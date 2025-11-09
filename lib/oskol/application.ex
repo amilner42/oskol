@@ -11,6 +11,8 @@ defmodule Oskol.Application do
       OskolWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:oskol, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Oskol.PubSub},
+      {Registry, keys: :unique, name: Oskol.GameRegistry},
+      Oskol.GameSupervisor,
       # Start a worker by calling: Oskol.Worker.start_link(arg)
       # {Oskol.Worker, arg},
       # Start to serve requests, typically the last entry
