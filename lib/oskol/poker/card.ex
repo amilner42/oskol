@@ -1,26 +1,37 @@
 defmodule Oskol.Poker.Card do
   @moduledoc """
-  Represents a playing card with rank and suit.
+  Represents a playing card with rank, suit, and a unique ID.
   """
 
   @type rank :: 2..14
   @type suit :: :hearts | :diamonds | :clubs | :spades
   @type t :: %__MODULE__{
+          id: String.t(),
           rank: rank(),
           suit: suit()
         }
 
-  defstruct [:rank, :suit]
+  defstruct [:id, :rank, :suit]
 
   @ranks [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
   @suits [:hearts, :diamonds, :clubs, :spades]
 
   @doc """
   Creates a new card with the given rank and suit.
+  Automatically generates a unique ID for the card.
   """
   @spec new(rank(), suit()) :: t()
   def new(rank, suit) when rank in @ranks and suit in @suits do
-    %__MODULE__{rank: rank, suit: suit}
+    %__MODULE__{
+      id: generate_id(),
+      rank: rank,
+      suit: suit
+    }
+  end
+
+  # Generates a unique ID for a card
+  defp generate_id do
+    :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
   end
 
   @doc """

@@ -1,0 +1,138 @@
+defmodule Oskol.Game.GameServerState do
+  @moduledoc """
+  Represents the state of a game server process.
+  This tracks the process-level concerns (connections, PIDs, monitors)
+  while GameState handles the pure game logic.
+  """
+
+  alias Oskol.Game.GameState
+
+  @type game_id :: String.t()
+  @type player_id :: String.t()
+  @type lobby_status :: :waiting_for_players | :ready_to_start
+
+  @type connection :: %{
+          name: String.t(),
+          pid: pid(),
+          connected: boolean(),
+          monitor_ref: reference() | nil
+        }
+
+  @type t :: %__MODULE__{
+          game_id: game_id(),
+          game_state: GameState.t() | nil,
+          connections: %{player_id() => connection()},
+          lobby_status: lobby_status(),
+          last_activity: integer()
+        }
+
+  defstruct game_id: nil,
+            game_state: nil,
+            connections: %{},
+            lobby_status: :waiting_for_players,
+            last_activity: 0
+
+  @doc """
+  Creates a new game server state for the given game_id.
+  """
+  @spec new(game_id()) :: t()
+  def new(game_id) do
+    %__MODULE__{
+      game_id: game_id,
+      game_state: nil,
+      connections: %{},
+      lobby_status: :waiting_for_players,
+      last_activity: System.system_time(:second)
+    }
+  end
+
+  @doc """
+  Checks if a player name is already taken in the connections.
+  """
+  @spec name_taken?(t(), String.t()) :: boolean()
+  def name_taken?(%__MODULE__{connections: connections}, name) do
+    connections
+    |> Map.values()
+    |> Enum.any?(fn conn -> conn.name == name end)
+  end
+
+  @doc """
+  Finds a player_id by their name. Returns nil if not found.
+  """
+  @spec find_player_id_by_name(t(), String.t()) :: player_id() | nil
+  def find_player_id_by_name(%__MODULE__{connections: connections}, name) do
+    Enum.find_value(connections, fn {player_id, conn} ->
+      if conn.name == name, do: player_id, else: nil
+    end)
+  end
+
+  @doc """
+  Updates the lobby status based on current connections.
+  Only updates if the game hasn't started yet.
+  """
+  @spec update_lobby_status(t()) :: t()
+  def update_lobby_status(%__MODULE__{game_state: nil} = state) do
+    connected_count = Enum.count(state.connections, fn {_id, conn} -> conn.connected end)
+    player_count = map_size(state.connections)
+
+    lobby_status =
+      cond do
+        connected_count == 2 and player_count == 2 -> :ready_to_start
+        true -> :waiting_for_players
+      end
+
+    %__MODULE__{state | lobby_status: lobby_status}
+  end
+
+  def update_lobby_status(%__MODULE__{} = state), do: state
+
+  @doc """
+  Handles a player action by validating the player connection and delegating to GameState.
+  Returns {:ok, updated_state} or {:error, reason}.
+  """
+  @spec handle_player_action(t(), player_id(), term()) ::
+          {:ok, t()} | {:error, :game_not_started | :player_not_found | :player_disconnected | term()}
+  def handle_player_action(%__MODULE__{game_state: nil}, _player_id, _action) do
+    {:error, :game_not_started}
+  end
+
+  def handle_player_action(%__MODULE__{} = state, player_id, action) do
+    case Map.get(state.connections, player_id) do
+      nil ->
+        {:error, :player_not_found}
+
+      %{connected: false} ->
+        {:error, :player_disconnected}
+
+      _connection ->
+        case perform_action(state.game_state, player_id, action) do
+          {:ok, updated_game_state} ->
+            {:ok, %__MODULE__{state | game_state: updated_game_state, last_activity: System.system_time(:second)}}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  # Private function that delegates actions to GameState
+  defp perform_action(game_state, player_id, {:lock_in_hand, hand}) do
+    {:ok, GameState.player_lock_in_hand(game_state, player_id, hand)}
+  end
+
+  defp perform_action(game_state, player_id, :unlock_hand) do
+    GameState.player_unlock_hand(game_state, player_id)
+  end
+
+  defp perform_action(game_state, player_id, {:discard_cards, cards}) do
+    GameState.player_discard_cards(game_state, player_id, cards)
+  end
+
+  defp perform_action(game_state, player_id, :mark_ready_for_next_round) do
+    {:ok, GameState.mark_ready_for_next_round(game_state, player_id)}
+  end
+
+  defp perform_action(_game_state, _player_id, action) do
+    {:error, {:unknown_action, action}}
+  end
+end

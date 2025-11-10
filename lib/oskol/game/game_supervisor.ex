@@ -1,4 +1,4 @@
-defmodule Oskol.GameSupervisor do
+defmodule Oskol.Game.GameSupervisor do
   use DynamicSupervisor
 
   def start_link(init_arg) do
@@ -15,7 +15,7 @@ defmodule Oskol.GameSupervisor do
   Returns {:ok, pid} if successful, or {:error, reason} if it fails.
   """
   def start_game(game_id) do
-    spec = {Oskol.GameServer, game_id}
+    spec = {Oskol.Game.GameServer, game_id}
     DynamicSupervisor.start_child(__MODULE__, spec)
   end
 

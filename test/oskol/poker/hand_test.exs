@@ -17,8 +17,17 @@ defmodule Oskol.Poker.HandTest do
   end
 
   defp assert_same_cards(actual, expected) do
-    sorted_actual = Enum.sort_by(actual, &{&1.rank, &1.suit})
-    sorted_expected = Enum.sort_by(expected, &{&1.rank, &1.suit})
+    # Compare cards by rank and suit only, ignoring ID
+    sorted_actual =
+      actual
+      |> Enum.sort_by(&{&1.rank, &1.suit})
+      |> Enum.map(&{&1.rank, &1.suit})
+
+    sorted_expected =
+      expected
+      |> Enum.sort_by(&{&1.rank, &1.suit})
+      |> Enum.map(&{&1.rank, &1.suit})
+
     assert sorted_actual == sorted_expected
   end
 
