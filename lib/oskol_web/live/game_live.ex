@@ -37,7 +37,9 @@ defmodule OskolWeb.GameLive do
         disconnected_players: disconnected_players,
         your_card_sort: :rank,
         opponent_card_sort: :rank,
-        error: nil
+        error: nil,
+        new_card_ids: [],
+        opponent_new_card_ids: []
       )
 
     # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
@@ -305,6 +307,91 @@ defmodule OskolWeb.GameLive do
       |> Enum.filter(fn {_id, conn} -> not conn.connected end)
       |> Enum.map(fn {id, conn} -> {id, conn.name} end)
 
+    # Detect new cards in player's hand
+    new_card_ids =
+      if socket.assigns.player_id && new_state.game_state do
+        old_hand_ids =
+          case socket.assigns.server_state.game_state do
+            nil ->
+              []
+
+            game_state ->
+              player_state = game_state.players[socket.assigns.player_id]
+
+              if player_state do
+                Enum.map(player_state.card_piles.hand_pile, & &1.id)
+              else
+                []
+              end
+          end
+
+        new_hand_ids =
+          case new_state.game_state.players[socket.assigns.player_id] do
+            nil -> []
+            player_state -> Enum.map(player_state.card_piles.hand_pile, & &1.id)
+          end
+
+        # Find cards that are in new hand but not in old hand
+        # Only mark as new if we previously had cards (not the initial deal)
+        truly_new_ids = new_hand_ids -- old_hand_ids
+
+        if length(truly_new_ids) > 0 and length(old_hand_ids) > 0 do
+          truly_new_ids
+        else
+          # Keep old new_card_ids, but filter to only cards still in current hand
+          Enum.filter(socket.assigns.new_card_ids, fn id -> id in new_hand_ids end)
+        end
+      else
+        socket.assigns.new_card_ids
+      end
+
+    # Detect new cards in opponent's hand
+    opponent_new_card_ids =
+      if socket.assigns.player_id && new_state.game_state do
+        opponent_id =
+          new_state.game_state.players
+          |> Map.keys()
+          |> Enum.find(&(&1 != socket.assigns.player_id))
+
+        if opponent_id do
+          old_opponent_hand_ids =
+            case socket.assigns.server_state.game_state do
+              nil ->
+                []
+
+              game_state ->
+                opponent_state = game_state.players[opponent_id]
+
+                if opponent_state do
+                  Enum.map(opponent_state.card_piles.hand_pile, & &1.id)
+                else
+                  []
+                end
+            end
+
+          new_opponent_hand_ids =
+            case new_state.game_state.players[opponent_id] do
+              nil -> []
+              opponent_state -> Enum.map(opponent_state.card_piles.hand_pile, & &1.id)
+            end
+
+          # Find cards that are in new hand but not in old hand
+          # Only mark as new if opponent previously had cards (not the initial deal)
+          truly_new_ids = new_opponent_hand_ids -- old_opponent_hand_ids
+
+          if length(truly_new_ids) > 0 and length(old_opponent_hand_ids) > 0 do
+            truly_new_ids
+          else
+            # Keep old opponent_new_card_ids, but filter to only cards still in current hand
+            Enum.filter(socket.assigns.opponent_new_card_ids, fn id -> id in new_opponent_hand_ids end)
+          end
+        else
+          socket.assigns.opponent_new_card_ids
+        end
+      else
+        socket.assigns.opponent_new_card_ids
+      end
+
     {:noreply,
      socket
      |> assign(
@@ -312,7 +399,9 @@ defmodule OskolWeb.GameLive do
        action_in_progress: false,
        viewing_results: viewing_results,
        viewing_round_summary: viewing_round_summary,
-       disconnected_players: disconnected_players
+       disconnected_players: disconnected_players,
+       new_card_ids: new_card_ids,
+       opponent_new_card_ids: opponent_new_card_ids
      )
      |> clear_error()}
   end
@@ -392,6 +481,45 @@ defmodule OskolWeb.GameLive do
   @impl true
   def render(assigns) do
     ~H"""
+    <style>
+      @keyframes border-fade {
+        0% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+
+      .new-card {
+        position: relative;
+      }
+
+      .new-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background-color: rgb(234, 179, 8);
+        animation: border-fade 10s ease-out forwards;
+        z-index: 10;
+      }
+
+      .new-card::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background-color: rgb(234, 179, 8);
+        animation: border-fade 10s ease-out forwards;
+        z-index: 10;
+      }
+    </style>
+
     <div class="min-h-screen bg-gray-900 text-white p-8">
       <div class="max-w-6xl mx-auto">
         <%= if @error do %>
@@ -599,7 +727,11 @@ defmodule OskolWeb.GameLive do
                 <div class="mt-4">
                   <div class="flex flex-wrap gap-4 mb-2">
                     <%= for card <- sort_cards(opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
-                      <div class="w-28 h-40 rounded overflow-hidden">
+                      <% is_new = card.id in @opponent_new_card_ids %>
+                      <div class={[
+                        "w-28 h-40 rounded overflow-hidden",
+                        if(is_new, do: "new-card", else: "")
+                      ]}>
                         <img src={card_to_png_url(card)} class="w-full h-full object-cover" />
                       </div>
                     <% end %>
@@ -1039,6 +1171,7 @@ defmodule OskolWeb.GameLive do
                       <% # Check if this card is selected by ID
                       selected = card.id in selected_card_ids %>
                       <% at_limit = length(selected_card_ids) >= 5 %>
+                      <% is_new = card.id in @new_card_ids %>
                       <button
                         phx-click="toggle_card"
                         phx-value-id={card.id}
@@ -1049,7 +1182,8 @@ defmodule OskolWeb.GameLive do
                           if((at_limit and not selected) or is_locked_in,
                             do: "opacity-50 cursor-not-allowed",
                             else: ""
-                          )
+                          ),
+                          if(is_new, do: "new-card", else: "")
                         ]}
                       >
                         <img
