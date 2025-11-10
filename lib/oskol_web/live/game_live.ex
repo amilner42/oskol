@@ -363,6 +363,7 @@ defmodule OskolWeb.GameLive do
 
   defp format_error(:game_full), do: "Game is full"
   defp format_error(:name_taken), do: "Name already taken"
+  defp format_error(:player_already_connected), do: "Name already taken by a connected player"
   defp format_error(:game_already_started), do: "Game already started"
   defp format_error(:not_enough_players), do: "Need 2 players to start"
   defp format_error(:game_not_started), do: "Game hasn't started yet"

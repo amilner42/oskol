@@ -104,29 +104,35 @@ defmodule Oskol.Game.GameServer do
         {:reply, {:error, :player_not_found}, state, @timeout}
 
       player_id ->
-        # Demonitor old process if it exists
         old_connection = state.connections[player_id]
-        if old_connection.monitor_ref do
-          Process.demonitor(old_connection.monitor_ref, [:flush])
+
+        # Only allow rejoin if player is disconnected
+        if old_connection.connected do
+          {:reply, {:error, :player_already_connected}, state, @timeout}
+        else
+          # Demonitor old process if it exists
+          if old_connection.monitor_ref do
+            Process.demonitor(old_connection.monitor_ref, [:flush])
+          end
+
+          # Monitor new process
+          monitor_ref = Process.monitor(player_pid)
+
+          updated_connection = %{old_connection | pid: player_pid, connected: true, monitor_ref: monitor_ref}
+          new_connections = Map.put(state.connections, player_id, updated_connection)
+
+          new_state = %GameServerState{
+            state
+            | connections: new_connections,
+              last_activity: System.system_time(:second)
+          }
+
+          new_state = GameServerState.update_lobby_status(new_state)
+
+          broadcast_state_change(new_state)
+
+          {:reply, {:ok, player_id, new_state}, new_state, @timeout}
         end
-
-        # Monitor new process
-        monitor_ref = Process.monitor(player_pid)
-
-        updated_connection = %{old_connection | pid: player_pid, connected: true, monitor_ref: monitor_ref}
-        new_connections = Map.put(state.connections, player_id, updated_connection)
-
-        new_state = %GameServerState{
-          state
-          | connections: new_connections,
-            last_activity: System.system_time(:second)
-        }
-
-        new_state = GameServerState.update_lobby_status(new_state)
-
-        broadcast_state_change(new_state)
-
-        {:reply, {:ok, player_id, new_state}, new_state, @timeout}
     end
   end
 
