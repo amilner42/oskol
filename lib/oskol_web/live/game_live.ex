@@ -234,7 +234,17 @@ defmodule OskolWeb.GameLive do
 
   @impl true
   def handle_event("dismiss_results", _params, socket) do
-    {:noreply, assign(socket, viewing_results: false)}
+    # Check if we're in round_end phase - if so, show round summary
+    game_state = socket.assigns.server_state.game_state
+
+    viewing_round_summary =
+      if game_state && game_state.phase == :round_end do
+        true
+      else
+        false
+      end
+
+    {:noreply, assign(socket, viewing_results: false, viewing_round_summary: viewing_round_summary)}
   end
 
   @impl true
@@ -255,6 +265,7 @@ defmodule OskolWeb.GameLive do
     if game_state.game_status == :game_over do
       {:noreply, assign(socket, viewing_round_summary: false, viewing_match_summary: true)}
     else
+      # Proceed to shop screen (if shop exists) or stay on round summary with ready status
       {:noreply, assign(socket, viewing_round_summary: false)}
     end
   end
@@ -344,18 +355,9 @@ defmodule OskolWeb.GameLive do
         true -> socket.assigns.viewing_results
       end
 
-    # Check if phase changed to :round_end - if so, show round summary
-    old_phase =
-      socket.assigns.server_state.game_state && socket.assigns.server_state.game_state.phase
-
-    new_phase = new_state.game_state && new_state.game_state.phase
-
-    viewing_round_summary =
-      if new_phase == :round_end and old_phase != :round_end do
-        true
-      else
-        socket.assigns.viewing_round_summary
-      end
+    # DON'T auto-show round summary when phase changes to :round_end
+    # Let hand results show first, then user dismisses to see round summary
+    viewing_round_summary = socket.assigns.viewing_round_summary
 
     # Update disconnected players list
     disconnected_players =
@@ -575,7 +577,7 @@ defmodule OskolWeb.GameLive do
                 opponent_state={opponent_state}
               />
 
-            <% game_state.phase == :round_end && !@viewing_round_summary && !@viewing_match_summary && game_state.game_status != :game_over -> %>
+            <% game_state.phase == :round_end && game_state.shop_state != nil && !@viewing_results && !@viewing_round_summary && !@viewing_match_summary && game_state.game_status != :game_over -> %>
               <.shop_screen
                 game_state={game_state}
                 player_id={@player_id}
