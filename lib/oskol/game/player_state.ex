@@ -34,7 +34,7 @@ defmodule Oskol.Game.PlayerState do
             status: nil
 
   @discards_per_round 3
-  @hands_per_round 1
+  @hands_per_round 4
 
   @doc """
   Creates a new player state with a full deck and level 1 skill tree.
