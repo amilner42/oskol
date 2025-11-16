@@ -6,6 +6,7 @@ defmodule Oskol.Game.GameServerState do
   """
 
   alias Oskol.Game.GameState
+  alias Oskol.Game.EventLog
 
   @type game_id :: String.t()
   @type player_id :: String.t()
@@ -23,14 +24,16 @@ defmodule Oskol.Game.GameServerState do
           game_state: GameState.t() | nil,
           connections: %{player_id() => connection()},
           lobby_status: lobby_status(),
-          last_activity: integer()
+          last_activity: integer(),
+          event_log: EventLog.t()
         }
 
   defstruct game_id: nil,
             game_state: nil,
             connections: %{},
             lobby_status: :waiting_for_players,
-            last_activity: 0
+            last_activity: 0,
+            event_log: nil
 
   @doc """
   Creates a new game server state for the given game_id.
@@ -42,7 +45,8 @@ defmodule Oskol.Game.GameServerState do
       game_state: nil,
       connections: %{},
       lobby_status: :waiting_for_players,
-      last_activity: System.system_time(:second)
+      last_activity: System.system_time(:second),
+      event_log: EventLog.new()
     }
   end
 
@@ -89,6 +93,8 @@ defmodule Oskol.Game.GameServerState do
   @doc """
   Handles a player action by validating the player connection and delegating to GameState.
   Returns {:ok, updated_state} or {:error, reason}.
+
+  The updated state includes both the new game_state and appended events to the event_log.
   """
   @spec handle_player_action(t(), player_id(), term()) ::
           {:ok, t()} | {:error, :game_not_started | :player_not_found | :player_disconnected | term()}
@@ -106,8 +112,20 @@ defmodule Oskol.Game.GameServerState do
 
       _connection ->
         case perform_action(state.game_state, player_id, action) do
-          {:ok, updated_game_state} ->
-            {:ok, %__MODULE__{state | game_state: updated_game_state, last_activity: System.system_time(:second)}}
+          {:ok, updated_game_state, event_descriptions} ->
+            # Append events to event log
+            updated_event_log =
+              Enum.reduce(event_descriptions, state.event_log, fn {type, pid, data}, log ->
+                EventLog.append(log, state.game_id, type, pid, data)
+              end)
+
+            {:ok,
+             %__MODULE__{
+               state
+               | game_state: updated_game_state,
+                 event_log: updated_event_log,
+                 last_activity: System.system_time(:second)
+             }}
 
           {:error, reason} ->
             {:error, reason}
@@ -116,8 +134,10 @@ defmodule Oskol.Game.GameServerState do
   end
 
   # Private function that delegates actions to GameState
+  # Returns {:ok, new_game_state, event_descriptions} or {:error, reason}
   defp perform_action(game_state, player_id, {:lock_in_hand, hand}) do
-    {:ok, GameState.player_lock_in_hand(game_state, player_id, hand)}
+    {new_state, events} = GameState.player_lock_in_hand(game_state, player_id, hand)
+    {:ok, new_state, events}
   end
 
   defp perform_action(game_state, player_id, :unlock_hand) do
@@ -129,7 +149,8 @@ defmodule Oskol.Game.GameServerState do
   end
 
   defp perform_action(game_state, player_id, :mark_ready_for_next_round) do
-    {:ok, GameState.mark_ready_for_next_round(game_state, player_id)}
+    {new_state, events} = GameState.mark_ready_for_next_round(game_state, player_id)
+    {:ok, new_state, events}
   end
 
   defp perform_action(_game_state, _player_id, action) do

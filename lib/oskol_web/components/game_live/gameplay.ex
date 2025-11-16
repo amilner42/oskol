@@ -201,13 +201,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     is_locked_in = @player_state.locked_in_hand != nil %>
 
     <div class="h-20 bg-white border-t border-gray-300 flex items-center justify-between px-8">
-      <!-- Left: Sort Button (always visible) -->
-      <button
-        phx-click="toggle_card_sort"
-        class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
-      >
-        Toggle Card Sort
-      </button>
+      <!-- Left: Sort and History Buttons (always visible) -->
+      <div class="flex items-center gap-2">
+        <button
+          phx-click="toggle_card_sort"
+          class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
+        >
+          Toggle Card Sort
+        </button>
+        <button
+          phx-click="toggle_history"
+          class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded transition-colors text-white"
+        >
+          History
+        </button>
+      </div>
 
       <%= if @viewing_results do %>
         <!-- Right: Continue Button when showing results -->

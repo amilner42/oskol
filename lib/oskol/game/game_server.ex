@@ -2,7 +2,7 @@ defmodule Oskol.Game.GameServer do
   use GenServer
   require Logger
 
-  alias Oskol.Game.{GameState, GameServerState}
+  alias Oskol.Game.{GameState, GameServerState, EventLog}
 
   @timeout :timer.hours(1)
 
@@ -83,10 +83,15 @@ defmodule Oskol.Game.GameServer do
         }
 
         new_connections = Map.put(state.connections, player_id, connection)
+
+        # Emit player_joined event
+        event_log = EventLog.append(state.event_log, state.game_id, :player_joined, player_id, %{name: player_name})
+
         new_state = %GameServerState{
           state
           | connections: new_connections,
-            last_activity: System.system_time(:second)
+            last_activity: System.system_time(:second),
+            event_log: event_log
         }
 
         new_state = GameServerState.update_lobby_status(new_state)
@@ -121,10 +126,14 @@ defmodule Oskol.Game.GameServer do
           updated_connection = %{old_connection | pid: player_pid, connected: true, monitor_ref: monitor_ref}
           new_connections = Map.put(state.connections, player_id, updated_connection)
 
+          # Emit player_reconnected event
+          event_log = EventLog.append(state.event_log, state.game_id, :player_reconnected, player_id, %{name: player_name})
+
           new_state = %GameServerState{
             state
             | connections: new_connections,
-              last_activity: System.system_time(:second)
+              last_activity: System.system_time(:second),
+              event_log: event_log
           }
 
           new_state = GameServerState.update_lobby_status(new_state)
@@ -154,7 +163,15 @@ defmodule Oskol.Game.GameServer do
 
         game_state = GameState.new(player_names)
 
-        new_state = %GameServerState{state | game_state: game_state}
+        # Emit game_started event
+        player_ids = Map.keys(player_names)
+        event_log = EventLog.append(state.event_log, state.game_id, :game_started, nil, %{
+          player_ids: player_ids,
+          initial_lives: 1,
+          starting_round: 1
+        })
+
+        new_state = %GameServerState{state | game_state: game_state, event_log: event_log}
 
         broadcast_state_change(new_state)
 
@@ -206,10 +223,16 @@ defmodule Oskol.Game.GameServer do
       updated_connection = %{state.connections[player_id] | connected: false}
       new_connections = Map.put(state.connections, player_id, updated_connection)
 
+      # Emit player_disconnected event
+      event_log = EventLog.append(state.event_log, state.game_id, :player_disconnected, player_id, %{
+        name: updated_connection.name
+      })
+
       new_state = %GameServerState{
         state
         | connections: new_connections,
-          last_activity: System.system_time(:second)
+          last_activity: System.system_time(:second),
+          event_log: event_log
       }
 
       new_state = GameServerState.update_lobby_status(new_state)

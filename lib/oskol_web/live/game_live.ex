@@ -7,6 +7,7 @@ defmodule OskolWeb.GameLive do
   import OskolWeb.Components.GameLive.Gameplay
   import OskolWeb.Components.GameLive.Summaries
   import OskolWeb.Components.GameLive.Shop
+  import OskolWeb.Components.GameLive.History
 
   @impl true
   def mount(%{"id" => game_id}, _session, socket) do
@@ -38,12 +39,14 @@ defmodule OskolWeb.GameLive do
         viewing_results: false,
         viewing_round_summary: false,
         viewing_match_summary: false,
+        viewing_history: false,
         disconnected_players: disconnected_players,
         your_card_sort: :rank,
         opponent_card_sort: :rank,
         error: nil,
         new_card_ids: [],
-        opponent_new_card_ids: []
+        opponent_new_card_ids: [],
+        last_seen_event_sequence: 0
       )
 
     # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
@@ -255,6 +258,17 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
+  def handle_event("toggle_history", _params, socket) do
+    {:noreply, assign(socket, viewing_history: !socket.assigns.viewing_history)}
+  end
+
+  @impl true
+  def handle_event("noop", _params, socket) do
+    # No-op event to prevent click propagation in modal
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("discard_cards", _params, socket) do
     player_state = get_player_state(socket)
     selected_ids = socket.assigns.selected_card_ids
@@ -317,89 +331,79 @@ defmodule OskolWeb.GameLive do
       |> Enum.filter(fn {_id, conn} -> not conn.connected end)
       |> Enum.map(fn {id, conn} -> {id, conn.name} end)
 
-    # Detect new cards in player's hand
-    new_card_ids =
-      if socket.assigns.player_id && new_state.game_state do
-        old_hand_ids =
-          case socket.assigns.server_state.game_state do
-            nil ->
-              []
+    # Detect new cards using event log (much more reliable than diffing state)
+    alias Oskol.Game.EventLog
 
-            game_state ->
-              player_state = game_state.players[socket.assigns.player_id]
-
-              if player_state do
-                Enum.map(player_state.card_piles.hand_pile, & &1.id)
-              else
-                []
-              end
-          end
-
-        new_hand_ids =
-          case new_state.game_state.players[socket.assigns.player_id] do
-            nil -> []
-            player_state -> Enum.map(player_state.card_piles.hand_pile, & &1.id)
-          end
-
-        # Find cards that are in new hand but not in old hand
-        # Only mark as new if we previously had cards (not the initial deal)
-        truly_new_ids = new_hand_ids -- old_hand_ids
-
-        if length(truly_new_ids) > 0 and length(old_hand_ids) > 0 do
-          truly_new_ids
-        else
-          # Keep old new_card_ids, but filter to only cards still in current hand
-          Enum.filter(socket.assigns.new_card_ids, fn id -> id in new_hand_ids end)
-        end
-      else
-        socket.assigns.new_card_ids
-      end
-
-    # Detect new cards in opponent's hand
-    opponent_new_card_ids =
+    {new_card_ids, opponent_new_card_ids, last_seen_sequence} =
       if socket.assigns.player_id && new_state.game_state do
         opponent_id =
           new_state.game_state.players
           |> Map.keys()
           |> Enum.find(&(&1 != socket.assigns.player_id))
 
-        if opponent_id do
-          old_opponent_hand_ids =
-            case socket.assigns.server_state.game_state do
-              nil ->
-                []
+        # Get events since last seen sequence
+        new_events = EventLog.get_since(new_state.event_log, socket.assigns.last_seen_event_sequence + 1)
 
-              game_state ->
-                opponent_state = game_state.players[opponent_id]
+        # Extract card IDs from cards_drawn events for this player
+        player_new_cards =
+          new_events
+          |> Enum.filter(fn event ->
+            event.type == :cards_drawn && event.player_id == socket.assigns.player_id
+          end)
+          |> Enum.flat_map(fn event -> Enum.map(event.data.cards, & &1.id) end)
 
-                if opponent_state do
-                  Enum.map(opponent_state.card_piles.hand_pile, & &1.id)
-                else
-                  []
-                end
-            end
+        # Extract card IDs from cards_drawn events for opponent
+        opponent_new_cards =
+          if opponent_id do
+            new_events
+            |> Enum.filter(fn event ->
+              event.type == :cards_drawn && event.player_id == opponent_id
+            end)
+            |> Enum.flat_map(fn event -> Enum.map(event.data.cards, & &1.id) end)
+          else
+            []
+          end
 
-          new_opponent_hand_ids =
+        # Get current hand card IDs to filter out cards no longer in hand
+        current_hand_ids =
+          case new_state.game_state.players[socket.assigns.player_id] do
+            nil -> []
+            player_state -> Enum.map(player_state.card_piles.hand_pile, & &1.id)
+          end
+
+        current_opponent_hand_ids =
+          if opponent_id do
             case new_state.game_state.players[opponent_id] do
               nil -> []
               opponent_state -> Enum.map(opponent_state.card_piles.hand_pile, & &1.id)
             end
-
-          # Find cards that are in new hand but not in old hand
-          # Only mark as new if opponent previously had cards (not the initial deal)
-          truly_new_ids = new_opponent_hand_ids -- old_opponent_hand_ids
-
-          if length(truly_new_ids) > 0 and length(old_opponent_hand_ids) > 0 do
-            truly_new_ids
           else
-            # Keep old opponent_new_card_ids, but filter to only cards still in current hand
-            Enum.filter(socket.assigns.opponent_new_card_ids, fn id -> id in new_opponent_hand_ids end)
+            []
           end
-        else
-          socket.assigns.opponent_new_card_ids
-        end
+
+        # Combine newly drawn cards with old new cards, filter to current hand
+        combined_new_cards =
+          (player_new_cards ++ socket.assigns.new_card_ids)
+          |> Enum.uniq()
+          |> Enum.filter(&(&1 in current_hand_ids))
+
+        combined_opponent_new_cards =
+          (opponent_new_cards ++ socket.assigns.opponent_new_card_ids)
+          |> Enum.uniq()
+          |> Enum.filter(&(&1 in current_opponent_hand_ids))
+
+        # Update last seen sequence to latest event
+        latest_sequence =
+          if length(new_events) > 0 do
+            List.last(new_events).sequence
+          else
+            socket.assigns.last_seen_event_sequence
+          end
+
+        {combined_new_cards, combined_opponent_new_cards, latest_sequence}
       else
-        socket.assigns.opponent_new_card_ids
+        {socket.assigns.new_card_ids, socket.assigns.opponent_new_card_ids,
+         socket.assigns.last_seen_event_sequence}
       end
 
     {:noreply,
@@ -411,7 +415,8 @@ defmodule OskolWeb.GameLive do
        viewing_round_summary: viewing_round_summary,
        disconnected_players: disconnected_players,
        new_card_ids: new_card_ids,
-       opponent_new_card_ids: opponent_new_card_ids
+       opponent_new_card_ids: opponent_new_card_ids,
+       last_seen_event_sequence: last_seen_sequence
      )
      |> clear_error()}
   end
@@ -560,6 +565,16 @@ defmodule OskolWeb.GameLive do
                 action_in_progress={@action_in_progress}
                 viewing_results={@viewing_results}
               />
+          <% end %>
+
+          <!-- History Modal (overlay) -->
+          <%= if @server_state.game_state do %>
+            <.history_modal
+              viewing_history={@viewing_history}
+              event_log={@server_state.event_log}
+              player_names={game_state.player_names}
+              player_id={@player_id}
+            />
           <% end %>
         <% end %>
       <% end %>
