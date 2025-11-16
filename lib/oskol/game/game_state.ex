@@ -3,7 +3,7 @@ defmodule Oskol.Game.GameState do
   Represents the complete state of a multiplayer poker roguelike game.
   """
 
-  alias Oskol.Game.PlayerState
+  alias Oskol.Game.{PlayerState, ShopState}
   alias Oskol.Poker.Card
 
   @type t :: %__MODULE__{
@@ -14,7 +14,10 @@ defmodule Oskol.Game.GameState do
           game_status: game_status(),
           last_hand_results: %{player_id() => hand_result()} | nil,
           round_hand_history: list(%{player_id() => hand_result()}),
-          winner_id: player_id() | nil
+          winner_id: player_id() | nil,
+          last_round_winner_id: player_id() | nil,
+          shop_state: ShopState.t() | nil,
+          shop_rounds: non_neg_integer()
         }
 
   @type phase :: :playing | :round_end
@@ -34,14 +37,17 @@ defmodule Oskol.Game.GameState do
             game_status: :active,
             last_hand_results: nil,
             round_hand_history: [],
-            winner_id: nil
+            winner_id: nil,
+            last_round_winner_id: nil,
+            shop_state: nil,
+            shop_rounds: 2
 
   @doc """
-  Creates a new game state with the given player_names map (player_id => player_name)
-  and initial_lives for each player.
+  Creates a new game state with the given player_names map (player_id => player_name),
+  initial_lives for each player, and shop_rounds configuration.
   """
-  @spec new(%{player_id() => String.t()}, pos_integer()) :: t()
-  def new(player_names, initial_lives \\ 3)
+  @spec new(%{player_id() => String.t()}, pos_integer(), non_neg_integer()) :: t()
+  def new(player_names, initial_lives \\ 3, shop_rounds \\ 2)
       when is_map(player_names) and map_size(player_names) == 2 do
     players =
       player_names
@@ -54,7 +60,8 @@ defmodule Oskol.Game.GameState do
       player_names: player_names,
       players: players,
       phase: :playing,
-      game_status: :active
+      game_status: :active,
+      shop_rounds: shop_rounds
     }
   end
 
@@ -342,13 +349,33 @@ defmodule Oskol.Game.GameState do
 
         {new_state, Enum.reverse(events)}
       else
-        # Round over but game continues
+        # Round over but game continues - initialize shop if shop_rounds > 0
+        [player1_id, player2_id] = Map.keys(players_with_updated_lives)
+
+        # Initialize shop state based on round winner and shop_rounds configuration
+        shop_state =
+          if game_state.shop_rounds > 0 do
+            if round_winner_id == nil do
+              # Tie - pass both player IDs and mark as tie
+              ShopState.new(player1_id, player2_id, true, game_state.shop_rounds)
+            else
+              # Determine loser
+              loser_id = if round_winner_id == player1_id, do: player2_id, else: player1_id
+              ShopState.new(round_winner_id, loser_id, false, game_state.shop_rounds)
+            end
+          else
+            # No shop configured
+            nil
+          end
+
         new_state = %{
           game_state
           | phase: :round_end,
             last_hand_results: hand_results,
             players: players_with_updated_lives,
-            round_hand_history: game_state.round_hand_history ++ [hand_results]
+            round_hand_history: game_state.round_hand_history ++ [hand_results],
+            last_round_winner_id: round_winner_id,
+            shop_state: shop_state
         }
 
         {new_state, Enum.reverse(events)}
@@ -366,6 +393,51 @@ defmodule Oskol.Game.GameState do
       {new_state, Enum.reverse(events)}
     end
   end
+
+  @doc """
+  Player makes a pick in the current shop round.
+  Advances to next shop round if both players have picked.
+
+  Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
+  """
+  @spec make_shop_pick(t(), player_id()) :: {:ok, t(), list()} | {:error, atom()}
+  def make_shop_pick(%__MODULE__{shop_state: shop_state} = game_state, player_id)
+      when shop_state != nil do
+    case ShopState.make_pick(shop_state, player_id) do
+      {:ok, updated_shop_state} ->
+        # TODO: In the future, this will actually apply the picked upgrade
+        pick_event =
+          {:shop_pick_made, player_id, %{shop_round: updated_shop_state.current_round}}
+
+        # Check if both players have picked
+        if ShopState.both_players_picked?(updated_shop_state) do
+          # Check if shop is complete (all rounds done)
+          if ShopState.shop_complete?(updated_shop_state) do
+            # Shop complete - keep shop_state but mark it as done
+            new_state = %{game_state | shop_state: updated_shop_state}
+            {:ok, new_state, [pick_event]}
+          else
+            # Advance to next shop round
+            next_shop_state = ShopState.advance_round(updated_shop_state)
+            new_state = %{game_state | shop_state: next_shop_state}
+
+            round_event =
+              {:shop_round_advanced, nil, %{shop_round: next_shop_state.current_round}}
+
+            {:ok, new_state, [pick_event, round_event]}
+          end
+        else
+          # Waiting for other player to pick
+          new_state = %{game_state | shop_state: updated_shop_state}
+          {:ok, new_state, [pick_event]}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def make_shop_pick(_, _), do: {:error, :no_shop_active}
 
   @doc """
   Marks a player as ready for the next round (from the shop).
@@ -471,7 +543,8 @@ defmodule Oskol.Game.GameState do
         players: updated_players,
         phase: :playing,
         last_hand_results: nil,
-        round_hand_history: []
+        round_hand_history: [],
+        shop_state: nil
     }
 
     {new_state, events}

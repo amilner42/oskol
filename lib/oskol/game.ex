@@ -39,8 +39,8 @@ defmodule Oskol.Game do
   defdelegate rejoin_game(game_id, player_name, player_pid), to: GameServer
   defdelegate get_server_state(game_id), to: GameServer, as: :get_state
 
-  def start_game_session(game_id, initial_lives \\ 3) do
-    GameServer.start_game(game_id, initial_lives)
+  def start_game_session(game_id, initial_lives \\ 3, shop_rounds \\ 2) do
+    GameServer.start_game(game_id, initial_lives, shop_rounds)
   end
   defdelegate player_lock_in_hand(game_id, player_id, hand), to: GameServer, as: :lock_in_hand
   defdelegate player_lock_in_hand_async(game_id, player_id, hand),
@@ -58,4 +58,8 @@ defmodule Oskol.Game do
   defdelegate mark_ready_for_next_round_async(game_id, player_id),
     to: GameServer,
     as: :mark_ready_for_next_round_async
+
+  defdelegate make_shop_pick_async(game_id, player_id),
+    to: GameServer,
+    as: :make_shop_pick_async
 end

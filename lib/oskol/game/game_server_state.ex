@@ -153,6 +153,10 @@ defmodule Oskol.Game.GameServerState do
     {:ok, new_state, events}
   end
 
+  defp perform_action(game_state, player_id, :make_shop_pick) do
+    GameState.make_shop_pick(game_state, player_id)
+  end
+
   defp perform_action(_game_state, _player_id, action) do
     {:error, {:unknown_action, action}}
   end

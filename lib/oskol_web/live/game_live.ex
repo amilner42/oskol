@@ -47,7 +47,8 @@ defmodule OskolWeb.GameLive do
         new_card_ids: [],
         opponent_new_card_ids: [],
         last_seen_event_sequence: 0,
-        selected_lives: 3
+        selected_lives: 3,
+        selected_shop_rounds: 2
       )
 
     # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
@@ -70,6 +71,7 @@ defmodule OskolWeb.GameLive do
                   server_state: new_state,
                   viewing_results: viewing_results,
                   selected_lives: 3,
+                  selected_shop_rounds: 2,
                   error: nil
                 )
 
@@ -104,6 +106,7 @@ defmodule OskolWeb.GameLive do
            server_state: new_state,
            viewing_results: viewing_results,
            selected_lives: 3,
+           selected_shop_rounds: 2,
            error: nil
          )}
 
@@ -129,6 +132,7 @@ defmodule OskolWeb.GameLive do
              joined: true,
              server_state: new_state,
              selected_lives: 3,
+             selected_shop_rounds: 2,
              error: nil
            )}
 
@@ -144,6 +148,7 @@ defmodule OskolWeb.GameLive do
                  joined: true,
                  server_state: new_state,
                  selected_lives: 3,
+                 selected_shop_rounds: 2,
                  error: nil
                )}
 
@@ -164,8 +169,18 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
+  def handle_event("select_shop_rounds", %{"rounds" => rounds_str}, socket) do
+    rounds = String.to_integer(rounds_str)
+    {:noreply, assign(socket, selected_shop_rounds: rounds)}
+  end
+
+  @impl true
   def handle_event("start_game", _params, socket) do
-    case Game.start_game_session(socket.assigns.game_id, socket.assigns.selected_lives) do
+    case Game.start_game_session(
+           socket.assigns.game_id,
+           socket.assigns.selected_lives,
+           socket.assigns.selected_shop_rounds
+         ) do
       {:ok, new_state} ->
         {:noreply, assign(socket, server_state: new_state, error: nil)}
 
@@ -247,6 +262,12 @@ defmodule OskolWeb.GameLive do
   @impl true
   def handle_event("mark_ready", _params, socket) do
     Game.mark_ready_for_next_round_async(socket.assigns.game_id, socket.assigns.player_id)
+    {:noreply, assign(socket, action_in_progress: true)}
+  end
+
+  @impl true
+  def handle_event("make_shop_pick", _params, socket) do
+    Game.make_shop_pick_async(socket.assigns.game_id, socket.assigns.player_id)
     {:noreply, assign(socket, action_in_progress: true)}
   end
 
@@ -428,7 +449,8 @@ defmodule OskolWeb.GameLive do
        new_card_ids: new_card_ids,
        opponent_new_card_ids: opponent_new_card_ids,
        last_seen_event_sequence: last_seen_sequence,
-       selected_lives: Map.get(socket.assigns, :selected_lives, 3)
+       selected_lives: Map.get(socket.assigns, :selected_lives, 3),
+       selected_shop_rounds: Map.get(socket.assigns, :selected_shop_rounds, 2)
      )
      |> clear_error()}
   end
@@ -522,6 +544,7 @@ defmodule OskolWeb.GameLive do
             player_name={@player_name}
             server_state={@server_state}
             selected_lives={@selected_lives}
+            selected_shop_rounds={@selected_shop_rounds}
           />
         <% else %>
           <% game_data = get_game_data(assigns) %>
@@ -554,6 +577,8 @@ defmodule OskolWeb.GameLive do
 
             <% game_state.phase == :round_end && !@viewing_round_summary && !@viewing_match_summary && game_state.game_status != :game_over -> %>
               <.shop_screen
+                game_state={game_state}
+                player_id={@player_id}
                 player_name={@player_name}
                 opponent_name={opponent_name}
                 player_state={player_state}
