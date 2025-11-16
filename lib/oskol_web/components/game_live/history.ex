@@ -95,7 +95,7 @@ defmodule OskolWeb.Components.GameLive.History do
           reconnected
 
         <% :game_started -> %>
-          Game started with {length(@event.data.player_ids)} players
+          Game started with {length(@event.data.player_ids)} players ({@event.data.initial_lives} lives each)
 
         <% :hand_locked_in -> %>
           <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
@@ -128,16 +128,24 @@ defmodule OskolWeb.Components.GameLive.History do
           </div>
 
         <% :round_completed -> %>
-          Round {@event.data.round_number} completed (Blind: {@event.data.blind_target})
+          <% winner_text = if @event.data.winner_id do
+            player_name(@event.data.winner_id, @player_names, @current_player_id)
+          else
+            "Tie"
+          end %>
+          Round {@event.data.round_number} completed (Winner: {winner_text})
           <div class="mt-2 space-y-1">
             <%= for {player_id, result} <- @event.data.player_results do %>
               <div class="text-xs">
                 <span class="font-semibold">{player_name(player_id, @player_names, @current_player_id)}:</span>
                 {result.score} points
-                <%= if result.passed do %>
-                  <span class="text-green-600">✓ Passed</span>
-                <% else %>
-                  <span class="text-red-600">✗ Failed (-1 life)</span>
+                <%= cond do %>
+                  <% result.is_round_winner == true -> %>
+                    <span class="text-green-600">✓ Won</span>
+                  <% result.is_round_winner == false -> %>
+                    <span class="text-red-600">✗ Lost (-1 life)</span>
+                  <% true -> %>
+                    <span class="text-yellow-600">= Tied</span>
                 <% end %>
                 <span class="text-gray-500">({result.lives} lives)</span>
               </div>
@@ -153,7 +161,7 @@ defmodule OskolWeb.Components.GameLive.History do
           is ready for the next round
 
         <% :round_started -> %>
-          Round {@event.data.round_number} started (Blind: {@event.data.blind_target})
+          Round {@event.data.round_number} started
           <div class="text-xs text-gray-500">
             {Map.get(@event.data, :hands_remaining, "?")} hands, {Map.get(@event.data, :discards_remaining, "?")} discards
           </div>

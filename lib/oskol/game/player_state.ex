@@ -8,7 +8,7 @@ defmodule Oskol.Game.PlayerState do
 
   @type t :: %__MODULE__{
           player_id: player_id(),
-          lives: 1..3,
+          lives: pos_integer(),
           card_piles: CardPiles.t(),
           skill_tree: SkillTree.t(),
           hands_remaining: non_neg_integer(),
@@ -23,33 +23,36 @@ defmodule Oskol.Game.PlayerState do
   @type player_status :: :active | :eliminated
 
   defstruct player_id: nil,
-            lives: 1,
+            lives: nil,
             card_piles: nil,
             skill_tree: nil,
-            hands_remaining: 4,
-            discards_remaining: 3,
-            current_round_score: 0,
+            hands_remaining: nil,
+            discards_remaining: nil,
+            current_round_score: nil,
             locked_in_hand: nil,
-            ready_for_next_round: false,
-            status: :active
+            ready_for_next_round: nil,
+            status: nil
+
+  @discards_per_round 3
+  @hands_per_round 1
 
   @doc """
   Creates a new player state with a full deck and level 1 skill tree.
   Draws 8 cards into hand to start.
   """
-  @spec new(player_id()) :: t()
-  def new(player_id) do
+  @spec new(player_id(), pos_integer()) :: t()
+  def new(player_id, initial_lives \\ 3) do
     card_piles =
       CardPiles.new(shuffle: true)
       |> CardPiles.draw_cards(8)
 
     %__MODULE__{
       player_id: player_id,
-      lives: 1,
+      lives: initial_lives,
       card_piles: card_piles,
       skill_tree: SkillTree.new(),
-      hands_remaining: 4,
-      discards_remaining: 3,
+      hands_remaining: @hands_per_round,
+      discards_remaining: @discards_per_round,
       current_round_score: 0,
       locked_in_hand: nil,
       ready_for_next_round: false,
@@ -66,8 +69,8 @@ defmodule Oskol.Game.PlayerState do
   def reset_for_new_round(%__MODULE__{} = player_state) do
     %{
       player_state
-      | hands_remaining: 4,
-        discards_remaining: 3,
+      | hands_remaining: @hands_per_round,
+        discards_remaining: @discards_per_round,
         current_round_score: 0,
         locked_in_hand: nil,
         ready_for_next_round: false

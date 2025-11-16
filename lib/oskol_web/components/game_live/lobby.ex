@@ -134,11 +134,76 @@ defmodule OskolWeb.Components.GameLive.Lobby do
 
         <.player_list connections={@server_state.connections} />
 
+        <div class="mt-6 mb-6">
+          <h3 class="text-lg font-bold mb-3">Game Mode</h3>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <button
+              phx-click="select_lives"
+              phx-value-lives="1"
+              class={[
+                "p-3 rounded border-2 transition-all",
+                if(@selected_lives == 1,
+                  do: "bg-red-600 border-red-400 shadow-lg",
+                  else: "bg-gray-700 border-gray-600 hover:bg-gray-600"
+                )
+              ]}
+            >
+              <div class="font-bold text-sm">Death Match</div>
+              <div class="text-xs text-gray-300">1 Life</div>
+            </button>
+
+            <button
+              phx-click="select_lives"
+              phx-value-lives="3"
+              class={[
+                "p-3 rounded border-2 transition-all",
+                if(@selected_lives == 3,
+                  do: "bg-blue-600 border-blue-400 shadow-lg",
+                  else: "bg-gray-700 border-gray-600 hover:bg-gray-600"
+                )
+              ]}
+            >
+              <div class="font-bold text-sm">Standard</div>
+              <div class="text-xs text-gray-300">3 Lives</div>
+            </button>
+
+            <button
+              phx-click="select_lives"
+              phx-value-lives="5"
+              class={[
+                "p-3 rounded border-2 transition-all",
+                if(@selected_lives == 5,
+                  do: "bg-purple-600 border-purple-400 shadow-lg",
+                  else: "bg-gray-700 border-gray-600 hover:bg-gray-600"
+                )
+              ]}
+            >
+              <div class="font-bold text-sm">Strategy</div>
+              <div class="text-xs text-gray-300">5 Lives</div>
+            </button>
+
+            <button
+              phx-click="select_lives"
+              phx-value-lives="7"
+              class={[
+                "p-3 rounded border-2 transition-all",
+                if(@selected_lives == 7,
+                  do: "bg-green-600 border-green-400 shadow-lg",
+                  else: "bg-gray-700 border-gray-600 hover:bg-gray-600"
+                )
+              ]}
+            >
+              <div class="font-bold text-sm">Marathon</div>
+              <div class="text-xs text-gray-300">7 Lives</div>
+            </button>
+          </div>
+        </div>
+
         <div class="mt-6">
           <%= if @server_state.lobby_status == :ready_to_start do %>
             <button
               phx-click="start_game"
-              class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded font-bold text-lg"
+              class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded font-bold text-lg w-full"
             >
               Start Game!
             </button>

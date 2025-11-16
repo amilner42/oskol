@@ -24,8 +24,8 @@ defmodule Oskol.Game.GameServer do
     GenServer.call(via_tuple(game_id), :get_state)
   end
 
-  def start_game(game_id) do
-    GenServer.call(via_tuple(game_id), :start_game)
+  def start_game(game_id, initial_lives \\ 3) do
+    GenServer.call(via_tuple(game_id), {:start_game, initial_lives})
   end
 
   def lock_in_hand(game_id, player_id, hand) do
@@ -146,7 +146,7 @@ defmodule Oskol.Game.GameServer do
   end
 
   @impl true
-  def handle_call(:start_game, _from, %GameServerState{} = state) do
+  def handle_call({:start_game, initial_lives}, _from, %GameServerState{} = state) do
     cond do
       state.game_state != nil ->
         {:reply, {:error, :game_already_started}, state, @timeout}
@@ -161,13 +161,13 @@ defmodule Oskol.Game.GameServer do
           |> Enum.map(fn {player_id, connection} -> {player_id, connection.name} end)
           |> Map.new()
 
-        game_state = GameState.new(player_names)
+        game_state = GameState.new(player_names, initial_lives)
 
         # Emit game_started event
         player_ids = Map.keys(player_names)
         event_log = EventLog.append(state.event_log, state.game_id, :game_started, nil, %{
           player_ids: player_ids,
-          initial_lives: 1,
+          initial_lives: initial_lives,
           starting_round: 1
         })
 

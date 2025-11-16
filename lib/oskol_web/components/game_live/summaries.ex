@@ -61,6 +61,17 @@ defmodule OskolWeb.Components.GameLive.Summaries do
 
   def round_summary(assigns) do
     ~H"""
+    <% # Determine round outcome
+    player_score = @player_state.current_round_score
+    opponent_score = @opponent_state.current_round_score
+
+    outcome =
+      cond do
+        player_score > opponent_score -> :player_won
+        opponent_score > player_score -> :opponent_won
+        true -> :tie
+      end %>
+
     <div class="bg-gray-800 py-6 px-8 rounded">
       <div class="text-center">
         <div class="text-xl font-bold text-yellow-400 mb-4">
@@ -70,23 +81,29 @@ defmodule OskolWeb.Components.GameLive.Summaries do
           <div>
             <div class="font-bold text-blue-400 mb-1">{@player_name}</div>
             <div class="text-gray-400">
-              Score: <span class="text-green-400 font-bold">{@player_state.current_round_score}</span>
+              Score: <span class="text-green-400 font-bold">{player_score}</span>
             </div>
-            <%= if @player_state.current_round_score >= @game_state.blind_target do %>
-              <div class="text-green-400 mt-1">✓ Blind Cleared!</div>
-            <% else %>
-              <div class="text-red-400 mt-1">✗ Blind Failed (-1 Life)</div>
+            <%= cond do %>
+              <% outcome == :player_won -> %>
+                <div class="text-green-400 mt-1 font-bold">✓ Round Winner!</div>
+              <% outcome == :opponent_won -> %>
+                <div class="text-red-400 mt-1">✗ Round Lost (-1 Life)</div>
+              <% outcome == :tie -> %>
+                <div class="text-yellow-400 mt-1">= Tie (No Life Lost)</div>
             <% end %>
           </div>
           <div>
             <div class="font-bold text-red-400 mb-1">{@opponent_name}</div>
             <div class="text-gray-400">
-              Score: <span class="text-green-400 font-bold">{@opponent_state.current_round_score}</span>
+              Score: <span class="text-green-400 font-bold">{opponent_score}</span>
             </div>
-            <%= if @opponent_state.current_round_score >= @game_state.blind_target do %>
-              <div class="text-green-400 mt-1">✓ Blind Cleared!</div>
-            <% else %>
-              <div class="text-red-400 mt-1">✗ Blind Failed (-1 Life)</div>
+            <%= cond do %>
+              <% outcome == :opponent_won -> %>
+                <div class="text-green-400 mt-1 font-bold">✓ Round Winner!</div>
+              <% outcome == :player_won -> %>
+                <div class="text-red-400 mt-1">✗ Round Lost (-1 Life)</div>
+              <% outcome == :tie -> %>
+                <div class="text-yellow-400 mt-1">= Tie (No Life Lost)</div>
             <% end %>
           </div>
         </div>

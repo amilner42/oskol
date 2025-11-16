@@ -204,16 +204,16 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <!-- Left: Sort and History Buttons (always visible) -->
       <div class="flex items-center gap-2">
         <button
+          phx-click="toggle_history"
+          class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
+        >
+          View History
+        </button>
+        <button
           phx-click="toggle_card_sort"
           class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
         >
           Toggle Card Sort
-        </button>
-        <button
-          phx-click="toggle_history"
-          class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded transition-colors text-white"
-        >
-          History
         </button>
       </div>
 
@@ -303,16 +303,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <div class="absolute top-4 left-4 text-gray-800 text-lg">
         Round {@game_state.round_number}
       </div>
-
-      <!-- Score goal in top right -->
-      <div class="absolute top-4 right-4 text-gray-800 text-lg">
-        Score {@game_state.blind_target} to survive
-      </div>
-
+      
     <!-- Centered content -->
       <div class="h-full flex flex-col justify-center">
         <%= cond do %>
-          <% @viewing_results -> %>
+          <% @viewing_results && @game_state.last_hand_results != nil -> %>
             <.hand_results_display
               game_state={@game_state}
               player_id={@player_id}
@@ -389,7 +384,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def round_info_display(assigns) do
     ~H"""
     <div class="text-gray-800 text-lg">
-      Score {@game_state.blind_target} to survive round {@game_state.round_number}
+      Round {@game_state.round_number} - Beat your opponent to survive
     </div>
     """
   end
@@ -398,7 +393,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <div>
       <%= if @show_result do %>
-        <% hand_type_text = @hand_type |> Atom.to_string() |> String.replace("_", " ") |> String.upcase() %>
+        <% hand_type_text =
+          @hand_type |> Atom.to_string() |> String.replace("_", " ") |> String.upcase() %>
         <%= if not @is_current_player do %>
           <div class="flex items-center justify-center gap-2 text-sm text-gray-700 mb-2">
             <span>{String.capitalize(@player_name)}</span>
@@ -420,7 +416,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       </div>
 
       <%= if @show_result do %>
-        <% hand_type_text = @hand_type |> Atom.to_string() |> String.replace("_", " ") |> String.upcase() %>
+        <% hand_type_text =
+          @hand_type |> Atom.to_string() |> String.replace("_", " ") |> String.upcase() %>
         <%= if @is_current_player do %>
           <div class="flex items-center justify-center gap-2 text-sm text-gray-700">
             <span>{hand_type_text}</span>

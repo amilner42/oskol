@@ -8,7 +8,6 @@ defmodule Oskol.Game.GameState do
 
   @type t :: %__MODULE__{
           round_number: pos_integer(),
-          blind_target: pos_integer(),
           player_names: %{player_id() => String.t()},
           players: %{player_id() => PlayerState.t()},
           phase: phase(),
@@ -20,12 +19,6 @@ defmodule Oskol.Game.GameState do
 
   @type phase :: :playing | :round_end
 
-  # Blind levels progression (similar to Balatro)
-  @blind_levels [
-    300, 450, 600, 800, 1200, 1600, 2000, 3000, 4000, 5000,
-    7500, 10000, 11000, 16500, 22000, 20000, 30000, 40000, 35000, 52500,
-    70000, 50000, 75000, 100000
-  ]
   @type game_status :: :active | :game_over
   @type player_id :: String.t()
   @type hand_result :: %{
@@ -35,7 +28,6 @@ defmodule Oskol.Game.GameState do
         }
 
   defstruct round_number: 1,
-            blind_target: 300,
             player_names: %{},
             players: %{},
             phase: :playing,
@@ -45,19 +37,20 @@ defmodule Oskol.Game.GameState do
             winner_id: nil
 
   @doc """
-  Creates a new game state with the given player_names map (player_id => player_name).
+  Creates a new game state with the given player_names map (player_id => player_name)
+  and initial_lives for each player.
   """
-  @spec new(%{player_id() => String.t()}) :: t()
-  def new(player_names) when is_map(player_names) and map_size(player_names) == 2 do
+  @spec new(%{player_id() => String.t()}, pos_integer()) :: t()
+  def new(player_names, initial_lives \\ 3)
+      when is_map(player_names) and map_size(player_names) == 2 do
     players =
       player_names
       |> Map.keys()
-      |> Enum.map(fn player_id -> {player_id, PlayerState.new(player_id)} end)
+      |> Enum.map(fn player_id -> {player_id, PlayerState.new(player_id, initial_lives)} end)
       |> Map.new()
 
     %__MODULE__{
       round_number: 1,
-      blind_target: 300,
       player_names: player_names,
       players: players,
       phase: :playing,
@@ -247,44 +240,62 @@ defmodule Oskol.Game.GameState do
       |> Enum.all?(fn player -> player.hands_remaining == 0 end)
 
     if round_over do
-      # Round is over - check blind targets and deduct lives
+      # Round is over - determine round winner via head-to-head scoring
+      [player1_id, player2_id] = Map.keys(updated_players)
+      player1 = updated_players[player1_id]
+      player2 = updated_players[player2_id]
+      score1 = player1.current_round_score
+      score2 = player2.current_round_score
+
+      # Determine round winner (nil if tie)
+      round_winner_id =
+        cond do
+          score1 > score2 -> player1_id
+          score2 > score1 -> player2_id
+          true -> nil
+        end
+
+      # Deduct life from loser only (or no one if tie)
       {players_with_updated_lives, life_events} =
-        Enum.map_reduce(updated_players, [], fn {player_id, player_state}, acc_events ->
-          # Check if player hit the blind
-          hit_blind = player_state.current_round_score >= game_state.blind_target
-          lives_before = player_state.lives
-
-          # Deduct life if didn't hit blind
-          new_lives =
-            if hit_blind do
-              player_state.lives
-            else
-              max(player_state.lives - 1, 0)
-            end
-
-          updated_player = %{player_state | lives: new_lives}
+        if round_winner_id do
+          # There is a winner - deduct life from loser
+          loser_id = if round_winner_id == player1_id, do: player2_id, else: player1_id
+          loser = updated_players[loser_id]
+          lives_before = loser.lives
+          new_lives = max(loser.lives - 1, 0)
+          updated_loser = %{loser | lives: new_lives}
 
           # Emit player_eliminated event if player died
-          new_events =
+          elimination_events =
             if lives_before > 0 and new_lives == 0 do
-              [{:player_eliminated, player_id, %{final_score: player_state.current_round_score}} | acc_events]
+              [{:player_eliminated, loser_id, %{final_score: loser.current_round_score}}]
             else
-              acc_events
+              []
             end
 
-          {{player_id, updated_player}, new_events}
-        end)
+          updated_map = Map.put(updated_players, loser_id, updated_loser)
+          {updated_map, elimination_events}
+        else
+          # Tie - no one loses life
+          {updated_players, []}
+        end
 
-      players_with_updated_lives = Map.new(players_with_updated_lives)
       events = life_events ++ events
 
       # Emit round_completed event
       player_results =
         Map.new(players_with_updated_lives, fn {player_id, player_state} ->
+          is_winner =
+            cond do
+              round_winner_id == player_id -> true
+              round_winner_id == nil -> nil
+              true -> false
+            end
+
           {player_id,
            %{
              score: player_state.current_round_score,
-             passed: player_state.current_round_score >= game_state.blind_target,
+             is_round_winner: is_winner,
              lives: player_state.lives
            }}
         end)
@@ -293,7 +304,7 @@ defmodule Oskol.Game.GameState do
         {:round_completed, nil,
          %{
            round_number: game_state.round_number,
-           blind_target: game_state.blind_target,
+           winner_id: round_winner_id,
            player_results: player_results
          }}
 
@@ -395,17 +406,14 @@ defmodule Oskol.Game.GameState do
 
   # Advances to the next round.
   # Lives have already been deducted in process_locked_hands/1.
-  # Resets player states, increments round number, sets new blind target.
+  # Resets player states, increments round number.
   # Shuffles player decks.
   # Returns {new_state, events}
   @spec advance_round(t()) :: {t(), list()}
   defp advance_round(%__MODULE__{} = game_state) do
     alias Oskol.Game.CardPiles
 
-    # Get next blind target from levels list
     next_round = game_state.round_number + 1
-    blind_index = min(next_round - 1, length(@blind_levels) - 1)
-    new_blind_target = Enum.at(@blind_levels, blind_index)
 
     # Shuffle decks and reset for next round, collecting cards_drawn events
     {updated_players, draw_events} =
@@ -451,7 +459,6 @@ defmodule Oskol.Game.GameState do
       {:round_started, nil,
        %{
          round_number: next_round,
-         blind_target: new_blind_target,
          hands_remaining: 4,
          discards_remaining: 3
        }}
@@ -461,7 +468,6 @@ defmodule Oskol.Game.GameState do
     new_state = %{
       game_state
       | round_number: next_round,
-        blind_target: new_blind_target,
         players: updated_players,
         phase: :playing,
         last_hand_results: nil,
