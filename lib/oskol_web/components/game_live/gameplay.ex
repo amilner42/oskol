@@ -9,15 +9,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def card_styles(assigns) do
     ~H"""
     <style>
-      @keyframes border-fade {
-        0% {
-          opacity: 1;
-        }
-        100% {
-          opacity: 0;
-        }
-      }
-
       .new-card {
         position: relative;
       }
@@ -30,7 +21,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         right: 0;
         height: 4px;
         background-color: rgb(234, 179, 8);
-        animation: border-fade 10s ease-out forwards;
         z-index: 10;
       }
 
@@ -42,7 +32,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         right: 0;
         height: 4px;
         background-color: rgb(234, 179, 8);
-        animation: border-fade 10s ease-out forwards;
         z-index: 10;
       }
     </style>
@@ -488,7 +477,34 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold text-gray-900">Your Deck</h2>
+            <!-- Toggle buttons serve as title -->
+            <div class="flex gap-2">
+              <button
+                phx-click="toggle_deck_view"
+                class={[
+                  "px-6 py-2 rounded-lg font-semibold transition-colors text-lg",
+                  if(@viewing_own_deck,
+                    do: "bg-gray-900 text-white",
+                    else: "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  )
+                ]}
+              >
+                Your Deck
+              </button>
+              <button
+                phx-click="toggle_deck_view"
+                class={[
+                  "px-6 py-2 rounded-lg font-semibold transition-colors text-lg",
+                  if(!@viewing_own_deck,
+                    do: "bg-gray-900 text-white",
+                    else: "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  )
+                ]}
+              >
+                {@opponent_name}'s Deck
+              </button>
+            </div>
+
             <button
               phx-click="toggle_deck"
               class="text-gray-500 hover:text-gray-700 text-2xl"
@@ -497,11 +513,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             </button>
           </div>
 
-          <% # Organize cards by location
-          discard_ids = MapSet.new(Enum.map(@player_state.card_piles.discard_pile, & &1.id))
-          draw_pile = @player_state.card_piles.draw_pile
-          hand_pile = @player_state.card_piles.hand_pile
-          discard_pile = @player_state.card_piles.discard_pile
+          <% # Select which state to show
+          current_state = if @viewing_own_deck, do: @player_state, else: @opponent_state
+
+          # Organize cards by location
+          discard_ids = MapSet.new(Enum.map(current_state.card_piles.discard_pile, & &1.id))
+          draw_pile = current_state.card_piles.draw_pile
+          hand_pile = current_state.card_piles.hand_pile
+          discard_pile = current_state.card_piles.discard_pile
 
           # Combine all cards
           all_cards = draw_pile ++ hand_pile ++ discard_pile
@@ -509,12 +528,18 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           # Group by suit
           cards_by_suit = Enum.group_by(all_cards, & &1.suit)
           suits = [:spades, :hearts, :clubs, :diamonds] %>
-          
+
     <!-- Render each suit as a row -->
           <%= for suit <- suits do %>
             <% suit_cards = Map.get(cards_by_suit, suit, []) %>
             <%= if length(suit_cards) > 0 do %>
+              <% # Count non-discarded cards
+              non_discarded_count = Enum.count(suit_cards, fn card -> card.id not in discard_ids end) %>
+
               <div class="mb-4">
+                <div class="text-sm text-gray-600 mb-1 font-medium">
+                  <%= suit |> to_string() |> String.capitalize() %>: <%= non_discarded_count %> remaining
+                </div>
                 <div class="flex flex-wrap gap-2">
                   <%= for card <- Enum.sort_by(suit_cards, & &1.rank, :desc) do %>
                     <% in_discard = card.id in discard_ids %>
