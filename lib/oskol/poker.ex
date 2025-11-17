@@ -22,6 +22,7 @@ defmodule Oskol.Poker do
 
   # Scoring
   defdelegate score_hand(hand_evaluation, skill_tree), to: Score, as: :calculate
+  defdelegate base_hand_scores(), to: Score
 
   # Skill tree
   defdelegate new_skill_tree(), to: SkillTree, as: :new

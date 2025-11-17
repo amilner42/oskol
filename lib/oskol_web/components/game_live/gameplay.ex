@@ -205,6 +205,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           Player Decks
         </button>
         <button
+          phx-click="toggle_levels"
+          class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
+        >
+          Player Levels
+        </button>
+        <button
           phx-click="toggle_card_sort"
           class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
         >
@@ -547,6 +553,100 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               </div>
             <% end %>
           <% end %>
+        </div>
+      </div>
+    <% end %>
+    """
+  end
+
+  def levels_modal(assigns) do
+    ~H"""
+    <%= if @viewing_levels do %>
+      <div
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        phx-click="toggle_levels"
+      >
+        <div
+          class="bg-white rounded-lg p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto"
+          phx-click="noop"
+        >
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold text-gray-900">Player Levels</h2>
+            <button
+              phx-click="toggle_levels"
+              class="text-gray-500 hover:text-gray-700 text-2xl"
+            >
+              ×
+            </button>
+          </div>
+
+          <% # Get base hand scores
+          base_scores = Oskol.Poker.base_hand_scores()
+
+          # Hand types in display order
+          hand_types = [
+            :high_card,
+            :pair,
+            :two_pair,
+            :three_of_a_kind,
+            :straight,
+            :flush,
+            :full_house,
+            :four_of_a_kind,
+            :straight_flush
+          ]
+
+          # Hand type display names
+          hand_names = %{
+            high_card: "High Card",
+            pair: "Pair",
+            two_pair: "Two Pair",
+            three_of_a_kind: "Three of a Kind",
+            straight: "Straight",
+            flush: "Flush",
+            full_house: "Full House",
+            four_of_a_kind: "Four of a Kind",
+            straight_flush: "Straight Flush"
+          } %>
+
+          <!-- Two-column layout: Player vs Opponent -->
+          <div class="grid grid-cols-2 gap-6 mb-4">
+            <!-- Player Column -->
+            <div>
+              <h3 class="text-xl font-semibold text-blue-600 mb-4 text-center">You</h3>
+              <%= for hand_type <- hand_types do %>
+                <% base = base_scores[hand_type]
+                player_level = Map.get(@player_state.skill_tree, hand_type, 1)
+                hand_name = hand_names[hand_type] %>
+
+                <div class="mb-3 p-3 bg-gray-50 rounded border border-gray-200">
+                  <div class="font-semibold text-gray-900 mb-1">{hand_name}</div>
+                  <div class="text-sm text-gray-600">
+                    <div>Base: {base.chips} chips × {base.multiplier} mult</div>
+                    <div class="mt-1 text-blue-600 font-medium">Level: {player_level}</div>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+
+            <!-- Opponent Column -->
+            <div>
+              <h3 class="text-xl font-semibold text-red-600 mb-4 text-center">{@opponent_name}</h3>
+              <%= for hand_type <- hand_types do %>
+                <% base = base_scores[hand_type]
+                opponent_level = Map.get(@opponent_state.skill_tree, hand_type, 1)
+                hand_name = hand_names[hand_type] %>
+
+                <div class="mb-3 p-3 bg-gray-50 rounded border border-gray-200">
+                  <div class="font-semibold text-gray-900 mb-1">{hand_name}</div>
+                  <div class="text-sm text-gray-600">
+                    <div>Base: {base.chips} chips × {base.multiplier} mult</div>
+                    <div class="mt-1 text-red-600 font-medium">Level: {opponent_level}</div>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </div>
         </div>
       </div>
     <% end %>

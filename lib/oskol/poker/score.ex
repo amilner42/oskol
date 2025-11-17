@@ -38,6 +38,11 @@ defmodule Oskol.Poker.Score do
   }
 
   @doc """
+  Returns the base hand scores map.
+  """
+  def base_hand_scores, do: @base_hand_scores
+
+  @doc """
   Calculates the score for a hand evaluation with skill tree levels applied.
 
   Level 1 = base scores only
