@@ -49,6 +49,7 @@ defmodule OskolWeb.GameLive do
         new_card_ids: [],
         opponent_new_card_ids: [],
         last_seen_event_sequence: 0,
+        acknowledged_event_sequence: 0,
         selected_lives: 3,
         selected_shop_rounds: 2
       )
@@ -230,7 +231,14 @@ defmodule OskolWeb.GameLive do
         hand
       )
 
-      {:noreply, assign(socket, action_in_progress: true, selected_card_ids: [], new_card_ids: [], error: nil)}
+      # Acknowledge all events seen so far - this clears card highlights
+      {:noreply,
+       assign(socket,
+         action_in_progress: true,
+         selected_card_ids: [],
+         acknowledged_event_sequence: socket.assigns.last_seen_event_sequence,
+         error: nil
+       )}
     end
   end
 
@@ -336,7 +344,14 @@ defmodule OskolWeb.GameLive do
           cards
         )
 
-        {:noreply, assign(socket, action_in_progress: true, selected_card_ids: [], new_card_ids: [], error: nil)}
+        # Acknowledge all events seen so far - this clears card highlights
+        {:noreply,
+         assign(socket,
+           action_in_progress: true,
+           selected_card_ids: [],
+           acknowledged_event_sequence: socket.assigns.last_seen_event_sequence,
+           error: nil
+         )}
     end
   end
 
@@ -376,23 +391,33 @@ defmodule OskolWeb.GameLive do
           |> Map.keys()
           |> Enum.find(&(&1 != socket.assigns.player_id))
 
-        # Get events since last seen sequence
+        # Get all new events since last seen (for tracking)
         new_events = EventLog.get_since(new_state.event_log, socket.assigns.last_seen_event_sequence + 1)
 
-        # Extract card IDs from cards_drawn events for this player
+        # Get events since last acknowledged (for highlighting)
+        # This allows us to clear highlights on user action by updating acknowledged_event_sequence
+        highlight_events = EventLog.get_since(new_state.event_log, socket.assigns.acknowledged_event_sequence + 1)
+
+        # Extract card IDs from cards_drawn events for this player (from acknowledged events)
+        # Exclude round_start draws - only highlight after discard/play
         player_new_cards =
-          new_events
+          highlight_events
           |> Enum.filter(fn event ->
-            event.type == :cards_drawn && event.player_id == socket.assigns.player_id
+            event.type == :cards_drawn &&
+              event.player_id == socket.assigns.player_id &&
+              event.data.reason != :round_start
           end)
           |> Enum.flat_map(fn event -> Enum.map(event.data.cards, & &1.id) end)
 
-        # Extract card IDs from cards_drawn events for opponent
+        # Extract card IDs from cards_drawn events for opponent (from acknowledged events)
+        # Exclude round_start draws - only highlight after discard/play
         opponent_new_cards =
           if opponent_id do
-            new_events
+            highlight_events
             |> Enum.filter(fn event ->
-              event.type == :cards_drawn && event.player_id == opponent_id
+              event.type == :cards_drawn &&
+                event.player_id == opponent_id &&
+                event.data.reason != :round_start
             end)
             |> Enum.flat_map(fn event -> Enum.map(event.data.cards, & &1.id) end)
           else
@@ -416,14 +441,14 @@ defmodule OskolWeb.GameLive do
             []
           end
 
-        # Combine newly drawn cards with old new cards, filter to current hand
-        combined_new_cards =
-          (player_new_cards ++ socket.assigns.new_card_ids)
+        # Filter to cards still in hand (no need to combine with old, events track everything)
+        new_card_ids_to_highlight =
+          player_new_cards
           |> Enum.uniq()
           |> Enum.filter(&(&1 in current_hand_ids))
 
-        combined_opponent_new_cards =
-          (opponent_new_cards ++ socket.assigns.opponent_new_card_ids)
+        opponent_new_card_ids_to_highlight =
+          opponent_new_cards
           |> Enum.uniq()
           |> Enum.filter(&(&1 in current_opponent_hand_ids))
 
@@ -435,7 +460,7 @@ defmodule OskolWeb.GameLive do
             socket.assigns.last_seen_event_sequence
           end
 
-        {combined_new_cards, combined_opponent_new_cards, latest_sequence}
+        {new_card_ids_to_highlight, opponent_new_card_ids_to_highlight, latest_sequence}
       else
         {socket.assigns.new_card_ids, socket.assigns.opponent_new_card_ids,
          socket.assigns.last_seen_event_sequence}
