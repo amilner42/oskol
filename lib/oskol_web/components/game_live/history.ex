@@ -11,7 +11,7 @@ defmodule OskolWeb.Components.GameLive.History do
     <%= if @viewing_history do %>
       <!-- Modal backdrop -->
       <div
-        class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+        class="fixed inset-0 backdrop-blur-sm bg-white/10 z-50 flex items-center justify-center p-4"
         phx-click="toggle_history"
       >
         <!-- Modal content (click inside won't close) -->

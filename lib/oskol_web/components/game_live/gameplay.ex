@@ -468,11 +468,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <%= if @viewing_deck do %>
       <div
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        class="fixed inset-0 backdrop-blur-sm bg-white/10 flex items-center justify-center z-50"
         phx-click="toggle_deck"
       >
         <div
-          class="bg-white rounded-lg p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+          class="bg-white rounded-lg shadow-xl p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto"
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
@@ -563,11 +563,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <%= if @viewing_levels do %>
       <div
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        class="fixed inset-0 backdrop-blur-sm bg-white/10 flex items-center justify-center z-50"
         phx-click="toggle_levels"
       >
         <div
-          class="bg-white rounded-lg p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto"
+          class="bg-white rounded-lg shadow-xl p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto"
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
