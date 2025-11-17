@@ -250,17 +250,6 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
-  def handle_event("undo_lock_in", _params, socket) do
-    # Fire async action to unlock hand
-    Game.player_unlock_hand_async(
-      socket.assigns.game_id,
-      socket.assigns.player_id
-    )
-
-    {:noreply, assign(socket, action_in_progress: true, selected_card_ids: [], error: nil)}
-  end
-
-  @impl true
   def handle_event("dismiss_round_summary", _params, socket) do
     game_state = socket.assigns.server_state.game_state
 

@@ -101,10 +101,6 @@ defmodule OskolWeb.Components.GameLive.History do
           <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
           locked in {length(@event.data.cards)} cards
 
-        <% :hand_unlocked -> %>
-          <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
-          unlocked their hand
-
         <% :cards_discarded -> %>
           <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
           discarded {length(@event.data.cards_discarded)} cards
@@ -192,7 +188,6 @@ defmodule OskolWeb.Components.GameLive.History do
   defp event_color(:player_reconnected), do: "#10b981"
   defp event_color(:game_started), do: "#3b82f6"
   defp event_color(:hand_locked_in), do: "#8b5cf6"
-  defp event_color(:hand_unlocked), do: "#6b7280"
   defp event_color(:cards_discarded), do: "#f59e0b"
   defp event_color(:cards_drawn), do: "#06b6d4"
   defp event_color(:hands_revealed), do: "#ec4899"

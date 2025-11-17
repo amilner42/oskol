@@ -63,7 +63,6 @@ defmodule Oskol.Game.EventTest do
     test "supports all playing event types" do
       types = [
         :hand_locked_in,
-        :hand_unlocked,
         :cards_discarded,
         :cards_drawn,
         :hands_revealed

@@ -92,29 +92,6 @@ defmodule Oskol.Game.GameState do
   end
 
   @doc """
-  Player unlocks their hand choice, allowing them to select a different hand.
-  Only works if both players haven't locked in yet.
-
-  Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
-  """
-  @spec player_unlock_hand(t(), player_id()) ::
-          {:ok, t(), list()} | {:error, :cannot_unlock}
-  def player_unlock_hand(%__MODULE__{} = game_state, player_id) do
-    # Can only unlock if both players haven't locked in yet
-    if both_players_locked_in?(game_state) do
-      {:error, :cannot_unlock}
-    else
-      updated_players =
-        Map.update!(game_state.players, player_id, fn player ->
-          %{player | locked_in_hand: nil}
-        end)
-
-      event = {:hand_unlocked, player_id, %{}}
-      {:ok, %{game_state | players: updated_players}, [event]}
-    end
-  end
-
-  @doc """
   Checks if both players have locked in their hands.
   """
   @spec both_players_locked_in?(t()) :: boolean()

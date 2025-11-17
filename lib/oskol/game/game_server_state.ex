@@ -140,10 +140,6 @@ defmodule Oskol.Game.GameServerState do
     {:ok, new_state, events}
   end
 
-  defp perform_action(game_state, player_id, :unlock_hand) do
-    GameState.player_unlock_hand(game_state, player_id)
-  end
-
   defp perform_action(game_state, player_id, {:discard_cards, cards}) do
     GameState.player_discard_cards(game_state, player_id, cards)
   end

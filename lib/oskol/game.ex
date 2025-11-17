@@ -47,10 +47,6 @@ defmodule Oskol.Game do
     to: GameServer,
     as: :lock_in_hand_async
 
-  defdelegate player_unlock_hand_async(game_id, player_id),
-    to: GameServer,
-    as: :unlock_hand_async
-
   defdelegate player_discard_cards_async(game_id, player_id, cards),
     to: GameServer,
     as: :discard_cards_async

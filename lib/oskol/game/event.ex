@@ -43,7 +43,6 @@ defmodule Oskol.Game.Event do
           | :game_started
           # Playing events
           | :hand_locked_in
-          | :hand_unlocked
           | :cards_discarded
           | :cards_drawn
           | :hands_revealed

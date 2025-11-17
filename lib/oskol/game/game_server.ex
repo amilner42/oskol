@@ -36,10 +36,6 @@ defmodule Oskol.Game.GameServer do
     GenServer.cast(via_tuple(game_id), {:player_action, player_id, {:lock_in_hand, hand}})
   end
 
-  def unlock_hand_async(game_id, player_id) do
-    GenServer.cast(via_tuple(game_id), {:player_action, player_id, :unlock_hand})
-  end
-
   def discard_cards_async(game_id, player_id, cards) do
     GenServer.cast(via_tuple(game_id), {:player_action, player_id, {:discard_cards, cards}})
   end

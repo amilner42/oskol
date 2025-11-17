@@ -246,45 +246,24 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <% end %>
           </button>
 
-          <%= if is_locked_in do %>
-            <button
-              phx-click="undo_lock_in"
-              disabled={@action_in_progress}
-              class={[
-                "px-4 py-2 rounded transition-colors bg-yellow-600 hover:bg-yellow-700",
-                if(
-                  @action_in_progress,
-                  do: "opacity-50 cursor-not-allowed",
-                  else: ""
-                )
-              ]}
-            >
-              <%= if @action_in_progress do %>
-                Undoing...
-              <% else %>
-                Undo
-              <% end %>
-            </button>
-          <% else %>
-            <button
-              phx-click="lock_in_hand"
-              disabled={@action_in_progress || length(selected_card_ids) == 0}
-              class={[
-                "px-4 py-2 rounded transition-colors bg-blue-600 hover:bg-blue-700",
-                if(
-                  @action_in_progress || length(selected_card_ids) == 0,
-                  do: "opacity-50 cursor-not-allowed",
-                  else: ""
-                )
-              ]}
-            >
-              <%= if @action_in_progress do %>
-                Playing...
-              <% else %>
-                Play
-              <% end %>
-            </button>
-          <% end %>
+          <button
+            phx-click="lock_in_hand"
+            disabled={@action_in_progress || length(selected_card_ids) == 0 || is_locked_in}
+            class={[
+              "px-4 py-2 rounded transition-colors bg-blue-600 hover:bg-blue-700",
+              if(
+                @action_in_progress || length(selected_card_ids) == 0 || is_locked_in,
+                do: "opacity-50 cursor-not-allowed",
+                else: ""
+              )
+            ]}
+          >
+            <%= if @action_in_progress do %>
+              Playing...
+            <% else %>
+              Play
+            <% end %>
+          </button>
         </div>
       <% end %>
     </div>
