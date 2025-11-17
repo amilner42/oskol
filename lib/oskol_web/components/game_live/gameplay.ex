@@ -207,13 +207,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           phx-click="toggle_history"
           class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
         >
-          View History
+          Game Log
         </button>
         <button
           phx-click="toggle_deck"
           class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
         >
-          View Deck
+          Player Decks
         </button>
         <button
           phx-click="toggle_card_sort"
@@ -509,8 +509,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           # Group by suit
           cards_by_suit = Enum.group_by(all_cards, & &1.suit)
           suits = [:spades, :hearts, :clubs, :diamonds] %>
-
-          <!-- Render each suit as a row -->
+          
+    <!-- Render each suit as a row -->
           <%= for suit <- suits do %>
             <% suit_cards = Map.get(cards_by_suit, suit, []) %>
             <%= if length(suit_cards) > 0 do %>

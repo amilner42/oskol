@@ -229,7 +229,7 @@ defmodule OskolWeb.GameLive do
         hand
       )
 
-      {:noreply, assign(socket, action_in_progress: true, selected_card_ids: [], error: nil)}
+      {:noreply, assign(socket, action_in_progress: true, selected_card_ids: [], new_card_ids: [], error: nil)}
     end
   end
 
@@ -341,7 +341,7 @@ defmodule OskolWeb.GameLive do
           cards
         )
 
-        {:noreply, assign(socket, action_in_progress: true, selected_card_ids: [], error: nil)}
+        {:noreply, assign(socket, action_in_progress: true, selected_card_ids: [], new_card_ids: [], error: nil)}
     end
   end
 
