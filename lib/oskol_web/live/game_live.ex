@@ -40,6 +40,7 @@ defmodule OskolWeb.GameLive do
         viewing_round_summary: false,
         viewing_match_summary: false,
         viewing_history: false,
+        viewing_deck: false,
         disconnected_players: disconnected_players,
         your_card_sort: :rank,
         opponent_card_sort: :rank,
@@ -303,6 +304,11 @@ defmodule OskolWeb.GameLive do
   @impl true
   def handle_event("toggle_history", _params, socket) do
     {:noreply, assign(socket, viewing_history: !socket.assigns.viewing_history)}
+  end
+
+  @impl true
+  def handle_event("toggle_deck", _params, socket) do
+    {:noreply, assign(socket, viewing_deck: !socket.assigns.viewing_deck)}
   end
 
   @impl true
@@ -615,6 +621,9 @@ defmodule OskolWeb.GameLive do
               player_names={game_state.player_names}
               player_id={@player_id}
             />
+
+            <!-- Deck Modal (overlay) -->
+            <.deck_modal viewing_deck={@viewing_deck} player_state={player_state} />
           <% end %>
         <% end %>
       <% end %>

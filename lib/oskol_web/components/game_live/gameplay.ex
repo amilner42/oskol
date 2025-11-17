@@ -201,13 +201,19 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     is_locked_in = @player_state.locked_in_hand != nil %>
 
     <div class="h-20 bg-white border-t border-gray-300 flex items-center justify-between px-8">
-      <!-- Left: Sort and History Buttons (always visible) -->
+      <!-- Left: Sort, History, and Deck Buttons (always visible) -->
       <div class="flex items-center gap-2">
         <button
           phx-click="toggle_history"
           class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
         >
           View History
+        </button>
+        <button
+          phx-click="toggle_deck"
+          class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
+        >
+          View Deck
         </button>
         <button
           phx-click="toggle_card_sort"
@@ -469,4 +475,63 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   defp suit_order(:hearts), do: 1
   defp suit_order(:clubs), do: 2
   defp suit_order(:diamonds), do: 3
+
+  def deck_modal(assigns) do
+    ~H"""
+    <%= if @viewing_deck do %>
+      <div
+        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        phx-click="toggle_deck"
+      >
+        <div
+          class="bg-white rounded-lg p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+          phx-click="noop"
+        >
+          <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold text-gray-900">Your Deck</h2>
+            <button
+              phx-click="toggle_deck"
+              class="text-gray-500 hover:text-gray-700 text-2xl"
+            >
+              ×
+            </button>
+          </div>
+
+          <% # Organize cards by location
+          discard_ids = MapSet.new(Enum.map(@player_state.card_piles.discard_pile, & &1.id))
+          draw_pile = @player_state.card_piles.draw_pile
+          hand_pile = @player_state.card_piles.hand_pile
+          discard_pile = @player_state.card_piles.discard_pile
+
+          # Combine all cards
+          all_cards = draw_pile ++ hand_pile ++ discard_pile
+
+          # Group by suit
+          cards_by_suit = Enum.group_by(all_cards, & &1.suit)
+          suits = [:spades, :hearts, :clubs, :diamonds] %>
+
+          <!-- Render each suit as a row -->
+          <%= for suit <- suits do %>
+            <% suit_cards = Map.get(cards_by_suit, suit, []) %>
+            <%= if length(suit_cards) > 0 do %>
+              <div class="mb-4">
+                <div class="flex flex-wrap gap-2">
+                  <%= for card <- Enum.sort_by(suit_cards, & &1.rank, :desc) do %>
+                    <% in_discard = card.id in discard_ids %>
+                    <div class={[
+                      "w-16 h-22 rounded overflow-hidden",
+                      if(in_discard, do: "opacity-30", else: "opacity-100")
+                    ]}>
+                      <img src={card_to_png_url(card)} class="w-full h-full" />
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+    """
+  end
 end
