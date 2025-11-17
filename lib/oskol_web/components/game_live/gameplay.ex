@@ -273,11 +273,25 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def playing_area(assigns) do
     ~H"""
     <div class="h-full relative">
-      <!-- Round number in top left -->
-      <div class="absolute top-4 left-4 text-gray-800 text-lg">
-        Round {@game_state.round_number}
+      <!-- Round info bar -->
+      <div class="absolute top-4 left-4 right-4 flex justify-between items-center text-gray-800 text-lg">
+        <div>Round {@game_state.round_number}</div>
+
+        <% player_score = @player_state.current_round_score
+        opponent_score = @opponent_state.current_round_score
+        score_diff = abs(player_score - opponent_score) %>
+
+        <%= if score_diff > 0 do %>
+          <div class="text-base">
+            <%= if player_score > opponent_score do %>
+              You are up by <%= score_diff %> points
+            <% else %>
+              <%= @opponent_name %> is up by <%= score_diff %> points
+            <% end %>
+          </div>
+        <% end %>
       </div>
-      
+
     <!-- Centered content -->
       <div class="h-full flex flex-col justify-center">
         <%= cond do %>
