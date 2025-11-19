@@ -4,11 +4,13 @@ defmodule Oskol.Game.ShopState do
   Each round both players pick from the same pool of upgrades.
   """
 
-  alias Oskol.Game.PlayerState
+  alias Oskol.Game.{PlayerState, ActionCard}
 
   @type player_id :: PlayerState.player_id()
 
   @type hand_type :: :high_card | :pair | :two_pair | :three_of_a_kind | :straight | :flush | :full_house | :four_of_a_kind | :straight_flush
+
+  @type shop_card :: {:level_up, hand_type()} | {:action, ActionCard.t()}
 
   @all_hand_types [:high_card, :pair, :two_pair, :three_of_a_kind, :straight, :flush, :full_house, :four_of_a_kind, :straight_flush]
 
@@ -19,8 +21,8 @@ defmodule Oskol.Game.ShopState do
           second_picker_id: player_id(),
           first_pick_made: boolean(),
           second_pick_made: boolean(),
-          available_upgrades: [hand_type()],
-          picked_upgrades: [non_neg_integer()]
+          available_cards: [shop_card()],
+          picked_card_indices: [non_neg_integer()]
         }
 
   defstruct total_rounds: 1,
@@ -29,8 +31,8 @@ defmodule Oskol.Game.ShopState do
             second_picker_id: nil,
             first_pick_made: false,
             second_pick_made: false,
-            available_upgrades: [],
-            picked_upgrades: []
+            available_cards: [],
+            picked_card_indices: []
 
   @doc """
   Creates a new shop state.
@@ -62,20 +64,34 @@ defmodule Oskol.Game.ShopState do
       second_picker_id: second_player,
       first_pick_made: false,
       second_pick_made: false,
-      available_upgrades: generate_random_upgrades(),
-      picked_upgrades: []
+      available_cards: generate_random_shop_cards(),
+      picked_card_indices: []
     }
   end
 
-  # Generates a random pool of 18 upgrade cards.
-  # Takes all 9 hand types, triples them (27 total), then randomly selects 18.
-  @spec generate_random_upgrades() :: [hand_type()]
-  defp generate_random_upgrades do
-    @all_hand_types
-    |> List.duplicate(3)
-    |> List.flatten()
+  # Generates a random pool of 18 shop cards: 9 level ups + 9 action cards.
+  # For level ups: triples all 9 hand types (27), shuffles, takes 9
+  # For action cards: triples all 9 denial cards (27), shuffles, takes 9
+  # Then shuffles all 18 together
+  @spec generate_random_shop_cards() :: [shop_card()]
+  defp generate_random_shop_cards do
+    # Generate 9 random level up cards
+    level_ups =
+      @all_hand_types
+      |> List.duplicate(3)
+      |> List.flatten()
+      |> Enum.shuffle()
+      |> Enum.take(9)
+      |> Enum.map(fn hand_type -> {:level_up, hand_type} end)
+
+    # Generate 9 random action cards
+    action_cards =
+      ActionCard.generate_random_action_cards(9)
+      |> Enum.map(fn card -> {:action, card} end)
+
+    # Combine and shuffle all 18 cards
+    (level_ups ++ action_cards)
     |> Enum.shuffle()
-    |> Enum.take(18)
   end
 
   @doc """
@@ -96,27 +112,27 @@ defmodule Oskol.Game.ShopState do
 
   @doc """
   Records a player's pick in the current round.
-  Returns the selected hand type along with the updated shop state.
+  Returns the selected shop card along with the updated shop state.
   """
-  @spec make_pick(t(), player_id(), non_neg_integer()) :: {:ok, t(), hand_type()} | {:error, atom()}
-  def make_pick(%__MODULE__{} = shop_state, player_id, upgrade_index) do
+  @spec make_pick(t(), player_id(), non_neg_integer()) :: {:ok, t(), shop_card()} | {:error, atom()}
+  def make_pick(%__MODULE__{} = shop_state, player_id, card_index) do
     cond do
-      upgrade_index < 0 or upgrade_index >= length(shop_state.available_upgrades) ->
-        {:error, :invalid_upgrade_index}
+      card_index < 0 or card_index >= length(shop_state.available_cards) ->
+        {:error, :invalid_card_index}
 
-      upgrade_index in shop_state.picked_upgrades ->
-        {:error, :upgrade_already_picked}
+      card_index in shop_state.picked_card_indices ->
+        {:error, :card_already_picked}
 
       not shop_state.first_pick_made and player_id == shop_state.first_picker_id ->
-        selected_hand = Enum.at(shop_state.available_upgrades, upgrade_index)
-        updated_state = %{shop_state | first_pick_made: true, picked_upgrades: [upgrade_index | shop_state.picked_upgrades]}
-        {:ok, updated_state, selected_hand}
+        selected_card = Enum.at(shop_state.available_cards, card_index)
+        updated_state = %{shop_state | first_pick_made: true, picked_card_indices: [card_index | shop_state.picked_card_indices]}
+        {:ok, updated_state, selected_card}
 
       shop_state.first_pick_made and not shop_state.second_pick_made and
           player_id == shop_state.second_picker_id ->
-        selected_hand = Enum.at(shop_state.available_upgrades, upgrade_index)
-        updated_state = %{shop_state | second_pick_made: true, picked_upgrades: [upgrade_index | shop_state.picked_upgrades]}
-        {:ok, updated_state, selected_hand}
+        selected_card = Enum.at(shop_state.available_cards, card_index)
+        updated_state = %{shop_state | second_pick_made: true, picked_card_indices: [card_index | shop_state.picked_card_indices]}
+        {:ok, updated_state, selected_card}
 
       true ->
         {:error, :not_your_turn}
@@ -126,7 +142,7 @@ defmodule Oskol.Game.ShopState do
   @doc """
   Advances to the next shop round.
   Should be called after both players have picked.
-  Regenerates the upgrade pool for the new round.
+  Keeps the same card pool and picked cards - only resets pick flags.
   """
   @spec advance_round(t()) :: t()
   def advance_round(%__MODULE__{current_round: round, total_rounds: total} = shop_state)
@@ -135,9 +151,7 @@ defmodule Oskol.Game.ShopState do
       shop_state
       | current_round: round + 1,
         first_pick_made: false,
-        second_pick_made: false,
-        available_upgrades: generate_random_upgrades(),
-        picked_upgrades: []
+        second_pick_made: false
     }
   end
 

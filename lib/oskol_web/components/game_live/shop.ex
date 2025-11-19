@@ -149,14 +149,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="text-center">
       <div class="text-lg text-success font-bold mb-6">{@message}</div>
 
-      <!-- 18 Upgrade Cards in 6x3 Grid -->
+      <!-- 18 Shop Cards in 6x3 Grid -->
       <div class="grid grid-cols-6 gap-3">
-        <%= for {hand_type, index} <- Enum.with_index(@shop_state.available_upgrades) do %>
-          <.upgrade_card
-            hand_type={hand_type}
+        <%= for {shop_card, index} <- Enum.with_index(@shop_state.available_cards) do %>
+          <.shop_card
+            shop_card={shop_card}
             index={index}
             skill_tree={@skill_tree}
-            is_picked={index in @shop_state.picked_upgrades}
+            is_picked={index in @shop_state.picked_card_indices}
             can_pick={@can_pick and not @action_in_progress}
           />
         <% end %>
@@ -170,14 +170,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div>
       <div class="text-center text-base-content/60 text-lg mb-6">{@message}</div>
 
-      <!-- 18 Upgrade Cards in 6x3 Grid (non-interactive) -->
+      <!-- 18 Shop Cards in 6x3 Grid (non-interactive) -->
       <div class="grid grid-cols-6 gap-3 opacity-50">
-        <%= for {hand_type, index} <- Enum.with_index(@shop_state.available_upgrades) do %>
-          <.upgrade_card
-            hand_type={hand_type}
+        <%= for {shop_card, index} <- Enum.with_index(@shop_state.available_cards) do %>
+          <.shop_card
+            shop_card={shop_card}
             index={index}
             skill_tree={@skill_tree}
-            is_picked={index in @shop_state.picked_upgrades}
+            is_picked={index in @shop_state.picked_card_indices}
             can_pick={false}
           />
         <% end %>
@@ -186,7 +186,19 @@ defmodule OskolWeb.Components.GameLive.Shop do
     """
   end
 
-  defp upgrade_card(assigns) do
+  defp shop_card(assigns) do
+    case assigns.shop_card do
+      {:level_up, hand_type} ->
+        assign(assigns, :hand_type, hand_type)
+        |> level_up_card()
+
+      {:action, action_card} ->
+        assign(assigns, :action_card, action_card)
+        |> action_card()
+    end
+  end
+
+  defp level_up_card(assigns) do
     # Calculate current and next level stats
     current_level = Map.get(assigns.skill_tree, assigns.hand_type, 1)
     next_level = current_level + 1
@@ -243,6 +255,56 @@ defmodule OskolWeb.Components.GameLive.Shop do
           →
           <span class="text-success font-bold">{@next_stats.multiplier}x</span>
         </div>
+      </div>
+
+      <%= if @is_picked do %>
+        <div class="text-center mt-1">
+          <span class="text-[10px] text-error font-bold">PICKED</span>
+        </div>
+      <% end %>
+    </button>
+    """
+  end
+
+  defp action_card(assigns) do
+    card_name = Oskol.Game.ActionCard.card_name(assigns.action_card)
+    card_description = Oskol.Game.ActionCard.card_description(assigns.action_card)
+
+    assigns =
+      assigns
+      |> assign(:card_name, card_name)
+      |> assign(:card_description, card_description)
+
+    ~H"""
+    <button
+      phx-click={if @can_pick and not @is_picked, do: "make_shop_pick", else: nil}
+      phx-value-index={@index}
+      disabled={@is_picked or not @can_pick}
+      class={[
+        "aspect-[2/3] rounded-lg border-2 p-2 flex flex-col justify-between transition-all text-left",
+        if(@is_picked,
+          do: "bg-base-100/30 border-base-300 opacity-40 cursor-not-allowed",
+          else:
+            if(@can_pick,
+              do: "bg-error/10 border-error hover:border-error hover:scale-[1.05] hover:shadow-lg cursor-pointer",
+              else: "bg-error/10 border-error/50 cursor-default"
+            )
+        )
+      ]}
+    >
+      <!-- Card Type Badge -->
+      <div class="text-[8px] font-bold text-error uppercase tracking-wide mb-1">
+        Action
+      </div>
+
+      <!-- Card Name -->
+      <div class="font-bold text-xs leading-tight text-error">
+        {@card_name}
+      </div>
+
+      <!-- Description -->
+      <div class="text-[9px] text-base-content/70 mt-2 flex-1">
+        {@card_description}
       </div>
 
       <%= if @is_picked do %>

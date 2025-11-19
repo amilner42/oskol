@@ -169,7 +169,9 @@ defmodule Oskol.Game.GameState do
       Map.new(game_state.players, fn {player_id, player_state} ->
         hand = player_state.locked_in_hand
         evaluation = Oskol.Poker.evaluate_hand(hand)
-        score_result = Oskol.Poker.score_hand(evaluation, player_state.skill_tree)
+
+        score_result =
+          Oskol.Poker.score_hand(evaluation, player_state.skill_tree, player_state.active_debuffs)
 
         result = %{
           hand: hand,
@@ -308,17 +310,21 @@ defmodule Oskol.Game.GameState do
            %{
              winner_id: winner_id,
              final_round: game_state.round_number,
-             final_lives:
-               Map.new(players_with_updated_lives, fn {pid, ps} -> {pid, ps.lives} end)
+             final_lives: Map.new(players_with_updated_lives, fn {pid, ps} -> {pid, ps.lives} end)
            }}
 
         events = [game_end_event | events]
+
+        # Clear debuffs now that round is complete
+        players_cleared = Map.new(players_with_updated_lives, fn {pid, ps} ->
+          {pid, PlayerState.clear_debuffs(ps)}
+        end)
 
         new_state = %{
           game_state
           | phase: :round_end,
             last_hand_results: hand_results,
-            players: players_with_updated_lives,
+            players: players_cleared,
             round_hand_history: game_state.round_hand_history ++ [hand_results],
             game_status: :game_over,
             winner_id: winner_id
@@ -328,6 +334,11 @@ defmodule Oskol.Game.GameState do
       else
         # Round over but game continues - initialize shop if shop_rounds > 0
         [player1_id, player2_id] = Map.keys(players_with_updated_lives)
+
+        # Clear debuffs now that round is complete
+        players_cleared = Map.new(players_with_updated_lives, fn {pid, ps} ->
+          {pid, PlayerState.clear_debuffs(ps)}
+        end)
 
         # Initialize shop state based on round winner and shop_rounds configuration
         shop_state =
@@ -349,7 +360,7 @@ defmodule Oskol.Game.GameState do
           game_state
           | phase: :round_end,
             last_hand_results: hand_results,
-            players: players_with_updated_lives,
+            players: players_cleared,
             round_hand_history: game_state.round_hand_history ++ [hand_results],
             last_round_winner_id: round_winner_id,
             shop_state: shop_state
@@ -377,24 +388,24 @@ defmodule Oskol.Game.GameState do
 
   Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
   """
-  @spec make_shop_pick(t(), player_id(), non_neg_integer()) :: {:ok, t(), list()} | {:error, atom()}
-  def make_shop_pick(%__MODULE__{shop_state: shop_state} = game_state, player_id, upgrade_index)
+  @spec make_shop_pick(t(), player_id(), non_neg_integer()) ::
+          {:ok, t(), list()} | {:error, atom()}
+  def make_shop_pick(%__MODULE__{shop_state: shop_state} = game_state, player_id, card_index)
       when shop_state != nil do
-    case ShopState.make_pick(shop_state, player_id, upgrade_index) do
-      {:ok, updated_shop_state, selected_hand_type} ->
-        # Apply the upgrade to the player's skill tree
-        updated_players =
-          Map.update!(game_state.players, player_id, fn player ->
-            updated_skill_tree = SkillTree.upgrade(player.skill_tree, selected_hand_type, 1)
-            %{player | skill_tree: updated_skill_tree}
-          end)
+    case ShopState.make_pick(shop_state, player_id, card_index) do
+      {:ok, updated_shop_state, selected_card} ->
+        # Apply the card effect based on card type
+        {updated_players, card_type, card_details} =
+          apply_shop_card(game_state.players, player_id, selected_card)
 
         pick_event =
-          {:shop_pick_made, player_id, %{
-            shop_round: updated_shop_state.current_round,
-            hand_type: selected_hand_type,
-            upgrade_index: upgrade_index
-          }}
+          {:shop_pick_made, player_id,
+           %{
+             shop_round: updated_shop_state.current_round,
+             card_type: card_type,
+             card_details: card_details,
+             card_index: card_index
+           }}
 
         # Check if both players have picked
         if ShopState.both_players_picked?(updated_shop_state) do
@@ -422,6 +433,38 @@ defmodule Oskol.Game.GameState do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  # Applies a shop card effect to the players.
+  # Returns {updated_players, card_type, card_details} for event logging.
+  defp apply_shop_card(players, player_id, {:level_up, hand_type}) do
+    updated_players =
+      Map.update!(players, player_id, fn player ->
+        updated_skill_tree = SkillTree.upgrade(player.skill_tree, hand_type, 1)
+        %{player | skill_tree: updated_skill_tree}
+      end)
+
+    {updated_players, :level_up, %{hand_type: hand_type}}
+  end
+
+  defp apply_shop_card(players, player_id, {:action, action_card}) do
+    # For denial cards, we add the debuff to the OPPONENT
+    opponent_id = players |> Map.keys() |> Enum.find(&(&1 != player_id))
+
+    updated_players =
+      case action_card.type do
+        :denial ->
+          Map.update!(players, opponent_id, fn opponent ->
+            PlayerState.add_denial_debuff(opponent, action_card.target_hand)
+          end)
+      end
+
+    {updated_players, :action,
+     %{
+       action_type: action_card.type,
+       target_hand: action_card.target_hand,
+       target_player: opponent_id
+     }}
   end
 
   def make_shop_pick(_, _, _), do: {:error, :no_shop_active}
@@ -518,7 +561,7 @@ defmodule Oskol.Game.GameState do
       {:round_started, nil,
        %{
          round_number: next_round,
-         hands_remaining: 4,
+         hands_remaining: 1,
          discards_remaining: 3
        }}
 

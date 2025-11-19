@@ -156,26 +156,52 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def player_stats(assigns) do
     ~H"""
-    <div class="flex items-center gap-4 text-base-content text-lg">
-      <div class="flex items-center gap-1">
-        <.icon name="hero-heart" class="w-5 h-5" />
-        <span>{@player_state.lives}</span>
+    <div class="flex flex-col items-center gap-2">
+      <div class="flex items-center gap-4 text-base-content text-lg">
+        <div class="flex items-center gap-1">
+          <.icon name="hero-heart" class="w-5 h-5" />
+          <span>{@player_state.lives}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <.icon name="hero-play" class="w-5 h-5" />
+          <span>{@player_state.hands_remaining}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <.icon name="hero-trash" class="w-5 h-5" />
+          <span>{@player_state.discards_remaining}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <.icon name="hero-star" class="w-5 h-5" />
+          <span>{@player_state.current_round_score}</span>
+        </div>
       </div>
-      <div class="flex items-center gap-1">
-        <.icon name="hero-play" class="w-5 h-5" />
-        <span>{@player_state.hands_remaining}</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <.icon name="hero-trash" class="w-5 h-5" />
-        <span>{@player_state.discards_remaining}</span>
-      </div>
-      <div class="flex items-center gap-1">
-        <.icon name="hero-star" class="w-5 h-5" />
-        <span>{@player_state.current_round_score}</span>
-      </div>
+
+      <%= if @player_state.active_debuffs != [] do %>
+        <div class="flex items-center gap-2 px-3 py-1 bg-error/10 rounded-lg border border-error/30">
+          <.icon name="hero-x-circle" class="w-4 h-4 text-error" />
+          <span class="text-xs font-semibold text-error">Denied:</span>
+          <div class="flex gap-1">
+            <%= for hand_type <- @player_state.active_debuffs do %>
+              <span class="text-xs px-2 py-0.5 bg-error/20 rounded text-error font-medium">
+                {format_hand_name_short(hand_type)}
+              </span>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end
+
+  defp format_hand_name_short(:high_card), do: "High"
+  defp format_hand_name_short(:pair), do: "Pair"
+  defp format_hand_name_short(:two_pair), do: "2 Pair"
+  defp format_hand_name_short(:three_of_a_kind), do: "3 Kind"
+  defp format_hand_name_short(:straight), do: "Straight"
+  defp format_hand_name_short(:flush), do: "Flush"
+  defp format_hand_name_short(:full_house), do: "Full"
+  defp format_hand_name_short(:four_of_a_kind), do: "4 Kind"
+  defp format_hand_name_short(:straight_flush), do: "Str Flush"
 
   def action_bar(assigns) do
     ~H"""

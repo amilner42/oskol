@@ -67,42 +67,55 @@ defmodule Oskol.Poker.Score do
   end
 
   @doc """
-  Calculates the score for a hand evaluation with skill tree levels applied.
+  Calculates the score for a hand evaluation with skill tree levels and debuffs applied.
 
   Level 1 = base scores only
   Level 2+ = base + (level - 1) × upgrade bonus
 
+  If hand_type is in active_debuffs, score is 0 (denial).
+
   Only scoring_cards contribute to the card value sum.
   """
-  @spec calculate(Hand.evaluation(), SkillTree.t()) :: score_result()
+  @spec calculate(Hand.evaluation(), SkillTree.t(), list(Hand.hand_type())) :: score_result()
   def calculate(
         %{hand_type: hand_type, scoring_cards: scoring_cards},
-        %SkillTree{} = skill_tree
+        %SkillTree{} = skill_tree,
+        active_debuffs \\ []
       ) do
-    # Get level for this hand type
-    level = Map.get(skill_tree, hand_type)
+    # Check if this hand type is denied (scores 0)
+    if hand_type in active_debuffs do
+      %{
+        hand_type: hand_type,
+        total_chips: 0,
+        total_multiplier: 0,
+        total_score: 0
+      }
+    else
+      # Get level for this hand type
+      level = Map.get(skill_tree, hand_type)
 
-    # Get base scores
-    base = @base_hand_scores[hand_type]
+      # Get base scores
+      base = @base_hand_scores[hand_type]
 
-    # Calculate level bonuses (level 1 = no bonus, level 2 = 1x bonus, etc.)
-    bonus_multiplier = max(0, level - 1)
-    upgrade = @upgrade_bonuses[hand_type]
+      # Calculate level bonuses (level 1 = no bonus, level 2 = 1x bonus, etc.)
+      bonus_multiplier = max(0, level - 1)
+      upgrade = @upgrade_bonuses[hand_type]
 
-    # Apply bonuses
-    total_base_chips = base.chips + bonus_multiplier * upgrade.chips
-    total_multiplier = base.multiplier + bonus_multiplier * upgrade.multiplier
+      # Apply bonuses
+      total_base_chips = base.chips + bonus_multiplier * upgrade.chips
+      total_multiplier = base.multiplier + bonus_multiplier * upgrade.multiplier
 
-    # Calculate card values and final score (only scoring cards count)
-    card_value_sum = Enum.sum(Enum.map(scoring_cards, &Card.chip_value/1))
-    total_chips = total_base_chips + card_value_sum
-    total_score = total_chips * total_multiplier
+      # Calculate card values and final score (only scoring cards count)
+      card_value_sum = Enum.sum(Enum.map(scoring_cards, &Card.chip_value/1))
+      total_chips = total_base_chips + card_value_sum
+      total_score = total_chips * total_multiplier
 
-    %{
-      hand_type: hand_type,
-      total_chips: total_chips,
-      total_multiplier: total_multiplier,
-      total_score: total_score
-    }
+      %{
+        hand_type: hand_type,
+        total_chips: total_chips,
+        total_multiplier: total_multiplier,
+        total_score: total_score
+      }
+    end
   end
 end
