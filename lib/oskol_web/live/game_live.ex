@@ -52,7 +52,8 @@ defmodule OskolWeb.GameLive do
         last_seen_event_sequence: 0,
         acknowledged_event_sequence: 0,
         selected_lives: 3,
-        selected_shop_rounds: 2
+        selected_shop_rounds: 2,
+        previewing_card_index: nil
       )
 
     # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
@@ -284,6 +285,49 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
+  def handle_event("preview_shop_card", %{"index" => index_str}, socket) do
+    card_index = String.to_integer(index_str)
+
+    # Broadcast preview to all players in the game
+    Phoenix.PubSub.broadcast(
+      Oskol.PubSub,
+      "game:#{socket.assigns.game_id}",
+      {:shop_preview_changed, card_index}
+    )
+
+    {:noreply, assign(socket, previewing_card_index: card_index)}
+  end
+
+  @impl true
+  def handle_event("close_shop_preview", _params, socket) do
+    # Broadcast close to all players
+    Phoenix.PubSub.broadcast(
+      Oskol.PubSub,
+      "game:#{socket.assigns.game_id}",
+      {:shop_preview_changed, nil}
+    )
+
+    {:noreply, assign(socket, previewing_card_index: nil)}
+  end
+
+  @impl true
+  def handle_event("confirm_shop_pick", %{"index" => index_str}, socket) do
+    card_index = String.to_integer(index_str)
+
+    # Make the actual shop pick
+    Game.make_shop_pick_async(socket.assigns.game_id, socket.assigns.player_id, card_index)
+
+    # Close preview for all players
+    Phoenix.PubSub.broadcast(
+      Oskol.PubSub,
+      "game:#{socket.assigns.game_id}",
+      {:shop_preview_changed, nil}
+    )
+
+    {:noreply, assign(socket, action_in_progress: true, previewing_card_index: nil)}
+  end
+
+  @impl true
   def handle_event("toggle_your_card_sort", _params, socket) do
     new_sort = if socket.assigns.your_card_sort == :rank, do: :suit, else: :rank
     {:noreply, assign(socket, your_card_sort: new_sort)}
@@ -502,6 +546,11 @@ defmodule OskolWeb.GameLive do
     end
   end
 
+  @impl true
+  def handle_info({:shop_preview_changed, card_index}, socket) do
+    {:noreply, assign(socket, previewing_card_index: card_index)}
+  end
+
   # Helper functions
 
   defp get_player_state(socket) do
@@ -619,6 +668,7 @@ defmodule OskolWeb.GameLive do
                 player_state={player_state}
                 opponent_state={opponent_state}
                 action_in_progress={@action_in_progress}
+                previewing_card_index={@previewing_card_index}
               />
 
             <% true -> %>

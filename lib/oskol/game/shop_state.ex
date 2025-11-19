@@ -69,27 +69,27 @@ defmodule Oskol.Game.ShopState do
     }
   end
 
-  # Generates a random pool of 18 shop cards: 9 level ups + 9 action cards.
-  # For level ups: triples all 9 hand types (27), shuffles, takes 9
-  # For action cards: triples all 9 denial cards (27), shuffles, takes 9
-  # Then shuffles all 18 together
+  # Generates a random pool of 12 shop cards: 6 level ups + 6 action cards.
+  # For level ups: triples all 9 hand types (27), shuffles, takes 6
+  # For action cards: triples all 9 denial cards (27), shuffles, takes 6
+  # Then shuffles all 12 together
   @spec generate_random_shop_cards() :: [shop_card()]
   defp generate_random_shop_cards do
-    # Generate 9 random level up cards
+    # Generate 6 random level up cards
     level_ups =
       @all_hand_types
       |> List.duplicate(3)
       |> List.flatten()
       |> Enum.shuffle()
-      |> Enum.take(9)
+      |> Enum.take(6)
       |> Enum.map(fn hand_type -> {:level_up, hand_type} end)
 
-    # Generate 9 random action cards
+    # Generate 6 random action cards
     action_cards =
-      ActionCard.generate_random_action_cards(9)
+      ActionCard.generate_random_action_cards(6)
       |> Enum.map(fn card -> {:action, card} end)
 
-    # Combine and shuffle all 18 cards
+    # Combine and shuffle all 12 cards
     (level_ups ++ action_cards)
     |> Enum.shuffle()
   end
