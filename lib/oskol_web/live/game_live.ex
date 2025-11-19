@@ -562,7 +562,7 @@ defmodule OskolWeb.GameLive do
     ~H"""
     <.card_styles />
 
-    <div class="min-h-screen text-white">
+    <div class="min-h-screen text-base-content">
       <%= if @error do %>
         <.error_banner error={@error} />
       <% end %>

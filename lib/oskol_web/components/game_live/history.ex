@@ -11,20 +11,20 @@ defmodule OskolWeb.Components.GameLive.History do
     <%= if @viewing_history do %>
       <!-- Modal backdrop -->
       <div
-        class="fixed inset-0 backdrop-blur-sm bg-white/10 z-50 flex items-center justify-center p-4"
+        class="fixed inset-0 backdrop-blur-sm bg-base-100/50 z-50 flex items-center justify-center p-4"
         phx-click="toggle_history"
       >
         <!-- Modal content (click inside won't close) -->
         <div
-          class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] flex flex-col"
+          class="bg-base-100 rounded-lg shadow-xl max-w-4xl w-full max-h-[80vh] flex flex-col border border-base-300"
           phx-click={JS.push("noop")}
         >
           <!-- Header -->
-          <div class="flex items-center justify-between p-6 border-b border-gray-200">
-            <h2 class="text-2xl font-bold text-gray-800">Game History</h2>
+          <div class="flex items-center justify-between p-6 border-b border-base-300">
+            <h2 class="text-2xl font-bold text-base-content">Game History</h2>
             <button
               phx-click="toggle_history"
-              class="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+              class="text-base-content/60 hover:text-base-content text-2xl font-bold"
             >
               ×
             </button>
@@ -44,7 +44,7 @@ defmodule OskolWeb.Components.GameLive.History do
           </div>
 
           <!-- Footer -->
-          <div class="p-4 border-t border-gray-200 text-center text-sm text-gray-500">
+          <div class="p-4 border-t border-base-300 text-center text-sm text-base-content/60">
             Total Events: {EventLog.count(@event_log)}
           </div>
         </div>
@@ -55,14 +55,14 @@ defmodule OskolWeb.Components.GameLive.History do
 
   defp event_item(assigns) do
     ~H"""
-    <div class="bg-gray-50 rounded p-4 border-l-4" style={"border-color: #{event_color(@event.type)}"}>
+    <div class="bg-base-200 rounded p-4 border-l-4" style={"border-color: #{event_color(@event.type)}"}>
       <div class="flex items-start justify-between gap-4">
         <div class="flex-1">
           <div class="flex items-center gap-2 mb-1">
             <span class="font-bold text-sm" style={"color: #{event_color(@event.type)}"}>
               {event_type_display(@event.type)}
             </span>
-            <span class="text-xs text-gray-500">
+            <span class="text-xs text-base-content/50">
               #{@event.sequence}
             </span>
           </div>
@@ -70,7 +70,7 @@ defmodule OskolWeb.Components.GameLive.History do
           <.event_details event={@event} player_names={@player_names} current_player_id={@current_player_id} />
         </div>
 
-        <div class="text-xs text-gray-400 whitespace-nowrap">
+        <div class="text-xs text-base-content/50 whitespace-nowrap">
           {format_timestamp(@event.timestamp)}
         </div>
       </div>
@@ -80,7 +80,7 @@ defmodule OskolWeb.Components.GameLive.History do
 
   defp event_details(assigns) do
     ~H"""
-    <div class="text-sm text-gray-700">
+    <div class="text-sm text-base-content/80">
       <%= case @event.type do %>
         <% :player_joined -> %>
           <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
@@ -109,7 +109,7 @@ defmodule OskolWeb.Components.GameLive.History do
         <% :cards_drawn -> %>
           <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
           drew {length(@event.data.cards)} cards
-          <span class="text-gray-500">({format_draw_reason(@event.data.reason)})</span>
+          <span class="text-base-content/50">({format_draw_reason(@event.data.reason)})</span>
 
         <% :hands_revealed -> %>
           Both players revealed their hands
@@ -117,8 +117,8 @@ defmodule OskolWeb.Components.GameLive.History do
             <%= for {player_id, result} <- @event.data.results do %>
               <div class="text-xs">
                 <span class="font-semibold">{player_name(player_id, @player_names, @current_player_id)}:</span>
-                <span class="text-purple-600">{format_hand_type(result.hand_type)}</span>
-                for <span class="text-green-600 font-bold">{result.score}</span> points
+                <span class="text-accent">{format_hand_type(result.hand_type)}</span>
+                for <span class="text-success font-bold">{result.score}</span> points
               </div>
             <% end %>
           </div>
@@ -137,19 +137,19 @@ defmodule OskolWeb.Components.GameLive.History do
                 {result.score} points
                 <%= cond do %>
                   <% result.is_round_winner == true -> %>
-                    <span class="text-green-600">✓ Won</span>
+                    <span class="text-success">✓ Won</span>
                   <% result.is_round_winner == false -> %>
-                    <span class="text-red-600">✗ Lost (-1 life)</span>
+                    <span class="text-error">✗ Lost (-1 life)</span>
                   <% true -> %>
-                    <span class="text-yellow-600">= Tied</span>
+                    <span class="text-warning">= Tied</span>
                 <% end %>
-                <span class="text-gray-500">({result.lives} lives)</span>
+                <span class="text-base-content/50">({result.lives} lives)</span>
               </div>
             <% end %>
           </div>
 
         <% :player_eliminated -> %>
-          <span class="font-semibold text-red-600">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold text-error">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
           was eliminated (Final score: {@event.data.final_score})
 
         <% :player_ready -> %>
@@ -158,14 +158,14 @@ defmodule OskolWeb.Components.GameLive.History do
 
         <% :round_started -> %>
           Round {@event.data.round_number} started
-          <div class="text-xs text-gray-500">
+          <div class="text-xs text-base-content/50">
             {Map.get(@event.data, :hands_remaining, "?")} hands, {Map.get(@event.data, :discards_remaining, "?")} discards
           </div>
 
         <% :game_ended -> %>
-          <span class="font-bold text-yellow-600">Game Over!</span>
+          <span class="font-bold text-warning">Game Over!</span>
           Winner: <span class="font-semibold">{player_name(@event.data.winner_id, @player_names, @current_player_id)}</span>
-          <div class="text-xs text-gray-500 mt-1">
+          <div class="text-xs text-base-content/50 mt-1">
             Final round: {@event.data.final_round}
           </div>
 

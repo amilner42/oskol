@@ -6,9 +6,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
   def shop_screen(assigns) do
     ~H"""
-    <div class="max-w-6xl mx-auto p-8 bg-gray-900 min-h-screen">
-      <div class="bg-gray-800 rounded-lg p-6 mb-6">
-        <h3 class="text-2xl font-bold mb-6 text-center text-cyan-400">Shop</h3>
+    <div class="max-w-6xl mx-auto p-8 bg-base-100 min-h-screen">
+      <div class="bg-base-200 rounded-lg p-6 mb-6 border border-base-300">
+        <h3 class="text-2xl font-bold mb-6 text-center text-primary">Shop</h3>
 
         <%= if @game_state.shop_state do %>
           <.shop_status shop_state={@game_state.shop_state} player_names={@game_state.player_names} />
@@ -34,10 +34,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
                   phx-click="mark_ready"
                   disabled={@action_in_progress or @player_state.ready_for_next_round}
                   class={[
-                    "px-6 py-3 rounded font-bold text-lg transition-colors",
+                    "px-6 py-3 rounded font-bold text-lg transition-all shadow-lg",
                     if(@action_in_progress or @player_state.ready_for_next_round,
-                      do: "bg-gray-600 cursor-not-allowed opacity-50",
-                      else: "bg-green-600 hover:bg-green-700"
+                      do: "bg-base-content/30 cursor-not-allowed opacity-50 text-base-content",
+                      else: "bg-success hover:bg-success/90 text-success-content hover:scale-[1.02]"
                     )
                   ]}
                 >
@@ -51,8 +51,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </div>
           <% end %>
         <% else %>
-          <div class="bg-gray-700 rounded-lg p-8 mb-6 text-center">
-            <p class="text-gray-400 text-xl">Loading shop...</p>
+          <div class="bg-base-300 rounded-lg p-8 mb-6 text-center">
+            <p class="text-base-content/60 text-xl">Loading shop...</p>
           </div>
         <% end %>
       </div>
@@ -62,27 +62,27 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
   defp shop_status(assigns) do
     ~H"""
-    <div class="bg-gray-700 rounded-lg p-4 mb-6">
+    <div class="bg-base-300 rounded-lg p-4 mb-6">
       <div class="flex items-center justify-between text-sm">
-        <div class="text-gray-300">
-          Shop Round: <span class="text-cyan-400 font-bold">
+        <div class="text-base-content/80">
+          Shop Round: <span class="text-primary font-bold">
             {@shop_state.current_round}/{@shop_state.total_rounds}
           </span>
         </div>
-        <div class="text-gray-300">
-          First Pick: <span class="text-green-400 font-bold">
+        <div class="text-base-content/80">
+          First Pick: <span class="text-success font-bold">
             {@player_names[@shop_state.first_picker_id]}
           </span>
           <%= if @shop_state.first_pick_made do %>
-            <span class="text-green-400 ml-1">✓</span>
+            <span class="text-success ml-1">✓</span>
           <% end %>
         </div>
-        <div class="text-gray-300">
-          Second Pick: <span class="text-blue-400 font-bold">
+        <div class="text-base-content/80">
+          Second Pick: <span class="text-info font-bold">
             {@player_names[@shop_state.second_picker_id]}
           </span>
           <%= if @shop_state.second_pick_made do %>
-            <span class="text-green-400 ml-1">✓</span>
+            <span class="text-success ml-1">✓</span>
           <% end %>
         </div>
       </div>
@@ -92,7 +92,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
   defp picking_view(assigns) do
     ~H"""
-    <div class="bg-gray-700 rounded-lg p-8 mb-6">
+    <div class="bg-base-300 rounded-lg p-8 mb-6">
       <%= cond do %>
         <%!-- First picker's turn --%>
         <% not @shop_state.first_pick_made and @shop_state.first_picker_id == @player_id -> %>
@@ -121,7 +121,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           />
         <%!-- Both have picked --%>
         <% true -> %>
-          <div class="text-center text-green-400 text-lg">
+          <div class="text-center text-success text-lg">
             Both players have picked! Moving to next round...
           </div>
       <% end %>
@@ -132,13 +132,13 @@ defmodule OskolWeb.Components.GameLive.Shop do
   defp pick_interface(assigns) do
     ~H"""
     <div class="text-center">
-      <div class="text-lg text-green-400 font-bold mb-6">{@message}</div>
+      <div class="text-lg text-success font-bold mb-6">{@message}</div>
 
       <!-- 24 Placeholder Cards in 6x4 Grid -->
       <div class="grid grid-cols-6 gap-3 mb-6">
         <%= for i <- 1..24 do %>
-          <div class="aspect-[2/3] bg-gray-800 rounded-lg border-2 border-gray-600 flex items-center justify-center hover:border-purple-400 transition-colors">
-            <span class="text-xs text-gray-500">{i}</span>
+          <div class="aspect-[2/3] bg-base-200 rounded-lg border-2 border-base-300 flex items-center justify-center hover:border-primary transition-colors">
+            <span class="text-xs text-base-content/50">{i}</span>
           </div>
         <% end %>
       </div>
@@ -147,10 +147,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
         phx-click="make_shop_pick"
         disabled={@action_in_progress or not @can_pick}
         class={[
-          "px-8 py-4 rounded-lg font-bold text-lg transition-colors",
+          "px-8 py-4 rounded-lg font-bold text-lg transition-all shadow-lg",
           if(@action_in_progress or not @can_pick,
-            do: "bg-gray-600 cursor-not-allowed opacity-50",
-            else: "bg-purple-600 hover:bg-purple-700"
+            do: "bg-base-content/30 cursor-not-allowed opacity-50 text-base-content",
+            else: "bg-accent hover:bg-accent/90 text-accent-content hover:scale-[1.02]"
           )
         ]}
       >
@@ -167,13 +167,13 @@ defmodule OskolWeb.Components.GameLive.Shop do
   defp waiting_view(assigns) do
     ~H"""
     <div>
-      <div class="text-center text-gray-400 text-lg mb-6">{@message}</div>
+      <div class="text-center text-base-content/60 text-lg mb-6">{@message}</div>
 
       <!-- 24 Placeholder Cards in 6x4 Grid (non-interactive) -->
       <div class="grid grid-cols-6 gap-3 opacity-50">
         <%= for i <- 1..24 do %>
-          <div class="aspect-[2/3] bg-gray-800 rounded-lg border-2 border-gray-600 flex items-center justify-center">
-            <span class="text-xs text-gray-500">{i}</span>
+          <div class="aspect-[2/3] bg-base-200 rounded-lg border-2 border-base-300 flex items-center justify-center">
+            <span class="text-xs text-base-content/50">{i}</span>
           </div>
         <% end %>
       </div>
@@ -183,20 +183,20 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
   defp ready_status_display(assigns) do
     ~H"""
-    <div class="bg-gray-700 rounded-lg p-4 mb-4">
-      <div class="text-center text-sm text-gray-300">
+    <div class="bg-base-300 rounded-lg p-4 mb-4">
+      <div class="text-center text-sm text-base-content">
         <div class="mb-2">
           {@player_name}: <%= if @player_ready do %>
-            <span class="text-green-400">✓ Ready</span>
+            <span class="text-success">✓ Ready</span>
           <% else %>
-            <span class="text-yellow-400">Not Ready</span>
+            <span class="text-warning">Not Ready</span>
           <% end %>
         </div>
         <div>
           {@opponent_name}: <%= if @opponent_ready do %>
-            <span class="text-green-400">✓ Ready</span>
+            <span class="text-success">✓ Ready</span>
           <% else %>
-            <span class="text-yellow-400">Not Ready</span>
+            <span class="text-warning">Not Ready</span>
           <% end %>
         </div>
       </div>

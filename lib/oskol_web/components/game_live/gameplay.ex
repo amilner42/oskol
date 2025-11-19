@@ -40,23 +40,23 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def game_screen(assigns) do
     ~H"""
-    <div class="flex flex-col h-screen">
+    <div class="flex flex-col h-screen bg-base-300">
       <!-- Opponent Stats Bar -->
-      <div class="flex justify-center py-3" style="background-color: #FBFBFB;">
+      <div class="flex justify-center py-3 bg-base-200/40 backdrop-blur-sm">
         <.player_stats player_state={@opponent_state} />
       </div>
-      
+
     <!-- Top 25% - Opponent Cards -->
-      <div class="flex-1 flex flex-col justify-end p-4" style="background-color: #FBFBFB;">
+      <div class="flex-1 flex flex-col justify-end p-4 bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
           opponent_card_sort={@opponent_card_sort}
           opponent_new_card_ids={@opponent_new_card_ids}
         />
       </div>
-      
+
     <!-- Middle 50% - Playing Area -->
-      <div class="flex-[2] flex flex-col justify-start border-t border-b border-gray-300 bg-white">
+      <div class="flex-[2] flex flex-col justify-start bg-base-100 shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)]">
         <.playing_area
           game_state={@game_state}
           player_id={@player_id}
@@ -68,9 +68,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           viewing_results={@viewing_results}
         />
       </div>
-      
+
     <!-- Player Cards -->
-      <div class="flex-1 flex flex-col justify-start p-4" style="background-color: #FBFBFB;">
+      <div class="flex-1 flex flex-col justify-start p-4 bg-base-200/40">
         <.player_cards
           player_state={@player_state}
           selected_card_ids={@selected_card_ids}
@@ -79,9 +79,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           action_in_progress={@action_in_progress}
         />
       </div>
-      
+
     <!-- Player Stats Bar -->
-      <div class="flex justify-center py-3" style="background-color: #FBFBFB;">
+      <div class="flex justify-center py-3 bg-base-200/40 backdrop-blur-sm">
         <.player_stats player_state={@player_state} />
       </div>
       
@@ -156,7 +156,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def player_stats(assigns) do
     ~H"""
-    <div class="flex items-center gap-4 text-gray-800 text-lg">
+    <div class="flex items-center gap-4 text-base-content text-lg">
       <div class="flex items-center gap-1">
         <.icon name="hero-heart" class="w-5 h-5" />
         <span>{@player_state.lives}</span>
@@ -189,32 +189,32 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     is_locked_in = @player_state.locked_in_hand != nil %>
 
-    <div class="h-20 bg-white border-t border-gray-300 flex items-center justify-between px-8">
+    <div class="h-20 bg-base-200/40 flex items-center justify-between px-8 border-t border-base-content/15">
       <!-- Left: Sort, History, and Deck Buttons (always visible) -->
       <div class="flex items-center gap-2">
         <button
           phx-click="toggle_history"
-          class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
+          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
         >
           Game Log
         </button>
         <button
           phx-click="toggle_deck"
-          class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
+          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
         >
-          Player Decks
+          View Cards
         </button>
         <button
           phx-click="toggle_levels"
-          class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
+          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
         >
-          Player Levels
+          View Levels
         </button>
         <button
           phx-click="toggle_card_sort"
-          class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded transition-colors text-gray-800"
+          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
         >
-          Toggle Card Sort
+          Sort Cards
         </button>
       </div>
 
@@ -222,7 +222,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <!-- Right: Continue Button when showing results -->
         <button
           phx-click="dismiss_results"
-          class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-white font-bold"
+          class="px-4 py-2 bg-primary hover:bg-primary/90 rounded transition-colors text-primary-content font-bold"
         >
           Continue
         </button>
@@ -236,7 +236,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 @player_state.discards_remaining == 0 || is_locked_in
             }
             class={[
-              "px-4 py-2 rounded transition-colors bg-red-600 hover:bg-red-700",
+              "px-4 py-2 rounded transition-colors bg-error hover:bg-error/90 text-error-content",
               if(
                 @action_in_progress || length(selected_card_ids) == 0 ||
                   @player_state.discards_remaining == 0 || is_locked_in,
@@ -256,7 +256,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             phx-click="lock_in_hand"
             disabled={@action_in_progress || length(selected_card_ids) == 0 || is_locked_in}
             class={[
-              "px-4 py-2 rounded transition-colors bg-blue-600 hover:bg-blue-700",
+              "px-4 py-2 rounded transition-colors bg-primary hover:bg-primary/90 text-primary-content",
               if(
                 @action_in_progress || length(selected_card_ids) == 0 || is_locked_in,
                 do: "opacity-50 cursor-not-allowed",
@@ -280,7 +280,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <div class="h-full relative">
       <!-- Round info bar -->
-      <div class="absolute top-4 left-4 right-4 flex justify-between items-center text-gray-800 text-lg">
+      <div class="absolute top-4 left-4 right-4 flex justify-between items-center text-base-content text-lg">
         <div>Round {@game_state.round_number}</div>
 
         <% player_score = @player_state.current_round_score
@@ -331,7 +331,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         hand={opponent_result.hand}
         hand_type={opponent_result.hand_type}
         score={opponent_result.score}
-        color="text-red-400"
+        color="text-error"
         show_result={true}
         is_current_player={false}
       />
@@ -342,7 +342,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         hand={my_result.hand}
         hand_type={my_result.hand_type}
         score={my_result.score}
-        color="text-blue-400"
+        color="text-primary"
         show_result={true}
         is_current_player={true}
       />
@@ -358,18 +358,18 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         hand={@hand}
         hand_type={nil}
         score={nil}
-        color="text-blue-400"
+        color="text-primary"
         show_result={false}
         is_current_player={true}
       />
-      <div class="text-xs text-gray-400 mt-2">Waiting for opponent...</div>
+      <div class="text-xs text-base-content/50 mt-2">Waiting for opponent...</div>
     </div>
     """
   end
 
   def opponent_locked_notice(assigns) do
     ~H"""
-    <div class="text-center text-gray-400 text-sm">
+    <div class="text-center text-base-content/50 text-sm">
       Opponent has locked in their hand
     </div>
     """
@@ -377,7 +377,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def round_info_display(assigns) do
     ~H"""
-    <div class="text-gray-800 text-lg">
+    <div class="text-base-content text-lg">
       Round {@game_state.round_number} - Beat your opponent to survive
     </div>
     """
@@ -390,11 +390,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% hand_type_text =
           @hand_type |> Atom.to_string() |> String.replace("_", " ") |> String.upcase() %>
         <%= if not @is_current_player do %>
-          <div class="flex items-center justify-center gap-2 text-sm text-gray-700 mb-2">
+          <div class="flex items-center justify-center gap-2 text-sm text-base-content/80 mb-2">
             <span>{String.capitalize(@player_name)}</span>
-            <span class="text-gray-400">|</span>
+            <span class="text-base-content/40">|</span>
             <span>{hand_type_text}</span>
-            <span class="text-gray-400">|</span>
+            <span class="text-base-content/40">|</span>
             <.icon name="hero-star" class="w-4 h-4" />
             <span>{@score}</span>
           </div>
@@ -413,15 +413,15 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% hand_type_text =
           @hand_type |> Atom.to_string() |> String.replace("_", " ") |> String.upcase() %>
         <%= if @is_current_player do %>
-          <div class="flex items-center justify-center gap-2 text-sm text-gray-700">
+          <div class="flex items-center justify-center gap-2 text-sm text-base-content/80">
             <span>{hand_type_text}</span>
-            <span class="text-gray-400">|</span>
+            <span class="text-base-content/40">|</span>
             <.icon name="hero-star" class="w-4 h-4" />
             <span>{@score}</span>
           </div>
         <% end %>
       <% else %>
-        <div class="text-xs text-gray-400">Locked In</div>
+        <div class="text-xs text-base-content/50">Locked In</div>
       <% end %>
     </div>
     """
@@ -468,11 +468,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <%= if @viewing_deck do %>
       <div
-        class="fixed inset-0 backdrop-blur-sm bg-white/10 flex items-center justify-center z-50"
+        class="fixed inset-0 backdrop-blur-sm bg-base-100/50 flex items-center justify-center z-50"
         phx-click="toggle_deck"
       >
         <div
-          class="bg-white rounded-lg shadow-xl p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto"
+          class="bg-base-100 rounded-lg shadow-xl p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto border border-base-300"
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
@@ -483,8 +483,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 class={[
                   "px-6 py-2 rounded-lg font-semibold transition-colors text-lg",
                   if(@viewing_own_deck,
-                    do: "bg-gray-900 text-white",
-                    else: "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    do: "bg-primary text-primary-content",
+                    else: "bg-base-200 text-base-content/70 hover:bg-base-300"
                   )
                 ]}
               >
@@ -495,8 +495,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 class={[
                   "px-6 py-2 rounded-lg font-semibold transition-colors text-lg",
                   if(!@viewing_own_deck,
-                    do: "bg-gray-900 text-white",
-                    else: "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    do: "bg-primary text-primary-content",
+                    else: "bg-base-200 text-base-content/70 hover:bg-base-300"
                   )
                 ]}
               >
@@ -506,7 +506,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
             <button
               phx-click="toggle_deck"
-              class="text-gray-500 hover:text-gray-700 text-2xl"
+              class="text-base-content/60 hover:text-base-content text-2xl"
             >
               ×
             </button>
@@ -536,7 +536,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               non_discarded_count = Enum.count(suit_cards, fn card -> card.id not in discard_ids end) %>
 
               <div class="mb-4">
-                <div class="text-sm text-gray-600 mb-1 font-medium">
+                <div class="text-sm text-base-content/70 mb-1 font-medium">
                   <%= suit |> to_string() |> String.capitalize() %>: <%= non_discarded_count %> remaining
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -563,18 +563,18 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <%= if @viewing_levels do %>
       <div
-        class="fixed inset-0 backdrop-blur-sm bg-white/10 flex items-center justify-center z-50"
+        class="fixed inset-0 backdrop-blur-sm bg-base-100/50 flex items-center justify-center z-50"
         phx-click="toggle_levels"
       >
         <div
-          class="bg-white rounded-lg shadow-xl p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto"
+          class="bg-base-100 rounded-lg shadow-xl p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto border border-base-300"
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold text-gray-900">Player Levels</h2>
+            <h2 class="text-2xl font-bold text-base-content">Player Levels</h2>
             <button
               phx-click="toggle_levels"
-              class="text-gray-500 hover:text-gray-700 text-2xl"
+              class="text-base-content/60 hover:text-base-content text-2xl"
             >
               ×
             </button>
@@ -613,17 +613,17 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <div class="grid grid-cols-2 gap-6 mb-4">
             <!-- Player Column -->
             <div>
-              <h3 class="text-xl font-semibold text-blue-600 mb-4 text-center">You</h3>
+              <h3 class="text-xl font-semibold text-primary mb-4 text-center">You</h3>
               <%= for hand_type <- hand_types do %>
                 <% base = base_scores[hand_type]
                 player_level = Map.get(@player_state.skill_tree, hand_type, 1)
                 hand_name = hand_names[hand_type] %>
 
-                <div class="mb-3 p-3 bg-gray-50 rounded border border-gray-200">
-                  <div class="font-semibold text-gray-900 mb-1">{hand_name}</div>
-                  <div class="text-sm text-gray-600">
+                <div class="mb-3 p-3 bg-base-200 rounded border border-base-300">
+                  <div class="font-semibold text-base-content mb-1">{hand_name}</div>
+                  <div class="text-sm text-base-content/70">
                     <div>Base: {base.chips} chips × {base.multiplier} mult</div>
-                    <div class="mt-1 text-blue-600 font-medium">Level: {player_level}</div>
+                    <div class="mt-1 text-primary font-medium">Level: {player_level}</div>
                   </div>
                 </div>
               <% end %>
@@ -631,17 +631,17 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
             <!-- Opponent Column -->
             <div>
-              <h3 class="text-xl font-semibold text-red-600 mb-4 text-center">{@opponent_name}</h3>
+              <h3 class="text-xl font-semibold text-error mb-4 text-center">{@opponent_name}</h3>
               <%= for hand_type <- hand_types do %>
                 <% base = base_scores[hand_type]
                 opponent_level = Map.get(@opponent_state.skill_tree, hand_type, 1)
                 hand_name = hand_names[hand_type] %>
 
-                <div class="mb-3 p-3 bg-gray-50 rounded border border-gray-200">
-                  <div class="font-semibold text-gray-900 mb-1">{hand_name}</div>
-                  <div class="text-sm text-gray-600">
+                <div class="mb-3 p-3 bg-base-200 rounded border border-base-300">
+                  <div class="font-semibold text-base-content mb-1">{hand_name}</div>
+                  <div class="text-sm text-base-content/70">
                     <div>Base: {base.chips} chips × {base.multiplier} mult</div>
-                    <div class="mt-1 text-red-600 font-medium">Level: {opponent_level}</div>
+                    <div class="mt-1 text-error font-medium">Level: {opponent_level}</div>
                   </div>
                 </div>
               <% end %>

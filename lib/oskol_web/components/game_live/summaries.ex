@@ -6,11 +6,11 @@ defmodule OskolWeb.Components.GameLive.Summaries do
 
   def round_summary_screen(assigns) do
     ~H"""
-    <div class="flex flex-col h-screen" style="background-color: #FBFBFB;">
+    <div class="flex flex-col h-screen bg-base-200">
       <!-- Center content with modern card layout -->
       <div class="flex-1 flex flex-col justify-center px-4">
         <div class="max-w-4xl mx-auto w-full">
-          <div class="bg-white rounded-lg shadow-md p-8 border border-gray-200">
+          <div class="bg-base-100 rounded-lg shadow-xl p-8 border border-base-300">
             <.round_summary
               game_state={@game_state}
               player_name={@player_name}
@@ -27,10 +27,10 @@ defmodule OskolWeb.Components.GameLive.Summaries do
 
   def match_summary_screen(assigns) do
     ~H"""
-    <div class="min-h-screen flex items-center justify-center" style="background-color: #FBFBFB;">
+    <div class="min-h-screen flex items-center justify-center bg-base-200">
       <div class="w-full max-w-4xl px-6">
-        <div class="bg-white rounded-lg shadow-lg p-8 border border-gray-200">
-          <h3 class="text-3xl font-bold mb-8 text-center text-gray-900">
+        <div class="bg-base-100 rounded-lg shadow-xl p-8 border border-base-300">
+          <h3 class="text-3xl font-bold mb-8 text-center text-base-content">
             Match Complete!
           </h3>
 
@@ -39,18 +39,18 @@ defmodule OskolWeb.Components.GameLive.Summaries do
               player_name={@player_name}
               lives={@player_state.lives}
               is_winner={@game_state.winner_id == @player_id}
-              color="text-blue-600"
+              color="text-primary"
             />
 
             <.player_result_card
               player_name={@opponent_name}
               lives={@opponent_state.lives}
               is_winner={@game_state.winner_id == @opponent_id}
-              color="text-red-600"
+              color="text-error"
             />
           </div>
 
-          <div class="text-center text-gray-500 text-sm">
+          <div class="text-center text-base-content/60 text-sm">
             Game Over - Rounds Completed: {@game_state.round_number}
           </div>
         </div>
@@ -74,41 +74,41 @@ defmodule OskolWeb.Components.GameLive.Summaries do
 
     <div>
       <div class="text-center">
-        <div class="text-2xl font-bold text-gray-900 mb-6">
+        <div class="text-2xl font-bold text-base-content mb-6">
           Round {@game_state.round_number} Complete!
         </div>
         <div class="grid grid-cols-2 gap-8 mb-8">
-          <div class="bg-gray-50 rounded-lg p-6">
-            <div class="font-bold text-blue-600 text-lg mb-3">{@player_name}</div>
-            <div class="text-gray-600 mb-2">
-              Score: <span class="text-gray-900 font-semibold text-xl">{player_score}</span>
+          <div class="bg-base-200 rounded-lg p-6">
+            <div class="font-bold text-primary text-lg mb-3">{@player_name}</div>
+            <div class="text-base-content/70 mb-2">
+              Score: <span class="text-base-content font-semibold text-xl">{player_score}</span>
             </div>
             <%= cond do %>
               <% outcome == :player_won -> %>
-                <div class="text-green-600 mt-2 font-semibold">✓ Round Winner!</div>
+                <div class="text-success mt-2 font-semibold">✓ Round Winner!</div>
               <% outcome == :opponent_won -> %>
-                <div class="text-red-600 mt-2">✗ Round Lost (-1 Life)</div>
+                <div class="text-error mt-2">✗ Round Lost (-1 Life)</div>
               <% outcome == :tie -> %>
-                <div class="text-gray-600 mt-2">= Tie (No Life Lost)</div>
+                <div class="text-base-content/70 mt-2">= Tie (No Life Lost)</div>
             <% end %>
-            <div class="mt-4 text-sm text-gray-500">
+            <div class="mt-4 text-sm text-base-content/60">
               Lives: {@player_state.lives}
             </div>
           </div>
-          <div class="bg-gray-50 rounded-lg p-6">
-            <div class="font-bold text-red-600 text-lg mb-3">{@opponent_name}</div>
-            <div class="text-gray-600 mb-2">
-              Score: <span class="text-gray-900 font-semibold text-xl">{opponent_score}</span>
+          <div class="bg-base-200 rounded-lg p-6">
+            <div class="font-bold text-error text-lg mb-3">{@opponent_name}</div>
+            <div class="text-base-content/70 mb-2">
+              Score: <span class="text-base-content font-semibold text-xl">{opponent_score}</span>
             </div>
             <%= cond do %>
               <% outcome == :opponent_won -> %>
-                <div class="text-green-600 mt-2 font-semibold">✓ Round Winner!</div>
+                <div class="text-success mt-2 font-semibold">✓ Round Winner!</div>
               <% outcome == :player_won -> %>
-                <div class="text-red-600 mt-2">✗ Round Lost (-1 Life)</div>
+                <div class="text-error mt-2">✗ Round Lost (-1 Life)</div>
               <% outcome == :tie -> %>
-                <div class="text-gray-600 mt-2">= Tie (No Life Lost)</div>
+                <div class="text-base-content/70 mt-2">= Tie (No Life Lost)</div>
             <% end %>
-            <div class="mt-4 text-sm text-gray-500">
+            <div class="mt-4 text-sm text-base-content/60">
               Lives: {@opponent_state.lives}
             </div>
           </div>
@@ -120,7 +120,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
             <div class="mt-6">
               <button
                 phx-click="dismiss_round_summary"
-                class="bg-gray-900 hover:bg-gray-800 text-white px-8 py-3 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg"
+                class="bg-primary hover:bg-primary/90 text-primary-content px-8 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-[1.02]"
               >
                 View Match Summary
               </button>
@@ -131,7 +131,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
             <div class="mt-6">
               <button
                 phx-click="dismiss_round_summary"
-                class="bg-gray-900 hover:bg-gray-800 text-white px-8 py-3 rounded-lg font-semibold transition-all shadow-md hover:shadow-lg"
+                class="bg-primary hover:bg-primary/90 text-primary-content px-8 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-[1.02]"
               >
                 Continue to Shop
               </button>
@@ -152,10 +152,10 @@ defmodule OskolWeb.Components.GameLive.Summaries do
                   phx-click="mark_ready"
                   disabled={@player_state.ready_for_next_round}
                   class={[
-                    "px-8 py-3 rounded-lg font-semibold text-lg transition-all shadow-md",
+                    "px-8 py-3 rounded-lg font-semibold text-lg transition-all shadow-lg",
                     if(@player_state.ready_for_next_round,
-                      do: "bg-gray-600 cursor-not-allowed opacity-50 text-white",
-                      else: "bg-green-600 hover:bg-green-700 hover:shadow-lg text-white"
+                      do: "bg-base-content/30 cursor-not-allowed opacity-50 text-base-content",
+                      else: "bg-success hover:bg-success/90 hover:shadow-xl text-success-content hover:scale-[1.02]"
                     )
                   ]}
                 >
@@ -178,15 +178,15 @@ defmodule OskolWeb.Components.GameLive.Summaries do
     <div class={[
       "rounded-lg p-8 border-2",
       if(@is_winner,
-        do: "bg-green-50 border-green-400",
-        else: "bg-gray-50 border-gray-200"
+        do: "bg-success/10 border-success",
+        else: "bg-base-200 border-base-300"
       )
     ]}>
       <h4 class={"text-2xl font-bold mb-6 text-center #{@color}"}>
         {@player_name}
       </h4>
       <%= if @is_winner do %>
-        <div class="text-4xl font-bold text-green-600 text-center mb-6">
+        <div class="text-4xl font-bold text-success text-center mb-6">
           🏆 WINNER!
         </div>
       <% end %>
@@ -194,16 +194,16 @@ defmodule OskolWeb.Components.GameLive.Summaries do
         <% lives = max(0, @lives) %>
         <%= if lives > 0 do %>
           <%= for _i <- 1..lives do %>
-            <.icon name="hero-heart" class="w-12 h-12 text-red-500" />
+            <.icon name="hero-heart" class="w-12 h-12 text-error" />
           <% end %>
         <% end %>
         <%= if lives < 3 do %>
           <%= for _i <- 1..(3 - lives) do %>
-            <.icon name="hero-heart" class="w-12 h-12 text-gray-300" />
+            <.icon name="hero-heart" class="w-12 h-12 text-base-content/20" />
           <% end %>
         <% end %>
       </div>
-      <div class="text-center text-gray-600 text-sm font-medium">
+      <div class="text-center text-base-content/70 text-sm font-medium">
         {@lives} {if @lives == 1, do: "Life", else: "Lives"} Remaining
       </div>
     </div>
@@ -212,20 +212,20 @@ defmodule OskolWeb.Components.GameLive.Summaries do
 
   defp ready_status_display(assigns) do
     ~H"""
-    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
-      <div class="text-center text-sm text-gray-700">
+    <div class="bg-base-200 rounded-lg p-4 border border-base-300">
+      <div class="text-center text-sm text-base-content">
         <div class="mb-2">
           {@player_name}: <%= if @player_ready do %>
-            <span class="text-green-600 font-semibold">✓ Ready</span>
+            <span class="text-success font-semibold">✓ Ready</span>
           <% else %>
-            <span class="text-yellow-600">Not Ready</span>
+            <span class="text-warning">Not Ready</span>
           <% end %>
         </div>
         <div>
           {@opponent_name}: <%= if @opponent_ready do %>
-            <span class="text-green-600 font-semibold">✓ Ready</span>
+            <span class="text-success font-semibold">✓ Ready</span>
           <% else %>
-            <span class="text-yellow-600">Not Ready</span>
+            <span class="text-warning">Not Ready</span>
           <% end %>
         </div>
       </div>
