@@ -8,13 +8,19 @@ defmodule Oskol.Game.ShopState do
 
   @type player_id :: PlayerState.player_id()
 
+  @type hand_type :: :high_card | :pair | :two_pair | :three_of_a_kind | :straight | :flush | :full_house | :four_of_a_kind | :straight_flush
+
+  @all_hand_types [:high_card, :pair, :two_pair, :three_of_a_kind, :straight, :flush, :full_house, :four_of_a_kind, :straight_flush]
+
   @type t :: %__MODULE__{
           total_rounds: pos_integer(),
           current_round: pos_integer(),
           first_picker_id: player_id(),
           second_picker_id: player_id(),
           first_pick_made: boolean(),
-          second_pick_made: boolean()
+          second_pick_made: boolean(),
+          available_upgrades: [hand_type()],
+          picked_upgrades: [non_neg_integer()]
         }
 
   defstruct total_rounds: 1,
@@ -22,7 +28,9 @@ defmodule Oskol.Game.ShopState do
             first_picker_id: nil,
             second_picker_id: nil,
             first_pick_made: false,
-            second_pick_made: false
+            second_pick_made: false,
+            available_upgrades: [],
+            picked_upgrades: []
 
   @doc """
   Creates a new shop state.
@@ -53,8 +61,21 @@ defmodule Oskol.Game.ShopState do
       first_picker_id: first_player,
       second_picker_id: second_player,
       first_pick_made: false,
-      second_pick_made: false
+      second_pick_made: false,
+      available_upgrades: generate_random_upgrades(),
+      picked_upgrades: []
     }
+  end
+
+  # Generates a random pool of 18 upgrade cards.
+  # Takes all 9 hand types, triples them (27 total), then randomly selects 18.
+  @spec generate_random_upgrades() :: [hand_type()]
+  defp generate_random_upgrades do
+    @all_hand_types
+    |> List.duplicate(3)
+    |> List.flatten()
+    |> Enum.shuffle()
+    |> Enum.take(18)
   end
 
   @doc """
@@ -75,16 +96,27 @@ defmodule Oskol.Game.ShopState do
 
   @doc """
   Records a player's pick in the current round.
+  Returns the selected hand type along with the updated shop state.
   """
-  @spec make_pick(t(), player_id()) :: {:ok, t()} | {:error, atom()}
-  def make_pick(%__MODULE__{} = shop_state, player_id) do
+  @spec make_pick(t(), player_id(), non_neg_integer()) :: {:ok, t(), hand_type()} | {:error, atom()}
+  def make_pick(%__MODULE__{} = shop_state, player_id, upgrade_index) do
     cond do
+      upgrade_index < 0 or upgrade_index >= length(shop_state.available_upgrades) ->
+        {:error, :invalid_upgrade_index}
+
+      upgrade_index in shop_state.picked_upgrades ->
+        {:error, :upgrade_already_picked}
+
       not shop_state.first_pick_made and player_id == shop_state.first_picker_id ->
-        {:ok, %{shop_state | first_pick_made: true}}
+        selected_hand = Enum.at(shop_state.available_upgrades, upgrade_index)
+        updated_state = %{shop_state | first_pick_made: true, picked_upgrades: [upgrade_index | shop_state.picked_upgrades]}
+        {:ok, updated_state, selected_hand}
 
       shop_state.first_pick_made and not shop_state.second_pick_made and
           player_id == shop_state.second_picker_id ->
-        {:ok, %{shop_state | second_pick_made: true}}
+        selected_hand = Enum.at(shop_state.available_upgrades, upgrade_index)
+        updated_state = %{shop_state | second_pick_made: true, picked_upgrades: [upgrade_index | shop_state.picked_upgrades]}
+        {:ok, updated_state, selected_hand}
 
       true ->
         {:error, :not_your_turn}
@@ -94,6 +126,7 @@ defmodule Oskol.Game.ShopState do
   @doc """
   Advances to the next shop round.
   Should be called after both players have picked.
+  Regenerates the upgrade pool for the new round.
   """
   @spec advance_round(t()) :: t()
   def advance_round(%__MODULE__{current_round: round, total_rounds: total} = shop_state)
@@ -102,7 +135,9 @@ defmodule Oskol.Game.ShopState do
       shop_state
       | current_round: round + 1,
         first_pick_made: false,
-        second_pick_made: false
+        second_pick_made: false,
+        available_upgrades: generate_random_upgrades(),
+        picked_upgrades: []
     }
   end
 

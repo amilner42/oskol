@@ -580,10 +580,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             </button>
           </div>
 
-          <% # Get base hand scores
-          base_scores = Oskol.Poker.base_hand_scores()
-
-          # Hand types in display order
+          <% # Hand types in display order
           hand_types = [
             :high_card,
             :pair,
@@ -615,14 +612,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <div>
               <h3 class="text-xl font-semibold text-primary mb-4 text-center">You</h3>
               <%= for hand_type <- hand_types do %>
-                <% base = base_scores[hand_type]
-                player_level = Map.get(@player_state.skill_tree, hand_type, 1)
+                <% player_level = Map.get(@player_state.skill_tree, hand_type, 1)
+                stats = Oskol.Poker.Score.stats_at_level(hand_type, player_level)
                 hand_name = hand_names[hand_type] %>
 
                 <div class="mb-3 p-3 bg-base-200 rounded border border-base-300">
                   <div class="font-semibold text-base-content mb-1">{hand_name}</div>
                   <div class="text-sm text-base-content/70">
-                    <div>Base: {base.chips} chips × {base.multiplier} mult</div>
+                    <div>{stats.base_chips} chips × {stats.multiplier} mult</div>
                     <div class="mt-1 text-primary font-medium">Level: {player_level}</div>
                   </div>
                 </div>
@@ -633,14 +630,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <div>
               <h3 class="text-xl font-semibold text-error mb-4 text-center">{@opponent_name}</h3>
               <%= for hand_type <- hand_types do %>
-                <% base = base_scores[hand_type]
-                opponent_level = Map.get(@opponent_state.skill_tree, hand_type, 1)
+                <% opponent_level = Map.get(@opponent_state.skill_tree, hand_type, 1)
+                stats = Oskol.Poker.Score.stats_at_level(hand_type, opponent_level)
                 hand_name = hand_names[hand_type] %>
 
                 <div class="mb-3 p-3 bg-base-200 rounded border border-base-300">
                   <div class="font-semibold text-base-content mb-1">{hand_name}</div>
                   <div class="text-sm text-base-content/70">
-                    <div>Base: {base.chips} chips × {base.multiplier} mult</div>
+                    <div>{stats.base_chips} chips × {stats.multiplier} mult</div>
                     <div class="mt-1 text-error font-medium">Level: {opponent_level}</div>
                   </div>
                 </div>

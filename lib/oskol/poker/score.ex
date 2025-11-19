@@ -43,6 +43,30 @@ defmodule Oskol.Poker.Score do
   def base_hand_scores, do: @base_hand_scores
 
   @doc """
+  Returns the upgrade bonuses map.
+  """
+  def upgrade_bonuses, do: @upgrade_bonuses
+
+  @doc """
+  Calculates the base chips and multiplier for a given hand type at a specific level.
+  Does not include card values - this is for preview purposes in the shop.
+
+  Returns `%{base_chips: integer(), multiplier: integer()}`
+  """
+  @spec stats_at_level(Hand.hand_type(), pos_integer()) :: %{base_chips: integer(), multiplier: integer()}
+  def stats_at_level(hand_type, level) do
+    base = @base_hand_scores[hand_type]
+    upgrade = @upgrade_bonuses[hand_type]
+
+    bonus_multiplier = max(0, level - 1)
+
+    %{
+      base_chips: base.chips + bonus_multiplier * upgrade.chips,
+      multiplier: base.multiplier + bonus_multiplier * upgrade.multiplier
+    }
+  end
+
+  @doc """
   Calculates the score for a hand evaluation with skill tree levels applied.
 
   Level 1 = base scores only

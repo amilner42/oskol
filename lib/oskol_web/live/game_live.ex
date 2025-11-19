@@ -277,8 +277,9 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
-  def handle_event("make_shop_pick", _params, socket) do
-    Game.make_shop_pick_async(socket.assigns.game_id, socket.assigns.player_id)
+  def handle_event("make_shop_pick", %{"index" => index_str}, socket) do
+    upgrade_index = String.to_integer(index_str)
+    Game.make_shop_pick_async(socket.assigns.game_id, socket.assigns.player_id, upgrade_index)
     {:noreply, assign(socket, action_in_progress: true)}
   end
 

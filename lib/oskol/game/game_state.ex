@@ -4,7 +4,7 @@ defmodule Oskol.Game.GameState do
   """
 
   alias Oskol.Game.{PlayerState, ShopState}
-  alias Oskol.Poker.Card
+  alias Oskol.Poker.{Card, SkillTree}
 
   @type t :: %__MODULE__{
           round_number: pos_integer(),
@@ -377,26 +377,36 @@ defmodule Oskol.Game.GameState do
 
   Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
   """
-  @spec make_shop_pick(t(), player_id()) :: {:ok, t(), list()} | {:error, atom()}
-  def make_shop_pick(%__MODULE__{shop_state: shop_state} = game_state, player_id)
+  @spec make_shop_pick(t(), player_id(), non_neg_integer()) :: {:ok, t(), list()} | {:error, atom()}
+  def make_shop_pick(%__MODULE__{shop_state: shop_state} = game_state, player_id, upgrade_index)
       when shop_state != nil do
-    case ShopState.make_pick(shop_state, player_id) do
-      {:ok, updated_shop_state} ->
-        # TODO: In the future, this will actually apply the picked upgrade
+    case ShopState.make_pick(shop_state, player_id, upgrade_index) do
+      {:ok, updated_shop_state, selected_hand_type} ->
+        # Apply the upgrade to the player's skill tree
+        updated_players =
+          Map.update!(game_state.players, player_id, fn player ->
+            updated_skill_tree = SkillTree.upgrade(player.skill_tree, selected_hand_type, 1)
+            %{player | skill_tree: updated_skill_tree}
+          end)
+
         pick_event =
-          {:shop_pick_made, player_id, %{shop_round: updated_shop_state.current_round}}
+          {:shop_pick_made, player_id, %{
+            shop_round: updated_shop_state.current_round,
+            hand_type: selected_hand_type,
+            upgrade_index: upgrade_index
+          }}
 
         # Check if both players have picked
         if ShopState.both_players_picked?(updated_shop_state) do
           # Check if shop is complete (all rounds done)
           if ShopState.shop_complete?(updated_shop_state) do
             # Shop complete - keep shop_state but mark it as done
-            new_state = %{game_state | shop_state: updated_shop_state}
+            new_state = %{game_state | shop_state: updated_shop_state, players: updated_players}
             {:ok, new_state, [pick_event]}
           else
             # Advance to next shop round
             next_shop_state = ShopState.advance_round(updated_shop_state)
-            new_state = %{game_state | shop_state: next_shop_state}
+            new_state = %{game_state | shop_state: next_shop_state, players: updated_players}
 
             round_event =
               {:shop_round_advanced, nil, %{shop_round: next_shop_state.current_round}}
@@ -405,7 +415,7 @@ defmodule Oskol.Game.GameState do
           end
         else
           # Waiting for other player to pick
-          new_state = %{game_state | shop_state: updated_shop_state}
+          new_state = %{game_state | shop_state: updated_shop_state, players: updated_players}
           {:ok, new_state, [pick_event]}
         end
 
@@ -414,7 +424,7 @@ defmodule Oskol.Game.GameState do
     end
   end
 
-  def make_shop_pick(_, _), do: {:error, :no_shop_active}
+  def make_shop_pick(_, _, _), do: {:error, :no_shop_active}
 
   @doc """
   Marks a player as ready for the next round (from the shop).

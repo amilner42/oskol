@@ -44,8 +44,8 @@ defmodule Oskol.Game.GameServer do
     GenServer.cast(via_tuple(game_id), {:player_action, player_id, :mark_ready_for_next_round})
   end
 
-  def make_shop_pick_async(game_id, player_id) do
-    GenServer.cast(via_tuple(game_id), {:player_action, player_id, :make_shop_pick})
+  def make_shop_pick_async(game_id, player_id, upgrade_index) do
+    GenServer.cast(via_tuple(game_id), {:player_action, player_id, {:make_shop_pick, upgrade_index}})
   end
 
   # Server Callbacks

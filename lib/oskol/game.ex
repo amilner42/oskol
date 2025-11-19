@@ -55,7 +55,7 @@ defmodule Oskol.Game do
     to: GameServer,
     as: :mark_ready_for_next_round_async
 
-  defdelegate make_shop_pick_async(game_id, player_id),
+  defdelegate make_shop_pick_async(game_id, player_id, upgrade_index),
     to: GameServer,
     as: :make_shop_pick_async
 end
