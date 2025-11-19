@@ -436,7 +436,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         13 -> "K"
         12 -> "Q"
         11 -> "J"
-        10 -> "0"
+        10 -> "T"
         n -> Integer.to_string(n)
       end
 
@@ -448,7 +448,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         :spades -> "S"
       end
 
-    "https://deckofcardsapi.com/static/img/#{rank_str}#{suit_str}.png"
+    "/images/cards/#{rank_str}#{suit_str}.svg"
   end
 
   defp sort_cards(cards, :rank) do
