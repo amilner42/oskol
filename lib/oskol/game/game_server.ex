@@ -45,7 +45,10 @@ defmodule Oskol.Game.GameServer do
   end
 
   def make_shop_pick_async(game_id, player_id, upgrade_index) do
-    GenServer.cast(via_tuple(game_id), {:player_action, player_id, {:make_shop_pick, upgrade_index}})
+    GenServer.cast(
+      via_tuple(game_id),
+      {:player_action, player_id, {:make_shop_pick, upgrade_index}}
+    )
   end
 
   # Server Callbacks
@@ -85,7 +88,10 @@ defmodule Oskol.Game.GameServer do
         new_connections = Map.put(state.connections, player_id, connection)
 
         # Emit player_joined event
-        event_log = EventLog.append(state.event_log, state.game_id, :player_joined, player_id, %{name: player_name})
+        event_log =
+          EventLog.append(state.event_log, state.game_id, :player_joined, player_id, %{
+            name: player_name
+          })
 
         new_state = %GameServerState{
           state
@@ -123,11 +129,20 @@ defmodule Oskol.Game.GameServer do
           # Monitor new process
           monitor_ref = Process.monitor(player_pid)
 
-          updated_connection = %{old_connection | pid: player_pid, connected: true, monitor_ref: monitor_ref}
+          updated_connection = %{
+            old_connection
+            | pid: player_pid,
+              connected: true,
+              monitor_ref: monitor_ref
+          }
+
           new_connections = Map.put(state.connections, player_id, updated_connection)
 
           # Emit player_reconnected event
-          event_log = EventLog.append(state.event_log, state.game_id, :player_reconnected, player_id, %{name: player_name})
+          event_log =
+            EventLog.append(state.event_log, state.game_id, :player_reconnected, player_id, %{
+              name: player_name
+            })
 
           new_state = %GameServerState{
             state
@@ -165,12 +180,14 @@ defmodule Oskol.Game.GameServer do
 
         # Emit game_started event
         player_ids = Map.keys(player_names)
-        event_log = EventLog.append(state.event_log, state.game_id, :game_started, nil, %{
-          player_ids: player_ids,
-          initial_lives: initial_lives,
-          shop_rounds: shop_rounds,
-          starting_round: 1
-        })
+
+        event_log =
+          EventLog.append(state.event_log, state.game_id, :game_started, nil, %{
+            player_ids: player_ids,
+            initial_lives: initial_lives,
+            shop_rounds: shop_rounds,
+            starting_round: 1
+          })
 
         new_state = %GameServerState{state | game_state: game_state, event_log: event_log}
 
@@ -225,9 +242,10 @@ defmodule Oskol.Game.GameServer do
       new_connections = Map.put(state.connections, player_id, updated_connection)
 
       # Emit player_disconnected event
-      event_log = EventLog.append(state.event_log, state.game_id, :player_disconnected, player_id, %{
-        name: updated_connection.name
-      })
+      event_log =
+        EventLog.append(state.event_log, state.game_id, :player_disconnected, player_id, %{
+          name: updated_connection.name
+        })
 
       new_state = %GameServerState{
         state

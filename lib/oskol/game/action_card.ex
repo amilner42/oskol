@@ -4,7 +4,16 @@ defmodule Oskol.Game.ActionCard do
   Action cards apply temporary effects for the next round only.
   """
 
-  @type hand_type :: :high_card | :pair | :two_pair | :three_of_a_kind | :straight | :flush | :full_house | :four_of_a_kind | :straight_flush
+  @type hand_type ::
+          :high_card
+          | :pair
+          | :two_pair
+          | :three_of_a_kind
+          | :straight
+          | :flush
+          | :full_house
+          | :four_of_a_kind
+          | :straight_flush
 
   @type card_type :: :denial
 

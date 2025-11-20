@@ -35,8 +35,8 @@ defmodule Oskol.Game.Event do
           data: map()
         }
 
+  # Lobby events
   @type event_type ::
-          # Lobby events
           :player_joined
           | :player_disconnected
           | :player_reconnected

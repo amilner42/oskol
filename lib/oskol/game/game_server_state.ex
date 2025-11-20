@@ -97,7 +97,8 @@ defmodule Oskol.Game.GameServerState do
   The updated state includes both the new game_state and appended events to the event_log.
   """
   @spec handle_player_action(t(), player_id(), term()) ::
-          {:ok, t()} | {:error, :game_not_started | :player_not_found | :player_disconnected | term()}
+          {:ok, t()}
+          | {:error, :game_not_started | :player_not_found | :player_disconnected | term()}
   def handle_player_action(%__MODULE__{game_state: nil}, _player_id, _action) do
     {:error, :game_not_started}
   end

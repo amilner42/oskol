@@ -126,7 +126,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
               </button>
             </div>
 
-          <%!-- Shop configured - Continue to shop --%>
+            <%!-- Shop configured - Continue to shop --%>
           <% @game_state.shop_state != nil -> %>
             <div class="mt-6">
               <button
@@ -137,7 +137,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
               </button>
             </div>
 
-          <%!-- No shop - Show ready status --%>
+            <%!-- No shop - Show ready status --%>
           <% true -> %>
             <div class="mt-8">
               <.ready_status_display
@@ -155,7 +155,8 @@ defmodule OskolWeb.Components.GameLive.Summaries do
                     "px-8 py-3 rounded-lg font-semibold text-lg transition-all shadow-lg",
                     if(@player_state.ready_for_next_round,
                       do: "bg-base-content/30 cursor-not-allowed opacity-50 text-base-content",
-                      else: "bg-success hover:bg-success/90 hover:shadow-xl text-success-content hover:scale-[1.02]"
+                      else:
+                        "bg-success hover:bg-success/90 hover:shadow-xl text-success-content hover:scale-[1.02]"
                     )
                   ]}
                 >
@@ -215,14 +216,16 @@ defmodule OskolWeb.Components.GameLive.Summaries do
     <div class="bg-base-200 rounded-lg p-4 border border-base-300">
       <div class="text-center text-sm text-base-content">
         <div class="mb-2">
-          {@player_name}: <%= if @player_ready do %>
+          {@player_name}:
+          <%= if @player_ready do %>
             <span class="text-success font-semibold">✓ Ready</span>
           <% else %>
             <span class="text-warning">Not Ready</span>
           <% end %>
         </div>
         <div>
-          {@opponent_name}: <%= if @opponent_ready do %>
+          {@opponent_name}:
+          <%= if @opponent_ready do %>
             <span class="text-success font-semibold">✓ Ready</span>
           <% else %>
             <span class="text-warning">Not Ready</span>

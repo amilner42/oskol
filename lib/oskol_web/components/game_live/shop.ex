@@ -11,8 +11,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <%= if @game_state.shop_state do %>
         <.shop_status shop_state={@game_state.shop_state} player_names={@game_state.player_names} />
       <% end %>
-
-      <!-- Center Preview Area (like the game board) -->
+      
+    <!-- Center Preview Area (like the game board) -->
       <div class="flex-1 flex items-center justify-center">
         <%= if assigns[:previewing_card_index] != nil and @game_state.shop_state do %>
           <.card_preview_center
@@ -68,14 +68,16 @@ defmodule OskolWeb.Components.GameLive.Shop do
                     Waiting for {@game_state.player_names[@game_state.shop_state.second_picker_id]} to pick...
                   </div>
                 <% true -> %>
-                  <div class="text-xl text-success">Both players have picked! Moving to next round...</div>
+                  <div class="text-xl text-success">
+                    Both players have picked! Moving to next round...
+                  </div>
               <% end %>
             </div>
           <% end %>
         <% end %>
       </div>
-
-      <!-- Bottom Cards Area (like gameplay hand) -->
+      
+    <!-- Bottom Cards Area (like gameplay hand) -->
       <%= if @game_state.shop_state && !shop_complete?(@game_state.shop_state) do %>
         <div class="pb-4">
           <.shop_cards_display
@@ -93,12 +95,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
     ~H"""
     <div class="flex items-center justify-between text-sm pb-4 border-b border-base-300">
       <div class="text-base-content/80">
-        Shop Round: <span class="text-primary font-bold">
+        Shop Round:
+        <span class="text-primary font-bold">
           {@shop_state.current_round}/{@shop_state.total_rounds}
         </span>
       </div>
       <div class="text-base-content/80">
-        First Pick: <span class="text-success font-bold">
+        First Pick:
+        <span class="text-success font-bold">
           {@player_names[@shop_state.first_picker_id]}
         </span>
         <%= if @shop_state.first_pick_made do %>
@@ -106,7 +110,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <% end %>
       </div>
       <div class="text-base-content/80">
-        Second Pick: <span class="text-info font-bold">
+        Second Pick:
+        <span class="text-info font-bold">
           {@player_names[@shop_state.second_picker_id]}
         </span>
         <%= if @shop_state.second_pick_made do %>
@@ -201,8 +206,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class={"text-[10px] font-bold uppercase tracking-wide #{@badge_color} mb-2"}>
         {@badge_text}
       </div>
-
-      <!-- Card name centered -->
+      
+    <!-- Card name centered -->
       <div class="flex-1 flex items-center justify-center">
         <div class="font-bold text-sm text-center text-base-content">
           {@display_name}
@@ -233,14 +238,16 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="bg-base-300 rounded-lg p-4 mb-4">
       <div class="text-center text-sm text-base-content">
         <div class="mb-2">
-          {@player_name}: <%= if @player_ready do %>
+          {@player_name}:
+          <%= if @player_ready do %>
             <span class="text-success">✓ Ready</span>
           <% else %>
             <span class="text-warning">Not Ready</span>
           <% end %>
         </div>
         <div>
-          {@opponent_name}: <%= if @opponent_ready do %>
+          {@opponent_name}:
+          <%= if @opponent_ready do %>
             <span class="text-success">✓ Ready</span>
           <% else %>
             <span class="text-warning">Not Ready</span>
@@ -258,9 +265,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
   defp can_pick_card?(shop_state, player_id) do
     cond do
-      not shop_state.first_pick_made and shop_state.first_picker_id == player_id -> true
-      shop_state.first_pick_made and not shop_state.second_pick_made and shop_state.second_picker_id == player_id -> true
-      true -> false
+      not shop_state.first_pick_made and shop_state.first_picker_id == player_id ->
+        true
+
+      shop_state.first_pick_made and not shop_state.second_pick_made and
+          shop_state.second_picker_id == player_id ->
+        true
+
+      true ->
+        false
     end
   end
 
@@ -309,16 +322,16 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="text-xs font-bold uppercase tracking-wide text-accent mb-3">
         Level Up
       </div>
-
-      <!-- Hand Name -->
+      
+    <!-- Hand Name -->
       <h3 class="text-4xl font-bold text-accent mb-4">{@hand_name}</h3>
-
-      <!-- Level Progress -->
+      
+    <!-- Level Progress -->
       <div class="text-lg text-base-content/70 mb-8">
         Level {@current_level} → {@next_level}
       </div>
-
-      <!-- Stats Comparison -->
+      
+    <!-- Stats Comparison -->
       <div class="space-y-6 mb-8">
         <div class="flex items-center justify-between px-4">
           <span class="text-base-content/80 text-lg">Base Chips:</span>
@@ -337,8 +350,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       </div>
-
-      <!-- Action Buttons -->
+      
+    <!-- Action Buttons -->
       <div class="flex gap-4 justify-center">
         <button
           phx-click="close_shop_preview"
@@ -384,21 +397,21 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="text-xs font-bold uppercase tracking-wide text-error mb-3">
         Action Card
       </div>
-
-      <!-- Card Name -->
+      
+    <!-- Card Name -->
       <h3 class="text-4xl font-bold text-error mb-4">{@card_name}</h3>
-
-      <!-- Target Hand -->
+      
+    <!-- Target Hand -->
       <div class="text-lg text-base-content/70 mb-8">
         Targets: <span class="font-semibold text-error">{@hand_name}</span>
       </div>
-
-      <!-- Description -->
+      
+    <!-- Description -->
       <div class="mb-8 px-4">
         <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
       </div>
-
-      <!-- Action Buttons -->
+      
+    <!-- Action Buttons -->
       <div class="flex gap-4 justify-center">
         <button
           phx-click="close_shop_preview"

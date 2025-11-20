@@ -8,11 +8,30 @@ defmodule Oskol.Game.ShopState do
 
   @type player_id :: PlayerState.player_id()
 
-  @type hand_type :: :high_card | :pair | :two_pair | :three_of_a_kind | :straight | :flush | :full_house | :four_of_a_kind | :straight_flush
+  @type hand_type ::
+          :high_card
+          | :pair
+          | :two_pair
+          | :three_of_a_kind
+          | :straight
+          | :flush
+          | :full_house
+          | :four_of_a_kind
+          | :straight_flush
 
   @type shop_card :: {:level_up, hand_type()} | {:action, ActionCard.t()}
 
-  @all_hand_types [:high_card, :pair, :two_pair, :three_of_a_kind, :straight, :flush, :full_house, :four_of_a_kind, :straight_flush]
+  @all_hand_types [
+    :high_card,
+    :pair,
+    :two_pair,
+    :three_of_a_kind,
+    :straight,
+    :flush,
+    :full_house,
+    :four_of_a_kind,
+    :straight_flush
+  ]
 
   @type t :: %__MODULE__{
           total_rounds: pos_integer(),
@@ -114,7 +133,8 @@ defmodule Oskol.Game.ShopState do
   Records a player's pick in the current round.
   Returns the selected shop card along with the updated shop state.
   """
-  @spec make_pick(t(), player_id(), non_neg_integer()) :: {:ok, t(), shop_card()} | {:error, atom()}
+  @spec make_pick(t(), player_id(), non_neg_integer()) ::
+          {:ok, t(), shop_card()} | {:error, atom()}
   def make_pick(%__MODULE__{} = shop_state, player_id, card_index) do
     cond do
       card_index < 0 or card_index >= length(shop_state.available_cards) ->
@@ -125,13 +145,25 @@ defmodule Oskol.Game.ShopState do
 
       not shop_state.first_pick_made and player_id == shop_state.first_picker_id ->
         selected_card = Enum.at(shop_state.available_cards, card_index)
-        updated_state = %{shop_state | first_pick_made: true, picked_card_indices: [card_index | shop_state.picked_card_indices]}
+
+        updated_state = %{
+          shop_state
+          | first_pick_made: true,
+            picked_card_indices: [card_index | shop_state.picked_card_indices]
+        }
+
         {:ok, updated_state, selected_card}
 
       shop_state.first_pick_made and not shop_state.second_pick_made and
           player_id == shop_state.second_picker_id ->
         selected_card = Enum.at(shop_state.available_cards, card_index)
-        updated_state = %{shop_state | second_pick_made: true, picked_card_indices: [card_index | shop_state.picked_card_indices]}
+
+        updated_state = %{
+          shop_state
+          | second_pick_made: true,
+            picked_card_indices: [card_index | shop_state.picked_card_indices]
+        }
+
         {:ok, updated_state, selected_card}
 
       true ->

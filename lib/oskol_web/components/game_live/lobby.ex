@@ -101,8 +101,8 @@ defmodule OskolWeb.Components.GameLive.Lobby do
             <p class="text-base-content/60 text-sm">Enter your name to join the game</p>
           <% end %>
         </div>
-
-        <!-- Disconnected Players -->
+        
+    <!-- Disconnected Players -->
         <%= if length(@disconnected_players) > 0 do %>
           <.disconnected_notice />
           <.rejoin_buttons disconnected_players={@disconnected_players} />
@@ -125,15 +125,15 @@ defmodule OskolWeb.Components.GameLive.Lobby do
             </div>
           <% end %>
         <% end %>
-
-        <!-- Join Form -->
+        
+    <!-- Join Form -->
         <%= if @server_state.game_state == nil do %>
           <div class="mb-8">
             <.join_form />
           </div>
         <% end %>
-
-        <!-- Players List -->
+        
+    <!-- Players List -->
         <%= if map_size(@server_state.connections) > 0 do %>
           <div class="mt-8">
             <h3 class="text-sm font-semibold text-base-content/80 mb-3">Players in Lobby</h3>
@@ -154,11 +154,11 @@ defmodule OskolWeb.Components.GameLive.Lobby do
           <span class="text-base-content/60 text-sm">Playing as</span>
           <div class="text-2xl font-semibold text-base-content mt-1">{@player_name}</div>
         </div>
-
-        <!-- Players List -->
+        
+    <!-- Players List -->
         <.player_list connections={@server_state.connections} />
-
-        <!-- Game Settings -->
+        
+    <!-- Game Settings -->
         <div class="space-y-6 mb-8">
           <!-- Lives Selector -->
           <div class="flex items-center justify-between">
@@ -180,8 +180,8 @@ defmodule OskolWeb.Components.GameLive.Lobby do
               </button>
             </div>
           </div>
-
-          <!-- Shop Rounds Selector -->
+          
+    <!-- Shop Rounds Selector -->
           <div class="flex items-center justify-between">
             <span class="text-base-content font-medium">Shop Rounds</span>
             <div class="flex gap-2">
@@ -202,8 +202,8 @@ defmodule OskolWeb.Components.GameLive.Lobby do
             </div>
           </div>
         </div>
-
-        <!-- Start Game Button -->
+        
+    <!-- Start Game Button -->
         <div>
           <%= if @server_state.lobby_status == :ready_to_start do %>
             <button

@@ -256,7 +256,8 @@ defmodule OskolWeb.GameLive do
         false
       end
 
-    {:noreply, assign(socket, viewing_results: false, viewing_round_summary: viewing_round_summary)}
+    {:noreply,
+     assign(socket, viewing_results: false, viewing_round_summary: viewing_round_summary)}
   end
 
   @impl true
@@ -443,11 +444,13 @@ defmodule OskolWeb.GameLive do
           |> Enum.find(&(&1 != socket.assigns.player_id))
 
         # Get all new events since last seen (for tracking)
-        new_events = EventLog.get_since(new_state.event_log, socket.assigns.last_seen_event_sequence + 1)
+        new_events =
+          EventLog.get_since(new_state.event_log, socket.assigns.last_seen_event_sequence + 1)
 
         # Get events since last acknowledged (for highlighting)
         # This allows us to clear highlights on user action by updating acknowledged_event_sequence
-        highlight_events = EventLog.get_since(new_state.event_log, socket.assigns.acknowledged_event_sequence + 1)
+        highlight_events =
+          EventLog.get_since(new_state.event_log, socket.assigns.acknowledged_event_sequence + 1)
 
         # Extract card IDs from cards_drawn events for this player (from acknowledged events)
         # Exclude round_start draws - only highlight after discard/play
@@ -649,7 +652,6 @@ defmodule OskolWeb.GameLive do
                 player_state={player_state}
                 opponent_state={opponent_state}
               />
-
             <% @viewing_round_summary && game_state.phase == :round_end -> %>
               <.round_summary_screen
                 game_state={game_state}
@@ -658,7 +660,6 @@ defmodule OskolWeb.GameLive do
                 player_state={player_state}
                 opponent_state={opponent_state}
               />
-
             <% game_state.phase == :round_end && game_state.shop_state != nil && !@viewing_results && !@viewing_round_summary && !@viewing_match_summary && game_state.game_status != :game_over -> %>
               <.shop_screen
                 game_state={game_state}
@@ -670,7 +671,6 @@ defmodule OskolWeb.GameLive do
                 action_in_progress={@action_in_progress}
                 previewing_card_index={@previewing_card_index}
               />
-
             <% true -> %>
               <.game_screen
                 game_state={game_state}
@@ -689,8 +689,8 @@ defmodule OskolWeb.GameLive do
                 viewing_results={@viewing_results}
               />
           <% end %>
-
-          <!-- History Modal (overlay) -->
+          
+    <!-- History Modal (overlay) -->
           <%= if @server_state.game_state do %>
             <.history_modal
               viewing_history={@viewing_history}
@@ -698,8 +698,8 @@ defmodule OskolWeb.GameLive do
               player_names={game_state.player_names}
               player_id={@player_id}
             />
-
-            <!-- Deck Modal (overlay) -->
+            
+    <!-- Deck Modal (overlay) -->
             <.deck_modal
               viewing_deck={@viewing_deck}
               viewing_own_deck={@viewing_own_deck}
@@ -708,8 +708,8 @@ defmodule OskolWeb.GameLive do
               player_name={@player_name}
               opponent_name={opponent_name}
             />
-
-            <!-- Levels Modal (overlay) -->
+            
+    <!-- Levels Modal (overlay) -->
             <.levels_modal
               viewing_levels={@viewing_levels}
               player_state={player_state}

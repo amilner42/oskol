@@ -45,7 +45,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <div class="flex justify-center py-3 bg-base-200/40 backdrop-blur-sm">
         <.player_stats player_state={@opponent_state} />
       </div>
-
+      
     <!-- Top 25% - Opponent Cards -->
       <div class="flex-1 flex flex-col justify-end p-4 bg-base-200/40">
         <.opponent_cards
@@ -54,7 +54,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           opponent_new_card_ids={@opponent_new_card_ids}
         />
       </div>
-
+      
     <!-- Middle 50% - Playing Area -->
       <div class="flex-[2] flex flex-col justify-start bg-base-100 shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)]">
         <.playing_area
@@ -68,7 +68,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           viewing_results={@viewing_results}
         />
       </div>
-
+      
     <!-- Player Cards -->
       <div class="flex-1 flex flex-col justify-start p-4 bg-base-200/40">
         <.player_cards
@@ -79,7 +79,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           action_in_progress={@action_in_progress}
         />
       </div>
-
+      
     <!-- Player Stats Bar -->
       <div class="flex justify-center py-3 bg-base-200/40 backdrop-blur-sm">
         <.player_stats player_state={@player_state} />
@@ -316,14 +316,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <%= if score_diff > 0 do %>
           <div class="text-base">
             <%= if player_score > opponent_score do %>
-              You are up by <%= score_diff %> points
+              You are up by {score_diff} points
             <% else %>
-              <%= @opponent_name %> is up by <%= score_diff %> points
+              {@opponent_name} is up by {score_diff} points
             <% end %>
           </div>
         <% end %>
       </div>
-
+      
     <!-- Centered content -->
       <div class="h-full flex flex-col justify-center">
         <%= cond do %>
@@ -553,7 +553,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           # Group by suit
           cards_by_suit = Enum.group_by(all_cards, & &1.suit)
           suits = [:spades, :hearts, :clubs, :diamonds] %>
-
+          
     <!-- Render each suit as a row -->
           <%= for suit <- suits do %>
             <% suit_cards = Map.get(cards_by_suit, suit, []) %>
@@ -563,7 +563,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
               <div class="mb-4">
                 <div class="text-sm text-base-content/70 mb-1 font-medium">
-                  <%= suit |> to_string() |> String.capitalize() %>: <%= non_discarded_count %> remaining
+                  {suit |> to_string() |> String.capitalize()}: {non_discarded_count} remaining
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <%= for card <- Enum.sort_by(suit_cards, & &1.rank, :desc) do %>
@@ -631,8 +631,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             four_of_a_kind: "Four of a Kind",
             straight_flush: "Straight Flush"
           } %>
-
-          <!-- Two-column layout: Player vs Opponent -->
+          
+    <!-- Two-column layout: Player vs Opponent -->
           <div class="grid grid-cols-2 gap-6 mb-4">
             <!-- Player Column -->
             <div>
@@ -651,8 +651,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 </div>
               <% end %>
             </div>
-
-            <!-- Opponent Column -->
+            
+    <!-- Opponent Column -->
             <div>
               <h3 class="text-xl font-semibold text-error mb-4 text-center">{@opponent_name}</h3>
               <%= for hand_type <- hand_types do %>

@@ -53,7 +53,10 @@ defmodule Oskol.Poker.Score do
 
   Returns `%{base_chips: integer(), multiplier: integer()}`
   """
-  @spec stats_at_level(Hand.hand_type(), pos_integer()) :: %{base_chips: integer(), multiplier: integer()}
+  @spec stats_at_level(Hand.hand_type(), pos_integer()) :: %{
+          base_chips: integer(),
+          multiplier: integer()
+        }
   def stats_at_level(hand_type, level) do
     base = @base_hand_scores[hand_type]
     upgrade = @upgrade_bonuses[hand_type]

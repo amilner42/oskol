@@ -42,7 +42,9 @@ defmodule Oskol.Game do
   def start_game_session(game_id, initial_lives \\ 3, shop_rounds \\ 2) do
     GameServer.start_game(game_id, initial_lives, shop_rounds)
   end
+
   defdelegate player_lock_in_hand(game_id, player_id, hand), to: GameServer, as: :lock_in_hand
+
   defdelegate player_lock_in_hand_async(game_id, player_id, hand),
     to: GameServer,
     as: :lock_in_hand_async

@@ -29,8 +29,8 @@ defmodule OskolWeb.Components.GameLive.History do
               ×
             </button>
           </div>
-
-          <!-- Event list -->
+          
+    <!-- Event list -->
           <div class="flex-1 overflow-y-auto p-6">
             <div class="space-y-3">
               <%= for event <- EventLog.get_all(@event_log) do %>
@@ -42,8 +42,8 @@ defmodule OskolWeb.Components.GameLive.History do
               <% end %>
             </div>
           </div>
-
-          <!-- Footer -->
+          
+    <!-- Footer -->
           <div class="p-4 border-t border-base-300 text-center text-sm text-base-content/60">
             Total Events: {EventLog.count(@event_log)}
           </div>
@@ -55,7 +55,10 @@ defmodule OskolWeb.Components.GameLive.History do
 
   defp event_item(assigns) do
     ~H"""
-    <div class="bg-base-200 rounded p-4 border-l-4" style={"border-color: #{event_color(@event.type)}"}>
+    <div
+      class="bg-base-200 rounded p-4 border-l-4"
+      style={"border-color: #{event_color(@event.type)}"}
+    >
       <div class="flex items-start justify-between gap-4">
         <div class="flex-1">
           <div class="flex items-center gap-2 mb-1">
@@ -67,7 +70,11 @@ defmodule OskolWeb.Components.GameLive.History do
             </span>
           </div>
 
-          <.event_details event={@event} player_names={@player_names} current_player_id={@current_player_id} />
+          <.event_details
+            event={@event}
+            player_names={@player_names}
+            current_player_id={@current_player_id}
+          />
         </div>
 
         <div class="text-xs text-base-content/50 whitespace-nowrap">
@@ -83,57 +90,66 @@ defmodule OskolWeb.Components.GameLive.History do
     <div class="text-sm text-base-content/80">
       <%= case @event.type do %>
         <% :player_joined -> %>
-          <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold">
+            {player_name(@event.player_id, @player_names, @current_player_id)}
+          </span>
           joined the game
-
         <% :player_disconnected -> %>
-          <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold">
+            {player_name(@event.player_id, @player_names, @current_player_id)}
+          </span>
           disconnected
-
         <% :player_reconnected -> %>
-          <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold">
+            {player_name(@event.player_id, @player_names, @current_player_id)}
+          </span>
           reconnected
-
         <% :game_started -> %>
           Game started with {length(@event.data.player_ids)} players ({@event.data.initial_lives} lives each)
-
         <% :hand_locked_in -> %>
-          <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold">
+            {player_name(@event.player_id, @player_names, @current_player_id)}
+          </span>
           locked in {length(@event.data.cards)} cards
-
         <% :cards_discarded -> %>
-          <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold">
+            {player_name(@event.player_id, @player_names, @current_player_id)}
+          </span>
           discarded {length(@event.data.cards_discarded)} cards
           ({@event.data.discards_remaining} discards remaining)
-
         <% :cards_drawn -> %>
-          <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold">
+            {player_name(@event.player_id, @player_names, @current_player_id)}
+          </span>
           drew {length(@event.data.cards)} cards
           <span class="text-base-content/50">({format_draw_reason(@event.data.reason)})</span>
-
         <% :hands_revealed -> %>
           Both players revealed their hands
           <div class="mt-2 space-y-1">
             <%= for {player_id, result} <- @event.data.results do %>
               <div class="text-xs">
-                <span class="font-semibold">{player_name(player_id, @player_names, @current_player_id)}:</span>
+                <span class="font-semibold">
+                  {player_name(player_id, @player_names, @current_player_id)}:
+                </span>
                 <span class="text-accent">{format_hand_type(result.hand_type)}</span>
-                for <span class="text-success font-bold">{result.score}</span> points
+                for <span class="text-success font-bold">{result.score}</span>
+                points
               </div>
             <% end %>
           </div>
-
         <% :round_completed -> %>
-          <% winner_text = if @event.data.winner_id do
-            player_name(@event.data.winner_id, @player_names, @current_player_id)
-          else
-            "Tie"
-          end %>
-          Round {@event.data.round_number} completed (Winner: {winner_text})
+          <% winner_text =
+            if @event.data.winner_id do
+              player_name(@event.data.winner_id, @player_names, @current_player_id)
+            else
+              "Tie"
+            end %> Round {@event.data.round_number} completed (Winner: {winner_text})
           <div class="mt-2 space-y-1">
             <%= for {player_id, result} <- @event.data.player_results do %>
               <div class="text-xs">
-                <span class="font-semibold">{player_name(player_id, @player_names, @current_player_id)}:</span>
+                <span class="font-semibold">
+                  {player_name(player_id, @player_names, @current_player_id)}:
+                </span>
                 {result.score} points
                 <%= cond do %>
                   <% result.is_round_winner == true -> %>
@@ -147,28 +163,34 @@ defmodule OskolWeb.Components.GameLive.History do
               </div>
             <% end %>
           </div>
-
         <% :player_eliminated -> %>
-          <span class="font-semibold text-error">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold text-error">
+            {player_name(@event.player_id, @player_names, @current_player_id)}
+          </span>
           was eliminated (Final score: {@event.data.final_score})
-
         <% :player_ready -> %>
-          <span class="font-semibold">{player_name(@event.player_id, @player_names, @current_player_id)}</span>
+          <span class="font-semibold">
+            {player_name(@event.player_id, @player_names, @current_player_id)}
+          </span>
           is ready for the next round
-
         <% :round_started -> %>
           Round {@event.data.round_number} started
           <div class="text-xs text-base-content/50">
-            {Map.get(@event.data, :hands_remaining, "?")} hands, {Map.get(@event.data, :discards_remaining, "?")} discards
+            {Map.get(@event.data, :hands_remaining, "?")} hands, {Map.get(
+              @event.data,
+              :discards_remaining,
+              "?"
+            )} discards
           </div>
-
         <% :game_ended -> %>
           <span class="font-bold text-warning">Game Over!</span>
-          Winner: <span class="font-semibold">{player_name(@event.data.winner_id, @player_names, @current_player_id)}</span>
+          Winner:
+          <span class="font-semibold">
+            {player_name(@event.data.winner_id, @player_names, @current_player_id)}
+          </span>
           <div class="text-xs text-base-content/50 mt-1">
             Final round: {@event.data.final_round}
           </div>
-
         <% _ -> %>
           {inspect(@event.type)} - {inspect(@event.data)}
       <% end %>
