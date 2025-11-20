@@ -316,9 +316,10 @@ defmodule Oskol.Game.GameState do
         events = [game_end_event | events]
 
         # Clear debuffs now that round is complete
-        players_cleared = Map.new(players_with_updated_lives, fn {pid, ps} ->
-          {pid, PlayerState.clear_debuffs(ps)}
-        end)
+        players_cleared =
+          Map.new(players_with_updated_lives, fn {pid, ps} ->
+            {pid, PlayerState.clear_debuffs(ps)}
+          end)
 
         new_state = %{
           game_state
@@ -336,9 +337,10 @@ defmodule Oskol.Game.GameState do
         [player1_id, player2_id] = Map.keys(players_with_updated_lives)
 
         # Clear debuffs now that round is complete
-        players_cleared = Map.new(players_with_updated_lives, fn {pid, ps} ->
-          {pid, PlayerState.clear_debuffs(ps)}
-        end)
+        players_cleared =
+          Map.new(players_with_updated_lives, fn {pid, ps} ->
+            {pid, PlayerState.clear_debuffs(ps)}
+          end)
 
         # Initialize shop state based on round winner and shop_rounds configuration
         shop_state =
@@ -561,7 +563,7 @@ defmodule Oskol.Game.GameState do
       {:round_started, nil,
        %{
          round_number: next_round,
-         hands_remaining: 1,
+         hands_remaining: 4,
          discards_remaining: 3
        }}
 
