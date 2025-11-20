@@ -614,7 +614,10 @@ defmodule OskolWeb.GameLive do
     previewing_card_index =
       if new_state.game_state && new_state.game_state.shop_state && socket.assigns.player_id do
         can_pick =
-          Oskol.Game.ShopState.can_pick?(new_state.game_state.shop_state, socket.assigns.player_id)
+          Oskol.Game.ShopState.can_pick?(
+            new_state.game_state.shop_state,
+            socket.assigns.player_id
+          )
 
         if can_pick do
           socket.assigns.previewing_card_index

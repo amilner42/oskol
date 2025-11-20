@@ -567,7 +567,8 @@ defmodule Oskol.Game.GameState do
       {:error, :not_your_pending_selection}
     else
       # Validate the selected card is in the available cards
-      selected_card = Enum.find(pending.available_cards, fn card -> card.id == selected_card_id end)
+      selected_card =
+        Enum.find(pending.available_cards, fn card -> card.id == selected_card_id end)
 
       if selected_card == nil do
         {:error, :invalid_card_selection}
@@ -718,7 +719,6 @@ defmodule Oskol.Game.GameState do
          %{type: :remove_card, card_id: selected_card.id}}
     end
   end
-
 
   defp apply_enhancement(players, player_id, card_id, enhancement) do
     Map.update!(players, player_id, fn player ->

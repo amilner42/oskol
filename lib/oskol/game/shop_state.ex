@@ -21,7 +21,9 @@ defmodule Oskol.Game.ShopState do
           | :straight_flush
 
   @type shop_card ::
-          {:level_up, hand_type()} | {:action, ActionCard.t()} | {:deck_builder, DeckBuilderCard.t()}
+          {:level_up, hand_type()}
+          | {:action, ActionCard.t()}
+          | {:deck_builder, DeckBuilderCard.t()}
 
   @type pending_deck_builder :: %{
           player_id: player_id(),

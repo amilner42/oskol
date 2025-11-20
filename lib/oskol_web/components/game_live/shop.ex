@@ -385,7 +385,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       </div>
-
+      
     <!-- Action Buttons -->
       <%= if @can_confirm do %>
         <div class="flex justify-center">
@@ -426,20 +426,20 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="text-xs font-bold uppercase tracking-wide text-error mb-3">
         Action Card
       </div>
-
+      
     <!-- Card Name -->
       <h3 class="text-4xl font-bold text-error mb-4">{@card_name}</h3>
-
+      
     <!-- Target Hand -->
       <div class="text-lg text-base-content/70 mb-8">
         Targets: <span class="font-semibold text-error">{@hand_name}</span>
       </div>
-
+      
     <!-- Description -->
       <div class="mb-8 px-4">
         <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
       </div>
-
+      
     <!-- Action Buttons -->
       <%= if @can_confirm do %>
         <div class="flex justify-center">
@@ -487,10 +487,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="text-xs font-bold uppercase tracking-wide text-purple-500 mb-3">
         Deck Builder
       </div>
-
+      
     <!-- Card Name -->
       <h3 class="text-4xl font-bold text-purple-500 mb-4">{@card_name}</h3>
-
+      
     <!-- Description -->
       <div class="mb-6 px-4">
         <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
@@ -514,8 +514,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-
-        <!-- Action Buttons -->
+        
+    <!-- Action Buttons -->
         <%= if @can_confirm do %>
           <div class="flex gap-4 justify-center">
             <button
