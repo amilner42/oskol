@@ -106,9 +106,23 @@ defmodule Oskol.Poker.Score do
 
       # Apply bonuses
       total_base_chips = base.chips + bonus_multiplier * upgrade.chips
-      total_multiplier = base.multiplier + bonus_multiplier * upgrade.multiplier
+      base_total_multiplier = base.multiplier + bonus_multiplier * upgrade.multiplier
+
+      # Calculate enhancement bonuses from scoring cards only
+      enhancement_multiplier =
+        scoring_cards
+        |> Enum.map(fn card ->
+          case card.enhancement do
+            {:bonus_mult, mult} -> mult
+            _ -> 0
+          end
+        end)
+        |> Enum.sum()
+
+      total_multiplier = base_total_multiplier + enhancement_multiplier
 
       # Calculate card values and final score (only scoring cards count)
+      # Card.chip_value/1 already includes bonus chips from enhancements
       card_value_sum = Enum.sum(Enum.map(scoring_cards, &Card.chip_value/1))
       total_chips = total_base_chips + card_value_sum
       total_score = total_chips * total_multiplier

@@ -154,6 +154,29 @@ defmodule Oskol.Game.GameServerState do
     GameState.make_shop_pick(game_state, player_id, upgrade_index)
   end
 
+  defp perform_action(game_state, player_id, {:preview_deck_builder, shop_card_index}) do
+    # Get the deck builder card from the shop
+    case Enum.at(game_state.shop_state.available_cards, shop_card_index) do
+      {:deck_builder, deck_builder_card} ->
+        case GameState.preview_deck_builder(game_state, player_id, deck_builder_card) do
+          {:ok, new_state, _available_cards} ->
+            # Emit an event for the preview
+            event = {:deck_builder_preview_ready, player_id, %{shop_card_index: shop_card_index}}
+            {:ok, new_state, [event]}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      _ ->
+        {:error, :not_a_deck_builder_card}
+    end
+  end
+
+  defp perform_action(game_state, player_id, {:confirm_deck_builder_pick, shop_card_index, selected_card_id}) do
+    GameState.confirm_deck_builder_pick(game_state, player_id, shop_card_index, selected_card_id)
+  end
+
   defp perform_action(_game_state, _player_id, action) do
     {:error, {:unknown_action, action}}
   end

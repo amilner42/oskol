@@ -60,4 +60,12 @@ defmodule Oskol.Game do
   defdelegate make_shop_pick_async(game_id, player_id, upgrade_index),
     to: GameServer,
     as: :make_shop_pick_async
+
+  defdelegate preview_deck_builder_async(game_id, player_id, shop_card_index),
+    to: GameServer,
+    as: :preview_deck_builder_async
+
+  defdelegate confirm_deck_builder_pick_async(game_id, player_id, shop_card_index, selected_card_id),
+    to: GameServer,
+    as: :confirm_deck_builder_pick_async
 end

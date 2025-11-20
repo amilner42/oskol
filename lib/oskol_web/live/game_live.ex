@@ -53,7 +53,8 @@ defmodule OskolWeb.GameLive do
         acknowledged_event_sequence: 0,
         selected_lives: 3,
         selected_shop_rounds: 2,
-        previewing_card_index: nil
+        previewing_card_index: nil,
+        deck_builder_selection: nil
       )
 
     # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
@@ -326,6 +327,76 @@ defmodule OskolWeb.GameLive do
     )
 
     {:noreply, assign(socket, action_in_progress: true, previewing_card_index: nil)}
+  end
+
+  @impl true
+  def handle_event("preview_deck_builder", %{"index" => index_str}, socket) do
+    card_index = String.to_integer(index_str)
+
+    # Trigger server to generate the 8 selection cards
+    Game.preview_deck_builder_async(
+      socket.assigns.game_id,
+      socket.assigns.player_id,
+      card_index
+    )
+
+    # Broadcast preview to all players (so they see the preview UI)
+    Phoenix.PubSub.broadcast(
+      Oskol.PubSub,
+      "game:#{socket.assigns.game_id}",
+      {:shop_preview_changed, card_index}
+    )
+
+    {:noreply, assign(socket, previewing_card_index: card_index)}
+  end
+
+  @impl true
+  def handle_event("select_deck_card", %{"card_id" => card_id}, socket) do
+    {:noreply, assign(socket, deck_builder_selection: card_id)}
+  end
+
+  @impl true
+  def handle_event("confirm_deck_builder_pick", %{"index" => index_str}, socket) do
+    card_index = String.to_integer(index_str)
+    selected_card_id = socket.assigns.deck_builder_selection
+
+    if selected_card_id do
+      # Send the selection to the server
+      Game.confirm_deck_builder_pick_async(
+        socket.assigns.game_id,
+        socket.assigns.player_id,
+        card_index,
+        selected_card_id
+      )
+
+      # Close preview for all players
+      Phoenix.PubSub.broadcast(
+        Oskol.PubSub,
+        "game:#{socket.assigns.game_id}",
+        {:shop_preview_changed, nil}
+      )
+
+      {:noreply,
+       assign(socket,
+         action_in_progress: true,
+         previewing_card_index: nil,
+         deck_builder_selection: nil
+       )}
+    else
+      {:noreply, assign(socket, error: "Please select a card first")}
+    end
+  end
+
+  @impl true
+  def handle_event("close_deck_builder_preview", _params, socket) do
+    # Close preview for all players
+    Phoenix.PubSub.broadcast(
+      Oskol.PubSub,
+      "game:#{socket.assigns.game_id}",
+      {:shop_preview_changed, nil}
+    )
+
+    {:noreply, assign(socket, previewing_card_index: nil, deck_builder_selection: nil)}
   end
 
   @impl true
@@ -670,6 +741,7 @@ defmodule OskolWeb.GameLive do
                 opponent_state={opponent_state}
                 action_in_progress={@action_in_progress}
                 previewing_card_index={@previewing_card_index}
+                deck_builder_selection={@deck_builder_selection}
               />
             <% true -> %>
               <.game_screen

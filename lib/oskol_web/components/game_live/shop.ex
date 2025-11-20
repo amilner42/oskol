@@ -21,6 +21,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             skill_tree={skill_tree_for_player(@player_id, assigns)}
             can_confirm={can_pick_card?(@game_state.shop_state, @player_id)}
             action_in_progress={@action_in_progress}
+            deck_builder_preview={@game_state.deck_builder_preview}
+            deck_builder_selection={assigns[:deck_builder_selection]}
           />
         <% else %>
           <%= if @game_state.shop_state && shop_complete?(@game_state.shop_state) do %>
@@ -155,6 +157,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp shop_card_simple(assigns) do
+    alias Oskol.Game.DeckBuilderCard
+
     {card_type, display_name, bg_color} =
       case assigns.shop_card do
         {:level_up, hand_type} ->
@@ -163,18 +167,39 @@ defmodule OskolWeb.Components.GameLive.Shop do
         {:action, action_card} ->
           hand_name = format_hand_name(action_card.target_hand)
           {:action, hand_name, "bg-error/5"}
+
+        {:deck_builder, deck_builder_card} ->
+          {:deck_builder, DeckBuilderCard.card_name(deck_builder_card), "bg-purple-500/5"}
       end
 
     # Add colored border if previewing
     border_class =
       if assigns[:is_previewing] do
-        if card_type == :level_up do
-          "border-4 border-accent"
-        else
-          "border-4 border-error"
+        case card_type do
+          :level_up -> "border-4 border-accent"
+          :action -> "border-4 border-error"
+          :deck_builder -> "border-4 border-purple-500"
         end
       else
         "border-2 border-base-300"
+      end
+
+    {badge_text, badge_color} =
+      case card_type do
+        :level_up -> {"LEVEL UP", "text-accent"}
+        :action -> {"ACTION", "text-error"}
+        :deck_builder -> {"DECK BUILDER", "text-purple-500"}
+      end
+
+    # Use different events for deck builders vs other cards
+    click_event =
+      if assigns[:can_pick] and not assigns[:is_picked] do
+        case card_type do
+          :deck_builder -> "preview_deck_builder"
+          _ -> "preview_shop_card"
+        end
+      else
+        nil
       end
 
     assigns =
@@ -183,12 +208,13 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:display_name, display_name)
       |> assign(:bg_color, bg_color)
       |> assign(:border_class, border_class)
-      |> assign(:badge_text, if(card_type == :level_up, do: "LEVEL UP", else: "ACTION"))
-      |> assign(:badge_color, if(card_type == :level_up, do: "text-accent", else: "text-error"))
+      |> assign(:badge_text, badge_text)
+      |> assign(:badge_color, badge_color)
+      |> assign(:click_event, click_event)
 
     ~H"""
     <button
-      phx-click={if @can_pick and not @is_picked, do: "preview_shop_card", else: nil}
+      phx-click={@click_event}
       phx-value-index={@index}
       disabled={@is_picked or not @can_pick}
       class={[
@@ -296,6 +322,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
             action_in_progress={@action_in_progress}
             card_index={@card_index}
           />
+        <% {:deck_builder, deck_builder_card} -> %>
+          <.deck_builder_preview
+            deck_builder_card={deck_builder_card}
+            can_confirm={@can_confirm}
+            action_in_progress={@action_in_progress}
+            card_index={@card_index}
+            deck_builder_preview={@deck_builder_preview}
+            deck_builder_selection={@deck_builder_selection}
+          />
       <% end %>
     </div>
     """
@@ -397,20 +432,20 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="text-xs font-bold uppercase tracking-wide text-error mb-3">
         Action Card
       </div>
-      
+
     <!-- Card Name -->
       <h3 class="text-4xl font-bold text-error mb-4">{@card_name}</h3>
-      
+
     <!-- Target Hand -->
       <div class="text-lg text-base-content/70 mb-8">
         Targets: <span class="font-semibold text-error">{@hand_name}</span>
       </div>
-      
+
     <!-- Description -->
       <div class="mb-8 px-4">
         <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
       </div>
-      
+
     <!-- Action Buttons -->
       <div class="flex gap-4 justify-center">
         <button
@@ -437,6 +472,169 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <% end %>
       </div>
     </div>
+    """
+  end
+
+  defp deck_builder_preview(assigns) do
+    alias Oskol.Game.DeckBuilderCard
+
+    card_name = DeckBuilderCard.card_name(assigns.deck_builder_card)
+    card_description = DeckBuilderCard.card_description(assigns.deck_builder_card)
+
+    # Check if we have the preview with 8 cards loaded
+    has_preview =
+      assigns[:deck_builder_preview] != nil and
+        is_list(assigns.deck_builder_preview.available_cards) and
+        length(assigns.deck_builder_preview.available_cards) == 8
+
+    assigns =
+      assigns
+      |> assign(:card_name, card_name)
+      |> assign(:card_description, card_description)
+      |> assign(:has_preview, has_preview)
+
+    ~H"""
+    <div class="text-center bg-base-200/50 rounded-xl p-8 border-2 border-purple-500/30 max-w-4xl">
+      <!-- Badge -->
+      <div class="text-xs font-bold uppercase tracking-wide text-purple-500 mb-3">
+        Deck Builder
+      </div>
+
+    <!-- Card Name -->
+      <h3 class="text-4xl font-bold text-purple-500 mb-4">{@card_name}</h3>
+
+    <!-- Description -->
+      <div class="mb-6 px-4">
+        <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
+      </div>
+
+      <%= if @has_preview do %>
+        <!-- 8-Card Selection Grid -->
+        <div class="mb-6">
+          <div class="text-sm text-base-content/70 mb-4">
+            Select a card to apply this enhancement:
+            <%= if @deck_builder_selection do %>
+              <span class="text-purple-500 font-bold ml-2">(Card selected)</span>
+            <% end %>
+          </div>
+          <div class="grid grid-cols-4 gap-3 max-w-2xl mx-auto">
+            <%= for card <- @deck_builder_preview.available_cards do %>
+              <.deck_builder_card
+                card={card}
+                selected={@deck_builder_selection == card.id}
+              />
+            <% end %>
+          </div>
+        </div>
+      <% else %>
+        <!-- Loading state -->
+        <div class="mb-6 text-base-content/60 italic">
+          Loading cards...
+        </div>
+      <% end %>
+
+    <!-- Action Buttons -->
+      <div class="flex gap-4 justify-center">
+        <button
+          phx-click="close_deck_builder_preview"
+          class="px-8 py-3 rounded-lg bg-base-300 hover:bg-base-300/80 text-base-content transition-all font-semibold"
+        >
+          Cancel
+        </button>
+        <!-- Debug info -->
+        <div class="text-xs text-base-content/50">
+          can_confirm: <%= inspect(@can_confirm) %> | has_preview: <%= inspect(@has_preview) %> | selection: <%= inspect(@deck_builder_selection) %>
+        </div>
+        <%= if @can_confirm and @has_preview and @deck_builder_selection do %>
+          <button
+            phx-click="confirm_deck_builder_pick"
+            phx-value-index={@card_index}
+            disabled={@action_in_progress}
+            class={[
+              "px-8 py-3 rounded-lg font-bold transition-all shadow-lg",
+              if(@action_in_progress,
+                do: "bg-purple-500/30 cursor-not-allowed opacity-50",
+                else: "bg-purple-500 hover:bg-purple-500/90 text-white hover:scale-[1.05]"
+              )
+            ]}
+          >
+            Confirm Selection
+          </button>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp deck_builder_card(assigns) do
+    # Format card display
+    rank_display =
+      case assigns.card.rank do
+        11 -> "J"
+        12 -> "Q"
+        13 -> "K"
+        14 -> "A"
+        n -> to_string(n)
+      end
+
+    suit_symbol =
+      case assigns.card.suit do
+        :hearts -> "♥"
+        :diamonds -> "♦"
+        :clubs -> "♣"
+        :spades -> "♠"
+      end
+
+    suit_color =
+      case assigns.card.suit do
+        suit when suit in [:hearts, :diamonds] -> "text-error"
+        _ -> "text-base-content"
+      end
+
+    # Check for enhancement
+    enhancement_text =
+      case assigns.card.enhancement do
+        {:bonus_chips, amount} -> "+#{amount}c"
+        {:bonus_mult, amount} -> "+#{amount}x"
+        nil -> nil
+      end
+
+    border_class =
+      if assigns.selected do
+        "border-4 border-purple-500 scale-105"
+      else
+        "border-2 border-base-300 hover:border-purple-300"
+      end
+
+    assigns =
+      assigns
+      |> assign(:rank_display, rank_display)
+      |> assign(:suit_symbol, suit_symbol)
+      |> assign(:suit_color, suit_color)
+      |> assign(:enhancement_text, enhancement_text)
+      |> assign(:border_class, border_class)
+
+    ~H"""
+    <button
+      phx-click="select_deck_card"
+      phx-value-card_id={@card.id}
+      class={[
+        "aspect-[2/3] rounded-lg bg-base-100 flex flex-col items-center justify-center transition-all cursor-pointer hover:shadow-lg",
+        @border_class
+      ]}
+    >
+      <div class={"text-3xl font-bold #{@suit_color}"}>
+        {@rank_display}
+      </div>
+      <div class={"text-4xl #{@suit_color}"}>
+        {@suit_symbol}
+      </div>
+      <%= if @enhancement_text do %>
+        <div class="mt-1 text-xs font-bold bg-purple-500/20 text-purple-500 px-2 py-0.5 rounded">
+          {@enhancement_text}
+        </div>
+      <% end %>
+    </button>
     """
   end
 end

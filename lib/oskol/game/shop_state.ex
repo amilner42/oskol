@@ -4,7 +4,7 @@ defmodule Oskol.Game.ShopState do
   Each round both players pick from the same pool of upgrades.
   """
 
-  alias Oskol.Game.{PlayerState, ActionCard}
+  alias Oskol.Game.{PlayerState, ActionCard, DeckBuilderCard}
 
   @type player_id :: PlayerState.player_id()
 
@@ -19,7 +19,8 @@ defmodule Oskol.Game.ShopState do
           | :four_of_a_kind
           | :straight_flush
 
-  @type shop_card :: {:level_up, hand_type()} | {:action, ActionCard.t()}
+  @type shop_card ::
+          {:level_up, hand_type()} | {:action, ActionCard.t()} | {:deck_builder, DeckBuilderCard.t()}
 
   @all_hand_types [
     :high_card,
@@ -88,28 +89,34 @@ defmodule Oskol.Game.ShopState do
     }
   end
 
-  # Generates a random pool of 12 shop cards: 6 level ups + 6 action cards.
-  # For level ups: triples all 9 hand types (27), shuffles, takes 6
-  # For action cards: triples all 9 denial cards (27), shuffles, takes 6
+  # Generates a random pool of 12 shop cards: 3 level ups + 3 action cards + 6 deck builders.
+  # For level ups: triples all 9 hand types (27), shuffles, takes 3
+  # For action cards: triples all 9 denial cards (27), shuffles, takes 3
+  # For deck builders: shuffles all 8 deck builder cards, takes 6
   # Then shuffles all 12 together
   @spec generate_random_shop_cards() :: [shop_card()]
   defp generate_random_shop_cards do
-    # Generate 6 random level up cards
+    # Generate 3 random level up cards
     level_ups =
       @all_hand_types
       |> List.duplicate(3)
       |> List.flatten()
       |> Enum.shuffle()
-      |> Enum.take(6)
+      |> Enum.take(3)
       |> Enum.map(fn hand_type -> {:level_up, hand_type} end)
 
-    # Generate 6 random action cards
+    # Generate 3 random action cards
     action_cards =
-      ActionCard.generate_random_action_cards(6)
+      ActionCard.generate_random_action_cards(3)
       |> Enum.map(fn card -> {:action, card} end)
 
+    # Generate 6 random deck builder cards
+    deck_builder_cards =
+      DeckBuilderCard.generate_random_deck_builder_cards(6)
+      |> Enum.map(fn card -> {:deck_builder, card} end)
+
     # Combine and shuffle all 12 cards
-    (level_ups ++ action_cards)
+    (level_ups ++ action_cards ++ deck_builder_cards)
     |> Enum.shuffle()
   end
 

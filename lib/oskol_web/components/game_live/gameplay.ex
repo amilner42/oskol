@@ -102,11 +102,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <div class="flex flex-wrap gap-4 justify-center mb-2">
       <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
+        <% enhancement_text = case card.enhancement do
+          {:bonus_chips, amount} -> "+#{amount}c"
+          {:bonus_mult, amount} -> "+#{amount}x"
+          nil -> nil
+        end %>
         <div class={[
-          "w-28 h-40 rounded overflow-hidden",
+          "w-28 h-40 rounded overflow-hidden relative",
           if(is_new, do: "new-card", else: "")
         ]}>
           <img src={card_to_png_url(card)} class="w-full h-full" />
+          <%= if enhancement_text do %>
+            <div class="absolute top-0.5 right-0.5 bg-purple-600 text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-lg">
+              {enhancement_text}
+            </div>
+          <% end %>
         </div>
       <% end %>
     </div>
@@ -130,12 +140,17 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% selected = card.id in selected_card_ids %>
         <% at_limit = length(selected_card_ids) >= 5 %>
         <% is_new = card.id in @new_card_ids %>
+        <% enhancement_text = case card.enhancement do
+          {:bonus_chips, amount} -> "+#{amount}c"
+          {:bonus_mult, amount} -> "+#{amount}x"
+          nil -> nil
+        end %>
         <button
           phx-click="toggle_card"
           phx-value-id={card.id}
           disabled={@action_in_progress || (at_limit && not selected) || is_locked_in}
           class={[
-            "transition-all w-28 h-40 rounded overflow-hidden",
+            "transition-all w-28 h-40 rounded overflow-hidden relative",
             if(selected, do: "-translate-y-4", else: ""),
             if((at_limit && not selected) || is_locked_in,
               do: "opacity-50 cursor-not-allowed",
@@ -148,6 +163,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             src={card_to_png_url(card)}
             class="w-full h-full"
           />
+          <%= if enhancement_text do %>
+            <div class="absolute top-0.5 right-0.5 bg-purple-600 text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-lg">
+              {enhancement_text}
+            </div>
+          <% end %>
         </button>
       <% end %>
     </div>
@@ -568,11 +588,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 <div class="flex flex-wrap gap-2">
                   <%= for card <- Enum.sort_by(suit_cards, & &1.rank, :desc) do %>
                     <% in_discard = card.id in discard_ids %>
+                    <% enhancement_text = case card.enhancement do
+                      {:bonus_chips, amount} -> "+#{amount}c"
+                      {:bonus_mult, amount} -> "+#{amount}x"
+                      nil -> nil
+                    end %>
                     <div class={[
-                      "w-16 h-22 rounded overflow-hidden",
+                      "w-16 h-22 rounded overflow-hidden relative",
                       if(in_discard, do: "opacity-30", else: "opacity-100")
                     ]}>
                       <img src={card_to_png_url(card)} class="w-full h-full" />
+                      <%= if enhancement_text do %>
+                        <div class="absolute top-0.5 right-0.5 bg-purple-600 text-white text-[10px] font-bold px-1 py-0.5 rounded shadow-lg">
+                          {enhancement_text}
+                        </div>
+                      <% end %>
                     </div>
                   <% end %>
                 </div>
