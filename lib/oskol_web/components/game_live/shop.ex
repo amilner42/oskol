@@ -21,7 +21,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             skill_tree={skill_tree_for_player(@player_id, assigns)}
             can_confirm={can_pick_card?(@game_state.shop_state, @player_id)}
             action_in_progress={@action_in_progress}
-            deck_builder_preview={@game_state.deck_builder_preview}
+            pending_deck_builder={@game_state.shop_state.pending_deck_builder}
             deck_builder_selection={assigns[:deck_builder_selection]}
           />
         <% else %>
@@ -328,7 +328,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             can_confirm={@can_confirm}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
-            deck_builder_preview={@deck_builder_preview}
+            pending_deck_builder={@pending_deck_builder}
             deck_builder_selection={@deck_builder_selection}
           />
       <% end %>
@@ -385,16 +385,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       </div>
-      
+
     <!-- Action Buttons -->
-      <div class="flex gap-4 justify-center">
-        <button
-          phx-click="close_shop_preview"
-          class="px-8 py-3 rounded-lg bg-base-300 hover:bg-base-300/80 text-base-content transition-all font-semibold"
-        >
-          Cancel
-        </button>
-        <%= if @can_confirm do %>
+      <%= if @can_confirm do %>
+        <div class="flex justify-center">
           <button
             phx-click="confirm_shop_pick"
             phx-value-index={@card_index}
@@ -409,8 +403,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
           >
             Confirm Pick
           </button>
-        <% end %>
-      </div>
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -447,14 +441,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
     <!-- Action Buttons -->
-      <div class="flex gap-4 justify-center">
-        <button
-          phx-click="close_shop_preview"
-          class="px-8 py-3 rounded-lg bg-base-300 hover:bg-base-300/80 text-base-content transition-all font-semibold"
-        >
-          Cancel
-        </button>
-        <%= if @can_confirm do %>
+      <%= if @can_confirm do %>
+        <div class="flex justify-center">
           <button
             phx-click="confirm_shop_pick"
             phx-value-index={@card_index}
@@ -469,8 +457,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
           >
             Confirm Pick
           </button>
-        <% end %>
-      </div>
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -481,11 +469,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
     card_name = DeckBuilderCard.card_name(assigns.deck_builder_card)
     card_description = DeckBuilderCard.card_description(assigns.deck_builder_card)
 
-    # Check if we have the preview with 8 cards loaded
+    # Check if we have the pending deck builder with 8 cards loaded
     has_preview =
-      assigns[:deck_builder_preview] != nil and
-        is_list(assigns.deck_builder_preview.available_cards) and
-        length(assigns.deck_builder_preview.available_cards) == 8
+      assigns[:pending_deck_builder] != nil and
+        is_list(assigns.pending_deck_builder.available_cards) and
+        length(assigns.pending_deck_builder.available_cards) == 8
 
     assigns =
       assigns
@@ -512,13 +500,13 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <!-- 8-Card Selection Grid -->
         <div class="mb-6">
           <div class="text-sm text-base-content/70 mb-4">
-            Select a card to apply this enhancement:
+            Select a card to apply this enhancement (or skip):
             <%= if @deck_builder_selection do %>
               <span class="text-purple-500 font-bold ml-2">(Card selected)</span>
             <% end %>
           </div>
           <div class="grid grid-cols-4 gap-3 max-w-2xl mx-auto">
-            <%= for card <- @deck_builder_preview.available_cards do %>
+            <%= for card <- @pending_deck_builder.available_cards do %>
               <.deck_builder_card
                 card={card}
                 selected={@deck_builder_selection == card.id}
@@ -526,42 +514,55 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-      <% else %>
-        <!-- Loading state -->
-        <div class="mb-6 text-base-content/60 italic">
-          Loading cards...
-        </div>
-      <% end %>
 
-    <!-- Action Buttons -->
-      <div class="flex gap-4 justify-center">
-        <button
-          phx-click="close_deck_builder_preview"
-          class="px-8 py-3 rounded-lg bg-base-300 hover:bg-base-300/80 text-base-content transition-all font-semibold"
-        >
-          Cancel
-        </button>
-        <!-- Debug info -->
-        <div class="text-xs text-base-content/50">
-          can_confirm: <%= inspect(@can_confirm) %> | has_preview: <%= inspect(@has_preview) %> | selection: <%= inspect(@deck_builder_selection) %>
-        </div>
-        <%= if @can_confirm and @has_preview and @deck_builder_selection do %>
-          <button
-            phx-click="confirm_deck_builder_pick"
-            phx-value-index={@card_index}
-            disabled={@action_in_progress}
-            class={[
-              "px-8 py-3 rounded-lg font-bold transition-all shadow-lg",
-              if(@action_in_progress,
-                do: "bg-purple-500/30 cursor-not-allowed opacity-50",
-                else: "bg-purple-500 hover:bg-purple-500/90 text-white hover:scale-[1.05]"
-              )
-            ]}
-          >
-            Confirm Selection
-          </button>
+        <!-- Action Buttons -->
+        <%= if @can_confirm do %>
+          <div class="flex gap-4 justify-center">
+            <button
+              phx-click="skip_deck_builder_selection"
+              class="px-8 py-3 rounded-lg bg-base-300 hover:bg-base-300/80 text-base-content transition-all font-semibold"
+            >
+              Skip
+            </button>
+            <%= if @deck_builder_selection do %>
+              <button
+                phx-click="confirm_deck_builder_pick"
+                phx-value-card_id={@deck_builder_selection}
+                disabled={@action_in_progress}
+                class={[
+                  "px-8 py-3 rounded-lg font-bold transition-all shadow-lg",
+                  if(@action_in_progress,
+                    do: "bg-purple-500/30 cursor-not-allowed opacity-50",
+                    else: "bg-purple-500 hover:bg-purple-500/90 text-white hover:scale-[1.05]"
+                  )
+                ]}
+              >
+                Confirm Selection
+              </button>
+            <% end %>
+          </div>
         <% end %>
-      </div>
+      <% else %>
+        <!-- Show "Confirm Pick" button before generating cards -->
+        <%= if @can_confirm do %>
+          <div class="flex justify-center mt-6">
+            <button
+              phx-click="confirm_deck_builder_preview"
+              phx-value-index={@card_index}
+              disabled={@action_in_progress}
+              class={[
+                "px-8 py-3 rounded-lg font-bold transition-all shadow-lg",
+                if(@action_in_progress,
+                  do: "bg-purple-500/30 cursor-not-allowed opacity-50",
+                  else: "bg-purple-500 hover:bg-purple-500/90 text-white hover:scale-[1.05]"
+                )
+              ]}
+            >
+              Confirm Pick
+            </button>
+          </div>
+        <% end %>
+      <% end %>
     </div>
     """
   end

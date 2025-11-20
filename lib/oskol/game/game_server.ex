@@ -51,17 +51,24 @@ defmodule Oskol.Game.GameServer do
     )
   end
 
-  def preview_deck_builder_async(game_id, player_id, shop_card_index) do
+  def confirm_deck_builder_pick_async(game_id, player_id, shop_card_index) do
     GenServer.cast(
       via_tuple(game_id),
-      {:player_action, player_id, {:preview_deck_builder, shop_card_index}}
+      {:player_action, player_id, {:confirm_deck_builder_pick, shop_card_index}}
     )
   end
 
-  def confirm_deck_builder_pick_async(game_id, player_id, shop_card_index, selected_card_id) do
+  def complete_deck_builder_selection_async(game_id, player_id, selected_card_id) do
     GenServer.cast(
       via_tuple(game_id),
-      {:player_action, player_id, {:confirm_deck_builder_pick, shop_card_index, selected_card_id}}
+      {:player_action, player_id, {:complete_deck_builder_selection, selected_card_id}}
+    )
+  end
+
+  def skip_deck_builder_selection_async(game_id, player_id) do
+    GenServer.cast(
+      via_tuple(game_id),
+      {:player_action, player_id, :skip_deck_builder_selection}
     )
   end
 

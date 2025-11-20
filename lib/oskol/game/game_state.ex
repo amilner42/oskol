@@ -3,14 +3,8 @@ defmodule Oskol.Game.GameState do
   Represents the complete state of a multiplayer poker roguelike game.
   """
 
-  alias Oskol.Game.{PlayerState, ShopState, DeckBuilderCard}
+  alias Oskol.Game.{DeckBuilderCard, PlayerState, ShopState}
   alias Oskol.Poker.{Card, SkillTree}
-
-  @type deck_builder_preview :: %{
-          player_id: player_id(),
-          card: DeckBuilderCard.t(),
-          available_cards: [Card.t()]
-        }
 
   @type t :: %__MODULE__{
           round_number: pos_integer(),
@@ -23,8 +17,7 @@ defmodule Oskol.Game.GameState do
           winner_id: player_id() | nil,
           last_round_winner_id: player_id() | nil,
           shop_state: ShopState.t() | nil,
-          shop_rounds: non_neg_integer(),
-          deck_builder_preview: deck_builder_preview() | nil
+          shop_rounds: non_neg_integer()
         }
 
   @type phase :: :playing | :round_end
@@ -47,8 +40,7 @@ defmodule Oskol.Game.GameState do
             winner_id: nil,
             last_round_winner_id: nil,
             shop_state: nil,
-            shop_rounds: 2,
-            deck_builder_preview: nil
+            shop_rounds: 2
 
   @doc """
   Creates a new game state with the given player_names map (player_id => player_name),
@@ -479,174 +471,261 @@ defmodule Oskol.Game.GameState do
      }}
   end
 
-  @doc """
-  Previews a deck builder card by generating the 8 cards the player can choose from.
-  Stores the preview in game state so both players can see it.
-
-  Returns `{:ok, new_state, available_cards}` on success or `{:error, reason}` on failure.
-  """
-  @spec preview_deck_builder(t(), player_id(), DeckBuilderCard.t()) ::
-          {:ok, t(), [Card.t()]} | {:error, atom()}
-  def preview_deck_builder(%__MODULE__{shop_state: shop_state} = game_state, player_id, deck_builder_card)
-      when shop_state != nil do
-    # Get all cards from player's deck (all piles)
-    player = game_state.players[player_id]
-    all_deck_cards =
-      player.card_piles.draw_pile ++
-        player.card_piles.hand_pile ++ player.card_piles.discard_pile
-
-    # Generate the 8 selection cards
-    available_cards = DeckBuilderCard.generate_selection_cards(deck_builder_card, all_deck_cards)
-
-    # Store preview in game state
-    preview = %{
-      player_id: player_id,
-      card: deck_builder_card,
-      available_cards: available_cards
-    }
-
-    new_state = %{game_state | deck_builder_preview: preview}
-    {:ok, new_state, available_cards}
+  defp apply_shop_card(players, _player_id, {:deck_builder, deck_builder_card}) do
+    # Deck builder cards don't apply any effect immediately
+    # The effect is applied when the player confirms their card selection
+    {players, :deck_builder, %{card_type: deck_builder_card.type}}
   end
 
-  def preview_deck_builder(_, _, _), do: {:error, :no_shop_active}
-
   @doc """
-  Confirms a deck builder pick after the player has selected a card from the preview.
-  Applies the deck builder effect and completes the shop pick.
+  Confirms a deck builder pick. This is the first step of the two-phase deck builder flow.
+  Marks the card as picked, generates 8 selection cards, and stores them in shop_state.
+  Does NOT complete the pick (turn does not switch yet).
 
   Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
   """
-  @spec confirm_deck_builder_pick(t(), player_id(), non_neg_integer(), String.t()) ::
+  @spec confirm_deck_builder_pick(t(), player_id(), non_neg_integer()) ::
           {:ok, t(), list()} | {:error, atom()}
   def confirm_deck_builder_pick(
-        %__MODULE__{shop_state: shop_state, deck_builder_preview: preview} = game_state,
+        %__MODULE__{shop_state: shop_state} = game_state,
         player_id,
-        shop_card_index,
+        card_index
+      )
+      when shop_state != nil do
+    # Validate it's player's turn
+    unless ShopState.can_pick?(shop_state, player_id) do
+      {:error, :not_your_turn}
+    else
+      # Validate it's a deck builder card
+      case Enum.at(shop_state.available_cards, card_index) do
+        {:deck_builder, deck_builder_card} ->
+          # Mark card as picked (but don't complete the pick yet)
+          case ShopState.mark_card_picked(shop_state, card_index) do
+            {:ok, updated_shop_state} ->
+              # Generate 8 cards to choose from
+              player = game_state.players[player_id]
+
+              all_deck_cards =
+                player.card_piles.draw_pile ++
+                  player.card_piles.hand_pile ++ player.card_piles.discard_pile
+
+              available_cards =
+                DeckBuilderCard.generate_selection_cards(deck_builder_card, all_deck_cards)
+
+              # Store in pending_deck_builder
+              pending = %{
+                player_id: player_id,
+                shop_card_index: card_index,
+                deck_builder_card: deck_builder_card,
+                available_cards: available_cards
+              }
+
+              updated_shop_state = %{updated_shop_state | pending_deck_builder: pending}
+              new_state = %{game_state | shop_state: updated_shop_state}
+
+              event =
+                {:deck_builder_confirmed, player_id,
+                 %{
+                   shop_round: updated_shop_state.current_round,
+                   card_type: deck_builder_card.type,
+                   card_index: card_index
+                 }}
+
+              {:ok, new_state, [event]}
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+
+        _ ->
+          {:error, :not_a_deck_builder_card}
+      end
+    end
+  end
+
+  def confirm_deck_builder_pick(_, _, _), do: {:error, :no_shop_active}
+
+  @doc """
+  Completes a pending deck builder selection by applying the effect to the selected card.
+  This is the second step of the two-phase deck builder flow.
+  Completes the pick (turn switches if needed).
+
+  Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
+  """
+  @spec complete_deck_builder_selection(t(), player_id(), String.t()) ::
+          {:ok, t(), list()} | {:error, atom()}
+  def complete_deck_builder_selection(
+        %__MODULE__{shop_state: shop_state} = game_state,
+        player_id,
         selected_card_id
       )
-      when shop_state != nil and preview != nil do
+      when shop_state != nil and shop_state.pending_deck_builder != nil do
+    pending = shop_state.pending_deck_builder
+
     # Validate this is the right player
-    if preview.player_id != player_id do
-      {:error, :not_your_preview}
+    unless pending.player_id == player_id do
+      {:error, :not_your_pending_selection}
     else
       # Validate the selected card is in the available cards
-      selected_card = Enum.find(preview.available_cards, fn card -> card.id == selected_card_id end)
+      selected_card = Enum.find(pending.available_cards, fn card -> card.id == selected_card_id end)
 
       if selected_card == nil do
         {:error, :invalid_card_selection}
       else
-        # Validate this is actually a deck builder card in the shop
-        case Enum.at(shop_state.available_cards, shop_card_index) do
-          {:deck_builder, _deck_builder_card} ->
-            # Valid, proceed with the shop pick
-            case ShopState.make_pick(shop_state, player_id, shop_card_index) do
-              {:ok, updated_shop_state, {:deck_builder, deck_builder_card}} ->
-                # Apply the deck builder effect
-                {updated_players, card_details} =
-                  apply_deck_builder_card(
-                    game_state.players,
-                    player_id,
-                    deck_builder_card,
-                    selected_card
-                  )
+        # Apply the deck builder effect
+        {updated_players, card_details} =
+          apply_deck_builder_card(
+            game_state.players,
+            player_id,
+            pending.deck_builder_card,
+            selected_card
+          )
 
-                pick_event =
-                  {:shop_pick_made, player_id,
-                   %{
-                     shop_round: updated_shop_state.current_round,
-                     card_type: :deck_builder,
-                     card_details: card_details,
-                     card_index: shop_card_index
-                   }}
+        # Complete the pick (mark first_pick_made or second_pick_made)
+        case ShopState.complete_pick(shop_state, player_id) do
+          {:ok, updated_shop_state} ->
+            # Clear pending_deck_builder
+            updated_shop_state = %{updated_shop_state | pending_deck_builder: nil}
 
-                # Clear the preview
-                game_state_no_preview = %{game_state | deck_builder_preview: nil}
+            deck_builder_event =
+              {:deck_builder_applied, player_id,
+               %{
+                 deck_builder_type: pending.deck_builder_card.type,
+                 card_details: card_details,
+                 selected_card_id: selected_card_id
+               }}
 
-                # Check if both players have picked
-                if ShopState.both_players_picked?(updated_shop_state) do
-                  if ShopState.shop_complete?(updated_shop_state) do
-                    new_state = %{
-                      game_state_no_preview
-                      | shop_state: updated_shop_state,
-                        players: updated_players
-                    }
+            # Check if both players have picked
+            if ShopState.both_players_picked?(updated_shop_state) do
+              if ShopState.shop_complete?(updated_shop_state) do
+                new_state = %{
+                  game_state
+                  | shop_state: updated_shop_state,
+                    players: updated_players
+                }
 
-                    {:ok, new_state, [pick_event]}
-                  else
-                    next_shop_state = ShopState.advance_round(updated_shop_state)
+                {:ok, new_state, [deck_builder_event]}
+              else
+                next_shop_state = ShopState.advance_round(updated_shop_state)
 
-                    new_state = %{
-                      game_state_no_preview
-                      | shop_state: next_shop_state,
-                        players: updated_players
-                    }
+                new_state = %{
+                  game_state
+                  | shop_state: next_shop_state,
+                    players: updated_players
+                }
 
-                    round_event =
-                      {:shop_round_advanced, nil, %{shop_round: next_shop_state.current_round}}
+                round_event =
+                  {:shop_round_advanced, nil, %{shop_round: next_shop_state.current_round}}
 
-                    {:ok, new_state, [pick_event, round_event]}
-                  end
-                else
-                  new_state = %{
-                    game_state_no_preview
-                    | shop_state: updated_shop_state,
-                      players: updated_players
-                  }
+                {:ok, new_state, [deck_builder_event, round_event]}
+              end
+            else
+              new_state = %{
+                game_state
+                | shop_state: updated_shop_state,
+                  players: updated_players
+              }
 
-                  {:ok, new_state, [pick_event]}
-                end
-
-              {:error, reason} ->
-                {:error, reason}
+              {:ok, new_state, [deck_builder_event]}
             end
 
-          _ ->
-            {:error, :not_a_deck_builder_card}
+          {:error, reason} ->
+            {:error, reason}
         end
       end
     end
   end
 
-  def confirm_deck_builder_pick(_, _, _, _), do: {:error, :no_preview_or_shop}
+  def complete_deck_builder_selection(_, _, _), do: {:error, :no_pending_selection}
 
-  # Applies a deck builder card effect.
-  # Returns {updated_players, card_details} for event logging.
-  defp apply_deck_builder_card(players, player_id, deck_builder_card, selected_card) do
-    case deck_builder_card.type do
-      :bonus_chips ->
-        apply_enhancement(
-          players,
-          player_id,
-          selected_card.id,
-          {:bonus_chips, deck_builder_card.bonus_amount}
-        )
+  @doc """
+  Skips a pending deck builder selection without applying any effect.
+  Completes the pick (turn switches if needed).
 
-      :bonus_mult ->
-        apply_enhancement(
-          players,
-          player_id,
-          selected_card.id,
-          {:bonus_mult, deck_builder_card.bonus_amount}
-        )
+  Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
+  """
+  @spec skip_deck_builder_selection(t(), player_id()) :: {:ok, t(), list()} | {:error, atom()}
+  def skip_deck_builder_selection(
+        %__MODULE__{shop_state: shop_state} = game_state,
+        player_id
+      )
+      when shop_state != nil and shop_state.pending_deck_builder != nil do
+    pending = shop_state.pending_deck_builder
 
-      :add_card ->
-        apply_add_card(players, player_id, selected_card)
+    # Validate this is the right player
+    unless pending.player_id == player_id do
+      {:error, :not_your_pending_selection}
+    else
+      # Complete the pick without applying any effect
+      case ShopState.complete_pick(shop_state, player_id) do
+        {:ok, updated_shop_state} ->
+          # Clear pending_deck_builder
+          updated_shop_state = %{updated_shop_state | pending_deck_builder: nil}
 
-      :remove_card ->
-        apply_remove_card(players, player_id, selected_card.id)
+          skip_event =
+            {:deck_builder_skipped, player_id,
+             %{deck_builder_type: pending.deck_builder_card.type}}
+
+          # Check if both players have picked
+          if ShopState.both_players_picked?(updated_shop_state) do
+            if ShopState.shop_complete?(updated_shop_state) do
+              new_state = %{game_state | shop_state: updated_shop_state}
+              {:ok, new_state, [skip_event]}
+            else
+              next_shop_state = ShopState.advance_round(updated_shop_state)
+              new_state = %{game_state | shop_state: next_shop_state}
+
+              round_event =
+                {:shop_round_advanced, nil, %{shop_round: next_shop_state.current_round}}
+
+              {:ok, new_state, [skip_event, round_event]}
+            end
+          else
+            new_state = %{game_state | shop_state: updated_shop_state}
+            {:ok, new_state, [skip_event]}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
-  defp apply_enhancement(players, player_id, card_id, enhancement) do
-    updated_players =
-      Map.update!(players, player_id, fn player ->
-        # Find and enhance the card in any pile
-        updated_card_piles = enhance_card_in_piles(player.card_piles, card_id, enhancement)
-        %{player | card_piles: updated_card_piles}
-      end)
+  def skip_deck_builder_selection(_, _), do: {:error, :no_pending_selection}
 
-    {updated_players, %{type: :enhancement, enhancement: enhancement, card_id: card_id}}
+  # Helper to apply deck builder card effects
+  defp apply_deck_builder_card(players, player_id, deck_builder_card, selected_card) do
+    case deck_builder_card.type do
+      type when type in [:bonus_chips, :bonus_mult] ->
+        # Apply enhancement to the selected card
+        enhancement =
+          case type do
+            :bonus_chips -> {:bonus_chips, deck_builder_card.bonus_amount}
+            :bonus_mult -> {:bonus_mult, deck_builder_card.bonus_amount}
+          end
+
+        {apply_enhancement(players, player_id, selected_card.id, enhancement),
+         %{type: :enhancement, enhancement: enhancement, card_id: selected_card.id}}
+
+      :add_card ->
+        # Add the selected card to player's deck
+        {apply_add_card(players, player_id, selected_card),
+         %{type: :add_card, card: selected_card}}
+
+      :remove_card ->
+        # Remove the selected card from player's deck
+        {apply_remove_card(players, player_id, selected_card.id),
+         %{type: :remove_card, card_id: selected_card.id}}
+    end
+  end
+
+
+  defp apply_enhancement(players, player_id, card_id, enhancement) do
+    Map.update!(players, player_id, fn player ->
+      # Find and enhance the card in any pile
+      updated_card_piles = enhance_card_in_piles(player.card_piles, card_id, enhancement)
+      %{player | card_piles: updated_card_piles}
+    end)
   end
 
   defp enhance_card_in_piles(card_piles, card_id, enhancement) do
@@ -672,36 +751,30 @@ defmodule Oskol.Game.GameState do
   defp apply_add_card(players, player_id, new_card) do
     alias Oskol.Game.CardPiles
 
-    updated_players =
-      Map.update!(players, player_id, fn player ->
-        # Add card to discard pile (will get shuffled in naturally)
-        updated_card_piles = %{
-          player.card_piles
-          | discard_pile: [new_card | player.card_piles.discard_pile]
-        }
+    Map.update!(players, player_id, fn player ->
+      # Add card to discard pile (will get shuffled in naturally)
+      updated_card_piles = %{
+        player.card_piles
+        | discard_pile: [new_card | player.card_piles.discard_pile]
+      }
 
-        %{player | card_piles: updated_card_piles}
-      end)
-
-    {updated_players, %{type: :add_card, card: new_card}}
+      %{player | card_piles: updated_card_piles}
+    end)
   end
 
   defp apply_remove_card(players, player_id, card_id) do
     alias Oskol.Game.CardPiles
 
-    updated_players =
-      Map.update!(players, player_id, fn player ->
-        # Remove card from all piles
-        updated_card_piles = %CardPiles{
-          draw_pile: Enum.reject(player.card_piles.draw_pile, fn c -> c.id == card_id end),
-          hand_pile: Enum.reject(player.card_piles.hand_pile, fn c -> c.id == card_id end),
-          discard_pile: Enum.reject(player.card_piles.discard_pile, fn c -> c.id == card_id end)
-        }
+    Map.update!(players, player_id, fn player ->
+      # Remove card from all piles
+      updated_card_piles = %CardPiles{
+        draw_pile: Enum.reject(player.card_piles.draw_pile, fn c -> c.id == card_id end),
+        hand_pile: Enum.reject(player.card_piles.hand_pile, fn c -> c.id == card_id end),
+        discard_pile: Enum.reject(player.card_piles.discard_pile, fn c -> c.id == card_id end)
+      }
 
-        %{player | card_piles: updated_card_piles}
-      end)
-
-    {updated_players, %{type: :remove_card, card_id: card_id}}
+      %{player | card_piles: updated_card_piles}
+    end)
   end
 
   @doc """

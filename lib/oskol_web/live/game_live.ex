@@ -333,58 +333,59 @@ defmodule OskolWeb.GameLive do
   def handle_event("preview_deck_builder", %{"index" => index_str}, socket) do
     card_index = String.to_integer(index_str)
 
-    # Trigger server to generate the 8 selection cards
-    Game.preview_deck_builder_async(
-      socket.assigns.game_id,
-      socket.assigns.player_id,
-      card_index
-    )
-
-    # Broadcast preview to all players (so they see the preview UI)
+    # Broadcast to sync preview with opponent's view
     Phoenix.PubSub.broadcast(
       Oskol.PubSub,
       "game:#{socket.assigns.game_id}",
       {:shop_preview_changed, card_index}
     )
 
+    # Just open the modal - no server call yet
+    # User will see description + "Confirm Pick" button
     {:noreply, assign(socket, previewing_card_index: card_index)}
   end
 
   @impl true
-  def handle_event("select_deck_card", %{"card_id" => card_id}, socket) do
-    {:noreply, assign(socket, deck_builder_selection: card_id)}
+  def handle_event("confirm_deck_builder_preview", %{"index" => index_str}, socket) do
+    card_index = String.to_integer(index_str)
+
+    # NOW start deck builder flow (marks card as picked, generates 8 cards)
+    Game.confirm_deck_builder_pick_async(
+      socket.assigns.game_id,
+      socket.assigns.player_id,
+      card_index
+    )
+
+    {:noreply, assign(socket, action_in_progress: true, deck_builder_selection: nil)}
   end
 
   @impl true
-  def handle_event("confirm_deck_builder_pick", %{"index" => index_str}, socket) do
-    card_index = String.to_integer(index_str)
-    selected_card_id = socket.assigns.deck_builder_selection
+  def handle_event("confirm_deck_builder_pick", %{"card_id" => card_id}, socket) do
+    # Complete the deck builder selection (applies effect)
+    Game.complete_deck_builder_selection_async(
+      socket.assigns.game_id,
+      socket.assigns.player_id,
+      card_id
+    )
 
-    if selected_card_id do
-      # Send the selection to the server
-      Game.confirm_deck_builder_pick_async(
-        socket.assigns.game_id,
-        socket.assigns.player_id,
-        card_index,
-        selected_card_id
-      )
+    {:noreply, assign(socket, action_in_progress: true, deck_builder_selection: nil)}
+  end
 
-      # Close preview for all players
-      Phoenix.PubSub.broadcast(
-        Oskol.PubSub,
-        "game:#{socket.assigns.game_id}",
-        {:shop_preview_changed, nil}
-      )
+  @impl true
+  def handle_event("skip_deck_builder_selection", _params, socket) do
+    # Skip without applying effect
+    Game.skip_deck_builder_selection_async(
+      socket.assigns.game_id,
+      socket.assigns.player_id
+    )
 
-      {:noreply,
-       assign(socket,
-         action_in_progress: true,
-         previewing_card_index: nil,
-         deck_builder_selection: nil
-       )}
-    else
-      {:noreply, assign(socket, error: "Please select a card first")}
-    end
+    {:noreply, assign(socket, action_in_progress: true, deck_builder_selection: nil)}
+  end
+
+  @impl true
+  def handle_event("select_deck_card", %{"card_id" => card_id}, socket) do
+    # Local UI state - track which card user selected from the 8-card grid
+    {:noreply, assign(socket, deck_builder_selection: card_id)}
   end
 
   @impl true
@@ -591,6 +592,39 @@ defmodule OskolWeb.GameLive do
          socket.assigns.last_seen_event_sequence}
       end
 
+    # Check if pending_deck_builder changed - if so, clear selection
+    old_pending =
+      socket.assigns.server_state.game_state &&
+        socket.assigns.server_state.game_state.shop_state &&
+        socket.assigns.server_state.game_state.shop_state.pending_deck_builder
+
+    new_pending =
+      new_state.game_state &&
+        new_state.game_state.shop_state &&
+        new_state.game_state.shop_state.pending_deck_builder
+
+    deck_builder_selection =
+      if old_pending != new_pending do
+        nil
+      else
+        socket.assigns.deck_builder_selection
+      end
+
+    # Clear previewing_card_index if it's not your turn anymore
+    previewing_card_index =
+      if new_state.game_state && new_state.game_state.shop_state && socket.assigns.player_id do
+        can_pick =
+          Oskol.Game.ShopState.can_pick?(new_state.game_state.shop_state, socket.assigns.player_id)
+
+        if can_pick do
+          socket.assigns.previewing_card_index
+        else
+          nil
+        end
+      else
+        socket.assigns.previewing_card_index
+      end
+
     {:noreply,
      socket
      |> assign(
@@ -603,7 +637,9 @@ defmodule OskolWeb.GameLive do
        opponent_new_card_ids: opponent_new_card_ids,
        last_seen_event_sequence: last_seen_sequence,
        selected_lives: Map.get(socket.assigns, :selected_lives, 3),
-       selected_shop_rounds: Map.get(socket.assigns, :selected_shop_rounds, 2)
+       selected_shop_rounds: Map.get(socket.assigns, :selected_shop_rounds, 2),
+       deck_builder_selection: deck_builder_selection,
+       previewing_card_index: previewing_card_index
      )
      |> clear_error()}
   end

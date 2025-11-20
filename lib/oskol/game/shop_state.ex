@@ -5,6 +5,7 @@ defmodule Oskol.Game.ShopState do
   """
 
   alias Oskol.Game.{PlayerState, ActionCard, DeckBuilderCard}
+  alias Oskol.Poker.Card
 
   @type player_id :: PlayerState.player_id()
 
@@ -21,6 +22,13 @@ defmodule Oskol.Game.ShopState do
 
   @type shop_card ::
           {:level_up, hand_type()} | {:action, ActionCard.t()} | {:deck_builder, DeckBuilderCard.t()}
+
+  @type pending_deck_builder :: %{
+          player_id: player_id(),
+          shop_card_index: non_neg_integer(),
+          deck_builder_card: DeckBuilderCard.t(),
+          available_cards: [Card.t()]
+        }
 
   @all_hand_types [
     :high_card,
@@ -42,7 +50,8 @@ defmodule Oskol.Game.ShopState do
           first_pick_made: boolean(),
           second_pick_made: boolean(),
           available_cards: [shop_card()],
-          picked_card_indices: [non_neg_integer()]
+          picked_card_indices: [non_neg_integer()],
+          pending_deck_builder: pending_deck_builder() | nil
         }
 
   defstruct total_rounds: 1,
@@ -52,7 +61,8 @@ defmodule Oskol.Game.ShopState do
             first_pick_made: false,
             second_pick_made: false,
             available_cards: [],
-            picked_card_indices: []
+            picked_card_indices: [],
+            pending_deck_builder: nil
 
   @doc """
   Creates a new shop state.
@@ -179,6 +189,68 @@ defmodule Oskol.Game.ShopState do
   end
 
   @doc """
+  Marks a card as picked without completing the pick.
+  Used for deck builders which need two-phase commitment.
+  """
+  @spec mark_card_picked(t(), non_neg_integer()) :: {:ok, t()} | {:error, atom()}
+  def mark_card_picked(%__MODULE__{} = shop_state, card_index) do
+    cond do
+      card_index < 0 or card_index >= length(shop_state.available_cards) ->
+        {:error, :invalid_card_index}
+
+      card_index in shop_state.picked_card_indices ->
+        {:error, :card_already_picked}
+
+      true ->
+        updated_state = %{
+          shop_state
+          | picked_card_indices: [card_index | shop_state.picked_card_indices]
+        }
+
+        {:ok, updated_state}
+    end
+  end
+
+  @doc """
+  Completes a pending pick by marking first_pick_made or second_pick_made.
+  Used after deck builder selection is confirmed.
+  """
+  @spec complete_pick(t(), player_id()) :: {:ok, t()} | {:error, atom()}
+  def complete_pick(%__MODULE__{} = shop_state, player_id) do
+    cond do
+      not shop_state.first_pick_made and player_id == shop_state.first_picker_id ->
+        updated_state = %{shop_state | first_pick_made: true}
+        {:ok, updated_state}
+
+      shop_state.first_pick_made and not shop_state.second_pick_made and
+          player_id == shop_state.second_picker_id ->
+        updated_state = %{shop_state | second_pick_made: true}
+        {:ok, updated_state}
+
+      true ->
+        {:error, :not_your_turn}
+    end
+  end
+
+  @doc """
+  Checks if it's the given player's turn to pick (and they haven't picked yet).
+  """
+  @spec can_pick?(t(), player_id()) :: boolean()
+  def can_pick?(%__MODULE__{} = shop_state, player_id) do
+    cond do
+      not shop_state.first_pick_made and shop_state.first_picker_id == player_id ->
+        true
+
+      shop_state.first_pick_made and not shop_state.second_pick_made and
+          shop_state.second_picker_id == player_id ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  @doc """
   Advances to the next shop round.
   Should be called after both players have picked.
   Keeps the same card pool and picked cards - only resets pick flags.
@@ -190,7 +262,8 @@ defmodule Oskol.Game.ShopState do
       shop_state
       | current_round: round + 1,
         first_pick_made: false,
-        second_pick_made: false
+        second_pick_made: false,
+        pending_deck_builder: nil
     }
   end
 
