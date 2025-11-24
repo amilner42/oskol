@@ -14,7 +14,7 @@ config :logger, level: :info
 # of environment variables, is done on config/runtime.exs.
 
 # Set up sentry config
-# - refer to: https://arie-milner.sentry.io/insights/projects/oskol/getting-started
+# - refer to: https://oskol.sentry.io/insights/projects/oskol/getting-started
 config :sentry,
   dsn:
     "https://f8fa809a8c03794cd455b50a6021cb75@o4510418103894016.ingest.us.sentry.io/4510418104221696",

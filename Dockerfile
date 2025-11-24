@@ -56,7 +56,7 @@ COPY lib lib
 RUN mix compile
 
 # Package source code for Sentry
-#  - refer to: https://arie-milner.sentry.io/insights/projects/oskol/getting-started
+#  - refer to: https://oskol.sentry.io/insights/projects/oskol/getting-started
 RUN mix sentry.package_source_code
 
 COPY assets assets
