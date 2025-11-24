@@ -459,7 +459,8 @@ defmodule OskolWeb.GameLive do
              :change_suit_hearts,
              :change_suit_diamonds,
              :change_suit_clubs,
-             :change_suit_spades
+             :change_suit_spades,
+             :increase_rank
            ])
 
     new_selection =
