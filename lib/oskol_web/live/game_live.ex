@@ -257,8 +257,39 @@ defmodule OskolWeb.GameLive do
         false
       end
 
+    # If showing round summary, schedule auto-dismiss after 10 seconds
+    if viewing_round_summary do
+      Process.send_after(self(), :auto_dismiss_round_summary, 10000)
+    end
+
     {:noreply,
      assign(socket, viewing_results: false, viewing_round_summary: viewing_round_summary)}
+  end
+
+  @impl true
+  def handle_info(:auto_dismiss_results, socket) do
+    # Only auto-dismiss if still viewing results
+    if socket.assigns.viewing_results do
+      # Same logic as dismiss_results event
+      game_state = socket.assigns.server_state.game_state
+
+      viewing_round_summary =
+        if game_state && game_state.phase == :round_end do
+          true
+        else
+          false
+        end
+
+      # If showing round summary, schedule auto-dismiss after 10 seconds
+      if viewing_round_summary do
+        Process.send_after(self(), :auto_dismiss_round_summary, 10000)
+      end
+
+      {:noreply,
+       assign(socket, viewing_results: false, viewing_round_summary: viewing_round_summary)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -270,6 +301,23 @@ defmodule OskolWeb.GameLive do
     else
       # Proceed to shop screen (if shop exists) or stay on round summary with ready status
       {:noreply, assign(socket, viewing_round_summary: false)}
+    end
+  end
+
+  @impl true
+  def handle_info(:auto_dismiss_round_summary, socket) do
+    # Only auto-dismiss if still viewing round summary
+    if socket.assigns.viewing_round_summary do
+      game_state = socket.assigns.server_state.game_state
+
+      if game_state.game_status == :game_over do
+        {:noreply, assign(socket, viewing_round_summary: false, viewing_match_summary: true)}
+      else
+        # Proceed to shop screen (if shop exists) or stay on round summary with ready status
+        {:noreply, assign(socket, viewing_round_summary: false)}
+      end
+    else
+      {:noreply, socket}
     end
   end
 
@@ -533,6 +581,11 @@ defmodule OskolWeb.GameLive do
         true -> socket.assigns.viewing_results
       end
 
+    # If viewing_results just became true, schedule auto-dismiss after 5 seconds
+    if viewing_results && !socket.assigns.viewing_results do
+      Process.send_after(self(), :auto_dismiss_results, 5000)
+    end
+
     # DON'T auto-show round summary when phase changes to :round_end
     # Let hand results show first, then user dismisses to see round summary
     viewing_round_summary = socket.assigns.viewing_round_summary
@@ -714,7 +767,6 @@ defmodule OskolWeb.GameLive do
 
   # Helper functions
 
-  defp format_error(:game_full), do: "Game is full"
   defp format_error(:game_full), do: "Game is full"
   defp format_error(:name_taken), do: "Name already taken"
   defp format_error(:player_already_connected), do: "Name already taken by a connected player"

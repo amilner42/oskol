@@ -34,6 +34,61 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         background-color: rgb(234, 179, 8);
         z-index: 10;
       }
+
+      @keyframes fillProgress5s {
+        0% {
+          width: 0%;
+        }
+        100% {
+          width: 100%;
+        }
+      }
+
+      @keyframes fillProgress10s {
+        0% {
+          width: 0%;
+        }
+        100% {
+          width: 100%;
+        }
+      }
+
+      .skip-button-5s {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .skip-button-5s::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.3);
+        animation: fillProgress5s 5s linear forwards;
+        z-index: 0;
+      }
+
+      .skip-button-10s {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .skip-button-10s::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.3);
+        animation: fillProgress10s 10s linear forwards;
+        z-index: 0;
+      }
+
+      .skip-button-text {
+        position: relative;
+        z-index: 1;
+      }
     </style>
     """
   end
@@ -242,12 +297,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       </div>
 
       <%= if @viewing_results do %>
-        <!-- Right: Continue Button when showing results -->
+        <!-- Right: Skip Button with progress fill -->
         <button
           phx-click="dismiss_results"
-          class="px-4 py-2 bg-primary hover:bg-primary/90 rounded transition-colors text-primary-content font-bold"
+          class="skip-button-5s px-4 py-2 rounded bg-base-100 hover:bg-base-200 text-base-content transition-colors"
         >
-          Continue
+          <span class="skip-button-text">Skip Hand Summary</span>
         </button>
       <% else %>
         <!-- Right: Action Buttons -->
