@@ -608,73 +608,30 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp deck_builder_card(assigns) do
-    # Format card display
-    rank_display =
-      case assigns.card.rank do
-        11 -> "J"
-        12 -> "Q"
-        13 -> "K"
-        14 -> "A"
-        n -> to_string(n)
-      end
-
-    suit_symbol =
-      case assigns.card.suit do
-        :hearts -> "♥"
-        :diamonds -> "♦"
-        :clubs -> "♣"
-        :spades -> "♠"
-      end
-
-    suit_color =
-      case assigns.card.suit do
-        suit when suit in [:hearts, :diamonds] -> "text-error"
-        _ -> "text-base-content"
-      end
-
-    # Check for enhancement
-    enhancement_text =
-      case assigns.card.enhancement do
-        {:bonus_chips, amount} -> "+#{amount}c"
-        {:bonus_mult, amount} -> "+#{amount}x"
-        nil -> nil
-      end
+    # Import card_display from gameplay component
+    alias OskolWeb.Components.GameLive.Gameplay
 
     border_class =
       if assigns.selected do
-        "border-4 border-purple-500 scale-105"
+        "border-4 border-purple-500"
       else
         "border-2 border-base-300 hover:border-purple-300"
       end
 
-    assigns =
-      assigns
-      |> assign(:rank_display, rank_display)
-      |> assign(:suit_symbol, suit_symbol)
-      |> assign(:suit_color, suit_color)
-      |> assign(:enhancement_text, enhancement_text)
-      |> assign(:border_class, border_class)
+    assigns = assign(assigns, :border_class, border_class)
 
     ~H"""
     <button
       phx-click="select_deck_card"
       phx-value-card_id={@card.id}
       class={[
-        "aspect-[2/3] rounded-lg bg-base-100 flex flex-col items-center justify-center transition-all cursor-pointer hover:shadow-lg",
-        @border_class
+        "transition-all cursor-pointer hover:shadow-lg",
+        if(@selected, do: "scale-105", else: ""),
+        @border_class,
+        "rounded overflow-hidden"
       ]}
     >
-      <div class={"text-3xl font-bold #{@suit_color}"}>
-        {@rank_display}
-      </div>
-      <div class={"text-4xl #{@suit_color}"}>
-        {@suit_symbol}
-      </div>
-      <%= if @enhancement_text do %>
-        <div class="mt-1 text-xs font-bold bg-purple-500/20 text-purple-500 px-2 py-0.5 rounded">
-          {@enhancement_text}
-        </div>
-      <% end %>
+      <Gameplay.card_display card={@card} class="w-28 h-40" />
     </button>
     """
   end
