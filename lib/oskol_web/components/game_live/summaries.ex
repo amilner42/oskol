@@ -115,30 +115,8 @@ defmodule OskolWeb.Components.GameLive.Summaries do
         </div>
 
         <%= cond do %>
-          <%!-- Game Over - Show match summary button --%>
-          <% @game_state.game_status == :game_over -> %>
-            <div class="mt-6">
-              <button
-                phx-click="dismiss_round_summary"
-                class="bg-primary hover:bg-primary/90 text-primary-content px-8 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-[1.02]"
-              >
-                View Match Summary
-              </button>
-            </div>
-
-            <%!-- Shop configured - Continue to shop --%>
-          <% @game_state.shop_state != nil -> %>
-            <div class="mt-6">
-              <button
-                phx-click="dismiss_round_summary"
-                class="bg-primary hover:bg-primary/90 text-primary-content px-8 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl hover:scale-[1.02]"
-              >
-                Continue to Shop
-              </button>
-            </div>
-
-            <%!-- No shop - Show ready status --%>
-          <% true -> %>
+          <%!-- No shop - Show ready status --%>
+          <% @game_state.shop_state == nil && @game_state.game_status != :game_over -> %>
             <div class="mt-8">
               <.ready_status_display
                 player_name={@player_name}
@@ -147,7 +125,13 @@ defmodule OskolWeb.Components.GameLive.Summaries do
                 opponent_ready={@opponent_state.ready_for_next_round}
               />
 
-              <div class="flex justify-center mt-4">
+              <div class="flex justify-center gap-4 mt-4">
+                <button
+                  phx-click="dismiss_round_summary"
+                  class="skip-button-10s px-4 py-2 bg-base-100 hover:bg-base-200 rounded text-base-content transition-colors"
+                >
+                  <span class="skip-button-text">Skip Match Summary</span>
+                </button>
                 <button
                   phx-click="mark_ready"
                   disabled={@player_state.ready_for_next_round}
@@ -167,6 +151,17 @@ defmodule OskolWeb.Components.GameLive.Summaries do
                   <% end %>
                 </button>
               </div>
+            </div>
+
+          <%!-- Game over or shop configured - show skip button --%>
+          <% true -> %>
+            <div class="mt-6 flex justify-center">
+              <button
+                phx-click="dismiss_round_summary"
+                class="skip-button-10s px-4 py-2 bg-base-100 hover:bg-base-200 rounded text-base-content transition-colors"
+              >
+                <span class="skip-button-text">Skip Match Summary</span>
+              </button>
             </div>
         <% end %>
       </div>
