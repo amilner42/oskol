@@ -1,75 +1,120 @@
 <style>
-  @keyframes gradient-shift {
+  @keyframes float {
     0%, 100% {
-      background-position: 0% 50%;
+      transform: translateY(0px) rotate(-2deg);
     }
     50% {
-      background-position: 100% 50%;
+      transform: translateY(-10px) rotate(2deg);
     }
   }
 
-  .animated-gradient {
-    background: linear-gradient(
-      135deg,
-      oklch(20% 0.05 240),
-      oklch(15% 0.08 265),
-      oklch(18% 0.06 280),
-      oklch(16% 0.07 240)
-    );
-    background-size: 400% 400%;
-    animation: gradient-shift 15s ease infinite;
+  @keyframes float-delayed {
+    0%, 100% {
+      transform: translateY(0px) rotate(3deg);
+    }
+    50% {
+      transform: translateY(-15px) rotate(-1deg);
+    }
   }
 
-  .glow-text {
-    text-shadow: 0 0 40px oklch(65% 0.25 265 / 0.4),
-                 0 0 80px oklch(65% 0.25 265 / 0.2);
+  .floating-card {
+    animation: float 6s ease-in-out infinite;
   }
 
-  .card-glow {
-    box-shadow: 0 8px 32px oklch(65% 0.25 265 / 0.15),
-                0 0 0 1px oklch(65% 0.25 265 / 0.1);
+  .floating-card-delayed {
+    animation: float-delayed 7s ease-in-out infinite;
+  }
+
+  .poker-card {
+    aspect-ratio: 2.5/3.5;
+    background: linear-gradient(145deg, #fff, #f5f5f5);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    position: absolute;
+    opacity: 0.15;
+  }
+
+  .card-suit {
+    font-size: 3rem;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
   }
 </style>
 
-<div class="min-h-screen flex items-center justify-center animated-gradient">
-  <div class="text-center px-6 max-w-lg w-full">
-    <div class="mb-8">
-      <h1 class="text-6xl sm:text-7xl font-bold text-white mb-4 glow-text">
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
+  <!-- Floating poker cards background -->
+  <div class="poker-card floating-card" style="width: 120px; top: 10%; left: 8%;">
+    <span class="card-suit" style="color: #dc2626;">♥</span>
+  </div>
+  <div class="poker-card floating-card-delayed" style="width: 100px; top: 60%; left: 12%;">
+    <span class="card-suit" style="color: #1f2937;">♠</span>
+  </div>
+  <div class="poker-card floating-card" style="width: 110px; top: 25%; right: 10%;">
+    <span class="card-suit" style="color: #dc2626;">♦</span>
+  </div>
+  <div class="poker-card floating-card-delayed" style="width: 105px; top: 65%; right: 8%;">
+    <span class="card-suit" style="color: #1f2937;">♣</span>
+  </div>
+
+  <div class="text-center px-6 max-w-xl w-full relative z-10">
+    <div class="mb-10">
+      <!-- Poker hand display -->
+      <div class="flex justify-center gap-1 mb-6">
+        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform -rotate-12 hover:rotate-0 transition-transform">
+          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">A</span>
+        </div>
+        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform -rotate-6 hover:rotate-0 transition-transform">
+          <span class="text-gray-800">K</span>
+        </div>
+        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold hover:rotate-0 transition-transform">
+          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">Q</span>
+        </div>
+        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform rotate-6 hover:rotate-0 transition-transform">
+          <span class="text-gray-800">J</span>
+        </div>
+        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform rotate-12 hover:rotate-0 transition-transform">
+          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">10</span>
+        </div>
+      </div>
+
+      <h1 class="text-6xl sm:text-7xl font-bold text-base-content mb-4">
         oskol.io
       </h1>
 
-      <p class="text-white/70 text-lg mb-2">
-        Poker Meets Strategy
+      <p class="text-base-content/80 text-xl mb-2 font-semibold">
+        Roguelike Poker Duels
       </p>
 
-      <p class="text-white/50 text-sm max-w-md mx-auto">
-        Upgrade your hands, outsmart your opponent, and dominate in this tactical twist on classic poker
+      <p class="text-base-content/60 text-sm max-w-md mx-auto">
+        Build your deck, level up your hands, and battle head-to-head in strategic poker showdowns
       </p>
     </div>
 
     <form id="game-form" class="space-y-4">
-      <div class="backdrop-blur-xl bg-white/5 rounded-2xl p-6 card-glow">
+      <div class="bg-base-100 rounded-2xl p-8 shadow-2xl border-2 border-base-300">
         <input
           type="text"
           id="game-name"
           name="game_name"
           placeholder="Enter game name"
-          class="w-full bg-white/10 border border-white/20 rounded-xl px-5 py-4 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 focus:bg-white/15 text-center text-lg transition-all"
+          class="w-full bg-base-200 border-2 border-base-300 rounded-xl px-5 py-4 text-base-content placeholder-base-content/40 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-center text-lg transition-all"
           autocomplete="off"
           autofocus
         />
 
         <button
           type="submit"
-          class="w-full mt-4 px-8 py-4 rounded-xl font-semibold text-lg bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-white transition-all shadow-lg hover:shadow-2xl hover:shadow-primary/20 hover:scale-[1.02] active:scale-[0.98]"
+          class="w-full mt-5 px-8 py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
         >
-          Create Game
+          Deal In ♠♥♦♣
         </button>
       </div>
     </form>
 
-    <p class="text-white/30 text-xs mt-6">
-      Share the game name with a friend to start playing
+    <p class="text-base-content/40 text-xs mt-6">
+      Share the game name with a friend • Best of 3 rounds
     </p>
   </div>
 </div>
