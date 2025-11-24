@@ -53,7 +53,7 @@ defmodule Oskol.Game.DeckBuilderCard do
   def card_name(%__MODULE__{type: :bonus_chips, bonus_amount: amount}), do: "+#{amount} Chips"
   def card_name(%__MODULE__{type: :bonus_mult, bonus_amount: amount}), do: "+#{amount} Mult"
   def card_name(%__MODULE__{type: :add_card}), do: "Add Card"
-  def card_name(%__MODULE__{type: :remove_card}), do: "Remove Card"
+  def card_name(%__MODULE__{type: :remove_card}), do: "Remove Cards"
 
   @doc """
   Returns a human-readable description for the card.
@@ -72,7 +72,7 @@ defmodule Oskol.Game.DeckBuilderCard do
   end
 
   def card_description(%__MODULE__{type: :remove_card}) do
-    "Remove a card from your deck"
+    "Remove up to 3 cards from your deck"
   end
 
   @doc """

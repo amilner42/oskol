@@ -360,12 +360,19 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
-  def handle_event("confirm_deck_builder_pick", %{"card_id" => card_id}, socket) do
+  def handle_event("confirm_deck_builder_pick", %{"card_ids" => card_ids_param}, socket) do
     # Complete the deck builder selection (applies effect)
+    # card_ids_param is either a single card_id string or a JSON-encoded list
+    card_ids =
+      case Jason.decode(card_ids_param) do
+        {:ok, list} when is_list(list) -> list
+        _ -> card_ids_param
+      end
+
     Game.complete_deck_builder_selection_async(
       socket.assigns.game_id,
       socket.assigns.player_id,
-      card_id
+      card_ids
     )
 
     {:noreply, assign(socket, action_in_progress: true, deck_builder_selection: nil)}
@@ -384,8 +391,39 @@ defmodule OskolWeb.GameLive do
 
   @impl true
   def handle_event("select_deck_card", %{"card_id" => card_id}, socket) do
-    # Local UI state - track which card user selected from the 8-card grid
-    {:noreply, assign(socket, deck_builder_selection: card_id)}
+    # Local UI state - track which card(s) user selected from the 8-card grid
+    # For :remove_card, allow selecting up to 3 cards
+    # For other types, only allow selecting 1 card
+
+    pending =
+      with %{server_state: %{game_state: %{shop_state: shop_state}}} <- socket.assigns,
+           %{pending_deck_builder: pending} when not is_nil(pending) <- shop_state do
+        pending
+      else
+        _ -> nil
+      end
+
+    is_remove_card = pending && pending.deck_builder_card.type == :remove_card
+
+    new_selection =
+      if is_remove_card do
+        # Toggle card in/out of list (max 3)
+        current_list = socket.assigns.deck_builder_selection || []
+        if card_id in current_list do
+          List.delete(current_list, card_id)
+        else
+          if length(current_list) < 3 do
+            [card_id | current_list]
+          else
+            current_list
+          end
+        end
+      else
+        # Single selection for other types
+        card_id
+      end
+
+    {:noreply, assign(socket, deck_builder_selection: new_selection)}
   end
 
   @impl true

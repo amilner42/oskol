@@ -58,10 +58,10 @@ defmodule Oskol.Game.GameServer do
     )
   end
 
-  def complete_deck_builder_selection_async(game_id, player_id, selected_card_id) do
+  def complete_deck_builder_selection_async(game_id, player_id, selected_card_ids) do
     GenServer.cast(
       via_tuple(game_id),
-      {:player_action, player_id, {:complete_deck_builder_selection, selected_card_id}}
+      {:player_action, player_id, {:complete_deck_builder_selection, selected_card_ids}}
     )
   end
 

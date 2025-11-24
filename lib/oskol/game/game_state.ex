@@ -552,12 +552,12 @@ defmodule Oskol.Game.GameState do
 
   Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
   """
-  @spec complete_deck_builder_selection(t(), player_id(), String.t()) ::
+  @spec complete_deck_builder_selection(t(), player_id(), String.t() | list(String.t())) ::
           {:ok, t(), list()} | {:error, atom()}
   def complete_deck_builder_selection(
         %__MODULE__{shop_state: shop_state} = game_state,
         player_id,
-        selected_card_id
+        selected_card_id_or_ids
       )
       when shop_state != nil and shop_state.pending_deck_builder != nil do
     pending = shop_state.pending_deck_builder
@@ -566,21 +566,37 @@ defmodule Oskol.Game.GameState do
     unless pending.player_id == player_id do
       {:error, :not_your_pending_selection}
     else
-      # Validate the selected card is in the available cards
-      selected_card =
-        Enum.find(pending.available_cards, fn card -> card.id == selected_card_id end)
+      # Handle both single card and multiple cards (for :remove_card)
+      is_remove_card = pending.deck_builder_card.type == :remove_card
+      selected_card_ids = if is_list(selected_card_id_or_ids), do: selected_card_id_or_ids, else: [selected_card_id_or_ids]
 
-      if selected_card == nil do
+      # Validate all selected cards are in the available cards
+      selected_cards =
+        Enum.map(selected_card_ids, fn id ->
+          Enum.find(pending.available_cards, fn card -> card.id == id end)
+        end)
+
+      if Enum.any?(selected_cards, &is_nil/1) do
         {:error, :invalid_card_selection}
       else
-        # Apply the deck builder effect
+        # For :remove_card, apply multiple removals; for others, use single card
         {updated_players, card_details} =
-          apply_deck_builder_card(
-            game_state.players,
-            player_id,
-            pending.deck_builder_card,
-            selected_card
-          )
+          if is_remove_card do
+            # Remove all selected cards
+            updated_players = Enum.reduce(selected_cards, game_state.players, fn card, acc_players ->
+              {new_players, _} = apply_deck_builder_card(acc_players, player_id, pending.deck_builder_card, card)
+              new_players
+            end)
+            {updated_players, %{type: :remove_card, card_ids: selected_card_ids}}
+          else
+            # Single card application
+            apply_deck_builder_card(
+              game_state.players,
+              player_id,
+              pending.deck_builder_card,
+              hd(selected_cards)
+            )
+          end
 
         # Complete the pick (mark first_pick_made or second_pick_made)
         case ShopState.complete_pick(shop_state, player_id) do
@@ -593,7 +609,7 @@ defmodule Oskol.Game.GameState do
                %{
                  deck_builder_type: pending.deck_builder_card.type,
                  card_details: card_details,
-                 selected_card_id: selected_card_id
+                 selected_card_id: hd(selected_card_ids)
                }}
 
             # Check if both players have picked
