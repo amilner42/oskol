@@ -43,6 +43,7 @@ defmodule OskolWeb.GameLive do
         viewing_deck: false,
         viewing_own_deck: true,
         viewing_levels: false,
+        levels_view_mode: :both,
         disconnected_players: disconnected_players,
         your_card_sort: :rank,
         opponent_card_sort: :rank,
@@ -526,6 +527,12 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
+  def handle_event("set_levels_view", %{"mode" => mode}, socket) do
+    view_mode = String.to_existing_atom(mode)
+    {:noreply, assign(socket, levels_view_mode: view_mode)}
+  end
+
+  @impl true
   def handle_event("noop", _params, socket) do
     # No-op event to prevent click propagation in modal
     {:noreply, socket}
@@ -914,6 +921,7 @@ defmodule OskolWeb.GameLive do
     <!-- Levels Modal (overlay) -->
             <.levels_modal
               viewing_levels={@viewing_levels}
+              levels_view_mode={@levels_view_mode}
               player_state={player_state}
               opponent_state={opponent_state}
               player_name={@player_name}
