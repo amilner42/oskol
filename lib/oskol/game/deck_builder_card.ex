@@ -6,8 +6,14 @@ defmodule Oskol.Game.DeckBuilderCard do
   alias Oskol.Poker.Card
 
   @type card_type ::
-          :bonus_chips | :bonus_mult | :add_card | :remove_card | :change_suit_hearts
-          | :change_suit_diamonds | :change_suit_clubs | :change_suit_spades
+          :bonus_chips
+          | :bonus_mult
+          | :add_card
+          | :remove_card
+          | :change_suit_hearts
+          | :change_suit_diamonds
+          | :change_suit_clubs
+          | :change_suit_spades
   @type t :: %__MODULE__{
           type: card_type(),
           bonus_amount: pos_integer() | nil

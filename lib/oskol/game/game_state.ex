@@ -604,8 +604,17 @@ defmodule Oskol.Game.GameState do
 
             detail_type =
               case pending.deck_builder_card.type do
-                :remove_card -> :remove_card
-                type when type in [:change_suit_hearts, :change_suit_diamonds, :change_suit_clubs, :change_suit_spades] -> :change_suit
+                :remove_card ->
+                  :remove_card
+
+                type
+                when type in [
+                       :change_suit_hearts,
+                       :change_suit_diamonds,
+                       :change_suit_clubs,
+                       :change_suit_spades
+                     ] ->
+                  :change_suit
               end
 
             {updated_players, %{type: detail_type, card_ids: selected_card_ids}}
@@ -755,7 +764,13 @@ defmodule Oskol.Game.GameState do
         {apply_remove_card(players, player_id, selected_card.id),
          %{type: :remove_card, card_id: selected_card.id}}
 
-      type when type in [:change_suit_hearts, :change_suit_diamonds, :change_suit_clubs, :change_suit_spades] ->
+      type
+      when type in [
+             :change_suit_hearts,
+             :change_suit_diamonds,
+             :change_suit_clubs,
+             :change_suit_spades
+           ] ->
         # Change the suit of the selected card
         new_suit =
           case type do
