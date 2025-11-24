@@ -101,36 +101,53 @@ defmodule Oskol.Game.ShopState do
     }
   end
 
-  # Generates a random pool of 12 shop cards: 3 level ups + 3 action cards + 6 deck builders.
-  # For level ups: triples all 9 hand types (27), shuffles, takes 3
-  # For action cards: triples all 9 denial cards (27), shuffles, takes 3
-  # For deck builders: shuffles all 8 deck builder cards, takes 6
-  # Then shuffles all 12 together
+  # Generates a pool of 12 shop cards: 4 level ups + 4 deck builders + 4 action cards.
+  # Cards are sorted by category (level ups first, then deck builders, then actions)
+  # and within each category they are sorted for consistency.
   @spec generate_random_shop_cards() :: [shop_card()]
   defp generate_random_shop_cards do
-    # Generate 3 random level up cards
+    # Generate 4 random level up cards (sorted by hand type)
     level_ups =
       @all_hand_types
       |> List.duplicate(3)
       |> List.flatten()
       |> Enum.shuffle()
-      |> Enum.take(3)
+      |> Enum.take(4)
+      |> Enum.sort_by(&hand_type_order/1)
       |> Enum.map(fn hand_type -> {:level_up, hand_type} end)
 
-    # Generate 3 random action cards
-    action_cards =
-      ActionCard.generate_random_action_cards(3)
-      |> Enum.map(fn card -> {:action, card} end)
-
-    # Generate 6 random deck builder cards
+    # Generate 4 deck builder cards (sorted by type)
     deck_builder_cards =
-      DeckBuilderCard.generate_random_deck_builder_cards(6)
+      DeckBuilderCard.generate_random_deck_builder_cards(4)
+      |> Enum.sort_by(&deck_builder_sort_key/1)
       |> Enum.map(fn card -> {:deck_builder, card} end)
 
-    # Combine and shuffle all 12 cards
-    (level_ups ++ action_cards ++ deck_builder_cards)
-    |> Enum.shuffle()
+    # Generate 4 random action cards (sorted by target_hand)
+    action_cards =
+      ActionCard.generate_random_action_cards(4)
+      |> Enum.sort_by(& &1.target_hand, fn a, b -> hand_type_order(a) <= hand_type_order(b) end)
+      |> Enum.map(fn card -> {:action, card} end)
+
+    # Combine in order: level ups, deck builders, actions
+    level_ups ++ deck_builder_cards ++ action_cards
   end
+
+  # Sort key for hand types (high card to straight flush)
+  defp hand_type_order(:high_card), do: 0
+  defp hand_type_order(:pair), do: 1
+  defp hand_type_order(:two_pair), do: 2
+  defp hand_type_order(:three_of_a_kind), do: 3
+  defp hand_type_order(:straight), do: 4
+  defp hand_type_order(:flush), do: 5
+  defp hand_type_order(:full_house), do: 6
+  defp hand_type_order(:four_of_a_kind), do: 7
+  defp hand_type_order(:straight_flush), do: 8
+
+  # Sort key for deck builder cards (chips, mult, add, remove)
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :bonus_chips}), do: 0
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :bonus_mult}), do: 1
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :add_card}), do: 2
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :remove_card}), do: 3
 
   @doc """
   Returns true if both players have made their picks in the current round.
