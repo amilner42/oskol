@@ -25,7 +25,7 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :high_card,
-        5 + 11,
+        125 + 11,
         1
       )
     end
@@ -41,8 +41,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :pair,
-        10 + 7 + 7,
-        2
+        140 + 7 + 7,
+        1
       )
     end
 
@@ -57,7 +57,7 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :two_pair,
-        20 + 7 + 7 + 3 + 3,
+        105 + 7 + 7 + 3 + 3,
         2
       )
     end
@@ -73,8 +73,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :three_of_a_kind,
-        30 + 9 + 9 + 9,
-        3
+        130 + 9 + 9 + 9,
+        2
       )
     end
 
@@ -89,7 +89,7 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :straight,
-        30 + 5 + 6 + 7 + 8 + 9,
+        70 + 5 + 6 + 7 + 8 + 9,
         4
       )
     end
@@ -105,7 +105,7 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :flush,
-        35 + 2 + 5 + 8 + 10 + 11,
+        70 + 2 + 5 + 8 + 10 + 11,
         4
       )
     end
@@ -121,8 +121,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :full_house,
-        40 + 7 + 7 + 7 + 3 + 3,
-        4
+        60 + 7 + 7 + 7 + 3 + 3,
+        6
       )
     end
 
@@ -137,8 +137,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :four_of_a_kind,
-        60 + 5 + 5 + 5 + 5,
-        7
+        50 + 5 + 5 + 5 + 5,
+        12
       )
     end
 
@@ -154,8 +154,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :four_of_a_kind,
-        60 + 5 + 5 + 5 + 5 + 5,
-        7
+        50 + 5 + 5 + 5 + 5 + 5,
+        12
       )
     end
 
@@ -170,8 +170,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :straight_flush,
-        100 + 5 + 6 + 7 + 8 + 9,
-        8
+        95 + 5 + 6 + 7 + 8 + 9,
+        12
       )
     end
   end
@@ -188,7 +188,7 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new() |> SkillTree.upgrade(:high_card, 9),
         :high_card,
-        5 + 9 * 10 + 11,
+        125 + 9 * 10 + 11,
         1 + 9 * 1
       )
     end
@@ -204,8 +204,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new() |> SkillTree.upgrade(:pair, 2),
         :pair,
-        10 + 2 * 15 + 7 + 7,
-        2 + 2 * 1
+        140 + 2 * 10 + 7 + 7,
+        1 + 2 * 1
       )
     end
 
@@ -220,8 +220,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new() |> SkillTree.upgrade(:straight_flush, 4),
         :straight_flush,
-        100 + 4 * 40 + 5 + 6 + 7 + 8 + 9,
-        8 + 4 * 4
+        95 + 4 * 20 + 5 + 6 + 7 + 8 + 9,
+        12 + 4 * 2
       )
     end
   end
@@ -243,8 +243,8 @@ defmodule Oskol.Poker.ScoreTest do
         |> SkillTree.upgrade(:flush, 5)
         |> SkillTree.upgrade(:straight_flush, 10),
         :pair,
-        10 + 2 * 15 + 7 + 7,
-        2 + 2 * 1
+        140 + 2 * 10 + 7 + 7,
+        1 + 2 * 1
       )
     end
   end
