@@ -704,18 +704,23 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                       <td class="p-1">
                         <% cards_at_position = Map.get(cards_by_position, {suit, rank}, []) %>
                         <%= if length(cards_at_position) > 0 do %>
-                          <div class="flex flex-wrap gap-1 justify-start items-start min-h-[6rem]">
-                            <%= for card <- cards_at_position do %>
+                          <% # Calculate height needed for stacked cards
+                          stack_height = 96 + (length(cards_at_position) - 1) * 20 %>
+                          <div class="relative" style={"height: #{stack_height}px; width: 64px;"}>
+                            <%= for {card, index} <- Enum.with_index(cards_at_position) do %>
                               <% in_discard = card.id in discard_ids
-                              opacity_class = if in_discard, do: "opacity-30", else: "opacity-100" %>
-                              <.card_display
-                                card={card}
-                                class={"w-16 h-24 #{opacity_class}"}
-                              />
+                              opacity_class = if in_discard, do: "opacity-30", else: "opacity-100"
+                              top_offset = index * 20 %>
+                              <div class="absolute" style={"top: #{top_offset}px;"}>
+                                <.card_display
+                                  card={card}
+                                  class={"w-16 h-24 #{opacity_class}"}
+                                />
+                              </div>
                             <% end %>
                           </div>
                         <% else %>
-                          <div class="w-16 h-24 min-h-[6rem]"></div>
+                          <div class="w-16 h-24"></div>
                         <% end %>
                       </td>
                     <% end %>
