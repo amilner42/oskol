@@ -592,27 +592,27 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
-            <!-- Toggle buttons serve as title -->
-            <div class="flex gap-2">
+            <!-- Segmented control toggle buttons -->
+            <div class="inline-flex rounded-lg border border-base-300 overflow-hidden">
               <button
                 phx-click="toggle_deck_view"
                 class={[
-                  "px-6 py-2 rounded-lg font-semibold transition-colors text-lg",
+                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-primary",
                   if(@viewing_own_deck,
-                    do: "bg-primary text-primary-content",
-                    else: "bg-base-200 text-base-content/70 hover:bg-base-300"
+                    do: "bg-base-300",
+                    else: "bg-base-100 hover:bg-base-200"
                   )
                 ]}
               >
-                Your Deck
+                {@player_name}'s Deck
               </button>
               <button
                 phx-click="toggle_deck_view"
                 class={[
-                  "px-6 py-2 rounded-lg font-semibold transition-colors text-lg",
+                  "px-4 py-2 font-semibold transition-colors text-error",
                   if(!@viewing_own_deck,
-                    do: "bg-primary text-primary-content",
-                    else: "bg-base-200 text-base-content/70 hover:bg-base-300"
+                    do: "bg-base-300",
+                    else: "bg-base-100 hover:bg-base-200"
                   )
                 ]}
               >
@@ -690,7 +690,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                   suit_remaining = Enum.count(suit_cards, fn card -> card.id not in discard_ids end)
                   suit_total = length(suit_cards) %>
                   <tr>
-                    <td class="px-2 py-1 text-left text-base font-semibold bg-base-200">
+                    <td class="px-2 py-1 text-left text-base font-semibold">
                       <span class="text-xs text-base-content/60 mr-1">
                         {suit_remaining}/{suit_total}
                       </span>
@@ -701,7 +701,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                       </span>
                     </td>
                     <%= for rank <- ranks do %>
-                      <td class="p-1 bg-base-100">
+                      <td class="p-1">
                         <% cards_at_position = Map.get(cards_by_position, {suit, rank}, []) %>
                         <%= if length(cards_at_position) > 0 do %>
                           <div class="flex flex-wrap gap-1 justify-start items-start min-h-[6rem]">
