@@ -1,120 +1,151 @@
 <style>
-  @keyframes float {
+  @keyframes neon-pulse {
     0%, 100% {
-      transform: translateY(0px) rotate(-2deg);
+      text-shadow:
+        0 0 7px oklch(75% 0.27 310),
+        0 0 10px oklch(75% 0.27 310),
+        0 0 21px oklch(75% 0.27 310),
+        0 0 42px oklch(75% 0.27 310 / 0.8);
     }
     50% {
-      transform: translateY(-10px) rotate(2deg);
+      text-shadow:
+        0 0 4px oklch(75% 0.27 310),
+        0 0 11px oklch(75% 0.27 310),
+        0 0 19px oklch(75% 0.27 310),
+        0 0 40px oklch(75% 0.27 310 / 1),
+        0 0 80px oklch(75% 0.27 310 / 0.5);
     }
   }
 
-  @keyframes float-delayed {
+  @keyframes border-glow {
     0%, 100% {
-      transform: translateY(0px) rotate(3deg);
+      box-shadow:
+        0 0 10px oklch(70% 0.25 195),
+        0 0 20px oklch(70% 0.25 195 / 0.5),
+        inset 0 0 10px oklch(70% 0.25 195 / 0.2);
     }
     50% {
-      transform: translateY(-15px) rotate(-1deg);
+      box-shadow:
+        0 0 15px oklch(70% 0.25 195),
+        0 0 30px oklch(70% 0.25 195 / 0.7),
+        0 0 45px oklch(70% 0.25 195 / 0.3),
+        inset 0 0 15px oklch(70% 0.25 195 / 0.3);
     }
   }
 
-  .floating-card {
-    animation: float 6s ease-in-out infinite;
+  @keyframes grid-move {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 50px 50px;
+    }
   }
 
-  .floating-card-delayed {
-    animation: float-delayed 7s ease-in-out infinite;
+  .neon-title {
+    animation: neon-pulse 2s ease-in-out infinite;
+    color: oklch(95% 0.05 310);
   }
 
-  .poker-card {
-    aspect-ratio: 2.5/3.5;
-    background: linear-gradient(145deg, #fff, #f5f5f5);
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-    position: absolute;
-    opacity: 0.15;
+  .neon-border {
+    animation: border-glow 2s ease-in-out infinite;
+    border: 2px solid oklch(70% 0.25 195);
   }
 
-  .card-suit {
-    font-size: 3rem;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+  .cyber-grid {
+    background-image:
+      linear-gradient(oklch(30% 0.02 240 / 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(30% 0.02 240 / 0.1) 1px, transparent 1px);
+    background-size: 50px 50px;
+    animation: grid-move 20s linear infinite;
+  }
+
+  .glow-button {
+    box-shadow:
+      0 0 20px oklch(75% 0.27 310 / 0.5),
+      0 10px 40px oklch(75% 0.27 310 / 0.3);
+  }
+
+  .glow-button:hover {
+    box-shadow:
+      0 0 30px oklch(75% 0.27 310 / 0.8),
+      0 10px 50px oklch(75% 0.27 310 / 0.5);
+  }
+
+  .stat-card {
+    border: 1px solid oklch(70% 0.25 195 / 0.3);
+    background: linear-gradient(135deg,
+      oklch(18% 0.02 240 / 0.8),
+      oklch(15% 0.02 240 / 0.8)
+    );
+    backdrop-filter: blur(10px);
   }
 </style>
 
-<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
-  <!-- Floating poker cards background -->
-  <div class="poker-card floating-card" style="width: 120px; top: 10%; left: 8%;">
-    <span class="card-suit" style="color: #dc2626;">♥</span>
-  </div>
-  <div class="poker-card floating-card-delayed" style="width: 100px; top: 60%; left: 12%;">
-    <span class="card-suit" style="color: #1f2937;">♠</span>
-  </div>
-  <div class="poker-card floating-card" style="width: 110px; top: 25%; right: 10%;">
-    <span class="card-suit" style="color: #dc2626;">♦</span>
-  </div>
-  <div class="poker-card floating-card-delayed" style="width: 105px; top: 65%; right: 8%;">
-    <span class="card-suit" style="color: #1f2937;">♣</span>
-  </div>
+<div class="min-h-screen flex items-center justify-center bg-black relative overflow-hidden cyber-grid">
+  <!-- Ambient glow effects -->
+  <div class="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-purple-950/20"></div>
+  <div class="absolute top-20 left-20 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl"></div>
+  <div class="absolute bottom-20 right-20 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl"></div>
 
-  <div class="text-center px-6 max-w-xl w-full relative z-10">
-    <div class="mb-10">
-      <!-- Poker hand display -->
-      <div class="flex justify-center gap-1 mb-6">
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform -rotate-12 hover:rotate-0 transition-transform">
-          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">A</span>
-        </div>
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform -rotate-6 hover:rotate-0 transition-transform">
-          <span class="text-gray-800">K</span>
-        </div>
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold hover:rotate-0 transition-transform">
-          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">Q</span>
-        </div>
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform rotate-6 hover:rotate-0 transition-transform">
-          <span class="text-gray-800">J</span>
-        </div>
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform rotate-12 hover:rotate-0 transition-transform">
-          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">10</span>
-        </div>
-      </div>
-
-      <h1 class="text-6xl sm:text-7xl font-bold text-base-content mb-4">
-        oskol.io
+  <div class="text-center px-6 max-w-2xl w-full relative z-10">
+    <div class="mb-12">
+      <h1 class="text-7xl sm:text-8xl font-black mb-6 neon-title tracking-tight">
+        OSKOL.IO
       </h1>
 
-      <p class="text-base-content/80 text-xl mb-2 font-semibold">
-        Roguelike Poker Duels
+      <div class="inline-block px-6 py-2 mb-4 rounded-full border border-cyan-500/50 bg-cyan-950/30">
+        <p class="text-cyan-300 text-sm font-mono uppercase tracking-widest">
+          ⚡ Tactical Poker Roguelike ⚡
+        </p>
+      </div>
+
+      <p class="text-gray-300 text-base max-w-lg mx-auto mb-8">
+        Upgrade poker hands through roguelike progression. Battle opponents in strategic showdowns.
+        <span class="text-purple-400 font-semibold">Only the sharpest mind wins.</span>
       </p>
 
-      <p class="text-base-content/60 text-sm max-w-md mx-auto">
-        Build your deck, level up your hands, and battle head-to-head in strategic poker showdowns
-      </p>
+      <!-- Stats display -->
+      <div class="flex justify-center gap-4 mb-8">
+        <div class="stat-card px-5 py-3 rounded-lg">
+          <div class="text-cyan-400 text-xs font-mono mb-1">MODE</div>
+          <div class="text-white font-bold">1v1</div>
+        </div>
+        <div class="stat-card px-5 py-3 rounded-lg">
+          <div class="text-purple-400 text-xs font-mono mb-1">ROUNDS</div>
+          <div class="text-white font-bold">BEST OF 3</div>
+        </div>
+        <div class="stat-card px-5 py-3 rounded-lg">
+          <div class="text-pink-400 text-xs font-mono mb-1">TYPE</div>
+          <div class="text-white font-bold">PVP</div>
+        </div>
+      </div>
     </div>
 
-    <form id="game-form" class="space-y-4">
-      <div class="bg-base-100 rounded-2xl p-8 shadow-2xl border-2 border-base-300">
+    <form id="game-form" class="space-y-5">
+      <div class="neon-border bg-black/50 backdrop-blur-xl rounded-2xl p-8">
         <input
           type="text"
           id="game-name"
           name="game_name"
-          placeholder="Enter game name"
-          class="w-full bg-base-200 border-2 border-base-300 rounded-xl px-5 py-4 text-base-content placeholder-base-content/40 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-center text-lg transition-all"
+          placeholder="ENTER_GAME_NAME"
+          class="w-full bg-transparent border-2 border-cyan-500/30 rounded-xl px-6 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_20px_rgba(34,211,238,0.3)] text-center text-lg font-mono uppercase transition-all"
           autocomplete="off"
           autofocus
         />
 
         <button
           type="submit"
-          class="w-full mt-5 px-8 py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
+          class="glow-button w-full mt-5 px-8 py-5 rounded-xl font-black text-xl bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-size-200 bg-pos-0 hover:bg-pos-100 text-white transition-all uppercase tracking-wider"
+          style="background-size: 200% auto;"
         >
-          Deal In ♠♥♦♣
+          <span class="drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]">Initialize Game</span>
         </button>
       </div>
     </form>
 
-    <p class="text-base-content/40 text-xs mt-6">
-      Share the game name with a friend • Best of 3 rounds
+    <p class="text-gray-500 text-xs mt-8 font-mono">
+      MULTIPLAYER_SESSION // SHARE_GAME_NAME_WITH_OPPONENT
     </p>
   </div>
 </div>
