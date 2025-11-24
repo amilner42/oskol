@@ -2,6 +2,20 @@
 
 This directory contains scripts to help set up and run the Oskol project in Claude Code Web environment.
 
+## Quick Start (Recommended for Claude Code Web)
+
+**Use the SessionStart Hook for automatic setup:**
+
+The `.claude/hooks/SessionStart` hook automatically handles everything:
+- **First session**: Runs full setup (10-15 min one-time cost)
+- **All subsequent sessions**: Loads environment instantly (<5 sec)
+
+No manual steps needed! Just open the project and the hook runs automatically.
+
+## Manual Setup (Alternative)
+
+If you prefer manual control or need to troubleshoot, use the scripts below.
+
 ## Scripts
 
 ### `setup-elixir-web.sh`
@@ -53,6 +67,34 @@ source scripts/env-elixir.sh
 - Start of each new Claude Code session
 - After the initial setup is complete
 - When you get "command not found" errors for elixir/mix
+
+### `.claude/hooks/SessionStart` (Automatic Hook)
+
+**Purpose**: Automatic environment setup on every Claude Code Web session.
+
+**What it does**:
+- Detects if this is the first session (no asdf installation)
+- If first session: Runs full `setup-elixir-web.sh` automatically
+- If subsequent session: Just loads environment variables (instant)
+- Shows current versions and helpful commands
+
+**How it works**:
+- Claude Code Web automatically runs this hook when you open the project
+- No manual intervention needed
+- First session: ~15 minutes (one-time setup)
+- All other sessions: <5 seconds (just loads environment)
+
+**Benefits**:
+- ✅ Zero manual setup steps
+- ✅ Automatic environment loading
+- ✅ Works across all Claude Code Web sessions
+- ✅ Instant after first setup
+
+**Troubleshooting**:
+If the hook doesn't run, ensure it's executable:
+```bash
+chmod +x .claude/hooks/SessionStart
+```
 
 ## Common Issues and Solutions
 
