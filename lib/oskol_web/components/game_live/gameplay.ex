@@ -742,48 +742,46 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
-            <h2 class="text-2xl font-bold text-base-content">Player Levels</h2>
-            
-    <!-- View mode toggle buttons (segmented control) -->
+            <!-- View mode toggle buttons (segmented control) -->
             <div class="inline-flex rounded-lg border border-base-300 overflow-hidden">
               <button
                 phx-click="set_levels_view"
                 phx-value-mode="player"
                 class={[
-                  "px-3 py-1.5 text-sm font-semibold transition-colors border-r border-base-300 text-primary",
+                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-primary",
                   if(@levels_view_mode == :player,
                     do: "bg-base-300",
                     else: "bg-base-100 hover:bg-base-200"
                   )
                 ]}
               >
-                {@player_name}
+                {@player_name}'s Levels
               </button>
               <button
                 phx-click="set_levels_view"
                 phx-value-mode="both"
                 class={[
-                  "px-3 py-1.5 text-sm font-semibold transition-colors border-r border-base-300 text-base-content",
+                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-base-content",
                   if(@levels_view_mode == :both,
                     do: "bg-base-300",
                     else: "bg-base-100 hover:bg-base-200"
                   )
                 ]}
               >
-                Both
+                Both Players' Levels
               </button>
               <button
                 phx-click="set_levels_view"
                 phx-value-mode="opponent"
                 class={[
-                  "px-3 py-1.5 text-sm font-semibold transition-colors text-error",
+                  "px-4 py-2 font-semibold transition-colors text-error",
                   if(@levels_view_mode == :opponent,
                     do: "bg-base-300",
                     else: "bg-base-100 hover:bg-base-200"
                   )
                 ]}
               >
-                {@opponent_name}
+                {@opponent_name}'s Levels
               </button>
             </div>
 
@@ -819,7 +817,18 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             full_house: "Full House",
             four_of_a_kind: "Four of a Kind",
             straight_flush: "Straight Flush"
-          } %>
+          }
+
+          # Find max levels for each player
+          max_player_level =
+            hand_types
+            |> Enum.map(fn hand_type -> Map.get(@player_state.skill_tree, hand_type, 1) end)
+            |> Enum.max()
+
+          max_opponent_level =
+            hand_types
+            |> Enum.map(fn hand_type -> Map.get(@opponent_state.skill_tree, hand_type, 1) end)
+            |> Enum.max() %>
 
           <div class="max-w-3xl mx-auto">
             <table class="w-full">
@@ -835,6 +844,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                   <tr class="border-b border-base-300">
                     <td class="py-3 px-4 font-semibold text-base-content">
                       {hand_name}
+                      <%= if player_level == max_player_level && max_player_level > 1 do %>
+                        <span class="text-primary ml-1">★</span>
+                      <% end %>
+                      <%= if opponent_level == max_opponent_level && max_opponent_level > 1 do %>
+                        <span class="text-error ml-1">★</span>
+                      <% end %>
                     </td>
                     <td class="py-3 px-4 text-sm text-right">
                       <div class="space-y-1">
@@ -852,7 +867,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                               <span class="font-medium">Level:</span>
                               <span class="ml-2">0 chips × 0 mult</span>
                             </div>
-
                           <% @levels_view_mode == :opponent -> %>
                             <%= if same_level do %>
                               <div class="text-base-content/70">
@@ -877,7 +891,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                                 </span>
                               </div>
                             <% end %>
-
                           <% @levels_view_mode == :both && same_level -> %>
                             <div class="text-base-content/70">
                               <span class="font-medium">Level {player_level}:</span>
@@ -889,7 +902,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                               <span class="font-medium">Level:</span>
                               <span class="ml-2">0 chips × 0 mult</span>
                             </div>
-
                           <% @levels_view_mode == :both -> %>
                             <div class="text-primary">
                               <span class="font-medium">Level {player_level}:</span>
