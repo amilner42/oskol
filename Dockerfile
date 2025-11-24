@@ -55,6 +55,10 @@ COPY lib lib
 # Compile the release
 RUN mix compile
 
+# Package source code for Sentry
+#  - refer to: https://arie-milner.sentry.io/insights/projects/oskol/getting-started
+RUN mix sentry.package_source_code
+
 COPY assets assets
 
 # compile assets

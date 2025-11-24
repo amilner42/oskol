@@ -52,6 +52,10 @@ defmodule OskolWeb do
     quote do
       use Phoenix.LiveView
 
+      # Set up sentry for better liveview support
+      # - refer to: https://docs.sentry.io/platforms/elixir/integrations/plug_and_phoenix/
+      on_mount Sentry.LiveViewHook
+
       unquote(html_helpers())
     end
   end

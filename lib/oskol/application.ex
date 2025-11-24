@@ -7,6 +7,12 @@ defmodule Oskol.Application do
 
   @impl true
   def start(_type, _args) do
+    # Capture crashed process exceptions
+    #  - refer to: https://arie-milner.sentry.io/insights/projects/oskol/getting-started
+    :logger.add_handler(:my_sentry_handler, Sentry.LoggerHandler, %{
+      config: %{metadata: [:file, :line]}
+    })
+
     children = [
       OskolWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:oskol, :dns_cluster_query) || :ignore},

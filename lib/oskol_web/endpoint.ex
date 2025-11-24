@@ -1,5 +1,6 @@
 defmodule OskolWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :oskol
+  use Sentry.PlugCapture
 
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
@@ -45,6 +46,10 @@ defmodule OskolWeb.Endpoint do
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
+
+  # Set up sentry plug for phoneix
+  # - refer to: https://docs.sentry.io/platforms/elixir/integrations/plug_and_phoenix/
+  plug Sentry.PlugContext
 
   plug Plug.MethodOverride
   plug Plug.Head
