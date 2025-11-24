@@ -14,27 +14,27 @@ defmodule Oskol.Poker.Score do
         }
 
   @base_hand_scores %{
-    high_card: %{chips: 5, multiplier: 1},
-    pair: %{chips: 10, multiplier: 2},
-    two_pair: %{chips: 20, multiplier: 2},
-    three_of_a_kind: %{chips: 30, multiplier: 3},
-    straight: %{chips: 30, multiplier: 4},
-    flush: %{chips: 35, multiplier: 4},
-    full_house: %{chips: 40, multiplier: 4},
-    four_of_a_kind: %{chips: 60, multiplier: 7},
-    straight_flush: %{chips: 100, multiplier: 8}
+    high_card: %{chips: 125, multiplier: 1},
+    pair: %{chips: 140, multiplier: 1},
+    two_pair: %{chips: 105, multiplier: 2},
+    three_of_a_kind: %{chips: 130, multiplier: 2},
+    straight: %{chips: 70, multiplier: 4},
+    flush: %{chips: 70, multiplier: 4},
+    full_house: %{chips: 60, multiplier: 6},
+    four_of_a_kind: %{chips: 50, multiplier: 12},
+    straight_flush: %{chips: 95, multiplier: 12}
   }
 
   @upgrade_bonuses %{
     high_card: %{chips: 10, multiplier: 1},
-    pair: %{chips: 15, multiplier: 1},
-    two_pair: %{chips: 20, multiplier: 1},
-    three_of_a_kind: %{chips: 20, multiplier: 2},
-    straight: %{chips: 30, multiplier: 3},
-    flush: %{chips: 15, multiplier: 2},
-    full_house: %{chips: 25, multiplier: 2},
-    four_of_a_kind: %{chips: 30, multiplier: 3},
-    straight_flush: %{chips: 40, multiplier: 4}
+    pair: %{chips: 10, multiplier: 1},
+    two_pair: %{chips: 10, multiplier: 1},
+    three_of_a_kind: %{chips: 10, multiplier: 1},
+    straight: %{chips: 10, multiplier: 1},
+    flush: %{chips: 10, multiplier: 1},
+    full_house: %{chips: 10, multiplier: 1},
+    four_of_a_kind: %{chips: 20, multiplier: 2},
+    straight_flush: %{chips: 20, multiplier: 2}
   }
 
   @doc """

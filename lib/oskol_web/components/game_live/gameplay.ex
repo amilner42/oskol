@@ -602,10 +602,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <%= for card <- Enum.sort_by(suit_cards, & &1.rank, :desc) do %>
-                    <% in_discard = card.id in discard_ids %>
+                    <% in_discard = card.id in discard_ids
+                    opacity_class = if in_discard, do: "opacity-30", else: "opacity-100" %>
                     <.card_display
                       card={card}
-                      class={["w-16 h-22", if(in_discard, do: "opacity-30", else: "opacity-100")]}
+                      class={"w-16 h-22 #{opacity_class}"}
                     />
                   <% end %>
                 </div>

@@ -15,8 +15,8 @@ defmodule Oskol.Game.DeckBuilderCard do
 
   @doc """
   Returns all deck builder cards available in the game.
-  - 3 chip enhancement variants: +20, +30, +40 chips
-  - 3 mult enhancement variants: +2, +3, +4 multiplier
+  - 3 chip enhancement variants: +20, +40, +60 chips
+  - 3 mult enhancement variants: +1, +2, +3 multiplier
   - 1 add card variant
   - 1 remove card variant
   Total: 8 deck builder cards
@@ -25,11 +25,11 @@ defmodule Oskol.Game.DeckBuilderCard do
   def all_deck_builder_cards do
     [
       %__MODULE__{type: :bonus_chips, bonus_amount: 20},
-      %__MODULE__{type: :bonus_chips, bonus_amount: 30},
       %__MODULE__{type: :bonus_chips, bonus_amount: 40},
+      %__MODULE__{type: :bonus_chips, bonus_amount: 60},
+      %__MODULE__{type: :bonus_mult, bonus_amount: 1},
       %__MODULE__{type: :bonus_mult, bonus_amount: 2},
       %__MODULE__{type: :bonus_mult, bonus_amount: 3},
-      %__MODULE__{type: :bonus_mult, bonus_amount: 4},
       %__MODULE__{type: :add_card, bonus_amount: nil},
       %__MODULE__{type: :remove_card, bonus_amount: nil}
     ]
