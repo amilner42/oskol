@@ -11,7 +11,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <%= if @game_state.shop_state do %>
         <.shop_status shop_state={@game_state.shop_state} player_names={@game_state.player_names} />
       <% end %>
-      
+
     <!-- Center Preview Area (like the game board) -->
       <div class="flex-1 flex items-center justify-center">
         <%= if assigns[:previewing_card_index] != nil and @game_state.shop_state do %>
@@ -78,7 +78,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <% end %>
         <% end %>
       </div>
-      
+
     <!-- Bottom Cards Area (like gameplay hand) -->
       <%= if @game_state.shop_state && !shop_complete?(@game_state.shop_state) do %>
         <div class="pb-4">
@@ -232,7 +232,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class={"text-[10px] font-bold uppercase tracking-wide #{@badge_color} mb-2"}>
         {@badge_text}
       </div>
-      
+
     <!-- Card name centered -->
       <div class="flex-1 flex items-center justify-center">
         <div class="font-bold text-sm text-center text-base-content">
@@ -357,15 +357,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="text-xs font-bold uppercase tracking-wide text-accent mb-3">
         Level Up
       </div>
-      
+
     <!-- Hand Name -->
       <h3 class="text-4xl font-bold text-accent mb-4">{@hand_name}</h3>
-      
+
     <!-- Level Progress -->
       <div class="text-lg text-base-content/70 mb-8">
         Level {@current_level} → {@next_level}
       </div>
-      
+
     <!-- Stats Comparison -->
       <div class="space-y-6 mb-8">
         <div class="flex items-center justify-between px-4">
@@ -385,7 +385,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       </div>
-      
+
     <!-- Action Buttons -->
       <%= if @can_confirm do %>
         <div class="flex justify-center">
@@ -426,20 +426,20 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="text-xs font-bold uppercase tracking-wide text-error mb-3">
         Action Card
       </div>
-      
+
     <!-- Card Name -->
       <h3 class="text-4xl font-bold text-error mb-4">{@card_name}</h3>
-      
+
     <!-- Target Hand -->
       <div class="text-lg text-base-content/70 mb-8">
         Targets: <span class="font-semibold text-error">{@hand_name}</span>
       </div>
-      
+
     <!-- Description -->
       <div class="mb-8 px-4">
         <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
       </div>
-      
+
     <!-- Action Buttons -->
       <%= if @can_confirm do %>
         <div class="flex justify-center">
@@ -487,10 +487,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="text-xs font-bold uppercase tracking-wide text-purple-500 mb-3">
         Deck Builder
       </div>
-      
+
     <!-- Card Name -->
       <h3 class="text-4xl font-bold text-purple-500 mb-4">{@card_name}</h3>
-      
+
     <!-- Description -->
       <div class="mb-6 px-4">
         <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
@@ -500,12 +500,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <!-- 8-Card Selection Grid -->
         <div class="mb-6">
           <div class="text-sm text-base-content/70 mb-4">
-            <% is_remove = @pending_deck_builder.deck_builder_card.type == :remove_card
+            <% card_type = @pending_deck_builder.deck_builder_card.type
 
             instruction =
-              if is_remove,
-                do: "Select up to 3 cards to remove (or skip):",
-                else: "Select a card to apply this enhancement (or skip):" %>
+              case card_type do
+                :remove_card -> "Select up to 3 cards to remove (or skip):"
+                type when type in [:change_suit_hearts, :change_suit_diamonds, :change_suit_clubs, :change_suit_spades] ->
+                  "Select up to 3 cards to change suit (or skip):"
+                _ -> "Select a card to apply this enhancement (or skip):"
+              end %>
             {instruction}
             <%= if @deck_builder_selection do %>
               <% count =
@@ -534,7 +537,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-        
+
     <!-- Action Buttons -->
         <%= if @can_confirm do %>
           <div class="flex gap-4 justify-center">

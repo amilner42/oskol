@@ -1,11 +1,12 @@
 ---
 name: playwright-testing-claude-code-web
-description: Use Playwright MCP for UI testing in Claude Code Web. Capture screenshots and share them via git. Use when testing web UIs in Claude Code Web. (project, gitignored)
+description: Use Playwright MCP for UI testing in Claude Code, capturing screenshots to confirm key behavior. Use when testing web UIs. (project, gitignored)
 ---
 
 # Playwright Testing in Claude Code Web
 
-Navigate and test UIs with Playwright in headless environment. User can't access localhost, so Claude explores the app and shares screenshots via git.
+Navigate and test UIs with Playwright in headless environment. User can't access localhost, so Claude explores the app
+and saves screenshots.
 
 ## Playwright Config (One-time setup)
 
@@ -22,83 +23,103 @@ module.exports = {
 };
 ```
 
-## Workflow: Navigate and Capture
+## Recommended Approach: Direct Node.js Script
 
-1. **Write a test to navigate and capture screenshots:**
+For complex interactive flows (multiple pages, forms, waiting for state changes), use a **Node.js script** instead of Playwright test runner.
 
-```bash
-cat > .explore-temp.spec.js << 'EOF'
-const { test } = require('@playwright/test');
+### Example: Full Game Flow Test
 
-test('explore app', async ({ page }) => {
-  // Navigate to homepage
-  await page.goto('http://localhost:4000');
-  await page.waitForTimeout(1000);
-  await page.screenshot({ path: 'screenshots/01-homepage.png', fullPage: true });
+See `playwright/test-suit-action-card/` in this project for a real-world example that:
+- Opens 2 browser contexts (2 players)
+- Navigates through lobby, game, and shop screens
+- Uses proper selectors (phx-click, input[name])
+- Captures 14+ screenshots at key moments
+- Handles LiveView state updates with appropriate waits
+- Organized with test script + README in its own folder
 
-  // Click button, navigate to next page
-  await page.click('text="Start New Game"');
-  await page.waitForTimeout(1000);
-  await page.screenshot({ path: 'screenshots/02-game-page.png', fullPage: true });
-
-  // Continue exploring...
-  // await page.fill('input[name="username"]', 'test');
-  // await page.click('button[type="submit"]');
-  // await page.screenshot({ path: 'screenshots/03-next-state.png', fullPage: true });
-});
-EOF
-```
-
-2. **Run with xvfb (fake framebuffer for headless browser):**
-
-```bash
-mkdir -p screenshots docs/screenshots
-xvfb-run npx -y playwright test .explore-temp.spec.js --config=playwright.config.js
-```
-
-3. **View screenshots locally to see what happened:**
-
-```bash
-ls -lh screenshots/
-# Claude can read these with Read tool to see the UI
-```
-
-4. **Share specific screenshots with user via git:**
-
-```bash
-# Copy interesting screenshots to docs/ for git sharing
-cp screenshots/02-game-page.png docs/screenshots/game-$(date +%Y%m%d-%H%M%S).png
-
-# Commit and push
-git add docs/screenshots/
-git commit -m "Add screenshot: game page exploration"
-git push
-
-# Generate URL for user
-REPO_URL=$(git remote get-url origin | sed 's|http://.*@127.0.0.1:[0-9]*/git/||' | sed 's/\.git$//')
-BRANCH=$(git branch --show-current)
-echo "https://github.com/${REPO_URL}/raw/${BRANCH}/docs/screenshots/game-*.png"
-```
-
-5. **Clean up temp files:**
-
-```bash
-rm -f .explore-temp.spec.js
-```
+**To create a new test**, see the template in `playwright/README.md` or copy an existing test folder.
 
 ## Key Points
 
-- **Write interactive tests** to navigate the app, not just capture homepage
-- **Use xvfb-run** for headless browser (required in Claude Code Web)
-- **Capture screenshots at interesting states** to verify UI behavior
-- **Read screenshots** with Read tool to see what's rendered
-- **Share via git** by copying to `docs/screenshots/` and pushing
-- **No package.json needed** - use `npx -y` directly
-- **Temp test files** (.explore-temp.spec.js) should be in project root and cleaned up after
+- **Node.js scripts work better** than test runner for complex flows with LiveView/WebSockets
+- **Save screenshots to `playwright/screenshots/<test-name>/`
+- **Use `page.$$()` for multi-element queries** instead of `.waitForSelector()` loops
+- **Add logging** with timestamps to track test progress
+- **Handle errors gracefully** with try/catch and error screenshots
+- **Inspect HTML carefully** - use Grep to find actual phx-click handlers and form names
+- **No xvfb-run needed** - headless Chromium works without it
+- **No package.json needed** - use `npx -y playwright` or direct require('playwright')
+- **Read screenshots with Read tool** to verify what was captured
 
-## Cleanup Before Merge
+## Troubleshooting Tips
+
+### Finding the right selectors
+```bash
+# Search for phx-click handlers
+grep -r "phx-click" lib/your_app_web/components/
+
+# Search for form field names
+grep -r "name=" lib/your_app_web/components/
+```
+
+### Common issues
+- **Elements not found**: LiveView may still be loading. Add `await sleep(2000)` after navigation
+- **Timeouts on button clicks**: Check if button text matches exactly (case-sensitive)
+- **Form submissions fail**: Use `page.fill('input[name="field"]')` not `input[placeholder="text"]`
+- **Multi-page navigation**: Open new pages with `context.newPage()` for simultaneous users
+- **State not updating**: LiveView needs time after actions. Increase sleep() durations
+
+### Debugging
+```javascript
+// See what text is on the page
+const bodyText = await page.textContent('body');
+console.log(bodyText.substring(0, 500));
+
+// Count elements
+const buttons = await page.$$('button');
+console.log(`Found ${buttons.length} buttons`);
+
+// Take debug screenshot
+await page.screenshot({ path: 'debug.png', fullPage: true });
+```
+
+## Project Organization
+
+**Recommended structure:**
+```
+project/
+├── playwright/
+│   ├── README.md                  # Overview of all tests
+│   ├── screenshots/               # Test output
+│   │   └── test-suit-action-card/            # One folder per test
+│   └── test-suit-action-card/                 # Example test
+│       ├── README.md             # What this test does
+│       └── test.js               # The test script
+```
+
+**Benefits:**
+- Each test has its own folder with documentation
+- Screenshots organized by test name
+- Easy to add new tests without cluttering root
+- Clear structure for multiple test suites
+- Can reference tests in skills/documentation
+
+## Running Tests
 
 ```bash
-git rm -r docs/screenshots/
-git commit -m "Clean up test screenshots"
+# Start server
+mix phx.server
+
+# Run a test (in another terminal)
+node playwright/test-suit-action-card/test.js
+
+# View screenshots
+ls -lh playwright/screenshots/test-suit-action-card/
 ```
+
+## Adding New Tests
+
+See `playwright/README.md` for:
+- How to structure a new test
+- Test template with logging and error handling
+- Best practices

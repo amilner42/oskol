@@ -566,8 +566,15 @@ defmodule Oskol.Game.GameState do
     unless pending.player_id == player_id do
       {:error, :not_your_pending_selection}
     else
-      # Handle both single card and multiple cards (for :remove_card)
-      is_remove_card = pending.deck_builder_card.type == :remove_card
+      # Handle both single card and multiple cards (for :remove_card and suit changes)
+      is_multi_select =
+        pending.deck_builder_card.type == :remove_card or
+          pending.deck_builder_card.type in [
+            :change_suit_hearts,
+            :change_suit_diamonds,
+            :change_suit_clubs,
+            :change_suit_spades
+          ]
 
       selected_card_ids =
         if is_list(selected_card_id_or_ids),
@@ -583,10 +590,10 @@ defmodule Oskol.Game.GameState do
       if Enum.any?(selected_cards, &is_nil/1) do
         {:error, :invalid_card_selection}
       else
-        # For :remove_card, apply multiple removals; for others, use single card
+        # For :remove_card and suit changes, apply multiple changes; for others, use single card
         {updated_players, card_details} =
-          if is_remove_card do
-            # Remove all selected cards
+          if is_multi_select do
+            # Apply to all selected cards
             updated_players =
               Enum.reduce(selected_cards, game_state.players, fn card, acc_players ->
                 {new_players, _} =
@@ -595,7 +602,13 @@ defmodule Oskol.Game.GameState do
                 new_players
               end)
 
-            {updated_players, %{type: :remove_card, card_ids: selected_card_ids}}
+            detail_type =
+              case pending.deck_builder_card.type do
+                :remove_card -> :remove_card
+                type when type in [:change_suit_hearts, :change_suit_diamonds, :change_suit_clubs, :change_suit_spades] -> :change_suit
+              end
+
+            {updated_players, %{type: detail_type, card_ids: selected_card_ids}}
           else
             # Single card application
             apply_deck_builder_card(
@@ -741,6 +754,19 @@ defmodule Oskol.Game.GameState do
         # Remove the selected card from player's deck
         {apply_remove_card(players, player_id, selected_card.id),
          %{type: :remove_card, card_id: selected_card.id}}
+
+      type when type in [:change_suit_hearts, :change_suit_diamonds, :change_suit_clubs, :change_suit_spades] ->
+        # Change the suit of the selected card
+        new_suit =
+          case type do
+            :change_suit_hearts -> :hearts
+            :change_suit_diamonds -> :diamonds
+            :change_suit_clubs -> :clubs
+            :change_suit_spades -> :spades
+          end
+
+        {apply_suit_change(players, player_id, selected_card.id, new_suit),
+         %{type: :change_suit, suit: new_suit, card_id: selected_card.id}}
     end
   end
 
@@ -798,6 +824,36 @@ defmodule Oskol.Game.GameState do
       }
 
       %{player | card_piles: updated_card_piles}
+    end)
+  end
+
+  defp apply_suit_change(players, player_id, card_id, new_suit) do
+    alias Oskol.Game.CardPiles
+
+    Map.update!(players, player_id, fn player ->
+      # Change suit of the card in any pile
+      updated_card_piles = change_suit_in_piles(player.card_piles, card_id, new_suit)
+      %{player | card_piles: updated_card_piles}
+    end)
+  end
+
+  defp change_suit_in_piles(card_piles, card_id, new_suit) do
+    alias Oskol.Game.CardPiles
+
+    %CardPiles{
+      draw_pile: change_suit_in_list(card_piles.draw_pile, card_id, new_suit),
+      hand_pile: change_suit_in_list(card_piles.hand_pile, card_id, new_suit),
+      discard_pile: change_suit_in_list(card_piles.discard_pile, card_id, new_suit)
+    }
+  end
+
+  defp change_suit_in_list(cards, card_id, new_suit) do
+    Enum.map(cards, fn card ->
+      if card.id == card_id do
+        %{card | suit: new_suit}
+      else
+        card
+      end
     end)
   end
 

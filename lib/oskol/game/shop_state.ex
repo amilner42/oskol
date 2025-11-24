@@ -157,11 +157,15 @@ defmodule Oskol.Game.ShopState do
   defp hand_type_order(:four_of_a_kind), do: 7
   defp hand_type_order(:straight_flush), do: 8
 
-  # Sort key for deck builder cards (chips, mult, add, remove)
+  # Sort key for deck builder cards (chips, mult, add, remove, suit changes)
   defp deck_builder_sort_key(%DeckBuilderCard{type: :bonus_chips}), do: 0
   defp deck_builder_sort_key(%DeckBuilderCard{type: :bonus_mult}), do: 1
   defp deck_builder_sort_key(%DeckBuilderCard{type: :add_card}), do: 2
   defp deck_builder_sort_key(%DeckBuilderCard{type: :remove_card}), do: 3
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_hearts}), do: 4
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_diamonds}), do: 5
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_clubs}), do: 6
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_spades}), do: 7
 
   @doc """
   Returns true if both players have made their picks in the current round.

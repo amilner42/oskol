@@ -5,7 +5,9 @@ defmodule Oskol.Game.DeckBuilderCard do
 
   alias Oskol.Poker.Card
 
-  @type card_type :: :bonus_chips | :bonus_mult | :add_card | :remove_card
+  @type card_type ::
+          :bonus_chips | :bonus_mult | :add_card | :remove_card | :change_suit_hearts
+          | :change_suit_diamonds | :change_suit_clubs | :change_suit_spades
   @type t :: %__MODULE__{
           type: card_type(),
           bonus_amount: pos_integer() | nil
@@ -19,7 +21,8 @@ defmodule Oskol.Game.DeckBuilderCard do
   - 1 mult enhancement: +1 multiplier
   - 1 add card variant
   - 1 remove card variant
-  Total: 4 deck builder cards
+  - 4 suit-changing variants (one per suit)
+  Total: 8 deck builder cards
   """
   @spec all_deck_builder_cards() :: [t()]
   def all_deck_builder_cards do
@@ -27,7 +30,11 @@ defmodule Oskol.Game.DeckBuilderCard do
       %__MODULE__{type: :bonus_chips, bonus_amount: 40},
       %__MODULE__{type: :bonus_mult, bonus_amount: 1},
       %__MODULE__{type: :add_card, bonus_amount: nil},
-      %__MODULE__{type: :remove_card, bonus_amount: nil}
+      %__MODULE__{type: :remove_card, bonus_amount: nil},
+      %__MODULE__{type: :change_suit_hearts, bonus_amount: nil},
+      %__MODULE__{type: :change_suit_diamonds, bonus_amount: nil},
+      %__MODULE__{type: :change_suit_clubs, bonus_amount: nil},
+      %__MODULE__{type: :change_suit_spades, bonus_amount: nil}
     ]
   end
 
@@ -50,6 +57,10 @@ defmodule Oskol.Game.DeckBuilderCard do
   def card_name(%__MODULE__{type: :bonus_mult, bonus_amount: amount}), do: "+#{amount} Mult"
   def card_name(%__MODULE__{type: :add_card}), do: "Add Card"
   def card_name(%__MODULE__{type: :remove_card}), do: "Remove Cards"
+  def card_name(%__MODULE__{type: :change_suit_hearts}), do: "Change to ♥"
+  def card_name(%__MODULE__{type: :change_suit_diamonds}), do: "Change to ♦"
+  def card_name(%__MODULE__{type: :change_suit_clubs}), do: "Change to ♣"
+  def card_name(%__MODULE__{type: :change_suit_spades}), do: "Change to ♠"
 
   @doc """
   Returns a human-readable description for the card.
@@ -69,6 +80,22 @@ defmodule Oskol.Game.DeckBuilderCard do
 
   def card_description(%__MODULE__{type: :remove_card}) do
     "Remove up to 3 cards from your deck"
+  end
+
+  def card_description(%__MODULE__{type: :change_suit_hearts}) do
+    "Change up to 3 cards to Hearts"
+  end
+
+  def card_description(%__MODULE__{type: :change_suit_diamonds}) do
+    "Change up to 3 cards to Diamonds"
+  end
+
+  def card_description(%__MODULE__{type: :change_suit_clubs}) do
+    "Change up to 3 cards to Clubs"
+  end
+
+  def card_description(%__MODULE__{type: :change_suit_spades}) do
+    "Change up to 3 cards to Spades"
   end
 
   @doc """
