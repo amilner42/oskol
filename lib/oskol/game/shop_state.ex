@@ -106,11 +106,25 @@ defmodule Oskol.Game.ShopState do
   # and within each category they are sorted for consistency.
   @spec generate_random_shop_cards() :: [shop_card()]
   defp generate_random_shop_cards do
-    # Generate 4 random level up cards (sorted by hand type)
-    level_ups =
-      @all_hand_types
-      |> List.duplicate(3)
+    # Generate 4 random level up cards with weighted frequencies (sorted by hand type)
+    # Frequencies: High Card (4), Pair (4), Two Pair (3), Three Kind (3),
+    #              Straight (2), Flush (2), Full House (2), Four Kind (1), Straight Flush (1)
+    level_up_pool =
+      [
+        List.duplicate(:high_card, 4),
+        List.duplicate(:pair, 4),
+        List.duplicate(:two_pair, 3),
+        List.duplicate(:three_of_a_kind, 3),
+        List.duplicate(:straight, 2),
+        List.duplicate(:flush, 2),
+        List.duplicate(:full_house, 2),
+        List.duplicate(:four_of_a_kind, 1),
+        List.duplicate(:straight_flush, 1)
+      ]
       |> List.flatten()
+
+    level_ups =
+      level_up_pool
       |> Enum.shuffle()
       |> Enum.take(4)
       |> Enum.sort_by(&hand_type_order/1)
