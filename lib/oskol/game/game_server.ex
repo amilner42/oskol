@@ -24,8 +24,12 @@ defmodule Oskol.Game.GameServer do
     GenServer.call(via_tuple(game_id), :get_state)
   end
 
-  def start_game(game_id, initial_lives \\ 3, shop_rounds \\ 2) do
-    GenServer.call(via_tuple(game_id), {:start_game, initial_lives, shop_rounds})
+  def select_format(game_id, player_id, format) do
+    GenServer.call(via_tuple(game_id), {:select_format, player_id, format})
+  end
+
+  def start_game(game_id) do
+    GenServer.call(via_tuple(game_id), :start_game)
   end
 
   def lock_in_hand(game_id, player_id, hand) do
@@ -121,7 +125,7 @@ defmodule Oskol.Game.GameServer do
             event_log: event_log
         }
 
-        new_state = GameServerState.update_lobby_status(new_state)
+        new_state = GameServerState.update_lobby_status_with_format(new_state)
 
         broadcast_state_change(new_state)
 
@@ -172,7 +176,7 @@ defmodule Oskol.Game.GameServer do
               event_log: event_log
           }
 
-          new_state = GameServerState.update_lobby_status(new_state)
+          new_state = GameServerState.update_lobby_status_with_format(new_state)
 
           broadcast_state_change(new_state)
 
@@ -182,7 +186,35 @@ defmodule Oskol.Game.GameServer do
   end
 
   @impl true
-  def handle_call({:start_game, initial_lives, shop_rounds}, _from, %GameServerState{} = state) do
+  def handle_call({:select_format, player_id, format}, _from, %GameServerState{} = state) do
+    cond do
+      state.game_state != nil ->
+        {:reply, {:error, :game_already_started}, state, @timeout}
+
+      not Map.has_key?(state.connections, player_id) ->
+        {:reply, {:error, :player_not_found}, state, @timeout}
+
+      true ->
+        # Update format selection for this player
+        new_format_selections = Map.put(state.format_selections, player_id, format)
+
+        new_state = %GameServerState{
+          state
+          | format_selections: new_format_selections,
+            last_activity: System.system_time(:second)
+        }
+
+        # Update lobby status to check if both players agreed
+        new_state = GameServerState.update_lobby_status_with_format(new_state)
+
+        broadcast_state_change(new_state)
+
+        {:reply, {:ok, new_state}, new_state, @timeout}
+    end
+  end
+
+  @impl true
+  def handle_call(:start_game, _from, %GameServerState{} = state) do
     cond do
       state.game_state != nil ->
         {:reply, {:error, :game_already_started}, state, @timeout}
@@ -191,30 +223,41 @@ defmodule Oskol.Game.GameServer do
         {:reply, {:error, :not_enough_players}, state, @timeout}
 
       true ->
-        # Create player_names map from connections
-        player_names =
-          state.connections
-          |> Enum.map(fn {player_id, connection} -> {player_id, connection.name} end)
-          |> Map.new()
+        # Check if both players agreed on a format
+        case GameServerState.check_format_agreement(state) do
+          {:ok, format} ->
+            # Get lives and shop_rounds from agreed format
+            {initial_lives, shop_rounds} = GameServerState.format_to_config(format)
 
-        game_state = GameState.new(player_names, initial_lives, shop_rounds)
+            # Create player_names map from connections
+            player_names =
+              state.connections
+              |> Enum.map(fn {player_id, connection} -> {player_id, connection.name} end)
+              |> Map.new()
 
-        # Emit game_started event
-        player_ids = Map.keys(player_names)
+            game_state = GameState.new(player_names, initial_lives, shop_rounds)
 
-        event_log =
-          EventLog.append(state.event_log, state.game_id, :game_started, nil, %{
-            player_ids: player_ids,
-            initial_lives: initial_lives,
-            shop_rounds: shop_rounds,
-            starting_round: 1
-          })
+            # Emit game_started event
+            player_ids = Map.keys(player_names)
 
-        new_state = %GameServerState{state | game_state: game_state, event_log: event_log}
+            event_log =
+              EventLog.append(state.event_log, state.game_id, :game_started, nil, %{
+                player_ids: player_ids,
+                format: format,
+                initial_lives: initial_lives,
+                shop_rounds: shop_rounds,
+                starting_round: 1
+              })
 
-        broadcast_state_change(new_state)
+            new_state = %GameServerState{state | game_state: game_state, event_log: event_log}
 
-        {:reply, {:ok, new_state}, new_state, @timeout}
+            broadcast_state_change(new_state)
+
+            {:reply, {:ok, new_state}, new_state, @timeout}
+
+          :no_agreement ->
+            {:reply, {:error, :no_format_agreement}, state, @timeout}
+        end
     end
   end
 
@@ -275,7 +318,7 @@ defmodule Oskol.Game.GameServer do
           event_log: event_log
       }
 
-      new_state = GameServerState.update_lobby_status(new_state)
+      new_state = GameServerState.update_lobby_status_with_format(new_state)
 
       broadcast_state_change(new_state)
 

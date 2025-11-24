@@ -38,9 +38,10 @@ defmodule Oskol.Game do
   defdelegate join_game(game_id, player_name, player_pid), to: GameServer
   defdelegate rejoin_game(game_id, player_name, player_pid), to: GameServer
   defdelegate get_server_state(game_id), to: GameServer, as: :get_state
+  defdelegate select_format(game_id, player_id, format), to: GameServer
 
-  def start_game_session(game_id, initial_lives \\ 3, shop_rounds \\ 2) do
-    GameServer.start_game(game_id, initial_lives, shop_rounds)
+  def start_game_session(game_id) do
+    GameServer.start_game(game_id)
   end
 
   defdelegate player_lock_in_hand(game_id, player_id, hand), to: GameServer, as: :lock_in_hand
