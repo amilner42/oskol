@@ -166,6 +166,7 @@ defmodule Oskol.Game.ShopState do
   defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_diamonds}), do: 5
   defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_clubs}), do: 6
   defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_spades}), do: 7
+  defp deck_builder_sort_key(%DeckBuilderCard{type: :increase_rank}), do: 8
 
   @doc """
   Returns true if both players have made their picks in the current round.
