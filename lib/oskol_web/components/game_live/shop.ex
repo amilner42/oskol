@@ -500,33 +500,33 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <!-- 8-Card Selection Grid -->
         <div class="mb-6">
           <div class="text-sm text-base-content/70 mb-4">
-            <%
-              is_remove = @pending_deck_builder.deck_builder_card.type == :remove_card
-              instruction = if is_remove, do: "Select up to 3 cards to remove (or skip):", else: "Select a card to apply this enhancement (or skip):"
-            %>
-            <%= instruction %>
+            <% is_remove = @pending_deck_builder.deck_builder_card.type == :remove_card
+
+            instruction =
+              if is_remove,
+                do: "Select up to 3 cards to remove (or skip):",
+                else: "Select a card to apply this enhancement (or skip):" %>
+            {instruction}
             <%= if @deck_builder_selection do %>
-              <%
-                count = if is_list(@deck_builder_selection) do
+              <% count =
+                if is_list(@deck_builder_selection) do
                   length(@deck_builder_selection)
                 else
                   1
-                end
-              %>
+                end %>
               <span class="text-purple-500 font-bold ml-2">
-                (<%= count %> card<%= if count != 1, do: "s" %> selected)
+                ({count} card{if count != 1, do: "s"} selected)
               </span>
             <% end %>
           </div>
           <div class="grid grid-cols-4 gap-3 max-w-2xl mx-auto">
             <%= for card <- @pending_deck_builder.available_cards do %>
-              <%
-                is_selected = if is_list(@deck_builder_selection) do
+              <% is_selected =
+                if is_list(@deck_builder_selection) do
                   card.id in @deck_builder_selection
                 else
                   @deck_builder_selection == card.id
-                end
-              %>
+                end %>
               <.deck_builder_card
                 card={card}
                 selected={is_selected}
@@ -545,14 +545,13 @@ defmodule OskolWeb.Components.GameLive.Shop do
               Skip
             </button>
             <%= if @deck_builder_selection do %>
-              <%
-                # For :remove_card, encode the list as JSON; for others, pass single card_id
-                card_ids_param = if is_list(@deck_builder_selection) do
+              <% # For :remove_card, encode the list as JSON; for others, pass single card_id
+              card_ids_param =
+                if is_list(@deck_builder_selection) do
                   Jason.encode!(@deck_builder_selection)
                 else
                   @deck_builder_selection
-                end
-              %>
+                end %>
               <button
                 phx-click="confirm_deck_builder_pick"
                 phx-value-card_ids={card_ids_param}

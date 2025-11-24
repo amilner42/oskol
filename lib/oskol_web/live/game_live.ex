@@ -457,6 +457,7 @@ defmodule OskolWeb.GameLive do
       if is_remove_card do
         # Toggle card in/out of list (max 3)
         current_list = socket.assigns.deck_builder_selection || []
+
         if card_id in current_list do
           List.delete(current_list, card_id)
         else

@@ -568,7 +568,11 @@ defmodule Oskol.Game.GameState do
     else
       # Handle both single card and multiple cards (for :remove_card)
       is_remove_card = pending.deck_builder_card.type == :remove_card
-      selected_card_ids = if is_list(selected_card_id_or_ids), do: selected_card_id_or_ids, else: [selected_card_id_or_ids]
+
+      selected_card_ids =
+        if is_list(selected_card_id_or_ids),
+          do: selected_card_id_or_ids,
+          else: [selected_card_id_or_ids]
 
       # Validate all selected cards are in the available cards
       selected_cards =
@@ -583,10 +587,14 @@ defmodule Oskol.Game.GameState do
         {updated_players, card_details} =
           if is_remove_card do
             # Remove all selected cards
-            updated_players = Enum.reduce(selected_cards, game_state.players, fn card, acc_players ->
-              {new_players, _} = apply_deck_builder_card(acc_players, player_id, pending.deck_builder_card, card)
-              new_players
-            end)
+            updated_players =
+              Enum.reduce(selected_cards, game_state.players, fn card, acc_players ->
+                {new_players, _} =
+                  apply_deck_builder_card(acc_players, player_id, pending.deck_builder_card, card)
+
+                new_players
+              end)
+
             {updated_players, %{type: :remove_card, card_ids: selected_card_ids}}
           else
             # Single card application

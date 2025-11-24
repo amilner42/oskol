@@ -640,34 +640,90 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           # Combine all cards
           all_cards = draw_pile ++ hand_pile ++ discard_pile
 
-          # Group by suit
-          cards_by_suit = Enum.group_by(all_cards, & &1.suit)
-          suits = [:spades, :hearts, :clubs, :diamonds] %>
-          
-    <!-- Render each suit as a row -->
-          <%= for suit <- suits do %>
-            <% suit_cards = Map.get(cards_by_suit, suit, []) %>
-            <%= if length(suit_cards) > 0 do %>
-              <% # Count non-discarded cards
-              non_discarded_count = Enum.count(suit_cards, fn card -> card.id not in discard_ids end) %>
+          # Group cards by (suit, rank) to handle duplicates
+          cards_by_position = Enum.group_by(all_cards, fn card -> {card.suit, card.rank} end)
 
-              <div class="mb-4">
-                <div class="text-sm text-base-content/70 mb-1 font-medium">
-                  {suit |> to_string() |> String.capitalize()}: {non_discarded_count} remaining
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  <%= for card <- Enum.sort_by(suit_cards, & &1.rank, :desc) do %>
-                    <% in_discard = card.id in discard_ids
-                    opacity_class = if in_discard, do: "opacity-30", else: "opacity-100" %>
-                    <.card_display
-                      card={card}
-                      class={"w-16 h-22 #{opacity_class}"}
-                    />
-                  <% end %>
-                </div>
-              </div>
-            <% end %>
-          <% end %>
+          # Define suits and ranks in display order
+          suits = [:spades, :hearts, :clubs, :diamonds]
+          ranks = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]
+
+          # Rank display names
+          rank_names = %{
+            14 => "A",
+            13 => "K",
+            12 => "Q",
+            11 => "J",
+            10 => "10",
+            9 => "9",
+            8 => "8",
+            7 => "7",
+            6 => "6",
+            5 => "5",
+            4 => "4",
+            3 => "3",
+            2 => "2"
+          }
+
+          # Suit display symbols
+          suit_symbols = %{
+            spades: "♠",
+            hearts: "♥",
+            clubs: "♣",
+            diamonds: "♦"
+          }
+
+          # Count total non-discarded cards
+          total_remaining = Enum.count(all_cards, fn card -> card.id not in discard_ids end) %>
+
+          <div class="mb-3 text-sm text-base-content/70">
+            Total: {total_remaining} / {length(all_cards)} cards remaining
+          </div>
+          
+    <!-- Table layout -->
+          <div class="overflow-x-auto">
+            <table class="border-collapse">
+              <!-- Body rows with suits -->
+              <tbody>
+                <%= for suit <- suits do %>
+                  <% # Count non-discarded cards of this suit
+                  suit_cards = Map.get(Enum.group_by(all_cards, & &1.suit), suit, [])
+                  suit_remaining = Enum.count(suit_cards, fn card -> card.id not in discard_ids end)
+                  suit_total = length(suit_cards) %>
+                  <tr>
+                    <td class="px-2 py-1 text-left text-base font-semibold bg-base-200">
+                      <span class="text-xs text-base-content/60 mr-1">
+                        {suit_remaining}/{suit_total}
+                      </span>
+                      <span class={[
+                        if(suit in [:hearts, :diamonds], do: "text-error", else: "text-base-content")
+                      ]}>
+                        {suit_symbols[suit]}
+                      </span>
+                    </td>
+                    <%= for rank <- ranks do %>
+                      <td class="p-1 bg-base-100">
+                        <% cards_at_position = Map.get(cards_by_position, {suit, rank}, []) %>
+                        <%= if length(cards_at_position) > 0 do %>
+                          <div class="flex flex-wrap gap-1 justify-start items-start min-h-[6rem]">
+                            <%= for card <- cards_at_position do %>
+                              <% in_discard = card.id in discard_ids
+                              opacity_class = if in_discard, do: "opacity-30", else: "opacity-100" %>
+                              <.card_display
+                                card={card}
+                                class={"w-16 h-24 #{opacity_class}"}
+                              />
+                            <% end %>
+                          </div>
+                        <% else %>
+                          <div class="w-16 h-24 min-h-[6rem]"></div>
+                        <% end %>
+                      </td>
+                    <% end %>
+                  </tr>
+                <% end %>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     <% end %>

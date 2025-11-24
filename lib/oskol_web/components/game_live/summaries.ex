@@ -153,7 +153,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
               </div>
             </div>
 
-          <%!-- Game over or shop configured - show skip button --%>
+            <%!-- Game over or shop configured - show skip button --%>
           <% true -> %>
             <div class="mt-6 flex justify-center">
               <button
