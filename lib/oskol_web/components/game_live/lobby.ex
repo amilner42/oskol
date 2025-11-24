@@ -145,7 +145,59 @@ defmodule OskolWeb.Components.GameLive.Lobby do
     """
   end
 
+  def format_card(assigns) do
+    ~H"""
+    <button
+      phx-click="select_format"
+      phx-value-format={@format}
+      class={[
+        "w-full p-4 rounded-lg transition-all border-2",
+        if(@selected,
+          do: "bg-primary border-primary text-primary-content shadow-lg",
+          else: "bg-base-200 border-base-300 text-base-content hover:border-primary/50 hover:bg-base-300"
+        ),
+        if(@opponent_selected,
+          do: "ring-2 ring-success ring-offset-2 ring-offset-base-100",
+          else: ""
+        )
+      ]}
+    >
+      <div class="text-left">
+        <div class="font-bold text-lg mb-1">{@title}</div>
+        <div class={[
+          "text-sm",
+          if(@selected, do: "text-primary-content/80", else: "text-base-content/60")
+        ]}>
+          {format_description(@lives, @shop_rounds)}
+        </div>
+      </div>
+    </button>
+    """
+  end
+
+  defp format_description(lives, 0), do: "#{lives} life • No shop"
+  defp format_description(lives, shop_rounds), do: "#{lives} lives • #{shop_rounds} shop rounds"
+
   def lobby_screen(assigns) do
+    # Get opponent's format selection if available
+    opponent_format =
+      if assigns[:player_id] do
+        opponent_id =
+          assigns.server_state.connections
+          |> Map.keys()
+          |> Enum.find(&(&1 != assigns.player_id))
+
+        if opponent_id do
+          Map.get(assigns.server_state.format_selections, opponent_id)
+        else
+          nil
+        end
+      else
+        nil
+      end
+
+    assigns = assign(assigns, :opponent_format, opponent_format)
+
     ~H"""
     <div class="min-h-screen bg-base-100 flex items-center justify-center p-6">
       <div class="w-full max-w-md">
@@ -154,55 +206,59 @@ defmodule OskolWeb.Components.GameLive.Lobby do
           <span class="text-base-content/60 text-sm">Playing as</span>
           <div class="text-2xl font-semibold text-base-content mt-1">{@player_name}</div>
         </div>
-        
+
     <!-- Players List -->
         <.player_list connections={@server_state.connections} />
-        
-    <!-- Game Settings -->
-        <div class="space-y-6 mb-8">
-          <!-- Lives Selector -->
-          <div class="flex items-center justify-between">
-            <span class="text-base-content font-medium">Lives</span>
-            <div class="flex gap-2">
-              <button
-                :for={lives <- [1, 3, 5, 7]}
-                phx-click="select_lives"
-                phx-value-lives={lives}
-                class={[
-                  "w-12 h-12 rounded-lg font-semibold transition-all",
-                  if(@selected_lives == lives,
-                    do: "bg-primary text-primary-content shadow-lg",
-                    else: "bg-base-200 text-base-content/70 hover:bg-base-300"
-                  )
-                ]}
-              >
-                {lives}
-              </button>
-            </div>
+
+    <!-- Format Selection -->
+        <div class="mb-8">
+          <h3 class="text-base-content font-semibold mb-4 text-center">Select Game Format</h3>
+          <div class="space-y-3">
+            <.format_card
+              format="bullet"
+              title="Bullet"
+              lives={1}
+              shop_rounds={0}
+              selected={@selected_format == :bullet}
+              opponent_selected={@opponent_format == :bullet}
+            />
+            <.format_card
+              format="blitz"
+              title="Blitz"
+              lives={2}
+              shop_rounds={1}
+              selected={@selected_format == :blitz}
+              opponent_selected={@opponent_format == :blitz}
+            />
+            <.format_card
+              format="rapid"
+              title="Rapid"
+              lives={3}
+              shop_rounds={2}
+              selected={@selected_format == :rapid}
+              opponent_selected={@opponent_format == :rapid}
+            />
+            <.format_card
+              format="classical"
+              title="Classical"
+              lives={5}
+              shop_rounds={2}
+              selected={@selected_format == :classical}
+              opponent_selected={@opponent_format == :classical}
+            />
           </div>
-          
-    <!-- Shop Rounds Selector -->
-          <div class="flex items-center justify-between">
-            <span class="text-base-content font-medium">Shop Rounds</span>
-            <div class="flex gap-2">
-              <button
-                :for={rounds <- [0, 1, 2, 3]}
-                phx-click="select_shop_rounds"
-                phx-value-rounds={rounds}
-                class={[
-                  "w-12 h-12 rounded-lg font-semibold transition-all",
-                  if(@selected_shop_rounds == rounds,
-                    do: "bg-primary text-primary-content shadow-lg",
-                    else: "bg-base-200 text-base-content/70 hover:bg-base-300"
-                  )
-                ]}
-              >
-                {rounds}
-              </button>
+
+          <%= if @opponent_format != nil do %>
+            <div class="mt-3 text-center text-sm text-base-content/60">
+              <%= if @selected_format == @opponent_format do %>
+                <span class="text-success font-semibold">Both players ready!</span>
+              <% else %>
+                <span>Opponent selected different format</span>
+              <% end %>
             </div>
-          </div>
+          <% end %>
         </div>
-        
+
     <!-- Start Game Button -->
         <div>
           <%= if @server_state.lobby_status == :ready_to_start do %>
@@ -214,7 +270,11 @@ defmodule OskolWeb.Components.GameLive.Lobby do
             </button>
           <% else %>
             <div class="text-center py-4 text-base-content/60">
-              Waiting for another player...
+              <%= if map_size(@server_state.connections) < 2 do %>
+                Waiting for another player...
+              <% else %>
+                Both players must select the same format
+              <% end %>
             </div>
           <% end %>
         </div>

@@ -52,8 +52,7 @@ defmodule OskolWeb.GameLive do
         opponent_new_card_ids: [],
         last_seen_event_sequence: 0,
         acknowledged_event_sequence: 0,
-        selected_lives: 3,
-        selected_shop_rounds: 2,
+        selected_format: nil,
         previewing_card_index: nil,
         deck_builder_selection: nil
       )
@@ -77,8 +76,7 @@ defmodule OskolWeb.GameLive do
                   joined: true,
                   server_state: new_state,
                   viewing_results: viewing_results,
-                  selected_lives: 3,
-                  selected_shop_rounds: 2,
+                  selected_format: Map.get(new_state.format_selections, player_id),
                   error: nil
                 )
 
@@ -112,8 +110,7 @@ defmodule OskolWeb.GameLive do
            joined: true,
            server_state: new_state,
            viewing_results: viewing_results,
-           selected_lives: 3,
-           selected_shop_rounds: 2,
+           selected_format: Map.get(new_state.format_selections, player_id),
            error: nil
          )}
 
@@ -138,8 +135,7 @@ defmodule OskolWeb.GameLive do
              player_name: name,
              joined: true,
              server_state: new_state,
-             selected_lives: 3,
-             selected_shop_rounds: 2,
+             selected_format: nil,
              error: nil
            )}
 
@@ -154,8 +150,7 @@ defmodule OskolWeb.GameLive do
                  player_name: name,
                  joined: true,
                  server_state: new_state,
-                 selected_lives: 3,
-                 selected_shop_rounds: 2,
+                 selected_format: Map.get(new_state.format_selections, player_id),
                  error: nil
                )}
 
@@ -170,24 +165,21 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
-  def handle_event("select_lives", %{"lives" => lives_str}, socket) do
-    lives = String.to_integer(lives_str)
-    {:noreply, assign(socket, selected_lives: lives)}
-  end
+  def handle_event("select_format", %{"format" => format_str}, socket) do
+    format = String.to_existing_atom(format_str)
 
-  @impl true
-  def handle_event("select_shop_rounds", %{"rounds" => rounds_str}, socket) do
-    rounds = String.to_integer(rounds_str)
-    {:noreply, assign(socket, selected_shop_rounds: rounds)}
+    case Game.select_format(socket.assigns.game_id, socket.assigns.player_id, format) do
+      {:ok, new_state} ->
+        {:noreply, assign(socket, server_state: new_state, selected_format: format, error: nil)}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, error: format_error(reason))}
+    end
   end
 
   @impl true
   def handle_event("start_game", _params, socket) do
-    case Game.start_game_session(
-           socket.assigns.game_id,
-           socket.assigns.selected_lives,
-           socket.assigns.selected_shop_rounds
-         ) do
+    case Game.start_game_session(socket.assigns.game_id) do
       {:ok, new_state} ->
         {:noreply, assign(socket, server_state: new_state, error: nil)}
 
@@ -736,6 +728,14 @@ defmodule OskolWeb.GameLive do
         socket.assigns.previewing_card_index
       end
 
+    # Update selected_format from server state if available
+    selected_format =
+      if socket.assigns.player_id do
+        Map.get(new_state.format_selections, socket.assigns.player_id)
+      else
+        socket.assigns.selected_format
+      end
+
     {:noreply,
      socket
      |> assign(
@@ -747,8 +747,7 @@ defmodule OskolWeb.GameLive do
        new_card_ids: new_card_ids,
        opponent_new_card_ids: opponent_new_card_ids,
        last_seen_event_sequence: last_seen_sequence,
-       selected_lives: Map.get(socket.assigns, :selected_lives, 3),
-       selected_shop_rounds: Map.get(socket.assigns, :selected_shop_rounds, 2),
+       selected_format: selected_format,
        deck_builder_selection: deck_builder_selection,
        previewing_card_index: previewing_card_index
      )
@@ -789,6 +788,7 @@ defmodule OskolWeb.GameLive do
   defp format_error(:player_already_connected), do: "Name already taken by a connected player"
   defp format_error(:game_already_started), do: "Game already started"
   defp format_error(:not_enough_players), do: "Need 2 players to start"
+  defp format_error(:no_format_agreement), do: "Both players must select the same format"
   defp format_error(:game_not_started), do: "Game hasn't started yet"
   defp format_error(:player_not_found), do: "Player not found"
   defp format_error(:player_disconnected), do: "You are disconnected"
@@ -845,10 +845,10 @@ defmodule OskolWeb.GameLive do
       <% else %>
         <%= if @server_state.game_state == nil do %>
           <.lobby_screen
+            player_id={@player_id}
             player_name={@player_name}
             server_state={@server_state}
-            selected_lives={@selected_lives}
-            selected_shop_rounds={@selected_shop_rounds}
+            selected_format={@selected_format}
           />
         <% else %>
           <% game_data = get_game_data(assigns) %>

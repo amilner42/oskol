@@ -11,6 +11,7 @@ defmodule Oskol.Game.GameServerState do
   @type game_id :: String.t()
   @type player_id :: String.t()
   @type lobby_status :: :waiting_for_players | :ready_to_start
+  @type game_format :: :bullet | :blitz | :rapid | :classical
 
   @type connection :: %{
           name: String.t(),
@@ -25,7 +26,8 @@ defmodule Oskol.Game.GameServerState do
           connections: %{player_id() => connection()},
           lobby_status: lobby_status(),
           last_activity: integer(),
-          event_log: EventLog.t()
+          event_log: EventLog.t(),
+          format_selections: %{player_id() => game_format()}
         }
 
   defstruct game_id: nil,
@@ -33,7 +35,8 @@ defmodule Oskol.Game.GameServerState do
             connections: %{},
             lobby_status: :waiting_for_players,
             last_activity: 0,
-            event_log: nil
+            event_log: nil,
+            format_selections: %{}
 
   @doc """
   Creates a new game server state for the given game_id.
@@ -46,7 +49,8 @@ defmodule Oskol.Game.GameServerState do
       connections: %{},
       lobby_status: :waiting_for_players,
       last_activity: System.system_time(:second),
-      event_log: EventLog.new()
+      event_log: EventLog.new(),
+      format_selections: %{}
     }
   end
 
@@ -169,4 +173,57 @@ defmodule Oskol.Game.GameServerState do
   defp perform_action(_game_state, _player_id, action) do
     {:error, {:unknown_action, action}}
   end
+
+  @doc """
+  Converts a game format to its configuration (lives, shop_rounds).
+  """
+  @spec format_to_config(game_format()) :: {pos_integer(), non_neg_integer()}
+  def format_to_config(:bullet), do: {1, 0}
+  def format_to_config(:blitz), do: {2, 1}
+  def format_to_config(:rapid), do: {3, 2}
+  def format_to_config(:classical), do: {5, 2}
+
+  @doc """
+  Checks if both players have selected the same format.
+  Returns {:ok, format} if agreed, :no_agreement if different or missing.
+  """
+  @spec check_format_agreement(t()) :: {:ok, game_format()} | :no_agreement
+  def check_format_agreement(%__MODULE__{format_selections: selections, connections: connections}) do
+    # Need exactly 2 players and 2 format selections
+    if map_size(connections) == 2 and map_size(selections) == 2 do
+      formats = Map.values(selections)
+      [format1, format2] = formats
+
+      if format1 == format2 do
+        {:ok, format1}
+      else
+        :no_agreement
+      end
+    else
+      :no_agreement
+    end
+  end
+
+  @doc """
+  Updates lobby status to include format agreement check.
+  """
+  @spec update_lobby_status_with_format(t()) :: t()
+  def update_lobby_status_with_format(%__MODULE__{game_state: nil} = state) do
+    connected_count = Enum.count(state.connections, fn {_id, conn} -> conn.connected end)
+    player_count = map_size(state.connections)
+
+    lobby_status =
+      cond do
+        connected_count == 2 and player_count == 2 and
+            match?({:ok, _}, check_format_agreement(state)) ->
+          :ready_to_start
+
+        true ->
+          :waiting_for_players
+      end
+
+    %__MODULE__{state | lobby_status: lobby_status}
+  end
+
+  def update_lobby_status_with_format(%__MODULE__{} = state), do: state
 end
