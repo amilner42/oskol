@@ -566,14 +566,15 @@ defmodule Oskol.Game.GameState do
     unless pending.player_id == player_id do
       {:error, :not_your_pending_selection}
     else
-      # Handle both single card and multiple cards (for :remove_card and suit changes)
+      # Handle both single card and multiple cards (for :remove_card, suit changes, and rank increase)
       is_multi_select =
         pending.deck_builder_card.type == :remove_card or
           pending.deck_builder_card.type in [
             :change_suit_hearts,
             :change_suit_diamonds,
             :change_suit_clubs,
-            :change_suit_spades
+            :change_suit_spades,
+            :increase_rank
           ]
 
       selected_card_ids =
@@ -615,6 +616,9 @@ defmodule Oskol.Game.GameState do
                        :change_suit_spades
                      ] ->
                   :change_suit
+
+                :increase_rank ->
+                  :increase_rank
               end
 
             {updated_players, %{type: detail_type, card_ids: selected_card_ids}}
@@ -782,6 +786,11 @@ defmodule Oskol.Game.GameState do
 
         {apply_suit_change(players, player_id, selected_card.id, new_suit),
          %{type: :change_suit, suit: new_suit, card_id: selected_card.id}}
+
+      :increase_rank ->
+        # Increase the rank of the selected card by 1 (max 14)
+        {apply_rank_increase(players, player_id, selected_card.id),
+         %{type: :increase_rank, card_id: selected_card.id}}
     end
   end
 
@@ -866,6 +875,38 @@ defmodule Oskol.Game.GameState do
     Enum.map(cards, fn card ->
       if card.id == card_id do
         %{card | suit: new_suit}
+      else
+        card
+      end
+    end)
+  end
+
+  defp apply_rank_increase(players, player_id, card_id) do
+    alias Oskol.Game.CardPiles
+
+    Map.update!(players, player_id, fn player ->
+      # Increase rank of the card in any pile
+      updated_card_piles = increase_rank_in_piles(player.card_piles, card_id)
+      %{player | card_piles: updated_card_piles}
+    end)
+  end
+
+  defp increase_rank_in_piles(card_piles, card_id) do
+    alias Oskol.Game.CardPiles
+
+    %CardPiles{
+      draw_pile: increase_rank_in_list(card_piles.draw_pile, card_id),
+      hand_pile: increase_rank_in_list(card_piles.hand_pile, card_id),
+      discard_pile: increase_rank_in_list(card_piles.discard_pile, card_id)
+    }
+  end
+
+  defp increase_rank_in_list(cards, card_id) do
+    Enum.map(cards, fn card ->
+      if card.id == card_id do
+        # Increase rank by 1, but cap at 14 (Ace)
+        new_rank = min(card.rank + 1, 14)
+        %{card | rank: new_rank}
       else
         card
       end

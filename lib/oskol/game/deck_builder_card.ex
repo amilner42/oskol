@@ -14,6 +14,7 @@ defmodule Oskol.Game.DeckBuilderCard do
           | :change_suit_diamonds
           | :change_suit_clubs
           | :change_suit_spades
+          | :increase_rank
   @type t :: %__MODULE__{
           type: card_type(),
           bonus_amount: pos_integer() | nil
@@ -28,7 +29,8 @@ defmodule Oskol.Game.DeckBuilderCard do
   - 1 add card variant
   - 1 remove card variant
   - 4 suit-changing variants (one per suit)
-  Total: 8 deck builder cards
+  - 1 rank increase variant
+  Total: 9 deck builder cards
   """
   @spec all_deck_builder_cards() :: [t()]
   def all_deck_builder_cards do
@@ -40,7 +42,8 @@ defmodule Oskol.Game.DeckBuilderCard do
       %__MODULE__{type: :change_suit_hearts, bonus_amount: nil},
       %__MODULE__{type: :change_suit_diamonds, bonus_amount: nil},
       %__MODULE__{type: :change_suit_clubs, bonus_amount: nil},
-      %__MODULE__{type: :change_suit_spades, bonus_amount: nil}
+      %__MODULE__{type: :change_suit_spades, bonus_amount: nil},
+      %__MODULE__{type: :increase_rank, bonus_amount: nil}
     ]
   end
 
@@ -67,6 +70,7 @@ defmodule Oskol.Game.DeckBuilderCard do
   def card_name(%__MODULE__{type: :change_suit_diamonds}), do: "Change to ♦"
   def card_name(%__MODULE__{type: :change_suit_clubs}), do: "Change to ♣"
   def card_name(%__MODULE__{type: :change_suit_spades}), do: "Change to ♠"
+  def card_name(%__MODULE__{type: :increase_rank}), do: "Increase Rank"
 
   @doc """
   Returns a human-readable description for the card.
@@ -102,6 +106,10 @@ defmodule Oskol.Game.DeckBuilderCard do
 
   def card_description(%__MODULE__{type: :change_suit_spades}) do
     "Change up to 3 cards to Spades"
+  end
+
+  def card_description(%__MODULE__{type: :increase_rank}) do
+    "Increase rank of up to 3 cards by 1 (max rank is Ace)"
   end
 
   @doc """
