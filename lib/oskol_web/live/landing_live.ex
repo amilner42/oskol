@@ -21,7 +21,9 @@ defmodule OskolWeb.LandingLive do
        player_id: nil,
        server_state: nil,
        selected_format: nil,
-       disconnected_players: []
+       disconnected_players: [],
+       # Tutorial state
+       tutorial_step: 0
      )}
   end
 
@@ -260,6 +262,34 @@ defmodule OskolWeb.LandingLive do
      |> push_patch(to: "/")}
   end
 
+  @impl true
+  def handle_event("start_tutorial", _params, socket) do
+    {:noreply, assign(socket, step: :tutorial, tutorial_step: 1)}
+  end
+
+  @impl true
+  def handle_event("tutorial_next", _params, socket) do
+    next_step = socket.assigns.tutorial_step + 1
+    max_steps = 6
+
+    if next_step > max_steps do
+      {:noreply, assign(socket, step: :game_name, tutorial_step: 0)}
+    else
+      {:noreply, assign(socket, tutorial_step: next_step)}
+    end
+  end
+
+  @impl true
+  def handle_event("tutorial_prev", _params, socket) do
+    prev_step = max(1, socket.assigns.tutorial_step - 1)
+    {:noreply, assign(socket, tutorial_step: prev_step)}
+  end
+
+  @impl true
+  def handle_event("exit_tutorial", _params, socket) do
+    {:noreply, assign(socket, step: :game_name, tutorial_step: 0)}
+  end
+
   # Handle game state updates from PubSub
   @impl true
   def handle_info({:game_state_updated, new_state}, socket) do
@@ -339,6 +369,8 @@ defmodule OskolWeb.LandingLive do
                   server_state={@server_state}
                   selected_format={@selected_format}
                 />
+              <% :tutorial -> %>
+                <.tutorial_screen tutorial_step={@tutorial_step} />
             <% end %>
 
             <%= if @step in [:game_name, :player_name] do %>
@@ -366,6 +398,12 @@ defmodule OskolWeb.LandingLive do
         New Game
       </.brand_button>
     </form>
+    <button
+      phx-click="start_tutorial"
+      class="mt-4 w-full px-6 py-3 rounded-xl font-medium text-base text-base-content/70 bg-white/30 hover:bg-white/50 backdrop-blur-sm border border-white/40 hover:border-white/60 transition-all"
+    >
+      How to Play
+    </button>
     """
   end
 
@@ -561,6 +599,241 @@ defmodule OskolWeb.LandingLive do
           </button>
         <% end %>
       </div>
+    </div>
+    """
+  end
+
+  # ============================================================================
+  # TUTORIAL SCREEN
+  # ============================================================================
+
+  defp tutorial_screen(assigns) do
+    ~H"""
+    <div class="max-w-2xl mx-auto">
+      <!-- Progress indicator -->
+      <div class="flex justify-center gap-2 mb-6">
+        <%= for step <- 1..6 do %>
+          <div class={[
+            "w-2 h-2 rounded-full transition-all",
+            if(step == @tutorial_step, do: "bg-white scale-125", else: "bg-white/30")
+          ]}>
+          </div>
+        <% end %>
+      </div>
+
+      <!-- Tutorial content -->
+      <div class="bg-white/90 backdrop-blur-sm rounded-2xl p-6 shadow-xl mb-6">
+        <.tutorial_step_content step={@tutorial_step} />
+      </div>
+
+      <!-- Navigation -->
+      <div class="flex gap-3">
+        <%= if @tutorial_step > 1 do %>
+          <button
+            phx-click="tutorial_prev"
+            class="flex-1 px-6 py-3 rounded-xl font-medium text-base text-gray-600 bg-white/50 hover:bg-white/70 backdrop-blur-sm border border-white/40 transition-all"
+          >
+            Back
+          </button>
+        <% else %>
+          <button
+            phx-click="exit_tutorial"
+            class="flex-1 px-6 py-3 rounded-xl font-medium text-base text-gray-600 bg-white/50 hover:bg-white/70 backdrop-blur-sm border border-white/40 transition-all"
+          >
+            Skip
+          </button>
+        <% end %>
+        <button
+          phx-click="tutorial_next"
+          class="flex-1 px-6 py-3 rounded-xl font-bold text-base text-white bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 shadow-lg transition-all"
+        >
+          <%= if @tutorial_step == 6, do: "Start Playing!", else: "Next" %>
+        </button>
+      </div>
+    </div>
+    """
+  end
+
+  defp tutorial_step_content(%{step: 1} = assigns) do
+    ~H"""
+    <div class="text-center">
+      <div class="text-4xl mb-4">&#9824; &#9829;</div>
+      <h2 class="text-2xl font-bold text-gray-800 mb-3">Welcome to Oskol!</h2>
+      <p class="text-gray-600 mb-4">
+        A poker roguelike where you battle a friend using poker hands.
+      </p>
+      <p class="text-gray-500 text-sm">
+        Win rounds by playing higher-scoring hands than your opponent.
+      </p>
+    </div>
+    """
+  end
+
+  defp tutorial_step_content(%{step: 2} = assigns) do
+    ~H"""
+    <div class="text-center">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">Your Cards</h2>
+      <!-- Demo cards -->
+      <div class="flex justify-center gap-2 mb-4">
+        <.tutorial_card rank="A" suit={:spades} />
+        <.tutorial_card rank="K" suit={:hearts} />
+        <.tutorial_card rank="Q" suit={:spades} />
+        <.tutorial_card rank="J" suit={:diamonds} />
+        <.tutorial_card rank="10" suit={:clubs} />
+        <.tutorial_card rank="9" suit={:hearts} />
+        <.tutorial_card rank="8" suit={:spades} />
+        <.tutorial_card rank="7" suit={:clubs} />
+      </div>
+      <p class="text-gray-600 mb-2">
+        Each round, you draw <span class="font-bold">8 cards</span> from your deck.
+      </p>
+      <p class="text-gray-500 text-sm">
+        Tap cards to select 1-5 for your hand.
+      </p>
+    </div>
+    """
+  end
+
+  defp tutorial_step_content(%{step: 3} = assigns) do
+    ~H"""
+    <div class="text-center">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">Poker Hands</h2>
+      <div class="grid grid-cols-2 gap-2 text-sm mb-4">
+        <div class="bg-gray-100 rounded-lg p-2 text-left">
+          <span class="font-bold text-gray-700">Pair</span>
+          <span class="text-gray-500 ml-1">Two matching</span>
+        </div>
+        <div class="bg-gray-100 rounded-lg p-2 text-left">
+          <span class="font-bold text-gray-700">Two Pair</span>
+          <span class="text-gray-500 ml-1">Two pairs</span>
+        </div>
+        <div class="bg-gray-100 rounded-lg p-2 text-left">
+          <span class="font-bold text-gray-700">Three Kind</span>
+          <span class="text-gray-500 ml-1">Three matching</span>
+        </div>
+        <div class="bg-gray-100 rounded-lg p-2 text-left">
+          <span class="font-bold text-gray-700">Straight</span>
+          <span class="text-gray-500 ml-1">5 in sequence</span>
+        </div>
+        <div class="bg-gray-100 rounded-lg p-2 text-left">
+          <span class="font-bold text-gray-700">Flush</span>
+          <span class="text-gray-500 ml-1">5 same suit</span>
+        </div>
+        <div class="bg-gray-100 rounded-lg p-2 text-left">
+          <span class="font-bold text-gray-700">Full House</span>
+          <span class="text-gray-500 ml-1">3 + 2</span>
+        </div>
+        <div class="bg-gray-100 rounded-lg p-2 text-left">
+          <span class="font-bold text-gray-700">Four Kind</span>
+          <span class="text-gray-500 ml-1">Four matching</span>
+        </div>
+        <div class="bg-gray-100 rounded-lg p-2 text-left">
+          <span class="font-bold text-gray-700">Str. Flush</span>
+          <span class="text-gray-500 ml-1">5 suited seq.</span>
+        </div>
+      </div>
+      <p class="text-gray-500 text-sm">
+        Better hands score more points!
+      </p>
+    </div>
+    """
+  end
+
+  defp tutorial_step_content(%{step: 4} = assigns) do
+    ~H"""
+    <div class="text-center">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">3 Hands Per Round</h2>
+      <div class="flex justify-center gap-4 mb-4">
+        <div class="bg-blue-100 rounded-xl p-3 text-center">
+          <div class="text-2xl font-bold text-blue-600">1</div>
+          <div class="text-xs text-blue-500">Hand</div>
+        </div>
+        <div class="bg-blue-100 rounded-xl p-3 text-center">
+          <div class="text-2xl font-bold text-blue-600">2</div>
+          <div class="text-xs text-blue-500">Hand</div>
+        </div>
+        <div class="bg-blue-100 rounded-xl p-3 text-center">
+          <div class="text-2xl font-bold text-blue-600">3</div>
+          <div class="text-xs text-blue-500">Hand</div>
+        </div>
+      </div>
+      <p class="text-gray-600 mb-2">
+        Play <span class="font-bold">3 hands</span> each round. Scores accumulate.
+      </p>
+      <p class="text-gray-500 text-sm">
+        Highest total score at the end wins the round!
+      </p>
+    </div>
+    """
+  end
+
+  defp tutorial_step_content(%{step: 5} = assigns) do
+    ~H"""
+    <div class="text-center">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">Discards</h2>
+      <div class="flex justify-center gap-2 mb-4">
+        <div class="w-12 h-16 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-2xl border-2 border-dashed border-gray-300">
+          ?
+        </div>
+        <div class="flex items-center text-2xl text-gray-400">&#8594;</div>
+        <div class="w-12 h-16 bg-gradient-to-br from-white to-gray-100 rounded-lg flex items-center justify-center shadow-md border border-gray-200">
+          <span class="text-red-500 font-bold">A&#9829;</span>
+        </div>
+      </div>
+      <p class="text-gray-600 mb-2">
+        You get <span class="font-bold">2 discards</span> per round.
+      </p>
+      <p class="text-gray-500 text-sm">
+        Discard unwanted cards to draw new ones from your deck!
+      </p>
+    </div>
+    """
+  end
+
+  defp tutorial_step_content(%{step: 6} = assigns) do
+    ~H"""
+    <div class="text-center">
+      <h2 class="text-xl font-bold text-gray-800 mb-4">The Shop</h2>
+      <div class="flex justify-center gap-2 mb-4">
+        <div class="bg-gradient-to-br from-amber-100 to-yellow-100 rounded-xl p-3 border border-amber-200">
+          <div class="text-lg font-bold text-amber-700">Pair</div>
+          <div class="text-xs text-amber-600">Lv.2 &#8593;</div>
+        </div>
+        <div class="bg-gradient-to-br from-amber-100 to-yellow-100 rounded-xl p-3 border border-amber-200">
+          <div class="text-lg font-bold text-amber-700">Flush</div>
+          <div class="text-xs text-amber-600">Lv.2 &#8593;</div>
+        </div>
+      </div>
+      <p class="text-gray-600 mb-2">
+        Between rounds, visit the <span class="font-bold">Shop</span>.
+      </p>
+      <p class="text-gray-500 text-sm">
+        Level up hand types for bonus chips & multipliers!
+      </p>
+    </div>
+    """
+  end
+
+  defp tutorial_card(assigns) do
+    color_class = if assigns.suit in [:hearts, :diamonds], do: "text-red-500", else: "text-gray-800"
+
+    suit_symbol =
+      case assigns.suit do
+        :hearts -> "&#9829;"
+        :diamonds -> "&#9830;"
+        :clubs -> "&#9827;"
+        :spades -> "&#9824;"
+      end
+
+    assigns =
+      assigns
+      |> assign(:color_class, color_class)
+      |> assign(:suit_symbol, suit_symbol)
+
+    ~H"""
+    <div class={"w-10 h-14 bg-gradient-to-br from-white to-gray-100 rounded-lg flex flex-col items-center justify-center shadow-md border border-gray-200 #{@color_class}"}>
+      <span class="text-xs font-bold leading-none">{@rank}</span>
+      <span class="text-[10px] leading-none">{raw(@suit_symbol)}</span>
     </div>
     """
   end
