@@ -59,14 +59,17 @@ config :oskol, dev_routes: true
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
 
+# NOTE: This is commented out by default to avoid spamming the dev env in sentry.
+#
 # Set up sentry config
 # - refer to: https://oskol.sentry.io/insights/projects/oskol/getting-started
-config :sentry,
-  dsn:
-    "https://f8fa809a8c03794cd455b50a6021cb75@o4510418103894016.ingest.us.sentry.io/4510418104221696",
-  environment_name: Mix.env(),
-  enable_source_code_context: true,
-  root_source_code_paths: [File.cwd!()]
+#
+# config :sentry,
+#   dsn:
+#     "https://f8fa809a8c03794cd455b50a6021cb75@o4510418103894016.ingest.us.sentry.io/4510418104221696",
+#   environment_name: Mix.env(),
+#   enable_source_code_context: true,
+#   root_source_code_paths: [File.cwd!()]s
 
 # Set a higher stacktrace during development. Avoid configuring such
 # in production as building large stacktraces may be expensive.
