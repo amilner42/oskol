@@ -121,8 +121,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new(),
         :full_house,
-        60 + 7 + 7 + 7 + 3 + 3,
-        6
+        70 + 7 + 7 + 7 + 3 + 3,
+        5
       )
     end
 
@@ -220,8 +220,8 @@ defmodule Oskol.Poker.ScoreTest do
         ],
         SkillTree.new() |> SkillTree.upgrade(:straight_flush, 4),
         :straight_flush,
-        95 + 4 * 40 + 5 + 6 + 7 + 8 + 9,
-        12 + 4 * 4
+        95 + 4 * 30 + 5 + 6 + 7 + 8 + 9,
+        12 + 4 * 3
       )
     end
   end

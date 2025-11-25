@@ -3,6 +3,6 @@ defmodule OskolWeb.PageControllerTest do
 
   test "GET /", %{conn: conn} do
     conn = get(conn, ~p"/")
-    assert html_response(conn, 200) =~ "Create Game"
+    assert html_response(conn, 200) =~ "Play Now"
   end
 end

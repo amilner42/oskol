@@ -154,7 +154,8 @@ defmodule OskolWeb.Components.GameLive.Lobby do
         "w-full p-4 rounded-lg transition-all border-2",
         if(@selected,
           do: "bg-primary border-primary text-primary-content shadow-lg",
-          else: "bg-base-200 border-base-300 text-base-content hover:border-primary/50 hover:bg-base-300"
+          else:
+            "bg-base-200 border-base-300 text-base-content hover:border-primary/50 hover:bg-base-300"
         ),
         if(@opponent_selected,
           do: "ring-2 ring-success ring-offset-2 ring-offset-base-100",
@@ -206,10 +207,10 @@ defmodule OskolWeb.Components.GameLive.Lobby do
           <span class="text-base-content/60 text-sm">Playing as</span>
           <div class="text-2xl font-semibold text-base-content mt-1">{@player_name}</div>
         </div>
-
+        
     <!-- Players List -->
         <.player_list connections={@server_state.connections} />
-
+        
     <!-- Format Selection -->
         <div class="mb-8">
           <h3 class="text-base-content font-semibold mb-4 text-center">Select Game Format</h3>
@@ -258,7 +259,7 @@ defmodule OskolWeb.Components.GameLive.Lobby do
             </div>
           <% end %>
         </div>
-
+        
     <!-- Start Game Button -->
         <div>
           <%= if @server_state.lobby_status == :ready_to_start do %>
