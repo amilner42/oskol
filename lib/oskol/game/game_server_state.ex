@@ -11,7 +11,7 @@ defmodule Oskol.Game.GameServerState do
   @type game_id :: String.t()
   @type player_id :: String.t()
   @type lobby_status :: :waiting_for_players | :ready_to_start
-  @type game_format :: :bullet | :blitz | :rapid | :classical
+  @type game_format :: :quick | :short | :standard | :extended
 
   @type connection :: %{
           name: String.t(),
@@ -178,10 +178,10 @@ defmodule Oskol.Game.GameServerState do
   Converts a game format to its configuration (lives, shop_rounds).
   """
   @spec format_to_config(game_format()) :: {pos_integer(), non_neg_integer()}
-  def format_to_config(:bullet), do: {1, 0}
-  def format_to_config(:blitz), do: {2, 1}
-  def format_to_config(:rapid), do: {3, 2}
-  def format_to_config(:classical), do: {5, 2}
+  def format_to_config(:quick), do: {1, 0}
+  def format_to_config(:short), do: {2, 1}
+  def format_to_config(:standard), do: {3, 2}
+  def format_to_config(:extended), do: {5, 2}
 
   @doc """
   Checks if both players have selected the same format.

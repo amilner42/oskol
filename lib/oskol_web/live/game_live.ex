@@ -897,6 +897,7 @@ defmodule OskolWeb.GameLive do
         <.join_screen
           server_state={@server_state}
           disconnected_players={@disconnected_players}
+          game_name={@game_id}
         />
       <% else %>
         <%= if @server_state.game_state == nil do %>
