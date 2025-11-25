@@ -17,7 +17,7 @@ defmodule OskolWeb.Router do
   scope "/", OskolWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live "/", LandingLive
     live "/g/:id", GameLive
   end
 
