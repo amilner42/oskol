@@ -3,14 +3,13 @@ defmodule OskolWeb.GameLive do
 
   alias Oskol.Game
 
-  import OskolWeb.Components.GameLive.Lobby
   import OskolWeb.Components.GameLive.Gameplay
   import OskolWeb.Components.GameLive.Summaries
   import OskolWeb.Components.GameLive.Shop
   import OskolWeb.Components.GameLive.History
 
   @impl true
-  def mount(%{"id" => game_id}, _session, socket) do
+  def mount(%{"id" => game_id} = params, _session, socket) do
     # Find or start game
     {:ok, _pid} = Game.find_or_start_game(game_id)
 
@@ -20,129 +19,123 @@ defmodule OskolWeb.GameLive do
     # Get initial server state
     server_state = Game.get_server_state(game_id)
 
-    # Check for disconnected players
+    # Check for name param (passed when navigating from landing after game start)
+    requested_name = params["name"]
+
+    # Check for disconnected players who could reconnect
     disconnected_players =
       server_state.connections
       |> Enum.filter(fn {_id, conn} -> not conn.connected end)
       |> Enum.map(fn {id, conn} -> {id, conn.name} end)
 
-    socket =
-      socket
-      |> assign(
-        game_id: game_id,
-        server_state: server_state,
-        player_id: nil,
-        player_name: nil,
-        joined: false,
-        action_in_progress: false,
-        selected_card_ids: [],
-        viewing_results: false,
-        viewing_round_summary: false,
-        viewing_match_summary: false,
-        viewing_history: false,
-        viewing_deck: false,
-        viewing_own_deck: true,
-        viewing_levels: false,
-        levels_view_mode: :both,
-        disconnected_players: disconnected_players,
-        your_card_sort: :rank,
-        opponent_card_sort: :rank,
-        error: nil,
-        new_card_ids: [],
-        opponent_new_card_ids: [],
-        last_seen_event_sequence: 0,
-        acknowledged_event_sequence: 0,
-        selected_format: nil,
-        previewing_card_index: nil,
-        deck_builder_selection: nil
-      )
+    # If no game in progress, redirect to landing page with game param
+    # Users should join through the landing page flow
+    if server_state.game_state == nil do
+      {:ok, push_navigate(socket, to: "/?game=#{URI.encode_www_form(game_id)}")}
+    else
+      socket =
+        socket
+        |> assign(
+          game_id: game_id,
+          server_state: server_state,
+          player_id: nil,
+          player_name: nil,
+          joined: false,
+          action_in_progress: false,
+          selected_card_ids: [],
+          viewing_results: false,
+          viewing_round_summary: false,
+          viewing_match_summary: false,
+          viewing_history: false,
+          viewing_deck: false,
+          viewing_own_deck: true,
+          viewing_levels: false,
+          levels_view_mode: :both,
+          disconnected_players: disconnected_players,
+          your_card_sort: :rank,
+          opponent_card_sort: :rank,
+          error: nil,
+          new_card_ids: [],
+          opponent_new_card_ids: [],
+          last_seen_event_sequence: 0,
+          acknowledged_event_sequence: 0,
+          previewing_card_index: nil,
+          deck_builder_selection: nil
+        )
 
-    # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
-    # This prevents reconnecting with a temporary PID that will be discarded
-    socket =
-      if connected?(socket) do
-        case disconnected_players do
-          [{player_id, player_name}] ->
-            case Game.rejoin_game(game_id, player_name, self()) do
-              {:ok, ^player_id, new_state} ->
-                # Check if there are hand results to show
-                viewing_results =
-                  new_state.game_state != nil and new_state.game_state.last_hand_results != nil
+      # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
+      # This prevents reconnecting with a temporary PID that will be discarded
+      socket =
+        if connected?(socket) do
+          # First try to reconnect using the name param if provided
+          reconnect_result =
+            if requested_name && requested_name != "" do
+              case Game.rejoin_game(game_id, requested_name, self()) do
+                {:ok, player_id, new_state} ->
+                  {:ok, player_id, requested_name, new_state}
 
-                socket
-                |> assign(
-                  player_id: player_id,
-                  player_name: player_name,
-                  joined: true,
-                  server_state: new_state,
-                  viewing_results: viewing_results,
-                  selected_format: Map.get(new_state.format_selections, player_id),
-                  error: nil
-                )
-
-              {:error, _reason} ->
-                socket
+                {:error, _reason} ->
+                  :failed
+              end
+            else
+              :no_name
             end
 
-          _ ->
-            socket
-        end
-      else
-        socket
-      end
+          case reconnect_result do
+            {:ok, player_id, player_name, new_state} ->
+              # Check if there are hand results to show
+              viewing_results =
+                new_state.game_state != nil and new_state.game_state.last_hand_results != nil
 
-    {:ok, socket}
+              socket
+              |> assign(
+                player_id: player_id,
+                player_name: player_name,
+                joined: true,
+                server_state: new_state,
+                viewing_results: viewing_results,
+                error: nil
+              )
+
+            _ ->
+              # Fallback: try single disconnected player
+              case disconnected_players do
+                [{player_id, player_name}] ->
+                  case Game.rejoin_game(game_id, player_name, self()) do
+                    {:ok, ^player_id, new_state} ->
+                      viewing_results =
+                        new_state.game_state != nil and
+                          new_state.game_state.last_hand_results != nil
+
+                      socket
+                      |> assign(
+                        player_id: player_id,
+                        player_name: player_name,
+                        joined: true,
+                        server_state: new_state,
+                        viewing_results: viewing_results,
+                        error: nil
+                      )
+
+                    {:error, _reason} ->
+                      # Couldn't reconnect - show reconnect screen
+                      socket
+                  end
+
+                _ ->
+                  # Multiple or no disconnected players - show reconnect screen
+                  socket
+              end
+          end
+        else
+          socket
+        end
+
+      {:ok, socket}
+    end
   end
 
-  @impl true
-  def handle_params(params, _uri, socket) do
-    # Auto-join if name query param is provided and not already joined
-    name = params["name"]
-
-    socket =
-      if name && String.trim(name) != "" && !socket.assigns.joined && connected?(socket) do
-        name = String.trim(name)
-
-        case Game.join_game(socket.assigns.game_id, name, self()) do
-          {:ok, player_id, new_state} ->
-            socket
-            |> assign(
-              player_id: player_id,
-              player_name: name,
-              joined: true,
-              server_state: new_state,
-              selected_format: nil,
-              error: nil
-            )
-
-          {:error, :name_taken} ->
-            # Name is taken - try to rejoin as that player
-            case Game.rejoin_game(socket.assigns.game_id, name, self()) do
-              {:ok, player_id, new_state} ->
-                socket
-                |> assign(
-                  player_id: player_id,
-                  player_name: name,
-                  joined: true,
-                  server_state: new_state,
-                  selected_format: Map.get(new_state.format_selections, player_id),
-                  error: nil
-                )
-
-              {:error, _reason} ->
-                socket
-            end
-
-          {:error, _reason} ->
-            socket
-        end
-      else
-        socket
-      end
-
-    {:noreply, socket}
-  end
-
+  # Reconnect handler - for when a disconnected player clicks to rejoin
   @impl true
   def handle_event("rejoin_as_player", %{"player_name" => name}, socket) do
     case Game.rejoin_game(socket.assigns.game_id, name, self()) do
@@ -159,78 +152,8 @@ defmodule OskolWeb.GameLive do
            joined: true,
            server_state: new_state,
            viewing_results: viewing_results,
-           selected_format: Map.get(new_state.format_selections, player_id),
            error: nil
          )}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  @impl true
-  def handle_event("join_game", %{"player_name" => name}, socket) do
-    name = String.trim(name)
-
-    if name == "" do
-      {:noreply, assign(socket, error: "Name cannot be empty")}
-    else
-      case Game.join_game(socket.assigns.game_id, name, self()) do
-        {:ok, player_id, new_state} ->
-          {:noreply,
-           socket
-           |> assign(
-             player_id: player_id,
-             player_name: name,
-             joined: true,
-             server_state: new_state,
-             selected_format: nil,
-             error: nil
-           )}
-
-        {:error, :name_taken} ->
-          # Name is taken - try to rejoin instead
-          case Game.rejoin_game(socket.assigns.game_id, name, self()) do
-            {:ok, player_id, new_state} ->
-              {:noreply,
-               socket
-               |> assign(
-                 player_id: player_id,
-                 player_name: name,
-                 joined: true,
-                 server_state: new_state,
-                 selected_format: Map.get(new_state.format_selections, player_id),
-                 error: nil
-               )}
-
-            {:error, reason} ->
-              {:noreply, assign(socket, error: format_error(reason))}
-          end
-
-        {:error, reason} ->
-          {:noreply, assign(socket, error: format_error(reason))}
-      end
-    end
-  end
-
-  @impl true
-  def handle_event("select_format", %{"format" => format_str}, socket) do
-    format = String.to_existing_atom(format_str)
-
-    case Game.select_format(socket.assigns.game_id, socket.assigns.player_id, format) do
-      {:ok, new_state} ->
-        {:noreply, assign(socket, server_state: new_state, selected_format: format, error: nil)}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  @impl true
-  def handle_event("start_game", _params, socket) do
-    case Game.start_game_session(socket.assigns.game_id) do
-      {:ok, new_state} ->
-        {:noreply, assign(socket, server_state: new_state, error: nil)}
 
       {:error, reason} ->
         {:noreply, assign(socket, error: format_error(reason))}
@@ -784,14 +707,6 @@ defmodule OskolWeb.GameLive do
         socket.assigns.previewing_card_index
       end
 
-    # Update selected_format from server state if available
-    selected_format =
-      if socket.assigns.player_id do
-        Map.get(new_state.format_selections, socket.assigns.player_id)
-      else
-        socket.assigns.selected_format
-      end
-
     {:noreply,
      socket
      |> assign(
@@ -803,7 +718,6 @@ defmodule OskolWeb.GameLive do
        new_card_ids: new_card_ids,
        opponent_new_card_ids: opponent_new_card_ids,
        last_seen_event_sequence: last_seen_sequence,
-       selected_format: selected_format,
        deck_builder_selection: deck_builder_selection,
        previewing_card_index: previewing_card_index
      )
@@ -894,108 +808,140 @@ defmodule OskolWeb.GameLive do
       <% end %>
 
       <%= if not @joined do %>
-        <.join_screen
-          server_state={@server_state}
+        <!-- Brief reconnect screen while determining which player to reconnect as -->
+        <.reconnect_screen
+          game_id={@game_id}
           disconnected_players={@disconnected_players}
-          game_name={@game_id}
         />
       <% else %>
-        <%= if @server_state.game_state == nil do %>
-          <.lobby_screen
-            player_id={@player_id}
-            player_name={@player_name}
-            server_state={@server_state}
-            selected_format={@selected_format}
-          />
-        <% else %>
-          <% game_data = get_game_data(assigns) %>
-          <% game_state = game_data.game_state %>
-          <% player_state = game_data.player_state %>
-          <% opponent_id = game_data.opponent_id %>
-          <% opponent_state = game_data.opponent_state %>
-          <% opponent_name = game_data.opponent_name %>
+        <% game_data = get_game_data(assigns) %>
+        <% game_state = game_data.game_state %>
+        <% player_state = game_data.player_state %>
+        <% opponent_id = game_data.opponent_id %>
+        <% opponent_state = game_data.opponent_state %>
+        <% opponent_name = game_data.opponent_name %>
 
-          <%= cond do %>
-            <% @viewing_match_summary && game_state.game_status == :game_over -> %>
-              <.match_summary_screen
-                game_state={game_state}
-                player_id={@player_id}
-                opponent_id={opponent_id}
-                player_name={@player_name}
-                opponent_name={opponent_name}
-                player_state={player_state}
-                opponent_state={opponent_state}
-              />
-            <% @viewing_round_summary && game_state.phase == :round_end -> %>
-              <.round_summary_screen
-                game_state={game_state}
-                player_name={@player_name}
-                opponent_name={opponent_name}
-                player_state={player_state}
-                opponent_state={opponent_state}
-              />
-            <% game_state.phase == :round_end && game_state.shop_state != nil && !@viewing_results && !@viewing_round_summary && !@viewing_match_summary && game_state.game_status != :game_over -> %>
-              <.shop_screen
-                game_state={game_state}
-                player_id={@player_id}
-                player_name={@player_name}
-                opponent_name={opponent_name}
-                player_state={player_state}
-                opponent_state={opponent_state}
-                action_in_progress={@action_in_progress}
-                previewing_card_index={@previewing_card_index}
-                deck_builder_selection={@deck_builder_selection}
-              />
-            <% true -> %>
-              <.game_screen
-                game_state={game_state}
-                player_id={@player_id}
-                opponent_id={opponent_id}
-                player_name={@player_name}
-                opponent_name={opponent_name}
-                player_state={player_state}
-                opponent_state={opponent_state}
-                opponent_card_sort={@opponent_card_sort}
-                opponent_new_card_ids={@opponent_new_card_ids}
-                selected_card_ids={@selected_card_ids}
-                your_card_sort={@your_card_sort}
-                new_card_ids={@new_card_ids}
-                action_in_progress={@action_in_progress}
-                viewing_results={@viewing_results}
-              />
-          <% end %>
-          
-    <!-- History Modal (overlay) -->
-          <%= if @server_state.game_state do %>
-            <.history_modal
-              viewing_history={@viewing_history}
-              event_log={@server_state.event_log}
-              player_names={game_state.player_names}
+        <%= cond do %>
+          <% @viewing_match_summary && game_state.game_status == :game_over -> %>
+            <.match_summary_screen
+              game_state={game_state}
               player_id={@player_id}
+              opponent_id={opponent_id}
+              player_name={@player_name}
+              opponent_name={opponent_name}
+              player_state={player_state}
+              opponent_state={opponent_state}
             />
-            
+          <% @viewing_round_summary && game_state.phase == :round_end -> %>
+            <.round_summary_screen
+              game_state={game_state}
+              player_name={@player_name}
+              opponent_name={opponent_name}
+              player_state={player_state}
+              opponent_state={opponent_state}
+            />
+          <% game_state.phase == :round_end && game_state.shop_state != nil && !@viewing_results && !@viewing_round_summary && !@viewing_match_summary && game_state.game_status != :game_over -> %>
+            <.shop_screen
+              game_state={game_state}
+              player_id={@player_id}
+              player_name={@player_name}
+              opponent_name={opponent_name}
+              player_state={player_state}
+              opponent_state={opponent_state}
+              action_in_progress={@action_in_progress}
+              previewing_card_index={@previewing_card_index}
+              deck_builder_selection={@deck_builder_selection}
+            />
+          <% true -> %>
+            <.game_screen
+              game_state={game_state}
+              player_id={@player_id}
+              opponent_id={opponent_id}
+              player_name={@player_name}
+              opponent_name={opponent_name}
+              player_state={player_state}
+              opponent_state={opponent_state}
+              opponent_card_sort={@opponent_card_sort}
+              opponent_new_card_ids={@opponent_new_card_ids}
+              selected_card_ids={@selected_card_ids}
+              your_card_sort={@your_card_sort}
+              new_card_ids={@new_card_ids}
+              action_in_progress={@action_in_progress}
+              viewing_results={@viewing_results}
+            />
+        <% end %>
+        
+    <!-- History Modal (overlay) -->
+        <%= if @server_state.game_state do %>
+          <.history_modal
+            viewing_history={@viewing_history}
+            event_log={@server_state.event_log}
+            player_names={game_state.player_names}
+            player_id={@player_id}
+          />
+          
     <!-- Deck Modal (overlay) -->
-            <.deck_modal
-              viewing_deck={@viewing_deck}
-              viewing_own_deck={@viewing_own_deck}
-              player_state={player_state}
-              opponent_state={opponent_state}
-              player_name={@player_name}
-              opponent_name={opponent_name}
-            />
-            
+          <.deck_modal
+            viewing_deck={@viewing_deck}
+            viewing_own_deck={@viewing_own_deck}
+            player_state={player_state}
+            opponent_state={opponent_state}
+            player_name={@player_name}
+            opponent_name={opponent_name}
+          />
+          
     <!-- Levels Modal (overlay) -->
-            <.levels_modal
-              viewing_levels={@viewing_levels}
-              levels_view_mode={@levels_view_mode}
-              player_state={player_state}
-              opponent_state={opponent_state}
-              player_name={@player_name}
-              opponent_name={opponent_name}
-            />
-          <% end %>
+          <.levels_modal
+            viewing_levels={@viewing_levels}
+            levels_view_mode={@levels_view_mode}
+            player_state={player_state}
+            opponent_state={opponent_state}
+            player_name={@player_name}
+            opponent_name={opponent_name}
+          />
         <% end %>
       <% end %>
+    </div>
+    """
+  end
+
+  # Simple error banner
+  defp error_banner(assigns) do
+    ~H"""
+    <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 backdrop-blur-sm text-white px-6 py-3 rounded-xl shadow-xl">
+      {@error}
+    </div>
+    """
+  end
+
+  # Simple reconnect screen for when multiple disconnected players exist
+  defp reconnect_screen(assigns) do
+    ~H"""
+    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 px-6">
+      <div class="w-full max-w-md mx-auto text-center">
+        <h1 class="text-2xl font-bold text-base-content mb-6">Reconnect to Game</h1>
+
+        <%= if length(@disconnected_players) > 0 do %>
+          <div class="bg-white/10 backdrop-blur-sm border-2 border-white/20 rounded-xl p-5 shadow-lg">
+            <p class="text-base-content font-semibold text-center mb-3">Choose your player</p>
+            <div class="space-y-2">
+              <%= for {_player_id, player_name} <- @disconnected_players do %>
+                <button
+                  phx-click="rejoin_as_player"
+                  phx-value-player_name={player_name}
+                  class="w-full px-6 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 transition-all shadow-lg"
+                >
+                  Join as {player_name}
+                </button>
+              <% end %>
+            </div>
+          </div>
+        <% else %>
+          <div class="text-base-content/60">
+            Connecting...
+          </div>
+        <% end %>
+      </div>
     </div>
     """
   end

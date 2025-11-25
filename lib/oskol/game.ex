@@ -34,6 +34,16 @@ defmodule Oskol.Game do
   defdelegate find_game(game_id), to: GameSupervisor
   defdelegate find_or_start_game(game_id), to: GameSupervisor
 
+  @doc """
+  Looks up a game without starting it. Returns {:ok, pid} or :not_found.
+  """
+  def lookup_game(game_id) do
+    case GameSupervisor.find_game(game_id) do
+      {:ok, pid} -> {:ok, pid}
+      :error -> :not_found
+    end
+  end
+
   # GameServer operations
   defdelegate join_game(game_id, player_name, player_pid), to: GameServer
   defdelegate rejoin_game(game_id, player_name, player_pid), to: GameServer
