@@ -385,61 +385,54 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           Game Log
         </button>
       </div>
-
-      <%= if @viewing_results do %>
-        <!-- Right: Skip Button with progress fill -->
+      
+    <!-- Right: Action Buttons (always visible, disabled during results) -->
+      <div class="flex items-center gap-4">
         <button
-          phx-click="dismiss_results"
-          class="skip-button-5s px-4 py-2 rounded bg-base-100 hover:bg-base-200 text-base-content transition-colors"
+          phx-click="discard_cards"
+          disabled={
+            @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
+              @player_state.discards_remaining == 0 || is_locked_in
+          }
+          class={[
+            "px-4 py-2 rounded transition-colors bg-error hover:bg-error/90 text-error-content",
+            if(
+              @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
+                @player_state.discards_remaining == 0 || is_locked_in,
+              do: "opacity-50 cursor-not-allowed",
+              else: ""
+            )
+          ]}
         >
-          <span class="skip-button-text">Skip Hand Summary</span>
+          <%= if @action_in_progress do %>
+            Discarding...
+          <% else %>
+            Discard
+          <% end %>
         </button>
-      <% else %>
-        <!-- Right: Action Buttons -->
-        <div class="flex items-center gap-4">
-          <button
-            phx-click="discard_cards"
-            disabled={
-              @action_in_progress || length(selected_card_ids) == 0 ||
-                @player_state.discards_remaining == 0 || is_locked_in
-            }
-            class={[
-              "px-4 py-2 rounded transition-colors bg-error hover:bg-error/90 text-error-content",
-              if(
-                @action_in_progress || length(selected_card_ids) == 0 ||
-                  @player_state.discards_remaining == 0 || is_locked_in,
-                do: "opacity-50 cursor-not-allowed",
-                else: ""
-              )
-            ]}
-          >
-            <%= if @action_in_progress do %>
-              Discarding...
-            <% else %>
-              Discard
-            <% end %>
-          </button>
 
-          <button
-            phx-click="lock_in_hand"
-            disabled={@action_in_progress || length(selected_card_ids) == 0 || is_locked_in}
-            class={[
-              "px-4 py-2 rounded transition-colors bg-primary hover:bg-primary/90 text-primary-content",
-              if(
-                @action_in_progress || length(selected_card_ids) == 0 || is_locked_in,
-                do: "opacity-50 cursor-not-allowed",
-                else: ""
-              )
-            ]}
-          >
-            <%= if @action_in_progress do %>
-              Playing...
-            <% else %>
-              Play
-            <% end %>
-          </button>
-        </div>
-      <% end %>
+        <button
+          phx-click="lock_in_hand"
+          disabled={
+            @viewing_results || @action_in_progress || length(selected_card_ids) == 0 || is_locked_in
+          }
+          class={[
+            "px-4 py-2 rounded transition-colors bg-primary hover:bg-primary/90 text-primary-content",
+            if(
+              @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
+                is_locked_in,
+              do: "opacity-50 cursor-not-allowed",
+              else: ""
+            )
+          ]}
+        >
+          <%= if @action_in_progress do %>
+            Playing...
+          <% else %>
+            Play
+          <% end %>
+        </button>
+      </div>
     </div>
     """
   end
