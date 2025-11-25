@@ -29,6 +29,7 @@ defmodule OskolWeb.LandingLive do
   def handle_params(params, _uri, socket) do
     # Handle URL changes (e.g., from push_patch)
     game_name = params["game"] || ""
+    name_from_url = params["name"]
 
     socket =
       cond do
@@ -40,6 +41,10 @@ defmodule OskolWeb.LandingLive do
         socket.assigns.step in [:joining, :lobby] ->
           socket
 
+        # Have both game and name params - try to auto-rejoin
+        connected?(socket) && name_from_url && name_from_url != "" ->
+          auto_rejoin_lobby(socket, game_name, name_from_url)
+
         # Have a game param and connected - check for disconnected players
         connected?(socket) ->
           check_game_for_reconnect(socket, game_name)
@@ -50,6 +55,44 @@ defmodule OskolWeb.LandingLive do
       end
 
     {:noreply, socket}
+  end
+
+  # Auto-rejoin lobby when name is in URL
+  defp auto_rejoin_lobby(socket, game_name, player_name) do
+    case Game.lookup_game(game_name) do
+      {:ok, _pid} ->
+        # Subscribe to game updates
+        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
+
+        # Try to rejoin
+        case Game.rejoin_game(game_name, player_name, self()) do
+          {:ok, player_id, new_state} ->
+            # Check if game already started - redirect to game
+            if new_state.game_state != nil do
+              push_navigate(socket,
+                to: "/#{URI.encode_www_form(game_name)}?name=#{URI.encode_www_form(player_name)}"
+              )
+            else
+              assign(socket,
+                step: :lobby,
+                game_name: game_name,
+                player_name: player_name,
+                player_id: player_id,
+                server_state: new_state,
+                selected_format: Map.get(new_state.format_selections, player_id),
+                error: nil
+              )
+            end
+
+          {:error, _reason} ->
+            # Couldn't rejoin - fall back to normal check
+            check_game_for_reconnect(socket, game_name)
+        end
+
+      :not_found ->
+        # Game doesn't exist - show player name input
+        assign(socket, step: :player_name, game_name: game_name)
+    end
   end
 
   # Check if the game has disconnected players and show reconnect screen
@@ -127,7 +170,9 @@ defmodule OskolWeb.LandingLive do
              selected_format: nil,
              error: nil
            )
-           |> push_patch(to: "/?game=#{game_id}")}
+           |> push_patch(
+             to: "/?game=#{URI.encode_www_form(game_id)}&name=#{URI.encode_www_form(player_name)}"
+           )}
 
         {:error, reason} ->
           {:noreply, assign(socket, error: format_error(reason))}
@@ -179,12 +224,16 @@ defmodule OskolWeb.LandingLive do
       case Game.join_game(game_id, player_name, self()) do
         {:ok, player_id, new_state} ->
           {:noreply,
-           assign(socket,
+           socket
+           |> assign(
              step: :lobby,
              player_id: player_id,
              server_state: new_state,
              selected_format: nil,
              error: nil
+           )
+           |> push_patch(
+             to: "/?game=#{URI.encode_www_form(game_id)}&name=#{URI.encode_www_form(player_name)}"
            )}
 
         {:error, :name_taken} ->
@@ -193,15 +242,23 @@ defmodule OskolWeb.LandingLive do
             {:ok, player_id, new_state} ->
               # Check if game already started
               if new_state.game_state != nil do
-                {:noreply, push_navigate(socket, to: "/#{URI.encode_www_form(game_id)}")}
+                {:noreply,
+                 push_navigate(socket,
+                   to: "/#{URI.encode_www_form(game_id)}?name=#{URI.encode_www_form(player_name)}"
+                 )}
               else
                 {:noreply,
-                 assign(socket,
+                 socket
+                 |> assign(
                    step: :lobby,
                    player_id: player_id,
                    server_state: new_state,
                    selected_format: Map.get(new_state.format_selections, player_id),
                    error: nil
+                 )
+                 |> push_patch(
+                   to:
+                     "/?game=#{URI.encode_www_form(game_id)}&name=#{URI.encode_www_form(player_name)}"
                  )}
               end
 
@@ -234,16 +291,23 @@ defmodule OskolWeb.LandingLive do
       {:ok, player_id, new_state} ->
         # Check if game already started
         if new_state.game_state != nil do
-          {:noreply, push_navigate(socket, to: "/#{URI.encode_www_form(game_id)}")}
+          {:noreply,
+           push_navigate(socket,
+             to: "/#{URI.encode_www_form(game_id)}?name=#{URI.encode_www_form(name)}"
+           )}
         else
           {:noreply,
-           assign(socket,
+           socket
+           |> assign(
              step: :lobby,
              player_id: player_id,
              player_name: name,
              server_state: new_state,
              selected_format: Map.get(new_state.format_selections, player_id),
              error: nil
+           )
+           |> push_patch(
+             to: "/?game=#{URI.encode_www_form(game_id)}&name=#{URI.encode_www_form(name)}"
            )}
         end
 
