@@ -1,0 +1,45 @@
+#!/bin/bash
+#
+# SessionStart Hook - Auto-load Elixir environment
+#
+# This runs automatically when Claude Code Web starts.
+# First session: Runs full setup (10-15 min)
+# Subsequent sessions: Loads environment instantly (<5 sec)
+
+set -e
+
+# Check if asdf is installed
+if [ ! -f "$HOME/.asdf/asdf.sh" ]; then
+    echo "⏳ First-time setup detected. Installing Elixir/Phoenix (10-15 min)..."
+    echo "   This only happens once. Future sessions will be instant."
+    echo ""
+
+    # Run the full setup script
+    if [ -f "scripts/setup-elixir-web.sh" ]; then
+        bash scripts/setup-elixir-web.sh
+    else
+        echo "❌ ERROR: scripts/setup-elixir-web.sh not found"
+        echo "   Please run: git pull origin main"
+        exit 1
+    fi
+else
+    # asdf already installed - just load the environment (fast)
+    echo "⚡ Loading Elixir environment..."
+
+    # Load environment
+    . "$HOME/.asdf/asdf.sh"
+    export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
+    export ELIXIR_ERL_OPTIONS="+fnu"
+    export LANG=C.UTF-8
+    export LC_ALL=C.UTF-8
+
+    # Show versions
+    echo "✓ Environment ready"
+    echo "  Erlang: $(asdf current erlang 2>/dev/null | awk '{print $2}' || echo 'not set')"
+    echo "  Elixir: $(asdf current elixir 2>/dev/null | awk '{print $2}' || echo 'not set')"
+    echo ""
+    echo "💡 Common commands:"
+    echo "   mix phx.server    # Start Phoenix server"
+    echo "   mix test          # Run tests"
+    echo ""
+fi
