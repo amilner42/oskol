@@ -868,6 +868,7 @@ defmodule OskolWeb.GameLive do
               new_card_ids={@new_card_ids}
               action_in_progress={@action_in_progress}
               viewing_results={@viewing_results}
+              connections={@server_state.connections}
             />
         <% end %>
         

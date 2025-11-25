@@ -96,12 +96,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def game_screen(assigns) do
     ~H"""
     <div class="flex flex-col h-screen bg-base-300">
-      <!-- Opponent Stats Bar -->
-      <div class="flex justify-center py-3 bg-base-200/40 backdrop-blur-sm">
-        <.player_stats player_state={@opponent_state} />
-      </div>
-      
-    <!-- Top 25% - Opponent Cards -->
+      <!-- Top - Opponent Cards -->
       <div class="flex-1 flex flex-col justify-end p-4 bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
@@ -110,7 +105,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         />
       </div>
       
-    <!-- Middle 50% - Playing Area -->
+    <!-- Middle - Playing Area -->
       <div class="flex-[2] flex flex-col justify-start bg-base-100 shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)]">
         <.playing_area
           game_state={@game_state}
@@ -121,10 +116,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           player_state={@player_state}
           opponent_state={@opponent_state}
           viewing_results={@viewing_results}
+          connections={@connections}
         />
       </div>
       
-    <!-- Player Cards -->
+    <!-- Bottom - Player Cards -->
       <div class="flex-1 flex flex-col justify-start p-4 bg-base-200/40">
         <.player_cards
           player_state={@player_state}
@@ -133,11 +129,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           new_card_ids={@new_card_ids}
           action_in_progress={@action_in_progress}
         />
-      </div>
-      
-    <!-- Player Stats Bar -->
-      <div class="flex justify-center py-3 bg-base-200/40 backdrop-blur-sm">
-        <.player_stats player_state={@player_state} />
       </div>
       
     <!-- Action Bar -->
@@ -347,6 +338,18 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   end
 
   def playing_area(assigns) do
+    # Get connection status for each player
+    player_connected =
+      Map.get(assigns.connections, assigns.player_id, %{}) |> Map.get(:connected, false)
+
+    opponent_connected =
+      Map.get(assigns.connections, assigns.opponent_id, %{}) |> Map.get(:connected, false)
+
+    assigns =
+      assigns
+      |> assign(:player_connected, player_connected)
+      |> assign(:opponent_connected, opponent_connected)
+
     ~H"""
     <div class="h-full relative">
       <!-- Round info - top left -->
@@ -368,12 +371,84 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <%= if score_diff > 0 do %>
           <div class="text-sm mt-1">
             <%= if player_score > opponent_score do %>
-              <span class="text-player">{@player_name}</span> is ahead by {score_diff} <%= if score_diff == 1, do: "point", else: "points" %>
+              <span class="text-player">{@player_name}</span>
+              is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
             <% else %>
-              <span class="text-opponent">{@opponent_name}</span> is ahead by {score_diff} <%= if score_diff == 1, do: "point", else: "points" %>
+              <span class="text-opponent">{@opponent_name}</span>
+              is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
             <% end %>
           </div>
         <% end %>
+      </div>
+      
+    <!-- Opponent status - top right -->
+      <div class="absolute top-4 right-4 flex flex-col items-end gap-0.5 text-base-content">
+        <div class="flex items-center gap-1">
+          <span class={"w-2 h-2 rounded-full #{if @opponent_connected, do: "bg-green-500", else: "bg-gray-500"}"}>
+          </span>
+          <span class="text-sm text-opponent">{@opponent_name}</span>
+        </div>
+        <div class="group relative flex items-center gap-0.5 cursor-default">
+          <%= for i <- 1..@game_state.initial_lives do %>
+            <%= if i > @game_state.initial_lives - @opponent_state.lives do %>
+              <.icon name="hero-heart-solid" class="w-4 h-4 text-base-content/70" />
+            <% else %>
+              <.icon name="hero-heart" class="w-4 h-4 text-base-content/30" />
+            <% end %>
+          <% end %>
+          <div class="absolute top-1/2 -translate-y-1/2 right-full mr-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            {@opponent_state.lives} {if @opponent_state.lives == 1, do: "life", else: "lives"} left
+          </div>
+        </div>
+        <div class="group relative flex items-center gap-0.5 cursor-default">
+          <%= for i <- 1..@game_state.discards_per_round do %>
+            <%= if i > @game_state.discards_per_round - @opponent_state.discards_remaining do %>
+              <.icon name="hero-trash-solid" class="w-4 h-4 text-base-content/70" />
+            <% else %>
+              <.icon name="hero-trash" class="w-4 h-4 text-base-content/30" />
+            <% end %>
+          <% end %>
+          <div class="absolute top-1/2 -translate-y-1/2 right-full mr-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            {@opponent_state.discards_remaining} {if @opponent_state.discards_remaining == 1,
+              do: "discard",
+              else: "discards"} left
+          </div>
+        </div>
+      </div>
+      
+    <!-- Player status - bottom right -->
+      <div class="absolute bottom-4 right-4 flex flex-col items-end gap-0.5 text-base-content">
+        <div class="group relative flex items-center gap-0.5 cursor-default">
+          <%= for i <- 1..@game_state.discards_per_round do %>
+            <%= if i > @game_state.discards_per_round - @player_state.discards_remaining do %>
+              <.icon name="hero-trash-solid" class="w-4 h-4 text-base-content/70" />
+            <% else %>
+              <.icon name="hero-trash" class="w-4 h-4 text-base-content/30" />
+            <% end %>
+          <% end %>
+          <div class="absolute top-1/2 -translate-y-1/2 right-full mr-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            {@player_state.discards_remaining} {if @player_state.discards_remaining == 1,
+              do: "discard",
+              else: "discards"} left
+          </div>
+        </div>
+        <div class="group relative flex items-center gap-0.5 cursor-default">
+          <%= for i <- 1..@game_state.initial_lives do %>
+            <%= if i > @game_state.initial_lives - @player_state.lives do %>
+              <.icon name="hero-heart-solid" class="w-4 h-4 text-base-content/70" />
+            <% else %>
+              <.icon name="hero-heart" class="w-4 h-4 text-base-content/30" />
+            <% end %>
+          <% end %>
+          <div class="absolute top-1/2 -translate-y-1/2 right-full mr-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            {@player_state.lives} {if @player_state.lives == 1, do: "life", else: "lives"} left
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <span class={"w-2 h-2 rounded-full #{if @player_connected, do: "bg-green-500", else: "bg-gray-500"}"}>
+          </span>
+          <span class="text-sm text-player">{@player_name}</span>
+        </div>
       </div>
       
     <!-- Centered content -->
@@ -672,7 +747,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           }
 
           # Count cards
-          total_cards = length(draw_pile) + length(hand_pile) + length(current_state.card_piles.discard_pile)
+          total_cards =
+            length(draw_pile) + length(hand_pile) + length(current_state.card_piles.discard_pile)
+
           cards_remaining = length(all_cards) %>
 
           <div class="mb-3 text-sm text-base-content/70">

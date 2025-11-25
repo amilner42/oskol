@@ -17,7 +17,10 @@ defmodule Oskol.Game.GameState do
           winner_id: player_id() | nil,
           last_round_winner_id: player_id() | nil,
           shop_state: ShopState.t() | nil,
-          shop_rounds: non_neg_integer()
+          shop_rounds: non_neg_integer(),
+          initial_lives: pos_integer(),
+          hands_per_round: pos_integer(),
+          discards_per_round: pos_integer()
         }
 
   @type phase :: :playing | :round_end
@@ -30,6 +33,9 @@ defmodule Oskol.Game.GameState do
           score: pos_integer()
         }
 
+  @hands_per_round 4
+  @discards_per_round 3
+
   defstruct round_number: 1,
             player_names: %{},
             players: %{},
@@ -40,7 +46,10 @@ defmodule Oskol.Game.GameState do
             winner_id: nil,
             last_round_winner_id: nil,
             shop_state: nil,
-            shop_rounds: 2
+            shop_rounds: 2,
+            initial_lives: 3,
+            hands_per_round: @hands_per_round,
+            discards_per_round: @discards_per_round
 
   @doc """
   Creates a new game state with the given player_names map (player_id => player_name),
@@ -61,7 +70,10 @@ defmodule Oskol.Game.GameState do
       players: players,
       phase: :playing,
       game_status: :active,
-      shop_rounds: shop_rounds
+      shop_rounds: shop_rounds,
+      initial_lives: initial_lives,
+      hands_per_round: @hands_per_round,
+      discards_per_round: @discards_per_round
     }
   end
 
