@@ -215,16 +215,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <span>{@player_state.lives}</span>
         </div>
         <div class="flex items-center gap-1">
-          <.icon name="hero-play" class="w-5 h-5" />
-          <span>{@player_state.hands_remaining}</span>
-        </div>
-        <div class="flex items-center gap-1">
           <.icon name="hero-trash" class="w-5 h-5" />
           <span>{@player_state.discards_remaining}</span>
-        </div>
-        <div class="flex items-center gap-1">
-          <.icon name="hero-star" class="w-5 h-5" />
-          <span>{@player_state.current_round_score}</span>
         </div>
       </div>
 
@@ -357,20 +349,28 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def playing_area(assigns) do
     ~H"""
     <div class="h-full relative">
-      <!-- Round info bar -->
-      <div class="absolute top-4 left-4 right-4 flex justify-between items-center text-base-content text-lg">
-        <div>Round {@game_state.round_number}</div>
-
+      <!-- Round info - top left -->
+      <div class="absolute top-4 left-4 text-left text-base-content">
+        <div class="text-lg">Round {@game_state.round_number}</div>
+        <div class="text-sm text-base-content/70">
+          <%= cond do %>
+            <% @player_state.hands_remaining == 0 -> %>
+              Round complete
+            <% @player_state.hands_remaining == 1 -> %>
+              Final hand
+            <% true -> %>
+              {@player_state.hands_remaining} hands remaining
+          <% end %>
+        </div>
         <% player_score = @player_state.current_round_score
         opponent_score = @opponent_state.current_round_score
         score_diff = abs(player_score - opponent_score) %>
-
         <%= if score_diff > 0 do %>
-          <div class="text-base">
+          <div class="text-sm mt-1">
             <%= if player_score > opponent_score do %>
-              You are up by {score_diff} points
+              <span class="text-player">{@player_name}</span> is ahead by {score_diff} <%= if score_diff == 1, do: "point", else: "points" %>
             <% else %>
-              {@opponent_name} is up by {score_diff} points
+              <span class="text-opponent">{@opponent_name}</span> is ahead by {score_diff} <%= if score_diff == 1, do: "point", else: "points" %>
             <% end %>
           </div>
         <% end %>
