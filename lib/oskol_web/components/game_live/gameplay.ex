@@ -452,13 +452,17 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         opponent_score = @opponent_state.current_round_score
         score_diff = abs(player_score - opponent_score) %>
         <%= if score_diff > 0 do %>
-          <div class="text-sm mt-1">
+          <div class="text-sm text-base-content/70 mt-1">
             <%= if player_score > opponent_score do %>
               <span class="text-player">{@player_name}</span>
-              is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
+              <span>
+                 is ahead by  {score_diff} {if score_diff == 1, do: "point", else: "points"}
+              </span>
             <% else %>
               <span class="text-opponent">{@opponent_name}</span>
-              is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
+              <span>
+                 is ahead by  {score_diff} {if score_diff == 1, do: "point", else: "points"}
+              </span>
             <% end %>
           </div>
         <% end %>
@@ -624,34 +628,20 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <div class="text-center space-y-8">
       <!-- Opponent's breakdown -->
-      <%= if @opponent_visible do %>
-        <.score_breakdown_row
-          result={@opponent_result}
-          player_name={@opponent_name}
-          animation_state={@opponent_state}
-          is_opponent={true}
-        />
-      <% end %>
+      <.score_breakdown_row
+        result={@opponent_result}
+        player_name={@opponent_name}
+        animation_state={@opponent_state || %{phase: :base, cards_scored: 0}}
+        is_opponent={true}
+      />
       
     <!-- Player's breakdown -->
-      <%= if @player_visible do %>
-        <.score_breakdown_row
-          result={@player_result}
-          player_name={@player_name}
-          animation_state={@player_state}
-          is_opponent={false}
-        />
-      <% end %>
-      
-    <!-- Skip button -->
-      <%= if @animation_phase != :complete do %>
-        <button
-          phx-click="skip_score_animation"
-          class="px-4 py-2 text-sm text-base-content/60 hover:text-base-content transition-colors"
-        >
-          Skip Animation
-        </button>
-      <% end %>
+      <.score_breakdown_row
+        result={@player_result}
+        player_name={@player_name}
+        animation_state={@player_state || %{phase: :base, cards_scored: 0}}
+        is_opponent={false}
+      />
     </div>
     """
   end
@@ -710,7 +700,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   defp score_breakdown_row(assigns) do
     breakdown = assigns.result.score_breakdown
-    hand = assigns.result.hand
+    # Sort hand by rank for easier reading
+    hand = sort_cards(assigns.result.hand, :rank)
+    # Sort card_breakdowns by rank too so animation goes left to right
+    sorted_breakdowns =
+      Enum.sort_by(breakdown.card_breakdowns, fn b -> {-b.card.rank, suit_order(b.card.suit)} end)
+
+    breakdown = %{breakdown | card_breakdowns: sorted_breakdowns}
     scoring_card_ids = MapSet.new(Enum.map(breakdown.card_breakdowns, & &1.card.id))
 
     # Calculate running totals based on cards scored
@@ -758,13 +754,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     ~H"""
     <div class={if @is_opponent, do: "", else: ""}>
-      <!-- Player name and hand type header -->
-      <div class="flex items-center justify-center gap-2 text-sm mb-2">
-        <span class={if @is_opponent, do: "text-opponent", else: "text-player"}>
-          {@player_name}
-        </span>
-        <span class="text-base-content/40">|</span>
-        <span class="text-base-content/80">{@hand_type_text}</span>
+      <!-- Hand type header -->
+      <div class="text-sm text-base-content/80 mb-2">
+        {@hand_type_text}
       </div>
       
     <!-- Cards display -->
@@ -859,6 +851,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   end
 
   def locked_hand_display(assigns) do
+    # Sort hand by rank for consistent display
+    sorted_hand = sort_cards(assigns.hand, :rank)
+    assigns = assign(assigns, :sorted_hand, sorted_hand)
+
     ~H"""
     <div>
       <%= if @show_result do %>
@@ -877,7 +873,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <% end %>
 
       <div class="flex gap-2 justify-center mb-2">
-        <%= for card <- @hand do %>
+        <%= for card <- @sorted_hand do %>
           <.card_display card={card} class="w-20 h-28" />
         <% end %>
       </div>

@@ -64,7 +64,9 @@ defmodule OskolWeb.GameLive do
           # Score animation state
           score_animation_phase: :idle,
           score_animation_card_index: 0,
-          animation_timer_ref: nil
+          animation_timer_ref: nil,
+          # Flag to skip animation on reconnect (first state update)
+          is_initial_state_update: true
         )
 
       # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
@@ -679,6 +681,14 @@ defmodule OskolWeb.GameLive do
         true -> socket.assigns.viewing_results
       end
 
+    # On reconnect (initial state update), don't show results at all - player likely already saw them
+    viewing_results =
+      if socket.assigns.is_initial_state_update do
+        false
+      else
+        viewing_results
+      end
+
     # If viewing_results just became true, start the score animation
     {animation_phase, animation_timer_ref} =
       if viewing_results && !socket.assigns.viewing_results do
@@ -836,7 +846,9 @@ defmodule OskolWeb.GameLive do
        deck_builder_selection: deck_builder_selection,
        previewing_card_index: previewing_card_index,
        score_animation_phase: animation_phase,
-       animation_timer_ref: animation_timer_ref
+       animation_timer_ref: animation_timer_ref,
+       # Clear initial state flag after first update
+       is_initial_state_update: false
      )
      |> clear_error()}
   end
