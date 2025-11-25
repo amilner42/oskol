@@ -632,13 +632,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           current_state = if @viewing_own_deck, do: @player_state, else: @opponent_state
 
           # Organize cards by location
-          discard_ids = MapSet.new(Enum.map(current_state.card_piles.discard_pile, & &1.id))
           draw_pile = current_state.card_piles.draw_pile
           hand_pile = current_state.card_piles.hand_pile
-          discard_pile = current_state.card_piles.discard_pile
+          hand_ids = MapSet.new(Enum.map(hand_pile, & &1.id))
 
-          # Combine all cards
-          all_cards = draw_pile ++ hand_pile ++ discard_pile
+          # Combine only draw pile and hand (exclude discarded cards)
+          all_cards = draw_pile ++ hand_pile
 
           # Group cards by (suit, rank) to handle duplicates
           cards_by_position = Enum.group_by(all_cards, fn card -> {card.suit, card.rank} end)
@@ -672,11 +671,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             diamonds: "♦"
           }
 
-          # Count total non-discarded cards
-          total_remaining = Enum.count(all_cards, fn card -> card.id not in discard_ids end) %>
+          # Count cards
+          total_cards = length(draw_pile) + length(hand_pile) + length(current_state.card_piles.discard_pile)
+          cards_remaining = length(all_cards) %>
 
           <div class="mb-3 text-sm text-base-content/70">
-            Total: {total_remaining} / {length(all_cards)} cards remaining
+            Total: {cards_remaining} / {total_cards} cards remaining
           </div>
           
     <!-- Table layout -->
@@ -685,14 +685,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               <!-- Body rows with suits -->
               <tbody>
                 <%= for suit <- suits do %>
-                  <% # Count non-discarded cards of this suit
+                  <% # Count cards of this suit (in hand shown as remaining)
                   suit_cards = Map.get(Enum.group_by(all_cards, & &1.suit), suit, [])
-                  suit_remaining = Enum.count(suit_cards, fn card -> card.id not in discard_ids end)
+                  suit_in_hand = Enum.count(suit_cards, fn card -> card.id in hand_ids end)
                   suit_total = length(suit_cards) %>
                   <tr>
                     <td class="px-2 py-1 text-left text-base font-semibold">
                       <span class="text-xs text-base-content/60 mr-1">
-                        {suit_remaining}/{suit_total}
+                        {suit_in_hand}/{suit_total}
                       </span>
                       <span class={[
                         if(suit in [:hearts, :diamonds], do: "text-error", else: "text-base-content")
@@ -708,8 +708,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                           stack_height = 96 + (length(cards_at_position) - 1) * 20 %>
                           <div class="relative" style={"height: #{stack_height}px; width: 64px;"}>
                             <%= for {card, index} <- Enum.with_index(cards_at_position) do %>
-                              <% in_discard = card.id in discard_ids
-                              opacity_class = if in_discard, do: "opacity-30", else: "opacity-100"
+                              <% in_hand = card.id in hand_ids
+                              opacity_class = if in_hand, do: "opacity-100", else: "opacity-30"
                               top_offset = index * 20 %>
                               <div class="absolute" style={"top: #{top_offset}px;"}>
                                 <.card_display
