@@ -231,6 +231,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <!-- Card controls for opponent -->
     <div class="flex justify-center gap-2 mb-2">
       <button
+        phx-click="view_opponent_levels"
+        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
+      >
+        View Levels
+      </button>
+      <button
         phx-click="view_opponent_deck"
         class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
       >
@@ -294,6 +300,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     </div>
     <!-- Card controls for player -->
     <div class="flex justify-center gap-2 mt-2">
+      <button
+        phx-click="view_your_levels"
+        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
+      >
+        View Levels
+      </button>
       <button
         phx-click="view_your_deck"
         class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
@@ -371,12 +383,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
         >
           Game Log
-        </button>
-        <button
-          phx-click="toggle_levels"
-          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
-        >
-          View Levels
         </button>
       </div>
 
@@ -1159,58 +1165,22 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <%= if @viewing_levels do %>
       <div
         class="fixed inset-0 backdrop-blur-sm bg-base-100/50 flex items-center justify-center z-50"
-        phx-click="toggle_levels"
+        phx-click="close_levels"
       >
         <div
           class="bg-base-100 rounded-lg shadow-xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-base-300"
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
-            <!-- View mode toggle buttons (segmented control) -->
-            <div class="inline-flex rounded-lg border border-base-300 overflow-hidden">
-              <button
-                phx-click="set_levels_view"
-                phx-value-mode="player"
-                class={[
-                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-player",
-                  if(@levels_view_mode == :player,
-                    do: "bg-base-300",
-                    else: "bg-base-100 hover:bg-base-200"
-                  )
-                ]}
-              >
-                {@player_name}'s Levels
-              </button>
-              <button
-                phx-click="set_levels_view"
-                phx-value-mode="both"
-                class={[
-                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-base-content",
-                  if(@levels_view_mode == :both,
-                    do: "bg-base-300",
-                    else: "bg-base-100 hover:bg-base-200"
-                  )
-                ]}
-              >
-                Both Players' Levels
-              </button>
-              <button
-                phx-click="set_levels_view"
-                phx-value-mode="opponent"
-                class={[
-                  "px-4 py-2 font-semibold transition-colors text-opponent",
-                  if(@levels_view_mode == :opponent,
-                    do: "bg-base-300",
-                    else: "bg-base-100 hover:bg-base-200"
-                  )
-                ]}
-              >
-                {@opponent_name}'s Levels
-              </button>
-            </div>
+            <h2 class={[
+              "text-xl font-bold",
+              if(@levels_view_mode == :player, do: "text-player", else: "text-opponent")
+            ]}>
+              {if @levels_view_mode == :player, do: @player_name, else: @opponent_name}'s Levels
+            </h2>
 
             <button
-              phx-click="toggle_levels"
+              phx-click="close_levels"
               class="text-base-content/60 hover:text-base-content text-2xl"
             >
               ×
@@ -1243,104 +1213,39 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             straight_flush: "Straight Flush"
           }
 
-          # Find max levels for each player
-          max_player_level =
-            hand_types
-            |> Enum.map(fn hand_type -> Map.get(@player_state.skill_tree, hand_type, 1) end)
-            |> Enum.max()
+          # Select the state to show based on view mode
+          current_state = if @levels_view_mode == :player, do: @player_state, else: @opponent_state
 
-          max_opponent_level =
+          # Find max level for highlighting
+          max_level =
             hand_types
-            |> Enum.map(fn hand_type -> Map.get(@opponent_state.skill_tree, hand_type, 1) end)
+            |> Enum.map(fn hand_type -> Map.get(current_state.skill_tree, hand_type, 1) end)
             |> Enum.max() %>
 
           <div class="max-w-3xl mx-auto">
             <table class="w-full">
               <tbody>
                 <%= for hand_type <- hand_types do %>
-                  <% player_level = Map.get(@player_state.skill_tree, hand_type, 1)
-                  opponent_level = Map.get(@opponent_state.skill_tree, hand_type, 1)
-                  player_stats = Oskol.Poker.Score.stats_at_level(hand_type, player_level)
-                  opponent_stats = Oskol.Poker.Score.stats_at_level(hand_type, opponent_level)
+                  <% level = Map.get(current_state.skill_tree, hand_type, 1)
+                  stats = Oskol.Poker.Score.stats_at_level(hand_type, level)
                   hand_name = hand_names[hand_type]
-                  same_level = player_level == opponent_level %>
+                  is_max = level == max_level && max_level > 1 %>
 
                   <tr class="border-b border-base-300">
                     <td class="py-3 px-4 font-semibold text-base-content">
-                      {hand_name}
-                      <%= if player_level == max_player_level && max_player_level > 1 do %>
-                        <span class="text-primary ml-1">★</span>
-                      <% end %>
-                      <%= if opponent_level == max_opponent_level && max_opponent_level > 1 do %>
-                        <span class="text-error ml-1">★</span>
+                      <span class="text-base-content/50 font-normal">Lv{level}</span>
+                      <span class="ml-2">{hand_name}</span>
+                      <%= if is_max do %>
+                        <span class={[
+                          "ml-1",
+                          if(@levels_view_mode == :player, do: "text-player", else: "text-opponent")
+                        ]}>
+                          ★
+                        </span>
                       <% end %>
                     </td>
                     <td class="py-3 px-4 text-sm text-right">
-                      <div class="space-y-1">
-                        <%= cond do %>
-                          <% @levels_view_mode == :player -> %>
-                            <div class={
-                              if(same_level, do: "text-base-content/70", else: "text-primary")
-                            }>
-                              <span class="font-medium">Level {player_level}:</span>
-                              <span class="ml-2">
-                                {player_stats.base_chips} chips × {player_stats.multiplier} mult
-                              </span>
-                            </div>
-                            <div class="invisible">
-                              <span class="font-medium">Level:</span>
-                              <span class="ml-2">0 chips × 0 mult</span>
-                            </div>
-                          <% @levels_view_mode == :opponent -> %>
-                            <%= if same_level do %>
-                              <div class="text-base-content/70">
-                                <span class="font-medium">Level {opponent_level}:</span>
-                                <span class="ml-2">
-                                  {opponent_stats.base_chips} chips × {opponent_stats.multiplier} mult
-                                </span>
-                              </div>
-                              <div class="invisible">
-                                <span class="font-medium">Level:</span>
-                                <span class="ml-2">0 chips × 0 mult</span>
-                              </div>
-                            <% else %>
-                              <div class="invisible">
-                                <span class="font-medium">Level:</span>
-                                <span class="ml-2">0 chips × 0 mult</span>
-                              </div>
-                              <div class="text-error">
-                                <span class="font-medium">Level {opponent_level}:</span>
-                                <span class="ml-2">
-                                  {opponent_stats.base_chips} chips × {opponent_stats.multiplier} mult
-                                </span>
-                              </div>
-                            <% end %>
-                          <% @levels_view_mode == :both && same_level -> %>
-                            <div class="text-base-content/70">
-                              <span class="font-medium">Level {player_level}:</span>
-                              <span class="ml-2">
-                                {player_stats.base_chips} chips × {player_stats.multiplier} mult
-                              </span>
-                            </div>
-                            <div class="invisible">
-                              <span class="font-medium">Level:</span>
-                              <span class="ml-2">0 chips × 0 mult</span>
-                            </div>
-                          <% @levels_view_mode == :both -> %>
-                            <div class="text-primary">
-                              <span class="font-medium">Level {player_level}:</span>
-                              <span class="ml-2">
-                                {player_stats.base_chips} chips × {player_stats.multiplier} mult
-                              </span>
-                            </div>
-                            <div class="text-error">
-                              <span class="font-medium">Level {opponent_level}:</span>
-                              <span class="ml-2">
-                                {opponent_stats.base_chips} chips × {opponent_stats.multiplier} mult
-                              </span>
-                            </div>
-                        <% end %>
-                      </div>
+                      {stats.base_chips} chips × {stats.multiplier} mult
                     </td>
                   </tr>
                 <% end %>

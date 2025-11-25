@@ -561,8 +561,18 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
-  def handle_event("toggle_levels", _params, socket) do
-    {:noreply, assign(socket, viewing_levels: !socket.assigns.viewing_levels)}
+  def handle_event("view_your_levels", _params, socket) do
+    {:noreply, assign(socket, viewing_levels: true, levels_view_mode: :player)}
+  end
+
+  @impl true
+  def handle_event("view_opponent_levels", _params, socket) do
+    {:noreply, assign(socket, viewing_levels: true, levels_view_mode: :opponent)}
+  end
+
+  @impl true
+  def handle_event("close_levels", _params, socket) do
+    {:noreply, assign(socket, viewing_levels: false)}
   end
 
   @impl true
