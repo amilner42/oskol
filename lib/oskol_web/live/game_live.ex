@@ -9,7 +9,7 @@ defmodule OskolWeb.GameLive do
   import OskolWeb.Components.GameLive.History
 
   @impl true
-  def mount(%{"id" => game_id} = _params, _session, socket) do
+  def mount(%{"id" => game_id} = params, _session, socket) do
     # Find or start game
     {:ok, _pid} = Game.find_or_start_game(game_id)
 
@@ -30,16 +30,32 @@ defmodule OskolWeb.GameLive do
     if server_state.game_state == nil do
       {:ok, push_navigate(socket, to: "/?game=#{URI.encode_www_form(game_id)}")}
     else
-      # Always show reconnect screen - never auto-reconnect
-      # User must click the yellow reconnect button to rejoin
+      # Check for name in URL params - if present, auto-reconnect
+      name_from_url = params["name"]
+
+      {player_id, player_name, joined, final_server_state} =
+        if name_from_url && name_from_url != "" do
+          case Game.rejoin_game(game_id, name_from_url, self()) do
+            {:ok, pid, new_state} ->
+              {pid, name_from_url, true, new_state}
+
+            {:error, _reason} ->
+              # Fall through to reconnect screen
+              {nil, nil, false, server_state}
+          end
+        else
+          # No name param - show reconnect screen
+          {nil, nil, false, server_state}
+        end
+
       socket =
         socket
         |> assign(
           game_id: game_id,
-          server_state: server_state,
-          player_id: nil,
-          player_name: nil,
-          joined: false,
+          server_state: final_server_state,
+          player_id: player_id,
+          player_name: player_name,
+          joined: joined,
           action_in_progress: false,
           selected_card_ids: [],
           viewing_results: false,
