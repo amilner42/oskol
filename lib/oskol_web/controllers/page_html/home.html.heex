@@ -1,120 +1,458 @@
 <style>
-  @keyframes float {
-    0%, 100% {
-      transform: translateY(0px) rotate(-2deg);
+  @keyframes drift-right {
+    0% {
+      transform: translateX(-150px) translateY(var(--y-offset, 0px)) rotate(var(--rot, 0deg));
     }
     50% {
-      transform: translateY(-10px) rotate(2deg);
+      transform: translateX(calc(100vw / 2 - 50px)) translateY(calc(var(--y-offset, 0px) + var(--y-wave, -15px))) rotate(calc(var(--rot, 0deg) + 3deg));
+    }
+    100% {
+      transform: translateX(calc(100vw + 150px)) translateY(var(--y-offset, 0px)) rotate(var(--rot, 0deg));
     }
   }
 
-  @keyframes float-delayed {
-    0%, 100% {
-      transform: translateY(0px) rotate(3deg);
+  @keyframes drift-left {
+    0% {
+      transform: translateX(calc(100vw + 150px)) translateY(var(--y-offset, 0px)) rotate(var(--rot, 0deg));
     }
     50% {
-      transform: translateY(-15px) rotate(-1deg);
+      transform: translateX(calc(100vw / 2 - 50px)) translateY(calc(var(--y-offset, 0px) + var(--y-wave, -15px))) rotate(calc(var(--rot, 0deg) - 3deg));
+    }
+    100% {
+      transform: translateX(-150px) translateY(var(--y-offset, 0px)) rotate(var(--rot, 0deg));
     }
   }
 
-  .floating-card {
-    animation: float 6s ease-in-out infinite;
-  }
-
-  .floating-card-delayed {
-    animation: float-delayed 7s ease-in-out infinite;
-  }
-
-  .poker-card {
-    aspect-ratio: 2.5/3.5;
-    background: linear-gradient(145deg, #fff, #f5f5f5);
-    border-radius: 12px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  .floating-battle {
     position: absolute;
-    opacity: 0.15;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.25;
+    left: 0;
+    top: var(--row, 10%);
   }
 
-  .card-suit {
-    font-size: 3rem;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+  .floating-battle.drift-r { animation: drift-right var(--speed, 20s) linear infinite; }
+  .floating-battle.drift-l { animation: drift-left var(--speed, 20s) linear infinite; }
+
+  .battle-hand {
+    display: flex;
+    gap: 2px;
   }
+
+  .battle-hand.loser {
+    opacity: 0.5;
+  }
+
+  .battle-vs {
+    font-size: 9px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    padding: 1px 6px;
+    background: linear-gradient(135deg, #dc2626, #db2777);
+    border-radius: 3px;
+  }
+
+  .mini-card {
+    width: 24px;
+    height: 34px;
+    background: linear-gradient(145deg, #fff, #f0f0f0);
+    border-radius: 3px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 10px;
+    line-height: 1;
+  }
+
+  .mini-card .rank { font-size: 9px; }
+  .mini-card .suit { font-size: 8px; margin-top: -2px; }
+  .mini-card.red { color: #dc2626; }
+  .mini-card.black { color: #1f2937; }
 </style>
 
 <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
-  <!-- Floating poker cards background -->
-  <div class="poker-card floating-card" style="width: 120px; top: 10%; left: 8%;">
-    <span class="card-suit" style="color: #dc2626;">♥</span>
+  <!-- Floating 1v1 poker battles drifting across screen -->
+
+  <!-- Battle 1: Three 7s vs Pair of Kings - Three of a kind wins -->
+  <div class="floating-battle drift-r" style="--row: 6%; --speed: 28s; --rot: -2deg; --y-wave: -10px; animation-delay: 0s;">
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">7</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">7</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">7</span><span class="suit">♦</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">K</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♥</span></div>
+    </div>
   </div>
-  <div class="poker-card floating-card-delayed" style="width: 100px; top: 60%; left: 12%;">
-    <span class="card-suit" style="color: #1f2937;">♠</span>
+
+  <!-- Battle 2: Full house vs Straight - Full house wins -->
+  <div class="floating-battle drift-l" style="--row: 18%; --speed: 32s; --rot: 3deg; --y-wave: -12px; animation-delay: -8s;">
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">3</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">3</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">3</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">9</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">9</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">5</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">6</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">7</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">8</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">9</span><span class="suit">♥</span></div>
+    </div>
   </div>
-  <div class="poker-card floating-card" style="width: 110px; top: 25%; right: 10%;">
-    <span class="card-suit" style="color: #dc2626;">♦</span>
+
+  <!-- Battle 3: Pair of Aces vs Pair of Kings - Aces win -->
+  <div class="floating-battle drift-r" style="--row: 28%; --speed: 25s; --rot: -3deg; --y-wave: -8px; animation-delay: -14s;">
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">A</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">A</span><span class="suit">♥</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">K</span><span class="suit">♣</span></div>
+    </div>
   </div>
-  <div class="poker-card floating-card-delayed" style="width: 105px; top: 65%; right: 8%;">
-    <span class="card-suit" style="color: #1f2937;">♣</span>
+
+  <!-- Battle 4: Four Jacks vs Flush - Four of a kind wins -->
+  <div class="floating-battle drift-l" style="--row: 38%; --speed: 35s; --rot: 2deg; --y-wave: -14px; animation-delay: -5s;">
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">J</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">J</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">J</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">J</span><span class="suit">♦</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">2</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">6</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">9</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">J</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♥</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 5: Two pair vs Three of a kind - Three of a kind wins -->
+  <div class="floating-battle drift-r" style="--row: 48%; --speed: 30s; --rot: -4deg; --y-wave: -10px; animation-delay: -20s;">
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">A</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">A</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">5</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">5</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">Q</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">Q</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">Q</span><span class="suit">♣</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 6: Straight flush vs Four 9s - Straight flush wins -->
+  <div class="floating-battle drift-l" style="--row: 58%; --speed: 38s; --rot: 3deg; --y-wave: -12px; animation-delay: -12s;">
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">4</span><span class="suit">♣</span></div>
+      <div class="mini-card black"><span class="rank">5</span><span class="suit">♣</span></div>
+      <div class="mini-card black"><span class="rank">6</span><span class="suit">♣</span></div>
+      <div class="mini-card black"><span class="rank">7</span><span class="suit">♣</span></div>
+      <div class="mini-card black"><span class="rank">8</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">9</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">9</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">9</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">9</span><span class="suit">♣</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 7: Three 5s vs Pair of Jacks - Three of a kind wins -->
+  <div class="floating-battle drift-r" style="--row: 68%; --speed: 26s; --rot: -2deg; --y-wave: -9px; animation-delay: -25s;">
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">5</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">5</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">5</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">J</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">J</span><span class="suit">♣</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 8: Royal straight vs Full house - Straight wins (close!) -->
+  <div class="floating-battle drift-l" style="--row: 78%; --speed: 33s; --rot: 4deg; --y-wave: -11px; animation-delay: -18s;">
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">10</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">J</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">Q</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">A</span><span class="suit">♠</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">K</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">K</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">4</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">4</span><span class="suit">♠</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 9: Flush vs Straight - Flush wins -->
+  <div class="floating-battle drift-r" style="--row: 88%; --speed: 29s; --rot: -3deg; --y-wave: -13px; animation-delay: -30s;">
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">3</span><span class="suit">♦</span></div>
+      <div class="mini-card red"><span class="rank">7</span><span class="suit">♦</span></div>
+      <div class="mini-card red"><span class="rank">10</span><span class="suit">♦</span></div>
+      <div class="mini-card red"><span class="rank">Q</span><span class="suit">♦</span></div>
+      <div class="mini-card red"><span class="rank">A</span><span class="suit">♦</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">4</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">5</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">6</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">7</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">8</span><span class="suit">♠</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 10: Pair of 8s vs Pair of 3s - 8s win -->
+  <div class="floating-battle drift-l" style="--row: 95%; --speed: 24s; --rot: 2deg; --y-wave: -8px; animation-delay: -7s;">
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">8</span><span class="suit">♦</span></div>
+      <div class="mini-card red"><span class="rank">8</span><span class="suit">♥</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">3</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">3</span><span class="suit">♦</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 11: Three 10s vs Two pair - Three of a kind wins -->
+  <div class="floating-battle drift-r" style="--row: 12%; --speed: 31s; --rot: 3deg; --y-wave: -11px; animation-delay: -22s;">
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">10</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">10</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">10</span><span class="suit">♦</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">6</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">6</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">4</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">4</span><span class="suit">♥</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 12: Pair of Queens vs Pair of 10s - Queens win -->
+  <div class="floating-battle drift-l" style="--row: 3%; --speed: 27s; --rot: -4deg; --y-wave: -9px; animation-delay: -15s;">
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">Q</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">Q</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">10</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">10</span><span class="suit">♦</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 13: Full house (2s over 7s) vs Flush - Full house wins -->
+  <div class="floating-battle drift-r" style="--row: 33%; --speed: 36s; --rot: 2deg; --y-wave: -13px; animation-delay: -9s;">
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">2</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">2</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">2</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">7</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">7</span><span class="suit">♠</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">2</span><span class="suit">♠</span></div>
+      <div class="mini-card black"><span class="rank">5</span><span class="suit">♠</span></div>
+      <div class="mini-card black"><span class="rank">8</span><span class="suit">♠</span></div>
+      <div class="mini-card black"><span class="rank">J</span><span class="suit">♠</span></div>
+      <div class="mini-card black"><span class="rank">K</span><span class="suit">♠</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 14: Four 3s vs Full house - Four of a kind wins -->
+  <div class="floating-battle drift-l" style="--row: 43%; --speed: 29s; --rot: -3deg; --y-wave: -10px; animation-delay: -27s;">
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">3</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">3</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">3</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">3</span><span class="suit">♦</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">A</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">A</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">A</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">K</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♥</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 15: Pair of 2s vs High card Ace - Pair wins -->
+  <div class="floating-battle drift-r" style="--row: 53%; --speed: 23s; --rot: 4deg; --y-wave: -7px; animation-delay: -3s;">
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">2</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">2</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">A</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♥</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 16: Three Aces vs Straight - Three of a kind loses -->
+  <div class="floating-battle drift-l" style="--row: 63%; --speed: 34s; --rot: -2deg; --y-wave: -12px; animation-delay: -19s;">
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">A</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">A</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">A</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">9</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">10</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">J</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">Q</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♦</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 17: Two pair (Js and 9s) vs Two pair (10s and 8s) - Jacks win -->
+  <div class="floating-battle drift-r" style="--row: 73%; --speed: 28s; --rot: 3deg; --y-wave: -9px; animation-delay: -33s;">
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">J</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">J</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">9</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">9</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">10</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">10</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">8</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">8</span><span class="suit">♦</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 18: Pair of 6s vs Pair of 5s - 6s win -->
+  <div class="floating-battle drift-l" style="--row: 83%; --speed: 25s; --rot: -4deg; --y-wave: -8px; animation-delay: -11s;">
+    <div class="battle-hand">
+      <div class="mini-card black"><span class="rank">6</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">6</span><span class="suit">♥</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card red"><span class="rank">5</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">5</span><span class="suit">♠</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 19: Straight (A-5) vs Three 4s - Straight wins -->
+  <div class="floating-battle drift-r" style="--row: 23%; --speed: 32s; --rot: -3deg; --y-wave: -11px; animation-delay: -16s;">
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">A</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">2</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">3</span><span class="suit">♦</span></div>
+      <div class="mini-card black"><span class="rank">4</span><span class="suit">♣</span></div>
+      <div class="mini-card red"><span class="rank">5</span><span class="suit">♥</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">4</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">4</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">4</span><span class="suit">♣</span></div>
+    </div>
+  </div>
+
+  <!-- Battle 20: Three Kings vs Flush - Flush wins -->
+  <div class="floating-battle drift-l" style="--row: 52%; --speed: 37s; --rot: 2deg; --y-wave: -14px; animation-delay: -24s;">
+    <div class="battle-hand loser">
+      <div class="mini-card black"><span class="rank">K</span><span class="suit">♠</span></div>
+      <div class="mini-card red"><span class="rank">K</span><span class="suit">♥</span></div>
+      <div class="mini-card black"><span class="rank">K</span><span class="suit">♣</span></div>
+    </div>
+    <div class="battle-vs">VS</div>
+    <div class="battle-hand">
+      <div class="mini-card red"><span class="rank">4</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">7</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">9</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">J</span><span class="suit">♥</span></div>
+      <div class="mini-card red"><span class="rank">A</span><span class="suit">♥</span></div>
+    </div>
   </div>
 
   <div class="text-center px-6 max-w-xl w-full relative z-10">
     <div class="mb-10">
-      <!-- Poker hand display -->
-      <div class="flex justify-center gap-1 mb-6">
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform -rotate-12 hover:rotate-0 transition-transform">
-          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">A</span>
+      <!-- OSKOL spelled out on cards -->
+      <div class="flex justify-center gap-2 mb-8">
+        <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold transform -rotate-12 hover:rotate-0 transition-transform">
+          <span class="text-gray-800">O</span>
         </div>
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform -rotate-6 hover:rotate-0 transition-transform">
+        <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold transform -rotate-6 hover:rotate-0 transition-transform">
+          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">S</span>
+        </div>
+        <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold hover:rotate-0 transition-transform">
           <span class="text-gray-800">K</span>
         </div>
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold hover:rotate-0 transition-transform">
-          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">Q</span>
+        <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold transform rotate-6 hover:rotate-0 transition-transform">
+          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">O</span>
         </div>
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform rotate-6 hover:rotate-0 transition-transform">
-          <span class="text-gray-800">J</span>
-        </div>
-        <div class="w-12 h-16 bg-white rounded-lg shadow-xl flex items-center justify-center text-2xl font-bold transform rotate-12 hover:rotate-0 transition-transform">
-          <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">10</span>
+        <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold transform rotate-12 hover:rotate-0 transition-transform">
+          <span class="text-gray-800">L</span>
         </div>
       </div>
 
-      <h1 class="text-6xl sm:text-7xl font-bold text-base-content mb-4">
-        oskol.io
-      </h1>
-
-      <p class="text-base-content/80 text-xl mb-2 font-semibold">
-        Roguelike Poker Duels
-      </p>
-
-      <p class="text-base-content/60 text-sm max-w-md mx-auto">
-        Build your deck, level up your hands, and battle head-to-head in strategic poker showdowns
-      </p>
     </div>
 
     <form id="game-form" class="space-y-4">
-      <div class="bg-base-100 rounded-2xl p-8 shadow-2xl border-2 border-base-300">
-        <input
-          type="text"
-          id="game-name"
-          name="game_name"
-          placeholder="Enter game name"
-          class="w-full bg-base-200 border-2 border-base-300 rounded-xl px-5 py-4 text-base-content placeholder-base-content/40 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-center text-lg transition-all"
-          autocomplete="off"
-          autofocus
-        />
+      <input
+        type="text"
+        id="game-name"
+        name="game_name"
+        placeholder="Enter game name"
+        class="w-full bg-white/90 backdrop-blur-sm border-2 border-white/50 rounded-xl px-5 py-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-white text-center text-lg transition-all shadow-lg"
+        autocomplete="off"
+        autofocus
+      />
 
-        <button
-          type="submit"
-          class="w-full mt-5 px-8 py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
-        >
-          Deal In ♠♥♦♣
-        </button>
-      </div>
+      <button
+        type="submit"
+        class="relative w-full px-8 py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
+      >
+        <span class="relative z-10">Play Now</span>
+        <span class="absolute text-white/20 text-2xl" style="top: 8%; left: 8%; transform: rotate(-15deg);">♠</span>
+        <span class="absolute text-white/20 text-xl" style="top: 60%; left: 5%; transform: rotate(10deg);">♦</span>
+        <span class="absolute text-white/20 text-3xl" style="top: 15%; right: 10%; transform: rotate(20deg);">♥</span>
+        <span class="absolute text-white/20 text-xl" style="top: 55%; right: 8%; transform: rotate(-8deg);">♣</span>
+        <span class="absolute text-white/20 text-lg" style="top: 35%; left: 20%; transform: rotate(5deg);">♥</span>
+        <span class="absolute text-white/20 text-2xl" style="top: 40%; right: 22%; transform: rotate(-12deg);">♠</span>
+      </button>
     </form>
 
     <p class="text-base-content/40 text-xs mt-6">
-      Share the game name with a friend • Best of 3 rounds
+      Share the game name with a friend • No account needed
     </p>
   </div>
 </div>
