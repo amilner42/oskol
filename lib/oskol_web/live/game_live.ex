@@ -95,6 +95,55 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
+  def handle_params(params, _uri, socket) do
+    # Auto-join if name query param is provided and not already joined
+    name = params["name"]
+
+    socket =
+      if name && String.trim(name) != "" && !socket.assigns.joined && connected?(socket) do
+        name = String.trim(name)
+
+        case Game.join_game(socket.assigns.game_id, name, self()) do
+          {:ok, player_id, new_state} ->
+            socket
+            |> assign(
+              player_id: player_id,
+              player_name: name,
+              joined: true,
+              server_state: new_state,
+              selected_format: nil,
+              error: nil
+            )
+
+          {:error, :name_taken} ->
+            # Name is taken - try to rejoin as that player
+            case Game.rejoin_game(socket.assigns.game_id, name, self()) do
+              {:ok, player_id, new_state} ->
+                socket
+                |> assign(
+                  player_id: player_id,
+                  player_name: name,
+                  joined: true,
+                  server_state: new_state,
+                  selected_format: Map.get(new_state.format_selections, player_id),
+                  error: nil
+                )
+
+              {:error, _reason} ->
+                socket
+            end
+
+          {:error, _reason} ->
+            socket
+        end
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("rejoin_as_player", %{"player_name" => name}, socket) do
     case Game.rejoin_game(socket.assigns.game_id, name, self()) do
       {:ok, player_id, new_state} ->

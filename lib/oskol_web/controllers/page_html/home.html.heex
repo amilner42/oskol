@@ -426,15 +426,24 @@
 
     </div>
 
-    <form id="game-form" class="space-y-4">
+    <form id="game-form" class="space-y-3">
+      <input
+        type="text"
+        id="player-name"
+        name="player_name"
+        placeholder="Your name"
+        class="w-full bg-white/90 backdrop-blur-sm border-2 border-white/50 rounded-xl px-5 py-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-white text-center text-lg transition-all shadow-lg"
+        autocomplete="off"
+        autofocus
+      />
+
       <input
         type="text"
         id="game-name"
         name="game_name"
-        placeholder="Enter game name"
+        placeholder="Game name"
         class="w-full bg-white/90 backdrop-blur-sm border-2 border-white/50 rounded-xl px-5 py-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-white text-center text-lg transition-all shadow-lg"
         autocomplete="off"
-        autofocus
       />
 
       <button
@@ -452,7 +461,7 @@
     </form>
 
     <p class="text-base-content/40 text-xs mt-6">
-      Share the game name with a friend • No account needed
+      Share the game name with a friend
     </p>
   </div>
 </div>
@@ -460,9 +469,10 @@
 <script>
   document.getElementById('game-form').addEventListener('submit', function(e) {
     e.preventDefault();
+    const playerName = document.getElementById('player-name').value.trim();
     const gameName = document.getElementById('game-name').value.trim();
-    if (gameName) {
-      window.location.href = '/g/' + encodeURIComponent(gameName);
+    if (playerName && gameName) {
+      window.location.href = '/g/' + encodeURIComponent(gameName) + '?name=' + encodeURIComponent(playerName);
     }
   });
 </script>
