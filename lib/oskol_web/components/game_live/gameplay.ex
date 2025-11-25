@@ -627,25 +627,31 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   @doc """
   Animated score breakdown display showing Balatro-style formula with cards highlighted sequentially.
+  Layout: opponent on top, player on bottom (so your cards are near you).
+  Animation order is alphabetical by player name so both players see the same reveal timing.
   """
   def animated_score_display(assigns) do
     opponent_result = assigns.game_state.last_hand_results[assigns.opponent_id]
     player_result = assigns.game_state.last_hand_results[assigns.player_id]
 
-    # Determine visibility and animation state for each player
-    {opponent_visible, opponent_state} =
+    # Determine animation order alphabetically - both players see same timing
+    # "first" animates during opponent_* phases, "second" during player_* phases
+    player_is_first = assigns.player_name <= assigns.opponent_name
+
+    # Get animation states based on alphabetical order
+    {_opponent_visible, opponent_state} =
       get_player_animation_state(
         assigns.animation_phase,
         assigns.animation_card_index,
-        :opponent,
+        if(player_is_first, do: :player, else: :opponent),
         opponent_result
       )
 
-    {player_visible, player_state} =
+    {_player_visible, player_state} =
       get_player_animation_state(
         assigns.animation_phase,
         assigns.animation_card_index,
-        :player,
+        if(player_is_first, do: :opponent, else: :player),
         player_result
       )
 
@@ -653,14 +659,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       assigns
       |> assign(:opponent_result, opponent_result)
       |> assign(:player_result, player_result)
-      |> assign(:opponent_visible, opponent_visible)
       |> assign(:opponent_state, opponent_state)
-      |> assign(:player_visible, player_visible)
       |> assign(:player_state, player_state)
 
     ~H"""
     <div class="text-center space-y-8">
-      <!-- Opponent's breakdown -->
+      <!-- Opponent's breakdown (always on top) -->
       <.score_breakdown_row
         result={@opponent_result}
         player_name={@opponent_name}
@@ -668,7 +672,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         is_opponent={true}
       />
       
-    <!-- Player's breakdown -->
+    <!-- Player's breakdown (always on bottom, near your cards) -->
       <.score_breakdown_row
         result={@player_result}
         player_name={@player_name}
