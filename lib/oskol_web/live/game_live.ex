@@ -493,26 +493,33 @@ defmodule OskolWeb.GameLive do
         _ -> nil
       end
 
+    card_type = pending && pending.deck_builder_card.type
+
     is_multi_select =
-      pending &&
-        (pending.deck_builder_card.type == :remove_card or
-           pending.deck_builder_card.type in [
-             :change_suit_hearts,
-             :change_suit_diamonds,
-             :change_suit_clubs,
-             :change_suit_spades,
-             :increase_rank
-           ])
+      card_type in [
+        :remove_card,
+        :change_suit_hearts,
+        :change_suit_diamonds,
+        :change_suit_clubs,
+        :change_suit_spades,
+        :increase_rank
+      ]
+
+    max_cards =
+      case card_type do
+        :increase_rank -> 2
+        _ -> 3
+      end
 
     new_selection =
       if is_multi_select do
-        # Toggle card in/out of list (max 3)
+        # Toggle card in/out of list
         current_list = socket.assigns.deck_builder_selection || []
 
         if card_id in current_list do
           List.delete(current_list, card_id)
         else
-          if length(current_list) < 3 do
+          if length(current_list) < max_cards do
             [card_id | current_list]
           else
             current_list

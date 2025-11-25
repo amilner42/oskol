@@ -33,8 +33,8 @@ defmodule Oskol.Poker.Score do
     straight: %{chips: 10, multiplier: 1},
     flush: %{chips: 10, multiplier: 1},
     full_house: %{chips: 10, multiplier: 1},
-    four_of_a_kind: %{chips: 30, multiplier: 3},
-    straight_flush: %{chips: 30, multiplier: 3}
+    four_of_a_kind: %{chips: 20, multiplier: 2},
+    straight_flush: %{chips: 20, multiplier: 2}
   }
 
   @doc """

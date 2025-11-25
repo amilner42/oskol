@@ -109,7 +109,7 @@ defmodule Oskol.Game.DeckBuilderCard do
   end
 
   def card_description(%__MODULE__{type: :increase_rank}) do
-    "Increase rank of up to 3 cards by 1 (max rank is Ace)"
+    "Increase rank of up to 2 cards by 1 (max rank is Ace)"
   end
 
   @doc """

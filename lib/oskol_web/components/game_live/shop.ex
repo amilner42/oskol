@@ -516,6 +516,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
                      ] ->
                   "Select up to 3 cards to change suit (or skip):"
 
+                :increase_rank ->
+                  "Select up to 2 cards to increase rank (or skip):"
+
                 _ ->
                   "Select a card to apply this enhancement (or skip):"
               end %>
