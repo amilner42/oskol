@@ -98,18 +98,50 @@ defmodule OskolWeb.LandingLive do
   end
 
   @impl true
-  def handle_event("submit_game_name", %{"game_name" => game_name}, socket) do
-    game_name = String.trim(game_name)
+  def handle_event("new_game", %{"player_name" => player_name}, socket) do
+    player_name = String.trim(player_name)
 
-    if game_name == "" do
-      {:noreply, assign(socket, error: "Please enter a game name")}
+    if player_name == "" do
+      {:noreply, assign(socket, error: "Please enter a display name")}
     else
-      # Update URL with query param for shareable link
-      {:noreply,
-       socket
-       |> assign(step: :player_name, game_name: game_name, error: nil)
-       |> push_patch(to: "/?game=#{URI.encode_www_form(game_name)}")}
+      # Generate a random 6-character game ID
+      game_id = generate_game_id()
+
+      # Start the game and join immediately
+      {:ok, _pid} = Game.find_or_start_game(game_id)
+
+      # Subscribe to game updates
+      Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+
+      # Join the game
+      case Game.join_game(game_id, player_name, self()) do
+        {:ok, player_id, new_state} ->
+          {:noreply,
+           socket
+           |> assign(
+             step: :lobby,
+             game_name: game_id,
+             player_name: player_name,
+             player_id: player_id,
+             server_state: new_state,
+             selected_format: nil,
+             error: nil
+           )
+           |> push_patch(to: "/?game=#{game_id}")}
+
+        {:error, reason} ->
+          {:noreply, assign(socket, error: format_error(reason))}
+      end
     end
+  end
+
+  # Generate a random URL-safe game ID
+  defp generate_game_id do
+    :crypto.strong_rand_bytes(6)
+    |> Base.url_encode64(padding: false)
+    |> String.replace(~r/[^a-zA-Z0-9]/, "")
+    |> String.slice(0, 6)
+    |> String.downcase()
   end
 
   @impl true
@@ -117,7 +149,7 @@ defmodule OskolWeb.LandingLive do
     player_name = String.trim(player_name)
 
     if player_name == "" do
-      {:noreply, assign(socket, error: "Please enter your name")}
+      {:noreply, assign(socket, error: "Please enter a display name")}
     else
       # Connect to game server
       game_id = socket.assigns.game_name
@@ -359,9 +391,8 @@ defmodule OskolWeb.LandingLive do
 
   defp game_name_form(assigns) do
     ~H"""
-    <form phx-submit="submit_game_name" class="space-y-3">
-      <div class="h-6 mb-2"></div>
-      <.brand_input name="game_name" placeholder="Enter game name" autofocus={true} />
+    <form phx-submit="new_game" class="space-y-3">
+      <.brand_input name="player_name" placeholder="enter your nickname" />
       <.brand_button type="submit" color={:primary}>
         New Game
       </.brand_button>
@@ -372,10 +403,9 @@ defmodule OskolWeb.LandingLive do
   defp player_name_form(assigns) do
     ~H"""
     <form phx-submit="submit_player_name" class="space-y-3">
-      <div class="h-6 mb-2"></div>
-      <.brand_input name="player_name" placeholder="Choose display name" autofocus={true} />
+      <.brand_input name="player_name" placeholder="enter your nickname" />
       <.brand_button type="submit" color={:primary}>
-        Continue
+        Join Game
       </.brand_button>
     </form>
     """
@@ -425,7 +455,7 @@ defmodule OskolWeb.LandingLive do
           </div>
 
           <form phx-submit="submit_player_name" class="space-y-3">
-            <.brand_input name="player_name" placeholder="Your name" autofocus={false} />
+            <.brand_input name="player_name" placeholder="Your name" />
             <.brand_button type="submit" color={:primary}>
               Join as New Player
             </.brand_button>
@@ -469,7 +499,7 @@ defmodule OskolWeb.LandingLive do
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-      
+
     <!-- Format Selection -->
       <div class="mb-8">
         <p class="text-base-content/40 text-xs mb-3 text-center">
@@ -544,7 +574,7 @@ defmodule OskolWeb.LandingLive do
           />
         </div>
       </div>
-      
+
     <!-- Start Game Button -->
       <div class="text-center">
         <%= if @server_state.lobby_status == :ready_to_start do %>
@@ -646,7 +676,7 @@ defmodule OskolWeb.LandingLive do
         <% true -> %>
           <!-- No selection -->
       <% end %>
-      
+
     <!-- Abstract SVG decoration per format -->
       <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
         <%= case @format do %>
@@ -702,7 +732,7 @@ defmodule OskolWeb.LandingLive do
             </svg>
         <% end %>
       </div>
-      
+
     <!-- Text content - centered and stacked -->
       <div class="relative z-10 flex flex-col items-center gap-1">
         <div class="text-gray-800 font-bold text-lg">{@title}</div>
@@ -840,7 +870,6 @@ defmodule OskolWeb.LandingLive do
 
   attr :name, :string, required: true
   attr :placeholder, :string, default: ""
-  attr :autofocus, :boolean, default: false
 
   defp brand_input(assigns) do
     ~H"""
@@ -848,7 +877,6 @@ defmodule OskolWeb.LandingLive do
       type="text"
       name={@name}
       placeholder={@placeholder}
-      autofocus={@autofocus}
       class="w-full bg-white/90 backdrop-blur-sm border-2 border-white/50 rounded-xl px-5 py-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-white text-center text-lg transition-all shadow-lg"
       autocomplete="off"
       phx-mounted={JS.focus()}
