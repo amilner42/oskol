@@ -450,18 +450,27 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         </div>
         <% player_score = @player_state.current_round_score
         opponent_score = @opponent_state.current_round_score
-        score_diff = abs(player_score - opponent_score) %>
+        score_diff = abs(player_score - opponent_score)
+        round_complete = @player_state.hands_remaining == 0 %>
         <%= if score_diff > 0 do %>
           <div class="text-sm text-base-content/70 mt-1">
             <%= if player_score > opponent_score do %>
               <span class="text-player">{@player_name}</span>
               <span>
-                is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
+                <%= if round_complete do %>
+                  wins by {score_diff} {if score_diff == 1, do: "point", else: "points"}
+                <% else %>
+                  is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
+                <% end %>
               </span>
             <% else %>
               <span class="text-opponent">{@opponent_name}</span>
               <span>
-                is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
+                <%= if round_complete do %>
+                  wins by {score_diff} {if score_diff == 1, do: "point", else: "points"}
+                <% else %>
+                  is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
+                <% end %>
               </span>
             <% end %>
           </div>

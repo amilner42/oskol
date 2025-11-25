@@ -9,7 +9,7 @@ defmodule OskolWeb.GameLive do
   import OskolWeb.Components.GameLive.History
 
   @impl true
-  def mount(%{"id" => game_id} = params, _session, socket) do
+  def mount(%{"id" => game_id} = _params, _session, socket) do
     # Find or start game
     {:ok, _pid} = Game.find_or_start_game(game_id)
 
@@ -18,9 +18,6 @@ defmodule OskolWeb.GameLive do
 
     # Get initial server state
     server_state = Game.get_server_state(game_id)
-
-    # Check for name param (passed when navigating from landing after game start)
-    requested_name = params["name"]
 
     # Check for disconnected players who could reconnect
     disconnected_players =
@@ -33,6 +30,8 @@ defmodule OskolWeb.GameLive do
     if server_state.game_state == nil do
       {:ok, push_navigate(socket, to: "/?game=#{URI.encode_www_form(game_id)}")}
     else
+      # Always show reconnect screen - never auto-reconnect
+      # User must click the yellow reconnect button to rejoin
       socket =
         socket
         |> assign(
@@ -68,49 +67,6 @@ defmodule OskolWeb.GameLive do
           # Flag to skip animation on reconnect (first state update)
           is_initial_state_update: true
         )
-
-      # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
-      # This prevents reconnecting with a temporary PID that will be discarded
-      socket =
-        if connected?(socket) do
-          # First try to reconnect using the name param if provided
-          reconnect_result =
-            if requested_name && requested_name != "" do
-              case Game.rejoin_game(game_id, requested_name, self()) do
-                {:ok, player_id, new_state} ->
-                  {:ok, player_id, requested_name, new_state}
-
-                {:error, _reason} ->
-                  :failed
-              end
-            else
-              :no_name
-            end
-
-          case reconnect_result do
-            {:ok, player_id, player_name, new_state} ->
-              # Check if there are hand results to show
-              viewing_results =
-                new_state.game_state != nil and new_state.game_state.last_hand_results != nil
-
-              socket
-              |> assign(
-                player_id: player_id,
-                player_name: player_name,
-                joined: true,
-                server_state: new_state,
-                viewing_results: viewing_results,
-                error: nil
-              )
-
-            _ ->
-              # No name param - always show reconnect screen to let user choose
-              # This avoids race conditions where we might auto-connect as the wrong player
-              socket
-          end
-        else
-          socket
-        end
 
       {:ok, socket}
     end
@@ -198,25 +154,21 @@ defmodule OskolWeb.GameLive do
       Process.cancel_timer(socket.assigns.animation_timer_ref)
     end
 
-    # Check if we're in round_end phase - if so, show round summary
+    # Check if game is over - if so, show match summary; otherwise go straight to shop
     game_state = socket.assigns.server_state.game_state
 
-    viewing_round_summary =
-      if game_state && game_state.phase == :round_end do
+    viewing_match_summary =
+      if game_state && game_state.game_status == :game_over do
         true
       else
         false
       end
 
-    # If showing round summary, schedule auto-dismiss after 10 seconds
-    if viewing_round_summary do
-      Process.send_after(self(), :auto_dismiss_round_summary, 10000)
-    end
-
     {:noreply,
      assign(socket,
        viewing_results: false,
-       viewing_round_summary: viewing_round_summary,
+       viewing_round_summary: false,
+       viewing_match_summary: viewing_match_summary,
        score_animation_phase: :idle,
        score_animation_card_index: 0,
        animation_timer_ref: nil
@@ -246,25 +198,21 @@ defmodule OskolWeb.GameLive do
   def handle_info(:auto_dismiss_results, socket) do
     # Only auto-dismiss if still viewing results
     if socket.assigns.viewing_results do
-      # Same logic as dismiss_results event
+      # Check if game is over - if so, show match summary; otherwise go straight to shop
       game_state = socket.assigns.server_state.game_state
 
-      viewing_round_summary =
-        if game_state && game_state.phase == :round_end do
+      viewing_match_summary =
+        if game_state && game_state.game_status == :game_over do
           true
         else
           false
         end
 
-      # If showing round summary, schedule auto-dismiss after 10 seconds
-      if viewing_round_summary do
-        Process.send_after(self(), :auto_dismiss_round_summary, 10000)
-      end
-
       {:noreply,
        assign(socket,
          viewing_results: false,
-         viewing_round_summary: viewing_round_summary,
+         viewing_round_summary: false,
+         viewing_match_summary: viewing_match_summary,
          score_animation_phase: :idle,
          score_animation_card_index: 0,
          animation_timer_ref: nil

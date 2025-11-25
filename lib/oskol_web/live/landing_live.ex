@@ -499,7 +499,7 @@ defmodule OskolWeb.LandingLive do
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-
+      
     <!-- Format Selection -->
       <div class="mb-8">
         <p class="text-base-content/40 text-xs mb-3 text-center">
@@ -574,7 +574,7 @@ defmodule OskolWeb.LandingLive do
           />
         </div>
       </div>
-
+      
     <!-- Start Game Button -->
       <div class="text-center">
         <%= if @server_state.lobby_status == :ready_to_start do %>
@@ -676,7 +676,7 @@ defmodule OskolWeb.LandingLive do
         <% true -> %>
           <!-- No selection -->
       <% end %>
-
+      
     <!-- Abstract SVG decoration per format -->
       <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
         <%= case @format do %>
@@ -732,7 +732,7 @@ defmodule OskolWeb.LandingLive do
             </svg>
         <% end %>
       </div>
-
+      
     <!-- Text content - centered and stacked -->
       <div class="relative z-10 flex flex-col items-center gap-1">
         <div class="text-gray-800 font-bold text-lg">{@title}</div>
