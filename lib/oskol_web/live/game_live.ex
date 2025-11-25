@@ -28,7 +28,7 @@ defmodule OskolWeb.GameLive do
     # If no game in progress, redirect to landing page with game param
     # Users should join through the landing page flow
     if server_state.game_state == nil do
-      {:ok, push_navigate(socket, to: "/?game=#{URI.encode_www_form(game_id)}")}
+      {:ok, push_navigate(socket, to: ~p"/?game=#{game_id}")}
     else
       # Check for name in URL params - if present, auto-reconnect
       name_from_url = params["name"]
