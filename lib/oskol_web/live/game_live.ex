@@ -541,24 +541,23 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
-  def handle_event("toggle_card_sort", _params, socket) do
-    new_sort = if socket.assigns.your_card_sort == :rank, do: :suit, else: :rank
-    {:noreply, assign(socket, your_card_sort: new_sort, opponent_card_sort: new_sort)}
-  end
-
-  @impl true
   def handle_event("toggle_history", _params, socket) do
     {:noreply, assign(socket, viewing_history: !socket.assigns.viewing_history)}
   end
 
   @impl true
-  def handle_event("toggle_deck", _params, socket) do
-    {:noreply, assign(socket, viewing_deck: !socket.assigns.viewing_deck, viewing_own_deck: true)}
+  def handle_event("view_your_deck", _params, socket) do
+    {:noreply, assign(socket, viewing_deck: true, viewing_own_deck: true)}
   end
 
   @impl true
-  def handle_event("toggle_deck_view", _params, socket) do
-    {:noreply, assign(socket, viewing_own_deck: !socket.assigns.viewing_own_deck)}
+  def handle_event("view_opponent_deck", _params, socket) do
+    {:noreply, assign(socket, viewing_deck: true, viewing_own_deck: false)}
+  end
+
+  @impl true
+  def handle_event("close_deck", _params, socket) do
+    {:noreply, assign(socket, viewing_deck: false)}
   end
 
   @impl true

@@ -228,6 +228,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def opponent_cards(assigns) do
     ~H"""
+    <!-- Card controls for opponent -->
+    <div class="flex justify-center gap-2 mb-2">
+      <button
+        phx-click="view_opponent_deck"
+        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
+      >
+        View Deck
+      </button>
+      <button
+        phx-click="toggle_opponent_card_sort"
+        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
+      >
+        Toggle Sort
+      </button>
+    </div>
     <div class="flex flex-wrap gap-4 justify-center mb-2">
       <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
@@ -276,6 +291,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           />
         </button>
       <% end %>
+    </div>
+    <!-- Card controls for player -->
+    <div class="flex justify-center gap-2 mt-2">
+      <button
+        phx-click="view_your_deck"
+        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
+      >
+        View Deck
+      </button>
+      <button
+        phx-click="toggle_your_card_sort"
+        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
+      >
+        Toggle Sort
+      </button>
     </div>
     """
   end
@@ -343,22 +373,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           Game Log
         </button>
         <button
-          phx-click="toggle_deck"
-          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
-        >
-          View Cards
-        </button>
-        <button
           phx-click="toggle_levels"
           class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
         >
           View Levels
-        </button>
-        <button
-          phx-click="toggle_card_sort"
-          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
-        >
-          Sort Cards
         </button>
       </div>
 
@@ -1005,43 +1023,22 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <%= if @viewing_deck do %>
       <div
         class="fixed inset-0 backdrop-blur-sm bg-base-100/50 flex items-center justify-center z-50"
-        phx-click="toggle_deck"
+        phx-click="close_deck"
       >
         <div
           class="bg-base-100 rounded-lg shadow-xl p-6 max-w-6xl w-full max-h-[90vh] overflow-y-auto border border-base-300"
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
-            <!-- Segmented control toggle buttons -->
-            <div class="inline-flex rounded-lg border border-base-300 overflow-hidden">
-              <button
-                phx-click="toggle_deck_view"
-                class={[
-                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-player",
-                  if(@viewing_own_deck,
-                    do: "bg-base-300",
-                    else: "bg-base-100 hover:bg-base-200"
-                  )
-                ]}
-              >
-                {@player_name}'s Deck
-              </button>
-              <button
-                phx-click="toggle_deck_view"
-                class={[
-                  "px-4 py-2 font-semibold transition-colors text-opponent",
-                  if(!@viewing_own_deck,
-                    do: "bg-base-300",
-                    else: "bg-base-100 hover:bg-base-200"
-                  )
-                ]}
-              >
-                {@opponent_name}'s Deck
-              </button>
-            </div>
+            <h2 class={[
+              "text-xl font-bold",
+              if(@viewing_own_deck, do: "text-player", else: "text-opponent")
+            ]}>
+              {if @viewing_own_deck, do: @player_name, else: @opponent_name}'s Deck
+            </h2>
 
             <button
-              phx-click="toggle_deck"
+              phx-click="close_deck"
               class="text-base-content/60 hover:text-base-content text-2xl"
             >
               ×
