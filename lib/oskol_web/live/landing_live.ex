@@ -343,7 +343,7 @@ defmodule OskolWeb.LandingLive do
 
             <%= if @step in [:game_name, :player_name] do %>
               <p class="text-base-content/40 text-xs mt-6">
-                Battle your friends · No signup required
+                Play with friends · No signup required
               </p>
             <% end %>
           </div>
@@ -373,7 +373,7 @@ defmodule OskolWeb.LandingLive do
     ~H"""
     <form phx-submit="submit_player_name" class="space-y-3">
       <div class="h-6 mb-2"></div>
-      <.brand_input name="player_name" placeholder="Your name" autofocus={true} />
+      <.brand_input name="player_name" placeholder="Choose display name" autofocus={true} />
       <.brand_button type="submit" color={:primary}>
         Continue
       </.brand_button>
@@ -469,7 +469,7 @@ defmodule OskolWeb.LandingLive do
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-      
+
     <!-- Format Selection -->
       <div class="mb-8">
         <p class="text-base-content/40 text-xs mb-3 text-center">
@@ -481,7 +481,7 @@ defmodule OskolWeb.LandingLive do
                 phx-click={JS.dispatch("phx:copy", to: "#share-link")}
                 class="inline-flex items-center gap-1.5 mx-1 px-2.5 py-1 bg-base-100/50 hover:bg-base-100 rounded-full text-base-content/70 hover:text-base-content transition-all cursor-pointer border border-base-content/20 hover:border-base-content/40"
               >
-                <span id="share-link" class="font-mono text-xs">oskol.io?game={@game_name}</span>
+                <span id="share-link" class="font-mono text-xs">oskol.io/?game={@game_name}</span>
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     stroke-linecap="round"
@@ -544,7 +544,7 @@ defmodule OskolWeb.LandingLive do
           />
         </div>
       </div>
-      
+
     <!-- Start Game Button -->
       <div class="text-center">
         <%= if @server_state.lobby_status == :ready_to_start do %>
@@ -646,7 +646,7 @@ defmodule OskolWeb.LandingLive do
         <% true -> %>
           <!-- No selection -->
       <% end %>
-      
+
     <!-- Abstract SVG decoration per format -->
       <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
         <%= case @format do %>
@@ -702,17 +702,13 @@ defmodule OskolWeb.LandingLive do
             </svg>
         <% end %>
       </div>
-      
-    <!-- Title -->
-      <div class="relative z-10 text-gray-800 font-bold text-lg mb-1">{@title}</div>
-      
-    <!-- Description -->
-      <div class="relative z-10 text-gray-500 text-xs leading-snug mb-2 whitespace-pre-line">
-        {@description}
+
+    <!-- Text content - centered and stacked -->
+      <div class="relative z-10 flex flex-col items-center gap-1">
+        <div class="text-gray-800 font-bold text-lg">{@title}</div>
+        <div class="text-gray-500 text-xs">{@description}</div>
+        <div class="text-gray-400 text-xs">{@subtitle}</div>
       </div>
-      
-    <!-- Time estimate -->
-      <div class="relative z-10 text-gray-400 text-xs">{@subtitle}</div>
     </button>
     """
   end
