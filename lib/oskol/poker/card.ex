@@ -56,9 +56,14 @@ defmodule Oskol.Poker.Card do
 
   def chip_value(card), do: base_chip_value(card)
 
-  defp base_chip_value(%__MODULE__{rank: rank}) when rank in 2..10, do: rank
-  defp base_chip_value(%__MODULE__{rank: 11}), do: 10
-  defp base_chip_value(%__MODULE__{rank: 12}), do: 10
-  defp base_chip_value(%__MODULE__{rank: 13}), do: 10
-  defp base_chip_value(%__MODULE__{rank: 14}), do: 11
+  @doc """
+  Returns the base chip value for a card (without any enhancement bonuses).
+  Face cards (J/Q/K) are worth 10, Ace is worth 11, numbered cards are face value.
+  """
+  @spec base_chip_value(t()) :: integer()
+  def base_chip_value(%__MODULE__{rank: rank}) when rank in 2..10, do: rank
+  def base_chip_value(%__MODULE__{rank: 11}), do: 10
+  def base_chip_value(%__MODULE__{rank: 12}), do: 10
+  def base_chip_value(%__MODULE__{rank: 13}), do: 10
+  def base_chip_value(%__MODULE__{rank: 14}), do: 11
 end

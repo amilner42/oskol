@@ -89,6 +89,87 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         position: relative;
         z-index: 1;
       }
+
+      /* Score animation styles */
+      @keyframes borderPulse {
+        0%, 100% { box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.3); }
+        50% { box-shadow: 0 0 15px 3px rgba(234, 179, 8, 0.8); }
+      }
+
+      .card-scoring {
+        animation: borderPulse 0.4s ease-in-out;
+        box-shadow: 0 0 15px 3px rgba(234, 179, 8, 0.8);
+      }
+
+      .card-scored {
+        box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.5);
+      }
+
+      .card-not-scoring {
+        opacity: 0.4;
+      }
+
+      @keyframes chipPop {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.2); }
+        100% { transform: scale(1); }
+      }
+
+      .chip-updated {
+        animation: chipPop 0.3s ease-out;
+        color: rgb(234, 179, 8);
+      }
+
+      @keyframes scoreReveal {
+        0% { transform: scale(0.8); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+
+      .score-reveal {
+        animation: scoreReveal 0.4s ease-out;
+      }
+
+      /* Floating chip indicator */
+      @keyframes floatUp {
+        0% {
+          opacity: 0;
+          transform: translateY(0) scale(0.8);
+        }
+        20% {
+          opacity: 1;
+          transform: translateY(-5px) scale(1);
+        }
+        80% {
+          opacity: 1;
+          transform: translateY(-15px) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(-25px) scale(0.9);
+        }
+      }
+
+      .chip-float {
+        position: absolute;
+        top: -8px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-weight: bold;
+        font-size: 14px;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        animation: floatUp 0.8s ease-out forwards;
+        pointer-events: none;
+        white-space: nowrap;
+        z-index: 20;
+      }
+
+      .chip-float-chips {
+        color: #60a5fa;
+      }
+
+      .chip-float-mult {
+        color: #f87171;
+      }
     </style>
     """
   end
@@ -117,6 +198,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           opponent_state={@opponent_state}
           viewing_results={@viewing_results}
           connections={@connections}
+          score_animation_phase={@score_animation_phase}
+          score_animation_card_index={@score_animation_card_index}
         />
       </div>
       
@@ -455,12 +538,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <div class="h-full flex flex-col justify-center">
         <%= cond do %>
           <% @viewing_results && @game_state.last_hand_results != nil -> %>
-            <.hand_results_display
+            <.animated_score_display
               game_state={@game_state}
               player_id={@player_id}
               opponent_id={@opponent_id}
               player_name={@player_name}
               opponent_name={@opponent_name}
+              animation_phase={@score_animation_phase}
+              animation_card_index={@score_animation_card_index}
             />
           <% @player_state.locked_in_hand != nil && @opponent_state.locked_in_hand == nil -> %>
             <.waiting_for_opponent player_name={@player_name} hand={@player_state.locked_in_hand} />
@@ -499,6 +584,243 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         show_result={true}
         is_current_player={true}
       />
+    </div>
+    """
+  end
+
+  @doc """
+  Animated score breakdown display showing Balatro-style formula with cards highlighted sequentially.
+  """
+  def animated_score_display(assigns) do
+    opponent_result = assigns.game_state.last_hand_results[assigns.opponent_id]
+    player_result = assigns.game_state.last_hand_results[assigns.player_id]
+
+    # Determine visibility and animation state for each player
+    {opponent_visible, opponent_state} =
+      get_player_animation_state(
+        assigns.animation_phase,
+        assigns.animation_card_index,
+        :opponent,
+        opponent_result
+      )
+
+    {player_visible, player_state} =
+      get_player_animation_state(
+        assigns.animation_phase,
+        assigns.animation_card_index,
+        :player,
+        player_result
+      )
+
+    assigns =
+      assigns
+      |> assign(:opponent_result, opponent_result)
+      |> assign(:player_result, player_result)
+      |> assign(:opponent_visible, opponent_visible)
+      |> assign(:opponent_state, opponent_state)
+      |> assign(:player_visible, player_visible)
+      |> assign(:player_state, player_state)
+
+    ~H"""
+    <div class="text-center space-y-8">
+      <!-- Opponent's breakdown -->
+      <%= if @opponent_visible do %>
+        <.score_breakdown_row
+          result={@opponent_result}
+          player_name={@opponent_name}
+          animation_state={@opponent_state}
+          is_opponent={true}
+        />
+      <% end %>
+      
+    <!-- Player's breakdown -->
+      <%= if @player_visible do %>
+        <.score_breakdown_row
+          result={@player_result}
+          player_name={@player_name}
+          animation_state={@player_state}
+          is_opponent={false}
+        />
+      <% end %>
+      
+    <!-- Skip button -->
+      <%= if @animation_phase != :complete do %>
+        <button
+          phx-click="skip_score_animation"
+          class="px-4 py-2 text-sm text-base-content/60 hover:text-base-content transition-colors"
+        >
+          Skip Animation
+        </button>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp get_player_animation_state(phase, card_index, player_type, result) do
+    opponent_phases = [:opponent_base, :opponent_cards, :opponent_final]
+    player_phases = [:player_base, :player_cards, :player_final]
+
+    cond do
+      phase == :idle ->
+        {false, nil}
+
+      phase == :complete ->
+        {true, %{phase: :final, cards_scored: length(result.score_breakdown.card_breakdowns)}}
+
+      player_type == :opponent && phase in opponent_phases ->
+        cards_scored =
+          case phase do
+            :opponent_base -> 0
+            :opponent_cards -> card_index + 1
+            :opponent_final -> length(result.score_breakdown.card_breakdowns)
+          end
+
+        {true, %{phase: phase_type(phase), cards_scored: cards_scored, current_card: card_index}}
+
+      player_type == :opponent && phase in player_phases ->
+        # Opponent is done, show final state
+        {true, %{phase: :final, cards_scored: length(result.score_breakdown.card_breakdowns)}}
+
+      player_type == :player && phase in player_phases ->
+        cards_scored =
+          case phase do
+            :player_base -> 0
+            :player_cards -> card_index + 1
+            :player_final -> length(result.score_breakdown.card_breakdowns)
+          end
+
+        {true, %{phase: phase_type(phase), cards_scored: cards_scored, current_card: card_index}}
+
+      player_type == :player && phase in opponent_phases ->
+        # Player not shown yet during opponent phases
+        {false, nil}
+
+      true ->
+        {false, nil}
+    end
+  end
+
+  defp phase_type(:opponent_base), do: :base
+  defp phase_type(:opponent_cards), do: :cards
+  defp phase_type(:opponent_final), do: :final
+  defp phase_type(:player_base), do: :base
+  defp phase_type(:player_cards), do: :cards
+  defp phase_type(:player_final), do: :final
+  defp phase_type(_), do: :final
+
+  defp score_breakdown_row(assigns) do
+    breakdown = assigns.result.score_breakdown
+    hand = assigns.result.hand
+    scoring_card_ids = MapSet.new(Enum.map(breakdown.card_breakdowns, & &1.card.id))
+
+    # Calculate running totals based on cards scored
+    cards_scored = assigns.animation_state.cards_scored
+
+    {running_chips, running_mult} =
+      if cards_scored == 0 do
+        {breakdown.base_chips, breakdown.base_multiplier}
+      else
+        scored_breakdowns = Enum.take(breakdown.card_breakdowns, cards_scored)
+
+        extra_chips =
+          scored_breakdowns
+          |> Enum.map(fn b -> b.chip_value + b.bonus_chips end)
+          |> Enum.sum()
+
+        extra_mult =
+          scored_breakdowns
+          |> Enum.map(fn b -> b.bonus_mult end)
+          |> Enum.sum()
+
+        {breakdown.base_chips + extra_chips, breakdown.base_multiplier + extra_mult}
+      end
+
+    show_final = assigns.animation_state.phase == :final
+    running_score = running_chips * running_mult
+
+    hand_type_text =
+      breakdown.hand_type
+      |> Atom.to_string()
+      |> String.replace("_", " ")
+      |> String.upcase()
+
+    assigns =
+      assigns
+      |> assign(:breakdown, breakdown)
+      |> assign(:hand, hand)
+      |> assign(:scoring_card_ids, scoring_card_ids)
+      |> assign(:running_chips, running_chips)
+      |> assign(:running_mult, running_mult)
+      |> assign(:running_score, running_score)
+      |> assign(:show_final, show_final)
+      |> assign(:hand_type_text, hand_type_text)
+      |> assign(:cards_scored, cards_scored)
+
+    ~H"""
+    <div class={if @is_opponent, do: "", else: ""}>
+      <!-- Player name and hand type header -->
+      <div class="flex items-center justify-center gap-2 text-sm mb-2">
+        <span class={if @is_opponent, do: "text-opponent", else: "text-player"}>
+          {@player_name}
+        </span>
+        <span class="text-base-content/40">|</span>
+        <span class="text-base-content/80">{@hand_type_text}</span>
+      </div>
+      
+    <!-- Cards display -->
+      <div class="flex gap-2 justify-center mb-3">
+        <%= for card <- @hand do %>
+          <% is_scoring = card.id in @scoring_card_ids
+
+          scoring_index =
+            if is_scoring,
+              do: Enum.find_index(@breakdown.card_breakdowns, fn b -> b.card.id == card.id end),
+              else: nil
+
+          is_currently_scoring =
+            scoring_index != nil && scoring_index == @cards_scored - 1 &&
+              @animation_state.phase == :cards
+
+          card_class =
+            cond do
+              not is_scoring -> "card-not-scoring"
+              scoring_index != nil && scoring_index < @cards_scored - 1 -> "card-scored"
+              is_currently_scoring -> "card-scoring"
+              scoring_index != nil && scoring_index < @cards_scored -> "card-scored"
+              true -> ""
+            end
+
+          # Get card breakdown for floating indicator
+          card_breakdown =
+            if is_currently_scoring && scoring_index != nil do
+              Enum.at(@breakdown.card_breakdowns, scoring_index)
+            end %>
+          <div class="relative">
+            <.card_display card={card} class={"w-16 h-24 #{card_class}"} />
+            <%= if card_breakdown do %>
+              <div class="chip-float chip-float-chips">
+                +{card_breakdown.chip_value + card_breakdown.bonus_chips}
+              </div>
+              <%= if card_breakdown.bonus_mult > 0 do %>
+                <div class="chip-float chip-float-mult" style="top: 8px;">
+                  +{card_breakdown.bonus_mult}x
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+      
+    <!-- Formula display -->
+      <div class="flex items-center justify-center gap-3 text-lg font-mono">
+        <span class="text-blue-400 font-bold">{@running_chips}</span>
+        <span class="text-base-content/60">×</span>
+        <span class="text-red-400 font-bold">{@running_mult}</span>
+        <%= if @show_final do %>
+          <span class="text-base-content/60">=</span>
+          <span class="text-yellow-400 font-bold text-xl score-reveal">{@running_score}</span>
+        <% end %>
+      </div>
     </div>
     """
   end

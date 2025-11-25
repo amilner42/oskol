@@ -6,8 +6,18 @@ defmodule Oskol.Poker.Score do
   alias Oskol.Poker.{Card, Hand}
   alias Oskol.Poker.SkillTree
 
+  @type card_breakdown :: %{
+          card: Card.t(),
+          chip_value: integer(),
+          bonus_chips: integer(),
+          bonus_mult: integer()
+        }
+
   @type score_result :: %{
           hand_type: Hand.hand_type(),
+          base_chips: integer(),
+          base_multiplier: integer(),
+          card_breakdowns: list(card_breakdown()),
           total_chips: integer(),
           total_multiplier: integer(),
           total_score: integer()
@@ -89,6 +99,9 @@ defmodule Oskol.Poker.Score do
     if hand_type in active_debuffs do
       %{
         hand_type: hand_type,
+        base_chips: 0,
+        base_multiplier: 0,
+        card_breakdowns: [],
         total_chips: 0,
         total_multiplier: 0,
         total_score: 0
@@ -104,31 +117,45 @@ defmodule Oskol.Poker.Score do
       bonus_multiplier = max(0, level - 1)
       upgrade = @upgrade_bonuses[hand_type]
 
-      # Apply bonuses
-      total_base_chips = base.chips + bonus_multiplier * upgrade.chips
-      base_total_multiplier = base.multiplier + bonus_multiplier * upgrade.multiplier
+      # Apply bonuses to get base stats from skill tree
+      base_chips = base.chips + bonus_multiplier * upgrade.chips
+      base_multiplier = base.multiplier + bonus_multiplier * upgrade.multiplier
 
-      # Calculate enhancement bonuses from scoring cards only
-      enhancement_multiplier =
-        scoring_cards
-        |> Enum.map(fn card ->
-          case card.enhancement do
-            {:bonus_mult, mult} -> mult
-            _ -> 0
-          end
+      # Build per-card breakdowns for scoring cards
+      card_breakdowns =
+        Enum.map(scoring_cards, fn card ->
+          base_value = Card.base_chip_value(card)
+
+          {bonus_chips, bonus_mult} =
+            case card.enhancement do
+              {:bonus_chips, chips} -> {chips, 0}
+              {:bonus_mult, mult} -> {0, mult}
+              nil -> {0, 0}
+            end
+
+          %{
+            card: card,
+            chip_value: base_value,
+            bonus_chips: bonus_chips,
+            bonus_mult: bonus_mult
+          }
         end)
-        |> Enum.sum()
 
-      total_multiplier = base_total_multiplier + enhancement_multiplier
+      # Calculate totals from breakdowns
+      card_value_sum =
+        Enum.sum(Enum.map(card_breakdowns, fn b -> b.chip_value + b.bonus_chips end))
 
-      # Calculate card values and final score (only scoring cards count)
-      # Card.chip_value/1 already includes bonus chips from enhancements
-      card_value_sum = Enum.sum(Enum.map(scoring_cards, &Card.chip_value/1))
-      total_chips = total_base_chips + card_value_sum
+      enhancement_multiplier = Enum.sum(Enum.map(card_breakdowns, fn b -> b.bonus_mult end))
+
+      total_chips = base_chips + card_value_sum
+      total_multiplier = base_multiplier + enhancement_multiplier
       total_score = total_chips * total_multiplier
 
       %{
         hand_type: hand_type,
+        base_chips: base_chips,
+        base_multiplier: base_multiplier,
+        card_breakdowns: card_breakdowns,
         total_chips: total_chips,
         total_multiplier: total_multiplier,
         total_score: total_score

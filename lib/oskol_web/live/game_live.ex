@@ -60,7 +60,11 @@ defmodule OskolWeb.GameLive do
           last_seen_event_sequence: 0,
           acknowledged_event_sequence: 0,
           previewing_card_index: nil,
-          deck_builder_selection: nil
+          deck_builder_selection: nil,
+          # Score animation state
+          score_animation_phase: :idle,
+          score_animation_card_index: 0,
+          animation_timer_ref: nil
         )
 
       # Only auto-reconnect if this is the connected mount (not the initial disconnected render)
@@ -98,34 +102,9 @@ defmodule OskolWeb.GameLive do
               )
 
             _ ->
-              # Fallback: try single disconnected player
-              case disconnected_players do
-                [{player_id, player_name}] ->
-                  case Game.rejoin_game(game_id, player_name, self()) do
-                    {:ok, ^player_id, new_state} ->
-                      viewing_results =
-                        new_state.game_state != nil and
-                          new_state.game_state.last_hand_results != nil
-
-                      socket
-                      |> assign(
-                        player_id: player_id,
-                        player_name: player_name,
-                        joined: true,
-                        server_state: new_state,
-                        viewing_results: viewing_results,
-                        error: nil
-                      )
-
-                    {:error, _reason} ->
-                      # Couldn't reconnect - show reconnect screen
-                      socket
-                  end
-
-                _ ->
-                  # Multiple or no disconnected players - show reconnect screen
-                  socket
-              end
+              # No name param - always show reconnect screen to let user choose
+              # This avoids race conditions where we might auto-connect as the wrong player
+              socket
           end
         else
           socket
@@ -212,6 +191,11 @@ defmodule OskolWeb.GameLive do
 
   @impl true
   def handle_event("dismiss_results", _params, socket) do
+    # Cancel any pending animation timer
+    if socket.assigns.animation_timer_ref do
+      Process.cancel_timer(socket.assigns.animation_timer_ref)
+    end
+
     # Check if we're in round_end phase - if so, show round summary
     game_state = socket.assigns.server_state.game_state
 
@@ -228,7 +212,32 @@ defmodule OskolWeb.GameLive do
     end
 
     {:noreply,
-     assign(socket, viewing_results: false, viewing_round_summary: viewing_round_summary)}
+     assign(socket,
+       viewing_results: false,
+       viewing_round_summary: viewing_round_summary,
+       score_animation_phase: :idle,
+       score_animation_card_index: 0,
+       animation_timer_ref: nil
+     )}
+  end
+
+  @impl true
+  def handle_event("skip_score_animation", _params, socket) do
+    # Cancel any pending animation timer
+    if socket.assigns.animation_timer_ref do
+      Process.cancel_timer(socket.assigns.animation_timer_ref)
+    end
+
+    # Jump to complete phase (shows final scores but keeps viewing_results true)
+    # Schedule auto-dismiss after brief pause
+    Process.send_after(self(), :auto_dismiss_results, 2000)
+
+    {:noreply,
+     assign(socket,
+       score_animation_phase: :complete,
+       score_animation_card_index: 0,
+       animation_timer_ref: nil
+     )}
   end
 
   @impl true
@@ -251,7 +260,13 @@ defmodule OskolWeb.GameLive do
       end
 
       {:noreply,
-       assign(socket, viewing_results: false, viewing_round_summary: viewing_round_summary)}
+       assign(socket,
+         viewing_results: false,
+         viewing_round_summary: viewing_round_summary,
+         score_animation_phase: :idle,
+         score_animation_card_index: 0,
+         animation_timer_ref: nil
+       )}
     else
       {:noreply, socket}
     end
@@ -283,6 +298,101 @@ defmodule OskolWeb.GameLive do
       end
     else
       {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info(:advance_score_animation, socket) do
+    # Get the hand results and calculate next animation step
+    game_state = socket.assigns.server_state.game_state
+    hand_results = game_state && game_state.last_hand_results
+
+    if hand_results && socket.assigns.viewing_results do
+      # Get opponent and player IDs
+      player_id = socket.assigns.player_id
+
+      opponent_id =
+        game_state.players
+        |> Map.keys()
+        |> Enum.find(&(&1 != player_id))
+
+      opponent_result = hand_results[opponent_id]
+      player_result = hand_results[player_id]
+
+      opponent_card_count = length(opponent_result.score_breakdown.card_breakdowns)
+      player_card_count = length(player_result.score_breakdown.card_breakdowns)
+
+      current_phase = socket.assigns.score_animation_phase
+      current_index = socket.assigns.score_animation_card_index
+
+      {next_phase, next_index, delay} =
+        next_animation_step(
+          current_phase,
+          current_index,
+          opponent_card_count,
+          player_card_count
+        )
+
+      # Schedule next step if not complete
+      timer_ref =
+        if next_phase != :complete do
+          Process.send_after(self(), :advance_score_animation, delay)
+        else
+          # Animation complete, schedule auto-dismiss after brief pause
+          Process.send_after(self(), :auto_dismiss_results, 2000)
+          nil
+        end
+
+      {:noreply,
+       assign(socket,
+         score_animation_phase: next_phase,
+         score_animation_card_index: next_index,
+         animation_timer_ref: timer_ref
+       )}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # Animation state machine: determines next phase, card index, and delay
+  defp next_animation_step(current_phase, current_index, opponent_cards, player_cards) do
+    case current_phase do
+      :opponent_base ->
+        if opponent_cards > 0 do
+          {:opponent_cards, 0, 600}
+        else
+          {:opponent_final, 0, 750}
+        end
+
+      :opponent_cards ->
+        if current_index + 1 < opponent_cards do
+          {:opponent_cards, current_index + 1, 600}
+        else
+          {:opponent_final, 0, 750}
+        end
+
+      :opponent_final ->
+        {:player_base, 0, 750}
+
+      :player_base ->
+        if player_cards > 0 do
+          {:player_cards, 0, 600}
+        else
+          {:player_final, 0, 750}
+        end
+
+      :player_cards ->
+        if current_index + 1 < player_cards do
+          {:player_cards, current_index + 1, 600}
+        else
+          {:player_final, 0, 750}
+        end
+
+      :player_final ->
+        {:complete, 0, 0}
+
+      _ ->
+        {:complete, 0, 0}
     end
   end
 
@@ -569,10 +679,15 @@ defmodule OskolWeb.GameLive do
         true -> socket.assigns.viewing_results
       end
 
-    # If viewing_results just became true, schedule auto-dismiss after 5 seconds
-    if viewing_results && !socket.assigns.viewing_results do
-      Process.send_after(self(), :auto_dismiss_results, 5000)
-    end
+    # If viewing_results just became true, start the score animation
+    {animation_phase, animation_timer_ref} =
+      if viewing_results && !socket.assigns.viewing_results do
+        # Start animation from opponent's base stats phase
+        timer_ref = Process.send_after(self(), :advance_score_animation, 750)
+        {:opponent_base, timer_ref}
+      else
+        {socket.assigns.score_animation_phase, socket.assigns.animation_timer_ref}
+      end
 
     # DON'T auto-show round summary when phase changes to :round_end
     # Let hand results show first, then user dismisses to see round summary
@@ -719,7 +834,9 @@ defmodule OskolWeb.GameLive do
        opponent_new_card_ids: opponent_new_card_ids,
        last_seen_event_sequence: last_seen_sequence,
        deck_builder_selection: deck_builder_selection,
-       previewing_card_index: previewing_card_index
+       previewing_card_index: previewing_card_index,
+       score_animation_phase: animation_phase,
+       animation_timer_ref: animation_timer_ref
      )
      |> clear_error()}
   end
@@ -869,6 +986,8 @@ defmodule OskolWeb.GameLive do
               action_in_progress={@action_in_progress}
               viewing_results={@viewing_results}
               connections={@server_state.connections}
+              score_animation_phase={@score_animation_phase}
+              score_animation_card_index={@score_animation_card_index}
             />
         <% end %>
         
@@ -923,27 +1042,64 @@ defmodule OskolWeb.GameLive do
         <h1 class="text-2xl font-bold text-base-content mb-6">Reconnect to Game</h1>
 
         <%= if length(@disconnected_players) > 0 do %>
-          <div class="bg-white/10 backdrop-blur-sm border-2 border-white/20 rounded-xl p-5 shadow-lg">
-            <p class="text-base-content font-semibold text-center mb-3">Choose your player</p>
-            <div class="space-y-2">
-              <%= for {_player_id, player_name} <- @disconnected_players do %>
-                <button
-                  phx-click="rejoin_as_player"
-                  phx-value-player_name={player_name}
-                  class="w-full px-6 py-3 rounded-xl font-bold text-white bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 transition-all shadow-lg"
-                >
-                  Join as {player_name}
-                </button>
-              <% end %>
-            </div>
+          <div class="space-y-3">
+            <%= for {_player_id, player_name} <- @disconnected_players do %>
+              <button
+                phx-click="rejoin_as_player"
+                phx-value-player_name={player_name}
+                class="relative w-full px-8 py-4 rounded-xl font-bold text-lg text-white transition-all shadow-xl overflow-hidden hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600"
+              >
+                <span class="relative z-10">Reconnect as {player_name}</span>
+                <.card_decorations />
+              </button>
+            <% end %>
           </div>
         <% else %>
           <div class="text-base-content/60">
             Connecting...
           </div>
         <% end %>
+
+        <p class="text-base-content/40 text-xs mt-6">
+          Game: {@game_id}
+        </p>
       </div>
     </div>
+    """
+  end
+
+  defp card_decorations(assigns) do
+    ~H"""
+    <span
+      class="absolute text-white/20 text-2xl"
+      style="top: 8%; left: 8%; transform: rotate(-15deg);"
+    >
+      &#9824;
+    </span>
+    <span class="absolute text-white/20 text-xl" style="top: 60%; left: 5%; transform: rotate(10deg);">
+      &#9830;
+    </span>
+    <span
+      class="absolute text-white/20 text-3xl"
+      style="top: 15%; right: 10%; transform: rotate(20deg);"
+    >
+      &#9829;
+    </span>
+    <span
+      class="absolute text-white/20 text-xl"
+      style="top: 55%; right: 8%; transform: rotate(-8deg);"
+    >
+      &#9827;
+    </span>
+    <span class="absolute text-white/20 text-lg" style="top: 35%; left: 20%; transform: rotate(5deg);">
+      &#9829;
+    </span>
+    <span
+      class="absolute text-white/20 text-2xl"
+      style="top: 40%; right: 22%; transform: rotate(-12deg);"
+    >
+      &#9824;
+    </span>
     """
   end
 end

@@ -30,7 +30,8 @@ defmodule Oskol.Game.GameState do
   @type hand_result :: %{
           hand: list(Card.t()),
           hand_type: Poker.hand_type(),
-          score: pos_integer()
+          score: pos_integer(),
+          score_breakdown: Oskol.Poker.Score.score_result()
         }
 
   @hands_per_round 4
@@ -188,7 +189,8 @@ defmodule Oskol.Game.GameState do
         result = %{
           hand: hand,
           hand_type: evaluation.hand_type,
-          score: score_result.total_score
+          score: score_result.total_score,
+          score_breakdown: score_result
         }
 
         {player_id, result}
