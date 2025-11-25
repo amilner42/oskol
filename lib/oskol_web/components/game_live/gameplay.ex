@@ -456,12 +456,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <%= if player_score > opponent_score do %>
               <span class="text-player">{@player_name}</span>
               <span>
-                 is ahead by  {score_diff} {if score_diff == 1, do: "point", else: "points"}
+                is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
               </span>
             <% else %>
               <span class="text-opponent">{@opponent_name}</span>
               <span>
-                 is ahead by  {score_diff} {if score_diff == 1, do: "point", else: "points"}
+                is ahead by {score_diff} {if score_diff == 1, do: "point", else: "points"}
               </span>
             <% end %>
           </div>
@@ -818,18 +818,36 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   end
 
   def waiting_for_opponent(assigns) do
+    # Sort hand by rank for consistent display
+    sorted_hand = sort_cards(assigns.hand, :rank)
+    assigns = assign(assigns, :sorted_hand, sorted_hand)
+
     ~H"""
-    <div class="text-center">
-      <.locked_hand_display
-        player_name={@player_name}
-        hand={@hand}
-        hand_type={nil}
-        score={nil}
-        color="text-player"
-        show_result={false}
-        is_current_player={true}
-      />
-      <div class="text-xs text-base-content/50 mt-2">Waiting for opponent...</div>
+    <div class="text-center space-y-8">
+      <!-- Opponent placeholder - same height as score breakdown row -->
+      <div>
+        <div class="text-sm text-base-content/50 mb-2">Waiting for opponent...</div>
+        <div class="flex gap-2 justify-center mb-3">
+          <!-- Invisible placeholder cards to reserve space -->
+          <%= for _i <- 1..length(@sorted_hand) do %>
+            <div class="w-16 h-24 opacity-0"></div>
+          <% end %>
+        </div>
+        <div class="h-7"></div>
+        <!-- placeholder for formula row -->
+      </div>
+      
+    <!-- Player's locked hand -->
+      <div>
+        <div class="text-sm text-base-content/80 mb-2">&nbsp;</div>
+        <div class="flex gap-2 justify-center mb-3">
+          <%= for card <- @sorted_hand do %>
+            <.card_display card={card} class="w-16 h-24" />
+          <% end %>
+        </div>
+        <div class="h-7"></div>
+        <!-- placeholder for formula row -->
+      </div>
     </div>
     """
   end
