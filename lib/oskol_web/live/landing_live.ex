@@ -176,6 +176,8 @@ defmodule OskolWeb.LandingLive do
   defp game_name_form(assigns) do
     ~H"""
     <form phx-submit="submit_game_name" class="space-y-3">
+      <div class="h-6 mb-2"></div>
+
       <input
         type="text"
         name="game_name"
@@ -200,12 +202,7 @@ defmodule OskolWeb.LandingLive do
   defp player_name_form(assigns) do
     ~H"""
     <form phx-submit="submit_player_name" class="space-y-3">
-      <div class="text-base-content/60 text-sm mb-2">
-        Joining game: <span class="font-semibold text-base-content">{@game_name}</span>
-        <button type="button" phx-click="go_back" class="ml-2 text-primary hover:underline text-xs">
-          (change)
-        </button>
-      </div>
+      <div class="h-6 mb-2"></div>
 
       <input
         type="text"
@@ -221,7 +218,7 @@ defmodule OskolWeb.LandingLive do
         type="submit"
         class="relative w-full px-8 py-4 rounded-xl font-bold text-lg bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white transition-all shadow-xl hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] overflow-hidden"
       >
-        <span class="relative z-10">Join Game</span>
+        <span class="relative z-10">Join {@game_name}</span>
         <.card_decorations />
       </button>
     </form>
@@ -244,163 +241,163 @@ defmodule OskolWeb.LandingLive do
     <!-- Battle 1: Three 7s vs Pair of Kings -->
     <div class="floating-battle drift-r" style="--row: 6%; --speed: 28s; --rot: -2deg; --y-wave: -10px; animation-delay: 0s;">
       <div class="battle-hand">
-        <.mini_card rank="7" suit="hearts" />
-        <.mini_card rank="7" suit="spades" />
-        <.mini_card rank="7" suit="diamonds" />
+        <.mini_card rank="7" suit={:hearts} />
+        <.mini_card rank="7" suit={:spades} />
+        <.mini_card rank="7" suit={:diamonds} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand loser">
-        <.mini_card rank="K" suit="spades" />
-        <.mini_card rank="K" suit="hearts" />
+        <.mini_card rank="K" suit={:spades} />
+        <.mini_card rank="K" suit={:hearts} />
       </div>
     </div>
 
     <!-- Battle 2: Full house vs Straight -->
     <div class="floating-battle drift-l" style="--row: 18%; --speed: 32s; --rot: 3deg; --y-wave: -12px; animation-delay: -8s;">
       <div class="battle-hand">
-        <.mini_card rank="3" suit="clubs" />
-        <.mini_card rank="3" suit="diamonds" />
-        <.mini_card rank="3" suit="spades" />
-        <.mini_card rank="9" suit="hearts" />
-        <.mini_card rank="9" suit="clubs" />
+        <.mini_card rank="3" suit={:clubs} />
+        <.mini_card rank="3" suit={:diamonds} />
+        <.mini_card rank="3" suit={:spades} />
+        <.mini_card rank="9" suit={:hearts} />
+        <.mini_card rank="9" suit={:clubs} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand loser">
-        <.mini_card rank="5" suit="hearts" />
-        <.mini_card rank="6" suit="spades" />
-        <.mini_card rank="7" suit="diamonds" />
-        <.mini_card rank="8" suit="clubs" />
-        <.mini_card rank="9" suit="hearts" />
+        <.mini_card rank="5" suit={:hearts} />
+        <.mini_card rank="6" suit={:spades} />
+        <.mini_card rank="7" suit={:diamonds} />
+        <.mini_card rank="8" suit={:clubs} />
+        <.mini_card rank="9" suit={:hearts} />
       </div>
     </div>
 
     <!-- Battle 3: Pair of Aces vs Pair of Kings -->
     <div class="floating-battle drift-r" style="--row: 28%; --speed: 25s; --rot: -3deg; --y-wave: -8px; animation-delay: -14s;">
       <div class="battle-hand">
-        <.mini_card rank="A" suit="spades" />
-        <.mini_card rank="A" suit="hearts" />
+        <.mini_card rank="A" suit={:spades} />
+        <.mini_card rank="A" suit={:hearts} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand loser">
-        <.mini_card rank="K" suit="diamonds" />
-        <.mini_card rank="K" suit="clubs" />
+        <.mini_card rank="K" suit={:diamonds} />
+        <.mini_card rank="K" suit={:clubs} />
       </div>
     </div>
 
     <!-- Battle 4: Four Jacks vs Flush -->
     <div class="floating-battle drift-l" style="--row: 38%; --speed: 35s; --rot: 2deg; --y-wave: -14px; animation-delay: -5s;">
       <div class="battle-hand">
-        <.mini_card rank="J" suit="spades" />
-        <.mini_card rank="J" suit="hearts" />
-        <.mini_card rank="J" suit="clubs" />
-        <.mini_card rank="J" suit="diamonds" />
+        <.mini_card rank="J" suit={:spades} />
+        <.mini_card rank="J" suit={:hearts} />
+        <.mini_card rank="J" suit={:clubs} />
+        <.mini_card rank="J" suit={:diamonds} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand loser">
-        <.mini_card rank="2" suit="hearts" />
-        <.mini_card rank="6" suit="hearts" />
-        <.mini_card rank="9" suit="hearts" />
-        <.mini_card rank="J" suit="hearts" />
-        <.mini_card rank="K" suit="hearts" />
+        <.mini_card rank="2" suit={:hearts} />
+        <.mini_card rank="6" suit={:hearts} />
+        <.mini_card rank="9" suit={:hearts} />
+        <.mini_card rank="J" suit={:hearts} />
+        <.mini_card rank="K" suit={:hearts} />
       </div>
     </div>
 
     <!-- Battle 5: Two pair vs Three of a kind -->
     <div class="floating-battle drift-r" style="--row: 48%; --speed: 30s; --rot: -4deg; --y-wave: -10px; animation-delay: -20s;">
       <div class="battle-hand loser">
-        <.mini_card rank="A" suit="hearts" />
-        <.mini_card rank="A" suit="spades" />
-        <.mini_card rank="5" suit="diamonds" />
-        <.mini_card rank="5" suit="clubs" />
+        <.mini_card rank="A" suit={:hearts} />
+        <.mini_card rank="A" suit={:spades} />
+        <.mini_card rank="5" suit={:diamonds} />
+        <.mini_card rank="5" suit={:clubs} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand">
-        <.mini_card rank="Q" suit="spades" />
-        <.mini_card rank="Q" suit="hearts" />
-        <.mini_card rank="Q" suit="clubs" />
+        <.mini_card rank="Q" suit={:spades} />
+        <.mini_card rank="Q" suit={:hearts} />
+        <.mini_card rank="Q" suit={:clubs} />
       </div>
     </div>
 
     <!-- Battle 6: Straight flush vs Four 9s -->
     <div class="floating-battle drift-l" style="--row: 58%; --speed: 38s; --rot: 3deg; --y-wave: -12px; animation-delay: -12s;">
       <div class="battle-hand">
-        <.mini_card rank="4" suit="clubs" />
-        <.mini_card rank="5" suit="clubs" />
-        <.mini_card rank="6" suit="clubs" />
-        <.mini_card rank="7" suit="clubs" />
-        <.mini_card rank="8" suit="clubs" />
+        <.mini_card rank="4" suit={:clubs} />
+        <.mini_card rank="5" suit={:clubs} />
+        <.mini_card rank="6" suit={:clubs} />
+        <.mini_card rank="7" suit={:clubs} />
+        <.mini_card rank="8" suit={:clubs} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand loser">
-        <.mini_card rank="9" suit="hearts" />
-        <.mini_card rank="9" suit="spades" />
-        <.mini_card rank="9" suit="diamonds" />
-        <.mini_card rank="9" suit="clubs" />
+        <.mini_card rank="9" suit={:hearts} />
+        <.mini_card rank="9" suit={:spades} />
+        <.mini_card rank="9" suit={:diamonds} />
+        <.mini_card rank="9" suit={:clubs} />
       </div>
     </div>
 
     <!-- Battle 7: Three 5s vs Pair of Jacks -->
     <div class="floating-battle drift-r" style="--row: 68%; --speed: 26s; --rot: -2deg; --y-wave: -9px; animation-delay: -25s;">
       <div class="battle-hand">
-        <.mini_card rank="5" suit="spades" />
-        <.mini_card rank="5" suit="hearts" />
-        <.mini_card rank="5" suit="clubs" />
+        <.mini_card rank="5" suit={:spades} />
+        <.mini_card rank="5" suit={:hearts} />
+        <.mini_card rank="5" suit={:clubs} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand loser">
-        <.mini_card rank="J" suit="diamonds" />
-        <.mini_card rank="J" suit="clubs" />
+        <.mini_card rank="J" suit={:diamonds} />
+        <.mini_card rank="J" suit={:clubs} />
       </div>
     </div>
 
     <!-- Battle 8: Full house vs Straight -->
     <div class="floating-battle drift-l" style="--row: 78%; --speed: 33s; --rot: 4deg; --y-wave: -11px; animation-delay: -18s;">
       <div class="battle-hand loser">
-        <.mini_card rank="10" suit="spades" />
-        <.mini_card rank="J" suit="hearts" />
-        <.mini_card rank="Q" suit="clubs" />
-        <.mini_card rank="K" suit="diamonds" />
-        <.mini_card rank="A" suit="spades" />
+        <.mini_card rank="10" suit={:spades} />
+        <.mini_card rank="J" suit={:hearts} />
+        <.mini_card rank="Q" suit={:clubs} />
+        <.mini_card rank="K" suit={:diamonds} />
+        <.mini_card rank="A" suit={:spades} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand">
-        <.mini_card rank="K" suit="clubs" />
-        <.mini_card rank="K" suit="diamonds" />
-        <.mini_card rank="K" suit="spades" />
-        <.mini_card rank="4" suit="hearts" />
-        <.mini_card rank="4" suit="spades" />
+        <.mini_card rank="K" suit={:clubs} />
+        <.mini_card rank="K" suit={:diamonds} />
+        <.mini_card rank="K" suit={:spades} />
+        <.mini_card rank="4" suit={:hearts} />
+        <.mini_card rank="4" suit={:spades} />
       </div>
     </div>
 
     <!-- Battle 9: Flush vs Straight -->
     <div class="floating-battle drift-r" style="--row: 88%; --speed: 29s; --rot: -3deg; --y-wave: -13px; animation-delay: -30s;">
       <div class="battle-hand">
-        <.mini_card rank="3" suit="diamonds" />
-        <.mini_card rank="7" suit="diamonds" />
-        <.mini_card rank="10" suit="diamonds" />
-        <.mini_card rank="Q" suit="diamonds" />
-        <.mini_card rank="A" suit="diamonds" />
+        <.mini_card rank="3" suit={:diamonds} />
+        <.mini_card rank="7" suit={:diamonds} />
+        <.mini_card rank="10" suit={:diamonds} />
+        <.mini_card rank="Q" suit={:diamonds} />
+        <.mini_card rank="A" suit={:diamonds} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand loser">
-        <.mini_card rank="4" suit="spades" />
-        <.mini_card rank="5" suit="hearts" />
-        <.mini_card rank="6" suit="clubs" />
-        <.mini_card rank="7" suit="diamonds" />
-        <.mini_card rank="8" suit="spades" />
+        <.mini_card rank="4" suit={:spades} />
+        <.mini_card rank="5" suit={:hearts} />
+        <.mini_card rank="6" suit={:clubs} />
+        <.mini_card rank="7" suit={:diamonds} />
+        <.mini_card rank="8" suit={:spades} />
       </div>
     </div>
 
     <!-- Battle 10: Pair of 8s vs Pair of 3s -->
     <div class="floating-battle drift-l" style="--row: 95%; --speed: 24s; --rot: 2deg; --y-wave: -8px; animation-delay: -7s;">
       <div class="battle-hand">
-        <.mini_card rank="8" suit="diamonds" />
-        <.mini_card rank="8" suit="hearts" />
+        <.mini_card rank="8" suit={:diamonds} />
+        <.mini_card rank="8" suit={:hearts} />
       </div>
       <div class="battle-vs">VS</div>
       <div class="battle-hand loser">
-        <.mini_card rank="3" suit="hearts" />
-        <.mini_card rank="3" suit="diamonds" />
+        <.mini_card rank="3" suit={:hearts} />
+        <.mini_card rank="3" suit={:diamonds} />
       </div>
     </div>
     """
