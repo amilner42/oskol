@@ -587,14 +587,14 @@ defmodule OskolWeb.LandingLive do
 
     ~H"""
     <div class="flex items-center justify-center gap-4 mb-8">
-      <span class="text-sky-400 font-bold text-2xl">
+      <span class="text-player font-bold text-2xl">
         {(@player_conn && @player_conn.name) || "You"}
       </span>
       <span class="text-base-content/40 text-lg">vs</span>
       <%= if @opponent_conn do %>
-        <span class="text-orange-400 font-bold text-2xl">{@opponent_conn.name}</span>
+        <span class="text-opponent font-bold text-2xl">{@opponent_conn.name}</span>
       <% else %>
-        <span class="text-orange-400 font-bold text-2xl">?</span>
+        <span class="text-opponent font-bold text-2xl">?</span>
       <% end %>
     </div>
     """
@@ -614,34 +614,34 @@ defmodule OskolWeb.LandingLive do
       <!-- Corner selection indicators -->
       <%= cond do %>
         <% @selected and @opponent_selected -> %>
-          <!-- Both selected - diagonal split: sky top-left/bottom-right, orange top-right/bottom-left -->
-          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-sky-500 rounded-tl-2xl">
+          <!-- Both selected - diagonal split: player top-left/bottom-right, opponent top-right/bottom-left -->
+          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-2xl">
           </div>
-          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-orange-500 rounded-tr-2xl">
+          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-orange-500 rounded-bl-2xl">
+          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-opponent rounded-bl-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-sky-500 rounded-br-2xl">
+          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-player rounded-br-2xl">
           </div>
         <% @selected -> %>
-          <!-- Only you selected - all sky corners -->
-          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-sky-500 rounded-tl-2xl">
+          <!-- Only you selected - all player corners -->
+          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-2xl">
           </div>
-          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-sky-500 rounded-tr-2xl">
+          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-player rounded-tr-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-sky-500 rounded-bl-2xl">
+          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-player rounded-bl-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-sky-500 rounded-br-2xl">
+          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-player rounded-br-2xl">
           </div>
         <% @opponent_selected -> %>
-          <!-- Only opponent selected - all orange corners -->
-          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-orange-500 rounded-tl-2xl">
+          <!-- Only opponent selected - all opponent corners -->
+          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-opponent rounded-tl-2xl">
           </div>
-          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-orange-500 rounded-tr-2xl">
+          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-orange-500 rounded-bl-2xl">
+          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-opponent rounded-bl-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-orange-500 rounded-br-2xl">
+          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-opponent rounded-br-2xl">
           </div>
         <% true -> %>
           <!-- No selection -->

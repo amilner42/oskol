@@ -39,14 +39,14 @@ defmodule OskolWeb.Components.GameLive.Summaries do
               player_name={@player_name}
               lives={@player_state.lives}
               is_winner={@game_state.winner_id == @player_id}
-              color="text-primary"
+              color="text-player"
             />
 
             <.player_result_card
               player_name={@opponent_name}
               lives={@opponent_state.lives}
               is_winner={@game_state.winner_id == @opponent_id}
-              color="text-error"
+              color="text-opponent"
             />
           </div>
 
@@ -79,7 +79,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
         </div>
         <div class="grid grid-cols-2 gap-8 mb-8">
           <div class="bg-base-200 rounded-lg p-6">
-            <div class="font-bold text-primary text-lg mb-3">{@player_name}</div>
+            <div class="font-bold text-player text-lg mb-3">{@player_name}</div>
             <div class="text-base-content/70 mb-2">
               Score: <span class="text-base-content font-semibold text-xl">{player_score}</span>
             </div>
@@ -96,7 +96,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
             </div>
           </div>
           <div class="bg-base-200 rounded-lg p-6">
-            <div class="font-bold text-error text-lg mb-3">{@opponent_name}</div>
+            <div class="font-bold text-opponent text-lg mb-3">{@opponent_name}</div>
             <div class="text-base-content/70 mb-2">
               Score: <span class="text-base-content font-semibold text-xl">{opponent_score}</span>
             </div>

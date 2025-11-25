@@ -409,7 +409,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         hand={opponent_result.hand}
         hand_type={opponent_result.hand_type}
         score={opponent_result.score}
-        color="text-error"
+        color="text-opponent"
         show_result={true}
         is_current_player={false}
       />
@@ -420,7 +420,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         hand={my_result.hand}
         hand_type={my_result.hand_type}
         score={my_result.score}
-        color="text-primary"
+        color="text-player"
         show_result={true}
         is_current_player={true}
       />
@@ -436,7 +436,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         hand={@hand}
         hand_type={nil}
         score={nil}
-        color="text-primary"
+        color="text-player"
         show_result={false}
         is_current_player={true}
       />
@@ -597,7 +597,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               <button
                 phx-click="toggle_deck_view"
                 class={[
-                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-primary",
+                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-player",
                   if(@viewing_own_deck,
                     do: "bg-base-300",
                     else: "bg-base-100 hover:bg-base-200"
@@ -609,7 +609,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               <button
                 phx-click="toggle_deck_view"
                 class={[
-                  "px-4 py-2 font-semibold transition-colors text-error",
+                  "px-4 py-2 font-semibold transition-colors text-opponent",
                   if(!@viewing_own_deck,
                     do: "bg-base-300",
                     else: "bg-base-100 hover:bg-base-200"
@@ -753,7 +753,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 phx-click="set_levels_view"
                 phx-value-mode="player"
                 class={[
-                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-primary",
+                  "px-4 py-2 font-semibold transition-colors border-r border-base-300 text-player",
                   if(@levels_view_mode == :player,
                     do: "bg-base-300",
                     else: "bg-base-100 hover:bg-base-200"
@@ -779,7 +779,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 phx-click="set_levels_view"
                 phx-value-mode="opponent"
                 class={[
-                  "px-4 py-2 font-semibold transition-colors text-error",
+                  "px-4 py-2 font-semibold transition-colors text-opponent",
                   if(@levels_view_mode == :opponent,
                     do: "bg-base-300",
                     else: "bg-base-100 hover:bg-base-200"

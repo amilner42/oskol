@@ -103,3 +103,17 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* Player colors - used consistently across lobby and game */
+.text-player {
+  color: oklch(68% 0.16 230); /* sky-500 */
+}
+.text-opponent {
+  color: oklch(70% 0.18 55); /* orange-500 */
+}
+.border-player {
+  border-color: oklch(68% 0.16 230); /* sky-500 */
+}
+.border-opponent {
+  border-color: oklch(70% 0.18 55); /* orange-500 */
+}
