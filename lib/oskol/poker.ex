@@ -14,6 +14,8 @@ defmodule Oskol.Poker do
 
   # Card operations
   defdelegate new_card(rank, suit), to: Card, as: :new
+  defdelegate new_joker(type \\ :standard), to: Card
+  defdelegate joker?(card), to: Card
   defdelegate card_chip_value(card), to: Card, as: :chip_value
 
   # Hand evaluation

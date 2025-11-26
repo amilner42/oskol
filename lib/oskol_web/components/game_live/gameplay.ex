@@ -1236,11 +1236,32 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         nil
       end
 
-    assigns = assign(assigns, :enhancement_text, enhancement_text)
+    # Check if this is a joker acting as another card
+    is_mutated_joker = assigns.card.joker != nil and assigns.card.acts_as != nil
+
+    assigns =
+      assigns
+      |> assign(:enhancement_text, enhancement_text)
+      |> assign(:is_mutated_joker, is_mutated_joker)
 
     ~H"""
-    <div class={"rounded overflow-hidden relative #{@class}"}>
+    <div class={[
+      "rounded overflow-hidden relative",
+      @class,
+      if(@is_mutated_joker, do: "ring-2 ring-warning ring-offset-1", else: "")
+    ]}>
       <img src={card_to_png_url(@card)} class="w-full h-full" />
+      <%= if @is_mutated_joker do %>
+        <div class={[
+          "absolute bg-warning text-warning-content font-bold rounded-full shadow-lg flex items-center justify-center",
+          if(@compact,
+            do: "bottom-px left-px text-[8px] w-3 h-3",
+            else: "bottom-0.5 left-0.5 text-xs w-5 h-5"
+          )
+        ]}>
+          J
+        </div>
+      <% end %>
       <%= if @enhancement_text do %>
         <div class={[
           "absolute bg-purple-600 text-white font-bold rounded shadow-lg",
@@ -1254,6 +1275,34 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <% end %>
     </div>
     """
+  end
+
+  def card_to_png_url(%Card{joker: joker, acts_as: acts_as}) when joker != nil do
+    # If joker has acts_as set, render as that card
+    if acts_as do
+      rank_str =
+        case acts_as.rank do
+          14 -> "A"
+          13 -> "K"
+          12 -> "Q"
+          11 -> "J"
+          10 -> "T"
+          n -> Integer.to_string(n)
+        end
+
+      suit_str =
+        case acts_as.suit do
+          :hearts -> "H"
+          :diamonds -> "D"
+          :clubs -> "C"
+          :spades -> "S"
+        end
+
+      "/images/cards/#{rank_str}#{suit_str}.svg"
+    else
+      # Joker without acts_as - use joker SVG (will be added later)
+      "/images/cards/JOKER.svg"
+    end
   end
 
   def card_to_png_url(%Card{rank: rank, suit: suit}) do
@@ -1279,17 +1328,50 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   end
 
   defp sort_cards(cards, :rank) do
-    Enum.sort_by(cards, fn card -> {-card.rank, suit_order(card.suit)} end)
+    # Jokers without acts_as sort to the right (highest sort value)
+    # Jokers with acts_as sort by their represented card
+    Enum.sort_by(cards, fn card ->
+      cond do
+        Oskol.Poker.joker?(card) and card.acts_as != nil ->
+          # Mutated joker - sort by acts_as
+          {0, -card.acts_as.rank, suit_order(card.acts_as.suit)}
+
+        Oskol.Poker.joker?(card) ->
+          # Unmutated joker - sort to right
+          {1, 0, 0}
+
+        true ->
+          # Regular card
+          {0, -card.rank, suit_order(card.suit)}
+      end
+    end)
   end
 
   defp sort_cards(cards, :suit) do
-    Enum.sort_by(cards, fn card -> {suit_order(card.suit), -card.rank} end)
+    # Jokers without acts_as sort to the right (highest sort value)
+    # Jokers with acts_as sort by their represented card
+    Enum.sort_by(cards, fn card ->
+      cond do
+        Oskol.Poker.joker?(card) and card.acts_as != nil ->
+          # Mutated joker - sort by acts_as
+          {0, suit_order(card.acts_as.suit), -card.acts_as.rank}
+
+        Oskol.Poker.joker?(card) ->
+          # Unmutated joker - sort to right
+          {1, 0, 0}
+
+        true ->
+          # Regular card
+          {0, suit_order(card.suit), -card.rank}
+      end
+    end)
   end
 
   defp suit_order(:spades), do: 0
   defp suit_order(:hearts), do: 1
   defp suit_order(:clubs), do: 2
   defp suit_order(:diamonds), do: 3
+  defp suit_order(nil), do: 4
 
   def deck_modal(assigns) do
     ~H"""
@@ -1350,8 +1432,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           # Combine only draw pile and hand (exclude discarded cards)
           all_cards = draw_pile ++ hand_pile
 
-          # Group cards by (suit, rank) to handle duplicates
-          cards_by_position = Enum.group_by(all_cards, fn card -> {card.suit, card.rank} end)
+          # Separate jokers from regular cards
+          {jokers, regular_cards} = Enum.split_with(all_cards, &Oskol.Poker.joker?/1)
+
+          # Group regular cards by (suit, rank) to handle duplicates
+          cards_by_position = Enum.group_by(regular_cards, fn card -> {card.suit, card.rank} end)
 
           # Define suits and ranks in display order
           suits = [:spades, :hearts, :clubs, :diamonds]
@@ -1397,9 +1482,34 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <table class="border-collapse">
               <!-- Body rows with suits -->
               <tbody>
+                <!-- Joker row at the very top -->
+                <%= if length(jokers) > 0 do %>
+                  <tr>
+                    <td class="px-2 py-1 text-left text-base font-semibold">
+                      <span class="text-xs text-base-content/60 mr-1">
+                        {length(jokers)}
+                      </span>
+                      <span class="text-warning">
+                        🃏
+                      </span>
+                    </td>
+                    <td class="p-1" colspan="13">
+                      <div class="flex gap-1">
+                        <%= for joker <- jokers do %>
+                          <% in_hand = joker.id in hand_ids
+                          opacity_class = if in_hand, do: "opacity-100", else: "opacity-30" %>
+                          <.card_display
+                            card={joker}
+                            class={"w-16 h-24 #{opacity_class}"}
+                          />
+                        <% end %>
+                      </div>
+                    </td>
+                  </tr>
+                <% end %>
                 <%= for suit <- suits do %>
-                  <% # Count remaining cards of this suit (draw pile + hand, excludes discards)
-                  suit_remaining = Enum.count(all_cards, fn card -> card.suit == suit end) %>
+                  <% # Count remaining cards of this suit (draw pile + hand, excludes discards and jokers)
+                  suit_remaining = Enum.count(regular_cards, fn card -> card.suit == suit end) %>
                   <tr>
                     <td class="px-2 py-1 text-left text-base font-semibold">
                       <span class="text-xs text-base-content/60 mr-1">

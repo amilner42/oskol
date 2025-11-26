@@ -7,15 +7,17 @@ defmodule Oskol.Poker.Card do
   @type suit :: :hearts | :diamonds | :clubs | :spades
   @type enhancement :: {:bonus_chips, pos_integer()} | {:bonus_mult, pos_integer()}
   @type joker_type :: :standard | :bonus_chips | :bonus_mult
+  @type acts_as :: %{rank: rank(), suit: suit()}
   @type t :: %__MODULE__{
           id: String.t(),
           rank: rank() | nil,
           suit: suit() | nil,
           enhancement: enhancement() | nil,
-          joker: joker_type() | nil
+          joker: joker_type() | nil,
+          acts_as: acts_as() | nil
         }
 
-  defstruct [:id, :rank, :suit, enhancement: nil, joker: nil]
+  defstruct [:id, :rank, :suit, enhancement: nil, joker: nil, acts_as: nil]
 
   @ranks [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
   @suits [:hearts, :diamonds, :clubs, :spades]
@@ -52,6 +54,17 @@ defmodule Oskol.Poker.Card do
   """
   @spec joker?(t()) :: boolean()
   def joker?(%__MODULE__{joker: joker}), do: joker != nil
+
+  @doc """
+  Sets what rank/suit a joker acts as when used in a hand.
+  Returns the card unchanged if not a joker.
+  """
+  @spec set_acts_as(t(), rank(), suit()) :: t()
+  def set_acts_as(%__MODULE__{joker: joker} = card, rank, suit) when joker != nil do
+    %{card | acts_as: %{rank: rank, suit: suit}}
+  end
+
+  def set_acts_as(card, _rank, _suit), do: card
 
   # Generates a unique ID for a card
   defp generate_id do

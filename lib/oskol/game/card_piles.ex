@@ -16,15 +16,18 @@ defmodule Oskol.Game.CardPiles do
             discard_pile: []
 
   @doc """
-  Creates a new CardPiles with a full 52-card deck in the draw pile.
+  Creates a new CardPiles with a full 52-card deck plus 1 joker in the draw pile.
   Pass `shuffle: true` to shuffle the deck, or `shuffle: false` for an ordered deck.
   """
   @spec new(shuffle: boolean()) :: t()
   def new(shuffle: shuffle) do
-    deck =
+    regular_cards =
       for rank <- 2..14, suit <- [:hearts, :diamonds, :clubs, :spades] do
         Poker.new_card(rank, suit)
       end
+
+    # Add 1 joker to the deck
+    deck = regular_cards ++ [Poker.new_joker()]
 
     draw_pile =
       if shuffle do
