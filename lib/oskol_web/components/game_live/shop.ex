@@ -7,94 +7,63 @@ defmodule OskolWeb.Components.GameLive.Shop do
   def shop_screen(assigns) do
     ~H"""
     <div class="h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200">
-      <%= if @game_state.shop_state && shop_complete?(@game_state.shop_state) do %>
-        <!-- Shop Complete: Ready Up Screen -->
-        <div class="h-full flex flex-col items-center justify-center">
-          <div class="text-center">
-            <div class="text-sm uppercase tracking-widest text-base-content/40 mb-2">
-              Shop Complete
+      <!-- Main Shop: Two Column Layout -->
+      <div class="h-full flex">
+        <!-- Left Column: Card Grid -->
+        <div class="w-[520px] border-r border-base-300/50 flex flex-col bg-base-100/50">
+          <!-- Header -->
+          <div class="p-6 border-b border-base-300/50">
+            <div class="flex items-center justify-between">
+              <div class="text-2xl font-light text-base-content">Shop</div>
+              <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
-            <h2 class="text-3xl font-light text-base-content mb-8">Ready for Next Round?</h2>
+          </div>
 
-            <.ready_status_display
-              player_name={@player_name}
-              opponent_name={@opponent_name}
-              player_ready={@player_state.ready_for_next_round}
-              opponent_ready={@opponent_state.ready_for_next_round}
-            />
-
-            <button
-              phx-click="mark_ready"
-              disabled={@action_in_progress or @player_state.ready_for_next_round}
-              class={[
-                "mt-8 px-12 py-4 rounded-full font-medium text-lg transition-all",
-                if(@action_in_progress or @player_state.ready_for_next_round,
-                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                  else: "bg-white text-base-content shadow-lg hover:shadow-xl hover:scale-105"
-                )
-              ]}
-            >
-              <%= if @player_state.ready_for_next_round do %>
-                Waiting for opponent...
-              <% else %>
-                Continue
+    <!-- Cards Grid: 3 columns x 5 rows -->
+          <div class="flex-1 p-6 overflow-y-auto">
+            <div class="grid grid-cols-3 gap-4">
+              <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
+                <.shop_card_minimal
+                  shop_card={shop_card}
+                  index={index}
+                  is_picked={index in @game_state.shop_state.picked_card_indices}
+                  is_selected={assigns[:previewing_card_index] == index}
+                  can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
+                />
               <% end %>
-            </button>
+            </div>
           </div>
         </div>
-      <% else %>
-        <!-- Main Shop: Two Column Layout -->
-        <div class="h-full flex">
-          <!-- Left Column: Card Grid -->
-          <div class="w-[520px] border-r border-base-300/50 flex flex-col bg-base-100/50">
-            <!-- Header -->
-            <div class="p-6 border-b border-base-300/50">
-              <div class="flex items-center justify-between">
-                <div class="text-2xl font-light text-base-content">Shop</div>
-                <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
-              </div>
-            </div>
-            
-    <!-- Cards Grid: 3 columns x 4 rows -->
-            <div class="flex-1 p-6 overflow-y-auto">
-              <div class="grid grid-cols-3 gap-4">
-                <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
-                  <.shop_card_minimal
-                    shop_card={shop_card}
-                    index={index}
-                    is_picked={index in @game_state.shop_state.picked_card_indices}
-                    is_selected={assigns[:previewing_card_index] == index}
-                    can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
-                  />
-                <% end %>
-              </div>
-            </div>
-          </div>
-          
-    <!-- Right Column: Preview Area -->
-          <div class="flex-1 flex flex-col">
-            <!-- Pick Status Bar -->
-            <.pick_status_bar
-              shop_state={@game_state.shop_state}
-              player_id={@player_id}
-              player_name={@player_name}
-              opponent_name={@opponent_name}
-            />
 
-            <%= if assigns[:previewing_card_index] != nil do %>
-              <.card_detail_panel
-                shop_card={Enum.at(@game_state.shop_state.available_cards, @previewing_card_index)}
-                card_index={@previewing_card_index}
-                skill_tree={skill_tree_for_player(@player_id, assigns)}
-                can_confirm={can_pick_card?(@game_state.shop_state, @player_id)}
-                action_in_progress={@action_in_progress}
-                pending_deck_builder={@game_state.shop_state.pending_deck_builder}
-                deck_builder_selection={assigns[:deck_builder_selection]}
-              />
-            <% else %>
-              <!-- Empty State -->
-              <div class="flex-1 flex items-center justify-center">
-                <div class="text-center">
+    <!-- Right Column: Preview Area -->
+        <div class="flex-1 flex flex-col">
+          <!-- Pick Status Bar -->
+          <.pick_status_bar
+            shop_state={@game_state.shop_state}
+            player_id={@player_id}
+            player_name={@player_name}
+            opponent_name={@opponent_name}
+            shop_countdown={assigns[:shop_countdown]}
+          />
+
+          <%= if assigns[:previewing_card_index] != nil do %>
+            <.card_detail_panel
+              shop_card={Enum.at(@game_state.shop_state.available_cards, @previewing_card_index)}
+              card_index={@previewing_card_index}
+              skill_tree={skill_tree_for_player(@player_id, assigns)}
+              can_confirm={can_pick_card?(@game_state.shop_state, @player_id)}
+              action_in_progress={@action_in_progress}
+              pending_deck_builder={@game_state.shop_state.pending_deck_builder}
+              deck_builder_selection={assigns[:deck_builder_selection]}
+            />
+          <% else %>
+            <!-- Empty State -->
+            <div class="flex-1 flex items-center justify-center">
+              <div class="text-center">
+                <%= if shop_complete?(@game_state.shop_state) do %>
+                  <!-- Shop complete - show countdown -->
+                  <.shop_countdown_display countdown={assigns[:shop_countdown]} />
+                <% else %>
                   <%= if can_pick_card?(@game_state.shop_state, @player_id) do %>
                     <div class="w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center">
                       <svg
@@ -130,12 +99,26 @@ defmodule OskolWeb.Components.GameLive.Shop do
                     </div>
                     <p class="text-base-content/40 text-lg font-light">Waiting for opponent...</p>
                   <% end %>
-                </div>
+                <% end %>
               </div>
-            <% end %>
-          </div>
+            </div>
+          <% end %>
         </div>
-      <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp shop_countdown_display(assigns) do
+    ~H"""
+    <div class="text-center">
+      <div class="w-20 h-20 rounded-full bg-emerald-500/10 mx-auto mb-4 flex items-center justify-center">
+        <span class="text-4xl font-light text-emerald-500">
+          <%= if @countdown, do: @countdown, else: "5" %>
+        </span>
+      </div>
+      <p class="text-base-content/60 text-lg font-light mb-2">All picks complete!</p>
+      <p class="text-base-content/40 text-sm">Next round starting in...</p>
     </div>
     """
   end
@@ -239,13 +222,21 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </span>
           </div>
         <% else %>
-          <div class="flex items-center gap-2">
-            <div class="w-2 h-2 rounded-full bg-emerald-500" />
-            <span class="text-sm text-emerald-600 font-medium">All picks complete</span>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full bg-emerald-500" />
+              <span class="text-sm text-emerald-600 font-medium">All picks complete</span>
+            </div>
+            <%= if @shop_countdown do %>
+              <div class="flex items-center gap-2 text-sm text-base-content/60">
+                <span>Next round in</span>
+                <span class="font-mono text-emerald-500 font-medium">{@shop_countdown}s</span>
+              </div>
+            <% end %>
           </div>
         <% end %>
       </div>
-      
+
     <!-- All pick slots - evenly spaced -->
       <div class="flex gap-3">
         <%= for slot <- @all_slots do %>
@@ -489,27 +480,6 @@ defmodule OskolWeb.Components.GameLive.Shop do
   defp format_hand_name(:full_house), do: "Full House"
   defp format_hand_name(:four_of_a_kind), do: "4 of a Kind"
   defp format_hand_name(:straight_flush), do: "Str. Flush"
-
-  defp ready_status_display(assigns) do
-    ~H"""
-    <div class="flex items-center justify-center gap-8">
-      <div class="flex items-center gap-2">
-        <div class={[
-          "w-2 h-2 rounded-full",
-          if(@player_ready, do: "bg-emerald-500", else: "bg-base-300")
-        ]} />
-        <span class="text-base-content/60 text-sm">{@player_name}</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class={[
-          "w-2 h-2 rounded-full",
-          if(@opponent_ready, do: "bg-emerald-500", else: "bg-base-300")
-        ]} />
-        <span class="text-base-content/60 text-sm">{@opponent_name}</span>
-      </div>
-    </div>
-    """
-  end
 
   defp shop_complete?(shop_state) do
     shop_state.current_round == shop_state.total_rounds and

@@ -79,7 +79,10 @@ defmodule OskolWeb.GameLive do
           score_animation_card_index: 0,
           animation_timer_ref: nil,
           # Flag to skip animation on reconnect (first state update)
-          is_initial_state_update: true
+          is_initial_state_update: true,
+          # Shop countdown timer state
+          shop_countdown: nil,
+          shop_countdown_timer_ref: nil
         )
 
       {:ok, socket}
@@ -376,6 +379,33 @@ defmodule OskolWeb.GameLive do
   def handle_event("mark_ready", _params, socket) do
     Game.mark_ready_for_next_round_async(socket.assigns.game_id, socket.assigns.player_id)
     {:noreply, assign(socket, action_in_progress: true)}
+  end
+
+  # Shop countdown timer handlers
+  @impl true
+  def handle_info(:shop_countdown_tick, socket) do
+    current_countdown = socket.assigns.shop_countdown
+
+    if current_countdown && current_countdown > 1 do
+      # Continue countdown
+      timer_ref = Process.send_after(self(), :shop_countdown_tick, 1000)
+
+      {:noreply,
+       assign(socket,
+         shop_countdown: current_countdown - 1,
+         shop_countdown_timer_ref: timer_ref
+       )}
+    else
+      # Countdown complete - auto mark ready and proceed
+      Game.mark_ready_for_next_round_async(socket.assigns.game_id, socket.assigns.player_id)
+
+      {:noreply,
+       assign(socket,
+         shop_countdown: nil,
+         shop_countdown_timer_ref: nil,
+         action_in_progress: true
+       )}
+    end
   end
 
   @impl true
@@ -788,6 +818,46 @@ defmodule OskolWeb.GameLive do
         socket.assigns.deck_builder_selection
       end
 
+    # Check if shop just became complete - start countdown timer
+    {shop_countdown, shop_countdown_timer_ref} =
+      if new_state.game_state && new_state.game_state.shop_state do
+        old_shop_state =
+          socket.assigns.server_state.game_state &&
+            socket.assigns.server_state.game_state.shop_state
+
+        old_complete =
+          old_shop_state && Oskol.Game.ShopState.shop_complete?(old_shop_state)
+
+        new_complete = Oskol.Game.ShopState.shop_complete?(new_state.game_state.shop_state)
+
+        cond do
+          # Shop just became complete - start countdown (5 seconds)
+          new_complete && !old_complete && socket.assigns.shop_countdown == nil ->
+            timer_ref = Process.send_after(self(), :shop_countdown_tick, 1000)
+            {5, timer_ref}
+
+          # Shop is still complete and countdown is running - keep current state
+          new_complete && socket.assigns.shop_countdown != nil ->
+            {socket.assigns.shop_countdown, socket.assigns.shop_countdown_timer_ref}
+
+          # Shop is no longer complete (round advanced) - clear countdown
+          true ->
+            # Cancel any existing timer
+            if socket.assigns.shop_countdown_timer_ref do
+              Process.cancel_timer(socket.assigns.shop_countdown_timer_ref)
+            end
+
+            {nil, nil}
+        end
+      else
+        # No shop state - clear countdown
+        if socket.assigns.shop_countdown_timer_ref do
+          Process.cancel_timer(socket.assigns.shop_countdown_timer_ref)
+        end
+
+        {nil, nil}
+      end
+
     # Clear previewing_card_index if it's not your turn anymore
     previewing_card_index =
       if new_state.game_state && new_state.game_state.shop_state && socket.assigns.player_id do
@@ -821,6 +891,8 @@ defmodule OskolWeb.GameLive do
        previewing_card_index: previewing_card_index,
        score_animation_phase: animation_phase,
        animation_timer_ref: animation_timer_ref,
+       shop_countdown: shop_countdown,
+       shop_countdown_timer_ref: shop_countdown_timer_ref,
        # Clear initial state flag after first update
        is_initial_state_update: false
      )
@@ -954,6 +1026,7 @@ defmodule OskolWeb.GameLive do
               action_in_progress={@action_in_progress}
               previewing_card_index={@previewing_card_index}
               deck_builder_selection={@deck_builder_selection}
+              shop_countdown={@shop_countdown}
             />
           <% true -> %>
             <.game_screen
