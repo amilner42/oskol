@@ -6,146 +6,325 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
   def shop_screen(assigns) do
     ~H"""
-    <div class="relative max-w-7xl mx-auto h-screen flex flex-col bg-base-100 p-6">
-      <!-- Top Status Bar -->
-      <%= if @game_state.shop_state do %>
-        <.shop_status shop_state={@game_state.shop_state} player_names={@game_state.player_names} />
-      <% end %>
-      
-    <!-- Center Preview Area (like the game board) -->
-      <div class="flex-1 flex items-center justify-center">
-        <%= if assigns[:previewing_card_index] != nil and @game_state.shop_state do %>
-          <.card_preview_center
-            shop_card={Enum.at(@game_state.shop_state.available_cards, @previewing_card_index)}
-            card_index={@previewing_card_index}
-            skill_tree={skill_tree_for_player(@player_id, assigns)}
-            can_confirm={can_pick_card?(@game_state.shop_state, @player_id)}
-            action_in_progress={@action_in_progress}
-            pending_deck_builder={@game_state.shop_state.pending_deck_builder}
-            deck_builder_selection={assigns[:deck_builder_selection]}
-          />
-        <% else %>
-          <%= if @game_state.shop_state && shop_complete?(@game_state.shop_state) do %>
-            <div class="text-center">
-              <.ready_status_display
-                player_name={@player_name}
-                opponent_name={@opponent_name}
-                player_ready={@player_state.ready_for_next_round}
-                opponent_ready={@opponent_state.ready_for_next_round}
-              />
+    <div class="h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200">
+      <%= if @game_state.shop_state && shop_complete?(@game_state.shop_state) do %>
+        <!-- Shop Complete: Ready Up Screen -->
+        <div class="h-full flex flex-col items-center justify-center">
+          <div class="text-center">
+            <div class="text-sm uppercase tracking-widest text-base-content/40 mb-2">
+              Shop Complete
+            </div>
+            <h2 class="text-3xl font-light text-base-content mb-8">Ready for Next Round?</h2>
 
-              <div class="flex justify-center mt-6">
-                <button
-                  phx-click="mark_ready"
-                  disabled={@action_in_progress or @player_state.ready_for_next_round}
-                  class={[
-                    "px-8 py-4 rounded font-bold text-xl transition-all shadow-lg",
-                    if(@action_in_progress or @player_state.ready_for_next_round,
-                      do: "bg-base-content/30 cursor-not-allowed opacity-50 text-base-content",
-                      else: "bg-success hover:bg-success/90 text-success-content hover:scale-[1.02]"
-                    )
-                  ]}
-                >
-                  <%= if @player_state.ready_for_next_round do %>
-                    Waiting for opponent...
-                  <% else %>
-                    I'm Ready!
-                  <% end %>
-                </button>
+            <.ready_status_display
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+              player_ready={@player_state.ready_for_next_round}
+              opponent_ready={@opponent_state.ready_for_next_round}
+            />
+
+            <button
+              phx-click="mark_ready"
+              disabled={@action_in_progress or @player_state.ready_for_next_round}
+              class={[
+                "mt-8 px-12 py-4 rounded-full font-medium text-lg transition-all",
+                if(@action_in_progress or @player_state.ready_for_next_round,
+                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                  else: "bg-white text-base-content shadow-lg hover:shadow-xl hover:scale-105"
+                )
+              ]}
+            >
+              <%= if @player_state.ready_for_next_round do %>
+                Waiting for opponent...
+              <% else %>
+                Continue
+              <% end %>
+            </button>
+          </div>
+        </div>
+      <% else %>
+        <!-- Main Shop: Two Column Layout -->
+        <div class="h-full flex">
+          <!-- Left Column: Card Grid -->
+          <div class="w-[520px] border-r border-base-300/50 flex flex-col bg-base-100/50">
+            <!-- Header -->
+            <div class="p-6 border-b border-base-300/50">
+              <div class="flex items-center justify-between">
+                <div class="text-2xl font-light text-base-content">Shop</div>
+                <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
               </div>
             </div>
-          <% else %>
-            <div class="text-center">
-              <%= cond do %>
-                <% not @game_state.shop_state.first_pick_made and @game_state.shop_state.first_picker_id == @player_id -> %>
-                  <div class="text-2xl text-success font-bold">Your turn to pick first!</div>
-                <% @game_state.shop_state.first_pick_made and not @game_state.shop_state.second_pick_made and @game_state.shop_state.second_picker_id == @player_id -> %>
-                  <div class="text-2xl text-success font-bold">Your turn to pick!</div>
-                <% not @game_state.shop_state.first_pick_made -> %>
-                  <div class="text-xl text-base-content/60">
-                    Waiting for {@game_state.player_names[@game_state.shop_state.first_picker_id]} to pick first...
-                  </div>
-                <% @game_state.shop_state.first_pick_made and not @game_state.shop_state.second_pick_made -> %>
-                  <div class="text-xl text-base-content/60">
-                    Waiting for {@game_state.player_names[@game_state.shop_state.second_picker_id]} to pick...
-                  </div>
-                <% true -> %>
-                  <div class="text-xl text-success">
-                    Both players have picked! Moving to next round...
-                  </div>
-              <% end %>
+            
+    <!-- Cards Grid: 3 columns x 4 rows -->
+            <div class="flex-1 p-6 overflow-y-auto">
+              <div class="grid grid-cols-3 gap-4">
+                <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
+                  <.shop_card_minimal
+                    shop_card={shop_card}
+                    index={index}
+                    is_picked={index in @game_state.shop_state.picked_card_indices}
+                    is_selected={assigns[:previewing_card_index] == index}
+                    can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
+                  />
+                <% end %>
+              </div>
             </div>
-          <% end %>
+          </div>
+          
+    <!-- Right Column: Preview Area -->
+          <div class="flex-1 flex flex-col">
+            <!-- Pick Status Bar -->
+            <.pick_status_bar
+              shop_state={@game_state.shop_state}
+              player_id={@player_id}
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+            />
+
+            <%= if assigns[:previewing_card_index] != nil do %>
+              <.card_detail_panel
+                shop_card={Enum.at(@game_state.shop_state.available_cards, @previewing_card_index)}
+                card_index={@previewing_card_index}
+                skill_tree={skill_tree_for_player(@player_id, assigns)}
+                can_confirm={can_pick_card?(@game_state.shop_state, @player_id)}
+                action_in_progress={@action_in_progress}
+                pending_deck_builder={@game_state.shop_state.pending_deck_builder}
+                deck_builder_selection={assigns[:deck_builder_selection]}
+              />
+            <% else %>
+              <!-- Empty State -->
+              <div class="flex-1 flex items-center justify-center">
+                <div class="text-center">
+                  <%= if can_pick_card?(@game_state.shop_state, @player_id) do %>
+                    <div class="w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center">
+                      <svg
+                        class="w-8 h-8 text-base-content/30"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="1.5"
+                          d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
+                        />
+                      </svg>
+                    </div>
+                    <p class="text-base-content/40 text-lg font-light">Select a card to preview</p>
+                  <% else %>
+                    <div class="w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center">
+                      <svg
+                        class="w-8 h-8 text-base-content/30 animate-pulse"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="1.5"
+                          d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    </div>
+                    <p class="text-base-content/40 text-lg font-light">Waiting for opponent...</p>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp turn_indicator(assigns) do
+    is_my_turn = can_pick_card?(assigns.shop_state, assigns.player_id)
+
+    assigns = assign(assigns, :is_my_turn, is_my_turn)
+
+    ~H"""
+    <div class={[
+      "px-3 py-1.5 rounded-full text-xs font-medium",
+      if(@is_my_turn,
+        do: "bg-emerald-500/10 text-emerald-600",
+        else: "bg-base-300/50 text-base-content/40"
+      )
+    ]}>
+      <%= if @is_my_turn do %>
+        Your pick
+      <% else %>
+        Waiting
+      <% end %>
+    </div>
+    """
+  end
+
+  defp pick_status_bar(assigns) do
+    # Determine names based on picker IDs
+    first_picker_name =
+      if assigns.shop_state.first_picker_id == assigns.player_id,
+        do: assigns.player_name,
+        else: assigns.opponent_name
+
+    second_picker_name =
+      if assigns.shop_state.second_picker_id == assigns.player_id,
+        do: assigns.player_name,
+        else: assigns.opponent_name
+
+    # Build list of all picks made so far
+    # picked_card_indices is prepended (most recent first), so reverse it
+    reversed_indices = Enum.reverse(assigns.shop_state.picked_card_indices)
+
+    # Create a map of pick_number -> card for completed picks
+    completed_picks =
+      reversed_indices
+      |> Enum.with_index()
+      |> Enum.map(fn {card_idx, pick_num} ->
+        {pick_num + 1, Enum.at(assigns.shop_state.available_cards, card_idx)}
+      end)
+      |> Map.new()
+
+    # Total picks expected (2 per round)
+    total_picks = assigns.shop_state.total_rounds * 2
+
+    # Current pick number (1-indexed)
+    current_pick_number = length(reversed_indices) + 1
+
+    # Build all pick slots
+    all_slots =
+      for pick_num <- 1..total_picks do
+        # Even picks (1, 3, 5...) are first picker, odd (2, 4, 6...) are second picker
+        picker_name = if rem(pick_num, 2) == 1, do: first_picker_name, else: second_picker_name
+        card = Map.get(completed_picks, pick_num)
+        is_current = pick_num == current_pick_number and current_pick_number <= total_picks
+
+        %{
+          pick_number: pick_num,
+          picker_name: picker_name,
+          card: card,
+          is_current: is_current,
+          is_completed: card != nil
+        }
+      end
+
+    is_my_turn = can_pick_card?(assigns.shop_state, assigns.player_id)
+    all_complete = current_pick_number > total_picks
+
+    assigns =
+      assigns
+      |> assign(:all_slots, all_slots)
+      |> assign(:is_my_turn, is_my_turn)
+      |> assign(:all_complete, all_complete)
+
+    ~H"""
+    <div class="p-6 border-b border-base-300/50">
+      <!-- Current turn indicator -->
+      <div class="mb-4">
+        <%= if not @all_complete do %>
+          <div class="flex items-center gap-2">
+            <div class={[
+              "w-2 h-2 rounded-full",
+              if(@is_my_turn, do: "bg-emerald-500 animate-pulse", else: "bg-amber-500 animate-pulse")
+            ]} />
+            <span class="text-sm text-base-content/60">
+              <%= if @is_my_turn do %>
+                <span class="text-emerald-600 font-medium">Your turn</span> to pick
+              <% else %>
+                <% current_slot = Enum.find(@all_slots, & &1.is_current) %> Waiting for
+                <span class="font-medium">{current_slot && current_slot.picker_name}</span>
+              <% end %>
+            </span>
+          </div>
+        <% else %>
+          <div class="flex items-center gap-2">
+            <div class="w-2 h-2 rounded-full bg-emerald-500" />
+            <span class="text-sm text-emerald-600 font-medium">All picks complete</span>
+          </div>
         <% end %>
       </div>
       
-    <!-- Bottom Cards Area (like gameplay hand) -->
-      <%= if @game_state.shop_state && !shop_complete?(@game_state.shop_state) do %>
-        <div class="pb-4">
-          <.shop_cards_display
-            shop_state={@game_state.shop_state}
-            player_id={@player_id}
-            previewing_card_index={assigns[:previewing_card_index]}
+    <!-- All pick slots - evenly spaced -->
+      <div class="flex gap-3">
+        <%= for slot <- @all_slots do %>
+          <.pick_slot_compact
+            pick_card={slot.card}
+            picker_name={slot.picker_name}
+            pick_number={slot.pick_number}
+            is_current={slot.is_current}
+            is_completed={slot.is_completed}
           />
-        </div>
-      <% end %>
-    </div>
-    """
-  end
-
-  defp shop_status(assigns) do
-    ~H"""
-    <div class="flex items-center justify-between text-sm pb-4 border-b border-base-300">
-      <div class="text-base-content/80">
-        Shop Round:
-        <span class="text-primary font-bold">
-          {@shop_state.current_round}/{@shop_state.total_rounds}
-        </span>
-      </div>
-      <div class="text-base-content/80">
-        First Pick:
-        <span class="text-success font-bold">
-          {@player_names[@shop_state.first_picker_id]}
-        </span>
-        <%= if @shop_state.first_pick_made do %>
-          <span class="text-success ml-1">✓</span>
-        <% end %>
-      </div>
-      <div class="text-base-content/80">
-        Second Pick:
-        <span class="text-info font-bold">
-          {@player_names[@shop_state.second_picker_id]}
-        </span>
-        <%= if @shop_state.second_pick_made do %>
-          <span class="text-success ml-1">✓</span>
         <% end %>
       </div>
     </div>
     """
   end
 
-  defp shop_cards_display(assigns) do
-    can_pick = can_pick_card?(assigns.shop_state, assigns.player_id)
-    assigns = assign(assigns, :can_pick, can_pick)
+  defp pick_slot_compact(assigns) do
+    alias Oskol.Game.DeckBuilderCard
+
+    card_display =
+      case assigns[:pick_card] do
+        {:level_up, hand_type} ->
+          %{type: :level_up, name: format_hand_name(hand_type), color: "emerald"}
+
+        {:action, action_card} ->
+          %{type: :action, name: format_hand_name(action_card.target_hand), color: "rose"}
+
+        {:deck_builder, deck_builder_card} ->
+          %{
+            type: :deck_builder,
+            name: DeckBuilderCard.card_name(deck_builder_card),
+            color: "violet"
+          }
+
+        nil ->
+          nil
+      end
+
+    ordinal =
+      case assigns.pick_number do
+        1 -> "1st"
+        2 -> "2nd"
+        3 -> "3rd"
+        n -> "#{n}th"
+      end
+
+    assigns =
+      assigns
+      |> assign(:card_display, card_display)
+      |> assign(:ordinal, ordinal)
 
     ~H"""
-    <div>
-      <%= if !@can_pick do %>
-        <div class="text-center mb-3 text-base-content/60 text-sm font-semibold">
-          Opponent is picking...
+    <div class={[
+      "flex-1 rounded-lg p-3 border transition-all",
+      cond do
+        @card_display != nil -> "bg-base-100 border-base-300/50"
+        @is_current -> "bg-base-200/50 border-dashed border-emerald-400 animate-pulse"
+        true -> "bg-base-200/30 border-base-300/30"
+      end
+    ]}>
+      <div class="text-[10px] uppercase tracking-wider text-base-content/40 mb-1">{@ordinal}</div>
+      <%= if @card_display do %>
+        <div class="flex items-center gap-2">
+          <div class={[
+            "w-2 h-2 rounded-full flex-shrink-0",
+            case @card_display.color do
+              "emerald" -> "bg-emerald-500"
+              "rose" -> "bg-rose-500"
+              "violet" -> "bg-violet-500"
+            end
+          ]} />
+          <div class="min-w-0">
+            <div class="text-sm font-medium text-base-content truncate">{@card_display.name}</div>
+            <div class="text-[10px] text-base-content/40">{@picker_name}</div>
+          </div>
         </div>
+      <% else %>
+        <div class="text-sm text-base-content/30">{@picker_name}</div>
       <% end %>
-      <div class="grid grid-cols-6 gap-3 max-w-6xl mx-auto">
-        <%= for {shop_card, index} <- Enum.with_index(@shop_state.available_cards) do %>
-          <.shop_card_simple
-            shop_card={shop_card}
-            index={index}
-            is_picked={index in @shop_state.picked_card_indices}
-            is_previewing={@previewing_card_index == index}
-            can_pick={@can_pick}
-          />
-        <% end %>
-      </div>
     </div>
     """
   end
@@ -156,39 +335,20 @@ defmodule OskolWeb.Components.GameLive.Shop do
     player_state && player_state.skill_tree
   end
 
-  defp shop_card_simple(assigns) do
+  defp shop_card_minimal(assigns) do
     alias Oskol.Game.DeckBuilderCard
 
-    {card_type, display_name, bg_color} =
+    {card_type, display_name, accent_color} =
       case assigns.shop_card do
         {:level_up, hand_type} ->
-          {:level_up, format_hand_name(hand_type), "bg-accent/5"}
+          {:level_up, format_hand_name(hand_type), "emerald"}
 
         {:action, action_card} ->
           hand_name = format_hand_name(action_card.target_hand)
-          {:action, hand_name, "bg-error/5"}
+          {:action, hand_name, "rose"}
 
         {:deck_builder, deck_builder_card} ->
-          {:deck_builder, DeckBuilderCard.card_name(deck_builder_card), "bg-purple-500/5"}
-      end
-
-    # Add colored border if previewing
-    border_class =
-      if assigns[:is_previewing] do
-        case card_type do
-          :level_up -> "border-4 border-accent"
-          :action -> "border-4 border-error"
-          :deck_builder -> "border-4 border-purple-500"
-        end
-      else
-        "border-2 border-base-300"
-      end
-
-    {badge_text, badge_color} =
-      case card_type do
-        :level_up -> {"LEVEL UP", "text-accent"}
-        :action -> {"ACTION", "text-error"}
-        :deck_builder -> {"DECK BUILDER", "text-purple-500"}
+          {:deck_builder, DeckBuilderCard.card_name(deck_builder_card), "violet"}
       end
 
     # Use different events for deck builders vs other cards
@@ -206,10 +366,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       assigns
       |> assign(:card_type, card_type)
       |> assign(:display_name, display_name)
-      |> assign(:bg_color, bg_color)
-      |> assign(:border_class, border_class)
-      |> assign(:badge_text, badge_text)
-      |> assign(:badge_color, badge_color)
+      |> assign(:accent_color, accent_color)
       |> assign(:click_event, click_event)
 
     ~H"""
@@ -218,31 +375,83 @@ defmodule OskolWeb.Components.GameLive.Shop do
       phx-value-index={@index}
       disabled={@is_picked or not @can_pick}
       class={[
-        "aspect-[2/3] rounded-lg p-3 flex flex-col transition-all",
-        @bg_color,
-        @border_class,
+        "aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden",
+        "bg-base-100 border-2",
         cond do
-          @is_picked -> "opacity-30 cursor-not-allowed"
-          @can_pick -> "hover:scale-105 hover:shadow-xl cursor-pointer"
-          true -> "cursor-not-allowed"
+          @is_picked ->
+            "opacity-30 cursor-not-allowed border-base-300/30"
+
+          @is_selected ->
+            case @accent_color do
+              "emerald" -> "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
+              "rose" -> "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
+              "violet" -> "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
+            end
+
+          @can_pick ->
+            case @accent_color do
+              "emerald" ->
+                "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
+
+              "rose" ->
+                "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
+
+              "violet" ->
+                "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+            end
+
+          true ->
+            "border-base-300/30 cursor-not-allowed"
         end
       ]}
     >
-      <!-- Badge at top -->
-      <div class={"text-[10px] font-bold uppercase tracking-wide #{@badge_color} mb-2"}>
-        {@badge_text}
+      <!-- Type badge at top -->
+      <div class={[
+        "text-[10px] font-bold uppercase tracking-wider mb-2",
+        case @accent_color do
+          "emerald" -> "text-emerald-500"
+          "rose" -> "text-rose-500"
+          "violet" -> "text-violet-500"
+        end
+      ]}>
+        <%= case @card_type do %>
+          <% :level_up -> %>
+            Level Up
+          <% :action -> %>
+            Action
+          <% :deck_builder -> %>
+            Deck Builder
+        <% end %>
       </div>
       
     <!-- Card name centered -->
       <div class="flex-1 flex items-center justify-center">
-        <div class="font-bold text-sm text-center text-base-content">
+        <div class={[
+          "font-semibold text-sm text-center leading-tight",
+          if(@is_picked, do: "text-base-content/30", else: "text-base-content")
+        ]}>
           {@display_name}
         </div>
       </div>
 
       <%= if @is_picked do %>
-        <div class="text-center mt-2">
-          <span class={"text-[10px] font-bold #{@badge_color}"}>PICKED</span>
+        <div class="absolute inset-0 bg-base-100/80 flex items-center justify-center rounded-xl">
+          <div class="flex flex-col items-center gap-1">
+            <svg
+              class="w-6 h-6 text-base-content/40"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M5 13l4 4L19 7"
+              />
+            </svg>
+            <span class="text-xs text-base-content/40 font-medium">Picked</span>
+          </div>
         </div>
       <% end %>
     </button>
@@ -261,24 +470,20 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
   defp ready_status_display(assigns) do
     ~H"""
-    <div class="bg-base-300 rounded-lg p-4 mb-4">
-      <div class="text-center text-sm text-base-content">
-        <div class="mb-2">
-          {@player_name}:
-          <%= if @player_ready do %>
-            <span class="text-success">✓ Ready</span>
-          <% else %>
-            <span class="text-warning">Not Ready</span>
-          <% end %>
-        </div>
-        <div>
-          {@opponent_name}:
-          <%= if @opponent_ready do %>
-            <span class="text-success">✓ Ready</span>
-          <% else %>
-            <span class="text-warning">Not Ready</span>
-          <% end %>
-        </div>
+    <div class="flex items-center justify-center gap-8">
+      <div class="flex items-center gap-2">
+        <div class={[
+          "w-2 h-2 rounded-full",
+          if(@player_ready, do: "bg-emerald-500", else: "bg-base-300")
+        ]} />
+        <span class="text-base-content/60 text-sm">{@player_name}</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class={[
+          "w-2 h-2 rounded-full",
+          if(@opponent_ready, do: "bg-emerald-500", else: "bg-base-300")
+        ]} />
+        <span class="text-base-content/60 text-sm">{@opponent_name}</span>
       </div>
     </div>
     """
@@ -303,12 +508,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
     end
   end
 
-  defp card_preview_center(assigns) do
+  defp card_detail_panel(assigns) do
     ~H"""
-    <div class="max-w-xl w-full">
+    <div class="flex-1 flex flex-col">
       <%= case @shop_card do %>
         <% {:level_up, hand_type} -> %>
-          <.level_up_preview
+          <.level_up_detail
             hand_type={hand_type}
             skill_tree={@skill_tree}
             can_confirm={@can_confirm}
@@ -316,14 +521,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
             card_index={@card_index}
           />
         <% {:action, action_card} -> %>
-          <.action_preview
+          <.action_detail
             action_card={action_card}
             can_confirm={@can_confirm}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
           />
         <% {:deck_builder, deck_builder_card} -> %>
-          <.deck_builder_preview
+          <.deck_builder_detail
             deck_builder_card={deck_builder_card}
             can_confirm={@can_confirm}
             action_in_progress={@action_in_progress}
@@ -336,7 +541,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     """
   end
 
-  defp level_up_preview(assigns) do
+  defp level_up_detail(assigns) do
     current_level = Map.get(assigns.skill_tree, assigns.hand_type, 1)
     next_level = current_level + 1
 
@@ -352,56 +557,96 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:hand_name, format_hand_name(assigns.hand_type))
 
     ~H"""
-    <div class="text-center bg-base-200/50 rounded-xl p-8 border-2 border-accent/30">
-      <!-- Badge -->
-      <div class="text-xs font-bold uppercase tracking-wide text-accent mb-3">
-        Level Up
+    <div class="flex-1 flex flex-col p-8">
+      <!-- Header -->
+      <div class="mb-8">
+        <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Level Up</div>
+        <h2 class="text-4xl font-light text-base-content">{@hand_name}</h2>
       </div>
       
-    <!-- Hand Name -->
-      <h3 class="text-4xl font-bold text-accent mb-4">{@hand_name}</h3>
-      
-    <!-- Level Progress -->
-      <div class="text-lg text-base-content/70 mb-8">
-        Level {@current_level} → {@next_level}
-      </div>
-      
-    <!-- Stats Comparison -->
-      <div class="space-y-6 mb-8">
-        <div class="flex items-center justify-between px-4">
-          <span class="text-base-content/80 text-lg">Base Chips:</span>
-          <div class="flex items-center gap-4">
-            <span class="line-through opacity-50 text-lg">{@current_stats.base_chips}</span>
-            <span class="text-base-content/40 text-xl">→</span>
-            <span class="text-success font-bold text-2xl">{@next_stats.base_chips}</span>
-          </div>
-        </div>
-        <div class="flex items-center justify-between px-4">
-          <span class="text-base-content/80 text-lg">Multiplier:</span>
-          <div class="flex items-center gap-4">
-            <span class="line-through opacity-50 text-lg">{@current_stats.multiplier}x</span>
-            <span class="text-base-content/40 text-xl">→</span>
-            <span class="text-success font-bold text-2xl">{@next_stats.multiplier}x</span>
+    <!-- Level indicator -->
+      <div class="mb-12">
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2">
+            <span class="text-3xl font-light text-base-content/40">{@current_level}</span>
+            <svg
+              class="w-5 h-5 text-emerald-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 7l5 5m0 0l-5 5m5-5H6"
+              />
+            </svg>
+            <span class="text-3xl font-medium text-emerald-500">{@next_level}</span>
           </div>
         </div>
       </div>
       
-    <!-- Action Buttons -->
+    <!-- Stats -->
+      <div class="space-y-6 flex-1">
+        <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
+          <span class="text-base-content/50 text-sm uppercase tracking-wider">Base Chips</span>
+          <div class="flex items-center gap-3">
+            <span class="text-base-content/30 text-lg">{@current_stats.base_chips}</span>
+            <svg
+              class="w-4 h-4 text-base-content/20"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M17 8l4 4m0 0l-4 4m4-4H3"
+              />
+            </svg>
+            <span class="text-emerald-500 text-2xl font-medium">{@next_stats.base_chips}</span>
+          </div>
+        </div>
+        <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
+          <span class="text-base-content/50 text-sm uppercase tracking-wider">Multiplier</span>
+          <div class="flex items-center gap-3">
+            <span class="text-base-content/30 text-lg">{@current_stats.multiplier}x</span>
+            <svg
+              class="w-4 h-4 text-base-content/20"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M17 8l4 4m0 0l-4 4m4-4H3"
+              />
+            </svg>
+            <span class="text-emerald-500 text-2xl font-medium">{@next_stats.multiplier}x</span>
+          </div>
+        </div>
+      </div>
+      
+    <!-- Action Button -->
       <%= if @can_confirm do %>
-        <div class="flex justify-center">
+        <div class="pt-8">
           <button
             phx-click="confirm_shop_pick"
             phx-value-index={@card_index}
             disabled={@action_in_progress}
             class={[
-              "px-8 py-3 rounded-lg font-bold transition-all shadow-lg",
+              "w-full py-4 rounded-full font-medium text-lg transition-all",
               if(@action_in_progress,
-                do: "bg-accent/30 cursor-not-allowed opacity-50",
-                else: "bg-accent hover:bg-accent/90 text-accent-content hover:scale-[1.05]"
+                do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                else: "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg hover:shadow-xl"
               )
             ]}
           >
-            Confirm Pick
+            Confirm Selection
           </button>
         </div>
       <% end %>
@@ -409,7 +654,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     """
   end
 
-  defp action_preview(assigns) do
+  defp action_detail(assigns) do
     card_name = Oskol.Game.ActionCard.card_name(assigns.action_card)
     card_description = Oskol.Game.ActionCard.card_description(assigns.action_card)
     hand_name = format_hand_name(assigns.action_card.target_hand)
@@ -421,41 +666,49 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:hand_name, hand_name)
 
     ~H"""
-    <div class="text-center bg-base-200/50 rounded-xl p-8 border-2 border-error/30">
-      <!-- Badge -->
-      <div class="text-xs font-bold uppercase tracking-wide text-error mb-3">
-        Action Card
+    <div class="flex-1 flex flex-col p-8">
+      <!-- Header -->
+      <div class="mb-8">
+        <div class="text-xs uppercase tracking-widest text-rose-500/60 mb-1">Action Card</div>
+        <h2 class="text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
       
-    <!-- Card Name -->
-      <h3 class="text-4xl font-bold text-error mb-4">{@card_name}</h3>
-      
-    <!-- Target Hand -->
-      <div class="text-lg text-base-content/70 mb-8">
-        Targets: <span class="font-semibold text-error">{@hand_name}</span>
+    <!-- Target -->
+      <div class="mb-8">
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10">
+          <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M13 10V3L4 14h7v7l9-11h-7z"
+            />
+          </svg>
+          <span class="text-rose-500 font-medium">{@hand_name}</span>
+        </div>
       </div>
       
     <!-- Description -->
-      <div class="mb-8 px-4">
-        <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
+      <div class="flex-1">
+        <p class="text-base-content/60 text-lg leading-relaxed">{@card_description}</p>
       </div>
       
-    <!-- Action Buttons -->
+    <!-- Action Button -->
       <%= if @can_confirm do %>
-        <div class="flex justify-center">
+        <div class="pt-8">
           <button
             phx-click="confirm_shop_pick"
             phx-value-index={@card_index}
             disabled={@action_in_progress}
             class={[
-              "px-8 py-3 rounded-lg font-bold transition-all shadow-lg",
+              "w-full py-4 rounded-full font-medium text-lg transition-all",
               if(@action_in_progress,
-                do: "bg-error/30 cursor-not-allowed opacity-50",
-                else: "bg-error hover:bg-error/90 text-error-content hover:scale-[1.05]"
+                do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
               )
             ]}
           >
-            Confirm Pick
+            Confirm Selection
           </button>
         </div>
       <% end %>
@@ -463,7 +716,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     """
   end
 
-  defp deck_builder_preview(assigns) do
+  defp deck_builder_detail(assigns) do
     alias Oskol.Game.DeckBuilderCard
 
     card_name = DeckBuilderCard.card_name(assigns.deck_builder_card)
@@ -482,47 +735,45 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:has_preview, has_preview)
 
     ~H"""
-    <div class="text-center bg-base-200/50 rounded-xl p-8 border-2 border-purple-500/30 max-w-4xl">
-      <!-- Badge -->
-      <div class="text-xs font-bold uppercase tracking-wide text-purple-500 mb-3">
-        Deck Builder
+    <div class="flex-1 flex flex-col p-8">
+      <!-- Header -->
+      <div class="mb-6">
+        <div class="text-xs uppercase tracking-widest text-violet-500/60 mb-1">Deck Builder</div>
+        <h2 class="text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
       
-    <!-- Card Name -->
-      <h3 class="text-4xl font-bold text-purple-500 mb-4">{@card_name}</h3>
-      
     <!-- Description -->
-      <div class="mb-6 px-4">
-        <p class="text-base-content text-xl leading-relaxed">{@card_description}</p>
+      <div class="mb-8">
+        <p class="text-base-content/60 text-lg leading-relaxed">{@card_description}</p>
       </div>
 
       <%= if @has_preview do %>
-        <!-- 8-Card Selection Grid -->
-        <div class="mb-6">
-          <div class="text-sm text-base-content/70 mb-4">
-            <% card_type = @pending_deck_builder.deck_builder_card.type
+        <!-- Selection instruction -->
+        <div class="mb-4">
+          <% card_type = @pending_deck_builder.deck_builder_card.type
 
-            instruction =
-              case card_type do
-                :remove_card ->
-                  "Select up to 2 cards to remove (or skip):"
+          instruction =
+            case card_type do
+              :remove_card ->
+                "Select up to 2 cards to remove"
 
-                type
-                when type in [
-                       :change_suit_hearts,
-                       :change_suit_diamonds,
-                       :change_suit_clubs,
-                       :change_suit_spades
-                     ] ->
-                  "Select up to 3 cards to change suit (or skip):"
+              type
+              when type in [
+                     :change_suit_hearts,
+                     :change_suit_diamonds,
+                     :change_suit_clubs,
+                     :change_suit_spades
+                   ] ->
+                "Select up to 3 cards to change"
 
-                :increase_rank ->
-                  "Select up to 2 cards to increase rank (or skip):"
+              :increase_rank ->
+                "Select up to 2 cards to upgrade"
 
-                _ ->
-                  "Select a card to apply this enhancement (or skip):"
-              end %>
-            {instruction}
+              _ ->
+                "Select a card to enhance"
+            end %>
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-base-content/50">{instruction}</span>
             <%= if @deck_builder_selection do %>
               <% count =
                 if is_list(@deck_builder_selection) do
@@ -530,12 +781,16 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 else
                   1
                 end %>
-              <span class="text-purple-500 font-bold ml-2">
-                ({count} card{if count != 1, do: "s"} selected)
+              <span class="text-xs px-2 py-1 rounded-full bg-violet-500/10 text-violet-500">
+                {count} selected
               </span>
             <% end %>
           </div>
-          <div class="grid grid-cols-4 gap-3 max-w-2xl mx-auto">
+        </div>
+        
+    <!-- 8-Card Selection Grid -->
+        <div class="flex-1 mb-6">
+          <div class="grid grid-cols-4 gap-3">
             <%= for card <- @pending_deck_builder.available_cards do %>
               <% is_selected =
                 if is_list(@deck_builder_selection) do
@@ -543,7 +798,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 else
                   @deck_builder_selection == card.id
                 end %>
-              <.deck_builder_card
+              <.deck_builder_card_minimal
                 card={card}
                 selected={is_selected}
               />
@@ -553,16 +808,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
         
     <!-- Action Buttons -->
         <%= if @can_confirm do %>
-          <div class="flex gap-4 justify-center">
+          <div class="flex gap-3">
             <button
               phx-click="skip_deck_builder_selection"
-              class="px-8 py-3 rounded-lg bg-base-300 hover:bg-base-300/80 text-base-content transition-all font-semibold"
+              class="flex-1 py-4 rounded-full font-medium text-base-content/60 bg-base-300/50 hover:bg-base-300 transition-all"
             >
               Skip
             </button>
             <%= if @deck_builder_selection do %>
-              <% # For :remove_card, encode the list as JSON; for others, pass single card_id
-              card_ids_param =
+              <% card_ids_param =
                 if is_list(@deck_builder_selection) do
                   Jason.encode!(@deck_builder_selection)
                 else
@@ -573,35 +827,35 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 phx-value-card_ids={card_ids_param}
                 disabled={@action_in_progress}
                 class={[
-                  "px-8 py-3 rounded-lg font-bold transition-all shadow-lg",
+                  "flex-1 py-4 rounded-full font-medium text-lg transition-all",
                   if(@action_in_progress,
-                    do: "bg-purple-500/30 cursor-not-allowed opacity-50",
-                    else: "bg-purple-500 hover:bg-purple-500/90 text-white hover:scale-[1.05]"
+                    do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                    else: "bg-violet-500 text-white hover:bg-violet-600 shadow-lg hover:shadow-xl"
                   )
                 ]}
               >
-                Confirm Selection
+                Confirm
               </button>
             <% end %>
           </div>
         <% end %>
       <% else %>
-        <!-- Show "Confirm Pick" button before generating cards -->
+        <!-- Initial confirm button -->
         <%= if @can_confirm do %>
-          <div class="flex justify-center mt-6">
+          <div class="flex-1 flex items-end">
             <button
               phx-click="confirm_deck_builder_preview"
               phx-value-index={@card_index}
               disabled={@action_in_progress}
               class={[
-                "px-8 py-3 rounded-lg font-bold transition-all shadow-lg",
+                "w-full py-4 rounded-full font-medium text-lg transition-all",
                 if(@action_in_progress,
-                  do: "bg-purple-500/30 cursor-not-allowed opacity-50",
-                  else: "bg-purple-500 hover:bg-purple-500/90 text-white hover:scale-[1.05]"
+                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                  else: "bg-violet-500 text-white hover:bg-violet-600 shadow-lg hover:shadow-xl"
                 )
               ]}
             >
-              Confirm Pick
+              Choose Cards
             </button>
           </div>
         <% end %>
@@ -610,31 +864,22 @@ defmodule OskolWeb.Components.GameLive.Shop do
     """
   end
 
-  defp deck_builder_card(assigns) do
-    # Import card_display from gameplay component
+  defp deck_builder_card_minimal(assigns) do
     alias OskolWeb.Components.GameLive.Gameplay
-
-    border_class =
-      if assigns.selected do
-        "border-4 border-purple-500"
-      else
-        "border-2 border-base-300 hover:border-purple-300"
-      end
-
-    assigns = assign(assigns, :border_class, border_class)
 
     ~H"""
     <button
       phx-click="select_deck_card"
       phx-value-card_id={@card.id}
       class={[
-        "transition-all cursor-pointer hover:shadow-lg",
-        if(@selected, do: "scale-105", else: ""),
-        @border_class,
-        "rounded overflow-hidden"
+        "transition-all cursor-pointer rounded-lg overflow-hidden",
+        if(@selected,
+          do: "ring-2 ring-violet-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg",
+          else: "hover:shadow-md hover:scale-102 border border-base-300/50"
+        )
       ]}
     >
-      <Gameplay.card_display card={@card} class="w-28 h-40" />
+      <Gameplay.card_display card={@card} class="w-full aspect-[2/3]" />
     </button>
     """
   end
