@@ -505,7 +505,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             instruction =
               case card_type do
                 :remove_card ->
-                  "Select up to 3 cards to remove (or skip):"
+                  "Select up to 2 cards to remove (or skip):"
 
                 type
                 when type in [

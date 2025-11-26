@@ -89,7 +89,7 @@ defmodule Oskol.Game.DeckBuilderCard do
   end
 
   def card_description(%__MODULE__{type: :remove_card}) do
-    "Remove up to 3 cards from your deck"
+    "Remove up to 2 cards from your deck"
   end
 
   def card_description(%__MODULE__{type: :change_suit_hearts}) do

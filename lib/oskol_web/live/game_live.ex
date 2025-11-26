@@ -519,6 +519,7 @@ defmodule OskolWeb.GameLive do
     max_cards =
       case card_type do
         :increase_rank -> 2
+        :remove_card -> 2
         _ -> 3
       end
 
