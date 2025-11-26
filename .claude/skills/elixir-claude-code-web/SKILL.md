@@ -1,59 +1,84 @@
 ---
 name: elixir-claude-code-web
-description: Set up Elixir development in Claude Code Web with asdf and fix HEX SSL certificate issues. Use when working with Elixir/Phoenix projects in Claude Code Web environment. (project, gitignored)
+description: Set up Elixir/Phoenix development in Claude Code Web with asdf, npm, and Playwright. Use when working with Elixir/Phoenix projects in Claude Code Web environment. (project, gitignored)
 ---
 
 # Elixir Setup for Claude Code Web
 
-Get Elixir/Phoenix running in Claude Code Web environment.
+Complete setup for Elixir/Phoenix development with testing tools.
 
-## Install asdf
+## Full Setup (First Time)
 
-```bash
-git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.1
-```
-
-## Install Erlang & Elixir
+Run the setup script to install everything:
 
 ```bash
-. ~/.asdf/asdf.sh
-asdf plugin add erlang https://github.com/asdf-vm/asdf-erlang.git
-asdf plugin add elixir https://github.com/asdf-vm/asdf-elixir.git
-asdf install  # reads from .tool-versions
-mix local.hex --force
-mix local.rebar --force
+.claude/skills/elixir-claude-code-web/setup.sh
 ```
 
-## CRITICAL: Fix HEX SSL Certificates
+This installs:
+- asdf version manager
+- Erlang & Elixir (from .tool-versions)
+- Hex and Rebar
+- Project dependencies
+- Phoenix assets
+- Playwright for testing
 
-The proxy causes SSL errors. Always set this before any `mix` command:
+## Quick Start (After Setup)
 
-```bash
-export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
-```
-
-## Install Dependencies & Run
+For subsequent sessions where asdf is already installed:
 
 ```bash
 . ~/.asdf/asdf.sh
 export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
-
-mix deps.get
-mix compile
-mix assets.setup  # Phoenix only
-mix assets.build  # Phoenix only
-mix phx.server    # Phoenix only
+mix phx.server
 ```
 
 Server runs at http://localhost:4000
 
-## One-Liner for Future Sessions
+## Running Tests
 
 ```bash
-. ~/.asdf/asdf.sh && export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt && mix phx.server
+. ~/.asdf/asdf.sh
+export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
+mix test
 ```
 
-## Common Error
+## Running Playwright Tests
 
-**Error:** `TLS client: Unknown CA`
-**Fix:** You forgot `export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt`
+```bash
+# Start server in background
+. ~/.asdf/asdf.sh
+export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
+mix phx.server &
+
+# Run playwright test
+node playwright/<test-folder>/test.js
+```
+
+## Troubleshooting
+
+### SSL/TLS Unknown CA errors
+```bash
+export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
+```
+
+### asdf not found
+```bash
+. ~/.asdf/asdf.sh
+```
+
+### mix/elixir not found after asdf install
+```bash
+asdf reshim elixir
+```
+
+### Playwright browser not found
+```bash
+npx playwright install chromium
+```
+
+### Dependencies out of date
+```bash
+mix deps.get
+mix compile
+```
