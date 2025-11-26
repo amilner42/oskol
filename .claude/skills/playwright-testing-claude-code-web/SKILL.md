@@ -48,7 +48,7 @@ See `playwright/test-suit-action-card/` in this project for a real-world example
 - **Handle errors gracefully** with try/catch and error screenshots
 - **Inspect HTML carefully** - use Grep to find actual phx-click handlers and form names
 - **No xvfb-run needed** - headless Chromium works without it
-- **No package.json needed** - use `npx -y playwright` or direct require('playwright')
+- **Playwright installed locally** - package.json has playwright as dependency (global install doesn't work with require())
 - **Read screenshots with Read tool** to verify what was captured
 
 ## Troubleshooting Tips
@@ -107,14 +107,16 @@ project/
 ## Running Tests
 
 ```bash
-# Start server
-mix phx.server
+# Load environment and start server
+. ~/.asdf/asdf.sh
+export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
+mix phx.server &
 
-# Run a test (in another terminal)
-node playwright/test-suit-action-card/test.js
+# Run a test
+node playwright/test-landing-screenshot/test.js
 
 # View screenshots
-ls -lh playwright/screenshots/test-suit-action-card/
+ls -lh playwright/screenshots/test-landing-screenshot/
 ```
 
 ## Adding New Tests
