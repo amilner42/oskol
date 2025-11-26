@@ -590,6 +590,11 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
+  def handle_event("toggle_deck_modal", _params, socket) do
+    {:noreply, assign(socket, viewing_deck: !socket.assigns.viewing_deck)}
+  end
+
+  @impl true
   def handle_event("view_your_levels", _params, socket) do
     {:noreply, assign(socket, viewing_levels: true, levels_view_mode: :player)}
   end
@@ -602,6 +607,15 @@ defmodule OskolWeb.GameLive do
   @impl true
   def handle_event("close_levels", _params, socket) do
     {:noreply, assign(socket, viewing_levels: false)}
+  end
+
+  @impl true
+  def handle_event("toggle_levels_modal", _params, socket) do
+    if socket.assigns.viewing_levels do
+      {:noreply, assign(socket, viewing_levels: false)}
+    else
+      {:noreply, assign(socket, viewing_levels: true, levels_view_mode: :player)}
+    end
   end
 
   @impl true

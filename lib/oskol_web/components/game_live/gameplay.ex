@@ -231,22 +231,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <!-- Card controls for opponent -->
     <div class="flex justify-center gap-2 mb-2">
       <button
-        phx-click="view_opponent_levels"
-        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
-      >
-        View Levels
-      </button>
-      <button
-        phx-click="view_opponent_deck"
-        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
-      >
-        View Deck
-      </button>
-      <button
         phx-click="toggle_opponent_card_sort"
-        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
+        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-28 justify-center"
       >
-        Toggle Sort
+        <span class="text-gray-500">Sort by</span>
+        <span class="font-semibold text-gray-800">
+          {if @opponent_card_sort == :rank, do: "Rank", else: "Suit"}
+        </span>
       </button>
     </div>
     <div class="flex flex-wrap gap-4 justify-center mb-2">
@@ -301,22 +292,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <!-- Card controls for player -->
     <div class="flex justify-center gap-2 mt-2">
       <button
-        phx-click="view_your_levels"
-        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
-      >
-        View Levels
-      </button>
-      <button
-        phx-click="view_your_deck"
-        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
-      >
-        View Deck
-      </button>
-      <button
         phx-click="toggle_your_card_sort"
-        class="px-3 py-1 text-xs bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/70 hover:text-base-content"
+        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-28 justify-center"
       >
-        Toggle Sort
+        <span class="text-gray-500">Sort by</span>
+        <span class="font-semibold text-gray-800">
+          {if @your_card_sort == :rank, do: "Rank", else: "Suit"}
+        </span>
       </button>
     </div>
     """
@@ -376,13 +358,25 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     is_locked_in = @player_state.locked_in_hand != nil %>
 
     <div class="h-20 bg-base-200/40 flex items-center justify-between px-8 border-t border-base-content/15">
-      <!-- Left: Sort, History, and Deck Buttons (always visible) -->
+      <!-- Left: Info Buttons (always visible) -->
       <div class="flex items-center gap-2">
         <button
           phx-click="toggle_history"
           class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
         >
           Game Log
+        </button>
+        <button
+          phx-click="toggle_deck_modal"
+          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
+        >
+          View Decks
+        </button>
+        <button
+          phx-click="toggle_levels_modal"
+          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
+        >
+          View Levels
         </button>
       </div>
       
@@ -1066,12 +1060,33 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
-            <h2 class={[
-              "text-xl font-bold",
-              if(@viewing_own_deck, do: "text-player", else: "text-opponent")
-            ]}>
-              {if @viewing_own_deck, do: @player_name, else: @opponent_name}'s Deck
-            </h2>
+            <div class="flex gap-4">
+              <button
+                phx-click="view_your_deck"
+                class={[
+                  "text-xl font-bold transition-all",
+                  if(@viewing_own_deck,
+                    do: "text-player",
+                    else: "text-base-content/40 hover:text-base-content/60"
+                  )
+                ]}
+              >
+                {@player_name}
+              </button>
+              <span class="text-xl text-base-content/30">|</span>
+              <button
+                phx-click="view_opponent_deck"
+                class={[
+                  "text-xl font-bold transition-all",
+                  if(!@viewing_own_deck,
+                    do: "text-opponent",
+                    else: "text-base-content/40 hover:text-base-content/60"
+                  )
+                ]}
+              >
+                {@opponent_name}
+              </button>
+            </div>
 
             <button
               phx-click="close_deck"
@@ -1200,12 +1215,33 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           phx-click="noop"
         >
           <div class="flex justify-between items-center mb-6">
-            <h2 class={[
-              "text-xl font-bold",
-              if(@levels_view_mode == :player, do: "text-player", else: "text-opponent")
-            ]}>
-              {if @levels_view_mode == :player, do: @player_name, else: @opponent_name}'s Levels
-            </h2>
+            <div class="flex gap-4">
+              <button
+                phx-click="view_your_levels"
+                class={[
+                  "text-xl font-bold transition-all",
+                  if(@levels_view_mode == :player,
+                    do: "text-player",
+                    else: "text-base-content/40 hover:text-base-content/60"
+                  )
+                ]}
+              >
+                {@player_name}
+              </button>
+              <span class="text-xl text-base-content/30">|</span>
+              <button
+                phx-click="view_opponent_levels"
+                class={[
+                  "text-xl font-bold transition-all",
+                  if(@levels_view_mode == :opponent,
+                    do: "text-opponent",
+                    else: "text-base-content/40 hover:text-base-content/60"
+                  )
+                ]}
+              >
+                {@opponent_name}
+              </button>
+            </div>
 
             <button
               phx-click="close_levels"
