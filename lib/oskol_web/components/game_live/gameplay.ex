@@ -217,10 +217,19 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <!-- Action Bar -->
       <.action_bar
         player_state={@player_state}
+        opponent_state={@opponent_state}
         selected_card_ids={@selected_card_ids}
-        card_sort={@your_card_sort}
         action_in_progress={@action_in_progress}
         viewing_results={@viewing_results}
+        console_open={@console_open}
+        console_tab={@console_tab}
+        viewing_own_deck={@viewing_own_deck}
+        levels_view_mode={@levels_view_mode}
+        player_name={@player_name}
+        opponent_name={@opponent_name}
+        player_id={@player_id}
+        event_log={@event_log}
+        game_state={@game_state}
       />
     </div>
     """
@@ -358,26 +367,35 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     is_locked_in = @player_state.locked_in_hand != nil %>
 
     <div class="h-20 bg-base-200/40 flex items-center justify-between px-8 border-t border-base-content/15">
-      <!-- Left: Info Buttons (always visible) -->
-      <div class="flex items-center gap-2">
+      <!-- Left: Console Button + Panel -->
+      <div class="relative">
         <button
-          phx-click="toggle_history"
-          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
+          phx-click="toggle_console"
+          class={[
+            "px-5 py-2 rounded-lg transition-all font-medium",
+            if(@console_open,
+              do: "bg-neutral text-neutral-content shadow-md",
+              else: "bg-neutral/80 hover:bg-neutral text-neutral-content shadow-sm"
+            )
+          ]}
         >
-          Game Log
+          Console
         </button>
-        <button
-          phx-click="toggle_deck_modal"
-          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
-        >
-          View Decks
-        </button>
-        <button
-          phx-click="toggle_levels_modal"
-          class="px-4 py-2 bg-base-100/60 hover:bg-base-100 rounded transition-all text-base-content/80 hover:text-base-content shadow-sm"
-        >
-          View Levels
-        </button>
+
+        <%= if @console_open do %>
+          <.console_panel
+            console_tab={@console_tab}
+            viewing_own_deck={@viewing_own_deck}
+            levels_view_mode={@levels_view_mode}
+            player_state={@player_state}
+            opponent_state={@opponent_state}
+            player_name={@player_name}
+            opponent_name={@opponent_name}
+            player_id={@player_id}
+            event_log={@event_log}
+            game_state={@game_state}
+          />
+        <% end %>
       </div>
       
     <!-- Right: Action Buttons (always visible, disabled during results) -->
@@ -427,6 +445,218 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <% end %>
         </button>
       </div>
+    </div>
+    """
+  end
+
+  def console_panel(assigns) do
+    ~H"""
+    <div class="absolute bottom-full left-0 mb-2 w-[730px] max-h-[70vh] bg-base-100 rounded-lg shadow-xl border border-base-300 flex flex-col">
+      <!-- Tab bar -->
+      <div class="flex border-b border-base-300">
+        <button
+          phx-click="set_console_tab"
+          phx-value-tab="decks"
+          class={[
+            "flex-1 px-4 py-2 text-sm font-medium transition-colors",
+            if(@console_tab == :decks,
+              do: "bg-base-200 text-base-content border-b-2 border-primary",
+              else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
+            )
+          ]}
+        >
+          Decks
+        </button>
+        <button
+          phx-click="set_console_tab"
+          phx-value-tab="levels"
+          class={[
+            "flex-1 px-4 py-2 text-sm font-medium transition-colors",
+            if(@console_tab == :levels,
+              do: "bg-base-200 text-base-content border-b-2 border-primary",
+              else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
+            )
+          ]}
+        >
+          Levels
+        </button>
+        <button
+          phx-click="set_console_tab"
+          phx-value-tab="log"
+          class={[
+            "flex-1 px-4 py-2 text-sm font-medium transition-colors",
+            if(@console_tab == :log,
+              do: "bg-base-200 text-base-content border-b-2 border-primary",
+              else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
+            )
+          ]}
+        >
+          Log
+        </button>
+      </div>
+      
+    <!-- Tab content -->
+      <div class="overflow-y-auto p-4">
+        <%= case @console_tab do %>
+          <% :log -> %>
+            <.console_log_tab
+              event_log={@event_log}
+              player_names={@game_state.player_names}
+              player_id={@player_id}
+            />
+          <% :decks -> %>
+            <.console_decks_tab
+              viewing_own_deck={@viewing_own_deck}
+              player_state={@player_state}
+              opponent_state={@opponent_state}
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+            />
+          <% :levels -> %>
+            <.console_levels_tab
+              levels_view_mode={@levels_view_mode}
+              player_state={@player_state}
+              opponent_state={@opponent_state}
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+            />
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp console_log_tab(assigns) do
+    alias Oskol.Game.EventLog
+
+    ~H"""
+    <div class="space-y-2">
+      <%= for event <- EventLog.get_all(@event_log) |> Enum.take(50) do %>
+        <div class="text-xs bg-base-200 rounded p-2 border-l-2 border-base-content/30">
+          <span class="font-medium text-base-content/50">#{event.sequence}</span>
+          <span class="ml-2">{format_event_type(event.type)}</span>
+        </div>
+      <% end %>
+      <%= if EventLog.count(@event_log) == 0 do %>
+        <div class="text-sm text-base-content/50 text-center py-4">No events yet</div>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp format_event_type(type) do
+    type
+    |> Atom.to_string()
+    |> String.replace("_", " ")
+    |> String.split(" ")
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
+
+  defp console_decks_tab(assigns) do
+    ~H"""
+    <% current_state = @player_state
+    draw_pile = current_state.card_piles.draw_pile
+    hand_pile = current_state.card_piles.hand_pile
+    hand_ids = MapSet.new(Enum.map(hand_pile, & &1.id))
+    all_cards = draw_pile ++ hand_pile
+
+    total_cards =
+      length(draw_pile) + length(hand_pile) + length(current_state.card_piles.discard_pile)
+
+    cards_remaining = length(all_cards) %>
+
+    <div class="text-xs text-base-content/70 mb-3">
+      {cards_remaining} cards left
+    </div>
+
+    <% suits = [:spades, :hearts, :clubs, :diamonds]
+    ranks = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2] %>
+
+    <!-- Cards in fixed 13-column grid per suit, duplicates in extra rows -->
+    <div class="space-y-3">
+      <%= for suit <- suits do %>
+        <% # Get all cards of this suit, group by rank
+        suit_cards = Enum.filter(all_cards, fn card -> card.suit == suit end)
+        cards_by_rank = Enum.group_by(suit_cards, fn card -> card.rank end)
+
+        max_dupes =
+          if map_size(cards_by_rank) > 0 do
+            cards_by_rank |> Map.values() |> Enum.map(&length/1) |> Enum.max()
+          else
+            1
+          end %>
+        <div class="flex items-start gap-2">
+          <!-- Suit count -->
+          <div class="w-4 text-center pt-1 text-xs text-base-content/50">
+            {length(suit_cards)}
+          </div>
+          <!-- Fixed 13-column grid with extra rows for duplicates -->
+          <div class="flex-1 space-y-1">
+            <%= for row_idx <- 0..(max_dupes - 1) do %>
+              <div class="flex gap-1">
+                <%= for rank <- ranks do %>
+                  <% cards_at_rank = Map.get(cards_by_rank, rank, [])
+                  card = Enum.at(cards_at_rank, row_idx) %>
+                  <%= if card do %>
+                    <% in_hand = card.id in hand_ids
+                    opacity = if in_hand, do: "opacity-100", else: "opacity-40" %>
+                    <.card_display card={card} class={"w-12 h-[72px] #{opacity}"} compact={true} />
+                  <% else %>
+                    <div class="w-12 h-[72px] bg-base-300/20 rounded"></div>
+                  <% end %>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp console_levels_tab(assigns) do
+    ~H"""
+    <% current_state = @player_state
+
+    hand_types = [
+      :high_card,
+      :pair,
+      :two_pair,
+      :three_of_a_kind,
+      :straight,
+      :flush,
+      :full_house,
+      :four_of_a_kind,
+      :straight_flush
+    ]
+
+    hand_names = %{
+      high_card: "High Card",
+      pair: "Pair",
+      two_pair: "Two Pair",
+      three_of_a_kind: "3 of a Kind",
+      straight: "Straight",
+      flush: "Flush",
+      full_house: "Full House",
+      four_of_a_kind: "4 of a Kind",
+      straight_flush: "Straight Flush"
+    } %>
+
+    <div class="space-y-1">
+      <%= for hand_type <- hand_types do %>
+        <% level = Map.get(current_state.skill_tree, hand_type, 1)
+        stats = Oskol.Poker.Score.stats_at_level(hand_type, level) %>
+        <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-base-200">
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-base-content/50 w-6">Lv{level}</span>
+            <span class="text-sm">{hand_names[hand_type]}</span>
+          </div>
+          <span class="text-xs text-base-content/70">
+            {stats.base_chips} × {stats.multiplier}
+          </span>
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -980,6 +1210,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   - card: The card struct to display
   - class: Additional CSS classes for the container
   - show_enhancement: Whether to show the enhancement badge (default: true)
+  - compact: Use smaller enhancement badge for small card displays (default: false)
   """
   def card_display(assigns) do
     # Set defaults
@@ -987,6 +1218,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       assigns
       |> assign_new(:class, fn -> "" end)
       |> assign_new(:show_enhancement, fn -> true end)
+      |> assign_new(:compact, fn -> false end)
 
     enhancement_text =
       if assigns.show_enhancement do
@@ -1005,7 +1237,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <div class={"rounded overflow-hidden relative #{@class}"}>
       <img src={card_to_png_url(@card)} class="w-full h-full" />
       <%= if @enhancement_text do %>
-        <div class="absolute top-0.5 right-0.5 bg-purple-600 text-white text-xs font-bold px-1.5 py-0.5 rounded shadow-lg">
+        <div class={[
+          "absolute bg-purple-600 text-white font-bold rounded shadow-lg",
+          if(@compact,
+            do: "top-px right-px text-[8px] px-0.5 py-0",
+            else: "top-0.5 right-0.5 text-xs px-1.5 py-0.5"
+          )
+        ]}>
           {@enhancement_text}
         </div>
       <% end %>

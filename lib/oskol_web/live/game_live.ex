@@ -6,7 +6,6 @@ defmodule OskolWeb.GameLive do
   import OskolWeb.Components.GameLive.Gameplay
   import OskolWeb.Components.GameLive.Summaries
   import OskolWeb.Components.GameLive.Shop
-  import OskolWeb.Components.GameLive.History
 
   @impl true
   def mount(%{"id" => game_id} = params, _session, socket) do
@@ -61,11 +60,10 @@ defmodule OskolWeb.GameLive do
           viewing_results: false,
           viewing_round_summary: false,
           viewing_match_summary: false,
-          viewing_history: false,
-          viewing_deck: false,
+          console_open: false,
+          console_tab: :decks,
           viewing_own_deck: true,
-          viewing_levels: false,
-          levels_view_mode: :both,
+          levels_view_mode: :player,
           disconnected_players: disconnected_players,
           your_card_sort: :rank,
           opponent_card_sort: :rank,
@@ -570,58 +568,34 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
-  def handle_event("toggle_history", _params, socket) do
-    {:noreply, assign(socket, viewing_history: !socket.assigns.viewing_history)}
+  def handle_event("toggle_console", _params, socket) do
+    {:noreply, assign(socket, console_open: !socket.assigns.console_open)}
+  end
+
+  @impl true
+  def handle_event("set_console_tab", %{"tab" => tab}, socket) do
+    tab_atom = String.to_existing_atom(tab)
+    {:noreply, assign(socket, console_tab: tab_atom)}
   end
 
   @impl true
   def handle_event("view_your_deck", _params, socket) do
-    {:noreply, assign(socket, viewing_deck: true, viewing_own_deck: true)}
+    {:noreply, assign(socket, viewing_own_deck: true)}
   end
 
   @impl true
   def handle_event("view_opponent_deck", _params, socket) do
-    {:noreply, assign(socket, viewing_deck: true, viewing_own_deck: false)}
-  end
-
-  @impl true
-  def handle_event("close_deck", _params, socket) do
-    {:noreply, assign(socket, viewing_deck: false)}
-  end
-
-  @impl true
-  def handle_event("toggle_deck_modal", _params, socket) do
-    {:noreply, assign(socket, viewing_deck: !socket.assigns.viewing_deck)}
+    {:noreply, assign(socket, viewing_own_deck: false)}
   end
 
   @impl true
   def handle_event("view_your_levels", _params, socket) do
-    {:noreply, assign(socket, viewing_levels: true, levels_view_mode: :player)}
+    {:noreply, assign(socket, levels_view_mode: :player)}
   end
 
   @impl true
   def handle_event("view_opponent_levels", _params, socket) do
-    {:noreply, assign(socket, viewing_levels: true, levels_view_mode: :opponent)}
-  end
-
-  @impl true
-  def handle_event("close_levels", _params, socket) do
-    {:noreply, assign(socket, viewing_levels: false)}
-  end
-
-  @impl true
-  def handle_event("toggle_levels_modal", _params, socket) do
-    if socket.assigns.viewing_levels do
-      {:noreply, assign(socket, viewing_levels: false)}
-    else
-      {:noreply, assign(socket, viewing_levels: true, levels_view_mode: :player)}
-    end
-  end
-
-  @impl true
-  def handle_event("set_levels_view", %{"mode" => mode}, socket) do
-    view_mode = String.to_existing_atom(mode)
-    {:noreply, assign(socket, levels_view_mode: view_mode)}
+    {:noreply, assign(socket, levels_view_mode: :opponent)}
   end
 
   @impl true
@@ -1000,37 +974,12 @@ defmodule OskolWeb.GameLive do
               connections={@server_state.connections}
               score_animation_phase={@score_animation_phase}
               score_animation_card_index={@score_animation_card_index}
+              console_open={@console_open}
+              console_tab={@console_tab}
+              viewing_own_deck={@viewing_own_deck}
+              levels_view_mode={@levels_view_mode}
+              event_log={@server_state.event_log}
             />
-        <% end %>
-        
-    <!-- History Modal (overlay) -->
-        <%= if @server_state.game_state do %>
-          <.history_modal
-            viewing_history={@viewing_history}
-            event_log={@server_state.event_log}
-            player_names={game_state.player_names}
-            player_id={@player_id}
-          />
-          
-    <!-- Deck Modal (overlay) -->
-          <.deck_modal
-            viewing_deck={@viewing_deck}
-            viewing_own_deck={@viewing_own_deck}
-            player_state={player_state}
-            opponent_state={opponent_state}
-            player_name={@player_name}
-            opponent_name={opponent_name}
-          />
-          
-    <!-- Levels Modal (overlay) -->
-          <.levels_modal
-            viewing_levels={@viewing_levels}
-            levels_view_mode={@levels_view_mode}
-            player_state={player_state}
-            opponent_state={opponent_state}
-            player_name={@player_name}
-            opponent_name={opponent_name}
-          />
         <% end %>
       <% end %>
     </div>
