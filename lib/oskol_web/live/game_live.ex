@@ -74,6 +74,7 @@ defmodule OskolWeb.GameLive do
           acknowledged_event_sequence: 0,
           previewing_card_index: nil,
           deck_builder_selection: nil,
+          plus_bomb_selection: nil,
           # Score animation state
           score_animation_phase: :idle,
           score_animation_card_index: 0,
@@ -585,6 +586,67 @@ defmodule OskolWeb.GameLive do
     {:noreply, assign(socket, previewing_card_index: nil, deck_builder_selection: nil)}
   end
 
+  # Plus Bomb handlers - similar to deck_builder but for action cards
+  @impl true
+  def handle_event("preview_plus_bomb", %{"index" => index_str}, socket) do
+    card_index = String.to_integer(index_str)
+
+    # Broadcast to sync preview with opponent's view
+    Phoenix.PubSub.broadcast(
+      Oskol.PubSub,
+      "game:#{socket.assigns.game_id}",
+      {:shop_preview_changed, card_index}
+    )
+
+    # Just open the modal - no server call yet
+    {:noreply, assign(socket, previewing_card_index: card_index)}
+  end
+
+  @impl true
+  def handle_event("confirm_plus_bomb_preview", %{"index" => index_str}, socket) do
+    card_index = String.to_integer(index_str)
+
+    # NOW start plus bomb flow (marks card as picked, generates 8 cards)
+    Game.confirm_plus_bomb_pick_async(
+      socket.assigns.game_id,
+      socket.assigns.player_id,
+      card_index
+    )
+
+    {:noreply, assign(socket, action_in_progress: true, plus_bomb_selection: nil)}
+  end
+
+  @impl true
+  def handle_event("select_plus_bomb_card", %{"card_id" => card_id}, socket) do
+    # Local UI state - track which card user selected from the 8-card grid
+    # Plus bomb only allows selecting a single card
+    {:noreply, assign(socket, plus_bomb_selection: card_id)}
+  end
+
+  @impl true
+  def handle_event("confirm_plus_bomb_pick", %{"card_id" => card_id}, socket) do
+    # Complete the plus bomb selection (applies effect to opponent)
+    Game.complete_plus_bomb_selection_async(
+      socket.assigns.game_id,
+      socket.assigns.player_id,
+      card_id
+    )
+
+    {:noreply, assign(socket, action_in_progress: true, plus_bomb_selection: nil)}
+  end
+
+  @impl true
+  def handle_event("close_plus_bomb_preview", _params, socket) do
+    # Close preview for all players
+    Phoenix.PubSub.broadcast(
+      Oskol.PubSub,
+      "game:#{socket.assigns.game_id}",
+      {:shop_preview_changed, nil}
+    )
+
+    {:noreply, assign(socket, previewing_card_index: nil, plus_bomb_selection: nil)}
+  end
+
   @impl true
   def handle_event("toggle_your_card_sort", _params, socket) do
     new_sort = if socket.assigns.your_card_sort == :rank, do: :suit, else: :rank
@@ -818,6 +880,24 @@ defmodule OskolWeb.GameLive do
         socket.assigns.deck_builder_selection
       end
 
+    # Check if pending_plus_bomb changed - if so, clear selection
+    old_plus_bomb_pending =
+      socket.assigns.server_state.game_state &&
+        socket.assigns.server_state.game_state.shop_state &&
+        socket.assigns.server_state.game_state.shop_state.pending_plus_bomb
+
+    new_plus_bomb_pending =
+      new_state.game_state &&
+        new_state.game_state.shop_state &&
+        new_state.game_state.shop_state.pending_plus_bomb
+
+    plus_bomb_selection =
+      if old_plus_bomb_pending != new_plus_bomb_pending do
+        nil
+      else
+        socket.assigns.plus_bomb_selection
+      end
+
     # Check if shop just became complete - start countdown timer
     {shop_countdown, shop_countdown_timer_ref} =
       if new_state.game_state && new_state.game_state.shop_state do
@@ -888,6 +968,7 @@ defmodule OskolWeb.GameLive do
        opponent_new_card_ids: opponent_new_card_ids,
        last_seen_event_sequence: last_seen_sequence,
        deck_builder_selection: deck_builder_selection,
+       plus_bomb_selection: plus_bomb_selection,
        previewing_card_index: previewing_card_index,
        score_animation_phase: animation_phase,
        animation_timer_ref: animation_timer_ref,

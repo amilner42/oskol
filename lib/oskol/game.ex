@@ -83,4 +83,12 @@ defmodule Oskol.Game do
   defdelegate skip_deck_builder_selection_async(game_id, player_id),
     to: GameServer,
     as: :skip_deck_builder_selection_async
+
+  defdelegate confirm_plus_bomb_pick_async(game_id, player_id, shop_card_index),
+    to: GameServer,
+    as: :confirm_plus_bomb_pick_async
+
+  defdelegate complete_plus_bomb_selection_async(game_id, player_id, selected_card_id),
+    to: GameServer,
+    as: :complete_plus_bomb_selection_async
 end

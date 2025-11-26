@@ -10,7 +10,8 @@ defmodule Oskol.Poker.Score do
           card: Card.t(),
           chip_value: integer(),
           bonus_chips: integer(),
-          bonus_mult: integer()
+          bonus_mult: integer(),
+          disabled: boolean()
         }
 
   @type score_result :: %{
@@ -21,6 +22,12 @@ defmodule Oskol.Poker.Score do
           total_chips: integer(),
           total_multiplier: integer(),
           total_score: integer()
+        }
+
+  @type card_debuffs :: %{
+          disabled_ranks: [Card.rank()],
+          disabled_suits: [Card.suit()],
+          enhancements_disabled: boolean()
         }
 
   @base_hand_scores %{
@@ -80,6 +87,18 @@ defmodule Oskol.Poker.Score do
   end
 
   @doc """
+  Returns the default (empty) card debuffs.
+  """
+  @spec default_card_debuffs() :: card_debuffs()
+  def default_card_debuffs do
+    %{
+      disabled_ranks: [],
+      disabled_suits: [],
+      enhancements_disabled: false
+    }
+  end
+
+  @doc """
   Calculates the score for a hand evaluation with skill tree levels and debuffs applied.
 
   Level 1 = base scores only
@@ -87,13 +106,20 @@ defmodule Oskol.Poker.Score do
 
   If hand_type is in active_debuffs, score is 0 (denial).
 
+  Card debuffs can disable individual cards or enhancements:
+  - disabled_ranks: cards with these ranks contribute 0 chips/enhancements
+  - disabled_suits: cards with these suits contribute 0 chips/enhancements
+  - enhancements_disabled: if true, all card enhancements are ignored
+
   Only scoring_cards contribute to the card value sum.
   """
-  @spec calculate(Hand.evaluation(), SkillTree.t(), list(Hand.hand_type())) :: score_result()
+  @spec calculate(Hand.evaluation(), SkillTree.t(), list(Hand.hand_type()), card_debuffs()) ::
+          score_result()
   def calculate(
         %{hand_type: hand_type, scoring_cards: scoring_cards},
         %SkillTree{} = skill_tree,
-        active_debuffs \\ []
+        active_debuffs \\ [],
+        card_debuffs \\ default_card_debuffs()
       ) do
     # Check if this hand type is denied (scores 0)
     if hand_type in active_debuffs do
@@ -124,21 +150,40 @@ defmodule Oskol.Poker.Score do
       # Build per-card breakdowns for scoring cards
       card_breakdowns =
         Enum.map(scoring_cards, fn card ->
-          base_value = Card.base_chip_value(card)
+          card_disabled? = card_is_disabled?(card, card_debuffs)
 
-          {bonus_chips, bonus_mult} =
-            case card.enhancement do
-              {:bonus_chips, chips} -> {chips, 0}
-              {:bonus_mult, mult} -> {0, mult}
-              nil -> {0, 0}
-            end
+          if card_disabled? do
+            # Card is disabled - contributes nothing
+            %{
+              card: card,
+              chip_value: 0,
+              bonus_chips: 0,
+              bonus_mult: 0,
+              disabled: true
+            }
+          else
+            base_value = Card.base_chip_value(card)
 
-          %{
-            card: card,
-            chip_value: base_value,
-            bonus_chips: bonus_chips,
-            bonus_mult: bonus_mult
-          }
+            # Check if enhancements are disabled globally
+            {bonus_chips, bonus_mult} =
+              if card_debuffs.enhancements_disabled do
+                {0, 0}
+              else
+                case card.enhancement do
+                  {:bonus_chips, chips} -> {chips, 0}
+                  {:bonus_mult, mult} -> {0, mult}
+                  nil -> {0, 0}
+                end
+              end
+
+            %{
+              card: card,
+              chip_value: base_value,
+              bonus_chips: bonus_chips,
+              bonus_mult: bonus_mult,
+              disabled: false
+            }
+          end
         end)
 
       # Calculate totals from breakdowns
@@ -161,5 +206,10 @@ defmodule Oskol.Poker.Score do
         total_score: total_score
       }
     end
+  end
+
+  # Checks if a card is disabled due to rank or suit debuffs
+  defp card_is_disabled?(card, card_debuffs) do
+    card.rank in card_debuffs.disabled_ranks or card.suit in card_debuffs.disabled_suits
   end
 end

@@ -32,6 +32,12 @@ defmodule Oskol.Game.ShopState do
           available_cards: [Card.t()]
         }
 
+  @type pending_plus_bomb :: %{
+          player_id: player_id(),
+          shop_card_index: non_neg_integer(),
+          available_cards: [Card.t()]
+        }
+
   @all_hand_types [
     :high_card,
     :pair,
@@ -53,7 +59,8 @@ defmodule Oskol.Game.ShopState do
           second_pick_made: boolean(),
           available_cards: [shop_card()],
           picked_card_indices: [non_neg_integer()],
-          pending_deck_builder: pending_deck_builder() | nil
+          pending_deck_builder: pending_deck_builder() | nil,
+          pending_plus_bomb: pending_plus_bomb() | nil
         }
 
   defstruct total_rounds: 1,
@@ -64,7 +71,8 @@ defmodule Oskol.Game.ShopState do
             second_pick_made: false,
             available_cards: [],
             picked_card_indices: [],
-            pending_deck_builder: nil
+            pending_deck_builder: nil,
+            pending_plus_bomb: nil
 
   @doc """
   Creates a new shop state.
@@ -317,7 +325,8 @@ defmodule Oskol.Game.ShopState do
       | current_round: round + 1,
         first_pick_made: false,
         second_pick_made: false,
-        pending_deck_builder: nil
+        pending_deck_builder: nil,
+        pending_plus_bomb: nil
     }
   end
 

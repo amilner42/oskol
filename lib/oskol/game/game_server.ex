@@ -76,6 +76,20 @@ defmodule Oskol.Game.GameServer do
     )
   end
 
+  def confirm_plus_bomb_pick_async(game_id, player_id, shop_card_index) do
+    GenServer.cast(
+      via_tuple(game_id),
+      {:player_action, player_id, {:confirm_plus_bomb_pick, shop_card_index}}
+    )
+  end
+
+  def complete_plus_bomb_selection_async(game_id, player_id, selected_card_id) do
+    GenServer.cast(
+      via_tuple(game_id),
+      {:player_action, player_id, {:complete_plus_bomb_selection, selected_card_id}}
+    )
+  end
+
   # Server Callbacks
 
   @impl true
