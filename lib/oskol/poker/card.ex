@@ -6,14 +6,16 @@ defmodule Oskol.Poker.Card do
   @type rank :: 2..14
   @type suit :: :hearts | :diamonds | :clubs | :spades
   @type enhancement :: {:bonus_chips, pos_integer()} | {:bonus_mult, pos_integer()}
+  @type joker_type :: :standard | :bonus_chips | :bonus_mult
   @type t :: %__MODULE__{
           id: String.t(),
-          rank: rank(),
-          suit: suit(),
-          enhancement: enhancement() | nil
+          rank: rank() | nil,
+          suit: suit() | nil,
+          enhancement: enhancement() | nil,
+          joker: joker_type() | nil
         }
 
-  defstruct [:id, :rank, :suit, enhancement: nil]
+  defstruct [:id, :rank, :suit, enhancement: nil, joker: nil]
 
   @ranks [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
   @suits [:hearts, :diamonds, :clubs, :spades]
@@ -30,6 +32,26 @@ defmodule Oskol.Poker.Card do
       suit: suit
     }
   end
+
+  @doc """
+  Creates a new joker card with the given type.
+  Jokers have no rank or suit - they act as wildcards.
+  """
+  @spec new_joker(joker_type()) :: t()
+  def new_joker(type \\ :standard) when type in [:standard, :bonus_chips, :bonus_mult] do
+    %__MODULE__{
+      id: generate_id(),
+      rank: nil,
+      suit: nil,
+      joker: type
+    }
+  end
+
+  @doc """
+  Returns true if the card is a joker.
+  """
+  @spec joker?(t()) :: boolean()
+  def joker?(%__MODULE__{joker: joker}), do: joker != nil
 
   # Generates a unique ID for a card
   defp generate_id do
@@ -48,6 +70,7 @@ defmodule Oskol.Poker.Card do
   @doc """
   Returns the chip value for a card, including any bonus chips from enhancements.
   Face cards (J/Q/K) are worth 10, Ace is worth 11, numbered cards are face value.
+  Jokers have 0 base chip value but may have enhancement bonuses.
   """
   @spec chip_value(t()) :: integer()
   def chip_value(%__MODULE__{enhancement: {:bonus_chips, bonus}} = card) do
@@ -59,8 +82,10 @@ defmodule Oskol.Poker.Card do
   @doc """
   Returns the base chip value for a card (without any enhancement bonuses).
   Face cards (J/Q/K) are worth 10, Ace is worth 11, numbered cards are face value.
+  Jokers have 0 base chip value.
   """
   @spec base_chip_value(t()) :: integer()
+  def base_chip_value(%__MODULE__{joker: joker}) when joker != nil, do: 0
   def base_chip_value(%__MODULE__{rank: rank}) when rank in 2..10, do: rank
   def base_chip_value(%__MODULE__{rank: 11}), do: 10
   def base_chip_value(%__MODULE__{rank: 12}), do: 10

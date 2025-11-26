@@ -126,18 +126,27 @@ defmodule Oskol.Poker.Score do
         Enum.map(scoring_cards, fn card ->
           base_value = Card.base_chip_value(card)
 
-          {bonus_chips, bonus_mult} =
+          # Get bonuses from card enhancement
+          {enhancement_chips, enhancement_mult} =
             case card.enhancement do
               {:bonus_chips, chips} -> {chips, 0}
               {:bonus_mult, mult} -> {0, mult}
               nil -> {0, 0}
             end
 
+          # Get bonuses from joker type (if this is a joker)
+          {joker_chips, joker_mult} =
+            case card.joker do
+              :bonus_chips -> {30, 0}
+              :bonus_mult -> {0, 4}
+              _ -> {0, 0}
+            end
+
           %{
             card: card,
             chip_value: base_value,
-            bonus_chips: bonus_chips,
-            bonus_mult: bonus_mult
+            bonus_chips: enhancement_chips + joker_chips,
+            bonus_mult: enhancement_mult + joker_mult
           }
         end)
 
