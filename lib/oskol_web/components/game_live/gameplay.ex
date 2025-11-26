@@ -499,6 +499,32 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             </div>
           <% true -> %>
         <% end %>
+
+        <%= if @player_state.active_debuffs != [] do %>
+          <div class="flex items-center gap-1 mt-2 px-2 py-1 bg-error/10 rounded border border-error/30">
+            <.icon name="hero-x-circle" class="w-3 h-3 text-error" />
+            <span class="text-xs text-error">
+              {@player_name} will not score with {Enum.map(
+                @player_state.active_debuffs,
+                &format_hand_name_short/1
+              )
+              |> Enum.join(", ")}
+            </span>
+          </div>
+        <% end %>
+
+        <%= if @opponent_state.active_debuffs != [] do %>
+          <div class="flex items-center gap-1 mt-1 px-2 py-1 bg-success/10 rounded border border-success/30">
+            <.icon name="hero-x-circle" class="w-3 h-3 text-success" />
+            <span class="text-xs text-success">
+              {@opponent_name} will not score with {Enum.map(
+                @opponent_state.active_debuffs,
+                &format_hand_name_short/1
+              )
+              |> Enum.join(", ")}
+            </span>
+          </div>
+        <% end %>
       </div>
       
     <!-- Opponent status - top right -->
@@ -1114,14 +1140,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               <!-- Body rows with suits -->
               <tbody>
                 <%= for suit <- suits do %>
-                  <% # Count cards of this suit (in hand shown as remaining)
-                  suit_cards = Map.get(Enum.group_by(all_cards, & &1.suit), suit, [])
-                  suit_in_hand = Enum.count(suit_cards, fn card -> card.id in hand_ids end)
-                  suit_total = length(suit_cards) %>
+                  <% # Count remaining cards of this suit (draw pile + hand, excludes discards)
+                  suit_remaining = Enum.count(all_cards, fn card -> card.suit == suit end) %>
                   <tr>
                     <td class="px-2 py-1 text-left text-base font-semibold">
                       <span class="text-xs text-base-content/60 mr-1">
-                        {suit_in_hand}/{suit_total}
+                        {suit_remaining}
                       </span>
                       <span class={[
                         if(suit in [:hearts, :diamonds], do: "text-error", else: "text-base-content")

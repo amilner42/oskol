@@ -274,29 +274,41 @@ defmodule OskolWeb.GameLive do
     hand_results = game_state && game_state.last_hand_results
 
     if hand_results && socket.assigns.viewing_results do
-      # Get opponent and player IDs
+      # Get player names and IDs
       player_id = socket.assigns.player_id
+      player_name = socket.assigns.player_name
 
       opponent_id =
         game_state.players
         |> Map.keys()
         |> Enum.find(&(&1 != player_id))
 
-      opponent_result = hand_results[opponent_id]
-      player_result = hand_results[player_id]
+      opponent_name = game_state.player_names[opponent_id]
 
-      opponent_card_count = length(opponent_result.score_breakdown.card_breakdowns)
-      player_card_count = length(player_result.score_breakdown.card_breakdowns)
+      # Animation order is alphabetical by name - "first" uses opponent_* phases, "second" uses player_* phases
+      {first_id, second_id} =
+        if player_name <= opponent_name do
+          {player_id, opponent_id}
+        else
+          {opponent_id, player_id}
+        end
+
+      first_result = hand_results[first_id]
+      second_result = hand_results[second_id]
+
+      first_card_count = length(first_result.score_breakdown.card_breakdowns)
+      second_card_count = length(second_result.score_breakdown.card_breakdowns)
 
       current_phase = socket.assigns.score_animation_phase
       current_index = socket.assigns.score_animation_card_index
 
+      # Note: next_animation_step uses "opponent" for first, "player" for second
       {next_phase, next_index, delay} =
         next_animation_step(
           current_phase,
           current_index,
-          opponent_card_count,
-          player_card_count
+          first_card_count,
+          second_card_count
         )
 
       # Schedule next step if not complete
