@@ -920,6 +920,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         player_name={@opponent_name}
         animation_state={@opponent_state || %{phase: :base, cards_scored: 0}}
         is_opponent={true}
+        skill_tree={@game_state.players[@opponent_id].skill_tree}
       />
       
     <!-- Player's breakdown (always on bottom, near your cards) -->
@@ -928,6 +929,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         player_name={@player_name}
         animation_state={@player_state || %{phase: :base, cards_scored: 0}}
         is_opponent={false}
+        skill_tree={@game_state.players[@player_id].skill_tree}
       />
     </div>
     """
@@ -1021,11 +1023,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     show_final = assigns.animation_state.phase == :final
     running_score = running_chips * running_mult
 
+    level = Map.get(assigns.skill_tree, breakdown.hand_type, 1)
+
     hand_type_text =
-      breakdown.hand_type
-      |> Atom.to_string()
-      |> String.replace("_", " ")
-      |> String.upcase()
+      "Lvl #{level} " <>
+        (breakdown.hand_type
+         |> Atom.to_string()
+         |> String.replace("_", " ")
+         |> String.upcase())
 
     assigns =
       assigns
