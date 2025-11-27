@@ -294,8 +294,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
           %{type: :level_up, name: format_hand_name(hand_type), color: "emerald"}
 
         {:action, action_card} ->
-          # Use amber for scrambler, rose for others
-          color = if action_card.type == :scrambler, do: "amber", else: "rose"
+          # Use amber for sabotage cards (scrambler/plus_bomb/static), rose for counter
+          color = if action_card.type in [:scrambler, :plus_bomb, :static], do: "amber", else: "rose"
           %{type: :action, name: ActionCard.card_name(action_card), color: color}
 
         {:deck_builder, deck_builder_card} ->
