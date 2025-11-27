@@ -714,7 +714,7 @@ defmodule OskolWeb.LandingLive do
             </p>
           <% end %>
           <p class="text-[10px] text-base-content/30 mt-1">
-            Valid codes: SHOP_FORCE_SCRAMBLER, SHOP_FORCE_PLUS_BOMB, SHOP_FORCE_STATIC, 1HAND
+            Valid codes: {Enum.join(DevCodes.all(), ", ")}
           </p>
         </div>
       <% end %>

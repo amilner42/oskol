@@ -393,6 +393,38 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     Enum.join(all_strs, ", ")
   end
 
+  @doc """
+  Returns a list of active sabotage badges for a player.
+  Each badge is a map with: name, tooltip, and active? boolean.
+  This centralizes badge logic so adding new sabotage cards is easy.
+  """
+  defp get_sabotage_badges(player_state) do
+    [
+      %{
+        name: "Scrambled",
+        tooltip: "1-in-5 drawn cards are face-down",
+        active?: player_state.scrambled
+      },
+      %{
+        name: "Static Field",
+        tooltip: "Card enhancements disabled",
+        active?: player_state.enhancements_disabled
+      },
+      %{
+        name: "Plus Bomb",
+        tooltip:
+          "#{format_disabled_cards(player_state.disabled_ranks, player_state.disabled_suits)} won't score",
+        active?: player_state.disabled_ranks != [] or player_state.disabled_suits != []
+      },
+      %{
+        name: "Supply Chain",
+        tooltip: "Draws limited to 4 cards per discard",
+        active?: player_state.supply_chain_limited
+      }
+    ]
+    |> Enum.filter(& &1.active?)
+  end
+
   defp format_rank(2), do: "2s"
   defp format_rank(3), do: "3s"
   defp format_rank(4), do: "4s"
@@ -798,32 +830,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           </div>
         <% end %>
 
-        <%= if @player_state.scrambled do %>
+        <%= for badge <- get_sabotage_badges(@player_state) do %>
           <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-player rounded cursor-default">
             <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
-            <span class="text-xs font-semibold text-sky-900">Scrambled</span>
+            <span class="text-xs font-semibold text-sky-900">{badge.name}</span>
             <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              1-in-5 drawn cards are face-down
-            </div>
-          </div>
-        <% end %>
-
-        <%= if @player_state.enhancements_disabled do %>
-          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-player rounded cursor-default">
-            <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
-            <span class="text-xs font-semibold text-sky-900">Static Field</span>
-            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              Card enhancements disabled
-            </div>
-          </div>
-        <% end %>
-
-        <%= if @player_state.disabled_ranks != [] or @player_state.disabled_suits != [] do %>
-          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-player rounded cursor-default">
-            <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
-            <span class="text-xs font-semibold text-sky-900">Plus Bomb</span>
-            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              {format_disabled_cards(@player_state.disabled_ranks, @player_state.disabled_suits)} won't score
+              {badge.tooltip}
             </div>
           </div>
         <% end %>
@@ -838,32 +850,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           </div>
         <% end %>
 
-        <%= if @opponent_state.scrambled do %>
+        <%= for badge <- get_sabotage_badges(@opponent_state) do %>
           <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded cursor-default">
             <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
-            <span class="text-xs font-semibold text-orange-900">Scrambled</span>
+            <span class="text-xs font-semibold text-orange-900">{badge.name}</span>
             <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              1-in-5 drawn cards are face-down
-            </div>
-          </div>
-        <% end %>
-
-        <%= if @opponent_state.enhancements_disabled do %>
-          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded cursor-default">
-            <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
-            <span class="text-xs font-semibold text-orange-900">Static Field</span>
-            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              Card enhancements disabled
-            </div>
-          </div>
-        <% end %>
-
-        <%= if @opponent_state.disabled_ranks != [] or @opponent_state.disabled_suits != [] do %>
-          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded cursor-default">
-            <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
-            <span class="text-xs font-semibold text-orange-900">Plus Bomb</span>
-            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              {format_disabled_cards(@opponent_state.disabled_ranks, @opponent_state.disabled_suits)} won't score
+              {badge.tooltip}
             </div>
           </div>
         <% end %>
