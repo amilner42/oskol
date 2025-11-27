@@ -31,6 +31,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 </div>
                 <div class="text-xs text-base-content/40">Permanent Upgrades</div>
               </div>
+              <% has_pending_selection = has_pending_selection?(@game_state.shop_state, @player_id) %>
               <div class="grid grid-cols-4 gap-4">
                 <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.take(8) do %>
                   <.shop_card_minimal
@@ -38,12 +39,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
                     index={index}
                     is_picked={index in @game_state.shop_state.picked_card_indices}
                     is_selected={assigns[:previewing_card_index] == index}
-                    can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
+                    can_pick={can_pick_card?(@game_state.shop_state, @player_id) and not has_pending_selection}
                   />
                 <% end %>
               </div>
             </div>
-            
+
     <!-- Tactical Ops Section (Action Cards) -->
             <div>
               <div class="mb-3 flex items-center gap-2">
@@ -59,7 +60,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                     index={index}
                     is_picked={index in @game_state.shop_state.picked_card_indices}
                     is_selected={assigns[:previewing_card_index] == index}
-                    can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
+                    can_pick={can_pick_card?(@game_state.shop_state, @player_id) and not has_pending_selection}
                   />
                 <% end %>
               </div>
@@ -495,6 +496,13 @@ defmodule OskolWeb.Components.GameLive.Shop do
       true ->
         false
     end
+  end
+
+  defp has_pending_selection?(shop_state, player_id) do
+    (shop_state.pending_deck_builder != nil and
+       shop_state.pending_deck_builder.player_id == player_id) or
+      (shop_state.pending_plus_bomb != nil and
+         shop_state.pending_plus_bomb.player_id == player_id)
   end
 
   defp card_detail_panel(assigns) do
