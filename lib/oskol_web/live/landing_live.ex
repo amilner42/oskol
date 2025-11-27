@@ -3,6 +3,8 @@ defmodule OskolWeb.LandingLive do
 
   alias Oskol.Game
 
+  @is_dev Mix.env() == :dev
+
   @impl true
   def mount(params, _session, socket) do
     # Check for ?game= query param
@@ -572,12 +574,10 @@ defmodule OskolWeb.LandingLive do
         if opponent_id, do: Map.get(assigns.server_state.format_selections, opponent_id)
       end
 
-    is_dev = Application.get_env(:oskol, :dev_routes, false)
-
     assigns =
       assigns
       |> assign(:opponent_format, opponent_format)
-      |> assign(:is_dev, is_dev)
+      |> assign(:is_dev, @is_dev)
 
     ~H"""
     <div class="max-w-2xl mx-auto">
