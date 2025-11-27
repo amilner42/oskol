@@ -2,6 +2,7 @@ defmodule OskolWeb.LandingLive do
   use OskolWeb, :live_view
 
   alias Oskol.Game
+  alias Oskol.Game.DevCodes
 
   @is_dev Mix.env() == :dev
 
@@ -353,14 +354,6 @@ defmodule OskolWeb.LandingLive do
      |> push_patch(to: ~p"/")}
   end
 
-  @valid_dev_codes [
-    "SHOP_FORCE_SCRAMBLER",
-    "SHOP_FORCE_PLUS_BOMB",
-    "SHOP_FORCE_STATIC",
-    "1HAND",
-    "ALL_ENHANCED"
-  ]
-
   @impl true
   def handle_event("update_dev_code", %{"dev_code" => dev_code}, socket) do
     # Parse and validate dev codes
@@ -370,7 +363,7 @@ defmodule OskolWeb.LandingLive do
         |> String.split(",")
         |> Enum.map(&String.trim/1)
         |> Enum.filter(&(&1 != ""))
-        |> Enum.split_with(&(&1 in @valid_dev_codes))
+        |> DevCodes.validate()
       else
         {[], []}
       end

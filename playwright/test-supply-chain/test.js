@@ -303,12 +303,52 @@ async function main() {
       log(`✗ WARNING: Expected ${expectedCards} cards but got ${cardsAfterDiscard.length}`);
     }
 
+    // ===== STEP 11: Second discard - discard 1 card, should get 2 back =====
+    log(`\nSTEP 11: ${secondPickerName} discarding 1 card (should get 2 back to reach 8 cards)...`);
+
+    // Now player should have 7 cards
+    const cardsBeforeSecondDiscard = await secondPicker.$$('button[phx-click="toggle_card"]');
+    log(`${secondPickerName} has ${cardsBeforeSecondDiscard.length} cards before second discard`);
+
+    // Select 1 card to discard
+    if (cardsBeforeSecondDiscard.length > 0) {
+      await cardsBeforeSecondDiscard[0].click();
+      await sleep(100);
+    }
+
+    await secondPicker.screenshot({ path: 'playwright/screenshots/test-supply-chain/17-one-card-selected.png', fullPage: true });
+    log('Selected 1 card for discard');
+
+    // Click Discard button
+    const discardBtn2 = await secondPicker.$('button:has-text("Discard")');
+    if (discardBtn2) {
+      await discardBtn2.click();
+      await sleep(2000);
+    }
+
+    // Take screenshot showing 2 cards were drawn (now back to 8 total)
+    await secondPicker.screenshot({ path: 'playwright/screenshots/test-supply-chain/18-two-cards-drawn-back-to-eight.png', fullPage: true });
+
+    // Count cards after second discard
+    const cardsAfterSecondDiscard = await secondPicker.$$('button[phx-click="toggle_card"]');
+    log(`${secondPickerName} has ${cardsAfterSecondDiscard.length} cards after second discard`);
+
+    // Should be 7 - 1 + 2 = 8 cards
+    const expectedAfterSecond = 8;
+    if (cardsAfterSecondDiscard.length === expectedAfterSecond) {
+      log(`✓ SUCCESS: Player drew 2 cards (not just 1) to get back to ${expectedAfterSecond} cards!`);
+    } else {
+      log(`✗ WARNING: Expected ${expectedAfterSecond} cards but got ${cardsAfterSecondDiscard.length}`);
+    }
+
     log('\n=== TEST COMPLETE ===');
     log('Screenshots saved to playwright/screenshots/test-supply-chain/');
     log('Key screenshots to verify:');
     log('  - 11-supply-chain-preview.png: SUPPLY CHAIN card detail view');
     log('  - 15-five-cards-selected.png: 5 cards selected for discard');
-    log('  - 16-only-four-cards-drawn.png: Only 4 cards drawn back (Supply Chain effect)');
+    log('  - 16-only-four-cards-drawn.png: Only 4 cards drawn back (7 cards total)');
+    log('  - 17-one-card-selected.png: 1 card selected for second discard');
+    log('  - 18-two-cards-drawn-back-to-eight.png: 2 cards drawn back (8 cards total)');
 
   } catch (error) {
     log(`ERROR: ${error.message}`);

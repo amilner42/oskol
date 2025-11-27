@@ -154,12 +154,20 @@ defmodule Oskol.Game.GameState do
         # Discard and draw new cards
         alias Oskol.Game.CardPiles
 
-        # Check if supply chain limited - cap draw at 4 cards
+        # Calculate how many cards to draw to get back to target hand size (8)
+        # Normally, we draw the same number we discarded to maintain hand size
+        # But with supply chain, we cap the draw at 4 cards per discard
+        target_hand_size = 8
+        current_hand_size = length(player.card_piles.hand_pile)
+        hand_size_after_discard = current_hand_size - length(cards)
+        cards_needed = target_hand_size - hand_size_after_discard
+
         cards_to_draw =
           if player.supply_chain_limited do
-            min(length(cards), 4)
+            # Supply Chain limits draw to at most 4 cards
+            min(cards_needed, 4)
           else
-            length(cards)
+            cards_needed
           end
 
         # Discard cards and draw new ones (respecting supply chain limit)
