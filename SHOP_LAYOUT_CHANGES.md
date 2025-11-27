@@ -1,8 +1,8 @@
-# Shop Layout Reorganization - 4x4 Grid
+# Command Center Reorganization - 4x4 Grid
 
 ## Summary
 
-Reorganized the shop from a 3x5 grid (15 cards) to a 4x4 grid (16 cards) split into two thematic sections:
+Reorganized the Command Center (formerly "Shop") from a 3x5 grid (15 cards) to a 4x4 grid (16 cards) split into two thematic sections:
 - **Arsenal** (top 8 cards): Permanent upgrades (Level Ups + Deck Builders)
 - **Tactical Ops** (bottom 8 cards): Temporary battlefield advantages (Action Cards)
 
@@ -19,7 +19,9 @@ Reorganized the shop from a 3x5 grid (15 cards) to a 4x4 grid (16 cards) split i
   - 8 Action Cards (up from 5)
 - Cards remain sorted by category for consistency
 
-### 2. Shop Layout (`lib/oskol_web/components/game_live/shop.ex`)
+### 2. Command Center Layout (`lib/oskol_web/components/game_live/shop.ex`)
+
+**Header**: Changed from "Shop" to "Command Center" to fit war theme
 
 **Width**: Increased from `w-[520px]` to `w-[690px]` (~33% wider to accommodate 4 columns)
 
