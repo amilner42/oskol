@@ -154,7 +154,19 @@ defmodule Oskol.Game.GameState do
         # Discard and draw new cards
         alias Oskol.Game.CardPiles
 
-        new_card_piles = CardPiles.replace_cards(player.card_piles, cards)
+        # Check if supply chain limited - cap draw at 4 cards
+        cards_to_draw =
+          if player.supply_chain_limited do
+            min(length(cards), 4)
+          else
+            length(cards)
+          end
+
+        # Discard cards and draw new ones (respecting supply chain limit)
+        new_card_piles =
+          player.card_piles
+          |> CardPiles.discard_cards(cards)
+          |> CardPiles.draw_cards(cards_to_draw)
 
         # Determine which cards are new (drawn to replace discarded ones)
         new_cards = new_card_piles.hand_pile -- player.card_piles.hand_pile
@@ -577,6 +589,22 @@ defmodule Oskol.Game.GameState do
     {updated_players, :action,
      %{
        action_type: :static,
+       target_player: opponent_id
+     }}
+  end
+
+  defp apply_shop_card(players, player_id, %ShopCard{type: :sabotage, subtype: :supply_chain}) do
+    # SUPPLY CHAIN limits opponent to drawing at most 4 cards when discarding
+    opponent_id = players |> Map.keys() |> Enum.find(&(&1 != player_id))
+
+    updated_players =
+      Map.update!(players, opponent_id, fn opponent ->
+        PlayerState.set_supply_chain_limited(opponent, true)
+      end)
+
+    {updated_players, :action,
+     %{
+       action_type: :supply_chain,
        target_player: opponent_id
      }}
   end

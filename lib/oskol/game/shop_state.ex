@@ -146,10 +146,11 @@ defmodule Oskol.Game.ShopState do
 
   defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :increase_rank}), do: {1, 8}
 
-  # Sabotage cards (scrambler, plus_bomb, static)
+  # Sabotage cards (scrambler, plus_bomb, static, supply_chain)
   defp card_sort_key(%ShopCard{type: :sabotage, subtype: :scrambler}), do: {2, 0}
   defp card_sort_key(%ShopCard{type: :sabotage, subtype: :plus_bomb}), do: {2, 1}
   defp card_sort_key(%ShopCard{type: :sabotage, subtype: :static}), do: {2, 2}
+  defp card_sort_key(%ShopCard{type: :sabotage, subtype: :supply_chain}), do: {2, 3}
 
   # Denial cards (sorted by hand type)
   defp card_sort_key(%ShopCard{type: :denial, subtype: hand}), do: {3, hand_type_order(hand)}
