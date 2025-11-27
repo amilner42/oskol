@@ -501,7 +501,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     ~H"""
     <div class="flex-1 flex flex-col">
       <%= case @shop_card do %>
-        <% {:level_up, hand_type} -> %>
+        <% %ShopCard{type: :level_up, subtype: hand_type} -> %>
           <.level_up_detail
             hand_type={hand_type}
             skill_tree={@skill_tree}
@@ -509,18 +509,18 @@ defmodule OskolWeb.Components.GameLive.Shop do
             action_in_progress={@action_in_progress}
             card_index={@card_index}
           />
-        <% {:action, action_card} -> %>
+        <% %ShopCard{type: type} = shop_card when type in [:sabotage, :denial] -> %>
           <.action_detail
-            action_card={action_card}
+            action_card={shop_card}
             can_confirm={@can_confirm}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
             pending_plus_bomb={@pending_plus_bomb}
             plus_bomb_selection={@plus_bomb_selection}
           />
-        <% {:deck_builder, deck_builder_card} -> %>
+        <% %ShopCard{type: :deck_builder} = shop_card -> %>
           <.deck_builder_detail
-            deck_builder_card={deck_builder_card}
+            deck_builder_card={shop_card}
             can_confirm={@can_confirm}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
