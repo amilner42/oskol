@@ -33,6 +33,7 @@ defmodule Oskol.Game.ShopCard do
           | :scrambler
           | :plus_bomb
           | :static
+          | :supply_chain
           | :bonus_chips
           | :bonus_mult
           | :add_card
@@ -112,6 +113,7 @@ defmodule Oskol.Game.ShopCard do
   def scrambler_card, do: %__MODULE__{type: :sabotage, subtype: :scrambler}
   def plus_bomb_card, do: %__MODULE__{type: :sabotage, subtype: :plus_bomb}
   def static_card, do: %__MODULE__{type: :sabotage, subtype: :static}
+  def supply_chain_card, do: %__MODULE__{type: :sabotage, subtype: :supply_chain}
 
   # ===== Card Generation =====
 
@@ -152,7 +154,7 @@ defmodule Oskol.Game.ShopCard do
 
   @doc """
   Generates random action cards (sabotage + denial).
-  Includes denial cards (3x each), scrambler (3x), plus_bomb (2x), and static (2x).
+  Includes denial cards (3x each), scrambler (3x), plus_bomb (2x), static (2x), and supply_chain (2x).
   """
   @spec generate_random_action_cards(pos_integer(), [String.t()]) :: [t()]
   def generate_random_action_cards(count, dev_codes \\ []) do
@@ -168,6 +170,9 @@ defmodule Oskol.Game.ShopCard do
       |> then(fn cards ->
         if "SHOP_FORCE_STATIC" in dev_codes, do: [static_card() | cards], else: cards
       end)
+      |> then(fn cards ->
+        if "SHOP_FORCE_SUPPLY_CHAIN" in dev_codes, do: [supply_chain_card() | cards], else: cards
+      end)
 
     pool =
       List.flatten([
@@ -178,7 +183,9 @@ defmodule Oskol.Game.ShopCard do
         # 2 copies of plus_bomb
         List.duplicate(plus_bomb_card(), 2),
         # 2 copies of static
-        List.duplicate(static_card(), 2)
+        List.duplicate(static_card(), 2),
+        # 2 copies of supply_chain
+        List.duplicate(supply_chain_card(), 2)
       ])
 
     if length(forced_cards) > 0 do
@@ -232,6 +239,7 @@ defmodule Oskol.Game.ShopCard do
   def card_name(%__MODULE__{type: :sabotage, subtype: :scrambler}), do: "The Scrambler"
   def card_name(%__MODULE__{type: :sabotage, subtype: :plus_bomb}), do: "Plus Bomb"
   def card_name(%__MODULE__{type: :sabotage, subtype: :static}), do: "Static Field"
+  def card_name(%__MODULE__{type: :sabotage, subtype: :supply_chain}), do: "Supply Chain"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
@@ -298,6 +306,10 @@ defmodule Oskol.Game.ShopCard do
 
   def card_description(%__MODULE__{type: :sabotage, subtype: :static}) do
     "Opponent's card enhancements disabled next round"
+  end
+
+  def card_description(%__MODULE__{type: :sabotage, subtype: :supply_chain}) do
+    "Opponent draws at most 4 cards when discarding next round"
   end
 
   def card_description(%__MODULE__{

@@ -33,7 +33,8 @@ defmodule Oskol.Game.PlayerState do
           face_down_card_ids: [String.t()],
           disabled_ranks: [Card.rank()],
           disabled_suits: [Card.suit()],
-          enhancements_disabled: boolean()
+          enhancements_disabled: boolean(),
+          supply_chain_limited: boolean()
         }
 
   @type player_id :: String.t()
@@ -54,7 +55,8 @@ defmodule Oskol.Game.PlayerState do
             face_down_card_ids: [],
             disabled_ranks: [],
             disabled_suits: [],
-            enhancements_disabled: false
+            enhancements_disabled: false,
+            supply_chain_limited: false
 
   @discards_per_round 3
   @hands_per_round 4
@@ -108,7 +110,7 @@ defmodule Oskol.Game.PlayerState do
 
   @doc """
   Clears all active debuffs. Should be called when the round ends.
-  Clears: hand type denials, disabled ranks/suits, and enhancement disabling.
+  Clears: hand type denials, disabled ranks/suits, enhancement disabling, and supply chain limit.
   """
   @spec clear_debuffs(t()) :: t()
   def clear_debuffs(%__MODULE__{} = player_state) do
@@ -117,7 +119,8 @@ defmodule Oskol.Game.PlayerState do
       | active_debuffs: [],
         disabled_ranks: [],
         disabled_suits: [],
-        enhancements_disabled: false
+        enhancements_disabled: false,
+        supply_chain_limited: false
     }
   end
 
@@ -201,6 +204,15 @@ defmodule Oskol.Game.PlayerState do
   @spec disable_enhancements(t()) :: t()
   def disable_enhancements(%__MODULE__{} = player_state) do
     %{player_state | enhancements_disabled: true}
+  end
+
+  @doc """
+  Sets supply chain limited state for a player.
+  When supply chain limited, player can only draw up to 4 cards when discarding.
+  """
+  @spec set_supply_chain_limited(t(), boolean()) :: t()
+  def set_supply_chain_limited(%__MODULE__{} = player_state, limited) do
+    %{player_state | supply_chain_limited: limited}
   end
 
   @doc """
