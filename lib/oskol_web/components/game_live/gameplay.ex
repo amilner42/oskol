@@ -424,16 +424,16 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     is_locked_in = @player_state.locked_in_hand != nil %>
 
-    <div class="h-20 bg-base-200/40 flex items-center justify-between px-8 border-t border-base-content/15">
+    <div class="h-20 flex items-center justify-between px-8">
       <!-- Left: Console Button + Panel -->
       <div class="relative">
         <button
           phx-click="toggle_console"
           class={[
-            "px-5 py-2 rounded-lg transition-all font-medium",
+            "px-5 py-2 rounded-lg transition-all font-medium shadow-lg ring-1 ring-white/10",
             if(@console_open,
-              do: "bg-neutral text-neutral-content shadow-md",
-              else: "bg-neutral/80 hover:bg-neutral text-neutral-content shadow-sm"
+              do: "bg-neutral text-neutral-content",
+              else: "bg-neutral/90 hover:bg-neutral text-neutral-content"
             )
           ]}
         >
@@ -465,7 +465,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               @player_state.discards_remaining == 0 || is_locked_in
           }
           class={[
-            "px-4 py-2 rounded transition-colors bg-error hover:bg-error/90 text-error-content",
+            "px-4 py-2 rounded-lg transition-colors bg-error hover:bg-error/90 text-error-content shadow-lg ring-1 ring-white/10",
             if(
               @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
                 @player_state.discards_remaining == 0 || is_locked_in,
@@ -487,7 +487,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             @viewing_results || @action_in_progress || length(selected_card_ids) == 0 || is_locked_in
           }
           class={[
-            "px-4 py-2 rounded transition-colors bg-primary hover:bg-primary/90 text-primary-content",
+            "px-4 py-2 rounded-lg transition-colors bg-primary hover:bg-primary/90 text-primary-content shadow-lg ring-1 ring-white/10",
             if(
               @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
                 is_locked_in,
@@ -523,7 +523,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             )
           ]}
         >
-          Decks
+          Logistics
         </button>
         <button
           phx-click="set_console_tab"
@@ -536,7 +536,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             )
           ]}
         >
-          Levels
+          Research
         </button>
         <button
           phx-click="set_console_tab"
@@ -549,7 +549,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             )
           ]}
         >
-          Log
+          Newspaper
         </button>
       </div>
       
