@@ -5,6 +5,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   use OskolWeb, :html
 
   alias Oskol.Poker.Card
+  alias OskolWeb.Utils.Format
 
   def card_styles(assigns) do
     ~H"""
@@ -368,7 +369,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <div class="flex gap-1">
             <%= for hand_type <- @player_state.active_debuffs do %>
               <span class="text-xs px-2 py-0.5 bg-sky-800/20 rounded text-sky-900 font-medium">
-                {format_hand_name_short(hand_type)}
+                {Format.hand_name(hand_type)}
               </span>
             <% end %>
           </div>
@@ -384,16 +385,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     </div>
     """
   end
-
-  defp format_hand_name_short(:high_card), do: "High"
-  defp format_hand_name_short(:pair), do: "Pair"
-  defp format_hand_name_short(:two_pair), do: "2 Pair"
-  defp format_hand_name_short(:three_of_a_kind), do: "3 Kind"
-  defp format_hand_name_short(:straight), do: "Straight"
-  defp format_hand_name_short(:flush), do: "Flush"
-  defp format_hand_name_short(:full_house), do: "Full"
-  defp format_hand_name_short(:four_of_a_kind), do: "4 Kind"
-  defp format_hand_name_short(:straight_flush), do: "Str Flush"
 
   defp format_disabled_cards(disabled_ranks, disabled_suits) do
     rank_strs = Enum.map(disabled_ranks, &format_rank/1)
@@ -713,19 +704,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       :full_house,
       :four_of_a_kind,
       :straight_flush
-    ]
-
-    hand_names = %{
-      high_card: "High Card",
-      pair: "Pair",
-      two_pair: "Two Pair",
-      three_of_a_kind: "3 of a Kind",
-      straight: "Straight",
-      flush: "Flush",
-      full_house: "Full House",
-      four_of_a_kind: "4 of a Kind",
-      straight_flush: "Straight Flush"
-    } %>
+    ] %>
 
     <div class="space-y-1">
       <%= for hand_type <- hand_types do %>
@@ -734,7 +713,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-base-200">
           <div class="flex items-center gap-2">
             <span class="text-xs text-base-content/50 w-6">Lv{level}</span>
-            <span class="text-sm">{hand_names[hand_type]}</span>
+            <span class="text-sm">{Format.hand_name(hand_type)}</span>
           </div>
           <span class="text-xs text-base-content/70">
             {stats.base_chips} × {stats.multiplier}
@@ -814,7 +793,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <div class="flex items-center gap-1 mt-2 px-2 py-1 bg-player rounded">
             <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
             <span class="text-xs font-semibold text-sky-900">
-              {Enum.map(@player_state.active_debuffs, &format_hand_name_short/1) |> Enum.join(", ")} blocked
+              {Enum.map(@player_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")} blocked
             </span>
           </div>
         <% end %>
@@ -854,7 +833,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <div class="flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded">
             <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
             <span class="text-xs font-semibold text-orange-900">
-              {Enum.map(@opponent_state.active_debuffs, &format_hand_name_short/1) |> Enum.join(", ")} blocked
+              {Enum.map(@opponent_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")} blocked
             </span>
           </div>
         <% end %>
@@ -1735,19 +1714,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             :straight_flush
           ]
 
-          # Hand type display names
-          hand_names = %{
-            high_card: "High Card",
-            pair: "Pair",
-            two_pair: "Two Pair",
-            three_of_a_kind: "Three of a Kind",
-            straight: "Straight",
-            flush: "Flush",
-            full_house: "Full House",
-            four_of_a_kind: "Four of a Kind",
-            straight_flush: "Straight Flush"
-          }
-
           # Select the state to show based on view mode
           current_state = if @levels_view_mode == :player, do: @player_state, else: @opponent_state
 
@@ -1763,7 +1729,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 <%= for hand_type <- hand_types do %>
                   <% level = Map.get(current_state.skill_tree, hand_type, 1)
                   stats = Oskol.Poker.Score.stats_at_level(hand_type, level)
-                  hand_name = hand_names[hand_type]
+                  hand_name = Format.hand_name(hand_type)
                   is_max = level == max_level && max_level > 1 %>
 
                   <tr class="border-b border-base-300">

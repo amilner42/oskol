@@ -4,31 +4,17 @@ defmodule Oskol.Game.ShopState do
   Each round both players pick from the same pool of upgrades.
   """
 
-  alias Oskol.Game.{PlayerState, ActionCard, DeckBuilderCard}
+  alias Oskol.Game.{PlayerState, ShopCard}
   alias Oskol.Poker.Card
 
   @type player_id :: PlayerState.player_id()
 
-  @type hand_type ::
-          :high_card
-          | :pair
-          | :two_pair
-          | :three_of_a_kind
-          | :straight
-          | :flush
-          | :full_house
-          | :four_of_a_kind
-          | :straight_flush
-
-  @type shop_card ::
-          {:level_up, hand_type()}
-          | {:action, ActionCard.t()}
-          | {:deck_builder, DeckBuilderCard.t()}
+  @type shop_card :: ShopCard.t()
 
   @type pending_deck_builder :: %{
           player_id: player_id(),
           shop_card_index: non_neg_integer(),
-          deck_builder_card: DeckBuilderCard.t(),
+          deck_builder_card: ShopCard.t(),
           available_cards: [Card.t()]
         }
 
@@ -37,18 +23,6 @@ defmodule Oskol.Game.ShopState do
           shop_card_index: non_neg_integer(),
           available_cards: [Card.t()]
         }
-
-  @all_hand_types [
-    :high_card,
-    :pair,
-    :two_pair,
-    :three_of_a_kind,
-    :straight,
-    :flush,
-    :full_house,
-    :four_of_a_kind,
-    :straight_flush
-  ]
 
   @type t :: %__MODULE__{
           total_rounds: pos_integer(),
@@ -116,78 +90,69 @@ defmodule Oskol.Game.ShopState do
   # Dev codes can force specific cards to appear.
   @spec generate_random_shop_cards([String.t()]) :: [shop_card()]
   defp generate_random_shop_cards(dev_codes) do
-    # Generate 4 random level up cards with weighted frequencies (sorted by hand type)
-    # Frequencies: High Card (4), Pair (4), Two Pair (3), Three Kind (3),
-    #              Straight (2), Flush (2), Full House (2), Four Kind (1), Straight Flush (1)
-    level_up_pool =
-      [
-        List.duplicate(:high_card, 4),
-        List.duplicate(:pair, 4),
-        List.duplicate(:two_pair, 3),
-        List.duplicate(:three_of_a_kind, 3),
-        List.duplicate(:straight, 2),
-        List.duplicate(:flush, 2),
-        List.duplicate(:full_house, 2),
-        List.duplicate(:four_of_a_kind, 1),
-        List.duplicate(:straight_flush, 1)
-      ]
-      |> List.flatten()
-
+    # Generate 4 random level up cards (sorted by hand type)
     level_ups =
-      level_up_pool
-      |> Enum.shuffle()
-      |> Enum.take(4)
-      |> Enum.sort_by(&hand_type_order/1)
-      |> Enum.map(fn hand_type -> {:level_up, hand_type} end)
+      ShopCard.generate_random_level_ups(4)
+      |> Enum.sort_by(&card_sort_key/1)
 
     # Generate 4 deck builder cards (sorted by type)
     deck_builder_cards =
-      DeckBuilderCard.generate_random_deck_builder_cards(4)
-      |> Enum.sort_by(&deck_builder_sort_key/1)
-      |> Enum.map(fn card -> {:deck_builder, card} end)
+      ShopCard.generate_random_deck_builders(4)
+      |> Enum.sort_by(&card_sort_key/1)
 
-    # Generate 8 random action cards (sorted by target_hand)
-    # Check for dev codes that force specific action cards
-    forced_cards =
-      []
-      |> then(fn cards ->
-        if "SHOP_FORCE_SCRAMBLER" in dev_codes,
-          do: [ActionCard.scrambler_card() | cards],
-          else: cards
-      end)
-      |> then(fn cards ->
-        if "SHOP_FORCE_PLUS_BOMB" in dev_codes,
-          do: [ActionCard.plus_bomb_card() | cards],
-          else: cards
-      end)
-      |> then(fn cards ->
-        if "SHOP_FORCE_STATIC" in dev_codes,
-          do: [ActionCard.static_card() | cards],
-          else: cards
-      end)
-
+    # Generate 8 random action cards (sabotage + denial, sorted)
     action_cards =
-      if length(forced_cards) > 0 do
-        remaining_count = 8 - length(forced_cards)
-        other_actions = ActionCard.generate_random_action_cards(remaining_count)
-        forced_cards ++ other_actions
-      else
-        ActionCard.generate_random_action_cards(8)
-      end
-      |> Enum.sort_by(&action_card_sort_key/1)
-      |> Enum.map(fn card -> {:action, card} end)
+      ShopCard.generate_random_action_cards(8, dev_codes)
+      |> Enum.sort_by(&card_sort_key/1)
 
     # Combine in order: level ups, deck builders, actions (8 permanent + 8 temporary)
     level_ups ++ deck_builder_cards ++ action_cards
   end
 
-  # Sort key for action cards (special actions first by type, then denials by target_hand)
-  defp action_card_sort_key(%ActionCard{type: :scrambler}), do: {0, 0}
-  defp action_card_sort_key(%ActionCard{type: :plus_bomb}), do: {0, 1}
-  defp action_card_sort_key(%ActionCard{type: :static}), do: {0, 2}
+  # Sort key for shop cards - unified sorting across all card types
+  defp card_sort_key(%ShopCard{type: :level_up, subtype: hand}), do: {0, hand_type_order(hand)}
+  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :bonus_chips}), do: {1, 0}
+  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :bonus_mult}), do: {1, 1}
+  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :add_card}), do: {1, 2}
+  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :remove_card}), do: {1, 3}
 
-  defp action_card_sort_key(%ActionCard{type: :denial, target_hand: hand}),
-    do: {1, hand_type_order(hand)}
+  defp card_sort_key(%ShopCard{
+         type: :deck_builder,
+         subtype: :change_suit,
+         metadata: %{suit: :hearts}
+       }),
+       do: {1, 4}
+
+  defp card_sort_key(%ShopCard{
+         type: :deck_builder,
+         subtype: :change_suit,
+         metadata: %{suit: :diamonds}
+       }),
+       do: {1, 5}
+
+  defp card_sort_key(%ShopCard{
+         type: :deck_builder,
+         subtype: :change_suit,
+         metadata: %{suit: :clubs}
+       }),
+       do: {1, 6}
+
+  defp card_sort_key(%ShopCard{
+         type: :deck_builder,
+         subtype: :change_suit,
+         metadata: %{suit: :spades}
+       }),
+       do: {1, 7}
+
+  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :increase_rank}), do: {1, 8}
+
+  # Sabotage cards (scrambler, plus_bomb, static)
+  defp card_sort_key(%ShopCard{type: :sabotage, subtype: :scrambler}), do: {2, 0}
+  defp card_sort_key(%ShopCard{type: :sabotage, subtype: :plus_bomb}), do: {2, 1}
+  defp card_sort_key(%ShopCard{type: :sabotage, subtype: :static}), do: {2, 2}
+
+  # Denial cards (sorted by hand type)
+  defp card_sort_key(%ShopCard{type: :denial, subtype: hand}), do: {3, hand_type_order(hand)}
 
   # Sort key for hand types (high card to straight flush)
   defp hand_type_order(:high_card), do: 0
@@ -199,17 +164,6 @@ defmodule Oskol.Game.ShopState do
   defp hand_type_order(:full_house), do: 6
   defp hand_type_order(:four_of_a_kind), do: 7
   defp hand_type_order(:straight_flush), do: 8
-
-  # Sort key for deck builder cards (chips, mult, add, remove, suit changes)
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :bonus_chips}), do: 0
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :bonus_mult}), do: 1
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :add_card}), do: 2
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :remove_card}), do: 3
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_hearts}), do: 4
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_diamonds}), do: 5
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_clubs}), do: 6
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :change_suit_spades}), do: 7
-  defp deck_builder_sort_key(%DeckBuilderCard{type: :increase_rank}), do: 8
 
   @doc """
   Returns true if both players have made their picks in the current round.

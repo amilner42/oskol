@@ -154,18 +154,4 @@ defmodule Oskol.Poker.Hand do
       Map.get(counts, card.rank) >= min_count
     end)
   end
-
-  @doc """
-  Returns a human-readable name for a hand type.
-  """
-  @spec hand_type_name(hand_type()) :: String.t()
-  def hand_type_name(:high_card), do: "High Card"
-  def hand_type_name(:pair), do: "Pair"
-  def hand_type_name(:two_pair), do: "Two Pair"
-  def hand_type_name(:three_of_a_kind), do: "Three of a Kind"
-  def hand_type_name(:straight), do: "Straight"
-  def hand_type_name(:flush), do: "Flush"
-  def hand_type_name(:full_house), do: "Full House"
-  def hand_type_name(:four_of_a_kind), do: "Four of a Kind"
-  def hand_type_name(:straight_flush), do: "Straight Flush"
 end

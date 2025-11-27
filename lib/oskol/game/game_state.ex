@@ -3,7 +3,7 @@ defmodule Oskol.Game.GameState do
   Represents the complete state of a multiplayer poker roguelike game.
   """
 
-  alias Oskol.Game.{DeckBuilderCard, PlayerState, ShopState}
+  alias Oskol.Game.{PlayerState, ShopCard, ShopState}
   alias Oskol.Poker.{Card, SkillTree}
 
   @type t :: %__MODULE__{
@@ -522,7 +522,7 @@ defmodule Oskol.Game.GameState do
 
   # Applies a shop card effect to the players.
   # Returns {updated_players, card_type, card_details} for event logging.
-  defp apply_shop_card(players, player_id, {:level_up, hand_type}) do
+  defp apply_shop_card(players, player_id, %ShopCard{type: :level_up, subtype: hand_type}) do
     updated_players =
       Map.update!(players, player_id, fn player ->
         updated_skill_tree = SkillTree.upgrade(player.skill_tree, hand_type, 1)
@@ -532,60 +532,65 @@ defmodule Oskol.Game.GameState do
     {updated_players, :level_up, %{hand_type: hand_type}}
   end
 
-  defp apply_shop_card(players, player_id, {:action, action_card}) do
-    # Action cards affect the OPPONENT
+  defp apply_shop_card(players, player_id, %ShopCard{type: :denial, subtype: hand_type}) do
+    # Denial cards affect the OPPONENT
     opponent_id = players |> Map.keys() |> Enum.find(&(&1 != player_id))
 
-    case action_card.type do
-      :denial ->
-        updated_players =
-          Map.update!(players, opponent_id, fn opponent ->
-            PlayerState.add_denial_debuff(opponent, action_card.target_hand)
-          end)
+    updated_players =
+      Map.update!(players, opponent_id, fn opponent ->
+        PlayerState.add_denial_debuff(opponent, hand_type)
+      end)
 
-        {updated_players, :action,
-         %{
-           action_type: action_card.type,
-           target_hand: action_card.target_hand,
-           target_player: opponent_id
-         }}
-
-      :scrambler ->
-        updated_players =
-          Map.update!(players, opponent_id, fn opponent ->
-            PlayerState.set_scrambled(opponent, true)
-          end)
-
-        {updated_players, :action,
-         %{
-           action_type: action_card.type,
-           target_player: opponent_id
-         }}
-
-      :static ->
-        # STATIC disables all enhancements on opponent's cards
-        updated_players =
-          Map.update!(players, opponent_id, fn opponent ->
-            PlayerState.disable_enhancements(opponent)
-          end)
-
-        {updated_players, :action,
-         %{
-           action_type: action_card.type,
-           target_player: opponent_id
-         }}
-
-      :plus_bomb ->
-        # PLUS BOMB requires a selection phase - don't apply anything yet
-        # This is handled separately like deck_builder
-        {players, :action, %{action_type: action_card.type, requires_selection: true}}
-    end
+    {updated_players, :action,
+     %{
+       action_type: :denial,
+       target_hand: hand_type,
+       target_player: opponent_id
+     }}
   end
 
-  defp apply_shop_card(players, _player_id, {:deck_builder, deck_builder_card}) do
+  defp apply_shop_card(players, player_id, %ShopCard{type: :sabotage, subtype: :scrambler}) do
+    # Scrambler affects the OPPONENT
+    opponent_id = players |> Map.keys() |> Enum.find(&(&1 != player_id))
+
+    updated_players =
+      Map.update!(players, opponent_id, fn opponent ->
+        PlayerState.set_scrambled(opponent, true)
+      end)
+
+    {updated_players, :action,
+     %{
+       action_type: :scrambler,
+       target_player: opponent_id
+     }}
+  end
+
+  defp apply_shop_card(players, player_id, %ShopCard{type: :sabotage, subtype: :static}) do
+    # STATIC disables all enhancements on opponent's cards
+    opponent_id = players |> Map.keys() |> Enum.find(&(&1 != player_id))
+
+    updated_players =
+      Map.update!(players, opponent_id, fn opponent ->
+        PlayerState.disable_enhancements(opponent)
+      end)
+
+    {updated_players, :action,
+     %{
+       action_type: :static,
+       target_player: opponent_id
+     }}
+  end
+
+  defp apply_shop_card(players, _player_id, %ShopCard{type: :sabotage, subtype: :plus_bomb}) do
+    # PLUS BOMB requires a selection phase - don't apply anything yet
+    # This is handled separately like deck_builder
+    {players, :action, %{action_type: :plus_bomb, requires_selection: true}}
+  end
+
+  defp apply_shop_card(players, _player_id, %ShopCard{type: :deck_builder, subtype: subtype}) do
     # Deck builder cards don't apply any effect immediately
     # The effect is applied when the player confirms their card selection
-    {players, :deck_builder, %{card_type: deck_builder_card.type}}
+    {players, :deck_builder, %{card_type: subtype}}
   end
 
   @doc """
@@ -609,7 +614,7 @@ defmodule Oskol.Game.GameState do
     else
       # Validate it's a deck builder card
       case Enum.at(shop_state.available_cards, card_index) do
-        {:deck_builder, deck_builder_card} ->
+        %ShopCard{type: :deck_builder} = shop_card ->
           # Mark card as picked (but don't complete the pick yet)
           case ShopState.mark_card_picked(shop_state, card_index) do
             {:ok, updated_shop_state} ->
@@ -621,13 +626,13 @@ defmodule Oskol.Game.GameState do
                   player.card_piles.hand_pile ++ player.card_piles.discard_pile
 
               available_cards =
-                DeckBuilderCard.generate_selection_cards(deck_builder_card, all_deck_cards)
+                ShopCard.generate_selection_cards(shop_card, all_deck_cards)
 
               # Store in pending_deck_builder
               pending = %{
                 player_id: player_id,
                 shop_card_index: card_index,
-                deck_builder_card: deck_builder_card,
+                deck_builder_card: shop_card,
                 available_cards: available_cards
               }
 
@@ -638,7 +643,7 @@ defmodule Oskol.Game.GameState do
                 {:deck_builder_confirmed, player_id,
                  %{
                    shop_round: updated_shop_state.current_round,
-                   card_type: deck_builder_card.type,
+                   card_type: shop_card.subtype,
                    card_index: card_index
                  }}
 
@@ -677,16 +682,8 @@ defmodule Oskol.Game.GameState do
     unless pending.player_id == player_id do
       {:error, :not_your_pending_selection}
     else
-      # Handle both single card and multiple cards (for :remove_card, suit changes, and rank increase)
-      is_multi_select =
-        pending.deck_builder_card.type == :remove_card or
-          pending.deck_builder_card.type in [
-            :change_suit_hearts,
-            :change_suit_diamonds,
-            :change_suit_clubs,
-            :change_suit_spades,
-            :increase_rank
-          ]
+      # Handle both single card and multiple cards based on max_selection
+      is_multi_select = ShopCard.max_selection(pending.deck_builder_card) > 1
 
       selected_card_ids =
         if is_list(selected_card_id_or_ids),
@@ -715,17 +712,11 @@ defmodule Oskol.Game.GameState do
               end)
 
             detail_type =
-              case pending.deck_builder_card.type do
+              case pending.deck_builder_card.subtype do
                 :remove_card ->
                   :remove_card
 
-                type
-                when type in [
-                       :change_suit_hearts,
-                       :change_suit_diamonds,
-                       :change_suit_clubs,
-                       :change_suit_spades
-                     ] ->
+                :change_suit ->
                   :change_suit
 
                 :increase_rank ->
@@ -752,7 +743,7 @@ defmodule Oskol.Game.GameState do
             deck_builder_event =
               {:deck_builder_applied, player_id,
                %{
-                 deck_builder_type: pending.deck_builder_card.type,
+                 deck_builder_type: pending.deck_builder_card.subtype,
                  card_details: card_details,
                  selected_card_id: hd(selected_card_ids)
                }}
@@ -876,7 +867,7 @@ defmodule Oskol.Game.GameState do
     else
       # Validate it's a plus_bomb action card
       case Enum.at(shop_state.available_cards, card_index) do
-        {:action, %{type: :plus_bomb}} ->
+        %ShopCard{type: :sabotage, subtype: :plus_bomb} ->
           # Mark card as picked (but don't complete the pick yet)
           case ShopState.mark_card_picked(shop_state, card_index) do
             {:ok, updated_shop_state} ->
@@ -1025,13 +1016,15 @@ defmodule Oskol.Game.GameState do
 
   # Helper to apply deck builder card effects
   defp apply_deck_builder_card(players, player_id, deck_builder_card, selected_card) do
-    case deck_builder_card.type do
-      type when type in [:bonus_chips, :bonus_mult] ->
+    case deck_builder_card.subtype do
+      subtype when subtype in [:bonus_chips, :bonus_mult] ->
         # Apply enhancement to the selected card
+        amount = deck_builder_card.metadata.amount
+
         enhancement =
-          case type do
-            :bonus_chips -> {:bonus_chips, deck_builder_card.bonus_amount}
-            :bonus_mult -> {:bonus_mult, deck_builder_card.bonus_amount}
+          case subtype do
+            :bonus_chips -> {:bonus_chips, amount}
+            :bonus_mult -> {:bonus_mult, amount}
           end
 
         {apply_enhancement(players, player_id, selected_card.id, enhancement),
@@ -1047,21 +1040,9 @@ defmodule Oskol.Game.GameState do
         {apply_remove_card(players, player_id, selected_card.id),
          %{type: :remove_card, card_id: selected_card.id}}
 
-      type
-      when type in [
-             :change_suit_hearts,
-             :change_suit_diamonds,
-             :change_suit_clubs,
-             :change_suit_spades
-           ] ->
+      :change_suit ->
         # Change the suit of the selected card
-        new_suit =
-          case type do
-            :change_suit_hearts -> :hearts
-            :change_suit_diamonds -> :diamonds
-            :change_suit_clubs -> :clubs
-            :change_suit_spades -> :spades
-          end
+        new_suit = deck_builder_card.metadata.suit
 
         {apply_suit_change(players, player_id, selected_card.id, new_suit),
          %{type: :change_suit, suit: new_suit, card_id: selected_card.id}}

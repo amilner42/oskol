@@ -377,18 +377,4 @@ defmodule Oskol.Poker.HandTest do
       assert result.hand_type != :straight_flush
     end
   end
-
-  describe "hand_type_name/1" do
-    test "returns correct names for all hand types" do
-      assert Hand.hand_type_name(:high_card) == "High Card"
-      assert Hand.hand_type_name(:pair) == "Pair"
-      assert Hand.hand_type_name(:two_pair) == "Two Pair"
-      assert Hand.hand_type_name(:three_of_a_kind) == "Three of a Kind"
-      assert Hand.hand_type_name(:straight) == "Straight"
-      assert Hand.hand_type_name(:flush) == "Flush"
-      assert Hand.hand_type_name(:full_house) == "Full House"
-      assert Hand.hand_type_name(:four_of_a_kind) == "Four of a Kind"
-      assert Hand.hand_type_name(:straight_flush) == "Straight Flush"
-    end
-  end
 end
