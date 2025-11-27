@@ -883,22 +883,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <%= if @has_preview do %>
         <!-- Selection instruction -->
         <div class="mb-4">
-          <% card_subtype = @pending_deck_builder.deck_builder_card.subtype
-
-          instruction =
-            case card_subtype do
-              :remove_card ->
-                "Select up to 2 cards to remove"
-
-              :change_suit ->
-                "Select up to 3 cards to change"
-
-              :increase_rank ->
-                "Select up to 2 cards to upgrade"
-
-              _ ->
-                "Select a card to enhance"
-            end %>
+          <% instruction = ShopCard.selection_instruction(@pending_deck_builder.deck_builder_card) %>
           <div class="flex items-center justify-between">
             <span class="text-sm text-base-content/50">{instruction}</span>
             <%= if @deck_builder_selection do %>

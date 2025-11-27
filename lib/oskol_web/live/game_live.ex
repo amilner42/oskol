@@ -522,8 +522,7 @@ defmodule OskolWeb.GameLive do
   @impl true
   def handle_event("select_deck_card", %{"card_id" => card_id}, socket) do
     # Local UI state - track which card(s) user selected from the 8-card grid
-    # For :remove_card and suit changes, allow selecting up to 3 cards
-    # For other types, only allow selecting 1 card
+    alias Oskol.Game.ShopCard
 
     pending =
       with %{server_state: %{game_state: %{shop_state: shop_state}}} <- socket.assigns,
@@ -533,24 +532,9 @@ defmodule OskolWeb.GameLive do
         _ -> nil
       end
 
-    card_type = pending && pending.deck_builder_card.type
-
-    is_multi_select =
-      card_type in [
-        :remove_card,
-        :change_suit_hearts,
-        :change_suit_diamonds,
-        :change_suit_clubs,
-        :change_suit_spades,
-        :increase_rank
-      ]
-
-    max_cards =
-      case card_type do
-        :increase_rank -> 2
-        :remove_card -> 2
-        _ -> 3
-      end
+    shop_card = pending && pending.deck_builder_card
+    max_cards = if shop_card, do: ShopCard.max_selection(shop_card), else: 1
+    is_multi_select = max_cards > 1
 
     new_selection =
       if is_multi_select do

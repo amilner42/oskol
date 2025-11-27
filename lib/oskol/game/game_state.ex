@@ -682,10 +682,8 @@ defmodule Oskol.Game.GameState do
     unless pending.player_id == player_id do
       {:error, :not_your_pending_selection}
     else
-      # Handle both single card and multiple cards (for :remove_card, suit changes, and rank increase)
-      is_multi_select =
-        pending.deck_builder_card.subtype == :remove_card or
-          pending.deck_builder_card.subtype in [:change_suit, :increase_rank]
+      # Handle both single card and multiple cards based on max_selection
+      is_multi_select = ShopCard.max_selection(pending.deck_builder_card) > 1
 
       selected_card_ids =
         if is_list(selected_card_id_or_ids),

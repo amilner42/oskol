@@ -312,6 +312,39 @@ defmodule Oskol.Game.ShopCard do
   def requires_selection?(%__MODULE__{}), do: false
 
   @doc """
+  Returns the maximum number of cards that can be selected for this card.
+  Returns 1 for cards that don't support multi-select.
+  """
+  @spec max_selection(t()) :: pos_integer()
+  def max_selection(%__MODULE__{type: :deck_builder, subtype: :change_suit}), do: 3
+  def max_selection(%__MODULE__{type: :deck_builder, subtype: :remove_card}), do: 2
+  def max_selection(%__MODULE__{type: :deck_builder, subtype: :increase_rank}), do: 2
+  def max_selection(%__MODULE__{type: :sabotage, subtype: :plus_bomb}), do: 1
+  def max_selection(%__MODULE__{type: :deck_builder}), do: 1
+  def max_selection(%__MODULE__{}), do: 1
+
+  @doc """
+  Returns the selection instruction text for this card.
+  """
+  @spec selection_instruction(t()) :: String.t()
+  def selection_instruction(%__MODULE__{type: :deck_builder, subtype: :remove_card}),
+    do: "Select up to 2 cards to remove"
+
+  def selection_instruction(%__MODULE__{type: :deck_builder, subtype: :change_suit}),
+    do: "Select up to 3 cards to change"
+
+  def selection_instruction(%__MODULE__{type: :deck_builder, subtype: :increase_rank}),
+    do: "Select up to 2 cards to upgrade"
+
+  def selection_instruction(%__MODULE__{type: :deck_builder}),
+    do: "Select a card to enhance"
+
+  def selection_instruction(%__MODULE__{type: :sabotage, subtype: :plus_bomb}),
+    do: "Select a card - that rank AND suit won't score for opponent"
+
+  def selection_instruction(%__MODULE__{}), do: ""
+
+  @doc """
   Generates selection cards based on the card type.
   - For deck builder enhancements/removal: Returns 8 random cards from player's deck
   - For add card: Returns 8 newly generated random cards
