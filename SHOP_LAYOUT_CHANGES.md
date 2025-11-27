@@ -56,8 +56,15 @@ Reorganized the shop from a 3x5 grid (15 cards) to a 4x4 grid (16 cards) split i
 ### 3. Visual Design
 
 **Section Headers**:
-- **Arsenal**: Emerald color (`text-emerald-500/80`) with "Permanent Upgrades" subtitle
-- **Tactical Ops**: Rose color (`text-rose-500/80`) with "Temporary Battlefield Advantage" subtitle
+- **Arsenal**: Gray text (`text-base-content/40`) with "Permanent Upgrades" subtitle
+- **Tactical Ops**: Gray text (`text-base-content/40`) with "Temporary Battlefield Advantage" subtitle
+- Consistent gray color for both sections provides cleaner visual hierarchy
+
+**Card Type Badges & Colors**:
+- **Level Up**: Green badge (`text-emerald-500`), shows hand name (e.g., "Pair", "Flush")
+- **Deck Builder**: Violet badge (`text-violet-500`), shows card type (e.g., "Remove Card")
+- **Blocker**: Red/rose badge (`text-rose-500`), shows "Blocker" label + blocked hand name
+- **Tactical**: Amber/yellow badge (`text-amber-500`), shows "Tactical" label + card name (Scrambler, Plus Bomb, Static Field)
 
 **Card Sizing**: Maintained same per-card dimensions; increased container width to prevent cramping
 
