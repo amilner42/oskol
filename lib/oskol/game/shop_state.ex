@@ -110,13 +110,13 @@ defmodule Oskol.Game.ShopState do
     }
   end
 
-  # Generates a pool of 15 shop cards: 5 level ups + 5 deck builders + 5 action cards.
-  # Cards are sorted by category (level ups first, then deck builders, then actions)
+  # Generates a pool of 16 shop cards: 8 permanent (level ups + deck builders) + 8 action cards.
+  # Cards are sorted by category (permanent cards first, then actions)
   # and within each category they are sorted for consistency.
   # Dev codes can force specific cards to appear.
   @spec generate_random_shop_cards([String.t()]) :: [shop_card()]
   defp generate_random_shop_cards(dev_codes) do
-    # Generate 5 random level up cards with weighted frequencies (sorted by hand type)
+    # Generate 4 random level up cards with weighted frequencies (sorted by hand type)
     # Frequencies: High Card (4), Pair (4), Two Pair (3), Three Kind (3),
     #              Straight (2), Flush (2), Full House (2), Four Kind (1), Straight Flush (1)
     level_up_pool =
@@ -136,17 +136,17 @@ defmodule Oskol.Game.ShopState do
     level_ups =
       level_up_pool
       |> Enum.shuffle()
-      |> Enum.take(5)
+      |> Enum.take(4)
       |> Enum.sort_by(&hand_type_order/1)
       |> Enum.map(fn hand_type -> {:level_up, hand_type} end)
 
-    # Generate 5 deck builder cards (sorted by type)
+    # Generate 4 deck builder cards (sorted by type)
     deck_builder_cards =
-      DeckBuilderCard.generate_random_deck_builder_cards(5)
+      DeckBuilderCard.generate_random_deck_builder_cards(4)
       |> Enum.sort_by(&deck_builder_sort_key/1)
       |> Enum.map(fn card -> {:deck_builder, card} end)
 
-    # Generate 5 random action cards (sorted by target_hand)
+    # Generate 8 random action cards (sorted by target_hand)
     # Check for dev codes that force specific action cards
     forced_cards =
       []
@@ -168,16 +168,16 @@ defmodule Oskol.Game.ShopState do
 
     action_cards =
       if length(forced_cards) > 0 do
-        remaining_count = 5 - length(forced_cards)
+        remaining_count = 8 - length(forced_cards)
         other_actions = ActionCard.generate_random_action_cards(remaining_count)
         forced_cards ++ other_actions
       else
-        ActionCard.generate_random_action_cards(5)
+        ActionCard.generate_random_action_cards(8)
       end
       |> Enum.sort_by(&action_card_sort_key/1)
       |> Enum.map(fn card -> {:action, card} end)
 
-    # Combine in order: level ups, deck builders, actions
+    # Combine in order: level ups, deck builders, actions (8 permanent + 8 temporary)
     level_ups ++ deck_builder_cards ++ action_cards
   end
 

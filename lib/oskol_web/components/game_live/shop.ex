@@ -10,7 +10,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <!-- Main Shop: Two Column Layout -->
       <div class="h-full flex">
         <!-- Left Column: Card Grid -->
-        <div class="w-[520px] border-r border-base-300/50 flex flex-col bg-base-100/50">
+        <div class="w-[690px] border-r border-base-300/50 flex flex-col bg-base-100/50">
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50">
             <div class="flex items-center justify-between">
@@ -18,19 +18,49 @@ defmodule OskolWeb.Components.GameLive.Shop do
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
-          
-    <!-- Cards Grid: 3 columns x 5 rows -->
+
+    <!-- Cards Grid: 4 columns x 4 rows with sections -->
           <div class="flex-1 p-6 overflow-y-auto">
-            <div class="grid grid-cols-3 gap-4">
-              <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
-                <.shop_card_minimal
-                  shop_card={shop_card}
-                  index={index}
-                  is_picked={index in @game_state.shop_state.picked_card_indices}
-                  is_selected={assigns[:previewing_card_index] == index}
-                  can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
-                />
-              <% end %>
+            <!-- Arsenal Section (Permanent Upgrades) -->
+            <div class="mb-6">
+              <div class="mb-3 flex items-center gap-2">
+                <div class="text-sm font-semibold uppercase tracking-wider text-emerald-500/80">
+                  Arsenal
+                </div>
+                <div class="text-xs text-base-content/40">Permanent Upgrades</div>
+              </div>
+              <div class="grid grid-cols-4 gap-4">
+                <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.take(8) do %>
+                  <.shop_card_minimal
+                    shop_card={shop_card}
+                    index={index}
+                    is_picked={index in @game_state.shop_state.picked_card_indices}
+                    is_selected={assigns[:previewing_card_index] == index}
+                    can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
+                  />
+                <% end %>
+              </div>
+            </div>
+
+    <!-- Tactical Ops Section (Action Cards) -->
+            <div>
+              <div class="mb-3 flex items-center gap-2">
+                <div class="text-sm font-semibold uppercase tracking-wider text-rose-500/80">
+                  Tactical Ops
+                </div>
+                <div class="text-xs text-base-content/40">Temporary Battlefield Advantage</div>
+              </div>
+              <div class="grid grid-cols-4 gap-4">
+                <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.drop(8) do %>
+                  <.shop_card_minimal
+                    shop_card={shop_card}
+                    index={index}
+                    is_picked={index in @game_state.shop_state.picked_card_indices}
+                    is_selected={assigns[:previewing_card_index] == index}
+                    can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
+                  />
+                <% end %>
+              </div>
             </div>
           </div>
         </div>
