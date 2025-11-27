@@ -2,8 +2,8 @@
  * End-to-end test for shop layout (15 cards) and auto-timer feature
  *
  * Tests:
- * 1. Two players join and start game
- * 2. Play through one complete round (4 hands)
+ * 1. Two players join and start game with 1HAND dev code
+ * 2. Play through one complete round (1 hand with dev code)
  * 3. Shop displays 15 cards (5 rows x 3 columns)
  * 4. Both players pick their cards
  * 5. After picks complete, countdown timer appears and auto-advances
@@ -68,8 +68,17 @@ async function main() {
     await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/03-lobby-p2-joined.png', fullPage: true });
     log('Player 2 joined lobby');
 
-    // ===== STEP 3: Both players select format =====
-    log('STEP 3: Selecting format...');
+    // ===== STEP 3: Enter 1HAND dev code =====
+    log('STEP 3: Entering 1HAND dev code...');
+
+    // Enter dev code (only need to do it on one player's page, the host)
+    await player1.fill('input[name="dev_code"]', '1HAND');
+    await sleep(500);
+    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/04-dev-code-entered.png', fullPage: true });
+    log('Dev code 1HAND entered');
+
+    // ===== STEP 4: Both players select format =====
+    log('STEP 4: Selecting format...');
 
     // Both click "Skirmish" format (shortest game, has shop)
     const skirmishBtn1 = await player1.$('button:has-text("Skirmish")');
@@ -80,11 +89,11 @@ async function main() {
     if (skirmishBtn2) await skirmishBtn2.click();
     await sleep(1000);
 
-    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/04-format-selected.png', fullPage: true });
+    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/05-format-selected.png', fullPage: true });
     log('Both players selected Skirmish format');
 
-    // ===== STEP 4: Start game =====
-    log('STEP 4: Starting game...');
+    // ===== STEP 5: Start game =====
+    log('STEP 5: Starting game...');
 
     const startButton = await player1.$('button:has-text("Start Game")');
     if (startButton) {
@@ -92,50 +101,44 @@ async function main() {
       await sleep(3000);
     }
 
-    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/05-game-started-p1.png', fullPage: true });
-    await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/06-game-started-p2.png', fullPage: true });
+    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/06-game-started-p1.png', fullPage: true });
+    await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/07-game-started-p2.png', fullPage: true });
     log('Game started');
 
-    // ===== STEP 5: Play 4 hands =====
-    log('STEP 5: Playing first round (4 hands)...');
+    // ===== STEP 6: Play 1 hand (thanks to 1HAND dev code) =====
+    log('STEP 6: Playing round (1 hand with dev code)...');
 
-    for (let hand = 1; hand <= 4; hand++) {
-      log(`  Playing hand ${hand}/4...`);
-
-      // Player 1 selects and plays a card
-      const p1Cards = await player1.$$('button[phx-click="toggle_card"]');
-      if (p1Cards.length > 0) {
-        await p1Cards[0].click();
-        await sleep(400);
-        await player1.click('button:has-text("Play")');
-        await sleep(1000);
-      }
-
-      // Player 2 selects and plays a card
-      const p2Cards = await player2.$$('button[phx-click="toggle_card"]');
-      if (p2Cards.length > 0) {
-        await p2Cards[0].click();
-        await sleep(400);
-        await player2.click('button:has-text("Play")');
-        await sleep(1500);
-      }
-
-      // Both players skip hand result
-      const p1Skip = await player1.$('button:has-text("Skip")');
-      if (p1Skip) await p1Skip.click();
-      const p2Skip = await player2.$('button:has-text("Skip")');
-      if (p2Skip) await p2Skip.click();
+    // Player 1 selects and plays a card
+    const p1Cards = await player1.$$('button[phx-click="toggle_card"]');
+    if (p1Cards.length > 0) {
+      await p1Cards[0].click();
+      await sleep(400);
+      await player1.click('button:has-text("Play")');
       await sleep(1000);
-
-      log(`  Hand ${hand} complete`);
     }
 
-    log('All 4 hands played');
+    // Player 2 selects and plays a card
+    const p2Cards = await player2.$$('button[phx-click="toggle_card"]');
+    if (p2Cards.length > 0) {
+      await p2Cards[0].click();
+      await sleep(400);
+      await player2.click('button:has-text("Play")');
+      await sleep(1500);
+    }
 
-    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/07-round-complete-p1.png', fullPage: true });
+    // Both players skip hand result
+    const p1Skip = await player1.$('button:has-text("Skip")');
+    if (p1Skip) await p1Skip.click();
+    const p2Skip = await player2.$('button:has-text("Skip")');
+    if (p2Skip) await p2Skip.click();
+    await sleep(1000);
 
-    // ===== STEP 6: Auto-dismiss results and get to shop =====
-    log('STEP 6: Waiting for shop...');
+    log('Hand complete');
+
+    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/08-round-complete-p1.png', fullPage: true });
+
+    // ===== STEP 7: Wait for shop =====
+    log('STEP 7: Waiting for shop...');
     await sleep(4000);  // Wait for auto-dismiss
 
     // If still on results, try clicking Skip
@@ -145,15 +148,15 @@ async function main() {
     if (skipBtn2) await skipBtn2.click();
     await sleep(2000);
 
-    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/08-shop-p1.png', fullPage: true });
-    await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/09-shop-p2.png', fullPage: true });
+    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/09-shop-p1.png', fullPage: true });
+    await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/10-shop-p2.png', fullPage: true });
 
     // Count shop cards to verify 15 cards
     const shopCards = await player1.$$('.grid.grid-cols-3 button');
     log(`Found ${shopCards.length} shop cards (expected: 15)`);
 
-    // ===== STEP 7: Pick shop cards =====
-    log('STEP 7: Picking shop cards...');
+    // ===== STEP 8: Pick shop cards =====
+    log('STEP 8: Picking shop cards...');
 
     // First picker makes pick
     const firstPickerText = await player1.textContent('body');
@@ -171,7 +174,7 @@ async function main() {
     if (shopCardsFirst.length > 0) {
       await shopCardsFirst[0].click();
       await sleep(1000);
-      await firstPicker.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/10-preview-card.png', fullPage: true });
+      await firstPicker.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/11-preview-card.png', fullPage: true });
 
       const confirmBtn = await firstPicker.$('button:has-text("Confirm Selection")');
       if (confirmBtn) {
@@ -200,13 +203,13 @@ async function main() {
 
     log('Both players picked cards');
 
-    // ===== STEP 8: Capture countdown timer =====
-    log('STEP 8: Capturing countdown timer...');
+    // ===== STEP 9: Capture countdown timer =====
+    log('STEP 9: Capturing countdown timer...');
     await sleep(500);
 
     // Take screenshot showing countdown
-    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/11-countdown-timer-p1.png', fullPage: true });
-    await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/12-countdown-timer-p2.png', fullPage: true });
+    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/12-countdown-timer-p1.png', fullPage: true });
+    await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/13-countdown-timer-p2.png', fullPage: true });
 
     // Check for countdown text
     const countdownText = await player1.textContent('body');
@@ -215,11 +218,11 @@ async function main() {
     }
 
     // Wait for auto-advance (5 seconds + buffer)
-    log('STEP 9: Waiting for auto-advance...');
+    log('STEP 10: Waiting for auto-advance...');
     await sleep(6000);
 
-    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/13-after-timer-p1.png', fullPage: true });
-    await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/14-after-timer-p2.png', fullPage: true });
+    await player1.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/14-after-timer-p1.png', fullPage: true });
+    await player2.screenshot({ path: 'playwright/screenshots/test-shop-layout-timer/15-after-timer-p2.png', fullPage: true });
 
     // Check if we're back to gameplay
     const gameplayCheck = await player1.textContent('body');
