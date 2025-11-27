@@ -18,7 +18,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
-
+          
     <!-- Cards Grid: 4 columns x 4 rows with sections -->
           <div class="flex-1 p-6 overflow-y-auto">
             <!-- Arsenal Section (Permanent Upgrades) -->
@@ -41,7 +41,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 <% end %>
               </div>
             </div>
-
+            
     <!-- Tactical Ops Section (Action Cards) -->
             <div>
               <div class="mb-3 flex items-center gap-2">
@@ -295,7 +295,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
         {:action, action_card} ->
           # Use amber for sabotage cards (scrambler/plus_bomb/static), rose for counter
-          color = if action_card.type in [:scrambler, :plus_bomb, :static], do: "amber", else: "rose"
+          color =
+            if action_card.type in [:scrambler, :plus_bomb, :static], do: "amber", else: "rose"
+
           %{type: :action, name: ActionCard.card_name(action_card), color: color}
 
         {:deck_builder, deck_builder_card} ->
