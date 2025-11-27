@@ -153,11 +153,11 @@ defmodule Oskol.Game.ShopCard do
   end
 
   @doc """
-  Generates random action cards (sabotage + denial).
-  Includes denial cards (3x each), scrambler (3x), plus_bomb (2x), static (2x), and supply_chain (2x).
+  Generates random sabotage cards.
+  Includes scrambler (3x), plus_bomb (2x), static (2x), and supply_chain (2x).
   """
-  @spec generate_random_action_cards(pos_integer(), [String.t()]) :: [t()]
-  def generate_random_action_cards(count, dev_codes \\ []) do
+  @spec generate_random_sabotage_cards(pos_integer(), [String.t()]) :: [t()]
+  def generate_random_sabotage_cards(count, dev_codes \\ []) do
     # Check for forced cards via dev codes
     forced_cards =
       []
@@ -176,8 +176,6 @@ defmodule Oskol.Game.ShopCard do
 
     pool =
       List.flatten([
-        # 3 copies of each denial card
-        List.duplicate(all_denial_cards(), 3) |> List.flatten(),
         # 3 copies of scrambler
         List.duplicate(scrambler_card(), 3),
         # 2 copies of plus_bomb
@@ -191,17 +189,30 @@ defmodule Oskol.Game.ShopCard do
     if length(forced_cards) > 0 do
       remaining_count = count - length(forced_cards)
 
-      other_actions =
+      other_sabotage =
         pool
         |> Enum.shuffle()
         |> Enum.take(remaining_count)
 
-      forced_cards ++ other_actions
+      forced_cards ++ other_sabotage
     else
       pool
       |> Enum.shuffle()
       |> Enum.take(count)
     end
+  end
+
+  @doc """
+  Generates random denial (counter) cards.
+  Each denial card appears with equal weight (3x each in the pool).
+  """
+  @spec generate_random_denial_cards(pos_integer()) :: [t()]
+  def generate_random_denial_cards(count) do
+    pool = List.duplicate(all_denial_cards(), 3) |> List.flatten()
+
+    pool
+    |> Enum.shuffle()
+    |> Enum.take(count)
   end
 
   # ===== Card Display Functions =====

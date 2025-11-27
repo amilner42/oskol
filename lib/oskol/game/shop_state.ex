@@ -84,29 +84,88 @@ defmodule Oskol.Game.ShopState do
     }
   end
 
-  # Generates a pool of 16 shop cards: 8 permanent (level ups + deck builders) + 8 action cards.
-  # Cards are sorted by category (permanent cards first, then actions)
-  # and within each category they are sorted for consistency.
+  # Arsenal distribution weights: {research_count, logistics_count} => weight
+  # Higher weight = more likely to be selected
+  @arsenal_distributions %{
+    {6, 2} => 2,
+    {5, 3} => 3,
+    {4, 4} => 3,
+    {3, 5} => 2,
+    {2, 6} => 1
+  }
+
+  # Action distribution weights: {sabotage_count, counter_count} => weight
+  # Fixed 50-50 split for now
+  @action_distributions %{
+    {4, 4} => 1
+  }
+
+  # Generates a pool of 16 shop cards using two-level randomization:
+  # Level 1: Decide category split (e.g., 5 research + 3 logistics)
+  # Level 2: Randomize within each category with proper weights
+  #
+  # Top 8: ARSENAL (Research + Logistics)
+  # Bottom 8: ACTIONS (Sabotage + Counters, 50-50 split)
+  #
+  # Cards are sorted by category for consistency.
   # Dev codes can force specific cards to appear.
   @spec generate_random_shop_cards([String.t()]) :: [shop_card()]
   defp generate_random_shop_cards(dev_codes) do
-    # Generate 4 random level up cards (sorted by hand type)
-    level_ups =
-      ShopCard.generate_random_level_ups(4)
+    # Level 1: Sample arsenal distribution (research vs logistics split)
+    {research_count, logistics_count} = sample_from_distribution(@arsenal_distributions)
+
+    # Level 2: Generate cards within each category
+    research_cards =
+      ShopCard.generate_random_level_ups(research_count)
       |> Enum.sort_by(&card_sort_key/1)
 
-    # Generate 4 deck builder cards (sorted by type)
-    deck_builder_cards =
-      ShopCard.generate_random_deck_builders(4)
+    logistics_cards =
+      ShopCard.generate_random_deck_builders(logistics_count)
       |> Enum.sort_by(&card_sort_key/1)
 
-    # Generate 8 random action cards (sabotage + denial, sorted)
-    action_cards =
-      ShopCard.generate_random_action_cards(8, dev_codes)
+    # Level 1: Sample action distribution (sabotage vs counter split)
+    {sabotage_count, counter_count} = sample_from_distribution(@action_distributions)
+
+    # Level 2: Generate cards within each category
+    sabotage_cards =
+      ShopCard.generate_random_sabotage_cards(sabotage_count, dev_codes)
       |> Enum.sort_by(&card_sort_key/1)
 
-    # Combine in order: level ups, deck builders, actions (8 permanent + 8 temporary)
-    level_ups ++ deck_builder_cards ++ action_cards
+    counter_cards =
+      ShopCard.generate_random_denial_cards(counter_count)
+      |> Enum.sort_by(&card_sort_key/1)
+
+    # Combine in order: research, logistics, sabotage, counters (8 arsenal + 8 actions)
+    research_cards ++ logistics_cards ++ sabotage_cards ++ counter_cards
+  end
+
+  # Samples a single item from a weighted distribution map
+  # Map format: %{item => weight, ...}
+  # Returns the selected item
+  @spec sample_from_distribution(%{any() => pos_integer()}) :: any()
+  defp sample_from_distribution(distribution) when map_size(distribution) > 0 do
+    # Create a list of {item, weight} tuples
+    items_with_weights = Enum.to_list(distribution)
+
+    # Calculate total weight
+    total_weight = Enum.reduce(items_with_weights, 0, fn {_item, weight}, acc -> acc + weight end)
+
+    # Generate random number in range [1, total_weight]
+    random_value = :rand.uniform(total_weight)
+
+    # Find the item that corresponds to this random value
+    {selected_item, _weight} =
+      Enum.reduce_while(items_with_weights, {nil, 0}, fn {item, weight}, {_current_item, cumulative} ->
+        new_cumulative = cumulative + weight
+
+        if random_value <= new_cumulative do
+          {:halt, {item, weight}}
+        else
+          {:cont, {item, new_cumulative}}
+        end
+      end)
+
+    selected_item
   end
 
   # Sort key for shop cards - unified sorting across all card types
