@@ -109,15 +109,15 @@ defmodule Oskol.Game.ShopState do
         logistics: %{
           weight: 1,
           cards: %{
-            bonus_chips: 1,
-            bonus_mult: 1,
-            add_card: 1,
-            remove_card: 1,
+            bonus_chips: 4,
+            bonus_mult: 4,
+            add_card: 4,
+            remove_card: 4,
             change_suit_hearts: 1,
             change_suit_diamonds: 1,
             change_suit_clubs: 1,
             change_suit_spades: 1,
-            increase_rank: 1
+            increase_rank: 4
           }
         }
       }
@@ -127,24 +127,24 @@ defmodule Oskol.Game.ShopState do
         sabotage: %{
           weight: 1,
           cards: %{
-            scrambler: 3,
-            plus_bomb: 2,
-            static: 2,
-            supply_chain: 2
+            scrambler: 1,
+            plus_bomb: 1,
+            static: 1,
+            supply_chain: 1
           }
         },
         counter: %{
           weight: 1,
           cards: %{
-            high_card: 3,
-            pair: 3,
-            two_pair: 3,
-            three_of_a_kind: 3,
-            straight: 3,
-            flush: 3,
-            full_house: 3,
-            four_of_a_kind: 3,
-            straight_flush: 3
+            high_card: 1,
+            pair: 1,
+            two_pair: 1,
+            three_of_a_kind: 1,
+            straight: 1,
+            flush: 1,
+            full_house: 1,
+            four_of_a_kind: 1,
+            straight_flush: 1
           }
         }
       }
@@ -199,7 +199,8 @@ defmodule Oskol.Game.ShopState do
 
   # Converts a branch name and card key to a ShopCard struct
   @spec card_key_to_shop_card(atom(), atom()) :: shop_card()
-  defp card_key_to_shop_card(:research, hand_type), do: %ShopCard{type: :level_up, subtype: hand_type}
+  defp card_key_to_shop_card(:research, hand_type),
+    do: %ShopCard{type: :level_up, subtype: hand_type}
 
   defp card_key_to_shop_card(:logistics, :bonus_chips),
     do: %ShopCard{type: :deck_builder, subtype: :bonus_chips, metadata: %{amount: 40}}
@@ -233,7 +234,8 @@ defmodule Oskol.Game.ShopState do
   defp card_key_to_shop_card(:sabotage, :static), do: ShopCard.static_card()
   defp card_key_to_shop_card(:sabotage, :supply_chain), do: ShopCard.supply_chain_card()
 
-  defp card_key_to_shop_card(:counter, hand_type), do: %ShopCard{type: :denial, subtype: hand_type}
+  defp card_key_to_shop_card(:counter, hand_type),
+    do: %ShopCard{type: :denial, subtype: hand_type}
 
   # Apply dev code overrides to force specific sabotage cards
   @spec apply_dev_code_overrides([shop_card()], [String.t()]) :: [shop_card()]
