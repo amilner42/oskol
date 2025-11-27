@@ -509,6 +509,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             hand_type={hand_type}
             skill_tree={@skill_tree}
             can_confirm={@can_confirm}
+            is_my_selection={@can_confirm}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
           />
@@ -536,11 +537,22 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp level_up_detail(assigns) do
-    current_level = Map.get(assigns.skill_tree, assigns.hand_type, 1)
-    next_level = current_level + 1
+    # Get upgrade bonus (constant for each hand type)
+    upgrade_bonus = Oskol.Poker.Score.upgrade_bonuses()[assigns.hand_type]
 
-    current_stats = Oskol.Poker.Score.stats_at_level(assigns.hand_type, current_level)
-    next_stats = Oskol.Poker.Score.stats_at_level(assigns.hand_type, next_level)
+    # Only calculate actual levels if this is my selection
+    {current_level, next_level, current_stats, next_stats} =
+      if assigns.is_my_selection do
+        level = Map.get(assigns.skill_tree, assigns.hand_type, 1)
+        {
+          level,
+          level + 1,
+          Oskol.Poker.Score.stats_at_level(assigns.hand_type, level),
+          Oskol.Poker.Score.stats_at_level(assigns.hand_type, level + 1)
+        }
+      else
+        {nil, nil, nil, nil}
+      end
 
     assigns =
       assigns
@@ -548,6 +560,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:next_level, next_level)
       |> assign(:current_stats, current_stats)
       |> assign(:next_stats, next_stats)
+      |> assign(:upgrade_bonus, upgrade_bonus)
       |> assign(:hand_name, Format.hand_name(assigns.hand_type))
 
     ~H"""
@@ -557,12 +570,16 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
         <h2 class="text-4xl font-light text-base-content">{@hand_name}</h2>
       </div>
-      
+
     <!-- Level indicator -->
       <div class="mb-12">
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2">
-            <span class="text-3xl font-light text-base-content/40">{@current_level}</span>
+            <%= if @is_my_selection do %>
+              <span class="text-3xl font-light text-base-content/40">{@current_level}</span>
+            <% else %>
+              <span class="text-3xl font-light text-base-content/40">?</span>
+            <% end %>
             <svg
               class="w-5 h-5 text-emerald-500"
               fill="none"
@@ -576,55 +593,79 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 d="M13 7l5 5m0 0l-5 5m5-5H6"
               />
             </svg>
-            <span class="text-3xl font-medium text-emerald-500">{@next_level}</span>
+            <%= if @is_my_selection do %>
+              <span class="text-3xl font-medium text-emerald-500">{@next_level}</span>
+            <% else %>
+              <span class="text-3xl font-medium text-emerald-500">?</span>
+            <% end %>
           </div>
         </div>
       </div>
-      
+
     <!-- Stats -->
       <div class="space-y-6 flex-1">
-        <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
-          <span class="text-base-content/50 text-sm uppercase tracking-wider">Base Chips</span>
-          <div class="flex items-center gap-3">
-            <span class="text-base-content/30 text-lg">{@current_stats.base_chips}</span>
-            <svg
-              class="w-4 h-4 text-base-content/20"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M17 8l4 4m0 0l-4 4m4-4H3"
-              />
-            </svg>
-            <span class="text-emerald-500 text-2xl font-medium">{@next_stats.base_chips}</span>
+        <%= if @is_my_selection do %>
+          <!-- My selection: show current → new values with delta -->
+          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
+            <span class="text-base-content/50 text-sm uppercase tracking-wider">Base Chips</span>
+            <div class="flex items-center gap-3">
+              <span class="text-base-content/30 text-lg">{@current_stats.base_chips}</span>
+              <svg
+                class="w-4 h-4 text-base-content/20"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M17 8l4 4m0 0l-4 4m4-4H3"
+                />
+              </svg>
+              <span class="text-emerald-500 text-2xl font-medium">{@next_stats.base_chips}</span>
+              <span class="text-emerald-400 text-sm font-medium">(+{@upgrade_bonus.chips})</span>
+            </div>
           </div>
-        </div>
-        <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
-          <span class="text-base-content/50 text-sm uppercase tracking-wider">Multiplier</span>
-          <div class="flex items-center gap-3">
-            <span class="text-base-content/30 text-lg">{@current_stats.multiplier}x</span>
-            <svg
-              class="w-4 h-4 text-base-content/20"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M17 8l4 4m0 0l-4 4m4-4H3"
-              />
-            </svg>
-            <span class="text-emerald-500 text-2xl font-medium">{@next_stats.multiplier}x</span>
+          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
+            <span class="text-base-content/50 text-sm uppercase tracking-wider">Multiplier</span>
+            <div class="flex items-center gap-3">
+              <span class="text-base-content/30 text-lg">{@current_stats.multiplier}x</span>
+              <svg
+                class="w-4 h-4 text-base-content/20"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M17 8l4 4m0 0l-4 4m4-4H3"
+                />
+              </svg>
+              <span class="text-emerald-500 text-2xl font-medium">{@next_stats.multiplier}x</span>
+              <span class="text-emerald-400 text-sm font-medium">(+{@upgrade_bonus.multiplier})</span>
+            </div>
           </div>
-        </div>
+        <% else %>
+          <!-- Opponent's selection: show only delta gained -->
+          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
+            <span class="text-base-content/50 text-sm uppercase tracking-wider">Chips Gained</span>
+            <span class="text-emerald-500 text-2xl font-medium">+{@upgrade_bonus.chips}</span>
+          </div>
+          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
+            <span class="text-base-content/50 text-sm uppercase tracking-wider">Mult Gained</span>
+            <span class="text-emerald-500 text-2xl font-medium">+{@upgrade_bonus.multiplier}</span>
+          </div>
+          <div class="mt-4 p-4 rounded-lg bg-base-200/50">
+            <p class="text-base-content/50 text-sm italic">
+              Opponent's current level is hidden. Watch for their hand types during gameplay!
+            </p>
+          </div>
+        <% end %>
       </div>
-      
+
     <!-- Action Button -->
       <%= if @can_confirm do %>
         <div class="pt-8">
