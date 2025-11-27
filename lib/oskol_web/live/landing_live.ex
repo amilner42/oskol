@@ -431,6 +431,9 @@ defmodule OskolWeb.LandingLive do
         <div class="text-center px-6 max-w-xl w-full mx-auto">
           <div class="mb-10 animate-logo">
             <.logo_large />
+            <p class="text-base-content/50 text-sm tracking-widest uppercase">
+              Poker warfare
+            </p>
           </div>
 
           <div class="animate-content">
