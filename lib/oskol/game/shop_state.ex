@@ -74,9 +74,10 @@ defmodule Oskol.Game.ShopState do
   - loser_id: The player who lost the last round (picks second)
   - round_was_tie: If true, randomly assign who picks first
   - total_rounds: Number of upgrade rounds (1-3)
+  - dev_codes: Optional list of dev codes for forcing specific cards
   """
-  @spec new(player_id(), player_id(), boolean(), pos_integer()) :: t()
-  def new(winner_id, loser_id, round_was_tie, total_rounds) do
+  @spec new(player_id(), player_id(), boolean(), pos_integer(), [String.t()]) :: t()
+  def new(winner_id, loser_id, round_was_tie, total_rounds, dev_codes \\ []) do
     # If tie, randomly pick who goes first
     {first_player, second_player} =
       if round_was_tie do
@@ -96,7 +97,7 @@ defmodule Oskol.Game.ShopState do
       second_picker_id: second_player,
       first_pick_made: false,
       second_pick_made: false,
-      available_cards: generate_random_shop_cards(),
+      available_cards: generate_random_shop_cards(dev_codes),
       picked_card_indices: []
     }
   end
@@ -104,8 +105,9 @@ defmodule Oskol.Game.ShopState do
   # Generates a pool of 12 shop cards: 4 level ups + 4 deck builders + 4 action cards.
   # Cards are sorted by category (level ups first, then deck builders, then actions)
   # and within each category they are sorted for consistency.
-  @spec generate_random_shop_cards() :: [shop_card()]
-  defp generate_random_shop_cards do
+  # Dev codes can force specific cards to appear.
+  @spec generate_random_shop_cards([String.t()]) :: [shop_card()]
+  defp generate_random_shop_cards(dev_codes) do
     # Generate 4 random level up cards with weighted frequencies (sorted by hand type)
     # Frequencies: High Card (4), Pair (4), Two Pair (3), Three Kind (3),
     #              Straight (2), Flush (2), Full House (2), Four Kind (1), Straight Flush (1)
@@ -137,14 +139,28 @@ defmodule Oskol.Game.ShopState do
       |> Enum.map(fn card -> {:deck_builder, card} end)
 
     # Generate 4 random action cards (sorted by target_hand)
+    # Check for dev codes that force specific action cards
     action_cards =
-      ActionCard.generate_random_action_cards(4)
-      |> Enum.sort_by(& &1.target_hand, fn a, b -> hand_type_order(a) <= hand_type_order(b) end)
+      if "SHOP_FORCE_SCRAMBLER" in dev_codes do
+        # Force a scrambler card to be in the first action slot
+        scrambler = ActionCard.scrambler_card()
+        other_actions = ActionCard.generate_random_action_cards(3)
+        [scrambler | other_actions]
+      else
+        ActionCard.generate_random_action_cards(4)
+      end
+      |> Enum.sort_by(&action_card_sort_key/1)
       |> Enum.map(fn card -> {:action, card} end)
 
     # Combine in order: level ups, deck builders, actions
     level_ups ++ deck_builder_cards ++ action_cards
   end
+
+  # Sort key for action cards (scramblers first, then by target_hand)
+  defp action_card_sort_key(%ActionCard{type: :scrambler}), do: {0, 0}
+
+  defp action_card_sort_key(%ActionCard{type: :denial, target_hand: hand}),
+    do: {1, hand_type_order(hand)}
 
   # Sort key for hand types (high card to straight flush)
   defp hand_type_order(:high_card), do: 0

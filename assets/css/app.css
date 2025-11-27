@@ -117,3 +117,9 @@
 .border-opponent {
   border-color: oklch(70% 0.18 55); /* orange-500 */
 }
+.bg-player {
+  background-color: oklch(68% 0.16 230); /* sky-500 */
+}
+.bg-opponent {
+  background-color: oklch(70% 0.18 55); /* orange-500 */
+}

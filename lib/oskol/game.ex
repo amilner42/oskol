@@ -50,8 +50,8 @@ defmodule Oskol.Game do
   defdelegate get_server_state(game_id), to: GameServer, as: :get_state
   defdelegate select_format(game_id, player_id, format), to: GameServer
 
-  def start_game_session(game_id) do
-    GameServer.start_game(game_id)
+  def start_game_session(game_id, dev_codes \\ []) do
+    GameServer.start_game(game_id, dev_codes)
   end
 
   defdelegate player_lock_in_hand(game_id, player_id, hand), to: GameServer, as: :lock_in_hand

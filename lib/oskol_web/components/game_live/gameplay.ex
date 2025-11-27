@@ -183,6 +183,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           opponent_state={@opponent_state}
           opponent_card_sort={@opponent_card_sort}
           opponent_new_card_ids={@opponent_new_card_ids}
+          opponent_face_down_card_ids={@opponent_face_down_card_ids}
         />
       </div>
       
@@ -210,6 +211,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           selected_card_ids={@selected_card_ids}
           your_card_sort={@your_card_sort}
           new_card_ids={@new_card_ids}
+          player_face_down_card_ids={@player_face_down_card_ids}
           action_in_progress={@action_in_progress}
         />
       </div>
@@ -236,14 +238,17 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   end
 
   def opponent_cards(assigns) do
+    # Default face_down_card_ids to empty list if not provided
+    assigns = assign_new(assigns, :opponent_face_down_card_ids, fn -> [] end)
+
     ~H"""
     <!-- Card controls for opponent -->
     <div class="flex justify-center gap-2 mb-2">
       <button
         phx-click="toggle_opponent_card_sort"
-        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-28 justify-center"
+        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-32 justify-center"
       >
-        <span class="text-gray-500">Sort by</span>
+        <span class="text-gray-500">Sorting by</span>
         <span class="font-semibold text-gray-800">
           {if @opponent_card_sort == :rank, do: "Rank", else: "Suit"}
         </span>
@@ -252,9 +257,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <div class="flex flex-wrap gap-4 justify-center mb-2">
       <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
+        <% is_face_down = card.id in @opponent_face_down_card_ids %>
         <.card_display
           card={card}
           class={["w-28 h-40", if(is_new, do: "new-card", else: "")]}
+          face_down={is_face_down}
         />
       <% end %>
     </div>
@@ -262,6 +269,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   end
 
   def player_cards(assigns) do
+    # Default face_down_card_ids to empty list if not provided
+    assigns = assign_new(assigns, :player_face_down_card_ids, fn -> [] end)
+
     ~H"""
     <% # Compute selected card IDs based on locked_in_hand or local state
     selected_card_ids =
@@ -278,6 +288,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% selected = card.id in selected_card_ids %>
         <% at_limit = length(selected_card_ids) >= 5 %>
         <% is_new = card.id in @new_card_ids %>
+        <% is_face_down = card.id in @player_face_down_card_ids %>
         <button
           phx-click="toggle_card"
           phx-value-id={card.id}
@@ -294,6 +305,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <.card_display
             card={card}
             class={["w-28 h-40", if(is_new, do: "new-card", else: "")]}
+            face_down={is_face_down}
           />
         </button>
       <% end %>
@@ -302,9 +314,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <div class="flex justify-center gap-2 mt-2">
       <button
         phx-click="toggle_your_card_sort"
-        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-28 justify-center"
+        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-32 justify-center"
       >
-        <span class="text-gray-500">Sort by</span>
+        <span class="text-gray-500">Sorting by</span>
         <span class="font-semibold text-gray-800">
           {if @your_card_sort == :rank, do: "Rank", else: "Suit"}
         </span>
@@ -328,16 +340,23 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       </div>
 
       <%= if @player_state.active_debuffs != [] do %>
-        <div class="flex items-center gap-2 px-3 py-1 bg-error/10 rounded-lg border border-error/30">
-          <.icon name="hero-x-circle" class="w-4 h-4 text-error" />
-          <span class="text-xs font-semibold text-error">Denied:</span>
+        <div class="flex items-center gap-2 px-3 py-1 bg-player rounded-lg">
+          <.icon name="hero-hand-thumb-down-solid" class="w-4 h-4 text-sky-900" />
+          <span class="text-xs font-semibold text-sky-900">Blocked:</span>
           <div class="flex gap-1">
             <%= for hand_type <- @player_state.active_debuffs do %>
-              <span class="text-xs px-2 py-0.5 bg-error/20 rounded text-error font-medium">
+              <span class="text-xs px-2 py-0.5 bg-sky-800/20 rounded text-sky-900 font-medium">
                 {format_hand_name_short(hand_type)}
               </span>
             <% end %>
           </div>
+        </div>
+      <% end %>
+
+      <%= if @player_state.scrambled do %>
+        <div class="flex items-center gap-2 px-3 py-1 bg-player rounded-lg">
+          <.icon name="hero-hand-thumb-down-solid" class="w-4 h-4 text-sky-900" />
+          <span class="text-xs font-semibold text-sky-900">Scrambled</span>
         </div>
       <% end %>
     </div>
@@ -559,15 +578,19 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     draw_pile = current_state.card_piles.draw_pile
     hand_pile = current_state.card_piles.hand_pile
     hand_ids = MapSet.new(Enum.map(hand_pile, & &1.id))
+    face_down_ids = MapSet.new(current_state.face_down_card_ids)
     all_cards = draw_pile ++ hand_pile
 
-    total_cards =
-      length(draw_pile) + length(hand_pile) + length(current_state.card_piles.discard_pile)
-
-    cards_remaining = length(all_cards) %>
+    cards_remaining = length(all_cards)
+    face_down_count = Enum.count(hand_pile, fn card -> card.id in face_down_ids end) %>
 
     <div class="text-xs text-base-content/70 mb-3">
       {cards_remaining} cards left
+      <%= if face_down_count > 0 do %>
+        <span class="text-player/70">
+          ({face_down_count} face-down {if face_down_count == 1, do: "card", else: "cards"} in hand not highlighted)
+        </span>
+      <% end %>
     </div>
 
     <% suits = [:spades, :hearts, :clubs, :diamonds]
@@ -600,7 +623,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                   card = Enum.at(cards_at_rank, row_idx) %>
                   <%= if card do %>
                     <% in_hand = card.id in hand_ids
-                    opacity = if in_hand, do: "opacity-100", else: "opacity-40" %>
+                    is_face_down = card.id in face_down_ids
+                    # Face-down cards in hand should not be highlighted (treated like draw pile)
+                    opacity = if in_hand and not is_face_down, do: "opacity-100", else: "opacity-40" %>
                     <.card_display card={card} class={"w-12 h-[72px] #{opacity}"} compact={true} />
                   <% else %>
                     <div class="w-12 h-[72px] bg-base-300/20 rounded"></div>
@@ -723,30 +748,45 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             </div>
           <% true -> %>
         <% end %>
-
+        
+    <!-- Active effects display -->
+        <!-- Effects on YOU (bad - thumbs down, player color) -->
         <%= if @player_state.active_debuffs != [] do %>
-          <div class="flex items-center gap-1 mt-2 px-2 py-1 bg-error/10 rounded border border-error/30">
-            <.icon name="hero-x-circle" class="w-3 h-3 text-error" />
-            <span class="text-xs text-error">
-              {@player_name} will not score with {Enum.map(
-                @player_state.active_debuffs,
-                &format_hand_name_short/1
-              )
-              |> Enum.join(", ")}
+          <div class="flex items-center gap-1 mt-2 px-2 py-1 bg-player rounded">
+            <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
+            <span class="text-xs font-semibold text-sky-900">
+              {Enum.map(@player_state.active_debuffs, &format_hand_name_short/1) |> Enum.join(", ")} blocked
             </span>
           </div>
         <% end %>
 
+        <%= if @player_state.scrambled do %>
+          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-player rounded cursor-default">
+            <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
+            <span class="text-xs font-semibold text-sky-900">Scrambled</span>
+            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              1-in-4 drawn cards are face-down
+            </div>
+          </div>
+        <% end %>
+        
+    <!-- Effects on OPPONENT (good for you - thumbs up, opponent color) -->
         <%= if @opponent_state.active_debuffs != [] do %>
-          <div class="flex items-center gap-1 mt-1 px-2 py-1 bg-success/10 rounded border border-success/30">
-            <.icon name="hero-x-circle" class="w-3 h-3 text-success" />
-            <span class="text-xs text-success">
-              {@opponent_name} will not score with {Enum.map(
-                @opponent_state.active_debuffs,
-                &format_hand_name_short/1
-              )
-              |> Enum.join(", ")}
+          <div class="flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded">
+            <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
+            <span class="text-xs font-semibold text-orange-900">
+              {Enum.map(@opponent_state.active_debuffs, &format_hand_name_short/1) |> Enum.join(", ")} blocked
             </span>
+          </div>
+        <% end %>
+
+        <%= if @opponent_state.scrambled do %>
+          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded cursor-default">
+            <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
+            <span class="text-xs font-semibold text-orange-900">Scrambled</span>
+            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              1-in-4 drawn cards are face-down
+            </div>
           </div>
         <% end %>
       </div>
@@ -1224,9 +1264,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign_new(:class, fn -> "" end)
       |> assign_new(:show_enhancement, fn -> true end)
       |> assign_new(:compact, fn -> false end)
+      |> assign_new(:face_down, fn -> false end)
 
     enhancement_text =
-      if assigns.show_enhancement do
+      if assigns.show_enhancement and not assigns.face_down do
         case assigns.card.enhancement do
           {:bonus_chips, amount} -> "+#{amount}c"
           {:bonus_mult, amount} -> "+#{amount}x"
@@ -1236,11 +1277,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         nil
       end
 
-    assigns = assign(assigns, :enhancement_text, enhancement_text)
+    card_url =
+      if assigns.face_down do
+        "/images/cards/1B.svg"
+      else
+        card_to_png_url(assigns.card)
+      end
+
+    assigns =
+      assigns
+      |> assign(:enhancement_text, enhancement_text)
+      |> assign(:card_url, card_url)
 
     ~H"""
     <div class={"rounded overflow-hidden relative #{@class}"}>
-      <img src={card_to_png_url(@card)} class="w-full h-full" />
+      <img src={@card_url} class="w-full h-full" />
       <%= if @enhancement_text do %>
         <div class={[
           "absolute bg-purple-600 text-white font-bold rounded shadow-lg",

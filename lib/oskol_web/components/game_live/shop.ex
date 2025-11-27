@@ -271,7 +271,13 @@ defmodule OskolWeb.Components.GameLive.Shop do
           %{type: :level_up, name: format_hand_name(hand_type), color: "emerald"}
 
         {:action, action_card} ->
-          %{type: :action, name: format_hand_name(action_card.target_hand), color: "rose"}
+          case action_card.type do
+            :denial ->
+              %{type: :action, name: format_hand_name(action_card.target_hand), color: "rose"}
+
+            :scrambler ->
+              %{type: :action, name: "The Scrambler", color: "amber"}
+          end
 
         {:deck_builder, deck_builder_card} ->
           %{
@@ -315,6 +321,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               "emerald" -> "bg-emerald-500"
               "rose" -> "bg-rose-500"
               "violet" -> "bg-violet-500"
+              "amber" -> "bg-amber-500"
             end
           ]} />
           <div class="min-w-0">
@@ -338,17 +345,22 @@ defmodule OskolWeb.Components.GameLive.Shop do
   defp shop_card_minimal(assigns) do
     alias Oskol.Game.DeckBuilderCard
 
-    {card_type, display_name, accent_color} =
+    {card_type, action_subtype, display_name, accent_color} =
       case assigns.shop_card do
         {:level_up, hand_type} ->
-          {:level_up, format_hand_name(hand_type), "emerald"}
+          {:level_up, nil, format_hand_name(hand_type), "emerald"}
 
         {:action, action_card} ->
-          hand_name = format_hand_name(action_card.target_hand)
-          {:action, hand_name, "rose"}
+          case action_card.type do
+            :denial ->
+              {:action, :blocker, format_hand_name(action_card.target_hand), "rose"}
+
+            :scrambler ->
+              {:action, :scrambler, "The Scrambler", "amber"}
+          end
 
         {:deck_builder, deck_builder_card} ->
-          {:deck_builder, DeckBuilderCard.card_name(deck_builder_card), "violet"}
+          {:deck_builder, nil, DeckBuilderCard.card_name(deck_builder_card), "violet"}
       end
 
     # Use different events for deck builders vs other cards
@@ -365,6 +377,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     assigns =
       assigns
       |> assign(:card_type, card_type)
+      |> assign(:action_subtype, action_subtype)
       |> assign(:display_name, display_name)
       |> assign(:accent_color, accent_color)
       |> assign(:click_event, click_event)
@@ -386,6 +399,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               "emerald" -> "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
               "rose" -> "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
               "violet" -> "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
+              "amber" -> "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
             end
 
           @can_pick ->
@@ -398,6 +412,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
               "violet" ->
                 "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+
+              "amber" ->
+                "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
             end
 
           true ->
@@ -412,13 +429,18 @@ defmodule OskolWeb.Components.GameLive.Shop do
           "emerald" -> "text-emerald-500"
           "rose" -> "text-rose-500"
           "violet" -> "text-violet-500"
+          "amber" -> "text-amber-500"
         end
       ]}>
         <%= case @card_type do %>
           <% :level_up -> %>
             Level Up
           <% :action -> %>
-            Action
+            <%= if @action_subtype == :scrambler do %>
+              Scrambler
+            <% else %>
+              Blocker
+            <% end %>
           <% :deck_builder -> %>
             Deck Builder
         <% end %>
@@ -657,36 +679,68 @@ defmodule OskolWeb.Components.GameLive.Shop do
   defp action_detail(assigns) do
     card_name = Oskol.Game.ActionCard.card_name(assigns.action_card)
     card_description = Oskol.Game.ActionCard.card_description(assigns.action_card)
-    hand_name = format_hand_name(assigns.action_card.target_hand)
+    is_scrambler = assigns.action_card.type == :scrambler
+
+    hand_name =
+      if is_scrambler, do: nil, else: format_hand_name(assigns.action_card.target_hand)
+
+    # Use amber for scrambler, rose for blocker
+    accent_color = if is_scrambler, do: "amber", else: "rose"
+    type_label = if is_scrambler, do: "Scrambler", else: "Blocker"
 
     assigns =
       assigns
       |> assign(:card_name, card_name)
       |> assign(:card_description, card_description)
       |> assign(:hand_name, hand_name)
+      |> assign(:is_scrambler, is_scrambler)
+      |> assign(:accent_color, accent_color)
+      |> assign(:type_label, type_label)
 
     ~H"""
     <div class="flex-1 flex flex-col p-8">
       <!-- Header -->
       <div class="mb-8">
-        <div class="text-xs uppercase tracking-widest text-rose-500/60 mb-1">Action Card</div>
+        <div class={[
+          "text-xs uppercase tracking-widest mb-1",
+          if(@accent_color == "amber", do: "text-amber-500/60", else: "text-rose-500/60")
+        ]}>
+          {@type_label}
+        </div>
         <h2 class="text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
-      
-    <!-- Target -->
-      <div class="mb-8">
-        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10">
-          <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M13 10V3L4 14h7v7l9-11h-7z"
-            />
-          </svg>
-          <span class="text-rose-500 font-medium">{@hand_name}</span>
+
+      <%= if @hand_name do %>
+        <!-- Target (for blockers only) -->
+        <div class="mb-8">
+          <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10">
+            <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+              />
+            </svg>
+            <span class="text-rose-500 font-medium">{@hand_name}</span>
+          </div>
         </div>
-      </div>
+      <% else %>
+        <!-- Scrambler effect indicator -->
+        <div class="mb-8">
+          <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10">
+            <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <span class="text-amber-500 font-medium">1-in-4 face-down</span>
+          </div>
+        </div>
+      <% end %>
       
     <!-- Description -->
       <div class="flex-1">
@@ -704,7 +758,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
               "w-full py-4 rounded-full font-medium text-lg transition-all",
               if(@action_in_progress,
                 do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                else:
+                  if(@accent_color == "amber",
+                    do: "bg-amber-500 text-white hover:bg-amber-600 shadow-lg hover:shadow-xl",
+                    else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                  )
               )
             ]}
           >

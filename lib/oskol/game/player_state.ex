@@ -28,7 +28,9 @@ defmodule Oskol.Game.PlayerState do
           locked_in_hand: list(Card.t()) | nil,
           ready_for_next_round: boolean(),
           status: player_status(),
-          active_debuffs: [hand_type()]
+          active_debuffs: [hand_type()],
+          scrambled: boolean(),
+          face_down_card_ids: [String.t()]
         }
 
   @type player_id :: String.t()
@@ -44,7 +46,9 @@ defmodule Oskol.Game.PlayerState do
             locked_in_hand: nil,
             ready_for_next_round: nil,
             status: nil,
-            active_debuffs: []
+            active_debuffs: [],
+            scrambled: false,
+            face_down_card_ids: []
 
   @discards_per_round 3
   @hands_per_round 4
@@ -77,12 +81,13 @@ defmodule Oskol.Game.PlayerState do
   Resets the player state for a new round.
   Resets: hands remaining, discards remaining, score, locked-in hand.
   Preserves: lives, card piles, skill tree, status, active_debuffs (applied from shop).
+  Optional hands_per_round parameter allows overriding the default (for dev codes like 1HAND).
   """
-  @spec reset_for_new_round(t()) :: t()
-  def reset_for_new_round(%__MODULE__{} = player_state) do
+  @spec reset_for_new_round(t(), pos_integer()) :: t()
+  def reset_for_new_round(%__MODULE__{} = player_state, hands_per_round \\ @hands_per_round) do
     %{
       player_state
-      | hands_remaining: @hands_per_round,
+      | hands_remaining: hands_per_round,
         discards_remaining: @discards_per_round,
         current_round_score: 0,
         locked_in_hand: nil,
@@ -113,5 +118,48 @@ defmodule Oskol.Game.PlayerState do
   @spec hand_denied?(t(), hand_type()) :: boolean()
   def hand_denied?(%__MODULE__{} = player_state, hand_type) do
     hand_type in player_state.active_debuffs
+  end
+
+  @doc """
+  Sets the scrambled state for a player.
+  When scrambled, newly drawn cards have a chance of being face-down.
+  """
+  @spec set_scrambled(t(), boolean()) :: t()
+  def set_scrambled(%__MODULE__{} = player_state, scrambled) do
+    %{player_state | scrambled: scrambled}
+  end
+
+  @doc """
+  Clears the scrambler effect and all face-down cards.
+  Should be called when the round ends.
+  """
+  @spec clear_scrambler(t()) :: t()
+  def clear_scrambler(%__MODULE__{} = player_state) do
+    %{player_state | scrambled: false, face_down_card_ids: []}
+  end
+
+  @doc """
+  Adds card IDs to the face-down list.
+  """
+  @spec add_face_down_cards(t(), [String.t()]) :: t()
+  def add_face_down_cards(%__MODULE__{} = player_state, card_ids) do
+    %{player_state | face_down_card_ids: card_ids ++ player_state.face_down_card_ids}
+  end
+
+  @doc """
+  Removes card IDs from the face-down list (reveals them).
+  """
+  @spec reveal_cards(t(), [String.t()]) :: t()
+  def reveal_cards(%__MODULE__{} = player_state, card_ids) do
+    remaining = player_state.face_down_card_ids -- card_ids
+    %{player_state | face_down_card_ids: remaining}
+  end
+
+  @doc """
+  Checks if a specific card is face-down.
+  """
+  @spec card_face_down?(t(), String.t()) :: boolean()
+  def card_face_down?(%__MODULE__{} = player_state, card_id) do
+    card_id in player_state.face_down_card_ids
   end
 end

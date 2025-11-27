@@ -27,7 +27,8 @@ defmodule Oskol.Game.GameServerState do
           lobby_status: lobby_status(),
           last_activity: integer(),
           event_log: EventLog.t(),
-          format_selections: %{player_id() => game_format()}
+          format_selections: %{player_id() => game_format()},
+          dev_codes: [String.t()]
         }
 
   defstruct game_id: nil,
@@ -36,7 +37,8 @@ defmodule Oskol.Game.GameServerState do
             lobby_status: :waiting_for_players,
             last_activity: 0,
             event_log: nil,
-            format_selections: %{}
+            format_selections: %{},
+            dev_codes: []
 
   @doc """
   Creates a new game server state for the given game_id.
