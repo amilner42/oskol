@@ -6,6 +6,7 @@ defmodule Oskol.Game.ShopState do
 
   alias Oskol.Game.{PlayerState, ShopCard}
   alias Oskol.Poker.Card
+  alias Oskol.Utils.WeightedRandom
 
   @type player_id :: PlayerState.player_id()
 
@@ -186,11 +187,11 @@ defmodule Oskol.Game.ShopState do
   defp sample_card_from_tree(%{branches: branches}) do
     # Step 1: Sample which branch (e.g., research vs logistics)
     branch_weights = Map.new(branches, fn {name, config} -> {name, config.weight} end)
-    branch_name = sample_from_weighted_map(branch_weights)
+    branch_name = WeightedRandom.sample(branch_weights)
 
     # Step 2: Sample which card from that branch
     branch_config = branches[branch_name]
-    card_key = sample_from_weighted_map(branch_config.cards)
+    card_key = WeightedRandom.sample(branch_config.cards)
 
     # Step 3: Convert card key to ShopCard struct
     card_key_to_shop_card(branch_name, card_key)
@@ -274,31 +275,6 @@ defmodule Oskol.Game.ShopState do
     else
       cards
     end
-  end
-
-  # Samples a single item from a weighted map
-  # Map format: %{item => weight, ...}
-  # Returns the selected item
-  @spec sample_from_weighted_map(%{any() => pos_integer()}) :: any()
-  defp sample_from_weighted_map(weighted_map) when map_size(weighted_map) > 0 do
-    items_with_weights = Enum.to_list(weighted_map)
-
-    total_weight = Enum.reduce(items_with_weights, 0, fn {_item, weight}, acc -> acc + weight end)
-
-    random_value = :rand.uniform(total_weight)
-
-    {selected_item, _weight} =
-      Enum.reduce_while(items_with_weights, {nil, 0}, fn {item, weight}, {_current_item, cumulative} ->
-        new_cumulative = cumulative + weight
-
-        if random_value <= new_cumulative do
-          {:halt, {item, weight}}
-        else
-          {:cont, {item, new_cumulative}}
-        end
-      end)
-
-    selected_item
   end
 
   # Sort key for shop cards - unified sorting across all card types
