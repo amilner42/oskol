@@ -102,13 +102,13 @@ defmodule Oskol.Game.ShopState do
     }
   end
 
-  # Generates a pool of 12 shop cards: 4 level ups + 4 deck builders + 4 action cards.
+  # Generates a pool of 15 shop cards: 5 level ups + 5 deck builders + 5 action cards.
   # Cards are sorted by category (level ups first, then deck builders, then actions)
   # and within each category they are sorted for consistency.
   # Dev codes can force specific cards to appear.
   @spec generate_random_shop_cards([String.t()]) :: [shop_card()]
   defp generate_random_shop_cards(dev_codes) do
-    # Generate 4 random level up cards with weighted frequencies (sorted by hand type)
+    # Generate 5 random level up cards with weighted frequencies (sorted by hand type)
     # Frequencies: High Card (4), Pair (4), Two Pair (3), Three Kind (3),
     #              Straight (2), Flush (2), Full House (2), Four Kind (1), Straight Flush (1)
     level_up_pool =
@@ -128,26 +128,26 @@ defmodule Oskol.Game.ShopState do
     level_ups =
       level_up_pool
       |> Enum.shuffle()
-      |> Enum.take(4)
+      |> Enum.take(5)
       |> Enum.sort_by(&hand_type_order/1)
       |> Enum.map(fn hand_type -> {:level_up, hand_type} end)
 
-    # Generate 4 deck builder cards (sorted by type)
+    # Generate 5 deck builder cards (sorted by type)
     deck_builder_cards =
-      DeckBuilderCard.generate_random_deck_builder_cards(4)
+      DeckBuilderCard.generate_random_deck_builder_cards(5)
       |> Enum.sort_by(&deck_builder_sort_key/1)
       |> Enum.map(fn card -> {:deck_builder, card} end)
 
-    # Generate 4 random action cards (sorted by target_hand)
+    # Generate 5 random action cards (sorted by target_hand)
     # Check for dev codes that force specific action cards
     action_cards =
       if "SHOP_FORCE_SCRAMBLER" in dev_codes do
         # Force a scrambler card to be in the first action slot
         scrambler = ActionCard.scrambler_card()
-        other_actions = ActionCard.generate_random_action_cards(3)
+        other_actions = ActionCard.generate_random_action_cards(4)
         [scrambler | other_actions]
       else
-        ActionCard.generate_random_action_cards(4)
+        ActionCard.generate_random_action_cards(5)
       end
       |> Enum.sort_by(&action_card_sort_key/1)
       |> Enum.map(fn card -> {:action, card} end)
