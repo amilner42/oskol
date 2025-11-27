@@ -460,12 +460,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <% :action -> %>
             <%= case @action_subtype do %>
               <% :blocker -> %>
-                Blocker
+                Counter
               <% :tactical -> %>
                 Tactical
             <% end %>
           <% :deck_builder -> %>
-            Deck Builder
+            Logistics
         <% end %>
       </div>
       
