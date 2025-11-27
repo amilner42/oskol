@@ -59,7 +59,8 @@ defmodule Oskol.Utils.WeightedRandom do
 
     # Find the item that corresponds to this random value
     {selected_item, _weight} =
-      Enum.reduce_while(items_with_weights, {nil, 0}, fn {item, weight}, {_current_item, cumulative} ->
+      Enum.reduce_while(items_with_weights, {nil, 0}, fn {item, weight},
+                                                         {_current_item, cumulative} ->
         new_cumulative = cumulative + weight
 
         if random_value <= new_cumulative do
