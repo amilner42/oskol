@@ -84,76 +84,209 @@ defmodule Oskol.Game.ShopState do
     }
   end
 
-  # Arsenal distribution weights: {research_count, logistics_count} => weight
-  # Higher weight = more likely to be selected
-  @arsenal_distributions %{
-    {6, 2} => 2,
-    {5, 3} => 3,
-    {4, 4} => 3,
-    {3, 5} => 2,
-    {2, 6} => 1
+  # Centralized shop card probability tree
+  # For each card slot, we:
+  # 1. Sample a branch (e.g., Research vs Logistics) using branch weights
+  # 2. Sample a specific card from that branch using card weights
+  @shop_probabilities %{
+    arsenal: %{
+      branches: %{
+        research: %{
+          weight: 1,
+          cards: %{
+            high_card: 1,
+            pair: 1,
+            two_pair: 1,
+            three_of_a_kind: 1,
+            straight: 1,
+            flush: 1,
+            full_house: 1,
+            four_of_a_kind: 1,
+            straight_flush: 1
+          }
+        },
+        logistics: %{
+          weight: 1,
+          cards: %{
+            bonus_chips: 1,
+            bonus_mult: 1,
+            add_card: 1,
+            remove_card: 1,
+            change_suit_hearts: 1,
+            change_suit_diamonds: 1,
+            change_suit_clubs: 1,
+            change_suit_spades: 1,
+            increase_rank: 1
+          }
+        }
+      }
+    },
+    actions: %{
+      branches: %{
+        sabotage: %{
+          weight: 1,
+          cards: %{
+            scrambler: 3,
+            plus_bomb: 2,
+            static: 2,
+            supply_chain: 2
+          }
+        },
+        counter: %{
+          weight: 1,
+          cards: %{
+            high_card: 3,
+            pair: 3,
+            two_pair: 3,
+            three_of_a_kind: 3,
+            straight: 3,
+            flush: 3,
+            full_house: 3,
+            four_of_a_kind: 3,
+            straight_flush: 3
+          }
+        }
+      }
+    }
   }
 
-  # Action distribution weights: {sabotage_count, counter_count} => weight
-  # Fixed 50-50 split for now
-  @action_distributions %{
-    {4, 4} => 1
-  }
-
-  # Generates a pool of 16 shop cards using two-level randomization:
-  # Level 1: Decide category split (e.g., 5 research + 3 logistics)
-  # Level 2: Randomize within each category with proper weights
+  # Generates a pool of 16 shop cards using hierarchical probability tree:
+  # For each card slot:
+  #   1. Sample branch (e.g., Research vs Logistics) using branch weights
+  #   2. Sample specific card from that branch using card weights
   #
-  # Top 8: ARSENAL (Research + Logistics)
-  # Bottom 8: ACTIONS (Sabotage + Counters, 50-50 split)
+  # Top 8: ARSENAL (Research + Logistics branches)
+  # Bottom 8: ACTIONS (Sabotage + Counter branches)
   #
   # Cards are sorted by category for consistency.
   # Dev codes can force specific cards to appear.
   @spec generate_random_shop_cards([String.t()]) :: [shop_card()]
   defp generate_random_shop_cards(dev_codes) do
-    # Level 1: Sample arsenal distribution (research vs logistics split)
-    {research_count, logistics_count} = sample_from_distribution(@arsenal_distributions)
+    arsenal_config = @shop_probabilities.arsenal
+    actions_config = @shop_probabilities.actions
 
-    # Level 2: Generate cards within each category
-    research_cards =
-      ShopCard.generate_random_level_ups(research_count)
+    # Generate 8 Arsenal cards (each independently samples branch then card)
+    arsenal_cards =
+      Enum.map(1..8, fn _ -> sample_card_from_tree(arsenal_config) end)
       |> Enum.sort_by(&card_sort_key/1)
 
-    logistics_cards =
-      ShopCard.generate_random_deck_builders(logistics_count)
+    # Generate 8 Action cards (each independently samples branch then card)
+    # Handle dev codes for forced sabotage cards
+    action_cards =
+      Enum.map(1..8, fn _ -> sample_card_from_tree(actions_config) end)
+      |> apply_dev_code_overrides(dev_codes)
       |> Enum.sort_by(&card_sort_key/1)
 
-    # Level 1: Sample action distribution (sabotage vs counter split)
-    {sabotage_count, counter_count} = sample_from_distribution(@action_distributions)
-
-    # Level 2: Generate cards within each category
-    sabotage_cards =
-      ShopCard.generate_random_sabotage_cards(sabotage_count, dev_codes)
-      |> Enum.sort_by(&card_sort_key/1)
-
-    counter_cards =
-      ShopCard.generate_random_denial_cards(counter_count)
-      |> Enum.sort_by(&card_sort_key/1)
-
-    # Combine in order: research, logistics, sabotage, counters (8 arsenal + 8 actions)
-    research_cards ++ logistics_cards ++ sabotage_cards ++ counter_cards
+    arsenal_cards ++ action_cards
   end
 
-  # Samples a single item from a weighted distribution map
+  # Samples a single card from a probability tree
+  # Tree structure: %{branches: %{branch_name => %{weight: w, cards: %{card => weight}}}}
+  @spec sample_card_from_tree(%{branches: map()}) :: shop_card()
+  defp sample_card_from_tree(%{branches: branches}) do
+    # Step 1: Sample which branch (e.g., research vs logistics)
+    branch_weights = Map.new(branches, fn {name, config} -> {name, config.weight} end)
+    branch_name = sample_from_weighted_map(branch_weights)
+
+    # Step 2: Sample which card from that branch
+    branch_config = branches[branch_name]
+    card_key = sample_from_weighted_map(branch_config.cards)
+
+    # Step 3: Convert card key to ShopCard struct
+    card_key_to_shop_card(branch_name, card_key)
+  end
+
+  # Converts a branch name and card key to a ShopCard struct
+  @spec card_key_to_shop_card(atom(), atom()) :: shop_card()
+  defp card_key_to_shop_card(:research, hand_type), do: %ShopCard{type: :level_up, subtype: hand_type}
+
+  defp card_key_to_shop_card(:logistics, :bonus_chips),
+    do: %ShopCard{type: :deck_builder, subtype: :bonus_chips, metadata: %{amount: 40}}
+
+  defp card_key_to_shop_card(:logistics, :bonus_mult),
+    do: %ShopCard{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: 1}}
+
+  defp card_key_to_shop_card(:logistics, :add_card),
+    do: %ShopCard{type: :deck_builder, subtype: :add_card}
+
+  defp card_key_to_shop_card(:logistics, :remove_card),
+    do: %ShopCard{type: :deck_builder, subtype: :remove_card}
+
+  defp card_key_to_shop_card(:logistics, :change_suit_hearts),
+    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :hearts}}
+
+  defp card_key_to_shop_card(:logistics, :change_suit_diamonds),
+    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :diamonds}}
+
+  defp card_key_to_shop_card(:logistics, :change_suit_clubs),
+    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :clubs}}
+
+  defp card_key_to_shop_card(:logistics, :change_suit_spades),
+    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :spades}}
+
+  defp card_key_to_shop_card(:logistics, :increase_rank),
+    do: %ShopCard{type: :deck_builder, subtype: :increase_rank}
+
+  defp card_key_to_shop_card(:sabotage, :scrambler), do: ShopCard.scrambler_card()
+  defp card_key_to_shop_card(:sabotage, :plus_bomb), do: ShopCard.plus_bomb_card()
+  defp card_key_to_shop_card(:sabotage, :static), do: ShopCard.static_card()
+  defp card_key_to_shop_card(:sabotage, :supply_chain), do: ShopCard.supply_chain_card()
+
+  defp card_key_to_shop_card(:counter, hand_type), do: %ShopCard{type: :denial, subtype: hand_type}
+
+  # Apply dev code overrides to force specific sabotage cards
+  @spec apply_dev_code_overrides([shop_card()], [String.t()]) :: [shop_card()]
+  defp apply_dev_code_overrides(cards, dev_codes) do
+    forced_cards = []
+
+    forced_cards =
+      if "SHOP_FORCE_SCRAMBLER" in dev_codes do
+        [ShopCard.scrambler_card() | forced_cards]
+      else
+        forced_cards
+      end
+
+    forced_cards =
+      if "SHOP_FORCE_PLUS_BOMB" in dev_codes do
+        [ShopCard.plus_bomb_card() | forced_cards]
+      else
+        forced_cards
+      end
+
+    forced_cards =
+      if "SHOP_FORCE_STATIC" in dev_codes do
+        [ShopCard.static_card() | forced_cards]
+      else
+        forced_cards
+      end
+
+    forced_cards =
+      if "SHOP_FORCE_SUPPLY_CHAIN" in dev_codes do
+        [ShopCard.supply_chain_card() | forced_cards]
+      else
+        forced_cards
+      end
+
+    if length(forced_cards) > 0 do
+      # Replace first N cards with forced cards
+      remaining_cards = Enum.drop(cards, length(forced_cards))
+      forced_cards ++ remaining_cards
+    else
+      cards
+    end
+  end
+
+  # Samples a single item from a weighted map
   # Map format: %{item => weight, ...}
   # Returns the selected item
-  @spec sample_from_distribution(%{any() => pos_integer()}) :: any()
-  defp sample_from_distribution(distribution) when map_size(distribution) > 0 do
-    # Create a list of {item, weight} tuples
-    items_with_weights = Enum.to_list(distribution)
+  @spec sample_from_weighted_map(%{any() => pos_integer()}) :: any()
+  defp sample_from_weighted_map(weighted_map) when map_size(weighted_map) > 0 do
+    items_with_weights = Enum.to_list(weighted_map)
 
-    # Calculate total weight
     total_weight = Enum.reduce(items_with_weights, 0, fn {_item, weight}, acc -> acc + weight end)
 
-    # Generate random number in range [1, total_weight]
     random_value = :rand.uniform(total_weight)
 
-    # Find the item that corresponds to this random value
     {selected_item, _weight} =
       Enum.reduce_while(items_with_weights, {nil, 0}, fn {item, weight}, {_current_item, cumulative} ->
         new_cumulative = cumulative + weight
