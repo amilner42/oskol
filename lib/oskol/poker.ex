@@ -21,9 +21,13 @@ defmodule Oskol.Poker do
   defdelegate hand_type_name(hand_type), to: Hand
 
   # Scoring
-  defdelegate score_hand(hand_evaluation, skill_tree, active_debuffs \\ []),
-    to: Score,
-    as: :calculate
+  @doc """
+  Scores a hand evaluation with skill tree levels and debuffs applied.
+  """
+  def score_hand(hand_evaluation, skill_tree, active_debuffs \\ [], card_debuffs \\ nil) do
+    card_debuffs = card_debuffs || Score.default_card_debuffs()
+    Score.calculate(hand_evaluation, skill_tree, active_debuffs, card_debuffs)
+  end
 
   defdelegate base_hand_scores(), to: Score
 

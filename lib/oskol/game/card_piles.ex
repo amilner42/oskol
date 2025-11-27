@@ -17,13 +17,32 @@ defmodule Oskol.Game.CardPiles do
 
   @doc """
   Creates a new CardPiles with a full 52-card deck in the draw pile.
-  Pass `shuffle: true` to shuffle the deck, or `shuffle: false` for an ordered deck.
+
+  Options:
+  - `shuffle: true/false` - whether to shuffle the deck (default: false)
+  - `enhance_all: true/false` - whether to add random enhancements to all cards (default: false)
   """
-  @spec new(shuffle: boolean()) :: t()
-  def new(shuffle: shuffle) do
+  @spec new(keyword()) :: t()
+  def new(opts \\ []) do
+    shuffle = Keyword.get(opts, :shuffle, false)
+    enhance_all = Keyword.get(opts, :enhance_all, false)
+
     deck =
       for rank <- 2..14, suit <- [:hearts, :diamonds, :clubs, :spades] do
-        Poker.new_card(rank, suit)
+        card = Poker.new_card(rank, suit)
+
+        if enhance_all do
+          enhancement =
+            if :rand.uniform(2) == 1 do
+              {:bonus_chips, 10}
+            else
+              {:bonus_mult, 2}
+            end
+
+          %{card | enhancement: enhancement}
+        else
+          card
+        end
       end
 
     draw_pile =

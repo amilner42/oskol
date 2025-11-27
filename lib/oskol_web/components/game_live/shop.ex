@@ -18,7 +18,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
-
+          
     <!-- Cards Grid: 3 columns x 5 rows -->
           <div class="flex-1 p-6 overflow-y-auto">
             <div class="grid grid-cols-3 gap-4">
@@ -34,7 +34,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </div>
           </div>
         </div>
-
+        
     <!-- Right Column: Preview Area -->
         <div class="flex-1 flex flex-col">
           <!-- Pick Status Bar -->
@@ -55,6 +55,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
               action_in_progress={@action_in_progress}
               pending_deck_builder={@game_state.shop_state.pending_deck_builder}
               deck_builder_selection={assigns[:deck_builder_selection]}
+              pending_plus_bomb={@game_state.shop_state.pending_plus_bomb}
+              plus_bomb_selection={assigns[:plus_bomb_selection]}
             />
           <% else %>
             <!-- Empty State -->
@@ -114,7 +116,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="text-center">
       <div class="w-20 h-20 rounded-full bg-emerald-500/10 mx-auto mb-4 flex items-center justify-center">
         <span class="text-4xl font-light text-emerald-500">
-          <%= if @countdown, do: @countdown, else: "5" %>
+          {if @countdown, do: @countdown, else: "5"}
         </span>
       </div>
       <p class="text-base-content/60 text-lg font-light mb-2">All picks complete!</p>
@@ -236,7 +238,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         <% end %>
       </div>
-
+      
     <!-- All pick slots - evenly spaced -->
       <div class="flex gap-3">
         <%= for slot <- @all_slots do %>
@@ -254,7 +256,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp pick_slot_compact(assigns) do
-    alias Oskol.Game.DeckBuilderCard
+    alias Oskol.Game.{DeckBuilderCard, ActionCard}
 
     card_display =
       case assigns[:pick_card] do
@@ -262,13 +264,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
           %{type: :level_up, name: format_hand_name(hand_type), color: "emerald"}
 
         {:action, action_card} ->
-          case action_card.type do
-            :denial ->
-              %{type: :action, name: format_hand_name(action_card.target_hand), color: "rose"}
-
-            :scrambler ->
-              %{type: :action, name: "The Scrambler", color: "amber"}
-          end
+          # Use amber for scrambler, rose for others
+          color = if action_card.type == :scrambler, do: "amber", else: "rose"
+          %{type: :action, name: ActionCard.card_name(action_card), color: color}
 
         {:deck_builder, deck_builder_card} ->
           %{
@@ -334,7 +332,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp shop_card_minimal(assigns) do
-    alias Oskol.Game.DeckBuilderCard
+    alias Oskol.Game.{DeckBuilderCard, ActionCard}
 
     {card_type, action_subtype, display_name, accent_color} =
       case assigns.shop_card do
@@ -342,23 +340,27 @@ defmodule OskolWeb.Components.GameLive.Shop do
           {:level_up, nil, format_hand_name(hand_type), "emerald"}
 
         {:action, action_card} ->
-          case action_card.type do
-            :denial ->
-              {:action, :blocker, format_hand_name(action_card.target_hand), "rose"}
+          subtype =
+            case action_card.type do
+              :denial -> :blocker
+              :scrambler -> :scrambler
+              :plus_bomb -> :plus_bomb
+              :static -> :static
+            end
 
-            :scrambler ->
-              {:action, :scrambler, "The Scrambler", "amber"}
-          end
+          color = if action_card.type == :scrambler, do: "amber", else: "rose"
+          {:action, subtype, ActionCard.card_name(action_card), color}
 
         {:deck_builder, deck_builder_card} ->
           {:deck_builder, nil, DeckBuilderCard.card_name(deck_builder_card), "violet"}
       end
 
-    # Use different events for deck builders vs other cards
+    # Use different events for deck builders and plus_bomb vs other cards
     click_event =
       if assigns[:can_pick] and not assigns[:is_picked] do
-        case card_type do
-          :deck_builder -> "preview_deck_builder"
+        case assigns.shop_card do
+          {:deck_builder, _} -> "preview_deck_builder"
+          {:action, %{type: :plus_bomb}} -> "preview_plus_bomb"
           _ -> "preview_shop_card"
         end
       else
@@ -427,10 +429,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <% :level_up -> %>
             Level Up
           <% :action -> %>
-            <%= if @action_subtype == :scrambler do %>
-              Scrambler
-            <% else %>
-              Blocker
+            <%= case @action_subtype do %>
+              <% :scrambler -> %>
+                Scrambler
+              <% :plus_bomb -> %>
+                Action
+              <% :static -> %>
+                Action
+              <% _ -> %>
+                Blocker
             <% end %>
           <% :deck_builder -> %>
             Deck Builder
@@ -518,6 +525,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             can_confirm={@can_confirm}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
+            pending_plus_bomb={@pending_plus_bomb}
+            plus_bomb_selection={@plus_bomb_selection}
           />
         <% {:deck_builder, deck_builder_card} -> %>
           <.deck_builder_detail
@@ -649,14 +658,34 @@ defmodule OskolWeb.Components.GameLive.Shop do
   defp action_detail(assigns) do
     card_name = Oskol.Game.ActionCard.card_name(assigns.action_card)
     card_description = Oskol.Game.ActionCard.card_description(assigns.action_card)
-    is_scrambler = assigns.action_card.type == :scrambler
+    action_type = assigns.action_card.type
+    is_scrambler = action_type == :scrambler
+    requires_selection = Oskol.Game.ActionCard.requires_selection?(assigns.action_card)
 
+    # For denial cards, show the target hand
     hand_name =
-      if is_scrambler, do: nil, else: format_hand_name(assigns.action_card.target_hand)
+      if assigns.action_card.target_hand do
+        format_hand_name(assigns.action_card.target_hand)
+      else
+        nil
+      end
 
-    # Use amber for scrambler, rose for blocker
+    # Use amber for scrambler, rose for others
     accent_color = if is_scrambler, do: "amber", else: "rose"
-    type_label = if is_scrambler, do: "Scrambler", else: "Blocker"
+
+    type_label =
+      case action_type do
+        :scrambler -> "Scrambler"
+        :plus_bomb -> "Action"
+        :static -> "Action"
+        :denial -> "Blocker"
+      end
+
+    # Check if we have pending plus bomb selection
+    has_plus_bomb_preview =
+      assigns[:pending_plus_bomb] != nil and
+        is_list(assigns.pending_plus_bomb.available_cards) and
+        length(assigns.pending_plus_bomb.available_cards) == 8
 
     assigns =
       assigns
@@ -666,6 +695,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:is_scrambler, is_scrambler)
       |> assign(:accent_color, accent_color)
       |> assign(:type_label, type_label)
+      |> assign(:action_type, action_type)
+      |> assign(:requires_selection, requires_selection)
+      |> assign(:has_plus_bomb_preview, has_plus_bomb_preview)
 
     ~H"""
     <div class="flex-1 flex flex-col p-8">
@@ -681,7 +713,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @hand_name do %>
-        <!-- Target (for blockers only) -->
+        <!-- Target for denial cards -->
         <div class="mb-8">
           <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10">
             <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -695,7 +727,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <span class="text-rose-500 font-medium">{@hand_name}</span>
           </div>
         </div>
-      <% else %>
+      <% end %>
+
+      <%= if @is_scrambler do %>
         <!-- Scrambler effect indicator -->
         <div class="mb-8">
           <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10">
@@ -713,34 +747,125 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <% end %>
       
     <!-- Description -->
-      <div class="flex-1">
+      <div class="mb-8">
         <p class="text-base-content/60 text-lg leading-relaxed">{@card_description}</p>
       </div>
-      
+
+      <%= if @has_plus_bomb_preview do %>
+        <!-- Plus Bomb card selection -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between">
+            <span class="text-sm text-base-content/50">
+              Select a card - that rank AND suit won't score for opponent
+            </span>
+            <%= if @plus_bomb_selection do %>
+              <span class="text-xs px-2 py-1 rounded-full bg-rose-500/10 text-rose-500">
+                1 selected
+              </span>
+            <% end %>
+          </div>
+        </div>
+        
+    <!-- 8-Card Selection Grid for Plus Bomb -->
+        <div class="flex-1 mb-6">
+          <div class="grid grid-cols-4 gap-3">
+            <%= for card <- @pending_plus_bomb.available_cards do %>
+              <% is_selected = @plus_bomb_selection == card.id %>
+              <.plus_bomb_card_minimal
+                card={card}
+                selected={is_selected}
+              />
+            <% end %>
+          </div>
+        </div>
+        
+    <!-- Confirm Button for Plus Bomb -->
+        <%= if @can_confirm and @plus_bomb_selection do %>
+          <div class="pt-4">
+            <button
+              phx-click="confirm_plus_bomb_pick"
+              phx-value-card_id={@plus_bomb_selection}
+              disabled={@action_in_progress}
+              class={[
+                "w-full py-4 rounded-full font-medium text-lg transition-all",
+                if(@action_in_progress,
+                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                  else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                )
+              ]}
+            >
+              Confirm Selection
+            </button>
+          </div>
+        <% end %>
+      <% else %>
+        <!-- Flex spacer -->
+        <div class="flex-1"></div>
+        
     <!-- Action Button -->
-      <%= if @can_confirm do %>
-        <div class="pt-8">
-          <button
-            phx-click="confirm_shop_pick"
-            phx-value-index={@card_index}
-            disabled={@action_in_progress}
-            class={[
-              "w-full py-4 rounded-full font-medium text-lg transition-all",
-              if(@action_in_progress,
-                do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                else:
-                  if(@accent_color == "amber",
-                    do: "bg-amber-500 text-white hover:bg-amber-600 shadow-lg hover:shadow-xl",
+        <%= if @can_confirm do %>
+          <div class="pt-8">
+            <%= if @requires_selection do %>
+              <!-- Plus Bomb needs two-phase: first choose the card, then select from 8 -->
+              <button
+                phx-click="confirm_plus_bomb_preview"
+                phx-value-index={@card_index}
+                disabled={@action_in_progress}
+                class={[
+                  "w-full py-4 rounded-full font-medium text-lg transition-all",
+                  if(@action_in_progress,
+                    do: "bg-base-300 text-base-content/40 cursor-not-allowed",
                     else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
                   )
-              )
-            ]}
-          >
-            Confirm Selection
-          </button>
-        </div>
+                ]}
+              >
+                Choose Card
+              </button>
+            <% else %>
+              <!-- Static, Denial, and Scrambler - immediate effect -->
+              <button
+                phx-click="confirm_shop_pick"
+                phx-value-index={@card_index}
+                disabled={@action_in_progress}
+                class={[
+                  "w-full py-4 rounded-full font-medium text-lg transition-all",
+                  if(@action_in_progress,
+                    do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                    else:
+                      if(@accent_color == "amber",
+                        do: "bg-amber-500 text-white hover:bg-amber-600 shadow-lg hover:shadow-xl",
+                        else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                      )
+                  )
+                ]}
+              >
+                Confirm Selection
+              </button>
+            <% end %>
+          </div>
+        <% end %>
       <% end %>
     </div>
+    """
+  end
+
+  defp plus_bomb_card_minimal(assigns) do
+    alias OskolWeb.Components.GameLive.Gameplay
+
+    ~H"""
+    <button
+      phx-click="select_plus_bomb_card"
+      phx-value-card_id={@card.id}
+      class={[
+        "transition-all cursor-pointer rounded-lg overflow-hidden",
+        if(@selected,
+          do: "ring-2 ring-rose-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg",
+          else: "hover:shadow-md hover:scale-102 border border-base-300/50"
+        )
+      ]}
+    >
+      <Gameplay.card_display card={@card} class="w-full aspect-[2/3]" />
+    </button>
     """
   end
 

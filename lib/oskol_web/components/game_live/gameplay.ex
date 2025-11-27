@@ -184,6 +184,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           opponent_card_sort={@opponent_card_sort}
           opponent_new_card_ids={@opponent_new_card_ids}
           opponent_face_down_card_ids={@opponent_face_down_card_ids}
+          disabled_ranks={@opponent_state.disabled_ranks}
+          disabled_suits={@opponent_state.disabled_suits}
+          enhancements_disabled={@opponent_state.enhancements_disabled}
         />
       </div>
       
@@ -213,6 +216,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           new_card_ids={@new_card_ids}
           player_face_down_card_ids={@player_face_down_card_ids}
           action_in_progress={@action_in_progress}
+          disabled_ranks={@player_state.disabled_ranks}
+          disabled_suits={@player_state.disabled_suits}
+          enhancements_disabled={@player_state.enhancements_disabled}
         />
       </div>
       
@@ -239,7 +245,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def opponent_cards(assigns) do
     # Default face_down_card_ids to empty list if not provided
-    assigns = assign_new(assigns, :opponent_face_down_card_ids, fn -> [] end)
+    assigns =
+      assigns
+      |> assign_new(:opponent_face_down_card_ids, fn -> [] end)
+      |> assign_new(:disabled_ranks, fn -> [] end)
+      |> assign_new(:disabled_suits, fn -> [] end)
+      |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
     <!-- Card controls for opponent -->
@@ -258,10 +269,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
         <% is_face_down = card.id in @opponent_face_down_card_ids %>
+        <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
         <.card_display
           card={card}
           class={["w-28 h-40", if(is_new, do: "new-card", else: "")]}
           face_down={is_face_down}
+          disabled={is_disabled}
+          enhancement_disabled={@enhancements_disabled}
         />
       <% end %>
     </div>
@@ -270,7 +284,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def player_cards(assigns) do
     # Default face_down_card_ids to empty list if not provided
-    assigns = assign_new(assigns, :player_face_down_card_ids, fn -> [] end)
+    assigns =
+      assigns
+      |> assign_new(:player_face_down_card_ids, fn -> [] end)
+      |> assign_new(:disabled_ranks, fn -> [] end)
+      |> assign_new(:disabled_suits, fn -> [] end)
+      |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
     <% # Compute selected card IDs based on locked_in_hand or local state
@@ -289,6 +308,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% at_limit = length(selected_card_ids) >= 5 %>
         <% is_new = card.id in @new_card_ids %>
         <% is_face_down = card.id in @player_face_down_card_ids %>
+        <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
         <button
           phx-click="toggle_card"
           phx-value-id={card.id}
@@ -306,6 +326,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             card={card}
             class={["w-28 h-40", if(is_new, do: "new-card", else: "")]}
             face_down={is_face_down}
+            disabled={is_disabled}
+            enhancement_disabled={@enhancements_disabled}
           />
         </button>
       <% end %>
@@ -372,6 +394,32 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   defp format_hand_name_short(:full_house), do: "Full"
   defp format_hand_name_short(:four_of_a_kind), do: "4 Kind"
   defp format_hand_name_short(:straight_flush), do: "Str Flush"
+
+  defp format_disabled_cards(disabled_ranks, disabled_suits) do
+    rank_strs = Enum.map(disabled_ranks, &format_rank/1)
+    suit_strs = Enum.map(disabled_suits, &format_suit/1)
+    all_strs = rank_strs ++ suit_strs
+    Enum.join(all_strs, ", ")
+  end
+
+  defp format_rank(2), do: "2s"
+  defp format_rank(3), do: "3s"
+  defp format_rank(4), do: "4s"
+  defp format_rank(5), do: "5s"
+  defp format_rank(6), do: "6s"
+  defp format_rank(7), do: "7s"
+  defp format_rank(8), do: "8s"
+  defp format_rank(9), do: "9s"
+  defp format_rank(10), do: "10s"
+  defp format_rank(11), do: "Jacks"
+  defp format_rank(12), do: "Queens"
+  defp format_rank(13), do: "Kings"
+  defp format_rank(14), do: "Aces"
+
+  defp format_suit(:hearts), do: "Hearts"
+  defp format_suit(:diamonds), do: "Diamonds"
+  defp format_suit(:clubs), do: "Clubs"
+  defp format_suit(:spades), do: "Spades"
 
   def action_bar(assigns) do
     ~H"""
@@ -624,9 +672,20 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                   <%= if card do %>
                     <% in_hand = card.id in hand_ids
                     is_face_down = card.id in face_down_ids
+
+                    is_disabled =
+                      card.rank in current_state.disabled_ranks or
+                        card.suit in current_state.disabled_suits
+
                     # Face-down cards in hand should not be highlighted (treated like draw pile)
                     opacity = if in_hand and not is_face_down, do: "opacity-100", else: "opacity-40" %>
-                    <.card_display card={card} class={"w-12 h-[72px] #{opacity}"} compact={true} />
+                    <.card_display
+                      card={card}
+                      class={"w-12 h-[72px] #{opacity}"}
+                      compact={true}
+                      disabled={is_disabled}
+                      enhancement_disabled={current_state.enhancements_disabled}
+                    />
                   <% else %>
                     <div class="w-12 h-[72px] bg-base-300/20 rounded"></div>
                   <% end %>
@@ -769,6 +828,26 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             </div>
           </div>
         <% end %>
+
+        <%= if @player_state.enhancements_disabled do %>
+          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-player rounded cursor-default">
+            <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
+            <span class="text-xs font-semibold text-sky-900">Static Field</span>
+            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              Card enhancements disabled
+            </div>
+          </div>
+        <% end %>
+
+        <%= if @player_state.disabled_ranks != [] or @player_state.disabled_suits != [] do %>
+          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-player rounded cursor-default">
+            <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
+            <span class="text-xs font-semibold text-sky-900">Plus Bomb</span>
+            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              {format_disabled_cards(@player_state.disabled_ranks, @player_state.disabled_suits)} won't score
+            </div>
+          </div>
+        <% end %>
         
     <!-- Effects on OPPONENT (good for you - thumbs up, opponent color) -->
         <%= if @opponent_state.active_debuffs != [] do %>
@@ -786,6 +865,26 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <span class="text-xs font-semibold text-orange-900">Scrambled</span>
             <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
               1-in-4 drawn cards are face-down
+            </div>
+          </div>
+        <% end %>
+
+        <%= if @opponent_state.enhancements_disabled do %>
+          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded cursor-default">
+            <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
+            <span class="text-xs font-semibold text-orange-900">Static Field</span>
+            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              Card enhancements disabled
+            </div>
+          </div>
+        <% end %>
+
+        <%= if @opponent_state.disabled_ranks != [] or @opponent_state.disabled_suits != [] do %>
+          <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded cursor-default">
+            <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
+            <span class="text-xs font-semibold text-orange-900">Plus Bomb</span>
+            <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              {format_disabled_cards(@opponent_state.disabled_ranks, @opponent_state.disabled_suits)} won't score
             </div>
           </div>
         <% end %>
@@ -865,6 +964,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <div class="h-full flex flex-col justify-center">
         <%= cond do %>
           <% @viewing_results && @game_state.last_hand_results != nil -> %>
+            <% player_result = @game_state.last_hand_results[@player_id] %>
+            <% opponent_result = @game_state.last_hand_results[@opponent_id] %>
             <.animated_score_display
               game_state={@game_state}
               player_id={@player_id}
@@ -873,9 +974,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               opponent_name={@opponent_name}
               animation_phase={@score_animation_phase}
               animation_card_index={@score_animation_card_index}
+              player_disabled_ranks={player_result.disabled_ranks}
+              player_disabled_suits={player_result.disabled_suits}
+              player_enhancements_disabled={player_result.enhancements_disabled}
+              opponent_disabled_ranks={opponent_result.disabled_ranks}
+              opponent_disabled_suits={opponent_result.disabled_suits}
+              opponent_enhancements_disabled={opponent_result.enhancements_disabled}
             />
           <% @player_state.locked_in_hand != nil && @opponent_state.locked_in_hand == nil -> %>
-            <.waiting_for_opponent player_name={@player_name} hand={@player_state.locked_in_hand} />
+            <.waiting_for_opponent
+              player_name={@player_name}
+              hand={@player_state.locked_in_hand}
+              disabled_ranks={@player_state.disabled_ranks}
+              disabled_suits={@player_state.disabled_suits}
+              enhancements_disabled={@player_state.enhancements_disabled}
+            />
           <% @opponent_state.locked_in_hand != nil && @player_state.locked_in_hand == nil -> %>
             <.opponent_locked_notice />
           <% true -> %>
@@ -961,6 +1074,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         animation_state={@opponent_state || %{phase: :base, cards_scored: 0}}
         is_opponent={true}
         skill_tree={@game_state.players[@opponent_id].skill_tree}
+        disabled_ranks={@opponent_disabled_ranks}
+        disabled_suits={@opponent_disabled_suits}
+        enhancements_disabled={@opponent_enhancements_disabled}
       />
       
     <!-- Player's breakdown (always on bottom, near your cards) -->
@@ -970,6 +1086,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         animation_state={@player_state || %{phase: :base, cards_scored: 0}}
         is_opponent={false}
         skill_tree={@game_state.players[@player_id].skill_tree}
+        disabled_ranks={@player_disabled_ranks}
+        disabled_suits={@player_disabled_suits}
+        enhancements_disabled={@player_enhancements_disabled}
       />
     </div>
     """
@@ -1083,6 +1202,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign(:show_final, show_final)
       |> assign(:hand_type_text, hand_type_text)
       |> assign(:cards_scored, cards_scored)
+      |> assign_new(:disabled_ranks, fn -> [] end)
+      |> assign_new(:disabled_suits, fn -> [] end)
+      |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
     <div class={if @is_opponent, do: "", else: ""}>
@@ -1118,9 +1240,16 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           card_breakdown =
             if is_currently_scoring && scoring_index != nil do
               Enum.at(@breakdown.card_breakdowns, scoring_index)
-            end %>
+            end
+
+          is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
           <div class="relative">
-            <.card_display card={card} class={"w-16 h-24 #{card_class}"} />
+            <.card_display
+              card={card}
+              class={"w-16 h-24 #{card_class}"}
+              disabled={is_disabled}
+              enhancement_disabled={@enhancements_disabled}
+            />
             <%= if card_breakdown do %>
               <div class="chip-float chip-float-chips">
                 +{card_breakdown.chip_value + card_breakdown.bonus_chips}
@@ -1152,7 +1281,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def waiting_for_opponent(assigns) do
     # Sort hand by rank for consistent display
     sorted_hand = sort_cards(assigns.hand, :rank)
-    assigns = assign(assigns, :sorted_hand, sorted_hand)
+
+    assigns =
+      assigns
+      |> assign(:sorted_hand, sorted_hand)
+      |> assign_new(:disabled_ranks, fn -> [] end)
+      |> assign_new(:disabled_suits, fn -> [] end)
+      |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
     <div class="text-center space-y-8">
@@ -1174,7 +1309,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <div class="text-sm text-base-content/80 mb-2">&nbsp;</div>
         <div class="flex gap-2 justify-center mb-3">
           <%= for card <- @sorted_hand do %>
-            <.card_display card={card} class="w-16 h-24" />
+            <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
+            <.card_display
+              card={card}
+              class="w-16 h-24"
+              disabled={is_disabled}
+              enhancement_disabled={@enhancements_disabled}
+            />
           <% end %>
         </div>
         <div class="h-7"></div>
@@ -1265,6 +1406,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign_new(:show_enhancement, fn -> true end)
       |> assign_new(:compact, fn -> false end)
       |> assign_new(:face_down, fn -> false end)
+      |> assign_new(:disabled, fn -> false end)
+      |> assign_new(:enhancement_disabled, fn -> false end)
 
     enhancement_text =
       if assigns.show_enhancement and not assigns.face_down do
@@ -1294,13 +1437,41 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <img src={@card_url} class="w-full h-full" />
       <%= if @enhancement_text do %>
         <div class={[
-          "absolute bg-purple-600 text-white font-bold rounded shadow-lg",
+          "absolute font-bold rounded shadow-lg",
+          if(@enhancement_disabled,
+            do: "bg-gray-500 text-gray-300 line-through",
+            else: "bg-purple-600 text-white"
+          ),
           if(@compact,
             do: "top-px right-px text-[8px] px-0.5 py-0",
             else: "top-0.5 right-0.5 text-xs px-1.5 py-0.5"
           )
         ]}>
           {@enhancement_text}
+        </div>
+      <% end %>
+      <%= if @disabled do %>
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <svg class="w-1/2 h-1/2 text-red-600/90" viewBox="0 0 100 100">
+            <line
+              x1="20"
+              y1="20"
+              x2="80"
+              y2="80"
+              stroke="currentColor"
+              stroke-width="12"
+              stroke-linecap="round"
+            />
+            <line
+              x1="80"
+              y1="20"
+              x2="20"
+              y2="80"
+              stroke="currentColor"
+              stroke-width="12"
+              stroke-linecap="round"
+            />
+          </svg>
         </div>
       <% end %>
     </div>
@@ -1472,11 +1643,17 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                             <%= for {card, index} <- Enum.with_index(cards_at_position) do %>
                               <% in_hand = card.id in hand_ids
                               opacity_class = if in_hand, do: "opacity-100", else: "opacity-30"
+
+                              is_disabled =
+                                card.rank in current_state.disabled_ranks or
+                                  card.suit in current_state.disabled_suits
+
                               top_offset = index * 20 %>
                               <div class="absolute" style={"top: #{top_offset}px;"}>
                                 <.card_display
                                   card={card}
                                   class={"w-16 h-24 #{opacity_class}"}
+                                  disabled={is_disabled}
                                 />
                               </div>
                             <% end %>

@@ -30,7 +30,10 @@ defmodule Oskol.Game.PlayerState do
           status: player_status(),
           active_debuffs: [hand_type()],
           scrambled: boolean(),
-          face_down_card_ids: [String.t()]
+          face_down_card_ids: [String.t()],
+          disabled_ranks: [Card.rank()],
+          disabled_suits: [Card.suit()],
+          enhancements_disabled: boolean()
         }
 
   @type player_id :: String.t()
@@ -48,7 +51,10 @@ defmodule Oskol.Game.PlayerState do
             status: nil,
             active_debuffs: [],
             scrambled: false,
-            face_down_card_ids: []
+            face_down_card_ids: [],
+            disabled_ranks: [],
+            disabled_suits: [],
+            enhancements_disabled: false
 
   @discards_per_round 3
   @hands_per_round 4
@@ -56,11 +62,16 @@ defmodule Oskol.Game.PlayerState do
   @doc """
   Creates a new player state with a full deck and level 1 skill tree.
   Draws 8 cards into hand to start.
+
+  Options:
+  - `dev_codes`: List of dev codes. If "ALL_ENHANCED" is present, all cards get random enhancements.
   """
-  @spec new(player_id(), pos_integer()) :: t()
-  def new(player_id, initial_lives \\ 3) do
+  @spec new(player_id(), pos_integer(), list(String.t())) :: t()
+  def new(player_id, initial_lives \\ 3, dev_codes \\ []) do
+    enhance_all = "ALL_ENHANCED" in dev_codes
+
     card_piles =
-      CardPiles.new(shuffle: true)
+      CardPiles.new(shuffle: true, enhance_all: enhance_all)
       |> CardPiles.draw_cards(8)
 
     %__MODULE__{
@@ -97,10 +108,17 @@ defmodule Oskol.Game.PlayerState do
 
   @doc """
   Clears all active debuffs. Should be called when the round ends.
+  Clears: hand type denials, disabled ranks/suits, and enhancement disabling.
   """
   @spec clear_debuffs(t()) :: t()
   def clear_debuffs(%__MODULE__{} = player_state) do
-    %{player_state | active_debuffs: []}
+    %{
+      player_state
+      | active_debuffs: [],
+        disabled_ranks: [],
+        disabled_suits: [],
+        enhancements_disabled: false
+    }
   end
 
   @doc """
@@ -161,5 +179,39 @@ defmodule Oskol.Game.PlayerState do
   @spec card_face_down?(t(), String.t()) :: boolean()
   def card_face_down?(%__MODULE__{} = player_state, card_id) do
     card_id in player_state.face_down_card_ids
+  end
+
+  @doc """
+  Adds a PLUS BOMB debuff that disables cards with the given rank or suit.
+  Cards matching the rank OR suit will contribute 0 chips/enhancements.
+  """
+  @spec add_plus_bomb_debuff(t(), Card.rank(), Card.suit()) :: t()
+  def add_plus_bomb_debuff(%__MODULE__{} = player_state, rank, suit) do
+    %{
+      player_state
+      | disabled_ranks: [rank | player_state.disabled_ranks],
+        disabled_suits: [suit | player_state.disabled_suits]
+    }
+  end
+
+  @doc """
+  Disables all card enhancements (STATIC debuff).
+  Cards will still score base chip values but bonus_chips/bonus_mult are ignored.
+  """
+  @spec disable_enhancements(t()) :: t()
+  def disable_enhancements(%__MODULE__{} = player_state) do
+    %{player_state | enhancements_disabled: true}
+  end
+
+  @doc """
+  Returns the card debuffs as a map suitable for Score.calculate/4.
+  """
+  @spec get_card_debuffs(t()) :: Oskol.Poker.Score.card_debuffs()
+  def get_card_debuffs(%__MODULE__{} = player_state) do
+    %{
+      disabled_ranks: player_state.disabled_ranks,
+      disabled_suits: player_state.disabled_suits,
+      enhancements_disabled: player_state.enhancements_disabled
+    }
   end
 end

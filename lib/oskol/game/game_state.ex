@@ -32,7 +32,10 @@ defmodule Oskol.Game.GameState do
           hand: list(Card.t()),
           hand_type: Poker.hand_type(),
           score: pos_integer(),
-          score_breakdown: Oskol.Poker.Score.score_result()
+          score_breakdown: Oskol.Poker.Score.score_result(),
+          disabled_ranks: [Card.rank()],
+          disabled_suits: [Card.suit()],
+          enhancements_disabled: boolean()
         }
 
   @hands_per_round 4
@@ -68,7 +71,7 @@ defmodule Oskol.Game.GameState do
       player_names
       |> Map.keys()
       |> Enum.map(fn player_id ->
-        player = PlayerState.new(player_id, initial_lives)
+        player = PlayerState.new(player_id, initial_lives, dev_codes)
         # Also need to set hands_remaining on player state
         {player_id, %{player | hands_remaining: hands_per_round}}
       end)
@@ -210,14 +213,26 @@ defmodule Oskol.Game.GameState do
         hand = player_state.locked_in_hand
         evaluation = Oskol.Poker.evaluate_hand(hand)
 
+        # Get card debuffs (disabled ranks/suits and enhancement disabling)
+        card_debuffs = PlayerState.get_card_debuffs(player_state)
+
         score_result =
-          Oskol.Poker.score_hand(evaluation, player_state.skill_tree, player_state.active_debuffs)
+          Oskol.Poker.score_hand(
+            evaluation,
+            player_state.skill_tree,
+            player_state.active_debuffs,
+            card_debuffs
+          )
 
         result = %{
           hand: hand,
           hand_type: evaluation.hand_type,
           score: score_result.total_score,
-          score_breakdown: score_result
+          score_breakdown: score_result,
+          # Store debuffs that were active when scoring (for UI display during animation)
+          disabled_ranks: player_state.disabled_ranks,
+          disabled_suits: player_state.disabled_suits,
+          enhancements_disabled: player_state.enhancements_disabled
         }
 
         {player_id, result}
@@ -521,25 +536,50 @@ defmodule Oskol.Game.GameState do
     # Action cards affect the OPPONENT
     opponent_id = players |> Map.keys() |> Enum.find(&(&1 != player_id))
 
-    updated_players =
-      case action_card.type do
-        :denial ->
+    case action_card.type do
+      :denial ->
+        updated_players =
           Map.update!(players, opponent_id, fn opponent ->
             PlayerState.add_denial_debuff(opponent, action_card.target_hand)
           end)
 
-        :scrambler ->
+        {updated_players, :action,
+         %{
+           action_type: action_card.type,
+           target_hand: action_card.target_hand,
+           target_player: opponent_id
+         }}
+
+      :scrambler ->
+        updated_players =
           Map.update!(players, opponent_id, fn opponent ->
             PlayerState.set_scrambled(opponent, true)
           end)
-      end
 
-    {updated_players, :action,
-     %{
-       action_type: action_card.type,
-       target_hand: action_card.target_hand,
-       target_player: opponent_id
-     }}
+        {updated_players, :action,
+         %{
+           action_type: action_card.type,
+           target_player: opponent_id
+         }}
+
+      :static ->
+        # STATIC disables all enhancements on opponent's cards
+        updated_players =
+          Map.update!(players, opponent_id, fn opponent ->
+            PlayerState.disable_enhancements(opponent)
+          end)
+
+        {updated_players, :action,
+         %{
+           action_type: action_card.type,
+           target_player: opponent_id
+         }}
+
+      :plus_bomb ->
+        # PLUS BOMB requires a selection phase - don't apply anything yet
+        # This is handled separately like deck_builder
+        {players, :action, %{action_type: action_card.type, requires_selection: true}}
+    end
   end
 
   defp apply_shop_card(players, _player_id, {:deck_builder, deck_builder_card}) do
@@ -814,6 +854,174 @@ defmodule Oskol.Game.GameState do
   end
 
   def skip_deck_builder_selection(_, _), do: {:error, :no_pending_selection}
+
+  @doc """
+  Confirms a plus bomb pick. This is the first step of the two-phase plus bomb flow.
+  Marks the card as picked, generates 8 random cards for selection, and stores them in shop_state.
+  Does NOT complete the pick (turn does not switch yet).
+
+  Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
+  """
+  @spec confirm_plus_bomb_pick(t(), player_id(), non_neg_integer()) ::
+          {:ok, t(), list()} | {:error, atom()}
+  def confirm_plus_bomb_pick(
+        %__MODULE__{shop_state: shop_state} = game_state,
+        player_id,
+        card_index
+      )
+      when shop_state != nil do
+    # Validate it's player's turn
+    unless ShopState.can_pick?(shop_state, player_id) do
+      {:error, :not_your_turn}
+    else
+      # Validate it's a plus_bomb action card
+      case Enum.at(shop_state.available_cards, card_index) do
+        {:action, %{type: :plus_bomb}} ->
+          # Mark card as picked (but don't complete the pick yet)
+          case ShopState.mark_card_picked(shop_state, card_index) do
+            {:ok, updated_shop_state} ->
+              # Generate 8 random cards for selection
+              available_cards = generate_plus_bomb_cards()
+
+              # Store in pending_plus_bomb
+              pending = %{
+                player_id: player_id,
+                shop_card_index: card_index,
+                available_cards: available_cards
+              }
+
+              updated_shop_state = %{updated_shop_state | pending_plus_bomb: pending}
+              new_state = %{game_state | shop_state: updated_shop_state}
+
+              event =
+                {:plus_bomb_confirmed, player_id,
+                 %{
+                   shop_round: updated_shop_state.current_round,
+                   card_index: card_index
+                 }}
+
+              {:ok, new_state, [event]}
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+
+        _ ->
+          {:error, :not_a_plus_bomb_card}
+      end
+    end
+  end
+
+  def confirm_plus_bomb_pick(_, _, _), do: {:error, :no_shop_active}
+
+  @doc """
+  Completes a pending plus bomb selection by applying the effect to the opponent.
+  The selected card's rank AND suit will disable matching cards for the opponent next round.
+
+  Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
+  """
+  @spec complete_plus_bomb_selection(t(), player_id(), String.t()) ::
+          {:ok, t(), list()} | {:error, atom()}
+  def complete_plus_bomb_selection(
+        %__MODULE__{shop_state: shop_state} = game_state,
+        player_id,
+        selected_card_id
+      )
+      when shop_state != nil and shop_state.pending_plus_bomb != nil do
+    pending = shop_state.pending_plus_bomb
+
+    # Validate this is the right player
+    unless pending.player_id == player_id do
+      {:error, :not_your_pending_selection}
+    else
+      # Find the selected card
+      selected_card =
+        Enum.find(pending.available_cards, fn card -> card.id == selected_card_id end)
+
+      if selected_card == nil do
+        {:error, :invalid_card_selection}
+      else
+        # Apply the plus bomb debuff to the OPPONENT
+        opponent_id = game_state.players |> Map.keys() |> Enum.find(&(&1 != player_id))
+
+        updated_players =
+          Map.update!(game_state.players, opponent_id, fn opponent ->
+            PlayerState.add_plus_bomb_debuff(opponent, selected_card.rank, selected_card.suit)
+          end)
+
+        # Complete the pick
+        case ShopState.complete_pick(shop_state, player_id) do
+          {:ok, updated_shop_state} ->
+            # Clear pending_plus_bomb
+            updated_shop_state = %{updated_shop_state | pending_plus_bomb: nil}
+
+            plus_bomb_event =
+              {:plus_bomb_applied, player_id,
+               %{
+                 selected_rank: selected_card.rank,
+                 selected_suit: selected_card.suit,
+                 target_player: opponent_id
+               }}
+
+            # Check if both players have picked
+            if ShopState.both_players_picked?(updated_shop_state) do
+              if ShopState.shop_complete?(updated_shop_state) do
+                new_state = %{
+                  game_state
+                  | shop_state: updated_shop_state,
+                    players: updated_players
+                }
+
+                {:ok, new_state, [plus_bomb_event]}
+              else
+                next_shop_state = ShopState.advance_round(updated_shop_state)
+
+                new_state = %{
+                  game_state
+                  | shop_state: next_shop_state,
+                    players: updated_players
+                }
+
+                round_event =
+                  {:shop_round_advanced, nil, %{shop_round: next_shop_state.current_round}}
+
+                {:ok, new_state, [plus_bomb_event, round_event]}
+              end
+            else
+              new_state = %{
+                game_state
+                | shop_state: updated_shop_state,
+                  players: updated_players
+              }
+
+              {:ok, new_state, [plus_bomb_event]}
+            end
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end
+    end
+  end
+
+  def complete_plus_bomb_selection(_, _, _), do: {:error, :no_pending_selection}
+
+  # Generates 8 random cards for plus bomb selection
+  defp generate_plus_bomb_cards do
+    ranks = Enum.to_list(2..14)
+    suits = [:hearts, :diamonds, :clubs, :spades]
+
+    # Generate 8 unique random cards
+    all_combinations =
+      for rank <- ranks, suit <- suits do
+        {rank, suit}
+      end
+
+    all_combinations
+    |> Enum.shuffle()
+    |> Enum.take(8)
+    |> Enum.map(fn {rank, suit} -> Card.new(rank, suit) end)
+  end
 
   # Helper to apply deck builder card effects
   defp apply_deck_builder_card(players, player_id, deck_builder_card, selected_card) do

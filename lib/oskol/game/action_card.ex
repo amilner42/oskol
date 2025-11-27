@@ -2,6 +2,12 @@ defmodule Oskol.Game.ActionCard do
   @moduledoc """
   Represents action cards that can be purchased in the shop.
   Action cards apply temporary effects for the next round only.
+
+  Types:
+  - :denial - Opponent's target_hand scores 0 next round
+  - :scrambler - Opponent's drawn cards have 1-in-4 chance of being face-down
+  - :plus_bomb - Pick a card; opponent's cards matching that rank OR suit score 0
+  - :static - All opponent's card enhancements are disabled next round
   """
 
   @type hand_type ::
@@ -15,7 +21,7 @@ defmodule Oskol.Game.ActionCard do
           | :four_of_a_kind
           | :straight_flush
 
-  @type card_type :: :denial | :scrambler
+  @type card_type :: :denial | :scrambler | :plus_bomb | :static
 
   @type t :: %__MODULE__{
           type: card_type(),
@@ -50,20 +56,40 @@ defmodule Oskol.Game.ActionCard do
   end
 
   @doc """
+  Returns the PLUS BOMB action card.
+  Requires card selection - opponent's cards matching rank OR suit won't score.
+  """
+  def plus_bomb_card do
+    %__MODULE__{type: :plus_bomb, target_hand: nil}
+  end
+
+  @doc """
+  Returns the STATIC action card.
+  Disables all opponent's card enhancements next round.
+  """
+  def static_card do
+    %__MODULE__{type: :static, target_hand: nil}
+  end
+
+  @doc """
   Generates a random pool of action cards.
-  Includes denial cards (tripled) and scrambler cards, randomly selects the specified count.
+  Includes denial cards (3x each), scrambler (3x), plus_bomb (2x), and static (2x).
   """
   @spec generate_random_action_cards(pos_integer()) :: [t()]
   def generate_random_action_cards(count) do
-    denial_pool =
-      all_denial_cards()
-      |> List.duplicate(3)
-      |> List.flatten()
+    pool =
+      List.flatten([
+        # 3 copies of each denial card
+        List.duplicate(all_denial_cards(), 3) |> List.flatten(),
+        # 3 copies of scrambler
+        List.duplicate(scrambler_card(), 3),
+        # 2 copies of plus_bomb
+        List.duplicate(plus_bomb_card(), 2),
+        # 2 copies of static
+        List.duplicate(static_card(), 2)
+      ])
 
-    # Add 3 scrambler cards to the pool
-    scrambler_pool = List.duplicate(scrambler_card(), 3)
-
-    (denial_pool ++ scrambler_pool)
+    pool
     |> Enum.shuffle()
     |> Enum.take(count)
   end
@@ -78,6 +104,14 @@ defmodule Oskol.Game.ActionCard do
 
   def card_name(%__MODULE__{type: :scrambler}) do
     "The Scrambler"
+  end
+
+  def card_name(%__MODULE__{type: :plus_bomb}) do
+    "Plus Bomb"
+  end
+
+  def card_name(%__MODULE__{type: :static}) do
+    "Static Field"
   end
 
   defp format_hand_name(:high_card), do: "High Card"
@@ -101,4 +135,19 @@ defmodule Oskol.Game.ActionCard do
   def card_description(%__MODULE__{type: :scrambler}) do
     "Opponent's drawn cards have 1-in-4 chance of being face-down next round"
   end
+
+  def card_description(%__MODULE__{type: :plus_bomb}) do
+    "Pick a card - opponent's matching rank/suit won't score"
+  end
+
+  def card_description(%__MODULE__{type: :static}) do
+    "Opponent's card enhancements disabled next round"
+  end
+
+  @doc """
+  Returns true if this action card requires a card selection phase.
+  """
+  @spec requires_selection?(t()) :: boolean()
+  def requires_selection?(%__MODULE__{type: :plus_bomb}), do: true
+  def requires_selection?(%__MODULE__{type: _}), do: false
 end

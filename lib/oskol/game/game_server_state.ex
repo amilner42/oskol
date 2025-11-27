@@ -172,6 +172,14 @@ defmodule Oskol.Game.GameServerState do
     GameState.skip_deck_builder_selection(game_state, player_id)
   end
 
+  defp perform_action(game_state, player_id, {:confirm_plus_bomb_pick, shop_card_index}) do
+    GameState.confirm_plus_bomb_pick(game_state, player_id, shop_card_index)
+  end
+
+  defp perform_action(game_state, player_id, {:complete_plus_bomb_selection, selected_card_id}) do
+    GameState.complete_plus_bomb_selection(game_state, player_id, selected_card_id)
+  end
+
   defp perform_action(_game_state, _player_id, action) do
     {:error, {:unknown_action, action}}
   end
