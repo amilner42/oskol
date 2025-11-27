@@ -10,27 +10,57 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <!-- Main Shop: Two Column Layout -->
       <div class="h-full flex">
         <!-- Left Column: Card Grid -->
-        <div class="w-[520px] border-r border-base-300/50 flex flex-col bg-base-100/50">
+        <div class="w-[690px] border-r border-base-300/50 flex flex-col bg-base-100/50">
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50">
             <div class="flex items-center justify-between">
-              <div class="text-2xl font-light text-base-content">Shop</div>
+              <div class="text-2xl font-light text-base-content">Command Center</div>
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
           
-    <!-- Cards Grid: 3 columns x 5 rows -->
+    <!-- Cards Grid: 4 columns x 4 rows with sections -->
           <div class="flex-1 p-6 overflow-y-auto">
-            <div class="grid grid-cols-3 gap-4">
-              <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
-                <.shop_card_minimal
-                  shop_card={shop_card}
-                  index={index}
-                  is_picked={index in @game_state.shop_state.picked_card_indices}
-                  is_selected={assigns[:previewing_card_index] == index}
-                  can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
-                />
-              <% end %>
+            <!-- Arsenal Section (Permanent Upgrades) -->
+            <div class="mb-6">
+              <div class="mb-3 flex items-center gap-2">
+                <div class="text-sm font-semibold uppercase tracking-wider text-base-content/40">
+                  Arsenal
+                </div>
+                <div class="text-xs text-base-content/40">Permanent Upgrades</div>
+              </div>
+              <div class="grid grid-cols-4 gap-4">
+                <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.take(8) do %>
+                  <.shop_card_minimal
+                    shop_card={shop_card}
+                    index={index}
+                    is_picked={index in @game_state.shop_state.picked_card_indices}
+                    is_selected={assigns[:previewing_card_index] == index}
+                    can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
+                  />
+                <% end %>
+              </div>
+            </div>
+            
+    <!-- Tactical Ops Section (Action Cards) -->
+            <div>
+              <div class="mb-3 flex items-center gap-2">
+                <div class="text-sm font-semibold uppercase tracking-wider text-base-content/40">
+                  Tactical Ops
+                </div>
+                <div class="text-xs text-base-content/40">Temporary Battlefield Advantage</div>
+              </div>
+              <div class="grid grid-cols-4 gap-4">
+                <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.drop(8) do %>
+                  <.shop_card_minimal
+                    shop_card={shop_card}
+                    index={index}
+                    is_picked={index in @game_state.shop_state.picked_card_indices}
+                    is_selected={assigns[:previewing_card_index] == index}
+                    can_pick={can_pick_card?(@game_state.shop_state, @player_id)}
+                  />
+                <% end %>
+              </div>
             </div>
           </div>
         </div>
@@ -264,8 +294,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
           %{type: :level_up, name: format_hand_name(hand_type), color: "emerald"}
 
         {:action, action_card} ->
-          # Use amber for scrambler, rose for others
-          color = if action_card.type == :scrambler, do: "amber", else: "rose"
+          # Use amber for sabotage cards (scrambler/plus_bomb/static), rose for counter
+          color =
+            if action_card.type in [:scrambler, :plus_bomb, :static], do: "amber", else: "rose"
+
           %{type: :action, name: ActionCard.card_name(action_card), color: color}
 
         {:deck_builder, deck_builder_card} ->
@@ -340,16 +372,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
           {:level_up, nil, format_hand_name(hand_type), "emerald"}
 
         {:action, action_card} ->
-          subtype =
-            case action_card.type do
-              :denial -> :blocker
-              :scrambler -> :scrambler
-              :plus_bomb -> :plus_bomb
-              :static -> :static
-            end
+          case action_card.type do
+            :denial ->
+              # Blockers: show just the hand name, use rose color
+              {:action, :blocker, format_hand_name(action_card.target_hand), "rose"}
 
-          color = if action_card.type == :scrambler, do: "amber", else: "rose"
-          {:action, subtype, ActionCard.card_name(action_card), color}
+            type when type in [:scrambler, :plus_bomb, :static] ->
+              # Sabotage cards: show card name, use amber color
+              {:action, :sabotage, ActionCard.card_name(action_card), "amber"}
+          end
 
         {:deck_builder, deck_builder_card} ->
           {:deck_builder, nil, DeckBuilderCard.card_name(deck_builder_card), "violet"}
@@ -427,20 +458,16 @@ defmodule OskolWeb.Components.GameLive.Shop do
       ]}>
         <%= case @card_type do %>
           <% :level_up -> %>
-            Level Up
+            Research
           <% :action -> %>
             <%= case @action_subtype do %>
-              <% :scrambler -> %>
-                Scrambler
-              <% :plus_bomb -> %>
-                Action
-              <% :static -> %>
-                Action
-              <% _ -> %>
-                Blocker
+              <% :blocker -> %>
+                Counter
+              <% :sabotage -> %>
+                Sabotage
             <% end %>
           <% :deck_builder -> %>
-            Deck Builder
+            Logistics
         <% end %>
       </div>
       
@@ -561,7 +588,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="flex-1 flex flex-col p-8">
       <!-- Header -->
       <div class="mb-8">
-        <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Level Up</div>
+        <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
         <h2 class="text-4xl font-light text-base-content">{@hand_name}</h2>
       </div>
       
@@ -675,10 +702,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     type_label =
       case action_type do
-        :scrambler -> "Scrambler"
-        :plus_bomb -> "Action"
-        :static -> "Action"
-        :denial -> "Blocker"
+        :scrambler -> "Sabotage"
+        :plus_bomb -> "Sabotage"
+        :static -> "Sabotage"
+        :denial -> "Counter"
       end
 
     # Check if we have pending plus bomb selection
@@ -891,7 +918,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="flex-1 flex flex-col p-8">
       <!-- Header -->
       <div class="mb-6">
-        <div class="text-xs uppercase tracking-widest text-violet-500/60 mb-1">Deck Builder</div>
+        <div class="text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
         <h2 class="text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
       
