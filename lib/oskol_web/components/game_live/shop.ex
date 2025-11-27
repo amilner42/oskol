@@ -39,12 +39,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
                     index={index}
                     is_picked={index in @game_state.shop_state.picked_card_indices}
                     is_selected={assigns[:previewing_card_index] == index}
-                    can_pick={can_pick_card?(@game_state.shop_state, @player_id) and not has_pending_selection}
+                    can_pick={
+                      can_pick_card?(@game_state.shop_state, @player_id) and not has_pending_selection
+                    }
                   />
                 <% end %>
               </div>
             </div>
-
+            
     <!-- Tactical Ops Section (Action Cards) -->
             <div>
               <div class="mb-3 flex items-center gap-2">
@@ -60,7 +62,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
                     index={index}
                     is_picked={index in @game_state.shop_state.picked_card_indices}
                     is_selected={assigns[:previewing_card_index] == index}
-                    can_pick={can_pick_card?(@game_state.shop_state, @player_id) and not has_pending_selection}
+                    can_pick={
+                      can_pick_card?(@game_state.shop_state, @player_id) and not has_pending_selection
+                    }
                   />
                 <% end %>
               </div>

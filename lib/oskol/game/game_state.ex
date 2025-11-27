@@ -1020,6 +1020,7 @@ defmodule Oskol.Game.GameState do
       subtype when subtype in [:bonus_chips, :bonus_mult] ->
         # Apply enhancement to the selected card
         amount = deck_builder_card.metadata.amount
+
         enhancement =
           case subtype do
             :bonus_chips -> {:bonus_chips, amount}

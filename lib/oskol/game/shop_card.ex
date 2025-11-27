@@ -232,8 +232,12 @@ defmodule Oskol.Game.ShopCard do
   def card_name(%__MODULE__{type: :sabotage, subtype: :plus_bomb}), do: "Plus Bomb"
   def card_name(%__MODULE__{type: :sabotage, subtype: :static}), do: "Static Field"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :bonus_chips, metadata: %{amount: amt}}),
-    do: "+#{amt} Chips"
+  def card_name(%__MODULE__{
+        type: :deck_builder,
+        subtype: :bonus_chips,
+        metadata: %{amount: amt}
+      }),
+      do: "+#{amt} Chips"
 
   def card_name(%__MODULE__{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: amt}}),
     do: "+#{amt} Mult"
@@ -241,17 +245,33 @@ defmodule Oskol.Game.ShopCard do
   def card_name(%__MODULE__{type: :deck_builder, subtype: :add_card}), do: "Add Card"
   def card_name(%__MODULE__{type: :deck_builder, subtype: :remove_card}), do: "Remove Cards"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :hearts}}),
-    do: "Change to ♥"
+  def card_name(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :hearts}
+      }),
+      do: "Change to ♥"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :diamonds}}),
-    do: "Change to ♦"
+  def card_name(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :diamonds}
+      }),
+      do: "Change to ♦"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :clubs}}),
-    do: "Change to ♣"
+  def card_name(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :clubs}
+      }),
+      do: "Change to ♣"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :spades}}),
-    do: "Change to ♠"
+  def card_name(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :spades}
+      }),
+      do: "Change to ♠"
 
   def card_name(%__MODULE__{type: :deck_builder, subtype: :increase_rank}), do: "Increase Rank"
 
@@ -279,11 +299,19 @@ defmodule Oskol.Game.ShopCard do
     "Opponent's card enhancements disabled next round"
   end
 
-  def card_description(%__MODULE__{type: :deck_builder, subtype: :bonus_chips, metadata: %{amount: amt}}) do
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :bonus_chips,
+        metadata: %{amount: amt}
+      }) do
     "Add +#{amt} chips to a card in your deck"
   end
 
-  def card_description(%__MODULE__{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: amt}}) do
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :bonus_mult,
+        metadata: %{amount: amt}
+      }) do
     "Add +#{amt} multiplier to a card in your deck"
   end
 
@@ -351,7 +379,10 @@ defmodule Oskol.Game.ShopCard do
   - For plus bomb: Returns 8 random cards from player's deck
   """
   @spec generate_selection_cards(t(), [Card.t()]) :: [Card.t()]
-  def generate_selection_cards(%__MODULE__{type: :deck_builder, subtype: :add_card}, _player_deck_cards) do
+  def generate_selection_cards(
+        %__MODULE__{type: :deck_builder, subtype: :add_card},
+        _player_deck_cards
+      ) do
     # Generate 8 new random cards
     all_cards = for rank <- 2..14, suit <- [:hearts, :diamonds, :clubs, :spades], do: {rank, suit}
 

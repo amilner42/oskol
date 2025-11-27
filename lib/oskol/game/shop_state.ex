@@ -116,17 +116,33 @@ defmodule Oskol.Game.ShopState do
   defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :add_card}), do: {1, 2}
   defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :remove_card}), do: {1, 3}
 
-  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :hearts}}),
-    do: {1, 4}
+  defp card_sort_key(%ShopCard{
+         type: :deck_builder,
+         subtype: :change_suit,
+         metadata: %{suit: :hearts}
+       }),
+       do: {1, 4}
 
-  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :diamonds}}),
-    do: {1, 5}
+  defp card_sort_key(%ShopCard{
+         type: :deck_builder,
+         subtype: :change_suit,
+         metadata: %{suit: :diamonds}
+       }),
+       do: {1, 5}
 
-  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :clubs}}),
-    do: {1, 6}
+  defp card_sort_key(%ShopCard{
+         type: :deck_builder,
+         subtype: :change_suit,
+         metadata: %{suit: :clubs}
+       }),
+       do: {1, 6}
 
-  defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :spades}}),
-    do: {1, 7}
+  defp card_sort_key(%ShopCard{
+         type: :deck_builder,
+         subtype: :change_suit,
+         metadata: %{suit: :spades}
+       }),
+       do: {1, 7}
 
   defp card_sort_key(%ShopCard{type: :deck_builder, subtype: :increase_rank}), do: {1, 8}
 
