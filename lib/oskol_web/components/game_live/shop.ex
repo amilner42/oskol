@@ -5,6 +5,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
   use OskolWeb, :html
 
   alias Oskol.Game.ShopCard
+  alias OskolWeb.Utils.Format
 
   def shop_screen(assigns) do
     ~H"""
@@ -473,16 +474,6 @@ defmodule OskolWeb.Components.GameLive.Shop do
     """
   end
 
-  defp format_hand_name(:high_card), do: "High Card"
-  defp format_hand_name(:pair), do: "Pair"
-  defp format_hand_name(:two_pair), do: "Two Pair"
-  defp format_hand_name(:three_of_a_kind), do: "3 of a Kind"
-  defp format_hand_name(:straight), do: "Straight"
-  defp format_hand_name(:flush), do: "Flush"
-  defp format_hand_name(:full_house), do: "Full House"
-  defp format_hand_name(:four_of_a_kind), do: "4 of a Kind"
-  defp format_hand_name(:straight_flush), do: "Str. Flush"
-
   defp shop_complete?(shop_state) do
     shop_state.current_round == shop_state.total_rounds and
       shop_state.first_pick_made and shop_state.second_pick_made
@@ -557,7 +548,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:next_level, next_level)
       |> assign(:current_stats, current_stats)
       |> assign(:next_stats, next_stats)
-      |> assign(:hand_name, format_hand_name(assigns.hand_type))
+      |> assign(:hand_name, Format.hand_name(assigns.hand_type))
 
     ~H"""
     <div class="flex-1 flex flex-col p-8">
@@ -667,7 +658,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     # For denial cards, show the target hand
     hand_name =
       if shop_card.type == :denial do
-        format_hand_name(shop_card.subtype)
+        Format.hand_name(shop_card.subtype)
       else
         nil
       end

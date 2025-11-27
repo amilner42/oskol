@@ -13,6 +13,7 @@ defmodule Oskol.Game.ShopCard do
   """
 
   alias Oskol.Poker.Card
+  alias OskolWeb.Utils.Format
 
   @type hand_type ::
           :high_card
@@ -221,11 +222,11 @@ defmodule Oskol.Game.ShopCard do
   """
   @spec card_name(t()) :: String.t()
   def card_name(%__MODULE__{type: :level_up, subtype: hand_type}) do
-    format_hand_name(hand_type)
+    Format.hand_name(hand_type)
   end
 
   def card_name(%__MODULE__{type: :denial, subtype: hand_type}) do
-    "Block #{format_hand_name(hand_type)}"
+    Format.hand_name(hand_type)
   end
 
   def card_name(%__MODULE__{type: :sabotage, subtype: :scrambler}), do: "The Scrambler"
@@ -280,11 +281,11 @@ defmodule Oskol.Game.ShopCard do
   """
   @spec card_description(t()) :: String.t()
   def card_description(%__MODULE__{type: :level_up, subtype: hand_type}) do
-    "Upgrade #{format_hand_name(hand_type)} - increases chips and multiplier"
+    "Upgrade #{Format.hand_name(hand_type)} - increases chips and multiplier"
   end
 
   def card_description(%__MODULE__{type: :denial, subtype: hand_type}) do
-    "Opponent's #{format_hand_name(hand_type)} scores 0 next round"
+    "Opponent's #{Format.hand_name(hand_type)} scores 0 next round"
   end
 
   def card_description(%__MODULE__{type: :sabotage, subtype: :scrambler}) do
@@ -398,16 +399,4 @@ defmodule Oskol.Game.ShopCard do
     |> Enum.shuffle()
     |> Enum.take(8)
   end
-
-  # ===== Helper Functions =====
-
-  defp format_hand_name(:high_card), do: "High Card"
-  defp format_hand_name(:pair), do: "Pair"
-  defp format_hand_name(:two_pair), do: "Two Pair"
-  defp format_hand_name(:three_of_a_kind), do: "3 of a Kind"
-  defp format_hand_name(:straight), do: "Straight"
-  defp format_hand_name(:flush), do: "Flush"
-  defp format_hand_name(:full_house), do: "Full House"
-  defp format_hand_name(:four_of_a_kind), do: "4 of a Kind"
-  defp format_hand_name(:straight_flush), do: "Str. Flush"
 end

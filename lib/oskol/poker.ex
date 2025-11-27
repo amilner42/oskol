@@ -18,7 +18,6 @@ defmodule Oskol.Poker do
 
   # Hand evaluation
   defdelegate evaluate_hand(hand), to: Hand, as: :evaluate
-  defdelegate hand_type_name(hand_type), to: Hand
 
   # Scoring
   @doc """
