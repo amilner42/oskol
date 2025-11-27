@@ -376,8 +376,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
               {:action, :blocker, format_hand_name(action_card.target_hand), "rose"}
 
             type when type in [:scrambler, :plus_bomb, :static] ->
-              # Tactical cards: show card name, use amber color
-              {:action, :tactical, ActionCard.card_name(action_card), "amber"}
+              # Sabotage cards: show card name, use amber color
+              {:action, :sabotage, ActionCard.card_name(action_card), "amber"}
           end
 
         {:deck_builder, deck_builder_card} ->
@@ -461,8 +461,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <%= case @action_subtype do %>
               <% :blocker -> %>
                 Counter
-              <% :tactical -> %>
-                Tactical
+              <% :sabotage -> %>
+                Sabotage
             <% end %>
           <% :deck_builder -> %>
             Logistics
