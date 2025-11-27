@@ -148,12 +148,29 @@ defmodule Oskol.Game.ShopState do
 
     # Generate 5 random action cards (sorted by target_hand)
     # Check for dev codes that force specific action cards
+    forced_cards =
+      []
+      |> then(fn cards ->
+        if "SHOP_FORCE_SCRAMBLER" in dev_codes,
+          do: [ActionCard.scrambler_card() | cards],
+          else: cards
+      end)
+      |> then(fn cards ->
+        if "SHOP_FORCE_PLUS_BOMB" in dev_codes,
+          do: [ActionCard.plus_bomb_card() | cards],
+          else: cards
+      end)
+      |> then(fn cards ->
+        if "SHOP_FORCE_STATIC" in dev_codes,
+          do: [ActionCard.static_card() | cards],
+          else: cards
+      end)
+
     action_cards =
-      if "SHOP_FORCE_SCRAMBLER" in dev_codes do
-        # Force a scrambler card to be in the first action slot
-        scrambler = ActionCard.scrambler_card()
-        other_actions = ActionCard.generate_random_action_cards(4)
-        [scrambler | other_actions]
+      if length(forced_cards) > 0 do
+        remaining_count = 5 - length(forced_cards)
+        other_actions = ActionCard.generate_random_action_cards(remaining_count)
+        forced_cards ++ other_actions
       else
         ActionCard.generate_random_action_cards(5)
       end
@@ -164,8 +181,10 @@ defmodule Oskol.Game.ShopState do
     level_ups ++ deck_builder_cards ++ action_cards
   end
 
-  # Sort key for action cards (scramblers first, then by target_hand)
+  # Sort key for action cards (special actions first by type, then denials by target_hand)
   defp action_card_sort_key(%ActionCard{type: :scrambler}), do: {0, 0}
+  defp action_card_sort_key(%ActionCard{type: :plus_bomb}), do: {0, 1}
+  defp action_card_sort_key(%ActionCard{type: :static}), do: {0, 2}
 
   defp action_card_sort_key(%ActionCard{type: :denial, target_hand: hand}),
     do: {1, hand_type_order(hand)}
