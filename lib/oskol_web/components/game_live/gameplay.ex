@@ -803,7 +803,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
             <span class="text-xs font-semibold text-sky-900">Scrambled</span>
             <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              1-in-4 drawn cards are face-down
+              1-in-5 drawn cards are face-down
             </div>
           </div>
         <% end %>
@@ -843,7 +843,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
             <span class="text-xs font-semibold text-orange-900">Scrambled</span>
             <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              1-in-4 drawn cards are face-down
+              1-in-5 drawn cards are face-down
             </div>
           </div>
         <% end %>

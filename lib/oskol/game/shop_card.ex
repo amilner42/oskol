@@ -289,7 +289,7 @@ defmodule Oskol.Game.ShopCard do
   end
 
   def card_description(%__MODULE__{type: :sabotage, subtype: :scrambler}) do
-    "Opponent's drawn cards have 1-in-4 chance of being face-down next round"
+    "Opponent's drawn cards have 1-in-5 chance of being face-down next round"
   end
 
   def card_description(%__MODULE__{type: :sabotage, subtype: :plus_bomb}) do

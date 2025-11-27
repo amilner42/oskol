@@ -159,7 +159,7 @@ defmodule Oskol.Game.GameState do
         # Determine which cards are new (drawn to replace discarded ones)
         new_cards = new_card_piles.hand_pile -- player.card_piles.hand_pile
 
-        # If player is scrambled, randomly mark some new cards as face-down (1-in-4 chance each)
+        # If player is scrambled, randomly mark some new cards as face-down (1-in-5 chance each)
         face_down_ids = scramble_cards(new_cards, player.scrambled)
 
         updated_player = %{
@@ -252,7 +252,7 @@ defmodule Oskol.Game.GameState do
         new_card_piles = CardPiles.replace_cards(player_state.card_piles, played_hand)
         new_cards = new_card_piles.hand_pile -- old_hand
 
-        # If player is scrambled, randomly mark some new cards as face-down (1-in-4 chance each)
+        # If player is scrambled, randomly mark some new cards as face-down (1-in-5 chance each)
         face_down_ids = scramble_cards(new_cards, player_state.scrambled)
 
         updated_player = %{
@@ -1291,14 +1291,14 @@ defmodule Oskol.Game.GameState do
   end
 
   # Randomly selects cards to be face-down based on scrambler effect
-  # Each card has a 1-in-4 chance of being face-down
+  # Each card has a 1-in-5 chance of being face-down
   # Returns list of card IDs that should be face-down
   @spec scramble_cards([Card.t()], boolean()) :: [String.t()]
   defp scramble_cards(_cards, false), do: []
 
   defp scramble_cards(cards, true) do
     cards
-    |> Enum.filter(fn _card -> :rand.uniform(4) == 1 end)
+    |> Enum.filter(fn _card -> :rand.uniform(5) == 1 end)
     |> Enum.map(& &1.id)
   end
 
