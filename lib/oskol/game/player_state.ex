@@ -62,11 +62,16 @@ defmodule Oskol.Game.PlayerState do
   @doc """
   Creates a new player state with a full deck and level 1 skill tree.
   Draws 8 cards into hand to start.
+
+  Options:
+  - `dev_codes`: List of dev codes. If "ALL_ENHANCED" is present, all cards get random enhancements.
   """
-  @spec new(player_id(), pos_integer()) :: t()
-  def new(player_id, initial_lives \\ 3) do
+  @spec new(player_id(), pos_integer(), list(String.t())) :: t()
+  def new(player_id, initial_lives \\ 3, dev_codes \\ []) do
+    enhance_all = "ALL_ENHANCED" in dev_codes
+
     card_piles =
-      CardPiles.new(shuffle: true)
+      CardPiles.new(shuffle: true, enhance_all: enhance_all)
       |> CardPiles.draw_cards(8)
 
     %__MODULE__{

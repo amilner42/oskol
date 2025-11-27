@@ -1107,6 +1107,7 @@ defmodule OskolWeb.GameLive do
               action_in_progress={@action_in_progress}
               previewing_card_index={@previewing_card_index}
               deck_builder_selection={@deck_builder_selection}
+              plus_bomb_selection={@plus_bomb_selection}
               shop_countdown={@shop_countdown}
             />
           <% true -> %>

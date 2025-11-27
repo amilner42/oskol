@@ -32,7 +32,10 @@ defmodule Oskol.Game.GameState do
           hand: list(Card.t()),
           hand_type: Poker.hand_type(),
           score: pos_integer(),
-          score_breakdown: Oskol.Poker.Score.score_result()
+          score_breakdown: Oskol.Poker.Score.score_result(),
+          disabled_ranks: [Card.rank()],
+          disabled_suits: [Card.suit()],
+          enhancements_disabled: boolean()
         }
 
   @hands_per_round 4
@@ -68,7 +71,7 @@ defmodule Oskol.Game.GameState do
       player_names
       |> Map.keys()
       |> Enum.map(fn player_id ->
-        player = PlayerState.new(player_id, initial_lives)
+        player = PlayerState.new(player_id, initial_lives, dev_codes)
         # Also need to set hands_remaining on player state
         {player_id, %{player | hands_remaining: hands_per_round}}
       end)
@@ -225,7 +228,11 @@ defmodule Oskol.Game.GameState do
           hand: hand,
           hand_type: evaluation.hand_type,
           score: score_result.total_score,
-          score_breakdown: score_result
+          score_breakdown: score_result,
+          # Store debuffs that were active when scoring (for UI display during animation)
+          disabled_ranks: player_state.disabled_ranks,
+          disabled_suits: player_state.disabled_suits,
+          enhancements_disabled: player_state.enhancements_disabled
         }
 
         {player_id, result}
@@ -928,7 +935,8 @@ defmodule Oskol.Game.GameState do
       {:error, :not_your_pending_selection}
     else
       # Find the selected card
-      selected_card = Enum.find(pending.available_cards, fn card -> card.id == selected_card_id end)
+      selected_card =
+        Enum.find(pending.available_cards, fn card -> card.id == selected_card_id end)
 
       if selected_card == nil do
         {:error, :invalid_card_selection}

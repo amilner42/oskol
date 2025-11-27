@@ -111,7 +111,7 @@ defmodule Oskol.Game.ActionCard do
   end
 
   def card_name(%__MODULE__{type: :static}) do
-    "Static"
+    "Static Field"
   end
 
   defp format_hand_name(:high_card), do: "High Card"

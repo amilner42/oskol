@@ -18,7 +18,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
-
+          
     <!-- Cards Grid: 3 columns x 5 rows -->
           <div class="flex-1 p-6 overflow-y-auto">
             <div class="grid grid-cols-3 gap-4">
@@ -34,7 +34,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </div>
           </div>
         </div>
-
+        
     <!-- Right Column: Preview Area -->
         <div class="flex-1 flex flex-col">
           <!-- Pick Status Bar -->
@@ -116,7 +116,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="text-center">
       <div class="w-20 h-20 rounded-full bg-emerald-500/10 mx-auto mb-4 flex items-center justify-center">
         <span class="text-4xl font-light text-emerald-500">
-          <%= if @countdown, do: @countdown, else: "5" %>
+          {if @countdown, do: @countdown, else: "5"}
         </span>
       </div>
       <p class="text-base-content/60 text-lg font-light mb-2">All picks complete!</p>
@@ -238,7 +238,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         <% end %>
       </div>
-
+      
     <!-- All pick slots - evenly spaced -->
       <div class="flex gap-3">
         <%= for slot <- @all_slots do %>
@@ -443,7 +443,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             Deck Builder
         <% end %>
       </div>
-
+      
     <!-- Card name centered -->
       <div class="flex-1 flex items-center justify-center">
         <div class={[
@@ -564,7 +564,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Level Up</div>
         <h2 class="text-4xl font-light text-base-content">{@hand_name}</h2>
       </div>
-
+      
     <!-- Level indicator -->
       <div class="mb-12">
         <div class="flex items-center gap-4">
@@ -587,7 +587,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       </div>
-
+      
     <!-- Stats -->
       <div class="space-y-6 flex-1">
         <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
@@ -631,7 +631,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       </div>
-
+      
     <!-- Action Button -->
       <%= if @can_confirm do %>
         <div class="pt-8">
@@ -745,8 +745,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       <% end %>
-
-      <!-- Description -->
+      
+    <!-- Description -->
       <div class="mb-8">
         <p class="text-base-content/60 text-lg leading-relaxed">{@card_description}</p>
       </div>
@@ -755,7 +755,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <!-- Plus Bomb card selection -->
         <div class="mb-4">
           <div class="flex items-center justify-between">
-            <span class="text-sm text-base-content/50">Select a card - that rank AND suit won't score for opponent</span>
+            <span class="text-sm text-base-content/50">
+              Select a card - that rank AND suit won't score for opponent
+            </span>
             <%= if @plus_bomb_selection do %>
               <span class="text-xs px-2 py-1 rounded-full bg-rose-500/10 text-rose-500">
                 1 selected
@@ -763,8 +765,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-
-        <!-- 8-Card Selection Grid for Plus Bomb -->
+        
+    <!-- 8-Card Selection Grid for Plus Bomb -->
         <div class="flex-1 mb-6">
           <div class="grid grid-cols-4 gap-3">
             <%= for card <- @pending_plus_bomb.available_cards do %>
@@ -776,8 +778,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-
-        <!-- Confirm Button for Plus Bomb -->
+        
+    <!-- Confirm Button for Plus Bomb -->
         <%= if @can_confirm and @plus_bomb_selection do %>
           <div class="pt-4">
             <button
@@ -799,8 +801,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <% else %>
         <!-- Flex spacer -->
         <div class="flex-1"></div>
-
-        <!-- Action Button -->
+        
+    <!-- Action Button -->
         <%= if @can_confirm do %>
           <div class="pt-8">
             <%= if @requires_selection do %>
@@ -892,7 +894,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class="text-xs uppercase tracking-widest text-violet-500/60 mb-1">Deck Builder</div>
         <h2 class="text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
-
+      
     <!-- Description -->
       <div class="mb-8">
         <p class="text-base-content/60 text-lg leading-relaxed">{@card_description}</p>
@@ -938,7 +940,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-
+        
     <!-- 8-Card Selection Grid -->
         <div class="flex-1 mb-6">
           <div class="grid grid-cols-4 gap-3">
@@ -956,7 +958,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-
+        
     <!-- Action Buttons -->
         <%= if @can_confirm do %>
           <div class="flex gap-3">

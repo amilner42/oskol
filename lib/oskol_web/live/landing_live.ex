@@ -353,7 +353,13 @@ defmodule OskolWeb.LandingLive do
      |> push_patch(to: ~p"/")}
   end
 
-  @valid_dev_codes ["SHOP_FORCE_SCRAMBLER", "SHOP_FORCE_PLUS_BOMB", "SHOP_FORCE_STATIC", "1HAND"]
+  @valid_dev_codes [
+    "SHOP_FORCE_SCRAMBLER",
+    "SHOP_FORCE_PLUS_BOMB",
+    "SHOP_FORCE_STATIC",
+    "1HAND",
+    "ALL_ENHANCED"
+  ]
 
   @impl true
   def handle_event("update_dev_code", %{"dev_code" => dev_code}, socket) do
