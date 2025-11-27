@@ -586,7 +586,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="flex-1 flex flex-col p-8">
       <!-- Header -->
       <div class="mb-8">
-        <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Level Up</div>
+        <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
         <h2 class="text-4xl font-light text-base-content">{@hand_name}</h2>
       </div>
       
@@ -700,10 +700,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     type_label =
       case action_type do
-        :scrambler -> "Scrambler"
-        :plus_bomb -> "Action"
-        :static -> "Action"
-        :denial -> "Blocker"
+        :scrambler -> "Sabotage"
+        :plus_bomb -> "Sabotage"
+        :static -> "Sabotage"
+        :denial -> "Counter"
       end
 
     # Check if we have pending plus bomb selection
@@ -916,7 +916,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="flex-1 flex flex-col p-8">
       <!-- Header -->
       <div class="mb-6">
-        <div class="text-xs uppercase tracking-widest text-violet-500/60 mb-1">Deck Builder</div>
+        <div class="text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
         <h2 class="text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
       
