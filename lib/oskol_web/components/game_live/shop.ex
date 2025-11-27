@@ -4,6 +4,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
   """
   use OskolWeb, :html
 
+  alias Oskol.Game.ShopCard
+
   def shop_screen(assigns) do
     ~H"""
     <div class="h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200">
@@ -286,25 +288,13 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp pick_slot_compact(assigns) do
-    alias Oskol.Game.{DeckBuilderCard, ActionCard}
-
     card_display =
       case assigns[:pick_card] do
-        {:level_up, hand_type} ->
-          %{type: :level_up, name: format_hand_name(hand_type), color: "emerald"}
-
-        {:action, action_card} ->
-          # Use amber for sabotage cards (scrambler/plus_bomb/static), rose for counter
-          color =
-            if action_card.type in [:scrambler, :plus_bomb, :static], do: "amber", else: "rose"
-
-          %{type: :action, name: ActionCard.card_name(action_card), color: color}
-
-        {:deck_builder, deck_builder_card} ->
+        %ShopCard{} = shop_card ->
           %{
-            type: :deck_builder,
-            name: DeckBuilderCard.card_name(deck_builder_card),
-            color: "violet"
+            type: shop_card.type,
+            name: ShopCard.card_name(shop_card),
+            color: ShopCard.card_color(shop_card)
           }
 
         nil ->
@@ -364,44 +354,29 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp shop_card_minimal(assigns) do
-    alias Oskol.Game.{DeckBuilderCard, ActionCard}
-
-    {card_type, action_subtype, display_name, accent_color} =
-      case assigns.shop_card do
-        {:level_up, hand_type} ->
-          {:level_up, nil, format_hand_name(hand_type), "emerald"}
-
-        {:action, action_card} ->
-          case action_card.type do
-            :denial ->
-              # Blockers: show just the hand name, use rose color
-              {:action, :blocker, format_hand_name(action_card.target_hand), "rose"}
-
-            type when type in [:scrambler, :plus_bomb, :static] ->
-              # Sabotage cards: show card name, use amber color
-              {:action, :sabotage, ActionCard.card_name(action_card), "amber"}
-          end
-
-        {:deck_builder, deck_builder_card} ->
-          {:deck_builder, nil, DeckBuilderCard.card_name(deck_builder_card), "violet"}
-      end
+    shop_card = assigns.shop_card
+    display_name = ShopCard.card_name(shop_card)
+    accent_color = ShopCard.card_color(shop_card)
+    card_type = shop_card.type
 
     # Use different events for deck builders and plus_bomb vs other cards
     click_event =
       if assigns[:can_pick] and not assigns[:is_picked] do
-        case assigns.shop_card do
-          {:deck_builder, _} -> "preview_deck_builder"
-          {:action, %{type: :plus_bomb}} -> "preview_plus_bomb"
+        case shop_card do
+          %ShopCard{type: :deck_builder} -> "preview_deck_builder"
+          %ShopCard{type: :sabotage, subtype: :plus_bomb} -> "preview_plus_bomb"
           _ -> "preview_shop_card"
         end
       else
         nil
       end
 
+    type_label = ShopCard.card_type_label(shop_card)
+
     assigns =
       assigns
       |> assign(:card_type, card_type)
-      |> assign(:action_subtype, action_subtype)
+      |> assign(:type_label, type_label)
       |> assign(:display_name, display_name)
       |> assign(:accent_color, accent_color)
       |> assign(:click_event, click_event)
@@ -456,19 +431,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           "amber" -> "text-amber-500"
         end
       ]}>
-        <%= case @card_type do %>
-          <% :level_up -> %>
-            Research
-          <% :action -> %>
-            <%= case @action_subtype do %>
-              <% :blocker -> %>
-                Counter
-              <% :sabotage -> %>
-                Sabotage
-            <% end %>
-          <% :deck_builder -> %>
-            Logistics
-        <% end %>
+        {@type_label}
       </div>
       
     <!-- Card name centered -->
@@ -683,30 +646,22 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp action_detail(assigns) do
-    card_name = Oskol.Game.ActionCard.card_name(assigns.action_card)
-    card_description = Oskol.Game.ActionCard.card_description(assigns.action_card)
-    action_type = assigns.action_card.type
-    is_scrambler = action_type == :scrambler
-    requires_selection = Oskol.Game.ActionCard.requires_selection?(assigns.action_card)
+    shop_card = assigns.action_card
+    card_name = ShopCard.card_name(shop_card)
+    card_description = ShopCard.card_description(shop_card)
+    is_scrambler = shop_card.subtype == :scrambler
+    requires_selection = ShopCard.requires_selection?(shop_card)
 
     # For denial cards, show the target hand
     hand_name =
-      if assigns.action_card.target_hand do
-        format_hand_name(assigns.action_card.target_hand)
+      if shop_card.type == :denial do
+        format_hand_name(shop_card.subtype)
       else
         nil
       end
 
-    # Use amber for scrambler, rose for others
-    accent_color = if is_scrambler, do: "amber", else: "rose"
-
-    type_label =
-      case action_type do
-        :scrambler -> "Sabotage"
-        :plus_bomb -> "Sabotage"
-        :static -> "Sabotage"
-        :denial -> "Counter"
-      end
+    accent_color = ShopCard.card_color(shop_card)
+    type_label = ShopCard.card_type_label(shop_card)
 
     # Check if we have pending plus bomb selection
     has_plus_bomb_preview =
@@ -722,7 +677,6 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:is_scrambler, is_scrambler)
       |> assign(:accent_color, accent_color)
       |> assign(:type_label, type_label)
-      |> assign(:action_type, action_type)
       |> assign(:requires_selection, requires_selection)
       |> assign(:has_plus_bomb_preview, has_plus_bomb_preview)
 
@@ -897,10 +851,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp deck_builder_detail(assigns) do
-    alias Oskol.Game.DeckBuilderCard
-
-    card_name = DeckBuilderCard.card_name(assigns.deck_builder_card)
-    card_description = DeckBuilderCard.card_description(assigns.deck_builder_card)
+    shop_card = assigns.deck_builder_card
+    card_name = ShopCard.card_name(shop_card)
+    card_description = ShopCard.card_description(shop_card)
 
     # Check if we have the pending deck builder with 8 cards loaded
     has_preview =
@@ -930,20 +883,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <%= if @has_preview do %>
         <!-- Selection instruction -->
         <div class="mb-4">
-          <% card_type = @pending_deck_builder.deck_builder_card.type
+          <% card_subtype = @pending_deck_builder.deck_builder_card.subtype
 
           instruction =
-            case card_type do
+            case card_subtype do
               :remove_card ->
                 "Select up to 2 cards to remove"
 
-              type
-              when type in [
-                     :change_suit_hearts,
-                     :change_suit_diamonds,
-                     :change_suit_clubs,
-                     :change_suit_spades
-                   ] ->
+              :change_suit ->
                 "Select up to 3 cards to change"
 
               :increase_rank ->
