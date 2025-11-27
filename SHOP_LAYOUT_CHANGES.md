@@ -62,17 +62,22 @@ Reorganized the Command Center (formerly "Shop") from a 3x5 grid (15 cards) to a
 - **Tactical Ops**: Gray text (`text-base-content/40`) with "Temporary Battlefield Advantage" subtitle
 - Consistent gray color for both sections provides cleaner visual hierarchy
 
-**Card Type Badges & Colors**:
+**Card Type Badges & Colors** (War-Themed):
 - **Research**: Green badge (`text-emerald-500`), shows "Research" label + hand name (e.g., "Pair", "Flush")
-- **Deck Builder**: Violet badge (`text-violet-500`), shows card type (e.g., "Remove Card")
-- **Blocker**: Red/rose badge (`text-rose-500`), shows "Blocker" label + blocked hand name
+- **Logistics**: Violet badge (`text-violet-500`), shows "Logistics" label + card type (e.g., "Remove Card")
+- **Counter**: Red/rose badge (`text-rose-500`), shows "Counter" label + countered hand name
 - **Tactical**: Amber/yellow badge (`text-amber-500`), shows "Tactical" label + card name (Scrambler, Plus Bomb, Static Field)
 
 **Card Sizing**: Maintained same per-card dimensions; increased container width to prevent cramping
 
 **Theme**: War-themed naming:
-- Arsenal = Your permanent weapon/equipment upgrades
-- Tactical Ops = Temporary battlefield tactical advantages
+- **Command Center** = Strategic upgrade hub (formerly "Shop")
+- **Arsenal** = Permanent weapon/equipment upgrades
+- **Tactical Ops** = Temporary battlefield tactical advantages
+- **Research** = Improving hand effectiveness (formerly "Level Up")
+- **Logistics** = Managing deck composition (formerly "Deck Builder")
+- **Counter** = Denial/blocking enemy hands (formerly "Blocker")
+- **Tactical** = Special one-time battlefield effects
 
 ## Testing
 
