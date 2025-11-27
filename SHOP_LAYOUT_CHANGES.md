@@ -63,7 +63,7 @@ Reorganized the Command Center (formerly "Shop") from a 3x5 grid (15 cards) to a
 - Consistent gray color for both sections provides cleaner visual hierarchy
 
 **Card Type Badges & Colors**:
-- **Level Up**: Green badge (`text-emerald-500`), shows hand name (e.g., "Pair", "Flush")
+- **Research**: Green badge (`text-emerald-500`), shows "Research" label + hand name (e.g., "Pair", "Flush")
 - **Deck Builder**: Violet badge (`text-violet-500`), shows card type (e.g., "Remove Card")
 - **Blocker**: Red/rose badge (`text-rose-500`), shows "Blocker" label + blocked hand name
 - **Tactical**: Amber/yellow badge (`text-amber-500`), shows "Tactical" label + card name (Scrambler, Plus Bomb, Static Field)
