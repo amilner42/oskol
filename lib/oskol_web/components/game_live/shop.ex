@@ -24,7 +24,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <!-- Arsenal Section (Permanent Upgrades) -->
             <div class="mb-6">
               <div class="mb-3 flex items-center gap-2">
-                <div class="text-sm font-semibold uppercase tracking-wider text-emerald-500/80">
+                <div class="text-sm font-semibold uppercase tracking-wider text-base-content/40">
                   Arsenal
                 </div>
                 <div class="text-xs text-base-content/40">Permanent Upgrades</div>
@@ -45,7 +45,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <!-- Tactical Ops Section (Action Cards) -->
             <div>
               <div class="mb-3 flex items-center gap-2">
-                <div class="text-sm font-semibold uppercase tracking-wider text-rose-500/80">
+                <div class="text-sm font-semibold uppercase tracking-wider text-base-content/40">
                   Tactical Ops
                 </div>
                 <div class="text-xs text-base-content/40">Temporary Battlefield Advantage</div>
@@ -370,16 +370,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
           {:level_up, nil, format_hand_name(hand_type), "emerald"}
 
         {:action, action_card} ->
-          subtype =
-            case action_card.type do
-              :denial -> :blocker
-              :scrambler -> :scrambler
-              :plus_bomb -> :plus_bomb
-              :static -> :static
-            end
+          case action_card.type do
+            :denial ->
+              # Blockers: show just the hand name, use rose color
+              {:action, :blocker, format_hand_name(action_card.target_hand), "rose"}
 
-          color = if action_card.type == :scrambler, do: "amber", else: "rose"
-          {:action, subtype, ActionCard.card_name(action_card), color}
+            type when type in [:scrambler, :plus_bomb, :static] ->
+              # Tactical cards: show card name, use amber color
+              {:action, :tactical, ActionCard.card_name(action_card), "amber"}
+          end
 
         {:deck_builder, deck_builder_card} ->
           {:deck_builder, nil, DeckBuilderCard.card_name(deck_builder_card), "violet"}
@@ -460,14 +459,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
             Level Up
           <% :action -> %>
             <%= case @action_subtype do %>
-              <% :scrambler -> %>
-                Scrambler
-              <% :plus_bomb -> %>
-                Action
-              <% :static -> %>
-                Action
-              <% _ -> %>
+              <% :blocker -> %>
                 Blocker
+              <% :tactical -> %>
+                Tactical
             <% end %>
           <% :deck_builder -> %>
             Deck Builder
