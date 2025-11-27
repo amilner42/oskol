@@ -6,6 +6,7 @@ defmodule Oskol.Game.ShopState do
 
   alias Oskol.Game.{PlayerState, ShopCard}
   alias Oskol.Poker.Card
+  alias Oskol.Utils.WeightedRandom
 
   @type player_id :: PlayerState.player_id()
 
@@ -84,29 +85,198 @@ defmodule Oskol.Game.ShopState do
     }
   end
 
-  # Generates a pool of 16 shop cards: 8 permanent (level ups + deck builders) + 8 action cards.
-  # Cards are sorted by category (permanent cards first, then actions)
-  # and within each category they are sorted for consistency.
+  # Centralized shop card probability tree
+  # For each card slot, we:
+  # 1. Sample a branch (e.g., Research vs Logistics) using branch weights
+  # 2. Sample a specific card from that branch using card weights
+  @shop_probabilities %{
+    arsenal: %{
+      branches: %{
+        research: %{
+          weight: 1,
+          cards: %{
+            high_card: 1,
+            pair: 1,
+            two_pair: 1,
+            three_of_a_kind: 1,
+            straight: 1,
+            flush: 1,
+            full_house: 1,
+            four_of_a_kind: 1,
+            straight_flush: 1
+          }
+        },
+        logistics: %{
+          weight: 1,
+          cards: %{
+            bonus_chips: 4,
+            bonus_mult: 4,
+            add_card: 4,
+            remove_card: 4,
+            change_suit_hearts: 1,
+            change_suit_diamonds: 1,
+            change_suit_clubs: 1,
+            change_suit_spades: 1,
+            increase_rank: 4
+          }
+        }
+      }
+    },
+    actions: %{
+      branches: %{
+        sabotage: %{
+          weight: 1,
+          cards: %{
+            scrambler: 1,
+            plus_bomb: 1,
+            static: 1,
+            supply_chain: 1
+          }
+        },
+        counter: %{
+          weight: 1,
+          cards: %{
+            high_card: 1,
+            pair: 1,
+            two_pair: 1,
+            three_of_a_kind: 1,
+            straight: 1,
+            flush: 1,
+            full_house: 1,
+            four_of_a_kind: 1,
+            straight_flush: 1
+          }
+        }
+      }
+    }
+  }
+
+  # Generates a pool of 16 shop cards using hierarchical probability tree:
+  # For each card slot:
+  #   1. Sample branch (e.g., Research vs Logistics) using branch weights
+  #   2. Sample specific card from that branch using card weights
+  #
+  # Top 8: ARSENAL (Research + Logistics branches)
+  # Bottom 8: ACTIONS (Sabotage + Counter branches)
+  #
+  # Cards are sorted by category for consistency.
   # Dev codes can force specific cards to appear.
   @spec generate_random_shop_cards([String.t()]) :: [shop_card()]
   defp generate_random_shop_cards(dev_codes) do
-    # Generate 4 random level up cards (sorted by hand type)
-    level_ups =
-      ShopCard.generate_random_level_ups(4)
+    arsenal_config = @shop_probabilities.arsenal
+    actions_config = @shop_probabilities.actions
+
+    # Generate 8 Arsenal cards (each independently samples branch then card)
+    arsenal_cards =
+      Enum.map(1..8, fn _ -> sample_card_from_tree(arsenal_config) end)
       |> Enum.sort_by(&card_sort_key/1)
 
-    # Generate 4 deck builder cards (sorted by type)
-    deck_builder_cards =
-      ShopCard.generate_random_deck_builders(4)
-      |> Enum.sort_by(&card_sort_key/1)
-
-    # Generate 8 random action cards (sabotage + denial, sorted)
+    # Generate 8 Action cards (each independently samples branch then card)
+    # Handle dev codes for forced sabotage cards
     action_cards =
-      ShopCard.generate_random_action_cards(8, dev_codes)
+      Enum.map(1..8, fn _ -> sample_card_from_tree(actions_config) end)
+      |> apply_dev_code_overrides(dev_codes)
       |> Enum.sort_by(&card_sort_key/1)
 
-    # Combine in order: level ups, deck builders, actions (8 permanent + 8 temporary)
-    level_ups ++ deck_builder_cards ++ action_cards
+    arsenal_cards ++ action_cards
+  end
+
+  # Samples a single card from a probability tree
+  # Tree structure: %{branches: %{branch_name => %{weight: w, cards: %{card => weight}}}}
+  @spec sample_card_from_tree(%{branches: map()}) :: shop_card()
+  defp sample_card_from_tree(%{branches: branches}) do
+    # Step 1: Sample which branch (e.g., research vs logistics)
+    branch_weights = Map.new(branches, fn {name, config} -> {name, config.weight} end)
+    branch_name = WeightedRandom.sample(branch_weights)
+
+    # Step 2: Sample which card from that branch
+    branch_config = branches[branch_name]
+    card_key = WeightedRandom.sample(branch_config.cards)
+
+    # Step 3: Convert card key to ShopCard struct
+    card_key_to_shop_card(branch_name, card_key)
+  end
+
+  # Converts a branch name and card key to a ShopCard struct
+  @spec card_key_to_shop_card(atom(), atom()) :: shop_card()
+  defp card_key_to_shop_card(:research, hand_type),
+    do: %ShopCard{type: :level_up, subtype: hand_type}
+
+  defp card_key_to_shop_card(:logistics, :bonus_chips),
+    do: %ShopCard{type: :deck_builder, subtype: :bonus_chips, metadata: %{amount: 40}}
+
+  defp card_key_to_shop_card(:logistics, :bonus_mult),
+    do: %ShopCard{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: 1}}
+
+  defp card_key_to_shop_card(:logistics, :add_card),
+    do: %ShopCard{type: :deck_builder, subtype: :add_card}
+
+  defp card_key_to_shop_card(:logistics, :remove_card),
+    do: %ShopCard{type: :deck_builder, subtype: :remove_card}
+
+  defp card_key_to_shop_card(:logistics, :change_suit_hearts),
+    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :hearts}}
+
+  defp card_key_to_shop_card(:logistics, :change_suit_diamonds),
+    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :diamonds}}
+
+  defp card_key_to_shop_card(:logistics, :change_suit_clubs),
+    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :clubs}}
+
+  defp card_key_to_shop_card(:logistics, :change_suit_spades),
+    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :spades}}
+
+  defp card_key_to_shop_card(:logistics, :increase_rank),
+    do: %ShopCard{type: :deck_builder, subtype: :increase_rank}
+
+  defp card_key_to_shop_card(:sabotage, :scrambler), do: ShopCard.scrambler_card()
+  defp card_key_to_shop_card(:sabotage, :plus_bomb), do: ShopCard.plus_bomb_card()
+  defp card_key_to_shop_card(:sabotage, :static), do: ShopCard.static_card()
+  defp card_key_to_shop_card(:sabotage, :supply_chain), do: ShopCard.supply_chain_card()
+
+  defp card_key_to_shop_card(:counter, hand_type),
+    do: %ShopCard{type: :denial, subtype: hand_type}
+
+  # Apply dev code overrides to force specific sabotage cards
+  @spec apply_dev_code_overrides([shop_card()], [String.t()]) :: [shop_card()]
+  defp apply_dev_code_overrides(cards, dev_codes) do
+    forced_cards = []
+
+    forced_cards =
+      if "SHOP_FORCE_SCRAMBLER" in dev_codes do
+        [ShopCard.scrambler_card() | forced_cards]
+      else
+        forced_cards
+      end
+
+    forced_cards =
+      if "SHOP_FORCE_PLUS_BOMB" in dev_codes do
+        [ShopCard.plus_bomb_card() | forced_cards]
+      else
+        forced_cards
+      end
+
+    forced_cards =
+      if "SHOP_FORCE_STATIC" in dev_codes do
+        [ShopCard.static_card() | forced_cards]
+      else
+        forced_cards
+      end
+
+    forced_cards =
+      if "SHOP_FORCE_SUPPLY_CHAIN" in dev_codes do
+        [ShopCard.supply_chain_card() | forced_cards]
+      else
+        forced_cards
+      end
+
+    if length(forced_cards) > 0 do
+      # Replace first N cards with forced cards
+      remaining_cards = Enum.drop(cards, length(forced_cards))
+      forced_cards ++ remaining_cards
+    else
+      cards
+    end
   end
 
   # Sort key for shop cards - unified sorting across all card types
