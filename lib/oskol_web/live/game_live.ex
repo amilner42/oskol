@@ -966,9 +966,13 @@ defmodule OskolWeb.GameLive do
               opponent_state={opponent_state}
               opponent_card_sort={@opponent_card_sort}
               opponent_new_card_ids={@opponent_new_card_ids}
+              opponent_face_down_card_ids={
+                (opponent_state && opponent_state.face_down_card_ids) || []
+              }
               selected_card_ids={@selected_card_ids}
               your_card_sort={@your_card_sort}
               new_card_ids={@new_card_ids}
+              player_face_down_card_ids={(player_state && player_state.face_down_card_ids) || []}
               action_in_progress={@action_in_progress}
               viewing_results={@viewing_results}
               connections={@server_state.connections}

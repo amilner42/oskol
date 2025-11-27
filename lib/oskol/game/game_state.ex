@@ -20,7 +20,8 @@ defmodule Oskol.Game.GameState do
           shop_rounds: non_neg_integer(),
           initial_lives: pos_integer(),
           hands_per_round: pos_integer(),
-          discards_per_round: pos_integer()
+          discards_per_round: pos_integer(),
+          dev_codes: [String.t()]
         }
 
   @type phase :: :playing | :round_end
@@ -50,19 +51,27 @@ defmodule Oskol.Game.GameState do
             shop_rounds: 2,
             initial_lives: 3,
             hands_per_round: @hands_per_round,
-            discards_per_round: @discards_per_round
+            discards_per_round: @discards_per_round,
+            dev_codes: []
 
   @doc """
   Creates a new game state with the given player_names map (player_id => player_name),
-  initial_lives for each player, and shop_rounds configuration.
+  initial_lives for each player, shop_rounds configuration, and optional dev_codes.
   """
-  @spec new(%{player_id() => String.t()}, pos_integer(), non_neg_integer()) :: t()
-  def new(player_names, initial_lives \\ 3, shop_rounds \\ 2)
+  @spec new(%{player_id() => String.t()}, pos_integer(), non_neg_integer(), [String.t()]) :: t()
+  def new(player_names, initial_lives \\ 3, shop_rounds \\ 2, dev_codes \\ [])
       when is_map(player_names) and map_size(player_names) == 2 do
+    # Check for dev codes that modify game settings
+    hands_per_round = if "1HAND" in dev_codes, do: 1, else: @hands_per_round
+
     players =
       player_names
       |> Map.keys()
-      |> Enum.map(fn player_id -> {player_id, PlayerState.new(player_id, initial_lives)} end)
+      |> Enum.map(fn player_id ->
+        player = PlayerState.new(player_id, initial_lives)
+        # Also need to set hands_remaining on player state
+        {player_id, %{player | hands_remaining: hands_per_round}}
+      end)
       |> Map.new()
 
     %__MODULE__{
@@ -73,8 +82,9 @@ defmodule Oskol.Game.GameState do
       game_status: :active,
       shop_rounds: shop_rounds,
       initial_lives: initial_lives,
-      hands_per_round: @hands_per_round,
-      discards_per_round: @discards_per_round
+      hands_per_round: hands_per_round,
+      discards_per_round: @discards_per_round,
+      dev_codes: dev_codes
     }
   end
 
@@ -86,9 +96,14 @@ defmodule Oskol.Game.GameState do
   """
   @spec player_lock_in_hand(t(), player_id(), list(Card.t())) :: {t(), list()}
   def player_lock_in_hand(%__MODULE__{} = game_state, player_id, hand) do
+    # Get card IDs from the locked-in hand
+    locked_card_ids = Enum.map(hand, & &1.id)
+
     updated_players =
       Map.update!(game_state.players, player_id, fn player ->
-        %{player | locked_in_hand: hand}
+        # Reveal any face-down cards that are being locked in
+        player_with_revealed = PlayerState.reveal_cards(player, locked_card_ids)
+        %{player_with_revealed | locked_in_hand: hand}
       end)
 
     game_state = %{game_state | players: updated_players}
@@ -141,11 +156,22 @@ defmodule Oskol.Game.GameState do
         # Determine which cards are new (drawn to replace discarded ones)
         new_cards = new_card_piles.hand_pile -- player.card_piles.hand_pile
 
+        # If player is scrambled, randomly mark some new cards as face-down (1-in-4 chance each)
+        face_down_ids = scramble_cards(new_cards, player.scrambled)
+
         updated_player = %{
           player
           | card_piles: new_card_piles,
             discards_remaining: player.discards_remaining - 1
         }
+
+        # Add face-down cards to player state
+        updated_player =
+          if face_down_ids != [] do
+            PlayerState.add_face_down_cards(updated_player, face_down_ids)
+          else
+            updated_player
+          end
 
         updated_players = Map.put(game_state.players, player_id, updated_player)
 
@@ -159,7 +185,8 @@ defmodule Oskol.Game.GameState do
            %{
              cards: new_cards,
              reason: :after_discard,
-             hand_size: length(new_card_piles.hand_pile)
+             hand_size: length(new_card_piles.hand_pile),
+             face_down_ids: face_down_ids
            }}
         ]
 
@@ -210,6 +237,9 @@ defmodule Oskol.Game.GameState do
         new_card_piles = CardPiles.replace_cards(player_state.card_piles, played_hand)
         new_cards = new_card_piles.hand_pile -- old_hand
 
+        # If player is scrambled, randomly mark some new cards as face-down (1-in-4 chance each)
+        face_down_ids = scramble_cards(new_cards, player_state.scrambled)
+
         updated_player = %{
           player_state
           | current_round_score: player_state.current_round_score + result.score,
@@ -218,13 +248,22 @@ defmodule Oskol.Game.GameState do
             hands_remaining: player_state.hands_remaining - 1
         }
 
+        # Add face-down cards to player state
+        updated_player =
+          if face_down_ids != [] do
+            PlayerState.add_face_down_cards(updated_player, face_down_ids)
+          else
+            updated_player
+          end
+
         # Create cards_drawn event for this player
         draw_event =
           {:cards_drawn, player_id,
            %{
              cards: new_cards,
              reason: :after_hand_played,
-             hand_size: length(new_card_piles.hand_pile)
+             hand_size: length(new_card_piles.hand_pile),
+             face_down_ids: face_down_ids
            }}
 
         {{player_id, updated_player}, [draw_event | acc_events]}
@@ -329,10 +368,10 @@ defmodule Oskol.Game.GameState do
 
         events = [game_end_event | events]
 
-        # Clear debuffs now that round is complete
+        # Clear debuffs and scrambler effects now that round is complete
         players_cleared =
           Map.new(players_with_updated_lives, fn {pid, ps} ->
-            {pid, PlayerState.clear_debuffs(ps)}
+            ps |> PlayerState.clear_debuffs() |> PlayerState.clear_scrambler() |> then(&{pid, &1})
           end)
 
         new_state = %{
@@ -350,10 +389,10 @@ defmodule Oskol.Game.GameState do
         # Round over but game continues - initialize shop if shop_rounds > 0
         [player1_id, player2_id] = Map.keys(players_with_updated_lives)
 
-        # Clear debuffs now that round is complete
+        # Clear debuffs and scrambler effects now that round is complete
         players_cleared =
           Map.new(players_with_updated_lives, fn {pid, ps} ->
-            {pid, PlayerState.clear_debuffs(ps)}
+            ps |> PlayerState.clear_debuffs() |> PlayerState.clear_scrambler() |> then(&{pid, &1})
           end)
 
         # Initialize shop state based on round winner and shop_rounds configuration
@@ -361,11 +400,24 @@ defmodule Oskol.Game.GameState do
           if game_state.shop_rounds > 0 do
             if round_winner_id == nil do
               # Tie - pass both player IDs and mark as tie
-              ShopState.new(player1_id, player2_id, true, game_state.shop_rounds)
+              ShopState.new(
+                player1_id,
+                player2_id,
+                true,
+                game_state.shop_rounds,
+                game_state.dev_codes
+              )
             else
               # Determine loser
               loser_id = if round_winner_id == player1_id, do: player2_id, else: player1_id
-              ShopState.new(round_winner_id, loser_id, false, game_state.shop_rounds)
+
+              ShopState.new(
+                round_winner_id,
+                loser_id,
+                false,
+                game_state.shop_rounds,
+                game_state.dev_codes
+              )
             end
           else
             # No shop configured
@@ -466,7 +518,7 @@ defmodule Oskol.Game.GameState do
   end
 
   defp apply_shop_card(players, player_id, {:action, action_card}) do
-    # For denial cards, we add the debuff to the OPPONENT
+    # Action cards affect the OPPONENT
     opponent_id = players |> Map.keys() |> Enum.find(&(&1 != player_id))
 
     updated_players =
@@ -474,6 +526,11 @@ defmodule Oskol.Game.GameState do
         :denial ->
           Map.update!(players, opponent_id, fn opponent ->
             PlayerState.add_denial_debuff(opponent, action_card.target_hand)
+          end)
+
+        :scrambler ->
+          Map.update!(players, opponent_id, fn opponent ->
+            PlayerState.set_scrambled(opponent, true)
           end)
       end
 
@@ -994,11 +1051,17 @@ defmodule Oskol.Game.GameState do
           discard_pile: []
         }
 
+        # Apply scrambler to initial hand cards if player is scrambled
+        face_down_ids = scramble_cards(hand_cards, player_state.scrambled)
+
         # Reset for new round with shuffled deck (lives already updated)
+        # Keep the scrambled state but add the face_down_card_ids for initial draw
+        # Pass hands_per_round from game_state to support dev codes like 1HAND
         updated_player =
           player_state
-          |> PlayerState.reset_for_new_round()
+          |> PlayerState.reset_for_new_round(game_state.hands_per_round)
           |> Map.put(:card_piles, new_card_piles)
+          |> PlayerState.add_face_down_cards(face_down_ids)
 
         # Create cards_drawn event for new hand
         draw_event =
@@ -1036,6 +1099,18 @@ defmodule Oskol.Game.GameState do
     }
 
     {new_state, events}
+  end
+
+  # Randomly selects cards to be face-down based on scrambler effect
+  # Each card has a 1-in-4 chance of being face-down
+  # Returns list of card IDs that should be face-down
+  @spec scramble_cards([Card.t()], boolean()) :: [String.t()]
+  defp scramble_cards(_cards, false), do: []
+
+  defp scramble_cards(cards, true) do
+    cards
+    |> Enum.filter(fn _card -> :rand.uniform(4) == 1 end)
+    |> Enum.map(& &1.id)
   end
 
   # Determines the winner when game is over

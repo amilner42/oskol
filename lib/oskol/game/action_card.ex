@@ -15,15 +15,15 @@ defmodule Oskol.Game.ActionCard do
           | :four_of_a_kind
           | :straight_flush
 
-  @type card_type :: :denial
+  @type card_type :: :denial | :scrambler
 
   @type t :: %__MODULE__{
           type: card_type(),
-          target_hand: hand_type()
+          target_hand: hand_type() | nil
         }
 
   defstruct type: :denial,
-            target_hand: :high_card
+            target_hand: nil
 
   @doc """
   Returns all available denial cards.
@@ -43,14 +43,27 @@ defmodule Oskol.Game.ActionCard do
   end
 
   @doc """
+  Returns the scrambler card.
+  """
+  def scrambler_card do
+    %__MODULE__{type: :scrambler, target_hand: nil}
+  end
+
+  @doc """
   Generates a random pool of action cards.
-  Triples all denial cards and randomly selects the specified count.
+  Includes denial cards (tripled) and scrambler cards, randomly selects the specified count.
   """
   @spec generate_random_action_cards(pos_integer()) :: [t()]
   def generate_random_action_cards(count) do
-    all_denial_cards()
-    |> List.duplicate(3)
-    |> List.flatten()
+    denial_pool =
+      all_denial_cards()
+      |> List.duplicate(3)
+      |> List.flatten()
+
+    # Add 3 scrambler cards to the pool
+    scrambler_pool = List.duplicate(scrambler_card(), 3)
+
+    (denial_pool ++ scrambler_pool)
     |> Enum.shuffle()
     |> Enum.take(count)
   end
@@ -60,7 +73,11 @@ defmodule Oskol.Game.ActionCard do
   """
   @spec card_name(t()) :: String.t()
   def card_name(%__MODULE__{type: :denial, target_hand: hand_type}) do
-    "Deny #{format_hand_name(hand_type)}"
+    "Block #{format_hand_name(hand_type)}"
+  end
+
+  def card_name(%__MODULE__{type: :scrambler}) do
+    "The Scrambler"
   end
 
   defp format_hand_name(:high_card), do: "High Card"
@@ -79,5 +96,9 @@ defmodule Oskol.Game.ActionCard do
   @spec card_description(t()) :: String.t()
   def card_description(%__MODULE__{type: :denial, target_hand: hand_type}) do
     "Opponent's #{format_hand_name(hand_type)} scores 0 next round"
+  end
+
+  def card_description(%__MODULE__{type: :scrambler}) do
+    "Opponent's drawn cards have 1-in-4 chance of being face-down next round"
   end
 end

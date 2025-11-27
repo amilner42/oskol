@@ -16,6 +16,9 @@ defmodule OskolWeb.LandingLive do
        step: step,
        game_name: game_name,
        player_name: "",
+       dev_code: "",
+       valid_dev_codes: [],
+       invalid_dev_codes: [],
        error: nil,
        # Game connection state (used when in :joining or :lobby steps)
        player_id: nil,
@@ -317,8 +320,20 @@ defmodule OskolWeb.LandingLive do
   def handle_event("start_game", _params, socket) do
     game_id = socket.assigns.game_name
     player_name = socket.assigns.player_name
+    dev_code = socket.assigns.dev_code
 
-    case Game.start_game_session(game_id) do
+    # Parse dev codes into a list
+    dev_codes =
+      if dev_code != "" do
+        dev_code
+        |> String.split(",")
+        |> Enum.map(&String.trim/1)
+        |> Enum.filter(&(&1 != ""))
+      else
+        []
+      end
+
+    case Game.start_game_session(game_id, dev_codes) do
       {:ok, _new_state} ->
         # Navigate to game URL with player name for auto-rejoin
         {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{player_name}")}
@@ -334,6 +349,30 @@ defmodule OskolWeb.LandingLive do
      socket
      |> assign(step: :game_name, error: nil)
      |> push_patch(to: ~p"/")}
+  end
+
+  @valid_dev_codes ["SHOP_FORCE_SCRAMBLER", "1HAND"]
+
+  @impl true
+  def handle_event("update_dev_code", %{"dev_code" => dev_code}, socket) do
+    # Parse and validate dev codes
+    {valid_codes, invalid_codes} =
+      if dev_code != "" do
+        dev_code
+        |> String.split(",")
+        |> Enum.map(&String.trim/1)
+        |> Enum.filter(&(&1 != ""))
+        |> Enum.split_with(&(&1 in @valid_dev_codes))
+      else
+        {[], []}
+      end
+
+    {:noreply,
+     assign(socket,
+       dev_code: dev_code,
+       valid_dev_codes: valid_codes,
+       invalid_dev_codes: invalid_codes
+     )}
   end
 
   # Handle game state updates from PubSub
@@ -411,6 +450,9 @@ defmodule OskolWeb.LandingLive do
                   player_name={@player_name}
                   server_state={@server_state}
                   selected_format={@selected_format}
+                  dev_code={@dev_code}
+                  valid_dev_codes={@valid_dev_codes}
+                  invalid_dev_codes={@invalid_dev_codes}
                 />
             <% end %>
 
@@ -530,7 +572,12 @@ defmodule OskolWeb.LandingLive do
         if opponent_id, do: Map.get(assigns.server_state.format_selections, opponent_id)
       end
 
-    assigns = assign(assigns, :opponent_format, opponent_format)
+    is_dev = Application.get_env(:oskol, :dev_routes, false)
+
+    assigns =
+      assigns
+      |> assign(:opponent_format, opponent_format)
+      |> assign(:is_dev, is_dev)
 
     ~H"""
     <div class="max-w-2xl mx-auto">
@@ -632,6 +679,43 @@ defmodule OskolWeb.LandingLive do
           </button>
         <% end %>
       </div>
+
+      <%= if @is_dev do %>
+        <!-- Dev Code Input (dev only) -->
+        <div class="mt-8 pt-6 border-t border-base-content/10">
+          <div class="text-xs text-base-content/40 uppercase tracking-widest mb-2">Dev Code</div>
+          <form phx-change="update_dev_code">
+            <input
+              type="text"
+              name="dev_code"
+              value={@dev_code}
+              placeholder="e.g. SHOP_FORCE_SCRAMBLER"
+              autocomplete="off"
+              class={[
+                "w-full bg-white/50 backdrop-blur-sm border rounded-lg px-4 py-2 text-gray-700 placeholder-gray-400 focus:outline-none text-sm font-mono",
+                cond do
+                  length(@invalid_dev_codes) > 0 -> "border-red-400 focus:border-red-500"
+                  length(@valid_dev_codes) > 0 -> "border-green-400 focus:border-green-500"
+                  true -> "border-white/30 focus:border-white/60"
+                end
+              ]}
+            />
+          </form>
+          <%= if length(@invalid_dev_codes) > 0 do %>
+            <p class="text-[11px] text-red-500 mt-1 font-medium">
+              Invalid: {Enum.join(@invalid_dev_codes, ", ")}
+            </p>
+          <% end %>
+          <%= if length(@valid_dev_codes) > 0 do %>
+            <p class="text-[11px] text-green-600 mt-1 font-medium">
+              Active: {Enum.join(@valid_dev_codes, ", ")}
+            </p>
+          <% end %>
+          <p class="text-[10px] text-base-content/30 mt-1">
+            Valid codes: SHOP_FORCE_SCRAMBLER, 1HAND
+          </p>
+        </div>
+      <% end %>
     </div>
     """
   end
