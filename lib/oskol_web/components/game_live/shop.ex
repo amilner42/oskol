@@ -14,7 +14,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50">
             <div class="flex items-center justify-between">
-              <div class="text-2xl font-light text-base-content">Shop</div>
+              <div class="text-2xl font-light text-base-content">Command Center</div>
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
