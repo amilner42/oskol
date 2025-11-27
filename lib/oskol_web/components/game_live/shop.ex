@@ -456,7 +456,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       ]}>
         <%= case @card_type do %>
           <% :level_up -> %>
-            Level Up
+            Research
           <% :action -> %>
             <%= case @action_subtype do %>
               <% :blocker -> %>
