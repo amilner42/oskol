@@ -857,7 +857,49 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           </div>
         </div>
       </div>
-      
+
+      <!-- Mobile: Badges row (only shows if there are any active effects) -->
+      <% player_badges = get_sabotage_badges(@player_state)
+         opponent_badges = get_sabotage_badges(@opponent_state)
+         has_any_badges = @player_state.active_debuffs != [] or @opponent_state.active_debuffs != [] or player_badges != [] or opponent_badges != [] %>
+      <%= if has_any_badges do %>
+        <div class="sm:hidden flex flex-wrap gap-1 px-2 py-1.5 bg-base-200/30 border-t border-base-300/50">
+          <!-- Player debuffs (bad for you) -->
+          <%= if @player_state.active_debuffs != [] do %>
+            <div class="flex items-center gap-1 px-2 py-0.5 bg-player rounded text-[10px]">
+              <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
+              <span class="font-semibold text-sky-900">
+                {Enum.map(@player_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")} blocked
+              </span>
+            </div>
+          <% end %>
+
+          <%= for badge <- player_badges do %>
+            <div class="flex items-center gap-1 px-2 py-0.5 bg-player rounded text-[10px]">
+              <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
+              <span class="font-semibold text-sky-900">{badge.name}</span>
+            </div>
+          <% end %>
+
+          <!-- Opponent debuffs (good for you) -->
+          <%= if @opponent_state.active_debuffs != [] do %>
+            <div class="flex items-center gap-1 px-2 py-0.5 bg-opponent rounded text-[10px]">
+              <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
+              <span class="font-semibold text-orange-900">
+                {Enum.map(@opponent_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")} blocked
+              </span>
+            </div>
+          <% end %>
+
+          <%= for badge <- opponent_badges do %>
+            <div class="flex items-center gap-1 px-2 py-0.5 bg-opponent rounded text-[10px]">
+              <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
+              <span class="font-semibold text-orange-900">{badge.name}</span>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+
     <!-- Desktop: Round info - top left -->
       <div class="hidden sm:block absolute top-4 left-4 text-left text-base-content">
         <div class="text-lg">Round {@game_state.round_number}</div>
