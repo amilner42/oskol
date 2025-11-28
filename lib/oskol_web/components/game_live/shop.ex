@@ -1301,23 +1301,15 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     ~H"""
     <div class="flex-1 flex flex-col p-4 lg:p-8 overflow-hidden">
-      <!-- Scrollable content area -->
-      <div class="flex-1 overflow-y-auto">
-        <!-- Header -->
-        <div class="mb-4 lg:mb-6">
-          <div class="text-[10px] lg:text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
-          <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
-        </div>
-
-      <!-- Description -->
-        <div class="mb-4 lg:mb-8">
-          <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
-        </div>
+      <!-- Header -->
+      <div class="mb-4 lg:mb-6 flex-shrink-0">
+        <div class="text-[10px] lg:text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
+        <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
 
       <%= if @has_preview do %>
-        <!-- Selection instruction -->
-        <div class="mb-4">
+        <!-- Selection instruction with count -->
+        <div class="mb-4 flex-shrink-0">
           <% instruction = ShopCard.selection_instruction(@pending_deck_builder.deck_builder_card) %>
           <div class="flex items-center justify-between">
             <span class="text-sm text-base-content/50">{instruction}</span>
@@ -1335,10 +1327,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
 
-
-    <!-- 8-Card Selection Grid -->
-        <div class="flex-1 mb-4 lg:mb-6">
-          <div class="flex flex-wrap gap-2 lg:gap-3 justify-center">
+      <!-- 8-Card Selection Grid -->
+        <div class="mb-4 lg:mb-6 flex-shrink-0">
+          <div class="flex flex-wrap gap-2 lg:gap-3">
             <%= for card <- @pending_deck_builder.available_cards do %>
               <% is_selected =
                 if is_list(@deck_builder_selection) do
@@ -1407,9 +1398,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         <% end %>
       <% else %>
+        <!-- Description (shown before card selection) -->
+        <div class="mb-4 lg:mb-8 flex-shrink-0">
+          <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
+        </div>
+
         <!-- Initial confirm button: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
-          <div class="flex-shrink-0">
+          <div class="flex-shrink-0 mt-auto">
             <%= if @in_destroy_phase do %>
               <button
                 phx-click="destroy_shop_card"
