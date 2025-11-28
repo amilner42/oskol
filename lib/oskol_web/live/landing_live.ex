@@ -23,6 +23,7 @@ defmodule OskolWeb.LandingLive do
        valid_dev_codes: [],
        invalid_dev_codes: [],
        error: nil,
+       inviter_name: nil,
        # Game connection state (used when in :joining or :lobby steps)
        player_id: nil,
        server_state: nil,
@@ -36,6 +37,14 @@ defmodule OskolWeb.LandingLive do
     # Handle URL changes (e.g., from push_patch)
     game_name = params["game"] || ""
     name_from_url = params["name"]
+
+    # Set Open Graph meta tags for invite links
+    socket =
+      if game_name != "" && !name_from_url do
+        set_invite_meta_tags(socket, game_name)
+      else
+        socket
+      end
 
     socket =
       cond do
@@ -61,6 +70,35 @@ defmodule OskolWeb.LandingLive do
       end
 
     {:noreply, socket}
+  end
+
+  # Set Open Graph meta tags for invite links
+  defp set_invite_meta_tags(socket, game_name) do
+    case Game.lookup_game(game_name) do
+      {:ok, _pid} ->
+        server_state = Game.get_server_state(game_name)
+
+        # Get the first connected player's name (the inviter)
+        inviter_name =
+          server_state.connections
+          |> Enum.find(fn {_id, conn} -> conn.connected end)
+          |> case do
+            {_id, conn} -> conn.name
+            nil -> nil
+          end
+
+        if inviter_name do
+          assign(socket,
+            og_title: "Join #{inviter_name} in Oskol Poker",
+            og_description: "#{inviter_name} has invited you to play a poker roguelike match"
+          )
+        else
+          socket
+        end
+
+      :not_found ->
+        socket
+    end
   end
 
   # Auto-rejoin lobby when name is in URL
@@ -157,6 +195,15 @@ defmodule OskolWeb.LandingLive do
         # Subscribe to game updates
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
 
+        # Get inviter name (first connected player)
+        inviter_name =
+          server_state.connections
+          |> Enum.find(fn {_id, conn} -> conn.connected end)
+          |> case do
+            {_id, conn} -> conn.name
+            nil -> nil
+          end
+
         # Check for disconnected players
         disconnected_players =
           server_state.connections
@@ -218,12 +265,12 @@ defmodule OskolWeb.LandingLive do
 
           # No disconnected players - show player name input
           true ->
-            assign(socket, step: :player_name, game_name: game_name)
+            assign(socket, step: :player_name, game_name: game_name, inviter_name: inviter_name)
         end
 
       :not_found ->
         # Game doesn't exist yet - show player name input
-        assign(socket, step: :player_name, game_name: game_name)
+        assign(socket, step: :player_name, game_name: game_name, inviter_name: nil)
     end
   end
 
@@ -528,7 +575,7 @@ defmodule OskolWeb.LandingLive do
               <% :game_name -> %>
                 <.game_name_form />
               <% :player_name -> %>
-                <.player_name_form game_name={@game_name} />
+                <.player_name_form game_name={@game_name} inviter_name={@inviter_name} />
               <% :joining -> %>
                 <.joining_screen
                   game_name={@game_name}
@@ -580,6 +627,13 @@ defmodule OskolWeb.LandingLive do
 
   defp player_name_form(assigns) do
     ~H"""
+    <%= if @inviter_name do %>
+      <p class="text-base-content/60 text-sm mb-4 text-center">
+        <span class="text-opponent font-semibold">{@inviter_name}</span>
+        has invited you to play
+      </p>
+    <% end %>
+
     <form phx-submit="submit_player_name" class="space-y-3">
       <.brand_input name="player_name" placeholder="enter your nickname" />
       <.brand_button type="submit" color={:primary}>
@@ -657,19 +711,23 @@ defmodule OskolWeb.LandingLive do
   # ============================================================================
 
   defp lobby_screen(assigns) do
-    opponent_format =
+    opponent_info =
       if assigns[:player_id] do
         opponent_id =
           assigns.server_state.connections
           |> Map.keys()
           |> Enum.find(&(&1 != assigns.player_id))
 
-        if opponent_id, do: Map.get(assigns.server_state.format_selections, opponent_id)
+        if opponent_id do
+          opponent_conn = assigns.server_state.connections[opponent_id]
+          opponent_format = Map.get(assigns.server_state.format_selections, opponent_id)
+          %{name: opponent_conn.name, format: opponent_format}
+        end
       end
 
     assigns =
       assigns
-      |> assign(:opponent_format, opponent_format)
+      |> assign(:opponent_info, opponent_info)
       |> assign(:is_dev, @is_dev)
 
     ~H"""
@@ -680,7 +738,7 @@ defmodule OskolWeb.LandingLive do
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-      
+
     <!-- Format Selection -->
       <div class="mb-4 sm:mb-8">
         <p class="text-base-content/40 text-xs mb-2 sm:mb-3 text-center">
@@ -689,9 +747,9 @@ defmodule OskolWeb.LandingLive do
               Waiting for opponent to join...
             <% @selected_format == nil -> %>
               Choose a game mode
-            <% @opponent_format == nil -> %>
+            <% !@opponent_info || @opponent_info.format == nil -> %>
               Waiting for opponent to select...
-            <% @selected_format != @opponent_format -> %>
+            <% @selected_format != @opponent_info.format -> %>
               Select the same game mode to start
             <% @selected_format == :short -> %>
               Both players selected Skirmish
@@ -713,7 +771,7 @@ defmodule OskolWeb.LandingLive do
             lives={2}
             shop_rounds={1}
             selected={@selected_format == :short}
-            opponent_selected={@opponent_format == :short}
+            opponent_selected={@opponent_info && @opponent_info.format == :short}
           />
           <.format_card_v2
             format="standard"
@@ -724,7 +782,7 @@ defmodule OskolWeb.LandingLive do
             lives={3}
             shop_rounds={2}
             selected={@selected_format == :standard}
-            opponent_selected={@opponent_format == :standard}
+            opponent_selected={@opponent_info && @opponent_info.format == :standard}
           />
           <.format_card_v2
             format="extended"
@@ -735,7 +793,7 @@ defmodule OskolWeb.LandingLive do
             lives={5}
             shop_rounds={2}
             selected={@selected_format == :extended}
-            opponent_selected={@opponent_format == :extended}
+            opponent_selected={@opponent_info && @opponent_info.format == :extended}
           />
         </div>
       </div>
