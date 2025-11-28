@@ -9,17 +9,29 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
   def shop_screen(assigns) do
     # Pre-compute shared values
-    has_pending_selection = has_pending_selection?(assigns.game_state.shop_state, assigns.player_id)
+    has_pending_selection =
+      has_pending_selection?(assigns.game_state.shop_state, assigns.player_id)
+
     in_destroy_phase = ShopState.in_destroy_phase?(assigns.game_state.shop_state)
     can_destroy = ShopState.can_destroy?(assigns.game_state.shop_state, assigns.player_id)
     can_pick = can_pick_card?(assigns.game_state.shop_state, assigns.player_id)
     is_active_player = if in_destroy_phase, do: can_destroy, else: can_pick
 
     # Build map of card_index -> picker_name
-    first_picker_name = if assigns.game_state.shop_state.first_picker_id == assigns.player_id, do: assigns.player_name, else: assigns.opponent_name
-    second_picker_name = if assigns.game_state.shop_state.second_picker_id == assigns.player_id, do: assigns.player_name, else: assigns.opponent_name
+    first_picker_name =
+      if assigns.game_state.shop_state.first_picker_id == assigns.player_id,
+        do: assigns.player_name,
+        else: assigns.opponent_name
+
+    second_picker_name =
+      if assigns.game_state.shop_state.second_picker_id == assigns.player_id,
+        do: assigns.player_name,
+        else: assigns.opponent_name
+
     reversed_indices = Enum.reverse(assigns.game_state.shop_state.picked_card_indices)
-    picked_by_map = reversed_indices
+
+    picked_by_map =
+      reversed_indices
       |> Enum.with_index()
       |> Enum.map(fn {card_idx, pick_num} ->
         picker_name = if rem(pick_num, 2) == 0, do: first_picker_name, else: second_picker_name
@@ -27,7 +39,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
       end)
       |> Map.new()
 
-    assigns = assigns
+    assigns =
+      assigns
       |> assign(:has_pending_selection, has_pending_selection)
       |> assign(:in_destroy_phase, in_destroy_phase)
       |> assign(:can_destroy, can_destroy)
@@ -39,9 +52,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto">
       <!-- Responsive layout using CSS order -->
       <div class="min-h-full flex flex-col lg:flex-row">
-
-        <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
-        <div class="order-1 lg:order-none lg:w-[690px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col">
+        
+    <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
+        <div class="order-1 lg:order-none lg:w-[503px] xl:w-[660px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col">
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50">
             <div class="flex items-center justify-between">
@@ -49,8 +62,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
-
-          <!-- Cards Grid (hidden on mobile, shown on desktop) -->
+          
+    <!-- Cards Grid (hidden on mobile, shown on desktop) -->
           <div class="hidden lg:block flex-1 p-6 overflow-y-auto">
             <.shop_cards_grid
               game_state={@game_state}
@@ -63,8 +76,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             />
           </div>
         </div>
-
-        <!-- Section 2: Timeline (order-2 on mobile) -->
+        
+    <!-- Section 2: Timeline (order-2 on mobile) -->
         <div class="order-2 lg:order-none lg:flex-1 lg:flex lg:flex-col">
           <.pick_status_bar
             shop_state={@game_state.shop_state}
@@ -73,8 +86,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             opponent_name={@opponent_name}
             shop_countdown={assigns[:shop_countdown]}
           />
-
-          <!-- Preview Panel (hidden on mobile, shown on desktop) -->
+          
+    <!-- Preview Panel (hidden on mobile, shown on desktop) -->
           <div class="hidden lg:flex flex-1 flex-col">
             <.preview_panel
               game_state={@game_state}
@@ -89,8 +102,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             />
           </div>
         </div>
-
-        <!-- Section 3: Cards (order-3 on mobile only, horizontal scroll) -->
+        
+    <!-- Section 3: Cards (order-3 on mobile only, horizontal scroll) -->
         <div class="order-3 lg:hidden px-4 py-6 border-t border-base-300/50 bg-base-100/50">
           <div class="flex gap-3 overflow-x-auto pb-2 pt-1">
             <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
@@ -110,8 +123,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-
-        <!-- Section 4: Preview (order-4 on mobile only) -->
+        
+    <!-- Section 4: Preview (order-4 on mobile only) -->
         <div class="order-4 lg:hidden flex-1 flex flex-col">
           <.preview_panel
             game_state={@game_state}
@@ -436,7 +449,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
         for destroy_num <- 1..destroys_allowed do
           card_idx = Enum.at(reversed_destroyed, destroy_num - 1)
           card = if card_idx, do: Enum.at(shop_state.available_cards, card_idx), else: nil
-          is_current = in_destroy_phase and destroy_num == current_destroy_number and current_destroy_number <= destroys_allowed
+
+          is_current =
+            in_destroy_phase and destroy_num == current_destroy_number and
+              current_destroy_number <= destroys_allowed
 
           %{
             type: :destroy,
@@ -476,7 +492,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
         # Odd picks (1, 3, 5...) are first picker, even (2, 4, 6...) are second picker
         picker_name = if rem(pick_num, 2) == 1, do: first_picker_name, else: second_picker_name
         card = Map.get(completed_picks, pick_num)
-        is_current = not in_destroy_phase and pick_num == current_pick_number and current_pick_number <= total_picks
+
+        is_current =
+          not in_destroy_phase and pick_num == current_pick_number and
+            current_pick_number <= total_picks
 
         %{
           type: :pick,
@@ -581,7 +600,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <div class={[
               "text-[10px]",
               if(@is_destroy, do: "text-rose-400", else: "text-base-content/40")
-            ]}>{@subtext}</div>
+            ]}>
+              {@subtext}
+            </div>
           </div>
         </div>
       <% else %>
@@ -651,67 +672,69 @@ defmodule OskolWeb.Components.GameLive.Shop do
       phx-click={@click_event}
       phx-value-index={@index}
       disabled={@is_disabled}
-      class={[
-        "w-[140px] aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
-        "bg-base-100 border-2",
-        cond do
-          # Destroyed cards
-          @is_destroyed ->
-            "opacity-50 cursor-not-allowed border-base-300/30"
+      class={
+        [
+          "w-[140px] aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
+          "bg-base-100 border-2",
+          cond do
+            # Destroyed cards
+            @is_destroyed ->
+              "opacity-50 cursor-not-allowed border-base-300/30"
 
-          # Picked cards
-          @is_picked ->
-            "opacity-50 cursor-not-allowed border-base-300/30"
+            # Picked cards
+            @is_picked ->
+              "opacity-50 cursor-not-allowed border-base-300/30"
 
-          # Selected for preview
-          @is_selected ->
-            case @accent_color do
-              "emerald" -> "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
-              "rose" -> "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
-              "violet" -> "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
-              "amber" -> "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
-            end
+            # Selected for preview
+            @is_selected ->
+              case @accent_color do
+                "emerald" -> "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
+                "rose" -> "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
+                "violet" -> "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
+                "amber" -> "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
+              end
 
-          # Destroy phase - can destroy this card (same styling as normal pick)
-          @in_destroy_phase and @can_destroy ->
-            case @accent_color do
-              "emerald" ->
-                "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
+            # Destroy phase - can destroy this card (same styling as normal pick)
+            @in_destroy_phase and @can_destroy ->
+              case @accent_color do
+                "emerald" ->
+                  "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
 
-              "rose" ->
-                "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
+                "rose" ->
+                  "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
 
-              "violet" ->
-                "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+                "violet" ->
+                  "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
 
-              "amber" ->
-                "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
-            end
+                "amber" ->
+                  "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
+              end
 
-          # Destroy phase - waiting player (can't destroy, disabled)
-          @in_destroy_phase ->
-            "border-base-300/30 cursor-not-allowed"
+            # Destroy phase - waiting player (can't destroy, disabled)
+            @in_destroy_phase ->
+              "border-base-300/30 cursor-not-allowed"
 
-          # Normal pick phase - can pick
-          @can_pick ->
-            case @accent_color do
-              "emerald" ->
-                "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
+            # Normal pick phase - can pick
+            @can_pick ->
+              case @accent_color do
+                "emerald" ->
+                  "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
 
-              "rose" ->
-                "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
+                "rose" ->
+                  "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
 
-              "violet" ->
-                "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+                "violet" ->
+                  "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
 
-              "amber" ->
-                "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
-            end
+                "amber" ->
+                  "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
+              end
 
-          true ->
-            "border-base-300/30 cursor-not-allowed"
-        end
-      ]}
+            true ->
+              "border-base-300/30 cursor-not-allowed"
+          end
+        ]
+      }
     >
       <!-- Type badge at top -->
       <div class={[
@@ -725,7 +748,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       ]}>
         {@type_label}
       </div>
-
+      
     <!-- Card name centered -->
       <div class="flex-1 flex items-center justify-center">
         <div class={[
@@ -839,6 +862,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     {current_level, next_level, current_stats, next_stats} =
       if assigns.is_active_player do
         level = Map.get(assigns.skill_tree, assigns.hand_type, 1)
+
         {
           level,
           level + 1,
@@ -865,7 +889,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
         <h2 class="text-4xl font-light text-base-content">{@hand_name}</h2>
       </div>
-
+      
     <!-- Level indicator -->
       <div class="mb-12">
         <div class="flex items-center gap-4">
@@ -896,7 +920,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       </div>
-
+      
     <!-- Stats -->
       <div class="space-y-6 flex-1">
         <%= if @is_active_player do %>
@@ -960,7 +984,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         <% end %>
       </div>
-
+      
     <!-- Action Button: only shown for active player -->
       <%= if @is_active_player do %>
         <div class="pt-8">
@@ -1161,7 +1185,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <% else %>
         <!-- Flex spacer -->
         <div class="flex-1"></div>
-
+        
     <!-- Action Button: only shown for active player -->
         <%= if @is_active_player do %>
           <div class="pt-8">
