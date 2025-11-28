@@ -631,6 +631,30 @@ defmodule OskolWeb.GameLive do
     {:noreply, assign(socket, previewing_card_index: nil, plus_bomb_selection: nil)}
   end
 
+  # Destroy phase handlers
+  @impl true
+  def handle_event("destroy_shop_card", %{"index" => index_str}, socket) do
+    card_index = String.to_integer(index_str)
+
+    Game.destroy_shop_card_async(
+      socket.assigns.game_id,
+      socket.assigns.player_id,
+      card_index
+    )
+
+    {:noreply, assign(socket, action_in_progress: true)}
+  end
+
+  @impl true
+  def handle_event("complete_destroy_phase", _params, socket) do
+    Game.complete_destroy_phase_async(
+      socket.assigns.game_id,
+      socket.assigns.player_id
+    )
+
+    {:noreply, assign(socket, action_in_progress: true)}
+  end
+
   @impl true
   def handle_event("toggle_your_card_sort", _params, socket) do
     new_sort = if socket.assigns.your_card_sort == :rank, do: :suit, else: :rank

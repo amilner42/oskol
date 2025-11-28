@@ -180,6 +180,14 @@ defmodule Oskol.Game.GameServerState do
     GameState.complete_plus_bomb_selection(game_state, player_id, selected_card_id)
   end
 
+  defp perform_action(game_state, player_id, {:destroy_shop_card, card_index}) do
+    GameState.destroy_shop_card(game_state, player_id, card_index)
+  end
+
+  defp perform_action(game_state, player_id, :complete_destroy_phase) do
+    GameState.complete_destroy_phase(game_state, player_id)
+  end
+
   defp perform_action(_game_state, _player_id, action) do
     {:error, {:unknown_action, action}}
   end

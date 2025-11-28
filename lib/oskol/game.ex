@@ -91,4 +91,12 @@ defmodule Oskol.Game do
   defdelegate complete_plus_bomb_selection_async(game_id, player_id, selected_card_id),
     to: GameServer,
     as: :complete_plus_bomb_selection_async
+
+  defdelegate destroy_shop_card_async(game_id, player_id, card_index),
+    to: GameServer,
+    as: :destroy_shop_card_async
+
+  defdelegate complete_destroy_phase_async(game_id, player_id),
+    to: GameServer,
+    as: :complete_destroy_phase_async
 end
