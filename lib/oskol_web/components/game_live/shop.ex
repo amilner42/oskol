@@ -604,7 +604,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-rose-50/80 flex items-center justify-center rounded-xl">
+        <div class="absolute inset-0 bg-rose-50/40 flex items-center justify-center rounded-xl">
           <div class="flex flex-col items-center gap-1">
             <svg
               class="w-6 h-6 text-rose-400"
