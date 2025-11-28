@@ -500,18 +500,23 @@ defmodule OskolWeb.LandingLive do
   def render(assigns) do
     ~H"""
     <.brand_styles />
-    <div class="min-h-screen-safe flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
+    <div class="min-h-screen-safe flex flex-col bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
       <.floating_battles />
 
-      <div class="relative z-10 w-full">
+      <div class="relative z-10 w-full flex flex-col flex-1 overflow-auto">
+        <!-- Top spacer - pushes content down, logo stays at fixed distance from top -->
+        <div class="shrink-0 h-[20vh] sm:h-[30vh]"></div>
+
         <div class="text-center px-6 max-w-xl w-full mx-auto">
-          <div class="mb-10 animate-logo">
+          <!-- Logo section - stays at fixed position -->
+          <div class="mb-8 animate-logo">
             <.logo_large />
             <p class="text-base-content/50 text-sm tracking-widest uppercase">
               Poker warfare
             </p>
           </div>
 
+    <!-- Content section - grows below logo -->
           <div class="animate-content">
             <%= if @error do %>
               <div class="mb-4 text-red-500 text-sm font-medium bg-red-500/10 rounded-lg p-3">
@@ -550,6 +555,9 @@ defmodule OskolWeb.LandingLive do
             <% end %>
           </div>
         </div>
+
+    <!-- Bottom spacer - balances the layout -->
+        <div class="flex-1"></div>
       </div>
     </div>
     """
@@ -672,29 +680,13 @@ defmodule OskolWeb.LandingLive do
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-      
+
     <!-- Format Selection -->
-      <div class="mb-8">
-        <p class="text-base-content/40 text-xs mb-3 text-center">
+      <div class="mb-4 sm:mb-8">
+        <p class="text-base-content/40 text-xs mb-2 sm:mb-3 text-center">
           <%= cond do %>
             <% map_size(@server_state.connections) < 2 -> %>
-              Share the link
-              <button
-                type="button"
-                phx-click={JS.dispatch("phx:copy", to: "#share-link")}
-                class="inline-flex items-center gap-1.5 mx-1 px-2.5 py-1 bg-base-100/50 hover:bg-base-100 rounded-full text-base-content/70 hover:text-base-content transition-all cursor-pointer border border-base-content/20 hover:border-base-content/40"
-              >
-                <span id="share-link" class="font-mono text-xs">{url(~p"/?game=#{@game_name}")}</span>
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
-              </button>
-              to invite a friend
+              Waiting for opponent to join...
             <% @selected_format == nil -> %>
               Choose a game mode
             <% @opponent_format == nil -> %>
@@ -704,14 +696,14 @@ defmodule OskolWeb.LandingLive do
             <% @selected_format == :short -> %>
               Both players selected Skirmish
             <% @selected_format == :standard -> %>
-              Both players selectd Battle
+              Both players selected Battle
             <% @selected_format == :extended -> %>
-              Both players selectd War
+              Both players selected War
             <% true -> %>
               Ready to start!
           <% end %>
         </p>
-        <div class="grid grid-cols-3 gap-3">
+        <div class="grid grid-cols-3 gap-1.5 sm:gap-3">
           <.format_card_v2
             format="short"
             title="Skirmish"
@@ -747,7 +739,7 @@ defmodule OskolWeb.LandingLive do
           />
         </div>
       </div>
-      
+
     <!-- Start Game Button -->
       <div class="text-center">
         <%= if @server_state.lobby_status == :ready_to_start do %>
@@ -763,6 +755,24 @@ defmodule OskolWeb.LandingLive do
             <.card_decorations />
           </button>
         <% end %>
+
+    <!-- Invite link - secondary action -->
+        <button
+          type="button"
+          phx-click={JS.dispatch("phx:copy", to: "#share-link")}
+          class="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/50 hover:text-base-content/70 transition-all"
+        >
+          <span id="share-link" class="hidden">{url(~p"/?game=#{@game_name}")}</span>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+            />
+          </svg>
+          <span>Copy invite link</span>
+        </button>
       </div>
 
       <%= if @is_dev do %>
@@ -826,15 +836,15 @@ defmodule OskolWeb.LandingLive do
       |> assign(:opponent_conn, opponent_conn)
 
     ~H"""
-    <div class="flex items-center justify-center gap-4 mb-8">
-      <span class="text-player font-bold text-2xl">
+    <div class="flex items-center justify-center gap-2 sm:gap-4 mb-4 sm:mb-8">
+      <span class="text-player font-bold text-lg sm:text-2xl">
         {(@player_conn && @player_conn.name) || "You"}
       </span>
-      <span class="text-base-content/40 text-lg">vs</span>
+      <span class="text-base-content/40 text-sm sm:text-lg">vs</span>
       <%= if @opponent_conn do %>
-        <span class="text-opponent font-bold text-2xl">{@opponent_conn.name}</span>
+        <span class="text-opponent font-bold text-lg sm:text-2xl">{@opponent_conn.name}</span>
       <% else %>
-        <span class="text-opponent font-bold text-2xl">?</span>
+        <span class="text-opponent font-bold text-lg sm:text-2xl">?</span>
       <% end %>
     </div>
     """
@@ -846,7 +856,7 @@ defmodule OskolWeb.LandingLive do
       phx-click="select_format"
       phx-value-format={@format}
       class={[
-        "relative p-5 rounded-2xl transition-all border-2 text-center group",
+        "relative p-2.5 sm:p-5 rounded-xl sm:rounded-2xl transition-all border-2 text-center group",
         "bg-white/90 backdrop-blur-sm shadow-lg hover:shadow-xl hover:scale-105",
         "border-white/50 hover:border-white"
       ]}
@@ -854,39 +864,39 @@ defmodule OskolWeb.LandingLive do
       <!-- Corner selection indicators -->
       <%= cond do %>
         <% @selected and @opponent_selected -> %>
-          <!-- Both selected - diagonal split: player top-left/bottom-right, opponent top-right/bottom-left -->
-          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-2xl">
+          <!-- Both selected - animated rotating corners -->
+          <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] rounded-tl-xl sm:rounded-tl-2xl corner-rotate-a">
           </div>
-          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-2xl">
+          <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] rounded-tr-xl sm:rounded-tr-2xl corner-rotate-b">
           </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-opponent rounded-bl-2xl">
+          <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] rounded-bl-xl sm:rounded-bl-2xl corner-rotate-b">
           </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-player rounded-br-2xl">
+          <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] rounded-br-xl sm:rounded-br-2xl corner-rotate-a">
           </div>
         <% @selected -> %>
           <!-- Only you selected - all player corners -->
-          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-2xl">
+          <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-xl sm:rounded-tl-2xl">
           </div>
-          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-player rounded-tr-2xl">
+          <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-player rounded-tr-xl sm:rounded-tr-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-player rounded-bl-2xl">
+          <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] border-player rounded-bl-xl sm:rounded-bl-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-player rounded-br-2xl">
+          <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-player rounded-br-xl sm:rounded-br-2xl">
           </div>
         <% @opponent_selected -> %>
           <!-- Only opponent selected - all opponent corners -->
-          <div class="absolute -top-[2px] -left-[2px] w-5 h-5 border-t-[3px] border-l-[3px] border-opponent rounded-tl-2xl">
+          <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-opponent rounded-tl-xl sm:rounded-tl-2xl">
           </div>
-          <div class="absolute -top-[2px] -right-[2px] w-5 h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-2xl">
+          <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-xl sm:rounded-tr-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 border-b-[3px] border-l-[3px] border-opponent rounded-bl-2xl">
+          <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] border-opponent rounded-bl-xl sm:rounded-bl-2xl">
           </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 border-b-[3px] border-r-[3px] border-opponent rounded-br-2xl">
+          <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-opponent rounded-br-xl sm:rounded-br-2xl">
           </div>
         <% true -> %>
           <!-- No selection -->
       <% end %>
-      
+
     <!-- Abstract SVG decoration per format -->
       <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
         <%= case @format do %>
@@ -942,12 +952,12 @@ defmodule OskolWeb.LandingLive do
             </svg>
         <% end %>
       </div>
-      
+
     <!-- Text content - centered and stacked -->
-      <div class="relative z-10 flex flex-col items-center gap-1">
-        <div class="text-gray-800 font-bold text-lg">{@title}</div>
-        <div class="text-gray-500 text-xs">{@description}</div>
-        <div class="text-gray-400 text-xs">{@subtitle}</div>
+      <div class="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1">
+        <div class="text-gray-800 font-bold text-sm sm:text-lg">{@title}</div>
+        <div class="text-gray-500 text-[10px] sm:text-xs hidden sm:block">{@description}</div>
+        <div class="text-gray-400 text-[10px] sm:text-xs">{@subtitle}</div>
       </div>
     </button>
     """
