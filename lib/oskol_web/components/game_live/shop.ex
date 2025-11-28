@@ -54,7 +54,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="min-h-full flex flex-col lg:flex-row lg:h-screen">
 
     <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
-        <div class="order-1 lg:order-none lg:w-[503px] xl:w-[660px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden">
+        <div class="order-1 lg:order-none lg:w-[520px] xl:w-[680px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden">
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50 flex-shrink-0">
             <div class="flex items-center justify-between">
