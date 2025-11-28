@@ -177,9 +177,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def game_screen(assigns) do
     ~H"""
-    <div class="flex flex-col h-screen bg-base-300">
-      <!-- Top - Opponent Cards -->
-      <div class="flex-1 flex flex-col justify-end p-4 bg-base-200/40">
+    <div class="flex flex-col h-screen-safe bg-base-300 overflow-hidden">
+      <!-- Top - Opponent Cards: shrink on mobile -->
+      <div class="shrink-0 sm:flex-1 flex flex-col justify-end pt-2 px-1 pb-1 sm:p-3 md:p-4 bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
           opponent_card_sort={@opponent_card_sort}
@@ -191,8 +191,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         />
       </div>
       
-    <!-- Middle - Playing Area -->
-      <div class="flex-[2] flex flex-col justify-start bg-base-100 shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)]">
+    <!-- Middle - Playing Area: takes remaining space -->
+      <div class="flex-1 min-h-0 flex flex-col justify-start bg-base-100 shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)]">
         <.playing_area
           game_state={@game_state}
           player_id={@player_id}
@@ -208,8 +208,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         />
       </div>
       
-    <!-- Bottom - Player Cards -->
-      <div class="flex-1 flex flex-col justify-start p-4 bg-base-200/40">
+    <!-- Bottom - Player Cards: shrink on mobile -->
+      <div class="shrink-0 sm:flex-1 flex flex-col justify-start pt-1 px-1 pb-0 sm:p-3 md:p-4 bg-base-200/40">
         <.player_cards
           player_state={@player_state}
           selected_card_ids={@selected_card_ids}
@@ -223,7 +223,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         />
       </div>
       
-    <!-- Action Bar -->
+    <!-- Action Bar: fixed height -->
       <.action_bar
         player_state={@player_state}
         opponent_state={@opponent_state}
@@ -255,10 +255,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     ~H"""
     <!-- Card controls for opponent -->
-    <div class="flex justify-center gap-2 mb-2">
+    <div class="flex justify-center mb-2 sm:mb-3">
       <button
         phx-click="toggle_opponent_card_sort"
-        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-32 justify-center"
+        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
       >
         <span class="text-gray-500">Sorting by</span>
         <span class="font-semibold text-gray-800">
@@ -266,17 +266,19 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         </span>
       </button>
     </div>
-    <div class="flex flex-wrap gap-4 justify-center mb-2">
+    <!-- Responsive card grid: flex cards that shrink on mobile, max size on desktop -->
+    <div class="flex gap-1 sm:gap-3 md:gap-4 justify-center px-2 sm:px-0">
       <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
         <% is_face_down = card.id in @opponent_face_down_card_ids %>
         <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
         <.card_display
           card={card}
-          class={["w-28 h-40", if(is_new, do: "new-card", else: "")]}
+          class={["flex-1 min-w-0 max-w-[112px] aspect-[5/7]", if(is_new, do: "new-card", else: "")]}
           face_down={is_face_down}
           disabled={is_disabled}
           enhancement_disabled={@enhancements_disabled}
+          compact={true}
         />
       <% end %>
     </div>
@@ -303,7 +305,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     is_locked_in = @player_state.locked_in_hand != nil %>
 
-    <div class="flex flex-wrap gap-4 justify-center mb-2">
+    <!-- Responsive card grid: flex cards that shrink on mobile, max size on desktop -->
+    <div class="flex gap-1 sm:gap-3 md:gap-4 justify-center px-2 sm:px-0">
       <%= for card <- sort_cards(@player_state.card_piles.hand_pile, @your_card_sort) do %>
         <% selected = card.id in selected_card_ids %>
         <% at_limit = length(selected_card_ids) >= 5 %>
@@ -315,8 +318,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           phx-value-id={card.id}
           disabled={@action_in_progress || (at_limit && not selected) || is_locked_in}
           class={[
-            "transition-all",
-            if(selected, do: "-translate-y-4", else: ""),
+            "flex-1 min-w-0 max-w-[112px] transition-all touch-manipulation",
+            if(selected, do: "-translate-y-2 sm:-translate-y-3 md:-translate-y-4", else: ""),
             if((at_limit && not selected) || is_locked_in,
               do: "opacity-50 cursor-not-allowed",
               else: ""
@@ -325,19 +328,20 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         >
           <.card_display
             card={card}
-            class={["w-28 h-40", if(is_new, do: "new-card", else: "")]}
+            class={["w-full aspect-[5/7]", if(is_new, do: "new-card", else: "")]}
             face_down={is_face_down}
             disabled={is_disabled}
             enhancement_disabled={@enhancements_disabled}
+            compact={true}
           />
         </button>
       <% end %>
     </div>
     <!-- Card controls for player -->
-    <div class="flex justify-center gap-2 mt-2">
+    <div class="flex justify-center mt-2 sm:mt-3">
       <button
         phx-click="toggle_your_card_sort"
-        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-32 justify-center"
+        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
       >
         <span class="text-gray-500">Sorting by</span>
         <span class="font-semibold text-gray-800">
@@ -456,13 +460,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     is_locked_in = @player_state.locked_in_hand != nil %>
 
-    <div class="h-20 flex items-center justify-between px-8">
-      <!-- Left: Console Button + Panel -->
+    <!-- Action bar -->
+    <div class="h-12 sm:h-20 flex items-center justify-between px-2 sm:px-8 shrink-0">
+      <!-- Left: Console Button -->
       <div class="relative">
         <button
           phx-click="toggle_console"
           class={[
-            "px-5 py-2 rounded-lg transition-all font-medium shadow-lg ring-1 ring-white/10",
+            "px-3 sm:px-5 py-2 rounded-lg transition-all font-medium shadow-lg ring-1 ring-white/10 text-sm sm:text-base touch-manipulation",
             if(@console_open,
               do: "bg-neutral text-neutral-content",
               else: "bg-neutral/90 hover:bg-neutral text-neutral-content"
@@ -489,7 +494,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       </div>
       
     <!-- Right: Action Buttons (always visible, disabled during results) -->
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2 sm:gap-4">
         <button
           phx-click="discard_cards"
           disabled={
@@ -497,7 +502,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               @player_state.discards_remaining == 0 || is_locked_in
           }
           class={[
-            "px-4 py-2 rounded-lg transition-colors bg-error hover:bg-error/90 text-error-content shadow-lg ring-1 ring-white/10",
+            "px-3 sm:px-4 py-2 rounded-lg transition-colors bg-error hover:bg-error/90 text-error-content shadow-lg ring-1 ring-white/10 text-sm sm:text-base touch-manipulation min-w-[70px] sm:min-w-0",
             if(
               @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
                 @player_state.discards_remaining == 0 || is_locked_in,
@@ -507,7 +512,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           ]}
         >
           <%= if @action_in_progress do %>
-            Discarding...
+            <span class="hidden sm:inline">Discarding...</span>
+            <span class="sm:hidden">...</span>
           <% else %>
             Discard
           <% end %>
@@ -519,7 +525,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             @viewing_results || @action_in_progress || length(selected_card_ids) == 0 || is_locked_in
           }
           class={[
-            "px-4 py-2 rounded-lg transition-colors bg-primary hover:bg-primary/90 text-primary-content shadow-lg ring-1 ring-white/10",
+            "px-4 sm:px-4 py-2 rounded-lg transition-colors bg-primary hover:bg-primary/90 text-primary-content shadow-lg ring-1 ring-white/10 text-sm sm:text-base font-semibold touch-manipulation min-w-[60px] sm:min-w-0",
             if(
               @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
                 is_locked_in,
@@ -529,7 +535,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           ]}
         >
           <%= if @action_in_progress do %>
-            Playing...
+            <span class="hidden sm:inline">Playing...</span>
+            <span class="sm:hidden">...</span>
           <% else %>
             Play
           <% end %>
@@ -541,76 +548,89 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def console_panel(assigns) do
     ~H"""
-    <div class="absolute bottom-full left-0 mb-2 w-[730px] max-h-[70vh] bg-base-100 rounded-lg shadow-xl border border-base-300 flex flex-col">
-      <!-- Tab bar -->
-      <div class="flex border-b border-base-300">
-        <button
-          phx-click="set_console_tab"
-          phx-value-tab="decks"
-          class={[
-            "flex-1 px-4 py-2 text-sm font-medium transition-colors",
-            if(@console_tab == :decks,
-              do: "bg-base-200 text-base-content border-b-2 border-primary",
-              else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
-            )
-          ]}
-        >
-          Logistics
-        </button>
-        <button
-          phx-click="set_console_tab"
-          phx-value-tab="levels"
-          class={[
-            "flex-1 px-4 py-2 text-sm font-medium transition-colors",
-            if(@console_tab == :levels,
-              do: "bg-base-200 text-base-content border-b-2 border-primary",
-              else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
-            )
-          ]}
-        >
-          Research
-        </button>
-        <button
-          phx-click="set_console_tab"
-          phx-value-tab="log"
-          class={[
-            "flex-1 px-4 py-2 text-sm font-medium transition-colors",
-            if(@console_tab == :log,
-              do: "bg-base-200 text-base-content border-b-2 border-primary",
-              else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
-            )
-          ]}
-        >
-          Newspaper
-        </button>
-      </div>
-      
+    <!-- Mobile: Full-screen modal overlay, Desktop: positioned panel -->
+    <div class="fixed inset-0 sm:absolute sm:inset-auto sm:bottom-full sm:left-0 sm:mb-2 z-50">
+      <!-- Mobile backdrop -->
+      <div class="sm:hidden fixed inset-0 bg-black/50" phx-click="toggle_console"></div>
+      <!-- Panel -->
+      <div class="fixed bottom-0 left-0 right-0 sm:relative sm:w-[730px] max-h-[85vh] sm:max-h-[70vh] bg-base-100 rounded-t-xl sm:rounded-lg shadow-xl border border-base-300 flex flex-col">
+        <!-- Mobile drag handle -->
+        <div class="sm:hidden flex justify-center py-2">
+          <div class="w-10 h-1 bg-base-content/20 rounded-full"></div>
+        </div>
+        <!-- Tab bar -->
+        <div class="flex border-b border-base-300">
+          <button
+            phx-click="set_console_tab"
+            phx-value-tab="decks"
+            class={[
+              "flex-1 px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors touch-manipulation",
+              if(@console_tab == :decks,
+                do: "bg-base-200 text-base-content border-b-2 border-primary",
+                else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
+              )
+            ]}
+          >
+            <span class="sm:hidden">Deck</span>
+            <span class="hidden sm:inline">Logistics</span>
+          </button>
+          <button
+            phx-click="set_console_tab"
+            phx-value-tab="levels"
+            class={[
+              "flex-1 px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors touch-manipulation",
+              if(@console_tab == :levels,
+                do: "bg-base-200 text-base-content border-b-2 border-primary",
+                else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
+              )
+            ]}
+          >
+            <span class="sm:hidden">Levels</span>
+            <span class="hidden sm:inline">Research</span>
+          </button>
+          <button
+            phx-click="set_console_tab"
+            phx-value-tab="log"
+            class={[
+              "flex-1 px-2 sm:px-4 py-2 text-xs sm:text-sm font-medium transition-colors touch-manipulation",
+              if(@console_tab == :log,
+                do: "bg-base-200 text-base-content border-b-2 border-primary",
+                else: "text-base-content/60 hover:text-base-content hover:bg-base-200/50"
+              )
+            ]}
+          >
+            <span class="sm:hidden">Log</span>
+            <span class="hidden sm:inline">Newspaper</span>
+          </button>
+        </div>
+        
     <!-- Tab content -->
-      <div class="overflow-y-auto p-4">
-        <%= case @console_tab do %>
-          <% :log -> %>
-            <.console_log_tab
-              event_log={@event_log}
-              player_names={@game_state.player_names}
-              player_id={@player_id}
-            />
-          <% :decks -> %>
-            <.console_decks_tab
-              viewing_own_deck={@viewing_own_deck}
-              player_state={@player_state}
-              opponent_state={@opponent_state}
-              player_name={@player_name}
-              opponent_name={@opponent_name}
-            />
-          <% :levels -> %>
-            <.console_levels_tab
-              levels_view_mode={@levels_view_mode}
-              player_state={@player_state}
-              opponent_state={@opponent_state}
-              player_name={@player_name}
-              opponent_name={@opponent_name}
-            />
-        <% end %>
+        <div class="overflow-y-auto overflow-x-auto p-2 sm:p-4">
+          <%= case @console_tab do %>
+            <% :log -> %>
+              <.console_log_tab
+                event_log={@event_log}
+                player_names={@game_state.player_names}
+                player_id={@player_id}
+              />
+            <% :decks -> %>
+              <.console_decks_tab
+                viewing_own_deck={@viewing_own_deck}
+                player_state={@player_state}
+                opponent_state={@opponent_state}
+                player_name={@player_name}
+                opponent_name={@opponent_name}
+              />
+            <% :levels -> %>
+              <.console_levels_tab
+                levels_view_mode={@levels_view_mode}
+                player_state={@player_state}
+                opponent_state={@opponent_state}
+                player_name={@player_name}
+                opponent_name={@opponent_name}
+              />
+          <% end %>
+        </div>
       </div>
     </div>
     """
@@ -655,10 +675,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     cards_remaining = length(all_cards)
     face_down_count = Enum.count(hand_pile, fn card -> card.id in face_down_ids end) %>
 
-    <div class="text-xs text-base-content/70 mb-3">
+    <div class="text-xs text-base-content/70 mb-2 sm:mb-3">
       {cards_remaining} cards left
       <%= if face_down_count > 0 do %>
-        <span class="text-player/70">
+        <span class="text-player/70 hidden sm:inline">
           ({face_down_count} face-down {if face_down_count == 1, do: "card", else: "cards"} in hand not highlighted)
         </span>
       <% end %>
@@ -668,7 +688,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ranks = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2] %>
 
     <!-- Cards in fixed 13-column grid per suit, duplicates in extra rows -->
-    <div class="space-y-3">
+    <!-- Mobile: scrollable horizontally with smaller cards -->
+    <div class="space-y-2 sm:space-y-3 min-w-0">
       <%= for suit <- suits do %>
         <% # Get all cards of this suit, group by rank
         suit_cards = Enum.filter(all_cards, fn card -> card.suit == suit end)
@@ -680,15 +701,15 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           else
             1
           end %>
-        <div class="flex items-start gap-2">
+        <div class="flex items-start gap-1 sm:gap-2">
           <!-- Suit count -->
-          <div class="w-4 text-center pt-1 text-xs text-base-content/50">
+          <div class="w-3 sm:w-4 text-center pt-1 text-[10px] sm:text-xs text-base-content/50 flex-shrink-0">
             {length(suit_cards)}
           </div>
-          <!-- Fixed 13-column grid with extra rows for duplicates -->
-          <div class="flex-1 space-y-1">
+          <!-- Fixed 13-column grid with extra rows for duplicates - scrollable on mobile -->
+          <div class="flex-1 space-y-0.5 sm:space-y-1 overflow-x-auto">
             <%= for row_idx <- 0..(max_dupes - 1) do %>
-              <div class="flex gap-1">
+              <div class="flex gap-0.5 sm:gap-1">
                 <%= for rank <- ranks do %>
                   <% cards_at_rank = Map.get(cards_by_rank, rank, [])
                   card = Enum.at(cards_at_rank, row_idx) %>
@@ -704,13 +725,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                     opacity = if in_hand and not is_face_down, do: "opacity-100", else: "opacity-40" %>
                     <.card_display
                       card={card}
-                      class={"w-12 h-[72px] #{opacity}"}
+                      class={"w-6 h-9 sm:w-12 sm:h-[72px] flex-shrink-0 #{opacity}"}
                       compact={true}
                       disabled={is_disabled}
                       enhancement_disabled={current_state.enhancements_disabled}
                     />
                   <% else %>
-                    <div class="w-12 h-[72px] bg-base-300/20 rounded"></div>
+                    <div class="w-6 h-9 sm:w-12 sm:h-[72px] bg-base-300/20 rounded flex-shrink-0">
+                    </div>
                   <% end %>
                 <% end %>
               </div>
@@ -771,8 +793,73 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     ~H"""
     <div class="h-full relative">
-      <!-- Round info - top left -->
-      <div class="absolute top-4 left-4 text-left text-base-content">
+      <!-- Mobile: 2-line status bar at top -->
+      <div class="sm:hidden grid grid-cols-[1fr_auto_1fr] items-center px-2 py-1.5 bg-base-200/50 text-xs gap-x-3">
+        <% player_score = @player_state.current_round_score
+        opponent_score = @opponent_state.current_round_score
+        score_diff = abs(player_score - opponent_score) %>
+        
+    <!-- Left column: Round info (2 lines) -->
+        <div class="flex flex-col">
+          <span class="font-semibold">Round {@game_state.round_number}</span>
+          <span class="text-base-content/60">
+            <%= cond do %>
+              <% @player_state.hands_remaining == 0 -> %>
+                Round complete
+              <% @player_state.hands_remaining == 1 -> %>
+                Final hand
+              <% true -> %>
+                {@player_state.hands_remaining} hands left
+            <% end %>
+          </span>
+        </div>
+        
+    <!-- Center column: Score diff (centered) -->
+        <div class="flex items-center justify-center">
+          <%= if score_diff > 0 do %>
+            <span class={
+              if player_score > opponent_score,
+                do: "text-player font-semibold text-sm",
+                else: "text-opponent font-semibold text-sm"
+            }>
+              {if player_score > opponent_score, do: "+", else: "-"}{score_diff}
+            </span>
+          <% else %>
+            <span class="text-base-content/50">Tied</span>
+          <% end %>
+        </div>
+        
+    <!-- Right column: Player stats (2 lines) -->
+        <div class="flex flex-col items-end gap-0.5">
+          <!-- Opponent line -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-opponent font-medium">{@opponent_name |> String.slice(0, 6)}</span>
+            <div class="flex items-center gap-0.5">
+              <span class="text-base-content/70">{@opponent_state.lives}</span>
+              <.icon name="hero-heart-solid" class="w-3 h-3 text-base-content/50" />
+            </div>
+            <div class="flex items-center gap-0.5">
+              <span class="text-base-content/70">{@opponent_state.discards_remaining}</span>
+              <.icon name="hero-trash-solid" class="w-3 h-3 text-base-content/50" />
+            </div>
+          </div>
+          <!-- Player line -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-player font-medium">{@player_name |> String.slice(0, 6)}</span>
+            <div class="flex items-center gap-0.5">
+              <span class="text-base-content/70">{@player_state.lives}</span>
+              <.icon name="hero-heart-solid" class="w-3 h-3 text-base-content/50" />
+            </div>
+            <div class="flex items-center gap-0.5">
+              <span class="text-base-content/70">{@player_state.discards_remaining}</span>
+              <.icon name="hero-trash-solid" class="w-3 h-3 text-base-content/50" />
+            </div>
+          </div>
+        </div>
+      </div>
+      
+    <!-- Desktop: Round info - top left -->
+      <div class="hidden sm:block absolute top-4 left-4 text-left text-base-content">
         <div class="text-lg">Round {@game_state.round_number}</div>
         <div class="text-sm text-base-content/70">
           <%= cond do %>
@@ -856,8 +943,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% end %>
       </div>
       
-    <!-- Opponent status - top right -->
-      <div class="absolute top-4 right-4 flex flex-col items-end gap-0.5 text-base-content">
+    <!-- Desktop: Opponent status - top right -->
+      <div class="hidden sm:flex absolute top-4 right-4 flex-col items-end gap-0.5 text-base-content">
         <div class="flex items-center gap-1">
           <span class={"w-2 h-2 rounded-full #{if @opponent_connected, do: "bg-green-500", else: "bg-gray-500"}"}>
           </span>
@@ -891,8 +978,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         </div>
       </div>
       
-    <!-- Player status - bottom right -->
-      <div class="absolute bottom-4 right-4 flex flex-col items-end gap-0.5 text-base-content">
+    <!-- Desktop: Player status - bottom right -->
+      <div class="hidden sm:flex absolute bottom-4 right-4 flex-col items-end gap-0.5 text-base-content">
         <div class="group relative flex items-center gap-0.5 cursor-default">
           <%= for i <- 1..@game_state.discards_per_round do %>
             <%= if i > @game_state.discards_per_round - @player_state.discards_remaining do %>
@@ -1032,7 +1119,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign(:player_state, player_state)
 
     ~H"""
-    <div class="text-center space-y-8">
+    <div class="text-center space-y-4 sm:space-y-8 px-2 sm:px-0">
       <!-- Opponent's breakdown (always on top) -->
       <.score_breakdown_row
         result={@opponent_result}
@@ -1175,12 +1262,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <div class={if @is_opponent, do: "", else: ""}>
       <!-- Hand type header -->
-      <div class="text-sm text-base-content/80 mb-2">
+      <div class="text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2">
         {@hand_type_text}
       </div>
       
-    <!-- Cards display -->
-      <div class="flex gap-2 justify-center mb-3">
+    <!-- Cards display - responsive sizing -->
+      <div class="flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3">
         <%= for card <- @hand do %>
           <% is_scoring = card.id in @scoring_card_ids
 
@@ -1212,16 +1299,17 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <div class="relative">
             <.card_display
               card={card}
-              class={"w-16 h-24 #{card_class}"}
+              class={"w-9 h-[52px] sm:w-16 sm:h-24 #{card_class}"}
               disabled={is_disabled}
               enhancement_disabled={@enhancements_disabled}
+              compact={true}
             />
             <%= if card_breakdown do %>
-              <div class="chip-float chip-float-chips">
+              <div class="chip-float chip-float-chips text-[10px] sm:text-sm">
                 +{card_breakdown.chip_value + card_breakdown.bonus_chips}
               </div>
               <%= if card_breakdown.bonus_mult > 0 do %>
-                <div class="chip-float chip-float-mult" style="top: 8px;">
+                <div class="chip-float chip-float-mult text-[10px] sm:text-sm" style="top: 8px;">
                   +{card_breakdown.bonus_mult}x
                 </div>
               <% end %>
@@ -1230,14 +1318,16 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% end %>
       </div>
       
-    <!-- Formula display -->
-      <div class="flex items-center justify-center gap-3 text-lg font-mono">
+    <!-- Formula display - responsive sizing -->
+      <div class="flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-lg font-mono">
         <span class="text-blue-400 font-bold">{@running_chips}</span>
         <span class="text-base-content/60">×</span>
         <span class="text-red-400 font-bold">{@running_mult}</span>
         <%= if @show_final do %>
           <span class="text-base-content/60">=</span>
-          <span class="text-yellow-400 font-bold text-xl score-reveal">{@running_score}</span>
+          <span class="text-yellow-400 font-bold text-base sm:text-xl score-reveal">
+            {@running_score}
+          </span>
         <% end %>
       </div>
     </div>
@@ -1256,35 +1346,38 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
-    <div class="text-center space-y-8">
+    <div class="text-center space-y-4 sm:space-y-8 px-2 sm:px-0">
       <!-- Opponent placeholder - same height as score breakdown row -->
       <div>
-        <div class="text-sm text-base-content/50 mb-2">Waiting for opponent...</div>
-        <div class="flex gap-2 justify-center mb-3">
+        <div class="text-xs sm:text-sm text-base-content/50 mb-1 sm:mb-2">
+          Waiting for opponent...
+        </div>
+        <div class="flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3">
           <!-- Invisible placeholder cards to reserve space -->
           <%= for _i <- 1..length(@sorted_hand) do %>
-            <div class="w-16 h-24 opacity-0"></div>
+            <div class="w-9 h-[52px] sm:w-16 sm:h-24 opacity-0"></div>
           <% end %>
         </div>
-        <div class="h-7"></div>
+        <div class="h-5 sm:h-7"></div>
         <!-- placeholder for formula row -->
       </div>
       
     <!-- Player's locked hand -->
       <div>
-        <div class="text-sm text-base-content/80 mb-2">&nbsp;</div>
-        <div class="flex gap-2 justify-center mb-3">
+        <div class="text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2">&nbsp;</div>
+        <div class="flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3">
           <%= for card <- @sorted_hand do %>
             <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
             <.card_display
               card={card}
-              class="w-16 h-24"
+              class="w-9 h-[52px] sm:w-16 sm:h-24"
               disabled={is_disabled}
               enhancement_disabled={@enhancements_disabled}
+              compact={true}
             />
           <% end %>
         </div>
-        <div class="h-7"></div>
+        <div class="h-5 sm:h-7"></div>
         <!-- placeholder for formula row -->
       </div>
     </div>

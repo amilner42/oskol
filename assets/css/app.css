@@ -123,3 +123,13 @@
 .bg-opponent {
   background-color: oklch(70% 0.18 55); /* orange-500 */
 }
+
+/* Mobile-safe viewport height - accounts for browser chrome (URL bar, etc) */
+.h-screen-safe {
+  height: 100vh; /* fallback for older browsers */
+  height: 100dvh; /* dynamic viewport height - shrinks when browser chrome is visible */
+}
+.min-h-screen-safe {
+  min-height: 100vh; /* fallback for older browsers */
+  min-height: 100dvh;
+}
