@@ -673,6 +673,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign_new(:in_destroy_phase, fn -> false end)
       |> assign_new(:can_destroy, fn -> false end)
 
+    # Player is viewing their own card details when they're the active player
+    # (either picking in normal phase, or destroying in destroy phase)
+    is_active_player = assigns.can_confirm or (assigns.in_destroy_phase and assigns.can_destroy)
+
+    assigns = assign(assigns, :is_active_player, is_active_player)
+
     ~H"""
     <div class="flex-1 flex flex-col">
       <%= case @shop_card do %>
@@ -681,7 +687,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             hand_type={hand_type}
             skill_tree={@skill_tree}
             can_confirm={@can_confirm}
-            is_my_selection={@can_confirm}
+            is_my_selection={@is_active_player}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
             in_destroy_phase={@in_destroy_phase}
