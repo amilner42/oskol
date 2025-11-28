@@ -560,9 +560,21 @@ defmodule OskolWeb.Components.GameLive.Shop do
               "amber" -> "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
             end
 
-          # Destroy phase - can destroy this card
+          # Destroy phase - can destroy this card (same styling as normal pick)
           @in_destroy_phase and @can_destroy ->
-            "border-rose-300/50 hover:border-rose-500 hover:shadow-md hover:shadow-rose-500/20 cursor-pointer"
+            case @accent_color do
+              "emerald" ->
+                "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
+
+              "rose" ->
+                "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
+
+              "violet" ->
+                "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+
+              "amber" ->
+                "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
+            end
 
           # Normal pick phase - can pick
           @can_pick ->
