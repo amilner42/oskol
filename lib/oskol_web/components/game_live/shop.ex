@@ -501,9 +501,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
         assigns[:is_picked] or is_destroyed ->
           nil
 
-        # Destroy phase - can click to preview (same as normal pick phase)
-        in_destroy_phase and can_destroy ->
-          "preview_shop_card"
+        # Destroy phase - ONLY can click if can_destroy (waiting player can't click)
+        in_destroy_phase ->
+          if can_destroy, do: "preview_shop_card", else: nil
 
         # Normal pick phase
         assigns[:can_pick] ->
