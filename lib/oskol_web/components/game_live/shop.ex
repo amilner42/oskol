@@ -54,7 +54,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="min-h-full flex flex-col lg:flex-row lg:h-screen">
 
     <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
-        <div class="order-1 lg:order-none lg:w-[520px] xl:w-[660px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden">
+        <div class="order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen">
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50 flex-shrink-0">
             <div class="flex items-center justify-between">
@@ -64,7 +64,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
 
     <!-- Cards Grid (hidden on mobile, shown on desktop) -->
-          <div class="hidden lg:block flex-1 p-6 overflow-y-auto">
+          <div class="hidden lg:block flex-1 p-6">
             <.shop_cards_grid
               game_state={@game_state}
               player_id={@player_id}
@@ -155,7 +155,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         </div>
         <div class="text-xs text-base-content/40">Permanent Upgrades</div>
       </div>
-      <div class="flex flex-wrap gap-4">
+      <div class="grid grid-cols-4 gap-3">
         <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.take(8) do %>
           <.shop_card_minimal
             shop_card={shop_card}
@@ -182,7 +182,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         </div>
         <div class="text-xs text-base-content/40">Temporary Battlefield Advantage</div>
       </div>
-      <div class="flex flex-wrap gap-4">
+      <div class="grid grid-cols-4 gap-3">
         <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.drop(8) do %>
           <.shop_card_minimal
             shop_card={shop_card}
@@ -676,7 +676,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       disabled={@is_disabled}
       class={
         [
-          "w-[100px] lg:w-[140px] aspect-[2/3] rounded-xl p-2 lg:p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
+          "w-[100px] lg:w-full aspect-[2/3] rounded-xl p-2 lg:p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
           "bg-base-100 border-2",
           cond do
             # Destroyed cards
