@@ -86,19 +86,23 @@ defmodule Oskol.Game.ShopState do
 
     # Calculate destroy phase based on life difference
     # The player who is behind in lives can destroy cards equal to the difference
+    # This is independent of who won the round - whoever has fewer lives gets to destroy
     {destroyer_id, destroys_allowed, destroy_phase_complete} =
       if map_size(player_lives) == 2 do
-        winner_lives = Map.get(player_lives, winner_id, 0)
-        loser_lives = Map.get(player_lives, loser_id, 0)
-        life_difference = winner_lives - loser_lives
+        [{player1_id, player1_lives}, {player2_id, player2_lives}] = Map.to_list(player_lives)
 
-        if life_difference > 0 do
-          # Loser is behind - they get to destroy cards
-          {loser_id, life_difference, false}
-        else
-          # Either tied or loser somehow has more lives (shouldn't happen)
-          # No destroy phase
-          {nil, 0, true}
+        cond do
+          player1_lives < player2_lives ->
+            # Player 1 is behind - they get to destroy cards
+            {player1_id, player2_lives - player1_lives, false}
+
+          player2_lives < player1_lives ->
+            # Player 2 is behind - they get to destroy cards
+            {player2_id, player1_lives - player2_lives, false}
+
+          true ->
+            # Lives are equal - no destroy phase
+            {nil, 0, true}
         end
       else
         # No life info provided - skip destroy phase
