@@ -1144,7 +1144,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     <!-- 8-Card Selection Grid for Plus Bomb -->
         <div class="flex-1 mb-4 lg:mb-6">
-          <div class="grid grid-cols-4 gap-2 lg:gap-3">
+          <div class="flex flex-wrap gap-2 lg:gap-3 justify-center">
             <%= for card <- @pending_plus_bomb.available_cards do %>
               <% is_selected = @plus_bomb_selection == card.id %>
               <.plus_bomb_card_minimal
@@ -1264,7 +1264,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       phx-click="select_plus_bomb_card"
       phx-value-card_id={@card.id}
       class={[
-        "transition-all cursor-pointer rounded-lg overflow-hidden",
+        "w-[70px] lg:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden",
         if(@selected,
           do: "ring-2 ring-rose-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg",
           else: "hover:shadow-md hover:scale-102 border border-base-300/50"
@@ -1338,7 +1338,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     <!-- 8-Card Selection Grid -->
         <div class="flex-1 mb-4 lg:mb-6">
-          <div class="grid grid-cols-4 gap-2 lg:gap-3">
+          <div class="flex flex-wrap gap-2 lg:gap-3 justify-center">
             <%= for card <- @pending_deck_builder.available_cards do %>
               <% is_selected =
                 if is_list(@deck_builder_selection) do
@@ -1456,7 +1456,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       phx-click="select_deck_card"
       phx-value-card_id={@card.id}
       class={[
-        "transition-all cursor-pointer rounded-lg overflow-hidden",
+        "w-[70px] lg:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden",
         if(@selected,
           do: "ring-2 ring-violet-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg",
           else: "hover:shadow-md hover:scale-102 border border-base-300/50"
