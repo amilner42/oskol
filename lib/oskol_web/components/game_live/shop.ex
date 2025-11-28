@@ -92,20 +92,28 @@ defmodule OskolWeb.Components.GameLive.Shop do
             shop_countdown={assigns[:shop_countdown]}
           />
 
+          <%
+            # Compute active player status once - clean, single source of truth
+            in_destroy_phase = ShopState.in_destroy_phase?(@game_state.shop_state)
+            can_pick = can_pick_card?(@game_state.shop_state, @player_id)
+            can_destroy = ShopState.can_destroy?(@game_state.shop_state, @player_id)
+
+            # Active player = can take action right now (pick OR destroy)
+            is_active_player = if in_destroy_phase, do: can_destroy, else: can_pick
+          %>
           <%= if assigns[:previewing_card_index] != nil do %>
             <!-- Card preview (works in both normal and destroy phase) -->
             <.card_detail_panel
               shop_card={Enum.at(@game_state.shop_state.available_cards, @previewing_card_index)}
               card_index={@previewing_card_index}
               skill_tree={skill_tree_for_player(@player_id, assigns)}
-              can_confirm={can_pick_card?(@game_state.shop_state, @player_id)}
+              is_active_player={is_active_player}
+              in_destroy_phase={in_destroy_phase}
               action_in_progress={@action_in_progress}
               pending_deck_builder={@game_state.shop_state.pending_deck_builder}
               deck_builder_selection={assigns[:deck_builder_selection]}
               pending_plus_bomb={@game_state.shop_state.pending_plus_bomb}
               plus_bomb_selection={assigns[:plus_bomb_selection]}
-              in_destroy_phase={ShopState.in_destroy_phase?(@game_state.shop_state)}
-              can_destroy={ShopState.can_destroy?(@game_state.shop_state, @player_id)}
             />
           <% else %>
             <%= if ShopState.in_destroy_phase?(@game_state.shop_state) do %>
@@ -667,17 +675,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp card_detail_panel(assigns) do
-    # Set defaults for destroy phase flags
+    # Set defaults
     assigns =
       assigns
       |> assign_new(:in_destroy_phase, fn -> false end)
-      |> assign_new(:can_destroy, fn -> false end)
-
-    # Player is viewing their own card details when they're the active player
-    # (either picking in normal phase, or destroying in destroy phase)
-    is_active_player = assigns.can_confirm or (assigns.in_destroy_phase and assigns.can_destroy)
-
-    assigns = assign(assigns, :is_active_player, is_active_player)
+      |> assign_new(:is_active_player, fn -> false end)
 
     ~H"""
     <div class="flex-1 flex flex-col">
@@ -686,34 +688,30 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <.level_up_detail
             hand_type={hand_type}
             skill_tree={@skill_tree}
-            can_confirm={@can_confirm}
-            is_my_selection={@is_active_player}
+            is_active_player={@is_active_player}
+            in_destroy_phase={@in_destroy_phase}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
-            in_destroy_phase={@in_destroy_phase}
-            can_destroy={@can_destroy}
           />
         <% %ShopCard{type: type} = shop_card when type in [:sabotage, :denial] -> %>
           <.action_detail
             action_card={shop_card}
-            can_confirm={@can_confirm}
+            is_active_player={@is_active_player}
+            in_destroy_phase={@in_destroy_phase}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
             pending_plus_bomb={@pending_plus_bomb}
             plus_bomb_selection={@plus_bomb_selection}
-            in_destroy_phase={@in_destroy_phase}
-            can_destroy={@can_destroy}
           />
         <% %ShopCard{type: :deck_builder} = shop_card -> %>
           <.deck_builder_detail
             deck_builder_card={shop_card}
-            can_confirm={@can_confirm}
+            is_active_player={@is_active_player}
+            in_destroy_phase={@in_destroy_phase}
             action_in_progress={@action_in_progress}
             card_index={@card_index}
             pending_deck_builder={@pending_deck_builder}
             deck_builder_selection={@deck_builder_selection}
-            in_destroy_phase={@in_destroy_phase}
-            can_destroy={@can_destroy}
           />
       <% end %>
     </div>
@@ -721,18 +719,18 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp level_up_detail(assigns) do
-    # Set defaults for destroy phase
+    # Set defaults
     assigns =
       assigns
       |> assign_new(:in_destroy_phase, fn -> false end)
-      |> assign_new(:can_destroy, fn -> false end)
+      |> assign_new(:is_active_player, fn -> false end)
 
     # Get upgrade bonus (constant for each hand type)
     upgrade_bonus = Oskol.Poker.Score.upgrade_bonuses()[assigns.hand_type]
 
-    # Only calculate actual levels if this is my selection
+    # Only calculate actual levels if this player is the active player
     {current_level, next_level, current_stats, next_stats} =
-      if assigns.is_my_selection do
+      if assigns.is_active_player do
         level = Map.get(assigns.skill_tree, assigns.hand_type, 1)
         {
           level,
@@ -765,7 +763,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="mb-12">
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2">
-            <%= if @is_my_selection do %>
+            <%= if @is_active_player do %>
               <span class="text-3xl font-light text-base-content/40">{@current_level}</span>
             <% else %>
               <span class="text-3xl font-light text-base-content/40">?</span>
@@ -783,7 +781,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 d="M13 7l5 5m0 0l-5 5m5-5H6"
               />
             </svg>
-            <%= if @is_my_selection do %>
+            <%= if @is_active_player do %>
               <span class="text-3xl font-medium text-emerald-500">{@next_level}</span>
             <% else %>
               <span class="text-3xl font-medium text-emerald-500">?</span>
@@ -794,8 +792,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     <!-- Stats -->
       <div class="space-y-6 flex-1">
-        <%= if @is_my_selection do %>
-          <!-- My selection: show current → new values with delta -->
+        <%= if @is_active_player do %>
+          <!-- Active player: show current → new values with delta -->
           <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
             <span class="text-base-content/50 text-sm uppercase tracking-wider">Base Chips</span>
             <div class="flex items-center gap-3">
@@ -839,7 +837,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </div>
           </div>
         <% else %>
-          <!-- Opponent's selection: show only delta gained -->
+          <!-- Waiting player: show only delta gained -->
           <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
             <span class="text-base-content/50 text-sm uppercase tracking-wider">Chips Gained</span>
             <span class="text-emerald-500 text-2xl font-medium">+{@upgrade_bonus.chips}</span>
@@ -856,27 +854,25 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <% end %>
       </div>
 
-    <!-- Action Button -->
-      <%= if @in_destroy_phase and @can_destroy do %>
+    <!-- Action Button: only shown for active player -->
+      <%= if @is_active_player do %>
         <div class="pt-8">
-          <button
-            phx-click="destroy_shop_card"
-            phx-value-index={@card_index}
-            disabled={@action_in_progress}
-            class={[
-              "w-full py-4 rounded-full font-medium text-lg transition-all",
-              if(@action_in_progress,
-                do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
-              )
-            ]}
-          >
-            Destroy This Card
-          </button>
-        </div>
-      <% else %>
-        <%= if @can_confirm do %>
-          <div class="pt-8">
+          <%= if @in_destroy_phase do %>
+            <button
+              phx-click="destroy_shop_card"
+              phx-value-index={@card_index}
+              disabled={@action_in_progress}
+              class={[
+                "w-full py-4 rounded-full font-medium text-lg transition-all",
+                if(@action_in_progress,
+                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                  else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                )
+              ]}
+            >
+              Destroy This Card
+            </button>
+          <% else %>
             <button
               phx-click="confirm_shop_pick"
               phx-value-index={@card_index}
@@ -891,19 +887,19 @@ defmodule OskolWeb.Components.GameLive.Shop do
             >
               Confirm Selection
             </button>
-          </div>
-        <% end %>
+          <% end %>
+        </div>
       <% end %>
     </div>
     """
   end
 
   defp action_detail(assigns) do
-    # Set defaults for destroy phase
+    # Set defaults
     assigns =
       assigns
       |> assign_new(:in_destroy_phase, fn -> false end)
-      |> assign_new(:can_destroy, fn -> false end)
+      |> assign_new(:is_active_player, fn -> false end)
 
     shop_card = assigns.action_card
     card_name = ShopCard.card_name(shop_card)
@@ -1019,27 +1015,25 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
         
-    <!-- Confirm Button for Plus Bomb -->
-        <%= if @in_destroy_phase and @can_destroy do %>
+    <!-- Action Button for Plus Bomb selection phase -->
+        <%= if @is_active_player and @plus_bomb_selection do %>
           <div class="pt-4">
-            <button
-              phx-click="destroy_shop_card"
-              phx-value-index={@card_index}
-              disabled={@action_in_progress}
-              class={[
-                "w-full py-4 rounded-full font-medium text-lg transition-all",
-                if(@action_in_progress,
-                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                  else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
-                )
-              ]}
-            >
-              Destroy This Card
-            </button>
-          </div>
-        <% else %>
-          <%= if @can_confirm and @plus_bomb_selection do %>
-            <div class="pt-4">
+            <%= if @in_destroy_phase do %>
+              <button
+                phx-click="destroy_shop_card"
+                phx-value-index={@card_index}
+                disabled={@action_in_progress}
+                class={[
+                  "w-full py-4 rounded-full font-medium text-lg transition-all",
+                  if(@action_in_progress,
+                    do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                    else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                  )
+                ]}
+              >
+                Destroy This Card
+              </button>
+            <% else %>
               <button
                 phx-click="confirm_plus_bomb_pick"
                 phx-value-card_id={@plus_bomb_selection}
@@ -1054,34 +1048,32 @@ defmodule OskolWeb.Components.GameLive.Shop do
               >
                 Confirm Selection
               </button>
-            </div>
-          <% end %>
+            <% end %>
+          </div>
         <% end %>
       <% else %>
         <!-- Flex spacer -->
         <div class="flex-1"></div>
 
-    <!-- Action Button -->
-        <%= if @in_destroy_phase and @can_destroy do %>
+    <!-- Action Button: only shown for active player -->
+        <%= if @is_active_player do %>
           <div class="pt-8">
-            <button
-              phx-click="destroy_shop_card"
-              phx-value-index={@card_index}
-              disabled={@action_in_progress}
-              class={[
-                "w-full py-4 rounded-full font-medium text-lg transition-all",
-                if(@action_in_progress,
-                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                  else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
-                )
-              ]}
-            >
-              Destroy This Card
-            </button>
-          </div>
-        <% else %>
-          <%= if @can_confirm do %>
-            <div class="pt-8">
+            <%= if @in_destroy_phase do %>
+              <button
+                phx-click="destroy_shop_card"
+                phx-value-index={@card_index}
+                disabled={@action_in_progress}
+                class={[
+                  "w-full py-4 rounded-full font-medium text-lg transition-all",
+                  if(@action_in_progress,
+                    do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                    else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                  )
+                ]}
+              >
+                Destroy This Card
+              </button>
+            <% else %>
               <%= if @requires_selection do %>
                 <!-- Plus Bomb needs two-phase: first choose the card, then select from 8 -->
                 <button
@@ -1119,8 +1111,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
                   Confirm Selection
                 </button>
               <% end %>
-            </div>
-          <% end %>
+            <% end %>
+          </div>
         <% end %>
       <% end %>
     </div>
@@ -1148,11 +1140,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp deck_builder_detail(assigns) do
-    # Set defaults for destroy phase
+    # Set defaults
     assigns =
       assigns
       |> assign_new(:in_destroy_phase, fn -> false end)
-      |> assign_new(:can_destroy, fn -> false end)
+      |> assign_new(:is_active_player, fn -> false end)
 
     shop_card = assigns.deck_builder_card
     card_name = ShopCard.card_name(shop_card)
@@ -1221,24 +1213,24 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
         
-    <!-- Action Buttons -->
-        <%= if @in_destroy_phase and @can_destroy do %>
-          <button
-            phx-click="destroy_shop_card"
-            phx-value-index={@card_index}
-            disabled={@action_in_progress}
-            class={[
-              "w-full py-4 rounded-full font-medium text-lg transition-all",
-              if(@action_in_progress,
-                do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
-              )
-            ]}
-          >
-            Destroy This Card
-          </button>
-        <% else %>
-          <%= if @can_confirm do %>
+    <!-- Action Buttons: only shown for active player -->
+        <%= if @is_active_player do %>
+          <%= if @in_destroy_phase do %>
+            <button
+              phx-click="destroy_shop_card"
+              phx-value-index={@card_index}
+              disabled={@action_in_progress}
+              class={[
+                "w-full py-4 rounded-full font-medium text-lg transition-all",
+                if(@action_in_progress,
+                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                  else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                )
+              ]}
+            >
+              Destroy This Card
+            </button>
+          <% else %>
             <div class="flex gap-3">
               <button
                 phx-click="skip_deck_builder_selection"
@@ -1272,27 +1264,25 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <% end %>
         <% end %>
       <% else %>
-        <!-- Initial confirm button -->
-        <%= if @in_destroy_phase and @can_destroy do %>
+        <!-- Initial confirm button: only shown for active player -->
+        <%= if @is_active_player do %>
           <div class="flex-1 flex items-end">
-            <button
-              phx-click="destroy_shop_card"
-              phx-value-index={@card_index}
-              disabled={@action_in_progress}
-              class={[
-                "w-full py-4 rounded-full font-medium text-lg transition-all",
-                if(@action_in_progress,
-                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                  else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
-                )
-              ]}
-            >
-              Destroy This Card
-            </button>
-          </div>
-        <% else %>
-          <%= if @can_confirm do %>
-            <div class="flex-1 flex items-end">
+            <%= if @in_destroy_phase do %>
+              <button
+                phx-click="destroy_shop_card"
+                phx-value-index={@card_index}
+                disabled={@action_in_progress}
+                class={[
+                  "w-full py-4 rounded-full font-medium text-lg transition-all",
+                  if(@action_in_progress,
+                    do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                    else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                  )
+                ]}
+              >
+                Destroy This Card
+              </button>
+            <% else %>
               <button
                 phx-click="confirm_deck_builder_preview"
                 phx-value-index={@card_index}
@@ -1307,8 +1297,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
               >
                 Choose Cards
               </button>
-            </div>
-          <% end %>
+            <% end %>
+          </div>
         <% end %>
       <% end %>
     </div>
