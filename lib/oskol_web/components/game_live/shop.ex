@@ -594,7 +594,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class={[
           "font-semibold text-sm text-center leading-tight",
           cond do
-            @is_destroyed -> "text-base-content/30 line-through"
+            @is_destroyed -> "text-base-content/30"
             @is_picked -> "text-base-content/30"
             true -> "text-base-content"
           end
