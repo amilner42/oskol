@@ -630,7 +630,7 @@ defmodule OskolWeb.LandingLive do
     <%= if @inviter_name do %>
       <p class="text-base-content/60 text-sm mb-4 text-center">
         <span class="text-opponent font-semibold">{@inviter_name}</span>
-        has invited you to play
+        has challenged you
       </p>
     <% end %>
 
