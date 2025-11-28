@@ -562,7 +562,7 @@ defmodule OskolWeb.LandingLive do
               Poker warfare
             </p>
           </div>
-
+          
     <!-- Content section - grows below logo -->
           <div class="animate-content">
             <%= if @error do %>
@@ -602,7 +602,7 @@ defmodule OskolWeb.LandingLive do
             <% end %>
           </div>
         </div>
-
+        
     <!-- Bottom spacer - balances the layout -->
         <div class="flex-1"></div>
       </div>
@@ -629,8 +629,7 @@ defmodule OskolWeb.LandingLive do
     ~H"""
     <%= if @inviter_name do %>
       <p class="text-base-content/60 text-sm mb-4 text-center">
-        <span class="text-opponent font-semibold">{@inviter_name}</span>
-        has challenged you
+        <span class="text-opponent font-semibold">{@inviter_name}</span> has challenged you
       </p>
     <% end %>
 
@@ -738,7 +737,7 @@ defmodule OskolWeb.LandingLive do
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-
+      
     <!-- Format Selection -->
       <div class="mb-4 sm:mb-8">
         <p class="text-base-content/40 text-xs mb-2 sm:mb-3 text-center">
@@ -797,7 +796,7 @@ defmodule OskolWeb.LandingLive do
           />
         </div>
       </div>
-
+      
     <!-- Start Game Button -->
       <div class="text-center">
         <%= if @server_state.lobby_status == :ready_to_start do %>
@@ -813,7 +812,7 @@ defmodule OskolWeb.LandingLive do
             <.card_decorations />
           </button>
         <% end %>
-
+        
     <!-- Invite link - secondary action -->
         <button
           type="button"
@@ -954,7 +953,7 @@ defmodule OskolWeb.LandingLive do
         <% true -> %>
           <!-- No selection -->
       <% end %>
-
+      
     <!-- Abstract SVG decoration per format -->
       <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
         <%= case @format do %>
@@ -1010,7 +1009,7 @@ defmodule OskolWeb.LandingLive do
             </svg>
         <% end %>
       </div>
-
+      
     <!-- Text content - centered and stacked -->
       <div class="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1">
         <div class="text-gray-800 font-bold text-sm sm:text-lg">{@title}</div>
