@@ -426,7 +426,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     ~H"""
     <div class="p-6 border-b border-base-300/50">
       <!-- All slots - destroy slots first, then pick slots -->
-      <div class="flex gap-3">
+      <div class="flex flex-wrap gap-3">
         <%= for slot <- @all_slots do %>
           <.timeline_slot
             slot_type={slot.type}
@@ -486,7 +486,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     ~H"""
     <div class={[
-      "flex-1 rounded-lg p-3 border transition-all",
+      "flex-1 min-w-[120px] max-w-[180px] rounded-lg p-3 border transition-all",
       cond do
         @card_display != nil -> "bg-base-100 border-base-300/50"
         @is_current -> ["bg-base-200/50 border-dashed animate-pulse", @current_border_color]
