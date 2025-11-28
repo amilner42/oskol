@@ -988,6 +988,7 @@ defmodule OskolWeb.GameLive do
 
         # Determine if player is active (can take action)
         in_destroy_phase = Oskol.Game.ShopState.in_destroy_phase?(shop_state)
+
         is_active_player =
           if in_destroy_phase do
             Oskol.Game.ShopState.can_destroy?(shop_state, socket.assigns.player_id)

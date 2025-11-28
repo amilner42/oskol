@@ -8,12 +8,53 @@ defmodule OskolWeb.Components.GameLive.Shop do
   alias OskolWeb.Utils.Format
 
   def shop_screen(assigns) do
+    # Pre-compute shared values
+    has_pending_selection =
+      has_pending_selection?(assigns.game_state.shop_state, assigns.player_id)
+
+    in_destroy_phase = ShopState.in_destroy_phase?(assigns.game_state.shop_state)
+    can_destroy = ShopState.can_destroy?(assigns.game_state.shop_state, assigns.player_id)
+    can_pick = can_pick_card?(assigns.game_state.shop_state, assigns.player_id)
+    is_active_player = if in_destroy_phase, do: can_destroy, else: can_pick
+
+    # Build map of card_index -> picker_name
+    first_picker_name =
+      if assigns.game_state.shop_state.first_picker_id == assigns.player_id,
+        do: assigns.player_name,
+        else: assigns.opponent_name
+
+    second_picker_name =
+      if assigns.game_state.shop_state.second_picker_id == assigns.player_id,
+        do: assigns.player_name,
+        else: assigns.opponent_name
+
+    reversed_indices = Enum.reverse(assigns.game_state.shop_state.picked_card_indices)
+
+    picked_by_map =
+      reversed_indices
+      |> Enum.with_index()
+      |> Enum.map(fn {card_idx, pick_num} ->
+        picker_name = if rem(pick_num, 2) == 0, do: first_picker_name, else: second_picker_name
+        {card_idx, picker_name}
+      end)
+      |> Map.new()
+
+    assigns =
+      assigns
+      |> assign(:has_pending_selection, has_pending_selection)
+      |> assign(:in_destroy_phase, in_destroy_phase)
+      |> assign(:can_destroy, can_destroy)
+      |> assign(:can_pick, can_pick)
+      |> assign(:is_active_player, is_active_player)
+      |> assign(:picked_by_map, picked_by_map)
+
     ~H"""
-    <div class="h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200">
-      <!-- Main Shop: Two Column Layout -->
-      <div class="h-full flex">
-        <!-- Left Column: Card Grid -->
-        <div class="w-[690px] border-r border-base-300/50 flex flex-col bg-base-100/50">
+    <div class="h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto">
+      <!-- Responsive layout using CSS order -->
+      <div class="min-h-full flex flex-col lg:flex-row">
+        
+    <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
+        <div class="order-1 lg:order-none lg:w-[503px] xl:w-[660px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col">
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50">
             <div class="flex items-center justify-between">
@@ -22,83 +63,22 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </div>
           </div>
           
-    <!-- Cards Grid: 4 columns x 4 rows with sections -->
-          <div class="flex-1 p-6 overflow-y-auto">
-            <!-- Arsenal Section (Permanent Upgrades) -->
-            <div class="mb-6">
-              <div class="mb-3 flex items-center gap-2">
-                <div class="text-sm font-semibold uppercase tracking-wider text-base-content/40">
-                  Arsenal
-                </div>
-                <div class="text-xs text-base-content/40">Permanent Upgrades</div>
-              </div>
-              <% has_pending_selection = has_pending_selection?(@game_state.shop_state, @player_id) %>
-              <% in_destroy_phase = ShopState.in_destroy_phase?(@game_state.shop_state) %>
-              <% can_destroy = ShopState.can_destroy?(@game_state.shop_state, @player_id) %>
-              <%
-                # Build map of card_index -> picker_name
-                first_picker_name = if @game_state.shop_state.first_picker_id == @player_id, do: @player_name, else: @opponent_name
-                second_picker_name = if @game_state.shop_state.second_picker_id == @player_id, do: @player_name, else: @opponent_name
-                reversed_indices = Enum.reverse(@game_state.shop_state.picked_card_indices)
-                picked_by_map = reversed_indices
-                  |> Enum.with_index()
-                  |> Enum.map(fn {card_idx, pick_num} ->
-                    picker_name = if rem(pick_num, 2) == 0, do: first_picker_name, else: second_picker_name
-                    {card_idx, picker_name}
-                  end)
-                  |> Map.new()
-              %>
-              <div class="grid grid-cols-4 gap-4">
-                <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.take(8) do %>
-                  <.shop_card_minimal
-                    shop_card={shop_card}
-                    index={index}
-                    is_picked={index in @game_state.shop_state.picked_card_indices}
-                    picked_by={Map.get(picked_by_map, index)}
-                    is_destroyed={index in @game_state.shop_state.destroyed_card_indices}
-                    is_selected={assigns[:previewing_card_index] == index}
-                    can_pick={
-                      can_pick_card?(@game_state.shop_state, @player_id) and not has_pending_selection
-                    }
-                    in_destroy_phase={in_destroy_phase}
-                    can_destroy={can_destroy}
-                  />
-                <% end %>
-              </div>
-            </div>
-
-    <!-- Tactical Ops Section (Action Cards) -->
-            <div>
-              <div class="mb-3 flex items-center gap-2">
-                <div class="text-sm font-semibold uppercase tracking-wider text-base-content/40">
-                  Tactical Ops
-                </div>
-                <div class="text-xs text-base-content/40">Temporary Battlefield Advantage</div>
-              </div>
-              <div class="grid grid-cols-4 gap-4">
-                <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.drop(8) do %>
-                  <.shop_card_minimal
-                    shop_card={shop_card}
-                    index={index}
-                    is_picked={index in @game_state.shop_state.picked_card_indices}
-                    picked_by={Map.get(picked_by_map, index)}
-                    is_destroyed={index in @game_state.shop_state.destroyed_card_indices}
-                    is_selected={assigns[:previewing_card_index] == index}
-                    can_pick={
-                      can_pick_card?(@game_state.shop_state, @player_id) and not has_pending_selection
-                    }
-                    in_destroy_phase={in_destroy_phase}
-                    can_destroy={can_destroy}
-                  />
-                <% end %>
-              </div>
-            </div>
+    <!-- Cards Grid (hidden on mobile, shown on desktop) -->
+          <div class="hidden lg:block flex-1 p-6 overflow-y-auto">
+            <.shop_cards_grid
+              game_state={@game_state}
+              player_id={@player_id}
+              previewing_card_index={assigns[:previewing_card_index]}
+              has_pending_selection={@has_pending_selection}
+              in_destroy_phase={@in_destroy_phase}
+              can_destroy={@can_destroy}
+              picked_by_map={@picked_by_map}
+            />
           </div>
         </div>
         
-    <!-- Right Column: Preview Area -->
-        <div class="flex-1 flex flex-col">
-          <!-- Pick Status Bar -->
+    <!-- Section 2: Timeline (order-2 on mobile) -->
+        <div class="order-2 lg:order-none lg:flex-1 lg:flex lg:flex-col">
           <.pick_status_bar
             shop_state={@game_state.shop_state}
             player_id={@player_id}
@@ -106,89 +86,193 @@ defmodule OskolWeb.Components.GameLive.Shop do
             opponent_name={@opponent_name}
             shop_countdown={assigns[:shop_countdown]}
           />
-
-          <%
-            # Compute active player status once - clean, single source of truth
-            in_destroy_phase = ShopState.in_destroy_phase?(@game_state.shop_state)
-            can_pick = can_pick_card?(@game_state.shop_state, @player_id)
-            can_destroy = ShopState.can_destroy?(@game_state.shop_state, @player_id)
-
-            # Active player = can take action right now (pick OR destroy)
-            is_active_player = if in_destroy_phase, do: can_destroy, else: can_pick
-          %>
-          <%= if assigns[:previewing_card_index] != nil do %>
-            <!-- Card preview (works in both normal and destroy phase) -->
-            <.card_detail_panel
-              shop_card={Enum.at(@game_state.shop_state.available_cards, @previewing_card_index)}
-              card_index={@previewing_card_index}
-              skill_tree={skill_tree_for_player(@player_id, assigns)}
-              is_active_player={is_active_player}
-              in_destroy_phase={in_destroy_phase}
+          
+    <!-- Preview Panel (hidden on mobile, shown on desktop) -->
+          <div class="hidden lg:flex flex-1 flex-col">
+            <.preview_panel
+              game_state={@game_state}
+              player_id={@player_id}
+              previewing_card_index={assigns[:previewing_card_index]}
+              is_active_player={@is_active_player}
+              in_destroy_phase={@in_destroy_phase}
               action_in_progress={@action_in_progress}
-              pending_deck_builder={@game_state.shop_state.pending_deck_builder}
               deck_builder_selection={assigns[:deck_builder_selection]}
-              pending_plus_bomb={@game_state.shop_state.pending_plus_bomb}
               plus_bomb_selection={assigns[:plus_bomb_selection]}
+              shop_countdown={assigns[:shop_countdown]}
             />
-          <% else %>
-            <%= if ShopState.in_destroy_phase?(@game_state.shop_state) do %>
-              <!-- Destroy Phase Panel (when no card is selected) -->
-              <.destroy_phase_panel
-                shop_state={@game_state.shop_state}
-                player_id={@player_id}
-                action_in_progress={@action_in_progress}
+          </div>
+        </div>
+        
+    <!-- Section 3: Cards (order-3 on mobile only, horizontal scroll) -->
+        <div class="order-3 lg:hidden px-4 py-6 border-t border-base-300/50 bg-base-100/50">
+          <div class="flex gap-3 overflow-x-auto pb-2 pt-1">
+            <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
+              <.shop_card_minimal
+                shop_card={shop_card}
+                index={index}
+                is_picked={index in @game_state.shop_state.picked_card_indices}
+                picked_by={Map.get(@picked_by_map, index)}
+                is_destroyed={index in @game_state.shop_state.destroyed_card_indices}
+                is_selected={assigns[:previewing_card_index] == index}
+                can_pick={
+                  can_pick_card?(@game_state.shop_state, @player_id) and not @has_pending_selection
+                }
+                in_destroy_phase={@in_destroy_phase}
+                can_destroy={@can_destroy}
               />
-            <% else %>
-              <!-- Empty State -->
-              <div class="flex-1 flex items-center justify-center">
-                <div class="text-center">
-                  <%= if shop_complete?(@game_state.shop_state) do %>
-                    <!-- Shop complete - show countdown -->
-                    <.shop_countdown_display countdown={assigns[:shop_countdown]} />
-                  <% else %>
-                    <%= if can_pick_card?(@game_state.shop_state, @player_id) do %>
-                      <div class="w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center">
-                        <svg
-                          class="w-8 h-8 text-base-content/30"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="1.5"
-                            d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
-                          />
-                        </svg>
-                      </div>
-                      <p class="text-base-content/40 text-lg font-light">Select a card to preview</p>
-                    <% else %>
-                      <div class="w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center">
-                        <svg
-                          class="w-8 h-8 text-base-content/30 animate-pulse"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="1.5"
-                            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                          />
-                        </svg>
-                      </div>
-                      <p class="text-base-content/40 text-lg font-light">Waiting for opponent...</p>
-                    <% end %>
-                  <% end %>
-                </div>
-              </div>
             <% end %>
-          <% end %>
+          </div>
+        </div>
+        
+    <!-- Section 4: Preview (order-4 on mobile only) -->
+        <div class="order-4 lg:hidden flex-1 flex flex-col">
+          <.preview_panel
+            game_state={@game_state}
+            player_id={@player_id}
+            previewing_card_index={assigns[:previewing_card_index]}
+            is_active_player={@is_active_player}
+            in_destroy_phase={@in_destroy_phase}
+            action_in_progress={@action_in_progress}
+            deck_builder_selection={assigns[:deck_builder_selection]}
+            plus_bomb_selection={assigns[:plus_bomb_selection]}
+            shop_countdown={assigns[:shop_countdown]}
+          />
         </div>
       </div>
     </div>
+    """
+  end
+
+  defp shop_cards_grid(assigns) do
+    ~H"""
+    <!-- Arsenal Section (Permanent Upgrades) -->
+    <div class="mb-6">
+      <div class="mb-3 flex items-center gap-2">
+        <div class="text-sm font-semibold uppercase tracking-wider text-base-content/40">
+          Arsenal
+        </div>
+        <div class="text-xs text-base-content/40">Permanent Upgrades</div>
+      </div>
+      <div class="flex flex-wrap gap-4">
+        <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.take(8) do %>
+          <.shop_card_minimal
+            shop_card={shop_card}
+            index={index}
+            is_picked={index in @game_state.shop_state.picked_card_indices}
+            picked_by={Map.get(@picked_by_map, index)}
+            is_destroyed={index in @game_state.shop_state.destroyed_card_indices}
+            is_selected={@previewing_card_index == index}
+            can_pick={
+              can_pick_card?(@game_state.shop_state, @player_id) and not @has_pending_selection
+            }
+            in_destroy_phase={@in_destroy_phase}
+            can_destroy={@can_destroy}
+          />
+        <% end %>
+      </div>
+    </div>
+
+    <!-- Tactical Ops Section (Action Cards) -->
+    <div>
+      <div class="mb-3 flex items-center gap-2">
+        <div class="text-sm font-semibold uppercase tracking-wider text-base-content/40">
+          Tactical Ops
+        </div>
+        <div class="text-xs text-base-content/40">Temporary Battlefield Advantage</div>
+      </div>
+      <div class="flex flex-wrap gap-4">
+        <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.drop(8) do %>
+          <.shop_card_minimal
+            shop_card={shop_card}
+            index={index}
+            is_picked={index in @game_state.shop_state.picked_card_indices}
+            picked_by={Map.get(@picked_by_map, index)}
+            is_destroyed={index in @game_state.shop_state.destroyed_card_indices}
+            is_selected={@previewing_card_index == index}
+            can_pick={
+              can_pick_card?(@game_state.shop_state, @player_id) and not @has_pending_selection
+            }
+            in_destroy_phase={@in_destroy_phase}
+            can_destroy={@can_destroy}
+          />
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp preview_panel(assigns) do
+    ~H"""
+    <%= if @previewing_card_index != nil do %>
+      <!-- Card preview (works in both normal and destroy phase) -->
+      <.card_detail_panel
+        shop_card={Enum.at(@game_state.shop_state.available_cards, @previewing_card_index)}
+        card_index={@previewing_card_index}
+        skill_tree={skill_tree_for_player(@player_id, assigns)}
+        is_active_player={@is_active_player}
+        in_destroy_phase={@in_destroy_phase}
+        action_in_progress={@action_in_progress}
+        pending_deck_builder={@game_state.shop_state.pending_deck_builder}
+        deck_builder_selection={@deck_builder_selection}
+        pending_plus_bomb={@game_state.shop_state.pending_plus_bomb}
+        plus_bomb_selection={@plus_bomb_selection}
+      />
+    <% else %>
+      <%= if ShopState.in_destroy_phase?(@game_state.shop_state) do %>
+        <!-- Destroy Phase Panel (when no card is selected) -->
+        <.destroy_phase_panel
+          shop_state={@game_state.shop_state}
+          player_id={@player_id}
+          action_in_progress={@action_in_progress}
+        />
+      <% else %>
+        <!-- Empty State -->
+        <div class="flex-1 flex items-center justify-center">
+          <div class="text-center">
+            <%= if shop_complete?(@game_state.shop_state) do %>
+              <!-- Shop complete - show countdown -->
+              <.shop_countdown_display countdown={@shop_countdown} />
+            <% else %>
+              <%= if can_pick_card?(@game_state.shop_state, @player_id) do %>
+                <div class="w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center">
+                  <svg
+                    class="w-8 h-8 text-base-content/30"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                      d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
+                    />
+                  </svg>
+                </div>
+                <p class="text-base-content/40 text-lg font-light">Select a card to preview</p>
+              <% else %>
+                <div class="w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center">
+                  <svg
+                    class="w-8 h-8 text-base-content/30 animate-pulse"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                </div>
+                <p class="text-base-content/40 text-lg font-light">Waiting for opponent...</p>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    <% end %>
     """
   end
 
@@ -335,46 +419,87 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp pick_status_bar(assigns) do
+    shop_state = assigns.shop_state
+    in_destroy_phase = ShopState.in_destroy_phase?(shop_state)
+
     # Determine names based on picker IDs
     first_picker_name =
-      if assigns.shop_state.first_picker_id == assigns.player_id,
+      if shop_state.first_picker_id == assigns.player_id,
         do: assigns.player_name,
         else: assigns.opponent_name
 
     second_picker_name =
-      if assigns.shop_state.second_picker_id == assigns.player_id,
+      if shop_state.second_picker_id == assigns.player_id,
         do: assigns.player_name,
         else: assigns.opponent_name
 
+    destroyer_name =
+      if shop_state.destroyer_id == assigns.player_id,
+        do: assigns.player_name,
+        else: assigns.opponent_name
+
+    # Build destroy slots (if any)
+    destroys_allowed = shop_state.destroys_allowed
+    reversed_destroyed = Enum.reverse(shop_state.destroyed_card_indices)
+    destroys_completed = length(reversed_destroyed)
+    current_destroy_number = destroys_completed + 1
+
+    destroy_slots =
+      if destroys_allowed > 0 do
+        for destroy_num <- 1..destroys_allowed do
+          card_idx = Enum.at(reversed_destroyed, destroy_num - 1)
+          card = if card_idx, do: Enum.at(shop_state.available_cards, card_idx), else: nil
+
+          is_current =
+            in_destroy_phase and destroy_num == current_destroy_number and
+              current_destroy_number <= destroys_allowed
+
+          %{
+            type: :destroy,
+            slot_number: destroy_num,
+            picker_name: destroyer_name,
+            card: card,
+            is_current: is_current,
+            is_completed: card != nil
+          }
+        end
+      else
+        []
+      end
+
     # Build list of all picks made so far
     # picked_card_indices is prepended (most recent first), so reverse it
-    reversed_indices = Enum.reverse(assigns.shop_state.picked_card_indices)
+    reversed_indices = Enum.reverse(shop_state.picked_card_indices)
 
     # Create a map of pick_number -> card for completed picks
     completed_picks =
       reversed_indices
       |> Enum.with_index()
       |> Enum.map(fn {card_idx, pick_num} ->
-        {pick_num + 1, Enum.at(assigns.shop_state.available_cards, card_idx)}
+        {pick_num + 1, Enum.at(shop_state.available_cards, card_idx)}
       end)
       |> Map.new()
 
     # Total picks expected (2 per round)
-    total_picks = assigns.shop_state.total_rounds * 2
+    total_picks = shop_state.total_rounds * 2
 
     # Current pick number (1-indexed)
     current_pick_number = length(reversed_indices) + 1
 
-    # Build all pick slots
-    all_slots =
+    # Build all pick slots - only show as current if NOT in destroy phase
+    pick_slots =
       for pick_num <- 1..total_picks do
-        # Even picks (1, 3, 5...) are first picker, odd (2, 4, 6...) are second picker
+        # Odd picks (1, 3, 5...) are first picker, even (2, 4, 6...) are second picker
         picker_name = if rem(pick_num, 2) == 1, do: first_picker_name, else: second_picker_name
         card = Map.get(completed_picks, pick_num)
-        is_current = pick_num == current_pick_number and current_pick_number <= total_picks
+
+        is_current =
+          not in_destroy_phase and pick_num == current_pick_number and
+            current_pick_number <= total_picks
 
         %{
-          pick_number: pick_num,
+          type: :pick,
+          slot_number: pick_num,
           picker_name: picker_name,
           card: card,
           is_current: is_current,
@@ -382,24 +507,22 @@ defmodule OskolWeb.Components.GameLive.Shop do
         }
       end
 
-    is_my_turn = can_pick_card?(assigns.shop_state, assigns.player_id)
-    all_complete = current_pick_number > total_picks
+    all_slots = destroy_slots ++ pick_slots
 
     assigns =
       assigns
       |> assign(:all_slots, all_slots)
-      |> assign(:is_my_turn, is_my_turn)
-      |> assign(:all_complete, all_complete)
 
     ~H"""
     <div class="p-6 border-b border-base-300/50">
-      <!-- All pick slots - evenly spaced -->
-      <div class="flex gap-3">
+      <!-- All slots - destroy slots first, then pick slots -->
+      <div class="flex flex-wrap gap-3">
         <%= for slot <- @all_slots do %>
-          <.pick_slot_compact
-            pick_card={slot.card}
+          <.timeline_slot
+            slot_type={slot.type}
+            slot_card={slot.card}
             picker_name={slot.picker_name}
-            pick_number={slot.pick_number}
+            slot_number={slot.slot_number}
             is_current={slot.is_current}
             is_completed={slot.is_completed}
           />
@@ -409,9 +532,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
     """
   end
 
-  defp pick_slot_compact(assigns) do
+  defp timeline_slot(assigns) do
     card_display =
-      case assigns[:pick_card] do
+      case assigns[:slot_card] do
         %ShopCard{} = shop_card ->
           %{
             type: shop_card.type,
@@ -423,29 +546,44 @@ defmodule OskolWeb.Components.GameLive.Shop do
           nil
       end
 
-    ordinal =
-      case assigns.pick_number do
-        1 -> "1st"
-        2 -> "2nd"
-        3 -> "3rd"
-        n -> "#{n}th"
+    is_destroy = assigns.slot_type == :destroy
+
+    label =
+      if is_destroy do
+        "Destroy"
+      else
+        case assigns.slot_number do
+          1 -> "1st"
+          2 -> "2nd"
+          3 -> "3rd"
+          n -> "#{n}th"
+        end
       end
+
+    # For destroy slots, use rose colors; for pick slots, use emerald
+    current_border_color = if is_destroy, do: "border-rose-400", else: "border-emerald-400"
+
+    # Text shown below the card name - player name for picks, "Destroyed" for destroys
+    subtext = if is_destroy, do: "Destroyed", else: assigns.picker_name
 
     assigns =
       assigns
       |> assign(:card_display, card_display)
-      |> assign(:ordinal, ordinal)
+      |> assign(:label, label)
+      |> assign(:is_destroy, is_destroy)
+      |> assign(:current_border_color, current_border_color)
+      |> assign(:subtext, subtext)
 
     ~H"""
     <div class={[
-      "flex-1 rounded-lg p-3 border transition-all",
+      "flex-1 min-w-[180px] flex-shrink-0 rounded-lg p-3 border transition-all",
       cond do
         @card_display != nil -> "bg-base-100 border-base-300/50"
-        @is_current -> "bg-base-200/50 border-dashed border-emerald-400 animate-pulse"
+        @is_current -> ["bg-base-200/50 border-dashed animate-pulse", @current_border_color]
         true -> "bg-base-200/30 border-base-300/30"
       end
     ]}>
-      <div class="text-[10px] uppercase tracking-wider text-base-content/40 mb-1">{@ordinal}</div>
+      <div class="text-[10px] uppercase tracking-wider text-base-content/40 mb-1">{@label}</div>
       <%= if @card_display do %>
         <div class="flex items-center gap-2">
           <div class={[
@@ -459,7 +597,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
           ]} />
           <div class="min-w-0">
             <div class="text-sm font-medium text-base-content truncate">{@card_display.name}</div>
-            <div class="text-[10px] text-base-content/40">{@picker_name}</div>
+            <div class={[
+              "text-[10px]",
+              if(@is_destroy, do: "text-rose-400", else: "text-base-content/40")
+            ]}>
+              {@subtext}
+            </div>
           </div>
         </div>
       <% else %>
@@ -529,67 +672,69 @@ defmodule OskolWeb.Components.GameLive.Shop do
       phx-click={@click_event}
       phx-value-index={@index}
       disabled={@is_disabled}
-      class={[
-        "aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden",
-        "bg-base-100 border-2",
-        cond do
-          # Destroyed cards
-          @is_destroyed ->
-            "opacity-50 cursor-not-allowed border-base-300/30"
+      class={
+        [
+          "w-[140px] aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
+          "bg-base-100 border-2",
+          cond do
+            # Destroyed cards
+            @is_destroyed ->
+              "opacity-50 cursor-not-allowed border-base-300/30"
 
-          # Picked cards
-          @is_picked ->
-            "opacity-50 cursor-not-allowed border-base-300/30"
+            # Picked cards
+            @is_picked ->
+              "opacity-50 cursor-not-allowed border-base-300/30"
 
-          # Selected for preview
-          @is_selected ->
-            case @accent_color do
-              "emerald" -> "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
-              "rose" -> "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
-              "violet" -> "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
-              "amber" -> "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
-            end
+            # Selected for preview
+            @is_selected ->
+              case @accent_color do
+                "emerald" -> "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
+                "rose" -> "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
+                "violet" -> "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
+                "amber" -> "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
+              end
 
-          # Destroy phase - can destroy this card (same styling as normal pick)
-          @in_destroy_phase and @can_destroy ->
-            case @accent_color do
-              "emerald" ->
-                "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
+            # Destroy phase - can destroy this card (same styling as normal pick)
+            @in_destroy_phase and @can_destroy ->
+              case @accent_color do
+                "emerald" ->
+                  "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
 
-              "rose" ->
-                "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
+                "rose" ->
+                  "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
 
-              "violet" ->
-                "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+                "violet" ->
+                  "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
 
-              "amber" ->
-                "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
-            end
+                "amber" ->
+                  "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
+              end
 
-          # Destroy phase - waiting player (can't destroy, disabled)
-          @in_destroy_phase ->
-            "border-base-300/30 cursor-not-allowed"
+            # Destroy phase - waiting player (can't destroy, disabled)
+            @in_destroy_phase ->
+              "border-base-300/30 cursor-not-allowed"
 
-          # Normal pick phase - can pick
-          @can_pick ->
-            case @accent_color do
-              "emerald" ->
-                "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
+            # Normal pick phase - can pick
+            @can_pick ->
+              case @accent_color do
+                "emerald" ->
+                  "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
 
-              "rose" ->
-                "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
+                "rose" ->
+                  "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
 
-              "violet" ->
-                "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+                "violet" ->
+                  "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
 
-              "amber" ->
-                "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
-            end
+                "amber" ->
+                  "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
+              end
 
-          true ->
-            "border-base-300/30 cursor-not-allowed"
-        end
-      ]}
+            true ->
+              "border-base-300/30 cursor-not-allowed"
+          end
+        ]
+      }
     >
       <!-- Type badge at top -->
       <div class={[
@@ -603,7 +748,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       ]}>
         {@type_label}
       </div>
-
+      
     <!-- Card name centered -->
       <div class="flex-1 flex items-center justify-center">
         <div class={[
@@ -717,6 +862,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     {current_level, next_level, current_stats, next_stats} =
       if assigns.is_active_player do
         level = Map.get(assigns.skill_tree, assigns.hand_type, 1)
+
         {
           level,
           level + 1,
@@ -743,7 +889,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
         <h2 class="text-4xl font-light text-base-content">{@hand_name}</h2>
       </div>
-
+      
     <!-- Level indicator -->
       <div class="mb-12">
         <div class="flex items-center gap-4">
@@ -774,7 +920,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       </div>
-
+      
     <!-- Stats -->
       <div class="space-y-6 flex-1">
         <%= if @is_active_player do %>
@@ -838,7 +984,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         <% end %>
       </div>
-
+      
     <!-- Action Button: only shown for active player -->
       <%= if @is_active_player do %>
         <div class="pt-8">
@@ -1039,7 +1185,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <% else %>
         <!-- Flex spacer -->
         <div class="flex-1"></div>
-
+        
     <!-- Action Button: only shown for active player -->
         <%= if @is_active_player do %>
           <div class="pt-8">
