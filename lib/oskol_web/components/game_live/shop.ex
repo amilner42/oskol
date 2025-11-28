@@ -52,7 +52,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="h-screen-safe bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto">
       <!-- Responsive layout using CSS order -->
       <div class="min-h-full flex flex-col lg:flex-row lg:h-screen">
-
+        
     <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
         <div class="order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen">
           <!-- Header -->
@@ -62,7 +62,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
-
+          
     <!-- Cards Grid (hidden on mobile, shown on desktop) -->
           <div class="hidden lg:block flex-1 p-6">
             <.shop_cards_grid
@@ -88,7 +88,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               shop_countdown={assigns[:shop_countdown]}
             />
           </div>
-
+          
     <!-- Preview Panel (hidden on mobile, shown on desktop) -->
           <div class="hidden lg:flex flex-1 flex-col overflow-hidden">
             <.preview_panel
@@ -585,7 +585,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
         true -> "bg-base-200/30 border-base-300/30"
       end
     ]}>
-      <div class="text-[9px] lg:text-[10px] uppercase tracking-wider text-base-content/40 mb-0.5 lg:mb-1">{@label}</div>
+      <div class="text-[9px] lg:text-[10px] uppercase tracking-wider text-base-content/40 mb-0.5 lg:mb-1">
+        {@label}
+      </div>
       <%= if @card_display do %>
         <div class="flex items-center gap-1.5 lg:gap-2">
           <div class={[
@@ -598,7 +600,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
             end
           ]} />
           <div class="min-w-0">
-            <div class="text-xs lg:text-sm font-medium text-base-content truncate">{@card_display.name}</div>
+            <div class="text-xs lg:text-sm font-medium text-base-content truncate">
+              {@card_display.name}
+            </div>
             <div class={[
               "text-[9px] lg:text-[10px]",
               if(@is_destroy, do: "text-rose-400", else: "text-base-content/40")
@@ -750,7 +754,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       ]}>
         {@type_label}
       </div>
-
+      
     <!-- Card name centered -->
       <div class="flex-1 flex items-center justify-center">
         <div class={[
@@ -890,16 +894,20 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <div class="flex-1 overflow-y-auto">
         <!-- Header -->
         <div class="mb-4 lg:mb-8">
-          <div class="text-[10px] lg:text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
+          <div class="text-[10px] lg:text-xs uppercase tracking-widest text-emerald-500/60 mb-1">
+            Research
+          </div>
           <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@hand_name}</h2>
         </div>
-
-      <!-- Level indicator -->
+        
+    <!-- Level indicator -->
         <div class="mb-6 lg:mb-12">
           <div class="flex items-center gap-3 lg:gap-4">
             <div class="flex items-center gap-1.5 lg:gap-2">
               <%= if @is_active_player do %>
-                <span class="text-2xl lg:text-3xl font-light text-base-content/40">{@current_level}</span>
+                <span class="text-2xl lg:text-3xl font-light text-base-content/40">
+                  {@current_level}
+                </span>
               <% else %>
                 <span class="text-2xl lg:text-3xl font-light text-base-content/40">?</span>
               <% end %>
@@ -924,72 +932,96 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </div>
           </div>
         </div>
-
-      <!-- Stats -->
+        
+    <!-- Stats -->
         <div class="space-y-3 lg:space-y-6">
-        <%= if @is_active_player do %>
-          <!-- Active player: show current → new values with delta -->
-          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
-            <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">Base Chips</span>
-            <div class="flex items-center gap-1.5 lg:gap-3">
-              <span class="text-base-content/30 text-base lg:text-lg">{@current_stats.base_chips}</span>
-              <svg
-                class="w-3 h-3 lg:w-4 lg:h-4 text-base-content/20"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M17 8l4 4m0 0l-4 4m4-4H3"
-                />
-              </svg>
-              <span class="text-emerald-500 text-lg lg:text-2xl font-medium">{@next_stats.base_chips}</span>
-              <span class="text-emerald-400 text-xs lg:text-sm font-medium">(+{@upgrade_bonus.chips})</span>
+          <%= if @is_active_player do %>
+            <!-- Active player: show current → new values with delta -->
+            <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
+              <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">
+                Base Chips
+              </span>
+              <div class="flex items-center gap-1.5 lg:gap-3">
+                <span class="text-base-content/30 text-base lg:text-lg">
+                  {@current_stats.base_chips}
+                </span>
+                <svg
+                  class="w-3 h-3 lg:w-4 lg:h-4 text-base-content/20"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M17 8l4 4m0 0l-4 4m4-4H3"
+                  />
+                </svg>
+                <span class="text-emerald-500 text-lg lg:text-2xl font-medium">
+                  {@next_stats.base_chips}
+                </span>
+                <span class="text-emerald-400 text-xs lg:text-sm font-medium">
+                  (+{@upgrade_bonus.chips})
+                </span>
+              </div>
             </div>
-          </div>
-          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
-            <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">Multiplier</span>
-            <div class="flex items-center gap-1.5 lg:gap-3">
-              <span class="text-base-content/30 text-base lg:text-lg">{@current_stats.multiplier}x</span>
-              <svg
-                class="w-3 h-3 lg:w-4 lg:h-4 text-base-content/20"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M17 8l4 4m0 0l-4 4m4-4H3"
-                />
-              </svg>
-              <span class="text-emerald-500 text-lg lg:text-2xl font-medium">{@current_stats.multiplier}x</span>
-              <span class="text-emerald-400 text-xs lg:text-sm font-medium">(+{@upgrade_bonus.multiplier})</span>
+            <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
+              <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">
+                Multiplier
+              </span>
+              <div class="flex items-center gap-1.5 lg:gap-3">
+                <span class="text-base-content/30 text-base lg:text-lg">
+                  {@current_stats.multiplier}x
+                </span>
+                <svg
+                  class="w-3 h-3 lg:w-4 lg:h-4 text-base-content/20"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M17 8l4 4m0 0l-4 4m4-4H3"
+                  />
+                </svg>
+                <span class="text-emerald-500 text-lg lg:text-2xl font-medium">
+                  {@current_stats.multiplier}x
+                </span>
+                <span class="text-emerald-400 text-xs lg:text-sm font-medium">
+                  (+{@upgrade_bonus.multiplier})
+                </span>
+              </div>
             </div>
-          </div>
-        <% else %>
-          <!-- Waiting player: show only delta gained -->
-          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
-            <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">Chips Gained</span>
-            <span class="text-emerald-500 text-lg lg:text-2xl font-medium">+{@upgrade_bonus.chips}</span>
-          </div>
-          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
-            <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">Mult Gained</span>
-            <span class="text-emerald-500 text-lg lg:text-2xl font-medium">+{@upgrade_bonus.multiplier}</span>
-          </div>
-          <div class="mt-3 lg:mt-4 p-3 lg:p-4 rounded-lg bg-base-200/50">
-            <p class="text-base-content/50 text-xs lg:text-sm italic">
-              Opponent's current level is hidden. Watch for their hand types during gameplay!
-            </p>
-          </div>
-        <% end %>
+          <% else %>
+            <!-- Waiting player: show only delta gained -->
+            <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
+              <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">
+                Chips Gained
+              </span>
+              <span class="text-emerald-500 text-lg lg:text-2xl font-medium">
+                +{@upgrade_bonus.chips}
+              </span>
+            </div>
+            <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
+              <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">
+                Mult Gained
+              </span>
+              <span class="text-emerald-500 text-lg lg:text-2xl font-medium">
+                +{@upgrade_bonus.multiplier}
+              </span>
+            </div>
+            <div class="mt-3 lg:mt-4 p-3 lg:p-4 rounded-lg bg-base-200/50">
+              <p class="text-base-content/50 text-xs lg:text-sm italic">
+                Opponent's current level is hidden. Watch for their hand types during gameplay!
+              </p>
+            </div>
+          <% end %>
         </div>
       </div>
-
+      
     <!-- Action Button: only shown for active player - fixed at bottom -->
       <%= if @is_active_player do %>
         <div class="pt-4 lg:pt-8 flex-shrink-0">
@@ -1107,7 +1139,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <!-- Scrambler effect indicator -->
           <div class="mb-4 lg:mb-8">
             <div class="inline-flex items-center gap-2 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full bg-amber-500/10">
-              <svg class="w-3 h-3 lg:w-4 lg:h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                class="w-3 h-3 lg:w-4 lg:h-4 text-amber-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -1119,8 +1156,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </div>
           </div>
         <% end %>
-
-      <!-- Description -->
+        
+    <!-- Description -->
         <div class="mb-4 lg:mb-8">
           <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
         </div>
@@ -1133,8 +1170,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
             Select a card - that rank AND suit won't score for opponent
           </span>
         </div>
-
-
+        
     <!-- 8-Card Selection Grid for Plus Bomb -->
         <div class="flex-1 mb-4 lg:mb-6">
           <div class="flex flex-wrap gap-2 lg:gap-3">
@@ -1185,7 +1221,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         <% end %>
       <% else %>
-    <!-- Action Button: only shown for active player - fixed at bottom -->
+        <!-- Action Button: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
           <div class="pt-4 lg:pt-8 flex-shrink-0">
             <%= if @in_destroy_phase do %>
@@ -1296,7 +1332,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="flex-1 flex flex-col p-4 lg:p-8 overflow-hidden">
       <!-- Header -->
       <div class="mb-4 lg:mb-6 flex-shrink-0">
-        <div class="text-[10px] lg:text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
+        <div class="text-[10px] lg:text-xs uppercase tracking-widest text-violet-500/60 mb-1">
+          Logistics
+        </div>
         <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
 
@@ -1306,8 +1344,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <% instruction = ShopCard.selection_instruction(@pending_deck_builder.deck_builder_card) %>
           <span class="text-sm text-base-content/50">{instruction}</span>
         </div>
-
-      <!-- 8-Card Selection Grid -->
+        
+    <!-- 8-Card Selection Grid -->
         <div class="mb-4 lg:mb-6 flex-shrink-0">
           <div class="flex flex-wrap gap-2 lg:gap-3">
             <%= for card <- @pending_deck_builder.available_cards do %>
@@ -1324,60 +1362,60 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-
-      <!-- Spacer to push button to bottom -->
+        
+    <!-- Spacer to push button to bottom -->
         <div class="flex-1"></div>
-
+        
     <!-- Action Buttons: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
           <div class="flex-shrink-0">
-          <%= if @in_destroy_phase do %>
-            <button
-              phx-click="destroy_shop_card"
-              phx-value-index={@card_index}
-              disabled={@action_in_progress}
-              class={[
-                "w-full py-4 rounded-full font-medium text-lg transition-all",
-                if(@action_in_progress,
-                  do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                  else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
-                )
-              ]}
-            >
-              Destroy This Card
-            </button>
-          <% else %>
-            <div class="flex gap-3">
+            <%= if @in_destroy_phase do %>
               <button
-                phx-click="skip_deck_builder_selection"
-                class="flex-1 py-4 rounded-full font-medium text-base-content/60 bg-base-300/50 hover:bg-base-300 transition-all"
+                phx-click="destroy_shop_card"
+                phx-value-index={@card_index}
+                disabled={@action_in_progress}
+                class={[
+                  "w-full py-4 rounded-full font-medium text-lg transition-all",
+                  if(@action_in_progress,
+                    do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                    else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
+                  )
+                ]}
               >
-                Skip
+                Destroy This Card
               </button>
-              <%= if @deck_builder_selection do %>
-                <% card_ids_param =
-                  if is_list(@deck_builder_selection) do
-                    Jason.encode!(@deck_builder_selection)
-                  else
-                    @deck_builder_selection
-                  end %>
+            <% else %>
+              <div class="flex gap-3">
                 <button
-                  phx-click="confirm_deck_builder_pick"
-                  phx-value-card_ids={card_ids_param}
-                  disabled={@action_in_progress}
-                  class={[
-                    "flex-1 py-4 rounded-full font-medium text-lg transition-all",
-                    if(@action_in_progress,
-                      do: "bg-base-300 text-base-content/40 cursor-not-allowed",
-                      else: "bg-violet-500 text-white hover:bg-violet-600 shadow-lg hover:shadow-xl"
-                    )
-                  ]}
+                  phx-click="skip_deck_builder_selection"
+                  class="flex-1 py-4 rounded-full font-medium text-base-content/60 bg-base-300/50 hover:bg-base-300 transition-all"
                 >
-                  Confirm
+                  Skip
                 </button>
-              <% end %>
-            </div>
-          <% end %>
+                <%= if @deck_builder_selection do %>
+                  <% card_ids_param =
+                    if is_list(@deck_builder_selection) do
+                      Jason.encode!(@deck_builder_selection)
+                    else
+                      @deck_builder_selection
+                    end %>
+                  <button
+                    phx-click="confirm_deck_builder_pick"
+                    phx-value-card_ids={card_ids_param}
+                    disabled={@action_in_progress}
+                    class={[
+                      "flex-1 py-4 rounded-full font-medium text-lg transition-all",
+                      if(@action_in_progress,
+                        do: "bg-base-300 text-base-content/40 cursor-not-allowed",
+                        else: "bg-violet-500 text-white hover:bg-violet-600 shadow-lg hover:shadow-xl"
+                      )
+                    ]}
+                  >
+                    Confirm
+                  </button>
+                <% end %>
+              </div>
+            <% end %>
           </div>
         <% end %>
       <% else %>
@@ -1385,11 +1423,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class="mb-4 lg:mb-8 flex-shrink-0">
           <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
         </div>
-
-        <!-- Spacer to push button to bottom -->
+        
+    <!-- Spacer to push button to bottom -->
         <div class="flex-1"></div>
-
-        <!-- Initial confirm button: only shown for active player - fixed at bottom -->
+        
+    <!-- Initial confirm button: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
           <div class="flex-shrink-0">
             <%= if @in_destroy_phase do %>

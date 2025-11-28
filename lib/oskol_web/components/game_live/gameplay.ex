@@ -1363,7 +1363,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <div class="h-5 sm:h-7"></div>
         <!-- placeholder for formula row -->
       </div>
-
+      
     <!-- Player's locked hand -->
       <div>
         <div class="text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2">&nbsp;</div>
