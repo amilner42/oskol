@@ -787,13 +787,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% player_score = @player_state.current_round_score
         opponent_score = @opponent_state.current_round_score
         score_diff = abs(player_score - opponent_score)
-        round_complete = @player_state.hands_remaining == 0
-        animation_in_progress = @viewing_results && @score_animation_phase not in [:idle, :complete] %>
+        round_complete = @player_state.hands_remaining == 0 %>
         <%= cond do %>
-          <% animation_in_progress -> %>
-            <div class="text-sm text-base-content/50 mt-1 animate-pulse">
-              Calculating...
-            </div>
           <% score_diff > 0 -> %>
             <div class="text-sm text-base-content/70 mt-1">
               <%= if player_score > opponent_score do %>
