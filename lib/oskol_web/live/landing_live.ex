@@ -500,7 +500,7 @@ defmodule OskolWeb.LandingLive do
   def render(assigns) do
     ~H"""
     <.brand_styles />
-    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
+    <div class="min-h-screen-safe flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
       <.floating_battles />
 
       <div class="relative z-10 w-full">

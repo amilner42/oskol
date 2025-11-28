@@ -6,7 +6,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
 
   def round_summary_screen(assigns) do
     ~H"""
-    <div class="flex flex-col h-screen bg-base-200">
+    <div class="flex flex-col h-screen-safe bg-base-200">
       <!-- Center content with modern card layout -->
       <div class="flex-1 flex flex-col justify-center px-4">
         <div class="max-w-4xl mx-auto w-full">
@@ -27,7 +27,7 @@ defmodule OskolWeb.Components.GameLive.Summaries do
 
   def match_summary_screen(assigns) do
     ~H"""
-    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100">
+    <div class="min-h-screen-safe flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100">
       <div class="w-full max-w-2xl px-6">
         <div class="text-center mb-8">
           <div class="text-6xl mb-4">

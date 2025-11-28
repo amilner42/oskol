@@ -177,7 +177,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def game_screen(assigns) do
     ~H"""
-    <div class="flex flex-col h-screen bg-base-300 overflow-hidden">
+    <div class="flex flex-col h-screen-safe bg-base-300 overflow-hidden">
       <!-- Top - Opponent Cards: shrink on mobile -->
       <div class="shrink-0 sm:flex-1 flex flex-col justify-end pt-2 px-1 pb-1 sm:p-3 md:p-4 bg-base-200/40">
         <.opponent_cards

@@ -1108,7 +1108,7 @@ defmodule OskolWeb.GameLive do
     ~H"""
     <.card_styles />
 
-    <div class="min-h-screen text-base-content">
+    <div class="min-h-screen-safe text-base-content">
       <%= if @error do %>
         <.error_banner error={@error} />
       <% end %>
@@ -1207,7 +1207,7 @@ defmodule OskolWeb.GameLive do
   # Simple reconnect screen for when multiple disconnected players exist
   defp reconnect_screen(assigns) do
     ~H"""
-    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 px-6">
+    <div class="min-h-screen-safe flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 px-6">
       <div class="w-full max-w-md mx-auto text-center">
         <h1 class="text-2xl font-bold text-base-content mb-6">Reconnect to Game</h1>
 

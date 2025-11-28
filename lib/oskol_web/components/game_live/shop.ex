@@ -49,7 +49,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:picked_by_map, picked_by_map)
 
     ~H"""
-    <div class="h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto">
+    <div class="h-screen-safe bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto">
       <!-- Responsive layout using CSS order -->
       <div class="min-h-full flex flex-col lg:flex-row">
         
