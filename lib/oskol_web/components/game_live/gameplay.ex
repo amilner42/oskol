@@ -177,9 +177,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
   def game_screen(assigns) do
     ~H"""
-    <div class="flex flex-col h-screen bg-base-300">
-      <!-- Top - Opponent Cards -->
-      <div class="flex-1 flex flex-col justify-end p-2 sm:p-3 md:p-4 bg-base-200/40">
+    <div class="flex flex-col h-screen bg-base-300 overflow-hidden">
+      <!-- Top - Opponent Cards: shrink on mobile, no extra padding -->
+      <div class="shrink-0 sm:flex-1 flex flex-col justify-end pt-1 px-1 pb-1 sm:p-3 md:p-4 bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
           opponent_card_sort={@opponent_card_sort}
@@ -191,8 +191,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         />
       </div>
 
-    <!-- Middle - Playing Area -->
-      <div class="flex-[2] flex flex-col justify-start bg-base-100 shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)]">
+    <!-- Middle - Playing Area: takes remaining space -->
+      <div class="flex-1 min-h-0 flex flex-col justify-start bg-base-100 shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)]">
         <.playing_area
           game_state={@game_state}
           player_id={@player_id}
@@ -208,8 +208,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         />
       </div>
 
-    <!-- Bottom - Player Cards -->
-      <div class="flex-1 flex flex-col justify-start p-2 sm:p-3 md:p-4 bg-base-200/40">
+    <!-- Bottom - Player Cards: shrink on mobile -->
+      <div class="shrink-0 sm:flex-1 flex flex-col justify-start pt-1 px-1 pb-0 sm:p-3 md:p-4 bg-base-200/40">
         <.player_cards
           player_state={@player_state}
           selected_card_ids={@selected_card_ids}
@@ -223,7 +223,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         />
       </div>
 
-    <!-- Action Bar -->
+    <!-- Action Bar: fixed height -->
       <.action_bar
         player_state={@player_state}
         opponent_state={@opponent_state}
@@ -267,7 +267,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       </button>
     </div>
     <!-- Responsive card grid: tiny on mobile, larger on bigger screens -->
-    <div class="flex flex-wrap gap-1 sm:gap-2 md:gap-3 lg:gap-4 justify-center mb-1 sm:mb-2">
+    <div class="flex flex-wrap gap-0.5 sm:gap-2 md:gap-3 lg:gap-4 justify-center">
       <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
         <% is_face_down = card.id in @opponent_face_down_card_ids %>
@@ -306,7 +306,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     is_locked_in = @player_state.locked_in_hand != nil %>
 
     <!-- Responsive card grid with touch-friendly sizing -->
-    <div class="flex flex-wrap gap-1 sm:gap-2 md:gap-3 lg:gap-4 justify-center mb-1 sm:mb-2">
+    <div class="flex flex-wrap gap-0.5 sm:gap-2 md:gap-3 lg:gap-4 justify-center">
       <%= for card <- sort_cards(@player_state.card_piles.hand_pile, @your_card_sort) do %>
         <% selected = card.id in selected_card_ids %>
         <% at_limit = length(selected_card_ids) >= 5 %>
@@ -461,7 +461,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     is_locked_in = @player_state.locked_in_hand != nil %>
 
     <!-- Mobile: compact action bar with discards shown -->
-    <div class="h-14 sm:h-20 flex items-center justify-between px-2 sm:px-8">
+    <div class="h-12 sm:h-20 flex items-center justify-between px-2 sm:px-8 shrink-0">
       <!-- Left: Console Button + Discard count on mobile -->
       <div class="relative flex items-center gap-2">
         <!-- Mobile discard indicator -->
