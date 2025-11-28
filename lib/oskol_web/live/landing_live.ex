@@ -89,8 +89,8 @@ defmodule OskolWeb.LandingLive do
             end
 
           {:error, _reason} ->
-            # Couldn't rejoin - fall back to normal check
-            check_game_for_reconnect(socket, game_name)
+            # Couldn't rejoin - fall back to normal check but keep the name
+            check_game_for_reconnect(socket, game_name, player_name)
         end
 
       :not_found ->
@@ -123,7 +123,8 @@ defmodule OskolWeb.LandingLive do
   end
 
   # Check if the game has disconnected players and show reconnect screen
-  defp check_game_for_reconnect(socket, game_name) do
+  # Optional name_from_url parameter for auto-rejoin attempt
+  defp check_game_for_reconnect(socket, game_name, name_from_url \\ nil) do
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
         server_state = Game.get_server_state(game_name)
@@ -137,7 +138,41 @@ defmodule OskolWeb.LandingLive do
           |> Enum.filter(fn {_id, conn} -> not conn.connected end)
           |> Enum.map(fn {id, conn} -> {id, conn.name} end)
 
+        # If we have a name from URL and it matches a disconnected player, auto-rejoin
+        matching_disconnected =
+          if name_from_url do
+            Enum.find(disconnected_players, fn {_id, name} -> name == name_from_url end)
+          end
+
         cond do
+          # Auto-rejoin if name from URL matches a disconnected player
+          matching_disconnected != nil ->
+            case Game.rejoin_game(game_name, name_from_url, self()) do
+              {:ok, player_id, new_state} ->
+                if new_state.game_state != nil do
+                  push_navigate(socket, to: ~p"/#{game_name}?name=#{name_from_url}")
+                else
+                  assign(socket,
+                    step: :lobby,
+                    game_name: game_name,
+                    player_name: name_from_url,
+                    player_id: player_id,
+                    server_state: new_state,
+                    selected_format: Map.get(new_state.format_selections, player_id),
+                    error: nil
+                  )
+                end
+
+              {:error, _reason} ->
+                # Still failed - show joining screen
+                assign(socket,
+                  step: :joining,
+                  game_name: game_name,
+                  server_state: server_state,
+                  disconnected_players: disconnected_players
+                )
+            end
+
           # Game in progress - show join screen with reconnect options
           server_state.game_state != nil ->
             assign(socket,
