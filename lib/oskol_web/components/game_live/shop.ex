@@ -604,9 +604,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-rose-50/40 flex items-end justify-center pb-3 rounded-xl">
-          <span class="text-xs text-red-600 font-bold uppercase tracking-wide">Destroyed</span>
-        </div>
+        <div class="absolute inset-0 bg-rose-50/40 rounded-xl pointer-events-none" />
       <% end %>
 
       <%= if @is_picked do %>
