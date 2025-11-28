@@ -500,18 +500,23 @@ defmodule OskolWeb.LandingLive do
   def render(assigns) do
     ~H"""
     <.brand_styles />
-    <div class="min-h-screen-safe flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
+    <div class="min-h-screen-safe flex flex-col bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
       <.floating_battles />
 
-      <div class="relative z-10 w-full">
+      <div class="relative z-10 w-full flex flex-col flex-1 overflow-auto">
+        <!-- Top spacer - pushes content down, logo stays at fixed distance from top -->
+        <div class="flex-1 min-h-[20vh] max-h-[28vh]"></div>
+
         <div class="text-center px-6 max-w-xl w-full mx-auto">
-          <div class="mb-10 animate-logo">
+          <!-- Logo section - stays at fixed position -->
+          <div class="mb-8 animate-logo">
             <.logo_large />
             <p class="text-base-content/50 text-sm tracking-widest uppercase">
               Poker warfare
             </p>
           </div>
 
+    <!-- Content section - grows below logo -->
           <div class="animate-content">
             <%= if @error do %>
               <div class="mb-4 text-red-500 text-sm font-medium bg-red-500/10 rounded-lg p-3">
@@ -550,6 +555,9 @@ defmodule OskolWeb.LandingLive do
             <% end %>
           </div>
         </div>
+
+    <!-- Bottom spacer - balances the layout -->
+        <div class="flex-1"></div>
       </div>
     </div>
     """
@@ -672,7 +680,7 @@ defmodule OskolWeb.LandingLive do
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-      
+
     <!-- Format Selection -->
       <div class="mb-8">
         <p class="text-base-content/40 text-xs mb-3 text-center">
@@ -747,7 +755,7 @@ defmodule OskolWeb.LandingLive do
           />
         </div>
       </div>
-      
+
     <!-- Start Game Button -->
       <div class="text-center">
         <%= if @server_state.lobby_status == :ready_to_start do %>
@@ -886,7 +894,7 @@ defmodule OskolWeb.LandingLive do
         <% true -> %>
           <!-- No selection -->
       <% end %>
-      
+
     <!-- Abstract SVG decoration per format -->
       <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
         <%= case @format do %>
@@ -942,7 +950,7 @@ defmodule OskolWeb.LandingLive do
             </svg>
         <% end %>
       </div>
-      
+
     <!-- Text content - centered and stacked -->
       <div class="relative z-10 flex flex-col items-center gap-1">
         <div class="text-gray-800 font-bold text-lg">{@title}</div>
