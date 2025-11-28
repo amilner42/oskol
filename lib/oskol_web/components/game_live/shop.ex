@@ -604,23 +604,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-rose-50/40 flex items-center justify-center rounded-xl">
-          <div class="flex flex-col items-center gap-1">
-            <svg
-              class="w-6 h-6 text-rose-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-            <span class="text-xs text-rose-400 font-medium">Destroyed</span>
-          </div>
+        <div class="absolute inset-0 bg-rose-50/40 flex items-end justify-center pb-3 rounded-xl">
+          <span class="text-xs text-red-600 font-bold uppercase tracking-wide">Destroyed</span>
         </div>
       <% end %>
 
