@@ -94,8 +94,31 @@ defmodule OskolWeb.LandingLive do
         end
 
       :not_found ->
-        # Game doesn't exist - show player name input
-        assign(socket, step: :player_name, game_name: game_name)
+        # Game doesn't exist yet - create it and join with the name from URL
+        # This handles the rematch flow where both players have names in URL
+        {:ok, _pid} = Game.find_or_start_game(game_name)
+
+        # Subscribe to game updates
+        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
+
+        # Join the game with the name from URL
+        case Game.join_game(game_name, player_name, self()) do
+          {:ok, player_id, new_state} ->
+            socket
+            |> assign(
+              step: :lobby,
+              game_name: game_name,
+              player_name: player_name,
+              player_id: player_id,
+              server_state: new_state,
+              selected_format: nil,
+              error: nil
+            )
+            |> push_patch(to: ~p"/?game=#{game_name}&name=#{player_name}")
+
+          {:error, reason} ->
+            assign(socket, step: :player_name, game_name: game_name, error: format_error(reason))
+        end
     end
   end
 
