@@ -90,6 +90,20 @@ defmodule Oskol.Game.GameServer do
     )
   end
 
+  def destroy_shop_card_async(game_id, player_id, card_index) do
+    GenServer.cast(
+      via_tuple(game_id),
+      {:player_action, player_id, {:destroy_shop_card, card_index}}
+    )
+  end
+
+  def complete_destroy_phase_async(game_id, player_id) do
+    GenServer.cast(
+      via_tuple(game_id),
+      {:player_action, player_id, :complete_destroy_phase}
+    )
+  end
+
   # Server Callbacks
 
   @impl true

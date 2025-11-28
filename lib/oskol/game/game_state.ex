@@ -431,6 +431,10 @@ defmodule Oskol.Game.GameState do
           end)
 
         # Initialize shop state based on round winner and shop_rounds configuration
+        # Build player lives map for destroy phase calculation
+        player_lives =
+          Map.new(players_cleared, fn {pid, ps} -> {pid, ps.lives} end)
+
         shop_state =
           if game_state.shop_rounds > 0 do
             if round_winner_id == nil do
@@ -440,7 +444,8 @@ defmodule Oskol.Game.GameState do
                 player2_id,
                 true,
                 game_state.shop_rounds,
-                game_state.dev_codes
+                game_state.dev_codes,
+                player_lives
               )
             else
               # Determine loser
@@ -451,7 +456,8 @@ defmodule Oskol.Game.GameState do
                 loser_id,
                 false,
                 game_state.shop_rounds,
-                game_state.dev_codes
+                game_state.dev_codes,
+                player_lives
               )
             end
           else
@@ -1032,6 +1038,68 @@ defmodule Oskol.Game.GameState do
   end
 
   def complete_plus_bomb_selection(_, _, _), do: {:error, :no_pending_selection}
+
+  @doc """
+  Destroys a shop card during the destroy phase.
+  Only the player who is behind in lives can destroy cards.
+
+  Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
+  """
+  @spec destroy_shop_card(t(), player_id(), non_neg_integer()) ::
+          {:ok, t(), list()} | {:error, atom()}
+  def destroy_shop_card(%__MODULE__{shop_state: shop_state} = game_state, player_id, card_index)
+      when shop_state != nil do
+    case ShopState.destroy_card(shop_state, player_id, card_index) do
+      {:ok, updated_shop_state} ->
+        # Get the destroyed card name for the event
+        destroyed_card = Enum.at(shop_state.available_cards, card_index)
+
+        event =
+          {:shop_card_destroyed, player_id,
+           %{
+             card_index: card_index,
+             card_type: destroyed_card.type,
+             card_subtype: destroyed_card.subtype,
+             destroys_remaining: ShopState.destroys_remaining(updated_shop_state)
+           }}
+
+        new_state = %{game_state | shop_state: updated_shop_state}
+        {:ok, new_state, [event]}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def destroy_shop_card(_, _, _), do: {:error, :no_shop_active}
+
+  @doc """
+  Completes the destroy phase, allowing normal shop picking to begin.
+  Can be called even if not all destroys have been used.
+
+  Returns `{:ok, new_state, events}` on success or `{:error, reason}` on failure.
+  """
+  @spec complete_destroy_phase(t(), player_id()) ::
+          {:ok, t(), list()} | {:error, atom()}
+  def complete_destroy_phase(%__MODULE__{shop_state: shop_state} = game_state, player_id)
+      when shop_state != nil do
+    case ShopState.complete_destroy_phase(shop_state, player_id) do
+      {:ok, updated_shop_state} ->
+        event =
+          {:destroy_phase_complete, player_id,
+           %{
+             cards_destroyed: length(updated_shop_state.destroyed_card_indices)
+           }}
+
+        new_state = %{game_state | shop_state: updated_shop_state}
+        {:ok, new_state, [event]}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def complete_destroy_phase(_, _), do: {:error, :no_shop_active}
 
   # Generates 8 random cards for plus bomb selection
   defp generate_plus_bomb_cards do

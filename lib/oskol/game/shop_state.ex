@@ -35,7 +35,12 @@ defmodule Oskol.Game.ShopState do
           available_cards: [shop_card()],
           picked_card_indices: [non_neg_integer()],
           pending_deck_builder: pending_deck_builder() | nil,
-          pending_plus_bomb: pending_plus_bomb() | nil
+          pending_plus_bomb: pending_plus_bomb() | nil,
+          # Destroy phase fields
+          destroy_phase_complete: boolean(),
+          destroyer_id: player_id() | nil,
+          destroys_allowed: non_neg_integer(),
+          destroyed_card_indices: [non_neg_integer()]
         }
 
   defstruct total_rounds: 1,
@@ -47,7 +52,12 @@ defmodule Oskol.Game.ShopState do
             available_cards: [],
             picked_card_indices: [],
             pending_deck_builder: nil,
-            pending_plus_bomb: nil
+            pending_plus_bomb: nil,
+            # Destroy phase fields
+            destroy_phase_complete: true,
+            destroyer_id: nil,
+            destroys_allowed: 0,
+            destroyed_card_indices: []
 
   @doc """
   Creates a new shop state.
@@ -58,9 +68,10 @@ defmodule Oskol.Game.ShopState do
   - round_was_tie: If true, randomly assign who picks first
   - total_rounds: Number of upgrade rounds (1-3)
   - dev_codes: Optional list of dev codes for forcing specific cards
+  - player_lives: Optional map of %{player_id => lives} for destroy phase calculation
   """
-  @spec new(player_id(), player_id(), boolean(), pos_integer(), [String.t()]) :: t()
-  def new(winner_id, loser_id, round_was_tie, total_rounds, dev_codes \\ []) do
+  @spec new(player_id(), player_id(), boolean(), pos_integer(), [String.t()], map()) :: t()
+  def new(winner_id, loser_id, round_was_tie, total_rounds, dev_codes \\ [], player_lives \\ %{}) do
     # If tie, randomly pick who goes first
     {first_player, second_player} =
       if round_was_tie do
@@ -73,6 +84,27 @@ defmodule Oskol.Game.ShopState do
         {winner_id, loser_id}
       end
 
+    # Calculate destroy phase based on life difference
+    # The player who is behind in lives can destroy cards equal to the difference
+    {destroyer_id, destroys_allowed, destroy_phase_complete} =
+      if map_size(player_lives) == 2 do
+        winner_lives = Map.get(player_lives, winner_id, 0)
+        loser_lives = Map.get(player_lives, loser_id, 0)
+        life_difference = winner_lives - loser_lives
+
+        if life_difference > 0 do
+          # Loser is behind - they get to destroy cards
+          {loser_id, life_difference, false}
+        else
+          # Either tied or loser somehow has more lives (shouldn't happen)
+          # No destroy phase
+          {nil, 0, true}
+        end
+      else
+        # No life info provided - skip destroy phase
+        {nil, 0, true}
+      end
+
     %__MODULE__{
       total_rounds: total_rounds,
       current_round: 1,
@@ -81,7 +113,12 @@ defmodule Oskol.Game.ShopState do
       first_pick_made: false,
       second_pick_made: false,
       available_cards: generate_random_shop_cards(dev_codes),
-      picked_card_indices: []
+      picked_card_indices: [],
+      # Destroy phase
+      destroy_phase_complete: destroy_phase_complete,
+      destroyer_id: destroyer_id,
+      destroys_allowed: destroys_allowed,
+      destroyed_card_indices: []
     }
   end
 
@@ -360,11 +397,18 @@ defmodule Oskol.Game.ShopState do
           {:ok, t(), shop_card()} | {:error, atom()}
   def make_pick(%__MODULE__{} = shop_state, player_id, card_index) do
     cond do
+      # Destroy phase must be complete before picking
+      not shop_state.destroy_phase_complete ->
+        {:error, :destroy_phase_not_complete}
+
       card_index < 0 or card_index >= length(shop_state.available_cards) ->
         {:error, :invalid_card_index}
 
       card_index in shop_state.picked_card_indices ->
         {:error, :card_already_picked}
+
+      card_index in shop_state.destroyed_card_indices ->
+        {:error, :card_destroyed}
 
       not shop_state.first_pick_made and player_id == shop_state.first_picker_id ->
         selected_card = Enum.at(shop_state.available_cards, card_index)
@@ -440,19 +484,25 @@ defmodule Oskol.Game.ShopState do
 
   @doc """
   Checks if it's the given player's turn to pick (and they haven't picked yet).
+  Destroy phase must be complete before anyone can pick.
   """
   @spec can_pick?(t(), player_id()) :: boolean()
   def can_pick?(%__MODULE__{} = shop_state, player_id) do
-    cond do
-      not shop_state.first_pick_made and shop_state.first_picker_id == player_id ->
-        true
+    # Can't pick if destroy phase is still active
+    if not shop_state.destroy_phase_complete do
+      false
+    else
+      cond do
+        not shop_state.first_pick_made and shop_state.first_picker_id == player_id ->
+          true
 
-      shop_state.first_pick_made and not shop_state.second_pick_made and
-          shop_state.second_picker_id == player_id ->
-        true
+        shop_state.first_pick_made and not shop_state.second_pick_made and
+            shop_state.second_picker_id == player_id ->
+          true
 
-      true ->
-        false
+        true ->
+          false
+      end
     end
   end
 
@@ -477,5 +527,104 @@ defmodule Oskol.Game.ShopState do
   def advance_round(%__MODULE__{} = shop_state) do
     # Already at final round, can't advance
     shop_state
+  end
+
+  # ===== Destroy Phase Functions =====
+
+  @doc """
+  Returns true if the destroy phase is still active (not complete).
+  """
+  @spec in_destroy_phase?(t()) :: boolean()
+  def in_destroy_phase?(%__MODULE__{destroy_phase_complete: complete}), do: not complete
+
+  @doc """
+  Returns true if the given player can destroy cards.
+  """
+  @spec can_destroy?(t(), player_id()) :: boolean()
+  def can_destroy?(%__MODULE__{} = shop_state, player_id) do
+    not shop_state.destroy_phase_complete and
+      shop_state.destroyer_id == player_id and
+      length(shop_state.destroyed_card_indices) < shop_state.destroys_allowed
+  end
+
+  @doc """
+  Returns how many more cards the destroyer can destroy.
+  """
+  @spec destroys_remaining(t()) :: non_neg_integer()
+  def destroys_remaining(%__MODULE__{} = shop_state) do
+    max(0, shop_state.destroys_allowed - length(shop_state.destroyed_card_indices))
+  end
+
+  @doc """
+  Destroys a card at the given index. The destroyed card cannot be picked by either player.
+  Auto-completes the destroy phase when all destroys are used.
+  """
+  @spec destroy_card(t(), player_id(), non_neg_integer()) :: {:ok, t()} | {:error, atom()}
+  def destroy_card(%__MODULE__{} = shop_state, player_id, card_index) do
+    cond do
+      shop_state.destroy_phase_complete ->
+        {:error, :destroy_phase_complete}
+
+      shop_state.destroyer_id != player_id ->
+        {:error, :not_destroyer}
+
+      length(shop_state.destroyed_card_indices) >= shop_state.destroys_allowed ->
+        {:error, :no_destroys_remaining}
+
+      card_index < 0 or card_index >= length(shop_state.available_cards) ->
+        {:error, :invalid_card_index}
+
+      card_index in shop_state.destroyed_card_indices ->
+        {:error, :card_already_destroyed}
+
+      true ->
+        new_destroyed = [card_index | shop_state.destroyed_card_indices]
+        # Auto-complete destroy phase when all destroys are used
+        all_destroys_used = length(new_destroyed) >= shop_state.destroys_allowed
+
+        updated_state = %{
+          shop_state
+          | destroyed_card_indices: new_destroyed,
+            destroy_phase_complete: all_destroys_used
+        }
+
+        {:ok, updated_state}
+    end
+  end
+
+  @doc """
+  Completes the destroy phase, allowing normal picking to begin.
+  Can be called even if not all destroys have been used (player chooses to skip remaining).
+  """
+  @spec complete_destroy_phase(t(), player_id()) :: {:ok, t()} | {:error, atom()}
+  def complete_destroy_phase(%__MODULE__{} = shop_state, player_id) do
+    cond do
+      shop_state.destroy_phase_complete ->
+        {:error, :already_complete}
+
+      shop_state.destroyer_id != player_id ->
+        {:error, :not_destroyer}
+
+      true ->
+        updated_state = %{shop_state | destroy_phase_complete: true}
+        {:ok, updated_state}
+    end
+  end
+
+  @doc """
+  Returns true if a card at the given index has been destroyed.
+  """
+  @spec card_destroyed?(t(), non_neg_integer()) :: boolean()
+  def card_destroyed?(%__MODULE__{destroyed_card_indices: destroyed}, card_index) do
+    card_index in destroyed
+  end
+
+  @doc """
+  Checks if a card is unavailable (either picked or destroyed).
+  """
+  @spec card_unavailable?(t(), non_neg_integer()) :: boolean()
+  def card_unavailable?(%__MODULE__{} = shop_state, card_index) do
+    card_index in shop_state.picked_card_indices or
+      card_index in shop_state.destroyed_card_indices
   end
 end
