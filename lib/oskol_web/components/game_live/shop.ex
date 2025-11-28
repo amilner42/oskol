@@ -91,8 +91,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
         </div>
 
         <!-- Section 3: Cards (order-3 on mobile only, horizontal scroll) -->
-        <div class="order-3 lg:hidden p-4 border-t border-base-300/50 bg-base-100/50">
-          <div class="flex gap-3 overflow-x-auto pb-2">
+        <div class="order-3 lg:hidden px-4 py-6 border-t border-base-300/50 bg-base-100/50">
+          <div class="flex gap-3 overflow-x-auto pb-2 pt-1">
             <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
               <.shop_card_minimal
                 shop_card={shop_card}
