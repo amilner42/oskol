@@ -975,19 +975,31 @@ defmodule OskolWeb.GameLive do
         {nil, nil}
       end
 
-    # Clear previewing_card_index if it's not your turn anymore
+    # Clear previewing_card_index if player is not active anymore or card was destroyed
     previewing_card_index =
       if new_state.game_state && new_state.game_state.shop_state && socket.assigns.player_id do
-        can_pick =
-          Oskol.Game.ShopState.can_pick?(
-            new_state.game_state.shop_state,
-            socket.assigns.player_id
-          )
+        shop_state = new_state.game_state.shop_state
+        current_preview = socket.assigns.previewing_card_index
 
-        if can_pick do
-          socket.assigns.previewing_card_index
-        else
-          nil
+        # Check if previewed card was destroyed
+        card_destroyed =
+          current_preview != nil and
+            current_preview in shop_state.destroyed_card_indices
+
+        # Determine if player is active (can take action)
+        in_destroy_phase = Oskol.Game.ShopState.in_destroy_phase?(shop_state)
+        is_active_player =
+          if in_destroy_phase do
+            Oskol.Game.ShopState.can_destroy?(shop_state, socket.assigns.player_id)
+          else
+            Oskol.Game.ShopState.can_pick?(shop_state, socket.assigns.player_id)
+          end
+
+        # Clear preview if card destroyed or player not active
+        cond do
+          card_destroyed -> nil
+          is_active_player -> current_preview
+          true -> nil
         end
       else
         socket.assigns.previewing_card_index
