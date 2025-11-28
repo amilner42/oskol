@@ -520,11 +520,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
         cond do
           # Destroyed cards
           @is_destroyed ->
-            "opacity-30 cursor-not-allowed border-base-300/30"
+            "opacity-50 cursor-not-allowed border-base-300/30"
 
           # Picked cards
           @is_picked ->
-            "opacity-30 cursor-not-allowed border-base-300/30"
+            "opacity-50 cursor-not-allowed border-base-300/30"
 
           # Selected for preview
           @is_selected ->
@@ -594,8 +594,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class={[
           "font-semibold text-sm text-center leading-tight",
           cond do
-            @is_destroyed -> "text-base-content/30"
-            @is_picked -> "text-base-content/30"
+            @is_destroyed -> "text-base-content/50"
+            @is_picked -> "text-base-content/50"
             true -> "text-base-content"
           end
         ]}>
@@ -604,7 +604,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-base-100/80 flex flex-col items-center justify-end pb-4 rounded-xl">
+        <div class="absolute inset-0 bg-base-100/60 flex flex-col items-center justify-end pb-4 rounded-xl">
           <svg
             class="w-6 h-6 text-rose-400"
             fill="none"
@@ -623,7 +623,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <% end %>
 
       <%= if @is_picked do %>
-        <div class="absolute inset-0 bg-base-100/80 flex flex-col items-center justify-end pb-4 rounded-xl">
+        <div class="absolute inset-0 bg-base-100/60 flex flex-col items-center justify-end pb-4 rounded-xl">
           <svg
             class="w-6 h-6 text-base-content/40"
             fill="none"
