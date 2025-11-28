@@ -1038,6 +1038,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <.waiting_for_opponent
               player_name={@player_name}
               hand={@player_state.locked_in_hand}
+              face_down_card_ids={@player_state.face_down_card_ids}
               disabled_ranks={@player_state.disabled_ranks}
               disabled_suits={@player_state.disabled_suits}
               enhancements_disabled={@player_state.enhancements_disabled}
@@ -1344,6 +1345,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign_new(:disabled_ranks, fn -> [] end)
       |> assign_new(:disabled_suits, fn -> [] end)
       |> assign_new(:enhancements_disabled, fn -> false end)
+      |> assign_new(:face_down_card_ids, fn -> [] end)
 
     ~H"""
     <div class="text-center space-y-4 sm:space-y-8 px-2 sm:px-0">
@@ -1361,16 +1363,18 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <div class="h-5 sm:h-7"></div>
         <!-- placeholder for formula row -->
       </div>
-      
+
     <!-- Player's locked hand -->
       <div>
         <div class="text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2">&nbsp;</div>
         <div class="flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3">
           <%= for card <- @sorted_hand do %>
             <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
+            <% is_face_down = card.id in @face_down_card_ids %>
             <.card_display
               card={card}
               class="w-9 h-[52px] sm:w-16 sm:h-24"
+              face_down={is_face_down}
               disabled={is_disabled}
               enhancement_disabled={@enhancements_disabled}
               compact={true}

@@ -99,14 +99,11 @@ defmodule Oskol.Game.GameState do
   """
   @spec player_lock_in_hand(t(), player_id(), list(Card.t())) :: {t(), list()}
   def player_lock_in_hand(%__MODULE__{} = game_state, player_id, hand) do
-    # Get card IDs from the locked-in hand
-    locked_card_ids = Enum.map(hand, & &1.id)
-
+    # Don't reveal face-down cards yet - they stay hidden until both players lock in
+    # Revealing happens in process_locked_hands/1 when both players have locked in
     updated_players =
       Map.update!(game_state.players, player_id, fn player ->
-        # Reveal any face-down cards that are being locked in
-        player_with_revealed = PlayerState.reveal_cards(player, locked_card_ids)
-        %{player_with_revealed | locked_in_hand: hand}
+        %{player | locked_in_hand: hand}
       end)
 
     game_state = %{game_state | players: updated_players}
@@ -226,6 +223,17 @@ defmodule Oskol.Game.GameState do
     alias Oskol.Game.CardPiles
 
     events = []
+
+    # Reveal face-down cards that are in the locked-in hands for both players
+    # This is done before scoring so both players can see the revealed cards
+    updated_players_with_revealed =
+      Map.new(game_state.players, fn {player_id, player_state} ->
+        locked_card_ids = Enum.map(player_state.locked_in_hand, & &1.id)
+        revealed_player = PlayerState.reveal_cards(player_state, locked_card_ids)
+        {player_id, revealed_player}
+      end)
+
+    game_state = %{game_state | players: updated_players_with_revealed}
 
     # Calculate scores for each player's locked-in hand
     hand_results =
