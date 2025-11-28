@@ -90,8 +90,29 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
 
-        <!-- Section 3: Preview (order-3 on mobile only) -->
-        <div class="order-3 lg:hidden flex-1 flex flex-col">
+        <!-- Section 3: Cards (order-3 on mobile only, horizontal scroll) -->
+        <div class="order-3 lg:hidden p-4 border-t border-base-300/50 bg-base-100/50">
+          <div class="flex gap-3 overflow-x-auto pb-2">
+            <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
+              <.shop_card_minimal
+                shop_card={shop_card}
+                index={index}
+                is_picked={index in @game_state.shop_state.picked_card_indices}
+                picked_by={Map.get(@picked_by_map, index)}
+                is_destroyed={index in @game_state.shop_state.destroyed_card_indices}
+                is_selected={assigns[:previewing_card_index] == index}
+                can_pick={
+                  can_pick_card?(@game_state.shop_state, @player_id) and not @has_pending_selection
+                }
+                in_destroy_phase={@in_destroy_phase}
+                can_destroy={@can_destroy}
+              />
+            <% end %>
+          </div>
+        </div>
+
+        <!-- Section 4: Preview (order-4 on mobile only) -->
+        <div class="order-4 lg:hidden flex-1 flex flex-col">
           <.preview_panel
             game_state={@game_state}
             player_id={@player_id}
@@ -102,19 +123,6 @@ defmodule OskolWeb.Components.GameLive.Shop do
             deck_builder_selection={assigns[:deck_builder_selection]}
             plus_bomb_selection={assigns[:plus_bomb_selection]}
             shop_countdown={assigns[:shop_countdown]}
-          />
-        </div>
-
-        <!-- Section 4: Cards Grid (order-4 on mobile only) -->
-        <div class="order-4 lg:hidden p-6 border-t border-base-300/50 bg-base-100/50">
-          <.shop_cards_grid
-            game_state={@game_state}
-            player_id={@player_id}
-            previewing_card_index={assigns[:previewing_card_index]}
-            has_pending_selection={@has_pending_selection}
-            in_destroy_phase={@in_destroy_phase}
-            can_destroy={@can_destroy}
-            picked_by_map={@picked_by_map}
           />
         </div>
       </div>
