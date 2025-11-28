@@ -576,6 +576,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
             end
 
+          # Destroy phase - waiting player (can't destroy, disabled)
+          @in_destroy_phase ->
+            "border-base-300/30 cursor-not-allowed"
+
           # Normal pick phase - can pick
           @can_pick ->
             case @accent_color do
