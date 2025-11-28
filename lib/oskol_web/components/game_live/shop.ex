@@ -370,40 +370,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     ~H"""
     <div class="p-6 border-b border-base-300/50">
-      <!-- Current turn indicator -->
-      <div class="mb-4">
-        <%= if not @all_complete do %>
-          <div class="flex items-center gap-2">
-            <div class={[
-              "w-2 h-2 rounded-full",
-              if(@is_my_turn, do: "bg-emerald-500 animate-pulse", else: "bg-amber-500 animate-pulse")
-            ]} />
-            <span class="text-sm text-base-content/60">
-              <%= if @is_my_turn do %>
-                <span class="text-emerald-600 font-medium">Your turn</span> to pick
-              <% else %>
-                <% current_slot = Enum.find(@all_slots, & &1.is_current) %> Waiting for
-                <span class="font-medium">{current_slot && current_slot.picker_name}</span>
-              <% end %>
-            </span>
-          </div>
-        <% else %>
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <div class="w-2 h-2 rounded-full bg-emerald-500" />
-              <span class="text-sm text-emerald-600 font-medium">All picks complete</span>
-            </div>
-            <%= if @shop_countdown do %>
-              <div class="flex items-center gap-2 text-sm text-base-content/60">
-                <span>Next round in</span>
-                <span class="font-mono text-emerald-500 font-medium">{@shop_countdown}s</span>
-              </div>
-            <% end %>
-          </div>
-        <% end %>
-      </div>
-      
-    <!-- All pick slots - evenly spaced -->
+      <!-- All pick slots - evenly spaced -->
       <div class="flex gap-3">
         <%= for slot <- @all_slots do %>
           <.pick_slot_compact
