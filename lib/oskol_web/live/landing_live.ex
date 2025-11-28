@@ -617,7 +617,7 @@ defmodule OskolWeb.LandingLive do
   defp game_name_form(assigns) do
     ~H"""
     <form phx-submit="new_game" class="space-y-3">
-      <.brand_input name="player_name" placeholder="enter your nickname" />
+      <.brand_input name="player_name" placeholder="name" />
       <.brand_button type="submit" color={:primary}>
         New Game
       </.brand_button>
@@ -629,13 +629,12 @@ defmodule OskolWeb.LandingLive do
     ~H"""
     <%= if @inviter_name do %>
       <p class="text-base-content/60 text-sm mb-4 text-center">
-        <span class="text-opponent font-semibold">{@inviter_name}</span>
-        has challenged you
+        <span class="text-opponent font-semibold">{@inviter_name}</span> has challenged you
       </p>
     <% end %>
 
     <form phx-submit="submit_player_name" class="space-y-3">
-      <.brand_input name="player_name" placeholder="enter your nickname" />
+      <.brand_input name="player_name" placeholder="name" />
       <.brand_button type="submit" color={:primary}>
         Join Game
       </.brand_button>
@@ -738,7 +737,7 @@ defmodule OskolWeb.LandingLive do
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-
+      
     <!-- Format Selection -->
       <div class="mb-4 sm:mb-8">
         <p class="text-base-content/40 text-xs mb-2 sm:mb-3 text-center">
