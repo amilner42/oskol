@@ -70,7 +70,7 @@ defmodule OskolWeb.LandingLive do
         # Subscribe to game updates
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
 
-        # Try to rejoin
+        # Try to rejoin first (for reconnecting players)
         case Game.rejoin_game(game_name, player_name, self()) do
           {:ok, player_id, new_state} ->
             # Check if game already started - redirect to game
@@ -89,18 +89,67 @@ defmodule OskolWeb.LandingLive do
             end
 
           {:error, _reason} ->
-            # Couldn't rejoin - fall back to normal check
-            check_game_for_reconnect(socket, game_name)
+            # Couldn't rejoin - try joining as a new player if game is still in lobby
+            server_state = Game.get_server_state(game_name)
+
+            if server_state.game_state == nil do
+              # Game is still in lobby - try to join as new player
+              case Game.join_game(game_name, player_name, self()) do
+                {:ok, player_id, new_state} ->
+                  socket
+                  |> assign(
+                    step: :lobby,
+                    game_name: game_name,
+                    player_name: player_name,
+                    player_id: player_id,
+                    server_state: new_state,
+                    selected_format: nil,
+                    error: nil
+                  )
+                  |> push_patch(to: ~p"/?game=#{game_name}&name=#{player_name}")
+
+                {:error, _join_reason} ->
+                  # Join also failed - fall back to reconnect check
+                  check_game_for_reconnect(socket, game_name, player_name)
+              end
+            else
+              # Game in progress - fall back to reconnect check
+              check_game_for_reconnect(socket, game_name, player_name)
+            end
         end
 
       :not_found ->
-        # Game doesn't exist - show player name input
-        assign(socket, step: :player_name, game_name: game_name)
+        # Game doesn't exist yet - create it and join with the name from URL
+        # This handles the rematch flow where both players have names in URL
+        {:ok, _pid} = Game.find_or_start_game(game_name)
+
+        # Subscribe to game updates
+        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
+
+        # Join the game with the name from URL
+        case Game.join_game(game_name, player_name, self()) do
+          {:ok, player_id, new_state} ->
+            socket
+            |> assign(
+              step: :lobby,
+              game_name: game_name,
+              player_name: player_name,
+              player_id: player_id,
+              server_state: new_state,
+              selected_format: nil,
+              error: nil
+            )
+            |> push_patch(to: ~p"/?game=#{game_name}&name=#{player_name}")
+
+          {:error, reason} ->
+            assign(socket, step: :player_name, game_name: game_name, error: format_error(reason))
+        end
     end
   end
 
   # Check if the game has disconnected players and show reconnect screen
-  defp check_game_for_reconnect(socket, game_name) do
+  # Optional name_from_url parameter for auto-rejoin attempt
+  defp check_game_for_reconnect(socket, game_name, name_from_url \\ nil) do
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
         server_state = Game.get_server_state(game_name)
@@ -114,7 +163,41 @@ defmodule OskolWeb.LandingLive do
           |> Enum.filter(fn {_id, conn} -> not conn.connected end)
           |> Enum.map(fn {id, conn} -> {id, conn.name} end)
 
+        # If we have a name from URL and it matches a disconnected player, auto-rejoin
+        matching_disconnected =
+          if name_from_url do
+            Enum.find(disconnected_players, fn {_id, name} -> name == name_from_url end)
+          end
+
         cond do
+          # Auto-rejoin if name from URL matches a disconnected player
+          matching_disconnected != nil ->
+            case Game.rejoin_game(game_name, name_from_url, self()) do
+              {:ok, player_id, new_state} ->
+                if new_state.game_state != nil do
+                  push_navigate(socket, to: ~p"/#{game_name}?name=#{name_from_url}")
+                else
+                  assign(socket,
+                    step: :lobby,
+                    game_name: game_name,
+                    player_name: name_from_url,
+                    player_id: player_id,
+                    server_state: new_state,
+                    selected_format: Map.get(new_state.format_selections, player_id),
+                    error: nil
+                  )
+                end
+
+              {:error, _reason} ->
+                # Still failed - show joining screen
+                assign(socket,
+                  step: :joining,
+                  game_name: game_name,
+                  server_state: server_state,
+                  disconnected_players: disconnected_players
+                )
+            end
+
           # Game in progress - show join screen with reconnect options
           server_state.game_state != nil ->
             assign(socket,

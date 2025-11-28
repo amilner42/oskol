@@ -27,32 +27,59 @@ defmodule OskolWeb.Components.GameLive.Summaries do
 
   def match_summary_screen(assigns) do
     ~H"""
-    <div class="min-h-screen flex items-center justify-center bg-base-200">
-      <div class="w-full max-w-4xl px-6">
-        <div class="bg-base-100 rounded-lg shadow-xl p-8 border border-base-300">
-          <h3 class="text-3xl font-bold mb-8 text-center text-base-content">
-            Match Complete!
+    <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100">
+      <div class="w-full max-w-2xl px-6">
+        <div class="text-center mb-8">
+          <div class="text-6xl mb-4">
+            <%= if @game_state.winner_id == @player_id do %>
+              🏆
+            <% else %>
+              💀
+            <% end %>
+          </div>
+          <h3 class="text-4xl font-bold text-base-content mb-2">
+            <%= if @game_state.winner_id == @player_id do %>
+              Victory!
+            <% else %>
+              Defeat
+            <% end %>
           </h3>
+          <p class="text-base-content/60">
+            Match complete after {@game_state.round_number} rounds
+          </p>
+        </div>
 
-          <div class="grid grid-cols-2 gap-6 mb-8">
-            <.player_result_card
-              player_name={@player_name}
-              lives={@player_state.lives}
-              is_winner={@game_state.winner_id == @player_id}
-              color="text-player"
-            />
+        <div class="grid grid-cols-2 gap-6 mb-8">
+          <.player_result_card
+            player_name={@player_name}
+            lives={@player_state.lives}
+            initial_lives={@game_state.initial_lives}
+            is_winner={@game_state.winner_id == @player_id}
+            color="text-player"
+          />
 
-            <.player_result_card
-              player_name={@opponent_name}
-              lives={@opponent_state.lives}
-              is_winner={@game_state.winner_id == @opponent_id}
-              color="text-opponent"
-            />
-          </div>
+          <.player_result_card
+            player_name={@opponent_name}
+            lives={@opponent_state.lives}
+            initial_lives={@game_state.initial_lives}
+            is_winner={@game_state.winner_id == @opponent_id}
+            color="text-opponent"
+          />
+        </div>
 
-          <div class="text-center text-base-content/60 text-sm">
-            Game Over - Rounds Completed: {@game_state.round_number}
-          </div>
+        <div class="flex flex-col gap-3">
+          <button
+            phx-click="rematch"
+            class="w-full px-8 py-4 rounded-xl font-bold text-lg text-white transition-all shadow-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]"
+          >
+            Rematch
+          </button>
+          <a
+            href="/"
+            class="w-full px-6 py-3 rounded-xl font-medium text-base-content/70 text-center transition-all bg-base-100 hover:bg-base-200 border border-base-300"
+          >
+            Back to Home
+          </a>
         </div>
       </div>
     </div>
@@ -170,37 +197,46 @@ defmodule OskolWeb.Components.GameLive.Summaries do
   end
 
   def player_result_card(assigns) do
+    # Use initial_lives if provided, otherwise default to 3
+    initial_lives = Map.get(assigns, :initial_lives, 3)
+    assigns = assign(assigns, :initial_lives, initial_lives)
+
     ~H"""
     <div class={[
-      "rounded-lg p-8 border-2",
+      "rounded-xl p-6 border-2 bg-base-100 shadow-lg",
       if(@is_winner,
-        do: "bg-success/10 border-success",
-        else: "bg-base-200 border-base-300"
+        do: "border-success ring-2 ring-success/20",
+        else: "border-base-300"
       )
     ]}>
-      <h4 class={"text-2xl font-bold mb-6 text-center #{@color}"}>
+      <h4 class={"text-xl font-bold mb-4 text-center #{@color}"}>
         {@player_name}
       </h4>
       <%= if @is_winner do %>
-        <div class="text-4xl font-bold text-success text-center mb-6">
-          🏆 WINNER!
+        <div class="text-2xl font-bold text-success text-center mb-4">
+          Winner
+        </div>
+      <% else %>
+        <div class="text-2xl font-bold text-error/60 text-center mb-4">
+          Eliminated
         </div>
       <% end %>
-      <div class="flex justify-center items-center gap-2 mb-4">
+      <div class="flex justify-center items-center gap-1.5 mb-3">
         <% lives = max(0, @lives) %>
+        <% lost_lives = @initial_lives - lives %>
         <%= if lives > 0 do %>
           <%= for _i <- 1..lives do %>
-            <.icon name="hero-heart" class="w-12 h-12 text-error" />
+            <.icon name="hero-heart-solid" class="w-8 h-8 text-error" />
           <% end %>
         <% end %>
-        <%= if lives < 3 do %>
-          <%= for _i <- 1..(3 - lives) do %>
-            <.icon name="hero-heart" class="w-12 h-12 text-base-content/20" />
+        <%= if lost_lives > 0 do %>
+          <%= for _i <- 1..lost_lives do %>
+            <.icon name="hero-heart" class="w-8 h-8 text-base-content/20" />
           <% end %>
         <% end %>
       </div>
-      <div class="text-center text-base-content/70 text-sm font-medium">
-        {@lives} {if @lives == 1, do: "Life", else: "Lives"} Remaining
+      <div class="text-center text-base-content/50 text-xs">
+        {lives}/{@initial_lives} lives
       </div>
     </div>
     """

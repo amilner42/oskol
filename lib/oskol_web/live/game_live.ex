@@ -253,6 +253,35 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
+  def handle_event("rematch", _params, socket) do
+    # Generate a new game ID based on current game ID for deterministic rematch
+    # Both players clicking rematch will go to the same new game
+    current_game_id = socket.assigns.game_id
+    player_name = socket.assigns.player_name
+
+    # Create rematch game ID by appending "-r" or incrementing counter
+    new_game_id = generate_rematch_id(current_game_id)
+
+    # Navigate to landing page with new game ID and player name
+    {:noreply, push_navigate(socket, to: ~p"/?game=#{new_game_id}&name=#{player_name}")}
+  end
+
+  # Generate a deterministic rematch game ID
+  defp generate_rematch_id(current_id) do
+    # Check if ID already has a rematch suffix (e.g., "abc123-r2")
+    case Regex.run(~r/^(.+)-r(\d+)$/, current_id) do
+      [_, base, num_str] ->
+        # Increment the rematch number
+        num = String.to_integer(num_str)
+        "#{base}-r#{num + 1}"
+
+      nil ->
+        # First rematch - add "-r1"
+        "#{current_id}-r1"
+    end
+  end
+
+  @impl true
   def handle_info(:auto_dismiss_round_summary, socket) do
     # Only auto-dismiss if still viewing round summary
     if socket.assigns.viewing_round_summary do
