@@ -11,9 +11,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
     ~H"""
     <div class="h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200">
       <!-- Main Shop: Two Column Layout -->
-      <div class="h-full flex">
+      <div class="h-full flex flex-col lg:flex-row">
         <!-- Left Column: Card Grid -->
-        <div class="w-[690px] border-r border-base-300/50 flex flex-col bg-base-100/50">
+        <div class="lg:w-[690px] flex-shrink-0 border-b lg:border-b-0 lg:border-r border-base-300/50 flex flex-col bg-base-100/50">
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50">
             <div class="flex items-center justify-between">
@@ -48,7 +48,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                   end)
                   |> Map.new()
               %>
-              <div class="grid grid-cols-4 gap-4">
+              <div class="flex flex-wrap gap-4">
                 <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.take(8) do %>
                   <.shop_card_minimal
                     shop_card={shop_card}
@@ -75,7 +75,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 </div>
                 <div class="text-xs text-base-content/40">Temporary Battlefield Advantage</div>
               </div>
-              <div class="grid grid-cols-4 gap-4">
+              <div class="flex flex-wrap gap-4">
                 <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.drop(8) do %>
                   <.shop_card_minimal
                     shop_card={shop_card}
@@ -581,7 +581,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       phx-value-index={@index}
       disabled={@is_disabled}
       class={[
-        "aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden",
+        "w-[140px] aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
         "bg-base-100 border-2",
         cond do
           # Destroyed cards
