@@ -604,44 +604,42 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-base-100/80 flex items-center justify-center rounded-xl">
-          <div class="flex flex-col items-center gap-1">
-            <svg
-              class="w-6 h-6 text-rose-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-            <span class="text-xs text-rose-400 font-medium">Destroyed</span>
-          </div>
+        <div class="absolute inset-0 bg-base-100/80 flex flex-col items-center justify-between py-4 rounded-xl">
+          <div></div>
+          <svg
+            class="w-6 h-6 text-rose-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+          <span class="text-xs text-rose-400 font-medium">Destroyed</span>
         </div>
       <% end %>
 
       <%= if @is_picked do %>
-        <div class="absolute inset-0 bg-base-100/80 flex items-center justify-center rounded-xl">
-          <div class="flex flex-col items-center gap-1">
-            <svg
-              class="w-6 h-6 text-base-content/40"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-            <span class="text-xs text-base-content/40 font-medium">Picked</span>
-          </div>
+        <div class="absolute inset-0 bg-base-100/80 flex flex-col items-center justify-between py-4 rounded-xl">
+          <div></div>
+          <svg
+            class="w-6 h-6 text-base-content/40"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M5 13l4 4L19 7"
+            />
+          </svg>
+          <span class="text-xs text-base-content/40 font-medium">Picked</span>
         </div>
       <% end %>
     </button>
