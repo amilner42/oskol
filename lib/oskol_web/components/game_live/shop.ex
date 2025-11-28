@@ -604,8 +604,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-base-100/80 flex flex-col items-center justify-between py-4 rounded-xl">
-          <div></div>
+        <div class="absolute inset-0 bg-base-100/80 flex flex-col items-center justify-end pb-4 rounded-xl">
           <svg
             class="w-6 h-6 text-rose-400"
             fill="none"
@@ -619,13 +618,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
               d="M6 18L18 6M6 6l12 12"
             />
           </svg>
-          <span class="text-xs text-rose-400 font-medium">Destroyed</span>
+          <span class="text-xs text-rose-400 font-medium mt-1">Destroyed</span>
         </div>
       <% end %>
 
       <%= if @is_picked do %>
-        <div class="absolute inset-0 bg-base-100/80 flex flex-col items-center justify-between py-4 rounded-xl">
-          <div></div>
+        <div class="absolute inset-0 bg-base-100/80 flex flex-col items-center justify-end pb-4 rounded-xl">
           <svg
             class="w-6 h-6 text-base-content/40"
             fill="none"
@@ -639,7 +637,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               d="M5 13l4 4L19 7"
             />
           </svg>
-          <span class="text-xs text-base-content/40 font-medium">Picked</span>
+          <span class="text-xs text-base-content/40 font-medium mt-1">Picked</span>
         </div>
       <% end %>
     </button>
