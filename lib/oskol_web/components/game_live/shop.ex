@@ -1129,16 +1129,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
       <%= if @has_plus_bomb_preview do %>
         <!-- Plus Bomb card selection -->
         <div class="mb-4">
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-base-content/50">
-              Select a card - that rank AND suit won't score for opponent
-            </span>
-            <%= if @plus_bomb_selection do %>
-              <span class="text-xs px-2 py-1 rounded-full bg-rose-500/10 text-rose-500">
-                1 selected
-              </span>
-            <% end %>
-          </div>
+          <span class="text-sm text-base-content/50">
+            Select a card - that rank AND suit won't score for opponent
+          </span>
         </div>
 
 
@@ -1308,23 +1301,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @has_preview do %>
-        <!-- Selection instruction with count -->
+        <!-- Selection instruction -->
         <div class="mb-4 flex-shrink-0">
           <% instruction = ShopCard.selection_instruction(@pending_deck_builder.deck_builder_card) %>
-          <div class="flex items-center justify-between">
-            <span class="text-sm text-base-content/50">{instruction}</span>
-            <%= if @deck_builder_selection do %>
-              <% count =
-                if is_list(@deck_builder_selection) do
-                  length(@deck_builder_selection)
-                else
-                  1
-                end %>
-              <span class="text-xs px-2 py-1 rounded-full bg-violet-500/10 text-violet-500">
-                {count} selected
-              </span>
-            <% end %>
-          </div>
+          <span class="text-sm text-base-content/50">{instruction}</span>
         </div>
 
       <!-- 8-Card Selection Grid -->
