@@ -1137,7 +1137,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     <!-- 8-Card Selection Grid for Plus Bomb -->
         <div class="flex-1 mb-4 lg:mb-6">
-          <div class="flex flex-wrap gap-2 lg:gap-3 justify-center">
+          <div class="flex flex-wrap gap-2 lg:gap-3">
             <%= for card <- @pending_plus_bomb.available_cards do %>
               <% is_selected = @plus_bomb_selection == card.id %>
               <.plus_bomb_card_minimal
@@ -1309,7 +1309,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
       <!-- 8-Card Selection Grid -->
         <div class="mb-4 lg:mb-6 flex-shrink-0">
-          <div class="flex flex-wrap gap-2 lg:gap-3 justify-center">
+          <div class="flex flex-wrap gap-2 lg:gap-3">
             <%= for card <- @pending_deck_builder.available_cards do %>
               <% is_selected =
                 if is_list(@deck_builder_selection) do
