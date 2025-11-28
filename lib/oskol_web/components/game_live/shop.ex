@@ -335,46 +335,81 @@ defmodule OskolWeb.Components.GameLive.Shop do
   end
 
   defp pick_status_bar(assigns) do
+    shop_state = assigns.shop_state
+    in_destroy_phase = ShopState.in_destroy_phase?(shop_state)
+
     # Determine names based on picker IDs
     first_picker_name =
-      if assigns.shop_state.first_picker_id == assigns.player_id,
+      if shop_state.first_picker_id == assigns.player_id,
         do: assigns.player_name,
         else: assigns.opponent_name
 
     second_picker_name =
-      if assigns.shop_state.second_picker_id == assigns.player_id,
+      if shop_state.second_picker_id == assigns.player_id,
         do: assigns.player_name,
         else: assigns.opponent_name
 
+    destroyer_name =
+      if shop_state.destroyer_id == assigns.player_id,
+        do: assigns.player_name,
+        else: assigns.opponent_name
+
+    # Build destroy slots (if any)
+    destroys_allowed = shop_state.destroys_allowed
+    reversed_destroyed = Enum.reverse(shop_state.destroyed_card_indices)
+    destroys_completed = length(reversed_destroyed)
+    current_destroy_number = destroys_completed + 1
+
+    destroy_slots =
+      if destroys_allowed > 0 do
+        for destroy_num <- 1..destroys_allowed do
+          card_idx = Enum.at(reversed_destroyed, destroy_num - 1)
+          card = if card_idx, do: Enum.at(shop_state.available_cards, card_idx), else: nil
+          is_current = in_destroy_phase and destroy_num == current_destroy_number and current_destroy_number <= destroys_allowed
+
+          %{
+            type: :destroy,
+            slot_number: destroy_num,
+            picker_name: destroyer_name,
+            card: card,
+            is_current: is_current,
+            is_completed: card != nil
+          }
+        end
+      else
+        []
+      end
+
     # Build list of all picks made so far
     # picked_card_indices is prepended (most recent first), so reverse it
-    reversed_indices = Enum.reverse(assigns.shop_state.picked_card_indices)
+    reversed_indices = Enum.reverse(shop_state.picked_card_indices)
 
     # Create a map of pick_number -> card for completed picks
     completed_picks =
       reversed_indices
       |> Enum.with_index()
       |> Enum.map(fn {card_idx, pick_num} ->
-        {pick_num + 1, Enum.at(assigns.shop_state.available_cards, card_idx)}
+        {pick_num + 1, Enum.at(shop_state.available_cards, card_idx)}
       end)
       |> Map.new()
 
     # Total picks expected (2 per round)
-    total_picks = assigns.shop_state.total_rounds * 2
+    total_picks = shop_state.total_rounds * 2
 
     # Current pick number (1-indexed)
     current_pick_number = length(reversed_indices) + 1
 
-    # Build all pick slots
-    all_slots =
+    # Build all pick slots - only show as current if NOT in destroy phase
+    pick_slots =
       for pick_num <- 1..total_picks do
-        # Even picks (1, 3, 5...) are first picker, odd (2, 4, 6...) are second picker
+        # Odd picks (1, 3, 5...) are first picker, even (2, 4, 6...) are second picker
         picker_name = if rem(pick_num, 2) == 1, do: first_picker_name, else: second_picker_name
         card = Map.get(completed_picks, pick_num)
-        is_current = pick_num == current_pick_number and current_pick_number <= total_picks
+        is_current = not in_destroy_phase and pick_num == current_pick_number and current_pick_number <= total_picks
 
         %{
-          pick_number: pick_num,
+          type: :pick,
+          slot_number: pick_num,
           picker_name: picker_name,
           card: card,
           is_current: is_current,
@@ -382,24 +417,22 @@ defmodule OskolWeb.Components.GameLive.Shop do
         }
       end
 
-    is_my_turn = can_pick_card?(assigns.shop_state, assigns.player_id)
-    all_complete = current_pick_number > total_picks
+    all_slots = destroy_slots ++ pick_slots
 
     assigns =
       assigns
       |> assign(:all_slots, all_slots)
-      |> assign(:is_my_turn, is_my_turn)
-      |> assign(:all_complete, all_complete)
 
     ~H"""
     <div class="p-6 border-b border-base-300/50">
-      <!-- All pick slots - evenly spaced -->
+      <!-- All slots - destroy slots first, then pick slots -->
       <div class="flex gap-3">
         <%= for slot <- @all_slots do %>
-          <.pick_slot_compact
-            pick_card={slot.card}
+          <.timeline_slot
+            slot_type={slot.type}
+            slot_card={slot.card}
             picker_name={slot.picker_name}
-            pick_number={slot.pick_number}
+            slot_number={slot.slot_number}
             is_current={slot.is_current}
             is_completed={slot.is_completed}
           />
@@ -409,9 +442,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
     """
   end
 
-  defp pick_slot_compact(assigns) do
+  defp timeline_slot(assigns) do
     card_display =
-      case assigns[:pick_card] do
+      case assigns[:slot_card] do
         %ShopCard{} = shop_card ->
           %{
             type: shop_card.type,
@@ -423,29 +456,44 @@ defmodule OskolWeb.Components.GameLive.Shop do
           nil
       end
 
-    ordinal =
-      case assigns.pick_number do
-        1 -> "1st"
-        2 -> "2nd"
-        3 -> "3rd"
-        n -> "#{n}th"
+    is_destroy = assigns.slot_type == :destroy
+
+    label =
+      if is_destroy do
+        "Destroy"
+      else
+        case assigns.slot_number do
+          1 -> "1st"
+          2 -> "2nd"
+          3 -> "3rd"
+          n -> "#{n}th"
+        end
       end
+
+    # For destroy slots, use rose colors; for pick slots, use emerald
+    current_border_color = if is_destroy, do: "border-rose-400", else: "border-emerald-400"
+
+    # Text shown below the card name - player name for picks, "Destroyed" for destroys
+    subtext = if is_destroy, do: "Destroyed", else: assigns.picker_name
 
     assigns =
       assigns
       |> assign(:card_display, card_display)
-      |> assign(:ordinal, ordinal)
+      |> assign(:label, label)
+      |> assign(:is_destroy, is_destroy)
+      |> assign(:current_border_color, current_border_color)
+      |> assign(:subtext, subtext)
 
     ~H"""
     <div class={[
       "flex-1 rounded-lg p-3 border transition-all",
       cond do
         @card_display != nil -> "bg-base-100 border-base-300/50"
-        @is_current -> "bg-base-200/50 border-dashed border-emerald-400 animate-pulse"
+        @is_current -> ["bg-base-200/50 border-dashed animate-pulse", @current_border_color]
         true -> "bg-base-200/30 border-base-300/30"
       end
     ]}>
-      <div class="text-[10px] uppercase tracking-wider text-base-content/40 mb-1">{@ordinal}</div>
+      <div class="text-[10px] uppercase tracking-wider text-base-content/40 mb-1">{@label}</div>
       <%= if @card_display do %>
         <div class="flex items-center gap-2">
           <div class={[
@@ -459,7 +507,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
           ]} />
           <div class="min-w-0">
             <div class="text-sm font-medium text-base-content truncate">{@card_display.name}</div>
-            <div class="text-[10px] text-base-content/40">{@picker_name}</div>
+            <div class={[
+              "text-[10px]",
+              if(@is_destroy, do: "text-rose-400", else: "text-base-content/40")
+            ]}>{@subtext}</div>
           </div>
         </div>
       <% else %>
