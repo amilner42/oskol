@@ -104,8 +104,8 @@ defmodule OskolWeb.Components.GameLive.Shop do
         </div>
         
     <!-- Section 3: Cards (order-3 on mobile only, horizontal scroll) -->
-        <div class="order-3 lg:hidden px-4 py-6 border-t border-base-300/50 bg-base-100/50">
-          <div class="flex gap-3 overflow-x-auto pb-2 pt-1">
+        <div class="order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-100/50">
+          <div class="flex gap-2 overflow-x-auto pb-2 pt-1">
             <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) do %>
               <.shop_card_minimal
                 shop_card={shop_card}
@@ -514,9 +514,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:all_slots, all_slots)
 
     ~H"""
-    <div class="p-6 border-b border-base-300/50">
+    <div class="p-3 lg:p-6 border-b border-base-300/50">
       <!-- All slots - destroy slots first, then pick slots -->
-      <div class="flex flex-wrap gap-3">
+      <div class="flex flex-wrap gap-2 lg:gap-3">
         <%= for slot <- @all_slots do %>
           <.timeline_slot
             slot_type={slot.type}
@@ -576,18 +576,18 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     ~H"""
     <div class={[
-      "flex-1 min-w-[180px] flex-shrink-0 rounded-lg p-3 border transition-all",
+      "flex-1 min-w-[110px] lg:min-w-[180px] flex-shrink-0 rounded-lg p-2 lg:p-3 border transition-all",
       cond do
         @card_display != nil -> "bg-base-100 border-base-300/50"
         @is_current -> ["bg-base-200/50 border-dashed animate-pulse", @current_border_color]
         true -> "bg-base-200/30 border-base-300/30"
       end
     ]}>
-      <div class="text-[10px] uppercase tracking-wider text-base-content/40 mb-1">{@label}</div>
+      <div class="text-[9px] lg:text-[10px] uppercase tracking-wider text-base-content/40 mb-0.5 lg:mb-1">{@label}</div>
       <%= if @card_display do %>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-1.5 lg:gap-2">
           <div class={[
-            "w-2 h-2 rounded-full flex-shrink-0",
+            "w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full flex-shrink-0",
             case @card_display.color do
               "emerald" -> "bg-emerald-500"
               "rose" -> "bg-rose-500"
@@ -596,9 +596,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
             end
           ]} />
           <div class="min-w-0">
-            <div class="text-sm font-medium text-base-content truncate">{@card_display.name}</div>
+            <div class="text-xs lg:text-sm font-medium text-base-content truncate">{@card_display.name}</div>
             <div class={[
-              "text-[10px]",
+              "text-[9px] lg:text-[10px]",
               if(@is_destroy, do: "text-rose-400", else: "text-base-content/40")
             ]}>
               {@subtext}
@@ -606,7 +606,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
       <% else %>
-        <div class="text-sm text-base-content/30">{@picker_name}</div>
+        <div class="text-xs lg:text-sm text-base-content/30">{@picker_name}</div>
       <% end %>
     </div>
     """
@@ -674,7 +674,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       disabled={@is_disabled}
       class={
         [
-          "w-[140px] aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
+          "w-[100px] lg:w-[140px] aspect-[2/3] rounded-xl p-2 lg:p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
           "bg-base-100 border-2",
           cond do
             # Destroyed cards
@@ -738,7 +738,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     >
       <!-- Type badge at top -->
       <div class={[
-        "text-[10px] font-bold uppercase tracking-wider mb-2",
+        "text-[8px] lg:text-[10px] font-bold uppercase tracking-wider mb-1 lg:mb-2",
         case @accent_color do
           "emerald" -> "text-emerald-500"
           "rose" -> "text-rose-500"
@@ -748,11 +748,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
       ]}>
         {@type_label}
       </div>
-      
+
     <!-- Card name centered -->
       <div class="flex-1 flex items-center justify-center">
         <div class={[
-          "font-semibold text-sm text-center leading-tight",
+          "font-semibold text-xs lg:text-sm text-center leading-tight",
           cond do
             @is_destroyed -> "text-base-content/50"
             @is_picked -> "text-base-content/50"
@@ -883,24 +883,24 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:hand_name, Format.hand_name(assigns.hand_type))
 
     ~H"""
-    <div class="flex-1 flex flex-col p-8">
+    <div class="flex-1 flex flex-col p-4 lg:p-8">
       <!-- Header -->
-      <div class="mb-8">
-        <div class="text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
-        <h2 class="text-4xl font-light text-base-content">{@hand_name}</h2>
+      <div class="mb-4 lg:mb-8">
+        <div class="text-[10px] lg:text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
+        <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@hand_name}</h2>
       </div>
-      
+
     <!-- Level indicator -->
-      <div class="mb-12">
-        <div class="flex items-center gap-4">
-          <div class="flex items-center gap-2">
+      <div class="mb-6 lg:mb-12">
+        <div class="flex items-center gap-3 lg:gap-4">
+          <div class="flex items-center gap-1.5 lg:gap-2">
             <%= if @is_active_player do %>
-              <span class="text-3xl font-light text-base-content/40">{@current_level}</span>
+              <span class="text-2xl lg:text-3xl font-light text-base-content/40">{@current_level}</span>
             <% else %>
-              <span class="text-3xl font-light text-base-content/40">?</span>
+              <span class="text-2xl lg:text-3xl font-light text-base-content/40">?</span>
             <% end %>
             <svg
-              class="w-5 h-5 text-emerald-500"
+              class="w-4 h-4 lg:w-5 lg:h-5 text-emerald-500"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -913,24 +913,24 @@ defmodule OskolWeb.Components.GameLive.Shop do
               />
             </svg>
             <%= if @is_active_player do %>
-              <span class="text-3xl font-medium text-emerald-500">{@next_level}</span>
+              <span class="text-2xl lg:text-3xl font-medium text-emerald-500">{@next_level}</span>
             <% else %>
-              <span class="text-3xl font-medium text-emerald-500">?</span>
+              <span class="text-2xl lg:text-3xl font-medium text-emerald-500">?</span>
             <% end %>
           </div>
         </div>
       </div>
-      
+
     <!-- Stats -->
-      <div class="space-y-6 flex-1">
+      <div class="space-y-3 lg:space-y-6 flex-1">
         <%= if @is_active_player do %>
           <!-- Active player: show current → new values with delta -->
-          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
-            <span class="text-base-content/50 text-sm uppercase tracking-wider">Base Chips</span>
-            <div class="flex items-center gap-3">
-              <span class="text-base-content/30 text-lg">{@current_stats.base_chips}</span>
+          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
+            <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">Base Chips</span>
+            <div class="flex items-center gap-1.5 lg:gap-3">
+              <span class="text-base-content/30 text-base lg:text-lg">{@current_stats.base_chips}</span>
               <svg
-                class="w-4 h-4 text-base-content/20"
+                class="w-3 h-3 lg:w-4 lg:h-4 text-base-content/20"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -942,16 +942,16 @@ defmodule OskolWeb.Components.GameLive.Shop do
                   d="M17 8l4 4m0 0l-4 4m4-4H3"
                 />
               </svg>
-              <span class="text-emerald-500 text-2xl font-medium">{@next_stats.base_chips}</span>
-              <span class="text-emerald-400 text-sm font-medium">(+{@upgrade_bonus.chips})</span>
+              <span class="text-emerald-500 text-lg lg:text-2xl font-medium">{@next_stats.base_chips}</span>
+              <span class="text-emerald-400 text-xs lg:text-sm font-medium">(+{@upgrade_bonus.chips})</span>
             </div>
           </div>
-          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
-            <span class="text-base-content/50 text-sm uppercase tracking-wider">Multiplier</span>
-            <div class="flex items-center gap-3">
-              <span class="text-base-content/30 text-lg">{@current_stats.multiplier}x</span>
+          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
+            <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">Multiplier</span>
+            <div class="flex items-center gap-1.5 lg:gap-3">
+              <span class="text-base-content/30 text-base lg:text-lg">{@current_stats.multiplier}x</span>
               <svg
-                class="w-4 h-4 text-base-content/20"
+                class="w-3 h-3 lg:w-4 lg:h-4 text-base-content/20"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -963,38 +963,38 @@ defmodule OskolWeb.Components.GameLive.Shop do
                   d="M17 8l4 4m0 0l-4 4m4-4H3"
                 />
               </svg>
-              <span class="text-emerald-500 text-2xl font-medium">{@next_stats.multiplier}x</span>
-              <span class="text-emerald-400 text-sm font-medium">(+{@upgrade_bonus.multiplier})</span>
+              <span class="text-emerald-500 text-lg lg:text-2xl font-medium">{@current_stats.multiplier}x</span>
+              <span class="text-emerald-400 text-xs lg:text-sm font-medium">(+{@upgrade_bonus.multiplier})</span>
             </div>
           </div>
         <% else %>
           <!-- Waiting player: show only delta gained -->
-          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
-            <span class="text-base-content/50 text-sm uppercase tracking-wider">Chips Gained</span>
-            <span class="text-emerald-500 text-2xl font-medium">+{@upgrade_bonus.chips}</span>
+          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
+            <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">Chips Gained</span>
+            <span class="text-emerald-500 text-lg lg:text-2xl font-medium">+{@upgrade_bonus.chips}</span>
           </div>
-          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-4">
-            <span class="text-base-content/50 text-sm uppercase tracking-wider">Mult Gained</span>
-            <span class="text-emerald-500 text-2xl font-medium">+{@upgrade_bonus.multiplier}</span>
+          <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
+            <span class="text-base-content/50 text-xs lg:text-sm uppercase tracking-wider">Mult Gained</span>
+            <span class="text-emerald-500 text-lg lg:text-2xl font-medium">+{@upgrade_bonus.multiplier}</span>
           </div>
-          <div class="mt-4 p-4 rounded-lg bg-base-200/50">
-            <p class="text-base-content/50 text-sm italic">
+          <div class="mt-3 lg:mt-4 p-3 lg:p-4 rounded-lg bg-base-200/50">
+            <p class="text-base-content/50 text-xs lg:text-sm italic">
               Opponent's current level is hidden. Watch for their hand types during gameplay!
             </p>
           </div>
         <% end %>
       </div>
-      
+
     <!-- Action Button: only shown for active player -->
       <%= if @is_active_player do %>
-        <div class="pt-8">
+        <div class="pt-4 lg:pt-8">
           <%= if @in_destroy_phase do %>
             <button
               phx-click="destroy_shop_card"
               phx-value-index={@card_index}
               disabled={@action_in_progress}
               class={[
-                "w-full py-4 rounded-full font-medium text-lg transition-all",
+                "w-full py-3 lg:py-4 rounded-full font-medium text-base lg:text-lg transition-all",
                 if(@action_in_progress,
                   do: "bg-base-300 text-base-content/40 cursor-not-allowed",
                   else: "bg-rose-500 text-white hover:bg-rose-600 shadow-lg hover:shadow-xl"
@@ -1009,7 +1009,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
               phx-value-index={@card_index}
               disabled={@action_in_progress}
               class={[
-                "w-full py-4 rounded-full font-medium text-lg transition-all",
+                "w-full py-3 lg:py-4 rounded-full font-medium text-base lg:text-lg transition-all",
                 if(@action_in_progress,
                   do: "bg-base-300 text-base-content/40 cursor-not-allowed",
                   else: "bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg hover:shadow-xl"
@@ -1067,21 +1067,21 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:has_plus_bomb_preview, has_plus_bomb_preview)
 
     ~H"""
-    <div class="flex-1 flex flex-col p-8">
+    <div class="flex-1 flex flex-col p-4 lg:p-8">
       <!-- Header -->
-      <div class="mb-8">
+      <div class="mb-4 lg:mb-8">
         <div class={[
-          "text-xs uppercase tracking-widest mb-1",
+          "text-[10px] lg:text-xs uppercase tracking-widest mb-1",
           if(@accent_color == "amber", do: "text-amber-500/60", else: "text-rose-500/60")
         ]}>
           {@type_label}
         </div>
-        <h2 class="text-4xl font-light text-base-content">{@card_name}</h2>
+        <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
 
       <%= if @hand_name do %>
         <!-- Target for denial cards -->
-        <div class="mb-8">
+        <div class="mb-4 lg:mb-8">
           <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10">
             <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -1098,9 +1098,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
       <%= if @is_scrambler do %>
         <!-- Scrambler effect indicator -->
-        <div class="mb-8">
-          <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/10">
-            <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="mb-4 lg:mb-8">
+          <div class="inline-flex items-center gap-2 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full bg-amber-500/10">
+            <svg class="w-3 h-3 lg:w-4 lg:h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -1108,14 +1108,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
                 d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
               />
             </svg>
-            <span class="text-amber-500 font-medium">1-in-5 face-down</span>
+            <span class="text-amber-500 text-sm lg:text-base font-medium">1-in-5 face-down</span>
           </div>
         </div>
       <% end %>
-      
+
     <!-- Description -->
-      <div class="mb-8">
-        <p class="text-base-content/60 text-lg leading-relaxed">{@card_description}</p>
+      <div class="mb-4 lg:mb-8">
+        <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
       </div>
 
       <%= if @has_plus_bomb_preview do %>
@@ -1132,10 +1132,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-        
+
+
     <!-- 8-Card Selection Grid for Plus Bomb -->
-        <div class="flex-1 mb-6">
-          <div class="grid grid-cols-4 gap-3">
+        <div class="flex-1 mb-4 lg:mb-6">
+          <div class="grid grid-cols-4 gap-2 lg:gap-3">
             <%= for card <- @pending_plus_bomb.available_cards do %>
               <% is_selected = @plus_bomb_selection == card.id %>
               <.plus_bomb_card_minimal
@@ -1294,16 +1295,16 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:has_preview, has_preview)
 
     ~H"""
-    <div class="flex-1 flex flex-col p-8">
+    <div class="flex-1 flex flex-col p-4 lg:p-8">
       <!-- Header -->
-      <div class="mb-6">
-        <div class="text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
-        <h2 class="text-4xl font-light text-base-content">{@card_name}</h2>
+      <div class="mb-4 lg:mb-6">
+        <div class="text-[10px] lg:text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
+        <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
       </div>
-      
+
     <!-- Description -->
-      <div class="mb-8">
-        <p class="text-base-content/60 text-lg leading-relaxed">{@card_description}</p>
+      <div class="mb-4 lg:mb-8">
+        <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
       </div>
 
       <%= if @has_preview do %>
@@ -1325,10 +1326,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-        
+
+
     <!-- 8-Card Selection Grid -->
-        <div class="flex-1 mb-6">
-          <div class="grid grid-cols-4 gap-3">
+        <div class="flex-1 mb-4 lg:mb-6">
+          <div class="grid grid-cols-4 gap-2 lg:gap-3">
             <%= for card <- @pending_deck_builder.available_cards do %>
               <% is_selected =
                 if is_list(@deck_builder_selection) do
