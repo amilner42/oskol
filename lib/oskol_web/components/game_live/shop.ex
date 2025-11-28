@@ -1329,7 +1329,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
       <!-- 8-Card Selection Grid -->
         <div class="mb-4 lg:mb-6 flex-shrink-0">
-          <div class="flex flex-wrap gap-2 lg:gap-3">
+          <div class="flex flex-wrap gap-2 lg:gap-3 justify-center">
             <%= for card <- @pending_deck_builder.available_cards do %>
               <% is_selected =
                 if is_list(@deck_builder_selection) do
@@ -1344,7 +1344,10 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-        
+
+      <!-- Spacer to push button to bottom -->
+        <div class="flex-1"></div>
+
     <!-- Action Buttons: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
           <div class="flex-shrink-0">
@@ -1403,9 +1406,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
           <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
         </div>
 
+        <!-- Spacer to push button to bottom -->
+        <div class="flex-1"></div>
+
         <!-- Initial confirm button: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
-          <div class="flex-shrink-0 mt-auto">
+          <div class="flex-shrink-0">
             <%= if @in_destroy_phase do %>
               <button
                 phx-click="destroy_shop_card"
