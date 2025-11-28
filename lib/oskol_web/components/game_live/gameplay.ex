@@ -1509,7 +1509,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           {@enhancement_text}
         </div>
       <% end %>
-      <%= if @disabled do %>
+      <%= if @disabled and not @face_down do %>
         <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
           <svg class="w-1/2 h-1/2 text-red-600/90" viewBox="0 0 100 100">
             <line
