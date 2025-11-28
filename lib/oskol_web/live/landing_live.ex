@@ -90,7 +90,7 @@ defmodule OskolWeb.LandingLive do
         if inviter_name do
           assign(socket,
             og_title: "#{inviter_name} challenged you to Oskol Poker",
-            og_description: "Accept the challenge and play a poker roguelike match"
+            og_description: "Accept the challenge to engage in poker warfare"
           )
         else
           socket
