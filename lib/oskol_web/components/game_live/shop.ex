@@ -406,9 +406,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
     ]}>
       <%= cond do %>
         <% @in_destroy_phase and @can_destroy -> %>
-          Destroy phase
+          Destroy
         <% @in_destroy_phase -> %>
-          Opponent destroying
+          Waiting
         <% @is_my_turn -> %>
           Your pick
         <% true -> %>
