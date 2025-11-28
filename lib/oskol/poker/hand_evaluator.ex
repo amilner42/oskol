@@ -344,25 +344,30 @@ defmodule Oskol.Poker.HandEvaluator do
     num_wild_suits = length(wild_suit_cards)
     num_full_wilds = Enum.count(wild_cards, &(&1.wild_type in [:joker, :wild_rank]))
 
-    # For each suit, check if we can reach min_count
-    result =
-      suit_counts
-      |> Enum.sort_by(fn {_suit, count} -> count end, :desc)
-      |> Enum.find_value(fn {suit, count} ->
-        # Cards of this suit (excluding wild_suit cards)
-        suit_cards = Enum.filter(regular_cards, &(&1.suit == suit && is_nil(&1.wild_type)))
+    # Special case: all cards are wild - choose spades
+    if map_size(suit_counts) == 0 && num_wild_suits + num_full_wilds >= min_count do
+      {:ok, :spades, wild_suit_cards}
+    else
+      # For each suit, check if we can reach min_count
+      result =
+        suit_counts
+        |> Enum.sort_by(fn {_suit, count} -> count end, :desc)
+        |> Enum.find_value(fn {suit, count} ->
+          # Cards of this suit (excluding wild_suit cards)
+          suit_cards = Enum.filter(regular_cards, &(&1.suit == suit && is_nil(&1.wild_type)))
 
-        # Total cards we can get: actual suit cards + wild_suit + full wilds
-        total_available = length(suit_cards) + num_wild_suits + num_full_wilds
+          # Total cards we can get: actual suit cards + wild_suit + full wilds
+          total_available = length(suit_cards) + num_wild_suits + num_full_wilds
 
-        if total_available >= min_count do
-          # Include wild_suit cards in the result
-          all_suit_cards = suit_cards ++ wild_suit_cards
-          {:ok, suit, all_suit_cards}
-        end
-      end)
+          if total_available >= min_count do
+            # Include wild_suit cards in the result
+            all_suit_cards = suit_cards ++ wild_suit_cards
+            {:ok, suit, all_suit_cards}
+          end
+        end)
 
-    result || :error
+      result || :error
+    end
   end
 
   # Finds a straight sequence with available cards and wilds
@@ -391,28 +396,42 @@ defmodule Oskol.Poker.HandEvaluator do
 
   # Finds a suited straight sequence
   defp find_suited_sequence(regular_cards, wild_cards, min_cards_needed, mods) do
-    # Group regular cards by suit
-    by_suit = Enum.group_by(regular_cards, & &1.suit)
+    # Special case: all cards are wild - make royal flush in spades
+    if length(regular_cards) == 0 && length(wild_cards) >= min_cards_needed do
+      max_gap = if mods.straight_flush_can_hop, do: 2, else: 1
 
-    # For each suit, try to find a straight
-    result =
-      Enum.find_value(by_suit, fn {suit, suit_cards} ->
-        ranks = Enum.map(suit_cards, & &1.rank) |> Enum.uniq() |> Enum.sort()
-        num_wilds = length(wild_cards)
-        max_gap = if mods.straight_flush_can_hop, do: 2, else: 1
+      # Make the best possible straight (royal flush if 5 cards)
+      case find_best_sequence_with_gaps([], length(wild_cards), min_cards_needed, max_gap) do
+        {:ok, target_ranks} ->
+          assigned_cards = assign_cards_to_suited_ranks([], wild_cards, target_ranks, :spades)
+          {:ok, assigned_cards}
+        :error ->
+          :error
+      end
+    else
+      # Group regular cards by suit
+      by_suit = Enum.group_by(regular_cards, & &1.suit)
 
-        case find_best_sequence_with_gaps(ranks, num_wilds, min_cards_needed, max_gap) do
-          {:ok, target_ranks} ->
-            # Assign cards to these ranks with this suit
-            assigned_cards = assign_cards_to_suited_ranks(suit_cards, wild_cards, target_ranks, suit)
-            {:ok, assigned_cards}
+      # For each suit, try to find a straight
+      result =
+        Enum.find_value(by_suit, fn {suit, suit_cards} ->
+          ranks = Enum.map(suit_cards, & &1.rank) |> Enum.uniq() |> Enum.sort()
+          num_wilds = length(wild_cards)
+          max_gap = if mods.straight_flush_can_hop, do: 2, else: 1
 
-          :error ->
-            nil
-        end
-      end)
+          case find_best_sequence_with_gaps(ranks, num_wilds, min_cards_needed, max_gap) do
+            {:ok, target_ranks} ->
+              # Assign cards to these ranks with this suit
+              assigned_cards = assign_cards_to_suited_ranks(suit_cards, wild_cards, target_ranks, suit)
+              {:ok, assigned_cards}
 
-    result || :error
+            :error ->
+              nil
+          end
+        end)
+
+      result || :error
+    end
   end
 
   # Finds the best sequence considering gaps and wilds

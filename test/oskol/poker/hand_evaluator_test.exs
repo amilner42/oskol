@@ -510,4 +510,170 @@ defmodule Oskol.Poker.HandEvaluatorTest do
       assert length(result.scoring_cards) == 3
     end
   end
+
+  describe "all jokers (1-5 jokers)" do
+    test "1 joker becomes high card (Ace)" do
+      hand = [joker("j1")]
+
+      result = HandEvaluator.evaluate(hand)
+
+      assert result.hand_type == :high_card
+      assert length(result.scoring_cards) == 1
+
+      scoring_card = hd(result.scoring_cards)
+      assert scoring_card.rank == 14  # Ace
+    end
+
+    test "2 jokers become pair of Aces" do
+      hand = [
+        joker("j1"),
+        joker("j2")
+      ]
+
+      result = HandEvaluator.evaluate(hand)
+
+      assert result.hand_type == :pair
+      assert length(result.scoring_cards) == 2
+
+      # Both should be Aces
+      ranks = Enum.map(result.scoring_cards, & &1.rank)
+      assert Enum.all?(ranks, &(&1 == 14))
+    end
+
+    test "3 jokers become three of a kind (Aces)" do
+      hand = [
+        joker("j1"),
+        joker("j2"),
+        joker("j3")
+      ]
+
+      result = HandEvaluator.evaluate(hand)
+
+      assert result.hand_type == :three_of_a_kind
+      assert length(result.scoring_cards) == 3
+
+      # All should be Aces
+      ranks = Enum.map(result.scoring_cards, & &1.rank)
+      assert Enum.all?(ranks, &(&1 == 14))
+    end
+
+    test "4 jokers become four of a kind (Aces)" do
+      hand = [
+        joker("j1"),
+        joker("j2"),
+        joker("j3"),
+        joker("j4")
+      ]
+
+      result = HandEvaluator.evaluate(hand)
+
+      assert result.hand_type == :four_of_a_kind
+      assert length(result.scoring_cards) == 4
+
+      # All should be Aces
+      ranks = Enum.map(result.scoring_cards, & &1.rank)
+      assert Enum.all?(ranks, &(&1 == 14))
+    end
+
+    test "5 jokers become royal flush (10-J-Q-K-A of spades)" do
+      hand = [
+        joker("j1"),
+        joker("j2"),
+        joker("j3"),
+        joker("j4"),
+        joker("j5")
+      ]
+
+      result = HandEvaluator.evaluate(hand)
+
+      assert result.hand_type == :straight_flush
+      assert length(result.scoring_cards) == 5
+
+      # Should be 10-J-Q-K-A (ranks 10, 11, 12, 13, 14)
+      ranks = Enum.map(result.scoring_cards, & &1.rank) |> Enum.sort()
+      assert ranks == [10, 11, 12, 13, 14]
+
+      # All should be the same suit (spades by default)
+      suits = Enum.map(result.scoring_cards, & &1.suit) |> Enum.uniq()
+      assert length(suits) == 1
+      assert hd(suits) == :spades
+    end
+
+    test "5 jokers with straight_needs_only_4 still make straight flush" do
+      mods = %UpgradeModifiers{straight_flush_needs_only_4: true}
+
+      hand = [
+        joker("j1"),
+        joker("j2"),
+        joker("j3"),
+        joker("j4"),
+        joker("j5")
+      ]
+
+      result = HandEvaluator.evaluate(hand, mods)
+
+      # With 5 jokers, should still prefer straight flush over other hands
+      assert result.hand_type == :straight_flush
+      assert length(result.scoring_cards) == 5
+    end
+  end
+
+  describe "jokers with regular cards - optimal choices" do
+    test "4 jokers with one Ace make straight flush with Ace high" do
+      hand = [
+        card(14, :spades),  # Ace of spades
+        joker("j1"),
+        joker("j2"),
+        joker("j3"),
+        joker("j4")
+      ]
+
+      result = HandEvaluator.evaluate(hand)
+
+      assert result.hand_type == :straight_flush
+      assert length(result.scoring_cards) == 5
+
+      # Should make 10-J-Q-K-A of spades
+      ranks = Enum.map(result.scoring_cards, & &1.rank) |> Enum.sort()
+      assert ranks == [10, 11, 12, 13, 14]
+
+      suits = Enum.map(result.scoring_cards, & &1.suit) |> Enum.uniq()
+      assert suits == [:spades]
+    end
+
+    test "3 jokers with two low cards make straight flush" do
+      hand = [
+        card(2, :hearts),
+        card(3, :hearts),
+        joker("j1"),
+        joker("j2"),
+        joker("j3")
+      ]
+
+      result = HandEvaluator.evaluate(hand)
+
+      assert result.hand_type == :straight_flush
+      assert length(result.scoring_cards) == 5
+
+      # Should use the hearts suit from regular cards
+      suits = Enum.map(result.scoring_cards, & &1.suit) |> Enum.uniq()
+      assert suits == [:hearts]
+    end
+
+    test "2 jokers with three cards prefer straight flush over full house" do
+      hand = [
+        card(5, :clubs),
+        card(6, :clubs),
+        card(7, :clubs),
+        joker("j1"),
+        joker("j2")
+      ]
+
+      result = HandEvaluator.evaluate(hand)
+
+      # Straight flush is better than full house
+      assert result.hand_type == :straight_flush
+      assert length(result.scoring_cards) == 5
+    end
+  end
 end
