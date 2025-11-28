@@ -6,14 +6,16 @@ defmodule Oskol.Poker.Card do
   @type rank :: 2..14
   @type suit :: :hearts | :diamonds | :clubs | :spades
   @type enhancement :: {:bonus_chips, pos_integer()} | {:bonus_mult, pos_integer()}
+  @type wild_type :: :joker | :wild_suit | :wild_rank | nil
   @type t :: %__MODULE__{
           id: String.t(),
           rank: rank(),
           suit: suit(),
-          enhancement: enhancement() | nil
+          enhancement: enhancement() | nil,
+          wild_type: wild_type()
         }
 
-  defstruct [:id, :rank, :suit, enhancement: nil]
+  defstruct [:id, :rank, :suit, enhancement: nil, wild_type: nil]
 
   @ranks [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
   @suits [:hearts, :diamonds, :clubs, :spades]

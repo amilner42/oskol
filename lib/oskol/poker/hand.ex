@@ -3,7 +3,7 @@ defmodule Oskol.Poker.Hand do
   Identifies poker hand types from cards.
   """
 
-  alias Oskol.Poker.Card
+  alias Oskol.Poker.{Card, HandEvaluator, UpgradeModifiers}
 
   @type hand_type ::
           :high_card
@@ -25,9 +25,36 @@ defmodule Oskol.Poker.Hand do
   @doc """
   Evaluates a poker hand (1-5 cards) and returns the hand type, played cards, and scoring cards.
   Scoring cards are the subset of played cards that contribute to the hand type.
+
+  If the hand contains wild cards, delegates to HandEvaluator for advanced evaluation.
+  Otherwise uses the original fast-path logic.
   """
   @spec evaluate(list(Card.t())) :: evaluation()
   def evaluate(hand) when is_list(hand) and length(hand) >= 1 and length(hand) <= 5 do
+    # Check if any cards are wild
+    has_wilds? = Enum.any?(hand, fn card -> !is_nil(card.wild_type) end)
+
+    if has_wilds? do
+      # Delegate to HandEvaluator for wild card handling
+      HandEvaluator.evaluate(hand, %UpgradeModifiers{})
+    else
+      # Original fast-path logic for non-wild hands
+      evaluate_regular_hand(hand)
+    end
+  end
+
+  @doc """
+  Evaluates a poker hand with upgrade modifiers applied.
+  This allows for special rules like "straights need only 4 cards" or "straights can hop".
+  """
+  @spec evaluate_with_modifiers(list(Card.t()), UpgradeModifiers.t()) :: evaluation()
+  def evaluate_with_modifiers(hand, modifiers \\ %UpgradeModifiers{})
+      when is_list(hand) and length(hand) >= 1 and length(hand) <= 5 do
+    HandEvaluator.evaluate(hand, modifiers)
+  end
+
+  # Original evaluation logic for hands without wild cards
+  defp evaluate_regular_hand(hand) do
     {hand_type, scoring_cards} =
       check_straight_flush(hand) ||
         check_four_of_a_kind(hand) ||
