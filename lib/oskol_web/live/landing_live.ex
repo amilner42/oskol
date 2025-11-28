@@ -562,7 +562,7 @@ defmodule OskolWeb.LandingLive do
               Poker warfare
             </p>
           </div>
-          
+
     <!-- Content section - grows below logo -->
           <div class="animate-content">
             <%= if @error do %>
@@ -602,7 +602,7 @@ defmodule OskolWeb.LandingLive do
             <% end %>
           </div>
         </div>
-        
+
     <!-- Bottom spacer - balances the layout -->
         <div class="flex-1"></div>
       </div>
@@ -617,7 +617,7 @@ defmodule OskolWeb.LandingLive do
   defp game_name_form(assigns) do
     ~H"""
     <form phx-submit="new_game" class="space-y-3">
-      <.brand_input name="player_name" placeholder="enter your nickname" />
+      <.brand_input name="player_name" placeholder="name" />
       <.brand_button type="submit" color={:primary}>
         New Game
       </.brand_button>
@@ -635,7 +635,7 @@ defmodule OskolWeb.LandingLive do
     <% end %>
 
     <form phx-submit="submit_player_name" class="space-y-3">
-      <.brand_input name="player_name" placeholder="enter your nickname" />
+      <.brand_input name="player_name" placeholder="name" />
       <.brand_button type="submit" color={:primary}>
         Join Game
       </.brand_button>
@@ -797,7 +797,7 @@ defmodule OskolWeb.LandingLive do
           />
         </div>
       </div>
-      
+
     <!-- Start Game Button -->
       <div class="text-center">
         <%= if @server_state.lobby_status == :ready_to_start do %>
@@ -813,7 +813,7 @@ defmodule OskolWeb.LandingLive do
             <.card_decorations />
           </button>
         <% end %>
-        
+
     <!-- Invite link - secondary action -->
         <button
           type="button"
@@ -954,7 +954,7 @@ defmodule OskolWeb.LandingLive do
         <% true -> %>
           <!-- No selection -->
       <% end %>
-      
+
     <!-- Abstract SVG decoration per format -->
       <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
         <%= case @format do %>
@@ -1010,7 +1010,7 @@ defmodule OskolWeb.LandingLive do
             </svg>
         <% end %>
       </div>
-      
+
     <!-- Text content - centered and stacked -->
       <div class="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1">
         <div class="text-gray-800 font-bold text-sm sm:text-lg">{@title}</div>
