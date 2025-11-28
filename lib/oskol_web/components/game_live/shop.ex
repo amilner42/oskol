@@ -35,12 +35,26 @@ defmodule OskolWeb.Components.GameLive.Shop do
               <% has_pending_selection = has_pending_selection?(@game_state.shop_state, @player_id) %>
               <% in_destroy_phase = ShopState.in_destroy_phase?(@game_state.shop_state) %>
               <% can_destroy = ShopState.can_destroy?(@game_state.shop_state, @player_id) %>
+              <%
+                # Build map of card_index -> picker_name
+                first_picker_name = if @game_state.shop_state.first_picker_id == @player_id, do: @player_name, else: @opponent_name
+                second_picker_name = if @game_state.shop_state.second_picker_id == @player_id, do: @player_name, else: @opponent_name
+                reversed_indices = Enum.reverse(@game_state.shop_state.picked_card_indices)
+                picked_by_map = reversed_indices
+                  |> Enum.with_index()
+                  |> Enum.map(fn {card_idx, pick_num} ->
+                    picker_name = if rem(pick_num, 2) == 0, do: first_picker_name, else: second_picker_name
+                    {card_idx, picker_name}
+                  end)
+                  |> Map.new()
+              %>
               <div class="grid grid-cols-4 gap-4">
                 <%= for {shop_card, index} <- Enum.with_index(@game_state.shop_state.available_cards) |> Enum.take(8) do %>
                   <.shop_card_minimal
                     shop_card={shop_card}
                     index={index}
                     is_picked={index in @game_state.shop_state.picked_card_indices}
+                    picked_by={Map.get(picked_by_map, index)}
                     is_destroyed={index in @game_state.shop_state.destroyed_card_indices}
                     is_selected={assigns[:previewing_card_index] == index}
                     can_pick={
@@ -67,6 +81,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                     shop_card={shop_card}
                     index={index}
                     is_picked={index in @game_state.shop_state.picked_card_indices}
+                    picked_by={Map.get(picked_by_map, index)}
                     is_destroyed={index in @game_state.shop_state.destroyed_card_indices}
                     is_selected={assigns[:previewing_card_index] == index}
                     can_pick={
@@ -611,7 +626,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
       <%= if @is_picked do %>
         <div class="absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl">
-          <span class="text-xs text-base-content/40 font-medium">Picked</span>
+          <span class="text-xs text-base-content/40 font-medium">{@picked_by}</span>
         </div>
       <% end %>
     </button>
