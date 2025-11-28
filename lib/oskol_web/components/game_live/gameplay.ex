@@ -178,8 +178,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def game_screen(assigns) do
     ~H"""
     <div class="flex flex-col h-screen bg-base-300 overflow-hidden">
-      <!-- Top - Opponent Cards: shrink on mobile, no extra padding -->
-      <div class="shrink-0 sm:flex-1 flex flex-col justify-end pt-1 px-1 pb-1 sm:p-3 md:p-4 bg-base-200/40">
+      <!-- Top - Opponent Cards: shrink on mobile -->
+      <div class="shrink-0 sm:flex-1 flex flex-col justify-end pt-2 px-1 pb-1 sm:p-3 md:p-4 bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
           opponent_card_sort={@opponent_card_sort}
@@ -254,13 +254,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
-    <!-- Card controls for opponent - hidden on mobile to save space -->
-    <div class="hidden sm:flex justify-center gap-2 mb-2">
+    <!-- Card controls for opponent -->
+    <div class="flex justify-center mb-1 sm:mb-2">
       <button
         phx-click="toggle_opponent_card_sort"
-        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-32 justify-center"
+        class="px-2 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
       >
-        <span class="text-gray-500">Sorting by</span>
+        <span class="text-gray-500">Sort:</span>
         <span class="font-semibold text-gray-800">
           {if @opponent_card_sort == :rank, do: "Rank", else: "Suit"}
         </span>
@@ -337,13 +337,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         </button>
       <% end %>
     </div>
-    <!-- Card controls for player - hidden on mobile to save space -->
-    <div class="hidden sm:flex justify-center gap-2 mt-2">
+    <!-- Card controls for player -->
+    <div class="flex justify-center mt-1 sm:mt-2">
       <button
         phx-click="toggle_your_card_sort"
-        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 w-32 justify-center"
+        class="px-2 py-0.5 sm:px-3 sm:py-1 text-[10px] sm:text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
       >
-        <span class="text-gray-500">Sorting by</span>
+        <span class="text-gray-500">Sort:</span>
         <span class="font-semibold text-gray-800">
           {if @your_card_sort == :rank, do: "Rank", else: "Suit"}
         </span>
