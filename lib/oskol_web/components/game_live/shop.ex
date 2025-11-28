@@ -604,40 +604,14 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-base-100/60 flex flex-col items-center justify-end pb-4 rounded-xl">
-          <svg
-            class="w-6 h-6 text-rose-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-          <span class="text-xs text-rose-400 font-medium mt-1">Destroyed</span>
+        <div class="absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl">
+          <span class="text-xs text-rose-400 font-medium">Destroyed</span>
         </div>
       <% end %>
 
       <%= if @is_picked do %>
-        <div class="absolute inset-0 bg-base-100/60 flex flex-col items-center justify-end pb-4 rounded-xl">
-          <svg
-            class="w-6 h-6 text-base-content/40"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M5 13l4 4L19 7"
-            />
-          </svg>
-          <span class="text-xs text-base-content/40 font-medium mt-1">Picked</span>
+        <div class="absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl">
+          <span class="text-xs text-base-content/40 font-medium">Picked</span>
         </div>
       <% end %>
     </button>
