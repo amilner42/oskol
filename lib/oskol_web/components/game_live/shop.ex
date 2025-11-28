@@ -520,7 +520,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         cond do
           # Destroyed cards
           @is_destroyed ->
-            "opacity-30 cursor-not-allowed border-rose-300/30 bg-rose-50/20"
+            "opacity-30 cursor-not-allowed border-transparent"
 
           # Picked cards
           @is_picked ->
