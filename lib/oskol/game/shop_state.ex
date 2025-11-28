@@ -557,6 +557,7 @@ defmodule Oskol.Game.ShopState do
 
   @doc """
   Destroys a card at the given index. The destroyed card cannot be picked by either player.
+  Auto-completes the destroy phase when all destroys are used.
   """
   @spec destroy_card(t(), player_id(), non_neg_integer()) :: {:ok, t()} | {:error, atom()}
   def destroy_card(%__MODULE__{} = shop_state, player_id, card_index) do
@@ -577,9 +578,14 @@ defmodule Oskol.Game.ShopState do
         {:error, :card_already_destroyed}
 
       true ->
+        new_destroyed = [card_index | shop_state.destroyed_card_indices]
+        # Auto-complete destroy phase when all destroys are used
+        all_destroys_used = length(new_destroyed) >= shop_state.destroys_allowed
+
         updated_state = %{
           shop_state
-          | destroyed_card_indices: [card_index | shop_state.destroyed_card_indices]
+          | destroyed_card_indices: new_destroyed,
+            destroy_phase_complete: all_destroys_used
         }
 
         {:ok, updated_state}
