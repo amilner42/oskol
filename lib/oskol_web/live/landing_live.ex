@@ -505,7 +505,7 @@ defmodule OskolWeb.LandingLive do
 
       <div class="relative z-10 w-full flex flex-col flex-1 overflow-auto">
         <!-- Top spacer - pushes content down, logo stays at fixed distance from top -->
-        <div class="flex-1 min-h-[20vh] max-h-[28vh]"></div>
+        <div class="shrink-0 h-[30vh]"></div>
 
         <div class="text-center px-6 max-w-xl w-full mx-auto">
           <!-- Logo section - stays at fixed position -->
