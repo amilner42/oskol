@@ -70,7 +70,7 @@ defmodule OskolWeb.LandingLive do
         # Subscribe to game updates
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
 
-        # Try to rejoin
+        # Try to rejoin first (for reconnecting players)
         case Game.rejoin_game(game_name, player_name, self()) do
           {:ok, player_id, new_state} ->
             # Check if game already started - redirect to game
@@ -89,8 +89,33 @@ defmodule OskolWeb.LandingLive do
             end
 
           {:error, _reason} ->
-            # Couldn't rejoin - fall back to normal check but keep the name
-            check_game_for_reconnect(socket, game_name, player_name)
+            # Couldn't rejoin - try joining as a new player if game is still in lobby
+            server_state = Game.get_server_state(game_name)
+
+            if server_state.game_state == nil do
+              # Game is still in lobby - try to join as new player
+              case Game.join_game(game_name, player_name, self()) do
+                {:ok, player_id, new_state} ->
+                  socket
+                  |> assign(
+                    step: :lobby,
+                    game_name: game_name,
+                    player_name: player_name,
+                    player_id: player_id,
+                    server_state: new_state,
+                    selected_format: nil,
+                    error: nil
+                  )
+                  |> push_patch(to: ~p"/?game=#{game_name}&name=#{player_name}")
+
+                {:error, _join_reason} ->
+                  # Join also failed - fall back to reconnect check
+                  check_game_for_reconnect(socket, game_name, player_name)
+              end
+            else
+              # Game in progress - fall back to reconnect check
+              check_game_for_reconnect(socket, game_name, player_name)
+            end
         end
 
       :not_found ->
