@@ -520,7 +520,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
         cond do
           # Destroyed cards
           @is_destroyed ->
-            "opacity-30 cursor-not-allowed border-transparent"
+            "opacity-30 cursor-not-allowed border-base-300/30"
 
           # Picked cards
           @is_picked ->
@@ -604,7 +604,24 @@ defmodule OskolWeb.Components.GameLive.Shop do
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-rose-50/40 rounded-xl pointer-events-none" />
+        <div class="absolute inset-0 bg-base-100/80 flex items-center justify-center rounded-xl">
+          <div class="flex flex-col items-center gap-1">
+            <svg
+              class="w-6 h-6 text-rose-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+            <span class="text-xs text-rose-400 font-medium">Destroyed</span>
+          </div>
+        </div>
       <% end %>
 
       <%= if @is_picked do %>
