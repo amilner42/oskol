@@ -51,18 +51,18 @@ defmodule OskolWeb.Components.GameLive.Shop do
     ~H"""
     <div class="h-screen-safe bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto">
       <!-- Responsive layout using CSS order -->
-      <div class="min-h-full flex flex-col lg:flex-row">
-        
+      <div class="min-h-full flex flex-col lg:flex-row lg:h-screen">
+
     <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
-        <div class="order-1 lg:order-none lg:w-[503px] xl:w-[660px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col">
+        <div class="order-1 lg:order-none lg:w-[503px] xl:w-[660px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden">
           <!-- Header -->
-          <div class="p-6 border-b border-base-300/50">
+          <div class="p-6 border-b border-base-300/50 flex-shrink-0">
             <div class="flex items-center justify-between">
               <div class="text-2xl font-light text-base-content">Command Center</div>
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
           </div>
-          
+
     <!-- Cards Grid (hidden on mobile, shown on desktop) -->
           <div class="hidden lg:block flex-1 p-6 overflow-y-auto">
             <.shop_cards_grid
@@ -78,17 +78,19 @@ defmodule OskolWeb.Components.GameLive.Shop do
         </div>
         
     <!-- Section 2: Timeline (order-2 on mobile) -->
-        <div class="order-2 lg:order-none lg:flex-1 lg:flex lg:flex-col">
-          <.pick_status_bar
-            shop_state={@game_state.shop_state}
-            player_id={@player_id}
-            player_name={@player_name}
-            opponent_name={@opponent_name}
-            shop_countdown={assigns[:shop_countdown]}
-          />
-          
+        <div class="order-2 lg:order-none lg:flex-1 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden">
+          <div class="flex-shrink-0">
+            <.pick_status_bar
+              shop_state={@game_state.shop_state}
+              player_id={@player_id}
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+              shop_countdown={assigns[:shop_countdown]}
+            />
+          </div>
+
     <!-- Preview Panel (hidden on mobile, shown on desktop) -->
-          <div class="hidden lg:flex flex-1 flex-col">
+          <div class="hidden lg:flex flex-1 flex-col overflow-hidden">
             <.preview_panel
               game_state={@game_state}
               player_id={@player_id}
@@ -883,46 +885,48 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:hand_name, Format.hand_name(assigns.hand_type))
 
     ~H"""
-    <div class="flex-1 flex flex-col p-4 lg:p-8">
-      <!-- Header -->
-      <div class="mb-4 lg:mb-8">
-        <div class="text-[10px] lg:text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
-        <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@hand_name}</h2>
-      </div>
+    <div class="flex-1 flex flex-col p-4 lg:p-8 overflow-hidden">
+      <!-- Scrollable content area -->
+      <div class="flex-1 overflow-y-auto">
+        <!-- Header -->
+        <div class="mb-4 lg:mb-8">
+          <div class="text-[10px] lg:text-xs uppercase tracking-widest text-emerald-500/60 mb-1">Research</div>
+          <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@hand_name}</h2>
+        </div>
 
-    <!-- Level indicator -->
-      <div class="mb-6 lg:mb-12">
-        <div class="flex items-center gap-3 lg:gap-4">
-          <div class="flex items-center gap-1.5 lg:gap-2">
-            <%= if @is_active_player do %>
-              <span class="text-2xl lg:text-3xl font-light text-base-content/40">{@current_level}</span>
-            <% else %>
-              <span class="text-2xl lg:text-3xl font-light text-base-content/40">?</span>
-            <% end %>
-            <svg
-              class="w-4 h-4 lg:w-5 lg:h-5 text-emerald-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13 7l5 5m0 0l-5 5m5-5H6"
-              />
-            </svg>
-            <%= if @is_active_player do %>
-              <span class="text-2xl lg:text-3xl font-medium text-emerald-500">{@next_level}</span>
-            <% else %>
-              <span class="text-2xl lg:text-3xl font-medium text-emerald-500">?</span>
-            <% end %>
+      <!-- Level indicator -->
+        <div class="mb-6 lg:mb-12">
+          <div class="flex items-center gap-3 lg:gap-4">
+            <div class="flex items-center gap-1.5 lg:gap-2">
+              <%= if @is_active_player do %>
+                <span class="text-2xl lg:text-3xl font-light text-base-content/40">{@current_level}</span>
+              <% else %>
+                <span class="text-2xl lg:text-3xl font-light text-base-content/40">?</span>
+              <% end %>
+              <svg
+                class="w-4 h-4 lg:w-5 lg:h-5 text-emerald-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 7l5 5m0 0l-5 5m5-5H6"
+                />
+              </svg>
+              <%= if @is_active_player do %>
+                <span class="text-2xl lg:text-3xl font-medium text-emerald-500">{@next_level}</span>
+              <% else %>
+                <span class="text-2xl lg:text-3xl font-medium text-emerald-500">?</span>
+              <% end %>
+            </div>
           </div>
         </div>
-      </div>
 
-    <!-- Stats -->
-      <div class="space-y-3 lg:space-y-6 flex-1">
+      <!-- Stats -->
+        <div class="space-y-3 lg:space-y-6">
         <%= if @is_active_player do %>
           <!-- Active player: show current → new values with delta -->
           <div class="flex items-baseline justify-between border-b border-base-300/30 pb-2 lg:pb-4">
@@ -983,11 +987,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
             </p>
           </div>
         <% end %>
+        </div>
       </div>
 
-    <!-- Action Button: only shown for active player -->
+    <!-- Action Button: only shown for active player - fixed at bottom -->
       <%= if @is_active_player do %>
-        <div class="pt-4 lg:pt-8">
+        <div class="pt-4 lg:pt-8 flex-shrink-0">
           <%= if @in_destroy_phase do %>
             <button
               phx-click="destroy_shop_card"
@@ -1067,55 +1072,58 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:has_plus_bomb_preview, has_plus_bomb_preview)
 
     ~H"""
-    <div class="flex-1 flex flex-col p-4 lg:p-8">
-      <!-- Header -->
-      <div class="mb-4 lg:mb-8">
-        <div class={[
-          "text-[10px] lg:text-xs uppercase tracking-widest mb-1",
-          if(@accent_color == "amber", do: "text-amber-500/60", else: "text-rose-500/60")
-        ]}>
-          {@type_label}
-        </div>
-        <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
-      </div>
-
-      <%= if @hand_name do %>
-        <!-- Target for denial cards -->
+    <div class="flex-1 flex flex-col p-4 lg:p-8 overflow-hidden">
+      <!-- Scrollable content area -->
+      <div class="flex-1 overflow-y-auto">
+        <!-- Header -->
         <div class="mb-4 lg:mb-8">
-          <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10">
-            <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
-              />
-            </svg>
-            <span class="text-rose-500 font-medium">{@hand_name}</span>
+          <div class={[
+            "text-[10px] lg:text-xs uppercase tracking-widest mb-1",
+            if(@accent_color == "amber", do: "text-amber-500/60", else: "text-rose-500/60")
+          ]}>
+            {@type_label}
           </div>
+          <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
         </div>
-      <% end %>
 
-      <%= if @is_scrambler do %>
-        <!-- Scrambler effect indicator -->
+        <%= if @hand_name do %>
+          <!-- Target for denial cards -->
+          <div class="mb-4 lg:mb-8">
+            <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-rose-500/10">
+              <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
+                />
+              </svg>
+              <span class="text-rose-500 font-medium">{@hand_name}</span>
+            </div>
+          </div>
+        <% end %>
+
+        <%= if @is_scrambler do %>
+          <!-- Scrambler effect indicator -->
+          <div class="mb-4 lg:mb-8">
+            <div class="inline-flex items-center gap-2 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full bg-amber-500/10">
+              <svg class="w-3 h-3 lg:w-4 lg:h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span class="text-amber-500 text-sm lg:text-base font-medium">1-in-5 face-down</span>
+            </div>
+          </div>
+        <% end %>
+
+      <!-- Description -->
         <div class="mb-4 lg:mb-8">
-          <div class="inline-flex items-center gap-2 px-3 lg:px-4 py-1.5 lg:py-2 rounded-full bg-amber-500/10">
-            <svg class="w-3 h-3 lg:w-4 lg:h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <span class="text-amber-500 text-sm lg:text-base font-medium">1-in-5 face-down</span>
-          </div>
+          <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
         </div>
-      <% end %>
-
-    <!-- Description -->
-      <div class="mb-4 lg:mb-8">
-        <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
       </div>
 
       <%= if @has_plus_bomb_preview do %>
@@ -1184,12 +1192,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         <% end %>
       <% else %>
-        <!-- Flex spacer -->
-        <div class="flex-1"></div>
-        
-    <!-- Action Button: only shown for active player -->
+    <!-- Action Button: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
-          <div class="pt-8">
+          <div class="pt-4 lg:pt-8 flex-shrink-0">
             <%= if @in_destroy_phase do %>
               <button
                 phx-click="destroy_shop_card"
@@ -1295,16 +1300,19 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:has_preview, has_preview)
 
     ~H"""
-    <div class="flex-1 flex flex-col p-4 lg:p-8">
-      <!-- Header -->
-      <div class="mb-4 lg:mb-6">
-        <div class="text-[10px] lg:text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
-        <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
-      </div>
+    <div class="flex-1 flex flex-col p-4 lg:p-8 overflow-hidden">
+      <!-- Scrollable content area -->
+      <div class="flex-1 overflow-y-auto">
+        <!-- Header -->
+        <div class="mb-4 lg:mb-6">
+          <div class="text-[10px] lg:text-xs uppercase tracking-widest text-violet-500/60 mb-1">Logistics</div>
+          <h2 class="text-2xl lg:text-4xl font-light text-base-content">{@card_name}</h2>
+        </div>
 
-    <!-- Description -->
-      <div class="mb-4 lg:mb-8">
-        <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
+      <!-- Description -->
+        <div class="mb-4 lg:mb-8">
+          <p class="text-base-content/60 text-sm lg:text-lg leading-relaxed">{@card_description}</p>
+        </div>
       </div>
 
       <%= if @has_preview do %>
@@ -1346,8 +1354,9 @@ defmodule OskolWeb.Components.GameLive.Shop do
           </div>
         </div>
         
-    <!-- Action Buttons: only shown for active player -->
+    <!-- Action Buttons: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
+          <div class="flex-shrink-0">
           <%= if @in_destroy_phase do %>
             <button
               phx-click="destroy_shop_card"
@@ -1395,11 +1404,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
               <% end %>
             </div>
           <% end %>
+          </div>
         <% end %>
       <% else %>
-        <!-- Initial confirm button: only shown for active player -->
+        <!-- Initial confirm button: only shown for active player - fixed at bottom -->
         <%= if @is_active_player do %>
-          <div class="flex-1 flex items-end">
+          <div class="flex-shrink-0">
             <%= if @in_destroy_phase do %>
               <button
                 phx-click="destroy_shop_card"
