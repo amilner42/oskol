@@ -3,7 +3,7 @@
 # GitHub CLI Setup Script for Claude Code Web
 #
 # This script installs the GitHub CLI and configures authentication
-# using the GITHUB_TOKEN environment variable.
+# using the GH_TOKEN environment variable.
 #
 # Usage:
 #   .claude/skills/github-cli-claude-code-web/setup.sh
@@ -39,17 +39,17 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Step 1: Check for GITHUB_TOKEN
+# Step 1: Check for GH_TOKEN
 check_token() {
-    log_info "Checking for GITHUB_TOKEN..."
+    log_info "Checking for GH_TOKEN..."
 
-    if [ -z "$GITHUB_TOKEN" ]; then
-        log_error "GITHUB_TOKEN environment variable is not set"
+    if [ -z "$GH_TOKEN" ]; then
+        log_error "GH_TOKEN environment variable is not set"
         log_error "Claude Code Web should have this set automatically"
         exit 1
     fi
 
-    log_success "GITHUB_TOKEN is available"
+    log_success "GH_TOKEN is available"
 }
 
 # Step 2: Install GitHub CLI
@@ -79,27 +79,13 @@ install_gh() {
 configure_auth() {
     log_info "Configuring GitHub CLI authentication..."
 
-    # Set GH_TOKEN from GITHUB_TOKEN
-    export GH_TOKEN=$GITHUB_TOKEN
-
-    # Add to bashrc for persistence
-    if ! grep -q "GH_TOKEN" "$HOME/.bashrc" 2>/dev/null; then
-        cat >> "$HOME/.bashrc" << 'EOF'
-
-# GitHub CLI setup
-export GH_TOKEN=$GITHUB_TOKEN
-EOF
-        log_info "Added GH_TOKEN to ~/.bashrc"
-    fi
-
-    log_success "Authentication configured"
+    # GH_TOKEN should already be set in the environment
+    log_success "Authentication configured (using GH_TOKEN from environment)"
 }
 
 # Step 4: Verify authentication
 verify_auth() {
     log_info "Verifying GitHub authentication..."
-
-    export GH_TOKEN=$GITHUB_TOKEN
 
     if gh auth status 2>&1 | grep -q "Logged in"; then
         log_success "GitHub authentication verified"
@@ -133,8 +119,7 @@ main() {
     log_info "  gh pr list"
     log_info "  gh issue list"
     echo ""
-    log_info "For future sessions, run:"
-    log_info "  export GH_TOKEN=\$GITHUB_TOKEN"
+    log_info "GH_TOKEN is set automatically in Claude Code Web"
     echo ""
 }
 

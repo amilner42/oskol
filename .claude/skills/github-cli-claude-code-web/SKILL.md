@@ -17,14 +17,13 @@ Run the setup script to install gh:
 
 This installs:
 - GitHub CLI (`gh`) via apt
-- Configures authentication using existing GITHUB_TOKEN
+- Configures authentication using existing GH_TOKEN
 
 ## Quick Start (After Setup)
 
 For subsequent sessions where gh is already installed:
 
 ```bash
-export GH_TOKEN=$GITHUB_TOKEN
 gh auth status
 ```
 
@@ -57,9 +56,8 @@ gh repo clone owner/repo
 
 ### Authentication failed
 ```bash
-# Ensure GITHUB_TOKEN is set
-echo $GITHUB_TOKEN
-export GH_TOKEN=$GITHUB_TOKEN
+# Ensure GH_TOKEN is set
+echo $GH_TOKEN
 gh auth status
 ```
 
