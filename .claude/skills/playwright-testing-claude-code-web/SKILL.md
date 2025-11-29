@@ -107,9 +107,7 @@ project/
 ## Running Tests
 
 ```bash
-# Load environment and start server
-. ~/.asdf/asdf.sh
-export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
+# Start server in background (after running Elixir setup)
 mix phx.server &
 
 # Run a test

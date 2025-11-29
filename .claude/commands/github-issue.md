@@ -8,7 +8,7 @@ Complete a GitHub issue end-to-end, including setup, implementation, and visual 
 
 ### Step 1: Setup GitHub CLI
 
-Run the GitHub CLI skill to ensure `gh` is available:
+Run the GitHub CLI setup (idempotent - skips if already installed):
 
 ```bash
 .claude/skills/github-cli-claude-code-web/setup.sh
@@ -17,24 +17,17 @@ Run the GitHub CLI skill to ensure `gh` is available:
 Then fetch the issue details:
 
 ```bash
-gh issue view <issue-number>
+$HOME/.local/bin/gh issue view <issue-number> --repo amilner42/oskol
 ```
 
 Read and understand the issue requirements before proceeding.
 
 ### Step 2: Setup Elixir Environment
 
-Run the Elixir skill to ensure the development environment is ready:
+Run the Elixir setup (idempotent - skips if already installed):
 
 ```bash
 .claude/skills/elixir-claude-code-web/setup.sh
-```
-
-Or if already set up in a previous session:
-
-```bash
-. ~/.asdf/asdf.sh
-export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
 ```
 
 Verify with `mix compile` to ensure dependencies are ready.
@@ -65,8 +58,6 @@ Run the test:
 
 ```bash
 # Start server in background
-. ~/.asdf/asdf.sh
-export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
 mix phx.server &
 
 # Run the verification script
@@ -77,16 +68,67 @@ node playwright/test-<issue-slug>/test.js
 
 Use the Read tool to view the captured screenshots and verify the implementation looks correct.
 
-### Step 6: Summary
+### Step 6: Commit and Create Pull Request
+
+Once implementation is verified:
+
+1. **Commit the changes:**
+   ```bash
+   git add -A
+   git commit -m "Fix #<issue-number>: <description>"
+   ```
+
+2. **Push and create PR with screenshots:**
+   ```bash
+   git push -u origin HEAD
+   ```
+
+3. **Create the PR with screenshots:**
+
+   Screenshots are already saved in `playwright/screenshots/test-<issue-slug>/` (matching the test folder name). Commit and push them, then reference in the PR:
+
+   ```bash
+   git add playwright/screenshots/test-<issue-slug>/
+   git commit -m "Add screenshots for #<issue-number>"
+   git push
+
+   $HOME/.local/bin/gh pr create \
+     --title "Fix #<issue-number>: <description>" \
+     --body "## Summary
+   <Brief description of changes>
+
+   ## Screenshots
+   ![Description](playwright/screenshots/test-<issue-slug>/01-screenshot.png)
+   ![Description](playwright/screenshots/test-<issue-slug>/02-screenshot.png)
+
+   Fixes #<issue-number>" \
+     --repo amilner42/oskol
+   ```
+
+   **Folder structure:**
+   ```
+   playwright/
+   ├── test-<issue-slug>/          # Test script
+   │   └── test.js
+   └── screenshots/
+       └── test-<issue-slug>/      # Screenshots (same folder name!)
+           ├── 01-screenshot.png
+           └── 02-screenshot.png
+   ```
+
+**IMPORTANT**: Always include screenshots in the PR body using relative paths to the committed files!
+
+### Step 7: Summary
 
 After completing all steps, provide:
 - Summary of changes made
 - List of files modified
 - Screenshot review confirming the fix
+- Link to the created PR
 - Any notes or follow-up items
 
 ## Notes
 
 - If any step fails, troubleshoot using the relevant skill documentation
-- Commit changes when implementation is complete and verified
-- Reference the issue number in commit messages (e.g., "Fix #123: description")
+- Always include screenshots in PRs to show visual changes
+- Reference the issue number in commit messages and PR title (e.g., "Fix #123: description")

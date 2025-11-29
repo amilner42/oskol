@@ -7,7 +7,7 @@ description: Set up GitHub CLI (gh) in Claude Code Web for PR creation, issue ma
 
 Install and configure the GitHub CLI (`gh`) to work with your repositories.
 
-## Full Setup (First Time)
+## Setup
 
 Run the setup script to install gh:
 
@@ -15,15 +15,15 @@ Run the setup script to install gh:
 .claude/skills/github-cli-claude-code-web/setup.sh
 ```
 
-This installs:
+**The script is idempotent** - it automatically skips steps that are already complete. You can safely run it whether this is a fresh instance or one that's already set up.
+
+The script handles:
 - GitHub CLI (`gh`) via direct binary download to `~/.local/bin`
 - Configures authentication using existing GH_TOKEN
 
-**IMPORTANT**: After setup, you MUST use the full path `$HOME/.local/bin/gh` for all commands. Each Bash invocation runs in a separate shell, so PATH changes don't persist between commands.
+**IMPORTANT**: After setup, use the full path `$HOME/.local/bin/gh` for all commands. Each Bash invocation runs in a separate shell, so PATH changes don't persist between commands.
 
-## Quick Start (After Setup)
-
-For subsequent sessions where gh is already installed:
+## Verify Setup
 
 ```bash
 $HOME/.local/bin/gh auth status

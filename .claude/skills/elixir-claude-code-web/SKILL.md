@@ -7,15 +7,17 @@ description: Set up Elixir/Phoenix development in Claude Code Web with asdf, npm
 
 Complete setup for Elixir/Phoenix development with testing tools.
 
-## Full Setup (First Time)
+## Setup
 
-Run the setup script to install everything:
+Run the setup script to prepare the environment:
 
 ```bash
 .claude/skills/elixir-claude-code-web/setup.sh
 ```
 
-This installs:
+**The script is idempotent** - it automatically skips steps that are already complete. You can safely run it whether this is a fresh instance or one that's already set up.
+
+The script handles:
 - asdf version manager
 - Erlang & Elixir (from .tool-versions)
 - Hex and Rebar
@@ -23,23 +25,11 @@ This installs:
 - Phoenix assets
 - Playwright for testing
 
-## Quick Start (After Setup)
-
-For subsequent sessions where asdf is already installed:
-
-```bash
-. ~/.asdf/asdf.sh
-export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
-mix phx.server
-```
-
-Server runs at http://localhost:4000
+After setup, the server runs at http://localhost:4000
 
 ## Running Tests
 
 ```bash
-. ~/.asdf/asdf.sh
-export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
 mix test
 ```
 
@@ -47,8 +37,6 @@ mix test
 
 ```bash
 # Start server in background
-. ~/.asdf/asdf.sh
-export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt
 mix phx.server &
 
 # Run playwright test
