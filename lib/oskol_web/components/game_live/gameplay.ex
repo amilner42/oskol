@@ -763,13 +763,25 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <div class="space-y-1">
       <%= for hand_type <- hand_types do %>
         <% level = Map.get(current_state.skill_tree, hand_type, 1)
-        stats = Oskol.Poker.Score.stats_at_level(hand_type, level) %>
-        <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-base-200">
+        stats = Oskol.Poker.Score.stats_at_level(hand_type, level)
+        is_countered = hand_type in current_state.active_debuffs %>
+        <div class={[
+          "flex items-center justify-between py-1 px-2 rounded hover:bg-base-200",
+          if(is_countered, do: "opacity-60", else: "")
+        ]}>
           <div class="flex items-center gap-2">
             <span class="text-xs text-base-content/50 w-6">Lv{level}</span>
-            <span class="text-sm">{Format.hand_name(hand_type)}</span>
+            <span class={["text-sm", if(is_countered, do: "line-through", else: "")]}>
+              {Format.hand_name(hand_type)}
+            </span>
+            <%= if is_countered do %>
+              <span class="text-xs text-error font-medium">(Countered)</span>
+            <% end %>
           </div>
-          <span class="text-xs text-base-content/70">
+          <span class={[
+            "text-xs",
+            if(is_countered, do: "text-base-content/40 line-through", else: "text-base-content/70")
+          ]}>
             {stats.base_chips} × {stats.multiplier}
           </span>
         </div>
