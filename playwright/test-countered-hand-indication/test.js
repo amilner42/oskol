@@ -51,12 +51,11 @@ async function main() {
     const gameUrl = page.url();
     log(`  Game URL: ${gameUrl}`);
 
-    // ===== STEP 3: Add second player with new browser context =====
+    // ===== STEP 3: Add second player with new page in same context =====
     log('STEP 3: Adding second player...');
 
-    // Create a second browser context for opponent
-    const context2 = await browser.newContext();
-    const page2 = await context2.newPage();
+    // Create a second page in the same context (more stable in headless)
+    const page2 = await context.newPage();
     await page2.goto(gameUrl);
     await sleep(2000);
 
