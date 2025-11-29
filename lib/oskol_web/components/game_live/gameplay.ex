@@ -857,11 +857,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           </div>
         </div>
       </div>
-
-      <!-- Mobile: Badges row (only shows if there are any active effects) -->
+      
+    <!-- Mobile: Badges row (only shows if there are any active effects) -->
       <% player_badges = get_sabotage_badges(@player_state)
-         opponent_badges = get_sabotage_badges(@opponent_state)
-         has_any_badges = @player_state.active_debuffs != [] or @opponent_state.active_debuffs != [] or player_badges != [] or opponent_badges != [] %>
+      opponent_badges = get_sabotage_badges(@opponent_state)
+
+      has_any_badges =
+        @player_state.active_debuffs != [] or @opponent_state.active_debuffs != [] or
+          player_badges != [] or opponent_badges != [] %>
       <%= if has_any_badges do %>
         <div class="sm:hidden flex flex-wrap gap-1 px-2 py-1.5 bg-base-200/30 border-t border-base-300/50">
           <!-- Player debuffs (bad for you) -->
@@ -880,8 +883,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               <span class="font-semibold text-sky-900">{badge.name}</span>
             </div>
           <% end %>
-
-          <!-- Opponent debuffs (good for you) -->
+          
+    <!-- Opponent debuffs (good for you) -->
           <%= if @opponent_state.active_debuffs != [] do %>
             <div class="flex items-center gap-1 px-2 py-0.5 bg-opponent rounded text-[10px]">
               <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
@@ -899,7 +902,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <% end %>
         </div>
       <% end %>
-
+      
     <!-- Desktop: Round info - top left -->
       <div class="hidden sm:block absolute top-4 left-4 text-left text-base-content">
         <div class="text-lg">Round {@game_state.round_number}</div>
@@ -1557,7 +1560,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <% end %>
       <%= if @disabled and not @face_down do %>
         <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <svg class="w-1/2 h-1/2 text-red-600/90" viewBox="0 0 100 100">
+          <svg class="w-3/4 h-3/4 text-pink-600/15" viewBox="0 0 100 100">
             <line
               x1="20"
               y1="20"
