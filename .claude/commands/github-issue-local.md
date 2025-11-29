@@ -4,9 +4,25 @@ Complete a GitHub issue end-to-end using local development environment with git 
 
 ## Issue to work on: $ARGUMENTS
 
+## CRITICAL: Do Not Install Anything
+
+**All tools are already installed globally on this machine:**
+- Elixir/Mix (via asdf)
+- Node.js (via asdf)
+- Playwright (global npm install)
+- GitHub CLI (gh)
+
+**NEVER run any of these commands:**
+- `npm install` - breaks playwright browser version matching
+- `npx playwright install` - browsers are already cached
+- `brew install` - everything is already installed
+- Any other package installation commands
+
+If something is missing or not working, **STOP and ask the user** - do not try to install it yourself.
+
 ## Environment Setup
 
-**IMPORTANT**: Before running any commands, source the environment file to get access to tools (mix, gh, node, etc.):
+**IMPORTANT**: Before running any commands, source the environment file to get access to tools:
 
 ```bash
 source ~/.claude/.claude-env
@@ -16,30 +32,43 @@ This file sets up PATH and environment variables (like GH_TOKEN) needed for loca
 
 ## Workflow
 
-### Step 1: Fetch Issue Details
+### Step 1: Fetch Issue Details and Setup Dependencies
+
+First, fetch the issue:
 
 ```bash
 source ~/.claude/.claude-env && gh issue view <issue-number> --repo amilner42/oskol
 ```
 
-Read and understand the issue requirements before proceeding.
+Read and understand the issue requirements.
+
+Then install Elixir dependencies (required for worktrees which don't share deps):
+
+```bash
+source ~/.claude/.claude-env && mix deps.get
+```
 
 ### Step 2: Start the Server
 
-Find an available port and start the Phoenix server:
+Find an available port and start the Phoenix server. **Print the port clearly so the user can visit it:**
 
 ```bash
 source ~/.claude/.claude-env && \
 for port in 4001 4002 4003 4004 4005; do
   if ! lsof -i :$port > /dev/null 2>&1; then
-    echo "Using port $port"
-    export PORT=$port
+    echo ""
+    echo "========================================"
+    echo "  SERVER STARTING ON PORT: $port"
+    echo "  Visit: http://localhost:$port"
+    echo "========================================"
+    echo ""
+    PORT=$port mix phx.server &
     break
   fi
-done && \
-PORT=$PORT mix phx.server &
-echo "Server running at http://localhost:$PORT"
+done
 ```
+
+**Note:** Remember which port was used - you'll need it for Playwright tests.
 
 ### Step 3: Implement the Issue
 
@@ -61,6 +90,7 @@ After implementing the changes, create a Playwright test to visually verify the 
 **IMPORTANT:**
 - Only create `test.js` - do NOT create README.md files in test folders
 - Use the correct port in the test: `http://localhost:${PORT}` (default 4001)
+- Playwright is installed globally - just `require('playwright')` works
 
 **Folder structure:**
 ```
@@ -79,6 +109,8 @@ Run the test:
 source ~/.claude/.claude-env && node playwright/test-<issue-slug>/test.js
 ```
 
+**If Playwright fails:** STOP and ask the user. Do NOT try to install browsers or packages.
+
 ### Step 5: Review Screenshots
 
 Use the Read tool to view the captured screenshots and verify the implementation looks correct.
@@ -90,7 +122,7 @@ Once implementation is verified:
 1. **Commit code changes AND screenshots together:**
    ```bash
    git add -A
-   git add playwright/screenshots/test-<issue-slug>/
+   git add -f playwright/screenshots/test-<issue-slug>/   # -f needed because screenshots are gitignored
    git commit -m "Fix #<issue-number>: <description>"
    ```
 
@@ -130,7 +162,8 @@ After completing all steps, provide:
 
 ## Notes
 
-- This command is for local development (Elixir/gh already installed)
+- This command is for local development - everything is already installed
 - Use port 4001+ to avoid conflicts with other instances
 - Always commit screenshots with your changes
 - Reference the issue number in commit messages and PR title
+- **If something doesn't work, ask the user - don't try to fix it by installing packages**
