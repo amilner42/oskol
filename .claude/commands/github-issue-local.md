@@ -4,12 +4,22 @@ Complete a GitHub issue end-to-end using local development environment with git 
 
 ## Issue to work on: $ARGUMENTS
 
+## Environment Setup
+
+**IMPORTANT**: Before running any commands, source the environment file to get access to tools (mix, gh, node, etc.):
+
+```bash
+source ~/.claude/.claude-env
+```
+
+This file sets up PATH and environment variables (like GH_TOKEN) needed for local development. You must source this before every bash command since each invocation is a new shell.
+
 ## Workflow
 
 ### Step 1: Fetch Issue Details
 
 ```bash
-gh issue view <issue-number> --repo amilner42/oskol
+source ~/.claude/.claude-env && gh issue view <issue-number> --repo amilner42/oskol
 ```
 
 Read and understand the issue requirements before proceeding.
@@ -19,16 +29,14 @@ Read and understand the issue requirements before proceeding.
 Find an available port and start the Phoenix server:
 
 ```bash
-# Find available port (4001, 4002, etc.)
+source ~/.claude/.claude-env && \
 for port in 4001 4002 4003 4004 4005; do
   if ! lsof -i :$port > /dev/null 2>&1; then
     echo "Using port $port"
     export PORT=$port
     break
   fi
-done
-
-# Start server in background
+done && \
 PORT=$PORT mix phx.server &
 echo "Server running at http://localhost:$PORT"
 ```
@@ -37,8 +45,8 @@ echo "Server running at http://localhost:$PORT"
 
 - Read the relevant code files to understand the current implementation
 - Make the necessary changes to complete the issue
-- Run `mix compile` to check for compilation errors
-- Run `mix test` to ensure tests pass
+- Run `source ~/.claude/.claude-env && mix compile` to check for compilation errors
+- Run `source ~/.claude/.claude-env && mix test` to ensure tests pass
 
 ### Step 4: Create Playwright Verification Script
 
@@ -68,7 +76,7 @@ playwright/
 Run the test:
 
 ```bash
-node playwright/test-<issue-slug>/test.js
+source ~/.claude/.claude-env && node playwright/test-<issue-slug>/test.js
 ```
 
 ### Step 5: Review Screenshots
@@ -94,9 +102,9 @@ Once implementation is verified:
 
 2. **Push and create PR:**
    ```bash
-   git push -u origin HEAD
+   source ~/.claude/.claude-env && git push -u origin HEAD
 
-   gh pr create \
+   source ~/.claude/.claude-env && gh pr create \
      --title "Fix #<issue-number>: <description>" \
      --body "## Summary
    <Brief description of changes>
