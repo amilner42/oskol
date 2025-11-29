@@ -1045,7 +1045,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
                   />
                 </svg>
                 <span class="text-emerald-500 text-lg lg:text-2xl font-medium">
-                  {@current_stats.multiplier}x
+                  {@next_stats.multiplier}x
                 </span>
                 <span class="text-emerald-400 text-xs lg:text-sm font-medium">
                   (+{@upgrade_bonus.multiplier})
