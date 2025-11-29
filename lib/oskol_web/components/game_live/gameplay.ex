@@ -178,8 +178,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def game_screen(assigns) do
     ~H"""
     <div class="flex flex-col h-screen-safe bg-base-300 overflow-hidden">
-      <!-- Top - Opponent Cards: shrink on mobile -->
-      <div class="shrink-0 sm:flex-1 flex flex-col justify-end pt-2 px-1 pb-1 sm:p-3 md:p-4 bg-base-200/40">
+      <!-- Top - Opponent Cards: scales based on screen height -->
+      <div class="shrink-0 sm:flex-1 flex flex-col justify-end card-section-padding bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
           opponent_card_sort={@opponent_card_sort}
@@ -190,7 +190,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           enhancements_disabled={@opponent_state.enhancements_disabled}
         />
       </div>
-      
+
     <!-- Middle - Playing Area: takes remaining space -->
       <div class="flex-1 min-h-0 flex flex-col justify-start bg-base-100 shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)]">
         <.playing_area
@@ -207,9 +207,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           score_animation_card_index={@score_animation_card_index}
         />
       </div>
-      
-    <!-- Bottom - Player Cards: shrink on mobile -->
-      <div class="shrink-0 sm:flex-1 flex flex-col justify-start pt-1 px-1 pb-0 sm:p-3 md:p-4 bg-base-200/40">
+
+    <!-- Bottom - Player Cards: scales based on screen height -->
+      <div class="shrink-0 sm:flex-1 flex flex-col justify-start card-section-padding bg-base-200/40">
         <.player_cards
           player_state={@player_state}
           selected_card_ids={@selected_card_ids}
@@ -222,7 +222,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           enhancements_disabled={@player_state.enhancements_disabled}
         />
       </div>
-      
+
     <!-- Action Bar: fixed height -->
       <.action_bar
         player_state={@player_state}
@@ -255,7 +255,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     ~H"""
     <!-- Card controls for opponent -->
-    <div class="flex justify-center mb-2 sm:mb-3">
+    <div class="flex justify-center card-sort-margin">
       <button
         phx-click="toggle_opponent_card_sort"
         class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
@@ -266,15 +266,15 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         </span>
       </button>
     </div>
-    <!-- Responsive card grid: flex cards that shrink on mobile, max size on desktop -->
-    <div class="flex gap-1 sm:gap-3 md:gap-4 justify-center px-2 sm:px-0">
+    <!-- Responsive card grid: flex cards that scale based on screen height -->
+    <div class="flex card-area-gap justify-center px-2 sm:px-0">
       <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
         <% is_face_down = card.id in @opponent_face_down_card_ids %>
         <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
         <.card_display
           card={card}
-          class={["flex-1 min-w-0 max-w-[112px] aspect-[5/7]", if(is_new, do: "new-card", else: "")]}
+          class={["flex-1 min-w-0 card-responsive aspect-[5/7]", if(is_new, do: "new-card", else: "")]}
           face_down={is_face_down}
           disabled={is_disabled}
           enhancement_disabled={@enhancements_disabled}
@@ -305,8 +305,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     is_locked_in = @player_state.locked_in_hand != nil %>
 
-    <!-- Responsive card grid: flex cards that shrink on mobile, max size on desktop -->
-    <div class="flex gap-1 sm:gap-3 md:gap-4 justify-center px-2 sm:px-0">
+    <!-- Responsive card grid: flex cards that scale based on screen height -->
+    <div class="flex card-area-gap justify-center px-2 sm:px-0">
       <%= for card <- sort_cards(@player_state.card_piles.hand_pile, @your_card_sort) do %>
         <% selected = card.id in selected_card_ids %>
         <% at_limit = length(selected_card_ids) >= 5 %>
@@ -318,7 +318,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           phx-value-id={card.id}
           disabled={@action_in_progress || (at_limit && not selected) || is_locked_in}
           class={[
-            "flex-1 min-w-0 max-w-[112px] transition-all touch-manipulation",
+            "flex-1 min-w-0 card-responsive transition-all touch-manipulation",
             if(selected, do: "-translate-y-2 sm:-translate-y-3 md:-translate-y-4", else: ""),
             if((at_limit && not selected) || is_locked_in,
               do: "opacity-50 cursor-not-allowed",
@@ -338,7 +338,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <% end %>
     </div>
     <!-- Card controls for player -->
-    <div class="flex justify-center mt-2 sm:mt-3">
+    <div class="flex justify-center card-sort-margin-top">
       <button
         phx-click="toggle_your_card_sort"
         class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
@@ -461,7 +461,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     is_locked_in = @player_state.locked_in_hand != nil %>
 
     <!-- Action bar -->
-    <div class="h-12 sm:h-20 flex items-center justify-between px-2 sm:px-8 shrink-0">
+    <div class="action-bar-responsive flex items-center justify-between shrink-0">
       <!-- Left: Console Button -->
       <div class="relative">
         <button
