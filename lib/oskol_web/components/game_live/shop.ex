@@ -52,15 +52,23 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="h-screen-safe bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto">
       <!-- Responsive layout using CSS order -->
       <div class="min-h-full flex flex-col lg:flex-row lg:h-screen">
-        
+
     <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
         <div class="order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen">
           <!-- Header -->
           <div class="p-6 border-b border-base-300/50 flex-shrink-0">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between mb-4">
               <div class="text-2xl font-light text-base-content">Command Center</div>
               <.turn_indicator shop_state={@game_state.shop_state} player_id={@player_id} />
             </div>
+            <!-- Round and Lives Status -->
+            <.game_status_bar
+              game_state={@game_state}
+              player_state={@player_state}
+              opponent_state={@opponent_state}
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+            />
           </div>
           
     <!-- Cards Grid (hidden on mobile, shown on desktop) -->
@@ -416,6 +424,55 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <% true -> %>
           Waiting
       <% end %>
+    </div>
+    """
+  end
+
+  defp game_status_bar(assigns) do
+    ~H"""
+    <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
+      <!-- Round indicator -->
+      <div class="flex items-center gap-2">
+        <div class="text-xs uppercase tracking-wider text-base-content/40">Round</div>
+        <div class="text-lg font-semibold text-base-content">{@game_state.round_number}</div>
+      </div>
+
+      <!-- Divider (hidden on mobile) -->
+      <div class="hidden sm:block w-px h-6 bg-base-300/50"></div>
+
+      <!-- Lives status -->
+      <div class="flex items-center gap-4">
+        <!-- Player lives -->
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-player font-medium">{@player_name}</span>
+          <div class="flex items-center gap-0.5">
+            <%= for i <- 1..@game_state.initial_lives do %>
+              <%= if i <= @player_state.lives do %>
+                <.icon name="hero-heart-solid" class="w-4 h-4 text-error" />
+              <% else %>
+                <.icon name="hero-heart" class="w-4 h-4 text-base-content/20" />
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+
+        <!-- VS divider -->
+        <span class="text-xs text-base-content/30">vs</span>
+
+        <!-- Opponent lives -->
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-opponent font-medium">{@opponent_name}</span>
+          <div class="flex items-center gap-0.5">
+            <%= for i <- 1..@game_state.initial_lives do %>
+              <%= if i <= @opponent_state.lives do %>
+                <.icon name="hero-heart-solid" class="w-4 h-4 text-error" />
+              <% else %>
+                <.icon name="hero-heart" class="w-4 h-4 text-base-content/20" />
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      </div>
     </div>
     """
   end
