@@ -959,10 +959,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <% end %>
         
     <!-- Active effects display -->
-        <!-- Effects on YOU (bad - thumbs down, player color) -->
+        <!-- Effects on YOU (player color) -->
         <%= if @player_state.active_debuffs != [] do %>
           <div class="flex items-center gap-1 mt-2 px-2 py-1 bg-player rounded">
-            <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
             <span class="text-xs font-semibold text-sky-900">
               {Enum.map(@player_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")} blocked
             </span>
@@ -971,18 +970,16 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
         <%= for badge <- get_sabotage_badges(@player_state) do %>
           <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-player rounded cursor-default">
-            <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
             <span class="text-xs font-semibold text-sky-900">{badge.name}</span>
             <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
               {badge.tooltip}
             </div>
           </div>
         <% end %>
-        
-    <!-- Effects on OPPONENT (good for you - thumbs up, opponent color) -->
+
+    <!-- Effects on OPPONENT (opponent color) -->
         <%= if @opponent_state.active_debuffs != [] do %>
           <div class="flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded">
-            <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
             <span class="text-xs font-semibold text-orange-900">
               {Enum.map(@opponent_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")} blocked
             </span>
@@ -991,7 +988,6 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
         <%= for badge <- get_sabotage_badges(@opponent_state) do %>
           <div class="group relative flex items-center gap-1 mt-1 px-2 py-1 bg-opponent rounded cursor-default">
-            <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
             <span class="text-xs font-semibold text-orange-900">{badge.name}</span>
             <div class="absolute top-1/2 -translate-y-1/2 left-full ml-2 px-2 py-1 bg-base-300 text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
               {badge.tooltip}
