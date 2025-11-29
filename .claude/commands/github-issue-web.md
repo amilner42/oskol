@@ -48,7 +48,8 @@ After implementing the changes, create a Playwright test to visually verify the 
    - Navigates to the relevant screens
    - Captures screenshots showing the changes
    - Saves to `playwright/screenshots/test-<issue-slug>/`
-3. Add a `README.md` explaining what the test verifies
+
+**Note:** Only create `test.js` - do NOT create README.md files in test folders.
 
 Reference the Playwright skill for patterns:
 - See `.claude/skills/playwright-testing-claude-code-web/SKILL.md`

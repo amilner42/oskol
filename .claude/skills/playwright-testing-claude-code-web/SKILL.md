@@ -35,9 +35,9 @@ See `playwright/test-suit-action-card/` in this project for a real-world example
 - Uses proper selectors (phx-click, input[name])
 - Captures 14+ screenshots at key moments
 - Handles LiveView state updates with appropriate waits
-- Organized with test script + README in its own folder
+- Organized with test script in its own folder
 
-**To create a new test**, see the template in `playwright/README.md` or copy an existing test folder.
+**To create a new test**, copy an existing test folder or use the template in `playwright/README.md`.
 
 ## Key Points
 
@@ -90,19 +90,18 @@ await page.screenshot({ path: 'debug.png', fullPage: true });
 project/
 ├── playwright/
 │   ├── README.md                  # Overview of all tests
-│   ├── screenshots/               # Test output
-│   │   └── test-suit-action-card/            # One folder per test
-│   └── test-suit-action-card/                 # Example test
-│       ├── README.md             # What this test does
-│       └── test.js               # The test script
+│   ├── screenshots/               # Test output (COMMIT THESE!)
+│   │   └── test-<name>/           # One folder per test
+│   │       ├── 01-screenshot.png
+│   │       └── 02-screenshot.png
+│   └── test-<name>/               # Test script
+│       └── test.js                # ONLY test.js - NO README.md!
 ```
 
-**Benefits:**
-- Each test has its own folder with documentation
-- Screenshots organized by test name
-- Easy to add new tests without cluttering root
-- Clear structure for multiple test suites
-- Can reference tests in skills/documentation
+**IMPORTANT:**
+- Only create `test.js` in test folders - do NOT create README.md files
+- Always commit screenshots to the repo for PR documentation
+- Screenshots folder name must match test folder name
 
 ## Running Tests
 

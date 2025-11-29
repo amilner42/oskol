@@ -7,11 +7,12 @@ Automated browser tests for the Oskol poker roguelike game.
 ```
 playwright/
 ├── README.md                    # This file
-├── screenshots/                 # Screenshots from test runs
-│   └── test-suit-action-card/              # One folder per test
-└── test-suit-action-card/                   # Full game flow test
-    ├── README.md               # Test-specific documentation
-    └── test.js                 # The test script
+├── screenshots/                 # Screenshots from test runs (COMMIT THESE!)
+│   └── test-<name>/             # One folder per test
+│       ├── 01-screenshot.png
+│       └── 02-screenshot.png
+└── test-<name>/                 # Test folder
+    └── test.js                  # ONLY test.js - no README.md!
 ```
 
 ## Available Tests
@@ -20,8 +21,6 @@ playwright/
 End-to-end test covering lobby → game → shop flow, including the suit-changing card feature.
 
 **Run:** `node playwright/test-suit-action-card/test.js`
-
-See `test-suit-action-card/README.md` for details.
 
 ## Running Tests
 
@@ -42,11 +41,10 @@ Screenshots are saved to `playwright/screenshots/<test-name>/`
 
 ## Adding New Tests
 
-1. Create a new directory: `playwright/my-test/`
-2. Add the test script: `playwright/my-test/test.js`
-3. Add documentation: `playwright/my-test/README.md`
-4. Update this README with a link to the new test
-5. Make sure screenshots save to: `playwright/screenshots/my-test/`
+1. Create a new directory: `playwright/test-<name>/`
+2. Add the test script: `playwright/test-<name>/test.js` (ONLY test.js - no README.md!)
+3. Make sure screenshots save to: `playwright/screenshots/test-<name>/`
+4. **IMPORTANT: Commit the screenshots!** They are used in PR documentation.
 
 ## Test Template
 
@@ -103,6 +101,7 @@ main().catch(console.error);
 - **Use descriptive names** for tests and screenshots
 - **Add timestamps** to logs for debugging
 - **Save error screenshots** when tests fail
-- **Document what each test verifies** in its README
 - **Use sleep() appropriately** - LiveView needs time to update
 - **Keep tests focused** - one test per feature/flow
+- **Commit screenshots** - they're used in PR documentation
+- **No README.md in test folders** - only test.js is needed
