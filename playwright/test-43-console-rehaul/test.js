@@ -76,12 +76,12 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
     await desktopPage.waitForTimeout(500);
 
     await desktopPage.screenshot({
-      path: path.join(SCREENSHOT_DIR, '04-desktop-deck-console-slides-up.png'),
+      path: path.join(SCREENSHOT_DIR, '04-desktop-deck-console-in-centerboard.png'),
       fullPage: true
     });
 
-    // Close console by clicking backdrop
-    await desktopPage.click('.backdrop-blur-sm');
+    // Close console by clicking same button (toggle off)
+    await deckButton.click();
     await desktopPage.waitForTimeout(500);
   }
 
@@ -92,12 +92,12 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
     await desktopPage.waitForTimeout(500);
 
     await desktopPage.screenshot({
-      path: path.join(SCREENSHOT_DIR, '05-desktop-levels-console-slides-up.png'),
+      path: path.join(SCREENSHOT_DIR, '05-desktop-levels-console-in-centerboard.png'),
       fullPage: true
     });
 
-    // Close
-    await desktopPage.click('.backdrop-blur-sm');
+    // Close by toggling
+    await levelsButton.click();
     await desktopPage.waitForTimeout(500);
   }
 
@@ -108,12 +108,12 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
     await desktopPage.waitForTimeout(500);
 
     await desktopPage.screenshot({
-      path: path.join(SCREENSHOT_DIR, '06-desktop-log-console-slides-up.png'),
+      path: path.join(SCREENSHOT_DIR, '06-desktop-log-console-in-centerboard.png'),
       fullPage: true
     });
 
-    // Close
-    await desktopPage.click('.backdrop-blur-sm');
+    // Close by toggling
+    await logButton.click();
     await desktopPage.waitForTimeout(500);
   }
 
@@ -121,9 +121,33 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
   console.log('Testing mobile viewport...');
 
   const mobilePage = await browser.newPage({ viewport: { width: 375, height: 812 } });
-  await mobilePage.goto(`http://localhost:${PORT}/game/${gameId}?name=Alice`);
+  // Use same approach as desktop - create new game session
+  const mobileGameId = 'test-console-mobile-' + Date.now();
+  await mobilePage.goto(`http://localhost:${PORT}/?game=${mobileGameId}`);
   await mobilePage.waitForLoadState('networkidle');
-  await mobilePage.waitForTimeout(2000);
+
+  // Enter player name
+  await mobilePage.fill('input[name="player_name"]', 'MobileAlice');
+  await mobilePage.click('button:has-text("Join Game")');
+  await mobilePage.waitForTimeout(1000);
+
+  // Second player for mobile game
+  const mobilePlayer2Page = await browser.newPage({ viewport: { width: 375, height: 812 } });
+  await mobilePlayer2Page.goto(`http://localhost:${PORT}/?game=${mobileGameId}`);
+  await mobilePlayer2Page.waitForLoadState('networkidle');
+  await mobilePlayer2Page.fill('input[name="player_name"]', 'MobileBob');
+  await mobilePlayer2Page.click('button:has-text("Join Game")');
+  await mobilePlayer2Page.waitForTimeout(1000);
+
+  // Both players select Battle mode
+  await mobilePage.click('button:has-text("Battle")');
+  await mobilePage.waitForTimeout(300);
+  await mobilePlayer2Page.click('button:has-text("Battle")');
+  await mobilePlayer2Page.waitForTimeout(300);
+
+  // Start game
+  await mobilePage.click('button:has-text("Start Game")');
+  await mobilePage.waitForTimeout(4000);
 
   await mobilePage.screenshot({
     path: path.join(SCREENSHOT_DIR, '07-mobile-game-with-emoji-buttons.png'),
@@ -137,12 +161,12 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
     await mobilePage.waitForTimeout(500);
 
     await mobilePage.screenshot({
-      path: path.join(SCREENSHOT_DIR, '08-mobile-deck-console-slides-up.png'),
+      path: path.join(SCREENSHOT_DIR, '08-mobile-deck-console-in-centerboard.png'),
       fullPage: true
     });
 
-    // Close
-    await mobilePage.click('.backdrop-blur-sm');
+    // Close by toggling same button
+    await mobileDeckButton.click();
     await mobilePage.waitForTimeout(500);
   }
 
@@ -153,12 +177,12 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
     await mobilePage.waitForTimeout(500);
 
     await mobilePage.screenshot({
-      path: path.join(SCREENSHOT_DIR, '09-mobile-levels-console-slides-up.png'),
+      path: path.join(SCREENSHOT_DIR, '09-mobile-levels-console-in-centerboard.png'),
       fullPage: true
     });
 
-    // Close
-    await mobilePage.click('.backdrop-blur-sm');
+    // Close by toggling
+    await mobileLevelsButton.click();
     await mobilePage.waitForTimeout(500);
   }
 
@@ -169,10 +193,12 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
     await mobilePage.waitForTimeout(500);
 
     await mobilePage.screenshot({
-      path: path.join(SCREENSHOT_DIR, '10-mobile-log-console-slides-up.png'),
+      path: path.join(SCREENSHOT_DIR, '10-mobile-log-console-in-centerboard.png'),
       fullPage: true
     });
   }
+
+  await mobilePlayer2Page.close();
 
   console.log('✅ All screenshots captured successfully!');
   await browser.close();
