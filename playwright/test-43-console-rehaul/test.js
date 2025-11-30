@@ -165,9 +165,12 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
       fullPage: true
     });
 
-    // Close by toggling same button
-    await mobileDeckButton.click();
-    await mobilePage.waitForTimeout(500);
+    // Close using mobile close button (✕)
+    const closeButton = await mobilePage.locator('button:has-text("✕")');
+    if (await closeButton.count() > 0) {
+      await closeButton.click();
+      await mobilePage.waitForTimeout(500);
+    }
   }
 
   // Click on Levels
@@ -181,9 +184,12 @@ const SCREENSHOT_DIR = 'playwright/screenshots/test-43-console-rehaul';
       fullPage: true
     });
 
-    // Close by toggling
-    await mobileLevelsButton.click();
-    await mobilePage.waitForTimeout(500);
+    // Close using mobile close button (✕)
+    const closeButton = await mobilePage.locator('button:has-text("✕")');
+    if (await closeButton.count() > 0) {
+      await closeButton.click();
+      await mobilePage.waitForTimeout(500);
+    }
   }
 
   // Click on Log

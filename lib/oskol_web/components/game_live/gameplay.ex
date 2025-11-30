@@ -1928,8 +1928,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   # New console system - emoji buttons at mid-left
   def console_buttons(assigns) do
     ~H"""
-    <!-- Fixed console buttons at mid-left of screen -->
-    <div class="fixed left-2 sm:left-4 top-1/2 -translate-y-1/2 z-40">
+    <!-- Fixed console buttons at mid-left of screen, hidden on mobile when console is active -->
+    <div class={[
+      "fixed left-2 sm:left-4 top-1/2 -translate-y-1/2 z-40",
+      if(@active_console != nil, do: "hidden sm:block", else: "")
+    ]}>
       <div class="flex flex-col gap-2 sm:gap-3">
         <!-- Deck Button -->
         <button
