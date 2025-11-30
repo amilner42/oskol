@@ -636,16 +636,20 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     alias Oskol.Game.EventLog
 
     ~H"""
-    <div class="space-y-2">
-      <%= for event <- EventLog.get_all(@event_log) |> Enum.take(50) do %>
-        <div class="text-xs bg-base-200 rounded p-2 border-l-2 border-base-content/30">
-          <span class="font-medium text-base-content/50">#{event.sequence}</span>
-          <span class="ml-2">{format_event_type(event.type)}</span>
+    <div class="flex justify-center">
+      <div class="w-full max-w-2xl">
+        <div class="space-y-2">
+          <%= for event <- EventLog.get_all(@event_log) |> Enum.take(50) do %>
+            <div class="text-xs bg-base-200 rounded p-2 border-l-2 border-base-content/30">
+              <span class="font-medium text-base-content/50">#{event.sequence}</span>
+              <span class="ml-2">{format_event_type(event.type)}</span>
+            </div>
+          <% end %>
+          <%= if EventLog.count(@event_log) == 0 do %>
+            <div class="text-sm text-base-content/50 text-center py-4">No events yet</div>
+          <% end %>
         </div>
-      <% end %>
-      <%= if EventLog.count(@event_log) == 0 do %>
-        <div class="text-sm text-base-content/50 text-center py-4">No events yet</div>
-      <% end %>
+      </div>
     </div>
     """
   end
@@ -671,22 +675,24 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     cards_remaining = length(all_cards)
     face_down_count = Enum.count(hand_pile, fn card -> card.id in face_down_ids end) %>
 
-    <div class="text-xs text-base-content/70 mb-2 sm:mb-3">
-      {cards_remaining} cards left
-      <%= if face_down_count > 0 do %>
-        <span class="text-player/70 hidden sm:inline">
-          ({face_down_count} face-down {if face_down_count == 1, do: "card", else: "cards"} in hand not highlighted)
-        </span>
-      <% end %>
-    </div>
+    <div class="flex justify-center">
+      <div class="inline-block">
+        <div class="text-xs text-base-content/70 mb-2 sm:mb-3">
+          {cards_remaining} cards left
+          <%= if face_down_count > 0 do %>
+            <span class="text-player/70 hidden sm:inline">
+              ({face_down_count} face-down {if face_down_count == 1, do: "card", else: "cards"} in hand not highlighted)
+            </span>
+          <% end %>
+        </div>
 
-    <% suits = [:spades, :hearts, :clubs, :diamonds]
-    ranks = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2] %>
+        <% suits = [:spades, :hearts, :clubs, :diamonds]
+        ranks = [14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2] %>
 
-    <!-- Cards in fixed 13-column grid per suit, duplicates in extra rows -->
-    <!-- Mobile: scrollable horizontally with smaller cards -->
-    <div class="space-y-2 sm:space-y-3 min-w-0">
-      <%= for suit <- suits do %>
+        <!-- Cards in fixed 13-column grid per suit, duplicates in extra rows -->
+        <!-- Mobile: scrollable horizontally with smaller cards -->
+        <div class="space-y-2 sm:space-y-3 min-w-0">
+          <%= for suit <- suits do %>
         <% # Get all cards of this suit, group by rank
         suit_cards = Enum.filter(all_cards, fn card -> card.suit == suit end)
         cards_by_rank = Enum.group_by(suit_cards, fn card -> card.rank end)
@@ -736,6 +742,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           </div>
         </div>
       <% end %>
+        </div>
+      </div>
     </div>
     """
   end
@@ -756,8 +764,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       :straight_flush
     ] %>
 
-    <div class="space-y-1">
-      <%= for hand_type <- hand_types do %>
+    <div class="flex justify-center">
+      <div class="w-full max-w-2xl">
+        <div class="space-y-1">
+          <%= for hand_type <- hand_types do %>
         <% level = Map.get(current_state.skill_tree, hand_type, 1)
         stats = Oskol.Poker.Score.stats_at_level(hand_type, level)
         is_countered = hand_type in current_state.active_debuffs %>
@@ -781,7 +791,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             {stats.base_chips} × {stats.multiplier}
           </span>
         </div>
-      <% end %>
+          <% end %>
+        </div>
+      </div>
     </div>
     """
   end
