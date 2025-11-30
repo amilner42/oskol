@@ -684,12 +684,12 @@ defmodule OskolWeb.Components.GameLive.Shop do
   defp shop_card_icon(assigns) do
     ~H"""
     <div class={[
-      "w-12 h-12 lg:w-16 lg:h-16",
+      "w-14 h-14 lg:w-20 lg:h-20",
       case @accent_color do
-        "emerald" -> "text-emerald-500"
-        "rose" -> "text-rose-500"
-        "violet" -> "text-violet-500"
-        "amber" -> "text-amber-500"
+        "emerald" -> "text-emerald-600"
+        "rose" -> "text-rose-600"
+        "violet" -> "text-violet-600"
+        "amber" -> "text-amber-600"
       end
     ]}>
       <%= case @shop_card do %>
@@ -774,11 +774,86 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <path d="M66 38 L74 48 L62 48 Z" />
             <path d="M84 36 L92 46 L80 46 Z" />
           </svg>
-        <%!-- Denial Cards - Counter Icons (same as level up but with X) --%>
-        <% %ShopCard{type: :denial, subtype: _hand_type} -> %>
+        <%!-- Denial Cards - Use same SVGs as level up cards --%>
+        <% %ShopCard{type: :denial, subtype: :high_card} -> %>
           <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
-            <circle cx="50" cy="50" r="35" stroke-width="4" />
-            <path d="M30 30 L70 70 M70 30 L30 70" stroke-width="4" stroke-linecap="round" />
+            <rect x="30" y="20" width="40" height="60" rx="4" stroke-width="3" />
+            <text x="50" y="60" text-anchor="middle" font-size="30" fill="currentColor">A</text>
+          </svg>
+        <% %ShopCard{type: :denial, subtype: :pair} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="20" y="20" width="30" height="45" rx="3" stroke-width="2.5" />
+            <rect x="50" y="20" width="30" height="45" rx="3" stroke-width="2.5" />
+            <circle cx="35" cy="42.5" r="8" fill="currentColor" />
+            <circle cx="65" cy="42.5" r="8" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :denial, subtype: :two_pair} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="10" y="20" width="20" height="30" rx="2" stroke-width="2" />
+            <rect x="32" y="20" width="20" height="30" rx="2" stroke-width="2" />
+            <rect x="56" y="20" width="20" height="30" rx="2" stroke-width="2" />
+            <rect x="78" y="20" width="20" height="30" rx="2" stroke-width="2" />
+            <circle cx="20" cy="35" r="5" fill="currentColor" />
+            <circle cx="42" cy="35" r="5" fill="currentColor" />
+            <circle cx="66" cy="35" r="5" fill="currentColor" />
+            <circle cx="88" cy="35" r="5" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :denial, subtype: :three_of_a_kind} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="15" y="25" width="25" height="37" rx="3" stroke-width="2.5" />
+            <rect x="38" y="25" width="25" height="37" rx="3" stroke-width="2.5" />
+            <rect x="61" y="25" width="25" height="37" rx="3" stroke-width="2.5" />
+            <circle cx="27.5" cy="43.5" r="6" fill="currentColor" />
+            <circle cx="50.5" cy="43.5" r="6" fill="currentColor" />
+            <circle cx="73.5" cy="43.5" r="6" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :denial, subtype: :straight} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <path d="M20 50 L35 30 L50 50 L65 35 L80 55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+            <circle cx="20" cy="50" r="5" fill="currentColor" />
+            <circle cx="35" cy="30" r="5" fill="currentColor" />
+            <circle cx="50" cy="50" r="5" fill="currentColor" />
+            <circle cx="65" cy="35" r="5" fill="currentColor" />
+            <circle cx="80" cy="55" r="5" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :denial, subtype: :flush} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M35 25 L45 45 L30 45 Z" />
+            <path d="M55 30 L65 50 L50 50 Z" />
+            <path d="M75 35 L85 55 L70 55 Z" />
+            <path d="M25 50 L35 70 L20 70 Z" />
+            <path d="M65 55 L75 75 L60 75 Z" />
+          </svg>
+        <% %ShopCard{type: :denial, subtype: :full_house} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="10" y="25" width="22" height="33" rx="2.5" stroke-width="2" />
+            <rect x="34" y="25" width="22" height="33" rx="2.5" stroke-width="2" />
+            <rect x="58" y="25" width="22" height="33" rx="2.5" stroke-width="2" />
+            <circle cx="21" cy="41.5" r="5.5" fill="currentColor" />
+            <circle cx="45" cy="41.5" r="5.5" fill="currentColor" />
+            <circle cx="69" cy="41.5" r="5.5" fill="currentColor" />
+            <rect x="82" y="32" width="12" height="20" rx="2" stroke-width="1.5" />
+            <rect x="82" y="54" width="12" height="20" rx="2" stroke-width="1.5" />
+          </svg>
+        <% %ShopCard{type: :denial, subtype: :four_of_a_kind} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="8" y="28" width="20" height="30" rx="2.5" stroke-width="2" />
+            <rect x="30" y="28" width="20" height="30" rx="2.5" stroke-width="2" />
+            <rect x="52" y="28" width="20" height="30" rx="2.5" stroke-width="2" />
+            <rect x="74" y="28" width="20" height="30" rx="2.5" stroke-width="2" />
+            <circle cx="18" cy="43" r="5" fill="currentColor" />
+            <circle cx="40" cy="43" r="5" fill="currentColor" />
+            <circle cx="62" cy="43" r="5" fill="currentColor" />
+            <circle cx="84" cy="43" r="5" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :denial, subtype: :straight_flush} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M15 50 Q30 30, 45 45 T75 40" stroke="currentColor" stroke-width="3" fill="none" />
+            <path d="M12 48 L20 58 L8 58 Z" />
+            <path d="M30 28 L38 38 L26 38 Z" />
+            <path d="M48 43 L56 53 L44 53 Z" />
+            <path d="M66 38 L74 48 L62 48 Z" />
+            <path d="M84 36 L92 46 L80 46 Z" />
           </svg>
         <%!-- Sabotage Cards - Fun Icons --%>
         <% %ShopCard{type: :sabotage, subtype: :scrambler} -> %>
@@ -995,11 +1070,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
 
     <!-- Card name at bottom -->
       <div class={[
-        "font-semibold text-xs lg:text-sm text-center leading-tight",
+        "font-bold text-xs lg:text-sm text-center leading-tight",
         cond do
-          @is_destroyed -> "text-base-content/50"
-          @is_picked -> "text-base-content/50"
-          true -> "text-base-content"
+          @is_destroyed -> "text-gray-400"
+          @is_picked -> "text-gray-400"
+          true -> "text-gray-900"
         end
       ]}>
         {@display_name}
