@@ -921,8 +921,20 @@ defmodule Oskol.Game.GameState do
           # Mark card as picked (but don't complete the pick yet)
           case ShopState.mark_card_picked(shop_state, card_index) do
             {:ok, updated_shop_state} ->
-              # Generate 8 random cards for selection
-              available_cards = generate_plus_bomb_cards()
+              # Get opponent's deck to sample from
+              opponent_id =
+                game_state.players
+                |> Map.keys()
+                |> Enum.find(fn id -> id != player_id end)
+
+              opponent = game_state.players[opponent_id]
+
+              opponent_deck =
+                opponent.card_piles.draw_pile ++
+                  opponent.card_piles.hand_pile ++ opponent.card_piles.discard_pile
+
+              # Generate 8 random cards from opponent's deck
+              available_cards = generate_plus_bomb_cards(opponent_deck)
 
               # Store in pending_plus_bomb
               pending = %{
@@ -1109,21 +1121,12 @@ defmodule Oskol.Game.GameState do
 
   def complete_destroy_phase(_, _), do: {:error, :no_shop_active}
 
-  # Generates 8 random cards for plus bomb selection
-  defp generate_plus_bomb_cards do
-    ranks = Enum.to_list(2..14)
-    suits = [:hearts, :diamonds, :clubs, :spades]
-
-    # Generate 8 unique random cards
-    all_combinations =
-      for rank <- ranks, suit <- suits do
-        {rank, suit}
-      end
-
-    all_combinations
+  # Generates 8 random cards for plus bomb selection from opponent's deck
+  defp generate_plus_bomb_cards(opponent_deck) do
+    opponent_deck
     |> Enum.shuffle()
     |> Enum.take(8)
-    |> Enum.map(fn {rank, suit} -> Card.new(rank, suit) end)
+    |> Card.sort_by_rank()
   end
 
   # Helper to apply deck builder card effects
@@ -1345,6 +1348,9 @@ defmodule Oskol.Game.GameState do
 
         # Draw 8 cards into hand, rest goes to draw pile
         {hand_cards, draw_cards} = Enum.split(shuffled_cards, 8)
+
+        # Sort hand cards by rank (descending) then by suit
+        hand_cards = Card.sort_by_rank(hand_cards)
 
         new_card_piles = %CardPiles{
           hand_pile: hand_cards,

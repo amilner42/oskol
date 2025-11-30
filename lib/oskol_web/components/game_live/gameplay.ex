@@ -1259,7 +1259,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     hand = sort_cards(assigns.result.hand, :rank)
     # Sort card_breakdowns by rank too so animation goes left to right
     sorted_breakdowns =
-      Enum.sort_by(breakdown.card_breakdowns, fn b -> {-b.card.rank, suit_order(b.card.suit)} end)
+      Enum.sort_by(breakdown.card_breakdowns, fn b -> {-b.card.rank, Card.suit_order(b.card.suit)} end)
 
     breakdown = %{breakdown | card_breakdowns: sorted_breakdowns}
     scoring_card_ids = MapSet.new(Enum.map(breakdown.card_breakdowns, & &1.card.id))
@@ -1617,17 +1617,12 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   end
 
   defp sort_cards(cards, :rank) do
-    Enum.sort_by(cards, fn card -> {-card.rank, suit_order(card.suit)} end)
+    Card.sort_by_rank(cards)
   end
 
   defp sort_cards(cards, :suit) do
-    Enum.sort_by(cards, fn card -> {suit_order(card.suit), -card.rank} end)
+    Enum.sort_by(cards, fn card -> {Card.suit_order(card.suit), -card.rank} end)
   end
-
-  defp suit_order(:spades), do: 0
-  defp suit_order(:hearts), do: 1
-  defp suit_order(:clubs), do: 2
-  defp suit_order(:diamonds), do: 3
 
   def deck_modal(assigns) do
     ~H"""

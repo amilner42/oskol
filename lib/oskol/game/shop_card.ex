@@ -314,6 +314,7 @@ defmodule Oskol.Game.ShopCard do
     |> Enum.shuffle()
     |> Enum.take(8)
     |> Enum.map(fn {rank, suit} -> Card.new(rank, suit) end)
+    |> Card.sort_by_rank()
   end
 
   def generate_selection_cards(%__MODULE__{}, player_deck_cards) do
@@ -321,5 +322,6 @@ defmodule Oskol.Game.ShopCard do
     player_deck_cards
     |> Enum.shuffle()
     |> Enum.take(8)
+    |> Card.sort_by_rank()
   end
 end

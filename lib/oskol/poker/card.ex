@@ -66,4 +66,23 @@ defmodule Oskol.Poker.Card do
   def base_chip_value(%__MODULE__{rank: 12}), do: 10
   def base_chip_value(%__MODULE__{rank: 13}), do: 10
   def base_chip_value(%__MODULE__{rank: 14}), do: 11
+
+  @doc """
+  Sorts cards by rank (descending) then by suit order.
+  This is the default sorting used throughout the game.
+  """
+  @spec sort_by_rank([t()]) :: [t()]
+  def sort_by_rank(cards) do
+    Enum.sort_by(cards, fn card -> {-card.rank, suit_order(card.suit)} end)
+  end
+
+  @doc """
+  Returns the numeric order for a suit (used for sorting).
+  Spades = 0, Hearts = 1, Clubs = 2, Diamonds = 3
+  """
+  @spec suit_order(suit()) :: 0..3
+  def suit_order(:spades), do: 0
+  def suit_order(:hearts), do: 1
+  def suit_order(:clubs), do: 2
+  def suit_order(:diamonds), do: 3
 end
