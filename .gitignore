@@ -36,9 +36,3 @@ npm-debug.log
 /assets/node_modules/
 /node_modules/
 package-lock.json
-
-# Playwright test artifacts
-/screenshots/
-/test-results/
-/priv/static/screenshots/
-playwright/**/screenshots/
