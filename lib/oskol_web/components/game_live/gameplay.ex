@@ -1986,10 +1986,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   # Inline console content (appears in centerboard)
   def console_content_inline(assigns) do
     ~H"""
-    <!-- Container with simple fade-in animation -->
-    <div class="w-full h-full flex flex-col animate-fadeInScale">
+    <!-- Container with simple fade-in animation, pinned top offset -->
+    <div class="w-full h-full flex flex-col items-center pt-8 sm:pt-16 animate-fadeInScale">
+      <!-- Desktop title (pinned position) -->
+      <div class="hidden sm:block text-center mb-6">
+        <h2 class="text-xl font-semibold text-white/90">
+          <%= case @active_console do %>
+            <% :deck -> %> 📦 Deck
+            <% :levels -> %> ⭐ Levels
+            <% :log -> %> 📰 Log
+          <% end %>
+        </h2>
+      </div>
+
       <!-- Mobile-only header with close button -->
-      <div class="sm:hidden flex items-center justify-between px-4 py-3">
+      <div class="sm:hidden w-full flex items-center justify-between px-4 pb-3 mb-4">
         <span class="text-sm font-semibold text-white/90">
           <%= case @active_console do %>
             <% :deck -> %> 📦 Deck
@@ -2005,8 +2016,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         </button>
       </div>
 
-      <!-- Scrollable content area - reuse existing tab components -->
-      <div class="overflow-y-auto overflow-x-auto flex-1 px-4 sm:px-8 py-4">
+      <!-- Scrollable content area - centered and max-width constrained -->
+      <div class="overflow-y-auto overflow-x-auto flex-1 w-full max-w-6xl px-4 sm:px-8">
         <%= case @active_console do %>
           <% :deck -> %>
             <.console_decks_tab
