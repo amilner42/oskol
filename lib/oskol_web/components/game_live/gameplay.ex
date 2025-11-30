@@ -1951,7 +1951,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           ]}
           title="View Deck"
         >
-          📦
+          <.icon name="hero-square-3-stack-3d" class="w-6 h-6 sm:w-7 sm:h-7 text-blue-600" />
         </button>
 
         <!-- Levels Button -->
@@ -1971,7 +1971,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           ]}
           title="View Levels"
         >
-          ⭐
+          <.icon name="hero-chart-bar" class="w-6 h-6 sm:w-7 sm:h-7 text-green-600" />
         </button>
 
         <!-- Log Button -->
@@ -1991,7 +1991,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           ]}
           title="View Log"
         >
-          📰
+          <.icon name="hero-newspaper" class="w-6 h-6 sm:w-7 sm:h-7 text-amber-600" />
         </button>
       </div>
     </div>
@@ -2005,22 +2005,34 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     <div class="w-full h-full flex flex-col items-center pt-8 sm:pt-16 animate-fadeInScale">
       <!-- Desktop title (pinned position) -->
       <div class="hidden sm:block text-center mb-6">
-        <h2 class="text-xl font-semibold text-white/90">
+        <h2 class="flex items-center justify-center gap-3 text-xl font-semibold text-white/90">
           <%= case @active_console do %>
-            <% :deck -> %> 📦 Deck
-            <% :levels -> %> ⭐ Levels
-            <% :log -> %> 📰 Log
+            <% :deck -> %>
+              <.icon name="hero-square-3-stack-3d" class="w-6 h-6 text-blue-400" />
+              Deck
+            <% :levels -> %>
+              <.icon name="hero-chart-bar" class="w-6 h-6 text-green-400" />
+              Levels
+            <% :log -> %>
+              <.icon name="hero-newspaper" class="w-6 h-6 text-amber-400" />
+              Log
           <% end %>
         </h2>
       </div>
 
       <!-- Mobile-only header with close button -->
       <div class="sm:hidden w-full flex items-center justify-between px-4 pb-3 mb-4">
-        <span class="text-sm font-semibold text-white/90">
+        <span class="flex items-center gap-2 text-sm font-semibold text-white/90">
           <%= case @active_console do %>
-            <% :deck -> %> 📦 Deck
-            <% :levels -> %> ⭐ Levels
-            <% :log -> %> 📰 Log
+            <% :deck -> %>
+              <.icon name="hero-square-3-stack-3d" class="w-4 h-4 text-blue-400" />
+              Deck
+            <% :levels -> %>
+              <.icon name="hero-chart-bar" class="w-4 h-4 text-green-400" />
+              Levels
+            <% :log -> %>
+              <.icon name="hero-newspaper" class="w-4 h-4 text-amber-400" />
+              Log
           <% end %>
         </span>
         <button
