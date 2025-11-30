@@ -1986,61 +1986,53 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   # Inline console content (appears in centerboard)
   def console_content_inline(assigns) do
     ~H"""
-    <!-- Container with max-width and centering -->
-    <div class="w-full max-w-full sm:max-w-5xl mx-auto px-2 sm:px-8 py-4">
-      <!-- Console card with animation -->
-      <div class="bg-base-100 rounded-xl shadow-2xl border border-base-300
-                  max-h-[70vh] sm:max-h-[calc(100%-4rem)]
-                  overflow-hidden flex flex-col
-                  animate-fadeInScale">
-
-        <!-- Mobile-only header with close button -->
-        <div class="sm:hidden flex items-center justify-between px-4 py-2
-                    border-b border-base-300 bg-base-200/50">
-          <span class="text-sm font-semibold text-base-content">
-            <%= case @active_console do %>
-              <% :deck -> %> 📦 Deck
-              <% :levels -> %> ⭐ Levels
-              <% :log -> %> 📰 Log
-            <% end %>
-          </span>
-          <button
-            phx-click="close_console"
-            class="text-base-content/60 hover:text-base-content text-xl px-2"
-          >
-            ✕
-          </button>
-        </div>
-
-        <!-- Scrollable content area - reuse existing tab components -->
-        <div class="overflow-y-auto overflow-x-auto p-3 sm:p-6">
+    <!-- Container with simple fade-in animation -->
+    <div class="w-full h-full flex flex-col animate-fadeInScale">
+      <!-- Mobile-only header with close button -->
+      <div class="sm:hidden flex items-center justify-between px-4 py-3">
+        <span class="text-sm font-semibold text-white/90">
           <%= case @active_console do %>
-            <% :deck -> %>
-              <.console_decks_tab
-                viewing_own_deck={@viewing_own_deck}
-                player_state={@player_state}
-                opponent_state={@opponent_state}
-                player_name={@player_name}
-                opponent_name={@opponent_name}
-              />
-
-            <% :levels -> %>
-              <.console_levels_tab
-                levels_view_mode={@levels_view_mode}
-                player_state={@player_state}
-                opponent_state={@opponent_state}
-                player_name={@player_name}
-                opponent_name={@opponent_name}
-              />
-
-            <% :log -> %>
-              <.console_log_tab
-                event_log={@event_log}
-                player_names={@game_state.player_names}
-                player_id={@player_id}
-              />
+            <% :deck -> %> 📦 Deck
+            <% :levels -> %> ⭐ Levels
+            <% :log -> %> 📰 Log
           <% end %>
-        </div>
+        </span>
+        <button
+          phx-click="close_console"
+          class="text-white/60 hover:text-white text-xl px-2"
+        >
+          ✕
+        </button>
+      </div>
+
+      <!-- Scrollable content area - reuse existing tab components -->
+      <div class="overflow-y-auto overflow-x-auto flex-1 px-4 sm:px-8 py-4">
+        <%= case @active_console do %>
+          <% :deck -> %>
+            <.console_decks_tab
+              viewing_own_deck={@viewing_own_deck}
+              player_state={@player_state}
+              opponent_state={@opponent_state}
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+            />
+
+          <% :levels -> %>
+            <.console_levels_tab
+              levels_view_mode={@levels_view_mode}
+              player_state={@player_state}
+              opponent_state={@opponent_state}
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+            />
+
+          <% :log -> %>
+            <.console_log_tab
+              event_log={@event_log}
+              player_names={@game_state.player_names}
+              player_id={@player_id}
+            />
+        <% end %>
       </div>
     </div>
     """
