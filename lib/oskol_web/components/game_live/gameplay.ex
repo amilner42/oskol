@@ -51,6 +51,21 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         animation: slideUp 0.3s ease-out forwards;
       }
 
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      .animate-fadeInScale {
+        animation: fadeInScale 0.2s ease-out forwards;
+      }
+
       @keyframes fillProgress5s {
         0% {
           width: 0%;
@@ -220,6 +235,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           connections={@connections}
           score_animation_phase={@score_animation_phase}
           score_animation_card_index={@score_animation_card_index}
+          active_console={@active_console}
+          viewing_own_deck={@viewing_own_deck}
+          levels_view_mode={@levels_view_mode}
+          event_log={@event_log}
         />
       </div>
       
@@ -246,24 +265,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         viewing_results={@viewing_results}
       />
 
-      <!-- Console Windows -->
-      <%= if @active_console do %>
-        <.console_window
-          active_console={@active_console}
-          viewing_own_deck={@viewing_own_deck}
-          levels_view_mode={@levels_view_mode}
-          player_state={@player_state}
-          opponent_state={@opponent_state}
-          player_name={@player_name}
-          opponent_name={@opponent_name}
-          player_id={@player_id}
-          event_log={@event_log}
-          game_state={@game_state}
-        />
-      <% end %>
-
-      <!-- Console Buttons (fixed at bottom) -->
-      <.console_buttons active_console={@active_console} />
+      <!-- Console Buttons (fixed at mid-left) -->
+      <.console_buttons active_console={@active_console} viewing_results={@viewing_results} />
     </div>
     """
   end
@@ -1058,10 +1061,24 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <span class="text-sm text-player">{@player_name}</span>
         </div>
       </div>
-      
+
     <!-- Centered content -->
       <div class="h-full flex flex-col justify-center">
         <%= cond do %>
+          <% assigns[:active_console] && !@viewing_results -> %>
+            <.console_content_inline
+              active_console={@active_console}
+              viewing_own_deck={@viewing_own_deck}
+              levels_view_mode={@levels_view_mode}
+              player_state={@player_state}
+              opponent_state={@opponent_state}
+              player_name={@player_name}
+              opponent_name={@opponent_name}
+              player_id={@player_id}
+              event_log={@event_log}
+              game_state={@game_state}
+            />
+
           <% @viewing_results && @game_state.last_hand_results != nil -> %>
             <% player_result = @game_state.last_hand_results[@player_id] %>
             <% opponent_result = @game_state.last_hand_results[@opponent_id] %>
@@ -1096,6 +1113,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <div></div>
         <% end %>
       </div>
+
+      <%= if assigns[:active_console] && !@viewing_results do %>
+        <div class="absolute inset-0 bg-black/10 backdrop-blur-[2px] -z-10
+                    transition-opacity duration-200"
+             phx-click="close_console">
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -1889,21 +1913,25 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     """
   end
 
-  # New console system - emoji buttons at bottom
+  # New console system - emoji buttons at mid-left
   def console_buttons(assigns) do
     ~H"""
-    <!-- Fixed console buttons at bottom of screen -->
-    <div class="fixed bottom-0 left-0 right-0 z-40 pointer-events-none">
-      <div class="flex justify-center items-end gap-2 pb-2">
+    <!-- Fixed console buttons at mid-left of screen -->
+    <div class="fixed left-2 sm:left-4 top-1/2 -translate-y-1/2 z-40">
+      <div class="flex flex-col gap-2 sm:gap-3">
         <!-- Deck Button -->
         <button
           phx-click="toggle_console"
           phx-value-window="deck"
+          disabled={assigns[:viewing_results] || false}
           class={[
-            "pointer-events-auto px-4 py-2 rounded-t-xl transition-all shadow-xl text-2xl touch-manipulation backdrop-blur-sm",
-            if(@active_console == :deck,
-              do: "bg-white/95 scale-110 -translate-y-1",
-              else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+            "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm",
+            if(assigns[:viewing_results] || false,
+              do: "opacity-30 cursor-not-allowed pointer-events-none bg-white/60",
+              else: if(@active_console == :deck,
+                do: "bg-white/95 scale-110 translate-x-1",
+                else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+              )
             )
           ]}
           title="View Deck"
@@ -1915,11 +1943,15 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <button
           phx-click="toggle_console"
           phx-value-window="levels"
+          disabled={assigns[:viewing_results] || false}
           class={[
-            "pointer-events-auto px-4 py-2 rounded-t-xl transition-all shadow-xl text-2xl touch-manipulation backdrop-blur-sm",
-            if(@active_console == :levels,
-              do: "bg-white/95 scale-110 -translate-y-1",
-              else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+            "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm",
+            if(assigns[:viewing_results] || false,
+              do: "opacity-30 cursor-not-allowed pointer-events-none bg-white/60",
+              else: if(@active_console == :levels,
+                do: "bg-white/95 scale-110 translate-x-1",
+                else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+              )
             )
           ]}
           title="View Levels"
@@ -1931,11 +1963,15 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <button
           phx-click="toggle_console"
           phx-value-window="log"
+          disabled={assigns[:viewing_results] || false}
           class={[
-            "pointer-events-auto px-4 py-2 rounded-t-xl transition-all shadow-xl text-2xl touch-manipulation backdrop-blur-sm",
-            if(@active_console == :log,
-              do: "bg-white/95 scale-110 -translate-y-1",
-              else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+            "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm",
+            if(assigns[:viewing_results] || false,
+              do: "opacity-30 cursor-not-allowed pointer-events-none bg-white/60",
+              else: if(@active_console == :log,
+                do: "bg-white/95 scale-110 translate-x-1",
+                else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+              )
             )
           ]}
           title="View Log"
@@ -1947,25 +1983,37 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     """
   end
 
-  def console_window(assigns) do
+  # Inline console content (appears in centerboard)
+  def console_content_inline(assigns) do
     ~H"""
-    <!-- Console window that slides up from bottom -->
-    <div class="fixed inset-0 z-30 flex items-end justify-center animate-slide-up">
-      <!-- Backdrop -->
-      <div class="fixed inset-0 bg-black/20 backdrop-blur-sm" phx-click="close_console"></div>
+    <!-- Container with max-width and centering -->
+    <div class="w-full max-w-full sm:max-w-5xl mx-auto px-2 sm:px-8 py-4">
+      <!-- Console card with animation -->
+      <div class="bg-base-100 rounded-xl shadow-2xl border border-base-300
+                  max-h-[70vh] sm:max-h-[calc(100%-4rem)]
+                  overflow-hidden flex flex-col
+                  animate-fadeInScale">
 
-      <!-- Console content -->
-      <div
-        class="relative bg-base-100 rounded-t-2xl shadow-2xl border-t-2 border-base-300 max-h-[80vh] overflow-hidden flex flex-col w-full max-w-4xl"
-        phx-click="noop"
-      >
-        <!-- Drag handle -->
-        <div class="flex justify-center py-3 cursor-pointer" phx-click="close_console">
-          <div class="w-12 h-1.5 bg-base-content/20 rounded-full"></div>
+        <!-- Mobile-only header with close button -->
+        <div class="sm:hidden flex items-center justify-between px-4 py-2
+                    border-b border-base-300 bg-base-200/50">
+          <span class="text-sm font-semibold text-base-content">
+            <%= case @active_console do %>
+              <% :deck -> %> 📦 Deck
+              <% :levels -> %> ⭐ Levels
+              <% :log -> %> 📰 Log
+            <% end %>
+          </span>
+          <button
+            phx-click="close_console"
+            class="text-base-content/60 hover:text-base-content text-xl px-2"
+          >
+            ✕
+          </button>
         </div>
 
-        <!-- Content area -->
-        <div class="overflow-y-auto overflow-x-auto px-4 pb-20">
+        <!-- Scrollable content area - reuse existing tab components -->
+        <div class="overflow-y-auto overflow-x-auto p-3 sm:p-6">
           <%= case @active_console do %>
             <% :deck -> %>
               <.console_decks_tab
@@ -1975,6 +2023,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 player_name={@player_name}
                 opponent_name={@opponent_name}
               />
+
             <% :levels -> %>
               <.console_levels_tab
                 levels_view_mode={@levels_view_mode}
@@ -1983,6 +2032,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
                 player_name={@player_name}
                 opponent_name={@opponent_name}
               />
+
             <% :log -> %>
               <.console_log_tab
                 event_log={@event_log}

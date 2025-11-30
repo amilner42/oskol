@@ -697,14 +697,25 @@ defmodule OskolWeb.GameLive do
 
   @impl true
   def handle_event("toggle_console", %{"window" => window}, socket) do
-    window_atom = String.to_existing_atom(window)
-    new_active = if socket.assigns.active_console == window_atom, do: nil, else: window_atom
-    {:noreply, assign(socket, active_console: new_active)}
+    # Prevent opening during score animation
+    if console_allowed?(socket) do
+      window_atom = String.to_existing_atom(window)
+      new_active = if socket.assigns.active_console == window_atom, do: nil, else: window_atom
+      {:noreply, assign(socket, active_console: new_active)}
+    else
+      # Silently ignore (animation in progress)
+      {:noreply, socket}
+    end
   end
 
   @impl true
   def handle_event("close_console", _params, socket) do
     {:noreply, assign(socket, active_console: nil)}
+  end
+
+  defp console_allowed?(socket) do
+    # Console blocked during score animation
+    !socket.assigns.viewing_results
   end
 
   @impl true
@@ -800,6 +811,15 @@ defmodule OskolWeb.GameLive do
         {:opponent_base, timer_ref}
       else
         {socket.assigns.score_animation_phase, socket.assigns.animation_timer_ref}
+      end
+
+    # Auto-close console when score animation starts
+    active_console =
+      if viewing_results && !socket.assigns.viewing_results do
+        # Results just became visible - close console
+        nil
+      else
+        socket.assigns.active_console
       end
 
     # DON'T auto-show round summary when phase changes to :round_end
@@ -1022,6 +1042,7 @@ defmodule OskolWeb.GameLive do
        previewing_card_index: previewing_card_index,
        score_animation_phase: animation_phase,
        animation_timer_ref: animation_timer_ref,
+       active_console: active_console,
        shop_countdown: shop_countdown,
        shop_countdown_timer_ref: shop_countdown_timer_ref,
        # Clear initial state flag after first update
