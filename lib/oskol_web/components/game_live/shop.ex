@@ -681,6 +681,181 @@ defmodule OskolWeb.Components.GameLive.Shop do
     player_state && player_state.skill_tree
   end
 
+  defp shop_card_icon(assigns) do
+    ~H"""
+    <div class={[
+      "w-12 h-12 lg:w-16 lg:h-16",
+      case @accent_color do
+        "emerald" -> "text-emerald-500"
+        "rose" -> "text-rose-500"
+        "violet" -> "text-violet-500"
+        "amber" -> "text-amber-500"
+      end
+    ]}>
+      <%= case @shop_card do %>
+        <%!-- Level Up Cards - Poker Hand Icons --%>
+        <% %ShopCard{type: :level_up, subtype: :high_card} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="30" y="20" width="40" height="60" rx="4" stroke-width="3" />
+            <text x="50" y="60" text-anchor="middle" font-size="30" fill="currentColor">A</text>
+          </svg>
+        <% %ShopCard{type: :level_up, subtype: :pair} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="20" y="20" width="30" height="45" rx="3" stroke-width="2.5" />
+            <rect x="50" y="20" width="30" height="45" rx="3" stroke-width="2.5" />
+            <circle cx="35" cy="42.5" r="8" fill="currentColor" />
+            <circle cx="65" cy="42.5" r="8" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :level_up, subtype: :two_pair} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="10" y="20" width="20" height="30" rx="2" stroke-width="2" />
+            <rect x="32" y="20" width="20" height="30" rx="2" stroke-width="2" />
+            <rect x="56" y="20" width="20" height="30" rx="2" stroke-width="2" />
+            <rect x="78" y="20" width="20" height="30" rx="2" stroke-width="2" />
+            <circle cx="20" cy="35" r="5" fill="currentColor" />
+            <circle cx="42" cy="35" r="5" fill="currentColor" />
+            <circle cx="66" cy="35" r="5" fill="currentColor" />
+            <circle cx="88" cy="35" r="5" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :level_up, subtype: :three_of_a_kind} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="15" y="25" width="25" height="37" rx="3" stroke-width="2.5" />
+            <rect x="38" y="25" width="25" height="37" rx="3" stroke-width="2.5" />
+            <rect x="61" y="25" width="25" height="37" rx="3" stroke-width="2.5" />
+            <circle cx="27.5" cy="43.5" r="6" fill="currentColor" />
+            <circle cx="50.5" cy="43.5" r="6" fill="currentColor" />
+            <circle cx="73.5" cy="43.5" r="6" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :level_up, subtype: :straight} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <path d="M20 50 L35 30 L50 50 L65 35 L80 55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+            <circle cx="20" cy="50" r="5" fill="currentColor" />
+            <circle cx="35" cy="30" r="5" fill="currentColor" />
+            <circle cx="50" cy="50" r="5" fill="currentColor" />
+            <circle cx="65" cy="35" r="5" fill="currentColor" />
+            <circle cx="80" cy="55" r="5" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :level_up, subtype: :flush} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M35 25 L45 45 L30 45 Z" />
+            <path d="M55 30 L65 50 L50 50 Z" />
+            <path d="M75 35 L85 55 L70 55 Z" />
+            <path d="M25 50 L35 70 L20 70 Z" />
+            <path d="M65 55 L75 75 L60 75 Z" />
+          </svg>
+        <% %ShopCard{type: :level_up, subtype: :full_house} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="10" y="25" width="22" height="33" rx="2.5" stroke-width="2" />
+            <rect x="34" y="25" width="22" height="33" rx="2.5" stroke-width="2" />
+            <rect x="58" y="25" width="22" height="33" rx="2.5" stroke-width="2" />
+            <circle cx="21" cy="41.5" r="5.5" fill="currentColor" />
+            <circle cx="45" cy="41.5" r="5.5" fill="currentColor" />
+            <circle cx="69" cy="41.5" r="5.5" fill="currentColor" />
+            <rect x="82" y="32" width="12" height="20" rx="2" stroke-width="1.5" />
+            <rect x="82" y="54" width="12" height="20" rx="2" stroke-width="1.5" />
+          </svg>
+        <% %ShopCard{type: :level_up, subtype: :four_of_a_kind} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="8" y="28" width="20" height="30" rx="2.5" stroke-width="2" />
+            <rect x="30" y="28" width="20" height="30" rx="2.5" stroke-width="2" />
+            <rect x="52" y="28" width="20" height="30" rx="2.5" stroke-width="2" />
+            <rect x="74" y="28" width="20" height="30" rx="2.5" stroke-width="2" />
+            <circle cx="18" cy="43" r="5" fill="currentColor" />
+            <circle cx="40" cy="43" r="5" fill="currentColor" />
+            <circle cx="62" cy="43" r="5" fill="currentColor" />
+            <circle cx="84" cy="43" r="5" fill="currentColor" />
+          </svg>
+        <% %ShopCard{type: :level_up, subtype: :straight_flush} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M15 50 Q30 30, 45 45 T75 40" stroke="currentColor" stroke-width="3" fill="none" />
+            <path d="M12 48 L20 58 L8 58 Z" />
+            <path d="M30 28 L38 38 L26 38 Z" />
+            <path d="M48 43 L56 53 L44 53 Z" />
+            <path d="M66 38 L74 48 L62 48 Z" />
+            <path d="M84 36 L92 46 L80 46 Z" />
+          </svg>
+        <%!-- Denial Cards - Counter Icons (same as level up but with X) --%>
+        <% %ShopCard{type: :denial, subtype: _hand_type} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <circle cx="50" cy="50" r="35" stroke-width="4" />
+            <path d="M30 30 L70 70 M70 30 L30 70" stroke-width="4" stroke-linecap="round" />
+          </svg>
+        <%!-- Sabotage Cards - Fun Icons --%>
+        <% %ShopCard{type: :sabotage, subtype: :scrambler} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <circle cx="30" cy="30" r="8" stroke-width="3" />
+            <circle cx="70" cy="30" r="8" stroke-width="3" />
+            <circle cx="30" cy="70" r="8" stroke-width="3" />
+            <circle cx="70" cy="70" r="8" stroke-width="3" />
+            <path d="M38 30 Q50 40 62 30 M38 70 Q50 60 62 70 M30 38 Q40 50 30 62 M70 38 Q60 50 70 62" stroke-width="2.5" />
+          </svg>
+        <% %ShopCard{type: :sabotage, subtype: :plus_bomb} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M30 15 L35 35 L50 30 L45 45 L65 50 L50 55 L55 70 L40 60 L35 75 L30 55 L15 60 L25 45 L10 40 L25 35 Z" />
+            <circle cx="30" cy="45" r="15" fill="currentColor" opacity="0.6" />
+          </svg>
+        <% %ShopCard{type: :sabotage, subtype: :static} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <path d="M30 20 L40 45 L35 45 L45 75 M55 25 L65 50 L60 50 L70 80 M70 15 L80 40 L75 40 L85 70" stroke-width="3.5" stroke-linecap="round" />
+          </svg>
+        <% %ShopCard{type: :sabotage, subtype: :supply_chain} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="20" y="35" width="25" height="30" rx="2" stroke-width="3" />
+            <rect x="55" y="35" width="25" height="30" rx="2" stroke-width="3" />
+            <path d="M45 50 L55 50 M32.5 20 L32.5 35 M67.5 20 L67.5 35" stroke-width="3" stroke-linecap="round" />
+            <path d="M27.5 20 L37.5 20 M62.5 20 L72.5 20" stroke-width="3" stroke-linecap="round" />
+          </svg>
+        <%!-- Deck Builder Cards - Logistics Icons --%>
+        <% %ShopCard{type: :deck_builder, subtype: :bonus_chips} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <circle cx="50" cy="50" r="30" stroke="currentColor" stroke-width="3" fill="none" />
+            <text x="50" y="62" text-anchor="middle" font-size="32" font-weight="bold" fill="currentColor">+</text>
+          </svg>
+        <% %ShopCard{type: :deck_builder, subtype: :bonus_mult} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <circle cx="50" cy="50" r="30" stroke="currentColor" stroke-width="3" fill="none" />
+            <text x="50" y="62" text-anchor="middle" font-size="28" font-weight="bold" fill="currentColor">×</text>
+          </svg>
+        <% %ShopCard{type: :deck_builder, subtype: :add_card} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="25" y="30" width="50" height="40" rx="4" stroke-width="3" />
+            <path d="M50 42 L50 58 M42 50 L58 50" stroke-width="3.5" stroke-linecap="round" />
+          </svg>
+        <% %ShopCard{type: :deck_builder, subtype: :remove_card} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="25" y="30" width="50" height="40" rx="4" stroke-width="3" />
+            <path d="M38 50 L62 50" stroke-width="3.5" stroke-linecap="round" />
+          </svg>
+        <% %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :hearts}} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M50 75 C50 75, 30 60, 30 45 C30 35, 40 30, 50 40 C60 30, 70 35, 70 45 C70 60, 50 75, 50 75 Z" />
+          </svg>
+        <% %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :diamonds}} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M50 20 L70 50 L50 80 L30 50 Z" />
+          </svg>
+        <% %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :clubs}} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <circle cx="35" cy="40" r="15" />
+            <circle cx="65" cy="40" r="15" />
+            <circle cx="50" cy="60" r="15" />
+            <path d="M45 70 L45 85 L55 85 L55 70" />
+          </svg>
+        <% %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :spades}} -> %>
+          <svg viewBox="0 0 100 100" fill="currentColor">
+            <path d="M50 20 C50 20, 30 35, 30 50 C30 60, 40 65, 50 60 C60 65, 70 60, 70 50 C70 35, 50 20, 50 20 Z" />
+            <path d="M45 65 L45 80 L55 80 L55 65" />
+          </svg>
+        <% %ShopCard{type: :deck_builder, subtype: :increase_rank} -> %>
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor">
+            <rect x="30" y="40" width="40" height="50" rx="4" stroke-width="3" />
+            <path d="M50 55 L50 75 M42 63 L50 55 L58 63" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+      <% end %>
+    </div>
+    """
+  end
+
   defp shop_card_minimal(assigns) do
     shop_card = assigns.shop_card
     display_name = ShopCard.card_name(shop_card)
@@ -729,6 +904,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       |> assign(:is_destroyed, is_destroyed)
       |> assign(:in_destroy_phase, in_destroy_phase)
       |> assign(:can_destroy, can_destroy)
+      |> assign(:shop_card, shop_card)
 
     ~H"""
     <button
@@ -738,7 +914,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
       class={
         [
           "w-[100px] lg:w-full aspect-[2/3] rounded-xl p-2 lg:p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0",
-          "bg-base-100 border-2",
+          "bg-white border-2",
           cond do
             # Destroyed cards
             @is_destroyed ->
@@ -811,29 +987,32 @@ defmodule OskolWeb.Components.GameLive.Shop do
       ]}>
         {@type_label}
       </div>
-      
-    <!-- Card name centered -->
-      <div class="flex-1 flex items-center justify-center">
-        <div class={[
-          "font-semibold text-xs lg:text-sm text-center leading-tight",
-          cond do
-            @is_destroyed -> "text-base-content/50"
-            @is_picked -> "text-base-content/50"
-            true -> "text-base-content"
-          end
-        ]}>
-          {@display_name}
-        </div>
+
+    <!-- SVG Icon -->
+      <div class="flex-1 flex items-center justify-center mb-2">
+        <.shop_card_icon shop_card={@shop_card} accent_color={@accent_color} />
+      </div>
+
+    <!-- Card name at bottom -->
+      <div class={[
+        "font-semibold text-xs lg:text-sm text-center leading-tight",
+        cond do
+          @is_destroyed -> "text-base-content/50"
+          @is_picked -> "text-base-content/50"
+          true -> "text-base-content"
+        end
+      ]}>
+        {@display_name}
       </div>
 
       <%= if @is_destroyed do %>
-        <div class="absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl">
+        <div class="absolute inset-0 bg-white/80 flex items-end justify-center pb-4 rounded-xl">
           <span class="text-xs text-rose-400 font-medium">Destroyed</span>
         </div>
       <% end %>
 
       <%= if @is_picked do %>
-        <div class="absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl">
+        <div class="absolute inset-0 bg-white/80 flex items-end justify-center pb-4 rounded-xl">
           <span class="text-xs text-base-content/40 font-medium">{@picked_by}</span>
         </div>
       <% end %>
