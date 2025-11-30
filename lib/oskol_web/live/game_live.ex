@@ -60,8 +60,7 @@ defmodule OskolWeb.GameLive do
           viewing_results: false,
           viewing_round_summary: false,
           viewing_match_summary: false,
-          console_open: false,
-          console_tab: :decks,
+          active_console: nil,
           viewing_own_deck: true,
           levels_view_mode: :player,
           disconnected_players: disconnected_players,
@@ -697,14 +696,15 @@ defmodule OskolWeb.GameLive do
   end
 
   @impl true
-  def handle_event("toggle_console", _params, socket) do
-    {:noreply, assign(socket, console_open: !socket.assigns.console_open)}
+  def handle_event("toggle_console", %{"window" => window}, socket) do
+    window_atom = String.to_existing_atom(window)
+    new_active = if socket.assigns.active_console == window_atom, do: nil, else: window_atom
+    {:noreply, assign(socket, active_console: new_active)}
   end
 
   @impl true
-  def handle_event("set_console_tab", %{"tab" => tab}, socket) do
-    tab_atom = String.to_existing_atom(tab)
-    {:noreply, assign(socket, console_tab: tab_atom)}
+  def handle_event("close_console", _params, socket) do
+    {:noreply, assign(socket, active_console: nil)}
   end
 
   @impl true
@@ -1183,8 +1183,7 @@ defmodule OskolWeb.GameLive do
               connections={@server_state.connections}
               score_animation_phase={@score_animation_phase}
               score_animation_card_index={@score_animation_card_index}
-              console_open={@console_open}
-              console_tab={@console_tab}
+              active_console={@active_console}
               viewing_own_deck={@viewing_own_deck}
               levels_view_mode={@levels_view_mode}
               event_log={@server_state.event_log}
