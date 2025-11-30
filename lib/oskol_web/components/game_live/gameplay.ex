@@ -178,8 +178,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
   def game_screen(assigns) do
     ~H"""
     <div class="flex flex-col h-screen-safe bg-base-300 overflow-hidden">
-      <!-- Top - Opponent Cards: shrink on mobile -->
-      <div class="shrink-0 sm:flex-1 flex flex-col justify-end pt-2 px-1 pb-1 sm:p-3 md:p-4 bg-base-200/40">
+      <!-- Top - Opponent Cards: shrink on mobile, minimal padding on desktop -->
+      <div class="shrink-0 flex flex-col justify-end pt-2 px-1 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
           opponent_card_sort={@opponent_card_sort}
@@ -208,8 +208,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         />
       </div>
       
-    <!-- Bottom - Player Cards: shrink on mobile -->
-      <div class="shrink-0 sm:flex-1 flex flex-col justify-start pt-1 px-1 pb-0 sm:p-3 md:p-4 bg-base-200/40">
+    <!-- Bottom - Player Cards: shrink on mobile, minimal padding on desktop -->
+      <div class="shrink-0 flex flex-col justify-start pt-1 px-1 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-base-200/40">
         <.player_cards
           player_state={@player_state}
           selected_card_ids={@selected_card_ids}
