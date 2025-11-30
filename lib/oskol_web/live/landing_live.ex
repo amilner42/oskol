@@ -559,7 +559,7 @@ defmodule OskolWeb.LandingLive do
           <div class="mb-8 animate-logo">
             <.logo_large />
             <p class="text-base-content/50 text-sm tracking-widest uppercase">
-              Poker warfare
+              Testing Poker warfare
             </p>
           </div>
           
