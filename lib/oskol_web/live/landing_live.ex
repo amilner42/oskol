@@ -816,7 +816,7 @@ defmodule OskolWeb.LandingLive do
     <!-- Invite link - secondary action -->
         <button
           type="button"
-          phx-click={JS.dispatch("phx:copy", to: "#share-link")}
+          phx-click={JS.dispatch("phx:share", to: "#share-link")}
           class="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/50 hover:text-base-content/70 transition-all"
         >
           <span id="share-link" class="hidden">{url(~p"/?game=#{@game_name}")}</span>
@@ -825,10 +825,10 @@ defmodule OskolWeb.LandingLive do
               stroke-linecap="round"
               stroke-linejoin="round"
               stroke-width="2"
-              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
             />
           </svg>
-          <span>Copy invite link</span>
+          <span>Invite friend</span>
         </button>
       </div>
 
@@ -1114,6 +1114,35 @@ defmodule OskolWeb.LandingLive do
             svg.classList.remove('text-green-500');
           }, 1000);
         });
+      });
+
+      window.addEventListener("phx:share", (event) => {
+        const text = event.target.innerText || event.target.textContent;
+
+        // Check if Web Share API is supported
+        if (navigator.share) {
+          navigator.share({
+            title: 'Oskol Poker',
+            text: 'Join me for a game of Oskol Poker!',
+            url: text
+          }).catch((error) => {
+            // User cancelled or error occurred - silently ignore
+            console.log('Share cancelled or failed:', error);
+          });
+        } else {
+          // Fallback to copy if Web Share API not supported
+          navigator.clipboard.writeText(text).then(() => {
+            const button = event.target.closest('button');
+            const svg = button.querySelector('svg');
+            const originalPath = svg.innerHTML;
+            svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+            svg.classList.add('text-green-500');
+            setTimeout(() => {
+              svg.innerHTML = originalPath;
+              svg.classList.remove('text-green-500');
+            }, 1000);
+          });
+        }
       });
     </script>
     """
