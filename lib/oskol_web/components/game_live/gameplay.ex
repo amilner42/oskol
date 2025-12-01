@@ -63,7 +63,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       }
 
       .animate-fadeInScale {
-        animation: fadeInScale 0.2s ease-out forwards;
+        animation: fadeInScale 0.1s ease-out forwards;
       }
 
       @keyframes fillProgress5s {
