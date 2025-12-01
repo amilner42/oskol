@@ -903,7 +903,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <!-- Opponent line -->
           <div class="flex items-center gap-1.5">
             <%= if opponent_score > player_score and score_diff > 0 do %>
-              <.icon name="hero-trophy-solid" class="w-3 h-3 text-opponent" />
+              <.icon name="hero-arrow-up-solid" class="w-3 h-3 text-opponent" />
             <% end %>
             <span class="text-opponent font-medium">{@opponent_name |> String.slice(0, 6)}</span>
             <div class="flex items-center gap-0.5">
@@ -918,7 +918,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <!-- Player line -->
           <div class="flex items-center gap-1.5">
             <%= if player_score > opponent_score and score_diff > 0 do %>
-              <.icon name="hero-trophy-solid" class="w-3 h-3 text-player" />
+              <.icon name="hero-arrow-up-solid" class="w-3 h-3 text-player" />
             <% end %>
             <span class="text-player font-medium">{@player_name |> String.slice(0, 6)}</span>
             <div class="flex items-center gap-0.5">
