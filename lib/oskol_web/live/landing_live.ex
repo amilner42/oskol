@@ -1122,8 +1122,6 @@ defmodule OskolWeb.LandingLive do
         // Check if Web Share API is supported
         if (navigator.share) {
           navigator.share({
-            title: 'Oskol Poker',
-            text: 'Join me for a game of Oskol Poker!',
             url: text
           }).catch((error) => {
             // User cancelled or error occurred - silently ignore
