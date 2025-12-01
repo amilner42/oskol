@@ -886,14 +886,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <div class="flex items-center justify-center">
           <%= cond do %>
             <% score_diff == 0 -> %>
-              <span class="text-base-content/50 text-[10px]">Tied</span>
+              <span class="text-base-content/50 text-xs">Tied</span>
             <% player_score > opponent_score -> %>
-              <span class="text-player text-[10px] whitespace-nowrap font-semibold">
-                up by {score_diff}
+              <span class="text-player text-sm whitespace-nowrap font-semibold">
+                +{score_diff}
               </span>
             <% true -> %>
-              <span class="text-opponent text-[10px] whitespace-nowrap font-semibold">
-                up by {score_diff}
+              <span class="text-opponent text-sm whitespace-nowrap font-semibold">
+                +{score_diff}
               </span>
           <% end %>
         </div>
