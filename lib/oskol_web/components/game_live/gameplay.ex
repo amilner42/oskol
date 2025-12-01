@@ -1930,7 +1930,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <!-- Fixed console buttons at mid-left of screen, hidden on mobile when console is active -->
     <div class={[
-      "fixed left-2 sm:left-4 top-1/2 -translate-y-1/2 z-40",
+      "fixed left-px top-1/2 -translate-y-1/2 z-40",
       if(@active_console != nil, do: "hidden sm:block", else: "")
     ]}>
       <div class="flex flex-col gap-2 sm:gap-3">
