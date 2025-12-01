@@ -938,33 +938,29 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           <!-- Player debuffs (bad for you) -->
           <%= if @player_state.active_debuffs != [] do %>
             <div class="flex items-center gap-1 px-2 py-0.5 bg-player rounded text-[10px]">
-              <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
               <span class="font-semibold text-sky-900">
-                {Enum.map(@player_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")} blocked
+                Blocked: {Enum.map(@player_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")}
               </span>
             </div>
           <% end %>
 
           <%= for badge <- player_badges do %>
             <div class="flex items-center gap-1 px-2 py-0.5 bg-player rounded text-[10px]">
-              <.icon name="hero-hand-thumb-down-solid" class="w-3 h-3 text-sky-900" />
               <span class="font-semibold text-sky-900">{badge.name}</span>
             </div>
           <% end %>
-          
+
     <!-- Opponent debuffs (good for you) -->
           <%= if @opponent_state.active_debuffs != [] do %>
             <div class="flex items-center gap-1 px-2 py-0.5 bg-opponent rounded text-[10px]">
-              <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
               <span class="font-semibold text-orange-900">
-                {Enum.map(@opponent_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")} blocked
+                Blocked: {Enum.map(@opponent_state.active_debuffs, &Format.hand_name/1) |> Enum.join(", ")}
               </span>
             </div>
           <% end %>
 
           <%= for badge <- opponent_badges do %>
             <div class="flex items-center gap-1 px-2 py-0.5 bg-opponent rounded text-[10px]">
-              <.icon name="hero-hand-thumb-up-solid" class="w-3 h-3 text-orange-900" />
               <span class="font-semibold text-orange-900">{badge.name}</span>
             </div>
           <% end %>
