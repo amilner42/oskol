@@ -212,7 +212,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       <div class="shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
-          opponent_card_sort={@opponent_card_sort}
+          your_card_sort={@your_card_sort}
           opponent_new_card_ids={@opponent_new_card_ids}
           opponent_face_down_card_ids={@opponent_face_down_card_ids}
           disabled_ranks={@opponent_state.disabled_ranks}
@@ -282,21 +282,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
-    <!-- Card controls for opponent -->
-    <div class="flex justify-center mb-2 sm:mb-3">
-      <button
-        phx-click="toggle_opponent_card_sort"
-        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
-      >
-        <span class="text-gray-500">Sorting by</span>
-        <span class="font-semibold text-gray-800">
-          {if @opponent_card_sort == :rank, do: "Rank", else: "Suit"}
-        </span>
-      </button>
-    </div>
     <!-- Responsive card grid: flex cards that shrink on mobile, max size on desktop -->
     <div class="flex gap-1 sm:gap-3 md:gap-4 justify-center px-2 sm:px-0">
-      <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
+      <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @your_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
         <% is_face_down = card.id in @opponent_face_down_card_ids %>
         <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
