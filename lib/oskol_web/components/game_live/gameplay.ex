@@ -2017,13 +2017,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <h2 class="flex items-center justify-center gap-3 text-xl font-semibold text-white/90">
           <%= case @active_console do %>
             <% :deck -> %>
-              <.icon name="hero-square-3-stack-3d" class="w-6 h-6 text-blue-400" />
+              <.icon name="hero-square-3-stack-3d-solid" class="w-6 h-6 text-blue-400" />
               Deck
             <% :levels -> %>
-              <.icon name="hero-chart-bar" class="w-6 h-6 text-green-400" />
+              <.icon name="hero-chart-bar-solid" class="w-6 h-6 text-green-400" />
               Levels
             <% :log -> %>
-              <.icon name="hero-newspaper" class="w-6 h-6 text-amber-400" />
+              <.icon name="hero-newspaper-solid" class="w-6 h-6 text-amber-400" />
               Log
           <% end %>
         </h2>
@@ -2034,13 +2034,13 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <span class="flex items-center gap-2 text-sm font-semibold text-white/90">
           <%= case @active_console do %>
             <% :deck -> %>
-              <.icon name="hero-square-3-stack-3d" class="w-4 h-4 text-blue-400" />
+              <.icon name="hero-square-3-stack-3d-solid" class="w-4 h-4 text-blue-400" />
               Deck
             <% :levels -> %>
-              <.icon name="hero-chart-bar" class="w-4 h-4 text-green-400" />
+              <.icon name="hero-chart-bar-solid" class="w-4 h-4 text-green-400" />
               Levels
             <% :log -> %>
-              <.icon name="hero-newspaper" class="w-4 h-4 text-amber-400" />
+              <.icon name="hero-newspaper-solid" class="w-4 h-4 text-amber-400" />
               Log
           <% end %>
         </span>
