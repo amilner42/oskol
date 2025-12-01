@@ -884,23 +884,27 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         
     <!-- Center column: Score diff (centered) -->
         <div class="flex items-center justify-center">
-          <%= if score_diff > 0 do %>
-            <span class={
-              if player_score > opponent_score,
-                do: "text-player font-semibold text-sm",
-                else: "text-opponent font-semibold text-sm"
-            }>
-              {if player_score > opponent_score, do: "+", else: "-"}{score_diff}
-            </span>
-          <% else %>
-            <span class="text-base-content/50">Tied</span>
+          <%= cond do %>
+            <% score_diff == 0 -> %>
+              <span class="text-base-content/50 text-[10px]">Tied</span>
+            <% player_score > opponent_score -> %>
+              <span class="text-player text-[10px] whitespace-nowrap font-semibold">
+                up by {score_diff}
+              </span>
+            <% true -> %>
+              <span class="text-opponent text-[10px] whitespace-nowrap font-semibold">
+                up by {score_diff}
+              </span>
           <% end %>
         </div>
-        
+
     <!-- Right column: Player stats (2 lines) -->
         <div class="flex flex-col items-end gap-0.5">
           <!-- Opponent line -->
           <div class="flex items-center gap-1.5">
+            <%= if opponent_score > player_score and score_diff > 0 do %>
+              <.icon name="hero-trophy-solid" class="w-3 h-3 text-opponent" />
+            <% end %>
             <span class="text-opponent font-medium">{@opponent_name |> String.slice(0, 6)}</span>
             <div class="flex items-center gap-0.5">
               <span class="text-base-content/70">{@opponent_state.lives}</span>
@@ -913,6 +917,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           </div>
           <!-- Player line -->
           <div class="flex items-center gap-1.5">
+            <%= if player_score > opponent_score and score_diff > 0 do %>
+              <.icon name="hero-trophy-solid" class="w-3 h-3 text-player" />
+            <% end %>
             <span class="text-player font-medium">{@player_name |> String.slice(0, 6)}</span>
             <div class="flex items-center gap-0.5">
               <span class="text-base-content/70">{@player_state.lives}</span>
