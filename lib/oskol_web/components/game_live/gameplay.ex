@@ -1942,16 +1942,19 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           class={[
             "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm",
             if(assigns[:viewing_results] || false,
-              do: "opacity-30 cursor-not-allowed pointer-events-none bg-white/60",
+              do: "opacity-30 cursor-not-allowed pointer-events-none bg-gray-900/30",
               else: if(@active_console == :deck,
-                do: "bg-white/95 scale-110 translate-x-1",
-                else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+                do: "bg-gray-900/95 scale-110 translate-x-1",
+                else: "bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
               )
             )
           ]}
           title="View Deck"
         >
-          <.icon name="hero-square-3-stack-3d" class="w-6 h-6 sm:w-7 sm:h-7 text-blue-600" />
+          <.icon
+            name={if @active_console == :deck, do: "hero-square-3-stack-3d-solid", else: "hero-square-3-stack-3d"}
+            class="w-6 h-6 sm:w-7 sm:h-7 text-blue-600"
+          />
         </button>
 
         <!-- Levels Button -->
@@ -1962,16 +1965,19 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           class={[
             "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm",
             if(assigns[:viewing_results] || false,
-              do: "opacity-30 cursor-not-allowed pointer-events-none bg-white/60",
+              do: "opacity-30 cursor-not-allowed pointer-events-none bg-gray-900/30",
               else: if(@active_console == :levels,
-                do: "bg-white/95 scale-110 translate-x-1",
-                else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+                do: "bg-gray-900/95 scale-110 translate-x-1",
+                else: "bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
               )
             )
           ]}
           title="View Levels"
         >
-          <.icon name="hero-chart-bar" class="w-6 h-6 sm:w-7 sm:h-7 text-green-600" />
+          <.icon
+            name={if @active_console == :levels, do: "hero-chart-bar-solid", else: "hero-chart-bar"}
+            class="w-6 h-6 sm:w-7 sm:h-7 text-green-600"
+          />
         </button>
 
         <!-- Log Button -->
@@ -1982,16 +1988,19 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           class={[
             "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm",
             if(assigns[:viewing_results] || false,
-              do: "opacity-30 cursor-not-allowed pointer-events-none bg-white/60",
+              do: "opacity-30 cursor-not-allowed pointer-events-none bg-gray-900/30",
               else: if(@active_console == :log,
-                do: "bg-white/95 scale-110 translate-x-1",
-                else: "bg-white/80 hover:bg-white/90 hover:scale-105"
+                do: "bg-gray-900/95 scale-110 translate-x-1",
+                else: "bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
               )
             )
           ]}
           title="View Log"
         >
-          <.icon name="hero-newspaper" class="w-6 h-6 sm:w-7 sm:h-7 text-amber-600" />
+          <.icon
+            name={if @active_console == :log, do: "hero-newspaper-solid", else: "hero-newspaper"}
+            class="w-6 h-6 sm:w-7 sm:h-7 text-amber-600"
+          />
         </button>
       </div>
     </div>
