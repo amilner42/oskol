@@ -209,10 +209,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
     ~H"""
     <div class="flex flex-col h-screen-safe bg-base-300 overflow-hidden">
       <!-- Top - Opponent Cards: shrink on mobile, minimal padding on desktop -->
-      <div class="shrink-0 flex flex-col justify-end pt-2 px-1 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-base-200/40">
+      <div class="shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-base-200/40">
         <.opponent_cards
           opponent_state={@opponent_state}
-          opponent_card_sort={@opponent_card_sort}
+          your_card_sort={@your_card_sort}
           opponent_new_card_ids={@opponent_new_card_ids}
           opponent_face_down_card_ids={@opponent_face_down_card_ids}
           disabled_ranks={@opponent_state.disabled_ranks}
@@ -243,7 +243,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       </div>
       
     <!-- Bottom - Player Cards: shrink on mobile, minimal padding on desktop -->
-      <div class="shrink-0 flex flex-col justify-start pt-1 px-1 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-base-200/40">
+      <div class="shrink-0 flex flex-col justify-start pt-1 px-0 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-base-200/40">
         <.player_cards
           player_state={@player_state}
           selected_card_ids={@selected_card_ids}
@@ -263,6 +263,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         selected_card_ids={@selected_card_ids}
         action_in_progress={@action_in_progress}
         viewing_results={@viewing_results}
+        your_card_sort={@your_card_sort}
       />
 
       <!-- Console Buttons (fixed at mid-left) -->
@@ -281,21 +282,9 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
-    <!-- Card controls for opponent -->
-    <div class="flex justify-center mb-2 sm:mb-3">
-      <button
-        phx-click="toggle_opponent_card_sort"
-        class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
-      >
-        <span class="text-gray-500">Sorting by</span>
-        <span class="font-semibold text-gray-800">
-          {if @opponent_card_sort == :rank, do: "Rank", else: "Suit"}
-        </span>
-      </button>
-    </div>
     <!-- Responsive card grid: flex cards that shrink on mobile, max size on desktop -->
     <div class="flex gap-1 sm:gap-3 md:gap-4 justify-center px-2 sm:px-0">
-      <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @opponent_card_sort) do %>
+      <%= for card <- sort_cards(@opponent_state.card_piles.hand_pile, @your_card_sort) do %>
         <% is_new = card.id in @opponent_new_card_ids %>
         <% is_face_down = card.id in @opponent_face_down_card_ids %>
         <% is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
@@ -364,8 +353,8 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         </button>
       <% end %>
     </div>
-    <!-- Card controls for player -->
-    <div class="flex justify-center mt-2 sm:mt-3">
+    <!-- Card controls for player - hidden on mobile (moved to action bar) -->
+    <div class="hidden sm:flex justify-center mt-2 sm:mt-3">
       <button
         phx-click="toggle_your_card_sort"
         class="px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
@@ -487,10 +476,11 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
 
     is_locked_in = @player_state.locked_in_hand != nil %>
 
-    <!-- Action bar -->
-    <div class="h-12 sm:h-20 flex items-center justify-end px-2 sm:px-8 shrink-0">
-      <!-- Action Buttons (always visible, disabled during results) -->
-      <div class="flex items-center gap-2 sm:gap-4">
+    <!-- Action bar - Mobile: full width with 3 buttons, Desktop: right-aligned 2 buttons -->
+    <div class="h-12 sm:h-20 flex items-center shrink-0">
+      <!-- Mobile layout: flex row with discard left, sort center, play right -->
+      <div class="sm:hidden flex items-center justify-between gap-1.5 w-full px-2">
+        <!-- Discard button (left) - fixed width -->
         <button
           phx-click="discard_cards"
           disabled={
@@ -498,7 +488,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
               @player_state.discards_remaining == 0 || is_locked_in
           }
           class={[
-            "px-3 sm:px-4 py-2 rounded-lg transition-colors bg-error hover:bg-error/90 text-error-content shadow-lg ring-1 ring-white/10 text-sm sm:text-base touch-manipulation min-w-[70px] sm:min-w-0",
+            "w-16 py-1.5 rounded transition-colors bg-error hover:bg-error/90 text-error-content shadow ring-1 ring-white/10 text-xs touch-manipulation",
             if(
               @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
                 @player_state.discards_remaining == 0 || is_locked_in,
@@ -508,8 +498,67 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           ]}
         >
           <%= if @action_in_progress do %>
-            <span class="hidden sm:inline">Discarding...</span>
-            <span class="sm:hidden">...</span>
+            ...
+          <% else %>
+            Discard
+          <% end %>
+        </button>
+
+        <!-- Sort button (center) - flexible width -->
+        <button
+          phx-click="toggle_your_card_sort"
+          class="px-2 py-1 text-[10px] bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-0.5 touch-manipulation whitespace-nowrap"
+        >
+          <span class="text-gray-500">Sort:</span>
+          <span class="font-semibold text-gray-800">
+            {if assigns[:your_card_sort] == :rank, do: "Rank", else: "Suit"}
+          </span>
+        </button>
+
+        <!-- Play button (right) - fixed width, same as discard -->
+        <button
+          phx-click="lock_in_hand"
+          disabled={
+            @viewing_results || @action_in_progress || length(selected_card_ids) == 0 || is_locked_in
+          }
+          class={[
+            "w-16 py-1.5 rounded transition-colors bg-primary hover:bg-primary/90 text-primary-content shadow ring-1 ring-white/10 text-xs font-semibold touch-manipulation",
+            if(
+              @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
+                is_locked_in,
+              do: "opacity-50 cursor-not-allowed",
+              else: ""
+            )
+          ]}
+        >
+          <%= if @action_in_progress do %>
+            ...
+          <% else %>
+            Play
+          <% end %>
+        </button>
+      </div>
+
+      <!-- Desktop layout: right-aligned buttons (unchanged) -->
+      <div class="hidden sm:flex items-center gap-4 ml-auto px-8">
+        <button
+          phx-click="discard_cards"
+          disabled={
+            @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
+              @player_state.discards_remaining == 0 || is_locked_in
+          }
+          class={[
+            "px-4 py-2 rounded-lg transition-colors bg-error hover:bg-error/90 text-error-content shadow-lg ring-1 ring-white/10 text-base touch-manipulation",
+            if(
+              @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
+                @player_state.discards_remaining == 0 || is_locked_in,
+              do: "opacity-50 cursor-not-allowed",
+              else: ""
+            )
+          ]}
+        >
+          <%= if @action_in_progress do %>
+            Discarding...
           <% else %>
             Discard
           <% end %>
@@ -521,7 +570,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             @viewing_results || @action_in_progress || length(selected_card_ids) == 0 || is_locked_in
           }
           class={[
-            "px-4 sm:px-4 py-2 rounded-lg transition-colors bg-primary hover:bg-primary/90 text-primary-content shadow-lg ring-1 ring-white/10 text-sm sm:text-base font-semibold touch-manipulation min-w-[60px] sm:min-w-0",
+            "px-4 py-2 rounded-lg transition-colors bg-primary hover:bg-primary/90 text-primary-content shadow-lg ring-1 ring-white/10 text-base font-semibold touch-manipulation",
             if(
               @viewing_results || @action_in_progress || length(selected_card_ids) == 0 ||
                 is_locked_in,
@@ -531,8 +580,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           ]}
         >
           <%= if @action_in_progress do %>
-            <span class="hidden sm:inline">Playing...</span>
-            <span class="sm:hidden">...</span>
+            Playing...
           <% else %>
             Play
           <% end %>
