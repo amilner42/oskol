@@ -47,6 +47,11 @@ defmodule OskolWeb.GameLive do
           {nil, nil, false, server_state}
         end
 
+      # Check if game is over - if so, show match summary on reconnect
+      viewing_match_summary =
+        joined && final_server_state.game_state &&
+          final_server_state.game_state.game_status == :game_over
+
       socket =
         socket
         |> assign(
@@ -59,7 +64,7 @@ defmodule OskolWeb.GameLive do
           selected_card_ids: [],
           viewing_results: false,
           viewing_round_summary: false,
-          viewing_match_summary: false,
+          viewing_match_summary: viewing_match_summary,
           active_console: nil,
           viewing_own_deck: true,
           levels_view_mode: :player,
@@ -94,9 +99,14 @@ defmodule OskolWeb.GameLive do
   def handle_event("rejoin_as_player", %{"player_name" => name}, socket) do
     case Game.rejoin_game(socket.assigns.game_id, name, self()) do
       {:ok, player_id, new_state} ->
-        # Check if there are hand results to show
+        # Check if game is over - if so, show match summary instead of results
+        viewing_match_summary =
+          new_state.game_state != nil and new_state.game_state.game_status == :game_over
+
+        # Check if there are hand results to show (but not if game is over)
         viewing_results =
-          new_state.game_state != nil and new_state.game_state.last_hand_results != nil
+          !viewing_match_summary && new_state.game_state != nil and
+            new_state.game_state.last_hand_results != nil
 
         {:noreply,
          socket
@@ -106,6 +116,7 @@ defmodule OskolWeb.GameLive do
            joined: true,
            server_state: new_state,
            viewing_results: viewing_results,
+           viewing_match_summary: viewing_match_summary,
            error: nil
          )}
 
@@ -796,11 +807,13 @@ defmodule OskolWeb.GameLive do
       end
 
     # On reconnect (initial state update), don't show results at all - player likely already saw them
-    viewing_results =
+    # But DO show match summary if game is over
+    {viewing_results, viewing_match_summary_override} =
       if socket.assigns.is_initial_state_update do
-        false
+        game_over = new_state.game_state && new_state.game_state.game_status == :game_over
+        {false, game_over}
       else
-        viewing_results
+        {viewing_results, nil}
       end
 
     # If viewing_results just became true, start the score animation
@@ -1026,6 +1039,14 @@ defmodule OskolWeb.GameLive do
         socket.assigns.previewing_card_index
       end
 
+    # Use override if set (for initial reconnect to game over state)
+    viewing_match_summary =
+      if viewing_match_summary_override != nil do
+        viewing_match_summary_override
+      else
+        socket.assigns.viewing_match_summary
+      end
+
     {:noreply,
      socket
      |> assign(
@@ -1033,6 +1054,7 @@ defmodule OskolWeb.GameLive do
        action_in_progress: false,
        viewing_results: viewing_results,
        viewing_round_summary: viewing_round_summary,
+       viewing_match_summary: viewing_match_summary,
        disconnected_players: disconnected_players,
        new_card_ids: new_card_ids,
        opponent_new_card_ids: opponent_new_card_ids,
