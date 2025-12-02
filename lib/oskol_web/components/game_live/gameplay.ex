@@ -1394,14 +1394,14 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
       |> assign_new(:enhancements_disabled, fn -> false end)
 
     ~H"""
-    <div class={if @is_opponent, do: "", else: ""}>
+    <div class="flex flex-col items-center">
       <!-- Hand type header -->
       <div class="text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2">
         {@hand_type_text}
       </div>
-      
+
     <!-- Cards display - responsive sizing -->
-      <div class="flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3">
+      <div class="flex gap-1 sm:gap-2 justify-center items-center mb-2 sm:mb-3">
         <%= for card <- @hand do %>
           <% is_scoring = card.id in @scoring_card_ids
 
@@ -1430,10 +1430,10 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             end
 
           is_disabled = card.rank in @disabled_ranks or card.suit in @disabled_suits %>
-          <div class="relative">
+          <div class="relative flex items-center">
             <.card_display
               card={card}
-              class={"w-9 h-[52px] sm:w-16 sm:h-24 #{card_class}"}
+              class={"w-9 h-[52px] sm:w-14 sm:h-20 #{card_class}"}
               disabled={is_disabled}
               enhancement_disabled={@enhancements_disabled}
               compact={true}
@@ -1451,7 +1451,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
           </div>
         <% end %>
       </div>
-      
+
     <!-- Formula display - responsive sizing -->
       <div class="flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-lg font-mono">
         <span class="text-blue-400 font-bold">{@running_chips}</span>
