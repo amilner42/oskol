@@ -134,21 +134,112 @@
   min-height: 100dvh;
 }
 
-/* Rotating corner animation for when both players select the same game mode */
-@keyframes corner-rotate {
-  0%, 49.9% {
-    border-color: oklch(68% 0.16 230); /* player/sky */
+/* Lock-in animation for when both players select the same game mode */
+
+/* Wrapper glow animation */
+@keyframes lock-in-glow {
+  0% {
+    box-shadow: 0 0 0 0 transparent;
   }
-  50%, 100% {
-    border-color: oklch(70% 0.18 55); /* opponent/orange */
+  40% {
+    box-shadow:
+      0 0 20px 4px oklch(68% 0.16 230 / 0.6),
+      0 0 40px 8px oklch(68% 0.16 230 / 0.3),
+      inset 0 0 20px 2px oklch(68% 0.16 230 / 0.2);
+  }
+  100% {
+    box-shadow:
+      0 0 20px 4px oklch(70% 0.18 55 / 0.6),
+      0 0 40px 8px oklch(70% 0.18 55 / 0.3),
+      inset 0 0 20px 2px oklch(70% 0.18 55 / 0.2);
   }
 }
 
-.corner-rotate-a {
-  animation: corner-rotate 2s steps(1) infinite;
+@keyframes lock-in-pulse-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 15px 3px oklch(68% 0.16 230 / 0.5),
+      0 0 30px 6px oklch(68% 0.16 230 / 0.25),
+      inset 0 0 15px 2px oklch(68% 0.16 230 / 0.15);
+  }
+  25% {
+    box-shadow:
+      0 0 25px 5px oklch(68% 0.16 230 / 0.7),
+      0 0 50px 10px oklch(68% 0.16 230 / 0.35),
+      inset 0 0 25px 3px oklch(68% 0.16 230 / 0.25);
+  }
+  50% {
+    box-shadow:
+      0 0 15px 3px oklch(70% 0.18 55 / 0.5),
+      0 0 30px 6px oklch(70% 0.18 55 / 0.25),
+      inset 0 0 15px 2px oklch(70% 0.18 55 / 0.15);
+  }
+  75% {
+    box-shadow:
+      0 0 25px 5px oklch(70% 0.18 55 / 0.7),
+      0 0 50px 10px oklch(70% 0.18 55 / 0.35),
+      inset 0 0 25px 3px oklch(70% 0.18 55 / 0.25);
+  }
 }
 
-.corner-rotate-b {
-  animation: corner-rotate 2s steps(1) infinite;
-  animation-delay: -1s; /* offset by half to be opposite */
+.lock-in-wrapper {
+  animation: lock-in-glow 1.2s ease-out forwards, lock-in-pulse-glow 4s ease-in-out 1.2s infinite;
+  border-radius: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .lock-in-wrapper {
+    border-radius: 1rem;
+  }
+}
+
+/* Corner animations */
+@keyframes corner-lock-in-grow {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.6;
+    border-color: transparent;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+    border-color: var(--corner-color);
+    filter: drop-shadow(0 0 8px var(--corner-glow));
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    border-color: var(--corner-color);
+    filter: drop-shadow(0 0 4px var(--corner-glow));
+  }
+}
+
+@keyframes corner-pulse {
+  0%, 100% {
+    transform: scale(1);
+    border-color: var(--corner-color);
+    filter: drop-shadow(0 0 4px var(--corner-glow));
+  }
+  50% {
+    transform: scale(1.15);
+    border-color: var(--corner-bright);
+    filter: drop-shadow(0 0 10px var(--corner-glow));
+  }
+}
+
+.corner-lock-in-a {
+  --corner-color: oklch(68% 0.16 230); /* player/sky */
+  --corner-bright: oklch(78% 0.2 230); /* brighter player/sky */
+  --corner-glow: oklch(68% 0.16 230 / 0.6);
+  animation: corner-lock-in-grow 0.6s ease-out forwards, corner-pulse 4s ease-in-out 0.6s infinite;
+}
+
+.corner-lock-in-b {
+  --corner-color: oklch(70% 0.18 55); /* opponent/orange */
+  --corner-bright: oklch(80% 0.22 55); /* brighter opponent/orange */
+  --corner-glow: oklch(70% 0.18 55 / 0.6);
+  animation: corner-lock-in-grow 0.6s ease-out 0.3s forwards, corner-pulse 4s ease-in-out 0.9s infinite;
+  transform: scale(0.8);
+  opacity: 0.6;
+  border-color: transparent;
 }
