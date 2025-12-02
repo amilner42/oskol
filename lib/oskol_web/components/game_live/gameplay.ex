@@ -905,7 +905,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <%= if opponent_score > player_score and score_diff > 0 do %>
               <.icon name="hero-star-solid" class="w-2.5 h-2.5 text-opponent" />
             <% end %>
-            <span class="text-opponent font-medium mr-1.5">{@opponent_name |> String.slice(0, 6)}</span>
+            <span class="text-opponent font-medium mr-1.5 truncate max-w-[10ch]">{@opponent_name}</span>
             <div class="flex items-center gap-0.5">
               <span class="text-base-content/70">{@opponent_state.lives}</span>
               <.icon name="hero-heart-solid" class="w-3 h-3 text-base-content/50" />
@@ -920,7 +920,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
             <%= if player_score > opponent_score and score_diff > 0 do %>
               <.icon name="hero-star-solid" class="w-2.5 h-2.5 text-player" />
             <% end %>
-            <span class="text-player font-medium mr-1.5">{@player_name |> String.slice(0, 6)}</span>
+            <span class="text-player font-medium mr-1.5 truncate max-w-[10ch]">{@player_name}</span>
             <div class="flex items-center gap-0.5">
               <span class="text-base-content/70">{@player_state.lives}</span>
               <.icon name="hero-heart-solid" class="w-3 h-3 text-base-content/50" />
@@ -1060,7 +1060,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <div class="flex items-center gap-1">
           <span class={"w-2 h-2 rounded-full #{if @opponent_connected, do: "bg-green-500", else: "bg-gray-500"}"}>
           </span>
-          <span class="text-sm text-opponent">{@opponent_name}</span>
+          <span class="text-sm text-opponent truncate max-w-[25ch]">{@opponent_name}</span>
         </div>
         <div class="group relative flex items-center gap-0.5 cursor-default">
           <%= for i <- 1..@game_state.initial_lives do %>
@@ -1121,7 +1121,7 @@ defmodule OskolWeb.Components.GameLive.Gameplay do
         <div class="flex items-center gap-1">
           <span class={"w-2 h-2 rounded-full #{if @player_connected, do: "bg-green-500", else: "bg-gray-500"}"}>
           </span>
-          <span class="text-sm text-player">{@player_name}</span>
+          <span class="text-sm text-player truncate max-w-[25ch]">{@player_name}</span>
         </div>
       </div>
 
