@@ -908,51 +908,60 @@ defmodule OskolWeb.LandingLive do
   end
 
   defp format_card_v2(assigns) do
+    # Determine if both players selected this format for special animation
+    both_selected = assigns.selected and assigns.opponent_selected
+
+    assigns = assign(assigns, :both_selected, both_selected)
+
     ~H"""
-    <button
-      phx-click="select_format"
-      phx-value-format={@format}
-      class={[
-        "relative p-2.5 sm:p-5 rounded-xl sm:rounded-2xl transition-all border-2 text-center group",
-        "bg-white/90 backdrop-blur-sm shadow-lg hover:shadow-xl hover:scale-105",
-        "border-white/50 hover:border-white"
-      ]}
-    >
-      <!-- Corner selection indicators -->
-      <%= cond do %>
-        <% @selected and @opponent_selected -> %>
-          <!-- Both selected - animated rotating corners -->
-          <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] rounded-tl-xl sm:rounded-tl-2xl corner-rotate-a">
-          </div>
-          <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] rounded-tr-xl sm:rounded-tr-2xl corner-rotate-b">
-          </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] rounded-bl-xl sm:rounded-bl-2xl corner-rotate-b">
-          </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] rounded-br-xl sm:rounded-br-2xl corner-rotate-a">
-          </div>
-        <% @selected -> %>
-          <!-- Only you selected - all player corners -->
-          <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-xl sm:rounded-tl-2xl">
-          </div>
-          <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-player rounded-tr-xl sm:rounded-tr-2xl">
-          </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] border-player rounded-bl-xl sm:rounded-bl-2xl">
-          </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-player rounded-br-xl sm:rounded-br-2xl">
-          </div>
-        <% @opponent_selected -> %>
-          <!-- Only opponent selected - all opponent corners -->
-          <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-opponent rounded-tl-xl sm:rounded-tl-2xl">
-          </div>
-          <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-xl sm:rounded-tr-2xl">
-          </div>
-          <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] border-opponent rounded-bl-xl sm:rounded-bl-2xl">
-          </div>
-          <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-opponent rounded-br-xl sm:rounded-br-2xl">
-          </div>
-        <% true -> %>
-          <!-- No selection -->
-      <% end %>
+    <div class={[
+      "relative",
+      @both_selected && "lock-in-wrapper"
+    ]}>
+      <button
+        phx-click="select_format"
+        phx-value-format={@format}
+        class={[
+          "relative w-full p-2.5 sm:p-5 rounded-xl sm:rounded-2xl transition-all border-2 text-center group",
+          "bg-white/90 backdrop-blur-sm shadow-lg hover:shadow-xl hover:scale-105",
+          "border-white/50 hover:border-white"
+        ]}
+      >
+        <!-- Corner selection indicators -->
+        <%= cond do %>
+          <% @both_selected -> %>
+            <!-- Both selected - animated lock-in corners -->
+            <div class="absolute -top-[2px] -left-[2px] w-5 h-5 sm:w-6 sm:h-6 border-t-[3px] border-l-[3px] rounded-tl-xl sm:rounded-tl-2xl corner-lock-in-a">
+            </div>
+            <div class="absolute -top-[2px] -right-[2px] w-5 h-5 sm:w-6 sm:h-6 border-t-[3px] border-r-[3px] rounded-tr-xl sm:rounded-tr-2xl corner-lock-in-b">
+            </div>
+            <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 sm:w-6 sm:h-6 border-b-[3px] border-l-[3px] rounded-bl-xl sm:rounded-bl-2xl corner-lock-in-b">
+            </div>
+            <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 sm:w-6 sm:h-6 border-b-[3px] border-r-[3px] rounded-br-xl sm:rounded-br-2xl corner-lock-in-a">
+            </div>
+          <% @selected -> %>
+            <!-- Only you selected - all player corners -->
+            <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-xl sm:rounded-tl-2xl">
+            </div>
+            <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-player rounded-tr-xl sm:rounded-tr-2xl">
+            </div>
+            <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] border-player rounded-bl-xl sm:rounded-bl-2xl">
+            </div>
+            <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-player rounded-br-xl sm:rounded-br-2xl">
+            </div>
+          <% @opponent_selected -> %>
+            <!-- Only opponent selected - all opponent corners -->
+            <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-opponent rounded-tl-xl sm:rounded-tl-2xl">
+            </div>
+            <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-xl sm:rounded-tr-2xl">
+            </div>
+            <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] border-opponent rounded-bl-xl sm:rounded-bl-2xl">
+            </div>
+            <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-opponent rounded-br-xl sm:rounded-br-2xl">
+            </div>
+          <% true -> %>
+            <!-- No selection -->
+        <% end %>
       
     <!-- Abstract SVG decoration per format -->
       <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
@@ -1011,12 +1020,13 @@ defmodule OskolWeb.LandingLive do
       </div>
       
     <!-- Text content - centered and stacked -->
-      <div class="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1">
-        <div class="text-gray-800 font-bold text-sm sm:text-lg">{@title}</div>
-        <div class="text-gray-500 text-[10px] sm:text-xs hidden sm:block">{@description}</div>
-        <div class="text-gray-400 text-[10px] sm:text-xs">{@subtitle}</div>
-      </div>
-    </button>
+        <div class="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1">
+          <div class="text-gray-800 font-bold text-sm sm:text-lg">{@title}</div>
+          <div class="text-gray-500 text-[10px] sm:text-xs hidden sm:block">{@description}</div>
+          <div class="text-gray-400 text-[10px] sm:text-xs">{@subtitle}</div>
+        </div>
+      </button>
+    </div>
     """
   end
 
