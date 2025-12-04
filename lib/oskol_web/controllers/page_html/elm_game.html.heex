@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <title>Oskol - Poker Roguelike</title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    </script>
+    <style>
+      .new-card {
+        position: relative;
+      }
+
+      .new-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background-color: rgb(234, 179, 8);
+        z-index: 10;
+      }
+
+      .new-card::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background-color: rgb(234, 179, 8);
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body class="h-full">
+    <div
+      id="elm-game-app"
+      data-game-id={@game_id}
+      data-player-id={if @player_id, do: @player_id, else: ""}
+    >
+    </div>
+  </body>
+</html>
