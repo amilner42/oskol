@@ -323,3 +323,21 @@ defmodule Oskol.Game.ShopCard do
     |> Enum.take(8)
   end
 end
+
+defimpl Jason.Encoder, for: Oskol.Game.ShopCard do
+  alias Oskol.Game.ShopCard
+
+  def encode(shop_card, opts) do
+    Jason.Encode.map(
+      %{
+        type: shop_card.type,
+        subtype: Atom.to_string(shop_card.subtype),
+        name: ShopCard.card_name(shop_card),
+        description: ShopCard.card_description(shop_card),
+        cost: 0,
+        metadata: shop_card.metadata
+      },
+      opts
+    )
+  end
+end

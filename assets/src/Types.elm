@@ -247,6 +247,104 @@ type alias PendingPlusBomb =
 
 
 
+-- SHOP UI STATE (CLIENT-ONLY)
+
+
+{-| Complete UI state for the shop system.
+Represents all possible states the player can be in during the shop phase.
+This is CLIENT-SIDE ONLY - derived from server ShopState on every update.
+-}
+type ShopUIState
+    = DestroyPhase DestroyPhaseData
+    | WaitingForOpponent WaitingData
+    | BrowsingCards BrowsingData
+    | PreviewingCard PreviewCardData
+    | SelectingDeckBuilderCards DeckBuilderSelectionData
+    | SelectingPlusBombCard PlusBombSelectionData
+    | ShopComplete CompletionData
+
+
+{-| Data for destroy phase
+-}
+type alias DestroyPhaseData =
+    { isMyTurn : Bool
+    , destroysRemaining : Int
+    , availableCards : List ShopCard
+    , destroyedIndices : List Int
+    }
+
+
+{-| Data for waiting on opponent
+-}
+type alias WaitingData =
+    { reason : WaitingReason
+    , availableCards : List ShopCard
+    , pickedIndices : List Int
+    , destroyedIndices : List Int
+    }
+
+
+type WaitingReason
+    = OpponentDestroying
+    | OpponentPicking
+
+
+{-| Data for browsing available cards (my turn, no preview)
+-}
+type alias BrowsingData =
+    { availableCards : List ShopCard
+    , pickedIndices : List Int
+    , destroyedIndices : List Int
+    }
+
+
+{-| Data for previewing a regular card (LevelUp, Denial, basic Sabotage)
+-}
+type alias PreviewCardData =
+    { cardIndex : Int
+    , card : ShopCard
+    , availableCards : List ShopCard
+    , pickedIndices : List Int
+    , destroyedIndices : List Int
+    }
+
+
+{-| Data for selecting deck builder cards
+-}
+type alias DeckBuilderSelectionData =
+    { cardIndex : Int
+    , deckBuilderCard : ShopCard
+    , availableCards : List Card
+    , selectedCardIds : Set String
+    , maxSelection : Int
+    , availableShopCards : List ShopCard
+    , pickedIndices : List Int
+    , destroyedIndices : List Int
+    }
+
+
+{-| Data for selecting plus bomb card
+-}
+type alias PlusBombSelectionData =
+    { cardIndex : Int
+    , availableCards : List Card
+    , selectedCardId : Maybe String
+    , availableShopCards : List ShopCard
+    , pickedIndices : List Int
+    , destroyedIndices : List Int
+    }
+
+
+{-| Data for shop completion state
+-}
+type alias CompletionData =
+    { availableCards : List ShopCard
+    , pickedIndices : List Int
+    , destroyedIndices : List Int
+    }
+
+
+
 -- UI STATE (CLIENT-ONLY)
 
 
@@ -262,6 +360,10 @@ type alias Model =
     , acknowledgedEventSeq : Int
     , connectionStatus : ConnectionStatus
     , cardSort : CardSort
+    , previewingCardIndex : Maybe Int  -- TODO: Remove after migration
+    , deckBuilderSelection : List String  -- TODO: Remove after migration
+    , plusBombSelection : Maybe String  -- TODO: Remove after migration
+    , shopUIState : Maybe ShopUIState  -- NEW: Unified shop state
     }
 
 
@@ -298,12 +400,24 @@ type Msg
     | ToggleCardSort
     | LockInHand
     | DiscardCards (List String)
+      -- Shop actions
     | MakeShopPick Int
+    | PreviewShopCard Int
+    | ClearCardPreview
     | ConfirmDeckBuilder Int
-    | CompleteDeckBuilderSelection (List String)
-    | SkipDeckBuilderSelection
     | ConfirmPlusBomb Int
-    | CompletePlusBombSelection String
+    | ToggleDeckCardSelection String  -- NEW: Toggle deck builder card selection
+    | SelectPlusBombCard String
+    | ConfirmSelection  -- NEW: Unified confirm for selections
+    | CancelSelection  -- NEW: Cancel/skip selection
+      -- OLD (to be removed after migration):
+    | PreviewDeckBuilder Int  -- TODO: Remove
+    | SelectDeckCard String  -- TODO: Remove (replaced by ToggleDeckCardSelection)
+    | CompleteDeckBuilderSelection (List String)  -- TODO: Remove (replaced by ConfirmSelection)
+    | SkipDeckBuilderSelection  -- TODO: Remove (replaced by CancelSelection)
+    | PreviewPlusBomb Int  -- TODO: Remove
+    | CompletePlusBombSelection String  -- TODO: Remove (replaced by ConfirmSelection)
+      -- Destroy phase
     | DestroyShopCard Int
     | CompleteDestroyPhase
     | ReadyForNextRound

@@ -380,9 +380,9 @@ defmodule OskolWeb.GameChannel do
     %{
       type: Atom.to_string(shop_card.type),
       subtype: Atom.to_string(shop_card.subtype),
-      name: shop_card.name,
-      description: shop_card.description,
-      cost: shop_card.cost,
+      name: Oskol.Game.ShopCard.card_name(shop_card),
+      description: Oskol.Game.ShopCard.card_description(shop_card),
+      cost: 0,
       metadata: serialize_shop_card_metadata(shop_card.metadata)
     }
   end
