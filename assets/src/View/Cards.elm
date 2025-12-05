@@ -8,7 +8,7 @@ import Html.Attributes exposing (class, classList, src)
 import Types exposing (..)
 
 
-{-| View a card as an image (matches LiveView's card_display)
+{-| View a card as an image (matches LiveView's card\_display)
 -}
 viewCardImage :
     { card : Card

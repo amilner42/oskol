@@ -9,7 +9,9 @@ import Json.Decode as D
 import Json.Encode as E
 import Set exposing (Set)
 import Types exposing (..)
+import Url exposing (percentEncode)
 import View.Game
+
 
 
 -- MAIN
@@ -33,6 +35,9 @@ port sendToChannel : E.Value -> Cmd msg
 
 
 port receiveFromChannel : (E.Value -> msg) -> Sub msg
+
+
+port navigateToUrl : String -> Cmd msg
 
 
 
@@ -64,6 +69,7 @@ init flags =
       , deckBuilderSelection = []
       , plusBombSelection = Nothing
       , shopUIState = Nothing
+      , rematchRequested = False
       }
     , Cmd.none
     )
@@ -226,6 +232,27 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
             newState
 
 
+{-| Generate a deterministic rematch game ID
+-}
+generateRematchId : String -> String
+generateRematchId currentId =
+    -- Check if ID already has a rematch suffix (e.g., "abc123-r2")
+    if String.contains "-r" currentId then
+        -- Extract base and number, increment
+        case String.split "-r" currentId of
+            [base, numStr] ->
+                case String.toInt numStr of
+                    Just num ->
+                        base ++ "-r" ++ String.fromInt (num + 1)
+                    Nothing ->
+                        currentId ++ "-r1"
+            _ ->
+                currentId ++ "-r1"
+    else
+        -- First rematch
+        currentId ++ "-r1"
+
+
 
 -- UPDATE
 
@@ -264,12 +291,12 @@ update msg model =
                     case ( model.shopUIState, newShopUIState ) of
                         ( Just (ShopComplete _), _ ) ->
                             False
-                            -- Already complete
 
+                        -- Already complete
                         ( _, Just (ShopComplete _) ) ->
                             True
-                            -- Just became complete
 
+                        -- Just became complete
                         _ ->
                             False
 
@@ -285,6 +312,29 @@ update msg model =
                 , shopUIState = newShopUIState
               }
             , cmd
+            )
+
+        RematchGameReady rematchGameId ->
+            -- Server has created rematch game, navigate to it with player name
+            let
+                playerName =
+                    case ( model.playerId, model.gameState ) of
+                        ( Just playerId, Success gameState ) ->
+                            Dict.get playerId gameState.playerNames
+
+                        _ ->
+                            Nothing
+
+                url =
+                    case playerName of
+                        Just name ->
+                            "/" ++ rematchGameId ++ "?name=" ++ percentEncode name
+
+                        Nothing ->
+                            "/" ++ rematchGameId
+            in
+            ( model
+            , navigateToUrl url
             )
 
         ChannelError err ->
@@ -399,6 +449,7 @@ update msg model =
                                             }
                                         )
                                 , previewingCardIndex = Just cardIndex
+
                                 -- Keep for backwards compat during migration
                               }
                             , Cmd.none
@@ -576,6 +627,11 @@ update msg model =
             , sendToChannel encodeReadyForNextRound
             )
 
+        RequestRematch ->
+            ( { model | rematchRequested = True }
+            , sendToChannel encodeRequestRematch
+            )
+
         -- Modal actions
         OpenModal modal ->
             ( { model | viewingModal = Just modal }
@@ -616,6 +672,9 @@ handleChannelMessage value =
                 StatusUpdate status ->
                     ConnectionStatusChanged status
 
+                RematchReady gameId ->
+                    RematchGameReady gameId
+
                 Error err ->
                     ChannelError err
 
@@ -629,6 +688,7 @@ type ChannelMessage
     = InitialGameState GameState
     | GameUpdate GameState
     | StatusUpdate ConnectionStatus
+    | RematchReady String
     | Error String
 
 
@@ -646,6 +706,9 @@ channelMessageDecoder =
 
                     "connection_status" ->
                         D.map StatusUpdate (D.field "status" connectionStatusDecoder)
+
+                    "rematch_ready" ->
+                        D.map RematchReady (D.field "game_id" D.string)
 
                     "error" ->
                         D.map Error (D.field "message" D.string)

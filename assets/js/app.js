@@ -197,6 +197,17 @@ if (elmGameContainer) {
     }
   });
 
+  // Listen for rematch ready event
+  gameChannel.on("rematch_ready", (payload) => {
+    console.log("Rematch ready:", payload);
+    if (gameApp.ports.receiveFromChannel) {
+      gameApp.ports.receiveFromChannel.send({
+        type: "rematch_ready",
+        game_id: payload.game_id
+      });
+    }
+  });
+
   // Send actions from Elm -> server
   if (gameApp.ports.sendToChannel) {
     gameApp.ports.sendToChannel.subscribe((data) => {
@@ -218,6 +229,14 @@ if (elmGameContainer) {
             });
           }
         });
+    });
+  }
+
+  // Handle navigation from Elm
+  if (gameApp.ports.navigateToUrl) {
+    gameApp.ports.navigateToUrl.subscribe((url) => {
+      console.log("Navigating to:", url);
+      window.location.href = url;
     });
   }
 

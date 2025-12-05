@@ -7,6 +7,7 @@ import Json.Encode as E
 import Types exposing (..)
 
 
+
 -- ACTION ENCODERS
 
 
@@ -114,6 +115,13 @@ encodeReadyForNextRound : E.Value
 encodeReadyForNextRound =
     E.object
         [ ( "action", E.string "ready_for_next_round" )
+        ]
+
+
+encodeRequestRematch : E.Value
+encodeRequestRematch =
+    E.object
+        [ ( "action", E.string "request_rematch" )
         ]
 
 

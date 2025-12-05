@@ -8,6 +8,7 @@ import Dict exposing (Dict)
 import Set exposing (Set)
 
 
+
 -- REMOTE DATA PATTERN
 
 
@@ -360,10 +361,11 @@ type alias Model =
     , acknowledgedEventSeq : Int
     , connectionStatus : ConnectionStatus
     , cardSort : CardSort
-    , previewingCardIndex : Maybe Int  -- TODO: Remove after migration
-    , deckBuilderSelection : List String  -- TODO: Remove after migration
-    , plusBombSelection : Maybe String  -- TODO: Remove after migration
-    , shopUIState : Maybe ShopUIState  -- NEW: Unified shop state
+    , previewingCardIndex : Maybe Int -- TODO: Remove after migration
+    , deckBuilderSelection : List String -- TODO: Remove after migration
+    , plusBombSelection : Maybe String -- TODO: Remove after migration
+    , shopUIState : Maybe ShopUIState -- NEW: Unified shop state
+    , rematchRequested : Bool -- Track if player requested rematch
     }
 
 
@@ -393,6 +395,7 @@ type Msg
     = -- Channel messages
       ReceivedGameState GameState
     | GameStateUpdated GameState
+    | RematchGameReady String
     | ChannelError String
     | ConnectionStatusChanged ConnectionStatus
       -- User actions
@@ -406,21 +409,23 @@ type Msg
     | ClearCardPreview
     | ConfirmDeckBuilder Int
     | ConfirmPlusBomb Int
-    | ToggleDeckCardSelection String  -- NEW: Toggle deck builder card selection
+    | ToggleDeckCardSelection String -- NEW: Toggle deck builder card selection
     | SelectPlusBombCard String
-    | ConfirmSelection  -- NEW: Unified confirm for selections
-    | CancelSelection  -- NEW: Cancel/skip selection
+    | ConfirmSelection -- NEW: Unified confirm for selections
+    | CancelSelection -- NEW: Cancel/skip selection
       -- OLD (to be removed after migration):
-    | PreviewDeckBuilder Int  -- TODO: Remove
-    | SelectDeckCard String  -- TODO: Remove (replaced by ToggleDeckCardSelection)
-    | CompleteDeckBuilderSelection (List String)  -- TODO: Remove (replaced by ConfirmSelection)
-    | SkipDeckBuilderSelection  -- TODO: Remove (replaced by CancelSelection)
-    | PreviewPlusBomb Int  -- TODO: Remove
-    | CompletePlusBombSelection String  -- TODO: Remove (replaced by ConfirmSelection)
+    | PreviewDeckBuilder Int -- TODO: Remove
+    | SelectDeckCard String -- TODO: Remove (replaced by ToggleDeckCardSelection)
+    | CompleteDeckBuilderSelection (List String) -- TODO: Remove (replaced by ConfirmSelection)
+    | SkipDeckBuilderSelection -- TODO: Remove (replaced by CancelSelection)
+    | PreviewPlusBomb Int -- TODO: Remove
+    | CompletePlusBombSelection String -- TODO: Remove (replaced by ConfirmSelection)
       -- Destroy phase
     | DestroyShopCard Int
     | CompleteDestroyPhase
     | ReadyForNextRound
+      -- Rematch
+    | RequestRematch
       -- Modal actions
     | OpenModal Modal
     | CloseModal
@@ -537,7 +542,8 @@ isShopComplete : Maybe ShopState -> Bool
 isShopComplete maybeShopState =
     case maybeShopState of
         Just shopState ->
-            shopState.currentRound == shopState.totalRounds
+            shopState.currentRound
+                == shopState.totalRounds
                 && shopState.firstPickMade
                 && shopState.secondPickMade
 

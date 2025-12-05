@@ -18,9 +18,8 @@ defmodule OskolWeb.Router do
     pipe_through :browser
 
     get "/elm-test", PageController, :elm_test
-    get "/elm/game/:id", PageController, :elm_game
     live "/", LandingLive
-    live "/:id", GameLive
+    get "/:id", PageController, :elm_game
   end
 
   # Other scopes may use custom stacks.

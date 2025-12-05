@@ -244,3 +244,13 @@
   opacity: 0.6;
   border-color: transparent;
 }
+
+/* Progress fill animation for rematch button - slow fill from left to right */
+@keyframes progress-fill {
+  0% {
+    width: 0%;
+  }
+  100% {
+    width: 100%;
+  }
+}

@@ -170,6 +170,64 @@ defmodule OskolWeb.GameChannel do
     {:reply, :ok, socket}
   end
 
+  @impl true
+  def handle_in("request_rematch", _params, socket) do
+    game_id = socket.assigns.game_id
+    player_id = socket.assigns.player_id
+
+    # Mark player as ready for rematch
+    GameServer.mark_ready_for_next_round_async(game_id, player_id)
+
+    # Get current game state to check if both players are ready
+    game_server_state = GameServer.get_state(game_id)
+
+    # If game is over and both players are ready, trigger rematch
+    if game_server_state.game_state != nil and
+       game_server_state.game_state.game_status == :game_over and
+       both_players_ready_for_rematch?(game_server_state.game_state) do
+      # Generate rematch game ID
+      rematch_game_id = generate_rematch_id(game_id)
+
+      # Get player names and game settings from current game
+      player_names = game_server_state.game_state.player_names |> Map.values() |> Enum.to_list()
+      initial_lives = game_server_state.game_state.initial_lives
+      shop_rounds = game_server_state.game_state.shop_rounds
+
+      # Determine format based on settings
+      format = config_to_format(initial_lives, shop_rounds)
+
+      # Start the new game server
+      case Oskol.Game.GameSupervisor.start_game(rematch_game_id) do
+        {:ok, _pid} ->
+          # Join both players to the new game (PIDs will be set when they actually connect)
+          [player1_name, player2_name] = player_names
+          {:ok, player1_id, _} = GameServer.join_game(rematch_game_id, player1_name)
+          {:ok, player2_id, _} = GameServer.join_game(rematch_game_id, player2_name)
+
+          # Select format for both players
+          _ = GameServer.select_format(rematch_game_id, player1_id, format)
+          _ = GameServer.select_format(rematch_game_id, player2_id, format)
+
+          # Start the game immediately
+          _ = GameServer.start_game(rematch_game_id, [])
+          :ok
+
+        {:error, {:already_started, _pid}} ->
+          # Game already exists, that's fine
+          :ok
+      end
+
+      # Broadcast rematch_ready event to redirect clients
+      Phoenix.PubSub.broadcast(
+        Oskol.PubSub,
+        "game:#{game_id}",
+        {:rematch_ready, rematch_game_id}
+      )
+    end
+
+    {:reply, :ok, socket}
+  end
+
   # Handle PubSub broadcasts from GameServer
   @impl true
   def handle_info({:game_state_updated, game_server_state}, socket) do
@@ -192,6 +250,13 @@ defmodule OskolWeb.GameChannel do
   def handle_info({:action_failed, _player_id, reason}, socket) do
     # Log the failure but don't crash the channel
     Logger.warning("Action failed: #{inspect(reason)}")
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:rematch_ready, rematch_game_id}, socket) do
+    # Notify client to navigate to rematch game
+    push(socket, "rematch_ready", %{game_id: rematch_game_id})
     {:noreply, socket}
   end
 
@@ -445,4 +510,29 @@ defmodule OskolWeb.GameChannel do
       enhancement: enhancement_tuple
     }
   end
+
+  # Check if both players are ready for rematch
+  defp both_players_ready_for_rematch?(game_state) do
+    game_state.players
+    |> Map.values()
+    |> Enum.all?(& &1.ready_for_next_round)
+  end
+
+  # Generate deterministic rematch game ID
+  defp generate_rematch_id(current_id) do
+    case Regex.run(~r/^(.+)-r(\d+)$/, current_id) do
+      [_, base, num_str] ->
+        num = String.to_integer(num_str)
+        "#{base}-r#{num + 1}"
+      nil ->
+        "#{current_id}-r1"
+    end
+  end
+
+  # Convert game configuration to format
+  defp config_to_format(2, 1), do: :short
+  defp config_to_format(3, 2), do: :standard
+  defp config_to_format(5, 2), do: :extended
+  # Default to standard if not a standard format
+  defp config_to_format(_, _), do: :standard
 end

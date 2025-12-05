@@ -76,34 +76,40 @@ viewGameState model gameState =
                 opponentName =
                     getPlayerName gameState opponent.playerId
             in
-            -- Check if we should show shop instead of normal game view
-            case ( gameState.phase, gameState.shopState ) of
-                ( RoundEnd, Just shopState ) ->
-                    -- Full-page shop view
-                    viewShop model gameState shopState
+            -- Check game status and phase
+            case gameState.gameStatus of
+                GameOver ->
+                    -- Full-screen match summary
+                    viewMatchSummary model gameState playerId playerName currentPlayer opponent opponentName
 
-                _ ->
-                    -- Normal game layout
-                    div [ class "flex flex-col h-screen bg-[#1a1d29] overflow-hidden" ]
-                        [ -- Top - Opponent Cards
-                          div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-[#0C0F14]" ]
-                            [ viewOpponentCards opponent model.newCardIds model.cardSort
-                            ]
-                        , -- Middle - Playing Area
-                          div [ class "flex-1 min-h-0 flex flex-col justify-center bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
-                            [ viewPlayingArea model gameState currentPlayer opponent playerId
-                            , viewOpponentInfo opponent opponentName gameState.initialLives gameState.discardsPerRound
-                            , viewPlayerInfo currentPlayer playerName gameState.initialLives gameState.discardsPerRound
-                            ]
-                        , -- Bottom - Player Cards
-                          div [ class "shrink-0 flex flex-col justify-start pt-1 px-0 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-[#0C0F14]" ]
-                            [ viewPlayerCards currentPlayer model
-                            ]
-                        , -- Action Bar
-                          viewActionBar currentPlayer model.selectedCards False
-                        , -- Console Buttons (fixed at mid-left)
-                          viewConsoleButtons model.viewingModal model.playerId
-                        ]
+                Active ->
+                    case ( gameState.phase, gameState.shopState ) of
+                        ( RoundEnd, Just shopState ) ->
+                            -- Full-page shop view
+                            viewShop model gameState shopState
+
+                        _ ->
+                            -- Normal game layout
+                            div [ class "flex flex-col h-screen bg-[#1a1d29] overflow-hidden" ]
+                                [ -- Top - Opponent Cards
+                                  div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-[#0C0F14]" ]
+                                    [ viewOpponentCards opponent model.newCardIds model.cardSort
+                                    ]
+                                , -- Middle - Playing Area
+                                  div [ class "flex-1 min-h-0 flex flex-col justify-center bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
+                                    [ viewPlayingArea model gameState currentPlayer opponent playerId
+                                    , viewOpponentInfo opponent opponentName gameState.initialLives gameState.discardsPerRound
+                                    , viewPlayerInfo currentPlayer playerName gameState.initialLives gameState.discardsPerRound
+                                    ]
+                                , -- Bottom - Player Cards
+                                  div [ class "shrink-0 flex flex-col justify-start pt-1 px-0 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-[#0C0F14]" ]
+                                    [ viewPlayerCards currentPlayer model
+                                    ]
+                                , -- Action Bar
+                                  viewActionBar currentPlayer model.selectedCards False
+                                , -- Console Buttons (fixed at mid-left)
+                                  viewConsoleButtons model.viewingModal model.playerId
+                                ]
 
         _ ->
             viewError "Unable to load player data"
@@ -219,7 +225,7 @@ viewPlayerCards player model =
 
 
 {-| Sort cards based on the current sort option
-Matches Elixir's sort_cards function exactly
+Matches Elixir's sort\_cards function exactly
 -}
 sortCards : CardSort -> List Card -> List Card
 sortCards sortOption cards =
@@ -437,24 +443,198 @@ viewRoundEnd model gameState currentPlayer =
             viewReadyForNextRound currentPlayer
 
 
-{-| View game over screen
+{-| View game over screen - matches LiveView exactly
 -}
 viewGameOver : GameState -> Html Msg
 viewGameOver gameState =
-    case gameState.winnerId of
-        Just winnerId ->
-            div [ class "bg-[#15161f] rounded-lg p-8 text-center border border-gray-700" ]
-                [ h2 [ class "text-3xl font-bold text-white mb-4" ]
-                    [ text "Game Over!" ]
-                , p [ class "text-2xl text-blue-400 mb-6" ]
-                    [ text (getPlayerName gameState winnerId ++ " wins!") ]
-                ]
+    text ""
 
-        Nothing ->
-            div [ class "bg-[#15161f] rounded-lg p-8 text-center border border-gray-700" ]
-                [ h2 [ class "text-3xl font-bold text-white" ]
-                    [ text "Game Over" ]
+
+{-| View match summary screen - full page with interactive rematch
+-}
+viewMatchSummary : Model -> GameState -> String -> String -> PlayerState -> PlayerState -> String -> Html Msg
+viewMatchSummary model gameState playerId playerName playerState opponentState opponentName =
+    let
+        isWinner =
+            gameState.winnerId == Just playerId
+
+        playerReady =
+            model.rematchRequested
+
+        opponentReady =
+            opponentState.readyForNextRound
+
+        bothReady =
+            playerReady && opponentReady
+    in
+    div [ class "min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100" ]
+        [ div [ class "w-full max-w-2xl px-6" ]
+            [ -- Header with emoji and title
+              div [ class "text-center mb-8" ]
+                [ div [ class "text-6xl mb-4" ]
+                    [ text
+                        (if isWinner then
+                            "🏆"
+
+                         else
+                            "💀"
+                        )
+                    ]
+                , h1 [ class "text-4xl font-bold text-base-content mb-2" ]
+                    [ text
+                        (if isWinner then
+                            "Victory!"
+
+                         else
+                            "Defeat"
+                        )
+                    ]
+                , p [ class "text-base-content/60" ]
+                    [ text ("Match complete after " ++ String.fromInt gameState.roundNumber ++ " rounds") ]
                 ]
+            , -- Player cards grid
+              div [ class "grid grid-cols-2 gap-6 mb-8" ]
+                [ viewPlayerResultCard playerName playerState.lives gameState.initialLives isWinner "text-player"
+                , viewPlayerResultCard opponentName opponentState.lives gameState.initialLives (not isWinner) "text-opponent"
+                ]
+            , -- Rematch section
+              viewRematchButton playerReady opponentReady playerName opponentName
+            ]
+        ]
+
+
+{-| Interactive rematch button with glow states
+-}
+viewRematchButton : Bool -> Bool -> String -> String -> Html Msg
+viewRematchButton playerReady opponentReady playerName opponentName =
+    let
+        -- Determine button styling based on ready states
+        buttonState =
+            case ( playerReady, opponentReady ) of
+                ( True, True ) ->
+                    -- Both ready - show starting match
+                    { bgClasses = "bg-gradient-to-r from-emerald-500 to-emerald-600 animate-pulse text-white"
+                    , borderClasses = "border-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.5)]"
+                    , textContent = "Starting match..."
+                    , clickable = False
+                    }
+
+                ( True, False ) ->
+                    -- Player ready - blue scanning animation
+                    { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
+                    , borderClasses = "border-gray-200"
+                    , textContent = "Rematch"
+                    , clickable = False
+                    }
+
+                ( False, True ) ->
+                    -- Opponent ready - orange scanning animation
+                    { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
+                    , borderClasses = "border-gray-200"
+                    , textContent = "Rematch"
+                    , clickable = True
+                    }
+
+                ( False, False ) ->
+                    -- Neither ready - white button with dark text
+                    { bgClasses = "bg-white hover:bg-gray-50 text-gray-900 shadow-md hover:shadow-lg"
+                    , borderClasses = "border-gray-200"
+                    , textContent = "Rematch"
+                    , clickable = True
+                    }
+
+        onClick_ =
+            if buttonState.clickable then
+                onClick RequestRematch
+
+            else
+                onClick NoOp
+    in
+    div [ class "flex flex-col gap-2" ]
+        [ button
+            [ class ("w-full px-8 py-4 rounded-xl font-bold text-lg transition-all " ++ buttonState.bgClasses)
+            , onClick_
+            , disabled (not buttonState.clickable)
+            ]
+            [ -- Barcode scanning animation overlay (multiple thin lines)
+              if playerReady && not opponentReady then
+                -- Player ready - blue progress fill
+                div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
+                    [ div
+                        [ class "absolute inset-y-0 left-0 h-full bg-blue-500"
+                        , Html.Attributes.style "animation" "progress-fill 1.5s ease-out forwards"
+                        ]
+                        []
+                    ]
+
+              else if opponentReady && not playerReady then
+                -- Opponent ready - orange progress fill
+                div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
+                    [ div
+                        [ class "absolute inset-y-0 left-0 h-full bg-orange-500"
+                        , Html.Attributes.style "animation" "progress-fill 1.5s ease-out forwards"
+                        ]
+                        []
+                    ]
+
+              else
+                text ""
+            , -- Button text
+              Html.span [ class "relative z-10" ] [ text buttonState.textContent ]
+            ]
+        ]
+
+
+{-| Player result card for match summary
+-}
+viewPlayerResultCard : String -> Int -> Int -> Bool -> String -> Html Msg
+viewPlayerResultCard playerName lives initialLives isWinner colorClass =
+    let
+        livesRemaining =
+            max 0 lives
+
+        lostLives =
+            initialLives - livesRemaining
+    in
+    div
+        [ classList
+            [ ( "rounded-xl p-6 border-2 bg-base-100 shadow-lg", True )
+            , ( "border-success ring-2 ring-success/20", isWinner )
+            , ( "border-base-300", not isWinner )
+            ]
+        ]
+        [ h2 [ class ("text-xl font-bold mb-4 text-center " ++ colorClass) ]
+            [ text playerName ]
+        , if isWinner then
+            div [ class "text-2xl font-bold text-success text-center mb-4" ]
+                [ text "Winner" ]
+
+          else
+            div [ class "text-2xl font-bold text-error/60 text-center mb-4" ]
+                [ text "Eliminated" ]
+        , -- Hearts display
+          div [ class "flex justify-center items-center gap-1.5 mb-3" ]
+            (List.concat
+                [ -- Filled hearts
+                  if livesRemaining > 0 then
+                    List.repeat livesRemaining
+                        (Heroicons.Solid.heart [ SvgAttr.class "w-8 h-8 text-error" ])
+
+                  else
+                    []
+                , -- Empty hearts
+                  if lostLives > 0 then
+                    List.repeat lostLives
+                        (Heroicons.Outline.heart [ SvgAttr.class "w-8 h-8 text-base-content/20" ])
+
+                  else
+                    []
+                ]
+            )
+        , -- Lives text
+          div [ class "text-center text-base-content/50 text-xs" ]
+            [ text (String.fromInt livesRemaining ++ "/" ++ String.fromInt initialLives ++ " lives") ]
+        ]
 
 
 {-| View shop interface - full page view
@@ -622,7 +802,7 @@ viewShopWithUIState model gameState shopState playerId uiState =
                     ]
                 , -- Cards Grid (scrollable)
                   div [ class "flex-1 p-6 overflow-y-auto" ]
-                    [ viewShopCardsGrid availableCards canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex
+                    [ viewShopCardsGrid availableCards canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState
                     ]
                 ]
             , -- Right column: Pick Timeline + Preview Panel
@@ -678,8 +858,8 @@ viewTurnIndicatorByState uiState =
 
 {-| Shop cards grid with Arsenal and Tactical Ops sections
 -}
-viewShopCardsGrid : List ShopCard -> Bool -> Set Int -> Set Int -> Maybe Int -> Html Msg
-viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewingCardIndex =
+viewShopCardsGrid : List ShopCard -> Bool -> Set Int -> Set Int -> Maybe Int -> ShopUIState -> Html Msg
+viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewingCardIndex uiState =
     div []
         [ -- Arsenal Section (Permanent Upgrades)
           div [ class "mb-6" ]
@@ -694,7 +874,7 @@ viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewi
                     |> List.take 8
                     |> List.indexedMap
                         (\index shopCard ->
-                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex
+                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState
                         )
                 )
             ]
@@ -715,7 +895,7 @@ viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewi
                                 index =
                                     relIndex + 8
                             in
-                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex
+                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState
                         )
                 )
             ]
@@ -724,8 +904,8 @@ viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewi
 
 {-| Minimal shop card - just badge and name (no description)
 -}
-viewShopCardMinimal : ShopCard -> Int -> Bool -> Set Int -> Set Int -> Maybe Int -> Html Msg
-viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex =
+viewShopCardMinimal : ShopCard -> Int -> Bool -> Set Int -> Set Int -> Maybe Int -> ShopUIState -> Html Msg
+viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState =
     let
         isPicked =
             Set.member index pickedIndices
@@ -832,7 +1012,12 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
                 NoOp
 
              else
-                PreviewShopCard index
+                case uiState of
+                    DestroyPhase _ ->
+                        DestroyShopCard index
+
+                    _ ->
+                        PreviewShopCard index
             )
         , Html.Attributes.disabled isDisabled
         ]
@@ -1815,7 +2000,8 @@ viewActionBar player selectedCards actionInProgress =
         ]
 
 
-{-| View opponent info overlay (top-right corner) -}
+{-| View opponent info overlay (top-right corner)
+-}
 viewOpponentInfo : PlayerState -> String -> Int -> Int -> Html Msg
 viewOpponentInfo opponent opponentName initialLives discardsPerRound =
     div [ class "hidden sm:flex absolute top-4 right-4 flex-col items-end gap-0.5 text-gray-300" ]
@@ -1847,7 +2033,8 @@ viewOpponentInfo opponent opponentName initialLives discardsPerRound =
         ]
 
 
-{-| View player info overlay (bottom-right corner) -}
+{-| View player info overlay (bottom-right corner)
+-}
 viewPlayerInfo : PlayerState -> String -> Int -> Int -> Html Msg
 viewPlayerInfo player playerName initialLives discardsPerRound =
     div [ class "hidden sm:flex absolute bottom-4 right-4 flex-col items-end gap-0.5 text-gray-300" ]
@@ -1879,7 +2066,6 @@ viewPlayerInfo player playerName initialLives discardsPerRound =
         ]
 
 
-
 {-| View modal based on which modal is currently viewing
 -}
 viewModal : Modal -> Model -> GameState -> PlayerState -> PlayerState -> String -> String -> String -> Html Msg
@@ -1899,7 +2085,8 @@ viewModal modal model gameState currentPlayer opponent playerId playerName oppon
             text ""
 
 
-{-| View game log modal -}
+{-| View game log modal
+-}
 viewGameLogModal : Html Msg
 viewGameLogModal =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
@@ -1914,7 +2101,8 @@ viewGameLogModal =
         ]
 
 
-{-| View deck modal -}
+{-| View deck modal
+-}
 viewDeckModal : String -> PlayerState -> PlayerState -> String -> String -> String -> Html Msg
 viewDeckModal deckPlayerId currentPlayer opponent playerId playerName opponentName =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
@@ -1928,7 +2116,8 @@ viewDeckModal deckPlayerId currentPlayer opponent playerId playerName opponentNa
         ]
 
 
-{-| View deck cards -}
+{-| View deck cards
+-}
 viewDeckCards : PlayerState -> Html Msg
 viewDeckCards player =
     let
@@ -2068,7 +2257,8 @@ viewDeckCards player =
         ]
 
 
-{-| View levels modal -}
+{-| View levels modal
+-}
 viewLevelsModal : PlayerState -> PlayerState -> String -> String -> Html Msg
 viewLevelsModal currentPlayer opponent playerName opponentName =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
@@ -2082,7 +2272,8 @@ viewLevelsModal currentPlayer opponent playerName opponentName =
         ]
 
 
-{-| View levels list for current player -}
+{-| View levels list for current player
+-}
 viewLevelsList : PlayerState -> Html Msg
 viewLevelsList player =
     let
@@ -2161,56 +2352,56 @@ viewLevelsList player =
     in
     div [ class "w-full" ]
         [ div [ class "space-y-1" ]
-                (List.map
-                    (\handType ->
-                        let
-                            level =
-                                getLevel handType player.skillTree
+            (List.map
+                (\handType ->
+                    let
+                        level =
+                            getLevel handType player.skillTree
 
-                            stats =
-                                statsAtLevel handType level
+                        stats =
+                            statsAtLevel handType level
 
-                            countered =
-                                isCountered handType
+                        countered =
+                            isCountered handType
 
-                            opacityClass =
-                                if countered then
-                                    "opacity-60"
+                        opacityClass =
+                            if countered then
+                                "opacity-60"
 
-                                else
-                                    ""
+                            else
+                                ""
 
-                            strikeClass =
-                                if countered then
-                                    "line-through"
+                        strikeClass =
+                            if countered then
+                                "line-through"
 
-                                else
-                                    ""
+                            else
+                                ""
 
-                            statsColorClass =
-                                if countered then
-                                    "text-base-content/40 line-through"
+                        statsColorClass =
+                            if countered then
+                                "text-base-content/40 line-through"
 
-                                else
-                                    "text-base-content/70"
-                        in
-                        div [ class ("flex items-center justify-between py-1 px-2 rounded hover:bg-base-200 " ++ opacityClass) ]
-                            [ div [ class "flex items-center gap-2" ]
-                                [ span [ class "text-xs text-base-content/50 w-6" ]
-                                    [ text ("Lv" ++ String.fromInt level) ]
-                                , span [ class ("text-sm " ++ strikeClass) ]
-                                    [ text (handTypeToString handType) ]
-                                , if countered then
-                                    span [ class "text-xs text-error font-medium" ]
-                                        [ text "(Countered)" ]
+                            else
+                                "text-base-content/70"
+                    in
+                    div [ class ("flex items-center justify-between py-1 px-2 rounded hover:bg-base-200 " ++ opacityClass) ]
+                        [ div [ class "flex items-center gap-2" ]
+                            [ span [ class "text-xs text-base-content/50 w-6" ]
+                                [ text ("Lv" ++ String.fromInt level) ]
+                            , span [ class ("text-sm " ++ strikeClass) ]
+                                [ text (handTypeToString handType) ]
+                            , if countered then
+                                span [ class "text-xs text-error font-medium" ]
+                                    [ text "(Countered)" ]
 
-                                  else
-                                    text ""
-                                ]
-                            , span [ class ("text-xs " ++ statsColorClass) ]
-                                [ text (String.fromInt stats.chips ++ " × " ++ String.fromInt stats.multiplier) ]
+                              else
+                                text ""
                             ]
-                    )
-                    handTypes
+                        , span [ class ("text-xs " ++ statsColorClass) ]
+                            [ text (String.fromInt stats.chips ++ " × " ++ String.fromInt stats.multiplier) ]
+                        ]
                 )
+                handTypes
+            )
         ]
