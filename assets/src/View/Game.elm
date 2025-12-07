@@ -799,8 +799,10 @@ viewScoreBreakdownRow result skillTree playerName isCurrentPlayer animState =
                                 , isFaceDown = isCardFaceDown result card
                                 , showEnhancement = True
                                 , compact = True
-                                , disabled = False
-                                , enhancementDisabled = False
+                                , disabled =
+                                    List.member card.rank result.disabledRanks
+                                        || List.member card.suit result.disabledSuits
+                                , enhancementDisabled = result.enhancementsDisabled
                                 }
                             ]
                         , case cardBreakdown of
