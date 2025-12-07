@@ -1007,6 +1007,22 @@ viewRematchButton playerReady opponentReady playerName opponentName =
             , -- Button text
               Html.span [ class "relative z-10" ] [ text buttonState.textContent ]
             ]
+        , -- Status text below button
+          case ( playerReady, opponentReady ) of
+            ( True, True ) ->
+                div [ class "text-center text-sm text-base-content/60" ]
+                    [ text "Both players ready!" ]
+
+            ( True, False ) ->
+                div [ class "text-center text-sm text-base-content/60" ]
+                    [ text "You requested a rematch" ]
+
+            ( False, True ) ->
+                div [ class "text-center text-sm text-base-content/60" ]
+                    [ text (opponentName ++ " requested a rematch") ]
+
+            ( False, False ) ->
+                text ""
         ]
 
 
