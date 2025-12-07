@@ -83,9 +83,9 @@ viewGameState model gameState =
                     viewMatchSummary model gameState playerId playerName currentPlayer opponent opponentName
 
                 Active ->
-                    case ( gameState.phase, gameState.shopState ) of
-                        ( RoundEnd, Just shopState ) ->
-                            -- Full-page shop view
+                    case ( gameState.phase, gameState.shopState, model.viewingResults ) of
+                        ( RoundEnd, Just shopState, False ) ->
+                            -- Full-page shop view (only if not viewing score animation)
                             viewShop model gameState shopState
 
                         _ ->
