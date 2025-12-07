@@ -5,10 +5,6 @@ defmodule OskolWeb.PageController do
     render(conn, :home)
   end
 
-  def elm_test(conn, _params) do
-    render(conn, :elm_test, layout: false)
-  end
-
   def elm_game(conn, %{"id" => game_id} = params) do
     # Try to get player_id from session first
     player_id =

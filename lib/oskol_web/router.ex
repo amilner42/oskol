@@ -17,7 +17,6 @@ defmodule OskolWeb.Router do
   scope "/", OskolWeb do
     pipe_through :browser
 
-    get "/elm-test", PageController, :elm_test
     live "/", LandingLive
     get "/:id", PageController, :elm_game
   end
