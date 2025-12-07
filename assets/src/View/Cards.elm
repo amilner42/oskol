@@ -63,7 +63,7 @@ viewCardImage config =
         , if config.disabled && not config.isFaceDown then
             div [ class "absolute inset-0 flex items-center justify-center pointer-events-none" ]
                 [ Html.node "svg"
-                    [ class "w-3/4 h-3/4 text-pink-600/15"
+                    [ class "w-3/4 h-3/4 text-red-600/80"
                     , Html.Attributes.attribute "viewBox" "0 0 100 100"
                     ]
                     [ Html.node "line"
