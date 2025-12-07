@@ -229,6 +229,7 @@ type ShopCardType
 type alias ShopCardMetadata =
     { amount : Maybe Int
     , suit : Maybe Suit
+    , maxCards : Maybe Int
     }
 
 

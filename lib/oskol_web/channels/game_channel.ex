@@ -457,7 +457,8 @@ defmodule OskolWeb.GameChannel do
   defp serialize_shop_card_metadata(metadata) do
     %{
       amount: metadata[:amount],
-      suit: if(metadata[:suit], do: Atom.to_string(metadata[:suit]), else: nil)
+      suit: if(metadata[:suit], do: Atom.to_string(metadata[:suit]), else: nil),
+      max_cards: metadata[:max_cards]
     }
   end
 

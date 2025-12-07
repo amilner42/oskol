@@ -328,6 +328,12 @@ defimpl Jason.Encoder, for: Oskol.Game.ShopCard do
   alias Oskol.Game.ShopCard
 
   def encode(shop_card, opts) do
+    # Convert metadata atom keys to string keys for JSON encoding
+    metadata =
+      shop_card.metadata
+      |> Enum.map(fn {k, v} -> {Atom.to_string(k), v} end)
+      |> Map.new()
+
     Jason.Encode.map(
       %{
         type: shop_card.type,
@@ -335,7 +341,7 @@ defimpl Jason.Encoder, for: Oskol.Game.ShopCard do
         name: ShopCard.card_name(shop_card),
         description: ShopCard.card_description(shop_card),
         cost: 0,
-        metadata: shop_card.metadata
+        metadata: metadata
       },
       opts
     )

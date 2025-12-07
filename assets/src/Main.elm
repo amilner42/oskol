@@ -195,9 +195,9 @@ getMaxSelection : ShopCard -> Int
 getMaxSelection shopCard =
     case shopCard.metadata of
         Just metadata ->
-            case metadata.amount of
-                Just amount ->
-                    amount
+            case metadata.maxCards of
+                Just maxCards ->
+                    maxCards
 
                 Nothing ->
                     1

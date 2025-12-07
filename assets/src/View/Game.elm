@@ -2595,7 +2595,7 @@ viewTopRow gameState player opponent opponentName playerName =
         opponentWinning =
             opponentScore > playerScore && scoreDiff > 0
     in
-    div [ class "absolute top-4 left-2 right-2 sm:left-4 sm:right-4 flex items-start justify-between z-10" ]
+    div [ class "absolute top-2 sm:top-4 left-2 right-2 sm:left-4 sm:right-4 flex items-start justify-between z-10" ]
         [ -- Left: Player info (you)
           div [ class "flex items-start gap-2" ]
             [ viewPlayerInfo player playerName initialLives discardsPerRound playerWinning
@@ -2688,23 +2688,9 @@ viewTopCenterBar gameState player opponent =
 viewOpponentInfo : PlayerState -> String -> Int -> Int -> Bool -> Html Msg
 viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
     div [ class "flex flex-col items-end gap-0.5 text-base-content" ]
-        [ -- Icons row (hearts and trash - horizontal on desktop, vertical on mobile)
-          div [ class "flex flex-col sm:flex-row items-end sm:items-center gap-0.5 sm:gap-1" ]
-            [ -- Hearts
-              div [ class "flex items-center gap-0.5" ]
-                (List.range 1 initialLives
-                    |> List.map
-                        (\i ->
-                            if i > initialLives - opponent.lives then
-                                Heroicons.Solid.heart [ SvgAttr.class "w-4 h-4 text-red-400" ]
-
-                            else
-                                Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
-                        )
-                )
-            , -- Dot separator (desktop only)
-              span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
-            , -- Trash
+        [ -- Icons row (trash and hearts - swapped order, horizontal on desktop, vertical on mobile)
+          div [ class "flex flex-col-reverse sm:flex-row items-end sm:items-center gap-0.5 sm:gap-1" ]
+            [ -- Trash (removed from LEFT/center - leftmost trash disappears first)
               div [ class "flex items-center gap-0.5" ]
                 (List.range 1 discardsPerRound
                     |> List.map
@@ -2714,6 +2700,20 @@ viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
 
                             else
                                 Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                        )
+                )
+            , -- Dot separator (desktop only)
+              span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
+            , -- Hearts (removed from LEFT/center - leftmost heart disappears first)
+              div [ class "flex items-center gap-0.5" ]
+                (List.range 1 initialLives
+                    |> List.map
+                        (\i ->
+                            if i > initialLives - opponent.lives then
+                                Heroicons.Solid.heart [ SvgAttr.class "w-4 h-4 text-red-400" ]
+
+                            else
+                                Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
                         )
                 )
             ]
@@ -2736,9 +2736,10 @@ viewPlayerInfo player playerName initialLives discardsPerRound isWinning =
     div [ class "flex flex-col items-start gap-0.5 text-base-content" ]
         [ -- Icons row (hearts and trash - horizontal on desktop, vertical on mobile)
           div [ class "flex flex-col sm:flex-row items-start sm:items-center gap-0.5 sm:gap-1" ]
-            [ -- Hearts
+            [ -- Hearts (removed from RIGHT/center - rightmost heart disappears first)
               div [ class "flex items-center gap-0.5" ]
                 (List.range 1 initialLives
+                    |> List.reverse
                     |> List.map
                         (\i ->
                             if i > initialLives - player.lives then
@@ -2750,9 +2751,10 @@ viewPlayerInfo player playerName initialLives discardsPerRound isWinning =
                 )
             , -- Dot separator (desktop only)
               span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
-            , -- Trash
+            , -- Trash (removed from RIGHT/center - rightmost trash disappears first)
               div [ class "flex items-center gap-0.5" ]
                 (List.range 1 discardsPerRound
+                    |> List.reverse
                     |> List.map
                         (\i ->
                             if i > discardsPerRound - player.discardsRemaining then

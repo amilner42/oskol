@@ -317,9 +317,10 @@ shopCardTypeDecoder =
 
 shopCardMetadataDecoder : Decoder ShopCardMetadata
 shopCardMetadataDecoder =
-    D.map2 ShopCardMetadata
-        (D.maybe (D.field "amount" D.int))
-        (D.maybe (D.field "suit" suitDecoder))
+    D.succeed ShopCardMetadata
+        |> andMap (D.oneOf [ D.field "amount" (D.map Just D.int), D.succeed Nothing ])
+        |> andMap (D.oneOf [ D.field "suit" (D.map Just suitDecoder), D.succeed Nothing ])
+        |> andMap (D.oneOf [ D.field "max_cards" (D.map Just D.int), D.succeed Nothing ])
 
 
 pendingDeckBuilderDecoder : Decoder PendingDeckBuilder
