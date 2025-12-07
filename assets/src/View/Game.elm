@@ -949,22 +949,25 @@ viewRematchButton playerReady opponentReady playerName opponentName =
                     , borderClasses = "border-blue-400"
                     , textContent = "Starting match..."
                     , clickable = False
+                    , showFill = False
                     }
 
                 ( True, False ) ->
-                    -- Player ready - solid blue
-                    { bgClasses = "bg-blue-500 text-white"
-                    , borderClasses = "border-blue-400"
+                    -- Player ready - show fill animation
+                    { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
+                    , borderClasses = "border-gray-200"
                     , textContent = "Rematch"
                     , clickable = False
+                    , showFill = True
                     }
 
                 ( False, True ) ->
-                    -- Opponent ready - solid blue
-                    { bgClasses = "bg-blue-500 text-white"
-                    , borderClasses = "border-blue-400"
+                    -- Opponent ready - show fill animation
+                    { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
+                    , borderClasses = "border-gray-200"
                     , textContent = "Rematch"
                     , clickable = True
+                    , showFill = True
                     }
 
                 ( False, False ) ->
@@ -973,6 +976,7 @@ viewRematchButton playerReady opponentReady playerName opponentName =
                     , borderClasses = "border-gray-200"
                     , textContent = "Rematch"
                     , clickable = True
+                    , showFill = False
                     }
 
         onClick_ =
@@ -988,8 +992,20 @@ viewRematchButton playerReady opponentReady playerName opponentName =
             , onClick_
             , disabled (not buttonState.clickable)
             ]
-            [ -- Button text
-              text buttonState.textContent
+            [ -- Progress fill animation overlay
+              if buttonState.showFill then
+                div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
+                    [ div
+                        [ class "absolute inset-y-0 left-0 h-full bg-blue-500"
+                        , Html.Attributes.style "animation" "progress-fill 0.5s ease-out forwards"
+                        ]
+                        []
+                    ]
+
+              else
+                text ""
+            , -- Button text
+              Html.span [ class "relative z-10" ] [ text buttonState.textContent ]
             ]
         ]
 
