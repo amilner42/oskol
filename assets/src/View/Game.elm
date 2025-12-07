@@ -135,6 +135,10 @@ viewOpponentCards opponent newCardIds cardSort =
 
                     isFaceDown =
                         List.member card.id opponent.faceDownCardIds
+
+                    isDisabled =
+                        List.member card.rank opponent.disabledRanks
+                            || List.member card.suit opponent.disabledSuits
                 in
                 div
                     [ classList
@@ -147,8 +151,8 @@ viewOpponentCards opponent newCardIds cardSort =
                         , isFaceDown = isFaceDown
                         , showEnhancement = True
                         , compact = True
-                        , disabled = False
-                        , enhancementDisabled = False
+                        , disabled = isDisabled
+                        , enhancementDisabled = opponent.enhancementsDisabled
                         }
                     ]
             )
@@ -192,6 +196,10 @@ viewPlayerCards player model =
                         isFaceDown =
                             List.member card.id player.faceDownCardIds
 
+                        isDisabled =
+                            List.member card.rank player.disabledRanks
+                                || List.member card.suit player.disabledSuits
+
                         canSelect =
                             not (atLimit && not isSelected) && not isLockedIn
                     in
@@ -215,8 +223,8 @@ viewPlayerCards player model =
                                 , isFaceDown = isFaceDown
                                 , showEnhancement = True
                                 , compact = True
-                                , disabled = False
-                                , enhancementDisabled = False
+                                , disabled = isDisabled
+                                , enhancementDisabled = player.enhancementsDisabled
                                 }
                             ]
                         ]
