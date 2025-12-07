@@ -79,8 +79,28 @@ viewGameState model gameState =
             -- Check game status and phase
             case gameState.gameStatus of
                 GameOver ->
-                    -- Full-screen match summary
-                    viewMatchSummary model gameState playerId playerName currentPlayer opponent opponentName
+                    if model.viewingResults then
+                        -- Show score animation before match summary
+                        div [ class "flex flex-col h-screen bg-[#1a1d29] overflow-hidden" ]
+                            [ -- Top - Opponent Cards
+                              div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-[#0C0F14]" ]
+                                [ viewOpponentCards opponent model.newCardIds model.cardSort
+                                ]
+                            , -- Middle - Score Animation
+                              div [ class "flex-1 min-h-0 flex flex-col bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
+                                [ div [ class "flex-1 flex items-center justify-center" ]
+                                    [ viewAnimatedScoreResults model gameState playerId playerName opponentName
+                                    ]
+                                ]
+                            , -- Bottom - Player Cards
+                              div [ class "shrink-0 pt-1 px-0 pb-2 sm:pt-3 sm:px-3 sm:pb-2 bg-[#0C0F14]" ]
+                                [ viewPlayerCards currentPlayer model
+                                ]
+                            ]
+
+                    else
+                        -- Full-screen match summary
+                        viewMatchSummary model gameState playerId playerName currentPlayer opponent opponentName
 
                 Active ->
                     case ( gameState.phase, gameState.shopState, model.viewingResults ) of
