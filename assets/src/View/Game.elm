@@ -924,10 +924,41 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
                 , p [ class "text-base-content/60" ]
                     [ text ("Match complete after " ++ String.fromInt gameState.roundNumber ++ " rounds") ]
                 ]
-            , -- Player cards grid
-              div [ class "grid grid-cols-2 gap-6 mb-8" ]
-                [ viewPlayerResultCard playerName playerState.lives gameState.initialLives isWinner "text-player"
-                , viewPlayerResultCard opponentName opponentState.lives gameState.initialLives (not isWinner) "text-opponent"
+            , -- Match result summary
+              div [ class "text-center mb-8 text-lg text-base-content/80" ]
+                [ let
+                    winnerName =
+                        if isWinner then
+                            playerName
+
+                        else
+                            opponentName
+
+                    loserName =
+                        if isWinner then
+                            opponentName
+
+                        else
+                            playerName
+
+                    winnerLives =
+                        if isWinner then
+                            playerState.lives
+
+                        else
+                            opponentState.lives
+
+                    hearts =
+                        String.repeat winnerLives "❤️"
+                  in
+                  Html.span []
+                    [ Html.span [ class "font-bold text-emerald-400" ] [ text winnerName ]
+                    , text " defeated "
+                    , Html.span [ class "font-bold text-rose-400" ] [ text loserName ]
+                    , text " with "
+                    , Html.span [ class "font-bold" ] [ text hearts ]
+                    , text (" " ++ String.fromInt winnerLives ++ "/" ++ String.fromInt gameState.initialLives ++ " lives remaining")
+                    ]
                 ]
             , -- Rematch section
               viewRematchButton playerReady opponentReady playerName opponentName
