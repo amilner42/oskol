@@ -944,27 +944,30 @@ viewRematchButton playerReady opponentReady playerName opponentName =
         buttonState =
             case ( playerReady, opponentReady ) of
                 ( True, True ) ->
-                    -- Both ready - show starting match
-                    { bgClasses = "bg-gradient-to-r from-emerald-500 to-emerald-600 animate-pulse text-white"
-                    , borderClasses = "border-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.5)]"
+                    -- Both ready - keep blue, show starting match
+                    { bgClasses = "bg-blue-500 text-white relative overflow-hidden"
+                    , borderClasses = "border-blue-400"
                     , textContent = "Starting match..."
                     , clickable = False
+                    , showFill = False
                     }
 
                 ( True, False ) ->
-                    -- Player ready - blue scanning animation
+                    -- Player ready - blue fill animation
                     { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
                     , borderClasses = "border-gray-200"
                     , textContent = "Rematch"
                     , clickable = False
+                    , showFill = True
                     }
 
                 ( False, True ) ->
-                    -- Opponent ready - orange scanning animation
+                    -- Opponent ready - orange fill animation
                     { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
                     , borderClasses = "border-gray-200"
                     , textContent = "Rematch"
                     , clickable = True
+                    , showFill = True
                     }
 
                 ( False, False ) ->
@@ -973,6 +976,7 @@ viewRematchButton playerReady opponentReady playerName opponentName =
                     , borderClasses = "border-gray-200"
                     , textContent = "Rematch"
                     , clickable = True
+                    , showFill = False
                     }
 
         onClick_ =
@@ -988,26 +992,30 @@ viewRematchButton playerReady opponentReady playerName opponentName =
             , onClick_
             , disabled (not buttonState.clickable)
             ]
-            [ -- Barcode scanning animation overlay (multiple thin lines)
-              if playerReady && not opponentReady then
-                -- Player ready - blue progress fill
-                div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
-                    [ div
-                        [ class "absolute inset-y-0 left-0 h-full bg-blue-500"
-                        , Html.Attributes.style "animation" "progress-fill 1.5s ease-out forwards"
+            [ -- Progress fill animation overlay
+              if buttonState.showFill then
+                if playerReady && not opponentReady then
+                    -- Player ready - blue progress fill
+                    div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
+                        [ div
+                            [ class "absolute inset-y-0 left-0 h-full bg-blue-500"
+                            , Html.Attributes.style "animation" "progress-fill 0.5s ease-out forwards"
+                            ]
+                            []
                         ]
-                        []
-                    ]
 
-              else if opponentReady && not playerReady then
-                -- Opponent ready - orange progress fill
-                div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
-                    [ div
-                        [ class "absolute inset-y-0 left-0 h-full bg-orange-500"
-                        , Html.Attributes.style "animation" "progress-fill 1.5s ease-out forwards"
+                else if opponentReady && not playerReady then
+                    -- Opponent ready - orange progress fill
+                    div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
+                        [ div
+                            [ class "absolute inset-y-0 left-0 h-full bg-orange-500"
+                            , Html.Attributes.style "animation" "progress-fill 0.5s ease-out forwards"
+                            ]
+                            []
                         ]
-                        []
-                    ]
+
+                else
+                    text ""
 
               else
                 text ""
