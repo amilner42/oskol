@@ -1158,86 +1158,164 @@ viewShopWithUIState model gameState shopState playerId uiState =
                 _ ->
                     Nothing
     in
-    div [ class "h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200" ]
+    div [ class "h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto" ]
         [ div [ class "min-h-full flex flex-col lg:flex-row lg:h-screen" ]
-            [ -- Left column: Header + Cards Grid
-              div [ class "lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen" ]
+            [ -- Section 1: Header (order-1 on mobile, part of left column on desktop)
+              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen" ]
                 [ -- Header
                   div [ class "p-6 border-b border-base-300/50 flex-shrink-0" ]
                     [ div [ class "flex items-center justify-between mb-4" ]
                         [ div [ class "text-2xl font-light text-base-content" ]
                             [ text "Command Center" ]
-                        , viewTurnIndicatorByState uiState
+                        , div [ class "flex items-center gap-2" ]
+                            [ div [ class "text-xs uppercase tracking-wider text-base-content/40" ]
+                                [ text "Round" ]
+                            , div [ class "text-lg font-semibold text-base-content" ]
+                                [ text (String.fromInt gameState.roundNumber) ]
+                            ]
                         ]
-                    , -- Game status bar (round and lives)
+                    , -- Lives status
                       case ( maybePlayerState, maybeOpponentState ) of
                         ( Just playerState, Just opponentState ) ->
-                            div [ class "flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6" ]
-                                [ -- Round indicator
+                            div [ class "flex items-center gap-4" ]
+                                [ -- Player lives
                                   div [ class "flex items-center gap-2" ]
-                                    [ div [ class "text-xs uppercase tracking-wider text-base-content/40" ]
-                                        [ text "Round" ]
-                                    , div [ class "text-lg font-semibold text-base-content" ]
-                                        [ text (String.fromInt gameState.roundNumber) ]
+                                    [ span [ class "text-xs text-player font-medium" ]
+                                        [ text playerName ]
+                                    , div [ class "flex items-center gap-0.5" ]
+                                        (List.range 1 gameState.initialLives
+                                            |> List.map
+                                                (\i ->
+                                                    if i <= playerState.lives then
+                                                        span [ class "text-error" ] [ text "♥" ]
+
+                                                    else
+                                                        span [ class "text-base-content/20" ] [ text "♥" ]
+                                                )
+                                        )
                                     ]
-                                , -- Lives status
-                                  div [ class "flex items-center gap-4" ]
-                                    [ -- Player lives
-                                      div [ class "flex items-center gap-2" ]
-                                        [ span [ class "text-xs text-player font-medium" ]
-                                            [ text playerName ]
-                                        , div [ class "flex items-center gap-0.5" ]
-                                            (List.range 1 gameState.initialLives
-                                                |> List.map
-                                                    (\i ->
-                                                        if i <= playerState.lives then
-                                                            span [ class "text-error" ] [ text "♥" ]
+                                , -- VS divider
+                                  span [ class "text-xs text-base-content/30" ] [ text "vs" ]
+                                , -- Opponent lives
+                                  div [ class "flex items-center gap-2" ]
+                                    [ span [ class "text-xs text-opponent font-medium" ]
+                                        [ text opponentName ]
+                                    , div [ class "flex items-center gap-0.5" ]
+                                        (List.range 1 gameState.initialLives
+                                            |> List.map
+                                                (\i ->
+                                                    if i <= opponentState.lives then
+                                                        span [ class "text-error" ] [ text "♥" ]
 
-                                                        else
-                                                            span [ class "text-base-content/20" ] [ text "♥" ]
-                                                    )
-                                            )
-                                        ]
-                                    , -- VS divider
-                                      span [ class "text-xs text-base-content/30" ] [ text "vs" ]
-                                    , -- Opponent lives
-                                      div [ class "flex items-center gap-2" ]
-                                        [ span [ class "text-xs text-opponent font-medium" ]
-                                            [ text opponentName ]
-                                        , div [ class "flex items-center gap-0.5" ]
-                                            (List.range 1 gameState.initialLives
-                                                |> List.map
-                                                    (\i ->
-                                                        if i <= opponentState.lives then
-                                                            span [ class "text-error" ] [ text "♥" ]
-
-                                                        else
-                                                            span [ class "text-base-content/20" ] [ text "♥" ]
-                                                    )
-                                            )
-                                        ]
+                                                    else
+                                                        span [ class "text-base-content/20" ] [ text "♥" ]
+                                                )
+                                        )
                                     ]
                                 ]
 
                         _ ->
                             text ""
                     ]
-                , -- Cards Grid (scrollable)
-                  div [ class "flex-1 p-6 overflow-y-auto" ]
+                , -- Cards Grid (hidden on mobile, shown on desktop)
+                  div [ class "hidden lg:block flex-1 p-6 overflow-y-auto" ]
                     [ viewShopCardsGrid availableCards canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
                     ]
                 ]
-            , -- Right column: Pick Timeline + Preview Panel
-              div [ class "lg:flex-1 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden" ]
-                [ -- Pick status bar (timeline)
-                  div [ class "flex-shrink-0" ]
+            , -- Section 2: Timeline (order-2 on mobile)
+              div [ class "order-2 lg:order-none lg:flex-1 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden" ]
+                [ div [ class "flex-shrink-0" ]
                     [ viewPickTimeline shopState playerId playerName opponentName ]
-                , -- Preview panel
-                  div [ class "flex-1 flex flex-col overflow-hidden" ]
+                , -- Preview Panel (hidden on mobile, shown on desktop)
+                  div [ class "hidden lg:flex flex-1 flex-col overflow-hidden" ]
+                    [ viewPreviewPanelByState uiState ]
+                ]
+            , -- Section 3: Cards (order-3 on mobile only, 2 rows with horizontal scroll)
+              div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-100/50" ]
+                [ -- Arsenal Section (Permanent Upgrades)
+                  div [ class "mb-4" ]
+                    [ div [ class "mb-2 flex items-center gap-2" ]
+                        [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
+                            [ text "Arsenal" ]
+                        , div [ class "text-[10px] text-base-content/40" ]
+                            [ text "Permanent Upgrades" ]
+                        ]
+                    , div [ class "flex gap-2 overflow-x-auto pb-2" ]
+                        (availableCards
+                            |> List.take 8
+                            |> List.indexedMap
+                                (\index shopCard ->
+                                    viewShopCardMinimal shopCard index canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
+                                )
+                        )
+                    ]
+                , -- Tactical Ops Section (Action Cards)
+                  div []
+                    [ div [ class "mb-2 flex items-center gap-2" ]
+                        [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
+                            [ text "Tactical Ops" ]
+                        , div [ class "text-[10px] text-base-content/40" ]
+                            [ text "Temporary Battlefield Advantage" ]
+                        ]
+                    , div [ class "flex gap-2 overflow-x-auto pb-2" ]
+                        (availableCards
+                            |> List.drop 8
+                            |> List.indexedMap
+                                (\relIndex shopCard ->
+                                    let
+                                        index =
+                                            relIndex + 8
+                                    in
+                                    viewShopCardMinimal shopCard index canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
+                                )
+                        )
+                    ]
+                ]
+            , -- Section 4: Preview (order-4 on mobile only) - now a bottom sheet modal
+              viewMobilePreviewModal uiState
+            ]
+        ]
+
+
+{-| Mobile preview modal - slides up from bottom when there's content to show
+-}
+viewMobilePreviewModal : ShopUIState -> Html Msg
+viewMobilePreviewModal uiState =
+    let
+        -- Check if there's something to preview
+        hasContent =
+            case uiState of
+                PreviewingCard _ ->
+                    True
+
+                SelectingDeckBuilderCards _ ->
+                    True
+
+                SelectingPlusBombCard _ ->
+                    True
+
+                _ ->
+                    False
+    in
+    if hasContent then
+        -- Modal overlay + bottom sheet
+        div [ class "lg:hidden fixed inset-0 z-50 flex items-end" ]
+            [ -- Backdrop
+              div
+                [ class "absolute inset-0 bg-black/50 backdrop-blur-sm"
+                , onClick ClearCardPreview
+                ]
+                []
+            , -- Bottom sheet
+              div [ class "relative w-full max-h-[85vh] bg-base-100 rounded-t-2xl shadow-2xl overflow-hidden animate-slide-up" ]
+                [ -- Content (scrollable)
+                  div [ class "overflow-y-auto max-h-[85vh]" ]
                     [ viewPreviewPanelByState uiState ]
                 ]
             ]
-        ]
+
+    else
+        text ""
 
 
 {-| View turn indicator for shop (state-based)
@@ -1466,7 +1544,7 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
                     "text-base-content/40"
     in
     button
-        [ class ("w-full aspect-[2/3] rounded-xl p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0 bg-base-100 border-2 " ++ borderClass ++ " " ++ opacityClass ++ " " ++ cursorClass)
+        [ class ("w-[100px] lg:w-full aspect-[2/3] rounded-xl p-2 lg:p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0 bg-base-100 border-2 " ++ borderClass ++ " " ++ opacityClass ++ " " ++ cursorClass)
         , onClick
             (if isDisabled then
                 NoOp
@@ -1478,11 +1556,11 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
         , Html.Attributes.disabled isDisabled
         ]
         [ -- Type badge at top
-          div [ class ("text-[10px] font-bold uppercase tracking-wider mb-2 " ++ labelColor) ]
+          div [ class ("text-[8px] lg:text-[10px] font-bold uppercase tracking-wider mb-1 lg:mb-2 " ++ labelColor) ]
             [ text typeLabel ]
         , -- Card name centered
           div [ class "flex-1 flex items-center justify-center" ]
-            [ div [ class "font-semibold text-sm text-center leading-tight text-base-content" ]
+            [ div [ class "font-semibold text-xs lg:text-sm text-center leading-tight text-base-content" ]
                 [ text shopCard.name ]
             ]
         , -- Picked/Destroyed overlay
@@ -1639,8 +1717,8 @@ viewPickTimeline shopState playerId playerName opponentName =
         allSlots =
             destroySlots ++ pickSlots
     in
-    div [ class "p-6 border-b border-base-300/50" ]
-        [ div [ class "flex flex-wrap gap-3" ]
+    div [ class "p-3 lg:p-6 border-b border-base-300/50" ]
+        [ div [ class "flex flex-wrap gap-2 lg:gap-3" ]
             (allSlots
                 |> List.map
                     (\slot ->
@@ -1689,8 +1767,8 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
             else
                 ( "bg-base-200/30 border-base-300/30", "text-base-content/40" )
     in
-    div [ class ("flex-1 min-w-[180px] flex-shrink-0 rounded-lg p-3 border transition-all " ++ containerClass) ]
-        [ div [ class ("text-[10px] uppercase tracking-wider mb-1 " ++ labelColor) ]
+    div [ class ("flex-1 min-w-[110px] lg:min-w-[180px] flex-shrink-0 rounded-lg p-2 lg:p-3 border transition-all " ++ containerClass) ]
+        [ div [ class ("text-[9px] lg:text-[10px] uppercase tracking-wider mb-0.5 lg:mb-1 " ++ labelColor) ]
             [ text label ]
         , case maybeCard of
             Just card ->
@@ -1709,18 +1787,18 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
                             DeckBuilder ->
                                 "bg-violet-500"
                 in
-                div [ class "flex items-center gap-2" ]
-                    [ div [ class ("w-2 h-2 rounded-full flex-shrink-0 " ++ dotColor) ] []
+                div [ class "flex items-center gap-1.5 lg:gap-2" ]
+                    [ div [ class ("w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full flex-shrink-0 " ++ dotColor) ] []
                     , div [ class "min-w-0" ]
-                        [ div [ class "text-sm font-medium text-base-content truncate" ]
+                        [ div [ class "text-xs lg:text-sm font-medium text-base-content truncate" ]
                             [ text card.name ]
-                        , div [ class "text-[10px] text-base-content/40" ]
+                        , div [ class "text-[9px] lg:text-[10px] text-base-content/40" ]
                             [ text pickerName ]
                         ]
                     ]
 
             Nothing ->
-                div [ class "text-sm text-base-content/30" ]
+                div [ class "text-xs lg:text-sm text-base-content/30" ]
                     [ text pickerName ]
         ]
 
@@ -1832,6 +1910,173 @@ viewShopCompletePreview =
         ]
 
 
+{-| Display upgrade details showing current level → new level
+-}
+viewUpgradeDetails : ShopCard -> SkillTree -> Html Msg
+viewUpgradeDetails card skillTree =
+    -- Only show for LevelUp cards with a hand type subtype
+    if card.cardType == LevelUp then
+        let
+            handType =
+                card.subtype
+
+            -- Get current level from skill tree (default to 1)
+            currentLevel =
+                case handType of
+                    "high_card" ->
+                        skillTree.highCard
+
+                    "pair" ->
+                        skillTree.pair
+
+                    "two_pair" ->
+                        skillTree.twoPair
+
+                    "three_of_a_kind" ->
+                        skillTree.threeOfAKind
+
+                    "straight" ->
+                        skillTree.straight
+
+                    "flush" ->
+                        skillTree.flush
+
+                    "full_house" ->
+                        skillTree.fullHouse
+
+                    "four_of_a_kind" ->
+                        skillTree.fourOfAKind
+
+                    "straight_flush" ->
+                        skillTree.straightFlush
+
+                    _ ->
+                        1
+
+            newLevel =
+                currentLevel + 1
+
+            -- Base hand scores (from Elixir @base_hand_scores)
+            ( baseChips, baseMult ) =
+                case handType of
+                    "high_card" ->
+                        ( 125, 1 )
+
+                    "pair" ->
+                        ( 140, 1 )
+
+                    "two_pair" ->
+                        ( 105, 2 )
+
+                    "three_of_a_kind" ->
+                        ( 130, 2 )
+
+                    "straight" ->
+                        ( 70, 4 )
+
+                    "flush" ->
+                        ( 70, 4 )
+
+                    "full_house" ->
+                        ( 70, 5 )
+
+                    "four_of_a_kind" ->
+                        ( 50, 12 )
+
+                    "straight_flush" ->
+                        ( 95, 12 )
+
+                    _ ->
+                        ( 0, 0 )
+
+            -- Upgrade bonuses per level (from Elixir @upgrade_bonuses)
+            ( upgradeChips, upgradeMult ) =
+                case handType of
+                    "high_card" ->
+                        ( 10, 1 )
+
+                    "pair" ->
+                        ( 10, 1 )
+
+                    "two_pair" ->
+                        ( 10, 1 )
+
+                    "three_of_a_kind" ->
+                        ( 10, 1 )
+
+                    "straight" ->
+                        ( 10, 1 )
+
+                    "flush" ->
+                        ( 10, 1 )
+
+                    "full_house" ->
+                        ( 10, 1 )
+
+                    "four_of_a_kind" ->
+                        ( 20, 2 )
+
+                    "straight_flush" ->
+                        ( 20, 2 )
+
+                    _ ->
+                        ( 0, 0 )
+
+            -- Calculate current and new chips/mult
+            currentChips =
+                baseChips + (currentLevel - 1) * upgradeChips
+
+            currentMult =
+                baseMult + (currentLevel - 1) * upgradeMult
+
+            newChips =
+                baseChips + (newLevel - 1) * upgradeChips
+
+            newMult =
+                baseMult + (newLevel - 1) * upgradeMult
+        in
+        div [ class "flex items-center justify-center gap-6" ]
+            [ -- Current Level
+              div [ class "text-center" ]
+                [ div [ class "text-xs uppercase tracking-wider text-base-content/40 mb-2" ]
+                    [ text ("Level " ++ String.fromInt currentLevel) ]
+                , div [ class "flex items-center gap-3" ]
+                    [ div [ class "text-center" ]
+                        [ div [ class "text-sm text-base-content/40" ] [ text "Chips" ]
+                        , div [ class "text-lg font-semibold text-base-content" ] [ text (String.fromInt currentChips) ]
+                        ]
+                    , div [ class "text-base-content/20" ] [ text "×" ]
+                    , div [ class "text-center" ]
+                        [ div [ class "text-sm text-base-content/40" ] [ text "Mult" ]
+                        , div [ class "text-lg font-semibold text-base-content" ] [ text (String.fromInt currentMult) ]
+                        ]
+                    ]
+                ]
+            , -- Arrow
+              div [ class "text-base-content/40 text-2xl" ]
+                [ text "→" ]
+            , -- New Level
+              div [ class "text-center" ]
+                [ div [ class "text-xs uppercase tracking-wider text-emerald-600 mb-2" ]
+                    [ text ("Level " ++ String.fromInt newLevel) ]
+                , div [ class "flex items-center gap-3" ]
+                    [ div [ class "text-center" ]
+                        [ div [ class "text-sm text-emerald-600/60" ] [ text "Chips" ]
+                        , div [ class "text-lg font-semibold text-emerald-600" ] [ text (String.fromInt newChips) ]
+                        ]
+                    , div [ class "text-emerald-600/40" ] [ text "×" ]
+                    , div [ class "text-center" ]
+                        [ div [ class "text-sm text-emerald-600/60" ] [ text "Mult" ]
+                        , div [ class "text-lg font-semibold text-emerald-600" ] [ text (String.fromInt newMult) ]
+                        ]
+                    ]
+                ]
+            ]
+
+    else
+        text ""
+
+
 {-| Shop card preview (regular card)
 -}
 viewShopCardPreview : PreviewCardData -> Html Msg
@@ -1899,51 +2144,71 @@ viewShopCardPreview data =
                 _ ->
                     "bg-base-300 hover:bg-base-400"
     in
-    div [ class "flex-1 flex flex-col p-8 overflow-hidden" ]
-        [ -- Header
-          div [ class "mb-8 flex-shrink-0" ]
+    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
+        [ -- Header (always centered)
+          div [ class "mb-8 flex-shrink-0 text-center" ]
             [ div [ class ("text-xs uppercase tracking-widest mb-1 " ++ labelColorClass) ]
                 [ text typeLabel ]
             , h2 [ class "text-4xl font-light text-base-content" ]
                 [ text data.card.name ]
             ]
-        , -- Description
-          div [ class "flex-1 overflow-y-auto" ]
-            [ div [ class "mb-8" ]
-                [ p [ class "text-base-content/60 text-lg leading-relaxed" ]
-                    [ text data.card.description ]
-                ]
+        , -- Description and upgrade details
+          div [ class "overflow-y-auto" ]
+            [ case data.card.cardType of
+                LevelUp ->
+                    -- For LevelUp cards, skip description and show upgrade details
+                    viewUpgradeDetails data.card data.skillTree
+
+                _ ->
+                    -- For other cards, show description
+                    div [ class "mb-8" ]
+                        [ p [ class "text-base-content/60 text-lg leading-relaxed text-center" ]
+                            [ text data.card.description ]
+                        ]
             ]
-        , -- Action Button
-          div [ class "pt-8 flex-shrink-0" ]
-            [ if data.isDestroyMode then
-                -- Destroy mode: show destroy button
+        , -- Action Buttons (always inline with Cancel on mobile)
+          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
+            [ -- Cancel button (mobile only)
+              button
+                [ onClick ClearCardPreview
+                , class "lg:hidden px-6 py-3 rounded-full font-medium transition-all text-base-content bg-base-300/50 hover:bg-base-300"
+                ]
+                [ text "Cancel" ]
+            , -- Primary action button
+              if data.isDestroyMode then
                 button
                     [ onClick (DestroyShopCard data.cardIndex)
-                    , class "w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl bg-rose-500 hover:bg-rose-600"
+                    , class "px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl bg-rose-500 hover:bg-rose-600"
                     ]
                     [ text "Destroy" ]
 
               else if data.card.cardType == DeckBuilder then
                 button
                     [ onClick (ConfirmDeckBuilder data.cardIndex)
-                    , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
                     ]
-                    [ text "Choose Cards" ]
+                    [ text "Confirm" ]
 
               else if data.card.cardType == Sabotage && data.card.subtype == "plus_bomb" then
                 button
                     [ onClick (ConfirmPlusBomb data.cardIndex)
-                    , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
                     ]
-                    [ text "Choose Card" ]
+                    [ text "Confirm" ]
+
+              else if data.card.cardType == LevelUp then
+                button
+                    [ onClick (MakeShopPick data.cardIndex)
+                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    ]
+                    [ text "Confirm" ]
 
               else
                 button
                     [ onClick (MakeShopPick data.cardIndex)
-                    , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
                     ]
-                    [ text "Confirm Selection" ]
+                    [ text "Confirm" ]
             ]
         ]
 
@@ -1956,50 +2221,47 @@ viewDeckBuilderSelectionPreview data =
         buttonBgClass =
             "bg-violet-500 hover:bg-violet-600"
     in
-    div [ class "flex-1 flex flex-col p-8 overflow-hidden" ]
-        [ -- Header
-          div [ class "mb-8 flex-shrink-0" ]
+    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
+        [ -- Header (centered)
+          div [ class "mb-8 flex-shrink-0 text-center" ]
             [ div [ class "text-xs uppercase tracking-widest mb-1 text-violet-500/60" ]
                 [ text "Logistics" ]
             , h2 [ class "text-4xl font-light text-base-content" ]
                 [ text data.deckBuilderCard.name ]
             ]
         , -- Card selection
-          div [ class "flex-1 overflow-y-auto" ]
-            [ div [ class "mb-4" ]
+          div [ class "overflow-y-auto" ]
+            [ div [ class "mb-4 text-center" ]
                 [ p [ class "text-sm text-base-content/50" ]
                     [ text ("Select up to " ++ String.fromInt data.maxSelection ++ " cards to enhance") ]
                 ]
-            , div [ class "flex flex-wrap gap-3 mb-6" ]
+            , div [ class "grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-3 mb-6" ]
                 (data.availableCards
                     |> List.map
                         (\card ->
                             let
                                 isSelected =
-                                    Set.member card.id data.selectedCardIds
+                                    List.member card.id data.selectedCardIds
                             in
                             viewDeckBuilderCardMinimal card isSelected
                         )
                 )
             ]
-        , -- Action Buttons
-          div [ class "pt-8 flex-shrink-0" ]
-            [ div [ class "flex gap-3" ]
-                [ button
-                    [ onClick CancelSelection
-                    , class "flex-1 py-4 rounded-full font-medium text-base-content/60 bg-base-300/50 hover:bg-base-300 transition-all"
-                    ]
-                    [ text "Skip" ]
-                , if not (Set.isEmpty data.selectedCardIds) then
-                    button
-                        [ onClick ConfirmSelection
-                        , class ("flex-1 py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                        ]
-                        [ text "Confirm" ]
-
-                  else
-                    text ""
+        , -- Action Buttons (always show confirm, disabled when empty)
+          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
+            [ let
+                hasSelection = not (List.isEmpty data.selectedCardIds)
+              in
+              button
+                [ onClick (if hasSelection then ConfirmSelection else NoOp)
+                , class ("px-8 py-3 rounded-full font-medium transition-all " ++
+                    if hasSelection then
+                        "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
+                    else
+                        "text-base-content/30 bg-base-300/30 cursor-not-allowed"
+                  )
                 ]
+                [ text "Confirm" ]
             ]
         ]
 
@@ -2012,9 +2274,9 @@ viewPlusBombSelectionPreview data =
         buttonBgClass =
             "bg-amber-500 hover:bg-amber-600"
     in
-    div [ class "flex-1 flex flex-col p-8 overflow-hidden" ]
-        [ -- Header
-          div [ class "mb-8 flex-shrink-0" ]
+    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
+        [ -- Header (centered)
+          div [ class "mb-8 flex-shrink-0 text-center" ]
             [ div [ class "text-xs uppercase tracking-widest mb-1 text-amber-500/60" ]
                 [ text "Sabotage" ]
             , h2 [ class "text-4xl font-light text-base-content" ]
@@ -2022,11 +2284,11 @@ viewPlusBombSelectionPreview data =
             ]
         , -- Card selection
           div [ class "flex-1 overflow-y-auto" ]
-            [ div [ class "mb-4" ]
+            [ div [ class "mb-4 text-center" ]
                 [ p [ class "text-sm text-base-content/50" ]
                     [ text "Select a card - that rank AND suit won't score for opponent" ]
                 ]
-            , div [ class "flex flex-wrap gap-3 mb-6" ]
+            , div [ class "grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-3 mb-6" ]
                 (data.availableCards
                     |> List.map
                         (\card ->
@@ -2038,18 +2300,21 @@ viewPlusBombSelectionPreview data =
                         )
                 )
             ]
-        , -- Action Button
-          div [ class "pt-8 flex-shrink-0" ]
-            [ case data.selectedCardId of
-                Just _ ->
-                    button
-                        [ onClick ConfirmSelection
-                        , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                        ]
-                        [ text "Confirm Selection" ]
-
-                Nothing ->
-                    text ""
+        , -- Action Buttons (always show confirm, disabled when empty)
+          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
+            [ let
+                hasSelection = data.selectedCardId /= Nothing
+              in
+              button
+                [ onClick (if hasSelection then ConfirmSelection else NoOp)
+                , class ("px-8 py-3 rounded-full font-medium transition-all " ++
+                    if hasSelection then
+                        "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
+                    else
+                        "text-base-content/30 bg-base-300/30 cursor-not-allowed"
+                  )
+                ]
+                [ text "Confirm" ]
             ]
         ]
 
@@ -2279,7 +2544,7 @@ viewDeckBuilderCardMinimal : Card -> Bool -> Html Msg
 viewDeckBuilderCardMinimal card isSelected =
     button
         [ class
-            ("w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
+            ("w-full sm:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
                 ++ (if isSelected then
                         "ring-2 ring-violet-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
 
@@ -2306,7 +2571,7 @@ viewPlusBombCardMinimal : Card -> Bool -> Html Msg
 viewPlusBombCardMinimal card isSelected =
     button
         [ class
-            ("w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
+            ("w-full sm:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
                 ++ (if isSelected then
                         "ring-2 ring-rose-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
 

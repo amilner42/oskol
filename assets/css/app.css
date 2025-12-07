@@ -348,3 +348,17 @@
 .animate-fadeInScale {
   animation: fadeInScale 0.1s ease-out forwards;
 }
+
+/* Slide up animation for mobile bottom sheet modal */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out forwards;
+}

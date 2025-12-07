@@ -130,7 +130,7 @@ deriveShopUIState playerId shopState =
                         { cardIndex = pending.shopCardIndex
                         , deckBuilderCard = pending.deckBuilderCard
                         , availableCards = pending.availableCards
-                        , selectedCardIds = Set.empty
+                        , selectedCardIds = []
                         , maxSelection = getMaxSelection pending.deckBuilderCard
                         , availableShopCards = shopState.availableCards
                         , pickedIndices = shopState.pickedCardIndices
@@ -591,6 +591,41 @@ update msg model =
 
         PreviewShopCard cardIndex ->
             -- NEW: Transition from BrowsingCards, DestroyPhase, or PreviewingCard to PreviewingCard
+            let
+                -- Extract player's skill tree from game state
+                playerSkillTree =
+                    case ( model.gameState, model.playerId ) of
+                        ( Success gameState, Just playerId ) ->
+                            case Dict.get playerId gameState.players of
+                                Just playerState ->
+                                    playerState.skillTree
+
+                                Nothing ->
+                                    -- Default empty skill tree
+                                    { highCard = 1
+                                    , pair = 1
+                                    , twoPair = 1
+                                    , threeOfAKind = 1
+                                    , straight = 1
+                                    , flush = 1
+                                    , fullHouse = 1
+                                    , fourOfAKind = 1
+                                    , straightFlush = 1
+                                    }
+
+                        _ ->
+                            -- Default empty skill tree
+                            { highCard = 1
+                            , pair = 1
+                            , twoPair = 1
+                            , threeOfAKind = 1
+                            , straight = 1
+                            , flush = 1
+                            , fullHouse = 1
+                            , fourOfAKind = 1
+                            , straightFlush = 1
+                            }
+            in
             case model.shopUIState of
                 Just (BrowsingCards data) ->
                     case List.drop cardIndex data.availableCards |> List.head of
@@ -605,6 +640,7 @@ update msg model =
                                             , pickedIndices = data.pickedIndices
                                             , destroyedIndices = data.destroyedIndices
                                             , isDestroyMode = False
+                                            , skillTree = playerSkillTree
                                             }
                                         )
                                 , previewingCardIndex = Just cardIndex
@@ -630,6 +666,7 @@ update msg model =
                                             , pickedIndices = []
                                             , destroyedIndices = data.destroyedIndices
                                             , isDestroyMode = True
+                                            , skillTree = playerSkillTree
                                             }
                                         )
                                 , previewingCardIndex = Just cardIndex
@@ -654,6 +691,7 @@ update msg model =
                                             , pickedIndices = data.pickedIndices
                                             , destroyedIndices = data.destroyedIndices
                                             , isDestroyMode = data.isDestroyMode
+                                            , skillTree = data.skillTree
                                             }
                                         )
                                 , previewingCardIndex = Just cardIndex
@@ -703,19 +741,22 @@ update msg model =
             )
 
         ToggleDeckCardSelection cardId ->
-            -- NEW: Toggle selection in deck builder mode
+            -- NEW: Toggle selection in deck builder mode with auto-deselect oldest when at max
             case model.shopUIState of
                 Just (SelectingDeckBuilderCards data) ->
                     let
                         newSelected =
-                            if Set.member cardId data.selectedCardIds then
-                                Set.remove cardId data.selectedCardIds
+                            if List.member cardId data.selectedCardIds then
+                                -- Deselect if already selected
+                                List.filter (\id -> id /= cardId) data.selectedCardIds
 
-                            else if Set.size data.selectedCardIds < data.maxSelection then
-                                Set.insert cardId data.selectedCardIds
+                            else if List.length data.selectedCardIds < data.maxSelection then
+                                -- Add to selection if under max
+                                data.selectedCardIds ++ [ cardId ]
 
                             else
-                                data.selectedCardIds
+                                -- At max capacity: remove oldest (first in list) and add new one
+                                (List.drop 1 data.selectedCardIds) ++ [ cardId ]
 
                         newState =
                             SelectingDeckBuilderCards { data | selectedCardIds = newSelected }
@@ -749,7 +790,7 @@ update msg model =
                 Just (SelectingDeckBuilderCards data) ->
                     let
                         selectedList =
-                            Set.toList data.selectedCardIds
+                            data.selectedCardIds
 
                         cmd =
                             if List.isEmpty selectedList then

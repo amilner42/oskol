@@ -155,45 +155,45 @@ defmodule Oskol.Game.ShopCard do
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :bonus_chips,
-        metadata: %{amount: amt}
+        metadata: %{amount: _amt}
       }),
-      do: "+#{amt} Chips"
+      do: "Fortify"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: amt}}),
-    do: "+#{amt} Mult"
+  def card_name(%__MODULE__{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: _amt}}),
+    do: "Amplify"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :add_card}), do: "Add Card"
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :remove_card}), do: "Remove Cards"
+  def card_name(%__MODULE__{type: :deck_builder, subtype: :add_card}), do: "Supply Drop"
+  def card_name(%__MODULE__{type: :deck_builder, subtype: :remove_card}), do: "Discharge"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :change_suit,
         metadata: %{suit: :hearts}
       }),
-      do: "Change to ♥"
+      do: "Camo ♥"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :change_suit,
         metadata: %{suit: :diamonds}
       }),
-      do: "Change to ♦"
+      do: "Camo ♦"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :change_suit,
         metadata: %{suit: :clubs}
       }),
-      do: "Change to ♣"
+      do: "Camo ♣"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :change_suit,
         metadata: %{suit: :spades}
       }),
-      do: "Change to ♠"
+      do: "Camo ♠"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :increase_rank}), do: "Increase Rank"
+  def card_name(%__MODULE__{type: :deck_builder, subtype: :increase_rank}), do: "Promote"
 
   @doc """
   Returns a description of what the card does.
