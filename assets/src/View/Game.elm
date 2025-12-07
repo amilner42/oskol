@@ -615,7 +615,12 @@ getPlayerAnimationState globalAnim maybeResult isFirstPlayer =
                         playerPhases
             in
             if globalAnim.phase == AnimationIdle then
-                Nothing
+                -- Show both hands with base scores from the start
+                Just
+                    { phase = OpponentBase
+                    , cardsScored = 0
+                    , currentCard = 0
+                    }
 
             else if globalAnim.phase == AnimationComplete then
                 Just
@@ -664,8 +669,12 @@ getPlayerAnimationState globalAnim maybeResult isFirstPlayer =
                     }
 
             else
-                -- Second player not shown yet
-                Nothing
+                -- Second player waiting - show with base scores only (0 cards scored)
+                Just
+                    { phase = PlayerBase
+                    , cardsScored = 0
+                    , currentCard = 0
+                    }
 
         Nothing ->
             Nothing

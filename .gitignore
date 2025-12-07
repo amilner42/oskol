@@ -36,3 +36,6 @@ npm-debug.log
 /assets/node_modules/
 /node_modules/
 package-lock.json
+
+# Elm build artifacts
+/assets/elm-stuff/
