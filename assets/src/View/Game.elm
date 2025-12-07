@@ -891,7 +891,7 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
             gameState.winnerId == Just playerId
 
         playerReady =
-            model.rematchRequested
+            playerState.readyForNextRound
 
         opponentReady =
             opponentState.readyForNextRound
@@ -944,30 +944,27 @@ viewRematchButton playerReady opponentReady playerName opponentName =
         buttonState =
             case ( playerReady, opponentReady ) of
                 ( True, True ) ->
-                    -- Both ready - keep blue, show starting match
-                    { bgClasses = "bg-blue-500 text-white relative overflow-hidden"
+                    -- Both ready - solid blue, show starting match
+                    { bgClasses = "bg-blue-500 text-white"
                     , borderClasses = "border-blue-400"
                     , textContent = "Starting match..."
                     , clickable = False
-                    , showFill = False
                     }
 
                 ( True, False ) ->
-                    -- Player ready - blue fill animation
-                    { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
-                    , borderClasses = "border-gray-200"
+                    -- Player ready - solid blue
+                    { bgClasses = "bg-blue-500 text-white"
+                    , borderClasses = "border-blue-400"
                     , textContent = "Rematch"
                     , clickable = False
-                    , showFill = True
                     }
 
                 ( False, True ) ->
-                    -- Opponent ready - orange fill animation
-                    { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
-                    , borderClasses = "border-gray-200"
+                    -- Opponent ready - solid blue
+                    { bgClasses = "bg-blue-500 text-white"
+                    , borderClasses = "border-blue-400"
                     , textContent = "Rematch"
                     , clickable = True
-                    , showFill = True
                     }
 
                 ( False, False ) ->
@@ -976,7 +973,6 @@ viewRematchButton playerReady opponentReady playerName opponentName =
                     , borderClasses = "border-gray-200"
                     , textContent = "Rematch"
                     , clickable = True
-                    , showFill = False
                     }
 
         onClick_ =
@@ -992,35 +988,8 @@ viewRematchButton playerReady opponentReady playerName opponentName =
             , onClick_
             , disabled (not buttonState.clickable)
             ]
-            [ -- Progress fill animation overlay
-              if buttonState.showFill then
-                if playerReady && not opponentReady then
-                    -- Player ready - blue progress fill
-                    div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
-                        [ div
-                            [ class "absolute inset-y-0 left-0 h-full bg-blue-500"
-                            , Html.Attributes.style "animation" "progress-fill 0.5s ease-out forwards"
-                            ]
-                            []
-                        ]
-
-                else if opponentReady && not playerReady then
-                    -- Opponent ready - orange progress fill
-                    div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
-                        [ div
-                            [ class "absolute inset-y-0 left-0 h-full bg-orange-500"
-                            , Html.Attributes.style "animation" "progress-fill 0.5s ease-out forwards"
-                            ]
-                            []
-                        ]
-
-                else
-                    text ""
-
-              else
-                text ""
-            , -- Button text
-              Html.span [ class "relative z-10" ] [ text buttonState.textContent ]
+            [ -- Button text
+              text buttonState.textContent
             ]
         ]
 

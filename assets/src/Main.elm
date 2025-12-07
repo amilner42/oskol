@@ -71,7 +71,6 @@ init flags =
       , deckBuilderSelection = []
       , plusBombSelection = Nothing
       , shopUIState = Nothing
-      , rematchRequested = False
       , scoreAnimation = { phase = AnimationIdle, cardIndex = 0, nextStepTime = Nothing }
       , viewingResults = False
       , shopCountdown = Nothing
@@ -990,7 +989,7 @@ update msg model =
             )
 
         RequestRematch ->
-            ( { model | rematchRequested = True }
+            ( model
             , sendToChannel encodeRequestRematch
             )
 

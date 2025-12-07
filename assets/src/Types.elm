@@ -394,7 +394,6 @@ type alias Model =
     , deckBuilderSelection : List String -- TODO: Remove after migration
     , plusBombSelection : Maybe String -- TODO: Remove after migration
     , shopUIState : Maybe ShopUIState -- NEW: Unified shop state
-    , rematchRequested : Bool -- Track if player requested rematch
     , scoreAnimation : ScoreAnimationState -- Score animation state
     , viewingResults : Bool -- Whether we're viewing hand results
     , shopCountdown : Maybe Int -- Countdown timer for shop completion (seconds remaining)
