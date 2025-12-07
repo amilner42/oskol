@@ -5,6 +5,8 @@ module View.Cards exposing (viewCardImage)
 
 import Html exposing (Html, div, img, text)
 import Html.Attributes exposing (class, classList, src)
+import Svg
+import Svg.Attributes
 import Types exposing (..)
 
 
@@ -61,31 +63,33 @@ viewCardImage config =
             Nothing ->
                 text ""
         , if config.disabled && not config.isFaceDown then
-            div [ class "absolute inset-0 flex items-center justify-center pointer-events-none" ]
-                [ Html.node "svg"
-                    [ class "w-3/4 h-3/4 text-red-600/80"
-                    , Html.Attributes.attribute "viewBox" "0 0 100 100"
-                    ]
-                    [ Html.node "line"
-                        [ Html.Attributes.attribute "x1" "20"
-                        , Html.Attributes.attribute "y1" "20"
-                        , Html.Attributes.attribute "x2" "80"
-                        , Html.Attributes.attribute "y2" "80"
-                        , Html.Attributes.attribute "stroke" "currentColor"
-                        , Html.Attributes.attribute "stroke-width" "12"
-                        , Html.Attributes.attribute "stroke-linecap" "round"
+            div [ class "absolute inset-0 z-10 pointer-events-none" ]
+                [ div [ class "absolute inset-0 flex items-center justify-center" ]
+                    [ Svg.svg
+                        [ Svg.Attributes.class "w-3/4 h-3/4 text-pink-600/15"
+                        , Svg.Attributes.viewBox "0 0 100 100"
                         ]
-                        []
-                    , Html.node "line"
-                        [ Html.Attributes.attribute "x1" "80"
-                        , Html.Attributes.attribute "y1" "20"
-                        , Html.Attributes.attribute "x2" "20"
-                        , Html.Attributes.attribute "y2" "80"
-                        , Html.Attributes.attribute "stroke" "currentColor"
-                        , Html.Attributes.attribute "stroke-width" "12"
-                        , Html.Attributes.attribute "stroke-linecap" "round"
+                        [ Svg.line
+                            [ Svg.Attributes.x1 "20"
+                            , Svg.Attributes.y1 "20"
+                            , Svg.Attributes.x2 "80"
+                            , Svg.Attributes.y2 "80"
+                            , Svg.Attributes.stroke "currentColor"
+                            , Svg.Attributes.strokeWidth "12"
+                            , Svg.Attributes.strokeLinecap "round"
+                            ]
+                            []
+                        , Svg.line
+                            [ Svg.Attributes.x1 "80"
+                            , Svg.Attributes.y1 "20"
+                            , Svg.Attributes.x2 "20"
+                            , Svg.Attributes.y2 "80"
+                            , Svg.Attributes.stroke "currentColor"
+                            , Svg.Attributes.strokeWidth "12"
+                            , Svg.Attributes.strokeLinecap "round"
+                            ]
+                            []
                         ]
-                        []
                     ]
                 ]
 
