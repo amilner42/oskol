@@ -105,7 +105,7 @@ defmodule OskolWeb.GameLive do
 
         # Check if there are hand results to show (but not if game is over)
         viewing_results =
-          !viewing_match_summary && new_state.game_state != nil and
+          (!viewing_match_summary && new_state.game_state != nil) and
             new_state.game_state.last_hand_results != nil
 
         {:noreply,

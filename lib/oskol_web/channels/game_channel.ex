@@ -183,8 +183,8 @@ defmodule OskolWeb.GameChannel do
 
     # If game is over and both players are ready, trigger rematch
     if game_server_state.game_state != nil and
-       game_server_state.game_state.game_status == :game_over and
-       both_players_ready_for_rematch?(game_server_state.game_state) do
+         game_server_state.game_state.game_status == :game_over and
+         both_players_ready_for_rematch?(game_server_state.game_state) do
       # Generate rematch game ID
       rematch_game_id = generate_rematch_id(game_id)
 
@@ -494,14 +494,16 @@ defmodule OskolWeb.GameChannel do
     suit = if is_binary(suit_str), do: String.to_atom(suit_str), else: suit_str
 
     # Convert enhancement if present
-    enhancement_tuple = case enhancement do
-      nil -> nil
-      %{"type" => "bonus_chips", "amount" => amount} -> {:bonus_chips, amount}
-      %{"type" => "bonus_mult", "amount" => amount} -> {:bonus_mult, amount}
-      %{type: "bonus_chips", amount: amount} -> {:bonus_chips, amount}
-      %{type: "bonus_mult", amount: amount} -> {:bonus_mult, amount}
-      other -> other  # Already in tuple format
-    end
+    enhancement_tuple =
+      case enhancement do
+        nil -> nil
+        %{"type" => "bonus_chips", "amount" => amount} -> {:bonus_chips, amount}
+        %{"type" => "bonus_mult", "amount" => amount} -> {:bonus_mult, amount}
+        %{type: "bonus_chips", amount: amount} -> {:bonus_chips, amount}
+        %{type: "bonus_mult", amount: amount} -> {:bonus_mult, amount}
+        # Already in tuple format
+        other -> other
+      end
 
     %Oskol.Poker.Card{
       id: id,
@@ -524,6 +526,7 @@ defmodule OskolWeb.GameChannel do
       [_, base, num_str] ->
         num = String.to_integer(num_str)
         "#{base}-r#{num + 1}"
+
       nil ->
         "#{current_id}-r1"
     end

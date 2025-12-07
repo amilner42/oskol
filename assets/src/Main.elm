@@ -8,6 +8,8 @@ import Html exposing (Html)
 import Json.Decode as D
 import Json.Encode as E
 import Set exposing (Set)
+import Task
+import Time
 import Types exposing (..)
 import Url exposing (percentEncode)
 import View.Game
@@ -70,6 +72,8 @@ init flags =
       , plusBombSelection = Nothing
       , shopUIState = Nothing
       , rematchRequested = False
+      , scoreAnimation = { phase = AnimationIdle, cardIndex = 0, nextStepTime = Nothing }
+      , viewingResults = False
       }
     , Cmd.none
     )
@@ -254,6 +258,137 @@ generateRematchId currentId =
 
 
 
+-- SCORE ANIMATION HELPERS
+
+
+{-| Advance to the next animation step based on current phase and game state
+-}
+advanceAnimationStep : Model -> Int -> ( Model, Cmd Msg )
+advanceAnimationStep model currentTime =
+    case model.gameState of
+        Success gameState ->
+            case ( model.playerId, gameState.lastHandResults ) of
+                ( Just playerId, Just handResults ) ->
+                    let
+                        -- Get both player results
+                        playerNames =
+                            Dict.toList gameState.playerNames
+                                |> List.sortBy Tuple.second
+                                |> List.map Tuple.first
+
+                        -- Determine alphabetical order (first player = opponent in animation phases)
+                        ( firstPlayerId, secondPlayerId ) =
+                            case playerNames of
+                                [ p1, p2 ] ->
+                                    ( p1, p2 )
+
+                                _ ->
+                                    ( "", "" )
+
+                        firstResult =
+                            Dict.get firstPlayerId handResults
+
+                        secondResult =
+                            Dict.get secondPlayerId handResults
+
+                        firstCardCount =
+                            firstResult
+                                |> Maybe.map (.scoreBreakdown >> .cardBreakdowns >> List.length)
+                                |> Maybe.withDefault 0
+
+                        secondCardCount =
+                            secondResult
+                                |> Maybe.map (.scoreBreakdown >> .cardBreakdowns >> List.length)
+                                |> Maybe.withDefault 0
+
+                        ( nextPhase, nextIndex, delayMs ) =
+                            nextAnimationStep
+                                model.scoreAnimation.phase
+                                model.scoreAnimation.cardIndex
+                                firstCardCount
+                                secondCardCount
+
+                        newAnimation =
+                            { phase = nextPhase
+                            , cardIndex = nextIndex
+                            , nextStepTime =
+                                if nextPhase == AnimationComplete then
+                                    Nothing
+
+                                else
+                                    Just (currentTime + delayMs)
+                            }
+
+                        -- Auto-dismiss when animation completes
+                        shouldDismiss =
+                            nextPhase == AnimationComplete
+                    in
+                    ( { model
+                        | scoreAnimation = newAnimation
+                        , viewingResults = not shouldDismiss
+                      }
+                    , Cmd.none
+                    )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+{-| Animation state machine - determines next phase, card index, and delay
+Matches the LiveView logic
+-}
+nextAnimationStep : ScoreAnimationPhase -> Int -> Int -> Int -> ( ScoreAnimationPhase, Int, Int )
+nextAnimationStep currentPhase currentIndex firstCardCount secondCardCount =
+    case currentPhase of
+        AnimationIdle ->
+            ( OpponentBase, 0, 0 )
+
+        OpponentBase ->
+            if firstCardCount > 0 then
+                ( OpponentCards, 0, 600 )
+
+            else
+                ( OpponentFinal, 0, 750 )
+
+        OpponentCards ->
+            if currentIndex + 1 < firstCardCount then
+                ( OpponentCards, currentIndex + 1, 600 )
+
+            else
+                ( OpponentFinal, 0, 750 )
+
+        OpponentFinal ->
+            if secondCardCount > 0 then
+                ( PlayerBase, 0, 750 )
+
+            else
+                ( PlayerFinal, 0, 750 )
+
+        PlayerBase ->
+            if secondCardCount > 0 then
+                ( PlayerCards, 0, 600 )
+
+            else
+                ( PlayerFinal, 0, 750 )
+
+        PlayerCards ->
+            if currentIndex + 1 < secondCardCount then
+                ( PlayerCards, currentIndex + 1, 600 )
+
+            else
+                ( PlayerFinal, 0, 750 )
+
+        PlayerFinal ->
+            ( AnimationComplete, 0, 2000 )
+
+        AnimationComplete ->
+            ( AnimationComplete, 0, 0 )
+
+
+
 -- UPDATE
 
 
@@ -300,6 +435,27 @@ update msg model =
                         _ ->
                             False
 
+                -- Detect new hand results and start animation
+                handResultsJustArrived =
+                    case ( model.gameState, gameState.lastHandResults ) of
+                        ( Success oldGameState, Just newResults ) ->
+                            oldGameState.lastHandResults /= Just newResults
+
+                        ( _, Just _ ) ->
+                            True
+
+                        _ ->
+                            False
+
+                ( newScoreAnimation, newViewingResults ) =
+                    if handResultsJustArrived then
+                        ( { phase = OpponentBase, cardIndex = 0, nextStepTime = Nothing }
+                        , True
+                        )
+
+                    else
+                        ( model.scoreAnimation, model.viewingResults )
+
                 cmd =
                     if shopJustCompleted then
                         sendToChannel encodeReadyForNextRound
@@ -310,6 +466,8 @@ update msg model =
             ( { model
                 | gameState = Success gameState
                 , shopUIState = newShopUIState
+                , scoreAnimation = newScoreAnimation
+                , viewingResults = newViewingResults
               }
             , cmd
             )
@@ -432,7 +590,7 @@ update msg model =
             )
 
         PreviewShopCard cardIndex ->
-            -- NEW: Transition from BrowsingCards to PreviewingCard
+            -- NEW: Transition from BrowsingCards, DestroyPhase, or PreviewingCard to PreviewingCard
             case model.shopUIState of
                 Just (BrowsingCards data) ->
                     case List.drop cardIndex data.availableCards |> List.head of
@@ -446,6 +604,7 @@ update msg model =
                                             , availableCards = data.availableCards
                                             , pickedIndices = data.pickedIndices
                                             , destroyedIndices = data.destroyedIndices
+                                            , isDestroyMode = False
                                             }
                                         )
                                 , previewingCardIndex = Just cardIndex
@@ -458,7 +617,54 @@ update msg model =
                         Nothing ->
                             ( model, Cmd.none )
 
-                -- Can only preview when browsing
+                Just (DestroyPhase data) ->
+                    case List.drop cardIndex data.availableCards |> List.head of
+                        Just card ->
+                            ( { model
+                                | shopUIState =
+                                    Just
+                                        (PreviewingCard
+                                            { cardIndex = cardIndex
+                                            , card = card
+                                            , availableCards = data.availableCards
+                                            , pickedIndices = []
+                                            , destroyedIndices = data.destroyedIndices
+                                            , isDestroyMode = True
+                                            }
+                                        )
+                                , previewingCardIndex = Just cardIndex
+                              }
+                            , Cmd.none
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                Just (PreviewingCard data) ->
+                    -- Allow switching between previewed cards
+                    case List.drop cardIndex data.availableCards |> List.head of
+                        Just card ->
+                            ( { model
+                                | shopUIState =
+                                    Just
+                                        (PreviewingCard
+                                            { cardIndex = cardIndex
+                                            , card = card
+                                            , availableCards = data.availableCards
+                                            , pickedIndices = data.pickedIndices
+                                            , destroyedIndices = data.destroyedIndices
+                                            , isDestroyMode = data.isDestroyMode
+                                            }
+                                        )
+                                , previewingCardIndex = Just cardIndex
+                              }
+                            , Cmd.none
+                            )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                -- Can only preview when browsing, destroying, or already previewing
                 _ ->
                     ( model, Cmd.none )
 
@@ -643,6 +849,28 @@ update msg model =
             , Cmd.none
             )
 
+        AdvanceScoreAnimation currentTime ->
+            -- Check if it's time to advance animation
+            case model.scoreAnimation.nextStepTime of
+                Just nextTime ->
+                    if currentTime >= nextTime then
+                        advanceAnimationStep model currentTime
+
+                    else
+                        ( model, Cmd.none )
+
+                Nothing ->
+                    -- First step, start immediately
+                    advanceAnimationStep model currentTime
+
+        DismissResults ->
+            ( { model
+                | viewingResults = False
+                , scoreAnimation = { phase = AnimationIdle, cardIndex = 0, nextStepTime = Nothing }
+              }
+            , Cmd.none
+            )
+
         NoOp ->
             ( model, Cmd.none )
 
@@ -652,8 +880,15 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    receiveFromChannel handleChannelMessage
+subscriptions model =
+    Sub.batch
+        [ receiveFromChannel handleChannelMessage
+        , if model.scoreAnimation.phase /= AnimationIdle && model.scoreAnimation.phase /= AnimationComplete then
+            Time.every 100 (\posix -> AdvanceScoreAnimation (Time.posixToMillis posix))
+
+          else
+            Sub.none
+        ]
 
 
 {-| Handle messages from the Phoenix channel

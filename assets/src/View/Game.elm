@@ -96,19 +96,22 @@ viewGameState model gameState =
                                     [ viewOpponentCards opponent model.newCardIds model.cardSort
                                     ]
                                 , -- Middle - Playing Area
-                                  div [ class "flex-1 min-h-0 flex flex-col justify-center bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
-                                    [ viewPlayingArea model gameState currentPlayer opponent playerId
-                                    , viewOpponentInfo opponent opponentName gameState.initialLives gameState.discardsPerRound
-                                    , viewPlayerInfo currentPlayer playerName gameState.initialLives gameState.discardsPerRound
+                                  div [ class "flex-1 min-h-0 flex flex-col bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
+                                    [ div [ class "flex-1 flex flex-col justify-center" ]
+                                        [ viewPlayingArea model gameState currentPlayer opponent playerId
+                                        ]
+                                    , viewTopRow gameState currentPlayer opponent opponentName playerName
+                                    , -- Badges at bottom of centerboard
+                                      viewCenterboardBadges currentPlayer opponent
+                                    , -- Console Buttons (absolute, centered vertically within centerboard)
+                                      viewConsoleButtons model.viewingModal model.playerId
                                     ]
                                 , -- Bottom - Player Cards
                                   div [ class "shrink-0 flex flex-col justify-start pt-1 px-0 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-[#0C0F14]" ]
                                     [ viewPlayerCards currentPlayer model
                                     ]
                                 , -- Action Bar
-                                  viewActionBar currentPlayer model.selectedCards False
-                                , -- Console Buttons (fixed at mid-left)
-                                  viewConsoleButtons model.viewingModal model.playerId
+                                  viewActionBar currentPlayer model.selectedCards model.cardSort False
                                 ]
 
         _ ->
@@ -315,38 +318,32 @@ viewPlayingArea model gameState currentPlayer opponent playerId =
             viewModal modal model gameState currentPlayer opponent playerId playerName opponentName
 
         Nothing ->
-            div [ class "h-full flex flex-col items-center justify-center p-4 text-white" ]
-                [ -- Round info
-                  div [ class "text-center mb-4" ]
-                    [ div [ class "text-4xl font-bold mb-2" ]
-                        [ text ("Round " ++ String.fromInt gameState.roundNumber) ]
-                    , div [ class "text-lg opacity-70" ]
-                        [ text
-                            (if currentPlayer.handsRemaining == 0 then
-                                "Round complete"
+            -- Check if viewing animated score results
+            if model.viewingResults then
+                viewAnimatedScoreResults model gameState playerId playerName opponentName
 
-                             else if currentPlayer.handsRemaining == 1 then
-                                "Final hand"
+            else
+                div [ class "h-full flex flex-col items-center justify-center p-4 text-white" ]
+                    [ -- Phase-specific content
+                      case gameState.phase of
+                        Playing ->
+                            -- Check locked-in status
+                            case ( currentPlayer.lockedInHand, opponent.lockedInHand ) of
+                                ( Just playerHand, Nothing ) ->
+                                    -- Player locked in, waiting for opponent
+                                    viewWaitingForOpponent playerHand currentPlayer
 
-                             else
-                                String.fromInt currentPlayer.handsRemaining ++ " hands remaining"
-                            )
-                        ]
-                    , viewScoreDifferential currentPlayer opponent playerName opponentName
+                                ( Nothing, Just _ ) ->
+                                    -- Opponent locked in, player hasn't
+                                    viewOpponentLockedNotice
+
+                                _ ->
+                                    -- Neither or both locked in (both = waiting for server to process)
+                                    text ""
+
+                        RoundEnd ->
+                            viewRoundEnd model gameState currentPlayer
                     ]
-                , -- Phase-specific content
-                  case gameState.phase of
-                    Playing ->
-                        case gameState.lastHandResults of
-                            Just results ->
-                                viewHandResults model gameState results
-
-                            Nothing ->
-                                text ""
-
-                    RoundEnd ->
-                        viewRoundEnd model gameState currentPlayer
-                ]
 
 
 {-| View score differential
@@ -406,13 +403,75 @@ pluralize singular plural count =
         plural
 
 
+{-| View when player has locked in but opponent hasn't
+-}
+viewWaitingForOpponent : List Card -> PlayerState -> Html Msg
+viewWaitingForOpponent lockedHand player =
+    let
+        sortedHand =
+            lockedHand
+                |> List.sortWith (\a b -> compare b.rank a.rank)
+    in
+    div [ class "text-center space-y-4 sm:space-y-8 px-2 sm:px-0" ]
+        [ -- Opponent placeholder section
+          div []
+            [ div [ class "text-xs sm:text-sm text-base-content/50 mb-1 sm:mb-2" ]
+                [ text "Waiting for opponent..." ]
+            , div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
+                (List.map
+                    (\_ ->
+                        div [ class "w-9 h-[52px] sm:w-16 sm:h-24 opacity-0" ] []
+                    )
+                    sortedHand
+                )
+            , div [ class "h-5 sm:h-7" ] []
+            ]
+        , -- Player's locked hand
+          div []
+            [ div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2" ] [ text "\u{00A0}" ]
+            , div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
+                (List.map
+                    (\card ->
+                        let
+                            isDisabled =
+                                List.member card.rank player.disabledRanks
+                                    || List.member card.suit player.disabledSuits
+
+                            isFaceDown =
+                                List.member card.id player.faceDownCardIds
+                        in
+                        div [ class "w-9 h-[52px] sm:w-16 sm:h-24" ]
+                            [ Cards.viewCardImage
+                                { card = card
+                                , isFaceDown = isFaceDown
+                                , showEnhancement = True
+                                , compact = True
+                                , disabled = isDisabled
+                                , enhancementDisabled = player.enhancementsDisabled
+                                }
+                            ]
+                    )
+                    sortedHand
+                )
+            , div [ class "h-5 sm:h-7" ] []
+            ]
+        ]
+
+
+{-| View when opponent has locked in but player hasn't
+-}
+viewOpponentLockedNotice : Html Msg
+viewOpponentLockedNotice =
+    div [ class "text-center text-base-content/50 text-sm" ]
+        [ text "Opponent has locked in their hand" ]
+
+
 {-| View hand results (shown briefly after hands are played)
 -}
 viewHandResults : Model -> GameState -> Dict String HandResult -> Html Msg
 viewHandResults model gameState results =
     div [ class "bg-[#15161f] rounded-lg p-6 max-w-4xl" ]
-        [ h2 [ class "text-xl font-bold text-white mb-4" ] [ text "Hand Results" ]
-        , div [ class "grid grid-cols-2 gap-4" ]
+        [ div [ class "grid grid-cols-2 gap-4" ]
             (results
                 |> Dict.toList
                 |> List.map
@@ -448,6 +507,360 @@ viewRoundEnd model gameState currentPlayer =
 viewGameOver : GameState -> Html Msg
 viewGameOver gameState =
     text ""
+
+
+{-| View animated score results - shows both players' hands with animated score breakdown
+-}
+viewAnimatedScoreResults : Model -> GameState -> String -> String -> String -> Html Msg
+viewAnimatedScoreResults model gameState playerId playerName opponentName =
+    case gameState.lastHandResults of
+        Just handResults ->
+            let
+                -- Get opponent ID
+                opponentId =
+                    Dict.keys gameState.players
+                        |> List.filter (\id -> id /= playerId)
+                        |> List.head
+                        |> Maybe.withDefault ""
+
+                -- Sort by player name alphabetically to determine animation order
+                playerNames =
+                    [ ( playerId, playerName ), ( opponentId, opponentName ) ]
+                        |> List.sortBy Tuple.second
+
+                ( firstPlayerId, firstPlayerName ) =
+                    List.head playerNames |> Maybe.withDefault ( "", "" )
+
+                ( secondPlayerId, secondPlayerName ) =
+                    List.drop 1 playerNames |> List.head |> Maybe.withDefault ( "", "" )
+
+                firstResult =
+                    Dict.get firstPlayerId handResults
+
+                secondResult =
+                    Dict.get secondPlayerId handResults
+
+                firstPlayer =
+                    Dict.get firstPlayerId gameState.players
+
+                secondPlayer =
+                    Dict.get secondPlayerId gameState.players
+
+                -- Determine animation state for each player
+                firstAnimState =
+                    getPlayerAnimationState model.scoreAnimation firstResult True
+
+                secondAnimState =
+                    getPlayerAnimationState model.scoreAnimation secondResult False
+            in
+            div [ class "text-center space-y-8 sm:space-y-16 animate-fadeInScale w-full px-2 sm:px-4" ]
+                [ -- First player (alphabetically - opponent in phases)
+                  case ( firstResult, firstPlayer, firstAnimState ) of
+                    ( Just result, Just player, Just animState ) ->
+                        viewScoreBreakdownRow
+                            result
+                            player.skillTree
+                            firstPlayerName
+                            (firstPlayerId == playerId)
+                            animState
+
+                    _ ->
+                        text ""
+                , -- Second player (alphabetically - player in phases)
+                  case ( secondResult, secondPlayer, secondAnimState ) of
+                    ( Just result, Just player, Just animState ) ->
+                        viewScoreBreakdownRow
+                            result
+                            player.skillTree
+                            secondPlayerName
+                            (secondPlayerId == playerId)
+                            animState
+
+                    _ ->
+                        text ""
+                ]
+
+        Nothing ->
+            text ""
+
+
+type alias AnimationState =
+    { phase : ScoreAnimationPhase
+    , cardsScored : Int
+    , currentCard : Int
+    }
+
+
+{-| Get animation state for a specific player based on global animation phase
+-}
+getPlayerAnimationState : ScoreAnimationState -> Maybe HandResult -> Bool -> Maybe AnimationState
+getPlayerAnimationState globalAnim maybeResult isFirstPlayer =
+    case maybeResult of
+        Just result ->
+            let
+                cardCount =
+                    List.length result.scoreBreakdown.cardBreakdowns
+
+                opponentPhases =
+                    [ OpponentBase, OpponentCards, OpponentFinal ]
+
+                playerPhases =
+                    [ PlayerBase, PlayerCards, PlayerFinal ]
+
+                relevantPhases =
+                    if isFirstPlayer then
+                        opponentPhases
+
+                    else
+                        playerPhases
+            in
+            if globalAnim.phase == AnimationIdle then
+                Nothing
+
+            else if globalAnim.phase == AnimationComplete then
+                Just
+                    { phase = OpponentFinal
+                    , cardsScored = cardCount
+                    , currentCard = cardCount - 1
+                    }
+
+            else if List.member globalAnim.phase relevantPhases then
+                let
+                    cardsScored =
+                        case globalAnim.phase of
+                            OpponentBase ->
+                                0
+
+                            OpponentCards ->
+                                globalAnim.cardIndex + 1
+
+                            OpponentFinal ->
+                                cardCount
+
+                            PlayerBase ->
+                                0
+
+                            PlayerCards ->
+                                globalAnim.cardIndex + 1
+
+                            PlayerFinal ->
+                                cardCount
+
+                            _ ->
+                                0
+                in
+                Just
+                    { phase = globalAnim.phase
+                    , cardsScored = cardsScored
+                    , currentCard = globalAnim.cardIndex
+                    }
+
+            else if isFirstPlayer && List.member globalAnim.phase playerPhases then
+                -- First player done, show final state
+                Just
+                    { phase = OpponentFinal
+                    , cardsScored = cardCount
+                    , currentCard = cardCount - 1
+                    }
+
+            else
+                -- Second player not shown yet
+                Nothing
+
+        Nothing ->
+            Nothing
+
+
+{-| View score breakdown for one player with animated cards and formula
+-}
+viewScoreBreakdownRow : HandResult -> SkillTree -> String -> Bool -> AnimationState -> Html Msg
+viewScoreBreakdownRow result skillTree playerName isCurrentPlayer animState =
+    let
+        breakdown =
+            result.scoreBreakdown
+
+        -- Sort cards by rank for display
+        sortedHand =
+            List.sortBy (\c -> ( -c.rank, suitOrder c.suit )) result.hand
+
+        sortedBreakdowns =
+            List.sortBy (\b -> ( -b.card.rank, suitOrder b.card.suit )) breakdown.cardBreakdowns
+
+        scoringCardIds =
+            Set.fromList (List.map (.card >> .id) sortedBreakdowns)
+
+        -- Calculate running totals
+        ( runningChips, runningMult ) =
+            if animState.cardsScored == 0 then
+                ( breakdown.baseChips, breakdown.baseMultiplier )
+
+            else
+                let
+                    scoredBreakdowns =
+                        List.take animState.cardsScored sortedBreakdowns
+
+                    extraChips =
+                        scoredBreakdowns
+                            |> List.map (\b -> b.chipValue + b.bonusChips)
+                            |> List.sum
+
+                    extraMult =
+                        scoredBreakdowns
+                            |> List.map .bonusMult
+                            |> List.sum
+                in
+                ( breakdown.baseChips + extraChips
+                , breakdown.baseMultiplier + extraMult
+                )
+
+        showFinal =
+            animState.phase == OpponentFinal || animState.phase == PlayerFinal || animState.phase == AnimationComplete
+
+        runningScore =
+            runningChips * runningMult
+
+        level =
+            getSkillLevel skillTree result.handType
+
+        handTypeText =
+            "Lvl " ++ String.fromInt level ++ " " ++ String.toUpper (handTypeToString result.handType)
+    in
+    div []
+        [ -- Hand type header
+          div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2" ]
+            [ text handTypeText ]
+        , -- Cards display
+          div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
+            (List.indexedMap
+                (\idx card ->
+                    let
+                        isScoring =
+                            Set.member card.id scoringCardIds
+
+                        scoringIndex =
+                            sortedBreakdowns
+                                |> List.indexedMap Tuple.pair
+                                |> List.filter (\( _, b ) -> b.card.id == card.id)
+                                |> List.head
+                                |> Maybe.map Tuple.first
+
+                        isCurrentlyScoring =
+                            case scoringIndex of
+                                Just si ->
+                                    si == animState.cardsScored - 1 && (animState.phase == OpponentCards || animState.phase == PlayerCards)
+
+                                Nothing ->
+                                    False
+
+                        cardClass =
+                            if not isScoring then
+                                "card-not-scoring"
+
+                            else if Maybe.withDefault 999 scoringIndex < animState.cardsScored - 1 then
+                                "card-scored"
+
+                            else if isCurrentlyScoring then
+                                "card-scoring"
+
+                            else if Maybe.withDefault 999 scoringIndex < animState.cardsScored then
+                                "card-scored"
+
+                            else
+                                ""
+
+                        cardBreakdown =
+                            if isCurrentlyScoring then
+                                List.drop (animState.cardsScored - 1) sortedBreakdowns |> List.head
+
+                            else
+                                Nothing
+                    in
+                    div [ class "relative" ]
+                        [ div [ class ("w-9 h-[52px] sm:w-16 sm:h-24 " ++ cardClass) ]
+                            [ Cards.viewCardImage
+                                { card = card
+                                , isFaceDown = isCardFaceDown result card
+                                , showEnhancement = True
+                                , compact = True
+                                , disabled = False
+                                , enhancementDisabled = False
+                                }
+                            ]
+                        , case cardBreakdown of
+                            Just cb ->
+                                div []
+                                    [ div [ class "chip-float chip-float-chips text-[10px] sm:text-sm" ]
+                                        [ text ("+" ++ String.fromInt (cb.chipValue + cb.bonusChips)) ]
+                                    , if cb.bonusMult > 0 then
+                                        div [ class "chip-float chip-float-mult text-[10px] sm:text-sm" ]
+                                            [ text ("+" ++ String.fromInt cb.bonusMult ++ "x") ]
+
+                                      else
+                                        text ""
+                                    ]
+
+                            Nothing ->
+                                text ""
+                        ]
+                )
+                sortedHand
+            )
+        , -- Formula display
+          div [ class "flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-lg font-mono" ]
+            [ span [ class "text-blue-400 font-bold" ] [ text (String.fromInt runningChips) ]
+            , span [ class "text-base-content/60" ] [ text "×" ]
+            , span [ class "text-red-400 font-bold" ] [ text (String.fromInt runningMult) ]
+            , if showFinal then
+                span [ class "text-base-content/60" ] [ text "=" ]
+
+              else
+                text ""
+            , if showFinal then
+                span [ class "text-yellow-400 font-bold text-base sm:text-xl score-reveal" ]
+                    [ text (String.fromInt runningScore) ]
+
+              else
+                text ""
+            ]
+        ]
+
+
+isCardFaceDown : HandResult -> Card -> Bool
+isCardFaceDown result card =
+    False
+
+
+{-| Get skill level for a hand type from the skill tree
+-}
+getSkillLevel : SkillTree -> HandType -> Int
+getSkillLevel skillTree handType =
+    case handType of
+        HighCard ->
+            skillTree.highCard
+
+        Pair ->
+            skillTree.pair
+
+        TwoPair ->
+            skillTree.twoPair
+
+        ThreeOfAKind ->
+            skillTree.threeOfAKind
+
+        Straight ->
+            skillTree.straight
+
+        Flush ->
+            skillTree.flush
+
+        FullHouse ->
+            skillTree.fullHouse
+
+        FourOfAKind ->
+            skillTree.fourOfAKind
+
+        StraightFlush ->
+            skillTree.straightFlush
 
 
 {-| View match summary screen - full page with interactive rematch
@@ -802,7 +1215,7 @@ viewShopWithUIState model gameState shopState playerId uiState =
                     ]
                 , -- Cards Grid (scrollable)
                   div [ class "flex-1 p-6 overflow-y-auto" ]
-                    [ viewShopCardsGrid availableCards canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState
+                    [ viewShopCardsGrid availableCards canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
                     ]
                 ]
             , -- Right column: Pick Timeline + Preview Panel
@@ -858,8 +1271,8 @@ viewTurnIndicatorByState uiState =
 
 {-| Shop cards grid with Arsenal and Tactical Ops sections
 -}
-viewShopCardsGrid : List ShopCard -> Bool -> Set Int -> Set Int -> Maybe Int -> ShopUIState -> Html Msg
-viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewingCardIndex uiState =
+viewShopCardsGrid : List ShopCard -> Bool -> Set Int -> Set Int -> Maybe Int -> ShopUIState -> ShopState -> String -> String -> String -> Html Msg
+viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewingCardIndex uiState shopState playerId playerName opponentName =
     div []
         [ -- Arsenal Section (Permanent Upgrades)
           div [ class "mb-6" ]
@@ -874,7 +1287,7 @@ viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewi
                     |> List.take 8
                     |> List.indexedMap
                         (\index shopCard ->
-                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState
+                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState shopState playerId playerName opponentName
                         )
                 )
             ]
@@ -895,7 +1308,7 @@ viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewi
                                 index =
                                     relIndex + 8
                             in
-                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState
+                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState shopState playerId playerName opponentName
                         )
                 )
             ]
@@ -904,14 +1317,52 @@ viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewi
 
 {-| Minimal shop card - just badge and name (no description)
 -}
-viewShopCardMinimal : ShopCard -> Int -> Bool -> Set Int -> Set Int -> Maybe Int -> ShopUIState -> Html Msg
-viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState =
+viewShopCardMinimal : ShopCard -> Int -> Bool -> Set Int -> Set Int -> Maybe Int -> ShopUIState -> ShopState -> String -> String -> String -> Html Msg
+viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState shopState playerId playerName opponentName =
     let
         isPicked =
             Set.member index pickedIndices
 
         isDestroyed =
             Set.member index destroyedIndices
+
+        -- Determine who picked this card
+        pickerNameForCard =
+            if isPicked then
+                -- Find position of this card in picked indices
+                let
+                    reversedPicked =
+                        shopState.pickedCardIndices |> List.reverse
+
+                    maybePosition =
+                        reversedPicked
+                            |> List.indexedMap (\i cardIdx -> if cardIdx == index then Just i else Nothing)
+                            |> List.filterMap identity
+                            |> List.head
+                in
+                case maybePosition of
+                    Just position ->
+                        -- Determine who picked at this position (1-indexed)
+                        let
+                            pickNum = position + 1
+                        in
+                        if modBy 2 pickNum == 1 then
+                            -- First picker
+                            if shopState.firstPickerId == playerId then
+                                playerName
+                            else
+                                opponentName
+                        else
+                            -- Second picker
+                            if shopState.secondPickerId == playerId then
+                                playerName
+                            else
+                                opponentName
+
+                    Nothing ->
+                        "Picked"
+            else
+                "Picked"
 
         isSelected =
             previewingCardIndex == Just index
@@ -1012,12 +1463,8 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
                 NoOp
 
              else
-                case uiState of
-                    DestroyPhase _ ->
-                        DestroyShopCard index
-
-                    _ ->
-                        PreviewShopCard index
+                -- Always preview the card, the action button in preview will differ
+                PreviewShopCard index
             )
         , Html.Attributes.disabled isDisabled
         ]
@@ -1033,7 +1480,7 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
           if isPicked then
             div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
                 [ span [ class "text-xs text-base-content/40 font-medium" ]
-                    [ text "Picked" ]
+                    [ text pickerNameForCard ]
                 ]
 
           else if isDestroyed then
@@ -1047,7 +1494,7 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
         ]
 
 
-{-| Pick timeline showing all picks made
+{-| Pick timeline showing all picks and destroys
 -}
 viewPickTimeline : ShopState -> String -> String -> String -> Html Msg
 viewPickTimeline shopState playerId playerName opponentName =
@@ -1066,20 +1513,85 @@ viewPickTimeline shopState playerId playerName opponentName =
             else
                 opponentName
 
+        -- Destroyer name (if there is one)
+        destroyerName =
+            case shopState.destroyerId of
+                Just destroyerId ->
+                    if destroyerId == playerId then
+                        Just playerName
+                    else
+                        Just opponentName
+                Nothing ->
+                    Nothing
+
+        totalDestroys =
+            shopState.destroysAllowed
+
         totalPicks =
             shopState.totalRounds * 2
 
-        currentPickNumber =
-            List.length shopState.pickedCardIndices + 1
+        destroyedCount =
+            List.length shopState.destroyedCardIndices
 
-        reversedIndices =
+        pickedCount =
+            List.length shopState.pickedCardIndices
+
+        reversedDestroyedIndices =
+            List.reverse shopState.destroyedCardIndices
+
+        reversedPickedIndices =
             List.reverse shopState.pickedCardIndices
 
+        -- Create destroy slots
+        destroySlots =
+            List.range 1 totalDestroys
+                |> List.map
+                    (\destroyNum ->
+                        let
+                            maybeCardIndex =
+                                reversedDestroyedIndices
+                                    |> List.drop (destroyNum - 1)
+                                    |> List.head
+
+                            maybeCard =
+                                maybeCardIndex
+                                    |> Maybe.andThen (\idx -> shopState.availableCards |> List.drop idx |> List.head)
+
+                            isCurrent =
+                                not shopState.destroyPhaseComplete
+                                && destroyNum == (destroyedCount + 1)
+                                && destroyedCount < totalDestroys
+
+                            -- Check if this is the player's action
+                            isPlayerAction =
+                                case shopState.destroyerId of
+                                    Just destroyerId ->
+                                        destroyerId == playerId
+                                    Nothing ->
+                                        False
+                        in
+                        { slotNum = destroyNum
+                        , slotType = "DESTROY"
+                        , pickerName = Maybe.withDefault "" destroyerName
+                        , maybeCard = maybeCard
+                        , isCurrent = isCurrent
+                        , isPlayerAction = isPlayerAction
+                        }
+                    )
+
+        -- Create pick slots
         pickSlots =
             List.range 1 totalPicks
                 |> List.map
                     (\pickNum ->
                         let
+                            -- Determine who is picking
+                            pickerId =
+                                if modBy 2 pickNum == 1 then
+                                    shopState.firstPickerId
+                                else
+                                    shopState.secondPickerId
+
                             pickerName =
                                 if modBy 2 pickNum == 1 then
                                     firstPickerName
@@ -1088,7 +1600,7 @@ viewPickTimeline shopState playerId playerName opponentName =
                                     secondPickerName
 
                             maybeCardIndex =
-                                reversedIndices
+                                reversedPickedIndices
                                     |> List.drop (pickNum - 1)
                                     |> List.head
 
@@ -1097,21 +1609,33 @@ viewPickTimeline shopState playerId playerName opponentName =
                                     |> Maybe.andThen (\idx -> shopState.availableCards |> List.drop idx |> List.head)
 
                             isCurrent =
-                                pickNum == currentPickNumber && currentPickNumber <= totalPicks
+                                shopState.destroyPhaseComplete
+                                && pickNum == (pickedCount + 1)
+                                && pickedCount < totalPicks
+
+                            -- Check if this is the player's pick
+                            isPlayerAction =
+                                pickerId == playerId
                         in
-                        { pickNum = pickNum
+                        { slotNum = pickNum
+                        , slotType = "PICK"
                         , pickerName = pickerName
                         , maybeCard = maybeCard
                         , isCurrent = isCurrent
+                        , isPlayerAction = isPlayerAction
                         }
                     )
+
+        -- Combine destroy + pick slots
+        allSlots =
+            destroySlots ++ pickSlots
     in
     div [ class "p-6 border-b border-base-300/50" ]
         [ div [ class "flex flex-wrap gap-3" ]
-            (pickSlots
+            (allSlots
                 |> List.map
                     (\slot ->
-                        viewTimelineSlot slot.pickNum slot.pickerName slot.maybeCard slot.isCurrent
+                        viewTimelineSlot slot.slotNum slot.slotType slot.pickerName slot.maybeCard slot.isCurrent slot.isPlayerAction
                     )
             )
         ]
@@ -1119,35 +1643,45 @@ viewPickTimeline shopState playerId playerName opponentName =
 
 {-| Single timeline slot
 -}
-viewTimelineSlot : Int -> String -> Maybe ShopCard -> Bool -> Html Msg
-viewTimelineSlot pickNum pickerName maybeCard isCurrent =
+viewTimelineSlot : Int -> String -> String -> Maybe ShopCard -> Bool -> Bool -> Html Msg
+viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction =
     let
-        label =
-            case pickNum of
+        ordinal =
+            case slotNum of
                 1 ->
-                    "1st"
+                    "1ST"
 
                 2 ->
-                    "2nd"
+                    "2ND"
 
                 3 ->
-                    "3rd"
+                    "3RD"
 
                 n ->
-                    String.fromInt n ++ "th"
+                    String.fromInt n ++ "TH"
 
-        containerClass =
+        label =
+            ordinal ++ " " ++ slotType
+
+        ( containerClass, labelColor ) =
             if maybeCard /= Nothing then
-                "bg-base-100 border-base-300/50"
+                if slotType == "DESTROY" then
+                    ( "bg-base-100 border-rose-400/30", "text-rose-500/60" )
+                else
+                    ( "bg-base-100 border-base-300/50", "text-base-content/40" )
 
             else if isCurrent then
-                "bg-base-200/50 border-dashed animate-pulse border-emerald-400"
+                -- Use player color for the glow (blue for player, orange for opponent)
+                if isPlayerAction then
+                    ( "bg-base-200/50 border-dashed animate-pulse border-blue-400", "text-base-content/40" )
+                else
+                    ( "bg-base-200/50 border-dashed animate-pulse border-orange-400", "text-base-content/40" )
 
             else
-                "bg-base-200/30 border-base-300/30"
+                ( "bg-base-200/30 border-base-300/30", "text-base-content/40" )
     in
     div [ class ("flex-1 min-w-[180px] flex-shrink-0 rounded-lg p-3 border transition-all " ++ containerClass) ]
-        [ div [ class "text-[10px] uppercase tracking-wider text-base-content/40 mb-1" ]
+        [ div [ class ("text-[10px] uppercase tracking-wider mb-1 " ++ labelColor) ]
             [ text label ]
         , case maybeCard of
             Just card ->
@@ -1373,7 +1907,15 @@ viewShopCardPreview data =
             ]
         , -- Action Button
           div [ class "pt-8 flex-shrink-0" ]
-            [ if data.card.cardType == DeckBuilder then
+            [ if data.isDestroyMode then
+                -- Destroy mode: show destroy button
+                button
+                    [ onClick (DestroyShopCard data.cardIndex)
+                    , class "w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl bg-rose-500 hover:bg-rose-600"
+                    ]
+                    [ text "Destroy" ]
+
+              else if data.card.cardType == DeckBuilder then
                 button
                     [ onClick (ConfirmDeckBuilder data.cardIndex)
                     , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
@@ -1854,8 +2396,18 @@ viewConsoleButtons viewingModal playerId =
 
         isLogOpen =
             viewingModal == Just GameLog
+
+        anyModalOpen =
+            viewingModal /= Nothing
     in
-    div [ class "fixed left-px top-1/2 -translate-y-1/2 z-40" ]
+    -- Hide console buttons on mobile when modal is open, always show on desktop
+    div
+        [ classList
+            [ ( "absolute left-px top-1/2 -translate-y-1/2 z-40", True )
+            , ( "hidden", anyModalOpen )
+            , ( "sm:block", True )
+            ]
+        ]
         [ div [ class "flex flex-col gap-2 sm:gap-3" ]
             [ -- Deck Button
               button
@@ -1922,8 +2474,8 @@ viewConsoleButtons viewingModal playerId =
 
 {-| View action bar at the bottom
 -}
-viewActionBar : PlayerState -> Set String -> Bool -> Html Msg
-viewActionBar player selectedCards actionInProgress =
+viewActionBar : PlayerState -> Set String -> CardSort -> Bool -> Html Msg
+viewActionBar player selectedCards cardSort actionInProgress =
     let
         selectedCardsList =
             Set.toList selectedCards
@@ -1986,6 +2538,23 @@ viewActionBar player selectedCards actionInProgress =
                     ]
                 ]
                 [ text "Discard" ]
+            , -- Sort button
+              button
+                [ onClick ToggleCardSort
+                , class "px-3 py-1.5 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
+                ]
+                [ span [ class "text-gray-500" ] [ text "Sort:" ]
+                , span [ class "font-semibold text-gray-800" ]
+                    [ text
+                        (case cardSort of
+                            ByRank ->
+                                "Rank"
+
+                            BySuit ->
+                                "Suit"
+                        )
+                    ]
+                ]
             , button
                 [ onClick LockInHand
                 , disabled (not canLockIn)
@@ -2000,68 +2569,208 @@ viewActionBar player selectedCards actionInProgress =
         ]
 
 
-{-| View opponent info overlay (top-right corner)
+{-| View top row with opponent info, hand progress, and player info
 -}
-viewOpponentInfo : PlayerState -> String -> Int -> Int -> Html Msg
-viewOpponentInfo opponent opponentName initialLives discardsPerRound =
-    div [ class "hidden sm:flex absolute top-4 right-4 flex-col items-end gap-0.5 text-gray-300" ]
-        [ div [ class "flex items-center gap-1" ]
-            [ span [ class "text-sm text-red-400 truncate max-w-[25ch]" ] [ text opponentName ]
+viewTopRow : GameState -> PlayerState -> PlayerState -> String -> String -> Html Msg
+viewTopRow gameState player opponent opponentName playerName =
+    let
+        initialLives =
+            gameState.initialLives
+
+        discardsPerRound =
+            gameState.discardsPerRound
+
+        playerScore =
+            player.currentRoundScore
+
+        opponentScore =
+            opponent.currentRoundScore
+
+        scoreDiff =
+            abs (playerScore - opponentScore)
+
+        playerWinning =
+            playerScore > opponentScore && scoreDiff > 0
+
+        opponentWinning =
+            opponentScore > playerScore && scoreDiff > 0
+    in
+    div [ class "absolute top-4 left-2 right-2 sm:left-4 sm:right-4 flex items-start justify-between z-10" ]
+        [ -- Left: Player info (you)
+          div [ class "flex items-start gap-2" ]
+            [ viewPlayerInfo player playerName initialLives discardsPerRound playerWinning
             ]
-        , div [ class "flex items-center gap-0.5" ]
-            (List.range 1 initialLives
-                |> List.map
-                    (\i ->
-                        if i > initialLives - opponent.lives then
-                            Heroicons.Solid.heart [ SvgAttr.class "w-4 h-4 text-gray-400" ]
-
-                        else
-                            Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
-                    )
-            )
-        , div [ class "flex items-center gap-0.5" ]
-            (List.range 1 discardsPerRound
-                |> List.map
-                    (\i ->
-                        if i > discardsPerRound - opponent.discardsRemaining then
-                            Heroicons.Solid.trash [ SvgAttr.class "w-4 h-4 text-gray-400" ]
-
-                        else
-                            Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-gray-600" ]
-                    )
-            )
+        , -- Center: Hand progress with score
+          viewTopCenterBar gameState player opponent
+        , -- Right: Opponent info
+          div [ class "flex items-start gap-2" ]
+            [ viewOpponentInfo opponent opponentName initialLives discardsPerRound opponentWinning
+            ]
         ]
 
 
-{-| View player info overlay (bottom-right corner)
+{-| View top center bar showing hand progress dots and score differential
 -}
-viewPlayerInfo : PlayerState -> String -> Int -> Int -> Html Msg
-viewPlayerInfo player playerName initialLives discardsPerRound =
-    div [ class "hidden sm:flex absolute bottom-4 right-4 flex-col items-end gap-0.5 text-gray-300" ]
-        [ div [ class "flex items-center gap-0.5" ]
-            (List.range 1 discardsPerRound
-                |> List.map
-                    (\i ->
-                        if i > discardsPerRound - player.discardsRemaining then
-                            Heroicons.Solid.trash [ SvgAttr.class "w-4 h-4 text-gray-400" ]
+viewTopCenterBar : GameState -> PlayerState -> PlayerState -> Html Msg
+viewTopCenterBar gameState player opponent =
+    let
+        totalHands =
+            gameState.handsPerRound
 
-                        else
-                            Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+        handsPlayed =
+            totalHands - player.handsRemaining
+
+        currentHand =
+            if player.handsRemaining > 0 then
+                handsPlayed + 1
+
+            else
+                totalHands
+
+        playerScore =
+            player.currentRoundScore
+
+        opponentScore =
+            opponent.currentRoundScore
+
+        scoreDiff =
+            abs (playerScore - opponentScore)
+
+        playerWinning =
+            playerScore > opponentScore
+
+        opponentWinning =
+            opponentScore > playerScore
+    in
+    div [ class "flex flex-col items-center text-xs gap-1.5" ]
+        [ -- Progress dots (top row)
+          div [ class "flex items-center gap-1.5" ]
+            (List.range 1 totalHands
+                |> List.map
+                    (\handNum ->
+                        let
+                            isPast =
+                                handNum < currentHand
+
+                            isCurrent =
+                                handNum == currentHand && player.handsRemaining > 0
+
+                            isFuture =
+                                handNum > currentHand
+                        in
+                        div
+                            [ classList
+                                [ ( "w-2 h-2 rounded-full transition-all", True )
+                                , ( "bg-base-content", isPast )
+                                , ( "bg-base-content animate-pulse ring-2 ring-base-content/50", isCurrent )
+                                , ( "bg-base-content/30", isFuture )
+                                ]
+                            ]
+                            []
                     )
             )
-        , div [ class "flex items-center gap-0.5" ]
-            (List.range 1 initialLives
-                |> List.map
-                    (\i ->
-                        if i > initialLives - player.lives then
-                            Heroicons.Solid.heart [ SvgAttr.class "w-4 h-4 text-gray-400" ]
+        , -- Score differential (bottom row)
+          if playerWinning && scoreDiff > 0 then
+              span [ class "text-xs font-semibold text-player" ]
+                  [ text ("+" ++ String.fromInt scoreDiff) ]
 
-                        else
-                            Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
-                    )
-            )
-        , div [ class "flex items-center gap-1" ]
-            [ span [ class "text-sm text-blue-400 truncate max-w-[25ch]" ] [ text playerName ]
+          else if opponentWinning && scoreDiff > 0 then
+              span [ class "text-xs font-semibold text-opponent" ]
+                  [ text ("+" ++ String.fromInt scoreDiff) ]
+
+          else
+              text ""
+        ]
+
+
+{-| View opponent info overlay (top-right corner) - Mobile and Desktop
+-}
+viewOpponentInfo : PlayerState -> String -> Int -> Int -> Bool -> Html Msg
+viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
+    div [ class "flex flex-col items-end gap-0.5 text-base-content" ]
+        [ -- Icons row (hearts and trash - horizontal on desktop, vertical on mobile)
+          div [ class "flex flex-col sm:flex-row items-end sm:items-center gap-0.5 sm:gap-1" ]
+            [ -- Hearts
+              div [ class "flex items-center gap-0.5" ]
+                (List.range 1 initialLives
+                    |> List.map
+                        (\i ->
+                            if i > initialLives - opponent.lives then
+                                Heroicons.Solid.heart [ SvgAttr.class "w-4 h-4 text-red-400" ]
+
+                            else
+                                Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                        )
+                )
+            , -- Dot separator (desktop only)
+              span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
+            , -- Trash
+              div [ class "flex items-center gap-0.5" ]
+                (List.range 1 discardsPerRound
+                    |> List.map
+                        (\i ->
+                            if i > discardsPerRound - opponent.discardsRemaining then
+                                Heroicons.Solid.trash [ SvgAttr.class "w-4 h-4 text-gray-400" ]
+
+                            else
+                                Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                        )
+                )
+            ]
+        , -- Name row with star if winning
+          div [ class "flex items-center gap-1" ]
+            [ span [ class "text-sm text-opponent truncate max-w-[25ch]" ] [ text opponentName ]
+            , if isWinning then
+                Heroicons.Solid.star [ SvgAttr.class "w-3 h-3 text-opponent" ]
+
+              else
+                text ""
+            ]
+        ]
+
+
+{-| View player info overlay (top-left corner) - Mobile and Desktop
+-}
+viewPlayerInfo : PlayerState -> String -> Int -> Int -> Bool -> Html Msg
+viewPlayerInfo player playerName initialLives discardsPerRound isWinning =
+    div [ class "flex flex-col items-start gap-0.5 text-base-content" ]
+        [ -- Icons row (hearts and trash - horizontal on desktop, vertical on mobile)
+          div [ class "flex flex-col sm:flex-row items-start sm:items-center gap-0.5 sm:gap-1" ]
+            [ -- Hearts
+              div [ class "flex items-center gap-0.5" ]
+                (List.range 1 initialLives
+                    |> List.map
+                        (\i ->
+                            if i > initialLives - player.lives then
+                                Heroicons.Solid.heart [ SvgAttr.class "w-4 h-4 text-red-400" ]
+
+                            else
+                                Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                        )
+                )
+            , -- Dot separator (desktop only)
+              span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
+            , -- Trash
+              div [ class "flex items-center gap-0.5" ]
+                (List.range 1 discardsPerRound
+                    |> List.map
+                        (\i ->
+                            if i > discardsPerRound - player.discardsRemaining then
+                                Heroicons.Solid.trash [ SvgAttr.class "w-4 h-4 text-gray-400" ]
+
+                            else
+                                Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                        )
+                )
+            ]
+        , -- Name row with star if winning
+          div [ class "flex items-center gap-1" ]
+            [ span [ class "text-sm text-player truncate max-w-[25ch]" ] [ text playerName ]
+            , if isWinning then
+                Heroicons.Solid.star [ SvgAttr.class "w-3 h-3 text-player" ]
+
+              else
+                text ""
             ]
         ]
 
@@ -2090,9 +2799,23 @@ viewModal modal model gameState currentPlayer opponent playerId playerName oppon
 viewGameLogModal : Html Msg
 viewGameLogModal =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
-        [ div [ class "flex items-center gap-3 mb-4" ]
-            [ Heroicons.Solid.newspaper [ SvgAttr.class "w-8 h-8 text-amber-600" ]
-            , h2 [ class "text-2xl font-bold" ] [ text "Game History" ]
+        [ -- Title row - desktop shows icon+title, mobile shows only X (centered, no text)
+          div [ class "flex items-center justify-center mb-4 w-full" ]
+            [ -- Desktop: Icon + Title
+              div [ class "hidden sm:flex items-center gap-3" ]
+                [ Heroicons.Solid.newspaper [ SvgAttr.class "w-8 h-8 text-amber-600" ]
+                , h2 [ class "text-2xl font-bold text-amber-600" ] [ text "History" ]
+                ]
+            , -- Mobile: Close button with X icon
+              button
+                [ onClick CloseModal
+                , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
+                , Html.Attributes.type_ "button"
+                , Html.Attributes.title "Close"
+                ]
+                [ span [ class "text-sm font-medium text-white" ] [ text "Close" ]
+                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
+                ]
             ]
         , div [ class "w-full max-w-4xl" ]
             [ div [ class "text-gray-300 text-center" ]
@@ -2106,9 +2829,23 @@ viewGameLogModal =
 viewDeckModal : String -> PlayerState -> PlayerState -> String -> String -> String -> Html Msg
 viewDeckModal deckPlayerId currentPlayer opponent playerId playerName opponentName =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
-        [ div [ class "flex items-center gap-3 mb-4" ]
-            [ Heroicons.Solid.square3Stack3d [ SvgAttr.class "w-8 h-8 text-blue-600" ]
-            , h2 [ class "text-2xl font-bold" ] [ text "Deck" ]
+        [ -- Title row - desktop shows icon+title, mobile shows only X (centered, no text)
+          div [ class "flex items-center justify-center mb-4 w-full" ]
+            [ -- Desktop: Icon + Title
+              div [ class "hidden sm:flex items-center gap-3" ]
+                [ Heroicons.Solid.square3Stack3d [ SvgAttr.class "w-8 h-8 text-blue-600" ]
+                , h2 [ class "text-2xl font-bold text-blue-600" ] [ text "Deck" ]
+                ]
+            , -- Mobile: Close button with X icon
+              button
+                [ onClick CloseModal
+                , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
+                , Html.Attributes.type_ "button"
+                , Html.Attributes.title "Close"
+                ]
+                [ span [ class "text-sm font-medium text-white" ] [ text "Close" ]
+                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
+                ]
             ]
         , div [ class "w-full max-w-4xl" ]
             [ viewDeckCards currentPlayer
@@ -2262,9 +2999,23 @@ viewDeckCards player =
 viewLevelsModal : PlayerState -> PlayerState -> String -> String -> Html Msg
 viewLevelsModal currentPlayer opponent playerName opponentName =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
-        [ div [ class "flex items-center gap-3 mb-6" ]
-            [ Heroicons.Solid.chartBar [ SvgAttr.class "w-8 h-8 text-green-600" ]
-            , h2 [ class "text-2xl font-bold" ] [ text "Levels" ]
+        [ -- Title row - desktop shows icon+title, mobile shows only X (centered, no text)
+          div [ class "flex items-center justify-center mb-6 w-full" ]
+            [ -- Desktop: Icon + Title
+              div [ class "hidden sm:flex items-center gap-3" ]
+                [ Heroicons.Solid.chartBar [ SvgAttr.class "w-8 h-8 text-green-600" ]
+                , h2 [ class "text-2xl font-bold text-green-600" ] [ text "Levels" ]
+                ]
+            , -- Mobile: Close button with X icon
+              button
+                [ onClick CloseModal
+                , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
+                , Html.Attributes.type_ "button"
+                , Html.Attributes.title "Close"
+                ]
+                [ span [ class "text-sm font-medium text-white" ] [ text "Close" ]
+                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
+                ]
             ]
         , div [ class "w-full max-w-2xl" ]
             [ viewLevelsList currentPlayer
@@ -2405,3 +3156,264 @@ viewLevelsList player =
                 handTypes
             )
         ]
+
+
+{-| Badge representing a debuff or status effect on a player
+-}
+type alias Badge =
+    { name : String
+    , tooltip : String
+    }
+
+
+{-| Get list of active sabotage badges for a player
+Mirrors the get_sabotage_badges function from gameplay.ex:421
+-}
+getSabotageBadges : PlayerState -> List Badge
+getSabotageBadges player =
+    let
+        scrambledBadge =
+            if player.scrambled then
+                Just { name = "Scrambled", tooltip = "1-in-5 drawn cards are face-down" }
+
+            else
+                Nothing
+
+        staticFieldBadge =
+            if player.enhancementsDisabled then
+                Just { name = "Static Field", tooltip = "Card enhancements disabled" }
+
+            else
+                Nothing
+
+        plusBombBadge =
+            if player.disabledRanks /= [] || player.disabledSuits /= [] then
+                let
+                    disabledText =
+                        formatDisabledCards player.disabledRanks player.disabledSuits
+                in
+                Just { name = "Plus Bomb", tooltip = disabledText ++ " won't score" }
+
+            else
+                Nothing
+
+        supplyChainBadge =
+            if player.supplyChainLimited then
+                Just { name = "Supply Chain", tooltip = "Draws limited to 4 cards per discard" }
+
+            else
+                Nothing
+    in
+    [ scrambledBadge, staticFieldBadge, plusBombBadge, supplyChainBadge ]
+        |> List.filterMap identity
+
+
+{-| Format disabled cards for tooltip
+-}
+formatDisabledCards : List Int -> List Suit -> String
+formatDisabledCards disabledRanks disabledSuits =
+    let
+        rankStrs =
+            List.map formatRank disabledRanks
+
+        suitStrs =
+            List.map formatSuit disabledSuits
+
+        allStrs =
+            rankStrs ++ suitStrs
+    in
+    String.join ", " allStrs
+
+
+{-| Format rank for display
+-}
+formatRank : Int -> String
+formatRank rank =
+    case rank of
+        2 ->
+            "2s"
+
+        3 ->
+            "3s"
+
+        4 ->
+            "4s"
+
+        5 ->
+            "5s"
+
+        6 ->
+            "6s"
+
+        7 ->
+            "7s"
+
+        8 ->
+            "8s"
+
+        9 ->
+            "9s"
+
+        10 ->
+            "10s"
+
+        11 ->
+            "Jacks"
+
+        12 ->
+            "Queens"
+
+        13 ->
+            "Kings"
+
+        14 ->
+            "Aces"
+
+        _ ->
+            String.fromInt rank
+
+
+{-| Format suit for display
+-}
+formatSuit : Suit -> String
+formatSuit suit =
+    case suit of
+        Hearts ->
+            "Hearts"
+
+        Diamonds ->
+            "Diamonds"
+
+        Clubs ->
+            "Clubs"
+
+        Spades ->
+            "Spades"
+
+
+{-| Render a single badge
+-}
+viewBadge : String -> Badge -> Html Msg
+viewBadge colorClass badge =
+    div
+        [ class ("group relative flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold " ++ colorClass)
+        , Html.Attributes.title badge.tooltip
+        ]
+        [ span [] [ text badge.name ]
+        ]
+
+
+{-| Render badges for a player (both debuffs and sabotage effects)
+Returns a list of badge elements to be rendered
+Mobile: stacks vertically (1 per line)
+Desktop: wraps horizontally (multiple per line)
+-}
+viewPlayerBadges : PlayerState -> String -> Html Msg
+viewPlayerBadges player colorClass =
+    let
+        debuffBadges =
+            if player.activeDebuffs /= [] then
+                let
+                    debuffNames =
+                        player.activeDebuffs
+                            |> List.map handTypeToString
+                            |> String.join ", "
+                in
+                [ { name = "Blocked: " ++ debuffNames, tooltip = "These hand types cannot be played" } ]
+
+            else
+                []
+
+        sabotageBadges =
+            getSabotageBadges player
+
+        allBadges =
+            debuffBadges ++ sabotageBadges
+    in
+    if allBadges /= [] then
+        div [ class "flex flex-col sm:flex-row sm:flex-wrap gap-1" ]
+            (List.map (viewBadge colorClass) allBadges)
+
+    else
+        text ""
+
+
+{-| View badges positioned at bottom of centerboard
+Mobile: All badges together in one row (player badges first, then opponent)
+Desktop: Player badges on bottom-left, opponent badges on bottom-right
+-}
+viewCenterboardBadges : PlayerState -> PlayerState -> Html Msg
+viewCenterboardBadges player opponent =
+    let
+        -- Get individual badge lists
+        opponentDebuffBadges =
+            if opponent.activeDebuffs /= [] then
+                let
+                    debuffNames =
+                        opponent.activeDebuffs
+                            |> List.map handTypeToString
+                            |> String.join ", "
+                in
+                [ { name = "Blocked: " ++ debuffNames, tooltip = "These hand types cannot be played" } ]
+
+            else
+                []
+
+        opponentSabotageBadges =
+            getSabotageBadges opponent
+
+        playerDebuffBadges =
+            if player.activeDebuffs /= [] then
+                let
+                    debuffNames =
+                        player.activeDebuffs
+                            |> List.map handTypeToString
+                            |> String.join ", "
+                in
+                [ { name = "Blocked: " ++ debuffNames, tooltip = "These hand types cannot be played" } ]
+
+            else
+                []
+
+        playerSabotageBadges =
+            getSabotageBadges player
+
+        allOpponentBadges =
+            opponentDebuffBadges ++ opponentSabotageBadges
+
+        allPlayerBadges =
+            playerDebuffBadges ++ playerSabotageBadges
+
+        hasAnyBadges =
+            allOpponentBadges /= [] || allPlayerBadges /= []
+    in
+    if hasAnyBadges then
+        div []
+            [ -- Mobile: All badges together, player first then opponent
+              div [ class "sm:hidden absolute bottom-1 left-2 right-2 flex flex-wrap gap-1 z-10" ]
+                (List.map (viewBadge "bg-player text-sky-900") allPlayerBadges
+                    ++ List.map (viewBadge "bg-opponent text-orange-900") allOpponentBadges
+                )
+            , -- Desktop: Split left and right with more spacing
+              div [ class "hidden sm:flex absolute bottom-4 left-4 right-4 items-end justify-between z-10 pointer-events-none" ]
+                [ -- Bottom-left: Player badges (you)
+                  if allPlayerBadges /= [] then
+                    div [ class "pointer-events-auto flex flex-wrap gap-1" ]
+                        (List.map (viewBadge "bg-player text-sky-900") allPlayerBadges)
+
+                  else
+                    text ""
+                , -- Bottom-right: Opponent badges
+                  if allOpponentBadges /= [] then
+                    div [ class "pointer-events-auto flex flex-wrap gap-1" ]
+                        (List.map (viewBadge "bg-opponent text-orange-900") allOpponentBadges)
+
+                  else
+                    text ""
+                ]
+            ]
+
+    else
+        text ""
+
+

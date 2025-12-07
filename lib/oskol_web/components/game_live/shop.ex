@@ -52,7 +52,7 @@ defmodule OskolWeb.Components.GameLive.Shop do
     <div class="h-screen-safe bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto">
       <!-- Responsive layout using CSS order -->
       <div class="min-h-full flex flex-col lg:flex-row lg:h-screen">
-
+        
     <!-- Section 1: Header (order-1 on mobile, part of left column on desktop) -->
         <div class="order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen">
           <!-- Header -->
@@ -436,11 +436,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
         <div class="text-xs uppercase tracking-wider text-base-content/40">Round</div>
         <div class="text-lg font-semibold text-base-content">{@game_state.round_number}</div>
       </div>
-
-      <!-- Divider (hidden on mobile) -->
+      
+    <!-- Divider (hidden on mobile) -->
       <div class="hidden sm:block w-px h-6 bg-base-300/50"></div>
-
-      <!-- Lives status -->
+      
+    <!-- Lives status -->
       <div class="flex items-center gap-4">
         <!-- Player lives -->
         <div class="flex items-center gap-2">
@@ -455,11 +455,11 @@ defmodule OskolWeb.Components.GameLive.Shop do
             <% end %>
           </div>
         </div>
-
-        <!-- VS divider -->
+        
+    <!-- VS divider -->
         <span class="text-xs text-base-content/30">vs</span>
-
-        <!-- Opponent lives -->
+        
+    <!-- Opponent lives -->
         <div class="flex items-center gap-2">
           <span class="text-xs text-opponent font-medium">{@opponent_name}</span>
           <div class="flex items-center gap-0.5">

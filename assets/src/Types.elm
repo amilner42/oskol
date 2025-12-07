@@ -307,6 +307,7 @@ type alias PreviewCardData =
     , availableCards : List ShopCard
     , pickedIndices : List Int
     , destroyedIndices : List Int
+    , isDestroyMode : Bool  -- True if previewing during destroy phase
     }
 
 
@@ -346,6 +347,32 @@ type alias CompletionData =
 
 
 
+-- SCORE ANIMATION STATE (CLIENT-ONLY)
+
+
+{-| Score animation phase - matches LiveView animation phases
+-}
+type ScoreAnimationPhase
+    = AnimationIdle
+    | OpponentBase
+    | OpponentCards
+    | OpponentFinal
+    | PlayerBase
+    | PlayerCards
+    | PlayerFinal
+    | AnimationComplete
+
+
+{-| Score animation state
+-}
+type alias ScoreAnimationState =
+    { phase : ScoreAnimationPhase
+    , cardIndex : Int
+    , nextStepTime : Maybe Int -- Timestamp when next animation step should occur
+    }
+
+
+
 -- UI STATE (CLIENT-ONLY)
 
 
@@ -366,6 +393,8 @@ type alias Model =
     , plusBombSelection : Maybe String -- TODO: Remove after migration
     , shopUIState : Maybe ShopUIState -- NEW: Unified shop state
     , rematchRequested : Bool -- Track if player requested rematch
+    , scoreAnimation : ScoreAnimationState -- Score animation state
+    , viewingResults : Bool -- Whether we're viewing hand results
     }
 
 
@@ -403,6 +432,9 @@ type Msg
     | ToggleCardSort
     | LockInHand
     | DiscardCards (List String)
+      -- Score animation
+    | AdvanceScoreAnimation Int -- Takes current time in milliseconds
+    | DismissResults
       -- Shop actions
     | MakeShopPick Int
     | PreviewShopCard Int
