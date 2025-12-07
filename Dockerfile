@@ -20,9 +20,11 @@ ARG RUNNER_IMAGE="docker.io/debian:${DEBIAN_VERSION}"
 
 FROM ${BUILDER_IMAGE} AS builder
 
-# install build dependencies
+# install build dependencies (including Node.js for Elm compilation)
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential git \
+  && apt-get install -y --no-install-recommends build-essential git curl \
+  && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+  && apt-get install -y nodejs \
   && rm -rf /var/lib/apt/lists/*
 
 # prepare build dir
@@ -39,6 +41,10 @@ ENV MIX_ENV="prod"
 COPY mix.exs mix.lock ./
 RUN mix deps.get --only $MIX_ENV
 RUN mkdir config
+
+# install npm dependencies for Elm compilation
+COPY package.json package-lock.json* ./
+RUN npm install
 
 # copy compile-time config files before we compile dependencies
 # to ensure any relevant config change will trigger the dependencies
@@ -59,9 +65,10 @@ RUN mix compile
 #  - refer to: https://oskol.sentry.io/insights/projects/oskol/getting-started
 RUN mix sentry.package_source_code
 
+# Copy assets
 COPY assets assets
 
-# compile assets
+# compile assets (npm packages already installed above)
 RUN mix assets.deploy
 
 # Changes to config/runtime.exs don't require recompiling the code
