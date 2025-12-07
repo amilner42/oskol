@@ -74,6 +74,7 @@ init flags =
       , rematchRequested = False
       , scoreAnimation = { phase = AnimationIdle, cardIndex = 0, nextStepTime = Nothing }
       , viewingResults = False
+      , shopCountdown = Nothing
       }
     , Cmd.none
     )
@@ -231,9 +232,59 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
             else
                 newState
 
+        -- Preserve preview state ONLY if still valid
+        ( Just (PreviewingCard prev), serverState ) ->
+            case serverState of
+                BrowsingCards newData ->
+                    -- Check if previewed card is still available and actionable
+                    if isCardStillValid prev.cardIndex newData.availableCards newData.pickedIndices newData.destroyedIndices then
+                        -- Card still valid, preserve preview with updated data
+                        PreviewingCard
+                            { prev
+                            | availableCards = newData.availableCards
+                            , pickedIndices = newData.pickedIndices
+                            , destroyedIndices = newData.destroyedIndices
+                            }
+
+                    else
+                        -- Card was picked/destroyed, return to browsing
+                        serverState
+
+                DestroyPhase newData ->
+                    -- Preserve preview only if in destroy mode and card still valid
+                    if prev.isDestroyMode && isCardStillValid prev.cardIndex newData.availableCards [] newData.destroyedIndices then
+                        PreviewingCard
+                            { prev
+                            | availableCards = newData.availableCards
+                            , destroyedIndices = newData.destroyedIndices
+                            }
+
+                    else
+                        -- Not in destroy mode, or card destroyed, or phase changed
+                        serverState
+
+                -- For ANY other state (SelectingDeckBuilderCards, SelectingPlusBombCard,
+                -- WaitingForOpponent, ShopComplete), the server has moved us to a different
+                -- phase. RESPECT it - don't preserve preview.
+                _ ->
+                    serverState
+
         -- For all other cases, use the new state
         _ ->
             newState
+
+
+{-| Check if a card at the given index is still valid for preview/selection.
+A card is valid if:
+- The index is within bounds of available cards
+- The card hasn't been picked
+- The card hasn't been destroyed
+-}
+isCardStillValid : Int -> List ShopCard -> List Int -> List Int -> Bool
+isCardStillValid cardIndex availableCards pickedIndices destroyedIndices =
+    (cardIndex >= 0 && cardIndex < List.length availableCards)
+        && not (List.member cardIndex pickedIndices)
+        && not (List.member cardIndex destroyedIndices)
 
 
 {-| Generate a deterministic rematch game ID
@@ -456,20 +507,22 @@ update msg model =
                     else
                         ( model.scoreAnimation, model.viewingResults )
 
-                cmd =
+                -- Start countdown when shop just completed, otherwise preserve existing countdown
+                newShopCountdown =
                     if shopJustCompleted then
-                        sendToChannel encodeReadyForNextRound
+                        Just 5  -- Start 5 second countdown
 
                     else
-                        Cmd.none
+                        model.shopCountdown
             in
             ( { model
                 | gameState = Success gameState
                 , shopUIState = newShopUIState
                 , scoreAnimation = newScoreAnimation
                 , viewingResults = newViewingResults
+                , shopCountdown = newShopCountdown
               }
-            , cmd
+            , Cmd.none
             )
 
         RematchGameReady rematchGameId ->
@@ -585,7 +638,9 @@ update msg model =
                     ( model, Cmd.none )
 
         MakeShopPick cardIndex ->
-            ( model
+            -- Send pick command to server - let GameStateUpdated handle state transition
+            -- (Don't re-derive immediately as server may set pendingPlusBomb/pendingDeckBuilder)
+            ( { model | previewingCardIndex = Nothing }
             , sendToChannel (encodeMakeShopPick cardIndex)
             )
 
@@ -707,9 +762,49 @@ update msg model =
                     ( model, Cmd.none )
 
         ClearCardPreview ->
-            -- NEW: Go back to browsing
-            case model.shopUIState of
-                Just (PreviewingCard data) ->
+            -- Go back to appropriate state (DestroyPhase if in destroy mode, BrowsingCards otherwise)
+            case ( model.shopUIState, model.gameState ) of
+                ( Just (PreviewingCard data), Success gameState ) ->
+                    let
+                        nextState =
+                            case gameState.shopState of
+                                Just shopState ->
+                                    if data.isDestroyMode then
+                                        -- Re-derive from server state to get accurate DestroyPhase
+                                        case model.playerId of
+                                            Just playerId ->
+                                                deriveShopUIState playerId shopState
+
+                                            Nothing ->
+                                                BrowsingCards
+                                                    { availableCards = data.availableCards
+                                                    , pickedIndices = data.pickedIndices
+                                                    , destroyedIndices = data.destroyedIndices
+                                                    }
+                                    else
+                                        BrowsingCards
+                                            { availableCards = data.availableCards
+                                            , pickedIndices = data.pickedIndices
+                                            , destroyedIndices = data.destroyedIndices
+                                            }
+
+                                Nothing ->
+                                    -- No shop state, just go to browsing
+                                    BrowsingCards
+                                        { availableCards = data.availableCards
+                                        , pickedIndices = data.pickedIndices
+                                        , destroyedIndices = data.destroyedIndices
+                                        }
+                    in
+                    ( { model
+                        | shopUIState = Just nextState
+                        , previewingCardIndex = Nothing
+                      }
+                    , Cmd.none
+                    )
+
+                ( Just (PreviewingCard data), _ ) ->
+                    -- Fallback if no game state available
                     ( { model
                         | shopUIState =
                             Just
@@ -860,7 +955,8 @@ update msg model =
             )
 
         DestroyShopCard cardIndex ->
-            ( model
+            -- Send destroy command to server - let GameStateUpdated handle state transition
+            ( { model | previewingCardIndex = Nothing }
             , sendToChannel (encodeDestroyShopCard cardIndex)
             )
 
@@ -868,6 +964,25 @@ update msg model =
             ( model
             , sendToChannel encodeCompleteDestroyPhase
             )
+
+        ShopCountdownTick ->
+            -- Decrement shop countdown and send ready when it hits 0
+            case model.shopCountdown of
+                Just countdown ->
+                    if countdown <= 1 then
+                        -- Countdown finished, send ready and clear countdown
+                        ( { model | shopCountdown = Nothing }
+                        , sendToChannel encodeReadyForNextRound
+                        )
+
+                    else
+                        -- Continue counting down
+                        ( { model | shopCountdown = Just (countdown - 1) }
+                        , Cmd.none
+                        )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         ReadyForNextRound ->
             ( model
@@ -929,6 +1044,13 @@ subscriptions model =
 
           else
             Sub.none
+        , -- Shop countdown timer - tick every second
+          case model.shopCountdown of
+            Just _ ->
+                Time.every 1000 (\_ -> ShopCountdownTick)
+
+            Nothing ->
+                Sub.none
         ]
 
 

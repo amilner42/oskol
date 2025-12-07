@@ -397,6 +397,7 @@ type alias Model =
     , rematchRequested : Bool -- Track if player requested rematch
     , scoreAnimation : ScoreAnimationState -- Score animation state
     , viewingResults : Bool -- Whether we're viewing hand results
+    , shopCountdown : Maybe Int -- Countdown timer for shop completion (seconds remaining)
     }
 
 
@@ -458,6 +459,8 @@ type Msg
     | DestroyShopCard Int
     | CompleteDestroyPhase
     | ReadyForNextRound
+      -- Shop countdown
+    | ShopCountdownTick
       -- Rematch
     | RequestRematch
       -- Modal actions

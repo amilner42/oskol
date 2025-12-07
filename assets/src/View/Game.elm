@@ -1168,10 +1168,10 @@ viewShopWithUIState model gameState shopState playerId uiState =
                 _ ->
                     Nothing
     in
-    div [ class "h-screen bg-gradient-to-br from-base-200 via-base-100 to-base-200 overflow-auto" ]
+    div [ class "h-screen bg-base-200 lg:bg-gradient-to-br lg:from-base-200 lg:via-base-100 lg:to-base-200 overflow-auto" ]
         [ div [ class "min-h-full flex flex-col lg:flex-row lg:h-screen" ]
             [ -- Section 1: Header (order-1 on mobile, part of left column on desktop)
-              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-100/50 lg:flex lg:flex-col lg:h-screen" ]
+              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-200 lg:bg-base-100/50 lg:flex lg:flex-col lg:h-screen" ]
                 [ -- Header
                   div [ class "p-6 border-b border-base-300/50 flex-shrink-0" ]
                     [ div [ class "flex items-center justify-between mb-4" ]
@@ -1238,59 +1238,79 @@ viewShopWithUIState model gameState shopState playerId uiState =
                     [ viewPickTimeline shopState playerId playerName opponentName ]
                 , -- Preview Panel (hidden on mobile, shown on desktop)
                   div [ class "hidden lg:flex flex-1 flex-col overflow-hidden" ]
-                    [ viewPreviewPanelByState uiState ]
+                    [ viewPreviewPanelByState uiState model.shopCountdown ]
                 ]
             , -- Section 3: Cards (order-3 on mobile only, 2 rows with horizontal scroll)
-              div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-100/50" ]
-                [ -- Arsenal Section (Permanent Upgrades)
-                  div [ class "mb-4" ]
-                    [ div [ class "mb-2 flex items-center gap-2" ]
-                        [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
-                            [ text "Arsenal" ]
-                        , div [ class "text-[10px] text-base-content/40" ]
-                            [ text "Permanent Upgrades" ]
+              -- OR countdown display if shop is complete
+              case uiState of
+                ShopComplete _ ->
+                    -- Show countdown on mobile instead of cards
+                    div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-200 flex items-center justify-center flex-1" ]
+                        [ div [ class "text-center" ]
+                            [ div [ class "text-2xl font-bold text-emerald-400 mb-2" ]
+                                [ text "Shop Complete!" ]
+                            , div [ class "text-lg text-base-content/60" ]
+                                [ case model.shopCountdown of
+                                    Just seconds ->
+                                        text ("Starting in " ++ String.fromInt seconds ++ "...")
+                                    Nothing ->
+                                        text "Starting..."
+                                ]
+                            ]
                         ]
-                    , div [ class "flex gap-2 overflow-x-auto pb-2" ]
-                        (availableCards
-                            |> List.take 8
-                            |> List.indexedMap
-                                (\index shopCard ->
-                                    viewShopCardMinimal shopCard index canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
+
+                _ ->
+                    -- Show cards normally
+                    div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-200" ]
+                        [ -- Arsenal Section (Permanent Upgrades)
+                          div [ class "mb-4" ]
+                            [ div [ class "mb-2 flex items-center gap-2" ]
+                                [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
+                                    [ text "Arsenal" ]
+                                , div [ class "text-[10px] text-base-content/40" ]
+                                    [ text "Permanent Upgrades" ]
+                                ]
+                            , div [ class "flex gap-2 overflow-x-auto pb-2" ]
+                                (availableCards
+                                    |> List.take 8
+                                    |> List.indexedMap
+                                        (\index shopCard ->
+                                            viewShopCardMinimal shopCard index canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
+                                        )
                                 )
-                        )
-                    ]
-                , -- Tactical Ops Section (Action Cards)
-                  div []
-                    [ div [ class "mb-2 flex items-center gap-2" ]
-                        [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
-                            [ text "Tactical Ops" ]
-                        , div [ class "text-[10px] text-base-content/40" ]
-                            [ text "Temporary Battlefield Advantage" ]
+                            ]
+                        , -- Tactical Ops Section (Action Cards)
+                          div []
+                            [ div [ class "mb-2 flex items-center gap-2" ]
+                                [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
+                                    [ text "Tactical Ops" ]
+                                , div [ class "text-[10px] text-base-content/40" ]
+                                    [ text "Temporary Battlefield Advantage" ]
+                                ]
+                            , div [ class "flex gap-2 overflow-x-auto pb-2" ]
+                                (availableCards
+                                    |> List.drop 8
+                                    |> List.indexedMap
+                                        (\relIndex shopCard ->
+                                            let
+                                                index =
+                                                    relIndex + 8
+                                            in
+                                            viewShopCardMinimal shopCard index canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
+                                        )
+                                )
+                            ]
                         ]
-                    , div [ class "flex gap-2 overflow-x-auto pb-2" ]
-                        (availableCards
-                            |> List.drop 8
-                            |> List.indexedMap
-                                (\relIndex shopCard ->
-                                    let
-                                        index =
-                                            relIndex + 8
-                                    in
-                                    viewShopCardMinimal shopCard index canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
-                                )
-                        )
-                    ]
-                ]
             , -- Section 4: Preview (order-4 on mobile only) - now a bottom sheet modal
-              viewMobilePreviewModal uiState
+              viewMobilePreviewModal uiState model.shopCountdown
             ]
         ]
 
 
 {-| Mobile preview modal - slides up from bottom when there's content to show
 -}
-viewMobilePreviewModal : ShopUIState -> Html Msg
-viewMobilePreviewModal uiState =
+viewMobilePreviewModal : ShopUIState -> Maybe Int -> Html Msg
+viewMobilePreviewModal uiState shopCountdown =
     let
         -- Check if there's something to preview
         hasContent =
@@ -1320,7 +1340,7 @@ viewMobilePreviewModal uiState =
               div [ class "relative w-full max-h-[85vh] bg-base-100 rounded-t-2xl shadow-2xl overflow-hidden animate-slide-up" ]
                 [ -- Content (scrollable)
                   div [ class "overflow-y-auto max-h-[85vh]" ]
-                    [ viewPreviewPanelByState uiState ]
+                    [ viewPreviewPanelByState uiState shopCountdown ]
                 ]
             ]
 
@@ -1815,8 +1835,8 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
 
 {-| Preview panel - exhaustive pattern match on UI state
 -}
-viewPreviewPanelByState : ShopUIState -> Html Msg
-viewPreviewPanelByState uiState =
+viewPreviewPanelByState : ShopUIState -> Maybe Int -> Html Msg
+viewPreviewPanelByState uiState shopCountdown =
     case uiState of
         DestroyPhase data ->
             if data.isMyTurn then
@@ -1846,7 +1866,7 @@ viewPreviewPanelByState uiState =
             viewPlusBombSelectionPreview data
 
         ShopComplete _ ->
-            viewShopCompletePreview
+            viewShopCompletePreview shopCountdown
 
 
 {-| Destroy phase instructions
@@ -1904,8 +1924,8 @@ viewEmptyBrowsingPreview =
 
 {-| Shop complete preview
 -}
-viewShopCompletePreview : Html Msg
-viewShopCompletePreview =
+viewShopCompletePreview : Maybe Int -> Html Msg
+viewShopCompletePreview shopCountdown =
     div [ class "flex-1 flex items-center justify-center" ]
         [ div [ class "text-center" ]
             [ div [ class "w-20 h-20 rounded-full bg-emerald-500/10 mx-auto mb-4 flex items-center justify-center" ]
@@ -1915,7 +1935,13 @@ viewShopCompletePreview =
             , p [ class "text-base-content/60 text-lg font-light mb-2" ]
                 [ text "All picks complete!" ]
             , p [ class "text-base-content/40 text-sm" ]
-                [ text "Next round starting soon..." ]
+                [ case shopCountdown of
+                    Just seconds ->
+                        text ("Starting in " ++ String.fromInt seconds ++ "...")
+
+                    Nothing ->
+                        text "Starting..."
+                ]
             ]
         ]
 
@@ -2176,14 +2202,17 @@ viewShopCardPreview data =
                             [ text data.card.description ]
                         ]
             ]
-        , -- Action Buttons (always inline with Cancel on mobile)
+        , -- Action Buttons (always inline with Cancel on mobile, except destroy mode)
           div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
-            [ -- Cancel button (mobile only)
-              button
-                [ onClick ClearCardPreview
-                , class "lg:hidden px-6 py-3 rounded-full font-medium transition-all text-base-content bg-base-300/50 hover:bg-base-300"
-                ]
-                [ text "Cancel" ]
+            [ -- Cancel button (mobile only, not in destroy mode)
+              if not data.isDestroyMode then
+                button
+                    [ onClick ClearCardPreview
+                    , class "lg:hidden px-6 py-3 rounded-full font-medium transition-all text-base-content bg-base-300/50 hover:bg-base-300"
+                    ]
+                    [ text "Cancel" ]
+              else
+                text ""
             , -- Primary action button
               if data.isDestroyMode then
                 button
