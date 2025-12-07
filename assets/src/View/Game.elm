@@ -950,14 +950,23 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
 
                     hearts =
                         String.repeat winnerLives "❤️"
+
+                    -- Determine message based on lives remaining
+                    ( verb, livesMessage ) =
+                        if winnerLives == gameState.initialLives then
+                            ( "absolutely stomped", "without losing a life" )
+
+                        else if winnerLives == 1 then
+                            ( "barely defeated", "with just one life remaining" )
+
+                        else
+                            ( "crushed", "with " ++ hearts ++ " " ++ String.fromInt winnerLives ++ " lives remaining" )
                   in
                   Html.span []
                     [ Html.span [ class "font-bold text-emerald-400" ] [ text winnerName ]
-                    , text " defeated "
+                    , text (" " ++ verb ++ " ")
                     , Html.span [ class "font-bold text-rose-400" ] [ text loserName ]
-                    , text " with "
-                    , Html.span [ class "font-bold" ] [ text hearts ]
-                    , text (" " ++ String.fromInt winnerLives ++ "/" ++ String.fromInt gameState.initialLives ++ " lives remaining")
+                    , text (" " ++ livesMessage)
                     ]
                 ]
             , -- Rematch section

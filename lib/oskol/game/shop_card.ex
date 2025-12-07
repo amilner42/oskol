@@ -159,8 +159,12 @@ defmodule Oskol.Game.ShopCard do
       }),
       do: "Fortify"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: _amt}}),
-    do: "Amplify"
+  def card_name(%__MODULE__{
+        type: :deck_builder,
+        subtype: :bonus_mult,
+        metadata: %{amount: _amt}
+      }),
+      do: "Amplify"
 
   def card_name(%__MODULE__{type: :deck_builder, subtype: :add_card}), do: "Supply Drop"
   def card_name(%__MODULE__{type: :deck_builder, subtype: :remove_card}), do: "Discharge"
@@ -247,19 +251,35 @@ defmodule Oskol.Game.ShopCard do
     "Remove up to 2 cards from your deck"
   end
 
-  def card_description(%__MODULE__{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :hearts}}) do
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :hearts}
+      }) do
     "Change up to 3 cards to Hearts"
   end
 
-  def card_description(%__MODULE__{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :diamonds}}) do
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :diamonds}
+      }) do
     "Change up to 3 cards to Diamonds"
   end
 
-  def card_description(%__MODULE__{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :clubs}}) do
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :clubs}
+      }) do
     "Change up to 3 cards to Clubs"
   end
 
-  def card_description(%__MODULE__{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :spades}}) do
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :spades}
+      }) do
     "Change up to 3 cards to Spades"
   end
 
