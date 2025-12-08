@@ -818,9 +818,11 @@ defmodule OskolWeb.LandingLive do
           type="button"
           phx-click={JS.dispatch("phx:share", to: "#share-link")}
           class="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/50 hover:text-base-content/70 transition-all"
+          id="invite-button"
         >
           <span id="share-link" class="hidden">{url(~p"/?game=#{@game_name}")}</span>
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <!-- Share icon - mobile only -->
+          <svg class="w-3.5 h-3.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -828,7 +830,12 @@ defmodule OskolWeb.LandingLive do
               d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
             />
           </svg>
-          <span>Invite friend</span>
+          <!-- Clipboard icon - desktop only, will change to checkmark -->
+          <span class="hero-clipboard w-3.5 h-3.5 hidden sm:inline" id="invite-icon"></span>
+          <!-- Mobile text -->
+          <span class="sm:hidden">Invite friend</span>
+          <!-- Desktop text -->
+          <span class="hidden sm:inline">Copy Invite Link</span>
         </button>
       </div>
 
@@ -1131,9 +1138,22 @@ defmodule OskolWeb.LandingLive do
 
       window.addEventListener("phx:share", (event) => {
         const text = event.target.innerText || event.target.textContent;
+        const button = event.target.closest('button');
+        const inviteIcon = button.querySelector('#invite-icon');
 
-        // Check if Web Share API is supported
-        if (navigator.share) {
+        // Desktop: Always copy to clipboard (has invite-icon element)
+        if (inviteIcon) {
+          navigator.clipboard.writeText(text).then(() => {
+            inviteIcon.classList.remove('hero-clipboard');
+            inviteIcon.classList.add('hero-check', 'text-green-500');
+            setTimeout(() => {
+              inviteIcon.classList.remove('hero-check', 'text-green-500');
+              inviteIcon.classList.add('hero-clipboard');
+            }, 1000);
+          });
+        }
+        // Mobile: Use native share if available, otherwise copy
+        else if (navigator.share) {
           navigator.share({
             url: text
           }).catch((error) => {
@@ -1141,17 +1161,18 @@ defmodule OskolWeb.LandingLive do
             console.log('Share cancelled or failed:', error);
           });
         } else {
-          // Fallback to copy if Web Share API not supported
+          // Mobile fallback: copy and show checkmark on SVG
           navigator.clipboard.writeText(text).then(() => {
-            const button = event.target.closest('button');
             const svg = button.querySelector('svg');
-            const originalPath = svg.innerHTML;
-            svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
-            svg.classList.add('text-green-500');
-            setTimeout(() => {
-              svg.innerHTML = originalPath;
-              svg.classList.remove('text-green-500');
-            }, 1000);
+            if (svg) {
+              const originalPath = svg.innerHTML;
+              svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+              svg.classList.add('text-green-500');
+              setTimeout(() => {
+                svg.innerHTML = originalPath;
+                svg.classList.remove('text-green-500');
+              }, 1000);
+            }
           });
         }
       });
