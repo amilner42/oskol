@@ -2029,9 +2029,7 @@ viewShopCompletePreview : Maybe Int -> Html Msg
 viewShopCompletePreview shopCountdown =
     div [ class "flex-1 flex items-center justify-center" ]
         [ div [ class "text-center" ]
-            [ div [ class "w-20 h-20 rounded-full bg-emerald-500/10 mx-auto mb-4 flex items-center justify-center" ]
-                [ Heroicons.Outline.checkCircle [ SvgAttr.class "w-12 h-12 text-emerald-500" ] ]
-            , p [ class "text-base-content/60 text-lg font-light mb-2" ]
+            [ p [ class "text-base-content/60 text-lg font-light mb-2" ]
                 [ text "All Picks Complete" ]
             , p [ class "text-base-content/40 text-sm" ]
                 [ case shopCountdown of
