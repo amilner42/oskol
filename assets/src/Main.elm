@@ -240,9 +240,9 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
                         -- Card still valid, preserve preview with updated data
                         PreviewingCard
                             { prev
-                            | availableCards = newData.availableCards
-                            , pickedIndices = newData.pickedIndices
-                            , destroyedIndices = newData.destroyedIndices
+                                | availableCards = newData.availableCards
+                                , pickedIndices = newData.pickedIndices
+                                , destroyedIndices = newData.destroyedIndices
                             }
 
                     else
@@ -254,8 +254,8 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
                     if prev.isDestroyMode && isCardStillValid prev.cardIndex newData.availableCards [] newData.destroyedIndices then
                         PreviewingCard
                             { prev
-                            | availableCards = newData.availableCards
-                            , destroyedIndices = newData.destroyedIndices
+                                | availableCards = newData.availableCards
+                                , destroyedIndices = newData.destroyedIndices
                             }
 
                     else
@@ -275,9 +275,11 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
 
 {-| Check if a card at the given index is still valid for preview/selection.
 A card is valid if:
-- The index is within bounds of available cards
-- The card hasn't been picked
-- The card hasn't been destroyed
+
+  - The index is within bounds of available cards
+  - The card hasn't been picked
+  - The card hasn't been destroyed
+
 -}
 isCardStillValid : Int -> List ShopCard -> List Int -> List Int -> Bool
 isCardStillValid cardIndex availableCards pickedIndices destroyedIndices =
@@ -294,14 +296,17 @@ generateRematchId currentId =
     if String.contains "-r" currentId then
         -- Extract base and number, increment
         case String.split "-r" currentId of
-            [base, numStr] ->
+            [ base, numStr ] ->
                 case String.toInt numStr of
                     Just num ->
                         base ++ "-r" ++ String.fromInt (num + 1)
+
                     Nothing ->
                         currentId ++ "-r1"
+
             _ ->
                 currentId ++ "-r1"
+
     else
         -- First rematch
         currentId ++ "-r1"
@@ -329,8 +334,11 @@ advanceAnimationStep model currentTime =
 
                         -- First = opponent (animates first), Second = player (animates second)
                         -- This ensures each player sees their cards on their own side
-                        firstPlayerId = opponentId
-                        secondPlayerId = playerId
+                        firstPlayerId =
+                            opponentId
+
+                        secondPlayerId =
+                            playerId
 
                         firstResult =
                             Dict.get firstPlayerId handResults
@@ -506,7 +514,8 @@ update msg model =
                 -- Start countdown when shop just completed, otherwise preserve existing countdown
                 newShopCountdown =
                     if shopJustCompleted then
-                        Just 5  -- Start 5 second countdown
+                        Just 5
+                        -- Start 5 second countdown
 
                     else
                         model.shopCountdown
@@ -777,6 +786,7 @@ update msg model =
                                                     , pickedIndices = data.pickedIndices
                                                     , destroyedIndices = data.destroyedIndices
                                                     }
+
                                     else
                                         BrowsingCards
                                             { availableCards = data.availableCards
@@ -847,7 +857,7 @@ update msg model =
 
                             else
                                 -- At max capacity: remove oldest (first in list) and add new one
-                                (List.drop 1 data.selectedCardIds) ++ [ cardId ]
+                                List.drop 1 data.selectedCardIds ++ [ cardId ]
 
                         newState =
                             SelectingDeckBuilderCards { data | selectedCardIds = newSelected }

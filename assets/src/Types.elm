@@ -308,8 +308,8 @@ type alias PreviewCardData =
     , availableCards : List ShopCard
     , pickedIndices : List Int
     , destroyedIndices : List Int
-    , isDestroyMode : Bool  -- True if previewing during destroy phase
-    , skillTree : SkillTree  -- Player's skill tree for showing upgrade details
+    , isDestroyMode : Bool -- True if previewing during destroy phase
+    , skillTree : SkillTree -- Player's skill tree for showing upgrade details
     }
 
 
@@ -319,7 +319,7 @@ type alias DeckBuilderSelectionData =
     { cardIndex : Int
     , deckBuilderCard : ShopCard
     , availableCards : List Card
-    , selectedCardIds : List String  -- Changed from Set to List to preserve selection order
+    , selectedCardIds : List String -- Changed from Set to List to preserve selection order
     , maxSelection : Int
     , availableShopCards : List ShopCard
     , pickedIndices : List Int

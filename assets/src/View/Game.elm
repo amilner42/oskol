@@ -533,10 +533,17 @@ viewAnimatedScoreResults model gameState playerId playerName opponentName =
 
                 -- Always show opponent first (top), then current player (bottom)
                 -- This ensures each player sees their cards on their own side
-                firstPlayerId = opponentId
-                firstPlayerName = opponentName
-                secondPlayerId = playerId
-                secondPlayerName = playerName
+                firstPlayerId =
+                    opponentId
+
+                firstPlayerName =
+                    opponentName
+
+                secondPlayerId =
+                    playerId
+
+                secondPlayerName =
+                    playerName
 
                 firstResult =
                     Dict.get firstPlayerId handResults
@@ -962,6 +969,7 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
                     winnerColor =
                         if isWinner then
                             "text-player"
+
                         else
                             "text-opponent"
 
@@ -969,6 +977,7 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
                     loserColor =
                         if isWinner then
                             "text-opponent"
+
                         else
                             "text-player"
                   in
@@ -1061,6 +1070,7 @@ viewRematchButton playerReady opponentReady playerName opponentName =
                     , Html.Attributes.style "animation" "text-to-white 0.5s ease-out forwards"
                     ]
                     [ text buttonState.textContent ]
+
               else
                 Html.span [ class "relative z-10" ] [ text buttonState.textContent ]
             ]
@@ -1319,6 +1329,7 @@ viewShopWithUIState model gameState shopState playerId uiState =
                                 [ case model.shopCountdown of
                                     Just seconds ->
                                         text ("Starting in " ++ String.fromInt seconds ++ "...")
+
                                     Nothing ->
                                         text "Starting..."
                                 ]
@@ -1519,7 +1530,14 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
 
                     maybePosition =
                         reversedPicked
-                            |> List.indexedMap (\i cardIdx -> if cardIdx == index then Just i else Nothing)
+                            |> List.indexedMap
+                                (\i cardIdx ->
+                                    if cardIdx == index then
+                                        Just i
+
+                                    else
+                                        Nothing
+                                )
                             |> List.filterMap identity
                             |> List.head
                 in
@@ -1527,23 +1545,30 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
                     Just position ->
                         -- Determine who picked at this position (1-indexed)
                         let
-                            pickNum = position + 1
+                            pickNum =
+                                position + 1
                         in
                         if modBy 2 pickNum == 1 then
                             -- First picker
                             if shopState.firstPickerId == playerId then
                                 playerName
-                            else
-                                opponentName
-                        else
-                            -- Second picker
-                            if shopState.secondPickerId == playerId then
-                                playerName
+
                             else
                                 opponentName
 
+                        else
+                        -- Second picker
+                        if
+                            shopState.secondPickerId == playerId
+                        then
+                            playerName
+
+                        else
+                            opponentName
+
                     Nothing ->
                         "Picked"
+
             else
                 "Picked"
 
@@ -1702,8 +1727,10 @@ viewPickTimeline shopState playerId playerName opponentName =
                 Just destroyerId ->
                     if destroyerId == playerId then
                         Just playerName
+
                     else
                         Just opponentName
+
                 Nothing ->
                     Nothing
 
@@ -1742,14 +1769,17 @@ viewPickTimeline shopState playerId playerName opponentName =
 
                             isCurrent =
                                 not shopState.destroyPhaseComplete
-                                && destroyNum == (destroyedCount + 1)
-                                && destroyedCount < totalDestroys
+                                    && destroyNum
+                                    == (destroyedCount + 1)
+                                    && destroyedCount
+                                    < totalDestroys
 
                             -- Check if this is the player's action
                             isPlayerAction =
                                 case shopState.destroyerId of
                                     Just destroyerId ->
                                         destroyerId == playerId
+
                                     Nothing ->
                                         False
                         in
@@ -1772,6 +1802,7 @@ viewPickTimeline shopState playerId playerName opponentName =
                             pickerId =
                                 if modBy 2 pickNum == 1 then
                                     shopState.firstPickerId
+
                                 else
                                     shopState.secondPickerId
 
@@ -1793,8 +1824,10 @@ viewPickTimeline shopState playerId playerName opponentName =
 
                             isCurrent =
                                 shopState.destroyPhaseComplete
-                                && pickNum == (pickedCount + 1)
-                                && pickedCount < totalPicks
+                                    && pickNum
+                                    == (pickedCount + 1)
+                                    && pickedCount
+                                    < totalPicks
 
                             -- Check if this is the player's pick
                             isPlayerAction =
@@ -1850,6 +1883,7 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
             if maybeCard /= Nothing then
                 if slotType == "DESTROY" then
                     ( "bg-base-100 border-rose-400/30", "text-rose-500/60" )
+
                 else
                     ( "bg-base-100 border-base-300/50", "text-base-content/40" )
 
@@ -1857,6 +1891,7 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
                 -- Use player color for the glow (blue for player, orange for opponent)
                 if isPlayerAction then
                     ( "bg-base-200/50 border-dashed animate-pulse border-blue-400", "text-base-content/40" )
+
                 else
                     ( "bg-base-200/50 border-dashed animate-pulse border-orange-400", "text-base-content/40" )
 
@@ -2275,6 +2310,7 @@ viewShopCardPreview data =
                     , class "lg:hidden px-6 py-3 rounded-full font-medium transition-all text-base-content bg-base-300/50 hover:bg-base-300"
                     ]
                     [ text "Cancel" ]
+
               else
                 text ""
             , -- Primary action button
@@ -2353,16 +2389,26 @@ viewDeckBuilderSelectionPreview data =
         , -- Action Buttons (always show confirm, disabled when empty)
           div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
             [ let
-                hasSelection = not (List.isEmpty data.selectedCardIds)
+                hasSelection =
+                    not (List.isEmpty data.selectedCardIds)
               in
               button
-                [ onClick (if hasSelection then ConfirmSelection else NoOp)
-                , class ("px-8 py-3 rounded-full font-medium transition-all " ++
-                    if hasSelection then
-                        "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
-                    else
-                        "text-base-content/30 bg-base-300/30 cursor-not-allowed"
-                  )
+                [ onClick
+                    (if hasSelection then
+                        ConfirmSelection
+
+                     else
+                        NoOp
+                    )
+                , class
+                    ("px-8 py-3 rounded-full font-medium transition-all "
+                        ++ (if hasSelection then
+                                "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
+
+                            else
+                                "text-base-content/30 bg-base-300/30 cursor-not-allowed"
+                           )
+                    )
                 ]
                 [ text "Confirm" ]
             ]
@@ -2406,16 +2452,26 @@ viewPlusBombSelectionPreview data =
         , -- Action Buttons (always show confirm, disabled when empty)
           div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
             [ let
-                hasSelection = data.selectedCardId /= Nothing
+                hasSelection =
+                    data.selectedCardId /= Nothing
               in
               button
-                [ onClick (if hasSelection then ConfirmSelection else NoOp)
-                , class ("px-8 py-3 rounded-full font-medium transition-all " ++
-                    if hasSelection then
-                        "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
-                    else
-                        "text-base-content/30 bg-base-300/30 cursor-not-allowed"
-                  )
+                [ onClick
+                    (if hasSelection then
+                        ConfirmSelection
+
+                     else
+                        NoOp
+                    )
+                , class
+                    ("px-8 py-3 rounded-full font-medium transition-all "
+                        ++ (if hasSelection then
+                                "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
+
+                            else
+                                "text-base-content/30 bg-base-300/30 cursor-not-allowed"
+                           )
+                    )
                 ]
                 [ text "Confirm" ]
             ]
@@ -3048,15 +3104,15 @@ viewTopCenterBar gameState player opponent =
             )
         , -- Score differential (bottom row)
           if playerWinning && scoreDiff > 0 then
-              span [ class "text-xs font-semibold text-player" ]
-                  [ text ("+" ++ String.fromInt scoreDiff) ]
+            span [ class "text-xs font-semibold text-player" ]
+                [ text ("+" ++ String.fromInt scoreDiff) ]
 
           else if opponentWinning && scoreDiff > 0 then
-              span [ class "text-xs font-semibold text-opponent" ]
-                  [ text ("+" ++ String.fromInt scoreDiff) ]
+            span [ class "text-xs font-semibold text-opponent" ]
+                [ text ("+" ++ String.fromInt scoreDiff) ]
 
           else
-              text ""
+            text ""
         ]
 
 
@@ -3546,7 +3602,7 @@ type alias Badge =
 
 
 {-| Get list of active sabotage badges for a player
-Mirrors the get_sabotage_badges function from gameplay.ex:421
+Mirrors the get\_sabotage\_badges function from gameplay.ex:421
 -}
 getSabotageBadges : PlayerState -> List Badge
 getSabotageBadges player =
@@ -3794,5 +3850,3 @@ viewCenterboardBadges player opponent =
 
     else
         text ""
-
-
