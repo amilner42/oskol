@@ -247,11 +247,11 @@ defmodule Oskol.Game.ShopState do
     do: %ShopCard{
       type: :deck_builder,
       subtype: :bonus_chips,
-      metadata: %{amount: 40, max_cards: 1}
+      metadata: %{amount: 40, max_cards: 2}
     }
 
   defp card_key_to_shop_card(:logistics, :bonus_mult),
-    do: %ShopCard{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: 1, max_cards: 1}}
+    do: %ShopCard{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: 1, max_cards: 2}}
 
   defp card_key_to_shop_card(:logistics, :add_card),
     do: %ShopCard{type: :deck_builder, subtype: :add_card, metadata: %{max_cards: 1}}

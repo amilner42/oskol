@@ -90,7 +90,7 @@ viewGameState model gameState =
 
                         _ ->
                             -- Normal game layout
-                            div [ class "flex flex-col h-screen bg-[#1a1d29] overflow-hidden" ]
+                            div [ class "flex flex-col h-screen-safe bg-[#1a1d29] overflow-hidden" ]
                                 [ -- Top - Opponent Cards
                                   div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-[#0C0F14]" ]
                                     [ viewOpponentCards opponent model.newCardIds model.cardSort
@@ -1234,10 +1234,10 @@ viewShopWithUIState model gameState shopState playerId uiState =
                 _ ->
                     Nothing
     in
-    div [ class "h-screen bg-base-200 lg:bg-gradient-to-br lg:from-base-200 lg:via-base-100 lg:to-base-200 overflow-auto" ]
-        [ div [ class "min-h-full flex flex-col lg:flex-row lg:h-screen" ]
+    div [ class "h-screen-safe bg-base-200 lg:bg-gradient-to-br lg:from-base-200 lg:via-base-100 lg:to-base-200 overflow-auto" ]
+        [ div [ class "min-h-full flex flex-col lg:flex-row lg:h-screen-safe" ]
             [ -- Section 1: Header (order-1 on mobile, part of left column on desktop)
-              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-200 lg:bg-base-100/50 lg:flex lg:flex-col lg:h-screen" ]
+              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-200 lg:bg-base-100/50 lg:flex lg:flex-col lg:h-screen-safe" ]
                 [ -- Header
                   div [ class "p-6 border-b border-base-300/50 flex-shrink-0" ]
                     [ div [ class "flex items-center justify-between mb-4" ]

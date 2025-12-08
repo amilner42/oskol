@@ -232,7 +232,7 @@ defmodule Oskol.Game.ShopCard do
         subtype: :bonus_chips,
         metadata: %{amount: amt}
       }) do
-    "Add +#{amt} chips to a card in your deck"
+    "Add +#{amt} chips to up to 2 cards in your deck"
   end
 
   def card_description(%__MODULE__{
@@ -240,7 +240,7 @@ defmodule Oskol.Game.ShopCard do
         subtype: :bonus_mult,
         metadata: %{amount: amt}
       }) do
-    "Add +#{amt} multiplier to a card in your deck"
+    "Add +#{amt} multiplier to up to 2 cards in your deck"
   end
 
   def card_description(%__MODULE__{type: :deck_builder, subtype: :add_card}) do
@@ -303,6 +303,8 @@ defmodule Oskol.Game.ShopCard do
   def max_selection(%__MODULE__{type: :deck_builder, subtype: :change_suit}), do: 3
   def max_selection(%__MODULE__{type: :deck_builder, subtype: :remove_card}), do: 2
   def max_selection(%__MODULE__{type: :deck_builder, subtype: :increase_rank}), do: 2
+  def max_selection(%__MODULE__{type: :deck_builder, subtype: :bonus_chips}), do: 2
+  def max_selection(%__MODULE__{type: :deck_builder, subtype: :bonus_mult}), do: 2
   def max_selection(%__MODULE__{type: :sabotage, subtype: :plus_bomb}), do: 1
   def max_selection(%__MODULE__{type: :deck_builder}), do: 1
   def max_selection(%__MODULE__{}), do: 1
@@ -319,6 +321,12 @@ defmodule Oskol.Game.ShopCard do
 
   def selection_instruction(%__MODULE__{type: :deck_builder, subtype: :increase_rank}),
     do: "Select up to 2 cards to upgrade"
+
+  def selection_instruction(%__MODULE__{type: :deck_builder, subtype: :bonus_chips}),
+    do: "Select up to 2 cards to fortify"
+
+  def selection_instruction(%__MODULE__{type: :deck_builder, subtype: :bonus_mult}),
+    do: "Select up to 2 cards to amplify"
 
   def selection_instruction(%__MODULE__{type: :deck_builder}),
     do: "Select a card to enhance"
@@ -361,10 +369,12 @@ defimpl Jason.Encoder, for: Oskol.Game.ShopCard do
 
   def encode(shop_card, opts) do
     # Convert metadata atom keys to string keys for JSON encoding
+    # and add maxCards field for client-side validation
     metadata =
       shop_card.metadata
       |> Enum.map(fn {k, v} -> {Atom.to_string(k), v} end)
       |> Map.new()
+      |> Map.put("maxCards", ShopCard.max_selection(shop_card))
 
     Jason.Encode.map(
       %{

@@ -771,6 +771,12 @@ defmodule Oskol.Game.GameState do
 
                 :increase_rank ->
                   :increase_rank
+
+                :bonus_chips ->
+                  :bonus_chips
+
+                :bonus_mult ->
+                  :bonus_mult
               end
 
             {updated_players, %{type: detail_type, card_ids: selected_card_ids}}
