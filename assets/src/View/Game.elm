@@ -39,7 +39,7 @@ viewGame model =
 -}
 viewLoading : String -> Html Msg
 viewLoading message =
-    div [ class "min-h-screen bg-[#1a1d29] flex items-center justify-center" ]
+    div [ class "min-h-screen bg-[#161B1F] flex items-center justify-center" ]
         [ div [ class "text-white text-2xl" ] [ text message ]
         ]
 
