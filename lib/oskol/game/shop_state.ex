@@ -244,34 +244,57 @@ defmodule Oskol.Game.ShopState do
     do: %ShopCard{type: :level_up, subtype: hand_type}
 
   defp card_key_to_shop_card(:logistics, :bonus_chips),
-    do: %ShopCard{type: :deck_builder, subtype: :bonus_chips, metadata: %{amount: 40}}
+    do: %ShopCard{
+      type: :deck_builder,
+      subtype: :bonus_chips,
+      metadata: %{amount: 40, max_cards: 1}
+    }
 
   defp card_key_to_shop_card(:logistics, :bonus_mult),
-    do: %ShopCard{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: 1}}
+    do: %ShopCard{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: 1, max_cards: 1}}
 
   defp card_key_to_shop_card(:logistics, :add_card),
-    do: %ShopCard{type: :deck_builder, subtype: :add_card}
+    do: %ShopCard{type: :deck_builder, subtype: :add_card, metadata: %{max_cards: 1}}
 
   defp card_key_to_shop_card(:logistics, :remove_card),
-    do: %ShopCard{type: :deck_builder, subtype: :remove_card}
+    do: %ShopCard{type: :deck_builder, subtype: :remove_card, metadata: %{max_cards: 2}}
 
   defp card_key_to_shop_card(:logistics, :change_suit_hearts),
-    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :hearts}}
+    do: %ShopCard{
+      type: :deck_builder,
+      subtype: :change_suit,
+      metadata: %{suit: :hearts, max_cards: 3}
+    }
 
   defp card_key_to_shop_card(:logistics, :change_suit_diamonds),
-    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :diamonds}}
+    do: %ShopCard{
+      type: :deck_builder,
+      subtype: :change_suit,
+      metadata: %{suit: :diamonds, max_cards: 3}
+    }
 
   defp card_key_to_shop_card(:logistics, :change_suit_clubs),
-    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :clubs}}
+    do: %ShopCard{
+      type: :deck_builder,
+      subtype: :change_suit,
+      metadata: %{suit: :clubs, max_cards: 3}
+    }
 
   defp card_key_to_shop_card(:logistics, :change_suit_spades),
-    do: %ShopCard{type: :deck_builder, subtype: :change_suit, metadata: %{suit: :spades}}
+    do: %ShopCard{
+      type: :deck_builder,
+      subtype: :change_suit,
+      metadata: %{suit: :spades, max_cards: 3}
+    }
 
   defp card_key_to_shop_card(:logistics, :increase_rank),
-    do: %ShopCard{type: :deck_builder, subtype: :increase_rank}
+    do: %ShopCard{type: :deck_builder, subtype: :increase_rank, metadata: %{max_cards: 2}}
 
   defp card_key_to_shop_card(:sabotage, :scrambler), do: ShopCard.scrambler_card()
-  defp card_key_to_shop_card(:sabotage, :plus_bomb), do: ShopCard.plus_bomb_card()
+
+  defp card_key_to_shop_card(:sabotage, :plus_bomb),
+    do: %ShopCard{type: :sabotage, subtype: :plus_bomb, metadata: %{max_cards: 1}}
+
   defp card_key_to_shop_card(:sabotage, :static), do: ShopCard.static_card()
   defp card_key_to_shop_card(:sabotage, :supply_chain), do: ShopCard.supply_chain_card()
 

@@ -1,5 +1,10 @@
 {
   "dependencies": {
+    "phoenix": "^1.8.2",
     "playwright": "^1.57.0"
+  },
+  "devDependencies": {
+    "elm": "^0.19.1-6",
+    "esbuild-plugin-elm": "^0.0.12"
   }
 }

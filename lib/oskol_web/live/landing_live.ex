@@ -818,9 +818,11 @@ defmodule OskolWeb.LandingLive do
           type="button"
           phx-click={JS.dispatch("phx:share", to: "#share-link")}
           class="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/50 hover:text-base-content/70 transition-all"
+          id="invite-button"
         >
           <span id="share-link" class="hidden">{url(~p"/?game=#{@game_name}")}</span>
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <!-- Share icon - mobile only -->
+          <svg class="w-3.5 h-3.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -828,7 +830,12 @@ defmodule OskolWeb.LandingLive do
               d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
             />
           </svg>
-          <span>Invite friend</span>
+          <!-- Clipboard icon - desktop only, will change to checkmark -->
+          <span class="hero-clipboard w-3.5 h-3.5 hidden sm:inline" id="invite-icon"></span>
+          <!-- Mobile text -->
+          <span class="sm:hidden">Invite friend</span>
+          <!-- Desktop text -->
+          <span class="hidden sm:inline">Copy Invite Link</span>
         </button>
       </div>
 
@@ -962,63 +969,66 @@ defmodule OskolWeb.LandingLive do
           <% true -> %>
             <!-- No selection -->
         <% end %>
-      
+        
     <!-- Abstract SVG decoration per format -->
-      <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
-        <%= case @format do %>
-          <% "short" -> %>
-            <!-- Bullet shapes flying right -->
-            <svg
-              class="absolute inset-0 w-full h-full"
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-            >
-              <path d="M5 20 Q3 20 3 18 L3 16 Q3 14 5 14 L12 14 L16 17 L12 20 Z" fill="currentColor" />
-              <path
-                d="M70 35 Q68 35 68 33 L68 31 Q68 29 70 29 L77 29 L81 32 L77 35 Z"
-                fill="currentColor"
-              />
-              <path
-                d="M25 55 Q23 55 23 53 L23 51 Q23 49 25 49 L32 49 L36 52 L32 55 Z"
-                fill="currentColor"
-              />
-              <path
-                d="M80 75 Q78 75 78 73 L78 71 Q78 69 80 69 L87 69 L91 72 L87 75 Z"
-                fill="currentColor"
-              />
-              <path
-                d="M15 85 Q13 85 13 83 L13 81 Q13 79 15 79 L22 79 L26 82 L22 85 Z"
-                fill="currentColor"
-              />
-            </svg>
-          <% "standard" -> %>
-            <!-- Concentric circles -->
-            <svg class="absolute -right-6 -bottom-6 w-28 h-28" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="2" />
-              <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" stroke-width="2" />
-              <circle cx="50" cy="50" r="19" fill="none" stroke="currentColor" stroke-width="2" />
-              <circle cx="50" cy="50" r="6" fill="currentColor" />
-            </svg>
-          <% "extended" -> %>
-            <!-- Train track going from bottom-left to top-right -->
-            <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
-              <!-- Two parallel rails -->
-              <line x1="5" y1="108" x2="115" y2="-2" stroke="currentColor" stroke-width="2.5" />
-              <line x1="20" y1="120" x2="130" y2="10" stroke="currentColor" stroke-width="2.5" />
-              <!-- Cross ties (chunky wooden sleepers) -->
-              <line x1="9" y1="104" x2="24" y2="116" stroke="currentColor" stroke-width="4" />
-              <line x1="21" y1="92" x2="36" y2="104" stroke="currentColor" stroke-width="4" />
-              <line x1="33" y1="80" x2="48" y2="92" stroke="currentColor" stroke-width="4" />
-              <line x1="45" y1="68" x2="60" y2="80" stroke="currentColor" stroke-width="4" />
-              <line x1="57" y1="56" x2="72" y2="68" stroke="currentColor" stroke-width="4" />
-              <line x1="69" y1="44" x2="84" y2="56" stroke="currentColor" stroke-width="4" />
-              <line x1="81" y1="32" x2="96" y2="44" stroke="currentColor" stroke-width="4" />
-              <line x1="93" y1="20" x2="108" y2="32" stroke="currentColor" stroke-width="4" />
-              <line x1="105" y1="8" x2="120" y2="20" stroke="currentColor" stroke-width="4" />
-            </svg>
-        <% end %>
-      </div>
-      
+        <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
+          <%= case @format do %>
+            <% "short" -> %>
+              <!-- Bullet shapes flying right -->
+              <svg
+                class="absolute inset-0 w-full h-full"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
+                <path
+                  d="M5 20 Q3 20 3 18 L3 16 Q3 14 5 14 L12 14 L16 17 L12 20 Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M70 35 Q68 35 68 33 L68 31 Q68 29 70 29 L77 29 L81 32 L77 35 Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M25 55 Q23 55 23 53 L23 51 Q23 49 25 49 L32 49 L36 52 L32 55 Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M80 75 Q78 75 78 73 L78 71 Q78 69 80 69 L87 69 L91 72 L87 75 Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M15 85 Q13 85 13 83 L13 81 Q13 79 15 79 L22 79 L26 82 L22 85 Z"
+                  fill="currentColor"
+                />
+              </svg>
+            <% "standard" -> %>
+              <!-- Concentric circles -->
+              <svg class="absolute -right-6 -bottom-6 w-28 h-28" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="2" />
+                <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" stroke-width="2" />
+                <circle cx="50" cy="50" r="19" fill="none" stroke="currentColor" stroke-width="2" />
+                <circle cx="50" cy="50" r="6" fill="currentColor" />
+              </svg>
+            <% "extended" -> %>
+              <!-- Train track going from bottom-left to top-right -->
+              <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
+                <!-- Two parallel rails -->
+                <line x1="5" y1="108" x2="115" y2="-2" stroke="currentColor" stroke-width="2.5" />
+                <line x1="20" y1="120" x2="130" y2="10" stroke="currentColor" stroke-width="2.5" />
+                <!-- Cross ties (chunky wooden sleepers) -->
+                <line x1="9" y1="104" x2="24" y2="116" stroke="currentColor" stroke-width="4" />
+                <line x1="21" y1="92" x2="36" y2="104" stroke="currentColor" stroke-width="4" />
+                <line x1="33" y1="80" x2="48" y2="92" stroke="currentColor" stroke-width="4" />
+                <line x1="45" y1="68" x2="60" y2="80" stroke="currentColor" stroke-width="4" />
+                <line x1="57" y1="56" x2="72" y2="68" stroke="currentColor" stroke-width="4" />
+                <line x1="69" y1="44" x2="84" y2="56" stroke="currentColor" stroke-width="4" />
+                <line x1="81" y1="32" x2="96" y2="44" stroke="currentColor" stroke-width="4" />
+                <line x1="93" y1="20" x2="108" y2="32" stroke="currentColor" stroke-width="4" />
+                <line x1="105" y1="8" x2="120" y2="20" stroke="currentColor" stroke-width="4" />
+              </svg>
+          <% end %>
+        </div>
+        
     <!-- Text content - centered and stacked -->
         <div class="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1">
           <div class="text-gray-800 font-bold text-sm sm:text-lg">{@title}</div>
@@ -1128,9 +1138,22 @@ defmodule OskolWeb.LandingLive do
 
       window.addEventListener("phx:share", (event) => {
         const text = event.target.innerText || event.target.textContent;
+        const button = event.target.closest('button');
+        const inviteIcon = button.querySelector('#invite-icon');
 
-        // Check if Web Share API is supported
-        if (navigator.share) {
+        // Desktop: Always copy to clipboard (has invite-icon element)
+        if (inviteIcon) {
+          navigator.clipboard.writeText(text).then(() => {
+            inviteIcon.classList.remove('hero-clipboard');
+            inviteIcon.classList.add('hero-check', 'text-green-500');
+            setTimeout(() => {
+              inviteIcon.classList.remove('hero-check', 'text-green-500');
+              inviteIcon.classList.add('hero-clipboard');
+            }, 1000);
+          });
+        }
+        // Mobile: Use native share if available, otherwise copy
+        else if (navigator.share) {
           navigator.share({
             url: text
           }).catch((error) => {
@@ -1138,17 +1161,18 @@ defmodule OskolWeb.LandingLive do
             console.log('Share cancelled or failed:', error);
           });
         } else {
-          // Fallback to copy if Web Share API not supported
+          // Mobile fallback: copy and show checkmark on SVG
           navigator.clipboard.writeText(text).then(() => {
-            const button = event.target.closest('button');
             const svg = button.querySelector('svg');
-            const originalPath = svg.innerHTML;
-            svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
-            svg.classList.add('text-green-500');
-            setTimeout(() => {
-              svg.innerHTML = originalPath;
-              svg.classList.remove('text-green-500');
-            }, 1000);
+            if (svg) {
+              const originalPath = svg.innerHTML;
+              svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
+              svg.classList.add('text-green-500');
+              setTimeout(() => {
+                svg.innerHTML = originalPath;
+                svg.classList.remove('text-green-500');
+              }, 1000);
+            }
           });
         }
       });

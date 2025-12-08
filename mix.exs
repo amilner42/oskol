@@ -81,7 +81,7 @@ defmodule Oskol.MixProject do
       "assets.build": ["compile", "tailwind oskol", "esbuild oskol"],
       "assets.deploy": [
         "tailwind oskol --minify",
-        "esbuild oskol --minify",
+        "cmd --cd assets node build.js --deploy",
         "phx.digest"
       ],
       precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]

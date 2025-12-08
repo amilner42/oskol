@@ -12,7 +12,7 @@ defmodule Oskol.Game.GameServer do
     GenServer.start_link(__MODULE__, game_id, name: via_tuple(game_id))
   end
 
-  def join_game(game_id, player_name, player_pid) do
+  def join_game(game_id, player_name, player_pid \\ nil) do
     GenServer.call(via_tuple(game_id), {:join_game, player_name, player_pid})
   end
 
@@ -128,13 +128,14 @@ defmodule Oskol.Game.GameServer do
         {:reply, {:error, :game_already_started}, state, @timeout}
 
       true ->
-        monitor_ref = Process.monitor(player_pid)
+        # Only monitor if we have a PID
+        monitor_ref = if player_pid, do: Process.monitor(player_pid), else: nil
         player_id = generate_player_id()
 
         connection = %{
           name: player_name,
           pid: player_pid,
-          connected: true,
+          connected: player_pid != nil,
           monitor_ref: monitor_ref
         }
 

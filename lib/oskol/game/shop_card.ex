@@ -155,45 +155,49 @@ defmodule Oskol.Game.ShopCard do
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :bonus_chips,
-        metadata: %{amount: amt}
+        metadata: %{amount: _amt}
       }),
-      do: "+#{amt} Chips"
+      do: "Fortify"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :bonus_mult, metadata: %{amount: amt}}),
-    do: "+#{amt} Mult"
+  def card_name(%__MODULE__{
+        type: :deck_builder,
+        subtype: :bonus_mult,
+        metadata: %{amount: _amt}
+      }),
+      do: "Amplify"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :add_card}), do: "Add Card"
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :remove_card}), do: "Remove Cards"
+  def card_name(%__MODULE__{type: :deck_builder, subtype: :add_card}), do: "Supply Drop"
+  def card_name(%__MODULE__{type: :deck_builder, subtype: :remove_card}), do: "Discharge"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :change_suit,
         metadata: %{suit: :hearts}
       }),
-      do: "Change to ♥"
+      do: "Camo ♥"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :change_suit,
         metadata: %{suit: :diamonds}
       }),
-      do: "Change to ♦"
+      do: "Camo ♦"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :change_suit,
         metadata: %{suit: :clubs}
       }),
-      do: "Change to ♣"
+      do: "Camo ♣"
 
   def card_name(%__MODULE__{
         type: :deck_builder,
         subtype: :change_suit,
         metadata: %{suit: :spades}
       }),
-      do: "Change to ♠"
+      do: "Camo ♠"
 
-  def card_name(%__MODULE__{type: :deck_builder, subtype: :increase_rank}), do: "Increase Rank"
+  def card_name(%__MODULE__{type: :deck_builder, subtype: :increase_rank}), do: "Promote"
 
   @doc """
   Returns a description of what the card does.
@@ -247,8 +251,36 @@ defmodule Oskol.Game.ShopCard do
     "Remove up to 2 cards from your deck"
   end
 
-  def card_description(%__MODULE__{type: :deck_builder, subtype: :change_suit}) do
-    "Change up to 3 cards to the selected suit"
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :hearts}
+      }) do
+    "Change up to 3 cards to Hearts"
+  end
+
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :diamonds}
+      }) do
+    "Change up to 3 cards to Diamonds"
+  end
+
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :clubs}
+      }) do
+    "Change up to 3 cards to Clubs"
+  end
+
+  def card_description(%__MODULE__{
+        type: :deck_builder,
+        subtype: :change_suit,
+        metadata: %{suit: :spades}
+      }) do
+    "Change up to 3 cards to Spades"
   end
 
   def card_description(%__MODULE__{type: :deck_builder, subtype: :increase_rank}) do
@@ -321,5 +353,29 @@ defmodule Oskol.Game.ShopCard do
     player_deck_cards
     |> Enum.shuffle()
     |> Enum.take(8)
+  end
+end
+
+defimpl Jason.Encoder, for: Oskol.Game.ShopCard do
+  alias Oskol.Game.ShopCard
+
+  def encode(shop_card, opts) do
+    # Convert metadata atom keys to string keys for JSON encoding
+    metadata =
+      shop_card.metadata
+      |> Enum.map(fn {k, v} -> {Atom.to_string(k), v} end)
+      |> Map.new()
+
+    Jason.Encode.map(
+      %{
+        type: shop_card.type,
+        subtype: Atom.to_string(shop_card.subtype),
+        name: ShopCard.card_name(shop_card),
+        description: ShopCard.card_description(shop_card),
+        cost: 0,
+        metadata: metadata
+      },
+      opts
+    )
   end
 end

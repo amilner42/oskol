@@ -213,7 +213,7 @@ async function main() {
 
     // Check for countdown text
     const countdownText = await player1.textContent('body');
-    if (countdownText.includes('Next round in') || countdownText.includes('All picks complete')) {
+    if (countdownText.includes('Next round in') || countdownText.includes('All Picks Complete')) {
       log('Countdown timer visible!');
     }
 

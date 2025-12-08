@@ -15,7 +15,6 @@ config :oskol, OskolWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "wQYiBumdsjOT3DphnuUS1vD+hyZ5TqzjdDuHlbqkfE2fss/NcD0FqE/1dvz0UO69",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:oskol, ~w(--sourcemap=inline --watch)]},
     tailwind: {Tailwind, :install_and_run, [:oskol, ~w(--watch)]}
   ]
 
@@ -49,7 +48,8 @@ config :oskol, OskolWeb.Endpoint,
     patterns: [
       ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$",
       ~r"priv/gettext/.*(po)$",
-      ~r"lib/oskol_web/(?:controllers|live|components|router)/?.*\.(ex|heex)$"
+      ~r"lib/oskol_web/(?:controllers|live|components|router)/?.*\.(ex|heex)$",
+      ~r"assets/src/.*(elm)$"
     ]
   ]
 
