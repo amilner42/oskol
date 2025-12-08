@@ -255,6 +255,16 @@
   }
 }
 
+/* Text color transition for rematch button - gray to white as fill progresses */
+@keyframes text-to-white {
+  0% {
+    color: rgb(55, 65, 81); /* gray-700 */
+  }
+  100% {
+    color: rgb(255, 255, 255); /* white */
+  }
+}
+
 /* Score animation - card states */
 .card-not-scoring {
   opacity: 0.4;

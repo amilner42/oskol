@@ -948,9 +948,6 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
                         else
                             opponentState.lives
 
-                    hearts =
-                        String.repeat winnerLives "❤️"
-
                     -- Determine message based on lives remaining
                     ( verb, livesMessage ) =
                         if winnerLives == gameState.initialLives then
@@ -960,12 +957,26 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
                             ( "barely defeated", "with just one life remaining" )
 
                         else
-                            ( "crushed", "with " ++ hearts ++ " " ++ String.fromInt winnerLives ++ " lives remaining" )
+                            ( "crushed", "with " ++ String.fromInt winnerLives ++ " lives remaining" )
+
+                    -- Winner color: text-player if isWinner, text-opponent if opponent won
+                    winnerColor =
+                        if isWinner then
+                            "text-player"
+                        else
+                            "text-opponent"
+
+                    -- Loser color: text-opponent if isWinner, text-player if opponent won
+                    loserColor =
+                        if isWinner then
+                            "text-opponent"
+                        else
+                            "text-player"
                   in
                   Html.span []
-                    [ Html.span [ class "font-bold text-emerald-400" ] [ text winnerName ]
+                    [ Html.span [ class ("font-bold " ++ winnerColor) ] [ text winnerName ]
                     , text (" " ++ verb ++ " ")
-                    , Html.span [ class "font-bold text-rose-400" ] [ text loserName ]
+                    , Html.span [ class ("font-bold " ++ loserColor) ] [ text loserName ]
                     , text (" " ++ livesMessage)
                     ]
                 ]
@@ -1011,8 +1022,8 @@ viewRematchButton playerReady opponentReady playerName opponentName =
                     }
 
                 ( False, False ) ->
-                    -- Neither ready - white button with dark text
-                    { bgClasses = "bg-white hover:bg-gray-50 text-gray-900 shadow-md hover:shadow-lg"
+                    -- Neither ready - white button with gray text
+                    { bgClasses = "bg-white hover:bg-gray-50 text-gray-700 shadow-md hover:shadow-lg"
                     , borderClasses = "border-gray-200"
                     , textContent = "Rematch"
                     , clickable = True
@@ -1044,8 +1055,15 @@ viewRematchButton playerReady opponentReady playerName opponentName =
 
               else
                 text ""
-            , -- Button text
-              Html.span [ class "relative z-10" ] [ text buttonState.textContent ]
+            , -- Button text with color animation when filling
+              if buttonState.showFill then
+                Html.span
+                    [ class "relative z-10"
+                    , Html.Attributes.style "animation" "text-to-white 0.5s ease-out forwards"
+                    ]
+                    [ text buttonState.textContent ]
+              else
+                Html.span [ class "relative z-10" ] [ text buttonState.textContent ]
             ]
         , -- Status text below button
           case ( playerReady, opponentReady ) of
