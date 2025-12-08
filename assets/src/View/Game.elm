@@ -1877,7 +1877,11 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
                     String.fromInt n ++ "TH"
 
         label =
-            ordinal ++ " " ++ slotType
+            if slotType == "DESTROY" then
+                "DESTROY"
+
+            else
+                ordinal ++ " " ++ slotType
 
         ( containerClass, labelColor ) =
             if maybeCard /= Nothing then
@@ -1976,11 +1980,7 @@ viewDestroyInstructions : Int -> Html Msg
 viewDestroyInstructions destroysRemaining =
     div [ class "flex-1 flex items-center justify-center" ]
         [ div [ class "text-center" ]
-            [ div [ class "w-20 h-20 rounded-full bg-rose-500/10 mx-auto mb-4 flex items-center justify-center" ]
-                [ span [ class "text-4xl font-light text-rose-500" ]
-                    [ text (String.fromInt destroysRemaining) ]
-                ]
-            , p [ class "text-base-content/60 text-lg font-light mb-2" ]
+            [ p [ class "text-base-content/60 text-lg font-light mb-2" ]
                 [ text "Destroy cards from the shop" ]
             , p [ class "text-base-content/40 text-sm" ]
                 [ text
