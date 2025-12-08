@@ -531,16 +531,12 @@ viewAnimatedScoreResults model gameState playerId playerName opponentName =
                         |> List.head
                         |> Maybe.withDefault ""
 
-                -- Sort by player name alphabetically to determine animation order
-                playerNames =
-                    [ ( playerId, playerName ), ( opponentId, opponentName ) ]
-                        |> List.sortBy Tuple.second
-
-                ( firstPlayerId, firstPlayerName ) =
-                    List.head playerNames |> Maybe.withDefault ( "", "" )
-
-                ( secondPlayerId, secondPlayerName ) =
-                    List.drop 1 playerNames |> List.head |> Maybe.withDefault ( "", "" )
+                -- Always show opponent first (top), then current player (bottom)
+                -- This ensures each player sees their cards on their own side
+                firstPlayerId = opponentId
+                firstPlayerName = opponentName
+                secondPlayerId = playerId
+                secondPlayerName = playerName
 
                 firstResult =
                     Dict.get firstPlayerId handResults
@@ -1315,7 +1311,7 @@ viewShopWithUIState model gameState shopState playerId uiState =
                     div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-200 flex items-center justify-center flex-1" ]
                         [ div [ class "text-center" ]
                             [ div [ class "text-2xl font-bold text-emerald-400 mb-2" ]
-                                [ text "All picks complete" ]
+                                [ text "All Picks Complete" ]
                             , div [ class "text-lg text-base-content/60" ]
                                 [ case model.shopCountdown of
                                     Just seconds ->
@@ -1641,7 +1637,7 @@ viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previe
                     "text-base-content/40"
     in
     button
-        [ class ("w-[100px] lg:w-full aspect-[2/3] rounded-xl p-2 lg:p-4 flex flex-col transition-all relative overflow-hidden flex-shrink-0 bg-base-100 border-2 " ++ borderClass ++ " " ++ opacityClass ++ " " ++ cursorClass)
+        [ class ("w-[100px] lg:w-full aspect-[2/3] rounded-xl p-2 flex flex-col transition-all relative overflow-hidden flex-shrink-0 bg-base-100 border-2 " ++ borderClass ++ " " ++ opacityClass ++ " " ++ cursorClass)
         , onClick
             (if isDisabled then
                 NoOp
@@ -2000,7 +1996,7 @@ viewShopCompletePreview shopCountdown =
                     [ text "✓" ]
                 ]
             , p [ class "text-base-content/60 text-lg font-light mb-2" ]
-                [ text "All picks complete" ]
+                [ text "All Picks Complete" ]
             , p [ class "text-base-content/40 text-sm" ]
                 [ case shopCountdown of
                     Just seconds ->
@@ -2716,7 +2712,7 @@ viewEmptyPreview shopState canPick =
                             [ text "5" ]
                         ]
                     , p [ class "text-base-content/60 text-lg font-light mb-2" ]
-                        [ text "All picks complete" ]
+                        [ text "All Picks Complete" ]
                     , p [ class "text-base-content/40 text-sm" ]
                         [ text "Next round starting in..." ]
                     ]
