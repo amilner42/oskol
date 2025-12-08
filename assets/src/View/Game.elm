@@ -3054,11 +3054,7 @@ viewTopCenterBar gameState player opponent =
             totalHands - player.handsRemaining
 
         currentHand =
-            if player.handsRemaining > 0 then
-                handsPlayed + 1
-
-            else
-                totalHands
+            handsPlayed + 1
 
         playerScore =
             player.currentRoundScore
