@@ -1141,8 +1141,12 @@ defmodule OskolWeb.LandingLive do
         const button = event.target.closest('button');
         const inviteIcon = button.querySelector('#invite-icon');
 
-        // Desktop: Always copy to clipboard (has invite-icon element)
-        if (inviteIcon) {
+        // Check if invite-icon is actually visible (not just present in DOM)
+        // On mobile it exists but is hidden via 'hidden sm:inline' class
+        const isDesktop = inviteIcon && window.getComputedStyle(inviteIcon).display !== 'none';
+
+        // Desktop: Always copy to clipboard (invite-icon is visible)
+        if (isDesktop) {
           navigator.clipboard.writeText(text).then(() => {
             inviteIcon.classList.remove('hero-clipboard');
             inviteIcon.classList.add('hero-check', 'text-green-500');
