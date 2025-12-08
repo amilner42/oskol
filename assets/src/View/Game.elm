@@ -1315,7 +1315,7 @@ viewShopWithUIState model gameState shopState playerId uiState =
                     div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-200 flex items-center justify-center flex-1" ]
                         [ div [ class "text-center" ]
                             [ div [ class "text-2xl font-bold text-emerald-400 mb-2" ]
-                                [ text "Shop Complete!" ]
+                                [ text "All picks complete" ]
                             , div [ class "text-lg text-base-content/60" ]
                                 [ case model.shopCountdown of
                                     Just seconds ->
@@ -2000,7 +2000,7 @@ viewShopCompletePreview shopCountdown =
                     [ text "✓" ]
                 ]
             , p [ class "text-base-content/60 text-lg font-light mb-2" ]
-                [ text "All picks complete!" ]
+                [ text "All picks complete" ]
             , p [ class "text-base-content/40 text-sm" ]
                 [ case shopCountdown of
                     Just seconds ->
@@ -2716,7 +2716,7 @@ viewEmptyPreview shopState canPick =
                             [ text "5" ]
                         ]
                     , p [ class "text-base-content/60 text-lg font-light mb-2" ]
-                        [ text "All picks complete!" ]
+                        [ text "All picks complete" ]
                     , p [ class "text-base-content/40 text-sm" ]
                         [ text "Next round starting in..." ]
                     ]
