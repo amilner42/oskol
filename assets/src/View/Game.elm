@@ -551,6 +551,9 @@ viewAnimatedScoreResults model gameState playerId playerName opponentName =
                     Dict.get secondPlayerId gameState.players
 
                 -- Determine animation state for each player
+                -- First shown (opponent at top) animates first → OpponentPhases → isFirstPlayer=true
+                -- Second shown (player at bottom) animates second → PlayerPhases → isFirstPlayer=false
+                -- Note: "Opponent/Player" in phase names refers to animation order, not game roles
                 firstAnimState =
                     getPlayerAnimationState model.scoreAnimation firstResult True
 

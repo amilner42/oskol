@@ -320,20 +320,17 @@ advanceAnimationStep model currentTime =
             case ( model.playerId, gameState.lastHandResults ) of
                 ( Just playerId, Just handResults ) ->
                     let
-                        -- Get both player results
-                        playerNames =
-                            Dict.toList gameState.playerNames
-                                |> List.sortBy Tuple.second
-                                |> List.map Tuple.first
+                        -- Get opponent ID
+                        opponentId =
+                            Dict.keys gameState.players
+                                |> List.filter (\id -> id /= playerId)
+                                |> List.head
+                                |> Maybe.withDefault ""
 
-                        -- Determine alphabetical order (first player = opponent in animation phases)
-                        ( firstPlayerId, secondPlayerId ) =
-                            case playerNames of
-                                [ p1, p2 ] ->
-                                    ( p1, p2 )
-
-                                _ ->
-                                    ( "", "" )
+                        -- First = opponent (animates first), Second = player (animates second)
+                        -- This ensures each player sees their cards on their own side
+                        firstPlayerId = opponentId
+                        secondPlayerId = playerId
 
                         firstResult =
                             Dict.get firstPlayerId handResults
