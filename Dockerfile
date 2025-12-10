@@ -20,25 +20,35 @@ ARG RUNNER_IMAGE="docker.io/debian:${DEBIAN_VERSION}"
 
 FROM ${BUILDER_IMAGE} AS builder
 
-# install build dependencies (including Node.js for Elm compilation)
+# install build dependencies (including Node.js for Elm compilation and Gleam)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends build-essential git curl \
   && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
   && apt-get install -y nodejs \
   && rm -rf /var/lib/apt/lists/*
 
+# install Gleam compiler
+ARG GLEAM_VERSION=1.13.0
+RUN curl -Lo gleam.tar.gz "https://github.com/gleam-lang/gleam/releases/download/v${GLEAM_VERSION}/gleam-v${GLEAM_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+  && tar -xzf gleam.tar.gz \
+  && mv gleam /usr/local/bin/gleam \
+  && rm gleam.tar.gz \
+  && chmod +x /usr/local/bin/gleam
+
 # prepare build dir
 WORKDIR /app
 
-# install hex + rebar
+# install hex + rebar + mix_gleam archive
 RUN mix local.hex --force \
-  && mix local.rebar --force
+  && mix local.rebar --force \
+  && mix archive.install hex mix_gleam 0.6.2 --force
 
 # set build ENV
 ENV MIX_ENV="prod"
 
 # install mix dependencies
 COPY mix.exs mix.lock ./
+COPY gleam.toml ./
 RUN mix deps.get --only $MIX_ENV
 RUN mkdir config
 
@@ -58,7 +68,10 @@ COPY priv priv
 
 COPY lib lib
 
-# Compile the release
+# Copy Gleam source code
+COPY src src
+
+# Compile the release (including Gleam)
 RUN mix compile
 
 # Package source code for Sentry

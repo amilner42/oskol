@@ -7,10 +7,14 @@ defmodule Oskol.MixProject do
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
+      erlc_paths: ["build/dev/erlang/oskol/_gleam_artefacts"],
+      erlc_include_path: "build/dev/erlang/oskol/include",
+      prune_code_paths: false,
       start_permanent: Mix.env() == :prod,
+      archives: [mix_gleam: "~> 0.6"],
       aliases: aliases(),
       deps: deps(),
-      compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      compilers: [:gleam, :phoenix_live_view | Mix.compilers()],
       listeners: [Phoenix.CodeReloader]
     ]
   end
@@ -76,6 +80,7 @@ defmodule Oskol.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
+      "deps.get": ["deps.get", "gleam.deps.get"],
       setup: ["deps.get", "assets.setup", "assets.build"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind oskol", "esbuild oskol"],

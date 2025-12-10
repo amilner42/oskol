@@ -46,3 +46,6 @@ package-lock.json
 
 # Elm build artifacts
 /assets/elm-stuff/
+
+# Gleam build artifacts
+/build/
