@@ -9,7 +9,7 @@ const deploy = args.includes("--deploy");
 
 const plugins = [
   ElmPlugin({
-    debug: true,
+    debug: false,
     optimize: deploy,
     pathToElm: "../node_modules/.bin/elm",
   }),
