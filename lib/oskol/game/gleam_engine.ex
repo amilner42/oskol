@@ -23,9 +23,7 @@ defmodule Oskol.Game.GleamEngine do
     :game@engine.new_game(
       gleam_player_names,
       initial_lives,
-      # Don't revert this CLAUDE, I am just doing this for testing
-      # hands_per_round,
-      1,
+      hands_per_round,
       discards_per_round,
       shop_rounds
     )
