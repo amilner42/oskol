@@ -22,12 +22,9 @@ defmodule OskolWeb.Router do
   end
 
   # Other scopes may use custom stacks.
-  scope "/api", OskolWeb do
-    pipe_through :api
-
-    get "/gleam/hello", GleamController, :hello
-    get "/gleam/hello/:name", GleamController, :hello_name
-  end
+  # scope "/api", OskolWeb do
+  #   pipe_through :api
+  # end
 
   # Enable LiveDashboard in development
   if Application.compile_env(:oskol, :dev_routes) do

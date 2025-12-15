@@ -4,6 +4,7 @@ module View.Game exposing (viewGame)
 -}
 
 import Dict exposing (Dict)
+import Helpers exposing (buildGameState, isDeckBuilderCard, isDenialCard, isLevelUpCard, isPlusBombCard, isSabotageCard, levelUpHandType, shopCardDescription, shopCardId, shopCardName)
 import Heroicons.Outline
 import Heroicons.Solid
 import Html exposing (Html, button, div, h1, h2, p, span, table, tbody, td, text, th, thead, tr)
@@ -31,8 +32,8 @@ viewGame model =
         Failure err ->
             viewError err
 
-        Success gameState ->
-            viewGameState model gameState
+        Success playerView ->
+            viewPlayerView model playerView
 
 
 {-| View loading state
@@ -56,22 +57,46 @@ viewError err =
         ]
 
 
-{-| View the active game state with LiveView-style layout
+{-| View the player-specific view from Gleam
+Pattern matches on the different PlayerView variants and builds fake GameState to call original helpers
+-}
+viewPlayerView : Model -> PlayerView -> Html Msg
+viewPlayerView model playerView =
+    case playerView of
+        ShopView shopData ->
+            -- Handle shop view directly without GameState conversion
+            viewShop model shopData
+
+        _ ->
+            let
+                -- Build fake GameState from PlayerView using adapter
+                gameState =
+                    buildGameState model playerView
+            in
+            -- Call the ORIGINAL viewGameState with fake GameState
+            viewGameState model gameState
+
+
+{-| View the active game state with LiveView-style layout (ORIGINAL)
+This is the main layout function from the original code
 -}
 viewGameState : Model -> GameState -> Html Msg
 viewGameState model gameState =
     let
+        playerId =
+            Maybe.withDefault "you" model.playerId
+
         maybeCurrentPlayer =
-            getCurrentPlayer model
+            getCurrentPlayer gameState playerId
 
         maybeOpponent =
-            getOpponentPlayer model
+            getOpponentPlayer gameState playerId
     in
     case ( maybeCurrentPlayer, maybeOpponent, model.playerId ) of
-        ( Just currentPlayer, Just opponent, Just playerId ) ->
+        ( Just currentPlayer, Just opponent, Just actualPlayerId ) ->
             let
                 playerName =
-                    getPlayerName gameState playerId
+                    getPlayerName gameState actualPlayerId
 
                 opponentName =
                     getPlayerName gameState opponent.playerId
@@ -80,42 +105,47 @@ viewGameState model gameState =
             case ( gameState.gameStatus, model.viewingResults ) of
                 ( GameOver, False ) ->
                     -- Full-screen match summary (only after animation completes)
-                    viewMatchSummary model gameState playerId playerName currentPlayer opponent opponentName
+                    viewMatchSummary model gameState actualPlayerId playerName currentPlayer opponent opponentName
 
                 _ ->
-                    case ( gameState.phase, gameState.shopState, model.viewingResults ) of
-                        ( RoundEnd, Just shopState, False ) ->
-                            -- Full-page shop view (only if not viewing score animation)
-                            viewShop model gameState shopState
-
-                        _ ->
-                            -- Normal game layout
-                            div [ class "flex flex-col h-screen-safe bg-[#1a1d29] overflow-hidden" ]
-                                [ -- Top - Opponent Cards
-                                  div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-[#0C0F14]" ]
-                                    [ viewOpponentCards opponent model.newCardIds model.cardSort
-                                    ]
-                                , -- Middle - Playing Area
-                                  div [ class "flex-1 min-h-0 flex flex-col bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
-                                    [ div [ class "flex-1 flex flex-col justify-center" ]
-                                        [ viewPlayingArea model gameState currentPlayer opponent playerId
-                                        ]
-                                    , viewTopRow gameState currentPlayer opponent opponentName playerName
-                                    , -- Badges at bottom of centerboard
-                                      viewCenterboardBadges currentPlayer opponent
-                                    , -- Console Buttons (absolute, centered vertically within centerboard)
-                                      viewConsoleButtons model.viewingModal model.playerId
-                                    ]
-                                , -- Bottom - Player Cards
-                                  div [ class "shrink-0 flex flex-col justify-start pt-1 px-0 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-[#0C0F14]" ]
-                                    [ viewPlayerCards currentPlayer model
-                                    ]
-                                , -- Action Bar
-                                  viewActionBar currentPlayer model.selectedCards model.cardSort False
+                    -- Normal game layout
+                    div [ class "flex flex-col h-screen-safe bg-[#1a1d29] overflow-hidden" ]
+                        [ -- Top - Opponent Cards
+                          div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-[#0C0F14]" ]
+                            [ viewOpponentCards opponent model.newCardIds model.cardSort
+                            ]
+                        , -- Middle - Playing Area
+                          div [ class "flex-1 min-h-0 flex flex-col bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
+                            [ div [ class "flex-1 flex flex-col justify-center" ]
+                                [ viewPlayingArea model gameState currentPlayer opponent actualPlayerId
                                 ]
+                            , viewTopRow gameState currentPlayer opponent opponentName playerName
+                            , -- Badges at bottom of centerboard
+                              viewCenterboardBadges currentPlayer opponent
+                            , -- Console Buttons (absolute, centered vertically within centerboard)
+                              viewConsoleButtons model.viewingModal model.playerId
+                            ]
+                        , -- Bottom - Player Cards
+                          div [ class "shrink-0 flex flex-col justify-start pt-1 px-0 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-[#0C0F14]" ]
+                            [ viewPlayerCards currentPlayer model
+                            ]
+                        , -- Action Bar
+                          viewActionBar currentPlayer model.selectedCards model.cardSort False
+                        ]
 
         _ ->
             viewError "Unable to load player data"
+
+
+
+-- ============================================================================
+-- ADAPTER LAYER: Convert PlayerView data -> old view helper format
+-- ============================================================================
+-- These functions build fake PlayerState/GameState records from PlayerView
+-- so we can reuse ALL the original view helpers without changing them
+-- ============================================================================
+-- ORIGINAL VIEW HELPERS (unchanged from before - 3700+ lines)
+-- ============================================================================
 
 
 {-| View opponent's cards at the top
@@ -137,7 +167,7 @@ viewOpponentCards opponent newCardIds cardSort =
                         List.member card.id opponent.faceDownCardIds
 
                     isDisabled =
-                        List.member card.rank opponent.disabledRanks
+                        List.member (rankValue card.rank) opponent.disabledRanks
                             || List.member card.suit opponent.disabledSuits
                 in
                 div
@@ -197,7 +227,7 @@ viewPlayerCards player model =
                             List.member card.id player.faceDownCardIds
 
                         isDisabled =
-                            List.member card.rank player.disabledRanks
+                            List.member (rankValue card.rank) player.disabledRanks
                                 || List.member card.suit player.disabledSuits
 
                         canSelect =
@@ -245,7 +275,7 @@ sortCards sortOption cards =
             -- Sort by descending rank, then by suit order as secondary
             List.sortWith
                 (\a b ->
-                    case compare b.rank a.rank of
+                    case compare (rankValue b.rank) (rankValue a.rank) of
                         EQ ->
                             compare (suitOrder a.suit) (suitOrder b.suit)
 
@@ -260,7 +290,7 @@ sortCards sortOption cards =
                 (\a b ->
                     case compare (suitOrder a.suit) (suitOrder b.suit) of
                         EQ ->
-                            compare b.rank a.rank
+                            compare (rankValue b.rank) (rankValue a.rank)
 
                         other ->
                             other
@@ -418,7 +448,7 @@ viewWaitingForOpponent lockedHand player =
     let
         sortedHand =
             lockedHand
-                |> List.sortWith (\a b -> compare b.rank a.rank)
+                |> List.sortWith (\a b -> compare (rankValue b.rank) (rankValue a.rank))
     in
     div [ class "text-center space-y-4 sm:space-y-8 px-2 sm:px-0" ]
         [ -- Opponent placeholder section
@@ -442,7 +472,7 @@ viewWaitingForOpponent lockedHand player =
                     (\card ->
                         let
                             isDisabled =
-                                List.member card.rank player.disabledRanks
+                                List.member (rankValue card.rank) player.disabledRanks
                                     || List.member card.suit player.disabledSuits
 
                             isFaceDown =
@@ -506,8 +536,9 @@ viewRoundEnd model gameState currentPlayer =
             viewGameOver gameState
 
         Active ->
-            -- Shop is shown at top level, so here we only show ready button
-            viewReadyForNextRound currentPlayer
+            -- Round end screen - shop will appear automatically if configured
+            -- No ready button needed, game advances automatically
+            text ""
 
 
 {-| View game over screen - matches LiveView exactly
@@ -704,10 +735,10 @@ viewScoreBreakdownRow result skillTree playerName isCurrentPlayer animState =
 
         -- Sort cards by rank for display
         sortedHand =
-            List.sortBy (\c -> ( -c.rank, suitOrder c.suit )) result.hand
+            List.sortBy (\c -> ( -(rankValue c.rank), suitOrder c.suit )) result.hand
 
         sortedBreakdowns =
-            List.sortBy (\b -> ( -b.card.rank, suitOrder b.card.suit )) breakdown.cardBreakdowns
+            List.sortBy (\b -> ( -(rankValue b.card.rank), suitOrder b.card.suit )) breakdown.cardBreakdowns
 
         scoringCardIds =
             Set.fromList (List.map (.card >> .id) sortedBreakdowns)
@@ -806,7 +837,7 @@ viewScoreBreakdownRow result skillTree playerName isCurrentPlayer animState =
                                 , showEnhancement = True
                                 , compact = True
                                 , disabled =
-                                    List.member card.rank result.disabledRanks
+                                    List.member (rankValue card.rank) result.disabledRanks
                                         || List.member card.suit result.disabledSuits
                                 , enhancementDisabled = result.enhancementsDisabled
                                 }
@@ -1145,1668 +1176,10 @@ viewPlayerResultCard playerName lives initialLives isWinner colorClass =
         ]
 
 
-{-| View shop interface - full page view
--}
-viewShop : Model -> GameState -> ShopState -> Html Msg
-viewShop model gameState shopState =
-    case ( model.playerId, model.shopUIState ) of
-        ( Just playerId, Just uiState ) ->
-            viewShopWithUIState model gameState shopState playerId uiState
 
-        _ ->
-            div [ class "flex items-center justify-center h-screen" ]
-                [ text "Loading..." ]
+{- ========== GAME VIEW HELPER FUNCTIONS ========== -}
 
 
-{-| View shop with UI state pattern matching
--}
-viewShopWithUIState : Model -> GameState -> ShopState -> String -> ShopUIState -> Html Msg
-viewShopWithUIState model gameState shopState playerId uiState =
-    let
-        -- Get player states for lives display
-        maybePlayerState =
-            Dict.get playerId gameState.players
-
-        maybeOpponentState =
-            Dict.toList gameState.players
-                |> List.filter (\( pid, _ ) -> pid /= playerId)
-                |> List.head
-                |> Maybe.map Tuple.second
-
-        playerName =
-            Dict.get playerId gameState.playerNames
-                |> Maybe.withDefault "You"
-
-        opponentName =
-            Dict.toList gameState.playerNames
-                |> List.filter (\( pid, _ ) -> pid /= playerId)
-                |> List.head
-                |> Maybe.map Tuple.second
-                |> Maybe.withDefault "Opponent"
-
-        -- Extract common data from UI state
-        ( availableCards, pickedIndices, destroyedIndices ) =
-            case uiState of
-                DestroyPhase data ->
-                    ( data.availableCards, [], data.destroyedIndices )
-
-                WaitingForOpponent data ->
-                    ( data.availableCards, data.pickedIndices, data.destroyedIndices )
-
-                BrowsingCards data ->
-                    ( data.availableCards, data.pickedIndices, data.destroyedIndices )
-
-                PreviewingCard data ->
-                    ( data.availableCards, data.pickedIndices, data.destroyedIndices )
-
-                SelectingDeckBuilderCards data ->
-                    ( data.availableShopCards, data.pickedIndices, data.destroyedIndices )
-
-                SelectingPlusBombCard data ->
-                    ( data.availableShopCards, data.pickedIndices, data.destroyedIndices )
-
-                ShopComplete data ->
-                    ( data.availableCards, data.pickedIndices, data.destroyedIndices )
-
-        pickedIndicesSet =
-            Set.fromList pickedIndices
-
-        destroyedIndicesSet =
-            Set.fromList destroyedIndices
-
-        -- Determine if player can pick (for card grid styling)
-        canPick =
-            case uiState of
-                BrowsingCards _ ->
-                    True
-
-                PreviewingCard _ ->
-                    True
-
-                DestroyPhase data ->
-                    data.isMyTurn
-
-                _ ->
-                    False
-
-        -- Get previewing card index for grid highlighting (backwards compat)
-        previewingCardIndex =
-            case uiState of
-                PreviewingCard data ->
-                    Just data.cardIndex
-
-                SelectingDeckBuilderCards data ->
-                    Just data.cardIndex
-
-                SelectingPlusBombCard data ->
-                    Just data.cardIndex
-
-                _ ->
-                    Nothing
-    in
-    div [ class "h-screen-safe bg-base-200 lg:bg-gradient-to-br lg:from-base-200 lg:via-base-100 lg:to-base-200 overflow-auto" ]
-        [ div [ class "min-h-full flex flex-col lg:flex-row lg:h-screen-safe" ]
-            [ -- Section 1: Header (order-1 on mobile, part of left column on desktop)
-              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-200 lg:bg-base-100/50 lg:flex lg:flex-col lg:h-screen-safe" ]
-                [ -- Header
-                  div [ class "p-6 border-b border-base-300/50 flex-shrink-0" ]
-                    [ div [ class "flex items-center justify-between mb-4" ]
-                        [ div [ class "text-2xl font-light text-base-content" ]
-                            [ text "Command Center" ]
-                        , div [ class "flex items-center gap-2" ]
-                            [ div [ class "text-xs uppercase tracking-wider text-base-content/40" ]
-                                [ text "Round" ]
-                            , div [ class "text-lg font-semibold text-base-content" ]
-                                [ text (String.fromInt gameState.roundNumber) ]
-                            ]
-                        ]
-                    , -- Lives status
-                      case ( maybePlayerState, maybeOpponentState ) of
-                        ( Just playerState, Just opponentState ) ->
-                            div [ class "flex items-center gap-4" ]
-                                [ -- Player lives
-                                  div [ class "flex items-center gap-2" ]
-                                    [ span [ class "text-xs text-player font-medium" ]
-                                        [ text playerName ]
-                                    , div [ class "flex items-center gap-0.5" ]
-                                        (List.range 1 gameState.initialLives
-                                            |> List.map
-                                                (\i ->
-                                                    if i <= playerState.lives then
-                                                        span [ class "text-error" ] [ text "♥" ]
-
-                                                    else
-                                                        span [ class "text-base-content/20" ] [ text "♥" ]
-                                                )
-                                        )
-                                    ]
-                                , -- VS divider
-                                  span [ class "text-xs text-base-content/30" ] [ text "vs" ]
-                                , -- Opponent lives
-                                  div [ class "flex items-center gap-2" ]
-                                    [ span [ class "text-xs text-opponent font-medium" ]
-                                        [ text opponentName ]
-                                    , div [ class "flex items-center gap-0.5" ]
-                                        (List.range 1 gameState.initialLives
-                                            |> List.map
-                                                (\i ->
-                                                    if i <= opponentState.lives then
-                                                        span [ class "text-error" ] [ text "♥" ]
-
-                                                    else
-                                                        span [ class "text-base-content/20" ] [ text "♥" ]
-                                                )
-                                        )
-                                    ]
-                                ]
-
-                        _ ->
-                            text ""
-                    ]
-                , -- Cards Grid (hidden on mobile, shown on desktop)
-                  div [ class "hidden lg:block flex-1 p-6 overflow-y-auto" ]
-                    [ viewShopCardsGrid availableCards canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
-                    ]
-                ]
-            , -- Section 2: Timeline (order-2 on mobile)
-              div [ class "order-2 lg:order-none lg:flex-1 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden" ]
-                [ div [ class "flex-shrink-0" ]
-                    [ viewPickTimeline shopState playerId playerName opponentName ]
-                , -- Preview Panel (hidden on mobile, shown on desktop)
-                  div [ class "hidden lg:flex flex-1 flex-col overflow-hidden" ]
-                    [ viewPreviewPanelByState uiState model.shopCountdown ]
-                ]
-            , -- Section 3: Cards (order-3 on mobile only, 2 rows with horizontal scroll)
-              -- OR countdown display if shop is complete
-              case uiState of
-                ShopComplete _ ->
-                    -- Show countdown on mobile instead of cards
-                    div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-200 flex items-center justify-center flex-1" ]
-                        [ div [ class "text-center" ]
-                            [ div [ class "text-2xl font-bold text-emerald-400 mb-2" ]
-                                [ text "All Picks Complete" ]
-                            , div [ class "text-lg text-base-content/60" ]
-                                [ case model.shopCountdown of
-                                    Just seconds ->
-                                        text ("Starting in " ++ String.fromInt seconds ++ "...")
-
-                                    Nothing ->
-                                        text "Starting..."
-                                ]
-                            ]
-                        ]
-
-                _ ->
-                    -- Show cards normally
-                    div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-200" ]
-                        [ -- Arsenal Section (Permanent Upgrades)
-                          div [ class "mb-4" ]
-                            [ div [ class "mb-2 flex items-center gap-2" ]
-                                [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
-                                    [ text "Arsenal" ]
-                                , div [ class "text-[10px] text-base-content/40" ]
-                                    [ text "Permanent Upgrades" ]
-                                ]
-                            , div [ class "flex gap-2 overflow-x-auto pb-2" ]
-                                (availableCards
-                                    |> List.take 8
-                                    |> List.indexedMap
-                                        (\index shopCard ->
-                                            viewShopCardMinimal shopCard index canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
-                                        )
-                                )
-                            ]
-                        , -- Tactical Ops Section (Action Cards)
-                          div []
-                            [ div [ class "mb-2 flex items-center gap-2" ]
-                                [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
-                                    [ text "Tactical Ops" ]
-                                , div [ class "text-[10px] text-base-content/40" ]
-                                    [ text "Temporary Battlefield Advantage" ]
-                                ]
-                            , div [ class "flex gap-2 overflow-x-auto pb-2" ]
-                                (availableCards
-                                    |> List.drop 8
-                                    |> List.indexedMap
-                                        (\relIndex shopCard ->
-                                            let
-                                                index =
-                                                    relIndex + 8
-                                            in
-                                            viewShopCardMinimal shopCard index canPick pickedIndicesSet destroyedIndicesSet previewingCardIndex uiState shopState playerId playerName opponentName
-                                        )
-                                )
-                            ]
-                        ]
-            , -- Section 4: Preview (order-4 on mobile only) - now a bottom sheet modal
-              viewMobilePreviewModal uiState model.shopCountdown
-            ]
-        ]
-
-
-{-| Mobile preview modal - slides up from bottom when there's content to show
--}
-viewMobilePreviewModal : ShopUIState -> Maybe Int -> Html Msg
-viewMobilePreviewModal uiState shopCountdown =
-    let
-        -- Check if there's something to preview
-        hasContent =
-            case uiState of
-                PreviewingCard _ ->
-                    True
-
-                SelectingDeckBuilderCards _ ->
-                    True
-
-                SelectingPlusBombCard _ ->
-                    True
-
-                _ ->
-                    False
-    in
-    if hasContent then
-        -- Modal overlay + bottom sheet
-        div [ class "lg:hidden fixed inset-0 z-50 flex items-end" ]
-            [ -- Backdrop
-              div
-                [ class "absolute inset-0 bg-black/50 backdrop-blur-sm"
-                , onClick ClearCardPreview
-                ]
-                []
-            , -- Bottom sheet
-              div [ class "relative w-full max-h-[85vh] bg-base-100 rounded-t-2xl shadow-2xl overflow-hidden animate-slide-up" ]
-                [ -- Content (scrollable)
-                  div [ class "overflow-y-auto max-h-[85vh]" ]
-                    [ viewPreviewPanelByState uiState shopCountdown ]
-                ]
-            ]
-
-    else
-        text ""
-
-
-{-| View turn indicator for shop (state-based)
--}
-viewTurnIndicatorByState : ShopUIState -> Html Msg
-viewTurnIndicatorByState uiState =
-    let
-        isYourTurn =
-            case uiState of
-                BrowsingCards _ ->
-                    True
-
-                PreviewingCard _ ->
-                    True
-
-                DestroyPhase data ->
-                    data.isMyTurn
-
-                _ ->
-                    False
-    in
-    div
-        [ class
-            (if isYourTurn then
-                "px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600"
-
-             else
-                "px-3 py-1.5 rounded-full text-xs font-medium bg-base-300/50 text-base-content/40"
-            )
-        ]
-        [ text
-            (if isYourTurn then
-                "Your pick"
-
-             else
-                "Waiting"
-            )
-        ]
-
-
-{-| Shop cards grid with Arsenal and Tactical Ops sections
--}
-viewShopCardsGrid : List ShopCard -> Bool -> Set Int -> Set Int -> Maybe Int -> ShopUIState -> ShopState -> String -> String -> String -> Html Msg
-viewShopCardsGrid availableCards canPick pickedIndices destroyedIndices previewingCardIndex uiState shopState playerId playerName opponentName =
-    div []
-        [ -- Arsenal Section (Permanent Upgrades)
-          div [ class "mb-6" ]
-            [ div [ class "mb-3 flex items-center gap-2" ]
-                [ div [ class "text-sm font-semibold uppercase tracking-wider text-base-content/40" ]
-                    [ text "Arsenal" ]
-                , div [ class "text-xs text-base-content/40" ]
-                    [ text "Permanent Upgrades" ]
-                ]
-            , div [ class "grid grid-cols-4 gap-3" ]
-                (availableCards
-                    |> List.take 8
-                    |> List.indexedMap
-                        (\index shopCard ->
-                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState shopState playerId playerName opponentName
-                        )
-                )
-            ]
-        , -- Tactical Ops Section (Action Cards)
-          div []
-            [ div [ class "mb-3 flex items-center gap-2" ]
-                [ div [ class "text-sm font-semibold uppercase tracking-wider text-base-content/40" ]
-                    [ text "Tactical Ops" ]
-                , div [ class "text-xs text-base-content/40" ]
-                    [ text "Temporary Battlefield Advantage" ]
-                ]
-            , div [ class "grid grid-cols-4 gap-3" ]
-                (availableCards
-                    |> List.drop 8
-                    |> List.indexedMap
-                        (\relIndex shopCard ->
-                            let
-                                index =
-                                    relIndex + 8
-                            in
-                            viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState shopState playerId playerName opponentName
-                        )
-                )
-            ]
-        ]
-
-
-{-| Minimal shop card - just badge and name (no description)
--}
-viewShopCardMinimal : ShopCard -> Int -> Bool -> Set Int -> Set Int -> Maybe Int -> ShopUIState -> ShopState -> String -> String -> String -> Html Msg
-viewShopCardMinimal shopCard index canPick pickedIndices destroyedIndices previewingCardIndex uiState shopState playerId playerName opponentName =
-    let
-        isPicked =
-            Set.member index pickedIndices
-
-        isDestroyed =
-            Set.member index destroyedIndices
-
-        -- Determine who picked this card
-        pickerNameForCard =
-            if isPicked then
-                -- Find position of this card in picked indices
-                let
-                    reversedPicked =
-                        shopState.pickedCardIndices |> List.reverse
-
-                    maybePosition =
-                        reversedPicked
-                            |> List.indexedMap
-                                (\i cardIdx ->
-                                    if cardIdx == index then
-                                        Just i
-
-                                    else
-                                        Nothing
-                                )
-                            |> List.filterMap identity
-                            |> List.head
-                in
-                case maybePosition of
-                    Just position ->
-                        -- Determine who picked at this position (1-indexed)
-                        let
-                            pickNum =
-                                position + 1
-                        in
-                        if modBy 2 pickNum == 1 then
-                            -- First picker
-                            if shopState.firstPickerId == playerId then
-                                playerName
-
-                            else
-                                opponentName
-
-                        else
-                        -- Second picker
-                        if
-                            shopState.secondPickerId == playerId
-                        then
-                            playerName
-
-                        else
-                            opponentName
-
-                    Nothing ->
-                        "Picked"
-
-            else
-                "Picked"
-
-        isSelected =
-            previewingCardIndex == Just index
-
-        isDisabled =
-            isPicked || isDestroyed || not canPick
-
-        accentColor =
-            case shopCard.cardType of
-                LevelUp ->
-                    "emerald"
-
-                Denial ->
-                    "rose"
-
-                Sabotage ->
-                    "amber"
-
-                DeckBuilder ->
-                    "violet"
-
-        typeLabel =
-            case shopCard.cardType of
-                LevelUp ->
-                    "RESEARCH"
-
-                Denial ->
-                    "COUNTER"
-
-                Sabotage ->
-                    "SABOTAGE"
-
-                DeckBuilder ->
-                    "LOGISTICS"
-
-        borderClass =
-            if isSelected then
-                case accentColor of
-                    "emerald" ->
-                        "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
-
-                    "rose" ->
-                        "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
-
-                    "violet" ->
-                        "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
-
-                    "amber" ->
-                        "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
-
-                    _ ->
-                        "border-base-300/50"
-
-            else if isPicked || isDestroyed then
-                "border-base-300/30"
-
-            else if not isDisabled then
-                "border-base-300/50 hover:border-" ++ accentColor ++ "-400 hover:shadow-md"
-
-            else
-                "border-base-300/30"
-
-        opacityClass =
-            if isPicked || isDestroyed then
-                "opacity-50"
-
-            else
-                "opacity-100"
-
-        cursorClass =
-            if isDisabled then
-                "cursor-not-allowed"
-
-            else
-                "cursor-pointer"
-
-        labelColor =
-            case accentColor of
-                "emerald" ->
-                    "text-emerald-500"
-
-                "rose" ->
-                    "text-rose-500"
-
-                "amber" ->
-                    "text-amber-500"
-
-                "violet" ->
-                    "text-violet-500"
-
-                _ ->
-                    "text-base-content/40"
-    in
-    button
-        [ class ("w-[100px] lg:w-full aspect-[2/3] rounded-xl p-2 flex flex-col transition-all relative overflow-hidden flex-shrink-0 bg-base-100 border-2 " ++ borderClass ++ " " ++ opacityClass ++ " " ++ cursorClass)
-        , onClick
-            (if isDisabled then
-                NoOp
-
-             else
-                -- Always preview the card, the action button in preview will differ
-                PreviewShopCard index
-            )
-        , Html.Attributes.disabled isDisabled
-        ]
-        [ -- Type badge at top
-          div [ class ("text-[8px] lg:text-[10px] font-bold uppercase tracking-wider mb-1 lg:mb-2 " ++ labelColor) ]
-            [ text typeLabel ]
-        , -- Card name centered
-          div [ class "flex-1 flex items-center justify-center" ]
-            [ div [ class "font-semibold text-xs lg:text-sm text-center leading-tight text-base-content" ]
-                [ text shopCard.name ]
-            ]
-        , -- Picked/Destroyed overlay
-          if isPicked then
-            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
-                [ span [ class "text-xs text-base-content/40 font-medium" ]
-                    [ text pickerNameForCard ]
-                ]
-
-          else if isDestroyed then
-            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
-                [ span [ class "text-xs text-rose-400 font-medium" ]
-                    [ text "Destroyed" ]
-                ]
-
-          else
-            text ""
-        ]
-
-
-{-| Pick timeline showing all picks and destroys
--}
-viewPickTimeline : ShopState -> String -> String -> String -> Html Msg
-viewPickTimeline shopState playerId playerName opponentName =
-    let
-        firstPickerName =
-            if shopState.firstPickerId == playerId then
-                playerName
-
-            else
-                opponentName
-
-        secondPickerName =
-            if shopState.secondPickerId == playerId then
-                playerName
-
-            else
-                opponentName
-
-        -- Destroyer name (if there is one)
-        destroyerName =
-            case shopState.destroyerId of
-                Just destroyerId ->
-                    if destroyerId == playerId then
-                        Just playerName
-
-                    else
-                        Just opponentName
-
-                Nothing ->
-                    Nothing
-
-        totalDestroys =
-            shopState.destroysAllowed
-
-        totalPicks =
-            shopState.totalRounds * 2
-
-        destroyedCount =
-            List.length shopState.destroyedCardIndices
-
-        pickedCount =
-            List.length shopState.pickedCardIndices
-
-        reversedDestroyedIndices =
-            List.reverse shopState.destroyedCardIndices
-
-        reversedPickedIndices =
-            List.reverse shopState.pickedCardIndices
-
-        -- Create destroy slots
-        destroySlots =
-            List.range 1 totalDestroys
-                |> List.map
-                    (\destroyNum ->
-                        let
-                            maybeCardIndex =
-                                reversedDestroyedIndices
-                                    |> List.drop (destroyNum - 1)
-                                    |> List.head
-
-                            maybeCard =
-                                maybeCardIndex
-                                    |> Maybe.andThen (\idx -> shopState.availableCards |> List.drop idx |> List.head)
-
-                            isCurrent =
-                                not shopState.destroyPhaseComplete
-                                    && destroyNum
-                                    == (destroyedCount + 1)
-                                    && destroyedCount
-                                    < totalDestroys
-
-                            -- Check if this is the player's action
-                            isPlayerAction =
-                                case shopState.destroyerId of
-                                    Just destroyerId ->
-                                        destroyerId == playerId
-
-                                    Nothing ->
-                                        False
-                        in
-                        { slotNum = destroyNum
-                        , slotType = "DESTROY"
-                        , pickerName = Maybe.withDefault "" destroyerName
-                        , maybeCard = maybeCard
-                        , isCurrent = isCurrent
-                        , isPlayerAction = isPlayerAction
-                        }
-                    )
-
-        -- Create pick slots
-        pickSlots =
-            List.range 1 totalPicks
-                |> List.map
-                    (\pickNum ->
-                        let
-                            -- Determine who is picking
-                            pickerId =
-                                if modBy 2 pickNum == 1 then
-                                    shopState.firstPickerId
-
-                                else
-                                    shopState.secondPickerId
-
-                            pickerName =
-                                if modBy 2 pickNum == 1 then
-                                    firstPickerName
-
-                                else
-                                    secondPickerName
-
-                            maybeCardIndex =
-                                reversedPickedIndices
-                                    |> List.drop (pickNum - 1)
-                                    |> List.head
-
-                            maybeCard =
-                                maybeCardIndex
-                                    |> Maybe.andThen (\idx -> shopState.availableCards |> List.drop idx |> List.head)
-
-                            isCurrent =
-                                shopState.destroyPhaseComplete
-                                    && pickNum
-                                    == (pickedCount + 1)
-                                    && pickedCount
-                                    < totalPicks
-
-                            -- Check if this is the player's pick
-                            isPlayerAction =
-                                pickerId == playerId
-                        in
-                        { slotNum = pickNum
-                        , slotType = "PICK"
-                        , pickerName = pickerName
-                        , maybeCard = maybeCard
-                        , isCurrent = isCurrent
-                        , isPlayerAction = isPlayerAction
-                        }
-                    )
-
-        -- Combine destroy + pick slots
-        allSlots =
-            destroySlots ++ pickSlots
-    in
-    div [ class "p-3 lg:p-6 border-b border-base-300/50" ]
-        [ div [ class "flex flex-wrap gap-2 lg:gap-3" ]
-            (allSlots
-                |> List.map
-                    (\slot ->
-                        viewTimelineSlot slot.slotNum slot.slotType slot.pickerName slot.maybeCard slot.isCurrent slot.isPlayerAction
-                    )
-            )
-        ]
-
-
-{-| Single timeline slot
--}
-viewTimelineSlot : Int -> String -> String -> Maybe ShopCard -> Bool -> Bool -> Html Msg
-viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction =
-    let
-        ordinal =
-            case slotNum of
-                1 ->
-                    "1ST"
-
-                2 ->
-                    "2ND"
-
-                3 ->
-                    "3RD"
-
-                n ->
-                    String.fromInt n ++ "TH"
-
-        label =
-            if slotType == "DESTROY" then
-                "DESTROY"
-
-            else
-                ordinal ++ " " ++ slotType
-
-        ( containerClass, labelColor ) =
-            if maybeCard /= Nothing then
-                if slotType == "DESTROY" then
-                    ( "bg-base-100 border-rose-400/30", "text-rose-500/60" )
-
-                else
-                    ( "bg-base-100 border-base-300/50", "text-base-content/40" )
-
-            else if isCurrent then
-                -- Use player color for the glow (blue for player, orange for opponent)
-                if isPlayerAction then
-                    ( "bg-base-200/50 border-dashed animate-pulse border-blue-400", "text-base-content/40" )
-
-                else
-                    ( "bg-base-200/50 border-dashed animate-pulse border-orange-400", "text-base-content/40" )
-
-            else
-                ( "bg-base-200/30 border-base-300/30", "text-base-content/40" )
-    in
-    div [ class ("flex-1 min-w-[110px] lg:min-w-[180px] flex-shrink-0 rounded-lg p-2 lg:p-3 border transition-all " ++ containerClass) ]
-        [ div [ class ("text-[9px] lg:text-[10px] uppercase tracking-wider mb-0.5 lg:mb-1 " ++ labelColor) ]
-            [ text label ]
-        , case maybeCard of
-            Just card ->
-                let
-                    dotColor =
-                        case card.cardType of
-                            LevelUp ->
-                                "bg-emerald-500"
-
-                            Denial ->
-                                "bg-rose-500"
-
-                            Sabotage ->
-                                "bg-amber-500"
-
-                            DeckBuilder ->
-                                "bg-violet-500"
-                in
-                div [ class "flex items-center gap-1.5 lg:gap-2" ]
-                    [ div [ class ("w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full flex-shrink-0 " ++ dotColor) ] []
-                    , div [ class "min-w-0" ]
-                        [ div [ class "text-xs lg:text-sm font-medium text-base-content truncate" ]
-                            [ text card.name ]
-                        , div [ class "text-[9px] lg:text-[10px] text-base-content/40" ]
-                            [ text pickerName ]
-                        ]
-                    ]
-
-            Nothing ->
-                div [ class "text-xs lg:text-sm text-base-content/30" ]
-                    [ text pickerName ]
-        ]
-
-
-{-| Preview panel - exhaustive pattern match on UI state
--}
-viewPreviewPanelByState : ShopUIState -> Maybe Int -> Html Msg
-viewPreviewPanelByState uiState shopCountdown =
-    case uiState of
-        DestroyPhase data ->
-            if data.isMyTurn then
-                viewDestroyInstructions data.destroysRemaining
-
-            else
-                viewWaitingMessage "Opponent is destroying cards..."
-
-        WaitingForOpponent data ->
-            case data.reason of
-                OpponentDestroying ->
-                    viewWaitingMessage "Opponent is destroying cards..."
-
-                OpponentPicking ->
-                    viewWaitingMessage "Opponent is picking..."
-
-        BrowsingCards _ ->
-            viewEmptyBrowsingPreview
-
-        PreviewingCard data ->
-            viewShopCardPreview data
-
-        SelectingDeckBuilderCards data ->
-            viewDeckBuilderSelectionPreview data
-
-        SelectingPlusBombCard data ->
-            viewPlusBombSelectionPreview data
-
-        ShopComplete _ ->
-            viewShopCompletePreview shopCountdown
-
-
-{-| Destroy phase instructions
--}
-viewDestroyInstructions : Int -> Html Msg
-viewDestroyInstructions destroysRemaining =
-    div [ class "flex-1 flex items-center justify-center" ]
-        [ div [ class "text-center" ]
-            [ p [ class "text-base-content/60 text-lg font-light mb-2" ]
-                [ text "Destroy cards from the shop" ]
-            , p [ class "text-base-content/40 text-sm" ]
-                [ text
-                    (if destroysRemaining == 1 then
-                        "1 destroy remaining"
-
-                     else
-                        String.fromInt destroysRemaining ++ " destroys remaining"
-                    )
-                ]
-            ]
-        ]
-
-
-{-| Waiting message
--}
-viewWaitingMessage : String -> Html Msg
-viewWaitingMessage message =
-    div [ class "flex-1 flex items-center justify-center" ]
-        [ div [ class "text-center" ]
-            [ div [ class "w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center" ]
-                [ Heroicons.Outline.clock [ SvgAttr.class "w-8 h-8 text-base-content/30 animate-pulse" ] ]
-            , p [ class "text-base-content/40 text-lg font-light" ]
-                [ text message ]
-            ]
-        ]
-
-
-{-| Empty preview when browsing
--}
-viewEmptyBrowsingPreview : Html Msg
-viewEmptyBrowsingPreview =
-    div [ class "flex-1 flex items-center justify-center" ]
-        [ div [ class "text-center" ]
-            [ div [ class "w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center" ]
-                [ Heroicons.Outline.cursorArrowRays [ SvgAttr.class "w-8 h-8 text-base-content/30" ] ]
-            , p [ class "text-base-content/40 text-lg font-light" ]
-                [ text "Select a card to preview" ]
-            ]
-        ]
-
-
-{-| Shop complete preview
--}
-viewShopCompletePreview : Maybe Int -> Html Msg
-viewShopCompletePreview shopCountdown =
-    div [ class "flex-1 flex items-center justify-center" ]
-        [ div [ class "text-center" ]
-            [ p [ class "text-base-content/60 text-lg font-light mb-2" ]
-                [ text "All Picks Complete" ]
-            , p [ class "text-base-content/40 text-sm" ]
-                [ case shopCountdown of
-                    Just seconds ->
-                        text ("Starting in " ++ String.fromInt seconds ++ "...")
-
-                    Nothing ->
-                        text "Starting..."
-                ]
-            ]
-        ]
-
-
-{-| Display upgrade details showing current level → new level
--}
-viewUpgradeDetails : ShopCard -> SkillTree -> Html Msg
-viewUpgradeDetails card skillTree =
-    -- Only show for LevelUp cards with a hand type subtype
-    if card.cardType == LevelUp then
-        let
-            handType =
-                card.subtype
-
-            -- Get current level from skill tree (default to 1)
-            currentLevel =
-                case handType of
-                    "high_card" ->
-                        skillTree.highCard
-
-                    "pair" ->
-                        skillTree.pair
-
-                    "two_pair" ->
-                        skillTree.twoPair
-
-                    "three_of_a_kind" ->
-                        skillTree.threeOfAKind
-
-                    "straight" ->
-                        skillTree.straight
-
-                    "flush" ->
-                        skillTree.flush
-
-                    "full_house" ->
-                        skillTree.fullHouse
-
-                    "four_of_a_kind" ->
-                        skillTree.fourOfAKind
-
-                    "straight_flush" ->
-                        skillTree.straightFlush
-
-                    _ ->
-                        1
-
-            newLevel =
-                currentLevel + 1
-
-            -- Base hand scores (from Elixir @base_hand_scores)
-            ( baseChips, baseMult ) =
-                case handType of
-                    "high_card" ->
-                        ( 125, 1 )
-
-                    "pair" ->
-                        ( 140, 1 )
-
-                    "two_pair" ->
-                        ( 105, 2 )
-
-                    "three_of_a_kind" ->
-                        ( 130, 2 )
-
-                    "straight" ->
-                        ( 70, 4 )
-
-                    "flush" ->
-                        ( 70, 4 )
-
-                    "full_house" ->
-                        ( 70, 5 )
-
-                    "four_of_a_kind" ->
-                        ( 50, 12 )
-
-                    "straight_flush" ->
-                        ( 95, 12 )
-
-                    _ ->
-                        ( 0, 0 )
-
-            -- Upgrade bonuses per level (from Elixir @upgrade_bonuses)
-            ( upgradeChips, upgradeMult ) =
-                case handType of
-                    "high_card" ->
-                        ( 10, 1 )
-
-                    "pair" ->
-                        ( 10, 1 )
-
-                    "two_pair" ->
-                        ( 10, 1 )
-
-                    "three_of_a_kind" ->
-                        ( 10, 1 )
-
-                    "straight" ->
-                        ( 10, 1 )
-
-                    "flush" ->
-                        ( 10, 1 )
-
-                    "full_house" ->
-                        ( 10, 1 )
-
-                    "four_of_a_kind" ->
-                        ( 20, 2 )
-
-                    "straight_flush" ->
-                        ( 20, 2 )
-
-                    _ ->
-                        ( 0, 0 )
-
-            -- Calculate current and new chips/mult
-            currentChips =
-                baseChips + (currentLevel - 1) * upgradeChips
-
-            currentMult =
-                baseMult + (currentLevel - 1) * upgradeMult
-
-            newChips =
-                baseChips + (newLevel - 1) * upgradeChips
-
-            newMult =
-                baseMult + (newLevel - 1) * upgradeMult
-        in
-        div [ class "flex items-center justify-center gap-6" ]
-            [ -- Current Level
-              div [ class "text-center" ]
-                [ div [ class "text-xs uppercase tracking-wider text-base-content/40 mb-2" ]
-                    [ text ("Level " ++ String.fromInt currentLevel) ]
-                , div [ class "flex items-center gap-3" ]
-                    [ div [ class "text-center" ]
-                        [ div [ class "text-sm text-base-content/40" ] [ text "Chips" ]
-                        , div [ class "text-lg font-semibold text-base-content" ] [ text (String.fromInt currentChips) ]
-                        ]
-                    , div [ class "text-base-content/20" ] [ text "×" ]
-                    , div [ class "text-center" ]
-                        [ div [ class "text-sm text-base-content/40" ] [ text "Mult" ]
-                        , div [ class "text-lg font-semibold text-base-content" ] [ text (String.fromInt currentMult) ]
-                        ]
-                    ]
-                ]
-            , -- Arrow
-              div [ class "text-base-content/40 text-2xl" ]
-                [ text "→" ]
-            , -- New Level
-              div [ class "text-center" ]
-                [ div [ class "text-xs uppercase tracking-wider text-emerald-600 mb-2" ]
-                    [ text ("Level " ++ String.fromInt newLevel) ]
-                , div [ class "flex items-center gap-3" ]
-                    [ div [ class "text-center" ]
-                        [ div [ class "text-sm text-emerald-600/60" ] [ text "Chips" ]
-                        , div [ class "text-lg font-semibold text-emerald-600" ] [ text (String.fromInt newChips) ]
-                        ]
-                    , div [ class "text-emerald-600/40" ] [ text "×" ]
-                    , div [ class "text-center" ]
-                        [ div [ class "text-sm text-emerald-600/60" ] [ text "Mult" ]
-                        , div [ class "text-lg font-semibold text-emerald-600" ] [ text (String.fromInt newMult) ]
-                        ]
-                    ]
-                ]
-            ]
-
-    else
-        text ""
-
-
-{-| Shop card preview (regular card)
--}
-viewShopCardPreview : PreviewCardData -> Html Msg
-viewShopCardPreview data =
-    let
-        accentColor =
-            case data.card.cardType of
-                LevelUp ->
-                    "emerald"
-
-                Denial ->
-                    "rose"
-
-                Sabotage ->
-                    "amber"
-
-                DeckBuilder ->
-                    "violet"
-
-        typeLabel =
-            case data.card.cardType of
-                LevelUp ->
-                    "Research"
-
-                Denial ->
-                    "Counter"
-
-                Sabotage ->
-                    "Sabotage"
-
-                DeckBuilder ->
-                    "Logistics"
-
-        labelColorClass =
-            case accentColor of
-                "emerald" ->
-                    "text-emerald-500/60"
-
-                "rose" ->
-                    "text-rose-500/60"
-
-                "amber" ->
-                    "text-amber-500/60"
-
-                "violet" ->
-                    "text-violet-500/60"
-
-                _ ->
-                    "text-base-content/40"
-
-        buttonBgClass =
-            case accentColor of
-                "emerald" ->
-                    "bg-emerald-500 hover:bg-emerald-600"
-
-                "rose" ->
-                    "bg-rose-500 hover:bg-rose-600"
-
-                "amber" ->
-                    "bg-amber-500 hover:bg-amber-600"
-
-                "violet" ->
-                    "bg-violet-500 hover:bg-violet-600"
-
-                _ ->
-                    "bg-base-300 hover:bg-base-400"
-    in
-    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
-        [ -- Header (always centered)
-          div [ class "mb-8 flex-shrink-0 text-center" ]
-            [ div [ class ("text-xs uppercase tracking-widest mb-1 " ++ labelColorClass) ]
-                [ text typeLabel ]
-            , h2 [ class "text-4xl font-light text-base-content" ]
-                [ text data.card.name ]
-            ]
-        , -- Description and upgrade details
-          div [ class "overflow-y-auto" ]
-            [ case data.card.cardType of
-                LevelUp ->
-                    -- For LevelUp cards, skip description and show upgrade details
-                    viewUpgradeDetails data.card data.skillTree
-
-                _ ->
-                    -- For other cards, show description
-                    div [ class "mb-8" ]
-                        [ p [ class "text-base-content/60 text-lg leading-relaxed text-center" ]
-                            [ text data.card.description ]
-                        ]
-            ]
-        , -- Action Buttons (always inline with Cancel on mobile, except destroy mode)
-          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
-            [ -- Cancel button (mobile only, not in destroy mode)
-              if not data.isDestroyMode then
-                button
-                    [ onClick ClearCardPreview
-                    , class "lg:hidden px-6 py-3 rounded-full font-medium transition-all text-base-content bg-base-300/50 hover:bg-base-300"
-                    ]
-                    [ text "Cancel" ]
-
-              else
-                text ""
-            , -- Primary action button
-              if data.isDestroyMode then
-                button
-                    [ onClick (DestroyShopCard data.cardIndex)
-                    , class "px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl bg-rose-500 hover:bg-rose-600"
-                    ]
-                    [ text "Destroy" ]
-
-              else if data.card.cardType == DeckBuilder then
-                button
-                    [ onClick (ConfirmDeckBuilder data.cardIndex)
-                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                    ]
-                    [ text "Confirm" ]
-
-              else if data.card.cardType == Sabotage && data.card.subtype == "plus_bomb" then
-                button
-                    [ onClick (ConfirmPlusBomb data.cardIndex)
-                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                    ]
-                    [ text "Confirm" ]
-
-              else if data.card.cardType == LevelUp then
-                button
-                    [ onClick (MakeShopPick data.cardIndex)
-                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                    ]
-                    [ text "Confirm" ]
-
-              else
-                button
-                    [ onClick (MakeShopPick data.cardIndex)
-                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                    ]
-                    [ text "Confirm" ]
-            ]
-        ]
-
-
-{-| Deck builder selection preview
--}
-viewDeckBuilderSelectionPreview : DeckBuilderSelectionData -> Html Msg
-viewDeckBuilderSelectionPreview data =
-    let
-        buttonBgClass =
-            "bg-violet-500 hover:bg-violet-600"
-    in
-    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
-        [ -- Header (centered)
-          div [ class "mb-8 flex-shrink-0 text-center" ]
-            [ div [ class "text-xs uppercase tracking-widest mb-1 text-violet-500/60" ]
-                [ text "Logistics" ]
-            , h2 [ class "text-4xl font-light text-base-content" ]
-                [ text data.deckBuilderCard.name ]
-            ]
-        , -- Card selection
-          div [ class "overflow-y-auto" ]
-            [ div [ class "mb-4 text-center" ]
-                [ p [ class "text-sm text-base-content/50" ]
-                    [ text ("Select up to " ++ String.fromInt data.maxSelection ++ " cards to enhance") ]
-                ]
-            , div [ class "grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-3 mb-6" ]
-                (data.availableCards
-                    |> List.map
-                        (\card ->
-                            let
-                                isSelected =
-                                    List.member card.id data.selectedCardIds
-                            in
-                            viewDeckBuilderCardMinimal card isSelected
-                        )
-                )
-            ]
-        , -- Action Buttons (always show confirm, disabled when empty)
-          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
-            [ let
-                hasSelection =
-                    not (List.isEmpty data.selectedCardIds)
-              in
-              button
-                [ onClick
-                    (if hasSelection then
-                        ConfirmSelection
-
-                     else
-                        NoOp
-                    )
-                , class
-                    ("px-8 py-3 rounded-full font-medium transition-all "
-                        ++ (if hasSelection then
-                                "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
-
-                            else
-                                "text-base-content/30 bg-base-300/30 cursor-not-allowed"
-                           )
-                    )
-                ]
-                [ text "Confirm" ]
-            ]
-        ]
-
-
-{-| Plus bomb selection preview
--}
-viewPlusBombSelectionPreview : PlusBombSelectionData -> Html Msg
-viewPlusBombSelectionPreview data =
-    let
-        buttonBgClass =
-            "bg-amber-500 hover:bg-amber-600"
-    in
-    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
-        [ -- Header (centered)
-          div [ class "mb-8 flex-shrink-0 text-center" ]
-            [ div [ class "text-xs uppercase tracking-widest mb-1 text-amber-500/60" ]
-                [ text "Sabotage" ]
-            , h2 [ class "text-4xl font-light text-base-content" ]
-                [ text "Plus Bomb" ]
-            ]
-        , -- Card selection
-          div [ class "flex-1 overflow-y-auto" ]
-            [ div [ class "mb-4 text-center" ]
-                [ p [ class "text-sm text-base-content/50" ]
-                    [ text "Select a card - that rank AND suit won't score for opponent" ]
-                ]
-            , div [ class "grid grid-cols-4 gap-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-3 mb-6" ]
-                (data.availableCards
-                    |> List.map
-                        (\card ->
-                            let
-                                isSelected =
-                                    data.selectedCardId == Just card.id
-                            in
-                            viewPlusBombCardMinimal card isSelected
-                        )
-                )
-            ]
-        , -- Action Buttons (always show confirm, disabled when empty)
-          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
-            [ let
-                hasSelection =
-                    data.selectedCardId /= Nothing
-              in
-              button
-                [ onClick
-                    (if hasSelection then
-                        ConfirmSelection
-
-                     else
-                        NoOp
-                    )
-                , class
-                    ("px-8 py-3 rounded-full font-medium transition-all "
-                        ++ (if hasSelection then
-                                "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
-
-                            else
-                                "text-base-content/30 bg-base-300/30 cursor-not-allowed"
-                           )
-                    )
-                ]
-                [ text "Confirm" ]
-            ]
-        ]
-
-
-{-| OLD - Card detail view in preview panel (TO BE REMOVED)
--}
-viewCardDetail : ShopCard -> Int -> Bool -> ShopState -> String -> List String -> Maybe String -> Html Msg
-viewCardDetail shopCard cardIndex canPick shopState playerId deckBuilderSelection plusBombSelection =
-    let
-        accentColor =
-            case shopCard.cardType of
-                LevelUp ->
-                    "emerald"
-
-                Denial ->
-                    "rose"
-
-                Sabotage ->
-                    "amber"
-
-                DeckBuilder ->
-                    "violet"
-
-        typeLabel =
-            case shopCard.cardType of
-                LevelUp ->
-                    "Research"
-
-                Denial ->
-                    "Counter"
-
-                Sabotage ->
-                    "Sabotage"
-
-                DeckBuilder ->
-                    "Logistics"
-
-        labelColorClass =
-            case accentColor of
-                "emerald" ->
-                    "text-emerald-500/60"
-
-                "rose" ->
-                    "text-rose-500/60"
-
-                "amber" ->
-                    "text-amber-500/60"
-
-                "violet" ->
-                    "text-violet-500/60"
-
-                _ ->
-                    "text-base-content/40"
-
-        buttonBgClass =
-            case accentColor of
-                "emerald" ->
-                    "bg-emerald-500 hover:bg-emerald-600"
-
-                "rose" ->
-                    "bg-rose-500 hover:bg-rose-600"
-
-                "amber" ->
-                    "bg-amber-500 hover:bg-amber-600"
-
-                "violet" ->
-                    "bg-violet-500 hover:bg-violet-600"
-
-                _ ->
-                    "bg-base-300 hover:bg-base-400"
-
-        -- Check if we're in deck builder selection mode for this card
-        hasDeckBuilderSelection =
-            case shopState.pendingDeckBuilder of
-                Just pending ->
-                    pending.shopCardIndex == cardIndex && pending.playerId == playerId
-
-                Nothing ->
-                    False
-
-        -- Check if we're in plus bomb selection mode for this card
-        hasPlusBombSelection =
-            case shopState.pendingPlusBomb of
-                Just pending ->
-                    pending.shopCardIndex == cardIndex && pending.playerId == playerId
-
-                Nothing ->
-                    False
-    in
-    div [ class "flex-1 flex flex-col p-8 overflow-hidden" ]
-        [ -- Header
-          div [ class "mb-8 flex-shrink-0" ]
-            [ div [ class ("text-xs uppercase tracking-widest mb-1 " ++ labelColorClass) ]
-                [ text typeLabel ]
-            , h2 [ class "text-4xl font-light text-base-content" ]
-                [ text shopCard.name ]
-            ]
-        , -- Description or card selection
-          if hasDeckBuilderSelection then
-            case shopState.pendingDeckBuilder of
-                Just pending ->
-                    div [ class "flex-1 overflow-y-auto" ]
-                        [ -- Selection instruction
-                          div [ class "mb-4" ]
-                            [ p [ class "text-sm text-base-content/50" ]
-                                [ text "Select cards to enhance" ]
-                            ]
-                        , -- 8-card selection grid
-                          div [ class "flex flex-wrap gap-3 mb-6" ]
-                            (pending.availableCards
-                                |> List.map
-                                    (\card ->
-                                        let
-                                            isSelected =
-                                                List.member card.id deckBuilderSelection
-                                        in
-                                        viewDeckBuilderCardMinimal card isSelected
-                                    )
-                            )
-                        ]
-
-                Nothing ->
-                    text ""
-
-          else if hasPlusBombSelection then
-            case shopState.pendingPlusBomb of
-                Just pending ->
-                    div [ class "flex-1 overflow-y-auto" ]
-                        [ -- Selection instruction
-                          div [ class "mb-4" ]
-                            [ p [ class "text-sm text-base-content/50" ]
-                                [ text "Select a card - that rank AND suit won't score for opponent" ]
-                            ]
-                        , -- 8-card selection grid
-                          div [ class "flex flex-wrap gap-3 mb-6" ]
-                            (pending.availableCards
-                                |> List.map
-                                    (\card ->
-                                        let
-                                            isSelected =
-                                                plusBombSelection == Just card.id
-                                        in
-                                        viewPlusBombCardMinimal card isSelected
-                                    )
-                            )
-                        ]
-
-                Nothing ->
-                    text ""
-
-          else
-            -- Normal card description
-            div [ class "flex-1 overflow-y-auto" ]
-                [ div [ class "mb-8" ]
-                    [ p [ class "text-base-content/60 text-lg leading-relaxed" ]
-                        [ text shopCard.description ]
-                    ]
-                ]
-        , -- Action Button: fixed at bottom
-          if canPick then
-            div [ class "pt-8 flex-shrink-0" ]
-                [ if hasDeckBuilderSelection then
-                    -- Deck builder: show Skip and Confirm buttons
-                    div [ class "flex gap-3" ]
-                        [ button
-                            [ onClick SkipDeckBuilderSelection
-                            , class "flex-1 py-4 rounded-full font-medium text-base-content/60 bg-base-300/50 hover:bg-base-300 transition-all"
-                            ]
-                            [ text "Skip" ]
-                        , if not (List.isEmpty deckBuilderSelection) then
-                            button
-                                [ onClick (CompleteDeckBuilderSelection deckBuilderSelection)
-                                , class ("flex-1 py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                                ]
-                                [ text "Confirm" ]
-
-                          else
-                            text ""
-                        ]
-
-                  else if hasPlusBombSelection then
-                    -- Plus bomb: show confirm button
-                    case plusBombSelection of
-                        Just cardId ->
-                            button
-                                [ onClick (CompletePlusBombSelection cardId)
-                                , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                                ]
-                                [ text "Confirm Selection" ]
-
-                        Nothing ->
-                            text ""
-
-                  else if shopCard.cardType == DeckBuilder then
-                    -- Deck builder: show "Choose Cards" button
-                    button
-                        [ onClick (PreviewDeckBuilder cardIndex)
-                        , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                        ]
-                        [ text "Choose Cards" ]
-
-                  else if shopCard.cardType == Sabotage && shopCard.subtype == "plus_bomb" then
-                    -- Plus bomb: show "Choose Card" button
-                    button
-                        [ onClick (PreviewPlusBomb cardIndex)
-                        , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                        ]
-                        [ text "Choose Card" ]
-
-                  else
-                    -- Regular card: show "Confirm Selection" button
-                    button
-                        [ onClick (MakeShopPick cardIndex)
-                        , class ("w-full py-4 rounded-full font-medium text-lg transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
-                        ]
-                        [ text "Confirm Selection" ]
-                ]
-
-          else
-            text ""
-        ]
-
-
-{-| Minimal card display for deck builder selection
--}
-viewDeckBuilderCardMinimal : Card -> Bool -> Html Msg
-viewDeckBuilderCardMinimal card isSelected =
-    button
-        [ class
-            ("w-full sm:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
-                ++ (if isSelected then
-                        "ring-2 ring-violet-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
-
-                    else
-                        "hover:shadow-md hover:scale-102 border border-base-300/50"
-                   )
-            )
-        , onClick (ToggleDeckCardSelection card.id)
-        ]
-        [ Cards.viewCardImage
-            { card = card
-            , isFaceDown = False
-            , showEnhancement = True
-            , compact = False
-            , disabled = False
-            , enhancementDisabled = False
-            }
-        ]
-
-
-{-| Minimal card display for plus bomb selection
--}
-viewPlusBombCardMinimal : Card -> Bool -> Html Msg
-viewPlusBombCardMinimal card isSelected =
-    button
-        [ class
-            ("w-full sm:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
-                ++ (if isSelected then
-                        "ring-2 ring-rose-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
-
-                    else
-                        "hover:shadow-md hover:scale-102 border border-base-300/50"
-                   )
-            )
-        , onClick (SelectPlusBombCard card.id)
-        ]
-        [ Cards.viewCardImage
-            { card = card
-            , isFaceDown = False
-            , showEnhancement = True
-            , compact = False
-            , disabled = False
-            , enhancementDisabled = False
-            }
-        ]
-
-
-{-| Empty preview state
--}
-viewEmptyPreview : ShopState -> Bool -> Html Msg
-viewEmptyPreview shopState canPick =
-    let
-        isShopComplete =
-            shopState.currentRound == shopState.totalRounds && shopState.firstPickMade && shopState.secondPickMade
-    in
-    div [ class "flex-1 flex items-center justify-center" ]
-        [ div [ class "text-center" ]
-            [ if isShopComplete then
-                -- Shop complete - show countdown
-                div []
-                    [ div [ class "w-20 h-20 rounded-full bg-emerald-500/10 mx-auto mb-4 flex items-center justify-center" ]
-                        [ span [ class "text-4xl font-light text-emerald-500" ]
-                            [ text "5" ]
-                        ]
-                    , p [ class "text-base-content/60 text-lg font-light mb-2" ]
-                        [ text "All Picks Complete" ]
-                    , p [ class "text-base-content/40 text-sm" ]
-                        [ text "Next round starting in..." ]
-                    ]
-
-              else if canPick then
-                div []
-                    [ div [ class "w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center" ]
-                        [ Heroicons.Outline.cursorArrowRays [ SvgAttr.class "w-8 h-8 text-base-content/30" ] ]
-                    , p [ class "text-base-content/40 text-lg font-light" ]
-                        [ text "Select a card to preview" ]
-                    ]
-
-              else
-                div []
-                    [ div [ class "w-16 h-16 rounded-full bg-base-300/50 mx-auto mb-4 flex items-center justify-center" ]
-                        [ Heroicons.Outline.clock [ SvgAttr.class "w-8 h-8 text-base-content/30 animate-pulse" ] ]
-                    , p [ class "text-base-content/40 text-lg font-light" ]
-                        [ text "Waiting for opponent..." ]
-                    ]
-            ]
-        ]
-
-
-{-| View ready for next round button
--}
-viewReadyForNextRound : PlayerState -> Html Msg
-viewReadyForNextRound currentPlayer =
-    div [ class "bg-[#15161f] rounded-lg p-6 text-center border border-gray-700" ]
-        [ if currentPlayer.readyForNextRound then
-            p [ class "text-green-400 text-xl" ]
-                [ text "Waiting for opponent..." ]
-
-          else
-            button
-                [ onClick ReadyForNextRound
-                , class "bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 px-6 rounded-lg text-xl transition-colors"
-                ]
-                [ text "Ready for Next Round" ]
-        ]
 
 
 {-| View console buttons (fixed at mid-left)
@@ -2831,7 +1204,6 @@ viewConsoleButtons viewingModal playerId =
         anyModalOpen =
             viewingModal /= Nothing
     in
-    -- Hide console buttons on mobile when modal is open, always show on desktop
     div
         [ classList
             [ ( "absolute left-px top-1/2 -translate-y-1/2 z-40", True )
@@ -2840,8 +1212,7 @@ viewConsoleButtons viewingModal playerId =
             ]
         ]
         [ div [ class "flex flex-col gap-2 sm:gap-3" ]
-            [ -- Deck Button
-              button
+            [ button
                 [ class "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
                 , Html.Attributes.title "View Deck"
                 , onClick
@@ -2863,8 +1234,7 @@ viewConsoleButtons viewingModal playerId =
                   else
                     Heroicons.Outline.square3Stack3d [ SvgAttr.class "w-6 h-6 sm:w-7 sm:h-7 text-blue-600" ]
                 ]
-            , -- Levels Button
-              button
+            , button
                 [ class "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
                 , Html.Attributes.title "View Levels"
                 , onClick
@@ -2881,8 +1251,7 @@ viewConsoleButtons viewingModal playerId =
                   else
                     Heroicons.Outline.chartBar [ SvgAttr.class "w-6 h-6 sm:w-7 sm:h-7 text-green-600" ]
                 ]
-            , -- Log Button
-              button
+            , button
                 [ class "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
                 , Html.Attributes.title "View Log"
                 , onClick
@@ -2924,8 +1293,7 @@ viewActionBar player selectedCards cardSort actionInProgress =
             selectedCount > 0 && player.discardsRemaining > 0 && not isLockedIn && not actionInProgress
     in
     div [ class "h-12 sm:h-20 flex items-center shrink-0 bg-[#0C0F14]" ]
-        [ -- Desktop layout
-          div [ class "hidden sm:flex items-center gap-4 ml-auto px-8" ]
+        [ div [ class "hidden sm:flex items-center gap-4 ml-auto px-8" ]
             [ button
                 [ onClick (DiscardCards selectedCardsList)
                 , disabled (not canDiscard)
@@ -2957,8 +1325,7 @@ viewActionBar player selectedCards cardSort actionInProgress =
                     text "Play"
                 ]
             ]
-        , -- Mobile layout
-          div [ class "sm:hidden flex items-center justify-between gap-1.5 w-full px-2" ]
+        , div [ class "sm:hidden flex items-center justify-between gap-1.5 w-full px-2" ]
             [ button
                 [ onClick (DiscardCards selectedCardsList)
                 , disabled (not canDiscard)
@@ -2969,8 +1336,7 @@ viewActionBar player selectedCards cardSort actionInProgress =
                     ]
                 ]
                 [ text "Discard" ]
-            , -- Sort button
-              button
+            , button
                 [ onClick ToggleCardSort
                 , class "px-3 py-1.5 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
                 ]
@@ -3027,14 +1393,11 @@ viewTopRow gameState player opponent opponentName playerName =
             opponentScore > playerScore && scoreDiff > 0
     in
     div [ class "absolute top-2 sm:top-4 left-2 right-2 sm:left-4 sm:right-4 flex items-start justify-between z-10" ]
-        [ -- Left: Player info (you)
-          div [ class "flex items-start gap-2" ]
+        [ div [ class "flex items-start gap-2" ]
             [ viewPlayerInfo player playerName initialLives discardsPerRound playerWinning
             ]
-        , -- Center: Hand progress with score
-          viewTopCenterBar gameState player opponent
-        , -- Right: Opponent info
-          div [ class "flex items-start gap-2" ]
+        , viewTopCenterBar gameState player opponent
+        , div [ class "flex items-start gap-2" ]
             [ viewOpponentInfo opponent opponentName initialLives discardsPerRound opponentWinning
             ]
         ]
@@ -3070,8 +1433,7 @@ viewTopCenterBar gameState player opponent =
             opponentScore > playerScore
     in
     div [ class "flex flex-col items-center text-xs gap-1.5" ]
-        [ -- Progress dots (top row)
-          div [ class "flex items-center gap-1.5" ]
+        [ div [ class "flex items-center gap-1.5" ]
             (List.range 1 totalHands
                 |> List.map
                     (\handNum ->
@@ -3096,8 +1458,7 @@ viewTopCenterBar gameState player opponent =
                             []
                     )
             )
-        , -- Score differential (bottom row)
-          if playerWinning && scoreDiff > 0 then
+        , if playerWinning && scoreDiff > 0 then
             span [ class "text-xs font-semibold text-player" ]
                 [ text ("+" ++ String.fromInt scoreDiff) ]
 
@@ -3115,10 +1476,8 @@ viewTopCenterBar gameState player opponent =
 viewOpponentInfo : PlayerState -> String -> Int -> Int -> Bool -> Html Msg
 viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
     div [ class "flex flex-col items-end gap-0.5 text-base-content" ]
-        [ -- Icons row (trash and hearts - swapped order, horizontal on desktop, vertical on mobile)
-          div [ class "flex flex-col-reverse sm:flex-row items-end sm:items-center gap-0.5 sm:gap-1" ]
-            [ -- Trash (removed from LEFT/center - leftmost trash disappears first)
-              div [ class "flex items-center gap-0.5" ]
+        [ div [ class "flex flex-col-reverse sm:flex-row items-end sm:items-center gap-0.5 sm:gap-1" ]
+            [ div [ class "flex items-center gap-0.5" ]
                 (List.range 1 discardsPerRound
                     |> List.map
                         (\i ->
@@ -3129,10 +1488,8 @@ viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
                                 Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-gray-600" ]
                         )
                 )
-            , -- Dot separator (desktop only)
-              span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
-            , -- Hearts (removed from LEFT/center - leftmost heart disappears first)
-              div [ class "flex items-center gap-0.5" ]
+            , span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
+            , div [ class "flex items-center gap-0.5" ]
                 (List.range 1 initialLives
                     |> List.map
                         (\i ->
@@ -3144,8 +1501,7 @@ viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
                         )
                 )
             ]
-        , -- Name row with star if winning
-          div [ class "flex items-center gap-1" ]
+        , div [ class "flex items-center gap-1" ]
             [ span [ class "text-sm text-opponent truncate max-w-[25ch]" ] [ text opponentName ]
             , if isWinning then
                 Heroicons.Solid.star [ SvgAttr.class "w-3 h-3 text-opponent" ]
@@ -3161,10 +1517,8 @@ viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
 viewPlayerInfo : PlayerState -> String -> Int -> Int -> Bool -> Html Msg
 viewPlayerInfo player playerName initialLives discardsPerRound isWinning =
     div [ class "flex flex-col items-start gap-0.5 text-base-content" ]
-        [ -- Icons row (hearts and trash - horizontal on desktop, vertical on mobile)
-          div [ class "flex flex-col sm:flex-row items-start sm:items-center gap-0.5 sm:gap-1" ]
-            [ -- Hearts (removed from RIGHT/center - rightmost heart disappears first)
-              div [ class "flex items-center gap-0.5" ]
+        [ div [ class "flex flex-col sm:flex-row items-start sm:items-center gap-0.5 sm:gap-1" ]
+            [ div [ class "flex items-center gap-0.5" ]
                 (List.range 1 initialLives
                     |> List.reverse
                     |> List.map
@@ -3176,10 +1530,8 @@ viewPlayerInfo player playerName initialLives discardsPerRound isWinning =
                                 Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
                         )
                 )
-            , -- Dot separator (desktop only)
-              span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
-            , -- Trash (removed from RIGHT/center - rightmost trash disappears first)
-              div [ class "flex items-center gap-0.5" ]
+            , span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
+            , div [ class "flex items-center gap-0.5" ]
                 (List.range 1 discardsPerRound
                     |> List.reverse
                     |> List.map
@@ -3192,8 +1544,7 @@ viewPlayerInfo player playerName initialLives discardsPerRound isWinning =
                         )
                 )
             ]
-        , -- Name row with star if winning
-          div [ class "flex items-center gap-1" ]
+        , div [ class "flex items-center gap-1" ]
             [ span [ class "text-sm text-player truncate max-w-[25ch]" ] [ text playerName ]
             , if isWinning then
                 Heroicons.Solid.star [ SvgAttr.class "w-3 h-3 text-player" ]
@@ -3219,7 +1570,6 @@ viewModal modal model gameState currentPlayer opponent playerId playerName oppon
             viewLevelsModal currentPlayer opponent playerName opponentName
 
         ShopModal ->
-            -- Shop modal will be implemented later
             text ""
 
 
@@ -3228,15 +1578,12 @@ viewModal modal model gameState currentPlayer opponent playerId playerName oppon
 viewGameLogModal : Html Msg
 viewGameLogModal =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
-        [ -- Title row - desktop shows icon+title, mobile shows only X (centered, no text)
-          div [ class "flex items-center justify-center mb-4 w-full" ]
-            [ -- Desktop: Icon + Title
-              div [ class "hidden sm:flex items-center gap-3" ]
+        [ div [ class "flex items-center justify-center mb-4 w-full" ]
+            [ div [ class "hidden sm:flex items-center gap-3" ]
                 [ Heroicons.Solid.newspaper [ SvgAttr.class "w-8 h-8 text-amber-600" ]
                 , h2 [ class "text-2xl font-bold text-amber-600" ] [ text "History" ]
                 ]
-            , -- Mobile: Close button with X icon
-              button
+            , button
                 [ onClick CloseModal
                 , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
                 , Html.Attributes.type_ "button"
@@ -3258,15 +1605,12 @@ viewGameLogModal =
 viewDeckModal : String -> PlayerState -> PlayerState -> String -> String -> String -> Html Msg
 viewDeckModal deckPlayerId currentPlayer opponent playerId playerName opponentName =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
-        [ -- Title row - desktop shows icon+title, mobile shows only X (centered, no text)
-          div [ class "flex items-center justify-center mb-4 w-full" ]
-            [ -- Desktop: Icon + Title
-              div [ class "hidden sm:flex items-center gap-3" ]
+        [ div [ class "flex items-center justify-center mb-4 w-full" ]
+            [ div [ class "hidden sm:flex items-center gap-3" ]
                 [ Heroicons.Solid.square3Stack3d [ SvgAttr.class "w-8 h-8 text-blue-600" ]
                 , h2 [ class "text-2xl font-bold text-blue-600" ] [ text "Deck" ]
                 ]
-            , -- Mobile: Close button with X icon
-              button
+            , button
                 [ onClick CloseModal
                 , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
                 , Html.Attributes.type_ "button"
@@ -3277,8 +1621,7 @@ viewDeckModal deckPlayerId currentPlayer opponent playerId playerName opponentNa
                 ]
             ]
         , div [ class "w-full max-w-4xl" ]
-            [ viewDeckCards currentPlayer
-            ]
+            [ viewDeckCards currentPlayer ]
         ]
 
 
@@ -3305,14 +1648,13 @@ viewDeckCards player =
         ranks =
             [ 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2 ]
 
-        -- Group cards by suit, then by rank within suit
         getSuitCards suit =
             List.filter (\card -> card.suit == suit) allCards
 
         groupCardsByRank cards =
             List.foldl
                 (\card acc ->
-                    Dict.update card.rank
+                    Dict.update (rankValue card.rank)
                         (\maybeList ->
                             case maybeList of
                                 Just list ->
@@ -3355,11 +1697,9 @@ viewDeckCards player =
                                 getMaxDuplicates cardsByRank
                         in
                         div [ class "flex items-start gap-1 sm:gap-2" ]
-                            [ -- Suit count
-                              div [ class "w-3 sm:w-4 text-center pt-1 text-[10px] sm:text-xs text-base-content/50 flex-shrink-0" ]
+                            [ div [ class "w-3 sm:w-4 text-center pt-1 text-[10px] sm:text-xs text-base-content/50 flex-shrink-0" ]
                                 [ text (String.fromInt (List.length suitCards)) ]
-                            , -- 13-column grid with multiple rows for duplicates
-                              div [ class "flex-1 space-y-0.5 sm:space-y-1 overflow-x-auto" ]
+                            , div [ class "flex-1 space-y-0.5 sm:space-y-1 overflow-x-auto" ]
                                 (List.range 0 (maxDupes - 1)
                                     |> List.map
                                         (\rowIdx ->
@@ -3384,7 +1724,6 @@ viewDeckCards player =
                                                                     isFaceDown =
                                                                         Set.member card.id faceDownIds
 
-                                                                    -- Face-down cards treated like draw pile
                                                                     opacityClass =
                                                                         if isInHand && not isFaceDown then
                                                                             "opacity-100"
@@ -3393,7 +1732,7 @@ viewDeckCards player =
                                                                             "opacity-40"
 
                                                                     isDisabled =
-                                                                        List.member card.rank player.disabledRanks
+                                                                        List.member (rankValue card.rank) player.disabledRanks
                                                                             || List.member card.suit player.disabledSuits
                                                                 in
                                                                 div [ class ("w-6 h-9 sm:w-12 sm:h-[72px] flex-shrink-0 " ++ opacityClass) ]
@@ -3428,15 +1767,12 @@ viewDeckCards player =
 viewLevelsModal : PlayerState -> PlayerState -> String -> String -> Html Msg
 viewLevelsModal currentPlayer opponent playerName opponentName =
     div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
-        [ -- Title row - desktop shows icon+title, mobile shows only X (centered, no text)
-          div [ class "flex items-center justify-center mb-6 w-full" ]
-            [ -- Desktop: Icon + Title
-              div [ class "hidden sm:flex items-center gap-3" ]
+        [ div [ class "flex items-center justify-center mb-6 w-full" ]
+            [ div [ class "hidden sm:flex items-center gap-3" ]
                 [ Heroicons.Solid.chartBar [ SvgAttr.class "w-8 h-8 text-green-600" ]
                 , h2 [ class "text-2xl font-bold text-green-600" ] [ text "Levels" ]
                 ]
-            , -- Mobile: Close button with X icon
-              button
+            , button
                 [ onClick CloseModal
                 , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
                 , Html.Attributes.type_ "button"
@@ -3447,8 +1783,7 @@ viewLevelsModal currentPlayer opponent playerName opponentName =
                 ]
             ]
         , div [ class "w-full max-w-2xl" ]
-            [ viewLevelsList currentPlayer
-            ]
+            [ viewLevelsList currentPlayer ]
         ]
 
 
@@ -3596,7 +1931,6 @@ type alias Badge =
 
 
 {-| Get list of active sabotage badges for a player
-Mirrors the get\_sabotage\_badges function from gameplay.ex:421
 -}
 getSabotageBadges : PlayerState -> List Badge
 getSabotageBadges player =
@@ -3728,53 +2062,32 @@ viewBadge colorClass badge =
         [ class ("group relative flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold " ++ colorClass)
         , Html.Attributes.title badge.tooltip
         ]
-        [ span [] [ text badge.name ]
-        ]
-
-
-{-| Render badges for a player (both debuffs and sabotage effects)
-Returns a list of badge elements to be rendered
-Mobile: stacks vertically (1 per line)
-Desktop: wraps horizontally (multiple per line)
--}
-viewPlayerBadges : PlayerState -> String -> Html Msg
-viewPlayerBadges player colorClass =
-    let
-        debuffBadges =
-            if player.activeDebuffs /= [] then
-                let
-                    debuffNames =
-                        player.activeDebuffs
-                            |> List.map handTypeToString
-                            |> String.join ", "
-                in
-                [ { name = "Blocked: " ++ debuffNames, tooltip = "These hand types cannot be played" } ]
-
-            else
-                []
-
-        sabotageBadges =
-            getSabotageBadges player
-
-        allBadges =
-            debuffBadges ++ sabotageBadges
-    in
-    if allBadges /= [] then
-        div [ class "flex flex-col sm:flex-row sm:flex-wrap gap-1" ]
-            (List.map (viewBadge colorClass) allBadges)
-
-    else
-        text ""
+        [ span [] [ text badge.name ] ]
 
 
 {-| View badges positioned at bottom of centerboard
-Mobile: All badges together in one row (player badges first, then opponent)
-Desktop: Player badges on bottom-left, opponent badges on bottom-right
 -}
 viewCenterboardBadges : PlayerState -> PlayerState -> Html Msg
 viewCenterboardBadges player opponent =
     let
-        -- Get individual badge lists
+        _ =
+            Debug.log "Player scrambled" player.scrambled
+
+        _ =
+            Debug.log "Player enhancementsDisabled" player.enhancementsDisabled
+
+        _ =
+            Debug.log "Player supplyChainLimited" player.supplyChainLimited
+
+        _ =
+            Debug.log "Opponent scrambled" opponent.scrambled
+
+        _ =
+            Debug.log "Opponent enhancementsDisabled" opponent.enhancementsDisabled
+
+        _ =
+            Debug.log "Opponent supplyChainLimited" opponent.supplyChainLimited
+
         opponentDebuffBadges =
             if opponent.activeDebuffs /= [] then
                 let
@@ -3818,22 +2131,18 @@ viewCenterboardBadges player opponent =
     in
     if hasAnyBadges then
         div []
-            [ -- Mobile: All badges together, player first then opponent
-              div [ class "sm:hidden absolute bottom-1 left-2 right-2 flex flex-wrap gap-1 z-10" ]
+            [ div [ class "sm:hidden absolute bottom-1 left-2 right-2 flex flex-wrap gap-1 z-10" ]
                 (List.map (viewBadge "bg-player text-sky-900") allPlayerBadges
                     ++ List.map (viewBadge "bg-opponent text-orange-900") allOpponentBadges
                 )
-            , -- Desktop: Split left and right with more spacing
-              div [ class "hidden sm:flex absolute bottom-4 left-4 right-4 items-end justify-between z-10 pointer-events-none" ]
-                [ -- Bottom-left: Player badges (you)
-                  if allPlayerBadges /= [] then
+            , div [ class "hidden sm:flex absolute bottom-4 left-4 right-4 items-end justify-between z-10 pointer-events-none" ]
+                [ if allPlayerBadges /= [] then
                     div [ class "pointer-events-auto flex flex-wrap gap-1" ]
                         (List.map (viewBadge "bg-player text-sky-900") allPlayerBadges)
 
                   else
                     text ""
-                , -- Bottom-right: Opponent badges
-                  if allOpponentBadges /= [] then
+                , if allOpponentBadges /= [] then
                     div [ class "pointer-events-auto flex flex-wrap gap-1" ]
                         (List.map (viewBadge "bg-opponent text-orange-900") allOpponentBadges)
 
@@ -3844,3 +2153,1369 @@ viewCenterboardBadges player opponent =
 
     else
         text ""
+
+
+
+{- ========== SHOP VIEW FUNCTIONS ========== -}
+
+
+{-| View shop interface - full page view
+-}
+viewShop : Model -> ShopData -> Html Msg
+viewShop model shopData =
+    div [ class "h-screen-safe bg-base-200 lg:bg-gradient-to-br lg:from-base-200 lg:via-base-100 lg:to-base-200 overflow-auto" ]
+        [ div [ class "min-h-full flex flex-col lg:flex-row lg:h-screen-safe" ]
+            [ -- Section 1: Header with lives (left column on desktop)
+              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-200 lg:bg-base-100/50 lg:flex lg:flex-col lg:h-screen-safe" ]
+                [ viewShopHeader shopData
+                , -- Cards Grid (hidden on mobile, shown on desktop)
+                  div [ class "hidden lg:block flex-1 p-6 overflow-y-auto" ]
+                    [ viewShopCardsGrid shopData model.shopUIState ]
+                ]
+            , -- Section 2: Timeline + Preview Panel (order-2 on mobile)
+              div [ class "order-2 lg:order-none lg:flex-1 lg:flex lg:flex-col lg:h-screen lg:overflow-hidden" ]
+                [ div [ class "flex-shrink-0" ]
+                    [ viewPickTimeline shopData ]
+                , -- Preview Panel (hidden on mobile, shown on desktop)
+                  case model.shopUIState of
+                    Just uiState ->
+                        div [ class "hidden lg:flex flex-1 flex-col overflow-hidden" ]
+                            [ viewPreviewPanelByState uiState model.shopCountdown shopData.yourSkillTree ]
+
+                    Nothing ->
+                        text ""
+                ]
+            , -- Section 3: Mobile cards view (order-3)
+              div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-200" ]
+                [ viewMobileShopCards shopData model.shopUIState ]
+            , -- Mobile preview modal
+              case model.shopUIState of
+                Just uiState ->
+                    viewMobilePreviewModal uiState model.shopCountdown shopData.yourSkillTree
+
+                Nothing ->
+                    text ""
+            ]
+        ]
+
+
+{-| Shop header with lives display
+-}
+viewShopHeader : ShopData -> Html Msg
+viewShopHeader shopData =
+    div [ class "p-6 border-b border-base-300/50 flex-shrink-0" ]
+        [ div [ class "flex items-center justify-between mb-4" ]
+            [ div [ class "text-2xl font-light text-base-content" ]
+                [ text "Command Center" ]
+            , div [ class "flex items-center gap-2" ]
+                [ div [ class "text-xs uppercase tracking-wider text-base-content/40" ]
+                    [ text "Round" ]
+                , div [ class "text-lg font-semibold text-base-content" ]
+                    [ text (String.fromInt shopData.currentRound) ]
+                ]
+            ]
+        , -- Lives status
+          div [ class "flex items-center gap-4" ]
+            [ -- Player lives
+              div [ class "flex items-center gap-2" ]
+                [ span [ class "text-xs text-player font-medium" ]
+                    [ text shopData.yourName ]
+                , div [ class "flex items-center gap-0.5" ]
+                    (List.range 1 shopData.initialLives
+                        |> List.map
+                            (\i ->
+                                if i <= shopData.yourLives then
+                                    span [ class "text-error" ] [ text "♥" ]
+
+                                else
+                                    span [ class "text-base-content/20" ] [ text "♥" ]
+                            )
+                    )
+                ]
+            , -- VS divider
+              span [ class "text-xs text-base-content/30" ] [ text "vs" ]
+            , -- Opponent lives
+              div [ class "flex items-center gap-2" ]
+                [ span [ class "text-xs text-opponent font-medium" ]
+                    [ text shopData.opponentName ]
+                , div [ class "flex items-center gap-0.5" ]
+                    (List.range 1 shopData.initialLives
+                        |> List.map
+                            (\i ->
+                                if i <= shopData.opponentLives then
+                                    span [ class "text-error" ] [ text "♥" ]
+
+                                else
+                                    span [ class "text-base-content/20" ] [ text "♥" ]
+                            )
+                    )
+                ]
+            ]
+        ]
+
+
+{-| Shop cards grid - desktop view
+-}
+viewShopCardsGrid : ShopData -> Maybe ShopUIState -> Html Msg
+viewShopCardsGrid shopData maybeUIState =
+    let
+        pickedCardIdsSet =
+            Set.fromList shopData.shopState.pickedCardIds
+
+        destroyedCardIdsSet =
+            Set.fromList shopData.shopState.destroyedCardIds
+
+        -- Determine if player can pick based on UI state
+        canPick =
+            case maybeUIState of
+                Just (BrowsingCards _) ->
+                    True
+
+                Just (PreviewingCard _) ->
+                    True
+
+                Just (DestroyPhase data) ->
+                    data.isMyTurn
+
+                _ ->
+                    False
+
+        -- Get the currently previewing card ID
+        previewingCardId =
+            case maybeUIState of
+                Just (PreviewingCard data) ->
+                    Just data.cardId
+
+                _ ->
+                    Nothing
+    in
+    div []
+        [ -- Arsenal Section (Permanent Upgrades)
+          div [ class "mb-6" ]
+            [ div [ class "mb-3 flex items-center gap-2" ]
+                [ div [ class "text-sm font-semibold uppercase tracking-wider text-base-content/40" ]
+                    [ text "Arsenal" ]
+                , div [ class "text-xs text-base-content/40" ]
+                    [ text "Permanent Upgrades" ]
+                ]
+            , div [ class "grid grid-cols-4 gap-3" ]
+                (shopData.availableCards
+                    |> List.take 8
+                    |> List.map
+                        (\shopCard ->
+                            viewShopCard shopCard shopData pickedCardIdsSet destroyedCardIdsSet canPick previewingCardId
+                        )
+                )
+            ]
+        , -- Tactical Ops Section (Action Cards)
+          div []
+            [ div [ class "mb-3 flex items-center gap-2" ]
+                [ div [ class "text-sm font-semibold uppercase tracking-wider text-base-content/40" ]
+                    [ text "Tactical Ops" ]
+                , div [ class "text-xs text-base-content/40" ]
+                    [ text "Temporary Battlefield Advantage" ]
+                ]
+            , div [ class "grid grid-cols-4 gap-3" ]
+                (shopData.availableCards
+                    |> List.drop 8
+                    |> List.map
+                        (\shopCard ->
+                            viewShopCard shopCard shopData pickedCardIdsSet destroyedCardIdsSet canPick previewingCardId
+                        )
+                )
+            ]
+        ]
+
+
+{-| Individual shop card
+-}
+viewShopCard : ShopCard -> ShopData -> Set String -> Set String -> Bool -> Maybe String -> Html Msg
+viewShopCard shopCard shopData pickedIds destroyedIds canPick previewingCardId =
+    let
+        cardId =
+            shopCardId shopCard
+
+        isPicked =
+            Set.member cardId pickedIds
+
+        isDestroyed =
+            Set.member cardId destroyedIds
+
+        isSelected =
+            previewingCardId == Just cardId
+
+        isDisabled =
+            isPicked || isDestroyed || not canPick
+
+        accentColor =
+            case shopCard.kind of
+                Types.Research _ ->
+                    "emerald"
+
+                Types.Counter _ ->
+                    "rose"
+
+                Types.Sabotage _ ->
+                    "amber"
+
+                Types.Logistics _ ->
+                    "violet"
+
+        typeLabel =
+            case shopCard.kind of
+                Types.Research _ ->
+                    "RESEARCH"
+
+                Types.Counter _ ->
+                    "COUNTER"
+
+                Types.Sabotage _ ->
+                    "SABOTAGE"
+
+                Types.Logistics _ ->
+                    "LOGISTICS"
+
+        borderClass =
+            if isSelected then
+                case accentColor of
+                    "emerald" ->
+                        "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
+
+                    "rose" ->
+                        "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
+
+                    "violet" ->
+                        "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
+
+                    "amber" ->
+                        "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
+
+                    _ ->
+                        "border-base-300/50"
+
+            else if isPicked || isDestroyed then
+                "border-base-300/30 opacity-50"
+
+            else if not canPick then
+                "border-base-300/30 opacity-50 cursor-not-allowed"
+
+            else
+                -- Use full class names for Tailwind to detect
+                case accentColor of
+                    "emerald" ->
+                        "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
+
+                    "rose" ->
+                        "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
+
+                    "violet" ->
+                        "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+
+                    "amber" ->
+                        "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
+
+                    _ ->
+                        "border-base-300/50 cursor-pointer"
+
+        labelColor =
+            case accentColor of
+                "emerald" ->
+                    "text-emerald-500"
+
+                "rose" ->
+                    "text-rose-500"
+
+                "amber" ->
+                    "text-amber-500"
+
+                "violet" ->
+                    "text-violet-500"
+
+                _ ->
+                    "text-base-content/40"
+    in
+    button
+        [ class ("w-full aspect-[2/3] rounded-xl p-2 flex flex-col transition-all relative overflow-hidden bg-base-100 border-2 " ++ borderClass)
+        , onClick
+            (if isDisabled then
+                NoOp
+
+             else
+                -- Always preview the card, the action button in preview will make the actual pick
+                PreviewShopCard cardId
+            )
+        , Html.Attributes.disabled isDisabled
+        ]
+        [ -- Type badge
+          div [ class ("text-[10px] font-bold uppercase tracking-wider mb-2 " ++ labelColor) ]
+            [ text typeLabel ]
+        , -- Card name
+          div [ class "flex-1 flex items-center justify-center" ]
+            [ div [ class "font-semibold text-sm text-center leading-tight text-base-content" ]
+                [ text (shopCardName shopCard) ]
+            ]
+        , -- Picked/Destroyed overlay
+          if isPicked then
+            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                [ span [ class "text-xs text-base-content/40 font-medium" ]
+                    [ text "Picked" ]
+                ]
+
+          else if isDestroyed then
+            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                [ span [ class "text-xs text-rose-400 font-medium" ]
+                    [ text "Destroyed" ]
+                ]
+
+          else
+            text ""
+        ]
+
+
+{-| Mobile shop cards - horizontal scrolling sections
+-}
+viewMobileShopCards : ShopData -> Maybe ShopUIState -> Html Msg
+viewMobileShopCards shopData maybeUIState =
+    let
+        pickedCardIdsSet =
+            Set.fromList shopData.shopState.pickedCardIds
+
+        destroyedCardIdsSet =
+            Set.fromList shopData.shopState.destroyedCardIds
+
+        -- Determine if player can pick based on UI state
+        canPick =
+            case maybeUIState of
+                Just (BrowsingCards _) ->
+                    True
+
+                Just (PreviewingCard _) ->
+                    True
+
+                Just (DestroyPhase data) ->
+                    data.isMyTurn
+
+                _ ->
+                    False
+
+        -- Extract the currently previewing card ID
+        previewingCardId =
+            case maybeUIState of
+                Just (PreviewingCard data) ->
+                    Just data.cardId
+
+                _ ->
+                    Nothing
+    in
+    div []
+        [ -- Arsenal Section
+          div [ class "mb-4" ]
+            [ div [ class "mb-2 flex items-center gap-2" ]
+                [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
+                    [ text "Arsenal" ]
+                , div [ class "text-[10px] text-base-content/40" ]
+                    [ text "Permanent Upgrades" ]
+                ]
+            , div [ class "flex gap-2 overflow-x-auto pb-2" ]
+                (shopData.availableCards
+                    |> List.take 8
+                    |> List.map
+                        (\shopCard ->
+                            viewMobileShopCard shopCard shopData pickedCardIdsSet destroyedCardIdsSet canPick previewingCardId
+                        )
+                )
+            ]
+        , -- Tactical Ops Section
+          div []
+            [ div [ class "mb-2 flex items-center gap-2" ]
+                [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
+                    [ text "Tactical Ops" ]
+                , div [ class "text-[10px] text-base-content/40" ]
+                    [ text "Temporary Battlefield Advantage" ]
+                ]
+            , div [ class "flex gap-2 overflow-x-auto pb-2" ]
+                (shopData.availableCards
+                    |> List.drop 8
+                    |> List.map
+                        (\shopCard ->
+                            viewMobileShopCard shopCard shopData pickedCardIdsSet destroyedCardIdsSet canPick previewingCardId
+                        )
+                )
+            ]
+        ]
+
+
+{-| Mobile shop card (smaller)
+-}
+viewMobileShopCard : ShopCard -> ShopData -> Set String -> Set String -> Bool -> Maybe String -> Html Msg
+viewMobileShopCard shopCard shopData pickedIds destroyedIds canPick previewingCardId =
+    let
+        cardId =
+            shopCardId shopCard
+
+        isPicked =
+            Set.member cardId pickedIds
+
+        isDestroyed =
+            Set.member cardId destroyedIds
+
+        isSelected =
+            previewingCardId == Just cardId
+
+        isDisabled =
+            isPicked || isDestroyed || not canPick
+
+        accentColor =
+            case shopCard.kind of
+                Types.Research _ ->
+                    "emerald"
+
+                Types.Counter _ ->
+                    "rose"
+
+                Types.Sabotage _ ->
+                    "amber"
+
+                Types.Logistics _ ->
+                    "violet"
+
+        typeLabel =
+            case shopCard.kind of
+                Types.Research _ ->
+                    "RESEARCH"
+
+                Types.Counter _ ->
+                    "COUNTER"
+
+                Types.Sabotage _ ->
+                    "SABOTAGE"
+
+                Types.Logistics _ ->
+                    "LOGISTICS"
+
+        borderClass =
+            if isSelected then
+                case accentColor of
+                    "emerald" ->
+                        "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
+
+                    "rose" ->
+                        "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
+
+                    "violet" ->
+                        "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
+
+                    "amber" ->
+                        "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
+
+                    _ ->
+                        "border-base-300/50"
+
+            else if isPicked || isDestroyed then
+                "border-base-300/30 opacity-50"
+
+            else if not canPick then
+                "border-base-300/30 opacity-50 cursor-not-allowed"
+
+            else
+                "border-base-300/50"
+
+        labelColor =
+            case accentColor of
+                "emerald" ->
+                    "text-emerald-500"
+
+                "rose" ->
+                    "text-rose-500"
+
+                "amber" ->
+                    "text-amber-500"
+
+                "violet" ->
+                    "text-violet-500"
+
+                _ ->
+                    "text-base-content/40"
+    in
+    button
+        [ class ("w-[100px] aspect-[2/3] rounded-xl p-2 flex flex-col transition-all relative overflow-hidden flex-shrink-0 bg-base-100 border-2 " ++ borderClass)
+        , onClick
+            (if isDisabled then
+                NoOp
+
+             else
+                -- Always preview the card, the action button in preview will make the actual pick
+                PreviewShopCard cardId
+            )
+        , Html.Attributes.disabled isDisabled
+        ]
+        [ -- Type badge
+          div [ class ("text-[8px] lg:text-[10px] font-bold uppercase tracking-wider mb-1 " ++ labelColor) ]
+            [ text typeLabel ]
+        , -- Card name
+          div [ class "flex-1 flex items-center justify-center" ]
+            [ div [ class "font-semibold text-xs text-center leading-tight text-base-content" ]
+                [ text (shopCardName shopCard) ]
+            ]
+        , -- Picked/Destroyed overlay
+          if isPicked then
+            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                [ span [ class "text-xs text-base-content/40 font-medium" ]
+                    [ text "Picked" ]
+                ]
+
+          else if isDestroyed then
+            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                [ span [ class "text-xs text-rose-400 font-medium" ]
+                    [ text "Destroyed" ]
+                ]
+
+          else
+            text ""
+        ]
+
+
+{-| Pick timeline showing order of picks
+-}
+viewPickTimeline : ShopData -> Html Msg
+viewPickTimeline shopData =
+    let
+        firstPickerName =
+            if shopData.shopState.firstPickerId == shopData.yourPlayerId then
+                shopData.yourName
+
+            else
+                shopData.opponentName
+
+        secondPickerName =
+            if shopData.shopState.secondPickerId == shopData.yourPlayerId then
+                shopData.yourName
+
+            else
+                shopData.opponentName
+
+        -- Destroyer name (if there is one)
+        destroyerName =
+            case shopData.shopState.destroyerId of
+                Just destroyerId ->
+                    if destroyerId == shopData.yourPlayerId then
+                        Just shopData.yourName
+
+                    else
+                        Just shopData.opponentName
+
+                Nothing ->
+                    Nothing
+
+        totalDestroys =
+            shopData.shopState.destroysAllowed
+
+        totalPicks =
+            shopData.totalRounds * 2
+
+        destroyedCount =
+            List.length shopData.shopState.destroyedCardIds
+
+        pickedCount =
+            List.length shopData.shopState.pickedCardIds
+
+        reversedDestroyedIds =
+            List.reverse shopData.shopState.destroyedCardIds
+
+        reversedPickedIds =
+            List.reverse shopData.shopState.pickedCardIds
+
+        -- Create destroy slots
+        destroySlots =
+            List.range 1 totalDestroys
+                |> List.map
+                    (\destroyNum ->
+                        let
+                            maybeCardId =
+                                reversedDestroyedIds
+                                    |> List.drop (destroyNum - 1)
+                                    |> List.head
+
+                            maybeCard =
+                                maybeCardId
+                                    |> Maybe.andThen (\cardId -> shopData.availableCards |> List.filter (\c -> c.id == cardId) |> List.head)
+
+                            isCurrent =
+                                not shopData.shopState.destroyPhaseComplete
+                                    && destroyNum
+                                    == (destroyedCount + 1)
+                                    && destroyedCount
+                                    < totalDestroys
+
+                            -- Check if this is the player's action
+                            isPlayerAction =
+                                case shopData.shopState.destroyerId of
+                                    Just destroyerId ->
+                                        destroyerId == shopData.yourPlayerId
+
+                                    Nothing ->
+                                        False
+                        in
+                        { slotNum = destroyNum
+                        , slotType = "DESTROY"
+                        , pickerName = Maybe.withDefault "" destroyerName
+                        , maybeCard = maybeCard
+                        , isCurrent = isCurrent
+                        , isPlayerAction = isPlayerAction
+                        }
+                    )
+
+        -- Create pick slots
+        pickSlots =
+            List.range 1 totalPicks
+                |> List.map
+                    (\pickNum ->
+                        let
+                            -- Determine who is picking
+                            pickerId =
+                                if modBy 2 pickNum == 1 then
+                                    shopData.shopState.firstPickerId
+
+                                else
+                                    shopData.shopState.secondPickerId
+
+                            pickerName =
+                                if modBy 2 pickNum == 1 then
+                                    firstPickerName
+
+                                else
+                                    secondPickerName
+
+                            maybeCardId =
+                                reversedPickedIds
+                                    |> List.drop (pickNum - 1)
+                                    |> List.head
+
+                            maybeCard =
+                                maybeCardId
+                                    |> Maybe.andThen (\cardId -> shopData.availableCards |> List.filter (\c -> c.id == cardId) |> List.head)
+
+                            isCurrent =
+                                shopData.shopState.destroyPhaseComplete
+                                    && pickNum
+                                    == (pickedCount + 1)
+                                    && pickedCount
+                                    < totalPicks
+
+                            -- Check if this is the player's pick
+                            isPlayerAction =
+                                pickerId == shopData.yourPlayerId
+                        in
+                        { slotNum = pickNum
+                        , slotType = "PICK"
+                        , pickerName = pickerName
+                        , maybeCard = maybeCard
+                        , isCurrent = isCurrent
+                        , isPlayerAction = isPlayerAction
+                        }
+                    )
+
+        -- Combine destroy + pick slots
+        allSlots =
+            destroySlots ++ pickSlots
+    in
+    div [ class "p-3 lg:p-6 border-b border-base-300/50" ]
+        [ div [ class "flex flex-wrap gap-2 lg:gap-3" ]
+            (allSlots
+                |> List.map
+                    (\slot ->
+                        viewTimelineSlot slot.slotNum slot.slotType slot.pickerName slot.maybeCard slot.isCurrent slot.isPlayerAction
+                    )
+            )
+        ]
+
+
+{-| Individual timeline slot
+-}
+viewTimelineSlot : Int -> String -> String -> Maybe ShopCard -> Bool -> Bool -> Html Msg
+viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction =
+    let
+        ordinal =
+            case slotNum of
+                1 ->
+                    "1ST"
+
+                2 ->
+                    "2ND"
+
+                3 ->
+                    "3RD"
+
+                n ->
+                    String.fromInt n ++ "TH"
+
+        label =
+            if slotType == "DESTROY" then
+                "DESTROY"
+
+            else
+                ordinal ++ " " ++ slotType
+
+        ( containerClass, labelColor ) =
+            if maybeCard /= Nothing then
+                if slotType == "DESTROY" then
+                    ( "bg-base-100 border-rose-400/30", "text-rose-500/60" )
+
+                else
+                    ( "bg-base-100 border-base-300/50", "text-base-content/40" )
+
+            else if isCurrent then
+                -- Use player color for the glow (blue for player, orange for opponent)
+                if isPlayerAction then
+                    ( "bg-base-200/50 border-dashed animate-pulse border-blue-400", "text-base-content/40" )
+
+                else
+                    ( "bg-base-200/50 border-dashed animate-pulse border-orange-400", "text-base-content/40" )
+
+            else
+                ( "bg-base-200/30 border-base-300/30", "text-base-content/40" )
+    in
+    div [ class ("flex-1 min-w-[110px] lg:min-w-[180px] flex-shrink-0 rounded-lg p-2 lg:p-3 border transition-all " ++ containerClass) ]
+        [ div [ class ("text-[9px] lg:text-[10px] uppercase tracking-wider mb-0.5 lg:mb-1 " ++ labelColor) ]
+            [ text label ]
+        , case maybeCard of
+            Just card ->
+                let
+                    dotColor =
+                        case card.kind of
+                            Types.Research _ ->
+                                "bg-emerald-500"
+
+                            Types.Counter _ ->
+                                "bg-rose-500"
+
+                            Types.Sabotage _ ->
+                                "bg-amber-500"
+
+                            Types.Logistics _ ->
+                                "bg-violet-500"
+                in
+                div [ class "flex items-center gap-1.5 lg:gap-2" ]
+                    [ div [ class ("w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full flex-shrink-0 " ++ dotColor) ] []
+                    , div [ class "min-w-0" ]
+                        [ div [ class "text-xs lg:text-sm font-medium text-base-content truncate" ]
+                            [ text (shopCardName card) ]
+                        , div [ class "text-[9px] lg:text-[10px] text-base-content/40" ]
+                            [ text pickerName ]
+                        ]
+                    ]
+
+            Nothing ->
+                div [ class "text-xs lg:text-sm text-base-content/30" ]
+                    [ text pickerName ]
+        ]
+
+
+{-| Preview panel - exhaustive pattern match on UI state
+-}
+viewPreviewPanelByState : ShopUIState -> Maybe Int -> SkillTree -> Html Msg
+viewPreviewPanelByState uiState shopCountdown skillTree =
+    case uiState of
+        DestroyPhase data ->
+            if data.isMyTurn then
+                viewDestroyInstructions data.destroysRemaining
+
+            else
+                viewWaitingMessage "Opponent is destroying cards..."
+
+        WaitingForOpponent data ->
+            case data.reason of
+                OpponentDestroying ->
+                    viewWaitingMessage "Opponent is destroying cards..."
+
+                OpponentPicking ->
+                    viewWaitingMessage "Opponent is picking..."
+
+        BrowsingCards _ ->
+            viewEmptyBrowsingPreview
+
+        PreviewingCard data ->
+            viewShopCardPreview data skillTree
+
+        SelectingDeckBuilderCards data ->
+            viewDeckBuilderSelectionPreview data
+
+        SelectingPlusBombCard data ->
+            viewPlusBombSelectionPreview data
+
+        ShopComplete _ ->
+            viewShopCompletePreview shopCountdown
+
+
+{-| Mobile preview modal
+-}
+viewMobilePreviewModal : ShopUIState -> Maybe Int -> SkillTree -> Html Msg
+viewMobilePreviewModal uiState shopCountdown skillTree =
+    let
+        hasContent =
+            case uiState of
+                PreviewingCard _ ->
+                    True
+
+                SelectingDeckBuilderCards _ ->
+                    True
+
+                SelectingPlusBombCard _ ->
+                    True
+
+                _ ->
+                    False
+    in
+    if hasContent then
+        div [ class "lg:hidden fixed inset-0 z-50 bg-black/50" ]
+            [ div [ class "absolute inset-x-0 bottom-0 flex items-end" ]
+                [ div [ class "relative w-full max-h-[85vh] bg-base-100 rounded-t-2xl shadow-2xl overflow-hidden animate-slide-up" ]
+                    [ -- Content (scrollable)
+                      div [ class "overflow-y-auto max-h-[85vh]" ]
+                        [ viewPreviewPanelByState uiState shopCountdown skillTree ]
+                    ]
+                ]
+            ]
+
+    else
+        text ""
+
+
+{-| Destroy phase instructions
+-}
+viewDestroyInstructions : Int -> Html Msg
+viewDestroyInstructions destroysRemaining =
+    div [ class "flex-1 flex items-center justify-center" ]
+        [ div [ class "text-center" ]
+            [ p [ class "text-base-content/60 text-lg font-light mb-2" ]
+                [ text "Destroy cards from the shop" ]
+            , p [ class "text-base-content/40 text-sm" ]
+                [ text
+                    (if destroysRemaining == 1 then
+                        "1 destroy remaining"
+
+                     else
+                        String.fromInt destroysRemaining ++ " destroys remaining"
+                    )
+                ]
+            ]
+        ]
+
+
+{-| Waiting message
+-}
+viewWaitingMessage : String -> Html Msg
+viewWaitingMessage message =
+    div [ class "flex-1 flex items-center justify-center" ]
+        [ div [ class "text-center" ]
+            [ p [ class "text-base-content/40 text-lg font-light" ]
+                [ text message ]
+            ]
+        ]
+
+
+{-| Empty preview when browsing
+-}
+viewEmptyBrowsingPreview : Html Msg
+viewEmptyBrowsingPreview =
+    div [ class "flex-1 flex items-center justify-center" ]
+        [ div [ class "text-center" ]
+            [ p [ class "text-base-content/40 text-lg font-light" ]
+                [ text "Select a card to preview" ]
+            ]
+        ]
+
+
+{-| Shop complete preview
+-}
+viewShopCompletePreview : Maybe Int -> Html Msg
+viewShopCompletePreview shopCountdown =
+    div [ class "flex-1 flex items-center justify-center" ]
+        [ div [ class "text-center" ]
+            [ p [ class "text-base-content/60 text-lg font-light mb-2" ]
+                [ text "All Picks Complete" ]
+            , p [ class "text-base-content/40 text-sm" ]
+                [ case shopCountdown of
+                    Just seconds ->
+                        text ("Starting in " ++ String.fromInt seconds ++ "...")
+
+                    Nothing ->
+                        text "Starting..."
+                ]
+            ]
+        ]
+
+
+{-| Shop card preview (regular card)
+-}
+viewShopCardPreview : PreviewCardData -> SkillTree -> Html Msg
+viewShopCardPreview data skillTree =
+    let
+        accentColor =
+            case data.card.kind of
+                Types.Research _ ->
+                    "emerald"
+
+                Types.Counter _ ->
+                    "rose"
+
+                Types.Sabotage _ ->
+                    "amber"
+
+                Types.Logistics _ ->
+                    "violet"
+
+        typeLabel =
+            case data.card.kind of
+                Types.Research _ ->
+                    "Research"
+
+                Types.Counter _ ->
+                    "Counter"
+
+                Types.Sabotage _ ->
+                    "Sabotage"
+
+                Types.Logistics _ ->
+                    "Logistics"
+
+        labelColorClass =
+            case accentColor of
+                "emerald" ->
+                    "text-emerald-500/60"
+
+                "rose" ->
+                    "text-rose-500/60"
+
+                "amber" ->
+                    "text-amber-500/60"
+
+                "violet" ->
+                    "text-violet-500/60"
+
+                _ ->
+                    "text-base-content/40"
+
+        buttonBgClass =
+            case accentColor of
+                "emerald" ->
+                    "bg-emerald-500 hover:bg-emerald-600"
+
+                "rose" ->
+                    "bg-rose-500 hover:bg-rose-600"
+
+                "amber" ->
+                    "bg-amber-500 hover:bg-amber-600"
+
+                "violet" ->
+                    "bg-violet-500 hover:bg-violet-600"
+
+                _ ->
+                    "bg-base-300 hover:bg-base-400"
+    in
+    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
+        [ -- Header (always centered)
+          div [ class "mb-8 flex-shrink-0 text-center" ]
+            [ div [ class ("text-xs uppercase tracking-widest mb-1 " ++ labelColorClass) ]
+                [ text typeLabel ]
+            , h2 [ class "text-4xl font-light text-base-content" ]
+                [ text (shopCardName data.card) ]
+            ]
+        , -- Description and upgrade details
+          div [ class "overflow-y-auto" ]
+            [ if isLevelUpCard data.card then
+                -- For LevelUp cards, skip description and show upgrade details
+                viewUpgradeDetails data.card skillTree
+
+              else
+                -- For other cards, show description
+                div [ class "mb-8" ]
+                    [ p [ class "text-base-content/60 text-lg leading-relaxed text-center" ]
+                        [ text (shopCardDescription data.card) ]
+                    ]
+            ]
+        , -- Action Buttons (always inline with Cancel on mobile, except destroy mode)
+          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
+            [ -- Cancel button (mobile only, not in destroy mode)
+              if not data.isDestroyMode then
+                button
+                    [ onClick ClearCardPreview
+                    , class "lg:hidden px-6 py-3 rounded-full font-medium transition-all text-base-content bg-base-300/50 hover:bg-base-300"
+                    ]
+                    [ text "Cancel" ]
+
+              else
+                text ""
+            , -- Primary action button
+              if data.isDestroyMode then
+                button
+                    [ onClick (DestroyShopCard data.cardId)
+                    , class "px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl bg-rose-500 hover:bg-rose-600"
+                    ]
+                    [ text "Destroy" ]
+
+              else if isDeckBuilderCard data.card then
+                button
+                    [ onClick (ConfirmDeckBuilder data.cardId)
+                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    ]
+                    [ text "Confirm" ]
+
+              else if isPlusBombCard data.card then
+                button
+                    [ onClick (ConfirmPlusBomb data.cardId)
+                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    ]
+                    [ text "Confirm" ]
+
+              else if isLevelUpCard data.card then
+                button
+                    [ onClick (MakeShopPick data.cardId)
+                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    ]
+                    [ text "Confirm" ]
+
+              else
+                button
+                    [ onClick (MakeShopPick data.cardId)
+                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    ]
+                    [ text "Confirm" ]
+            ]
+        ]
+
+
+{-| Display upgrade details showing current level → new level
+-}
+viewUpgradeDetails : ShopCard -> SkillTree -> Html Msg
+viewUpgradeDetails card skillTree =
+    -- Only show for LevelUp cards
+    case card.kind of
+        Research (LevelUpCard handType) ->
+            let
+                -- Get current level from skill tree (default to 1)
+                currentLevel =
+                    case handType of
+                        HighCard ->
+                            skillTree.highCard
+
+                        Pair ->
+                            skillTree.pair
+
+                        TwoPair ->
+                            skillTree.twoPair
+
+                        ThreeOfAKind ->
+                            skillTree.threeOfAKind
+
+                        Straight ->
+                            skillTree.straight
+
+                        Flush ->
+                            skillTree.flush
+
+                        FullHouse ->
+                            skillTree.fullHouse
+
+                        FourOfAKind ->
+                            skillTree.fourOfAKind
+
+                        StraightFlush ->
+                            skillTree.straightFlush
+
+                newLevel =
+                    currentLevel + 1
+
+                -- Base hand scores
+                ( baseChips, baseMult ) =
+                    case handType of
+                        HighCard ->
+                            ( 125, 1 )
+
+                        Pair ->
+                            ( 140, 1 )
+
+                        TwoPair ->
+                            ( 105, 2 )
+
+                        ThreeOfAKind ->
+                            ( 130, 2 )
+
+                        Straight ->
+                            ( 70, 4 )
+
+                        Flush ->
+                            ( 70, 4 )
+
+                        FullHouse ->
+                            ( 70, 5 )
+
+                        FourOfAKind ->
+                            ( 50, 12 )
+
+                        StraightFlush ->
+                            ( 95, 12 )
+
+                -- Upgrade bonuses per level
+                ( upgradeChips, upgradeMult ) =
+                    case handType of
+                        HighCard ->
+                            ( 10, 1 )
+
+                        Pair ->
+                            ( 10, 1 )
+
+                        TwoPair ->
+                            ( 10, 1 )
+
+                        ThreeOfAKind ->
+                            ( 10, 1 )
+
+                        Straight ->
+                            ( 10, 1 )
+
+                        Flush ->
+                            ( 10, 1 )
+
+                        FullHouse ->
+                            ( 10, 1 )
+
+                        FourOfAKind ->
+                            ( 20, 2 )
+
+                        StraightFlush ->
+                            ( 20, 2 )
+
+                -- Calculate current and new chips/mult
+                currentChips =
+                    baseChips + (currentLevel - 1) * upgradeChips
+
+                currentMult =
+                    baseMult + (currentLevel - 1) * upgradeMult
+
+                newChips =
+                    baseChips + (newLevel - 1) * upgradeChips
+
+                newMult =
+                    baseMult + (newLevel - 1) * upgradeMult
+            in
+            div [ class "flex items-center justify-center gap-6" ]
+                [ -- Current Level
+                  div [ class "text-center" ]
+                    [ div [ class "text-xs uppercase tracking-wider text-base-content/40 mb-2" ]
+                        [ text ("Level " ++ String.fromInt currentLevel) ]
+                    , div [ class "flex items-center gap-3" ]
+                        [ div [ class "text-center" ]
+                            [ div [ class "text-sm text-base-content/40" ] [ text "Chips" ]
+                            , div [ class "text-lg font-semibold text-base-content" ] [ text (String.fromInt currentChips) ]
+                            ]
+                        , div [ class "text-base-content/20" ] [ text "×" ]
+                        , div [ class "text-center" ]
+                            [ div [ class "text-sm text-base-content/40" ] [ text "Mult" ]
+                            , div [ class "text-lg font-semibold text-base-content" ] [ text (String.fromInt currentMult) ]
+                            ]
+                        ]
+                    ]
+                , -- Arrow
+                  div [ class "text-base-content/40 text-2xl" ]
+                    [ text "→" ]
+                , -- New Level
+                  div [ class "text-center" ]
+                    [ div [ class "text-xs uppercase tracking-wider text-emerald-600 mb-2" ]
+                        [ text ("Level " ++ String.fromInt newLevel) ]
+                    , div [ class "flex items-center gap-3" ]
+                        [ div [ class "text-center" ]
+                            [ div [ class "text-sm text-emerald-600/60" ] [ text "Chips" ]
+                            , div [ class "text-lg font-semibold text-emerald-600" ] [ text (String.fromInt newChips) ]
+                            ]
+                        , div [ class "text-emerald-600/40" ] [ text "×" ]
+                        , div [ class "text-center" ]
+                            [ div [ class "text-sm text-emerald-600/60" ] [ text "Mult" ]
+                            , div [ class "text-lg font-semibold text-emerald-600" ] [ text (String.fromInt newMult) ]
+                            ]
+                        ]
+                    ]
+                ]
+
+        _ ->
+            text ""
+
+
+{-| Deck builder selection preview
+-}
+viewDeckBuilderSelectionPreview : DeckBuilderSelectionData -> Html Msg
+viewDeckBuilderSelectionPreview data =
+    let
+        buttonBgClass =
+            "bg-violet-500 hover:bg-violet-600"
+    in
+    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
+        [ -- Header (centered)
+          div [ class "mb-8 flex-shrink-0 text-center" ]
+            [ div [ class "text-xs uppercase tracking-widest mb-1 text-violet-500/60" ]
+                [ text "Logistics" ]
+            , h2 [ class "text-4xl font-light text-base-content" ]
+                [ text (shopCardName data.deckBuilderCard) ]
+            ]
+        , -- Card selection
+          div [ class "overflow-y-auto" ]
+            [ div [ class "mb-4 text-center" ]
+                [ p [ class "text-sm text-base-content/50" ]
+                    [ text ("Select up to " ++ String.fromInt data.maxSelection ++ " cards to enhance") ]
+                ]
+            , div [ class "flex flex-wrap gap-3 mb-6" ]
+                (data.availableCards
+                    |> List.map
+                        (\card ->
+                            let
+                                isSelected =
+                                    List.member card.id data.selectedCardIds
+                            in
+                            viewDeckBuilderCardMinimal card isSelected
+                        )
+                )
+            ]
+        , -- Action Buttons (always show confirm, disabled when empty)
+          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
+            [ let
+                hasSelection =
+                    not (List.isEmpty data.selectedCardIds)
+              in
+              button
+                [ onClick
+                    (if hasSelection then
+                        ConfirmSelection
+
+                     else
+                        NoOp
+                    )
+                , class
+                    ("px-8 py-3 rounded-full font-medium transition-all "
+                        ++ (if hasSelection then
+                                "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
+
+                            else
+                                "text-base-content/30 bg-base-300/30 cursor-not-allowed"
+                           )
+                    )
+                ]
+                [ text "Confirm" ]
+            ]
+        ]
+
+
+{-| Minimal card for deck builder selection
+-}
+viewDeckBuilderCardMinimal : Card -> Bool -> Html Msg
+viewDeckBuilderCardMinimal card isSelected =
+    button
+        [ class
+            ("w-full sm:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
+                ++ (if isSelected then
+                        "ring-2 ring-violet-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
+
+                    else
+                        "hover:shadow-md hover:scale-102 border border-base-300/50"
+                   )
+            )
+        , onClick (ToggleDeckCardSelection card.id)
+        ]
+        [ Cards.viewCardImage
+            { card = card
+            , isFaceDown = False
+            , showEnhancement = True
+            , compact = False
+            , disabled = False
+            , enhancementDisabled = False
+            }
+        ]
+
+
+{-| Plus bomb selection preview
+-}
+viewPlusBombSelectionPreview : PlusBombSelectionData -> Html Msg
+viewPlusBombSelectionPreview data =
+    let
+        buttonBgClass =
+            "bg-amber-500 hover:bg-amber-600"
+    in
+    div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
+        [ -- Header (centered)
+          div [ class "mb-8 flex-shrink-0 text-center" ]
+            [ div [ class "text-xs uppercase tracking-widest mb-1 text-amber-500/60" ]
+                [ text "Sabotage" ]
+            , h2 [ class "text-4xl font-light text-base-content" ]
+                [ text "Plus Bomb" ]
+            ]
+        , -- Card selection
+          div [ class "overflow-y-auto" ]
+            [ div [ class "mb-4 text-center" ]
+                [ p [ class "text-sm text-base-content/50" ]
+                    [ text "Select a card to enhance with +1 to its value" ]
+                ]
+            , div [ class "flex flex-wrap gap-3 mb-6" ]
+                (data.availableCards
+                    |> List.map
+                        (\card ->
+                            let
+                                isSelected =
+                                    data.selectedCardId == Just card.id
+                            in
+                            viewPlusBombCardMinimal card isSelected
+                        )
+                )
+            ]
+        , -- Action Buttons
+          div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
+            [ let
+                hasSelection =
+                    data.selectedCardId /= Nothing
+              in
+              button
+                [ onClick
+                    (if hasSelection then
+                        ConfirmSelection
+
+                     else
+                        NoOp
+                    )
+                , class
+                    ("px-8 py-3 rounded-full font-medium transition-all "
+                        ++ (if hasSelection then
+                                "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
+
+                            else
+                                "text-base-content/30 bg-base-300/30 cursor-not-allowed"
+                           )
+                    )
+                ]
+                [ text "Confirm" ]
+            ]
+        ]
+
+
+{-| Minimal card for plus bomb selection
+-}
+viewPlusBombCardMinimal : Card -> Bool -> Html Msg
+viewPlusBombCardMinimal card isSelected =
+    button
+        [ class
+            ("w-full sm:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
+                ++ (if isSelected then
+                        "ring-2 ring-rose-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
+
+                    else
+                        "hover:shadow-md hover:scale-102 border border-base-300/50"
+                   )
+            )
+        , onClick (SelectPlusBombCard card.id)
+        ]
+        [ Cards.viewCardImage
+            { card = card
+            , isFaceDown = False
+            , showEnhancement = True
+            , compact = False
+            , disabled = False
+            , enhancementDisabled = False
+            }
+        ]

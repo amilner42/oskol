@@ -105,23 +105,44 @@ cardToSvgUrl card =
     let
         rankStr =
             case card.rank of
-                14 ->
+                Ace ->
                     "A"
 
-                13 ->
+                King ->
                     "K"
 
-                12 ->
+                Queen ->
                     "Q"
 
-                11 ->
+                Jack ->
                     "J"
 
-                10 ->
+                Ten ->
                     "T"
 
-                n ->
-                    String.fromInt n
+                Nine ->
+                    "9"
+
+                Eight ->
+                    "8"
+
+                Seven ->
+                    "7"
+
+                Six ->
+                    "6"
+
+                Five ->
+                    "5"
+
+                Four ->
+                    "4"
+
+                Three ->
+                    "3"
+
+                Two ->
+                    "2"
 
         suitStr =
             case card.suit of

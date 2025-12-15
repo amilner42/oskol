@@ -163,8 +163,25 @@ mix deps.get          # Install dependencies
 mix ecto.setup        # Setup database (if needed)
 mix phx.server        # Start server (localhost:4000)
 mix test              # Run tests
-mix compile           # Compile Elixir code
+mix compile           # Compile Elixir/Gleam code
+mix assets.build      # Compile Elm and build assets
 ```
+
+## Development Workflow for Claude
+
+**IMPORTANT: Never run background tasks or servers**
+- ❌ DO NOT use `run_in_background: true` on mix phx.server or any long-running commands
+- ❌ DO NOT start the Phoenix server in the background
+- ✅ DO use `mix compile` to verify Elixir/Gleam code compiles
+- ✅ DO use `mix assets.build` or `cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null` to verify Elm compiles
+- ✅ DO use `timeout 90` on potentially long-running commands to prevent hanging
+
+**Testing code changes:**
+1. Make your code changes
+2. Run `mix compile` to check Elixir/Gleam compilation
+3. Run `cd assets && timeout 90 ../node_modules/.bin/elm make src/Main.elm --output=/dev/null` to check Elm compilation
+4. Report compilation results to the user
+5. Let the user test manually in their browser
 
 ## Common Patterns
 
@@ -192,6 +209,7 @@ mix compile           # Compile Elixir code
 ❌ Don't use undo functionality (removed as confusing)
 ❌ Don't accumulate state in LiveView (use event log)
 ❌ Don't put UI logic in game state (separation of concerns)
+❌ Don't run background tasks or servers (use compile commands instead - see Development Workflow)
 
 ## Testing Notes
 

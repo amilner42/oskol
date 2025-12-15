@@ -7,8 +7,15 @@ defmodule Oskol.MixProject do
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
-      erlc_paths: ["build/dev/erlang/oskol/_gleam_artefacts"],
+      erlc_paths: [
+        "build/dev/erlang/oskol/_gleam_artefacts",
+        "build/dev/erlang/gleam_stdlib/_gleam_artefacts",
+        "build/dev/erlang/gleam_json/_gleam_artefacts",
+        "build/dev/erlang/gleeunit/_gleam_artefacts"
+      ],
       erlc_include_path: "build/dev/erlang/oskol/include",
+      erlc_options: [{:d, :GLEAM}],
+      erlc_exclude_paths: ["build/dev/erlang/*/gleam@@compile.erl"],
       prune_code_paths: false,
       start_permanent: Mix.env() == :prod,
       archives: [mix_gleam: "~> 0.6"],
@@ -68,7 +75,11 @@ defmodule Oskol.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      # Gleam packages
+      {:gleam_stdlib, "~> 0.34 or ~> 1.0"},
+      {:gleam_json, "~> 3.0"},
+      {:gleeunit, "~> 1.0", only: [:dev, :test], runtime: false}
     ]
   end
 

@@ -2,7 +2,6 @@ defmodule OskolWeb.UserSocket do
   use Phoenix.Socket
 
   # Channels
-  channel "counter:*", OskolWeb.CounterChannel
   channel "game:*", OskolWeb.GameChannel
 
   @impl true
