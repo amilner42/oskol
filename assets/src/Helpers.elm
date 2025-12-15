@@ -108,41 +108,57 @@ shopCardDescription card =
         Types.Counter inner ->
             case inner of
                 DenialCard handType ->
-                    "Opponent cannot level up " ++ Types.handTypeToString handType ++ " this shop"
+                    "Opponent cannot score with " ++ Types.handTypeToString handType ++ " next round"
 
         Types.Logistics inner ->
             case inner of
-                FortifyCard amount _ ->
-                    "+" ++ String.fromInt amount ++ " chips to selected cards"
+                FortifyCard amount maxCards ->
+                    "Enhance " ++ String.fromInt maxCards ++ " cards with +" ++ String.fromInt amount ++ " chips"
 
-                AmplifyCard amount _ ->
-                    "+" ++ String.fromInt amount ++ " mult to selected cards"
+                AmplifyCard amount maxCards ->
+                    "Enhance " ++ String.fromInt maxCards ++ " cards with +" ++ String.fromInt amount ++ " mult"
 
-                SupplyDropCard _ ->
-                    "Draw selected cards to your hand next round"
+                SupplyDropCard maxCards ->
+                    let
+                        cardText =
+                            if maxCards == 1 then
+                                "card"
 
-                DischargeCard _ ->
-                    "Discard selected cards"
+                            else
+                                "cards"
+                    in
+                    "Add " ++ String.fromInt maxCards ++ " " ++ cardText ++ " to your deck"
 
-                CamoCard suit _ ->
-                    "Change selected cards to " ++ suitToString suit
+                DischargeCard maxCards ->
+                    let
+                        cardText =
+                            if maxCards == 1 then
+                                "card"
 
-                PromoteCard _ ->
-                    "Promote selected cards by 1 rank"
+                            else
+                                "cards"
+                    in
+                    "Remove " ++ String.fromInt maxCards ++ " " ++ cardText ++ " from your deck"
+
+                CamoCard suit maxCards ->
+                    "Convert " ++ String.fromInt maxCards ++ " cards to " ++ suitToString suit
+
+                PromoteCard maxCards ->
+                    "Increase the rank of " ++ String.fromInt maxCards ++ " cards. Aces become 2s"
 
         Types.Sabotage inner ->
             case inner of
                 ScramblerCard ->
-                    "Opponent's hand is scrambled (cards face down) next round"
+                    "Opponent's cards will have a 1 in 5 chance of being drawn face down next round"
 
                 PlusBombCard _ ->
-                    "Add + enhancement to opponent's selected cards"
+                    "Disable opponent's selected cards (won't score next round)"
 
                 StaticFieldCard ->
-                    "Opponent cannot use enhancements next round"
+                    "Opponent's card enhancements will not score next round"
 
                 SupplyChainCard ->
-                    "Opponent can only draw 3 cards next round"
+                    "Opponent will draw at most 4 cards after every play or discard next round"
 
 
 {-| Get the category of a shop card
@@ -305,24 +321,6 @@ This creates a minimal GameState that has enough data for the original view help
 buildGameState : Model -> PlayerView -> GameState
 buildGameState model playerView =
     case playerView of
-        LobbyView _ ->
-            -- Shouldn't happen, but provide defaults
-            { roundNumber = 1
-            , playerNames = Dict.empty
-            , players = Dict.empty
-            , phase = Playing
-            , gameStatus = Active
-            , lastHandResults = Nothing
-            , roundHandHistory = []
-            , winnerId = Nothing
-            , lastRoundWinnerId = Nothing
-            , shopState = Nothing
-            , shopRounds = 0
-            , initialLives = 3
-            , handsPerRound = 4
-            , discardsPerRound = 2
-            }
-
         PlayingView playingData ->
             let
                 yourPlayerState =
@@ -356,104 +354,6 @@ buildGameState model playerView =
             , initialLives = playingData.initialLives
             , handsPerRound = playingData.handsPerRound
             , discardsPerRound = playingData.discardsPerRound
-            }
-
-        RoundEndView roundEndData ->
-            let
-                playerId =
-                    Maybe.withDefault "you" model.playerId
-
-                -- Build minimal PlayerState from round end data
-                yourPlayerState =
-                    { playerId = playerId
-                    , lives = roundEndData.yourLives
-                    , cardPiles = { handPile = [], drawPile = [], discardPile = [] }
-                    , skillTree =
-                        { highCard = 1
-                        , pair = 1
-                        , twoPair = 1
-                        , threeOfAKind = 1
-                        , straight = 1
-                        , flush = 1
-                        , fullHouse = 1
-                        , fourOfAKind = 1
-                        , straightFlush = 1
-                        }
-                    , handsRemaining = 0
-                    , discardsRemaining = 0
-                    , currentRoundScore = 0
-                    , lockedInHand = Nothing
-                    , readyForNextRound = False
-                    , status = PlayerActive
-                    , activeDebuffs = []
-                    , scrambled = False
-                    , faceDownCardIds = []
-                    , disabledRanks = []
-                    , disabledSuits = []
-                    , enhancementsDisabled = False
-                    , supplyChainLimited = False
-                    }
-
-                opponentPlayerState =
-                    { playerId = "opponent"
-                    , lives = roundEndData.opponentLives
-                    , cardPiles = { handPile = [], drawPile = [], discardPile = [] }
-                    , skillTree =
-                        { highCard = 1
-                        , pair = 1
-                        , twoPair = 1
-                        , threeOfAKind = 1
-                        , straight = 1
-                        , flush = 1
-                        , fullHouse = 1
-                        , fourOfAKind = 1
-                        , straightFlush = 1
-                        }
-                    , handsRemaining = 0
-                    , discardsRemaining = 0
-                    , currentRoundScore = 0
-                    , lockedInHand = Nothing
-                    , readyForNextRound = False
-                    , status = PlayerActive
-                    , activeDebuffs = []
-                    , scrambled = False
-                    , faceDownCardIds = []
-                    , disabledRanks = []
-                    , disabledSuits = []
-                    , enhancementsDisabled = False
-                    , supplyChainLimited = False
-                    }
-            in
-            { roundNumber = roundEndData.roundNumber
-            , playerNames =
-                Dict.fromList
-                    [ ( playerId, roundEndData.yourName )
-                    , ( "opponent", roundEndData.opponentName )
-                    ]
-            , players =
-                Dict.fromList
-                    [ ( playerId, yourPlayerState )
-                    , ( "opponent", opponentPlayerState )
-                    ]
-            , phase = RoundEnd
-            , gameStatus = Active
-            , lastHandResults = Nothing
-            , roundHandHistory = []
-            , winnerId = Nothing
-            , lastRoundWinnerId =
-                if roundEndData.yourLostLife then
-                    Just "opponent"
-
-                else if roundEndData.opponentLostLife then
-                    Just playerId
-
-                else
-                    Nothing
-            , shopState = Nothing
-            , shopRounds = 0
-            , initialLives = roundEndData.yourLives
-            , handsPerRound = 4
-            , discardsPerRound = 2
             }
 
         ShopView shopData ->
@@ -514,7 +414,7 @@ buildGameState model playerView =
                     [ ( shopData.yourPlayerId, yourPlayerState )
                     , ( shopData.opponentPlayerId, opponentPlayerState )
                     ]
-            , phase = RoundEnd
+            , phase = Playing
             , gameStatus = Active
             , lastHandResults = Nothing
             , roundHandHistory = []
@@ -531,6 +431,58 @@ buildGameState model playerView =
             let
                 playerId =
                     Maybe.withDefault "you" model.playerId
+
+                emptySkillTree =
+                    { highCard = 1
+                    , pair = 1
+                    , twoPair = 1
+                    , threeOfAKind = 1
+                    , straight = 1
+                    , flush = 1
+                    , fullHouse = 1
+                    , fourOfAKind = 1
+                    , straightFlush = 1
+                    }
+
+                yourPlayerState =
+                    { playerId = playerId
+                    , lives = gameOverData.yourFinalLives
+                    , cardPiles = { handPile = [], drawPile = [], discardPile = [] }
+                    , skillTree = emptySkillTree
+                    , handsRemaining = 0
+                    , discardsRemaining = 0
+                    , currentRoundScore = 0
+                    , lockedInHand = Nothing
+                    , readyForNextRound = gameOverData.yourReady
+                    , status = if gameOverData.yourFinalLives == 0 then PlayerEliminated else PlayerActive
+                    , activeDebuffs = []
+                    , scrambled = False
+                    , faceDownCardIds = []
+                    , disabledRanks = []
+                    , disabledSuits = []
+                    , enhancementsDisabled = False
+                    , supplyChainLimited = False
+                    }
+
+                opponentPlayerState =
+                    { playerId = "opponent"
+                    , lives = gameOverData.opponentFinalLives
+                    , cardPiles = { handPile = [], drawPile = [], discardPile = [] }
+                    , skillTree = emptySkillTree
+                    , handsRemaining = 0
+                    , discardsRemaining = 0
+                    , currentRoundScore = 0
+                    , lockedInHand = Nothing
+                    , readyForNextRound = gameOverData.opponentReady
+                    , status = if gameOverData.opponentFinalLives == 0 then PlayerEliminated else PlayerActive
+                    , activeDebuffs = []
+                    , scrambled = False
+                    , faceDownCardIds = []
+                    , disabledRanks = []
+                    , disabledSuits = []
+                    , enhancementsDisabled = False
+                    , supplyChainLimited = False
+                    }
             in
             { roundNumber = 1
             , playerNames =
@@ -538,8 +490,12 @@ buildGameState model playerView =
                     [ ( playerId, gameOverData.yourName )
                     , ( "opponent", gameOverData.opponentName )
                     ]
-            , players = Dict.empty
-            , phase = RoundEnd
+            , players =
+                Dict.fromList
+                    [ ( playerId, yourPlayerState )
+                    , ( "opponent", opponentPlayerState )
+                    ]
+            , phase = Playing
             , gameStatus = GameOver
             , lastHandResults = Nothing
             , roundHandHistory = []

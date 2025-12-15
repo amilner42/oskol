@@ -379,8 +379,6 @@ viewPlayingArea model gameState currentPlayer opponent playerId =
                                     -- Neither or both locked in (both = waiting for server to process)
                                     text ""
 
-                        RoundEnd ->
-                            viewRoundEnd model gameState currentPlayer
                     ]
 
 
@@ -527,20 +525,6 @@ viewHandResults model gameState results =
         ]
 
 
-{-| View round end state (when not in shop)
--}
-viewRoundEnd : Model -> GameState -> PlayerState -> Html Msg
-viewRoundEnd model gameState currentPlayer =
-    case gameState.gameStatus of
-        GameOver ->
-            viewGameOver gameState
-
-        Active ->
-            -- Round end screen - shop will appear automatically if configured
-            -- No ready button needed, game advances automatically
-            text ""
-
-
 {-| View game over screen - matches LiveView exactly
 -}
 viewGameOver : GameState -> Html Msg
@@ -552,74 +536,53 @@ viewGameOver gameState =
 -}
 viewAnimatedScoreResults : Model -> GameState -> String -> String -> String -> Html Msg
 viewAnimatedScoreResults model gameState playerId playerName opponentName =
-    case gameState.lastHandResults of
-        Just handResults ->
+    case model.currentAnimationData of
+        Just animData ->
             let
-                -- Get opponent ID
-                opponentId =
-                    Dict.keys gameState.players
-                        |> List.filter (\id -> id /= playerId)
-                        |> List.head
-                        |> Maybe.withDefault ""
+                -- Get player states for card rendering info
+                maybeCurrentPlayer =
+                    getCurrentPlayer gameState playerId
 
-                -- Always show opponent first (top), then current player (bottom)
-                -- This ensures each player sees their cards on their own side
-                firstPlayerId =
-                    opponentId
+                maybeOpponent =
+                    getOpponentPlayer gameState playerId
 
-                firstPlayerName =
-                    opponentName
-
-                secondPlayerId =
-                    playerId
-
-                secondPlayerName =
-                    playerName
-
-                firstResult =
-                    Dict.get firstPlayerId handResults
-
-                secondResult =
-                    Dict.get secondPlayerId handResults
-
-                firstPlayer =
-                    Dict.get firstPlayerId gameState.players
-
-                secondPlayer =
-                    Dict.get secondPlayerId gameState.players
-
-                -- Determine animation state for each player
-                -- First shown (opponent at top) animates first → OpponentPhases → isFirstPlayer=true
-                -- Second shown (player at bottom) animates second → PlayerPhases → isFirstPlayer=false
-                -- Note: "Opponent/Player" in phase names refers to animation order, not game roles
+                -- Opponent shown first (top), player shown second (bottom)
+                -- First animates → OpponentPhases → isFirstPlayer=true
+                -- Second animates → PlayerPhases → isFirstPlayer=false
                 firstAnimState =
-                    getPlayerAnimationState model.scoreAnimation firstResult True
+                    getPlayerAnimationStateFromBreakdown model.scoreAnimation animData.opponentBreakdown True
 
                 secondAnimState =
-                    getPlayerAnimationState model.scoreAnimation secondResult False
+                    getPlayerAnimationStateFromBreakdown model.scoreAnimation animData.yourBreakdown False
             in
             div [ class "text-center space-y-8 sm:space-y-16 animate-fadeInScale w-full px-2 sm:px-4" ]
-                [ -- First player (alphabetically - opponent in phases)
-                  case ( firstResult, firstPlayer, firstAnimState ) of
-                    ( Just result, Just player, Just animState ) ->
-                        viewScoreBreakdownRow
-                            result
-                            player.skillTree
-                            firstPlayerName
-                            (firstPlayerId == playerId)
+                [ -- Opponent (top)
+                  case ( firstAnimState, maybeOpponent ) of
+                    ( Just animState, Just opponent ) ->
+                        viewScoreBreakdownRowFromAnimation
+                            animData.opponentHand
+                            animData.opponentHandType
+                            animData.opponentScore
+                            animData.opponentBreakdown
+                            opponentName
+                            False
                             animState
+                            opponent
 
                     _ ->
                         text ""
-                , -- Second player (alphabetically - player in phases)
-                  case ( secondResult, secondPlayer, secondAnimState ) of
-                    ( Just result, Just player, Just animState ) ->
-                        viewScoreBreakdownRow
-                            result
-                            player.skillTree
-                            secondPlayerName
-                            (secondPlayerId == playerId)
+                , -- Player (bottom)
+                  case ( secondAnimState, maybeCurrentPlayer ) of
+                    ( Just animState, Just currentPlayer ) ->
+                        viewScoreBreakdownRowFromAnimation
+                            animData.yourHand
+                            animData.yourHandType
+                            animData.yourScore
+                            animData.yourBreakdown
+                            playerName
+                            True
                             animState
+                            currentPlayer
 
                     _ ->
                         text ""
@@ -636,93 +599,316 @@ type alias AnimationState =
     }
 
 
-{-| Get animation state for a specific player based on global animation phase
+{-| Format hand type string from backend (e.g., "high_card" -> "High Card")
 -}
-getPlayerAnimationState : ScoreAnimationState -> Maybe HandResult -> Bool -> Maybe AnimationState
-getPlayerAnimationState globalAnim maybeResult isFirstPlayer =
-    case maybeResult of
-        Just result ->
-            let
-                cardCount =
-                    List.length result.scoreBreakdown.cardBreakdowns
+formatHandTypeString : String -> String
+formatHandTypeString handType =
+    case handType of
+        "high_card" ->
+            "High Card"
 
-                opponentPhases =
-                    [ OpponentBase, OpponentCards, OpponentFinal ]
+        "pair" ->
+            "Pair"
 
-                playerPhases =
-                    [ PlayerBase, PlayerCards, PlayerFinal ]
+        "two_pair" ->
+            "Two Pair"
 
-                relevantPhases =
-                    if isFirstPlayer then
-                        opponentPhases
+        "three_of_a_kind" ->
+            "Three of a Kind"
 
-                    else
-                        playerPhases
-            in
-            if globalAnim.phase == AnimationIdle then
-                -- Show both hands with base scores from the start
-                Just
-                    { phase = OpponentBase
-                    , cardsScored = 0
-                    , currentCard = 0
-                    }
+        "straight" ->
+            "Straight"
 
-            else if globalAnim.phase == AnimationComplete then
-                Just
-                    { phase = OpponentFinal
-                    , cardsScored = cardCount
-                    , currentCard = cardCount - 1
-                    }
+        "flush" ->
+            "Flush"
 
-            else if List.member globalAnim.phase relevantPhases then
-                let
-                    cardsScored =
-                        case globalAnim.phase of
-                            OpponentBase ->
-                                0
+        "full_house" ->
+            "Full House"
 
-                            OpponentCards ->
-                                globalAnim.cardIndex + 1
+        "four_of_a_kind" ->
+            "Four of a Kind"
 
-                            OpponentFinal ->
-                                cardCount
+        "straight_flush" ->
+            "Straight Flush"
 
-                            PlayerBase ->
-                                0
+        _ ->
+            handType
 
-                            PlayerCards ->
-                                globalAnim.cardIndex + 1
 
-                            PlayerFinal ->
-                                cardCount
+{-| Get skill level for a hand type from the skill tree
+-}
+getSkillLevelForHandType : SkillTree -> String -> Int
+getSkillLevelForHandType skillTree handType =
+    case handType of
+        "high_card" ->
+            skillTree.highCard
 
-                            _ ->
-                                0
-                in
-                Just
-                    { phase = globalAnim.phase
-                    , cardsScored = cardsScored
-                    , currentCard = globalAnim.cardIndex
-                    }
+        "pair" ->
+            skillTree.pair
 
-            else if isFirstPlayer && List.member globalAnim.phase playerPhases then
-                -- First player done, show final state
-                Just
-                    { phase = OpponentFinal
-                    , cardsScored = cardCount
-                    , currentCard = cardCount - 1
-                    }
+        "two_pair" ->
+            skillTree.twoPair
+
+        "three_of_a_kind" ->
+            skillTree.threeOfAKind
+
+        "straight" ->
+            skillTree.straight
+
+        "flush" ->
+            skillTree.flush
+
+        "full_house" ->
+            skillTree.fullHouse
+
+        "four_of_a_kind" ->
+            skillTree.fourOfAKind
+
+        "straight_flush" ->
+            skillTree.straightFlush
+
+        _ ->
+            1
+
+
+{-| Get animation state from score breakdown (new animation system)
+-}
+getPlayerAnimationStateFromBreakdown : ScoreAnimationState -> ScoreBreakdown -> Bool -> Maybe AnimationState
+getPlayerAnimationStateFromBreakdown globalAnim breakdown isFirstPlayer =
+    let
+        cardCount =
+            List.length breakdown.cardBreakdowns
+
+        opponentPhases =
+            [ OpponentBase, OpponentCards, OpponentFinal ]
+
+        playerPhases =
+            [ PlayerBase, PlayerCards, PlayerFinal ]
+
+        relevantPhases =
+            if isFirstPlayer then
+                opponentPhases
 
             else
-                -- Second player waiting - show with base scores only (0 cards scored)
-                Just
-                    { phase = PlayerBase
-                    , cardsScored = 0
-                    , currentCard = 0
-                    }
+                playerPhases
+    in
+    if globalAnim.phase == AnimationIdle then
+        -- Show both hands with base scores from the start
+        Just
+            { phase = OpponentBase
+            , cardsScored = 0
+            , currentCard = 0
+            }
 
-        Nothing ->
-            Nothing
+    else if globalAnim.phase == AnimationComplete then
+        Just
+            { phase = OpponentFinal
+            , cardsScored = cardCount
+            , currentCard = cardCount - 1
+            }
+
+    else if List.member globalAnim.phase relevantPhases then
+        let
+            cardsScored =
+                case globalAnim.phase of
+                    OpponentBase ->
+                        0
+
+                    OpponentCards ->
+                        globalAnim.cardIndex + 1
+
+                    OpponentFinal ->
+                        cardCount
+
+                    PlayerBase ->
+                        0
+
+                    PlayerCards ->
+                        globalAnim.cardIndex + 1
+
+                    PlayerFinal ->
+                        cardCount
+
+                    _ ->
+                        0
+        in
+        Just
+            { phase = globalAnim.phase
+            , cardsScored = cardsScored
+            , currentCard = globalAnim.cardIndex
+            }
+
+    else if isFirstPlayer && List.member globalAnim.phase playerPhases then
+        -- First player done, show final state
+        Just
+            { phase = OpponentFinal
+            , cardsScored = cardCount
+            , currentCard = cardCount - 1
+            }
+
+    else
+        -- Second player waiting - show with base scores only (0 cards scored)
+        Just
+            { phase = PlayerBase
+            , cardsScored = 0
+            , currentCard = 0
+            }
+
+
+{-| View score breakdown from animation data (new animation system)
+-}
+viewScoreBreakdownRowFromAnimation : List Card -> String -> Int -> ScoreBreakdown -> String -> Bool -> AnimationState -> PlayerState -> Html Msg
+viewScoreBreakdownRowFromAnimation hand handType score breakdown playerName isCurrentPlayer animState playerState =
+    let
+        -- Sort cards by rank for display
+        sortedHand =
+            List.sortBy (\c -> ( -(rankValue c.rank), suitOrder c.suit )) hand
+
+        sortedBreakdowns =
+            List.sortBy (\b -> ( -(rankValue b.card.rank), suitOrder b.card.suit )) breakdown.cardBreakdowns
+
+        scoringCardIds =
+            Set.fromList (List.map (.card >> .id) sortedBreakdowns)
+
+        -- Calculate running totals
+        ( runningChips, runningMult ) =
+            if animState.cardsScored == 0 then
+                ( breakdown.baseChips, breakdown.baseMultiplier )
+
+            else
+                let
+                    scoredBreakdowns =
+                        List.take animState.cardsScored sortedBreakdowns
+
+                    extraChips =
+                        scoredBreakdowns
+                            |> List.map (\b -> b.chipValue + b.bonusChips)
+                            |> List.sum
+
+                    extraMult =
+                        scoredBreakdowns
+                            |> List.map .bonusMult
+                            |> List.sum
+                in
+                ( breakdown.baseChips + extraChips
+                , breakdown.baseMultiplier + extraMult
+                )
+
+        showFinal =
+            animState.phase == OpponentFinal || animState.phase == PlayerFinal || animState.phase == AnimationComplete
+
+        runningScore =
+            runningChips * runningMult
+
+        level =
+            getSkillLevelForHandType playerState.skillTree handType
+
+        handTypeText =
+            "Lvl " ++ String.fromInt level ++ " " ++ formatHandTypeString handType
+    in
+    div []
+        [ -- Hand type header
+          div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2" ]
+            [ text handTypeText ]
+        , -- Cards display
+          div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
+            (List.indexedMap
+                (\idx card ->
+                    let
+                        isScoring =
+                            Set.member card.id scoringCardIds
+
+                        scoringIndex =
+                            sortedBreakdowns
+                                |> List.indexedMap Tuple.pair
+                                |> List.filter (\( _, b ) -> b.card.id == card.id)
+                                |> List.head
+                                |> Maybe.map Tuple.first
+
+                        isCurrentlyScoring =
+                            case scoringIndex of
+                                Just si ->
+                                    si == animState.cardsScored - 1 && (animState.phase == OpponentCards || animState.phase == PlayerCards)
+
+                                Nothing ->
+                                    False
+
+                        cardClass =
+                            if not isScoring then
+                                "card-not-scoring"
+
+                            else if Maybe.withDefault 999 scoringIndex < animState.cardsScored - 1 then
+                                "card-scored"
+
+                            else if isCurrentlyScoring then
+                                "card-scoring"
+
+                            else if Maybe.withDefault 999 scoringIndex < animState.cardsScored then
+                                "card-scored"
+
+                            else
+                                ""
+
+                        cardBreakdown =
+                            if isCurrentlyScoring then
+                                List.drop (animState.cardsScored - 1) sortedBreakdowns |> List.head
+
+                            else
+                                Nothing
+
+                        -- Get actual card state from player
+                        isDisabled =
+                            List.member (rankValue card.rank) playerState.disabledRanks
+                                || List.member card.suit playerState.disabledSuits
+                    in
+                    div [ class "relative" ]
+                        [ div [ class ("w-9 h-[52px] sm:w-16 sm:h-24 " ++ cardClass) ]
+                            [ Cards.viewCardImage
+                                { card = card
+                                , isFaceDown = False -- Always face-up during scoring animation
+                                , showEnhancement = True
+                                , compact = True
+                                , disabled = isDisabled
+                                , enhancementDisabled = playerState.enhancementsDisabled
+                                }
+                            ]
+                        , case cardBreakdown of
+                            Just cb ->
+                                div []
+                                    [ div [ class "chip-float chip-float-chips text-[10px] sm:text-sm" ]
+                                        [ text ("+" ++ String.fromInt (cb.chipValue + cb.bonusChips)) ]
+                                    , if cb.bonusMult > 0 then
+                                        div [ class "chip-float chip-float-mult text-[10px] sm:text-sm" ]
+                                            [ text ("+" ++ String.fromInt cb.bonusMult ++ "x") ]
+
+                                      else
+                                        text ""
+                                    ]
+
+                            Nothing ->
+                                text ""
+                        ]
+                )
+                sortedHand
+            )
+        , -- Formula display
+          div [ class "flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-lg font-mono" ]
+            [ span [ class "text-blue-400 font-bold" ] [ text (String.fromInt runningChips) ]
+            , span [ class "text-base-content/60" ] [ text "×" ]
+            , span [ class "text-red-400 font-bold" ] [ text (String.fromInt runningMult) ]
+            , if showFinal then
+                span [ class "text-base-content/60" ] [ text "=" ]
+
+              else
+                text ""
+            , if showFinal then
+                span [ class "text-yellow-400 font-bold text-base sm:text-xl score-reveal" ]
+                    [ text (String.fromInt runningScore) ]
+
+              else
+                text ""
+            ]
+        ]
 
 
 {-| View score breakdown for one player with animated cards and formula
@@ -1899,8 +2085,27 @@ viewLevelsList player =
 
                             else
                                 "text-base-content/70"
+
+                        -- Background color gradient based on level (plateaus at 5+)
+                        levelBgClass =
+                            case min level 5 of
+                                1 ->
+                                    "bg-base-300/20"
+
+                                2 ->
+                                    "bg-emerald-900/20"
+
+                                3 ->
+                                    "bg-cyan-900/20"
+
+                                4 ->
+                                    "bg-purple-900/25"
+
+                                _ ->
+                                    -- Level 5+
+                                    "bg-amber-900/25"
                     in
-                    div [ class ("flex items-center justify-between py-1 px-2 rounded hover:bg-base-200 " ++ opacityClass) ]
+                    div [ class ("flex items-center justify-between py-1 px-2 rounded " ++ levelBgClass ++ " " ++ opacityClass) ]
                         [ div [ class "flex items-center gap-2" ]
                             [ span [ class "text-xs text-base-content/50 w-6" ]
                                 [ text ("Lv" ++ String.fromInt level) ]
@@ -1955,7 +2160,7 @@ getSabotageBadges player =
                     disabledText =
                         formatDisabledCards player.disabledRanks player.disabledSuits
                 in
-                Just { name = "Plus Bomb", tooltip = disabledText ++ " won't score" }
+                Just { name = "Napalm Strikes", tooltip = disabledText ++ " won't score" }
 
             else
                 Nothing
@@ -2327,6 +2532,50 @@ viewShopCardsGrid shopData maybeUIState =
         ]
 
 
+{-| Helper to determine who picked a card and return (name, isPlayer)
+-}
+getCardPicker : String -> ShopData -> Maybe ( String, Bool )
+getCardPicker cardId shopData =
+    let
+        -- Find the index of this card in the picked cards list
+        maybePickIndex =
+            shopData.shopState.pickedCardIds
+                |> List.indexedMap (\idx id -> ( idx, id ))
+                |> List.filter (\( _, id ) -> id == cardId)
+                |> List.head
+                |> Maybe.map Tuple.first
+    in
+    case maybePickIndex of
+        Nothing ->
+            Nothing
+
+        Just pickIndex ->
+            let
+                -- Convert to 1-based pick number
+                pickNum =
+                    pickIndex + 1
+
+                -- Odd picks = first picker, even picks = second picker
+                pickerId =
+                    if modBy 2 pickNum == 1 then
+                        shopData.shopState.firstPickerId
+
+                    else
+                        shopData.shopState.secondPickerId
+
+                pickerName =
+                    if pickerId == shopData.yourPlayerId then
+                        shopData.yourName
+
+                    else
+                        shopData.opponentName
+
+                isPlayer =
+                    pickerId == shopData.yourPlayerId
+            in
+            Just ( pickerName, isPlayer )
+
+
 {-| Individual shop card
 -}
 viewShopCard : ShopCard -> ShopData -> Set String -> Set String -> Bool -> Maybe String -> Html Msg
@@ -2456,10 +2705,26 @@ viewShopCard shopCard shopData pickedIds destroyedIds canPick previewingCardId =
             ]
         , -- Picked/Destroyed overlay
           if isPicked then
-            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
-                [ span [ class "text-xs text-base-content/40 font-medium" ]
-                    [ text "Picked" ]
-                ]
+            case getCardPicker cardId shopData of
+                Just ( pickerName, isPlayer ) ->
+                    let
+                        textColorClass =
+                            if isPlayer then
+                                "text-blue-400"
+
+                            else
+                                "text-orange-400"
+                    in
+                    div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                        [ span [ class ("text-xs font-medium " ++ textColorClass) ]
+                            [ text pickerName ]
+                        ]
+
+                Nothing ->
+                    div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                        [ span [ class "text-xs text-base-content/40 font-medium" ]
+                            [ text "Picked" ]
+                        ]
 
           else if isDestroyed then
             div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
@@ -2659,10 +2924,26 @@ viewMobileShopCard shopCard shopData pickedIds destroyedIds canPick previewingCa
             ]
         , -- Picked/Destroyed overlay
           if isPicked then
-            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
-                [ span [ class "text-xs text-base-content/40 font-medium" ]
-                    [ text "Picked" ]
-                ]
+            case getCardPicker cardId shopData of
+                Just ( pickerName, isPlayer ) ->
+                    let
+                        textColorClass =
+                            if isPlayer then
+                                "text-blue-400"
+
+                            else
+                                "text-orange-400"
+                    in
+                    div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                        [ span [ class ("text-xs font-medium " ++ textColorClass) ]
+                            [ text pickerName ]
+                        ]
+
+                Nothing ->
+                    div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                        [ span [ class "text-xs text-base-content/40 font-medium" ]
+                            [ text "Picked" ]
+                        ]
 
           else if isDestroyed then
             div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
@@ -2859,10 +3140,16 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
         ( containerClass, labelColor ) =
             if maybeCard /= Nothing then
                 if slotType == "DESTROY" then
-                    ( "bg-base-100 border-rose-400/30", "text-rose-500/60" )
+                    -- Glassy red effect for completed destroy phase
+                    ( "bg-gradient-to-br from-rose-500/20 to-rose-600/30 backdrop-blur-sm border-rose-400/40", "text-rose-400/80" )
 
                 else
-                    ( "bg-base-100 border-base-300/50", "text-base-content/40" )
+                    -- Glassy effect in player color (blue or orange) for completed pick
+                    if isPlayerAction then
+                        ( "bg-gradient-to-br from-blue-500/20 to-blue-600/30 backdrop-blur-sm border-blue-400/40", "text-blue-400/80" )
+
+                    else
+                        ( "bg-gradient-to-br from-orange-500/20 to-orange-600/30 backdrop-blur-sm border-orange-400/40", "text-orange-400/80" )
 
             else if isCurrent then
                 -- Use player color for the glow (blue for player, orange for opponent)
@@ -2880,29 +3167,11 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
             [ text label ]
         , case maybeCard of
             Just card ->
-                let
-                    dotColor =
-                        case card.kind of
-                            Types.Research _ ->
-                                "bg-emerald-500"
-
-                            Types.Counter _ ->
-                                "bg-rose-500"
-
-                            Types.Sabotage _ ->
-                                "bg-amber-500"
-
-                            Types.Logistics _ ->
-                                "bg-violet-500"
-                in
-                div [ class "flex items-center gap-1.5 lg:gap-2" ]
-                    [ div [ class ("w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full flex-shrink-0 " ++ dotColor) ] []
-                    , div [ class "min-w-0" ]
-                        [ div [ class "text-xs lg:text-sm font-medium text-base-content truncate" ]
-                            [ text (shopCardName card) ]
-                        , div [ class "text-[9px] lg:text-[10px] text-base-content/40" ]
-                            [ text pickerName ]
-                        ]
+                div [ class "min-w-0" ]
+                    [ div [ class "text-xs lg:text-sm font-medium text-base-content truncate" ]
+                        [ text (shopCardName card) ]
+                    , div [ class "text-[9px] lg:text-[10px] text-base-content/40" ]
+                        [ text pickerName ]
                     ]
 
             Nothing ->
@@ -3361,9 +3630,9 @@ viewDeckBuilderSelectionPreview data =
           div [ class "overflow-y-auto" ]
             [ div [ class "mb-4 text-center" ]
                 [ p [ class "text-sm text-base-content/50" ]
-                    [ text ("Select up to " ++ String.fromInt data.maxSelection ++ " cards to enhance") ]
+                    [ text (shopCardDescription data.deckBuilderCard) ]
                 ]
-            , div [ class "flex flex-wrap gap-3 mb-6" ]
+            , div [ class "flex flex-wrap gap-3 mb-6 justify-center" ]
                 (data.availableCards
                     |> List.map
                         (\card ->
@@ -3410,7 +3679,7 @@ viewDeckBuilderCardMinimal : Card -> Bool -> Html Msg
 viewDeckBuilderCardMinimal card isSelected =
     button
         [ class
-            ("w-full sm:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
+            ("w-[75px] lg:w-[140px] transition-all cursor-pointer rounded-lg overflow-hidden "
                 ++ (if isSelected then
                         "ring-2 ring-violet-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
 
@@ -3438,6 +3707,20 @@ viewPlusBombSelectionPreview data =
     let
         buttonBgClass =
             "bg-amber-500 hover:bg-amber-600"
+
+        -- Find the shop card for this Plus Bomb
+        maybeShopCard =
+            data.availableShopCards
+                |> List.filter (\c -> shopCardId c == data.cardId)
+                |> List.head
+
+        cardDescription =
+            case maybeShopCard of
+                Just card ->
+                    shopCardDescription card
+
+                Nothing ->
+                    "Select a card to disable all opponent cards of that rank or suit next round"
     in
     div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
         [ -- Header (centered)
@@ -3445,15 +3728,15 @@ viewPlusBombSelectionPreview data =
             [ div [ class "text-xs uppercase tracking-widest mb-1 text-amber-500/60" ]
                 [ text "Sabotage" ]
             , h2 [ class "text-4xl font-light text-base-content" ]
-                [ text "Plus Bomb" ]
+                [ text "Napalm Strikes" ]
             ]
         , -- Card selection
           div [ class "overflow-y-auto" ]
             [ div [ class "mb-4 text-center" ]
                 [ p [ class "text-sm text-base-content/50" ]
-                    [ text "Select a card to enhance with +1 to its value" ]
+                    [ text cardDescription ]
                 ]
-            , div [ class "flex flex-wrap gap-3 mb-6" ]
+            , div [ class "flex flex-wrap gap-3 mb-6 justify-center" ]
                 (data.availableCards
                     |> List.map
                         (\card ->
@@ -3500,7 +3783,7 @@ viewPlusBombCardMinimal : Card -> Bool -> Html Msg
 viewPlusBombCardMinimal card isSelected =
     button
         [ class
-            ("w-full sm:w-[100px] transition-all cursor-pointer rounded-lg overflow-hidden "
+            ("w-[75px] lg:w-[140px] transition-all cursor-pointer rounded-lg overflow-hidden "
                 ++ (if isSelected then
                         "ring-2 ring-rose-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
 

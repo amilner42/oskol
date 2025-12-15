@@ -74,8 +74,17 @@ fn repeat_unique_cards(constructor: fn() -> ShopCard, count: Int) -> List(ShopCa
 }
 
 /// Generate N random level up cards (equal probability for each hand type)
+/// Each hand type appears 3 times in the pool to allow duplicates
 fn generate_random_level_ups(count: Int) -> List(ShopCard) {
-  card.all_level_up_cards()
+  // Triple the pool: 9 hand types × 3 copies = 27 cards
+  let pool =
+    list.flatten([
+      card.all_level_up_cards(),
+      card.all_level_up_cards(),
+      card.all_level_up_cards(),
+    ])
+
+  pool
   |> list.shuffle()
   |> list.take(count)
 }
@@ -126,9 +135,18 @@ fn generate_random_sabotage(count: Int) -> List(ShopCard) {
   |> list.take(count)
 }
 
-/// Generate N random denial cards with weighted distribution
+/// Generate N random denial cards with equal probability for each hand type
+/// Each hand type appears 3 times in the pool to allow duplicates
 fn generate_random_denial(count: Int) -> List(ShopCard) {
-  card.all_denial_cards()
+  // Triple the pool: 9 hand types × 3 copies = 27 cards
+  let pool =
+    list.flatten([
+      card.all_denial_cards(),
+      card.all_denial_cards(),
+      card.all_denial_cards(),
+    ])
+
+  pool
   |> list.shuffle()
   |> list.take(count)
 }

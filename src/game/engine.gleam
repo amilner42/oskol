@@ -25,6 +25,8 @@ pub type GameAction {
   LockInHand(player_id: PlayerId, hand: List(Card))
   DiscardCards(player_id: PlayerId, cards: List(Card))
   UpgradeHand(player_id: PlayerId, hand_type: HandType, levels: Int)
+  MarkReadyForRematch(player_id: PlayerId)
+  ClearAnimation(player_id: PlayerId)
 
   // Shop actions
   MakeShopPick(player_id: PlayerId, card_id: String)
@@ -72,6 +74,8 @@ pub fn apply_action(state: GameState, action: GameAction) -> EngineResult {
     DiscardCards(player_id, cards) -> handle_discard(state, player_id, cards)
     UpgradeHand(player_id, hand_type, levels) ->
       handle_upgrade_hand(state, player_id, hand_type, levels)
+    MarkReadyForRematch(player_id) -> handle_mark_ready(state, player_id)
+    ClearAnimation(_player_id) -> handle_clear_animation(state)
 
     // Shop actions
     MakeShopPick(player_id, card_id) ->
@@ -201,7 +205,8 @@ fn handle_discard(
           let drawn_cards = list.drop(new_hand, old_hand_size - cards_discarded_count)
 
           let new_players = dict.insert(state.players, player_id, updated_player)
-          let new_state = state.GameState(..state, players: new_players)
+          // Clear last_hand_results on new player action (animation should only show once)
+          let new_state = state.GameState(..state, players: new_players, last_hand_results: None)
 
           EngineResult(
             state: new_state,
@@ -211,6 +216,27 @@ fn handle_discard(
       }
     }
   }
+}
+
+/// Handle marking player as ready for next round/rematch
+fn handle_mark_ready(
+  state: GameState,
+  player_id: PlayerId,
+) -> EngineResult {
+  case state.mark_ready_for_next_round(state, player_id) {
+    Error(msg) -> EngineResult(state: state, events: [ActionError(msg)])
+    Ok(new_state) ->
+      EngineResult(
+        state: new_state,
+        events: [event_log.PlayerReady(player_id)],
+      )
+  }
+}
+
+/// Handle clearing animation state (called when Elm animation completes)
+fn handle_clear_animation(state: GameState) -> EngineResult {
+  let cleared_state = state.GameState(..state, last_hand_results: None)
+  EngineResult(state: cleared_state, events: [])
 }
 
 /// Handle upgrading a hand
@@ -396,15 +422,15 @@ fn handle_confirm_deck_builder_pick(
   case state.shop_state {
     None -> EngineResult(state: state, events: [ActionError("No active shop")])
     Some(shop) -> {
-      // Get player's hand
+      // Get player's all cards (hand + deck + discard = 52 cards)
       case dict.get(state.players, player_id) {
         Error(_) ->
           EngineResult(state: state, events: [ActionError("Player not found")])
         Ok(player_state) -> {
-          let player_hand = player.get_hand(player_state)
+          let player_all_cards = player.get_all_cards(player_state)
 
           case
-            shop_state.confirm_deck_builder_pick(shop, player_id, card_id, player_hand)
+            shop_state.confirm_deck_builder_pick(shop, player_id, card_id, player_all_cards)
           {
             Error(err) -> {
               let msg = shop_error_to_string(err)
@@ -517,24 +543,32 @@ fn handle_confirm_plus_bomb_pick(
   case state.shop_state {
     None -> EngineResult(state: state, events: [ActionError("No active shop")])
     Some(shop) -> {
-      // Get player's hand (their own cards for plus bomb selection)
-      case dict.get(state.players, player_id) {
+      // Get opponent's all cards (hand + deck + discard = 52 cards)
+      // Find opponent player ID
+      let all_player_ids = dict.keys(state.players)
+      case list.find(all_player_ids, fn(id) { id != player_id }) {
         Error(_) ->
-          EngineResult(state: state, events: [ActionError("Player not found")])
-        Ok(player_state) -> {
-          let player_hand = player.get_hand(player_state)
+          EngineResult(state: state, events: [ActionError("Opponent not found")])
+        Ok(opponent_id) -> {
+          case dict.get(state.players, opponent_id) {
+            Error(_) ->
+              EngineResult(state: state, events: [ActionError("Opponent not found")])
+            Ok(opponent) -> {
+              let opponent_all_cards = player.get_all_cards(opponent)
 
-          case
-            shop_state.confirm_plus_bomb_pick(shop, player_id, card_id, player_hand)
-          {
-            Error(err) -> {
-              let msg = shop_error_to_string(err)
-              EngineResult(state: state, events: [ActionError(msg)])
-            }
-            Ok(updated_shop) -> {
-              let new_state =
-                state.GameState(..state, shop_state: Some(updated_shop))
-              EngineResult(state: new_state, events: [])
+              case
+                shop_state.confirm_plus_bomb_pick(shop, player_id, card_id, opponent_all_cards)
+              {
+                Error(err) -> {
+                  let msg = shop_error_to_string(err)
+                  EngineResult(state: state, events: [ActionError(msg)])
+                }
+                Ok(updated_shop) -> {
+                  let new_state =
+                    state.GameState(..state, shop_state: Some(updated_shop))
+                  EngineResult(state: new_state, events: [])
+                }
+              }
             }
           }
         }

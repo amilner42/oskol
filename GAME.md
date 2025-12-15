@@ -62,11 +62,11 @@ After all hands are played:
 1. **Total scores are compared** across all hands played that round
 2. **The loser loses 1 life** (or no one loses a life if it's a tie)
 3. If a player reaches 0 lives, the **game is over**
-4. Otherwise, proceed to shop (if configured) or next round
+4. Otherwise, proceed to shop phase
 
 ### 5. Shop Phase
 
-If shop rounds are configured and the current round number is within the shop round limit:
+After every round (until the game is over), players enter the shop phase:
 
 #### Destroy Phase (Life-Based Advantage)
 - If one player has **fewer lives** than the other, they get to **destroy shop cards**
@@ -77,7 +77,10 @@ If shop rounds are configured and the current round number is within the shop ro
 #### Pick Phase
 - The **round winner picks first**, then the loser
 - Players alternate picking cards from the available shop cards
-- Picks continue for the configured number of shop rounds
+- The `shop_rounds` configuration (1-3) controls how many pick rounds occur within each shop
+  - 1 shop round = each player picks 1 card
+  - 2 shop rounds = each player picks 2 cards (alternating)
+  - 3 shop rounds = each player picks 3 cards (alternating)
 - Some cards (Deck Builders, Napalm Strikes) require additional selection steps
 - Once all picks are complete, players auto-ready for the next round
 

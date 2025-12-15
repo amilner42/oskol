@@ -75,6 +75,7 @@ init flags =
       , scoreAnimation = { phase = AnimationIdle, cardIndex = 0, nextStepTime = Nothing }
       , viewingResults = False
       , shopCountdown = Nothing
+      , currentAnimationData = Nothing
       }
     , Cmd.none
     )
@@ -301,12 +302,51 @@ generateRematchId currentId =
 
 
 {-| Advance to the next animation step based on current phase and game state
-TODO: Re-implement for PlayerView/RoundEndView
 -}
 advanceAnimationStep : Model -> Int -> ( Model, Cmd Msg )
 advanceAnimationStep model currentTime =
-    -- Stub for now - animations disabled until we port to PlayerView
-    ( model, Cmd.none )
+    case model.currentAnimationData of
+        Just animData ->
+            let
+                firstCardCount =
+                    List.length animData.opponentBreakdown.cardBreakdowns
+
+                secondCardCount =
+                    List.length animData.yourBreakdown.cardBreakdowns
+
+                ( nextPhase, nextIndex, delayMs ) =
+                    nextAnimationStep model.scoreAnimation.phase model.scoreAnimation.cardIndex firstCardCount secondCardCount
+
+                -- Auto-dismiss when animation completes
+                shouldDismiss =
+                    nextPhase == AnimationComplete
+
+                newAnimation =
+                    if shouldDismiss then
+                        -- Reset to idle so next animation can start
+                        { phase = AnimationIdle
+                        , cardIndex = 0
+                        , nextStepTime = Nothing
+                        }
+                    else
+                        { phase = nextPhase
+                        , cardIndex = nextIndex
+                        , nextStepTime = Just (currentTime + delayMs)
+                        }
+            in
+            ( { model
+                | scoreAnimation = newAnimation
+                , viewingResults = not shouldDismiss
+              }
+            , if shouldDismiss then
+                sendToChannel encodeClearAnimation
+              else
+                Cmd.none
+            )
+
+        Nothing ->
+            -- No animation data, stay idle
+            ( model, Cmd.none )
 
 
 {-| Animation state machine - determines next phase, card index, and delay
@@ -320,41 +360,41 @@ nextAnimationStep currentPhase currentIndex firstCardCount secondCardCount =
 
         OpponentBase ->
             if firstCardCount > 0 then
-                ( OpponentCards, 0, 600 )
+                ( OpponentCards, 0, 400 )
 
             else
-                ( OpponentFinal, 0, 750 )
+                ( OpponentFinal, 0, 400 )
 
         OpponentCards ->
             if currentIndex + 1 < firstCardCount then
                 ( OpponentCards, currentIndex + 1, 600 )
 
             else
-                ( OpponentFinal, 0, 750 )
+                ( OpponentFinal, 0, 400 )
 
         OpponentFinal ->
             if secondCardCount > 0 then
-                ( PlayerBase, 0, 750 )
+                ( PlayerBase, 0, 400 )
 
             else
-                ( PlayerFinal, 0, 750 )
+                ( PlayerFinal, 0, 400 )
 
         PlayerBase ->
             if secondCardCount > 0 then
-                ( PlayerCards, 0, 600 )
+                ( PlayerCards, 0, 400 )
 
             else
-                ( PlayerFinal, 0, 750 )
+                ( PlayerFinal, 0, 400 )
 
         PlayerCards ->
             if currentIndex + 1 < secondCardCount then
                 ( PlayerCards, currentIndex + 1, 600 )
 
             else
-                ( PlayerFinal, 0, 750 )
+                ( PlayerFinal, 0, 400 )
 
         PlayerFinal ->
-            ( AnimationComplete, 0, 2000 )
+            ( AnimationComplete, 0, 2500 )
 
         AnimationComplete ->
             ( AnimationComplete, 0, 0 )
@@ -369,8 +409,19 @@ update msg model =
     case msg of
         ReceivedGameState gameState ->
             -- Initial game state received when joining channel
+            -- Derive shop UI state if we're in shop view
+            let
+                newShopUIState =
+                    case ( gameState, model.playerId ) of
+                        ( ShopView shopData, Just playerId ) ->
+                            Just (deriveShopUIState playerId shopData.shopState)
+
+                        _ ->
+                            Nothing
+            in
             ( { model
                 | gameState = Success gameState
+                , shopUIState = newShopUIState
                 , connectionStatus = Connected
               }
             , Cmd.none
@@ -387,10 +438,52 @@ update msg model =
 
                         _ ->
                             Nothing
+
+                -- Check if animation should start or needs to be cleared
+                ( shouldStartAnimation, shouldClearAnimation, animationData ) =
+                    case playerView of
+                        PlayingView playingData ->
+                            case playingData.pendingAnimation of
+                                Just animation ->
+                                    -- New animation available and not already animating
+                                    ( model.scoreAnimation.phase == AnimationIdle, False, Just animation )
+
+                                Nothing ->
+                                    -- No pending animation - clear any running animation
+                                    ( False, True, Nothing )
+
+                        _ ->
+                            ( False, False, Nothing )
+
+                ( newAnimation, newViewingResults, newAnimationData ) =
+                    if shouldStartAnimation then
+                        ( { phase = OpponentBase
+                          , cardIndex = 0
+                          , nextStepTime = Nothing
+                          }
+                        , True
+                        , animationData
+                        )
+
+                    else if shouldClearAnimation then
+                        -- Server says no animation - force clear
+                        ( { phase = AnimationIdle
+                          , cardIndex = 0
+                          , nextStepTime = Nothing
+                          }
+                        , False
+                        , Nothing
+                        )
+
+                    else
+                        ( model.scoreAnimation, model.viewingResults, model.currentAnimationData )
             in
             ( { model
                 | gameState = Success playerView
                 , shopUIState = newShopUIState
+                , scoreAnimation = newAnimation
+                , viewingResults = newViewingResults
+                , currentAnimationData = newAnimationData
               }
             , Cmd.none
             )
@@ -400,12 +493,6 @@ update msg model =
             let
                 playerName =
                     case model.gameState of
-                        Success (LobbyView lobbyData) ->
-                            Just lobbyData.yourName
-
-                        Success (RoundEndView roundEndData) ->
-                            Just roundEndData.yourName
-
                         Success (GameOverView gameOverData) ->
                             Just gameOverData.yourName
 
@@ -484,6 +571,7 @@ update msg model =
                             ( { model
                                 | selectedCards = Set.empty
                                 , newCardIds = Set.empty
+                                , viewingModal = Nothing
                               }
                             , sendToChannel (encodeLockInHand selectedCardsList)
                             )

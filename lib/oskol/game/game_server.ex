@@ -32,6 +32,10 @@ defmodule Oskol.Game.GameServer do
     GenServer.call(via_tuple(game_id), :start_game)
   end
 
+  def set_game_state(game_id, game_state) do
+    GenServer.call(via_tuple(game_id), {:set_game_state, game_state})
+  end
+
   # Generic player action - all game actions go through this
   def player_action_async(game_id, player_id, action) do
     GenServer.cast(via_tuple(game_id), {:player_action, player_id, action})
@@ -128,7 +132,9 @@ defmodule Oskol.Game.GameServer do
 
           new_state = GameServerState.update_lobby_status_with_format(new_state)
 
-          broadcast_state_change(new_state)
+          # Don't broadcast on rejoin - rejoining player gets state in join() response
+          # Broadcasting would trigger animations for other players unnecessarily
+          # broadcast_state_change(new_state)
 
           {:reply, {:ok, player_id, new_state}, new_state, @timeout}
         end
@@ -176,8 +182,9 @@ defmodule Oskol.Game.GameServer do
         # Check if both players agreed on a format
         case GameServerState.check_format_agreement(state) do
           {:ok, format} ->
-            # Get lives and shop_rounds from agreed format
-            {initial_lives, shop_rounds} = GameServerState.format_to_config(format)
+            # Get all game config from agreed format
+            {initial_lives, hands_per_round, discards_per_round, shop_rounds} =
+              GameServerState.format_to_config(format)
 
             # Create player_names map from connections
             player_names =
@@ -187,7 +194,13 @@ defmodule Oskol.Game.GameServer do
 
             # Use Gleam engine to create game state
             game_state =
-              Oskol.Game.GleamEngine.new_game(player_names, initial_lives, 4, 3, shop_rounds)
+              Oskol.Game.GleamEngine.new_game(
+                player_names,
+                initial_lives,
+                hands_per_round,
+                discards_per_round,
+                shop_rounds
+              )
 
             new_state = %GameServerState{
               state
@@ -202,6 +215,13 @@ defmodule Oskol.Game.GameServer do
             {:reply, {:error, :no_format_agreement}, state, @timeout}
         end
     end
+  end
+
+  @impl true
+  def handle_call({:set_game_state, game_state}, _from, %GameServerState{} = state) do
+    new_state = %GameServerState{state | game_state: game_state}
+    broadcast_state_change(new_state)
+    {:reply, :ok, new_state, @timeout}
   end
 
   @impl true

@@ -36,6 +36,7 @@ pub type Player {
     discards_remaining: Int,
     current_round_score: Int,
     locked_in_hand: Option(List(Card)),
+    ready_for_next_round: Bool,
     status: PlayerStatus,
     active_debuffs: List(HandType),
     scrambled: Bool,
@@ -83,6 +84,7 @@ pub fn new(
     discards_remaining: discards_per_round,
     current_round_score: 0,
     locked_in_hand: None,
+    ready_for_next_round: False,
     status: Active,
     active_debuffs: [],
     scrambled: False,
@@ -135,8 +137,18 @@ pub fn reset_for_next_hand(player: Player, score_to_add: Int) -> Player {
       // Add locked in cards to discard pile
       let new_discard = list.append(player.card_piles.discard, locked_hand)
 
-      // Draw replacement cards
-      let num_to_draw = list.length(locked_hand)
+      // Calculate how many cards to draw to get back to target hand size (8)
+      // Supply Chain limits draw to at most 4 cards
+      let target_hand_size = 8
+      let current_hand_size = list.length(player.card_piles.hand)
+      let hand_size_after_discard = current_hand_size - list.length(locked_hand)
+      let cards_needed = target_hand_size - hand_size_after_discard
+
+      let num_to_draw = case player.supply_chain_limited {
+        True -> int.min(cards_needed, 4)
+        False -> cards_needed
+      }
+
       let #(drawn_cards, new_deck) =
         deck.draw_cards(player.card_piles.deck, num_to_draw)
 
@@ -202,6 +214,7 @@ pub fn reset_for_new_round(player: Player, hands_per_round: Int, discards_per_ro
     discards_remaining: discards_per_round,
     current_round_score: 0,
     locked_in_hand: None,
+    ready_for_next_round: False,
     face_down_card_ids: new_face_down_ids,
     // NOTE: Spread operator ..player preserves all other fields including:
     // - lives (never reset)
@@ -236,6 +249,11 @@ pub fn lose_life(player: Player) -> Player {
   Player(..player, lives: new_lives, status: new_status)
 }
 
+/// Mark player as ready for next round/rematch
+pub fn mark_ready_for_next_round(player: Player) -> Player {
+  Player(..player, ready_for_next_round: True)
+}
+
 /// Upgrade a hand type in the player's skill tree
 pub fn upgrade_hand(player: Player, hand_type: HandType, levels: Int) -> Player {
   let new_skill_tree =
@@ -266,8 +284,18 @@ pub fn discard_and_draw(
       // Add to discard pile
       let new_discard = list.append(player.card_piles.discard, cards_to_discard)
 
-      // Draw replacement cards
-      let num_to_draw = list.length(cards_to_discard)
+      // Calculate how many cards to draw to get back to target hand size (8)
+      // Supply Chain limits draw to at most 4 cards
+      let target_hand_size = 8
+      let current_hand_size = list.length(player.card_piles.hand)
+      let hand_size_after_discard = current_hand_size - list.length(cards_to_discard)
+      let cards_needed = target_hand_size - hand_size_after_discard
+
+      let num_to_draw = case player.supply_chain_limited {
+        True -> int.min(cards_needed, 4)
+        False -> cards_needed
+      }
+
       let #(drawn_cards, new_deck) =
         deck.draw_cards(player.card_piles.deck, num_to_draw)
 
@@ -299,6 +327,13 @@ pub fn discard_and_draw(
 /// Get the current hand
 pub fn get_hand(player: Player) -> List(Card) {
   player.card_piles.hand
+}
+
+/// Get all cards from all piles (hand + deck + discard)
+/// Used for deck builder selections to show random 8 from full deck
+pub fn get_all_cards(player: Player) -> List(Card) {
+  list.append(player.card_piles.hand, player.card_piles.deck)
+  |> list.append(player.card_piles.discard)
 }
 
 /// Draw cards at the start of a new round

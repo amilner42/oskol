@@ -3,7 +3,9 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import poker/card.{type Card, type Suit}
 import poker/hand.{type HandType}
+import poker/score
 import game/state.{type GameState}
+import game/player.{type Player}
 import shop/card as shop_card
 import shop/state as shop_state
 
@@ -11,30 +13,14 @@ import shop/state as shop_state
 // This is what gets sent to Elm - clean, minimal, typed
 
 pub type PlayerView {
-  // Before game starts
-  LobbyView(LobbyData)
-
   // During gameplay
   PlayingView(PlayingData)
-
-  // Between rounds (showing scores, who lost life)
-  RoundEndView(RoundEndData)
 
   // Shop phase (between rounds, both players see everything)
   ShopView(ShopData)
 
   // Game finished
   GameOverView(GameOverData)
-}
-
-// ========== LOBBY DATA ==========
-
-pub type LobbyData {
-  LobbyData(
-    your_name: String,
-    opponent_name: Option(String),
-    ready_to_start: Bool,
-  )
 }
 
 // ========== PLAYING DATA ==========
@@ -80,38 +66,9 @@ pub type PlayingData {
     hands_per_round: Int,
     discards_per_round: Int,
     initial_lives: Int,
-  )
-}
 
-// ========== ROUND END DATA ==========
-
-pub type RoundEndData {
-  RoundEndData(
-    // Your result
-    your_name: String,
-    your_hand_result: Option(HandResult),
-    your_lives: Int,
-    your_lost_life: Bool,
-
-    // Opponent result
-    opponent_name: String,
-    opponent_hand_result: Option(HandResult),
-    opponent_lives: Int,
-    opponent_lost_life: Bool,
-
-    // Round info
-    round_number: Int,
-    was_tie: Bool,
-  )
-}
-
-pub type HandResult {
-  HandResult(
-    hand: List(Card),
-    hand_type: String,
-    score: Int,
-    chips: Int,
-    multiplier: Int,
+    // Animation data
+    pending_animation: Option(HandResultAnimation),
   )
 }
 
@@ -165,6 +122,46 @@ pub type GameOverData {
     you_won: Bool,
     your_final_lives: Int,
     opponent_final_lives: Int,
+    your_ready: Bool,
+    opponent_ready: Bool,
+  )
+}
+
+// ========== SCORE ANIMATION DATA ==========
+
+/// Detailed score breakdown for animations
+pub type ScoreBreakdown {
+  ScoreBreakdown(
+    base_chips: Int,
+    base_multiplier: Int,
+    total_chips: Int,
+    total_multiplier: Int,
+    card_breakdowns: List(CardBreakdown),
+  )
+}
+
+/// Per-card breakdown for floating chip animations
+pub type CardBreakdown {
+  CardBreakdown(
+    card: Card,
+    chip_value: Int,
+    bonus_chips: Int,
+    bonus_mult: Int,
+    disabled: Bool,
+  )
+}
+
+/// Animation data sent to Elm when hand completes
+pub type HandResultAnimation {
+  HandResultAnimation(
+    your_hand: List(Card),
+    your_hand_type: HandType,
+    your_score: Int,
+    your_breakdown: ScoreBreakdown,
+    opponent_hand: List(Card),
+    opponent_hand_type: HandType,
+    opponent_score: Int,
+    opponent_breakdown: ScoreBreakdown,
   )
 }
 
@@ -173,18 +170,18 @@ pub type GameOverData {
 /// Get the view for a specific player
 /// This is the ONLY function Elixir should call to get UI data
 pub fn get_player_view(state: GameState, player_id: String) -> PlayerView {
-  // Check if shop is active first (overrides all other views)
-  case state.shop_state {
-    Some(shop) -> build_shop_view(state, shop, player_id)
+  // Prioritize animations over shop - if last_hand_results exists, show playing view with animation
+  case state.last_hand_results {
+    Some(_) -> build_playing_view(state, player_id)
     None ->
-      case state.game_status {
-        state.GameOver -> build_game_over_view(state, player_id)
-        state.GameActive -> {
-          case state.phase {
-            state.Playing -> build_playing_view(state, player_id)
-            state.RoundEnd -> build_round_end_view(state, player_id)
+      // No animation to show, check other views
+      case state.shop_state {
+        Some(shop) -> build_shop_view(state, shop, player_id)
+        None ->
+          case state.game_status {
+            state.GameOver -> build_game_over_view(state, player_id)
+            state.GameActive -> build_playing_view(state, player_id)
           }
-        }
       }
   }
 }
@@ -199,6 +196,37 @@ fn build_playing_view(state: GameState, player_id: String) -> PlayerView {
 
   // Get opponent name
   let assert Ok(opponent_name) = dict.get(state.player_names, opponent_id)
+
+  // Build animation data if hand results are present
+  let pending_animation = case state.last_hand_results {
+    Some(results) -> {
+      case dict.get(results, player_id) {
+        Ok(your_result) -> {
+          case dict.get(results, opponent_id) {
+            Ok(opponent_result) -> {
+              // Build detailed breakdowns for animation
+              let your_breakdown = build_breakdown_from_result(your_result.hand, player)
+              let opponent_breakdown = build_breakdown_from_result(opponent_result.hand, opponent)
+
+              Some(HandResultAnimation(
+                your_hand: your_result.hand,
+                your_hand_type: your_result.hand_type,
+                your_score: your_result.score,
+                your_breakdown: your_breakdown,
+                opponent_hand: opponent_result.hand,
+                opponent_hand_type: opponent_result.hand_type,
+                opponent_score: opponent_result.score,
+                opponent_breakdown: opponent_breakdown,
+              ))
+            }
+            Error(_) -> None
+          }
+        }
+        Error(_) -> None
+      }
+    }
+    None -> None
+  }
 
   PlayingView(PlayingData(
     // Your state
@@ -240,78 +268,54 @@ fn build_playing_view(state: GameState, player_id: String) -> PlayerView {
     hands_per_round: state.hands_per_round,
     discards_per_round: state.discards_per_round,
     initial_lives: state.initial_lives,
+
+    // Animation data
+    pending_animation: pending_animation,
   ))
 }
 
-// ========== ROUND END VIEW BUILDER ==========
+// Helper to build breakdown from hand and player state
+fn build_breakdown_from_result(
+  hand: List(Card),
+  player: Player,
+) -> ScoreBreakdown {
+  // Re-evaluate hand to get detailed breakdown
+  let evaluation = hand.evaluate(hand)
 
-fn build_round_end_view(state: GameState, player_id: String) -> PlayerView {
-  // Get player and opponent
-  let assert Ok(player) = dict.get(state.players, player_id)
-  let opponent_id = get_opponent_id(state, player_id)
-  let assert Ok(opponent) = dict.get(state.players, opponent_id)
+  let card_debuffs =
+    score.CardDebuffs(
+      disabled_ranks: player.disabled_ranks,
+      disabled_suits: player.disabled_suits,
+      enhancements_disabled: player.enhancements_disabled,
+    )
 
-  // Get names
-  let assert Ok(your_name) = dict.get(state.player_names, player_id)
-  let assert Ok(opponent_name) = dict.get(state.player_names, opponent_id)
+  let score_result =
+    score.calculate(
+      evaluation,
+      player.skill_tree,
+      player.active_debuffs,
+      card_debuffs,
+    )
 
-  // Get hand results from last_hand_results
-  let your_hand_result = case state.last_hand_results {
-    None -> None
-    Some(results) -> case dict.get(results, player_id) {
-      Ok(result) -> Some(HandResult(
-        hand: result.hand,
-        hand_type: hand_type_to_string(result.hand_type),
-        score: result.score,
-        chips: result.total_chips,
-        multiplier: result.total_multiplier,
-      ))
-      Error(_) -> None
-    }
-  }
+  // Convert score.CardBreakdown to view.CardBreakdown
+  let view_card_breakdowns =
+    list.map(score_result.card_breakdowns, fn(cb) {
+      CardBreakdown(
+        card: cb.card,
+        chip_value: cb.chip_value,
+        bonus_chips: cb.bonus_chips,
+        bonus_mult: cb.bonus_mult,
+        disabled: cb.disabled,
+      )
+    })
 
-  let opponent_hand_result = case state.last_hand_results {
-    None -> None
-    Some(results) -> case dict.get(results, opponent_id) {
-      Ok(result) -> Some(HandResult(
-        hand: result.hand,
-        hand_type: hand_type_to_string(result.hand_type),
-        score: result.score,
-        chips: result.total_chips,
-        multiplier: result.total_multiplier,
-      ))
-      Error(_) -> None
-    }
-  }
-
-  // Determine who lost life (compare last round winner)
-  let your_lost_life = case state.last_round_winner_id {
-    None -> False  // Tie, no one lost
-    Some(winner_id) -> winner_id != player_id
-  }
-
-  let opponent_lost_life = case state.last_round_winner_id {
-    None -> False  // Tie, no one lost
-    Some(winner_id) -> winner_id != opponent_id
-  }
-
-  RoundEndView(RoundEndData(
-    your_name: your_name,
-    your_hand_result: your_hand_result,
-    your_lives: player.lives,
-    your_lost_life: your_lost_life,
-
-    opponent_name: opponent_name,
-    opponent_hand_result: opponent_hand_result,
-    opponent_lives: opponent.lives,
-    opponent_lost_life: opponent_lost_life,
-
-    round_number: state.round_number,
-    was_tie: case state.last_round_winner_id {
-      None -> True
-      Some(_) -> False
-    },
-  ))
+  ScoreBreakdown(
+    base_chips: score_result.base_chips,
+    base_multiplier: score_result.base_multiplier,
+    total_chips: score_result.total_chips,
+    total_multiplier: score_result.total_multiplier,
+    card_breakdowns: view_card_breakdowns,
+  )
 }
 
 // ========== SHOP VIEW BUILDER ==========
@@ -393,6 +397,8 @@ fn build_game_over_view(state: GameState, player_id: String) -> PlayerView {
     you_won: you_won,
     your_final_lives: player.lives,
     opponent_final_lives: opponent.lives,
+    your_ready: player.ready_for_next_round,
+    opponent_ready: opponent.ready_for_next_round,
   ))
 }
 
@@ -402,18 +408,4 @@ fn get_opponent_id(state: GameState, player_id: String) -> String {
   let all_player_ids = dict.keys(state.players)
   let assert Ok(opponent_id) = list.find(all_player_ids, fn(id) { id != player_id })
   opponent_id
-}
-
-fn hand_type_to_string(hand_type: HandType) -> String {
-  case hand_type {
-    hand.HighCard -> "high_card"
-    hand.Pair -> "pair"
-    hand.TwoPair -> "two_pair"
-    hand.ThreeOfAKind -> "three_of_a_kind"
-    hand.Straight -> "straight"
-    hand.Flush -> "flush"
-    hand.FullHouse -> "full_house"
-    hand.FourOfAKind -> "four_of_a_kind"
-    hand.StraightFlush -> "straight_flush"
-  }
 }

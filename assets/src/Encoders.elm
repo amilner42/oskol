@@ -116,6 +116,13 @@ encodeRequestRematch =
         ]
 
 
+encodeClearAnimation : E.Value
+encodeClearAnimation =
+    E.object
+        [ ( "action", E.string "clear_animation" )
+        ]
+
+
 
 -- HELPER ENCODERS
 

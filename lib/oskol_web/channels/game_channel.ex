@@ -90,6 +90,15 @@ defmodule OskolWeb.GameChannel do
   end
 
   @impl true
+  def handle_in("clear_animation", _payload, socket) do
+    game_id = socket.assigns.game_id
+    player_id = socket.assigns.player_id
+
+    GameServer.player_action_async(game_id, player_id, :clear_animation)
+    {:reply, :ok, socket}
+  end
+
+  @impl true
   def handle_in("make_shop_pick", %{"card_id" => card_id}, socket) do
     game_id = socket.assigns.game_id
     player_id = socket.assigns.player_id
@@ -169,17 +178,41 @@ defmodule OskolWeb.GameChannel do
   @impl true
   def handle_in("request_rematch", _params, socket) do
     game_id = socket.assigns.game_id
-    _player_id = socket.assigns.player_id
+    player_id = socket.assigns.player_id
 
-    # Get current game state
-    game_server_state = GameServer.get_state(game_id)
+    # Mark player as ready for rematch (async - state update will trigger handle_info)
+    GameServer.player_action_async(game_id, player_id, :mark_ready_for_rematch)
 
-    # If game is over, trigger rematch immediately
+    {:reply, :ok, socket}
+  end
+
+  # Handle PubSub broadcasts from GameServer
+  @impl true
+  def handle_info({:game_state_updated, game_server_state}, socket) do
+    game_id = socket.assigns.game_id
+    player_id = socket.assigns.player_id
+
+    game_state_json =
+      if game_server_state.game_state == nil do
+        %{
+          type: "lobby",
+          connections: game_server_state.connections,
+          lobby_status: Atom.to_string(game_server_state.lobby_status)
+        }
+      else
+        # Get player-specific view from Gleam
+        GleamEngine.get_player_view(game_server_state.game_state, player_id)
+      end
+
+    push(socket, "game_state_updated", %{game_state: game_state_json})
+
+    # Check if both players are ready for rematch
     if game_server_state.game_state != nil do
       game_info = GleamEngine.get_game_info(game_server_state.game_state)
+      both_ready = GleamEngine.both_players_ready_for_rematch(game_server_state.game_state)
 
-      if game_info.game_status == :game_over do
-        # Generate rematch game ID
+      if game_info.game_status == :game_over and both_ready do
+        # Both players ready - create rematch game
         rematch_game_id = generate_rematch_id(game_id)
 
         # Get player names and game settings from current game
@@ -190,26 +223,35 @@ defmodule OskolWeb.GameChannel do
 
         config = GleamEngine.get_game_config(game_server_state.game_state)
         initial_lives = config.initial_lives
-        # Shop rounds not yet in Gleam - use default of 2 for standard format
-        shop_rounds = 2
-
-        # Determine format based on settings
-        format = config_to_format(initial_lives, shop_rounds)
+        hands_per_round = config.hands_per_round
+        discards_per_round = config.discards_per_round
+        shop_rounds = config.shop_rounds
 
         # Start the new game server
         case Oskol.Game.GameSupervisor.start_game(rematch_game_id) do
           {:ok, _pid} ->
-            # Join both players to the new game (PIDs will be set when they actually connect)
+            # Join both players to the new game
             [player1_name, player2_name] = player_names
             {:ok, player1_id, _} = GameServer.join_game(rematch_game_id, player1_name)
             {:ok, player2_id, _} = GameServer.join_game(rematch_game_id, player2_name)
 
-            # Select format for both players
-            _ = GameServer.select_format(rematch_game_id, player1_id, format)
-            _ = GameServer.select_format(rematch_game_id, player2_id, format)
+            # Create game directly with exact config (bypass format selection to preserve custom settings)
+            player_names_map = %{
+              player1_id => player1_name,
+              player2_id => player2_name
+            }
 
-            # Start the game immediately
-            _ = GameServer.start_game(rematch_game_id)
+            game_state =
+              GleamEngine.new_game(
+                player_names_map,
+                initial_lives,
+                hands_per_round,
+                discards_per_round,
+                shop_rounds
+              )
+
+            # Directly set the game state
+            GameServer.set_game_state(rematch_game_id, game_state)
             :ok
 
           {:error, {:already_started, _pid}} ->
@@ -226,27 +268,6 @@ defmodule OskolWeb.GameChannel do
       end
     end
 
-    {:reply, :ok, socket}
-  end
-
-  # Handle PubSub broadcasts from GameServer
-  @impl true
-  def handle_info({:game_state_updated, game_server_state}, socket) do
-    player_id = socket.assigns.player_id
-
-    game_state_json =
-      if game_server_state.game_state == nil do
-        %{
-          type: "lobby",
-          connections: game_server_state.connections,
-          lobby_status: Atom.to_string(game_server_state.lobby_status)
-        }
-      else
-        # Get player-specific view from Gleam
-        GleamEngine.get_player_view(game_server_state.game_state, player_id)
-      end
-
-    push(socket, "game_state_updated", %{game_state: game_state_json})
     {:noreply, socket}
   end
 
@@ -307,9 +328,9 @@ defmodule OskolWeb.GameChannel do
   end
 
   # Convert game configuration to format
-  defp config_to_format(2, 1), do: :short
-  defp config_to_format(3, 2), do: :standard
-  defp config_to_format(5, 2), do: :extended
+  defp config_to_format(2, 4, 3, 1), do: :short
+  defp config_to_format(3, 4, 3, 2), do: :standard
+  defp config_to_format(5, 4, 3, 2), do: :extended
   # Default to standard if not a standard format
-  defp config_to_format(_, _), do: :standard
+  defp config_to_format(_, _, _, _), do: :standard
 end

@@ -13,14 +13,9 @@ defmodule Oskol.Game.GleamEngine do
   @doc """
   Create a new game with Gleam engine.
   Gleam handles all game logic including deck creation and shuffling.
+  All parameters are required - no defaults to avoid bugs.
   """
-  def new_game(
-        player_names,
-        initial_lives \\ 3,
-        hands_per_round \\ 4,
-        discards_per_round \\ 3,
-        shop_rounds \\ 0
-      ) do
+  def new_game(player_names, initial_lives, hands_per_round, discards_per_round, shop_rounds) do
     # Convert player names to Gleam dict
     gleam_player_names = player_names_to_gleam(player_names)
 
@@ -28,6 +23,8 @@ defmodule Oskol.Game.GleamEngine do
     :game@engine.new_game(
       gleam_player_names,
       initial_lives,
+      # Don't revert this CLAUDE, I am just doing this for testing
+      # hands_per_round,
       1,
       discards_per_round,
       shop_rounds
@@ -80,6 +77,14 @@ defmodule Oskol.Game.GleamEngine do
 
   defp action_to_gleam(player_id, {:upgrade_hand, hand_type, levels}) do
     {:upgrade_hand, player_id, hand_type, levels}
+  end
+
+  defp action_to_gleam(player_id, :mark_ready_for_rematch) do
+    {:mark_ready_for_rematch, player_id}
+  end
+
+  defp action_to_gleam(player_id, :clear_animation) do
+    {:clear_animation, player_id}
   end
 
   # Shop actions
@@ -137,7 +142,7 @@ defmodule Oskol.Game.GleamEngine do
 
   defp player_from_gleam(gleam_player) do
     {:player, player_id, lives, _card_piles, _skill_tree, hands_remaining, discards_remaining,
-     current_round_score, locked_in_hand, status, _active_debuffs,
+     current_round_score, locked_in_hand, _ready_for_next_round, status, _active_debuffs,
      _scrambled, _face_down_card_ids, _disabled_ranks, _disabled_suits, _enhancements_disabled,
      _supply_chain_limited} = gleam_player
 
@@ -190,6 +195,13 @@ defmodule Oskol.Game.GleamEngine do
   end
 
   @doc """
+  Check if both players are ready for rematch.
+  """
+  def both_players_ready_for_rematch(gleam_state) do
+    :game@state.both_players_ready_for_next_round(gleam_state)
+  end
+
+  @doc """
   Get player names from Gleam state.
   Returns a map of player_id => player_name.
   """
@@ -204,17 +216,18 @@ defmodule Oskol.Game.GleamEngine do
   end
 
   @doc """
-  Get game configuration (initial_lives, hands_per_round, discards_per_round).
+  Get game configuration (initial_lives, hands_per_round, discards_per_round, shop_rounds).
   """
   def get_game_config(gleam_state) do
     {:game_state, _round, _names, _players, _phase, _status, _last_hand, _history, _winner,
-     _last_winner, initial_lives, hands_per_round, discards_per_round, _shop_rounds, _event_log,
+     _last_winner, initial_lives, hands_per_round, discards_per_round, shop_rounds, _event_log,
      _shop_state} = gleam_state
 
     %{
       initial_lives: initial_lives,
       hands_per_round: hands_per_round,
-      discards_per_round: discards_per_round
+      discards_per_round: discards_per_round,
+      shop_rounds: shop_rounds
     }
   end
 
@@ -235,8 +248,9 @@ defmodule Oskol.Game.GleamEngine do
     # Get player's skill tree
     {:ok,
      {:player, _id, _lives, _card_piles, skill_tree, _hands_rem, _discards_rem, _score,
-      _locked_hand, _status, _debuffs, _scrambled, _face_down, _disabled_ranks,
-      _disabled_suits, _enh_disabled, _supply_chain}} = :gleam@dict.get(players, player_id)
+      _locked_hand, _ready_for_next_round, _status, _debuffs, _scrambled, _face_down,
+      _disabled_ranks, _disabled_suits, _enh_disabled, _supply_chain}} =
+      :gleam@dict.get(players, player_id)
 
     player_skill_tree = skill_tree_to_json_map(skill_tree)
 
@@ -247,24 +261,14 @@ defmodule Oskol.Game.GleamEngine do
 
   # ========== PLAYER VIEW CONVERSIONS ==========
 
-  defp player_view_from_gleam({:lobby_view, lobby_data}, _skill_tree) do
-    {:lobby_data, your_name, opponent_name, ready} = lobby_data
-
-    %{
-      type: "lobby",
-      your_name: your_name,
-      opponent_name: option_from_gleam(opponent_name),
-      ready_to_start: ready
-    }
-  end
-
   defp player_view_from_gleam({:playing_view, playing_data}, your_skill_tree) do
     {:playing_data, your_hand, your_draw_pile, your_lives, your_hands_rem, your_discard_rem,
      your_score, your_locked_hand, your_face_down, your_disabled_ranks, your_disabled_suits,
      your_enh_disabled, your_debuffs, your_scrambled, your_supply_chain, opp_name, opp_hand,
      opp_lives, opp_hands_rem, opp_discard_rem, opp_score, opp_locked_hand, opp_face_down,
      opp_disabled_ranks, opp_disabled_suits, opp_enh_disabled, opp_debuffs, opp_scrambled,
-     opp_supply_chain, round_num, hands_per_round, discards_per_round, initial_lives} =
+     opp_supply_chain, round_num, hands_per_round, discards_per_round, initial_lives,
+     pending_animation} =
       playing_data
 
     %{
@@ -303,32 +307,14 @@ defmodule Oskol.Game.GleamEngine do
       round_number: round_num,
       hands_per_round: hands_per_round,
       discards_per_round: discards_per_round,
-      initial_lives: initial_lives
-    }
-  end
-
-  defp player_view_from_gleam({:round_end_view, round_end_data}, _skill_tree) do
-    {:round_end_data, your_name, your_result, your_lives, your_lost, opp_name, opp_result,
-     opp_lives, opp_lost, round_num, was_tie} = round_end_data
-
-    %{
-      type: "round_end",
-      your_name: your_name,
-      your_hand_result: option_from_gleam(your_result, &hand_result_from_gleam_view/1),
-      your_lives: your_lives,
-      your_lost_life: your_lost,
-      opponent_name: opp_name,
-      opponent_hand_result: option_from_gleam(opp_result, &hand_result_from_gleam_view/1),
-      opponent_lives: opp_lives,
-      opponent_lost_life: opp_lost,
-      round_number: round_num,
-      was_tie: was_tie
+      initial_lives: initial_lives,
+      pending_animation: option_from_gleam(pending_animation, &hand_result_animation_from_gleam/1)
     }
   end
 
   defp player_view_from_gleam({:game_over_view, game_over_data}, _skill_tree) do
-    {:game_over_data, your_name, opp_name, winner_name, you_won, your_lives, opp_lives} =
-      game_over_data
+    {:game_over_data, your_name, opp_name, winner_name, you_won, your_lives, opp_lives,
+     your_ready, opp_ready} = game_over_data
 
     %{
       type: "game_over",
@@ -337,7 +323,9 @@ defmodule Oskol.Game.GleamEngine do
       winner_name: winner_name,
       you_won: you_won,
       your_final_lives: your_lives,
-      opponent_final_lives: opp_lives
+      opponent_final_lives: opp_lives,
+      your_ready: your_ready,
+      opponent_ready: opp_ready
     }
   end
 
@@ -490,18 +478,6 @@ defmodule Oskol.Game.GleamEngine do
     }
   end
 
-  defp hand_result_from_gleam_view(gleam_result) do
-    {:hand_result, hand, hand_type, score, chips, multiplier} = gleam_result
-
-    %{
-      hand: Enum.map(hand, &card_to_json_map/1),
-      hand_type: hand_type,
-      score: score,
-      chips: chips,
-      multiplier: multiplier
-    }
-  end
-
   # Convert a Gleam card directly to a JSON-encodable map
   # ID comes from Gleam - stable across game state updates
   # Rank and suit are sent as strings (atoms) - Elm will decode them to typed constructors!
@@ -541,6 +517,49 @@ defmodule Oskol.Game.GleamEngine do
 
   defp option_from_gleam(:none, _converter), do: nil
   defp option_from_gleam({:some, value}, converter), do: converter.(value)
+
+  # Convert HandResultAnimation from Gleam to JSON
+  defp hand_result_animation_from_gleam(
+         {:hand_result_animation, your_hand, your_hand_type, your_score, your_breakdown, opp_hand,
+          opp_hand_type, opp_score, opp_breakdown}
+       ) do
+    %{
+      your_hand: Enum.map(your_hand, &card_to_json_map/1),
+      your_hand_type: hand_type_to_string(your_hand_type),
+      your_score: your_score,
+      your_breakdown: score_breakdown_from_gleam(your_breakdown),
+      opponent_hand: Enum.map(opp_hand, &card_to_json_map/1),
+      opponent_hand_type: hand_type_to_string(opp_hand_type),
+      opponent_score: opp_score,
+      opponent_breakdown: score_breakdown_from_gleam(opp_breakdown)
+    }
+  end
+
+  # Convert ScoreBreakdown from Gleam to JSON
+  defp score_breakdown_from_gleam(
+         {:score_breakdown, base_chips, base_mult, total_chips, total_mult, card_breakdowns}
+       ) do
+    %{
+      base_chips: base_chips,
+      base_multiplier: base_mult,
+      total_chips: total_chips,
+      total_multiplier: total_mult,
+      card_breakdowns: Enum.map(card_breakdowns, &card_breakdown_from_gleam/1)
+    }
+  end
+
+  # Convert CardBreakdown from Gleam to JSON
+  defp card_breakdown_from_gleam(
+         {:card_breakdown, card, chip_value, bonus_chips, bonus_mult, disabled}
+       ) do
+    %{
+      card: card_to_json_map(card),
+      chip_value: chip_value,
+      bonus_chips: bonus_chips,
+      bonus_mult: bonus_mult,
+      disabled: disabled
+    }
+  end
 
   # Convert PendingDeckBuilder from Gleam to JSON
   defp pending_deck_builder_to_json(:none), do: nil

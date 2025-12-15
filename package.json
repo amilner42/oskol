@@ -1,4 +1,10 @@
 {
+  "scripts": {
+    "format": "npm run format:elm && npm run format:gleam && npm run format:elixir",
+    "format:elm": "elm-format assets/src --yes",
+    "format:gleam": "gleam format",
+    "format:elixir": "mix format"
+  },
   "dependencies": {
     "phoenix": "^1.8.2",
     "playwright": "^1.57.0"

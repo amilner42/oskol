@@ -23,14 +23,8 @@ playerViewDecoder =
 playerViewByType : String -> Decoder PlayerView
 playerViewByType viewType =
     case viewType of
-        "lobby" ->
-            D.map LobbyView lobbyDataDecoder
-
         "playing" ->
             D.map PlayingView playingDataDecoder
-
-        "round_end" ->
-            D.map RoundEndView roundEndDataDecoder
 
         "shop" ->
             D.map ShopView shopDataDecoder
@@ -40,27 +34,6 @@ playerViewByType viewType =
 
         _ ->
             D.fail ("Unknown view type: " ++ viewType)
-
-
-{-| Decoder for lobby data
--}
-lobbyDataDecoder : Decoder LobbyData
-lobbyDataDecoder =
-    D.succeed LobbyData
-        |> andMap (D.oneOf [ D.field "your_name" D.string, D.succeed "" ])
-        |> andMap (D.field "opponent_name" (D.nullable D.string))
-        |> andMap (D.oneOf [ D.field "ready_to_start" D.bool, D.succeed False ])
-        |> andMap (D.oneOf [ D.field "connections" (dictDecoder connectionDecoder), D.succeed Dict.empty ])
-        |> andMap (D.field "lobby_status" D.string)
-
-
-{-| Decoder for connection info
--}
-connectionDecoder : Decoder Connection
-connectionDecoder =
-    D.succeed Connection
-        |> andMap (D.field "name" D.string)
-        |> andMap (D.field "connected" D.bool)
 
 
 {-| Decoder for playing data
@@ -101,35 +74,7 @@ playingDataDecoder =
         |> andMap (D.field "hands_per_round" D.int)
         |> andMap (D.field "discards_per_round" D.int)
         |> andMap (D.field "initial_lives" D.int)
-
-
-{-| Decoder for round end data
--}
-roundEndDataDecoder : Decoder RoundEndData
-roundEndDataDecoder =
-    D.succeed RoundEndData
-        |> andMap (D.field "your_name" D.string)
-        |> andMap (D.field "your_hand_result" (D.nullable viewHandResultDecoder))
-        |> andMap (D.field "your_lives" D.int)
-        |> andMap (D.field "your_lost_life" D.bool)
-        |> andMap (D.field "opponent_name" D.string)
-        |> andMap (D.field "opponent_hand_result" (D.nullable viewHandResultDecoder))
-        |> andMap (D.field "opponent_lives" D.int)
-        |> andMap (D.field "opponent_lost_life" D.bool)
-        |> andMap (D.field "round_number" D.int)
-        |> andMap (D.field "was_tie" D.bool)
-
-
-{-| Decoder for view hand result (simpler than full HandResult)
--}
-viewHandResultDecoder : Decoder ViewHandResult
-viewHandResultDecoder =
-    D.succeed ViewHandResult
-        |> andMap (D.field "hand" (D.list cardDecoder))
-        |> andMap (D.field "hand_type" D.string)
-        |> andMap (D.field "score" D.int)
-        |> andMap (D.field "chips" D.int)
-        |> andMap (D.field "multiplier" D.int)
+        |> andMap (D.field "pending_animation" (D.maybe handResultAnimationDecoder))
 
 
 {-| Decoder for game over data
@@ -143,6 +88,8 @@ gameOverDataDecoder =
         |> andMap (D.field "you_won" D.bool)
         |> andMap (D.field "your_final_lives" D.int)
         |> andMap (D.field "opponent_final_lives" D.int)
+        |> andMap (D.field "your_ready" D.bool)
+        |> andMap (D.field "opponent_ready" D.bool)
 
 
 {-| Decoder for shop view data
@@ -230,12 +177,11 @@ handResultDecoder =
 
 scoreBreakdownDecoder : Decoder ScoreBreakdown
 scoreBreakdownDecoder =
-    D.map6 ScoreBreakdown
+    D.map5 ScoreBreakdown
         (D.field "base_chips" D.int)
         (D.field "base_multiplier" D.int)
         (D.field "total_chips" D.int)
         (D.field "total_multiplier" D.int)
-        (D.field "total_score" D.int)
         (D.field "card_breakdowns" (D.list cardBreakdownDecoder))
 
 
@@ -247,6 +193,19 @@ cardBreakdownDecoder =
         (D.field "bonus_chips" D.int)
         (D.field "bonus_mult" D.int)
         (D.field "disabled" D.bool)
+
+
+handResultAnimationDecoder : Decoder HandResultAnimation
+handResultAnimationDecoder =
+    D.succeed HandResultAnimation
+        |> andMap (D.field "your_hand" (D.list cardDecoder))
+        |> andMap (D.field "your_hand_type" D.string)
+        |> andMap (D.field "your_score" D.int)
+        |> andMap (D.field "your_breakdown" scoreBreakdownDecoder)
+        |> andMap (D.field "opponent_hand" (D.list cardDecoder))
+        |> andMap (D.field "opponent_hand_type" D.string)
+        |> andMap (D.field "opponent_score" D.int)
+        |> andMap (D.field "opponent_breakdown" scoreBreakdownDecoder)
 
 
 

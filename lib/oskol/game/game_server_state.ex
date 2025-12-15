@@ -89,12 +89,13 @@ defmodule Oskol.Game.GameServerState do
   def update_lobby_status(%__MODULE__{} = state), do: state
 
   @doc """
-  Converts a game format to its configuration (lives, shop_rounds).
+  Converts a game format to its configuration (lives, hands_per_round, discards_per_round, shop_rounds).
   """
-  @spec format_to_config(game_format()) :: {pos_integer(), non_neg_integer()}
-  def format_to_config(:short), do: {2, 1}
-  def format_to_config(:standard), do: {3, 2}
-  def format_to_config(:extended), do: {5, 2}
+  @spec format_to_config(game_format()) ::
+          {pos_integer(), pos_integer(), pos_integer(), non_neg_integer()}
+  def format_to_config(:short), do: {2, 4, 3, 1}
+  def format_to_config(:standard), do: {3, 4, 3, 2}
+  def format_to_config(:extended), do: {5, 4, 3, 2}
 
   @doc """
   Checks if both players have selected the same format.

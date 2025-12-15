@@ -30,30 +30,9 @@ type RemoteData error data
 This is what gets sent from the server - clean, minimal, typed
 -}
 type PlayerView
-    = LobbyView LobbyData
-    | PlayingView PlayingData
-    | RoundEndView RoundEndData
+    = PlayingView PlayingData
     | ShopView ShopData
     | GameOverView GameOverData
-
-
-{-| Lobby state before game starts
--}
-type alias LobbyData =
-    { yourName : String
-    , opponentName : Maybe String
-    , readyToStart : Bool
-    , connections : Dict String Connection -- For compatibility with old lobby code
-    , lobbyStatus : String
-    }
-
-
-{-| Connection info for lobby
--}
-type alias Connection =
-    { name : String
-    , connected : Bool
-    }
 
 
 {-| Playing state during a round
@@ -92,33 +71,7 @@ type alias PlayingData =
     , handsPerRound : Int
     , discardsPerRound : Int
     , initialLives : Int
-    }
-
-
-{-| Round end state showing results
--}
-type alias RoundEndData =
-    { yourName : String
-    , yourHandResult : Maybe ViewHandResult
-    , yourLives : Int
-    , yourLostLife : Bool
-    , opponentName : String
-    , opponentHandResult : Maybe ViewHandResult
-    , opponentLives : Int
-    , opponentLostLife : Bool
-    , roundNumber : Int
-    , wasTie : Bool
-    }
-
-
-{-| Hand result for view (simpler than full HandResult)
--}
-type alias ViewHandResult =
-    { hand : List Card
-    , handType : String
-    , score : Int
-    , chips : Int
-    , multiplier : Int
+    , pendingAnimation : Maybe HandResultAnimation
     }
 
 
@@ -150,6 +103,8 @@ type alias GameOverData =
     , youWon : Bool
     , yourFinalLives : Int
     , opponentFinalLives : Int
+    , yourReady : Bool
+    , opponentReady : Bool
     }
 
 
@@ -210,7 +165,6 @@ type alias ScoreBreakdown =
     , baseMultiplier : Int
     , totalChips : Int
     , totalMultiplier : Int
-    , totalScore : Int
     , cardBreakdowns : List CardBreakdown
     }
 
@@ -223,6 +177,20 @@ type alias CardBreakdown =
     , bonusChips : Int
     , bonusMult : Int
     , disabled : Bool
+    }
+
+
+{-| Hand result animation data
+-}
+type alias HandResultAnimation =
+    { yourHand : List Card
+    , yourHandType : String
+    , yourScore : Int
+    , yourBreakdown : ScoreBreakdown
+    , opponentHand : List Card
+    , opponentHandType : String
+    , opponentScore : Int
+    , opponentBreakdown : ScoreBreakdown
     }
 
 
@@ -531,7 +499,6 @@ type alias GameState =
 
 type GamePhase
     = Playing
-    | RoundEnd
 
 
 type GameStatus
@@ -562,6 +529,7 @@ type alias Model =
     , scoreAnimation : ScoreAnimationState -- Score animation state
     , viewingResults : Bool -- Whether we're viewing hand results
     , shopCountdown : Maybe Int -- Countdown timer for shop completion (seconds remaining)
+    , currentAnimationData : Maybe HandResultAnimation -- Current animation data from server
     }
 
 

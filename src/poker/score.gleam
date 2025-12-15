@@ -34,6 +34,9 @@ pub type CardBreakdown {
   )
 }
 
+// NOTE: We also have view.CardBreakdown which is identical in structure
+// This allows poker/score to be independent of game/view
+
 /// Complete scoring result
 pub type ScoreResult {
   ScoreResult(
