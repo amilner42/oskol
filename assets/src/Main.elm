@@ -328,6 +328,7 @@ advanceAnimationStep model currentTime =
                         , cardIndex = 0
                         , nextStepTime = Nothing
                         }
+
                     else
                         { phase = nextPhase
                         , cardIndex = nextIndex
@@ -340,6 +341,7 @@ advanceAnimationStep model currentTime =
               }
             , if shouldDismiss then
                 sendToChannel encodeClearAnimation
+
               else
                 Cmd.none
             )

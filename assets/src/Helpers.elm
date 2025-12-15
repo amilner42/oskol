@@ -454,7 +454,12 @@ buildGameState model playerView =
                     , currentRoundScore = 0
                     , lockedInHand = Nothing
                     , readyForNextRound = gameOverData.yourReady
-                    , status = if gameOverData.yourFinalLives == 0 then PlayerEliminated else PlayerActive
+                    , status =
+                        if gameOverData.yourFinalLives == 0 then
+                            PlayerEliminated
+
+                        else
+                            PlayerActive
                     , activeDebuffs = []
                     , scrambled = False
                     , faceDownCardIds = []
@@ -474,7 +479,12 @@ buildGameState model playerView =
                     , currentRoundScore = 0
                     , lockedInHand = Nothing
                     , readyForNextRound = gameOverData.opponentReady
-                    , status = if gameOverData.opponentFinalLives == 0 then PlayerEliminated else PlayerActive
+                    , status =
+                        if gameOverData.opponentFinalLives == 0 then
+                            PlayerEliminated
+
+                        else
+                            PlayerActive
                     , activeDebuffs = []
                     , scrambled = False
                     , faceDownCardIds = []

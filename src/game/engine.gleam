@@ -1,23 +1,24 @@
-import gleam/dict
-import gleam/list
-import gleam/option.{None, Some}
-import gleam/result
-import poker/deck
 import game/event_log.{
   ActionError, CardsDiscarded, GameOver, HandLockedIn, HandUpgraded,
   HandsResolved, RoundEnded,
 }
 import game/player.{type PlayerId}
-import shop/state as shop_state
-import shop/card as shop_card
 import game/state.{type GameState}
 import game/view
+import gleam/dict
+import gleam/list
+import gleam/option.{None, Some}
+import gleam/result
 import poker/card.{type Card}
+import poker/deck
 import poker/hand.{type HandType}
+import shop/card as shop_card
+import shop/state as shop_state
 import utils/uuid
 
 // Re-export view types for Elixir
-pub type PlayerView = view.PlayerView
+pub type PlayerView =
+  view.PlayerView
 
 /// Game actions - all possible player moves
 pub type GameAction {
@@ -35,7 +36,10 @@ pub type GameAction {
 
   // Multi-step shop actions
   ConfirmDeckBuilderPick(player_id: PlayerId, card_id: String)
-  CompleteDeckBuilderSelection(player_id: PlayerId, selected_card_ids: List(String))
+  CompleteDeckBuilderSelection(
+    player_id: PlayerId,
+    selected_card_ids: List(String),
+  )
   ConfirmPlusBombPick(player_id: PlayerId, card_id: String)
   CompletePlusBombSelection(player_id: PlayerId, opponent_card_id: String)
 }
@@ -89,7 +93,11 @@ pub fn apply_action(state: GameState, action: GameAction) -> EngineResult {
     ConfirmDeckBuilderPick(player_id, card_id) ->
       handle_confirm_deck_builder_pick(state, player_id, card_id)
     CompleteDeckBuilderSelection(player_id, selected_card_ids) ->
-      handle_complete_deck_builder_selection(state, player_id, selected_card_ids)
+      handle_complete_deck_builder_selection(
+        state,
+        player_id,
+        selected_card_ids,
+      )
     ConfirmPlusBombPick(player_id, card_id) ->
       handle_confirm_plus_bomb_pick(state, player_id, card_id)
     CompletePlusBombSelection(player_id, opponent_card_id) ->
@@ -133,7 +141,9 @@ fn handle_lock_in(
                 Some(_winner) -> {
                   let loser_id =
                     dict.keys(new_state.players)
-                    |> list.find(fn(id) { Some(id) != new_state.last_round_winner_id })
+                    |> list.find(fn(id) {
+                      Some(id) != new_state.last_round_winner_id
+                    })
                     |> result.map(fn(id) { [id] })
                     |> result.unwrap([])
 
@@ -191,7 +201,8 @@ fn handle_discard(
   cards: List(Card),
 ) -> EngineResult {
   case dict.get(state.players, player_id) {
-    Error(_) -> EngineResult(state: state, events: [ActionError("Player not found")])
+    Error(_) ->
+      EngineResult(state: state, events: [ActionError("Player not found")])
     Ok(p) -> {
       case player.discard_and_draw(p, cards) {
         Error(msg) -> EngineResult(state: state, events: [ActionError(msg)])
@@ -202,16 +213,22 @@ fn handle_discard(
           let cards_discarded_count = list.length(cards)
 
           // Just use the last N cards drawn as the "new" cards
-          let drawn_cards = list.drop(new_hand, old_hand_size - cards_discarded_count)
+          let drawn_cards =
+            list.drop(new_hand, old_hand_size - cards_discarded_count)
 
-          let new_players = dict.insert(state.players, player_id, updated_player)
+          let new_players =
+            dict.insert(state.players, player_id, updated_player)
           // Clear last_hand_results on new player action (animation should only show once)
-          let new_state = state.GameState(..state, players: new_players, last_hand_results: None)
+          let new_state =
+            state.GameState(
+              ..state,
+              players: new_players,
+              last_hand_results: None,
+            )
 
-          EngineResult(
-            state: new_state,
-            events: [CardsDiscarded(player_id, cards, drawn_cards)],
-          )
+          EngineResult(state: new_state, events: [
+            CardsDiscarded(player_id, cards, drawn_cards),
+          ])
         }
       }
     }
@@ -219,17 +236,11 @@ fn handle_discard(
 }
 
 /// Handle marking player as ready for next round/rematch
-fn handle_mark_ready(
-  state: GameState,
-  player_id: PlayerId,
-) -> EngineResult {
+fn handle_mark_ready(state: GameState, player_id: PlayerId) -> EngineResult {
   case state.mark_ready_for_next_round(state, player_id) {
     Error(msg) -> EngineResult(state: state, events: [ActionError(msg)])
     Ok(new_state) ->
-      EngineResult(
-        state: new_state,
-        events: [event_log.PlayerReady(player_id)],
-      )
+      EngineResult(state: new_state, events: [event_log.PlayerReady(player_id)])
   }
 }
 
@@ -259,10 +270,9 @@ fn handle_upgrade_hand(
       let new_players = dict.insert(state.players, player_id, updated_player)
       let new_state = state.GameState(..state, players: new_players)
 
-      EngineResult(
-        state: new_state,
-        events: [HandUpgraded(player_id, hand_type, new_level)],
-      )
+      EngineResult(state: new_state, events: [
+        HandUpgraded(player_id, hand_type, new_level),
+      ])
     }
   }
 }
@@ -290,11 +300,13 @@ fn handle_make_shop_pick(
               // Get opponent player ID
               let all_player_ids = dict.keys(state.players)
               case list.find(all_player_ids, fn(id) { id != player_id }) {
-                Error(_) -> state  // Can't find opponent, shouldn't happen
+                Error(_) -> state
+                // Can't find opponent, shouldn't happen
                 Ok(opponent_id) -> {
                   // Get opponent player
                   case dict.get(state.players, opponent_id) {
-                    Error(_) -> state  // Opponent not found, shouldn't happen
+                    Error(_) -> state
+                    // Opponent not found, shouldn't happen
                     Ok(opponent) -> {
                       // Apply sabotage effect to opponent
                       let updated_opponent = case sabotage_type {
@@ -310,7 +322,12 @@ fn handle_make_shop_pick(
                       }
 
                       // Update opponent in state
-                      let updated_players = dict.insert(state.players, opponent_id, updated_opponent)
+                      let updated_players =
+                        dict.insert(
+                          state.players,
+                          opponent_id,
+                          updated_opponent,
+                        )
                       state.GameState(..state, players: updated_players)
                     }
                   }
@@ -321,10 +338,13 @@ fn handle_make_shop_pick(
             // Research cards - level up player's hand types
             shop_card.Research(shop_card.LevelUp(hand_type)) -> {
               case dict.get(state.players, player_id) {
-                Error(_) -> state  // Player not found, shouldn't happen
+                Error(_) -> state
+                // Player not found, shouldn't happen
                 Ok(current_player) -> {
-                  let upgraded_player = player.upgrade_hand(current_player, hand_type, 1)
-                  let updated_players = dict.insert(state.players, player_id, upgraded_player)
+                  let upgraded_player =
+                    player.upgrade_hand(current_player, hand_type, 1)
+                  let updated_players =
+                    dict.insert(state.players, player_id, upgraded_player)
                   state.GameState(..state, players: updated_players)
                 }
               }
@@ -335,18 +355,32 @@ fn handle_make_shop_pick(
               // Get opponent player ID
               let all_player_ids = dict.keys(state.players)
               case list.find(all_player_ids, fn(id) { id != player_id }) {
-                Error(_) -> state  // Can't find opponent, shouldn't happen
+                Error(_) -> state
+                // Can't find opponent, shouldn't happen
                 Ok(opponent_id) -> {
                   // Get opponent player
                   case dict.get(state.players, opponent_id) {
-                    Error(_) -> state  // Opponent not found, shouldn't happen
+                    Error(_) -> state
+                    // Opponent not found, shouldn't happen
                     Ok(opponent) -> {
                       // Add hand type to opponent's active debuffs
-                      let updated_debuffs = [hand_type, ..opponent.active_debuffs]
-                      let updated_opponent = player.Player(..opponent, active_debuffs: updated_debuffs)
+                      let updated_debuffs = [
+                        hand_type,
+                        ..opponent.active_debuffs
+                      ]
+                      let updated_opponent =
+                        player.Player(
+                          ..opponent,
+                          active_debuffs: updated_debuffs,
+                        )
 
                       // Update opponent in state
-                      let updated_players = dict.insert(state.players, opponent_id, updated_opponent)
+                      let updated_players =
+                        dict.insert(
+                          state.players,
+                          opponent_id,
+                          updated_opponent,
+                        )
                       state.GameState(..state, players: updated_players)
                     }
                   }
@@ -358,7 +392,11 @@ fn handle_make_shop_pick(
             shop_card.Logistics(_) -> state
           }
 
-          let new_state = state.GameState(..state_with_effects, shop_state: Some(updated_shop))
+          let new_state =
+            state.GameState(
+              ..state_with_effects,
+              shop_state: Some(updated_shop),
+            )
           // Check if shop is complete and auto-ready players if so
           let final_state = check_shop_completion_and_auto_ready(new_state)
           // TODO: Add shop event to event log when we add shop events
@@ -383,7 +421,8 @@ fn handle_destroy_shop_card(
           EngineResult(state: state, events: [ActionError(msg)])
         }
         Ok(updated_shop) -> {
-          let new_state = state.GameState(..state, shop_state: Some(updated_shop))
+          let new_state =
+            state.GameState(..state, shop_state: Some(updated_shop))
           EngineResult(state: new_state, events: [])
         }
       }
@@ -404,7 +443,8 @@ fn handle_complete_destroy_phase(
           EngineResult(state: state, events: [ActionError(msg)])
         }
         Ok(updated_shop) -> {
-          let new_state = state.GameState(..state, shop_state: Some(updated_shop))
+          let new_state =
+            state.GameState(..state, shop_state: Some(updated_shop))
           EngineResult(state: new_state, events: [])
         }
       }
@@ -430,7 +470,12 @@ fn handle_confirm_deck_builder_pick(
           let player_all_cards = player.get_all_cards(player_state)
 
           case
-            shop_state.confirm_deck_builder_pick(shop, player_id, card_id, player_all_cards)
+            shop_state.confirm_deck_builder_pick(
+              shop,
+              player_id,
+              card_id,
+              player_all_cards,
+            )
           {
             Error(err) -> {
               let msg = shop_error_to_string(err)
@@ -463,8 +508,11 @@ fn handle_complete_deck_builder_selection(
         }
         Ok(#(updated_shop, pending)) -> {
           // Apply the deck builder effects to the player's cards
-          let state_with_enhancements = case dict.get(state.players, player_id) {
-            Error(_) -> state  // Player not found, shouldn't happen
+          let state_with_enhancements = case
+            dict.get(state.players, player_id)
+          {
+            Error(_) -> state
+            // Player not found, shouldn't happen
             Ok(current_player) -> {
               // Extract the enhancement from the shop card
               let updated_player = case pending.deck_builder_card.kind {
@@ -485,30 +533,39 @@ fn handle_complete_deck_builder_selection(
                     shop_card.SupplyDrop(_) -> {
                       // Create new cards from the selected card IDs
                       // The selected_card_ids point to cards from pending.available_cards
-                      let cards_to_add = list.filter_map(pending.available_cards, fn(c) {
-                        case list.contains(selected_card_ids, c.id) {
-                          True -> {
-                            // Create a new card with the same rank and suit but new ID
-                            let new_card = card.Card(
-                              id: uuid.generate(),
-                              rank: c.rank,
-                              suit: c.suit,
-                              enhancement: None,
-                            )
-                            Ok(new_card)
+                      let cards_to_add =
+                        list.filter_map(pending.available_cards, fn(c) {
+                          case list.contains(selected_card_ids, c.id) {
+                            True -> {
+                              // Create a new card with the same rank and suit but new ID
+                              let new_card =
+                                card.Card(
+                                  id: uuid.generate(),
+                                  rank: c.rank,
+                                  suit: c.suit,
+                                  enhancement: None,
+                                )
+                              Ok(new_card)
+                            }
+                            False -> Error(Nil)
                           }
-                          False -> Error(Nil)
-                        }
-                      })
+                        })
                       player.add_cards_to_deck(current_player, cards_to_add)
                     }
                     shop_card.Discharge(_) -> {
                       // Remove the selected cards from the deck
-                      player.remove_cards_from_deck(current_player, selected_card_ids)
+                      player.remove_cards_from_deck(
+                        current_player,
+                        selected_card_ids,
+                      )
                     }
                     shop_card.Camo(target_suit, _) -> {
                       // Change the suit of the selected cards
-                      player.change_cards_suit(current_player, selected_card_ids, target_suit)
+                      player.change_cards_suit(
+                        current_player,
+                        selected_card_ids,
+                        target_suit,
+                      )
                     }
                     shop_card.Promote(_) -> {
                       // Increase the rank of the selected cards
@@ -516,16 +573,22 @@ fn handle_complete_deck_builder_selection(
                     }
                   }
                 }
-                _ -> current_player  // Not a logistics card, shouldn't happen
+                _ -> current_player
+                // Not a logistics card, shouldn't happen
               }
 
               // Update player in state
-              let updated_players = dict.insert(state.players, player_id, updated_player)
+              let updated_players =
+                dict.insert(state.players, player_id, updated_player)
               state.GameState(..state, players: updated_players)
             }
           }
 
-          let new_state = state.GameState(..state_with_enhancements, shop_state: Some(updated_shop))
+          let new_state =
+            state.GameState(
+              ..state_with_enhancements,
+              shop_state: Some(updated_shop),
+            )
           // Check if shop is complete and auto-ready players if so
           let final_state = check_shop_completion_and_auto_ready(new_state)
           EngineResult(state: final_state, events: [])
@@ -552,12 +615,19 @@ fn handle_confirm_plus_bomb_pick(
         Ok(opponent_id) -> {
           case dict.get(state.players, opponent_id) {
             Error(_) ->
-              EngineResult(state: state, events: [ActionError("Opponent not found")])
+              EngineResult(state: state, events: [
+                ActionError("Opponent not found"),
+              ])
             Ok(opponent) -> {
               let opponent_all_cards = player.get_all_cards(opponent)
 
               case
-                shop_state.confirm_plus_bomb_pick(shop, player_id, card_id, opponent_all_cards)
+                shop_state.confirm_plus_bomb_pick(
+                  shop,
+                  player_id,
+                  card_id,
+                  opponent_all_cards,
+                )
               {
                 Error(err) -> {
                   let msg = shop_error_to_string(err)
@@ -595,7 +665,11 @@ fn handle_complete_plus_bomb_selection(
           let state_with_debuff = case shop.pending_plus_bomb {
             Some(pending) -> {
               // Find the selected card from available_cards
-              case list.find(pending.available_cards, fn(c) { c.id == selected_card_id }) {
+              case
+                list.find(pending.available_cards, fn(c) {
+                  c.id == selected_card_id
+                })
+              {
                 Ok(selected_card) -> {
                   // Get opponent ID
                   let all_player_ids = dict.keys(state.players)
@@ -605,12 +679,24 @@ fn handle_complete_plus_bomb_selection(
                       case dict.get(state.players, opponent_id) {
                         Ok(opponent) -> {
                           // Add rank and suit to opponent's disabled lists
-                          let updated_opponent = player.Player(
-                            ..opponent,
-                            disabled_ranks: [selected_card.rank, ..opponent.disabled_ranks],
-                            disabled_suits: [selected_card.suit, ..opponent.disabled_suits]
-                          )
-                          let updated_players = dict.insert(state.players, opponent_id, updated_opponent)
+                          let updated_opponent =
+                            player.Player(
+                              ..opponent,
+                              disabled_ranks: [
+                                selected_card.rank,
+                                ..opponent.disabled_ranks
+                              ],
+                              disabled_suits: [
+                                selected_card.suit,
+                                ..opponent.disabled_suits
+                              ],
+                            )
+                          let updated_players =
+                            dict.insert(
+                              state.players,
+                              opponent_id,
+                              updated_opponent,
+                            )
                           state.GameState(..state, players: updated_players)
                         }
                         Error(_) -> state
@@ -625,7 +711,8 @@ fn handle_complete_plus_bomb_selection(
             None -> state
           }
 
-          let new_state = state.GameState(..state_with_debuff, shop_state: Some(updated_shop))
+          let new_state =
+            state.GameState(..state_with_debuff, shop_state: Some(updated_shop))
           // Check if shop is complete and auto-ready players if so
           let final_state = check_shop_completion_and_auto_ready(new_state)
           EngineResult(state: final_state, events: [])
@@ -646,7 +733,8 @@ fn check_shop_completion_and_auto_ready(state: GameState) -> GameState {
           // Shop is complete - start next round automatically
           case state.start_new_round(state) {
             Ok(new_state) -> new_state
-            Error(_) -> state  // Shouldn't happen, but return original state on error
+            Error(_) -> state
+            // Shouldn't happen, but return original state on error
           }
         }
       }

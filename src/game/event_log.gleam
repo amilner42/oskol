@@ -1,8 +1,8 @@
-import gleam/list
 import game/player.{type PlayerId}
+import gleam/dict
+import gleam/list
 import poker/card.{type Card}
 import poker/hand.{type HandType}
-import gleam/dict
 
 /// Hand result for events (matches state.HandResult)
 pub type HandResult {
@@ -40,10 +40,7 @@ pub fn new() -> EventLog {
 
 /// Append a single event to the log
 pub fn append(log: EventLog, event: GameEvent) -> EventLog {
-  EventLog(
-    events: [event, ..log.events],
-    next_sequence: log.next_sequence + 1,
-  )
+  EventLog(events: [event, ..log.events], next_sequence: log.next_sequence + 1)
 }
 
 /// Append multiple events to the log

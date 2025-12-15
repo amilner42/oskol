@@ -92,7 +92,8 @@ fn check_four_of_a_kind(
 fn check_full_house(hand: List(Card), hand_len: Int) -> Result(List(Card), Nil) {
   case hand_len == 5 {
     True -> {
-      let counts = rank_counts(hand) |> dict.values |> list.sort(by: int.compare)
+      let counts =
+        rank_counts(hand) |> dict.values |> list.sort(by: int.compare)
       case counts == [2, 3] {
         True -> Ok(hand)
         False -> Error(Nil)
@@ -151,12 +152,14 @@ fn check_pair(hand: List(Card), hand_len: Int) -> Result(List(Card), Nil) {
 }
 
 fn check_high_card(hand: List(Card)) -> List(Card) {
-  case list.reduce(hand, fn(max, c) {
-    case card.rank_value(c.rank) > card.rank_value(max.rank) {
-      True -> c
-      False -> max
-    }
-  }) {
+  case
+    list.reduce(hand, fn(max, c) {
+      case card.rank_value(c.rank) > card.rank_value(max.rank) {
+        True -> c
+        False -> max
+      }
+    })
+  {
     Ok(highest) -> [highest]
     Error(_) -> []
   }
@@ -243,4 +246,3 @@ fn get_cards_by_min_count(hand: List(Card), min_count: Int) -> List(Card) {
     }
   })
 }
-

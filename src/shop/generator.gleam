@@ -1,16 +1,16 @@
 /// Shop card generation using two-level weighted randomization
 /// Level 1: Sample category distribution (e.g., 5 research + 3 logistics)
 /// Level 2: Generate random cards within each category with their own weights
-import shop/card.{
-  type ShopCard, add_card_card, all_camo_cards, bonus_chips_card, bonus_mult_card,
-  increase_rank_card, plus_bomb_card, remove_card_card, scrambler_card,
-  static_card, supply_chain_card,
-}
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/order
 import poker/hand
+import shop/card.{
+  type ShopCard, add_card_card, all_camo_cards, bonus_chips_card,
+  bonus_mult_card, increase_rank_card, plus_bomb_card, remove_card_card,
+  scrambler_card, static_card, supply_chain_card,
+}
 
 // LEVEL 1 DISTRIBUTIONS
 
@@ -68,7 +68,10 @@ fn find_weighted_item(
 // LEVEL 2 CARD GENERATION
 
 /// Generate N unique cards by calling constructor N times (ensures unique UUIDs)
-fn repeat_unique_cards(constructor: fn() -> ShopCard, count: Int) -> List(ShopCard) {
+fn repeat_unique_cards(
+  constructor: fn() -> ShopCard,
+  count: Int,
+) -> List(ShopCard) {
   list.range(0, count - 1)
   |> list.map(fn(_) { constructor() })
 }
@@ -193,9 +196,7 @@ pub fn generate_shop_cards() -> List(ShopCard) {
   // Debug: Print all card IDs to verify uniqueness
   io.println("🎴 Generated shop cards with IDs:")
   all_cards
-  |> list.each(fn(c) {
-    io.println("  " <> card.name(c) <> " → " <> card.id(c))
-  })
+  |> list.each(fn(c) { io.println("  " <> card.name(c) <> " → " <> card.id(c)) })
 
   all_cards
 }

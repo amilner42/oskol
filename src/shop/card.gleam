@@ -14,20 +14,30 @@ pub type CounterCard {
 
 /// Logistics cards (deck building)
 pub type LogisticsCard {
-  Fortify(amount: Int, max_cards: Int)  // Add bonus chips to cards
-  Amplify(amount: Int, max_cards: Int)  // Add bonus mult to cards
-  SupplyDrop(max_cards: Int)  // Add new cards to deck
-  Discharge(max_cards: Int)  // Remove cards from deck
-  Camo(suit: Suit, max_cards: Int)  // Change cards to a suit
-  Promote(max_cards: Int)  // Increase rank of cards
+  Fortify(amount: Int, max_cards: Int)
+  // Add bonus chips to cards
+  Amplify(amount: Int, max_cards: Int)
+  // Add bonus mult to cards
+  SupplyDrop(max_cards: Int)
+  // Add new cards to deck
+  Discharge(max_cards: Int)
+  // Remove cards from deck
+  Camo(suit: Suit, max_cards: Int)
+  // Change cards to a suit
+  Promote(max_cards: Int)
+  // Increase rank of cards
 }
 
 /// Sabotage cards (offensive debuffs)
 pub type SabotageCard {
-  Scrambler  // Cards drawn have chance to be face-down
-  PlusBomb(max_cards: Int)  // Disable rank/suit scoring
-  StaticField  // Disable enhancements
-  SupplyChain  // Limit card draws
+  Scrambler
+  // Cards drawn have chance to be face-down
+  PlusBomb(max_cards: Int)
+  // Disable rank/suit scoring
+  StaticField
+  // Disable enhancements
+  SupplyChain
+  // Limit card draws
 }
 
 /// Card kind - category-specific card details
@@ -203,7 +213,9 @@ pub fn description(card: ShopCard) -> String {
 fn research_card_description(card: ResearchCard) -> String {
   case card {
     LevelUp(hand_type) ->
-      "Upgrade " <> format_hand_name(hand_type) <> " - increases chips and multiplier"
+      "Upgrade "
+      <> format_hand_name(hand_type)
+      <> " - increases chips and multiplier"
   }
 }
 
@@ -224,9 +236,13 @@ fn logistics_card_description(card: LogisticsCard) -> String {
     Discharge(max_cards) ->
       "Remove up to " <> int_to_string(max_cards) <> " cards from your deck"
     Camo(_, max_cards) ->
-      "Change up to " <> int_to_string(max_cards) <> " cards to the selected suit"
+      "Change up to "
+      <> int_to_string(max_cards)
+      <> " cards to the selected suit"
     Promote(max_cards) ->
-      "Increase rank of up to " <> int_to_string(max_cards) <> " cards by 1 (max rank is Ace)"
+      "Increase rank of up to "
+      <> int_to_string(max_cards)
+      <> " cards by 1 (max rank is Ace)"
   }
 }
 
@@ -234,8 +250,7 @@ fn sabotage_card_description(card: SabotageCard) -> String {
   case card {
     Scrambler ->
       "Opponent's drawn cards have 1-in-5 chance of being face-down next round"
-    PlusBomb(_) ->
-      "Pick a card - opponent's matching rank/suit won't score"
+    PlusBomb(_) -> "Pick a card - opponent's matching rank/suit won't score"
     StaticField -> "Opponent's card enhancements disabled next round"
     SupplyChain -> "Opponent draws at most 4 cards when discarding next round"
   }

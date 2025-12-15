@@ -101,6 +101,7 @@ pub fn next_rank(rank: Rank) -> Rank {
     Jack -> Queen
     Queen -> King
     King -> Ace
-    Ace -> Two  // Circular: wraps back to Two
+    Ace -> Two
+    // Circular: wraps back to Two
   }
 }

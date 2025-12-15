@@ -1,11 +1,11 @@
+import game/player.{type Player}
+import game/state.{type GameState}
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import poker/card.{type Card, type Suit}
 import poker/hand.{type HandType}
 import poker/score
-import game/state.{type GameState}
-import game/player.{type Player}
 import shop/card as shop_card
 import shop/state as shop_state
 
@@ -42,7 +42,6 @@ pub type PlayingData {
     your_active_debuffs: List(HandType),
     your_scrambled: Bool,
     your_supply_chain_limited: Bool,
-
     // Opponent state (both players see each other's hands AND effects!)
     opponent_name: String,
     opponent_hand: List(Card),
@@ -58,15 +57,12 @@ pub type PlayingData {
     opponent_active_debuffs: List(HandType),
     opponent_scrambled: Bool,
     opponent_supply_chain_limited: Bool,
-
     // Round info
     round_number: Int,
-
     // Game configuration
     hands_per_round: Int,
     discards_per_round: Int,
     initial_lives: Int,
-
     // Animation data
     pending_animation: Option(HandResultAnimation),
   )
@@ -79,18 +75,15 @@ pub type ShopData {
     // Shop state (both players see everything - no hidden info!)
     shop_state: shop_state.ShopState,
     available_cards: List(shop_card.ShopCard),
-
     // Player info
     your_player_id: String,
     your_name: String,
     your_lives: Int,
     your_skill_tree: SkillTree,
-
     opponent_player_id: String,
     opponent_name: String,
     opponent_lives: Int,
     opponent_skill_tree: SkillTree,
-
     // Shop config
     current_round: Int,
     total_rounds: Int,
@@ -205,8 +198,10 @@ fn build_playing_view(state: GameState, player_id: String) -> PlayerView {
           case dict.get(results, opponent_id) {
             Ok(opponent_result) -> {
               // Build detailed breakdowns for animation
-              let your_breakdown = build_breakdown_from_result(your_result.hand, player)
-              let opponent_breakdown = build_breakdown_from_result(opponent_result.hand, opponent)
+              let your_breakdown =
+                build_breakdown_from_result(your_result.hand, player)
+              let opponent_breakdown =
+                build_breakdown_from_result(opponent_result.hand, opponent)
 
               Some(HandResultAnimation(
                 your_hand: your_result.hand,
@@ -244,7 +239,6 @@ fn build_playing_view(state: GameState, player_id: String) -> PlayerView {
     your_active_debuffs: player.active_debuffs,
     your_scrambled: player.scrambled,
     your_supply_chain_limited: player.supply_chain_limited,
-
     // Opponent state (both players see each other's hands AND effects!)
     opponent_name: opponent_name,
     opponent_hand: opponent.card_piles.hand,
@@ -260,15 +254,12 @@ fn build_playing_view(state: GameState, player_id: String) -> PlayerView {
     opponent_active_debuffs: opponent.active_debuffs,
     opponent_scrambled: opponent.scrambled,
     opponent_supply_chain_limited: opponent.supply_chain_limited,
-
     // Round info
     round_number: state.round_number,
-
     // Game configuration
     hands_per_round: state.hands_per_round,
     discards_per_round: state.discards_per_round,
     initial_lives: state.initial_lives,
-
     // Animation data
     pending_animation: pending_animation,
   ))
@@ -320,7 +311,11 @@ fn build_breakdown_from_result(
 
 // ========== SHOP VIEW BUILDER ==========
 
-fn build_shop_view(state: GameState, shop: shop_state.ShopState, player_id: String) -> PlayerView {
+fn build_shop_view(
+  state: GameState,
+  shop: shop_state.ShopState,
+  player_id: String,
+) -> PlayerView {
   // Get player and opponent
   let assert Ok(player) = dict.get(state.players, player_id)
   let opponent_id = get_opponent_id(state, player_id)
@@ -333,17 +328,14 @@ fn build_shop_view(state: GameState, shop: shop_state.ShopState, player_id: Stri
   ShopView(ShopData(
     shop_state: shop,
     available_cards: shop.available_cards,
-
     your_player_id: player_id,
     your_name: your_name,
     your_lives: player.lives,
     your_skill_tree: build_skill_tree(player.skill_tree),
-
     opponent_player_id: opponent_id,
     opponent_name: opponent_name,
     opponent_lives: opponent.lives,
     opponent_skill_tree: build_skill_tree(opponent.skill_tree),
-
     current_round: shop.current_round,
     total_rounds: shop.total_rounds,
     initial_lives: state.initial_lives,
@@ -356,7 +348,8 @@ fn build_skill_tree(skill_tree_dict: dict.Dict(HandType, Int)) -> SkillTree {
   let get_level = fn(hand_type) {
     case dict.get(skill_tree_dict, hand_type) {
       Ok(level) -> level
-      Error(_) -> 1  // Default level is 1
+      Error(_) -> 1
+      // Default level is 1
     }
   }
 
@@ -406,6 +399,7 @@ fn build_game_over_view(state: GameState, player_id: String) -> PlayerView {
 
 fn get_opponent_id(state: GameState, player_id: String) -> String {
   let all_player_ids = dict.keys(state.players)
-  let assert Ok(opponent_id) = list.find(all_player_ids, fn(id) { id != player_id })
+  let assert Ok(opponent_id) =
+    list.find(all_player_ids, fn(id) { id != player_id })
   opponent_id
 }

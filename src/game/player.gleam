@@ -3,8 +3,8 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import poker/card.{type Card, type Rank, type Suit}
-import poker/hand.{type HandType}
 import poker/deck
+import poker/hand.{type HandType}
 
 /// Player ID is a string identifier
 pub type PlayerId =
@@ -18,11 +18,7 @@ pub type PlayerStatus {
 
 /// Card piles - represents a player's deck, hand, and discard pile
 pub type CardPiles {
-  CardPiles(
-    deck: List(Card),
-    hand: List(Card),
-    discard: List(Card),
-  )
+  CardPiles(deck: List(Card), hand: List(Card), discard: List(Card))
 }
 
 /// Player state - all info for a single player
@@ -72,7 +68,8 @@ pub fn new(
 
   // Draw initial hand (8 cards)
   let #(initial_hand, remaining_deck) = deck.draw_cards(shuffled_deck, 8)
-  let card_piles = CardPiles(deck: remaining_deck, hand: initial_hand, discard: [])
+  let card_piles =
+    CardPiles(deck: remaining_deck, hand: initial_hand, discard: [])
 
   // Note: No scrambling on initial creation since scrambled starts as False
   Player(
@@ -101,10 +98,13 @@ pub fn new(
 fn scramble_cards(cards: List(Card)) -> List(String) {
   // Filter cards with ~20% probability (1 in 5)
   list.filter_map(cards, fn(card) {
-    let random_value = int.random(5)  // Returns 0-4
+    let random_value = int.random(5)
+    // Returns 0-4
     case random_value == 0 {
-      True -> Ok(card.id)  // ~20% chance: add to face_down list
-      False -> Error(Nil)  // ~80% chance: skip
+      True -> Ok(card.id)
+      // ~20% chance: add to face_down list
+      False -> Error(Nil)
+      // ~80% chance: skip
     }
   })
 }
@@ -119,14 +119,19 @@ pub fn has_locked_in(player: Player) -> Bool {
 
 /// Lock in a hand for the player
 pub fn lock_in_hand(player: Player, hand: List(Card)) -> Player {
-  Player(..player, locked_in_hand: Some(hand), hands_remaining: player.hands_remaining - 1)
+  Player(
+    ..player,
+    locked_in_hand: Some(hand),
+    hands_remaining: player.hands_remaining - 1,
+  )
 }
 
 /// Reset player for next hand within the same round
 /// This discards the locked in cards, draws new ones, and updates the score
 pub fn reset_for_next_hand(player: Player, score_to_add: Int) -> Player {
   case player.locked_in_hand {
-    None -> player  // No locked in hand, nothing to do
+    None -> player
+    // No locked in hand, nothing to do
     Some(locked_hand) -> {
       // Remove locked in cards from hand
       let new_hand =
@@ -182,7 +187,11 @@ pub fn reset_for_next_hand(player: Player, score_to_add: Int) -> Player {
 /// - Shuffles all cards (hand + deck + discard) into a new deck
 /// - Resets hands_remaining and discards_remaining
 /// - Preserves: lives, skill_tree, sabotage effects, deck enhancements
-pub fn reset_for_new_round(player: Player, hands_per_round: Int, discards_per_round: Int) -> Player {
+pub fn reset_for_new_round(
+  player: Player,
+  hands_per_round: Int,
+  discards_per_round: Int,
+) -> Player {
   // Combine all cards from hand, deck, and discard pile
   let all_cards =
     list.append(player.card_piles.hand, player.card_piles.deck)
@@ -195,11 +204,7 @@ pub fn reset_for_new_round(player: Player, hands_per_round: Int, discards_per_ro
   let #(new_hand, remaining_deck) = deck.draw_cards(shuffled_deck, 8)
 
   // Create new card piles
-  let new_piles = CardPiles(
-    deck: remaining_deck,
-    hand: new_hand,
-    discard: [],
-  )
+  let new_piles = CardPiles(deck: remaining_deck, hand: new_hand, discard: [])
 
   // Apply scrambler effect if active (1 in 5 cards become face-down)
   let new_face_down_ids = case player.scrambled {
@@ -217,10 +222,10 @@ pub fn reset_for_new_round(player: Player, hands_per_round: Int, discards_per_ro
     ready_for_next_round: False,
     face_down_card_ids: new_face_down_ids,
     // NOTE: Spread operator ..player preserves all other fields including:
-    // - lives (never reset)
-    // - skill_tree (level upgrades persist)
-    // - sabotage effects (cleared only when shop starts, see end_round() in state.gleam)
-    // - deck enhancements (persist through shuffles)
+  // - lives (never reset)
+  // - skill_tree (level upgrades persist)
+  // - sabotage effects (cleared only when shop starts, see end_round() in state.gleam)
+  // - deck enhancements (persist through shuffles)
   )
 }
 
@@ -288,7 +293,8 @@ pub fn discard_and_draw(
       // Supply Chain limits draw to at most 4 cards
       let target_hand_size = 8
       let current_hand_size = list.length(player.card_piles.hand)
-      let hand_size_after_discard = current_hand_size - list.length(cards_to_discard)
+      let hand_size_after_discard =
+        current_hand_size - list.length(cards_to_discard)
       let cards_needed = target_hand_size - hand_size_after_discard
 
       let num_to_draw = case player.supply_chain_limited {
@@ -314,12 +320,14 @@ pub fn discard_and_draw(
         False -> player.face_down_card_ids
       }
 
-      Ok(Player(
-        ..player,
-        card_piles: new_piles,
-        discards_remaining: player.discards_remaining - 1,
-        face_down_card_ids: new_face_down_ids,
-      ))
+      Ok(
+        Player(
+          ..player,
+          card_piles: new_piles,
+          discards_remaining: player.discards_remaining - 1,
+          face_down_card_ids: new_face_down_ids,
+        ),
+      )
     }
   }
 }
@@ -389,7 +397,8 @@ pub fn apply_enhancements_to_cards(
   let new_deck = list.map(player.card_piles.deck, apply_to_card)
   let new_discard = list.map(player.card_piles.discard, apply_to_card)
 
-  let new_piles = CardPiles(hand: new_hand, deck: new_deck, discard: new_discard)
+  let new_piles =
+    CardPiles(hand: new_hand, deck: new_deck, discard: new_discard)
 
   Player(..player, card_piles: new_piles)
 }
@@ -406,16 +415,15 @@ pub fn add_cards_to_deck(player: Player, cards: List(Card)) -> Player {
 /// Searches through all card piles (hand, deck, discard) and removes matching cards
 pub fn remove_cards_from_deck(player: Player, card_ids: List(String)) -> Player {
   // Helper function to filter out cards by ID
-  let filter_card = fn(c: Card) -> Bool {
-    !list.contains(card_ids, c.id)
-  }
+  let filter_card = fn(c: Card) -> Bool { !list.contains(card_ids, c.id) }
 
   // Remove from all piles
   let new_hand = list.filter(player.card_piles.hand, filter_card)
   let new_deck = list.filter(player.card_piles.deck, filter_card)
   let new_discard = list.filter(player.card_piles.discard, filter_card)
 
-  let new_piles = CardPiles(hand: new_hand, deck: new_deck, discard: new_discard)
+  let new_piles =
+    CardPiles(hand: new_hand, deck: new_deck, discard: new_discard)
 
   Player(..player, card_piles: new_piles)
 }
@@ -438,15 +446,13 @@ pub fn change_cards_suit(
   let new_deck = list.map(player.card_piles.deck, change_suit)
   let new_discard = list.map(player.card_piles.discard, change_suit)
 
-  let new_piles = CardPiles(hand: new_hand, deck: new_deck, discard: new_discard)
+  let new_piles =
+    CardPiles(hand: new_hand, deck: new_deck, discard: new_discard)
   Player(..player, card_piles: new_piles)
 }
 
 /// Increase the rank of specific cards by their IDs
-pub fn promote_cards(
-  player: Player,
-  card_ids: List(String),
-) -> Player {
+pub fn promote_cards(player: Player, card_ids: List(String)) -> Player {
   let promote = fn(c: Card) -> Card {
     case list.contains(card_ids, c.id) {
       True -> card.Card(..c, rank: card.next_rank(c.rank))
@@ -459,6 +465,7 @@ pub fn promote_cards(
   let new_deck = list.map(player.card_piles.deck, promote)
   let new_discard = list.map(player.card_piles.discard, promote)
 
-  let new_piles = CardPiles(hand: new_hand, deck: new_deck, discard: new_discard)
+  let new_piles =
+    CardPiles(hand: new_hand, deck: new_deck, discard: new_discard)
   Player(..player, card_piles: new_piles)
 }

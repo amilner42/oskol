@@ -378,7 +378,6 @@ viewPlayingArea model gameState currentPlayer opponent playerId =
                                 _ ->
                                     -- Neither or both locked in (both = waiting for server to process)
                                     text ""
-
                     ]
 
 
@@ -599,7 +598,7 @@ type alias AnimationState =
     }
 
 
-{-| Format hand type string from backend (e.g., "high_card" -> "High Card")
+{-| Format hand type string from backend (e.g., "high\_card" -> "High Card")
 -}
 formatHandTypeString : String -> String
 formatHandTypeString handType =
@@ -1364,8 +1363,6 @@ viewPlayerResultCard playerName lives initialLives isWinner colorClass =
 
 
 {- ========== GAME VIEW HELPER FUNCTIONS ========== -}
-
-
 
 
 {-| View console buttons (fixed at mid-left)
@@ -3144,12 +3141,14 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
                     ( "bg-gradient-to-br from-rose-500/20 to-rose-600/30 backdrop-blur-sm border-rose-400/40", "text-rose-400/80" )
 
                 else
-                    -- Glassy effect in player color (blue or orange) for completed pick
-                    if isPlayerAction then
-                        ( "bg-gradient-to-br from-blue-500/20 to-blue-600/30 backdrop-blur-sm border-blue-400/40", "text-blue-400/80" )
+                -- Glassy effect in player color (blue or orange) for completed pick
+                if
+                    isPlayerAction
+                then
+                    ( "bg-gradient-to-br from-blue-500/20 to-blue-600/30 backdrop-blur-sm border-blue-400/40", "text-blue-400/80" )
 
-                    else
-                        ( "bg-gradient-to-br from-orange-500/20 to-orange-600/30 backdrop-blur-sm border-orange-400/40", "text-orange-400/80" )
+                else
+                    ( "bg-gradient-to-br from-orange-500/20 to-orange-600/30 backdrop-blur-sm border-orange-400/40", "text-orange-400/80" )
 
             else if isCurrent then
                 -- Use player color for the glow (blue for player, orange for opponent)

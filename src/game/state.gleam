@@ -1,16 +1,16 @@
+import game/event_log.{type EventLog}
+import game/player.{type Player, type PlayerId}
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import game/event_log.{type EventLog}
-import game/player.{type Player, type PlayerId}
-import shop/generator as shop_gen
-import shop/state.{type ShopState} as shop_state
 import poker/card.{type Card}
 import poker/hand.{type HandType}
 import poker/score
+import shop/generator as shop_gen
+import shop/state.{type ShopState} as shop_state
 
 /// Game phase - what stage of the game we're in
 pub type Phase {
@@ -82,7 +82,8 @@ pub fn mark_ready_for_next_round(
     Error(_) -> Error("Player not found")
     Ok(p) -> {
       let updated_player = player.mark_ready_for_next_round(p)
-      let updated_players = dict.insert(state.players, player_id, updated_player)
+      let updated_players =
+        dict.insert(state.players, player_id, updated_player)
       Ok(GameState(..state, players: updated_players))
     }
   }
@@ -103,10 +104,16 @@ pub fn player_lock_in_hand(
         False -> {
           // Lock in the hand
           let updated_player = player.lock_in_hand(p, hand)
-          let updated_players = dict.insert(state.players, player_id, updated_player)
+          let updated_players =
+            dict.insert(state.players, player_id, updated_player)
 
           // Clear last_hand_results on new player action (animation should only show once)
-          let new_state = GameState(..state, players: updated_players, last_hand_results: None)
+          let new_state =
+            GameState(
+              ..state,
+              players: updated_players,
+              last_hand_results: None,
+            )
 
           // Check if both players locked in
           case both_players_locked_in(new_state) {
@@ -227,12 +234,14 @@ fn resolve_hands(state: GameState) -> Result(GameState, String) {
       end_round(state_with_results)
     }
     False ->
-      Ok(GameState(
-        ..state,
-        players: reset_players,
-        last_hand_results: Some(hand_results),
-        round_hand_history: new_history,
-      ))
+      Ok(
+        GameState(
+          ..state,
+          players: reset_players,
+          last_hand_results: Some(hand_results),
+          round_hand_history: new_history,
+        ),
+      )
   }
 }
 
@@ -333,18 +342,22 @@ fn end_round(state: GameState) -> Result(GameState, String) {
       // Store the round winner for shop creation
       let round_winner_id = case is_tie {
         True -> None
-        False -> list.first(losers) |> option.from_result |> option.map(fn(loser_id) {
-          // Winner is the other player
-          dict.keys(state.players)
-          |> list.find(fn(id) { id != loser_id })
-          |> result.unwrap("")
-        })
+        False ->
+          list.first(losers)
+          |> option.from_result
+          |> option.map(fn(loser_id) {
+            // Winner is the other player
+            dict.keys(state.players)
+            |> list.find(fn(id) { id != loser_id })
+            |> result.unwrap("")
+          })
       }
 
       // Clear temporary debuffs from previous shop round (if any) before creating new shop
       // Debuffs last exactly 1 round: applied in shop → active next round → cleared when new shop starts
       let players_with_cleared_debuffs = case game_over {
-        True -> updated_players  // Game over, no need to clear
+        True -> updated_players
+        // Game over, no need to clear
         False -> {
           // Always clear debuffs before shop if game is active
           io.println("🧹 CLEARING previous round debuffs before shop")
@@ -361,7 +374,13 @@ fn end_round(state: GameState) -> Result(GameState, String) {
           None
         }
         False -> {
-          io.println("✅ CREATING SHOP at end of round " <> int.to_string(state.round_number) <> " (shop_rounds=" <> int.to_string(state.shop_rounds) <> " picks inside shop)")
+          io.println(
+            "✅ CREATING SHOP at end of round "
+            <> int.to_string(state.round_number)
+            <> " (shop_rounds="
+            <> int.to_string(state.shop_rounds)
+            <> " picks inside shop)",
+          )
 
           // Generate shop cards
           let shop_cards = shop_gen.generate_shop_cards()
@@ -378,7 +397,8 @@ fn end_round(state: GameState) -> Result(GameState, String) {
                 True -> #(p1_id, p2_id, False)
                 False -> #(p2_id, p1_id, False)
               }
-            None -> #(p1_id, p2_id, True)  // Tie
+            None -> #(p1_id, p2_id, True)
+            // Tie
           }
 
           // Build player lives map from cleared players
@@ -399,19 +419,22 @@ fn end_round(state: GameState) -> Result(GameState, String) {
         }
       }
 
-      let state_after_shop_check = GameState(
-        ..state,
-        players: players_with_cleared_debuffs,
-        game_status: new_status,
-        winner_id: winner_id,
-        last_round_winner_id: round_winner_id,
-        shop_state: shop,
-      )
+      let state_after_shop_check =
+        GameState(
+          ..state,
+          players: players_with_cleared_debuffs,
+          game_status: new_status,
+          winner_id: winner_id,
+          last_round_winner_id: round_winner_id,
+          shop_state: shop,
+        )
 
       // Shop is always created if game is active, so we only need to check game_over
       case game_over {
-        True -> Ok(state_after_shop_check)  // Game over, stay in RoundEnd to show results
-        False -> Ok(state_after_shop_check)  // Shop created, stay in RoundEnd until shop completes
+        True -> Ok(state_after_shop_check)
+        // Game over, stay in RoundEnd to show results
+        False -> Ok(state_after_shop_check)
+        // Shop created, stay in RoundEnd until shop completes
       }
     }
   }
@@ -421,7 +444,12 @@ fn end_round(state: GameState) -> Result(GameState, String) {
 pub fn start_new_round(state: GameState) -> Result(GameState, String) {
   let new_round_number = state.round_number + 1
 
-  io.println("🔄 START_NEW_ROUND: advancing from round " <> int.to_string(state.round_number) <> " to " <> int.to_string(new_round_number))
+  io.println(
+    "🔄 START_NEW_ROUND: advancing from round "
+    <> int.to_string(state.round_number)
+    <> " to "
+    <> int.to_string(new_round_number),
+  )
 
   // Reset players for the new round (shuffle deck, reset discards)
   // NOTE: Debuffs are NOT cleared here - they persist from shop phase
@@ -429,19 +457,26 @@ pub fn start_new_round(state: GameState) -> Result(GameState, String) {
   let reset_players =
     state.players
     |> dict.map_values(fn(_id, p) {
-      player.reset_for_new_round(p, state.hands_per_round, state.discards_per_round)
+      player.reset_for_new_round(
+        p,
+        state.hands_per_round,
+        state.discards_per_round,
+      )
     })
 
   // Always clear shop and start Playing phase
   // Shop was already created in end_round if needed
-  Ok(GameState(
-    ..state,
-    round_number: new_round_number,
-    players: reset_players,
-    phase: Playing,
-    shop_state: None,  // Clear shop
-    last_hand_results: None,
-    round_hand_history: [],
-    last_round_winner_id: None,
-  ))
+  Ok(
+    GameState(
+      ..state,
+      round_number: new_round_number,
+      players: reset_players,
+      phase: Playing,
+      shop_state: None,
+      // Clear shop
+      last_hand_results: None,
+      round_hand_history: [],
+      last_round_winner_id: None,
+    ),
+  )
 }

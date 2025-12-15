@@ -1,8 +1,8 @@
-import shop/card as shop_card
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import poker/card.{type Card}
+import shop/card as shop_card
 
 pub type PlayerId =
   String
@@ -143,8 +143,7 @@ pub fn can_pick(shop_state: ShopState, player_id: PlayerId) -> Bool {
     False -> False
     True ->
       case
-        !shop_state.first_pick_made
-        && shop_state.first_picker_id == player_id
+        !shop_state.first_pick_made && shop_state.first_picker_id == player_id
       {
         True -> True
         False ->
@@ -177,7 +176,11 @@ pub fn make_pick(
             True -> Error(CardDestroyed)
             False -> {
               // Find the selected card by ID
-              case list.find(shop_state.available_cards, fn(c) { shop_card.id(c) == card_id }) {
+              case
+                list.find(shop_state.available_cards, fn(c) {
+                  shop_card.id(c) == card_id
+                })
+              {
                 Error(Nil) -> Error(CardNotFound)
                 Ok(selected_card) ->
                   process_pick(shop_state, player_id, card_id, selected_card)
@@ -196,16 +199,13 @@ fn process_pick(
   card_id: String,
   selected_card: shop_card.ShopCard,
 ) -> Result(#(ShopState, shop_card.ShopCard), ShopError) {
-  case
-    !shop_state.first_pick_made && player_id == shop_state.first_picker_id
-  {
+  case !shop_state.first_pick_made && player_id == shop_state.first_picker_id {
     True -> {
       let updated_state =
-        ShopState(
-          ..shop_state,
-          first_pick_made: True,
-          picked_card_ids: [card_id, ..shop_state.picked_card_ids],
-        )
+        ShopState(..shop_state, first_pick_made: True, picked_card_ids: [
+          card_id,
+          ..shop_state.picked_card_ids
+        ])
       Ok(#(updated_state, selected_card))
     }
     False ->
@@ -216,11 +216,10 @@ fn process_pick(
       {
         True -> {
           let updated_state =
-            ShopState(
-              ..shop_state,
-              second_pick_made: True,
-              picked_card_ids: [card_id, ..shop_state.picked_card_ids],
-            )
+            ShopState(..shop_state, second_pick_made: True, picked_card_ids: [
+              card_id,
+              ..shop_state.picked_card_ids
+            ])
           // Advance to next round if both players picked and more rounds remain
           let final_state = advance_round(updated_state)
           Ok(#(final_state, selected_card))
@@ -237,17 +236,19 @@ pub fn mark_card_picked(
   card_id: String,
 ) -> Result(ShopState, ShopError) {
   // Verify card exists
-  case list.find(shop_state.available_cards, fn(c) { shop_card.id(c) == card_id }) {
+  case
+    list.find(shop_state.available_cards, fn(c) { shop_card.id(c) == card_id })
+  {
     Error(Nil) -> Error(CardNotFound)
     Ok(_) ->
       case list.contains(shop_state.picked_card_ids, card_id) {
         True -> Error(CardAlreadyPicked)
         False -> {
           let updated_state =
-            ShopState(
-              ..shop_state,
-              picked_card_ids: [card_id, ..shop_state.picked_card_ids],
-            )
+            ShopState(..shop_state, picked_card_ids: [
+              card_id,
+              ..shop_state.picked_card_ids
+            ])
           Ok(updated_state)
         }
       }
@@ -260,9 +261,7 @@ pub fn complete_pick(
   shop_state: ShopState,
   player_id: PlayerId,
 ) -> Result(ShopState, ShopError) {
-  case
-    !shop_state.first_pick_made && player_id == shop_state.first_picker_id
-  {
+  case !shop_state.first_pick_made && player_id == shop_state.first_picker_id {
     True -> {
       let updated_state = ShopState(..shop_state, first_pick_made: True)
       Ok(updated_state)
@@ -343,15 +342,23 @@ pub fn destroy_card(
             True -> Error(NoDestroysRemaining)
             False -> {
               // Verify card exists
-              case list.find(shop_state.available_cards, fn(c) { shop_card.id(c) == card_id }) {
+              case
+                list.find(shop_state.available_cards, fn(c) {
+                  shop_card.id(c) == card_id
+                })
+              {
                 Error(Nil) -> Error(CardNotFound)
                 Ok(_) ->
                   case list.contains(shop_state.destroyed_card_ids, card_id) {
                     True -> Error(CardAlreadyDestroyed)
                     False -> {
-                      let new_destroyed = [card_id, ..shop_state.destroyed_card_ids]
+                      let new_destroyed = [
+                        card_id,
+                        ..shop_state.destroyed_card_ids
+                      ]
                       let all_destroys_used =
-                        list.length(new_destroyed) >= shop_state.destroys_allowed
+                        list.length(new_destroyed)
+                        >= shop_state.destroys_allowed
 
                       let updated_state =
                         ShopState(
@@ -382,7 +389,8 @@ pub fn complete_destroy_phase(
     False ->
       case shop_state.destroyer_id {
         Some(destroyer) if destroyer == player_id -> {
-          let updated_state = ShopState(..shop_state, destroy_phase_complete: True)
+          let updated_state =
+            ShopState(..shop_state, destroy_phase_complete: True)
           Ok(updated_state)
         }
         _ -> Error(NotDestroyer)
@@ -416,7 +424,11 @@ pub fn confirm_deck_builder_pick(
     False -> Error(NotYourTurn)
     True -> {
       // Find the shop card
-      case list.find(shop_state.available_cards, fn(c) { shop_card.id(c) == card_id }) {
+      case
+        list.find(shop_state.available_cards, fn(c) {
+          shop_card.id(c) == card_id
+        })
+      {
         Error(_) -> Error(CardNotFound)
         Ok(selected_card) -> {
           // Verify it's a deck builder card
@@ -441,7 +453,10 @@ pub fn confirm_deck_builder_pick(
                     )
 
                   let final_state =
-                    ShopState(..updated_state, pending_deck_builder: Some(pending))
+                    ShopState(
+                      ..updated_state,
+                      pending_deck_builder: Some(pending),
+                    )
                   Ok(final_state)
                 }
               }
@@ -490,7 +505,11 @@ pub fn confirm_plus_bomb_pick(
     False -> Error(NotYourTurn)
     True -> {
       // Find the shop card
-      case list.find(shop_state.available_cards, fn(c) { shop_card.id(c) == card_id }) {
+      case
+        list.find(shop_state.available_cards, fn(c) {
+          shop_card.id(c) == card_id
+        })
+      {
         Error(_) -> Error(CardNotFound)
         Ok(selected_card) -> {
           // Verify it's a plus bomb card
@@ -547,4 +566,3 @@ pub fn complete_plus_bomb_selection(
     Some(_) -> Error(NotYourTurn)
   }
 }
-

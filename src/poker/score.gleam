@@ -171,9 +171,7 @@ pub fn calculate(
 
       // Build per-card breakdowns
       let card_breakdowns =
-        list.map(scoring_cards, fn(c) {
-          build_card_breakdown(c, card_debuffs)
-        })
+        list.map(scoring_cards, fn(c) { build_card_breakdown(c, card_debuffs) })
 
       // Calculate totals
       let card_value_sum =
@@ -204,10 +202,7 @@ pub fn calculate(
 }
 
 // Helper: builds card breakdown considering debuffs
-fn build_card_breakdown(
-  c: Card,
-  debuffs: CardDebuffs,
-) -> CardBreakdown {
+fn build_card_breakdown(c: Card, debuffs: CardDebuffs) -> CardBreakdown {
   let card_disabled =
     list.contains(debuffs.disabled_ranks, c.rank)
     || list.contains(debuffs.disabled_suits, c.suit)
