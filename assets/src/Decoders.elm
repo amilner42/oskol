@@ -41,6 +41,7 @@ playerViewByType viewType =
 playingDataDecoder : Decoder PlayingData
 playingDataDecoder =
     D.succeed PlayingData
+        |> andMap (D.field "your_name" D.string)
         |> andMap (D.field "your_hand" (D.list cardDecoder))
         |> andMap (D.field "your_draw_pile" (D.list cardDecoder))
         |> andMap (D.field "your_lives" D.int)
@@ -202,10 +203,12 @@ handResultAnimationDecoder =
         |> andMap (D.field "your_hand_type" D.string)
         |> andMap (D.field "your_score" D.int)
         |> andMap (D.field "your_breakdown" scoreBreakdownDecoder)
+        |> andMap (D.field "your_hand_level" D.int)
         |> andMap (D.field "opponent_hand" (D.list cardDecoder))
         |> andMap (D.field "opponent_hand_type" D.string)
         |> andMap (D.field "opponent_score" D.int)
         |> andMap (D.field "opponent_breakdown" scoreBreakdownDecoder)
+        |> andMap (D.field "opponent_hand_level" D.int)
 
 
 

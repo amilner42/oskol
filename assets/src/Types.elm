@@ -38,7 +38,8 @@ type PlayerView
 {-| Playing state during a round
 -}
 type alias PlayingData =
-    { yourHand : List Card
+    { yourName : String
+    , yourHand : List Card
     , yourDrawPile : List Card
     , yourLives : Int
     , yourHandsRemaining : Int
@@ -187,10 +188,12 @@ type alias HandResultAnimation =
     , yourHandType : String
     , yourScore : Int
     , yourBreakdown : ScoreBreakdown
+    , yourHandLevel : Int
     , opponentHand : List Card
     , opponentHandType : String
     , opponentScore : Int
     , opponentBreakdown : ScoreBreakdown
+    , opponentHandLevel : Int
     }
 
 

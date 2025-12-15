@@ -260,17 +260,18 @@ defmodule Oskol.Game.GleamEngine do
   # ========== PLAYER VIEW CONVERSIONS ==========
 
   defp player_view_from_gleam({:playing_view, playing_data}, your_skill_tree) do
-    {:playing_data, your_hand, your_draw_pile, your_lives, your_hands_rem, your_discard_rem,
-     your_score, your_locked_hand, your_face_down, your_disabled_ranks, your_disabled_suits,
-     your_enh_disabled, your_debuffs, your_scrambled, your_supply_chain, opp_name, opp_hand,
-     opp_lives, opp_hands_rem, opp_discard_rem, opp_score, opp_locked_hand, opp_face_down,
-     opp_disabled_ranks, opp_disabled_suits, opp_enh_disabled, opp_debuffs, opp_scrambled,
-     opp_supply_chain, round_num, hands_per_round, discards_per_round, initial_lives,
-     pending_animation} =
+    {:playing_data, your_name, your_hand, your_draw_pile, your_lives, your_hands_rem,
+     your_discard_rem, your_score, your_locked_hand, your_face_down, your_disabled_ranks,
+     your_disabled_suits, your_enh_disabled, your_debuffs, your_scrambled, your_supply_chain,
+     opp_name, opp_hand, opp_lives, opp_hands_rem, opp_discard_rem, opp_score, opp_locked_hand,
+     opp_face_down, opp_disabled_ranks, opp_disabled_suits, opp_enh_disabled, opp_debuffs,
+     opp_scrambled, opp_supply_chain, round_num, hands_per_round, discards_per_round,
+     initial_lives, pending_animation} =
       playing_data
 
     %{
       type: "playing",
+      your_name: your_name,
       your_hand: Enum.map(your_hand, &card_to_json_map/1),
       your_draw_pile: Enum.map(your_draw_pile, &card_to_json_map/1),
       your_lives: your_lives,
@@ -518,18 +519,20 @@ defmodule Oskol.Game.GleamEngine do
 
   # Convert HandResultAnimation from Gleam to JSON
   defp hand_result_animation_from_gleam(
-         {:hand_result_animation, your_hand, your_hand_type, your_score, your_breakdown, opp_hand,
-          opp_hand_type, opp_score, opp_breakdown}
+         {:hand_result_animation, your_hand, your_hand_type, your_score, your_breakdown,
+          your_hand_level, opp_hand, opp_hand_type, opp_score, opp_breakdown, opp_hand_level}
        ) do
     %{
       your_hand: Enum.map(your_hand, &card_to_json_map/1),
       your_hand_type: hand_type_to_string(your_hand_type),
       your_score: your_score,
       your_breakdown: score_breakdown_from_gleam(your_breakdown),
+      your_hand_level: your_hand_level,
       opponent_hand: Enum.map(opp_hand, &card_to_json_map/1),
       opponent_hand_type: hand_type_to_string(opp_hand_type),
       opponent_score: opp_score,
-      opponent_breakdown: score_breakdown_from_gleam(opp_breakdown)
+      opponent_breakdown: score_breakdown_from_gleam(opp_breakdown),
+      opponent_hand_level: opp_hand_level
     }
   end
 

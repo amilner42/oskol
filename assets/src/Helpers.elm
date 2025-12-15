@@ -335,7 +335,7 @@ buildGameState model playerView =
             { roundNumber = playingData.roundNumber
             , playerNames =
                 Dict.fromList
-                    [ ( playerId, "You" )
+                    [ ( playerId, playingData.yourName )
                     , ( "opponent", playingData.opponentName )
                     ]
             , players =

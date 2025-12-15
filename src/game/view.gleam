@@ -28,6 +28,7 @@ pub type PlayerView {
 pub type PlayingData {
   PlayingData(
     // Your state
+    your_name: String,
     your_hand: List(Card),
     your_draw_pile: List(Card),
     your_lives: Int,
@@ -151,10 +152,12 @@ pub type HandResultAnimation {
     your_hand_type: HandType,
     your_score: Int,
     your_breakdown: ScoreBreakdown,
+    your_hand_level: Int,
     opponent_hand: List(Card),
     opponent_hand_type: HandType,
     opponent_score: Int,
     opponent_breakdown: ScoreBreakdown,
+    opponent_hand_level: Int,
   )
 }
 
@@ -187,7 +190,8 @@ fn build_playing_view(state: GameState, player_id: String) -> PlayerView {
   let opponent_id = get_opponent_id(state, player_id)
   let assert Ok(opponent) = dict.get(state.players, opponent_id)
 
-  // Get opponent name
+  // Get player and opponent names
+  let assert Ok(your_name) = dict.get(state.player_names, player_id)
   let assert Ok(opponent_name) = dict.get(state.player_names, opponent_id)
 
   // Build animation data if hand results are present
@@ -203,15 +207,31 @@ fn build_playing_view(state: GameState, player_id: String) -> PlayerView {
               let opponent_breakdown =
                 build_breakdown_from_result(opponent_result.hand, opponent)
 
+              // Get skill tree levels for this hand type
+              let your_level = case
+                dict.get(player.skill_tree, your_result.hand_type)
+              {
+                Ok(level) -> level
+                Error(_) -> 1
+              }
+              let opponent_level = case
+                dict.get(opponent.skill_tree, opponent_result.hand_type)
+              {
+                Ok(level) -> level
+                Error(_) -> 1
+              }
+
               Some(HandResultAnimation(
                 your_hand: your_result.hand,
                 your_hand_type: your_result.hand_type,
                 your_score: your_result.score,
                 your_breakdown: your_breakdown,
+                your_hand_level: your_level,
                 opponent_hand: opponent_result.hand,
                 opponent_hand_type: opponent_result.hand_type,
                 opponent_score: opponent_result.score,
                 opponent_breakdown: opponent_breakdown,
+                opponent_hand_level: opponent_level,
               ))
             }
             Error(_) -> None
@@ -225,6 +245,7 @@ fn build_playing_view(state: GameState, player_id: String) -> PlayerView {
 
   PlayingView(PlayingData(
     // Your state
+    your_name: your_name,
     your_hand: player.card_piles.hand,
     your_draw_pile: player.card_piles.deck,
     your_lives: player.lives,

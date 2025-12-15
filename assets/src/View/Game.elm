@@ -563,6 +563,7 @@ viewAnimatedScoreResults model gameState playerId playerName opponentName =
                             animData.opponentHandType
                             animData.opponentScore
                             animData.opponentBreakdown
+                            animData.opponentHandLevel
                             opponentName
                             False
                             animState
@@ -578,6 +579,7 @@ viewAnimatedScoreResults model gameState playerId playerName opponentName =
                             animData.yourHandType
                             animData.yourScore
                             animData.yourBreakdown
+                            animData.yourHandLevel
                             playerName
                             True
                             animState
@@ -756,8 +758,8 @@ getPlayerAnimationStateFromBreakdown globalAnim breakdown isFirstPlayer =
 
 {-| View score breakdown from animation data (new animation system)
 -}
-viewScoreBreakdownRowFromAnimation : List Card -> String -> Int -> ScoreBreakdown -> String -> Bool -> AnimationState -> PlayerState -> Html Msg
-viewScoreBreakdownRowFromAnimation hand handType score breakdown playerName isCurrentPlayer animState playerState =
+viewScoreBreakdownRowFromAnimation : List Card -> String -> Int -> ScoreBreakdown -> Int -> String -> Bool -> AnimationState -> PlayerState -> Html Msg
+viewScoreBreakdownRowFromAnimation hand handType score breakdown level playerName isCurrentPlayer animState playerState =
     let
         -- Sort cards by rank for display
         sortedHand =
@@ -798,9 +800,6 @@ viewScoreBreakdownRowFromAnimation hand handType score breakdown playerName isCu
 
         runningScore =
             runningChips * runningMult
-
-        level =
-            getSkillLevelForHandType playerState.skillTree handType
 
         handTypeText =
             "Lvl " ++ String.fromInt level ++ " " ++ formatHandTypeString handType
@@ -1577,11 +1576,29 @@ viewTopRow gameState player opponent opponentName playerName =
     in
     div [ class "absolute top-2 sm:top-4 left-2 right-2 sm:left-4 sm:right-4 flex items-start justify-between z-10" ]
         [ div [ class "flex items-start gap-2" ]
-            [ viewPlayerInfo player playerName initialLives discardsPerRound playerWinning
+            [ viewPlayerInfo player
+                playerName
+                initialLives
+                discardsPerRound
+                (if playerWinning then
+                    scoreDiff
+
+                 else
+                    0
+                )
             ]
         , viewTopCenterBar gameState player opponent
         , div [ class "flex items-start gap-2" ]
-            [ viewOpponentInfo opponent opponentName initialLives discardsPerRound opponentWinning
+            [ viewOpponentInfo opponent
+                opponentName
+                initialLives
+                discardsPerRound
+                (if opponentWinning then
+                    scoreDiff
+
+                 else
+                    0
+                )
             ]
         ]
 
@@ -1615,49 +1632,37 @@ viewTopCenterBar gameState player opponent =
         opponentWinning =
             opponentScore > playerScore
     in
-    div [ class "flex flex-col items-center text-xs gap-1.5" ]
-        [ div [ class "flex items-center gap-1.5" ]
-            (List.range 1 totalHands
-                |> List.map
-                    (\handNum ->
-                        let
-                            isPast =
-                                handNum < currentHand
+    div [ class "flex items-center gap-1.5" ]
+        (List.range 1 totalHands
+            |> List.map
+                (\handNum ->
+                    let
+                        isPast =
+                            handNum < currentHand
 
-                            isCurrent =
-                                handNum == currentHand && player.handsRemaining > 0
+                        isCurrent =
+                            handNum == currentHand && player.handsRemaining > 0
 
-                            isFuture =
-                                handNum > currentHand
-                        in
-                        div
-                            [ classList
-                                [ ( "w-2 h-2 rounded-full transition-all", True )
-                                , ( "bg-base-content", isPast )
-                                , ( "bg-base-content animate-pulse ring-2 ring-base-content/50", isCurrent )
-                                , ( "bg-base-content/30", isFuture )
-                                ]
+                        isFuture =
+                            handNum > currentHand
+                    in
+                    div
+                        [ classList
+                            [ ( "w-2 h-2 rounded-full transition-all", True )
+                            , ( "bg-base-content", isPast )
+                            , ( "bg-base-content animate-pulse ring-2 ring-base-content/50", isCurrent )
+                            , ( "bg-base-content/30", isFuture )
                             ]
-                            []
-                    )
-            )
-        , if playerWinning && scoreDiff > 0 then
-            span [ class "text-xs font-semibold text-player" ]
-                [ text ("+" ++ String.fromInt scoreDiff) ]
-
-          else if opponentWinning && scoreDiff > 0 then
-            span [ class "text-xs font-semibold text-opponent" ]
-                [ text ("+" ++ String.fromInt scoreDiff) ]
-
-          else
-            text ""
-        ]
+                        ]
+                        []
+                )
+        )
 
 
 {-| View opponent info overlay (top-right corner) - Mobile and Desktop
 -}
-viewOpponentInfo : PlayerState -> String -> Int -> Int -> Bool -> Html Msg
-viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
+viewOpponentInfo : PlayerState -> String -> Int -> Int -> Int -> Html Msg
+viewOpponentInfo opponent opponentName initialLives discardsPerRound scoreDiff =
     div [ class "flex flex-col items-end gap-0.5 text-base-content" ]
         [ div [ class "flex flex-col-reverse sm:flex-row items-end sm:items-center gap-0.5 sm:gap-1" ]
             [ div [ class "flex items-center gap-0.5" ]
@@ -1684,21 +1689,24 @@ viewOpponentInfo opponent opponentName initialLives discardsPerRound isWinning =
                         )
                 )
             ]
-        , div [ class "flex items-center gap-1" ]
-            [ span [ class "text-sm text-opponent truncate max-w-[25ch]" ] [ text opponentName ]
-            , if isWinning then
-                Heroicons.Solid.star [ SvgAttr.class "w-3 h-3 text-opponent" ]
+        , div [ class "flex items-center gap-3" ]
+            [ if scoreDiff > 0 then
+                span [ class "flex items-center gap-0 text-xs font-semibold text-opponent" ]
+                    [ Heroicons.Solid.plus [ SvgAttr.class "w-3 h-3" ]
+                    , text (String.fromInt scoreDiff)
+                    ]
 
               else
                 text ""
+            , span [ class "text-sm text-opponent truncate max-w-[25ch]" ] [ text opponentName ]
             ]
         ]
 
 
 {-| View player info overlay (top-left corner) - Mobile and Desktop
 -}
-viewPlayerInfo : PlayerState -> String -> Int -> Int -> Bool -> Html Msg
-viewPlayerInfo player playerName initialLives discardsPerRound isWinning =
+viewPlayerInfo : PlayerState -> String -> Int -> Int -> Int -> Html Msg
+viewPlayerInfo player playerName initialLives discardsPerRound scoreDiff =
     div [ class "flex flex-col items-start gap-0.5 text-base-content" ]
         [ div [ class "flex flex-col sm:flex-row items-start sm:items-center gap-0.5 sm:gap-1" ]
             [ div [ class "flex items-center gap-0.5" ]
@@ -1727,10 +1735,13 @@ viewPlayerInfo player playerName initialLives discardsPerRound isWinning =
                         )
                 )
             ]
-        , div [ class "flex items-center gap-1" ]
+        , div [ class "flex items-center gap-3" ]
             [ span [ class "text-sm text-player truncate max-w-[25ch]" ] [ text playerName ]
-            , if isWinning then
-                Heroicons.Solid.star [ SvgAttr.class "w-3 h-3 text-player" ]
+            , if scoreDiff > 0 then
+                span [ class "flex items-center gap-0 text-xs font-semibold text-player" ]
+                    [ Heroicons.Solid.plus [ SvgAttr.class "w-3 h-3" ]
+                    , text (String.fromInt scoreDiff)
+                    ]
 
               else
                 text ""
