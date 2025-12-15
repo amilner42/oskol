@@ -9,60 +9,108 @@ import Types exposing (..)
 
 
 
--- GAME STATE DECODERS
+-- PLAYER VIEW DECODERS (New architecture from Gleam)
 
 
-gameStateDecoder : Decoder GameState
-gameStateDecoder =
-    D.succeed GameState
+{-| Main decoder for PlayerView - dispatches based on "type" field
+-}
+playerViewDecoder : Decoder PlayerView
+playerViewDecoder =
+    D.field "type" D.string
+        |> D.andThen playerViewByType
+
+
+playerViewByType : String -> Decoder PlayerView
+playerViewByType viewType =
+    case viewType of
+        "playing" ->
+            D.map PlayingView playingDataDecoder
+
+        "shop" ->
+            D.map ShopView shopDataDecoder
+
+        "game_over" ->
+            D.map GameOverView gameOverDataDecoder
+
+        _ ->
+            D.fail ("Unknown view type: " ++ viewType)
+
+
+{-| Decoder for playing data
+-}
+playingDataDecoder : Decoder PlayingData
+playingDataDecoder =
+    D.succeed PlayingData
+        |> andMap (D.field "your_name" D.string)
+        |> andMap (D.field "your_hand" (D.list cardDecoder))
+        |> andMap (D.field "your_draw_pile" (D.list cardDecoder))
+        |> andMap (D.field "your_lives" D.int)
+        |> andMap (D.field "your_hands_remaining" D.int)
+        |> andMap (D.field "your_discards_remaining" D.int)
+        |> andMap (D.field "your_current_score" D.int)
+        |> andMap (D.field "your_locked_in_hand" (D.maybe (D.list cardDecoder)))
+        |> andMap (D.field "your_face_down_card_ids" (D.list D.string))
+        |> andMap (D.field "your_disabled_ranks" (D.list D.int))
+        |> andMap (D.field "your_disabled_suits" (D.list suitDecoder))
+        |> andMap (D.field "your_enhancements_disabled" D.bool)
+        |> andMap (D.field "your_active_debuffs" (D.list handTypeDecoder))
+        |> andMap (D.field "your_scrambled" D.bool)
+        |> andMap (D.field "your_supply_chain_limited" D.bool)
+        |> andMap (D.field "your_skill_tree" skillTreeDecoder)
+        |> andMap (D.field "opponent_name" D.string)
+        |> andMap (D.field "opponent_hand" (D.list cardDecoder))
+        |> andMap (D.field "opponent_lives" D.int)
+        |> andMap (D.field "opponent_hands_remaining" D.int)
+        |> andMap (D.field "opponent_discards_remaining" D.int)
+        |> andMap (D.field "opponent_current_score" D.int)
+        |> andMap (D.field "opponent_locked_in_hand" (D.maybe (D.list cardDecoder)))
+        |> andMap (D.field "opponent_face_down_card_ids" (D.list D.string))
+        |> andMap (D.field "opponent_disabled_ranks" (D.list D.int))
+        |> andMap (D.field "opponent_disabled_suits" (D.list suitDecoder))
+        |> andMap (D.field "opponent_enhancements_disabled" D.bool)
+        |> andMap (D.field "opponent_active_debuffs" (D.list handTypeDecoder))
+        |> andMap (D.field "opponent_scrambled" D.bool)
+        |> andMap (D.field "opponent_supply_chain_limited" D.bool)
         |> andMap (D.field "round_number" D.int)
-        |> andMap (D.field "player_names" (dictDecoder D.string))
-        |> andMap (D.field "players" (dictDecoder playerStateDecoder))
-        |> andMap (D.field "phase" gamePhaseDecoder)
-        |> andMap (D.field "game_status" gameStatusDecoder)
-        |> andMap (D.field "last_hand_results" (D.maybe (dictDecoder handResultDecoder)))
-        |> andMap (D.field "round_hand_history" (D.list (dictDecoder handResultDecoder)))
-        |> andMap (D.field "winner_id" (D.maybe D.string))
-        |> andMap (D.field "last_round_winner_id" (D.maybe D.string))
-        |> andMap (D.field "shop_state" (D.maybe shopStateDecoder))
-        |> andMap (D.field "shop_rounds" D.int)
-        |> andMap (D.field "initial_lives" D.int)
         |> andMap (D.field "hands_per_round" D.int)
         |> andMap (D.field "discards_per_round" D.int)
+        |> andMap (D.field "initial_lives" D.int)
+        |> andMap (D.field "pending_animation" (D.maybe handResultAnimationDecoder))
 
 
-gamePhaseDecoder : Decoder GamePhase
-gamePhaseDecoder =
-    D.string
-        |> D.andThen
-            (\str ->
-                case str of
-                    "playing" ->
-                        D.succeed Playing
-
-                    "round_end" ->
-                        D.succeed RoundEnd
-
-                    _ ->
-                        D.fail ("Unknown game phase: " ++ str)
-            )
+{-| Decoder for game over data
+-}
+gameOverDataDecoder : Decoder GameOverData
+gameOverDataDecoder =
+    D.succeed GameOverData
+        |> andMap (D.field "your_name" D.string)
+        |> andMap (D.field "opponent_name" D.string)
+        |> andMap (D.field "winner_name" D.string)
+        |> andMap (D.field "you_won" D.bool)
+        |> andMap (D.field "your_final_lives" D.int)
+        |> andMap (D.field "opponent_final_lives" D.int)
+        |> andMap (D.field "your_ready" D.bool)
+        |> andMap (D.field "opponent_ready" D.bool)
 
 
-gameStatusDecoder : Decoder GameStatus
-gameStatusDecoder =
-    D.string
-        |> D.andThen
-            (\str ->
-                case str of
-                    "active" ->
-                        D.succeed Active
-
-                    "game_over" ->
-                        D.succeed GameOver
-
-                    _ ->
-                        D.fail ("Unknown game status: " ++ str)
-            )
+{-| Decoder for shop view data
+-}
+shopDataDecoder : Decoder ShopData
+shopDataDecoder =
+    D.succeed ShopData
+        |> andMap (D.field "shop_state" shopStateDecoder)
+        |> andMap (D.field "available_cards" (D.list shopCardDecoder))
+        |> andMap (D.field "your_player_id" D.string)
+        |> andMap (D.field "your_name" D.string)
+        |> andMap (D.field "your_lives" D.int)
+        |> andMap (D.field "your_skill_tree" skillTreeDecoder)
+        |> andMap (D.field "opponent_player_id" D.string)
+        |> andMap (D.field "opponent_name" D.string)
+        |> andMap (D.field "opponent_lives" D.int)
+        |> andMap (D.field "opponent_skill_tree" skillTreeDecoder)
+        |> andMap (D.field "current_round" D.int)
+        |> andMap (D.field "total_rounds" D.int)
+        |> andMap (D.field "initial_lives" D.int)
 
 
 
@@ -130,12 +178,11 @@ handResultDecoder =
 
 scoreBreakdownDecoder : Decoder ScoreBreakdown
 scoreBreakdownDecoder =
-    D.map6 ScoreBreakdown
+    D.map5 ScoreBreakdown
         (D.field "base_chips" D.int)
         (D.field "base_multiplier" D.int)
         (D.field "total_chips" D.int)
         (D.field "total_multiplier" D.int)
-        (D.field "total_score" D.int)
         (D.field "card_breakdowns" (D.list cardBreakdownDecoder))
 
 
@@ -149,6 +196,21 @@ cardBreakdownDecoder =
         (D.field "disabled" D.bool)
 
 
+handResultAnimationDecoder : Decoder HandResultAnimation
+handResultAnimationDecoder =
+    D.succeed HandResultAnimation
+        |> andMap (D.field "your_hand" (D.list cardDecoder))
+        |> andMap (D.field "your_hand_type" D.string)
+        |> andMap (D.field "your_score" D.int)
+        |> andMap (D.field "your_breakdown" scoreBreakdownDecoder)
+        |> andMap (D.field "your_hand_level" D.int)
+        |> andMap (D.field "opponent_hand" (D.list cardDecoder))
+        |> andMap (D.field "opponent_hand_type" D.string)
+        |> andMap (D.field "opponent_score" D.int)
+        |> andMap (D.field "opponent_breakdown" scoreBreakdownDecoder)
+        |> andMap (D.field "opponent_hand_level" D.int)
+
+
 
 -- CARD DECODERS
 
@@ -157,9 +219,59 @@ cardDecoder : Decoder Card
 cardDecoder =
     D.map4 Card
         (D.field "id" D.string)
-        (D.field "rank" D.int)
+        (D.field "rank" rankDecoder)
         (D.field "suit" suitDecoder)
         (D.field "enhancement" (D.maybe enhancementDecoder))
+
+
+rankDecoder : Decoder Rank
+rankDecoder =
+    D.string
+        |> D.andThen
+            (\str ->
+                case str of
+                    "two" ->
+                        D.succeed Two
+
+                    "three" ->
+                        D.succeed Three
+
+                    "four" ->
+                        D.succeed Four
+
+                    "five" ->
+                        D.succeed Five
+
+                    "six" ->
+                        D.succeed Six
+
+                    "seven" ->
+                        D.succeed Seven
+
+                    "eight" ->
+                        D.succeed Eight
+
+                    "nine" ->
+                        D.succeed Nine
+
+                    "ten" ->
+                        D.succeed Ten
+
+                    "jack" ->
+                        D.succeed Jack
+
+                    "queen" ->
+                        D.succeed Queen
+
+                    "king" ->
+                        D.succeed King
+
+                    "ace" ->
+                        D.succeed Ace
+
+                    _ ->
+                        D.fail ("Unknown rank: " ++ str)
+            )
 
 
 suitDecoder : Decoder Suit
@@ -272,62 +384,142 @@ shopStateDecoder =
         |> andMap (D.field "first_pick_made" D.bool)
         |> andMap (D.field "second_pick_made" D.bool)
         |> andMap (D.field "available_cards" (D.list shopCardDecoder))
-        |> andMap (D.field "picked_card_indices" (D.list D.int))
+        |> andMap (D.field "picked_card_ids" (D.list D.string))
         |> andMap (D.field "pending_deck_builder" (D.maybe pendingDeckBuilderDecoder))
         |> andMap (D.field "pending_plus_bomb" (D.maybe pendingPlusBombDecoder))
         |> andMap (D.field "destroy_phase_complete" D.bool)
         |> andMap (D.field "destroyer_id" (D.maybe D.string))
         |> andMap (D.field "destroys_allowed" D.int)
-        |> andMap (D.field "destroyed_card_indices" (D.list D.int))
+        |> andMap (D.field "destroyed_card_ids" (D.list D.string))
+
+
+researchCardDecoder : Decoder ResearchCard
+researchCardDecoder =
+    D.index 0 D.string
+        |> D.andThen
+            (\cardType ->
+                case cardType of
+                    "LevelUp" ->
+                        D.map LevelUpCard
+                            (D.index 1 handTypeDecoder)
+
+                    _ ->
+                        D.fail ("Unknown research card type: " ++ cardType)
+            )
+
+
+counterCardDecoder : Decoder CounterCard
+counterCardDecoder =
+    D.index 0 D.string
+        |> D.andThen
+            (\cardType ->
+                case cardType of
+                    "Denial" ->
+                        D.map DenialCard
+                            (D.index 1 handTypeDecoder)
+
+                    _ ->
+                        D.fail ("Unknown counter card type: " ++ cardType)
+            )
+
+
+logisticsCardDecoder : Decoder LogisticsCard
+logisticsCardDecoder =
+    D.index 0 D.string
+        |> D.andThen
+            (\cardType ->
+                case cardType of
+                    "Fortify" ->
+                        D.map2 FortifyCard
+                            (D.index 1 D.int)
+                            (D.index 2 D.int)
+
+                    "Amplify" ->
+                        D.map2 AmplifyCard
+                            (D.index 1 D.int)
+                            (D.index 2 D.int)
+
+                    "SupplyDrop" ->
+                        D.map SupplyDropCard
+                            (D.index 1 D.int)
+
+                    "Discharge" ->
+                        D.map DischargeCard
+                            (D.index 1 D.int)
+
+                    "Camo" ->
+                        D.map2 CamoCard
+                            (D.index 1 suitDecoder)
+                            (D.index 2 D.int)
+
+                    "Promote" ->
+                        D.map PromoteCard
+                            (D.index 1 D.int)
+
+                    _ ->
+                        D.fail ("Unknown logistics card type: " ++ cardType)
+            )
+
+
+sabotageCardDecoder : Decoder SabotageCard
+sabotageCardDecoder =
+    D.index 0 D.string
+        |> D.andThen
+            (\cardType ->
+                case cardType of
+                    "Scrambler" ->
+                        D.succeed ScramblerCard
+
+                    "PlusBomb" ->
+                        D.map PlusBombCard
+                            (D.index 1 D.int)
+
+                    "StaticField" ->
+                        D.succeed StaticFieldCard
+
+                    "SupplyChain" ->
+                        D.succeed SupplyChainCard
+
+                    _ ->
+                        D.fail ("Unknown sabotage card type: " ++ cardType)
+            )
+
+
+cardKindDecoder : Decoder CardKind
+cardKindDecoder =
+    D.index 0 D.string
+        |> D.andThen
+            (\category ->
+                case category of
+                    "Research" ->
+                        D.map Research (D.index 1 researchCardDecoder)
+
+                    "Counter" ->
+                        D.map Counter (D.index 1 counterCardDecoder)
+
+                    "Logistics" ->
+                        D.map Logistics (D.index 1 logisticsCardDecoder)
+
+                    "Sabotage" ->
+                        D.map Sabotage (D.index 1 sabotageCardDecoder)
+
+                    _ ->
+                        D.fail ("Unknown shop card category: " ++ category)
+            )
 
 
 shopCardDecoder : Decoder ShopCard
 shopCardDecoder =
-    D.map6 ShopCard
-        (D.field "type" shopCardTypeDecoder)
-        (D.field "subtype" D.string)
-        (D.field "name" D.string)
-        (D.field "description" D.string)
-        (D.field "cost" D.int)
-        (D.field "metadata" (D.maybe shopCardMetadataDecoder))
-
-
-shopCardTypeDecoder : Decoder ShopCardType
-shopCardTypeDecoder =
-    D.string
-        |> D.andThen
-            (\str ->
-                case str of
-                    "level_up" ->
-                        D.succeed LevelUp
-
-                    "denial" ->
-                        D.succeed Denial
-
-                    "sabotage" ->
-                        D.succeed Sabotage
-
-                    "deck_builder" ->
-                        D.succeed DeckBuilder
-
-                    _ ->
-                        D.fail ("Unknown shop card type: " ++ str)
-            )
-
-
-shopCardMetadataDecoder : Decoder ShopCardMetadata
-shopCardMetadataDecoder =
-    D.succeed ShopCardMetadata
-        |> andMap (D.oneOf [ D.field "amount" (D.map Just D.int), D.succeed Nothing ])
-        |> andMap (D.oneOf [ D.field "suit" (D.map Just suitDecoder), D.succeed Nothing ])
-        |> andMap (D.oneOf [ D.field "max_cards" (D.map Just D.int), D.succeed Nothing ])
+    D.map2 ShopCard
+        (D.field "id" D.string)
+        (D.field "kind" cardKindDecoder)
 
 
 pendingDeckBuilderDecoder : Decoder PendingDeckBuilder
 pendingDeckBuilderDecoder =
     D.map4 PendingDeckBuilder
         (D.field "player_id" D.string)
-        (D.field "shop_card_index" D.int)
+        (D.field "shop_card_id" D.string)
         (D.field "deck_builder_card" shopCardDecoder)
         (D.field "available_cards" (D.list cardDecoder))
 
@@ -336,7 +528,7 @@ pendingPlusBombDecoder : Decoder PendingPlusBomb
 pendingPlusBombDecoder =
     D.map3 PendingPlusBomb
         (D.field "player_id" D.string)
-        (D.field "shop_card_index" D.int)
+        (D.field "shop_card_id" D.string)
         (D.field "available_cards" (D.list cardDecoder))
 
 

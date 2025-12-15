@@ -1,6 +1,8 @@
 defmodule OskolWeb.PageController do
   use OskolWeb, :controller
 
+  alias Oskol.Game.GleamEngine
+
   def home(conn, _params) do
     render(conn, :home)
   end
@@ -23,7 +25,9 @@ defmodule OskolWeb.PageController do
                 # If game has started, look up player_id from player_names
                 if game_server_state.game_state do
                   # Find the player_id where the name matches
-                  Enum.find_value(game_server_state.game_state.player_names, fn {pid, player_name} ->
+                  player_names = GleamEngine.get_player_names(game_server_state.game_state)
+
+                  Enum.find_value(player_names, fn {pid, player_name} ->
                     if player_name == name, do: pid, else: nil
                   end)
                 else

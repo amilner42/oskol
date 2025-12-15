@@ -4,6 +4,7 @@ import Browser
 import Decoders exposing (..)
 import Dict
 import Encoders exposing (..)
+import Helpers exposing (..)
 import Html exposing (Html)
 import Json.Decode as D
 import Json.Encode as E
@@ -74,6 +75,7 @@ init flags =
       , scoreAnimation = { phase = AnimationIdle, cardIndex = 0, nextStepTime = Nothing }
       , viewingResults = False
       , shopCountdown = Nothing
+      , currentAnimationData = Nothing
       }
     , Cmd.none
     )
@@ -107,17 +109,17 @@ deriveShopUIState playerId shopState =
         -- DESTROY PHASE
         DestroyPhase
             { isMyTurn = shopState.destroyerId == Just playerId
-            , destroysRemaining = shopState.destroysAllowed - List.length shopState.destroyedCardIndices
+            , destroysRemaining = shopState.destroysAllowed - List.length shopState.destroyedCardIds
             , availableCards = shopState.availableCards
-            , destroyedIndices = shopState.destroyedCardIndices
+            , destroyedCardIds = shopState.destroyedCardIds
             }
 
     else if shopState.currentRound == shopState.totalRounds && shopState.firstPickMade && shopState.secondPickMade then
         -- SHOP COMPLETE
         ShopComplete
             { availableCards = shopState.availableCards
-            , pickedIndices = shopState.pickedCardIndices
-            , destroyedIndices = shopState.destroyedCardIndices
+            , pickedCardIds = shopState.pickedCardIds
+            , destroyedCardIds = shopState.destroyedCardIds
             }
 
     else
@@ -127,14 +129,14 @@ deriveShopUIState playerId shopState =
                 if pending.playerId == playerId then
                     -- I'm in deck builder selection mode
                     SelectingDeckBuilderCards
-                        { cardIndex = pending.shopCardIndex
+                        { cardId = pending.shopCardId
                         , deckBuilderCard = pending.deckBuilderCard
                         , availableCards = pending.availableCards
                         , selectedCardIds = []
                         , maxSelection = getMaxSelection pending.deckBuilderCard
                         , availableShopCards = shopState.availableCards
-                        , pickedIndices = shopState.pickedCardIndices
-                        , destroyedIndices = shopState.destroyedCardIndices
+                        , pickedCardIds = shopState.pickedCardIds
+                        , destroyedCardIds = shopState.destroyedCardIds
                         }
 
                 else
@@ -142,8 +144,8 @@ deriveShopUIState playerId shopState =
                     WaitingForOpponent
                         { reason = OpponentPicking
                         , availableCards = shopState.availableCards
-                        , pickedIndices = shopState.pickedCardIndices
-                        , destroyedIndices = shopState.destroyedCardIndices
+                        , pickedCardIds = shopState.pickedCardIds
+                        , destroyedCardIds = shopState.destroyedCardIds
                         }
 
             Nothing ->
@@ -152,12 +154,12 @@ deriveShopUIState playerId shopState =
                         if pending.playerId == playerId then
                             -- I'm in plus bomb selection mode
                             SelectingPlusBombCard
-                                { cardIndex = pending.shopCardIndex
+                                { cardId = pending.shopCardId
                                 , availableCards = pending.availableCards
                                 , selectedCardId = Nothing
                                 , availableShopCards = shopState.availableCards
-                                , pickedIndices = shopState.pickedCardIndices
-                                , destroyedIndices = shopState.destroyedCardIndices
+                                , pickedCardIds = shopState.pickedCardIds
+                                , destroyedCardIds = shopState.destroyedCardIds
                                 }
 
                         else
@@ -165,8 +167,8 @@ deriveShopUIState playerId shopState =
                             WaitingForOpponent
                                 { reason = OpponentPicking
                                 , availableCards = shopState.availableCards
-                                , pickedIndices = shopState.pickedCardIndices
-                                , destroyedIndices = shopState.destroyedCardIndices
+                                , pickedCardIds = shopState.pickedCardIds
+                                , destroyedCardIds = shopState.destroyedCardIds
                                 }
 
                     Nothing ->
@@ -175,8 +177,8 @@ deriveShopUIState playerId shopState =
                             -- My turn to pick, browsing cards
                             BrowsingCards
                                 { availableCards = shopState.availableCards
-                                , pickedIndices = shopState.pickedCardIndices
-                                , destroyedIndices = shopState.destroyedCardIndices
+                                , pickedCardIds = shopState.pickedCardIds
+                                , destroyedCardIds = shopState.destroyedCardIds
                                 }
 
                         else
@@ -184,26 +186,9 @@ deriveShopUIState playerId shopState =
                             WaitingForOpponent
                                 { reason = OpponentPicking
                                 , availableCards = shopState.availableCards
-                                , pickedIndices = shopState.pickedCardIndices
-                                , destroyedIndices = shopState.destroyedCardIndices
+                                , pickedCardIds = shopState.pickedCardIds
+                                , destroyedCardIds = shopState.destroyedCardIds
                                 }
-
-
-{-| Helper to determine max selection for deck builder cards
--}
-getMaxSelection : ShopCard -> Int
-getMaxSelection shopCard =
-    case shopCard.metadata of
-        Just metadata ->
-            case metadata.maxCards of
-                Just maxCards ->
-                    maxCards
-
-                Nothing ->
-                    1
-
-        Nothing ->
-            1
 
 
 {-| Smart derivation that preserves transient UI state when in the same phase
@@ -217,7 +202,7 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
     case ( previousUIState, newState ) of
         -- Preserve deck builder selections if still in same selection phase
         ( Just (SelectingDeckBuilderCards prev), SelectingDeckBuilderCards new ) ->
-            if prev.cardIndex == new.cardIndex then
+            if prev.cardId == new.cardId then
                 SelectingDeckBuilderCards { new | selectedCardIds = prev.selectedCardIds }
 
             else
@@ -225,7 +210,7 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
 
         -- Preserve plus bomb selection if still in same selection phase
         ( Just (SelectingPlusBombCard prev), SelectingPlusBombCard new ) ->
-            if prev.cardIndex == new.cardIndex then
+            if prev.cardId == new.cardId then
                 SelectingPlusBombCard { new | selectedCardId = prev.selectedCardId }
 
             else
@@ -236,13 +221,13 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
             case serverState of
                 BrowsingCards newData ->
                     -- Check if previewed card is still available and actionable
-                    if isCardStillValid prev.cardIndex newData.availableCards newData.pickedIndices newData.destroyedIndices then
+                    if isCardStillValid prev.cardId newData.availableCards newData.pickedCardIds newData.destroyedCardIds then
                         -- Card still valid, preserve preview with updated data
                         PreviewingCard
                             { prev
                                 | availableCards = newData.availableCards
-                                , pickedIndices = newData.pickedIndices
-                                , destroyedIndices = newData.destroyedIndices
+                                , pickedCardIds = newData.pickedCardIds
+                                , destroyedCardIds = newData.destroyedCardIds
                             }
 
                     else
@@ -251,11 +236,11 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
 
                 DestroyPhase newData ->
                     -- Preserve preview only if in destroy mode and card still valid
-                    if prev.isDestroyMode && isCardStillValid prev.cardIndex newData.availableCards [] newData.destroyedIndices then
+                    if prev.isDestroyMode && isCardStillValid prev.cardId newData.availableCards [] newData.destroyedCardIds then
                         PreviewingCard
                             { prev
                                 | availableCards = newData.availableCards
-                                , destroyedIndices = newData.destroyedIndices
+                                , destroyedCardIds = newData.destroyedCardIds
                             }
 
                     else
@@ -273,19 +258,19 @@ deriveShopUIStatePreservingSelections playerId shopState previousUIState =
             newState
 
 
-{-| Check if a card at the given index is still valid for preview/selection.
+{-| Check if a card with the given ID is still valid for preview/selection.
 A card is valid if:
 
-  - The index is within bounds of available cards
+  - The card exists in the available cards list
   - The card hasn't been picked
   - The card hasn't been destroyed
 
 -}
-isCardStillValid : Int -> List ShopCard -> List Int -> List Int -> Bool
-isCardStillValid cardIndex availableCards pickedIndices destroyedIndices =
-    (cardIndex >= 0 && cardIndex < List.length availableCards)
-        && not (List.member cardIndex pickedIndices)
-        && not (List.member cardIndex destroyedIndices)
+isCardStillValid : String -> List ShopCard -> List String -> List String -> Bool
+isCardStillValid cardId availableCards pickedCardIds destroyedCardIds =
+    List.any (\c -> shopCardId c == cardId) availableCards
+        && not (List.member cardId pickedCardIds)
+        && not (List.member cardId destroyedCardIds)
 
 
 {-| Generate a deterministic rematch game ID
@@ -320,75 +305,49 @@ generateRematchId currentId =
 -}
 advanceAnimationStep : Model -> Int -> ( Model, Cmd Msg )
 advanceAnimationStep model currentTime =
-    case model.gameState of
-        Success gameState ->
-            case ( model.playerId, gameState.lastHandResults ) of
-                ( Just playerId, Just handResults ) ->
-                    let
-                        -- Get opponent ID
-                        opponentId =
-                            Dict.keys gameState.players
-                                |> List.filter (\id -> id /= playerId)
-                                |> List.head
-                                |> Maybe.withDefault ""
+    case model.currentAnimationData of
+        Just animData ->
+            let
+                firstCardCount =
+                    List.length animData.opponentBreakdown.cardBreakdowns
 
-                        -- First = opponent (animates first), Second = player (animates second)
-                        -- This ensures each player sees their cards on their own side
-                        firstPlayerId =
-                            opponentId
+                secondCardCount =
+                    List.length animData.yourBreakdown.cardBreakdowns
 
-                        secondPlayerId =
-                            playerId
+                ( nextPhase, nextIndex, delayMs ) =
+                    nextAnimationStep model.scoreAnimation.phase model.scoreAnimation.cardIndex firstCardCount secondCardCount
 
-                        firstResult =
-                            Dict.get firstPlayerId handResults
+                -- Auto-dismiss when animation completes
+                shouldDismiss =
+                    nextPhase == AnimationComplete
 
-                        secondResult =
-                            Dict.get secondPlayerId handResults
+                newAnimation =
+                    if shouldDismiss then
+                        -- Reset to idle so next animation can start
+                        { phase = AnimationIdle
+                        , cardIndex = 0
+                        , nextStepTime = Nothing
+                        }
 
-                        firstCardCount =
-                            firstResult
-                                |> Maybe.map (.scoreBreakdown >> .cardBreakdowns >> List.length)
-                                |> Maybe.withDefault 0
+                    else
+                        { phase = nextPhase
+                        , cardIndex = nextIndex
+                        , nextStepTime = Just (currentTime + delayMs)
+                        }
+            in
+            ( { model
+                | scoreAnimation = newAnimation
+                , viewingResults = not shouldDismiss
+              }
+            , if shouldDismiss then
+                sendToChannel encodeClearAnimation
 
-                        secondCardCount =
-                            secondResult
-                                |> Maybe.map (.scoreBreakdown >> .cardBreakdowns >> List.length)
-                                |> Maybe.withDefault 0
+              else
+                Cmd.none
+            )
 
-                        ( nextPhase, nextIndex, delayMs ) =
-                            nextAnimationStep
-                                model.scoreAnimation.phase
-                                model.scoreAnimation.cardIndex
-                                firstCardCount
-                                secondCardCount
-
-                        newAnimation =
-                            { phase = nextPhase
-                            , cardIndex = nextIndex
-                            , nextStepTime =
-                                if nextPhase == AnimationComplete then
-                                    Nothing
-
-                                else
-                                    Just (currentTime + delayMs)
-                            }
-
-                        -- Auto-dismiss when animation completes
-                        shouldDismiss =
-                            nextPhase == AnimationComplete
-                    in
-                    ( { model
-                        | scoreAnimation = newAnimation
-                        , viewingResults = not shouldDismiss
-                      }
-                    , Cmd.none
-                    )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        _ ->
+        Nothing ->
+            -- No animation data, stay idle
             ( model, Cmd.none )
 
 
@@ -403,41 +362,41 @@ nextAnimationStep currentPhase currentIndex firstCardCount secondCardCount =
 
         OpponentBase ->
             if firstCardCount > 0 then
-                ( OpponentCards, 0, 600 )
+                ( OpponentCards, 0, 400 )
 
             else
-                ( OpponentFinal, 0, 750 )
+                ( OpponentFinal, 0, 400 )
 
         OpponentCards ->
             if currentIndex + 1 < firstCardCount then
                 ( OpponentCards, currentIndex + 1, 600 )
 
             else
-                ( OpponentFinal, 0, 750 )
+                ( OpponentFinal, 0, 400 )
 
         OpponentFinal ->
             if secondCardCount > 0 then
-                ( PlayerBase, 0, 750 )
+                ( PlayerBase, 0, 400 )
 
             else
-                ( PlayerFinal, 0, 750 )
+                ( PlayerFinal, 0, 400 )
 
         PlayerBase ->
             if secondCardCount > 0 then
-                ( PlayerCards, 0, 600 )
+                ( PlayerCards, 0, 400 )
 
             else
-                ( PlayerFinal, 0, 750 )
+                ( PlayerFinal, 0, 400 )
 
         PlayerCards ->
             if currentIndex + 1 < secondCardCount then
                 ( PlayerCards, currentIndex + 1, 600 )
 
             else
-                ( PlayerFinal, 0, 750 )
+                ( PlayerFinal, 0, 400 )
 
         PlayerFinal ->
-            ( AnimationComplete, 0, 2000 )
+            ( AnimationComplete, 0, 2500 )
 
         AnimationComplete ->
             ( AnimationComplete, 0, 0 )
@@ -452,80 +411,81 @@ update msg model =
     case msg of
         ReceivedGameState gameState ->
             -- Initial game state received when joining channel
+            -- Derive shop UI state if we're in shop view
+            let
+                newShopUIState =
+                    case ( gameState, model.playerId ) of
+                        ( ShopView shopData, Just playerId ) ->
+                            Just (deriveShopUIState playerId shopData.shopState)
+
+                        _ ->
+                            Nothing
+            in
             ( { model
                 | gameState = Success gameState
+                , shopUIState = newShopUIState
                 , connectionStatus = Connected
               }
             , Cmd.none
             )
 
-        GameStateUpdated gameState ->
+        GameStateUpdated playerView ->
             -- Game state update from server broadcast
+            -- Derive shop UI state if we're in shop view
             let
-                -- Derive new shop UI state
                 newShopUIState =
-                    case ( gameState.phase, gameState.shopState, model.playerId ) of
-                        ( RoundEnd, Just shopState, Just playerId ) ->
-                            Just
-                                (deriveShopUIStatePreservingSelections
-                                    playerId
-                                    shopState
-                                    model.shopUIState
-                                )
+                    case ( playerView, model.playerId ) of
+                        ( ShopView shopData, Just playerId ) ->
+                            Just (deriveShopUIState playerId shopData.shopState)
 
                         _ ->
                             Nothing
 
-                -- Clean detection: shop just transitioned to complete
-                shopJustCompleted =
-                    case ( model.shopUIState, newShopUIState ) of
-                        ( Just (ShopComplete _), _ ) ->
-                            False
+                -- Check if animation should start or needs to be cleared
+                ( shouldStartAnimation, shouldClearAnimation, animationData ) =
+                    case playerView of
+                        PlayingView playingData ->
+                            case playingData.pendingAnimation of
+                                Just animation ->
+                                    -- New animation available and not already animating
+                                    ( model.scoreAnimation.phase == AnimationIdle, False, Just animation )
 
-                        -- Already complete
-                        ( _, Just (ShopComplete _) ) ->
-                            True
-
-                        -- Just became complete
-                        _ ->
-                            False
-
-                -- Detect new hand results and start animation
-                handResultsJustArrived =
-                    case ( model.gameState, gameState.lastHandResults ) of
-                        ( Success oldGameState, Just newResults ) ->
-                            oldGameState.lastHandResults /= Just newResults
-
-                        ( _, Just _ ) ->
-                            True
+                                Nothing ->
+                                    -- No pending animation - clear any running animation
+                                    ( False, True, Nothing )
 
                         _ ->
-                            False
+                            ( False, False, Nothing )
 
-                ( newScoreAnimation, newViewingResults ) =
-                    if handResultsJustArrived then
-                        ( { phase = OpponentBase, cardIndex = 0, nextStepTime = Nothing }
+                ( newAnimation, newViewingResults, newAnimationData ) =
+                    if shouldStartAnimation then
+                        ( { phase = OpponentBase
+                          , cardIndex = 0
+                          , nextStepTime = Nothing
+                          }
                         , True
+                        , animationData
+                        )
+
+                    else if shouldClearAnimation then
+                        -- Server says no animation - force clear
+                        ( { phase = AnimationIdle
+                          , cardIndex = 0
+                          , nextStepTime = Nothing
+                          }
+                        , False
+                        , Nothing
                         )
 
                     else
-                        ( model.scoreAnimation, model.viewingResults )
-
-                -- Start countdown when shop just completed, otherwise preserve existing countdown
-                newShopCountdown =
-                    if shopJustCompleted then
-                        Just 5
-                        -- Start 5 second countdown
-
-                    else
-                        model.shopCountdown
+                        ( model.scoreAnimation, model.viewingResults, model.currentAnimationData )
             in
             ( { model
-                | gameState = Success gameState
+                | gameState = Success playerView
                 , shopUIState = newShopUIState
-                , scoreAnimation = newScoreAnimation
+                , scoreAnimation = newAnimation
                 , viewingResults = newViewingResults
-                , shopCountdown = newShopCountdown
+                , currentAnimationData = newAnimationData
               }
             , Cmd.none
             )
@@ -534,9 +494,9 @@ update msg model =
             -- Server has created rematch game, navigate to it with player name
             let
                 playerName =
-                    case ( model.playerId, model.gameState ) of
-                        ( Just playerId, Success gameState ) ->
-                            Dict.get playerId gameState.playerNames
+                    case model.gameState of
+                        Success (GameOverView gameOverData) ->
+                            Just gameOverData.yourName
 
                         _ ->
                             Nothing
@@ -597,9 +557,13 @@ update msg model =
 
         -- Game actions
         LockInHand ->
-            case model.gameState of
-                Success gameState ->
-                    case getCurrentPlayer model of
+            case ( model.gameState, model.playerId ) of
+                ( Success playerView, Just playerId ) ->
+                    let
+                        gameState =
+                            buildGameState model playerView
+                    in
+                    case getCurrentPlayer gameState playerId of
                         Just currentPlayer ->
                             let
                                 selectedCardsList =
@@ -609,6 +573,7 @@ update msg model =
                             ( { model
                                 | selectedCards = Set.empty
                                 , newCardIds = Set.empty
+                                , viewingModal = Nothing
                               }
                             , sendToChannel (encodeLockInHand selectedCardsList)
                             )
@@ -620,9 +585,13 @@ update msg model =
                     ( model, Cmd.none )
 
         DiscardCards cardIds ->
-            case model.gameState of
-                Success gameState ->
-                    case getCurrentPlayer model of
+            case ( model.gameState, model.playerId ) of
+                ( Success playerView, Just playerId ) ->
+                    let
+                        gameState =
+                            buildGameState model playerView
+                    in
+                    case getCurrentPlayer gameState playerId of
                         Just currentPlayer ->
                             let
                                 cardsToDiscard =
@@ -642,39 +611,24 @@ update msg model =
                 _ ->
                     ( model, Cmd.none )
 
-        MakeShopPick cardIndex ->
+        MakeShopPick cardId ->
             -- Send pick command to server - let GameStateUpdated handle state transition
             -- (Don't re-derive immediately as server may set pendingPlusBomb/pendingDeckBuilder)
             ( { model | previewingCardIndex = Nothing }
-            , sendToChannel (encodeMakeShopPick cardIndex)
+            , sendToChannel (encodeMakeShopPick cardId)
             )
 
-        PreviewShopCard cardIndex ->
+        PreviewShopCard cardId ->
             -- NEW: Transition from BrowsingCards, DestroyPhase, or PreviewingCard to PreviewingCard
+            -- Extract skill tree from ShopView
             let
-                -- Extract player's skill tree from game state
                 playerSkillTree =
-                    case ( model.gameState, model.playerId ) of
-                        ( Success gameState, Just playerId ) ->
-                            case Dict.get playerId gameState.players of
-                                Just playerState ->
-                                    playerState.skillTree
-
-                                Nothing ->
-                                    -- Default empty skill tree
-                                    { highCard = 1
-                                    , pair = 1
-                                    , twoPair = 1
-                                    , threeOfAKind = 1
-                                    , straight = 1
-                                    , flush = 1
-                                    , fullHouse = 1
-                                    , fourOfAKind = 1
-                                    , straightFlush = 1
-                                    }
+                    case model.gameState of
+                        Success (ShopView shopData) ->
+                            shopData.yourSkillTree
 
                         _ ->
-                            -- Default empty skill tree
+                            -- Fallback (shouldn't happen in shop)
                             { highCard = 1
                             , pair = 1
                             , twoPair = 1
@@ -688,22 +642,22 @@ update msg model =
             in
             case model.shopUIState of
                 Just (BrowsingCards data) ->
-                    case List.drop cardIndex data.availableCards |> List.head of
+                    case List.filter (\c -> c.id == cardId) data.availableCards |> List.head of
                         Just card ->
                             ( { model
                                 | shopUIState =
                                     Just
                                         (PreviewingCard
-                                            { cardIndex = cardIndex
+                                            { cardId = cardId
                                             , card = card
                                             , availableCards = data.availableCards
-                                            , pickedIndices = data.pickedIndices
-                                            , destroyedIndices = data.destroyedIndices
+                                            , pickedCardIds = data.pickedCardIds
+                                            , destroyedCardIds = data.destroyedCardIds
                                             , isDestroyMode = False
                                             , skillTree = playerSkillTree
                                             }
                                         )
-                                , previewingCardIndex = Just cardIndex
+                                , previewingCardIndex = Nothing
 
                                 -- Keep for backwards compat during migration
                               }
@@ -714,22 +668,22 @@ update msg model =
                             ( model, Cmd.none )
 
                 Just (DestroyPhase data) ->
-                    case List.drop cardIndex data.availableCards |> List.head of
+                    case List.filter (\c -> c.id == cardId) data.availableCards |> List.head of
                         Just card ->
                             ( { model
                                 | shopUIState =
                                     Just
                                         (PreviewingCard
-                                            { cardIndex = cardIndex
+                                            { cardId = cardId
                                             , card = card
                                             , availableCards = data.availableCards
-                                            , pickedIndices = []
-                                            , destroyedIndices = data.destroyedIndices
+                                            , pickedCardIds = []
+                                            , destroyedCardIds = data.destroyedCardIds
                                             , isDestroyMode = True
                                             , skillTree = playerSkillTree
                                             }
                                         )
-                                , previewingCardIndex = Just cardIndex
+                                , previewingCardIndex = Nothing
                               }
                             , Cmd.none
                             )
@@ -739,22 +693,22 @@ update msg model =
 
                 Just (PreviewingCard data) ->
                     -- Allow switching between previewed cards
-                    case List.drop cardIndex data.availableCards |> List.head of
+                    case List.filter (\c -> c.id == cardId) data.availableCards |> List.head of
                         Just card ->
                             ( { model
                                 | shopUIState =
                                     Just
                                         (PreviewingCard
-                                            { cardIndex = cardIndex
+                                            { cardId = cardId
                                             , card = card
                                             , availableCards = data.availableCards
-                                            , pickedIndices = data.pickedIndices
-                                            , destroyedIndices = data.destroyedIndices
+                                            , pickedCardIds = data.pickedCardIds
+                                            , destroyedCardIds = data.destroyedCardIds
                                             , isDestroyMode = data.isDestroyMode
                                             , skillTree = data.skillTree
                                             }
                                         )
-                                , previewingCardIndex = Just cardIndex
+                                , previewingCardIndex = Nothing
                               }
                             , Cmd.none
                             )
@@ -768,39 +722,25 @@ update msg model =
 
         ClearCardPreview ->
             -- Go back to appropriate state (DestroyPhase if in destroy mode, BrowsingCards otherwise)
-            case ( model.shopUIState, model.gameState ) of
-                ( Just (PreviewingCard data), Success gameState ) ->
+            -- TODO: Re-derive from PlayerView once shop is ported
+            case model.shopUIState of
+                Just (PreviewingCard data) ->
                     let
                         nextState =
-                            case gameState.shopState of
-                                Just shopState ->
-                                    if data.isDestroyMode then
-                                        -- Re-derive from server state to get accurate DestroyPhase
-                                        case model.playerId of
-                                            Just playerId ->
-                                                deriveShopUIState playerId shopState
+                            if data.isDestroyMode then
+                                DestroyPhase
+                                    { isMyTurn = True
+                                    , destroysRemaining = 0
+                                    , availableCards = data.availableCards
+                                    , destroyedCardIds = data.destroyedCardIds
+                                    }
 
-                                            Nothing ->
-                                                BrowsingCards
-                                                    { availableCards = data.availableCards
-                                                    , pickedIndices = data.pickedIndices
-                                                    , destroyedIndices = data.destroyedIndices
-                                                    }
-
-                                    else
-                                        BrowsingCards
-                                            { availableCards = data.availableCards
-                                            , pickedIndices = data.pickedIndices
-                                            , destroyedIndices = data.destroyedIndices
-                                            }
-
-                                Nothing ->
-                                    -- No shop state, just go to browsing
-                                    BrowsingCards
-                                        { availableCards = data.availableCards
-                                        , pickedIndices = data.pickedIndices
-                                        , destroyedIndices = data.destroyedIndices
-                                        }
+                            else
+                                BrowsingCards
+                                    { availableCards = data.availableCards
+                                    , pickedCardIds = data.pickedCardIds
+                                    , destroyedCardIds = data.destroyedCardIds
+                                    }
                     in
                     ( { model
                         | shopUIState = Just nextState
@@ -809,36 +749,20 @@ update msg model =
                     , Cmd.none
                     )
 
-                ( Just (PreviewingCard data), _ ) ->
-                    -- Fallback if no game state available
-                    ( { model
-                        | shopUIState =
-                            Just
-                                (BrowsingCards
-                                    { availableCards = data.availableCards
-                                    , pickedIndices = data.pickedIndices
-                                    , destroyedIndices = data.destroyedIndices
-                                    }
-                                )
-                        , previewingCardIndex = Nothing
-                      }
-                    , Cmd.none
-                    )
-
                 _ ->
                     ( { model | previewingCardIndex = Nothing }, Cmd.none )
 
-        ConfirmDeckBuilder cardIndex ->
+        ConfirmDeckBuilder cardId ->
             -- Send to server, which will set pendingDeckBuilder
             -- Next GameStateUpdated will transition us to SelectingDeckBuilderCards
             ( model
-            , sendToChannel (encodeConfirmDeckBuilder cardIndex)
+            , sendToChannel (encodeConfirmDeckBuilder cardId)
             )
 
-        ConfirmPlusBomb cardIndex ->
+        ConfirmPlusBomb cardId ->
             -- Send to server, which will set pendingPlusBomb
             ( model
-            , sendToChannel (encodeConfirmPlusBomb cardIndex)
+            , sendToChannel (encodeConfirmPlusBomb cardId)
             )
 
         ToggleDeckCardSelection cardId ->
@@ -923,9 +847,9 @@ update msg model =
                     ( model, Cmd.none )
 
         -- OLD HANDLERS (kept for backwards compatibility during migration)
-        PreviewDeckBuilder cardIndex ->
+        PreviewDeckBuilder cardId ->
             ( model
-            , sendToChannel (encodeConfirmDeckBuilder cardIndex)
+            , sendToChannel (encodeConfirmDeckBuilder cardId)
             )
 
         SelectDeckCard cardId ->
@@ -950,9 +874,9 @@ update msg model =
             , sendToChannel encodeSkipDeckBuilderSelection
             )
 
-        PreviewPlusBomb cardIndex ->
+        PreviewPlusBomb cardId ->
             ( model
-            , sendToChannel (encodeConfirmPlusBomb cardIndex)
+            , sendToChannel (encodeConfirmPlusBomb cardId)
             )
 
         CompletePlusBombSelection cardId ->
@@ -960,10 +884,10 @@ update msg model =
             , sendToChannel (encodeCompletePlusBombSelection cardId)
             )
 
-        DestroyShopCard cardIndex ->
+        DestroyShopCard cardId ->
             -- Send destroy command to server - let GameStateUpdated handle state transition
             ( { model | previewingCardIndex = Nothing }
-            , sendToChannel (encodeDestroyShopCard cardIndex)
+            , sendToChannel (encodeDestroyShopCard cardId)
             )
 
         CompleteDestroyPhase ->
@@ -976,9 +900,9 @@ update msg model =
             case model.shopCountdown of
                 Just countdown ->
                     if countdown <= 1 then
-                        -- Countdown finished, send ready and clear countdown
+                        -- Countdown finished, clear countdown (round advances automatically)
                         ( { model | shopCountdown = Nothing }
-                        , sendToChannel encodeReadyForNextRound
+                        , Cmd.none
                         )
 
                     else
@@ -989,11 +913,6 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
-
-        ReadyForNextRound ->
-            ( model
-            , sendToChannel encodeReadyForNextRound
-            )
 
         RequestRematch ->
             ( model
@@ -1089,8 +1008,8 @@ handleChannelMessage value =
 {-| Decoder for channel messages
 -}
 type ChannelMessage
-    = InitialGameState GameState
-    | GameUpdate GameState
+    = InitialGameState PlayerView
+    | GameUpdate PlayerView
     | StatusUpdate ConnectionStatus
     | RematchReady String
     | Error String
@@ -1103,10 +1022,10 @@ channelMessageDecoder =
             (\msgType ->
                 case msgType of
                     "initial_state" ->
-                        D.map InitialGameState (D.field "game_state" gameStateDecoder)
+                        D.map InitialGameState (D.field "game_state" playerViewDecoder)
 
                     "game_state_updated" ->
-                        D.map GameUpdate (D.field "game_state" gameStateDecoder)
+                        D.map GameUpdate (D.field "game_state" playerViewDecoder)
 
                     "connection_status" ->
                         D.map StatusUpdate (D.field "status" connectionStatusDecoder)

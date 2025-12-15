@@ -33,21 +33,21 @@ encodeDiscardCards cards =
 
 {-| Encode a make shop pick action
 -}
-encodeMakeShopPick : Int -> E.Value
-encodeMakeShopPick cardIndex =
+encodeMakeShopPick : String -> E.Value
+encodeMakeShopPick cardId =
     E.object
         [ ( "action", E.string "make_shop_pick" )
-        , ( "card_index", E.int cardIndex )
+        , ( "card_id", E.string cardId )
         ]
 
 
 {-| Encode a confirm deck builder pick action
 -}
-encodeConfirmDeckBuilder : Int -> E.Value
-encodeConfirmDeckBuilder cardIndex =
+encodeConfirmDeckBuilder : String -> E.Value
+encodeConfirmDeckBuilder cardId =
     E.object
         [ ( "action", E.string "confirm_deck_builder_pick" )
-        , ( "card_index", E.int cardIndex )
+        , ( "card_id", E.string cardId )
         ]
 
 
@@ -72,11 +72,11 @@ encodeSkipDeckBuilderSelection =
 
 {-| Encode a confirm plus bomb pick action
 -}
-encodeConfirmPlusBomb : Int -> E.Value
-encodeConfirmPlusBomb cardIndex =
+encodeConfirmPlusBomb : String -> E.Value
+encodeConfirmPlusBomb cardId =
     E.object
         [ ( "action", E.string "confirm_plus_bomb_pick" )
-        , ( "card_index", E.int cardIndex )
+        , ( "card_id", E.string cardId )
         ]
 
 
@@ -92,11 +92,11 @@ encodeCompletePlusBombSelection cardId =
 
 {-| Encode a destroy shop card action
 -}
-encodeDestroyShopCard : Int -> E.Value
-encodeDestroyShopCard cardIndex =
+encodeDestroyShopCard : String -> E.Value
+encodeDestroyShopCard cardId =
     E.object
         [ ( "action", E.string "destroy_shop_card" )
-        , ( "card_index", E.int cardIndex )
+        , ( "card_id", E.string cardId )
         ]
 
 
@@ -109,19 +109,17 @@ encodeCompleteDestroyPhase =
         ]
 
 
-{-| Encode a ready for next round action
--}
-encodeReadyForNextRound : E.Value
-encodeReadyForNextRound =
-    E.object
-        [ ( "action", E.string "ready_for_next_round" )
-        ]
-
-
 encodeRequestRematch : E.Value
 encodeRequestRematch =
     E.object
         [ ( "action", E.string "request_rematch" )
+        ]
+
+
+encodeClearAnimation : E.Value
+encodeClearAnimation =
+    E.object
+        [ ( "action", E.string "clear_animation" )
         ]
 
 
@@ -135,10 +133,55 @@ encodeCard : Card -> E.Value
 encodeCard card =
     E.object
         [ ( "id", E.string card.id )
-        , ( "rank", E.int card.rank )
+        , ( "rank", encodeRank card.rank )
         , ( "suit", encodeSuit card.suit )
         , ( "enhancement", encodeMaybeEnhancement card.enhancement )
         ]
+
+
+{-| Encode a rank
+-}
+encodeRank : Rank -> E.Value
+encodeRank rank =
+    case rank of
+        Two ->
+            E.string "two"
+
+        Three ->
+            E.string "three"
+
+        Four ->
+            E.string "four"
+
+        Five ->
+            E.string "five"
+
+        Six ->
+            E.string "six"
+
+        Seven ->
+            E.string "seven"
+
+        Eight ->
+            E.string "eight"
+
+        Nine ->
+            E.string "nine"
+
+        Ten ->
+            E.string "ten"
+
+        Jack ->
+            E.string "jack"
+
+        Queen ->
+            E.string "queen"
+
+        King ->
+            E.string "king"
+
+        Ace ->
+            E.string "ace"
 
 
 {-| Encode a suit

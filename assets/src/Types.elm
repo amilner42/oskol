@@ -22,37 +22,91 @@ type RemoteData error data
 
 
 
--- GAME TYPES
+-- PLAYER VIEW (from Gleam)
+-- Clean ADT matching what Gleam sends
 
 
-{-| Complete game state from server
+{-| Player-specific view of the game
+This is what gets sent from the server - clean, minimal, typed
 -}
-type alias GameState =
-    { roundNumber : Int
-    , playerNames : Dict String String
-    , players : Dict String PlayerState
-    , phase : GamePhase
-    , gameStatus : GameStatus
-    , lastHandResults : Maybe (Dict String HandResult)
-    , roundHandHistory : List (Dict String HandResult)
-    , winnerId : Maybe String
-    , lastRoundWinnerId : Maybe String
-    , shopState : Maybe ShopState
-    , shopRounds : Int
-    , initialLives : Int
+type PlayerView
+    = PlayingView PlayingData
+    | ShopView ShopData
+    | GameOverView GameOverData
+
+
+{-| Playing state during a round
+-}
+type alias PlayingData =
+    { yourName : String
+    , yourHand : List Card
+    , yourDrawPile : List Card
+    , yourLives : Int
+    , yourHandsRemaining : Int
+    , yourDiscardsRemaining : Int
+    , yourCurrentScore : Int
+    , yourLockedInHand : Maybe (List Card)
+    , yourFaceDownCardIds : List String
+    , yourDisabledRanks : List Int
+    , yourDisabledSuits : List Suit
+    , yourEnhancementsDisabled : Bool
+    , yourActiveDebuffs : List HandType
+    , yourScrambled : Bool
+    , yourSupplyChainLimited : Bool
+    , yourSkillTree : SkillTree
+    , opponentName : String
+    , opponentHand : List Card
+    , opponentLives : Int
+    , opponentHandsRemaining : Int
+    , opponentDiscardsRemaining : Int
+    , opponentCurrentScore : Int
+    , opponentLockedInHand : Maybe (List Card)
+    , opponentFaceDownCardIds : List String
+    , opponentDisabledRanks : List Int
+    , opponentDisabledSuits : List Suit
+    , opponentEnhancementsDisabled : Bool
+    , opponentActiveDebuffs : List HandType
+    , opponentScrambled : Bool
+    , opponentSupplyChainLimited : Bool
+    , roundNumber : Int
     , handsPerRound : Int
     , discardsPerRound : Int
+    , initialLives : Int
+    , pendingAnimation : Maybe HandResultAnimation
     }
 
 
-type GamePhase
-    = Playing
-    | RoundEnd
+{-| Shop view data - shown to both players during shop phase
+-}
+type alias ShopData =
+    { shopState : ShopState
+    , availableCards : List ShopCard
+    , yourPlayerId : String
+    , yourName : String
+    , yourLives : Int
+    , yourSkillTree : SkillTree
+    , opponentPlayerId : String
+    , opponentName : String
+    , opponentLives : Int
+    , opponentSkillTree : SkillTree
+    , currentRound : Int
+    , totalRounds : Int
+    , initialLives : Int
+    }
 
 
-type GameStatus
-    = Active
-    | GameOver
+{-| Game over state
+-}
+type alias GameOverData =
+    { yourName : String
+    , opponentName : String
+    , winnerName : String
+    , youWon : Bool
+    , yourFinalLives : Int
+    , opponentFinalLives : Int
+    , yourReady : Bool
+    , opponentReady : Bool
+    }
 
 
 {-| Individual player state
@@ -112,7 +166,6 @@ type alias ScoreBreakdown =
     , baseMultiplier : Int
     , totalChips : Int
     , totalMultiplier : Int
-    , totalScore : Int
     , cardBreakdowns : List CardBreakdown
     }
 
@@ -128,15 +181,49 @@ type alias CardBreakdown =
     }
 
 
+{-| Hand result animation data
+-}
+type alias HandResultAnimation =
+    { yourHand : List Card
+    , yourHandType : String
+    , yourScore : Int
+    , yourBreakdown : ScoreBreakdown
+    , yourHandLevel : Int
+    , opponentHand : List Card
+    , opponentHandType : String
+    , opponentScore : Int
+    , opponentBreakdown : ScoreBreakdown
+    , opponentHandLevel : Int
+    }
+
+
 
 -- CARD TYPES
+
+
+{-| Card rank - fully typed, matches Gleam!
+-}
+type Rank
+    = Two
+    | Three
+    | Four
+    | Five
+    | Six
+    | Seven
+    | Eight
+    | Nine
+    | Ten
+    | Jack
+    | Queen
+    | King
+    | Ace
 
 
 {-| A playing card with rank, suit, ID, and optional enhancement
 -}
 type alias Card =
     { id : String
-    , rank : Int
+    , rank : Rank
     , suit : Suit
     , enhancement : Maybe Enhancement
     }
@@ -199,43 +286,56 @@ type alias ShopState =
     , firstPickMade : Bool
     , secondPickMade : Bool
     , availableCards : List ShopCard
-    , pickedCardIndices : List Int
+    , pickedCardIds : List String
     , pendingDeckBuilder : Maybe PendingDeckBuilder
     , pendingPlusBomb : Maybe PendingPlusBomb
     , destroyPhaseComplete : Bool
     , destroyerId : Maybe String
     , destroysAllowed : Int
-    , destroyedCardIndices : List Int
+    , destroyedCardIds : List String
     }
+
+
+type ResearchCard
+    = LevelUpCard HandType
+
+
+type CounterCard
+    = DenialCard HandType
+
+
+type LogisticsCard
+    = FortifyCard Int Int -- amount, max_cards
+    | AmplifyCard Int Int -- amount, max_cards
+    | SupplyDropCard Int -- max_cards
+    | DischargeCard Int -- max_cards
+    | CamoCard Suit Int -- suit, max_cards
+    | PromoteCard Int -- max_cards
+
+
+type SabotageCard
+    = ScramblerCard
+    | PlusBombCard Int -- max_cards
+    | StaticFieldCard
+    | SupplyChainCard
+
+
+type CardKind
+    = Research ResearchCard
+    | Counter CounterCard
+    | Logistics LogisticsCard
+    | Sabotage SabotageCard
 
 
 type alias ShopCard =
-    { cardType : ShopCardType
-    , subtype : String
-    , name : String
-    , description : String
-    , cost : Int
-    , metadata : Maybe ShopCardMetadata
-    }
-
-
-type ShopCardType
-    = LevelUp
-    | Denial
-    | Sabotage
-    | DeckBuilder
-
-
-type alias ShopCardMetadata =
-    { amount : Maybe Int
-    , suit : Maybe Suit
-    , maxCards : Maybe Int
+    { id : String
+    , kind : CardKind
     }
 
 
 type alias PendingDeckBuilder =
     { playerId : String
-    , shopCardIndex : Int
+    , shopCardId : String
     , deckBuilderCard : ShopCard
     , availableCards : List Card
     }
@@ -243,7 +343,7 @@ type alias PendingDeckBuilder =
 
 type alias PendingPlusBomb =
     { playerId : String
-    , shopCardIndex : Int
+    , shopCardId : String
     , availableCards : List Card
     }
 
@@ -272,7 +372,7 @@ type alias DestroyPhaseData =
     { isMyTurn : Bool
     , destroysRemaining : Int
     , availableCards : List ShopCard
-    , destroyedIndices : List Int
+    , destroyedCardIds : List String
     }
 
 
@@ -281,8 +381,8 @@ type alias DestroyPhaseData =
 type alias WaitingData =
     { reason : WaitingReason
     , availableCards : List ShopCard
-    , pickedIndices : List Int
-    , destroyedIndices : List Int
+    , pickedCardIds : List String
+    , destroyedCardIds : List String
     }
 
 
@@ -295,19 +395,19 @@ type WaitingReason
 -}
 type alias BrowsingData =
     { availableCards : List ShopCard
-    , pickedIndices : List Int
-    , destroyedIndices : List Int
+    , pickedCardIds : List String
+    , destroyedCardIds : List String
     }
 
 
 {-| Data for previewing a regular card (LevelUp, Denial, basic Sabotage)
 -}
 type alias PreviewCardData =
-    { cardIndex : Int
+    { cardId : String
     , card : ShopCard
     , availableCards : List ShopCard
-    , pickedIndices : List Int
-    , destroyedIndices : List Int
+    , pickedCardIds : List String
+    , destroyedCardIds : List String
     , isDestroyMode : Bool -- True if previewing during destroy phase
     , skillTree : SkillTree -- Player's skill tree for showing upgrade details
     }
@@ -316,26 +416,26 @@ type alias PreviewCardData =
 {-| Data for selecting deck builder cards
 -}
 type alias DeckBuilderSelectionData =
-    { cardIndex : Int
+    { cardId : String
     , deckBuilderCard : ShopCard
     , availableCards : List Card
     , selectedCardIds : List String -- Changed from Set to List to preserve selection order
     , maxSelection : Int
     , availableShopCards : List ShopCard
-    , pickedIndices : List Int
-    , destroyedIndices : List Int
+    , pickedCardIds : List String
+    , destroyedCardIds : List String
     }
 
 
 {-| Data for selecting plus bomb card
 -}
 type alias PlusBombSelectionData =
-    { cardIndex : Int
+    { cardId : String
     , availableCards : List Card
     , selectedCardId : Maybe String
     , availableShopCards : List ShopCard
-    , pickedIndices : List Int
-    , destroyedIndices : List Int
+    , pickedCardIds : List String
+    , destroyedCardIds : List String
     }
 
 
@@ -343,8 +443,8 @@ type alias PlusBombSelectionData =
 -}
 type alias CompletionData =
     { availableCards : List ShopCard
-    , pickedIndices : List Int
-    , destroyedIndices : List Int
+    , pickedCardIds : List String
+    , destroyedCardIds : List String
     }
 
 
@@ -375,6 +475,41 @@ type alias ScoreAnimationState =
 
 
 
+-- LEGACY GAME STATE (for original view helpers)
+-- This is reconstructed from PlayerView for backward compatibility
+
+
+{-| Full game state - LEGACY type for original view helpers
+We reconstruct this from PlayerView data using adapters
+-}
+type alias GameState =
+    { roundNumber : Int
+    , playerNames : Dict String String
+    , players : Dict String PlayerState
+    , phase : GamePhase
+    , gameStatus : GameStatus
+    , lastHandResults : Maybe (Dict String HandResult)
+    , roundHandHistory : List (Dict String HandResult)
+    , winnerId : Maybe String
+    , lastRoundWinnerId : Maybe String
+    , shopState : Maybe ShopState
+    , shopRounds : Int
+    , initialLives : Int
+    , handsPerRound : Int
+    , discardsPerRound : Int
+    }
+
+
+type GamePhase
+    = Playing
+
+
+type GameStatus
+    = Active
+    | GameOver
+
+
+
 -- UI STATE (CLIENT-ONLY)
 
 
@@ -383,7 +518,7 @@ type alias ScoreAnimationState =
 type alias Model =
     { gameId : String
     , playerId : Maybe String
-    , gameState : RemoteData String GameState
+    , gameState : RemoteData String PlayerView
     , viewingModal : Maybe Modal
     , selectedCards : Set String
     , newCardIds : Set String
@@ -397,6 +532,7 @@ type alias Model =
     , scoreAnimation : ScoreAnimationState -- Score animation state
     , viewingResults : Bool -- Whether we're viewing hand results
     , shopCountdown : Maybe Int -- Countdown timer for shop completion (seconds remaining)
+    , currentAnimationData : Maybe HandResultAnimation -- Current animation data from server
     }
 
 
@@ -424,8 +560,8 @@ type CardSort
 
 type Msg
     = -- Channel messages
-      ReceivedGameState GameState
-    | GameStateUpdated GameState
+      ReceivedGameState PlayerView
+    | GameStateUpdated PlayerView
     | RematchGameReady String
     | ChannelError String
     | ConnectionStatusChanged ConnectionStatus
@@ -438,26 +574,25 @@ type Msg
     | AdvanceScoreAnimation Int -- Takes current time in milliseconds
     | DismissResults
       -- Shop actions
-    | MakeShopPick Int
-    | PreviewShopCard Int
+    | MakeShopPick String
+    | PreviewShopCard String
     | ClearCardPreview
-    | ConfirmDeckBuilder Int
-    | ConfirmPlusBomb Int
+    | ConfirmDeckBuilder String
+    | ConfirmPlusBomb String
     | ToggleDeckCardSelection String -- NEW: Toggle deck builder card selection
     | SelectPlusBombCard String
     | ConfirmSelection -- NEW: Unified confirm for selections
     | CancelSelection -- NEW: Cancel/skip selection
       -- OLD (to be removed after migration):
-    | PreviewDeckBuilder Int -- TODO: Remove
+    | PreviewDeckBuilder String -- TODO: Remove
     | SelectDeckCard String -- TODO: Remove (replaced by ToggleDeckCardSelection)
     | CompleteDeckBuilderSelection (List String) -- TODO: Remove (replaced by ConfirmSelection)
     | SkipDeckBuilderSelection -- TODO: Remove (replaced by CancelSelection)
-    | PreviewPlusBomb Int -- TODO: Remove
+    | PreviewPlusBomb String -- TODO: Remove
     | CompletePlusBombSelection String -- TODO: Remove (replaced by ConfirmSelection)
       -- Destroy phase
-    | DestroyShopCard Int
+    | DestroyShopCard String
     | CompleteDestroyPhase
-    | ReadyForNextRound
       -- Shop countdown
     | ShopCountdownTick
       -- Rematch
@@ -510,40 +645,32 @@ isCardFaceDown player card =
     List.member card.id player.faceDownCardIds
 
 
-{-| Get the current player (you)
+{-| Get the current player (you) from GameState
+Updated to take GameState and playerId directly
 -}
-getCurrentPlayer : Model -> Maybe PlayerState
-getCurrentPlayer model =
-    case ( model.gameState, model.playerId ) of
-        ( Success gameState, Just playerId ) ->
-            Dict.get playerId gameState.players
-
-        _ ->
-            Nothing
+getCurrentPlayer : GameState -> String -> Maybe PlayerState
+getCurrentPlayer gameState playerId =
+    Dict.get playerId gameState.players
 
 
-{-| Get the opponent player
+{-| Get the opponent player from GameState
+Updated to take GameState and playerId directly
 -}
-getOpponentPlayer : Model -> Maybe PlayerState
-getOpponentPlayer model =
-    case ( model.gameState, model.playerId ) of
-        ( Success gameState, Just playerId ) ->
-            gameState.players
-                |> Dict.toList
-                |> List.filter (\( id, _ ) -> id /= playerId)
-                |> List.head
-                |> Maybe.map Tuple.second
-
-        _ ->
-            Nothing
+getOpponentPlayer : GameState -> String -> Maybe PlayerState
+getOpponentPlayer gameState playerId =
+    gameState.players
+        |> Dict.toList
+        |> List.filter (\( id, _ ) -> id /= playerId)
+        |> List.head
+        |> Maybe.map Tuple.second
 
 
-{-| Get player name by ID
+{-| Get player name by ID from GameState
 -}
 getPlayerName : GameState -> String -> String
 getPlayerName gameState playerId =
     Dict.get playerId gameState.playerNames
-        |> Maybe.withDefault "Unknown"
+        |> Maybe.withDefault "Player"
 
 
 {-| Check if it's the player's turn in the shop
@@ -589,23 +716,92 @@ isShopComplete maybeShopState =
 
 {-| Get the card rank display string
 -}
-rankToString : Int -> String
+rankToString : Rank -> String
 rankToString rank =
     case rank of
-        11 ->
+        Two ->
+            "2"
+
+        Three ->
+            "3"
+
+        Four ->
+            "4"
+
+        Five ->
+            "5"
+
+        Six ->
+            "6"
+
+        Seven ->
+            "7"
+
+        Eight ->
+            "8"
+
+        Nine ->
+            "9"
+
+        Ten ->
+            "10"
+
+        Jack ->
             "J"
 
-        12 ->
+        Queen ->
             "Q"
 
-        13 ->
+        King ->
             "K"
 
-        14 ->
+        Ace ->
             "A"
 
-        _ ->
-            String.fromInt rank
+
+{-| Get the numeric value of a rank (for comparison/sorting)
+-}
+rankValue : Rank -> Int
+rankValue rank =
+    case rank of
+        Two ->
+            2
+
+        Three ->
+            3
+
+        Four ->
+            4
+
+        Five ->
+            5
+
+        Six ->
+            6
+
+        Seven ->
+            7
+
+        Eight ->
+            8
+
+        Nine ->
+            9
+
+        Ten ->
+            10
+
+        Jack ->
+            11
+
+        Queen ->
+            12
+
+        King ->
+            13
+
+        Ace ->
+            14
 
 
 {-| Get the hand type display string

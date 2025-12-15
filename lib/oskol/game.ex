@@ -3,31 +3,7 @@ defmodule Oskol.Game do
   Facade module for game-related functionality.
   """
 
-  alias Oskol.Game.{CardPiles, GameServer, GameState, GameSupervisor, PlayerState}
-
-  # Type aliases
-  @type game_state :: GameState.t()
-  @type player_state :: PlayerState.t()
-  @type player_id :: PlayerState.player_id()
-  @type phase :: GameState.phase()
-  @type game_status :: GameState.game_status()
-  @type card_piles :: CardPiles.t()
-
-  # GameState operations
-  defdelegate new_game(player_ids), to: GameState, as: :new
-  defdelegate lock_in_hand(game_state, player_id, hand), to: GameState, as: :player_lock_in_hand
-  defdelegate both_players_locked_in?(game_state), to: GameState
-
-  # PlayerState operations
-  defdelegate new_player(player_id), to: PlayerState, as: :new
-  defdelegate reset_player_for_round(player_state), to: PlayerState, as: :reset_for_new_round
-
-  # CardPiles operations
-  defdelegate new_card_piles(opts), to: CardPiles, as: :new
-  defdelegate draw_cards(card_piles, count), to: CardPiles
-  defdelegate discard_cards(card_piles, cards), to: CardPiles
-  defdelegate replace_cards(card_piles, cards), to: CardPiles
-  defdelegate shuffle_discard_into_draw(card_piles), to: CardPiles
+  alias Oskol.Game.{GameServer, GameSupervisor}
 
   # GameSupervisor operations
   defdelegate start_game(game_id), to: GameSupervisor
@@ -50,53 +26,10 @@ defmodule Oskol.Game do
   defdelegate get_server_state(game_id), to: GameServer, as: :get_state
   defdelegate select_format(game_id, player_id, format), to: GameServer
 
-  def start_game_session(game_id, dev_codes \\ []) do
-    GameServer.start_game(game_id, dev_codes)
+  def start_game_session(game_id) do
+    GameServer.start_game(game_id)
   end
 
-  defdelegate player_lock_in_hand(game_id, player_id, hand), to: GameServer, as: :lock_in_hand
-
-  defdelegate player_lock_in_hand_async(game_id, player_id, hand),
-    to: GameServer,
-    as: :lock_in_hand_async
-
-  defdelegate player_discard_cards_async(game_id, player_id, cards),
-    to: GameServer,
-    as: :discard_cards_async
-
-  defdelegate mark_ready_for_next_round_async(game_id, player_id),
-    to: GameServer,
-    as: :mark_ready_for_next_round_async
-
-  defdelegate make_shop_pick_async(game_id, player_id, upgrade_index),
-    to: GameServer,
-    as: :make_shop_pick_async
-
-  defdelegate confirm_deck_builder_pick_async(game_id, player_id, shop_card_index),
-    to: GameServer,
-    as: :confirm_deck_builder_pick_async
-
-  defdelegate complete_deck_builder_selection_async(game_id, player_id, selected_card_id),
-    to: GameServer,
-    as: :complete_deck_builder_selection_async
-
-  defdelegate skip_deck_builder_selection_async(game_id, player_id),
-    to: GameServer,
-    as: :skip_deck_builder_selection_async
-
-  defdelegate confirm_plus_bomb_pick_async(game_id, player_id, shop_card_index),
-    to: GameServer,
-    as: :confirm_plus_bomb_pick_async
-
-  defdelegate complete_plus_bomb_selection_async(game_id, player_id, selected_card_id),
-    to: GameServer,
-    as: :complete_plus_bomb_selection_async
-
-  defdelegate destroy_shop_card_async(game_id, player_id, card_index),
-    to: GameServer,
-    as: :destroy_shop_card_async
-
-  defdelegate complete_destroy_phase_async(game_id, player_id),
-    to: GameServer,
-    as: :complete_destroy_phase_async
+  # Generic player action - all game actions go through this
+  defdelegate player_action_async(game_id, player_id, action), to: GameServer
 end

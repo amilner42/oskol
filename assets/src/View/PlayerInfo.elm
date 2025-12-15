@@ -73,7 +73,6 @@ viewStat label value =
 viewPlayerInfo :
     { player : PlayerState
     , playerName : String
-    , gameState : GameState
     }
     -> Html Msg
 viewPlayerInfo config =
