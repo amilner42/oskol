@@ -72,16 +72,25 @@ viewPlayerView model playerView =
                 -- Build fake GameState from PlayerView using adapter
                 gameState =
                     buildGameState model playerView
+
+                -- Extract pendingAnimation if this is a PlayingView
+                pendingAnimation =
+                    case playerView of
+                        PlayingView playingData ->
+                            playingData.pendingAnimation
+
+                        _ ->
+                            Nothing
             in
             -- Call the ORIGINAL viewGameState with fake GameState
-            viewGameState model gameState
+            viewGameState model gameState pendingAnimation
 
 
 {-| View the active game state with LiveView-style layout (ORIGINAL)
 This is the main layout function from the original code
 -}
-viewGameState : Model -> GameState -> Html Msg
-viewGameState model gameState =
+viewGameState : Model -> GameState -> Maybe HandResultAnimation -> Html Msg
+viewGameState model gameState pendingAnimation =
     let
         playerId =
             Maybe.withDefault "you" model.playerId
@@ -119,7 +128,7 @@ viewGameState model gameState =
                             [ div [ class "flex-1 flex flex-col justify-center" ]
                                 [ viewPlayingArea model gameState currentPlayer opponent actualPlayerId
                                 ]
-                            , viewTopRow gameState currentPlayer opponent opponentName playerName
+                            , viewTopRow gameState currentPlayer opponent opponentName playerName pendingAnimation
                             , -- Badges at bottom of centerboard
                               viewCenterboardBadges currentPlayer opponent
                             , -- Console Buttons (absolute, centered vertically within centerboard)
@@ -1517,8 +1526,8 @@ viewActionBar player selectedCards cardSort actionInProgress =
 
 {-| View top row with opponent info, hand progress, and player info
 -}
-viewTopRow : GameState -> PlayerState -> PlayerState -> String -> String -> Html Msg
-viewTopRow gameState player opponent opponentName playerName =
+viewTopRow : GameState -> PlayerState -> PlayerState -> String -> String -> Maybe HandResultAnimation -> Html Msg
+viewTopRow gameState player opponent opponentName playerName pendingAnimation =
     let
         initialLives =
             gameState.initialLives
@@ -1554,7 +1563,7 @@ viewTopRow gameState player opponent opponentName playerName =
                     0
                 )
             ]
-        , viewTopCenterBar gameState player opponent
+        , viewTopCenterBar gameState player opponent pendingAnimation
         , div [ class "flex items-start gap-2" ]
             [ viewOpponentInfo opponent
                 opponentName
@@ -1572,17 +1581,26 @@ viewTopRow gameState player opponent opponentName playerName =
 
 {-| View top center bar showing hand progress dots and score differential
 -}
-viewTopCenterBar : GameState -> PlayerState -> PlayerState -> Html Msg
-viewTopCenterBar gameState player opponent =
+viewTopCenterBar : GameState -> PlayerState -> PlayerState -> Maybe HandResultAnimation -> Html Msg
+viewTopCenterBar gameState player opponent pendingAnimation =
     let
         totalHands =
             gameState.handsPerRound
 
-        handsPlayed =
-            totalHands - player.handsRemaining
+        -- Calculate how many hands are FULLY COMPLETE (scored and done)
+        -- If we have a locked hand OR animation pending, that hand is NOT complete yet
+        handsCompleted =
+            if player.lockedInHand /= Nothing || pendingAnimation /= Nothing then
+                -- One hand is locked/scoring but not complete
+                totalHands - player.handsRemaining - 1
 
-        currentHand =
-            handsPlayed + 1
+            else
+                -- All locked hands have been scored and are complete
+                totalHands - player.handsRemaining
+
+        -- Current hand number is the one we're on right now (playing or scoring)
+        currentHandNum =
+            handsCompleted + 1
 
         playerScore =
             player.currentRoundScore
@@ -1604,14 +1622,15 @@ viewTopCenterBar gameState player opponent =
             |> List.map
                 (\handNum ->
                     let
+                        -- Mutually exclusive conditions
                         isPast =
-                            handNum < currentHand
+                            handNum <= handsCompleted
 
                         isCurrent =
-                            handNum == currentHand && player.handsRemaining > 0
+                            handNum == currentHandNum && currentHandNum <= totalHands
 
                         isFuture =
-                            handNum > currentHand
+                            handNum > currentHandNum
                     in
                     div
                         [ classList
