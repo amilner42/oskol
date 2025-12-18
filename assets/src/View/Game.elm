@@ -2250,24 +2250,6 @@ viewBadge colorClass badge =
 viewCenterboardBadges : PlayerState -> PlayerState -> Html Msg
 viewCenterboardBadges player opponent =
     let
-        _ =
-            Debug.log "Player scrambled" player.scrambled
-
-        _ =
-            Debug.log "Player enhancementsDisabled" player.enhancementsDisabled
-
-        _ =
-            Debug.log "Player supplyChainLimited" player.supplyChainLimited
-
-        _ =
-            Debug.log "Opponent scrambled" opponent.scrambled
-
-        _ =
-            Debug.log "Opponent enhancementsDisabled" opponent.enhancementsDisabled
-
-        _ =
-            Debug.log "Opponent supplyChainLimited" opponent.supplyChainLimited
-
         opponentDebuffBadges =
             if opponent.activeDebuffs /= [] then
                 let

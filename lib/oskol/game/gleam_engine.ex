@@ -236,7 +236,6 @@ defmodule Oskol.Game.GleamEngine do
   """
   def get_player_view(gleam_state, player_id) do
     gleam_view = :game@engine.get_player_view(gleam_state, player_id)
-    IO.inspect(gleam_view, label: "🔍 GLEAM VIEW FOR #{player_id}")
 
     # Extract player's skill tree from game state
     {:game_state, _round_num, _player_names, players, _phase, _game_status, _last_hand_results,
@@ -252,9 +251,7 @@ defmodule Oskol.Game.GleamEngine do
 
     player_skill_tree = skill_tree_to_json_map(skill_tree)
 
-    result = player_view_from_gleam(gleam_view, player_skill_tree)
-    IO.inspect(result, label: "📤 SENDING TO ELM")
-    result
+    player_view_from_gleam(gleam_view, player_skill_tree)
   end
 
   # ========== PLAYER VIEW CONVERSIONS ==========
