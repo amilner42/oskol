@@ -156,7 +156,7 @@ viewOpponentCards opponent newCardIds cardSort =
         sortedCards =
             sortCards cardSort opponent.cardPiles.handPile
     in
-    div [ class "flex gap-1 sm:gap-3 md:gap-4 justify-center px-2 sm:px-0" ]
+    div [ class "flex md:gap-3 lg:gap-4 justify-center px-2" ]
         (List.map
             (\card ->
                 let
@@ -172,7 +172,7 @@ viewOpponentCards opponent newCardIds cardSort =
                 in
                 div
                     [ classList
-                        [ ( "flex-1 min-w-0 max-w-[112px] aspect-[5/7]", True )
+                        [ ( "w-[18%] md:w-auto md:flex-1 md:max-w-[112px] aspect-[5/7] -ml-[6%] md:ml-0 first:ml-0", True )
                         , ( "new-card", isNew )
                         ]
                     ]
@@ -213,7 +213,7 @@ viewPlayerCards player model =
             sortCards model.cardSort player.cardPiles.handPile
     in
     div []
-        [ div [ class "flex gap-1 sm:gap-3 md:gap-4 justify-center px-2 sm:px-0" ]
+        [ div [ class "flex md:gap-3 lg:gap-4 justify-center px-2" ]
             (List.map
                 (\card ->
                     let
@@ -237,9 +237,9 @@ viewPlayerCards player model =
                         [ onClick (ToggleCardSelection card.id)
                         , disabled (not canSelect)
                         , classList
-                            [ ( "flex-1 min-w-0 max-w-[112px] transition-all touch-manipulation", True )
-                            , ( "-translate-y-2 sm:-translate-y-3 md:-translate-y-4", isSelected )
-                            , ( "opacity-50 cursor-not-allowed", not canSelect )
+                            [ ( "w-[18%] md:w-auto md:flex-1 md:max-w-[112px] -ml-[6%] md:ml-0 first:ml-0 transition-all touch-manipulation", True )
+                            , ( "-translate-y-2 md:-translate-y-3 lg:-translate-y-4", isSelected )
+                            , ( "cursor-not-allowed brightness-50 contrast-75 saturate-50", not canSelect )
                             ]
                         ]
                         [ div
@@ -261,7 +261,6 @@ viewPlayerCards player model =
                 )
                 sortedCards
             )
-        , viewSortButton model.cardSort
         ]
 
 
@@ -1474,53 +1473,21 @@ viewActionBar player selectedCards cardSort actionInProgress =
         canDiscard =
             selectedCount > 0 && player.discardsRemaining > 0 && not isLockedIn && not actionInProgress
     in
-    div [ class "h-12 sm:h-20 flex items-center shrink-0 bg-[#0C0F14]" ]
-        [ div [ class "hidden sm:flex items-center gap-4 ml-auto px-8" ]
+    div [ class "flex items-center justify-center shrink-0 bg-[#0C0F14] px-2 py-2 md:py-3 lg:py-4" ]
+        [ div [ class "flex items-center gap-2 w-full md:max-w-[980px] lg:max-w-[1008px]" ]
             [ button
                 [ onClick (DiscardCards selectedCardsList)
                 , disabled (not canDiscard)
                 , classList
-                    [ ( "px-4 py-2 rounded-lg transition-colors shadow-lg ring-1 ring-white/10 text-base touch-manipulation", True )
+                    [ ( "flex-1 py-3 rounded-lg transition-colors text-xs md:text-sm font-semibold touch-manipulation shadow-lg ring-1 ring-white/10", True )
                     , ( "bg-red-600 hover:bg-red-700 text-white", canDiscard )
-                    , ( "opacity-50 cursor-not-allowed bg-gray-600 text-gray-400", not canDiscard )
-                    ]
-                ]
-                [ if actionInProgress then
-                    text "Discarding..."
-
-                  else
-                    text "Discard"
-                ]
-            , button
-                [ onClick LockInHand
-                , disabled (not canLockIn)
-                , classList
-                    [ ( "px-4 py-2 rounded-lg transition-colors shadow-lg ring-1 ring-white/10 text-base font-semibold touch-manipulation", True )
-                    , ( "bg-sky-600 hover:bg-sky-700 text-white", canLockIn )
-                    , ( "opacity-50 cursor-not-allowed bg-gray-600 text-gray-400", not canLockIn )
-                    ]
-                ]
-                [ if actionInProgress then
-                    text "Playing..."
-
-                  else
-                    text "Play"
-                ]
-            ]
-        , div [ class "sm:hidden flex items-center justify-between gap-1.5 w-full px-2" ]
-            [ button
-                [ onClick (DiscardCards selectedCardsList)
-                , disabled (not canDiscard)
-                , classList
-                    [ ( "w-16 py-1.5 rounded transition-colors shadow ring-1 ring-white/10 text-xs touch-manipulation", True )
-                    , ( "bg-red-600 hover:bg-red-700 text-white", canDiscard )
-                    , ( "opacity-50 cursor-not-allowed bg-gray-600 text-gray-400", not canDiscard )
+                    , ( "opacity-50 cursor-not-allowed bg-red-600/30 text-red-200", not canDiscard )
                     ]
                 ]
                 [ text "Discard" ]
             , button
                 [ onClick ToggleCardSort
-                , class "px-3 py-1.5 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
+                , class "flex-1 py-3 rounded-lg text-xs md:text-sm bg-white/90 hover:bg-white transition-all flex items-center justify-center gap-1 touch-manipulation shadow-lg"
                 ]
                 [ span [ class "text-gray-500" ] [ text "Sort:" ]
                 , span [ class "font-semibold text-gray-800" ]
@@ -1538,9 +1505,9 @@ viewActionBar player selectedCards cardSort actionInProgress =
                 [ onClick LockInHand
                 , disabled (not canLockIn)
                 , classList
-                    [ ( "w-16 py-1.5 rounded transition-colors shadow ring-1 ring-white/10 text-xs font-semibold touch-manipulation", True )
+                    [ ( "flex-1 py-3 rounded-lg transition-colors text-xs md:text-sm font-semibold touch-manipulation shadow-lg ring-1 ring-white/10", True )
                     , ( "bg-sky-600 hover:bg-sky-700 text-white", canLockIn )
-                    , ( "opacity-50 cursor-not-allowed bg-gray-600 text-gray-400", not canLockIn )
+                    , ( "opacity-50 cursor-not-allowed bg-sky-600/30 text-sky-200", not canLockIn )
                     ]
                 ]
                 [ text "Play" ]
