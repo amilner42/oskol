@@ -7,8 +7,8 @@ import Dict exposing (Dict)
 import Helpers exposing (buildGameState, isDeckBuilderCard, isDenialCard, isLevelUpCard, isPlusBombCard, isSabotageCard, levelUpHandType, shopCardDescription, shopCardId, shopCardName)
 import Heroicons.Outline
 import Heroicons.Solid
-import Html exposing (Html, button, div, h1, h2, p, span, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (class, classList, disabled, style)
+import Html exposing (Html, button, div, h1, h2, img, p, span, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (class, classList, disabled, src, style)
 import Html.Events exposing (onClick, stopPropagationOn)
 import Json.Decode as D
 import Set exposing (Set)
@@ -121,7 +121,7 @@ viewGameState model gameState pendingAnimation =
                     div [ class "flex flex-col h-screen-safe bg-[#1a1d29] overflow-hidden" ]
                         [ -- Top - Opponent Cards
                           div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-[#0C0F14]" ]
-                            [ viewOpponentCards opponent model.newCardIds model.cardSort
+                            [ viewOpponentCards opponent currentPlayer model.newCardIds model.cardSort
                             ]
                         , -- Middle - Playing Area
                           div [ class "flex-1 min-h-0 flex flex-col bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
@@ -159,11 +159,15 @@ viewGameState model gameState pendingAnimation =
 
 {-| View opponent's cards at the top
 -}
-viewOpponentCards : PlayerState -> Set String -> CardSort -> Html Msg
-viewOpponentCards opponent newCardIds cardSort =
+viewOpponentCards : PlayerState -> PlayerState -> Set String -> CardSort -> Html Msg
+viewOpponentCards opponent player newCardIds cardSort =
     let
         sortedCards =
             sortCards cardSort opponent.cardPiles.handPile
+
+        -- Check if opponent locked in but player hasn't
+        opponentLockedPlayerNot =
+            opponent.lockedInHand /= Nothing && player.lockedInHand == Nothing
     in
     div [ class "flex md:gap-3 lg:gap-4 justify-center px-2" ]
         (List.map
@@ -183,6 +187,7 @@ viewOpponentCards opponent newCardIds cardSort =
                     [ classList
                         [ ( "w-[18%] md:w-auto md:flex-1 md:max-w-[112px] aspect-[5/7] -ml-[6%] md:ml-0 first:ml-0", True )
                         , ( "new-card", isNew )
+                        , ( "brightness-50 contrast-75 saturate-50", opponentLockedPlayerNot )  -- Dim when locked in
                         ]
                     ]
                     [ Cards.viewCardImage
@@ -364,29 +369,18 @@ viewPlayingArea model gameState currentPlayer opponent playerId =
             viewModal modal model gameState currentPlayer opponent playerId playerName opponentName
 
         Nothing ->
-            -- Check if viewing animated score results
-            if model.viewingResults then
-                viewAnimatedScoreResults model gameState playerId playerName opponentName
+            div [ class "h-full flex flex-col items-center justify-center p-4 text-white" ]
+                [ -- Phase-specific content
+                  case gameState.phase of
+                    Playing ->
+                        -- Always show placeholder outlines with cards when locked in
+                        -- Pass animation data if viewing results
+                        if model.viewingResults then
+                            viewHandPlaceholdersWithAnimation model gameState currentPlayer opponent playerId playerName opponentName
 
-            else
-                div [ class "h-full flex flex-col items-center justify-center p-4 text-white" ]
-                    [ -- Phase-specific content
-                      case gameState.phase of
-                        Playing ->
-                            -- Check locked-in status
-                            case ( currentPlayer.lockedInHand, opponent.lockedInHand ) of
-                                ( Just playerHand, Nothing ) ->
-                                    -- Player locked in, waiting for opponent
-                                    viewWaitingForOpponent playerHand currentPlayer
-
-                                ( Nothing, Just _ ) ->
-                                    -- Opponent locked in, player hasn't
-                                    viewOpponentLockedNotice
-
-                                _ ->
-                                    -- Neither or both locked in (both = waiting for server to process)
-                                    text ""
-                    ]
+                        else
+                            viewHandPlaceholders currentPlayer opponent
+                ]
 
 
 {-| View score differential
@@ -446,67 +440,360 @@ pluralize singular plural count =
         plural
 
 
-{-| View when player has locked in but opponent hasn't
+{-| View hand placeholders - always shows 5 card outlines, filled when locked in
 -}
-viewWaitingForOpponent : List Card -> PlayerState -> Html Msg
-viewWaitingForOpponent lockedHand player =
+viewHandPlaceholders : PlayerState -> PlayerState -> Html Msg
+viewHandPlaceholders player opponent =
     let
-        sortedHand =
-            lockedHand
-                |> List.sortWith (\a b -> compare (rankValue b.rank) (rankValue a.rank))
-    in
-    div [ class "text-center space-y-4 sm:space-y-8 px-2 sm:px-0" ]
-        [ -- Opponent placeholder section
-          div []
-            [ div [ class "text-xs sm:text-sm text-base-content/50 mb-1 sm:mb-2" ]
-                [ text "Waiting for opponent..." ]
-            , div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
-                (List.map
-                    (\_ ->
-                        div [ class "w-9 h-[52px] sm:w-16 sm:h-24 opacity-0" ] []
-                    )
-                    sortedHand
-                )
-            , div [ class "h-5 sm:h-7" ] []
-            ]
-        , -- Player's locked hand
-          div []
-            [ div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2" ] [ text "\u{00A0}" ]
-            , div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
-                (List.map
-                    (\card ->
-                        let
-                            isDisabled =
-                                List.member (rankValue card.rank) player.disabledRanks
-                                    || List.member card.suit player.disabledSuits
+        -- Check if both players have locked in
+        bothLockedIn =
+            case ( player.lockedInHand, opponent.lockedInHand ) of
+                ( Just _, Just _ ) ->
+                    True
 
-                            isFaceDown =
-                                List.member card.id player.faceDownCardIds
-                        in
-                        div [ class "w-9 h-[52px] sm:w-16 sm:h-24" ]
-                            [ Cards.viewCardImage
-                                { card = card
-                                , isFaceDown = isFaceDown
-                                , showEnhancement = True
-                                , compact = True
-                                , disabled = isDisabled
-                                , enhancementDisabled = player.enhancementsDisabled
-                                }
-                            ]
+                _ ->
+                    False
+
+        -- Get sorted hands (up to 5 cards)
+        sortedPlayerHand =
+            case player.lockedInHand of
+                Just hand ->
+                    hand
+                        |> List.sortWith (\a b -> compare (rankValue b.rank) (rankValue a.rank))
+                        |> List.take 5
+
+                Nothing ->
+                    []
+
+        sortedOpponentHand =
+            -- Only show opponent cards if both players have locked in
+            if bothLockedIn then
+                case opponent.lockedInHand of
+                    Just hand ->
+                        hand
+                            |> List.sortWith (\a b -> compare (rankValue b.rank) (rankValue a.rank))
+                            |> List.take 5
+
+                    Nothing ->
+                        []
+
+            else
+                []
+
+        -- Check if opponent has locked in (for showing icon in placeholders)
+        opponentHasLockedIn =
+            opponent.lockedInHand /= Nothing
+
+        -- Create exactly 5 slots for each player
+        opponentSlots =
+            List.range 0 4
+                |> List.map
+                    (\index ->
+                        case List.head (List.drop index sortedOpponentHand) of
+                            Just card ->
+                                -- Both players locked in, show opponent's card
+                                viewCardSlot (Just card) opponent True
+
+                            Nothing ->
+                                -- Show placeholder, with icon if opponent locked in
+                                viewCardPlaceholder opponentHasLockedIn
                     )
-                    sortedHand
-                )
-            , div [ class "h-5 sm:h-7" ] []
+
+        playerSlots =
+            List.range 0 4
+                |> List.map
+                    (\index ->
+                        case List.head (List.drop index sortedPlayerHand) of
+                            Just card ->
+                                -- Player has a card in this slot
+                                viewCardSlot (Just card) player False
+
+                            Nothing ->
+                                -- Empty placeholder (no icon for player's own cards)
+                                viewCardPlaceholder False
+                    )
+    in
+    div [ class "text-center space-y-6 sm:space-y-10 px-2 sm:px-0" ]
+        [ -- Opponent's hand placeholders (top)
+          div []
+            [ div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2 invisible" ]
+                [ text "\u{00A0}" ]
+            , div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
+                opponentSlots
+            , -- Reserve space for formula (invisible placeholder)
+              div [ class "h-5 sm:h-7 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-base font-mono invisible" ]
+                [ text "\u{00A0}" ]
+            ]
+        , -- Player's hand placeholders (bottom)
+          div []
+            [ div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2 invisible" ]
+                [ text "\u{00A0}" ]
+            , div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
+                playerSlots
+            , -- Reserve space for formula (invisible placeholder)
+              div [ class "h-5 sm:h-7 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-base font-mono invisible" ]
+                [ text "\u{00A0}" ]
             ]
         ]
 
 
-{-| View when opponent has locked in but player hasn't
+{-| View hand placeholders with animation - same layout but with scoring animation
 -}
-viewOpponentLockedNotice : Html Msg
-viewOpponentLockedNotice =
-    div [ class "text-center text-base-content/50 text-sm" ]
-        [ text "Opponent has locked in their hand" ]
+viewHandPlaceholdersWithAnimation : Model -> GameState -> PlayerState -> PlayerState -> String -> String -> String -> Html Msg
+viewHandPlaceholdersWithAnimation model gameState player opponent playerId playerName opponentName =
+    case model.currentAnimationData of
+        Just animData ->
+            let
+                -- Get animation states
+                firstAnimState =
+                    getPlayerAnimationStateFromBreakdown model.scoreAnimation animData.opponentBreakdown True
+
+                secondAnimState =
+                    getPlayerAnimationStateFromBreakdown model.scoreAnimation animData.yourBreakdown False
+
+                -- Sort hands for consistent display
+                sortedOpponentHand =
+                    List.sortBy (\c -> ( -(rankValue c.rank), suitOrder c.suit )) animData.opponentHand
+
+                sortedPlayerHand =
+                    List.sortBy (\c -> ( -(rankValue c.rank), suitOrder c.suit )) animData.yourHand
+            in
+            div [ class "text-center space-y-6 sm:space-y-10 px-2 sm:px-0" ]
+                [ -- Opponent's hand with animation (top)
+                  case firstAnimState of
+                    Just animState ->
+                        viewAnimatedHandRow
+                            sortedOpponentHand
+                            animData.opponentHandType
+                            animData.opponentBreakdown
+                            animData.opponentHandLevel
+                            animState
+                            opponent
+                            False
+
+                    Nothing ->
+                        text ""
+                , -- Player's hand with animation (bottom)
+                  case secondAnimState of
+                    Just animState ->
+                        viewAnimatedHandRow
+                            sortedPlayerHand
+                            animData.yourHandType
+                            animData.yourBreakdown
+                            animData.yourHandLevel
+                            animState
+                            player
+                            True
+
+                    Nothing ->
+                        text ""
+                ]
+
+        Nothing ->
+            -- Fallback to regular placeholders
+            viewHandPlaceholders player opponent
+
+
+{-| View a single animated hand row in placeholder layout
+-}
+viewAnimatedHandRow : List Card -> String -> ScoreBreakdown -> Int -> AnimationState -> PlayerState -> Bool -> Html Msg
+viewAnimatedHandRow hand handType breakdown level animState playerState isCurrentPlayer =
+    let
+        -- Sort breakdowns same way as cards
+        sortedBreakdowns =
+            List.sortBy (\b -> ( -(rankValue b.card.rank), suitOrder b.card.suit )) breakdown.cardBreakdowns
+
+        scoringCardIds =
+            Set.fromList (List.map (.card >> .id) sortedBreakdowns)
+
+        -- Calculate running totals
+        ( runningChips, runningMult ) =
+            if animState.cardsScored == 0 then
+                ( breakdown.baseChips, breakdown.baseMultiplier )
+
+            else
+                let
+                    scoredBreakdowns =
+                        List.take animState.cardsScored sortedBreakdowns
+
+                    extraChips =
+                        scoredBreakdowns
+                            |> List.map (\b -> b.chipValue + b.bonusChips)
+                            |> List.sum
+
+                    extraMult =
+                        scoredBreakdowns
+                            |> List.map .bonusMult
+                            |> List.sum
+                in
+                ( breakdown.baseChips + extraChips
+                , breakdown.baseMultiplier + extraMult
+                )
+
+        showFinal =
+            animState.phase == OpponentFinal || animState.phase == PlayerFinal || animState.phase == AnimationComplete
+
+        runningScore =
+            runningChips * runningMult
+
+        handTypeText =
+            "Lvl " ++ String.fromInt level ++ " " ++ formatHandTypeString handType
+
+        -- Create exactly 5 slots, padding with empty placeholders
+        cardSlots =
+            List.range 0 4
+                |> List.map
+                    (\index ->
+                        case List.head (List.drop index hand) of
+                            Just card ->
+                                let
+                                    isScoring =
+                                        Set.member card.id scoringCardIds
+
+                                    scoringIndex =
+                                        sortedBreakdowns
+                                            |> List.indexedMap Tuple.pair
+                                            |> List.filter (\( _, b ) -> b.card.id == card.id)
+                                            |> List.head
+                                            |> Maybe.map Tuple.first
+
+                                    isCurrentlyScoring =
+                                        case scoringIndex of
+                                            Just si ->
+                                                si == animState.cardsScored - 1 && (animState.phase == OpponentCards || animState.phase == PlayerCards)
+
+                                            Nothing ->
+                                                False
+
+                                    cardClass =
+                                        if not isScoring then
+                                            "card-not-scoring"
+
+                                        else if Maybe.withDefault 999 scoringIndex < animState.cardsScored - 1 then
+                                            "card-scored"
+
+                                        else if isCurrentlyScoring then
+                                            "card-scoring"
+
+                                        else if Maybe.withDefault 999 scoringIndex < animState.cardsScored then
+                                            "card-scored"
+
+                                        else
+                                            ""
+
+                                    cardBreakdown =
+                                        if isCurrentlyScoring then
+                                            List.drop (animState.cardsScored - 1) sortedBreakdowns |> List.head
+
+                                        else
+                                            Nothing
+
+                                    isDisabled =
+                                        List.member (rankValue card.rank) playerState.disabledRanks
+                                            || List.member card.suit playerState.disabledSuits
+                                in
+                                div [ class "relative" ]
+                                    [ div [ class ("w-9 h-[52px] sm:w-16 sm:h-24 " ++ cardClass) ]
+                                        [ Cards.viewCardImage
+                                            { card = card
+                                            , isFaceDown = False
+                                            , showEnhancement = True
+                                            , compact = True
+                                            , disabled = isDisabled
+                                            , enhancementDisabled = playerState.enhancementsDisabled
+                                            }
+                                        ]
+                                    , case cardBreakdown of
+                                        Just cb ->
+                                            div []
+                                                [ div [ class "chip-float chip-float-chips text-[10px] sm:text-sm" ]
+                                                    [ text ("+" ++ String.fromInt (cb.chipValue + cb.bonusChips)) ]
+                                                , if cb.bonusMult > 0 then
+                                                    div [ class "chip-float chip-float-mult text-[10px] sm:text-sm" ]
+                                                        [ text ("+" ++ String.fromInt cb.bonusMult ++ "x") ]
+
+                                                  else
+                                                    text ""
+                                                ]
+
+                                        Nothing ->
+                                            text ""
+                                    ]
+
+                            Nothing ->
+                                -- Empty placeholder for unused slots
+                                viewCardPlaceholder False
+                    )
+    in
+    div []
+        [ -- Hand type header (smaller text)
+          div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2" ]
+            [ text handTypeText ]
+        , -- Cards display
+          div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
+            cardSlots
+        , -- Formula display
+          div [ class "h-5 sm:h-7 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-base font-mono" ]
+            [ span [ class "text-blue-400 font-bold" ] [ text (String.fromInt runningChips) ]
+            , span [ class "text-base-content/60" ] [ text "×" ]
+            , span [ class "text-red-400 font-bold" ] [ text (String.fromInt runningMult) ]
+            , if showFinal then
+                span [ class "text-base-content/60" ] [ text "=" ]
+
+              else
+                text ""
+            , if showFinal then
+                span [ class "text-yellow-400 font-bold score-reveal" ]
+                    [ text (String.fromInt runningScore) ]
+
+              else
+                text ""
+            ]
+        ]
+
+
+{-| View a card placeholder outline
+-}
+viewCardPlaceholder : Bool -> Html Msg
+viewCardPlaceholder showIcon =
+    div
+        [ class "w-9 h-[52px] sm:w-16 sm:h-24 border-2 border-dashed border-white/20 rounded flex items-center justify-center" ]
+        [ if showIcon then
+            -- Show lock icon when opponent has locked in
+            Heroicons.Solid.lockClosed [ SvgAttr.class "w-4 h-4 sm:w-5 sm:h-5 text-white/20" ]
+
+          else
+            text ""
+        ]
+
+
+{-| View a card slot - either filled with a card or empty
+-}
+viewCardSlot : Maybe Card -> PlayerState -> Bool -> Html Msg
+viewCardSlot maybeCard playerState isOpponent =
+    case maybeCard of
+        Just card ->
+            let
+                isDisabled =
+                    List.member (rankValue card.rank) playerState.disabledRanks
+                        || List.member card.suit playerState.disabledSuits
+
+                isFaceDown =
+                    List.member card.id playerState.faceDownCardIds
+            in
+            div [ class "w-9 h-[52px] sm:w-16 sm:h-24" ]
+                [ Cards.viewCardImage
+                    { card = card
+                    , isFaceDown = isFaceDown
+                    , showEnhancement = True
+                    , compact = True
+                    , disabled = isDisabled
+                    , enhancementDisabled = playerState.enhancementsDisabled
+                    }
+                ]
+
+        Nothing ->
+            viewCardPlaceholder False
 
 
 {-| View hand results (shown briefly after hands are played)
