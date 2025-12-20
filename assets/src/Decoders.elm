@@ -32,6 +32,9 @@ playerViewByType viewType =
         "game_over" ->
             D.map GameOverView gameOverDataDecoder
 
+        "reconnect_needed" ->
+            D.succeed ReconnectNeededView
+
         _ ->
             D.fail ("Unknown view type: " ++ viewType)
 
@@ -549,3 +552,12 @@ dictDecoder valueDecoder =
 andMap : Decoder a -> Decoder (a -> b) -> Decoder b
 andMap =
     D.map2 (|>)
+
+
+{-| Decoder for disconnected player info (from controller flags)
+-}
+disconnectedPlayerDecoder : Decoder DisconnectedPlayer
+disconnectedPlayerDecoder =
+    D.map2 DisconnectedPlayer
+        (D.field "id" D.string)
+        (D.field "name" D.string)

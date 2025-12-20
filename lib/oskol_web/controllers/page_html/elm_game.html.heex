@@ -41,6 +41,7 @@
       id="elm-game-app"
       data-game-id={@game_id}
       data-player-id={if @player_id, do: @player_id, else: ""}
+      data-disconnected-players={Jason.encode!(@disconnected_players)}
     >
     </div>
   </body>

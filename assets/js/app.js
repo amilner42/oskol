@@ -148,34 +148,102 @@ if (elmGameContainer) {
   const gameId = elmGameContainer.dataset.gameId;
   const playerId = elmGameContainer.dataset.playerId || null;
 
+  // Parse disconnected players from server
+  let disconnectedPlayers = [];
+  try {
+    disconnectedPlayers = JSON.parse(elmGameContainer.dataset.disconnectedPlayers || "[]");
+  } catch (e) {
+    console.error("Failed to parse disconnected players:", e);
+  }
+
   const gameApp = Elm.Main.init({
     node: elmGameContainer,
     flags: {
       gameId: gameId,
-      playerId: playerId
+      playerId: playerId,
+      disconnectedPlayers: disconnectedPlayers
     }
   });
 
-  // Setup Phoenix Socket for game
-  const gameSocket = new Socket("/socket", {});
+  // Setup Phoenix Socket for game with reconnection
+  const gameSocket = new Socket("/socket", {
+    reconnectAfterMs: (tries) => {
+      // Exponential backoff: 1s, 2s, 4s, 8s, max 10s
+      return Math.min(1000 * Math.pow(2, tries - 1), 10000);
+    }
+  });
+
+  // Track connection status
+  gameSocket.onOpen(() => {
+    console.log("Socket connected");
+    if (gameApp.ports.receiveFromChannel) {
+      gameApp.ports.receiveFromChannel.send({
+        type: "connection_status",
+        status: "connected"
+      });
+    }
+  });
+
+  gameSocket.onClose(() => {
+    console.log("Socket disconnected");
+    if (gameApp.ports.receiveFromChannel) {
+      gameApp.ports.receiveFromChannel.send({
+        type: "connection_status",
+        status: "disconnected"
+      });
+    }
+  });
+
+  gameSocket.onError(() => {
+    console.log("Socket error");
+    if (gameApp.ports.receiveFromChannel) {
+      gameApp.ports.receiveFromChannel.send({
+        type: "connection_status",
+        status: "disconnected"
+      });
+    }
+  });
+
   gameSocket.connect();
 
   // Join the game channel
-  const gameChannel = gameSocket.channel(`game:${gameId}`, {
+  let gameChannel = gameSocket.channel(`game:${gameId}`, {
     player_id: playerId
   });
 
+  // Function to handle successful channel join
+  function handleChannelJoin(resp) {
+    console.log("Joined game channel successfully", resp);
+    if (gameApp.ports.receiveFromChannel) {
+      gameApp.ports.receiveFromChannel.send({
+        type: "initial_state",
+        game_state: resp.game_state,
+        connections: resp.connections || []
+      });
+    }
+  }
+
+  // Function to rejoin channel (used after reconnection)
+  function rejoinChannel() {
+    if (gameChannel.state === "joined") {
+      return; // Already joined
+    }
+
+    gameChannel.join()
+      .receive("ok", handleChannelJoin)
+      .receive("error", resp => {
+        console.error("Unable to rejoin game channel", resp);
+        if (gameApp.ports.receiveFromChannel) {
+          gameApp.ports.receiveFromChannel.send({
+            type: "error",
+            message: resp.reason || "Failed to rejoin game"
+          });
+        }
+      });
+  }
+
   gameChannel.join()
-    .receive("ok", resp => {
-      console.log("Joined game channel successfully", resp);
-      // Send initial game state to Elm
-      if (gameApp.ports.receiveFromChannel) {
-        gameApp.ports.receiveFromChannel.send({
-          type: "initial_state",
-          game_state: resp.game_state
-        });
-      }
-    })
+    .receive("ok", handleChannelJoin)
     .receive("error", resp => {
       console.error("Unable to join game channel", resp);
       if (gameApp.ports.receiveFromChannel) {
@@ -186,13 +254,24 @@ if (elmGameContainer) {
       }
     });
 
+  // Handle channel close - attempt to rejoin
+  gameChannel.onClose(() => {
+    console.log("Channel closed, will attempt to rejoin when socket reconnects");
+  });
+
+  // Handle channel errors
+  gameChannel.onError(() => {
+    console.log("Channel error");
+  });
+
   // Listen for game state updates from server
   gameChannel.on("game_state_updated", (payload) => {
     console.log("Game state updated:", payload);
     if (gameApp.ports.receiveFromChannel) {
       gameApp.ports.receiveFromChannel.send({
         type: "game_state_updated",
-        game_state: payload.game_state
+        game_state: payload.game_state,
+        connections: payload.connections || []
       });
     }
   });
@@ -217,18 +296,43 @@ if (elmGameContainer) {
       // Remove 'action' from payload, send only the params
       const {action: _, ...payload} = data;
 
-      // Send the action to the channel
-      gameChannel.push(action, payload)
-        .receive("ok", (msg) => console.log("Action success:", msg))
-        .receive("error", (msg) => {
-          console.error("Action error:", msg);
-          if (gameApp.ports.receiveFromChannel) {
-            gameApp.ports.receiveFromChannel.send({
-              type: "error",
-              message: msg.reason || "Action failed"
-            });
-          }
-        });
+      // Handle reconnect_as specially - it returns the new player state
+      if (action === "reconnect_as") {
+        gameChannel.push(action, payload)
+          .receive("ok", (resp) => {
+            console.log("Reconnect success:", resp);
+            if (gameApp.ports.receiveFromChannel) {
+              gameApp.ports.receiveFromChannel.send({
+                type: "reconnected",
+                player_id: resp.player_id,
+                game_state: resp.game_state,
+                connections: resp.connections || []
+              });
+            }
+          })
+          .receive("error", (msg) => {
+            console.error("Reconnect error:", msg);
+            if (gameApp.ports.receiveFromChannel) {
+              gameApp.ports.receiveFromChannel.send({
+                type: "error",
+                message: msg.reason || "Failed to reconnect"
+              });
+            }
+          });
+      } else {
+        // Normal action handling
+        gameChannel.push(action, payload)
+          .receive("ok", (msg) => console.log("Action success:", msg))
+          .receive("error", (msg) => {
+            console.error("Action error:", msg);
+            if (gameApp.ports.receiveFromChannel) {
+              gameApp.ports.receiveFromChannel.send({
+                type: "error",
+                message: msg.reason || "Action failed"
+              });
+            }
+          });
+      }
     });
   }
 
@@ -239,6 +343,21 @@ if (elmGameContainer) {
       window.location.href = url;
     });
   }
+
+  // Handle browser online/offline events
+  window.addEventListener("online", () => {
+    console.log("Browser online - socket should auto-reconnect");
+  });
+
+  window.addEventListener("offline", () => {
+    console.log("Browser offline");
+    if (gameApp.ports.receiveFromChannel) {
+      gameApp.ports.receiveFromChannel.send({
+        type: "connection_status",
+        status: "disconnected"
+      });
+    }
+  });
 
   // Expose for debugging
   window.gameApp = gameApp;

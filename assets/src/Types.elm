@@ -33,6 +33,24 @@ type PlayerView
     = PlayingView PlayingData
     | ShopView ShopData
     | GameOverView GameOverData
+    | ReconnectNeededView -- Player needs to select which player to reconnect as
+
+
+{-| Connection info for a player (from server)
+-}
+type alias ConnectionInfo =
+    { id : String
+    , name : String
+    , connected : Bool
+    }
+
+
+{-| Disconnected player info (passed from controller)
+-}
+type alias DisconnectedPlayer =
+    { id : String
+    , name : String
+    }
 
 
 {-| Playing state during a round
@@ -533,6 +551,8 @@ type alias Model =
     , viewingResults : Bool -- Whether we're viewing hand results
     , shopCountdown : Maybe Int -- Countdown timer for shop completion (seconds remaining)
     , currentAnimationData : Maybe HandResultAnimation -- Current animation data from server
+    , connections : List ConnectionInfo -- Active connection status for all players
+    , disconnectedPlayers : List DisconnectedPlayer -- Players who are disconnected (passed from controller)
     }
 
 
@@ -565,6 +585,10 @@ type Msg
     | RematchGameReady String
     | ChannelError String
     | ConnectionStatusChanged ConnectionStatus
+    | ConnectionsUpdated (List ConnectionInfo)
+    | Reconnected String PlayerView -- player_id, new game state after reconnection
+      -- Reconnection actions
+    | ReconnectAs String -- Reconnect as a specific player name
       -- User actions
     | ToggleCardSelection String
     | ToggleCardSort

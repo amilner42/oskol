@@ -123,6 +123,16 @@ encodeClearAnimation =
         ]
 
 
+{-| Encode a reconnect as action
+-}
+encodeReconnectAs : String -> E.Value
+encodeReconnectAs playerName =
+    E.object
+        [ ( "action", E.string "reconnect_as" )
+        , ( "player_name", E.string playerName )
+        ]
+
+
 
 -- HELPER ENCODERS
 

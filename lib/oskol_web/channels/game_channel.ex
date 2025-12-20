@@ -52,7 +52,10 @@ defmodule OskolWeb.GameChannel do
           GleamEngine.get_player_view(game_server_state.game_state, player_id)
         end
 
-      {:ok, %{game_state: game_state_json}, socket}
+      # Include connection status for reconnection tracking
+      connections_status = build_connections_status(game_server_state.connections)
+
+      {:ok, %{game_state: game_state_json, connections: connections_status}, socket}
     catch
       :exit, _ ->
         {:error, %{reason: "Game not found"}}
@@ -60,8 +63,72 @@ defmodule OskolWeb.GameChannel do
   end
 
   @impl true
-  def join("game:" <> _game_id, _params, _socket) do
-    {:error, %{reason: "player_id required"}}
+  def join("game:" <> game_id, _params, socket) do
+    # Allow joining without player_id for reconnection selection
+    try do
+      Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+
+      game_server_state = GameServer.get_state(game_id)
+
+      socket =
+        socket
+        |> assign(:game_id, game_id)
+        |> assign(:player_id, nil)
+
+      # Return lobby/game state and connection status for reconnect UI
+      game_state_json =
+        if game_server_state.game_state == nil do
+          %{
+            type: "lobby",
+            connections: game_server_state.connections,
+            lobby_status: Atom.to_string(game_server_state.lobby_status)
+          }
+        else
+          # Return a spectator view (no player-specific data)
+          %{type: "reconnect_needed"}
+        end
+
+      connections_status = build_connections_status(game_server_state.connections)
+
+      {:ok, %{game_state: game_state_json, connections: connections_status}, socket}
+    catch
+      :exit, _ ->
+        {:error, %{reason: "Game not found"}}
+    end
+  end
+
+  # Handle reconnection - client selects which player to reconnect as
+  @impl true
+  def handle_in("reconnect_as", %{"player_name" => player_name}, socket) do
+    game_id = socket.assigns.game_id
+
+    case GameServer.rejoin_game(game_id, player_name, self()) do
+      {:ok, player_id, game_server_state} ->
+        # Update socket with the player_id
+        socket = assign(socket, :player_id, player_id)
+
+        # Get player-specific game state
+        game_state_json =
+          if game_server_state.game_state == nil do
+            %{
+              type: "lobby",
+              connections: game_server_state.connections,
+              lobby_status: Atom.to_string(game_server_state.lobby_status)
+            }
+          else
+            GleamEngine.get_player_view(game_server_state.game_state, player_id)
+          end
+
+        connections_status = build_connections_status(game_server_state.connections)
+
+        {:reply, {:ok, %{player_id: player_id, game_state: game_state_json, connections: connections_status}}, socket}
+
+      {:error, :player_already_connected} ->
+        {:reply, {:error, %{reason: "Player already connected"}}, socket}
+
+      {:error, reason} ->
+        {:reply, {:error, %{reason: inspect(reason)}}, socket}
+    end
   end
 
   # Handle player actions
@@ -204,7 +271,10 @@ defmodule OskolWeb.GameChannel do
         GleamEngine.get_player_view(game_server_state.game_state, player_id)
       end
 
-    push(socket, "game_state_updated", %{game_state: game_state_json})
+    # Include connection status for reconnection tracking
+    connections_status = build_connections_status(game_server_state.connections)
+
+    push(socket, "game_state_updated", %{game_state: game_state_json, connections: connections_status})
 
     # Check if both players are ready for rematch
     if game_server_state.game_state != nil do
@@ -333,4 +403,12 @@ defmodule OskolWeb.GameChannel do
   defp config_to_format(5, 4, 3, 2), do: :extended
   # Default to standard if not a standard format
   defp config_to_format(_, _, _, _), do: :standard
+
+  # Build connection status map for Elm
+  defp build_connections_status(connections) do
+    connections
+    |> Enum.map(fn {id, conn} ->
+      %{id: id, name: conn.name, connected: conn.connected}
+    end)
+  end
 end

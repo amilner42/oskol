@@ -50,6 +50,7 @@ port navigateToUrl : String -> Cmd msg
 type alias Flags =
     { gameId : String
     , playerId : Maybe String
+    , disconnectedPlayers : List DisconnectedPlayer
     }
 
 
@@ -76,6 +77,8 @@ init flags =
       , viewingResults = False
       , shopCountdown = Nothing
       , currentAnimationData = Nothing
+      , connections = []
+      , disconnectedPlayers = flags.disconnectedPlayers
       }
     , Cmd.none
     )
@@ -521,6 +524,37 @@ update msg model =
         ConnectionStatusChanged status ->
             ( { model | connectionStatus = status }
             , Cmd.none
+            )
+
+        ConnectionsUpdated connections ->
+            ( { model | connections = connections }
+            , Cmd.none
+            )
+
+        Reconnected playerId playerView ->
+            -- Successfully reconnected as a player
+            let
+                newShopUIState =
+                    case playerView of
+                        ShopView shopData ->
+                            Just (deriveShopUIState playerId shopData.shopState)
+
+                        _ ->
+                            Nothing
+            in
+            ( { model
+                | playerId = Just playerId
+                , gameState = Success playerView
+                , shopUIState = newShopUIState
+                , connectionStatus = Connected
+              }
+            , Cmd.none
+            )
+
+        ReconnectAs playerName ->
+            -- Send reconnect request to server
+            ( model
+            , sendToChannel (encodeReconnectAs playerName)
             )
 
         -- Card selection
@@ -986,10 +1020,12 @@ handleChannelMessage value =
     case D.decodeValue channelMessageDecoder value of
         Ok channelMsg ->
             case channelMsg of
-                InitialGameState gameState ->
+                InitialGameState gameState connections ->
+                    -- Handle initial state - first update connections, then game state
+                    -- For now, just return the game state (connections handled via separate msg would be better)
                     ReceivedGameState gameState
 
-                GameUpdate gameState ->
+                GameUpdate gameState connections ->
                     GameStateUpdated gameState
 
                 StatusUpdate status ->
@@ -997,6 +1033,9 @@ handleChannelMessage value =
 
                 RematchReady gameId ->
                     RematchGameReady gameId
+
+                ReconnectedMsg playerId gameState connections ->
+                    Reconnected playerId gameState
 
                 Error err ->
                     ChannelError err
@@ -1008,10 +1047,11 @@ handleChannelMessage value =
 {-| Decoder for channel messages
 -}
 type ChannelMessage
-    = InitialGameState PlayerView
-    | GameUpdate PlayerView
+    = InitialGameState PlayerView (List ConnectionInfo)
+    | GameUpdate PlayerView (List ConnectionInfo)
     | StatusUpdate ConnectionStatus
     | RematchReady String
+    | ReconnectedMsg String PlayerView (List ConnectionInfo)
     | Error String
 
 
@@ -1022,10 +1062,20 @@ channelMessageDecoder =
             (\msgType ->
                 case msgType of
                     "initial_state" ->
-                        D.map InitialGameState (D.field "game_state" playerViewDecoder)
+                        D.map2 InitialGameState
+                            (D.field "game_state" playerViewDecoder)
+                            (D.field "connections" (D.list connectionInfoDecoder)
+                                |> D.maybe
+                                |> D.map (Maybe.withDefault [])
+                            )
 
                     "game_state_updated" ->
-                        D.map GameUpdate (D.field "game_state" playerViewDecoder)
+                        D.map2 GameUpdate
+                            (D.field "game_state" playerViewDecoder)
+                            (D.field "connections" (D.list connectionInfoDecoder)
+                                |> D.maybe
+                                |> D.map (Maybe.withDefault [])
+                            )
 
                     "connection_status" ->
                         D.map StatusUpdate (D.field "status" connectionStatusDecoder)
@@ -1033,12 +1083,31 @@ channelMessageDecoder =
                     "rematch_ready" ->
                         D.map RematchReady (D.field "game_id" D.string)
 
+                    "reconnected" ->
+                        D.map3 ReconnectedMsg
+                            (D.field "player_id" D.string)
+                            (D.field "game_state" playerViewDecoder)
+                            (D.field "connections" (D.list connectionInfoDecoder)
+                                |> D.maybe
+                                |> D.map (Maybe.withDefault [])
+                            )
+
                     "error" ->
                         D.map Error (D.field "message" D.string)
 
                     _ ->
                         D.fail ("Unknown message type: " ++ msgType)
             )
+
+
+{-| Decoder for connection info
+-}
+connectionInfoDecoder : D.Decoder ConnectionInfo
+connectionInfoDecoder =
+    D.map3 ConnectionInfo
+        (D.field "id" D.string)
+        (D.field "name" D.string)
+        (D.field "connected" D.bool)
 
 
 connectionStatusDecoder : D.Decoder ConnectionStatus

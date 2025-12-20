@@ -67,6 +67,10 @@ viewPlayerView model playerView =
             -- Handle shop view directly without GameState conversion
             viewShop model shopData
 
+        ReconnectNeededView ->
+            -- Show reconnection UI
+            viewReconnect model
+
         _ ->
             let
                 -- Build fake GameState from PlayerView using adapter
@@ -84,6 +88,75 @@ viewPlayerView model playerView =
             in
             -- Call the ORIGINAL viewGameState with fake GameState
             viewGameState model gameState pendingAnimation
+
+
+{-| View the reconnection screen when player identity is unknown
+-}
+viewReconnect : Model -> Html Msg
+viewReconnect model =
+    let
+        -- Get disconnected players from connections or initial flags
+        disconnectedPlayers =
+            if List.isEmpty model.disconnectedPlayers then
+                -- Fall back to connections list from server
+                model.connections
+                    |> List.filter (\c -> not c.connected)
+                    |> List.map (\c -> { id = c.id, name = c.name })
+
+            else
+                model.disconnectedPlayers
+    in
+    div [ class "min-h-screen bg-gradient-to-br from-base-300 via-base-200 to-base-100 flex flex-col items-center justify-center p-6" ]
+        [ div [ class "max-w-md w-full text-center" ]
+            [ -- Logo/title
+              h1 [ class "text-4xl font-bold text-white mb-2" ] [ text "Oskol" ]
+            , p [ class "text-base-content/50 text-sm tracking-widest uppercase mb-8" ]
+                [ text "Poker warfare" ]
+
+            -- Reconnection message
+            , div [ class "mb-6" ]
+                [ p [ class "text-base-content/60 text-lg" ]
+                    [ text "Game in progress" ]
+                ]
+
+            -- Reconnect buttons
+            , if List.isEmpty disconnectedPlayers then
+                div [ class "text-center" ]
+                    [ p [ class "text-base-content/50 mb-4" ]
+                        [ text "All players are connected." ]
+                    , p [ class "text-base-content/40 text-sm" ]
+                        [ text "Waiting for a player slot to become available..." ]
+                    ]
+
+              else
+                div [ class "space-y-3" ]
+                    (List.map viewReconnectButton disconnectedPlayers)
+
+            -- Connection status indicator
+            , div [ class "mt-8 text-base-content/40 text-sm" ]
+                [ case model.connectionStatus of
+                    Connected ->
+                        text "Connected to server"
+
+                    Connecting ->
+                        text "Connecting..."
+
+                    Disconnected ->
+                        text "Disconnected - attempting to reconnect..."
+                ]
+            ]
+        ]
+
+
+{-| Button to reconnect as a specific player
+-}
+viewReconnectButton : DisconnectedPlayer -> Html Msg
+viewReconnectButton player =
+    button
+        [ class "w-full px-8 py-4 rounded-xl font-bold text-lg text-white transition-all shadow-xl overflow-hidden hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600"
+        , onClick (ReconnectAs player.name)
+        ]
+        [ text ("Reconnect as " ++ player.name) ]
 
 
 {-| View the active game state with LiveView-style layout (ORIGINAL)
