@@ -3501,9 +3501,15 @@ viewMobilePreviewModal uiState shopCountdown skillTree =
                     False
     in
     if hasContent then
-        div [ class "lg:hidden fixed inset-0 z-50 bg-black/50" ]
+        div
+            [ class "lg:hidden fixed inset-0 z-50 bg-black/50"
+            , onClick ClearCardPreview
+            ]
             [ div [ class "absolute inset-x-0 bottom-0 flex items-end" ]
-                [ div [ class "relative w-full max-h-[85vh] bg-base-100 rounded-t-2xl shadow-2xl overflow-hidden animate-slide-up" ]
+                [ div
+                    [ class "relative w-full max-h-[85vh] bg-base-100 rounded-t-2xl shadow-2xl overflow-hidden animate-slide-up"
+                    , stopPropagationOn "click" (D.succeed ( NoOp, True ))
+                    ]
                     [ -- Content (scrollable)
                       div [ class "overflow-y-auto max-h-[85vh]" ]
                         [ viewPreviewPanelByState uiState shopCountdown skillTree ]
@@ -3668,19 +3674,9 @@ viewShopCardPreview data skillTree =
                         [ text (shopCardDescription data.card) ]
                     ]
             ]
-        , -- Action Buttons (always inline with Cancel on mobile, except destroy mode)
+        , -- Action Buttons
           div [ class "pt-8 flex justify-center gap-3 flex-shrink-0" ]
-            [ -- Cancel button (mobile only, not in destroy mode)
-              if not data.isDestroyMode then
-                button
-                    [ onClick ClearCardPreview
-                    , class "lg:hidden px-6 py-3 rounded-full font-medium transition-all text-base-content bg-base-300/50 hover:bg-base-300"
-                    ]
-                    [ text "Cancel" ]
-
-              else
-                text ""
-            , -- Primary action button
+            [ -- Primary action button
               if data.isDestroyMode then
                 button
                     [ onClick (DestroyShopCard data.cardId)
