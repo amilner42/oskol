@@ -59,7 +59,9 @@ defmodule Oskol.MixProject do
   end
 
   # Specifies which paths to compile per environment.
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  # Elixir test support lives outside test/ so the Gleam compiler does not
+  # try to build it as part of the Gleam package.
+  defp elixirc_paths(:test), do: ["lib", "test_support"]
   defp elixirc_paths(_), do: ["lib"]
 
   # Specifies your project dependencies.

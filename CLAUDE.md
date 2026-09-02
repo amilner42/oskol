@@ -105,7 +105,7 @@ assets/src/View/Game.elm         Tilt's bespoke UI
 ```bash
 mix deps.get          # Elixir + Gleam deps
 mix compile           # compiles Gleam (via mix_gleam) and Elixir
-gleam test            # Gleam unit + conformance tests (57 tests, seeded playouts)
+bin/test-gleam        # Gleam unit + conformance tests (57 tests, seeded playouts)
 mix test              # Elixir room, channel, LiveView tests
 mix assets.build      # Elm (via esbuild plugin) + Tailwind
 cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # Elm typecheck
@@ -114,8 +114,13 @@ node playwright/test-tilt-smoke/test.js   # browser smoke test (server must be r
 ```
 
 Notes:
-- `gleam build`/`gleam test` leave a `gleam@@compile.erl` escript in the build
-  dir; `mix compile` removes it (see `Mix.Tasks.Compile.GleamClean` in mix.exs).
+- mix and the gleam CLI share `build/`. `mix compile` removes the
+  `gleam@@compile.erl` escript gleam leaves behind (see
+  `Mix.Tasks.Compile.GleamClean` in mix.exs), and `bin/test-gleam` clears our
+  package's gleam build output so the gleam CLI recompiles it with beams after
+  mix has touched it. Use `bin/test-gleam`, not bare `gleam test`.
+- Elixir test support lives in `test_support/`, not `test/support/`, because
+  gleam compiles any `.ex` it finds under `test/`.
 - `mix run path/to/script.exs` trips over positional args in this setup; use
   `mix run -e 'Code.eval_file("path")'`.
 - In this environment the Elm package cache is populated by git clone
