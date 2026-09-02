@@ -375,80 +375,140 @@
 
 
 
-/* ---------- Landing / lobby design system ---------- */
+/* ---------- Multicade x notebook design system ----------
+   Light and airy like a fresh notebook page, with 8-bit arcade bones:
+   pixel headings, hard-shadow borders, marquees, scanlines. */
 
-/* The table: dark slate with a soft spotlight, shared by every page */
-.felt {
-  background-color: #0e1117;
+:root {
+  --paper: #fbf9f3;
+  --paper-2: #f3efe4;
+  --grid: #dde5f3;
+  --ink: #23243a;
+  --pencil: #6b6b78;
+  --pen: #2f5fd0;
+  --red: #e3453b;
+  --highlighter: #ffd93d;
+  --marker-green: #62c370;
+  --marker-pink: #f27ba1;
+  --sky: #6ec1ff;
+}
+
+.paper {
+  background-color: var(--paper);
   background-image:
-    radial-gradient(ellipse 70% 50% at 50% -10%, rgba(56, 189, 248, 0.14), transparent 60%),
-    radial-gradient(ellipse 60% 40% at 90% 100%, rgba(244, 63, 94, 0.08), transparent 60%),
-    radial-gradient(ellipse 60% 40% at 0% 100%, rgba(245, 158, 11, 0.08), transparent 60%);
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -1px -1px;
+  color: var(--ink);
 }
 
-/* Entrance animation for panels and posters */
-@keyframes rise-in {
-  0% { opacity: 0; transform: translateY(14px); }
-  100% { opacity: 1; transform: translateY(0); }
+.pixel {
+  font-family: "Press Start 2P", "VT323", ui-monospace, "Courier New", monospace;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
 }
-.rise-in { animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.rise-in-1 { animation-delay: 0.05s; }
-.rise-in-2 { animation-delay: 0.12s; }
-.rise-in-3 { animation-delay: 0.19s; }
 
-/* Game posters carry their accent as a CSS variable */
-.poster {
-  --accent: #38bdf8;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background:
-    linear-gradient(180deg, color-mix(in oklab, var(--accent) 14%, transparent), transparent 55%),
-    rgba(255, 255, 255, 0.04);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s, box-shadow 0.25s;
+/* Hard, blocky borders with an offset shadow */
+.pix {
+  border: 3px solid var(--ink);
+  box-shadow: 6px 6px 0 0 var(--ink);
+  background: #fff;
 }
-.poster:hover, .poster:focus-visible {
-  transform: translateY(-4px);
-  border-color: color-mix(in oklab, var(--accent) 60%, transparent);
-  box-shadow: 0 20px 50px -20px color-mix(in oklab, var(--accent) 60%, transparent);
-  outline: none;
+.pix-sm {
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 0 var(--ink);
+  background: #fff;
 }
-.poster .poster-art { transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
-.poster:hover .poster-art { transform: scale(1.04) rotate(-1deg); }
-.accent-text { color: var(--accent); }
-.accent-bg { background-color: var(--accent); }
-.accent-ring { border-color: var(--accent); }
+.pix-flat {
+  border: 3px solid var(--ink);
+  background: #fff;
+}
 
-/* Selection tiles (formats) */
+/* Cabinet: marquee on top, screen, then a control panel */
+.cabinet { --accent: var(--pen); display: flex; flex-direction: column; transition: transform 0.15s; }
+.cabinet:hover, .cabinet:focus-visible { transform: translate(-2px, -2px); box-shadow: 8px 8px 0 0 var(--ink); outline: none; }
+.cabinet .marquee {
+  background: var(--accent);
+  color: #fff;
+  border-bottom: 3px solid var(--ink);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+}
+.cabinet .screen {
+  position: relative;
+  background: var(--paper-2);
+  border-bottom: 3px solid var(--ink);
+  overflow: hidden;
+}
+.screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(35, 36, 58, 0.06) 0 2px, transparent 2px 4px);
+}
+.cabinet:hover .screen svg { transform: translateY(-2px); }
+.screen svg { transition: transform 0.2s; image-rendering: pixelated; }
+
+.cabinet .cursor { opacity: 0; }
+.cabinet:hover .cursor, .cabinet:focus-visible .cursor { opacity: 1; animation: blink 0.8s steps(1) infinite; }
+
+@keyframes blink { 50% { opacity: 0; } }
+.blink { animation: blink 1.1s steps(1) infinite; }
+
+/* Arcade buttons */
+.btn-arcade {
+  border: 3px solid var(--ink);
+  box-shadow: 0 5px 0 0 var(--ink);
+  background: var(--red);
+  color: #fff;
+  transition: transform 0.08s, box-shadow 0.08s, filter 0.15s;
+}
+.btn-arcade.pen { background: var(--pen); }
+.btn-arcade.green { background: var(--marker-green); color: var(--ink); }
+.btn-arcade.yellow { background: var(--highlighter); color: var(--ink); }
+.btn-arcade:hover:not(:disabled) { filter: brightness(1.06); }
+.btn-arcade:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 0 var(--ink); }
+.btn-arcade:disabled { background: #d9d9dd; color: #8a8a94; box-shadow: 0 5px 0 0 #a9a9b2; border-color: #a9a9b2; cursor: not-allowed; }
+
+/* Option tiles */
 .tile {
-  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+  border: 3px solid var(--ink);
+  background: #fff;
+  transition: transform 0.1s, box-shadow 0.1s, background 0.15s;
 }
-.tile:hover { transform: translateY(-2px); }
-.tile-mine { border-color: oklch(68% 0.16 230); box-shadow: 0 0 0 1px oklch(68% 0.16 230); }
-.tile-theirs { border-color: oklch(70% 0.18 55); border-style: dashed; }
-.tile-both {
-  border-color: oklch(75% 0.16 150);
-  box-shadow: 0 0 0 1px oklch(75% 0.16 150), 0 0 24px -6px oklch(75% 0.16 150);
-}
+.tile:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 0 var(--ink); }
+.tile-mine { background: #e8effc; box-shadow: 4px 4px 0 0 var(--pen); border-color: var(--pen); }
+.tile-theirs { background: #fff3f2; border-color: var(--red); border-style: dashed; }
+.tile-both { background: #eaf7ec; box-shadow: 4px 4px 0 0 var(--marker-green); border-color: var(--marker-green); }
 
-/* Primary action */
-.cta {
-  background: linear-gradient(135deg, oklch(62% 0.2 255), oklch(58% 0.22 270));
-  transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
-  box-shadow: 0 10px 30px -12px oklch(60% 0.22 265);
-}
-.cta:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
-.cta:active:not(:disabled) { transform: translateY(0) scale(0.99); }
-.cta:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+/* Highlighter underline for the headline */
+.hl { background: linear-gradient(transparent 55%, var(--highlighter) 55%, var(--highlighter) 92%, transparent 92%); }
 
-/* Wordmark letters */
+/* Wordmark tiles */
 .mark-letter {
   display: inline-grid;
   place-items: center;
   width: 2rem;
-  height: 2.6rem;
-  border-radius: 0.4rem;
+  height: 2rem;
   background: #fff;
-  color: #111827;
-  font-weight: 800;
-  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.8);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 0 var(--ink);
+  font-size: 0.75rem;
 }
-.mark-letter.red { color: #e11d48; }
+.mark-letter.red { color: var(--red); }
+
+.text-player { color: var(--pen); }
+.text-opponent { color: var(--red); }
+.border-player { border-color: var(--pen); }
+.border-opponent { border-color: var(--red); }
+.bg-player { background-color: var(--pen); }
+.bg-opponent { background-color: var(--red); }
+
+.name-field {
+  border: 3px solid var(--ink);
+  background: #fff;
+  box-shadow: inset 4px 4px 0 0 var(--paper-2);
+}
+.name-field:focus { outline: none; border-color: var(--pen); box-shadow: 4px 4px 0 0 var(--pen); }

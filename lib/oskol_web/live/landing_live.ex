@@ -413,7 +413,7 @@ defmodule OskolWeb.LandingLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="felt min-h-screen-safe text-gray-100 flex flex-col">
+    <div class="paper min-h-screen-safe flex flex-col">
       <.topbar page={@page} />
       <main class="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pb-16">
         <%= if @page == :library do %>
@@ -436,8 +436,11 @@ defmodule OskolWeb.LandingLive do
           />
         <% end %>
       </main>
-      <footer class="text-center text-xs text-gray-500 pb-6 px-4">
-        No accounts. A game stays open for an hour after the last move.
+      <footer
+        class="pixel text-[9px] sm:text-[10px] text-center pb-6 px-4"
+        style="color: var(--pencil)"
+      >
+        NO ACCOUNTS · A GAME STAYS OPEN FOR AN HOUR AFTER THE LAST MOVE
       </footer>
     </div>
     """
@@ -450,18 +453,18 @@ defmodule OskolWeb.LandingLive do
   defp topbar(assigns) do
     ~H"""
     <header class="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-5 pb-2 flex items-center justify-between">
-      <.link patch={~p"/"} class="flex items-center gap-1.5" aria-label="Oskol home">
+      <.link patch={~p"/"} class="flex items-center gap-1.5 pixel" aria-label="Oskol home">
         <span class="mark-letter">O</span>
         <span class="mark-letter red">S</span>
         <span class="mark-letter">K</span>
         <span class="mark-letter red">O</span>
         <span class="mark-letter">L</span>
       </.link>
-      <span class="text-xs sm:text-sm text-gray-400 tracking-wide">
+      <span class="pixel text-[9px] sm:text-[10px]" style="color: var(--pencil)">
         <%= if @page == :library do %>
-          Games for two
+          2 PLAYERS · NO SIGNUP
         <% else %>
-          <.link patch={~p"/"} class="hover:text-white transition-colors">← All games</.link>
+          <.link patch={~p"/"} class="hover:text-[color:var(--pen)]">◀ ALL GAMES</.link>
         <% end %>
       </span>
     </header>
@@ -474,31 +477,35 @@ defmodule OskolWeb.LandingLive do
 
   defp library(assigns) do
     ~H"""
-    <section class="pt-10 sm:pt-16 pb-8 text-center rise-in">
-      <h1 class="text-4xl sm:text-6xl font-black tracking-tight text-white">
-        Send a link.<br class="sm:hidden" /> Play in seconds.
+    <section class="pt-8 sm:pt-14 pb-8 text-center">
+      <p class="pixel text-[10px] sm:text-xs blink" style="color: var(--red)">▶ INSERT COIN ◀</p>
+      <h1 class="pixel mt-4 text-2xl sm:text-4xl leading-relaxed" style="color: var(--ink)">
+        SEND A LINK.<br />
+        <span class="hl px-1">PLAY IN SECONDS.</span>
       </h1>
-      <p class="mt-4 text-gray-400 text-base sm:text-lg max-w-xl mx-auto">
-        Two-player games with nothing to install and no signup. Pick a game, share the invite, and your opponent is in.
+      <p class="mt-5 text-base sm:text-lg max-w-xl mx-auto" style="color: var(--pencil)">
+        Two-player games with nothing to install and no signup. Pick a cabinet, share the invite, and your opponent is in.
       </p>
     </section>
 
-    <section id="game-library" class="grid gap-4 sm:gap-6 sm:grid-cols-2">
-      <.poster :for={{game, index} <- Enum.with_index(@games)} game={game} index={index} />
+    <p class="pixel text-[10px] sm:text-xs mb-3 text-center" style="color: var(--ink)">
+      SELECT YOUR GAME
+    </p>
+    <section id="game-library" class="grid gap-6 sm:gap-8 sm:grid-cols-2">
+      <.cabinet :for={game <- @games} game={game} />
     </section>
 
-    <section class="mt-14 grid gap-4 sm:grid-cols-3 text-sm rise-in rise-in-3">
-      <.step n="1" title="Pick a game">Every game has its own page and link.</.step>
-      <.step n="2" title="Share the invite">Your opponent opens it, types a name, done.</.step>
-      <.step n="3" title="Agree and play">Choose a mode and an optional clock, then start.</.step>
+    <section class="mt-14 grid gap-4 sm:grid-cols-3">
+      <.step n="1" title="PICK A GAME">Every game has its own page and link.</.step>
+      <.step n="2" title="SHARE THE INVITE">Your opponent opens it, types a name, done.</.step>
+      <.step n="3" title="PRESS START">Agree on a mode and an optional clock, then play.</.step>
     </section>
     """
   end
 
   attr :game, :map, required: true
-  attr :index, :integer, default: 0
 
-  defp poster(assigns) do
+  defp cabinet(assigns) do
     assigns =
       assign(assigns,
         accent: GameArt.accent(assigns.game["slug"]),
@@ -509,21 +516,29 @@ defmodule OskolWeb.LandingLive do
     <.link
       patch={~p"/#{@game["slug"]}"}
       id={"game-#{@game["slug"]}"}
-      class={["poster rise-in block rounded-3xl p-5 sm:p-6", "rise-in-#{min(@index + 1, 3)}"]}
+      class="cabinet pix block"
       style={"--accent: #{@accent}"}
     >
-      <div class="poster-art h-36 sm:h-44 flex items-center justify-center">
-        <GameArt.art slug={@game["slug"]} class="h-full w-auto max-w-full" />
+      <div class="marquee pixel text-xs sm:text-sm px-4 py-3 flex items-center justify-between">
+        <span class="uppercase">{@game["name"]}</span>
+        <span class="cursor">▶</span>
       </div>
-      <div class="mt-4 flex items-baseline justify-between gap-3">
-        <h2 class="text-2xl sm:text-3xl font-black text-white tracking-tight">{@game["name"]}</h2>
-        <span class="accent-text text-sm font-semibold whitespace-nowrap">Play →</span>
+      <div class="screen px-6 py-5 sm:py-6 flex items-center justify-center">
+        <GameArt.art slug={@game["slug"]} class="h-32 sm:h-40 w-auto" />
       </div>
-      <p class="mt-1 text-gray-300">{@game["tagline"]}</p>
-      <p class="mt-2 text-sm text-gray-500 leading-relaxed">{@game["description"]}</p>
-      <div class="mt-4 flex flex-wrap gap-1.5">
-        <.chip :for={name <- @format_names}>{name}</.chip>
-        <.chip>Optional clock</.chip>
+      <div class="px-4 sm:px-5 py-4">
+        <p class="font-semibold text-base sm:text-lg" style="color: var(--ink)">{@game["tagline"]}</p>
+        <p class="mt-1 text-sm leading-relaxed" style="color: var(--pencil)">
+          {@game["description"]}
+        </p>
+        <div class="mt-3 flex flex-wrap gap-1.5">
+          <.chip :for={name <- @format_names}>{name}</.chip>
+          <.chip>Optional clock</.chip>
+        </div>
+        <div class="mt-4 flex items-center justify-between">
+          <span class="pixel text-[9px]" style="color: var(--pencil)">1P VS 2P</span>
+          <span class="btn-arcade pixel text-[10px] px-4 py-2.5 rounded-full">PLAY</span>
+        </div>
       </div>
     </.link>
     """
@@ -535,13 +550,16 @@ defmodule OskolWeb.LandingLive do
 
   defp step(assigns) do
     ~H"""
-    <div class="rounded-2xl border border-white/8 bg-white/[0.03] p-4 flex gap-3">
-      <span class="shrink-0 w-7 h-7 rounded-full bg-white/10 text-white font-bold grid place-items-center text-xs">
+    <div class="pix-sm p-4 flex gap-3 items-start">
+      <span
+        class="pixel text-[10px] shrink-0 w-8 h-8 grid place-items-center"
+        style="background: var(--highlighter); border: 2px solid var(--ink)"
+      >
         {@n}
       </span>
       <div>
-        <div class="font-semibold text-white">{@title}</div>
-        <div class="text-gray-400 mt-0.5">{render_slot(@inner_block)}</div>
+        <div class="pixel text-[10px]" style="color: var(--ink)">{@title}</div>
+        <div class="text-sm mt-1.5" style="color: var(--pencil)">{render_slot(@inner_block)}</div>
       </div>
     </div>
     """
@@ -551,7 +569,10 @@ defmodule OskolWeb.LandingLive do
 
   defp chip(assigns) do
     ~H"""
-    <span class="text-[11px] uppercase tracking-wider text-gray-300 bg-white/8 border border-white/10 rounded-full px-2.5 py-1">
+    <span
+      class="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5"
+      style="border: 2px solid var(--ink); background: var(--paper-2); color: var(--ink)"
+    >
       {render_slot(@inner_block)}
     </span>
     """
@@ -578,28 +599,31 @@ defmodule OskolWeb.LandingLive do
 
     ~H"""
     <section
-      class="poster rounded-3xl mt-4 sm:mt-8 p-5 sm:p-8 grid gap-6 sm:grid-cols-[1fr_1.4fr] items-center rise-in"
+      class="cabinet pix mt-4 sm:mt-8"
       style={"--accent: #{@accent}; transform: none;"}
       id={"game-hero-#{@slug}"}
     >
-      <div class="h-40 sm:h-56 flex items-center justify-center">
-        <GameArt.art slug={@slug} class="h-full w-auto max-w-full" />
+      <div class="marquee pixel text-sm sm:text-base px-5 py-3 uppercase" id="game-title">
+        {@info["name"]}
       </div>
-      <div class="text-center sm:text-left">
-        <p class="accent-text text-xs font-semibold uppercase tracking-[0.2em]">{@info["tagline"]}</p>
-        <h1 class="mt-2 text-4xl sm:text-5xl font-black tracking-tight text-white" id="game-title">
-          {@info["name"]}
-        </h1>
-        <p class="mt-3 text-gray-300 leading-relaxed">{@info["description"]}</p>
+      <div class="screen grid sm:grid-cols-[auto_1fr] gap-4 sm:gap-8 items-center px-5 sm:px-8 py-5 sm:py-6">
+        <GameArt.art slug={@slug} class="h-28 sm:h-36 w-auto mx-auto" />
+        <div class="text-center sm:text-left">
+          <p class="pixel text-[10px]" style="color: var(--accent)">
+            {String.upcase(@info["tagline"])}
+          </p>
+          <p class="mt-2 leading-relaxed" style="color: var(--ink)">{@info["description"]}</p>
+        </div>
       </div>
     </section>
 
-    <section class="mt-5 sm:mt-6 rise-in rise-in-1">
-      <div class="rounded-3xl bg-white text-gray-900 shadow-2xl shadow-black/40 p-5 sm:p-8">
+    <section class="mt-8 sm:mt-10">
+      <div class="pix p-5 sm:p-8">
         <p
           :if={@error}
           id="form-error"
-          class="mb-4 text-sm font-medium text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-4 py-3"
+          class="mb-4 text-sm font-semibold px-4 py-3"
+          style="border: 2px solid var(--red); color: var(--red); background: #fff3f2"
         >
           {@error}
         </p>
@@ -633,13 +657,11 @@ defmodule OskolWeb.LandingLive do
 
   defp create_form(assigns) do
     ~H"""
-    <form phx-submit="new_game" class="grid gap-3 sm:grid-cols-[1fr_auto] items-end">
-      <label class="block">
-        <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Your name</span>
-        <.name_input placeholder="e.g. Alice" />
-      </label>
-      <.cta type="submit" id="create-game">Create game</.cta>
-      <p class="sm:col-span-2 text-sm text-gray-500">
+    <p class="pixel text-[10px] mb-3" style="color: var(--pen)">PLAYER 1 · ENTER YOUR NAME</p>
+    <form phx-submit="new_game" class="grid gap-3 sm:grid-cols-[1fr_auto] items-center">
+      <.name_input placeholder="e.g. Alice" />
+      <.cta type="submit" id="create-game">CREATE GAME</.cta>
+      <p class="sm:col-span-2 text-sm" style="color: var(--pencil)">
         You'll get a link to send your opponent. They need no account either.
       </p>
     </form>
@@ -650,15 +672,13 @@ defmodule OskolWeb.LandingLive do
 
   defp join_form(assigns) do
     ~H"""
-    <p :if={@inviter_name} class="mb-4 text-lg">
+    <p :if={@inviter_name} class="mb-1 text-lg">
       <span class="text-opponent font-bold">{@inviter_name}</span> challenged you.
     </p>
-    <form phx-submit="submit_player_name" class="grid gap-3 sm:grid-cols-[1fr_auto] items-end">
-      <label class="block">
-        <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Your name</span>
-        <.name_input placeholder="e.g. Bob" />
-      </label>
-      <.cta type="submit" id="join-game">Join game</.cta>
+    <p class="pixel text-[10px] mb-3" style="color: var(--red)">PLAYER 2 · ENTER YOUR NAME</p>
+    <form phx-submit="submit_player_name" class="grid gap-3 sm:grid-cols-[1fr_auto] items-center">
+      <.name_input placeholder="e.g. Bob" />
+      <.cta type="submit" id="join-game">JOIN GAME</.cta>
     </form>
     """
   end
@@ -681,29 +701,36 @@ defmodule OskolWeb.LandingLive do
     ~H"""
     <div class="space-y-4">
       <%= if @disconnected_players != [] do %>
-        <p class="text-gray-600">Someone stepped away. Reconnect as:</p>
-        <div class="grid gap-2 sm:grid-cols-2">
+        <p class="pixel text-[10px]" style="color: var(--pen)">CONTINUE? RECONNECT AS</p>
+        <div class="grid gap-3 sm:grid-cols-2">
           <button
             :for={{_id, name} <- @disconnected_players}
             phx-click="rejoin_as_player"
             phx-value-player_name={name}
-            class="rounded-xl border-2 border-amber-400 bg-amber-50 text-amber-900 font-semibold px-4 py-3 hover:bg-amber-100"
+            class="btn-arcade yellow pixel text-[10px] px-4 py-3"
           >
             {name}
           </button>
         </div>
         <%= if @can_join do %>
-          <p class="text-gray-500 text-sm pt-2">Or join as a new player:</p>
-          <form phx-submit="submit_player_name" class="grid gap-3 sm:grid-cols-[1fr_auto] items-end">
+          <p class="text-sm pt-2" style="color: var(--pencil)">Or join as a new player:</p>
+          <form
+            phx-submit="submit_player_name"
+            class="grid gap-3 sm:grid-cols-[1fr_auto] items-center"
+          >
             <.name_input placeholder="Your name" />
-            <.cta type="submit">Join game</.cta>
+            <.cta type="submit">JOIN GAME</.cta>
           </form>
         <% end %>
       <% else %>
-        <p class="text-gray-600">This game is full.</p>
-        <.link patch={~p"/"} class="inline-block text-blue-600 font-semibold">Start your own →</.link>
+        <p class="pixel text-[10px]" style="color: var(--red)">GAME FULL</p>
+        <.link patch={~p"/"} class="inline-block font-semibold" style="color: var(--pen)">
+          Start your own →
+        </.link>
       <% end %>
-      <p class="text-xs text-gray-400">Game code: {@game_name}</p>
+      <p class="pixel text-[9px]" style="color: var(--pencil)">
+        GAME CODE {String.upcase(@game_name)}
+      </p>
     </div>
     """
   end
@@ -762,31 +789,36 @@ defmodule OskolWeb.LandingLive do
       )
 
     ~H"""
-    <div class="space-y-6">
-      <div class="flex items-center justify-center gap-3 sm:gap-5 text-2xl sm:text-3xl font-black">
-        <span class="text-player">{(@me && @me.name) || "You"}</span>
-        <span class="text-gray-300 text-base font-semibold">vs</span>
-        <%= if @opponent do %>
-          <span class="text-opponent">{@opponent.name}</span>
-        <% else %>
-          <span class="text-gray-300 animate-pulse">?</span>
-        <% end %>
+    <div class="space-y-7">
+      <div class="flex items-center justify-center gap-4 sm:gap-8">
+        <div class="text-center min-w-[7rem]">
+          <p class="pixel text-[9px] mb-1" style="color: var(--pen)">1P</p>
+          <p class="text-player text-xl sm:text-2xl font-black truncate">
+            {(@me && @me.name) || "You"}
+          </p>
+        </div>
+        <span class="pixel text-[10px]" style="color: var(--pencil)">VS</span>
+        <div class="text-center min-w-[7rem]">
+          <p class="pixel text-[9px] mb-1" style="color: var(--red)">2P</p>
+          <%= if @opponent do %>
+            <p class="text-opponent text-xl sm:text-2xl font-black truncate">{@opponent.name}</p>
+          <% else %>
+            <p class="text-xl sm:text-2xl font-black blink" style="color: var(--pencil)">?</p>
+          <% end %>
+        </div>
       </div>
 
-      <div
-        :if={@opponent == nil}
-        class="rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 p-4 text-center"
-      >
-        <p class="text-sm text-gray-600">Send this link to whoever you want to play:</p>
+      <div :if={@opponent == nil} class="pix-sm p-4 text-center" style="background: var(--paper-2)">
+        <p class="pixel text-[10px] mb-2" style="color: var(--ink)">INVITE PLAYER 2</p>
         <.invite_box url={@invite_url} />
       </div>
 
       <div>
         <div class="flex items-baseline justify-between mb-2">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Game mode</h3>
-          <span class="text-xs text-gray-400">both players choose</span>
+          <h3 class="pixel text-[10px]" style="color: var(--ink)">GAME MODE</h3>
+          <span class="text-xs" style="color: var(--pencil)">both players choose</span>
         </div>
-        <div class={["grid gap-2", format_grid_class(length(@formats))]}>
+        <div class={["grid gap-3", format_grid_class(length(@formats))]}>
           <.format_tile
             :for={format <- @formats}
             format={format}
@@ -798,8 +830,8 @@ defmodule OskolWeb.LandingLive do
 
       <div>
         <div class="flex items-baseline justify-between mb-2">
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Time control</h3>
-          <span class="text-xs text-gray-400">optional</span>
+          <h3 class="pixel text-[10px]" style="color: var(--ink)">TIME CONTROL</h3>
+          <span class="text-xs" style="color: var(--pencil)">optional</span>
         </div>
         <div class="flex flex-wrap gap-2" id="clock-picker">
           <.clock_chip
@@ -811,15 +843,17 @@ defmodule OskolWeb.LandingLive do
         </div>
       </div>
 
-      <div class="space-y-3">
-        <p class={[
-          "text-center text-sm",
-          if(@ready, do: "text-emerald-600 font-semibold", else: "text-gray-500")
-        ]}>
+      <div class="space-y-3 text-center">
+        <p
+          class={["text-sm", @ready && "font-semibold"]}
+          style={if @ready, do: "color: var(--marker-green)", else: "color: var(--pencil)"}
+        >
           {@status}
         </p>
-        <.cta phx-click="start_game" disabled={not @ready} id="start-game">Start Game</.cta>
-        <div :if={@opponent != nil} class="text-center">
+        <.cta phx-click="start_game" disabled={not @ready} id="start-game" color="green">
+          <span class={@ready && "blink"}>PRESS START</span>
+        </.cta>
+        <div :if={@opponent != nil}>
           <.invite_box url={@invite_url} compact />
         </div>
       </div>
@@ -838,21 +872,20 @@ defmodule OskolWeb.LandingLive do
       phx-value-format={@format["id"]}
       id={"format-#{@format["id"]}"}
       class={[
-        "tile text-left rounded-2xl border-2 px-4 py-3 bg-white",
+        "tile text-left px-4 py-3",
         @mine and @theirs and "tile-both",
         @mine and not @theirs and "tile-mine",
-        @theirs and not @mine and "tile-theirs",
-        not @mine and not @theirs and "border-gray-200 hover:border-gray-300"
+        @theirs and not @mine and "tile-theirs"
       ]}
     >
       <div class="flex items-center justify-between gap-2">
-        <span class="font-bold text-gray-900">{@format["name"]}</span>
-        <span class="flex gap-1">
-          <span :if={@mine} class="w-2 h-2 rounded-full bg-player" title="you"></span>
-          <span :if={@theirs} class="w-2 h-2 rounded-full bg-opponent" title="opponent"></span>
+        <span class="font-bold" style="color: var(--ink)">{@format["name"]}</span>
+        <span class="pixel text-[8px] flex gap-1">
+          <span :if={@mine} class="text-player">1P</span>
+          <span :if={@theirs} class="text-opponent">2P</span>
         </span>
       </div>
-      <div class="text-xs text-gray-500 mt-0.5">{@format["description"]}</div>
+      <div class="text-xs mt-0.5" style="color: var(--pencil)">{@format["description"]}</div>
     </button>
     """
   end
@@ -869,12 +902,12 @@ defmodule OskolWeb.LandingLive do
       id={"clock-#{@preset["id"]}"}
       title={@preset["description"]}
       class={[
-        "tile rounded-full border-2 px-3.5 py-1.5 text-sm font-semibold bg-white text-gray-800",
+        "tile px-3.5 py-1.5 text-sm font-semibold",
         @mine and @theirs and "tile-both",
         @mine and not @theirs and "tile-mine",
-        @theirs and not @mine and "tile-theirs",
-        not @mine and not @theirs and "border-gray-200 hover:border-gray-300"
+        @theirs and not @mine and "tile-theirs"
       ]}
+      style="color: var(--ink)"
     >
       {@preset["name"]}
     </button>
@@ -893,15 +926,15 @@ defmodule OskolWeb.LandingLive do
       data-url={@url}
       class={[
         "inline-flex items-center gap-2 max-w-full",
-        @compact && "text-xs text-gray-500 hover:text-gray-800",
-        !@compact &&
-          "mt-2 rounded-xl bg-white border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-gray-400"
+        @compact && "text-xs font-semibold hover:underline",
+        !@compact && "pix-flat px-3 py-2 text-sm hover:bg-[color:var(--highlighter)]"
       ]}
+      style="color: var(--ink)"
     >
       <span class="hero-link w-4 h-4 shrink-0"></span>
       <span :if={!@compact} id="share-link" class="truncate font-mono">{@url}</span>
-      <span data-label class="font-semibold whitespace-nowrap">
-        {if @compact, do: "Copy invite link", else: "Copy"}
+      <span data-label class="pixel text-[9px] whitespace-nowrap">
+        {if @compact, do: "COPY INVITE LINK", else: "COPY"}
       </span>
     </button>
     """
@@ -918,7 +951,8 @@ defmodule OskolWeb.LandingLive do
       name="player_name"
       placeholder={@placeholder}
       maxlength="24"
-      class="mt-1 w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 text-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+      class="name-field w-full px-4 py-3 text-lg"
+      style="color: var(--ink)"
       autocomplete="off"
       autocorrect="off"
       autocapitalize="words"
@@ -932,6 +966,7 @@ defmodule OskolWeb.LandingLive do
 
   attr :type, :string, default: "button"
   attr :disabled, :boolean, default: false
+  attr :color, :string, default: "red"
   attr :rest, :global, include: ~w(phx-click id)
   slot :inner_block, required: true
 
@@ -940,7 +975,10 @@ defmodule OskolWeb.LandingLive do
     <button
       type={@type}
       disabled={@disabled}
-      class="cta w-full sm:w-auto sm:min-w-[11rem] rounded-xl px-6 py-3 text-lg font-bold text-white"
+      class={[
+        "btn-arcade pixel text-[11px] sm:text-xs w-full sm:w-auto sm:min-w-[12rem] px-6 py-4",
+        @color
+      ]}
       {@rest}
     >
       {render_slot(@inner_block)}

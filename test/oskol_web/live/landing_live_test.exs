@@ -5,7 +5,7 @@ defmodule OskolWeb.LandingLiveTest do
 
   test "the library lists every registered game", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/")
-    assert html =~ "Games for two"
+    assert html =~ "SELECT YOUR GAME"
     assert has_element?(view, "#game-tilt", "Tilt")
     assert html =~ "Head-to-head poker roguelike"
   end
@@ -14,7 +14,7 @@ defmodule OskolWeb.LandingLiveTest do
     {:ok, view, html} = live(conn, ~p"/tilt")
     assert html =~ "Tilt"
     assert has_element?(view, "form[phx-submit=new_game]")
-    assert has_element?(view, "a[href='/']", "All games")
+    assert has_element?(view, "a[href='/']", "ALL GAMES")
   end
 
   test "picking a game from the library is a patch, not a page load", %{conn: conn} do
@@ -23,7 +23,7 @@ defmodule OskolWeb.LandingLiveTest do
     assert_patch(view, "/backgammon")
     assert has_element?(view, "#game-title", "Backgammon")
     assert has_element?(view, "form[phx-submit=new_game]")
-    view |> element("header a[href='/']", "All games") |> render_click()
+    view |> element("header a[href='/']", "ALL GAMES") |> render_click()
     assert_patch(view, "/")
     assert has_element?(view, "#game-tilt")
   end
@@ -64,7 +64,7 @@ defmodule OskolWeb.LandingLiveTest do
     guest |> element("#format-short") |> render_click()
 
     assert render(host) =~ "Both picked Short"
-    host |> element("button", "Start Game") |> render_click()
+    host |> element("#start-game") |> render_click()
     assert_redirect(host, "/tilt/#{game_id}?name=Alice")
     assert Oskol.Game.get_server_state(game_id).instance != nil
   end
@@ -103,7 +103,7 @@ defmodule OskolWeb.LandingLiveClockTest do
     assert render(host) =~ "Agree on a time control"
     guest |> element("#clock-blitz") |> render_click()
     assert render(host) =~ "Both picked Single game"
-    host |> element("button", "Start Game") |> render_click()
+    host |> element("#start-game") |> render_click()
     assert_redirect(host, "/backgammon/#{game_id}?name=Alice")
     state = Oskol.Game.get_server_state(game_id)
     assert Oskol.GameKit.player_update(state.instance, "x")["clock"]["label"] == "3 min + 2 s"
