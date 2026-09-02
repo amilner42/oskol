@@ -12,7 +12,12 @@ import gleam/result
 
 pub type Action {
   Roll
+  /// Stage a move on your own board.
   MoveChecker(from: Loc, to: Loc)
+  /// Take back the last staged move.
+  Undo
+  /// Commit the staged moves and end the turn.
+  Play
   Double
   Take
   Drop
@@ -97,62 +102,96 @@ pub fn apply(
       Ok(#(next, events))
     }
     MoveChecker(from, to) -> {
-      use applied <- result.try(state.move(state, player_id, from, to))
-      let next = applied.state
+      use #(next, _staged) <- result.try(state.stage(state, player_id, from, to))
+      // Staging is private: the opponent only learns that the mover is thinking.
+      Ok(
+        #(next, [
+          custom("move_staged", [
+            #("player_id", json.string(player_id)),
+            #("dice_left", json.int(list.length(state.dice_left(next)))),
+          ]),
+        ]),
+      )
+    }
+    Undo -> {
+      use #(next, _undone) <- result.try(state.undo(state, player_id))
+      Ok(
+        #(next, [
+          custom("move_undone", [#("player_id", json.string(player_id))]),
+        ]),
+      )
+    }
+    Play -> {
+      use played <- result.try(state.play(state, player_id))
+      let next = played.state
       let opponent_id = case
         list.find(state.order, fn(id) { id != player_id })
       {
         Ok(id) -> id
         Error(_) -> ""
       }
-      let moved = [
-        custom("checker_moved", [
-          #("player_id", json.string(player_id)),
-          #("checker", json.string(applied.mover)),
-          #("from", json.string(board.loc_id(applied.move.from))),
-          #("to", json.string(board.loc_id(applied.move.to))),
-          #("die", json.int(applied.move.die)),
-        ]),
-        event.moved(
-          applied.mover,
-          board.zone_id(applied.move.from, player_id),
-          board.zone_id(applied.move.to, player_id),
-        ),
-      ]
-      let hit = case applied.hit {
-        Some(checker) -> [
-          custom("hit", [
-            #("player_id", json.string(opponent_id)),
-            #("checker", json.string(checker)),
-          ]),
-          event.moved(
-            checker,
-            board.zone_id(applied.move.to, opponent_id),
-            board.zone_id(board.Bar, opponent_id),
-          ),
-        ]
-        None -> []
-      }
+      let move_events =
+        list.flat_map(played.moves, fn(staged) {
+          let m = staged.move
+          let moved = [
+            custom("checker_moved", [
+              #("player_id", json.string(player_id)),
+              #("checker", json.string(staged.mover)),
+              #("from", json.string(board.loc_id(m.from))),
+              #("to", json.string(board.loc_id(m.to))),
+              #("die", json.int(m.die)),
+            ]),
+            event.moved(
+              staged.mover,
+              board.zone_id(m.from, player_id),
+              board.zone_id(m.to, player_id),
+            ),
+          ]
+          case staged.hit {
+            Some(checker) ->
+              list.append(moved, [
+                custom("hit", [
+                  #("player_id", json.string(opponent_id)),
+                  #("checker", json.string(checker)),
+                ]),
+                event.moved(
+                  checker,
+                  board.zone_id(m.to, opponent_id),
+                  board.zone_id(board.Bar, opponent_id),
+                ),
+              ])
+            None -> moved
+          }
+        })
       let pips = case state.color_of(state, player_id) {
         Ok(color) -> [
           event.CounterChanged(
             player_id,
             "pips",
-            board.pip_count(state.board, color),
-            board.pip_count(next.board, color),
+            board.pip_count(state.turn_board, color),
+            board.pip_count(next.turn_board, color),
           ),
         ]
         Error(_) -> []
       }
-      let ending = case applied.game_end {
+      let ending = case played.game_end {
         Some(end) -> end_events(state, next, end)
-        None ->
-          case applied.turn_ended {
-            True -> turn_started(next)
-            False -> []
-          }
+        None -> turn_started(next)
       }
-      Ok(#(next, list.flatten([moved, hit, pips, ending])))
+      Ok(#(
+        next,
+        list.flatten([
+          [
+            custom("turn_played", [
+              #("player_id", json.string(player_id)),
+              #("moves", json.int(list.length(played.moves))),
+            ]),
+          ],
+          move_events,
+          pips,
+          ending,
+        ]),
+      ))
     }
   }
 }
@@ -233,16 +272,27 @@ pub fn legal(state: GameState, player_id: String) -> List(Schema) {
       ),
       action.simple("drop", "Drop"),
     ]
-    _, _ ->
-      state.legal_moves(state, player_id)
-      |> list.map(fn(m) {
-        let from = board.loc_id(m.from)
-        let to = board.loc_id(m.to)
-        action.Schema("move", label_for(m), [
-          action.choice("from", [#(from, from)]),
-          action.choice("to", [#(to, to)]),
-        ])
-      })
+    _, _ -> {
+      let moves =
+        state.legal_moves(state, player_id)
+        |> list.map(fn(m) {
+          let from = board.loc_id(m.from)
+          let to = board.loc_id(m.to)
+          action.Schema("move", label_for(m), [
+            action.choice("from", [#(from, from)]),
+            action.choice("to", [#(to, to)]),
+          ])
+        })
+      let undo = case state.can_undo(state, player_id) {
+        True -> [action.simple("undo", "Undo")]
+        False -> []
+      }
+      let play = case state.can_play(state, player_id) {
+        True -> [action.simple("play", "Play")]
+        False -> []
+      }
+      list.flatten([moves, undo, play])
+    }
   }
   list.append(main, resign)
 }

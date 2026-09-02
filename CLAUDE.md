@@ -78,6 +78,10 @@ The client only ever decodes these:
 Actions in: `{"name": "play_hand", "params": {"cards": ["AS", "KD"]}}`.
 Legal actions may be enumerated (backgammon sends one `move` schema per legal
 move) or described with candidates (Tilt's `play_hand` selects from the hand).
+Hidden information is resolved by the `scene` projection per viewer: in
+backgammon the mover stages moves (`move`, `undo`) that only their own scene
+shows, and commits them with `play`; the opponent and spectators see the
+board as it stood when the turn began until then.
 Schemas with nothing to choose become one-click buttons in the generic client.
 
 ### Time controls

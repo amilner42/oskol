@@ -233,7 +233,9 @@ pub fn doubles_grant_four_moves_in_one_turn_test() {
     })
   assert state.dice_left(s) == [3]
   let assert [m, ..] = state.legal_moves(s, "p1")
-  let #(s, events) = apply(s, "p1", engine.MoveChecker(m.from, m.to))
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(m.from, m.to))
+  assert state.to_move(s) == Some("p1")
+  let #(s, events) = apply(s, "p1", engine.Play)
   assert state.to_move(s) == Some("p2")
   assert has_custom(events, "turn_started")
 }
@@ -276,13 +278,14 @@ pub fn hitting_puts_the_opponent_on_the_bar_and_they_must_enter_test() {
       #(Black, Point(12), 5),
     ])
   let s = position(3, "single", b, [3, 1])
-  let #(s, events) = apply(s, "p1", engine.MoveChecker(Point(8), Point(5)))
-  assert has_custom(events, "hit")
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(8), Point(5)))
   assert board.on_bar(s.board, Black) == 1
-  assert list.any(events, fn(e) { e == event.moved("b1", "point:5", "bar:p2") })
-  // Finish White's turn, then Black rolls and may only enter from the bar
+  // Finish White's turn and play it; the hit is announced when the turn is played
   let assert [m, ..] = state.legal_moves(s, "p1")
   let #(s, _) = apply(s, "p1", engine.MoveChecker(m.from, m.to))
+  let #(s, events) = apply(s, "p1", engine.Play)
+  assert has_custom(events, "hit")
+  assert list.any(events, fn(e) { e == event.moved("b1", "point:5", "bar:p2") })
   let #(s, _) = apply(s, "p2", engine.Roll)
   case s.phase {
     state.Moving(Black, _) -> {
@@ -296,7 +299,8 @@ pub fn bearing_off_the_last_checker_wins_with_the_right_kind_test() {
   let gammon =
     setup([#(White, Off, 14), #(White, Point(1), 1), #(Black, Point(19), 15)])
   let s = position(4, "single", gammon, [1, 2])
-  let #(s, events) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
+  let #(s, events) = apply(s, "p1", engine.Play)
   assert has_custom(events, "game_won")
   assert has_custom(events, "match_over")
   let assert state.Finished(White) = s.phase
@@ -316,7 +320,8 @@ pub fn match_play_continues_with_a_fresh_board_until_the_target_test() {
       #(Black, Point(19), 14),
     ])
   let s = position(5, "match5", backgammon_position, [1, 2])
-  let #(s, events) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
+  let #(s, events) = apply(s, "p1", engine.Play)
   assert has_custom(events, "game_won") && has_custom(events, "new_game")
   assert has_custom(events, "match_over") == False
   assert state.score_of(s, "p1") == 3
@@ -338,6 +343,7 @@ pub fn match_play_continues_with_a_fresh_board_until_the_target_test() {
         phase: state.Moving(White, [1, 2]),
       )
     let #(next, _) = apply(st, "p1", engine.MoveChecker(Point(1), Off))
+    let #(next, _) = apply(next, "p1", engine.Play)
     next
   }
   let s = again(s)
@@ -390,16 +396,33 @@ fn walk(s: state.GameState, chooser: rng.Rng, steps: Int) -> state.GameState {
     _, state.Moving(c, _) -> {
       let id = state.player_of(s, c)
       let legal = state.legal_moves(s, id)
-      let assert Ok(#(m, chooser)) = rng.pick(chooser, legal)
-      let before = board.pip_count(s.board, c)
-      let #(next, _) = apply(s, id, engine.MoveChecker(m.from, m.to))
-      let after = case next.game_number == s.game_number {
-        True -> board.pip_count(next.board, c)
-        False -> before - expected_drop(c, m)
+      case legal {
+        [] -> {
+          let #(next, _) = apply(s, id, engine.Play)
+          walk(next, chooser, steps - 1)
+        }
+        _ -> walk_move(s, chooser, steps, c, id, legal)
       }
-      assert before - after == expected_drop(c, m)
-      walk(next, chooser, steps - 1)
     }
+  }
+}
+
+fn walk_move(
+  s: state.GameState,
+  chooser: rng.Rng,
+  steps: Int,
+  c: board.Color,
+  id: String,
+  legal: List(board.Move),
+) -> state.GameState {
+  let _ = Nil
+  {
+    let assert Ok(#(m, chooser)) = rng.pick(chooser, legal)
+    let before = board.pip_count(s.board, c)
+    let #(next, _) = apply(s, id, engine.MoveChecker(m.from, m.to))
+    let after = board.pip_count(next.board, c)
+    assert before - after == expected_drop(c, m)
+    walk(next, chooser, steps - 1)
   }
 }
 
@@ -425,7 +448,8 @@ pub fn black_bears_off_and_wins_a_gammon_too_test() {
   let s = new_game(8, "single")
   let s = state.GameState(..s, board: b, phase: state.Moving(Black, [1, 2]))
   assert list.contains(moves(b, Black, [1, 2]), #("24", "off"))
-  let #(s, events) = apply(s, "p2", engine.MoveChecker(Point(24), Off))
+  let #(s, _) = apply(s, "p2", engine.MoveChecker(Point(24), Off))
+  let #(s, events) = apply(s, "p2", engine.Play)
   assert has_custom(events, "game_won")
   let assert state.Finished(Black) = s.phase
   assert state.score_of(s, "p2") == 2

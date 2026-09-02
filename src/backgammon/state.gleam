@@ -16,7 +16,8 @@ pub type Phase {
   Rolling(to_move: Color)
   /// `by` offered a double; the opponent must take or drop.
   Doubled(by: Color)
-  /// `to_move` has dice left to play.
+  /// `to_move` has dice left to play. Moves are staged on the mover's own
+  /// view and only committed with `play`; `dice` are the ones still unused.
   Moving(to_move: Color, dice: List(Int))
   /// The match is over.
   Finished(winner: Color)
@@ -50,8 +51,17 @@ pub type GameState {
     crawford: Bool,
     /// The Crawford game has been played (or is being played).
     crawford_done: Bool,
+    /// The board as the opponent sees it: before any move staged this turn.
+    turn_board: Board,
+    /// Moves staged this turn, oldest first. Committed by `play`.
+    staged: List(Staged),
     rng: Rng,
   )
+}
+
+/// A move staged but not yet played, with what undo needs.
+pub type Staged {
+  Staged(move: Move, mover: String, hit: Option(String), board_before: Board)
 }
 
 /// How a game ended.
@@ -106,6 +116,8 @@ pub fn new(
       cube_owner: None,
       crawford: False,
       crawford_done: False,
+      turn_board: board.initial(),
+      staged: [],
       rng: rng,
     )
   opening_roll(state)
@@ -134,6 +146,7 @@ fn die(rng: Rng) -> #(Int, Rng) {
 }
 
 fn start_moving(state: GameState, color: Color, dice: List(Int)) -> GameState {
+  let state = GameState(..state, turn_board: state.board, staged: [])
   case board.legal_moves(state.board, color, dice) {
     [] -> GameState(..state, phase: Rolling(board.opponent(color)))
     _ -> GameState(..state, phase: Moving(color, dice))
@@ -225,6 +238,44 @@ pub fn legal_moves(state: GameState, player_id: PlayerId) -> List(Move) {
     Moving(c, dice), Ok(mine) if c == mine ->
       board.legal_moves(state.board, c, dice)
     _, _ -> []
+  }
+}
+
+/// Can the mover take back their last staged move?
+pub fn can_undo(state: GameState, player_id: PlayerId) -> Bool {
+  case state.phase, color_of(state, player_id) {
+    Moving(c, _), Ok(mine) if c == mine -> state.staged != []
+    _, _ -> False
+  }
+}
+
+/// The turn is complete: no legal move remains for the unused dice.
+pub fn can_play(state: GameState, player_id: PlayerId) -> Bool {
+  case state.phase, color_of(state, player_id) {
+    Moving(c, dice), Ok(mine) if c == mine ->
+      board.legal_moves(state.board, c, dice) == []
+    _, _ -> False
+  }
+}
+
+/// All dice of the current roll (four for doubles).
+pub fn turn_dice(state: GameState) -> List(Int) {
+  case state.last_roll {
+    [a, b] if a == b -> [a, a, a, a]
+    other -> other
+  }
+}
+
+/// The board this viewer may see: the mover's own staging, or the board as
+/// it stood when the turn began for everyone else.
+pub fn visible_board(state: GameState, viewer: Option(PlayerId)) -> Board {
+  case state.phase {
+    Moving(c, _) ->
+      case state.staged != [] && viewer != Some(player_of(state, c)) {
+        True -> state.turn_board
+        False -> state.board
+      }
+    _ -> state.board
   }
 }
 
@@ -333,24 +384,13 @@ pub fn resign(
   }
 }
 
-pub type Applied {
-  Applied(
-    state: GameState,
-    move: Move,
-    mover: String,
-    hit: Option(String),
-    /// The turn passed to the opponent after this move.
-    turn_ended: Bool,
-    game_end: Option(GameEnd),
-  )
-}
-
-pub fn move(
+/// Stage a move on the mover's board. Nothing is committed until `play`.
+pub fn stage(
   state: GameState,
   player_id: PlayerId,
   from: board.Loc,
   to: board.Loc,
-) -> Result(Applied, String) {
+) -> Result(#(GameState, Staged), String) {
   use color <- result.try(color_of(state, player_id))
   case state.phase {
     Moving(c, dice) if c == color -> {
@@ -366,31 +406,87 @@ pub fn move(
       )
       let #(next_board, mover, hit) =
         board.apply_move(state.board, color, chosen)
-      let remaining = remove_one(dice, chosen.die)
-      let state = GameState(..state, board: next_board)
-      case board.borne_off(next_board, color) == 15 {
-        True -> {
-          let #(state, game_end) =
-            finish_game(state, color, Won(board.win_kind(next_board, color)))
-          Ok(Applied(state, chosen, mover, hit, True, Some(game_end)))
-        }
-        False -> {
-          let continues =
-            remaining != []
-            && board.legal_moves(next_board, color, remaining) != []
-          let state = case continues {
-            True -> GameState(..state, phase: Moving(color, remaining))
-            False -> GameState(..state, phase: Rolling(board.opponent(color)))
-          }
-          Ok(Applied(state, chosen, mover, hit, !continues, None))
-        }
-      }
+      let staged = Staged(chosen, mover, hit, state.board)
+      Ok(#(
+        GameState(
+          ..state,
+          board: next_board,
+          phase: Moving(color, remove_one(dice, chosen.die)),
+          staged: list.append(state.staged, [staged]),
+        ),
+        staged,
+      ))
     }
     Moving(_, _) -> Error("Not your turn")
     Rolling(c) if c == color -> Error("Roll first")
     Rolling(_) -> Error("Not your turn")
     Doubled(_) -> Error("A double is pending")
     Finished(_) -> Error("The match is over")
+  }
+}
+
+/// Take back the most recently staged move.
+pub fn undo(
+  state: GameState,
+  player_id: PlayerId,
+) -> Result(#(GameState, Staged), String) {
+  use color <- result.try(color_of(state, player_id))
+  case state.phase {
+    Moving(c, dice) if c == color ->
+      case list.reverse(state.staged) {
+        [] -> Error("Nothing to undo")
+        [last, ..rest] ->
+          Ok(#(
+            GameState(
+              ..state,
+              board: last.board_before,
+              phase: Moving(color, [last.move.die, ..dice]),
+              staged: list.reverse(rest),
+            ),
+            last,
+          ))
+      }
+    _ -> Error("Nothing to undo")
+  }
+}
+
+/// What a committed turn produced.
+pub type Played {
+  Played(state: GameState, moves: List(Staged), game_end: Option(GameEnd))
+}
+
+/// Commit the staged moves. The turn must be complete: every die that can
+/// be played has been.
+pub fn play(state: GameState, player_id: PlayerId) -> Result(Played, String) {
+  use color <- result.try(color_of(state, player_id))
+  case state.phase {
+    Moving(c, dice) if c == color ->
+      case board.legal_moves(state.board, color, dice) {
+        [] -> {
+          let moves = state.staged
+          let state = GameState(..state, turn_board: state.board, staged: [])
+          case board.borne_off(state.board, color) == 15 {
+            True -> {
+              let #(state, game_end) =
+                finish_game(
+                  state,
+                  color,
+                  Won(board.win_kind(state.board, color)),
+                )
+              Ok(Played(state, moves, Some(game_end)))
+            }
+            False ->
+              Ok(Played(
+                GameState(..state, phase: Rolling(board.opponent(color))),
+                moves,
+                None,
+              ))
+          }
+        }
+        _ -> Error("You still have moves to play")
+      }
+    Moving(_, _) -> Error("Not your turn")
+    _ -> Error("Nothing to play")
   }
 }
 

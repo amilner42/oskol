@@ -98,12 +98,21 @@ async function main() {
     if (usedAfter <= usedBefore) throw new Error('the move did not consume a die');
 
     // Finish the turn; the other player then gets ROLL and DOUBLE.
-    for (let i = 0; i < 4 && (await mover.locator(source).count()) > 0; i++) {
-      await mover.locator(source).first().click();
-      await sleep(200);
-      await mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)').first().click();
-      await sleep(700);
+    // Stage the rest of the turn: select a source, wait for its destinations, click one.
+    for (let i = 0; i < 4; i++) {
+      const src = mover.locator(source);
+      if ((await src.count()) === 0) break;
+      await src.first().click();
+      const target = mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)');
+      try { await target.first().waitFor({ timeout: 3000 }); } catch (_) { break; }
+      await target.first().click();
+      await mover.waitForFunction(() => !document.querySelector('.bg-point.selected'), null, { timeout: 5000 });
+      await sleep(400);
     }
+    // Moves are staged privately; the turn ends with PLAY.
+    if ((await waiter.locator('.checker').count()) !== 30) throw new Error('opponent view should not change during staging');
+    await mover.waitForSelector('button:has-text("PLAY")', { timeout: 10000 });
+    await mover.click('button:has-text("PLAY")');
     await waiter.waitForSelector('button:has-text("ROLL")', { timeout: 10000 });
     if ((await waiter.locator('button:has-text("DOUBLE")').count()) !== 1) throw new Error('doubling should be offered before rolling');
     await waiter.click('button:has-text("ROLL")');

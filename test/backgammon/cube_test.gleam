@@ -187,7 +187,8 @@ pub fn a_gammon_with_the_cube_at_two_scores_four_test() {
       cube_value: 2,
       cube_owner: Some(White),
     )
-  let #(s, events) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
+  let #(s, events) = apply(s, "p1", engine.Play)
   assert state.score_of(s, "p1") == 4
   assert list.any(events, fn(e) {
     case e {
@@ -206,16 +207,19 @@ pub fn jacoby_makes_gammons_single_until_the_cube_is_turned_test() {
   let centred =
     state.GameState(..centred, board: b, phase: state.Moving(White, [1, 2]))
   let #(after, _) = apply(centred, "p1", engine.MoveChecker(Point(1), Off))
+  let #(after, _) = apply(after, "p1", engine.Play)
   assert state.score_of(after, "p1") == 1
   let turned =
     state.GameState(..centred, cube_value: 2, cube_owner: Some(White))
   let #(after, _) = apply(turned, "p1", engine.MoveChecker(Point(1), Off))
+  let #(after, _) = apply(after, "p1", engine.Play)
   assert state.score_of(after, "p1") == 4
   // Match play has no Jacoby rule
   let match = new_game(9, "match5")
   let match =
     state.GameState(..match, board: b, phase: state.Moving(White, [1, 2]))
   let #(after, _) = apply(match, "p1", engine.MoveChecker(Point(1), Off))
+  let #(after, _) = apply(after, "p1", engine.Play)
   assert state.score_of(after, "p1") == 2
 }
 
@@ -235,6 +239,13 @@ pub fn resigning_gives_the_opponent_the_cube_value_test() {
   assert engine.apply(s, "p2", engine.Resign) == Error("The match is over")
 }
 
+fn bear_off_and_play(
+  s: state.GameState,
+) -> #(state.GameState, List(event.Event)) {
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
+  apply(s, "p1", engine.Play)
+}
+
 // ---------- Crawford ----------
 
 pub fn the_crawford_game_forbids_doubling_then_it_resumes_test() {
@@ -243,7 +254,7 @@ pub fn the_crawford_game_forbids_doubling_then_it_resumes_test() {
     setup([#(White, Off, 14), #(White, Point(1), 1), #(Black, Point(19), 15)])
   let s = new_game(11, "match3")
   let s = state.GameState(..s, board: b, phase: state.Moving(White, [1, 2]))
-  let #(s, events) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
+  let #(s, events) = bear_off_and_play(s)
   assert state.score_of(s, "p1") == 2
   assert s.crawford && s.crawford_done
   assert list.any(events, fn(e) {
@@ -267,6 +278,7 @@ pub fn the_crawford_game_forbids_doubling_then_it_resumes_test() {
     ])
   let s = state.GameState(..s, board: win_b, phase: state.Moving(Black, [1, 2]))
   let #(s, _) = apply(s, "p2", engine.MoveChecker(Point(24), Off))
+  let #(s, _) = apply(s, "p2", engine.Play)
   assert state.score_of(s, "p2") == 1
   assert s.crawford == False && s.crawford_done
   let s = state.GameState(..s, phase: state.Rolling(Black))
@@ -282,6 +294,7 @@ pub fn the_crawford_game_forbids_doubling_then_it_resumes_test() {
   let s2 =
     state.GameState(..s2, scores: dict.from_list([#("p1", 2), #("p2", 1)]))
   let #(s2, _) = apply(s2, "p2", engine.MoveChecker(Point(24), Off))
+  let #(s2, _) = apply(s2, "p2", engine.Play)
   assert s2.crawford == False
 }
 

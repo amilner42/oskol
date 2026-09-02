@@ -99,6 +99,8 @@ pub fn init(
 pub fn decode_action(incoming: action.Incoming) -> Result(Action, String) {
   case incoming.name {
     "roll" -> Ok(engine.Roll)
+    "undo" -> Ok(engine.Undo)
+    "play" -> Ok(engine.Play)
     "double" -> Ok(engine.Double)
     "take" -> Ok(engine.Take)
     "drop" -> Ok(engine.Drop)

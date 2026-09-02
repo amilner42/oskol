@@ -54,20 +54,25 @@ pub fn moving_uses_a_die_and_eventually_passes_the_turn_test() {
   let assert [first, ..] = state.legal_moves(s, mover)
   let assert Ok(#(s2, events)) =
     engine.apply(s, mover, engine.MoveChecker(first.from, first.to))
+  // Staging is private: no token movement is announced yet
   assert list.any(events, fn(e) {
     case e {
-      event.TokenMoved(_, _, _) -> True
+      event.Custom("move_staged", _) -> True
       _ -> False
     }
   })
   assert list.length(state.dice_left(s2)) == 1
   assert state.to_move(s2) == Some(mover)
   let assert [second, ..] = state.legal_moves(s2, mover)
-  let assert Ok(#(s3, events3)) =
+  let assert Ok(#(s3, _)) =
     engine.apply(s2, mover, engine.MoveChecker(second.from, second.to))
-  assert state.to_move(s3) != Some(mover)
-  let assert state.Rolling(_) = s3.phase
-  assert list.any(events3, fn(e) {
+  // Both dice used, but the turn is still the mover's until they play
+  assert state.to_move(s3) == Some(mover)
+  assert state.can_play(s3, mover)
+  let assert Ok(#(s4, events4)) = engine.apply(s3, mover, engine.Play)
+  assert state.to_move(s4) != Some(mover)
+  let assert state.Rolling(_) = s4.phase
+  assert list.any(events4, fn(e) {
     case e {
       event.Custom("turn_started", _) -> True
       _ -> False

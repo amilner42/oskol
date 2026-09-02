@@ -637,6 +637,9 @@ viewSide ctx me them legalMoves =
             else if myTurn && hasAction "roll" ctx.legal then
                 "YOUR TURN. ROLL!"
 
+            else if myTurn && hasAction "play" ctx.legal then
+                "PRESS PLAY TO END YOUR TURN"
+
             else if myTurn && legalMoves /= [] then
                 case ctx.model.selectedFrom of
                     Just from ->
@@ -663,6 +666,8 @@ viewSide ctx me them legalMoves =
                 (List.filterMap identity
                     [ actionButton ctx "roll" "pen"
                     , actionButton ctx "double" "yellow"
+                    , actionButton ctx "play" "green"
+                    , actionButton ctx "undo" "yellow"
                     , actionButton ctx "take" "green"
                     , actionButton ctx "drop" ""
                     ]

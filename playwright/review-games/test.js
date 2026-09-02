@@ -84,12 +84,20 @@ async function backgammon(context, tag) {
   await mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)').first().click();
   await sleep(800);
   // finish the turn
-  for (let i = 0; i < 4 && (await mover.locator(source).count()) > 0; i++) {
-    await mover.locator(source).first().click();
-    await sleep(200);
-    await mover.locator('.bg-point.target').first().click();
-    await sleep(600);
+  // Stage the rest of the turn: select a source, wait for its destinations, click one.
+  for (let i = 0; i < 4; i++) {
+    const src = mover.locator(source);
+    if ((await src.count()) === 0) break;
+    await src.first().click();
+    const target = mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)');
+    try { await target.first().waitFor({ timeout: 3000 }); } catch (_) { break; }
+    await target.first().click();
+    await mover.waitForFunction(() => !document.querySelector('.bg-point.selected'), null, { timeout: 5000 });
+    await sleep(400);
   }
+  await mover.screenshot({ path: `${OUT}/${tag}-bg-02b-staged.png` });
+  await mover.waitForSelector('button:has-text("PLAY")', { timeout: 10000 });
+  await mover.click('button:has-text("PLAY")');
   await waiter.waitForSelector('button:has-text("DOUBLE")', { timeout: 15000 });
   await waiter.screenshot({ path: `${OUT}/${tag}-bg-03-roll-or-double.png` });
   await waiter.click('button:has-text("DOUBLE")');

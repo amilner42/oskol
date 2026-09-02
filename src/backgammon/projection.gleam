@@ -12,6 +12,12 @@ import gleam/option.{None, Some}
 pub const slug = "backgammon"
 
 pub fn build(state: GameState, viewer: Viewer) -> Scene {
+  let viewer_id = scene.viewer_id(viewer)
+  // Only the mover sees their staged moves; everyone else sees the board as
+  // it was when the turn began.
+  let is_mover = viewer_id != None && state.to_move(state) == viewer_id
+  let state =
+    state.GameState(..state, board: state.visible_board(state, viewer_id))
   scene.Scene(
     game: slug,
     phase: phase_name(state),
@@ -20,7 +26,7 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
     zones: list.flatten([
       point_zones(state),
       player_zones(state),
-      [dice_zone(state), cube_zone(state)],
+      [dice_zone(state, is_mover), cube_zone(state)],
     ]),
     data: [
       #("to_move", json.nullable(state.to_move(state), json.string)),
@@ -42,6 +48,20 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
         ]),
       ),
       #("unlimited", json.bool(state.unlimited(state))),
+      #(
+        "staged",
+        json.int(case is_mover {
+          True -> list.length(state.staged)
+          False -> 0
+        }),
+      ),
+      #(
+        "turn_complete",
+        json.bool(case viewer_id {
+          Some(id) -> state.can_play(state, id)
+          None -> False
+        }),
+      ),
       #("dice", json.array(state.dice_left(state), json.int)),
       #("last_roll", json.array(state.last_roll, json.int)),
       #("target", json.int(state.config.target)),
@@ -134,17 +154,19 @@ fn player_zones(state: GameState) -> List(Zone) {
   })
 }
 
-fn dice_zone(state: GameState) -> Zone {
+fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
   let rolled = state.last_roll
   let left = state.dice_left(state)
   let tokens = case state.phase {
     state.Moving(_, _) -> {
-      // Show every die from the roll (four for doubles); mark used ones
-      let all = case rolled {
-        [a, b] if a == b -> [a, a, a, a]
-        other -> other
+      // Every die of the roll (four for doubles); only the mover sees which
+      // are used, since their moves are still private.
+      let all = state.turn_dice(state)
+      let unused = case is_mover {
+        True -> left
+        False -> all
       }
-      mark_used(all, left, 0, [])
+      mark_used(all, unused, 0, [])
     }
     _ -> list.index_map(rolled, fn(value, i) { die_token(i, value, True) })
   }
