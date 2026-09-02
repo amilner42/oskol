@@ -138,11 +138,11 @@ view :
     }
     -> Html Msg
 view { playerId, scene, legal, model, status, clock } =
-    div [ class "min-h-screen bg-[#1a1d29] text-gray-100 p-3 sm:p-4 space-y-4 text-sm" ]
+    div [ class "paper min-h-screen-safe p-3 sm:p-5 space-y-4 text-sm", style "color" "var(--ink)" ]
         [ div [ class "flex items-start justify-between gap-4" ]
             [ div []
-                [ span [ class "text-xl font-bold capitalize" ] [ text scene.game ]
-                , span [ class "text-gray-400 ml-3" ] [ text (scene.phase ++ " · " ++ status) ]
+                [ span [ class "pixel text-xs uppercase" ] [ text scene.game ]
+                , span [ class "pixel text-[8px] ml-3", style "color" "var(--pencil)" ] [ text (String.toUpper (scene.phase ++ " · " ++ status)) ]
                 ]
             , clock
             ]
@@ -156,29 +156,28 @@ viewPlayer : String -> Protocol.PlayerInfo -> Html Msg
 viewPlayer playerId player =
     div
         [ classList
-            [ ( "rounded-lg p-3 bg-white/5 border", True )
-            , ( "border-blue-400", player.id == playerId )
-            , ( "border-white/10", player.id /= playerId )
+            [ ( "game-panel p-3", True )
+            , ( "tile-mine", player.id == playerId )
             ]
         ]
         [ div [ class "font-bold flex items-center gap-2" ]
             [ text player.name
-            , span [ class "text-xs font-normal text-gray-400" ]
+            , span [ class "pixel text-[8px]", style "color" "var(--pencil)" ]
                 [ text
                     (if player.id == playerId then
-                        "(you)"
+                        "1P"
 
                      else
                         ""
                     )
                 ]
             ]
-        , div [ class "text-gray-300 flex flex-wrap gap-x-3 font-mono text-xs" ]
+        , div [ class "flex flex-wrap gap-x-3 pixel text-[8px]", style "color" "var(--pencil)" ]
             (player.counters
                 |> Dict.toList
                 |> List.map (\( k, v ) -> span [] [ text (k ++ " " ++ String.fromInt v) ])
             )
-        , div [ class "text-yellow-300 text-xs" ] [ text (String.join ", " player.flags) ]
+        , div [ class "pixel text-[8px]", style "color" "var(--pen)" ] [ text (String.toUpper (String.join ", " player.flags)) ]
         ]
 
 
@@ -251,8 +250,8 @@ viewGroup scene model legal group =
             viewZone scene model legal zone
 
         Strip prefix zones ->
-            div [ class "rounded-lg bg-white/5 p-3 overflow-x-auto" ]
-                [ div [ class "text-gray-400 text-xs mb-2" ] [ text prefix ]
+            div [ class "game-panel p-3 overflow-x-auto" ]
+                [ div [ class "pixel text-[8px] mb-2", style "color" "var(--pencil)" ] [ text (String.toUpper prefix) ]
                 , div [ class "flex gap-1 min-w-max" ] (List.map (viewColumn model legal) zones)
                 ]
 
@@ -267,8 +266,8 @@ viewColumn model legal zone =
             String.split ":" zone.id |> List.drop 1 |> String.join ":"
     in
     div [ class "flex flex-col items-center gap-0.5 w-8" ]
-        [ span [ class "text-[10px] text-gray-500" ] [ text label ]
-        , div [ class "flex flex-col-reverse items-center gap-0.5 min-h-[7rem] bg-white/5 rounded w-full py-1" ]
+        [ span [ class "pixel text-[7px]", style "color" "var(--pencil)" ] [ text label ]
+        , div [ class "flex flex-col-reverse items-center gap-0.5 min-h-[7rem] w-full py-1", style "background" "var(--paper-2)" ]
             (List.map (viewToken model selectable True) zone.tokens)
         ]
 
@@ -290,12 +289,12 @@ viewZone scene model legal zone =
                 _ ->
                     zone.id
     in
-    div [ class "rounded-lg bg-white/5 p-3" ]
-        [ div [ class "text-gray-400 text-xs mb-2" ]
+    div [ class "game-panel p-3" ]
+        [ div [ class "pixel text-[8px] mb-2", style "color" "var(--pencil)" ]
             [ text (label ++ " (" ++ String.fromInt zone.count ++ ")") ]
         , div [ class "flex flex-wrap gap-2 items-center" ]
             (if List.isEmpty zone.tokens then
-                List.repeat (min zone.count 12) (div [ class "w-8 h-11 rounded bg-white/10" ] [])
+                List.repeat (min zone.count 12) (div [ class "w-8 h-11", style "background" "var(--paper-2)", style "border" "2px dashed var(--pencil)" ] [])
 
              else
                 List.map (viewToken model selectable False) zone.tokens
@@ -362,7 +361,8 @@ viewToken model selectable compact token =
     case ( token.faceUp, color, value ) of
         ( False, _, _ ) ->
             button
-                [ classList (base ++ [ ( "w-8 h-11 rounded bg-gray-700 border-gray-500", True ) ])
+                [ classList (base ++ [ ( "w-8 h-11 card-face", True ) ])
+                , style "background" "var(--paper-2)"
                 , disabled (not canSelect)
                 , onClick (ToggleToken token.id)
                 ]
@@ -370,7 +370,7 @@ viewToken model selectable compact token =
 
         ( True, Just c, _ ) ->
             button
-                [ classList (base ++ [ ( "w-6 h-6 rounded-full border-black/40", True ) ])
+                [ classList (base ++ [ ( "checker w-6", True ), ( "white", c == "white" ), ( "black", c /= "white" ) ])
                 , style "background" (cssColor c)
                 , style "color"
                     (if c == "white" then
@@ -387,7 +387,7 @@ viewToken model selectable compact token =
 
         ( True, Nothing, Just v ) ->
             div
-                [ classList (base ++ [ ( "w-9 h-9 rounded-md bg-white text-gray-900 border-gray-300 text-base", True ) ])
+                [ classList (base ++ [ ( "die pixel text-[10px]", True ) ])
                 , title token.id
                 ]
                 [ text (String.fromInt v) ]
@@ -396,7 +396,7 @@ viewToken model selectable compact token =
             button
                 [ classList
                     (base
-                        ++ [ ( "rounded bg-white text-gray-900 border-white px-1", True )
+                        ++ [ ( "card-face px-1", True )
                            , ( "min-w-[2rem] h-11", not compact )
                            , ( "min-w-[1.5rem] h-8", compact )
                            ]
@@ -458,23 +458,23 @@ viewActions scene playerId model legal =
                         []
 
                     else
-                        [ span [ class "text-gray-500 mr-2" ] [ text ("Waiting for " ++ p.name ++ "...") ] ]
+                        [ span [ class "pixel text-[8px] mr-2", style "color" "var(--pencil)" ] [ text (String.toUpper ("Waiting for " ++ p.name ++ "…")) ] ]
 
                 Nothing ->
                     if List.isEmpty legal then
-                        [ span [ class "text-gray-500" ] [ text "Waiting for your opponent..." ] ]
+                        [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text "WAITING FOR YOUR OPPONENT…" ] ]
 
                     else
                         []
     in
-    div [ class "rounded-lg bg-white/5 p-3 flex flex-wrap gap-2 items-center min-h-[3.5rem]" ]
+    div [ class "game-panel p-3 flex flex-wrap gap-2 items-center min-h-[3.5rem]" ]
         (case model.activeAction |> Maybe.andThen (\i -> legal |> List.drop i |> List.head) of
             Nothing ->
                 waitingHint
                     ++ List.indexedMap
                         (\index schema ->
                             button
-                                [ class "px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-sm"
+                                [ class "btn-arcade pen pixel text-[8px] px-3 py-2"
                                 , onClick (ChooseAction index schema)
                                 ]
                                 [ text schema.label ]
@@ -482,10 +482,10 @@ viewActions scene playerId model legal =
                         legal
 
             Just schema ->
-                [ span [ class "text-gray-300" ] [ text schema.label ]
+                [ span [ class "pixel text-[8px]" ] [ text (String.toUpper schema.label) ]
                 , div [ class "flex flex-wrap gap-1" ] (List.concatMap (viewParam model) schema.params)
-                , button [ class "px-3 py-2 rounded bg-green-600 hover:bg-green-500", onClick (Submit schema) ] [ text "Confirm" ]
-                , button [ class "px-3 py-2 rounded bg-gray-600 hover:bg-gray-500", onClick Cancel ] [ text "Cancel" ]
+                , button [ class "btn-arcade green pixel text-[8px] px-3 py-2", onClick (Submit schema) ] [ text "CONFIRM" ]
+                , button [ class "pixel text-[8px] px-3 py-2 underline", style "color" "var(--pencil)", onClick Cancel ] [ text "CANCEL" ]
                 ]
         )
 
@@ -494,7 +494,7 @@ viewParam : Model -> Protocol.Param -> List (Html Msg)
 viewParam model param =
     case param.kind of
         Select sel ->
-            [ span [ class "text-xs text-gray-400 self-center" ]
+            [ span [ class "text-xs self-center", style "color" "var(--pencil)" ]
                 [ text
                     ("pick "
                         ++ String.fromInt sel.min
@@ -519,9 +519,8 @@ viewParam model param =
                     (\( id, label ) ->
                         button
                             [ classList
-                                [ ( "px-2 py-1 rounded text-xs border", True )
-                                , ( "bg-yellow-500 text-gray-900 border-yellow-400", Dict.get param.name model.choices == Just id )
-                                , ( "bg-white/10 border-white/20", Dict.get param.name model.choices /= Just id )
+                                [ ( "tile px-2 py-1 text-xs", True )
+                                , ( "tile-mine", Dict.get param.name model.choices == Just id )
                                 ]
                             , onClick (ChooseOption param.name id)
                             ]
@@ -533,4 +532,4 @@ viewParam model param =
                 []
 
         Number min max ->
-            [ span [ class "text-xs text-gray-400" ] [ text (param.name ++ ": " ++ String.fromInt min ++ ".." ++ String.fromInt max) ] ]
+            [ span [ class "text-xs", style "color" "var(--pencil)" ] [ text (param.name ++ ": " ++ String.fromInt min ++ ".." ++ String.fromInt max) ] ]

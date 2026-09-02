@@ -5,6 +5,7 @@ This mirrors the Elixir GameState structure from the server.
 -}
 
 import Dict exposing (Dict)
+import Games.Backgammon.View
 import Generic.View
 import Protocol
 import Set exposing (Set)
@@ -527,6 +528,7 @@ type alias Model =
     , legal : List Protocol.Schema -- Legal action schemas for this player
     , lastPlaying : Maybe PlayingData -- Last playing-phase view, shown while a score reveal plays
     , generic : Generic.View.Model -- UI state for the generic renderer (non-Tilt games)
+    , backgammon : Games.Backgammon.View.Model -- UI state for the backgammon board
     , clockReceivedAt : Int -- Client time (ms) when the latest clock snapshot arrived
     , nowMs : Int -- Client time (ms), refreshed while a clock runs
     , gameState : RemoteData String PlayerView
@@ -573,6 +575,7 @@ type Msg
     = -- Channel messages
       ServerMessageReceived Protocol.ServerMessage
     | GenericMsg Generic.View.Msg
+    | BackgammonMsg Games.Backgammon.View.Msg
     | ClockSynced Time.Posix
     | ClockTick Time.Posix
     | RematchGameReady String

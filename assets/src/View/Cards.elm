@@ -45,7 +45,7 @@ viewCardImage config =
             else
                 Nothing
     in
-    div [ class "rounded overflow-hidden relative w-full h-full" ]
+    div [ class "card-face overflow-hidden relative w-full h-full" ]
         [ img [ src cardUrl, class "w-full h-full" ] []
         , case enhancementText of
             Just text_ ->

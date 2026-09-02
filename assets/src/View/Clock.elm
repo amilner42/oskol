@@ -47,11 +47,10 @@ viewPlayer playerId receivedAt now nameOf timedOut player =
     in
     div
         [ classList
-            [ ( "px-2 py-1 rounded-md flex items-center gap-2 bg-black/40 border", True )
-            , ( "border-yellow-400 text-white", player.running && not expired )
-            , ( "border-white/10 text-gray-400", not player.running && not expired )
-            , ( "border-red-500 text-red-300", expired )
-            , ( "text-blue-300", player.id == playerId && not expired )
+            [ ( "px-2 py-1 flex items-center gap-2 border-2", True )
+            , ( "bg-[color:var(--highlighter)] border-[color:var(--ink)] text-[color:var(--ink)]", player.running && not expired )
+            , ( "bg-white border-[color:var(--pencil)] text-[color:var(--pencil)]", not player.running && not expired )
+            , ( "bg-white border-[color:var(--red)] text-[color:var(--red)]", expired )
             ]
         ]
         [ span [ class "truncate max-w-[6rem]" ] [ text (nameOf player.id) ]

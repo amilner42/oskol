@@ -111,10 +111,13 @@ lib/oskol_web/components/game_art.ex     per-game accent colour + poster illustr
 lib/oskol_web/controllers/page_controller.ex   "/:slug/:id" serves the Elm client
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Tilt/Adapter.elm  Scene -> Tilt's PlayerView
+assets/src/Games/Backgammon/View.elm  bespoke backgammon board on the protocol Scene
 assets/src/Generic/View.elm      fallback renderer for games without a bespoke UI
-                                 (backgammon uses it today)
-assets/src/View/Clock.elm        clock display shared by both renderers
+assets/src/View/Clock.elm        clock display shared by all renderers
 assets/src/View/Game.elm         Tilt's bespoke UI
+assets/css/app.css               the multicade/notebook design system (paper, pixel,
+                                 pix, btn-arcade, tile, bg-board...) used by LiveView
+                                 pages and the Elm game screens alike
 ```
 
 ## URLs
@@ -129,7 +132,8 @@ assets/src/View/Game.elm         Tilt's bespoke UI
 3. Add `test/<slug>/conformance_test.gleam` using `gamekit/conformance`
    (random playouts to termination, replay determinism, your invariants).
 4. It is now playable at `/<slug>` with the generic renderer. Add a bespoke Elm
-   view only if you want one; it must read the protocol Scene, never new wire types.
+   view only if you want one; it must read the protocol Scene, never new wire types
+  (see `assets/src/Games/Backgammon/View.elm` for a small one).
 
 ## Development commands
 
@@ -144,6 +148,7 @@ mix phx.server        # http://localhost:4000
 node playwright/test-tilt-smoke/test.js         # browser smoke test (server must be running)
 node playwright/test-backgammon-smoke/test.js   # backgammon on the generic renderer, with a clock
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
+node playwright/review-games/test.js            # screenshots of both games in play (desktop + phone)
 ```
 
 Notes:
@@ -160,6 +165,9 @@ Notes:
   `mix run -e 'Code.eval_file("path")'`.
 - In this environment the Elm package cache is populated by git clone
   (GitHub zipballs are blocked); see `.claude/skills`.
+- The pixel font comes from Google Fonts. Playwright scripts abort those
+  requests so sandboxed runs are not stalled by the blocked download; the
+  screenshots therefore show a monospace fallback for headings.
 
 ## Development workflow for Claude
 - Do not leave servers running. For a browser check, run the server and the
@@ -197,7 +205,6 @@ Notes:
 - Don't add emojis or files unless asked.
 
 ## Future
-- A bespoke backgammon board view (it plays on the generic renderer today).
 - Optional cube rules: beavers, automatic doubles.
 - Persist seed + event log per game for replay and crash recovery.
 - Bots derived from `legal` for solo play and balance reports.

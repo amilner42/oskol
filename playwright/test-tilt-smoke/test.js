@@ -26,6 +26,8 @@ async function main() {
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   });
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // External fonts are blocked in sandboxes and would stall the load event.
+  await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   const errors = [];
   const watch = (page, who) => {
     page.on('pageerror', (e) => errors.push(`${who} pageerror: ${e.message}`));

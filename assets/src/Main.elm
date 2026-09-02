@@ -4,6 +4,7 @@ import Browser
 import Decoders exposing (..)
 import Dict
 import Encoders exposing (..)
+import Games.Backgammon.View as Backgammon
 import Games.Tilt.Adapter as Tilt
 import Generic.View
 import Helpers exposing (..)
@@ -72,6 +73,7 @@ init flags =
       , legal = []
       , lastPlaying = Nothing
       , generic = Generic.View.init
+      , backgammon = Backgammon.init
       , clockReceivedAt = 0
       , nowMs = 0
       , gameState = Loading
@@ -444,6 +446,24 @@ update msg model =
             ( { model | generic = generic }
             , maybeAction |> Maybe.map sendToChannel |> Maybe.withDefault Cmd.none
             )
+
+        BackgammonMsg bgMsg ->
+            let
+                ( bg, out ) =
+                    Backgammon.update bgMsg model.backgammon
+
+                updated =
+                    { model | backgammon = bg }
+            in
+            case out of
+                Backgammon.NoOut ->
+                    ( updated, Cmd.none )
+
+                Backgammon.Send value ->
+                    ( updated, sendToChannel value )
+
+                Backgammon.WantRematch ->
+                    update RequestRematch updated
 
         ClockSynced posix ->
             ( { model | clockReceivedAt = Time.posixToMillis posix, nowMs = Time.posixToMillis posix }
@@ -1133,29 +1153,55 @@ view model =
     else
         case model.payload of
             Just payload ->
-                Html.map GenericMsg
-                    (Generic.View.view
-                        { playerId = payload.playerId
-                        , scene = payload.update.scene
-                        , legal = payload.update.legal
-                        , model = model.generic
-                        , status =
-                            case payload.update.outcome of
-                                Protocol.Ongoing ->
-                                    "in progress"
+                let
+                    clockView =
+                        View.Clock.view
+                            { clock = Just payload.update.clock
+                            , playerId = payload.playerId
+                            , receivedAt = model.clockReceivedAt
+                            , now = model.nowMs
+                            , nameOf = nameOf model
+                            }
 
-                                Protocol.Finished winners ->
-                                    "finished: " ++ String.join ", " (List.map (nameOf model) winners)
-                        , clock =
-                            View.Clock.view
-                                { clock = Just payload.update.clock
-                                , playerId = payload.playerId
-                                , receivedAt = model.clockReceivedAt
-                                , now = model.nowMs
-                                , nameOf = nameOf model
-                                }
-                        }
-                    )
+                    finished =
+                        case payload.update.outcome of
+                            Protocol.Ongoing ->
+                                Nothing
+
+                            Protocol.Finished winners ->
+                                Just winners
+                in
+                if model.gameSlug == "backgammon" then
+                    Html.map BackgammonMsg
+                        (Backgammon.view
+                            { playerId = payload.playerId
+                            , scene = payload.update.scene
+                            , legal = payload.update.legal
+                            , model = model.backgammon
+                            , clock = clockView
+                            , nameOf = nameOf model
+                            , rematchReady = payload.rematchReady
+                            , finished = finished
+                            }
+                        )
+
+                else
+                    Html.map GenericMsg
+                        (Generic.View.view
+                            { playerId = payload.playerId
+                            , scene = payload.update.scene
+                            , legal = payload.update.legal
+                            , model = model.generic
+                            , status =
+                                case finished of
+                                    Nothing ->
+                                        "in progress"
+
+                                    Just winners ->
+                                        "finished: " ++ String.join ", " (List.map (nameOf model) winners)
+                            , clock = clockView
+                            }
+                        )
 
             Nothing ->
                 Html.text "Connecting..."

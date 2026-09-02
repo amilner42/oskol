@@ -40,8 +40,8 @@ viewGame model =
 -}
 viewLoading : String -> Html Msg
 viewLoading message =
-    div [ class "min-h-screen bg-[#161B1F] flex items-center justify-center" ]
-        [ div [ class "text-white text-2xl" ] [ text message ]
+    div [ class "min-h-screen paper flex items-center justify-center" ]
+        [ div [ class "pixel text-sm text-base-content" ] [ text message ]
         ]
 
 
@@ -49,7 +49,7 @@ viewLoading message =
 -}
 viewError : String -> Html Msg
 viewError err =
-    div [ class "min-h-screen bg-[#1a1d29] flex items-center justify-center" ]
+    div [ class "min-h-screen paper flex items-center justify-center" ]
         [ div [ class "bg-red-900 text-red-200 p-6 rounded-lg max-w-md" ]
             [ h2 [ class "text-xl font-bold mb-4" ] [ text "Error" ]
             , p [] [ text err ]
@@ -118,13 +118,13 @@ viewGameState model gameState pendingAnimation =
 
                 _ ->
                     -- Normal game layout
-                    div [ class "flex flex-col h-screen-safe bg-[#1a1d29] overflow-hidden" ]
+                    div [ class "flex flex-col h-screen-safe paper overflow-hidden" ]
                         [ -- Top - Opponent Cards
-                          div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3 bg-[#0C0F14]" ]
+                          div [ class "shrink-0 flex flex-col justify-end pt-2 px-0 pb-1 sm:pt-2 sm:px-3 sm:pb-3" ]
                             [ viewOpponentCards opponent currentPlayer model.newCardIds model.cardSort
                             ]
                         , -- Middle - Playing Area
-                          div [ class "flex-1 min-h-0 flex flex-col bg-[#161B1F] shadow-[0_0_30px_-5px_rgba(0,0,0,0.5)] relative" ]
+                          div [ class "flex-1 min-h-0 flex flex-col bg-white border-y-[3px] border-[color:var(--ink)] relative" ]
                             [ div [ class "flex-1 flex flex-col justify-center" ]
                                 [ viewPlayingArea model gameState currentPlayer opponent actualPlayerId
                                 ]
@@ -135,7 +135,7 @@ viewGameState model gameState pendingAnimation =
                               viewConsoleButtons model.viewingModal model.playerId
                             ]
                         , -- Bottom - Player Cards
-                          div [ class "shrink-0 flex flex-col justify-start pt-1 px-0 pb-0 sm:pt-3 sm:px-3 sm:pb-0 bg-[#0C0F14]" ]
+                          div [ class "shrink-0 flex flex-col justify-start pt-1 px-0 pb-0 sm:pt-3 sm:px-3 sm:pb-0" ]
                             [ viewPlayerCards currentPlayer model
                             ]
                         , -- Action Bar
@@ -336,7 +336,7 @@ viewSortButton currentSort =
     div [ class "hidden sm:flex justify-center mt-2 sm:mt-3" ]
         [ button
             [ onClick ToggleCardSort
-            , class "px-3 py-1 text-xs bg-white/90 hover:bg-white rounded shadow-sm transition-all flex items-center gap-1 touch-manipulation"
+            , class "px-3 py-1 text-xs pix-sm transition-all flex items-center gap-1 touch-manipulation"
             ]
             [ span [ class "text-gray-500" ] [ text "Sorting by" ]
             , span [ class "font-semibold text-gray-800" ]
@@ -369,7 +369,7 @@ viewPlayingArea model gameState currentPlayer opponent playerId =
             viewModal modal model gameState currentPlayer opponent playerId playerName opponentName
 
         Nothing ->
-            div [ class "h-full flex flex-col items-center justify-center p-4 text-white" ]
+            div [ class "h-full flex flex-col items-center justify-center p-4 text-base-content" ]
                 [ -- Phase-specific content
                   case gameState.phase of
                     Playing ->
@@ -757,10 +757,10 @@ viewAnimatedHandRow hand handType breakdown level animState playerState isCurren
 viewCardPlaceholder : Bool -> Html Msg
 viewCardPlaceholder showIcon =
     div
-        [ class "w-9 h-[52px] sm:w-16 sm:h-24 border-2 border-dashed border-white/20 rounded flex items-center justify-center" ]
+        [ class "w-9 h-[52px] sm:w-16 sm:h-24 border-2 border-dashed border-gray-400 rounded flex items-center justify-center" ]
         [ if showIcon then
             -- Show lock icon when opponent has locked in
-            Heroicons.Solid.lockClosed [ SvgAttr.class "w-4 h-4 sm:w-5 sm:h-5 text-white/20" ]
+            Heroicons.Solid.lockClosed [ SvgAttr.class "w-4 h-4 sm:w-5 sm:h-5 text-gray-400" ]
 
           else
             text ""
@@ -800,14 +800,14 @@ viewCardSlot maybeCard playerState isOpponent =
 -}
 viewHandResults : Model -> GameState -> Dict String HandResult -> Html Msg
 viewHandResults model gameState results =
-    div [ class "bg-[#15161f] rounded-lg p-6 max-w-4xl" ]
+    div [ class "pix p-6 max-w-4xl" ]
         [ div [ class "grid grid-cols-2 gap-4" ]
             (results
                 |> Dict.toList
                 |> List.map
                     (\( playerId, result ) ->
-                        div [ class "bg-[#1a1d29] rounded p-4 border border-gray-700" ]
-                            [ div [ class "text-white font-bold mb-2" ]
+                        div [ class "bg-base-200 p-4 border-2 border-base-content" ]
+                            [ div [ class "text-base-content font-bold mb-2" ]
                                 [ text (getPlayerName gameState playerId) ]
                             , div [ class "text-gray-300 mb-2" ]
                                 [ text (handTypeToString result.handType) ]
@@ -1690,7 +1690,7 @@ viewConsoleButtons viewingModal playerId =
         ]
         [ div [ class "flex flex-col gap-2 sm:gap-3" ]
             [ button
-                [ class "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
+                [ class "px-2 py-1.5 sm:px-3 sm:py-2 transition-all text-xl sm:text-2xl touch-manipulation bg-white border-2 border-l-0 border-[color:var(--ink)] hover:bg-[color:var(--highlighter)]"
                 , Html.Attributes.title "View Deck"
                 , onClick
                     (if isDeckOpen then
@@ -1712,7 +1712,7 @@ viewConsoleButtons viewingModal playerId =
                     Heroicons.Outline.square3Stack3d [ SvgAttr.class "w-6 h-6 sm:w-7 sm:h-7 text-blue-600" ]
                 ]
             , button
-                [ class "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
+                [ class "px-2 py-1.5 sm:px-3 sm:py-2 transition-all text-xl sm:text-2xl touch-manipulation bg-white border-2 border-l-0 border-[color:var(--ink)] hover:bg-[color:var(--highlighter)]"
                 , Html.Attributes.title "View Levels"
                 , onClick
                     (if isLevelsOpen then
@@ -1729,7 +1729,7 @@ viewConsoleButtons viewingModal playerId =
                     Heroicons.Outline.chartBar [ SvgAttr.class "w-6 h-6 sm:w-7 sm:h-7 text-green-600" ]
                 ]
             , button
-                [ class "px-2 py-1.5 sm:px-3 sm:py-2 rounded-r-xl transition-all shadow-xl text-xl sm:text-2xl touch-manipulation backdrop-blur-sm bg-gray-900/20 hover:bg-gray-900/40 hover:scale-105"
+                [ class "px-2 py-1.5 sm:px-3 sm:py-2 transition-all text-xl sm:text-2xl touch-manipulation bg-white border-2 border-l-0 border-[color:var(--ink)] hover:bg-[color:var(--highlighter)]"
                 , Html.Attributes.title "View Log"
                 , onClick
                     (if isLogOpen then
@@ -1769,24 +1769,22 @@ viewActionBar player selectedCards cardSort actionInProgress =
         canDiscard =
             selectedCount > 0 && player.discardsRemaining > 0 && not isLockedIn && not actionInProgress
     in
-    div [ class "flex items-center justify-center shrink-0 bg-[#0C0F14] px-2 py-2 md:py-3 lg:py-4" ]
+    div [ class "flex items-center justify-center shrink-0 px-2 py-2 md:py-3 lg:py-4" ]
         [ div [ class "flex items-center gap-2 w-full md:max-w-[980px] lg:max-w-[1008px]" ]
             [ button
                 [ onClick (DiscardCards selectedCardsList)
                 , disabled (not canDiscard)
                 , classList
-                    [ ( "flex-1 py-3 rounded-lg transition-colors text-xs md:text-sm font-semibold touch-manipulation shadow-lg ring-1 ring-white/10", True )
-                    , ( "bg-red-600 hover:bg-red-700 text-white", canDiscard )
-                    , ( "opacity-50 cursor-not-allowed bg-red-600/30 text-red-200", not canDiscard )
+                    [ ( "btn-arcade flex-1 py-3 pixel text-[10px] md:text-xs touch-manipulation", True )
                     ]
                 ]
                 [ text "Discard" ]
             , button
                 [ onClick ToggleCardSort
-                , class "flex-1 py-3 rounded-lg text-xs md:text-sm bg-white/90 hover:bg-white transition-all flex items-center justify-center gap-1 touch-manipulation shadow-lg"
+                , class "flex-1 py-3 pix-sm pixel text-[10px] md:text-xs transition-all flex items-center justify-center gap-1 touch-manipulation"
                 ]
-                [ span [ class "text-gray-500" ] [ text "Sort:" ]
-                , span [ class "font-semibold text-gray-800" ]
+                [ span [ style "color" "var(--pencil)" ] [ text "SORT" ]
+                , span [ class "font-semibold text-base-content" ]
                     [ text
                         (case cardSort of
                             ByRank ->
@@ -1801,9 +1799,7 @@ viewActionBar player selectedCards cardSort actionInProgress =
                 [ onClick LockInHand
                 , disabled (not canLockIn)
                 , classList
-                    [ ( "flex-1 py-3 rounded-lg transition-colors text-xs md:text-sm font-semibold touch-manipulation shadow-lg ring-1 ring-white/10", True )
-                    , ( "bg-sky-600 hover:bg-sky-700 text-white", canLockIn )
-                    , ( "opacity-50 cursor-not-allowed bg-sky-600/30 text-sky-200", not canLockIn )
+                    [ ( "btn-arcade pen flex-1 py-3 pixel text-[10px] md:text-xs touch-manipulation", True )
                     ]
                 ]
                 [ text "Play" ]
@@ -2044,7 +2040,7 @@ viewModal modal model gameState currentPlayer opponent playerId playerName oppon
 -}
 viewGameLogModal : Html Msg
 viewGameLogModal =
-    div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
+    div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-base-content overflow-y-auto" ]
         [ div [ class "flex items-center justify-center mb-4 w-full" ]
             [ div [ class "hidden sm:flex items-center gap-3" ]
                 [ Heroicons.Solid.newspaper [ SvgAttr.class "w-8 h-8 text-amber-600" ]
@@ -2056,7 +2052,7 @@ viewGameLogModal =
                 , Html.Attributes.type_ "button"
                 , Html.Attributes.title "Close"
                 ]
-                [ span [ class "text-sm font-medium text-white" ] [ text "Close" ]
+                [ span [ class "text-sm font-medium text-base-content" ] [ text "Close" ]
                 , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
                 ]
             ]
@@ -2071,7 +2067,7 @@ viewGameLogModal =
 -}
 viewDeckModal : String -> PlayerState -> PlayerState -> String -> String -> String -> Html Msg
 viewDeckModal deckPlayerId currentPlayer opponent playerId playerName opponentName =
-    div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
+    div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-base-content overflow-y-auto" ]
         [ div [ class "flex items-center justify-center mb-4 w-full" ]
             [ div [ class "hidden sm:flex items-center gap-3" ]
                 [ Heroicons.Solid.square3Stack3d [ SvgAttr.class "w-8 h-8 text-blue-600" ]
@@ -2083,7 +2079,7 @@ viewDeckModal deckPlayerId currentPlayer opponent playerId playerName opponentNa
                 , Html.Attributes.type_ "button"
                 , Html.Attributes.title "Close"
                 ]
-                [ span [ class "text-sm font-medium text-white" ] [ text "Close" ]
+                [ span [ class "text-sm font-medium text-base-content" ] [ text "Close" ]
                 , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
                 ]
             ]
@@ -2233,7 +2229,7 @@ viewDeckCards player =
 -}
 viewLevelsModal : PlayerState -> PlayerState -> String -> String -> Html Msg
 viewLevelsModal currentPlayer opponent playerName opponentName =
-    div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-white overflow-y-auto" ]
+    div [ class "h-full flex flex-col items-center justify-start px-4 py-4 pt-12 text-base-content overflow-y-auto" ]
         [ div [ class "flex items-center justify-center mb-6 w-full" ]
             [ div [ class "hidden sm:flex items-center gap-3" ]
                 [ Heroicons.Solid.chartBar [ SvgAttr.class "w-8 h-8 text-green-600" ]
@@ -2245,7 +2241,7 @@ viewLevelsModal currentPlayer opponent playerName opponentName =
                 , Html.Attributes.type_ "button"
                 , Html.Attributes.title "Close"
                 ]
-                [ span [ class "text-sm font-medium text-white" ] [ text "Close" ]
+                [ span [ class "text-sm font-medium text-base-content" ] [ text "Close" ]
                 , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
                 ]
             ]
@@ -3684,35 +3680,35 @@ viewShopCardPreview data skillTree =
               if data.isDestroyMode then
                 button
                     [ onClick (DestroyShopCard data.cardId)
-                    , class "px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl bg-rose-500 hover:bg-rose-600"
+                    , class "btn-arcade pixel text-[9px] px-6 py-3"
                     ]
                     [ text "Destroy" ]
 
               else if isDeckBuilderCard data.card then
                 button
                     [ onClick (ConfirmDeckBuilder data.cardId)
-                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    , class ("btn-arcade pixel text-[9px] px-6 py-3 " ++ buttonBgClass)
                     ]
                     [ text "Confirm" ]
 
               else if isPlusBombCard data.card then
                 button
                     [ onClick (ConfirmPlusBomb data.cardId)
-                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    , class ("btn-arcade pixel text-[9px] px-6 py-3 " ++ buttonBgClass)
                     ]
                     [ text "Confirm" ]
 
               else if isLevelUpCard data.card then
                 button
                     [ onClick (MakeShopPick data.cardId)
-                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    , class ("btn-arcade pixel text-[9px] px-6 py-3 " ++ buttonBgClass)
                     ]
                     [ text "Confirm" ]
 
               else
                 button
                     [ onClick (MakeShopPick data.cardId)
-                    , class ("px-8 py-3 rounded-full font-medium transition-all text-white shadow-lg hover:shadow-xl " ++ buttonBgClass)
+                    , class ("btn-arcade pixel text-[9px] px-6 py-3 " ++ buttonBgClass)
                     ]
                     [ text "Confirm" ]
             ]
@@ -3926,7 +3922,7 @@ viewDeckBuilderSelectionPreview data =
                 , class
                     ("px-8 py-3 rounded-full font-medium transition-all "
                         ++ (if hasSelection then
-                                "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
+                                "btn-arcade pixel text-[9px] " ++ buttonBgClass
 
                             else
                                 "text-base-content/30 bg-base-300/30 cursor-not-allowed"
@@ -4030,7 +4026,7 @@ viewPlusBombSelectionPreview data =
                 , class
                     ("px-8 py-3 rounded-full font-medium transition-all "
                         ++ (if hasSelection then
-                                "text-white shadow-lg hover:shadow-xl " ++ buttonBgClass
+                                "btn-arcade pixel text-[9px] " ++ buttonBgClass
 
                             else
                                 "text-base-content/30 bg-base-300/30 cursor-not-allowed"

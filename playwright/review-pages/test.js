@@ -12,6 +12,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.PW_CHROMIUM, args: ['--no-sandbox'] });
   for (const [name, vp] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
     const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 1 });
+  // External fonts are blocked in sandboxes and would stall the load event.
+  await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     const page = await ctx.newPage();
     await page.goto(`${BASE}/`); await page.waitForSelector('[data-phx-main].phx-connected'); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-01-library.png` });

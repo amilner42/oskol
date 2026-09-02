@@ -26,12 +26,12 @@
   name: "dark";
   default: true;
   prefersdark: true;
-  color-scheme: "dark";
-  --color-base-100: oklch(22% 0.01 240);
-  --color-base-200: oklch(18% 0.01 240);
-  --color-base-300: oklch(16% 0.01 240);
-  --color-base-content: oklch(92% 0.01 240);
-  --color-primary: oklch(65% 0.25 265);
+  color-scheme: "light";
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(96.5% 0.01 90);
+  --color-base-300: oklch(86% 0.02 90);
+  --color-base-content: oklch(25% 0.03 280);
+  --color-primary: oklch(50% 0.2 265);
   --color-primary-content: oklch(100% 0 0);
   --color-secondary: oklch(60% 0.2 280);
   --color-secondary-content: oklch(100% 0 0);
@@ -45,11 +45,11 @@
   --color-success-content: oklch(100% 0 0);
   --color-warning: oklch(70% 0.18 60);
   --color-warning-content: oklch(20% 0.01 60);
-  --color-error: oklch(60% 0.25 25);
+  --color-error: oklch(60% 0.2 27);
   --color-error-content: oklch(100% 0 0);
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.75rem;
+  --radius-selector: 0.25rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.25rem;
   --size-selector: 0.21875rem;
   --size-field: 0.21875rem;
   --border: 1px;
@@ -62,11 +62,11 @@
   default: false;
   prefersdark: false;
   color-scheme: "light";
-  --color-base-100: oklch(98% 0 0);
-  --color-base-200: oklch(96% 0.001 286.375);
-  --color-base-300: oklch(92% 0.004 286.32);
-  --color-base-content: oklch(21% 0.006 285.885);
-  --color-primary: oklch(70% 0.213 47.604);
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(96.5% 0.01 90);
+  --color-base-300: oklch(86% 0.02 90);
+  --color-base-content: oklch(25% 0.03 280);
+  --color-primary: oklch(50% 0.2 265);
   --color-primary-content: oklch(98% 0.016 73.684);
   --color-secondary: oklch(55% 0.027 264.364);
   --color-secondary-content: oklch(98% 0.002 247.839);
@@ -80,11 +80,11 @@
   --color-success-content: oklch(98% 0.014 180.72);
   --color-warning: oklch(66% 0.179 58.318);
   --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
+  --color-error: oklch(60% 0.2 27);
   --color-error-content: oklch(96% 0.015 12.422);
   --radius-selector: 0.25rem;
   --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
+  --radius-box: 0.25rem;
   --size-selector: 0.21875rem;
   --size-field: 0.21875rem;
   --border: 1.5px;
@@ -512,3 +512,51 @@
   box-shadow: inset 4px 4px 0 0 var(--paper-2);
 }
 .name-field:focus { outline: none; border-color: var(--pen); box-shadow: 4px 4px 0 0 var(--pen); }
+
+/* ---------- Game screens ---------- */
+.game-panel { border: 3px solid var(--ink); background: #fff; }
+.game-strip { background: var(--paper-2); border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink); }
+.card-face { border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: #fff; border-radius: 4px; }
+.card-face.selected { box-shadow: 3px 3px 0 0 var(--pen); border-color: var(--pen); }
+.new-card::before, .new-card::after { background-color: var(--highlighter) !important; }
+
+/* Backgammon board */
+.bg-board { background: #fff; border: 3px solid var(--ink); box-shadow: 6px 6px 0 0 var(--ink); }
+.bg-point { position: relative; }
+.bg-point::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--point);
+}
+.bg-point.top::before { clip-path: polygon(0 0, 100% 0, 50% 92%); }
+.bg-point.bottom::before { clip-path: polygon(0 100%, 100% 100%, 50% 8%); }
+.bg-point.source::after, .bg-point.target::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--pen);
+  pointer-events: none;
+}
+.bg-point.target::after { border-color: var(--marker-green); border-style: dashed; }
+.bg-point.selected::after { background: rgba(47, 95, 208, 0.12); }
+.checker {
+  width: 78%;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  border: 2px solid var(--ink);
+  box-shadow: inset -2px -2px 0 0 rgba(0, 0, 0, 0.15);
+}
+.checker.white { background: #fff; }
+.checker.black { background: var(--ink); box-shadow: inset -2px -2px 0 0 rgba(255, 255, 255, 0.15); }
+.die {
+  display: grid; place-items: center;
+  width: 2.4rem; height: 2.4rem;
+  border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: #fff;
+}
+.die.used { opacity: 0.35; box-shadow: none; }
+.cube {
+  display: grid; place-items: center;
+  width: 2.4rem; height: 2.4rem;
+  border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: var(--highlighter);
+}
