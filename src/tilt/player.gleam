@@ -144,6 +144,8 @@ fn draw_count(player: Player, hand_after_removal: Int) -> Int {
 }
 
 /// Remove `removed` from the hand into the discard pile and draw replacements.
+/// When the deck runs dry the discard pile is shuffled back in, so a hand can
+/// only fall short of eight when the whole deck is smaller than that.
 /// Returns the drawn cards so callers can emit events.
 fn replace_cards(
   player: Player,
@@ -155,11 +157,13 @@ fn replace_cards(
     list.filter(player.card_piles.hand, fn(c) {
       !list.contains(removed_ids, c.id)
     })
-  let new_discard = list.append(player.card_piles.discard, removed)
-  let #(drawn, new_deck) =
-    deck.draw_cards(
+  let discard = list.append(player.card_piles.discard, removed)
+  let #(drawn, new_deck, new_discard, rng) =
+    draw_with_reshuffle(
       player.card_piles.deck,
+      discard,
       draw_count(player, list.length(kept)),
+      rng,
     )
   let #(face_down, rng) = case player.scrambled {
     True -> {
@@ -179,6 +183,25 @@ fn replace_cards(
     drawn,
     rng,
   )
+}
+
+/// Draw `count` cards, reshuffling the discard pile into the deck if needed.
+fn draw_with_reshuffle(
+  deck: List(Card),
+  discard: List(Card),
+  count: Int,
+  rng: Rng,
+) -> #(List(Card), List(Card), List(Card), Rng) {
+  let #(drawn, remaining) = deck.draw_cards(deck, count)
+  let short = count - list.length(drawn)
+  case short > 0 && discard != [] {
+    True -> {
+      let #(reshuffled, rng) = rng.shuffle(rng, discard)
+      let #(more, remaining) = deck.draw_cards(reshuffled, short)
+      #(list.append(drawn, more), remaining, [], rng)
+    }
+    False -> #(drawn, remaining, discard, rng)
+  }
 }
 
 /// After a hand resolves: discard the played cards, draw replacements, bank

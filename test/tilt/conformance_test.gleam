@@ -1,6 +1,7 @@
 import gamekit/conformance
 import gamekit/game.{Seat}
 import gamekit/rng
+import gleam/int
 import gleam/list
 import tilt/game as tilt
 import tilt/player
@@ -15,8 +16,16 @@ fn invariant(state: GameState) -> Result(Nil, String) {
   list.try_each(state.players_in_order(state), fn(p) {
     let all = player.get_all_cards(p)
     let ids = list.map(all, fn(c) { c.id })
+    // Hands are refilled to eight during play (the shop may thin them);
+    // Supply Chain is the one effect that leaves a hand short.
+    let expected_hand = case state.phase, p.supply_chain_limited {
+      state.Playing, False ->
+        list.length(p.card_piles.hand)
+        == int_min(player.hand_size, list.length(all))
+      _, _ -> list.length(p.card_piles.hand) <= player.hand_size
+    }
     case
-      list.length(p.card_piles.hand) <= player.hand_size,
+      expected_hand,
       list.length(list.unique(ids)) == list.length(ids),
       p.lives >= 0 && p.lives <= state.config.initial_lives,
       p.hands_remaining >= 0
@@ -24,7 +33,7 @@ fn invariant(state: GameState) -> Result(Nil, String) {
       p.discards_remaining >= 0
     {
       True, True, True, True, True -> Ok(Nil)
-      False, _, _, _, _ -> Error("hand larger than " <> "8")
+      False, _, _, _, _ -> Error("hand is not full")
       _, False, _, _, _ -> Error("duplicate card ids")
       _, _, False, _, _ -> Error("lives out of range")
       _, _, _, False, _ -> Error("hands_remaining out of range")
@@ -107,4 +116,8 @@ pub fn malformed_actions_are_rejected_test() {
       "ghost",
       "{\"name\":\"discard\",\"params\":{\"cards\":[]}}",
     )
+}
+
+fn int_min(a: Int, b: Int) -> Int {
+  int.min(a, b)
 }

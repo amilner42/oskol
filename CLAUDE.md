@@ -166,9 +166,19 @@ Notes:
   play a game from a script without a browser.
 
 ## Testing notes
-- Gleam conformance (`test/tilt/conformance_test.gleam`): 30 seeded random
-  playouts to game over, replay reproduces the same scene JSON, illegal
-  actions rejected, every action emits events, card ids stay unique.
+- Gleam conformance (`test/tilt/conformance_test.gleam`,
+  `test/backgammon/engine_test.gleam`): seeded random playouts to game over,
+  replay reproduces the same scene JSON, illegal actions rejected, every
+  action emits events, per-game invariants (unique card ids, full hands
+  during play, 15 checkers per color, no mixed points).
+- Rules tests use controlled positions: `test/tilt/rules_test.gleam` sets
+  exact hands and sabotage flags to assert scores, ties, game over, and every
+  shop card's effect; `test/backgammon/rules_test.gleam` builds boards to
+  assert dice order, the larger-die rule, bar entry, bearing off, doubles,
+  hits, gammons, match play, and pip arithmetic over random games.
+- When you add a rule, add a controlled-position test for it before the
+  playouts: the playouts prove nothing crashes, the position tests prove the
+  rule is right.
 - Elixir tests build rooms through `Oskol.GameFixtures` and drive real
   channels and LiveViews.
 
