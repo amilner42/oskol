@@ -1,7 +1,9 @@
 //// Position builders shared by the backgammon suites: exact boards for rule
 //// tests and seeded random boards for property and oracle tests.
 
-import backgammon/board.{type Board, type Color, type Loc, Bar, Black, Off, Point, White}
+import backgammon/board.{
+  type Board, type Color, type Loc, Bar, Black, Off, Point, White,
+}
 import backgammon/game as backgammon
 import backgammon/state
 import gamekit/game.{type Seat, Seat}
@@ -108,11 +110,7 @@ fn pick_loc(rng: Rng, color: Color, spread: Spread) -> #(Loc, Rng) {
   }
 }
 
-fn blocked(
-  checkers: Dict(String, #(Color, Loc)),
-  color: Color,
-  p: Int,
-) -> Bool {
+fn blocked(checkers: Dict(String, #(Color, Loc)), color: Color, p: Int) -> Bool {
   dict.values(checkers)
   |> list.any(fn(v) { v == #(board.opponent(color), Point(p)) })
 }

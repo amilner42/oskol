@@ -52,6 +52,10 @@ pub fn reveals_the_viewer_cannot_see_are_dropped_test() {
 }
 
 pub fn other_events_pass_through_in_order_test() {
-  let events = [Message("hi"), PhaseChanged("shop"), event.moved("a", "x", "public")]
+  let events = [
+    Message("hi"),
+    PhaseChanged("shop"),
+    event.moved("a", "x", "public"),
+  ]
   assert event.for_viewer(events, viewed()) == events
 }

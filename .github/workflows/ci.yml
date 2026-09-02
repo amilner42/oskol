@@ -1,0 +1,101 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: compile, Gleam, Elm, Elixir
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.1.1"
+          elixir-version: "1.19.2"
+          gleam-version: "1.13.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Cache mix deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+            build
+          key: mix-${{ runner.os }}-${{ hashFiles('mix.lock', 'manifest.toml') }}
+          restore-keys: mix-${{ runner.os }}-
+
+      - name: Cache Elm packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.elm
+          key: elm-${{ runner.os }}-${{ hashFiles('assets/elm.json') }}
+
+      - run: npm ci
+      - run: mix deps.get
+      - run: mix compile
+      - name: Gleam unit, rules, property and golden tests
+        run: bin/test-gleam
+      - name: Fixture payloads for elm-test
+        run: mix oskol.fixtures payloads
+      - name: Elm typecheck
+        run: cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null
+      - name: Elm tests
+        run: cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm
+      - name: Elixir tests
+        run: mix test
+      - name: Formatting
+        run: mix format --check-formatted && gleam format --check src test
+
+  browser:
+    name: Playwright smokes
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.1.1"
+          elixir-version: "1.19.2"
+          gleam-version: "1.13.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Cache mix deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+            build
+          key: mix-${{ runner.os }}-${{ hashFiles('mix.lock', 'manifest.toml') }}
+          restore-keys: mix-${{ runner.os }}-
+
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: mix deps.get
+      - run: mix assets.build
+      - name: Start the server
+        run: |
+          mix phx.server > server.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf -o /dev/null http://localhost:4000/ && break
+            sleep 1
+          done
+          curl -sf -o /dev/null http://localhost:4000/ || (cat server.log && exit 1)
+      - run: node playwright/test-tilt-smoke/test.js
+      - run: node playwright/test-backgammon-smoke/test.js
+      - name: Server log
+        if: failure()
+        run: cat server.log

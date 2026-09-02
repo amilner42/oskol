@@ -12,7 +12,8 @@ fn parsed(text: String) -> Dynamic {
 }
 
 pub fn incoming_accepts_a_missing_params_object_test() {
-  let assert Ok(incoming) = action.decode_incoming(parsed("{\"name\":\"roll\"}"))
+  let assert Ok(incoming) =
+    action.decode_incoming(parsed("{\"name\":\"roll\"}"))
   assert incoming.name == "roll"
   assert action.string_param(incoming.params, "x")
     == Error("Missing or invalid param: x")

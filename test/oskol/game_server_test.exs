@@ -169,5 +169,4 @@ defmodule Oskol.Game.GameServerTest do
     |> Map.fetch!("tokens")
     |> Enum.map(&{&1["props"]["rank"], &1["props"]["suit"]})
   end
-
 end

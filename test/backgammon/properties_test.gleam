@@ -126,7 +126,9 @@ fn nothing_leaks(s: state.GameState) -> Result(Nil, String) {
         _ -> "p1"
       }
       let base = unwind(s, mover)
-      let same = fn(viewer) { scene_json(s, viewer) == scene_json(base, viewer) }
+      let same = fn(viewer) {
+        scene_json(s, viewer) == scene_json(base, viewer)
+      }
       let other_legal =
         list.map(engine.legal(s, other), fn(schema) { schema.name })
       case
@@ -137,7 +139,8 @@ fn nothing_leaks(s: state.GameState) -> Result(Nil, String) {
         other_legal
       {
         True, True, True, False, ["resign"] -> Ok(Nil)
-        False, _, _, _, _ -> Error("undoing every move does not restore the turn board")
+        False, _, _, _, _ ->
+          Error("undoing every move does not restore the turn board")
         _, False, _, _, _ -> Error("the opponent can see staged moves")
         _, _, False, _, _ -> Error("spectators can see staged moves")
         _, _, _, True, _ -> Error("the mover cannot see their own staged moves")

@@ -16,18 +16,27 @@ defmodule OskolWeb.GameChannel do
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
       state = GameServer.get_state(game_id)
 
-      # Register this channel process as the live connection for the player
-      case get_in(state.connections, [player_id, :name]) do
-        nil ->
-          :ok
+      # Register this channel process as the live connection for the player.
+      # The join reply must describe the room after that, or the joining
+      # client would see itself as disconnected.
+      state =
+        case get_in(state.connections, [player_id, :name]) do
+          nil ->
+            state
 
-        name ->
-          case GameServer.rejoin_game(game_id, name, self()) do
-            {:ok, ^player_id, _} -> :ok
-            {:error, :player_already_connected} -> :ok
-            {:error, reason} -> Logger.warning("Channel rejoin failed: #{inspect(reason)}")
-          end
-      end
+          name ->
+            case GameServer.rejoin_game(game_id, name, self()) do
+              {:ok, ^player_id, joined} ->
+                joined
+
+              {:error, :player_already_connected} ->
+                state
+
+              {:error, reason} ->
+                Logger.warning("Channel rejoin failed: #{inspect(reason)}")
+                state
+            end
+        end
 
       socket = socket |> assign(:game_id, game_id) |> assign(:player_id, player_id)
       {:ok, %{payload: payload(state, player_id, [])}, socket}

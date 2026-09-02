@@ -2,12 +2,12 @@
 
 import gamekit/scene.{type Scene, type Token, type Viewer, type Zone}
 import gleam/dict
-import gleam/json.{type Json}
 import gleam/int
-import gleam/order
+import gleam/json.{type Json}
 import gleam/list
-import gleam/string
 import gleam/option.{None, Some}
+import gleam/order
+import gleam/string
 import tilt/codec
 import tilt/engine
 import tilt/player.{type Player}
@@ -173,7 +173,8 @@ fn masked(p: Player, c: Card) -> Token {
 
 fn by_face(a: Card, b: Card) -> order.Order {
   case int.compare(card.rank_value(a.rank), card.rank_value(b.rank)) {
-    order.Eq -> string.compare(codec.suit_to_string(a.suit), codec.suit_to_string(b.suit))
+    order.Eq ->
+      string.compare(codec.suit_to_string(a.suit), codec.suit_to_string(b.suit))
     other -> other
   }
 }

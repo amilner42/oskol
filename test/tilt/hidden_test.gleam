@@ -89,8 +89,7 @@ fn scenes_keep_secrets(s: GameState) -> Result(Nil, String) {
           _, [_, ..], _, _, _ -> Error(who <> "draw pile")
           _, _, [_, ..], _, _ -> Error(who <> "discards")
           _, _, _, False, _ -> Error(who <> "locked-in hand early")
-          _, _, _, _, False ->
-            Error(who <> "played zone with the wrong count")
+          _, _, _, _, False -> Error(who <> "played zone with the wrong count")
         }
       }),
     )
@@ -124,35 +123,34 @@ fn events_keep_secrets(
 ) -> Result(Nil, String) {
   let g = tilt.game()
   let face_down =
-    list.flat_map(state.players_in_order(after), fn(p) {
-      p.face_down_card_ids
-    })
-  list.try_each([scene.Player("p1"), scene.Player("p2"), scene.Spectator], fn(
-    viewer,
-  ) {
-    let visible = event.for_viewer(events, g.scene(after, viewer))
-    let text = json.to_string(json.array(visible, event.to_json))
-    case
-      list.find(face_down, fn(id) {
-        string.contains(text, "\"id\":\"" <> id <> "\",\"rank\"")
-      })
-    {
-      Ok(id) ->
-        Error(
-          "after "
-          <> actor
-          <> " "
-          <> action_json
-          <> ", "
-          <> viewer_name(viewer)
-          <> " learns the face of "
-          <> id
-          <> " from "
-          <> text,
-        )
-      Error(_) -> Ok(Nil)
-    }
-  })
+    list.flat_map(state.players_in_order(after), fn(p) { p.face_down_card_ids })
+  list.try_each(
+    [scene.Player("p1"), scene.Player("p2"), scene.Spectator],
+    fn(viewer) {
+      let visible = event.for_viewer(events, g.scene(after, viewer))
+      let text = json.to_string(json.array(visible, event.to_json))
+      case
+        list.find(face_down, fn(id) {
+          string.contains(text, "\"id\":\"" <> id <> "\",\"rank\"")
+        })
+      {
+        Ok(id) ->
+          Error(
+            "after "
+            <> actor
+            <> " "
+            <> action_json
+            <> ", "
+            <> viewer_name(viewer)
+            <> " learns the face of "
+            <> id
+            <> " from "
+            <> text,
+          )
+        Error(_) -> Ok(Nil)
+      }
+    },
+  )
 }
 
 pub fn hidden_information_never_leaks_in_random_games_test() {
@@ -185,7 +183,9 @@ pub fn card_ids_reveal_neither_face_nor_position_test() {
   let assert Ok(s) = tilt.init(format.config, seats(), rng.seed(4))
   list.each(state.players_in_order(s), fn(p) {
     let all = list.append(p.card_piles.hand, p.card_piles.deck)
-    list.each(all, fn(c) { assert string.starts_with(c.id, p.player_id <> "-c") })
+    list.each(all, fn(c) {
+      assert string.starts_with(c.id, p.player_id <> "-c")
+    })
     // Labels are a shuffle of their own: the deck order is not the label order
     let labels = list.map(p.card_piles.deck, fn(c) { c.id })
     assert labels != list.sort(labels, string.compare)

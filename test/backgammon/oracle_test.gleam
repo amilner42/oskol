@@ -181,7 +181,11 @@ fn oracle_sequences(b: Board, c: Color, dice: List(Int)) -> List(List(Move)) {
 // ---------- comparison ----------
 
 fn move_key(m: Move) -> String {
-  board.loc_id(m.from) <> ">" <> board.loc_id(m.to) <> "/" <> int.to_string(m.die)
+  board.loc_id(m.from)
+  <> ">"
+  <> board.loc_id(m.to)
+  <> "/"
+  <> int.to_string(m.die)
 }
 
 fn normalize(seqs: List(List(Move))) -> List(String) {
@@ -202,9 +206,11 @@ fn check(b: Board, c: Color, dice: List(Int)) -> Nil {
         <> " with dice "
         <> string.inspect(dice)
         <> "\nboard: "
-        <> string.inspect(list.sort(dict.to_list(b.checkers), fn(x, y) {
-          string.compare(x.0, y.0)
-        }))
+        <> string.inspect(
+          list.sort(dict.to_list(b.checkers), fn(x, y) {
+            string.compare(x.0, y.0)
+          }),
+        )
         <> "\noracle: "
         <> string.inspect(expected)
         <> "\nengine: "

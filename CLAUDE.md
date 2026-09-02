@@ -55,8 +55,22 @@ Rules that keep this honest:
   every state change; the client animates from events, not from diffing.
 - **No presentation in the engine.** No animation flags, no wizard state.
   Multi-step interactions are action schemas with candidates.
-- **Ids are deterministic** (cards are `"AS"`, shop cards `"shop-<round>-<n>"`,
-  checkers `"w1".."b15"`).
+- **Ids are deterministic and opaque.** Checkers are `"w1".."b15"`, shop
+  cards `"shop-<round>-<n>"`, Tilt cards `"<player>-c17"`: labels shuffled
+  independently of the deck, so an id never reveals a face or a position.
+  Faces travel as token props.
+- **Hidden information is the projection's job, and the host's.** `scene`
+  decides per viewer: `scene.hidden_zone` sends a count only,
+  `scene.hidden(token)` keeps an id but drops face and props. Events are
+  emitted once for everyone; the host runs them through
+  `event.for_viewer(events, viewer_scene)`, which blanks the id of any
+  `token_moved` whose token the viewer's scene does not show and drops
+  reveals they cannot see. `custom` payloads are not filtered: never put
+  one viewer's secret in one.
+- **Sort before you serialise a dict keyed by a custom type.** Erlang orders
+  atom keys by atom-table index, which differs between VMs, so unsorted
+  `dict.to_list` output makes scene JSON (and golden fingerprints)
+  irreproducible.
 - **Games never read the time.** `clocks(state)` names the players who should
   be charged right now (both during simultaneous play, one on their turn, none
   during a reveal). `gamekit/clock` owns the arithmetic, `gamekit/instance`
@@ -134,7 +148,8 @@ assets/css/app.css               the multicade/notebook design system (paper, pi
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`.
 2. Register it in `src/gamekit/registry.gleam` (`all()`).
 3. Add `test/<slug>/conformance_test.gleam` using `gamekit/conformance`
-   (random playouts to termination, replay determinism, your invariants).
+   (random playouts to termination, replay determinism, your invariants),
+   then `mix oskol.fixtures` so the golden and Elm suites cover it.
 4. It is now playable at `/<slug>` with the generic renderer. Add a bespoke Elm
    view only if you want one; it must read the protocol Scene, never new wire types
   (see `assets/src/Games/Backgammon/View.elm` for a small one).
@@ -142,18 +157,23 @@ assets/css/app.css               the multicade/notebook design system (paper, pi
 ## Development commands
 
 ```bash
+bin/check             # everything below, in order; add --browser for the Playwright smokes
 mix deps.get          # Elixir + Gleam deps
 mix compile           # compiles Gleam (via mix_gleam) and Elixir
-bin/test-gleam        # Gleam unit + conformance tests (seeded playouts for every game)
-mix test              # Elixir room, channel, LiveView tests
-mix assets.build      # Elm (via esbuild plugin) + Tailwind
+bin/test-gleam        # Gleam unit, rules, oracle, property, hidden-info and golden tests
+mix oskol.fixtures    # regenerate fixtures: `replays` (committed) and/or `payloads` (derived)
+mix test              # Elixir room, bots, channel, LiveView tests
 cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # Elm typecheck
+cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm  # Elm tests (needs `mix oskol.fixtures payloads`)
+mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4000
 node playwright/test-tilt-smoke/test.js         # browser smoke test (server must be running)
-node playwright/test-backgammon-smoke/test.js   # backgammon on the generic renderer, with a clock
+node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
 node playwright/review-games/test.js            # screenshots of both games in play (desktop + phone)
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`.
 
 Notes:
 - mix and the gleam CLI share `build/`. `mix compile` removes the
@@ -162,16 +182,15 @@ Notes:
   package's gleam build output so the gleam CLI recompiles it with beams after
   mix has touched it. Use `bin/test-gleam`, not bare `gleam test`.
 - Elixir test support lives in `test_support/`, not `test/support/`, because
-  gleam compiles any `.ex` it finds under `test/`.
+  gleam compiles any `.ex` it finds under `test/`. `test/oskol_test_files.erl`
+  is the one Erlang file: file access for the golden tests.
 - The gleam compile step forwards positional args to deps tasks. `mix test`
   is aliased to compile first and then run with `--no-compile` so
   `mix test path/to/file.exs` works; for scripts use
   `mix run -e 'Code.eval_file("path")'`.
 - In this environment the Elm package cache is populated by git clone
   (GitHub zipballs are blocked); see `.claude/skills`.
-- The pixel font comes from Google Fonts. Playwright scripts abort those
-  requests so sandboxed runs are not stalled by the blocked download; the
-  screenshots therefore show a monospace fallback for headings.
+- The pixel font is self-hosted under `priv/static/fonts`.
 
 ## Development workflow for Claude
 - Do not leave servers running. For a browser check, run the server and the
@@ -183,24 +202,67 @@ Notes:
   `gamekit/host.text`) shows a game as text with the legal actions, so you can
   play a game from a script without a browser.
 
-## Testing notes
-- Gleam conformance (`test/tilt/conformance_test.gleam`,
-  `test/backgammon/engine_test.gleam`): seeded random playouts to game over,
-  replay reproduces the same scene JSON, illegal actions rejected, every
-  action emits events, per-game invariants (unique card ids, full hands
-  during play, 15 checkers per color, no mixed points).
-- Rules tests use controlled positions: `test/tilt/rules_test.gleam` sets
-  exact hands and sabotage flags to assert scores, ties, game over, and every
-  shop card's effect; `test/backgammon/rules_test.gleam` builds boards to
-  assert dice order, the larger-die rule, bar entry, bearing off, doubles,
-  hits, gammons, match play, and pip arithmetic over random games;
-  `test/backgammon/cube_test.gleam` covers doubling, taking, dropping, the
-  Crawford game, Jacoby scoring, resigning and unlimited play.
-- When you add a rule, add a controlled-position test for it before the
-  playouts: the playouts prove nothing crashes, the position tests prove the
-  rule is right.
-- Elixir tests build rooms through `Oskol.GameFixtures` and drive real
-  channels and LiveViews.
+## Testing: one layer at a time, and the seams between them
+
+Every game is its seed plus its action log, and the suite leans on that.
+
+**Gleam (`bin/test-gleam`)**
+- Rules in controlled positions: `test/tilt/rules_test.gleam` sets exact
+  hands and sabotage flags; `test/backgammon/rules_test.gleam` and
+  `cube_test.gleam` build boards to assert dice order, bar entry, bearing
+  off, hits, gammons, doubling, Crawford, Jacoby, resigning.
+- `test/backgammon/oracle_test.gleam`: an independent move generator,
+  written from the rulebook on raw checker data, checked against
+  `board.sequences` on hundreds of random boards (`positions.gleam` builds
+  them) plus named positions with the expected sequences spelled out.
+- `test/backgammon/properties_test.gleam`: staged-turn invariants over random
+  positions (undo is an exact inverse, a legal first move never strands a
+  die, pip accounting, commit) and a no-leak property over random games
+  (opponent and spectator scenes never change while moves are staged).
+- `test/tilt/hidden_test.gleam`: what each viewer may see (draw order,
+  scrambled faces, locked-in hands) in scenes and in events, over random
+  games, using `conformance.walk` to observe every transition.
+- Conformance (`test/tilt/conformance_test.gleam`,
+  `test/backgammon/engine_test.gleam`): seeded playouts to game over with
+  per-game invariants, replay determinism, malformed actions rejected.
+  Random play excludes `resign` (`conformance.Options`).
+- Golden replays (`test/gamekit/golden_test.gleam`): every file in
+  `test/fixtures/replays` replays to its recorded fingerprint, and every
+  registered format has one. A rules change fails here; when intended, run
+  `mix oskol.fixtures replays` and read the diff.
+- Framework units: rng, clocks, action decoding and validation,
+  `event.for_viewer`, host/protocol shapes.
+
+**Fixtures (`mix oskol.fixtures`)** come from `gamekit/fixture`: replays are
+small and committed; payload captures (every update every viewer received
+for the first steps of a playout) are derived, gitignored, and embedded in
+`assets/tests/Fixtures.elm` for elm-test.
+
+**Elm (`elm-test`)**
+- `ProtocolTest`: every fixture payload decodes; cross-checks that hold for
+  any game (viewer matches seat, spectators have no legal actions, select
+  candidates exist in their zone, ids unique per zone, events only name
+  tokens the viewer can see).
+- `TiltAdapterTest`, `BackgammonViewTest`, `GenericViewTest`: adapters and
+  views on real scenes, pure update logic, and rendered DOM facts
+  (30 checkers, sources marked only for legal moves, PLAY iff `play` is
+  legal, click sends the right message).
+- `MainUpdateTest`: fixture payloads replayed through `Main.applyPayload`.
+
+**Elixir (`mix test`)**
+- `test/oskol/room_test.exs`: `Oskol.Bots` (test_support) plays random
+  legal actions through the room for every registered game and format,
+  many rooms concurrently; disconnect, rejoin, rematch keeps format and
+  clock. Channel tests cover join replies, spectators, per-player payloads,
+  and reconnects; LiveView tests the library and lobby.
+
+**Browser (`bin/check --browser`)**: Playwright smokes create real games and
+play them; review scripts take screenshots for eyeballing.
+
+When you add a rule, add a controlled-position test before the playouts:
+the playouts prove nothing crashes, the position tests prove the rule is
+right. When you add a game, its conformance test plus `mix oskol.fixtures`
+give it golden replays and Elm contract coverage for free.
 
 ## Known patterns to avoid
 - Don't add per-game code to Elixir or to `Protocol.elm`.

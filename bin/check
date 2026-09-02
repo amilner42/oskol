@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Every suite, in order, one command. Stops at the first failure.
+#
+#   bin/check            compile, Gleam tests, Elm typecheck + tests, Elixir tests
+#   bin/check --browser  the same, then the Playwright smokes against a
+#                        server this script starts and stops
+#
+# Elm tests read a generated fixture corpus, so it is regenerated first
+# (the committed golden replays are left alone; the Gleam suite guards them).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+
+step "mix compile"
+mix compile
+
+step "Gleam unit, rules, property and golden tests"
+bin/test-gleam
+
+step "fixture payloads for elm-test"
+mix oskol.fixtures payloads >/dev/null
+
+step "Elm typecheck"
+(cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null)
+
+step "Elm tests"
+(cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm)
+
+step "Elixir tests"
+mix test
+
+if [[ "${1:-}" == "--browser" ]]; then
+  step "assets"
+  mix assets.build >/dev/null
+
+  step "server"
+  log="${TMPDIR:-/tmp}/oskol-check-server.log"
+  setsid bash -c 'exec mix phx.server' >"$log" 2>&1 &
+  server=$!
+  trap 'kill -- -'"$server"' 2>/dev/null || true' EXIT
+  for _ in $(seq 1 90); do
+    curl -sf -o /dev/null http://localhost:4000/ && break
+    sleep 1
+  done
+  curl -sf -o /dev/null http://localhost:4000/ || { echo "server did not start; see $log"; exit 1; }
+
+  step "browser smokes"
+  node playwright/test-tilt-smoke/test.js
+  node playwright/test-backgammon-smoke/test.js
+fi
+
+step "all green"
