@@ -74,10 +74,8 @@ fn play_hand(
 ) -> Result(#(GameState, List(Event)), String) {
   use #(next, resolution) <- result.try(state.lock_in(state, player_id, ids))
   let events = [
-    custom("hand_locked_in", [
-      #("player_id", json.string(player_id)),
-      #("cards", codec.strings(ids)),
-    ]),
+    // The cards stay secret until both players have locked in
+    custom("hand_locked_in", [#("player_id", json.string(player_id))]),
     ..list.map(ids, fn(id) {
       event.moved(id, hand_zone(player_id), played_zone(player_id))
     })
@@ -208,10 +206,11 @@ fn discard(
   let events =
     list.flatten([
       [
+        // Ids only: the moved tokens carry what each viewer may see
         custom("cards_discarded", [
           #("player_id", json.string(player_id)),
-          #("discarded", codec.cards_to_json(discarded)),
-          #("drawn", codec.cards_to_json(drawn)),
+          #("discarded", codec.strings(list.map(discarded, fn(c) { c.id }))),
+          #("drawn", json.int(list.length(drawn))),
         ]),
       ],
       list.map(discarded, fn(c) {
@@ -468,7 +467,7 @@ fn complete_deck_builder(
         |> list.filter(fn(c) { list.contains(ids, c.id) })
         |> list.fold(#([], state), fn(acc, source) {
           let #(cards, state) = acc
-          let #(id, state) = state.next_card_id(state, source.rank, source.suit)
+          let #(id, state) = state.next_card_id(state)
           #(list.append(cards, [card.new(id, source.rank, source.suit)]), state)
         })
       #(player.add_cards_to_deck(p, new_cards), state)

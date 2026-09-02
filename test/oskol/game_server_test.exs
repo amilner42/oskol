@@ -59,7 +59,9 @@ defmodule Oskol.Game.GameServerTest do
     test "the same seed deals the same cards" do
       a = started(7)
       b = started(7)
-      assert hand_cards(a.state.instance, a.p1, 8) == hand_cards(b.state.instance, b.p1, 8)
+      # Card ids embed the player id, so compare faces
+      assert hand_faces(a.state.instance, a.p1) == hand_faces(b.state.instance, b.p1)
+      assert length(hand_faces(a.state.instance, a.p1)) == 8
     end
 
     test "actions apply, broadcast, and reject illegal moves without changing state" do
@@ -160,4 +162,12 @@ defmodule Oskol.Game.GameServerTest do
       end
     end)
   end
+
+  defp hand_faces(instance, player) do
+    GameKit.player_update(instance, player)["scene"]["zones"]
+    |> Enum.find(&(&1["id"] == "hand:#{player}"))
+    |> Map.fetch!("tokens")
+    |> Enum.map(&{&1["props"]["rank"], &1["props"]["suit"]})
+  end
+
 end

@@ -117,6 +117,32 @@ pub fn next_deadline(instance: Instance, now: Int) -> Result(Int, Nil) {
   }
 }
 
+/// A seeded random playout as a JSON fixture (see gamekit/fixture).
+pub fn fixture_json(
+  slug: String,
+  format_id: String,
+  seats: List(#(String, String)),
+  seed: Int,
+  max_steps: Int,
+) -> Result(String, String) {
+  use entry <- result.try(find(slug))
+  let seats = list.map(seats, fn(s) { game.Seat(id: s.0, name: s.1) })
+  entry.fixture(format_id, seats, seed, max_steps)
+}
+
+/// A compact replay fixture (action log plus fingerprint).
+pub fn replay_json(
+  slug: String,
+  format_id: String,
+  seats: List(#(String, String)),
+  seed: Int,
+  max_steps: Int,
+) -> Result(String, String) {
+  use entry <- result.try(find(slug))
+  let seats = list.map(seats, fn(s) { game.Seat(id: s.0, name: s.1) })
+  entry.replay(format_id, seats, seed, max_steps)
+}
+
 // ---------- Updates ----------
 
 /// The full update payload for one player: scene, legal actions, outcome,
@@ -151,11 +177,12 @@ fn update_json(
   events: List(Event),
   now: Int,
 ) -> String {
+  let viewed = instance.scene(instance, viewer)
   json.object([
-    #("scene", scene.to_json(instance.scene(instance, viewer))),
+    #("scene", scene.to_json(viewed)),
     #("legal", json.array(legal, action.to_json)),
     #("outcome", game.outcome_to_json(instance.outcome(instance))),
-    #("events", json.array(events, event.to_json)),
+    #("events", json.array(event.for_viewer(events, viewed), event.to_json)),
     #("clock", clock.to_json(instance.clocks(instance), now)),
   ])
   |> json.to_string

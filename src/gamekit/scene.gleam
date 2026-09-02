@@ -169,6 +169,20 @@ pub fn zone_token_ids(scene: Scene, zone_id: String) -> List(String) {
   }
 }
 
+/// Does this scene show a token with this id anywhere?
+pub fn has_token(scene: Scene, token_id: String) -> Bool {
+  list.any(scene.zones, fn(z) { list.any(z.tokens, fn(t) { t.id == token_id }) })
+}
+
+/// Is this zone's content visible to the viewer? A hidden zone reports a
+/// count but no tokens.
+pub fn zone_visible(scene: Scene, zone_id: String) -> Bool {
+  case find_zone(scene, zone_id) {
+    Ok(z) -> z.tokens != [] || z.count == 0
+    Error(_) -> False
+  }
+}
+
 pub fn viewer_id(viewer: Viewer) -> Option(PlayerId) {
   case viewer {
     Player(id) -> Some(id)

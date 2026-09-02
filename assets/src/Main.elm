@@ -1,4 +1,4 @@
-port module Main exposing (main)
+port module Main exposing (Flags, applyPayload, init, main, refreshView, update)
 
 import Browser
 import Decoders exposing (..)

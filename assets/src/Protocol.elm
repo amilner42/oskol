@@ -18,6 +18,7 @@ module Protocol exposing
     , counter
     , encodeAction
     , encodeRematch
+    , eventDecoder
     , findPlayer
     , formatClock
     , remainingNow
@@ -28,8 +29,11 @@ module Protocol exposing
     , playerData
     , sceneData
     , serverMessageDecoder
+    , schemaDecoder
+    , sceneDecoder
     , tokenProp
     , tokensMovedTo
+    , updateDecoder
     , zoneTokens
     )
 

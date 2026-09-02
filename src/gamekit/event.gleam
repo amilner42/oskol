@@ -5,8 +5,10 @@
 //// cover the common cases so a generic client can animate any game; `Custom`
 //// carries game-specific payloads for bespoke views.
 
+import gamekit/scene.{type Scene}
 import gleam/int
 import gleam/json.{type Json}
+import gleam/list
 import gleam/option.{type Option, None, Some}
 
 pub type Event {
@@ -65,6 +67,43 @@ pub fn to_json(event: Event) -> Json {
         #("payload", payload),
       ])
   }
+}
+
+/// The events one viewer may receive. Games emit events once, for everyone;
+/// the host runs them through this with the viewer's own scene so hidden
+/// information stays hidden without games having to think about it:
+///
+/// - a `TokenMoved` keeps its token id only when the viewer's scene shows
+///   that token (or the token was destroyed out of a zone the viewer can
+///   see); otherwise the id is blanked and only the zones remain, so counts
+///   still animate without naming the token;
+/// - a `Revealed` for a token the viewer cannot see is dropped;
+/// - everything else passes through. `Custom` payloads are the game's
+///   responsibility: never put one viewer's secrets in them.
+pub fn for_viewer(events: List(Event), viewed: Scene) -> List(Event) {
+  list.filter_map(events, fn(event) {
+    case event {
+      TokenMoved(id, from, to) ->
+        case scene.has_token(viewed, id) {
+          True -> Ok(event)
+          False ->
+            case from, to {
+              Some(zone), None if id != "" ->
+                case scene.zone_visible(viewed, zone) {
+                  True -> Ok(event)
+                  False -> Ok(TokenMoved("", from, to))
+                }
+              _, _ -> Ok(TokenMoved("", from, to))
+            }
+        }
+      Revealed(id, _) ->
+        case scene.has_token(viewed, id) {
+          True -> Ok(event)
+          False -> Error(Nil)
+        }
+      _ -> Ok(event)
+    }
+  })
 }
 
 pub fn moved(token_id: String, from: String, to: String) -> Event {

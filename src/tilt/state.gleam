@@ -85,6 +85,13 @@ pub fn new(
     list.fold(seats, #(dict.new(), rng), fn(acc, seat) {
       let #(players, rng) = acc
       let #(shuffled, rng) = rng.shuffle(rng, deck.create_standard_deck())
+      // Ids are opaque labels shuffled independently of the deck, so an id
+      // reveals neither a card's face nor where it sits in the draw pile.
+      let #(labels, rng) = rng.shuffle(rng, list.range(1, 52))
+      let shuffled =
+        list.map2(shuffled, labels, fn(c, n) {
+          card.Card(..c, id: seat.0 <> "-c" <> int.to_string(n))
+        })
       let p =
         player.new(
           seat.0,
@@ -151,21 +158,15 @@ pub fn name_of(state: GameState, player_id: PlayerId) -> String {
   dict.get(state.names, player_id) |> result.unwrap(player_id)
 }
 
-fn all_locked_in(state: GameState) -> Bool {
+pub fn all_locked_in(state: GameState) -> Bool {
   list.all(players_in_order(state), player.has_locked_in)
 }
 
 /// Mint a unique id for a card created during the game
-pub fn next_card_id(
-  state: GameState,
-  rank: card.Rank,
-  suit: card.Suit,
-) -> #(String, GameState) {
+pub fn next_card_id(state: GameState) -> #(String, GameState) {
+  // Opaque like every card id: the serial says nothing about the face
   let serial = state.card_serial + 1
-  #(
-    card.code(rank, suit) <> "-" <> int.to_string(serial),
-    GameState(..state, card_serial: serial),
-  )
+  #("c" <> int.to_string(serial), GameState(..state, card_serial: serial))
 }
 
 // ---------- Playing ----------

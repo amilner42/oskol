@@ -178,6 +178,10 @@ fn replace_cards(
       hand: list.append(kept, drawn),
       discard: new_discard,
     )
+  // Only cards still in hand stay face down: a played or discarded card is
+  // revealed, and must not come back face down after a reshuffle
+  let face_down =
+    list.filter(face_down, fn(id) { list.any(piles.hand, fn(c) { c.id == id }) })
   #(
     Player(..player, card_piles: piles, face_down_card_ids: face_down),
     drawn,

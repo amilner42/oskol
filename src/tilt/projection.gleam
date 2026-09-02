@@ -3,7 +3,10 @@
 import gamekit/scene.{type Scene, type Token, type Viewer, type Zone}
 import gleam/dict
 import gleam/json.{type Json}
+import gleam/int
+import gleam/order
 import gleam/list
+import gleam/string
 import gleam/option.{None, Some}
 import tilt/codec
 import tilt/engine
@@ -24,7 +27,11 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
     players: list.map(players, fn(p) { player_info(state, p) }),
     zones: list.flatten([
       list.flat_map(players, fn(p) {
-        player_zones(p, viewer_id == Some(p.player_id))
+        player_zones(
+          p,
+          viewer_id == Some(p.player_id),
+          state.all_locked_in(state),
+        )
       }),
       shop_zones(state),
     ]),
@@ -43,12 +50,15 @@ pub fn phase_name(phase: state.Phase) -> String {
 // ---------- Players ----------
 
 fn player_info(state: GameState, p: Player) -> scene.PlayerInfo {
+  // Sorted: a dict keyed by a custom type iterates in atom-table order,
+  // which differs between VMs, and scene JSON must be reproducible.
   let skill_tree =
     p.skill_tree
     |> dict.to_list
     |> list.map(fn(entry) {
       #(codec.hand_type_to_string(entry.0), json.int(entry.1))
     })
+    |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
     |> json.object
   scene.player(p.player_id, state.name_of(state, p.player_id))
   |> scene.counter("lives", p.lives)
@@ -57,6 +67,7 @@ fn player_info(state: GameState, p: Player) -> scene.PlayerInfo {
   |> scene.counter("discards_remaining", p.discards_remaining)
   |> scene.counter("deck_count", list.length(p.card_piles.deck))
   |> scene.counter("discard_count", list.length(p.card_piles.discard))
+  |> scene.counter("hand_count", list.length(p.card_piles.hand))
   |> scene.flag("locked_in", player.has_locked_in(p))
   |> scene.flag("scrambled", p.scrambled)
   |> scene.flag("enhancements_disabled", p.enhancements_disabled)
@@ -88,29 +99,45 @@ fn card_token(c: Card) -> Token {
   |> scene.with_props(list.filter(codec.card_fields(c), fn(f) { f.0 != "id" }))
 }
 
-fn player_zones(p: Player, is_viewer: Bool) -> List(Zone) {
+fn player_zones(p: Player, is_viewer: Bool, revealed: Bool) -> List(Zone) {
   let id = p.player_id
+  // Hands are open in Tilt. A scrambled card is face down to everyone,
+  // holder included: the token keeps its (opaque) id so it can be played,
+  // but carries no face.
   let hand =
     scene.owned_zone(
       engine.hand_zone(id),
       id,
       scene.Fan,
-      list.map(p.card_piles.hand, card_token),
+      list.map(p.card_piles.hand, fn(c) { masked(p, c) }),
     )
-  let played =
-    scene.owned_zone(
-      engine.played_zone(id),
-      id,
-      scene.Row,
-      list.map(option.unwrap(p.locked_in_hand, []), card_token),
-    )
+  // A locked-in hand stays secret until both players have locked in
+  let locked = option.unwrap(p.locked_in_hand, [])
+  let played = case is_viewer || revealed {
+    True ->
+      scene.owned_zone(
+        engine.played_zone(id),
+        id,
+        scene.Row,
+        list.map(locked, card_token),
+      )
+    False ->
+      scene.hidden_zone(
+        engine.played_zone(id),
+        Some(id),
+        scene.Row,
+        list.length(locked),
+      )
+  }
+  // The holder may know what is left in their draw pile, never in which
+  // order: it is sent sorted by face. Others only get the count.
   let #(deck, discard) = case is_viewer {
     True -> #(
       scene.owned_zone(
         engine.deck_zone(id),
         id,
         scene.Stack,
-        list.map(p.card_piles.deck, card_token),
+        p.card_piles.deck |> list.sort(by_face) |> list.map(card_token),
       ),
       scene.owned_zone(
         engine.discard_zone(id),
@@ -135,6 +162,20 @@ fn player_zones(p: Player, is_viewer: Bool) -> List(Zone) {
     )
   }
   [hand, played, deck, discard]
+}
+
+fn masked(p: Player, c: Card) -> Token {
+  case list.contains(p.face_down_card_ids, c.id) {
+    True -> scene.hidden(card_token(c))
+    False -> card_token(c)
+  }
+}
+
+fn by_face(a: Card, b: Card) -> order.Order {
+  case int.compare(card.rank_value(a.rank), card.rank_value(b.rank)) {
+    order.Eq -> string.compare(codec.suit_to_string(a.suit), codec.suit_to_string(b.suit))
+    other -> other
+  }
 }
 
 fn shop_zones(state: GameState) -> List(Zone) {

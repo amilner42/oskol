@@ -432,19 +432,27 @@ pub fn undo(
 ) -> Result(#(GameState, Staged), String) {
   use color <- result.try(color_of(state, player_id))
   case state.phase {
-    Moving(c, dice) if c == color ->
+    Moving(c, _) if c == color ->
       case list.reverse(state.staged) {
         [] -> Error("Nothing to undo")
-        [last, ..rest] ->
+        [last, ..rest] -> {
+          // Rebuild the unused dice from the roll so undo restores the exact
+          // state the player saw, in the same order.
+          let remaining = list.reverse(rest)
+          let dice =
+            list.fold(remaining, turn_dice(state), fn(dice, s) {
+              remove_one(dice, s.move.die)
+            })
           Ok(#(
             GameState(
               ..state,
               board: last.board_before,
-              phase: Moving(color, [last.move.die, ..dice]),
-              staged: list.reverse(rest),
+              phase: Moving(color, dice),
+              staged: remaining,
             ),
             last,
           ))
+        }
       }
     _ -> Error("Nothing to undo")
   }

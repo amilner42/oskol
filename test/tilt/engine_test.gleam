@@ -64,8 +64,13 @@ pub fn new_game_deals_eight_cards_each_test() {
 }
 
 pub fn same_seed_same_deal_test() {
-  assert hand_ids(new_game(5), p1) == hand_ids(new_game(5), p1)
-  assert hand_ids(new_game(5), p1) != hand_ids(new_game(6), p1)
+  // Ids are positional and opaque, so compare the faces dealt
+  let faces = fn(seed) {
+    player.get_hand(get(new_game(seed), p1))
+    |> list.map(fn(c) { #(c.rank, c.suit) })
+  }
+  assert faces(5) == faces(5)
+  assert faces(5) != faces(6)
 }
 
 pub fn players_get_different_shuffles_test() {

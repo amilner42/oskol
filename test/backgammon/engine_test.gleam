@@ -116,13 +116,14 @@ fn invariant(s: state.GameState) -> Result(Nil, String) {
 pub fn random_single_games_terminate_test() {
   list.each(list.range(1, 12), fn(seed) {
     let assert Ok(report) =
-      conformance.random_playout(
+      conformance.random_playout_with(
         backgammon.game(),
         "single",
         seats(),
         seed,
         4000,
         invariant,
+        conformance.Options(exclude: ["resign"]),
       )
     assert report.finished
     let assert state.Finished(_) = report.state.phase
@@ -132,13 +133,14 @@ pub fn random_single_games_terminate_test() {
 pub fn random_matches_terminate_and_score_test() {
   list.each([50, 51, 52], fn(seed) {
     let assert Ok(report) =
-      conformance.random_playout(
+      conformance.random_playout_with(
         backgammon.game(),
         "match5",
         seats(),
         seed,
         30_000,
         invariant,
+        conformance.Options(exclude: ["resign"]),
       )
     assert report.finished
     let assert state.Finished(winner) = report.state.phase

@@ -62,7 +62,17 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
           None -> False
         }),
       ),
-      #("dice", json.array(state.dice_left(state), json.int)),
+      #(
+        "dice",
+        json.array(
+          case state.phase, is_mover {
+            // Which dice are used is part of the private staging
+            state.Moving(_, _), False -> state.turn_dice(state)
+            _, _ -> state.dice_left(state)
+          },
+          json.int,
+        ),
+      ),
       #("last_roll", json.array(state.last_roll, json.int)),
       #("target", json.int(state.config.target)),
       #("game_number", json.int(state.game_number)),

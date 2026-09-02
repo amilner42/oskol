@@ -375,6 +375,16 @@
 
 
 
+/* Self-hosted pixel font (Press Start 2P, OFL). Served from priv/static/fonts
+   so rendering never depends on a third party and test screenshots are stable. */
+@font-face {
+  font-family: "Press Start 2P";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/press-start-2p-latin.woff2") format("woff2");
+}
+
 /* ---------- Multicade x notebook design system ----------
    Light and airy like a fresh notebook page, with 8-bit arcade bones:
    pixel headings, hard-shadow borders, marquees, scanlines. */

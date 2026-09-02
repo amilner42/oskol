@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Model, Msg(..), Out(..), init, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Msg(..), Out(..), init, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 

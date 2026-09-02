@@ -30,7 +30,18 @@ import Types exposing (..)
 -}
 cardFromToken : Token -> Maybe Card
 cardFromToken token =
-    D.decodeValue (cardPropsDecoder token.id) token.props |> Result.toMaybe
+    case D.decodeValue (cardPropsDecoder token.id) token.props of
+        Ok card ->
+            Just card
+
+        Err _ ->
+            -- A face-down card carries no face at all (the server keeps it
+            -- secret); it is still a card the holder can select by id.
+            if token.faceUp then
+                Nothing
+
+            else
+                Just (Card token.id Two Spades Nothing)
 
 
 cardPropsDecoder : String -> Decoder Card

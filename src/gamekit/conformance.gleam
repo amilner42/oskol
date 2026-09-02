@@ -5,6 +5,7 @@
 //// add their own invariant via the `check` callback.
 
 import gamekit/action.{type Schema}
+import gamekit/event.{type Event}
 import gamekit/game.{type Game, type Seat}
 import gamekit/rng.{type Rng}
 import gamekit/scene
@@ -24,6 +25,19 @@ pub type Report(state) {
   Report(state: state, steps: List(Step), finished: Bool)
 }
 
+/// Tuning for random play.
+pub type Options {
+  Options(
+    /// Action names never chosen (a random `resign` would end every game
+    /// early and prove nothing about the rules).
+    exclude: List(String),
+  )
+}
+
+pub fn default_options() -> Options {
+  Options(exclude: [])
+}
+
 /// Play a game to completion (or `max_steps`) choosing uniformly among the
 /// legal actions of all players. Fails if a legal action is rejected, if the
 /// game is stuck with no legal actions while unfinished, or if `check` fails.
@@ -35,6 +49,26 @@ pub fn random_playout(
   max_steps: Int,
   check: fn(state) -> Result(Nil, String),
 ) -> Result(Report(state), String) {
+  random_playout_with(
+    definition,
+    format_id,
+    seats,
+    seed,
+    max_steps,
+    check,
+    default_options(),
+  )
+}
+
+pub fn random_playout_with(
+  definition: Game(state, a),
+  format_id: String,
+  seats: List(Seat),
+  seed: Int,
+  max_steps: Int,
+  check: fn(state) -> Result(Nil, String),
+  options: Options,
+) -> Result(Report(state), String) {
   use format <- result.try(
     game.find_format(definition.info, format_id)
     |> result.replace_error("Unknown format"),
@@ -45,7 +79,16 @@ pub fn random_playout(
     rng.seed(seed),
   ))
   use _ <- result.try(check(initial))
-  loop(definition, seats, initial, rng.seed(seed + 7919), max_steps, [], check)
+  loop(
+    definition,
+    seats,
+    initial,
+    rng.seed(seed + 7919),
+    max_steps,
+    [],
+    check,
+    options,
+  )
 }
 
 fn loop(
@@ -56,6 +99,7 @@ fn loop(
   remaining: Int,
   steps: List(Step),
   check: fn(state) -> Result(Nil, String),
+  options: Options,
 ) -> Result(Report(state), String) {
   let finished = case definition.outcome(state) {
     game.Ongoing -> False
@@ -67,13 +111,15 @@ fn loop(
     False, 0 ->
       Ok(Report(state: state, steps: list.reverse(steps), finished: False))
     False, _ -> {
-      let options =
+      let choices =
         list.flat_map(seats, fn(seat) {
-          list.map(definition.legal(state, seat.id), fn(schema) {
-            #(seat.id, schema)
+          definition.legal(state, seat.id)
+          |> list.filter(fn(schema) {
+            !list.contains(options.exclude, schema.name)
           })
+          |> list.map(fn(schema) { #(seat.id, schema) })
         })
-      case options {
+      case choices {
         [] ->
           Error(
             "Stuck: no legal actions but the game is not finished after "
@@ -82,7 +128,7 @@ fn loop(
           )
         _ -> {
           let assert Ok(#(#(player_id, schema), chooser)) =
-            rng.pick(chooser, options)
+            rng.pick(chooser, choices)
           let #(action_json, chooser) = build_action(schema, chooser)
           use next <- result.try(apply_json(
             definition,
@@ -109,6 +155,7 @@ fn loop(
             remaining - 1,
             [Step(player_id, action_json), ..steps],
             check,
+            options,
           )
         }
       }
@@ -163,6 +210,41 @@ pub fn replay(
   ))
   list.try_fold(steps, initial, fn(state, step) {
     apply_json(definition, state, step.player_id, step.action_json)
+  })
+}
+
+/// Re-apply recorded steps from the seed, handing every transition to `f`:
+/// the state before, the actor, the action JSON, the state after and the
+/// events it produced. For tests that care what each action did, not only
+/// where the game ended.
+pub fn walk(
+  definition: Game(state, a),
+  format_id: String,
+  seats: List(Seat),
+  seed: Int,
+  steps: List(Step),
+  f: fn(state, String, String, state, List(Event)) -> Result(Nil, String),
+) -> Result(state, String) {
+  use format <- result.try(
+    game.find_format(definition.info, format_id)
+    |> result.replace_error("Unknown format"),
+  )
+  use initial <- result.try(definition.init(
+    format.config,
+    seats,
+    rng.seed(seed),
+  ))
+  list.try_fold(steps, initial, fn(state, step) {
+    use raw <- result.try(parse(step.action_json))
+    use incoming <- result.try(action.decode_incoming(raw))
+    use decoded <- result.try(definition.decode_action(incoming))
+    use #(next, events) <- result.try(definition.apply(
+      state,
+      step.player_id,
+      decoded,
+    ))
+    use _ <- result.try(f(state, step.player_id, step.action_json, next, events))
+    Ok(next)
   })
 }
 
