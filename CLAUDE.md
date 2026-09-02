@@ -105,7 +105,9 @@ test/backgammon/    board rules, engine, cube (take/drop, Crawford, Jacoby,
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: lobby, formats, actions, rematch
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
-lib/oskol_web/live/landing_live.ex       "/" library, "/:slug" start page + lobby
+lib/oskol_web/live/landing_live.ex       "/" library, "/:slug" start page + lobby (one LiveView,
+                                         patch navigation between them)
+lib/oskol_web/components/game_art.ex     per-game accent colour + poster illustration (optional)
 lib/oskol_web/controllers/page_controller.ex   "/:slug/:id" serves the Elm client
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Tilt/Adapter.elm  Scene -> Tilt's PlayerView
@@ -141,6 +143,7 @@ cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # E
 mix phx.server        # http://localhost:4000
 node playwright/test-tilt-smoke/test.js         # browser smoke test (server must be running)
 node playwright/test-backgammon-smoke/test.js   # backgammon on the generic renderer, with a clock
+node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
 ```
 
 Notes:

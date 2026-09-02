@@ -374,3 +374,81 @@
 }
 
 
+
+/* ---------- Landing / lobby design system ---------- */
+
+/* The table: dark slate with a soft spotlight, shared by every page */
+.felt {
+  background-color: #0e1117;
+  background-image:
+    radial-gradient(ellipse 70% 50% at 50% -10%, rgba(56, 189, 248, 0.14), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 100%, rgba(244, 63, 94, 0.08), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 0% 100%, rgba(245, 158, 11, 0.08), transparent 60%);
+}
+
+/* Entrance animation for panels and posters */
+@keyframes rise-in {
+  0% { opacity: 0; transform: translateY(14px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.rise-in { animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.rise-in-1 { animation-delay: 0.05s; }
+.rise-in-2 { animation-delay: 0.12s; }
+.rise-in-3 { animation-delay: 0.19s; }
+
+/* Game posters carry their accent as a CSS variable */
+.poster {
+  --accent: #38bdf8;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--accent) 14%, transparent), transparent 55%),
+    rgba(255, 255, 255, 0.04);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s, box-shadow 0.25s;
+}
+.poster:hover, .poster:focus-visible {
+  transform: translateY(-4px);
+  border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+  box-shadow: 0 20px 50px -20px color-mix(in oklab, var(--accent) 60%, transparent);
+  outline: none;
+}
+.poster .poster-art { transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+.poster:hover .poster-art { transform: scale(1.04) rotate(-1deg); }
+.accent-text { color: var(--accent); }
+.accent-bg { background-color: var(--accent); }
+.accent-ring { border-color: var(--accent); }
+
+/* Selection tiles (formats) */
+.tile {
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.tile:hover { transform: translateY(-2px); }
+.tile-mine { border-color: oklch(68% 0.16 230); box-shadow: 0 0 0 1px oklch(68% 0.16 230); }
+.tile-theirs { border-color: oklch(70% 0.18 55); border-style: dashed; }
+.tile-both {
+  border-color: oklch(75% 0.16 150);
+  box-shadow: 0 0 0 1px oklch(75% 0.16 150), 0 0 24px -6px oklch(75% 0.16 150);
+}
+
+/* Primary action */
+.cta {
+  background: linear-gradient(135deg, oklch(62% 0.2 255), oklch(58% 0.22 270));
+  transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
+  box-shadow: 0 10px 30px -12px oklch(60% 0.22 265);
+}
+.cta:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+.cta:active:not(:disabled) { transform: translateY(0) scale(0.99); }
+.cta:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+/* Wordmark letters */
+.mark-letter {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2.6rem;
+  border-radius: 0.4rem;
+  background: #fff;
+  color: #111827;
+  font-weight: 800;
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.8);
+}
+.mark-letter.red { color: #e11d48; }

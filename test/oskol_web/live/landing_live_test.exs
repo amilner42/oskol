@@ -17,6 +17,17 @@ defmodule OskolWeb.LandingLiveTest do
     assert has_element?(view, "a[href='/']", "All games")
   end
 
+  test "picking a game from the library is a patch, not a page load", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/")
+    view |> element("#game-backgammon") |> render_click()
+    assert_patch(view, "/backgammon")
+    assert has_element?(view, "#game-title", "Backgammon")
+    assert has_element?(view, "form[phx-submit=new_game]")
+    view |> element("header a[href='/']", "All games") |> render_click()
+    assert_patch(view, "/")
+    assert has_element?(view, "#game-tilt")
+  end
+
   test "an unknown game redirects to the library", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, ~p"/nope")
   end
@@ -29,7 +40,7 @@ defmodule OskolWeb.LandingLiveTest do
       |> form("form[phx-submit=new_game]", %{"player_name" => "Alice"})
       |> render_submit()
 
-    assert html =~ "Waiting for opponent to join"
+    assert html =~ "Waiting for your opponent"
     assert has_element?(view, "#format-short", "Short")
     assert has_element?(view, "#format-standard", "Standard")
     assert has_element?(view, "#format-extended", "Extended")
@@ -52,7 +63,7 @@ defmodule OskolWeb.LandingLiveTest do
     host |> element("#format-short") |> render_click()
     guest |> element("#format-short") |> render_click()
 
-    assert render(host) =~ "Both players selected Short"
+    assert render(host) =~ "Both picked Short"
     host |> element("button", "Start Game") |> render_click()
     assert_redirect(host, "/tilt/#{game_id}?name=Alice")
     assert Oskol.Game.get_server_state(game_id).instance != nil
@@ -91,7 +102,7 @@ defmodule OskolWeb.LandingLiveClockTest do
     host |> element("#clock-blitz") |> render_click()
     assert render(host) =~ "Agree on a time control"
     guest |> element("#clock-blitz") |> render_click()
-    assert render(host) =~ "Both players selected Single game"
+    assert render(host) =~ "Both picked Single game"
     host |> element("button", "Start Game") |> render_click()
     assert_redirect(host, "/backgammon/#{game_id}?name=Alice")
     state = Oskol.Game.get_server_state(game_id)

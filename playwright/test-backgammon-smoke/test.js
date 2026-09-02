@@ -36,7 +36,7 @@ async function main() {
     await p1.goto(`${BASE}/backgammon`);
     await p1.waitForSelector('[data-phx-main].phx-connected');
     await p1.fill('input[name="player_name"]', 'Alice');
-    await p1.click('button:has-text("New Game")');
+    await p1.click('#create-game');
     await p1.waitForSelector('#format-single');
     const gameId = new URL(p1.url()).searchParams.get('game');
     log(`Game ${gameId} created`);
@@ -47,7 +47,7 @@ async function main() {
     await p2.waitForSelector('[data-phx-main].phx-connected');
     await sleep(500);
     await p2.fill('input[name="player_name"]', 'Bob');
-    await p2.click('button:has-text("Join Game")');
+    await p2.click('#join-game');
     await p2.waitForSelector('#format-single');
 
     await p1.click('#format-single');
@@ -55,7 +55,7 @@ async function main() {
     await p1.click('#clock-blitz');
     await p1.waitForSelector('text=Agree on a time control');
     await p2.click('#clock-blitz');
-    await p1.waitForSelector('text=Both players selected Single game');
+    await p1.waitForSelector('text=Both picked Single game');
     await p1.screenshot({ path: `${SHOTS}/01-lobby.png` });
     await p1.click('button:has-text("Start Game")');
     await p1.waitForURL(`**/backgammon/${gameId}**`);

@@ -29,7 +29,34 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {},  // Empty hooks for now
+  hooks: {
+    // Invite links: native share on phones, clipboard elsewhere.
+    Share: {
+      mounted() {
+        this.el.addEventListener("click", async () => {
+          const url = this.el.dataset.url;
+          const label = this.el.querySelector("[data-label]");
+          const original = label ? label.textContent : null;
+          const flash = (text) => {
+            if (!label) return;
+            label.textContent = text;
+            setTimeout(() => (label.textContent = original), 1500);
+          };
+          const mobile = window.matchMedia("(max-width: 640px)").matches;
+          if (mobile && navigator.share) {
+            try { await navigator.share({ url }); } catch (_) {}
+            return;
+          }
+          try {
+            await navigator.clipboard.writeText(url);
+            flash("Copied!");
+          } catch (_) {
+            flash("Copy failed");
+          }
+        });
+      },
+    },
+  },
 })
 
 // Show progress bar on live navigation and form submits

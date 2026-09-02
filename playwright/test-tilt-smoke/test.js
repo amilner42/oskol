@@ -47,7 +47,7 @@ async function main() {
 
     // 2. Create + join
     await p1.fill('input[name="player_name"]', 'Alice');
-    await p1.click('button:has-text("New Game")');
+    await p1.click('#create-game');
     await p1.waitForSelector('#format-short');
     const gameId = new URL(p1.url()).searchParams.get('game');
     if (!gameId) throw new Error('no game id in lobby url ' + p1.url());
@@ -60,14 +60,14 @@ async function main() {
     await p2.waitForSelector('[data-phx-main].phx-connected');
     await sleep(500);
     await p2.fill('input[name="player_name"]', 'Bob');
-    await p2.click('button:has-text("Join Game")');
+    await p2.click('#join-game');
     await p2.waitForSelector('#format-short');
     await p1.screenshot({ path: `${SHOTS}/03-lobby.png` });
 
     // 3. Format + start
     await p1.click('#format-short');
     await p2.click('#format-short');
-    await p1.waitForSelector('text=Both players selected Short');
+    await p1.waitForSelector('text=Both picked Short');
     await p1.click('button:has-text("Start Game")');
     await p1.waitForURL(`**/tilt/${gameId}**`);
     await p2.waitForURL(`**/tilt/${gameId}**`);
