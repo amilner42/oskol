@@ -50,7 +50,7 @@ viewLoading message =
 viewError : String -> Html Msg
 viewError err =
     div [ class "min-h-screen paper flex items-center justify-center" ]
-        [ div [ class "bg-red-900 text-red-200 p-6 rounded-lg max-w-md" ]
+        [ div [ class "bg-red-900 text-red-200 p-6 max-w-md" ]
             [ h2 [ class "text-xl font-bold mb-4" ] [ text "Error" ]
             , p [] [ text err ]
             ]
@@ -338,8 +338,8 @@ viewSortButton currentSort =
             [ onClick ToggleCardSort
             , class "px-3 py-1 text-xs pix-sm transition-all flex items-center gap-1 touch-manipulation"
             ]
-            [ span [ class "text-gray-500" ] [ text "Sorting by" ]
-            , span [ class "font-semibold text-gray-800" ]
+            [ span [ class "text-[color:var(--pencil)]" ] [ text "Sorting by" ]
+            , span [ class "font-semibold text-base-content" ]
                 [ text
                     (case currentSort of
                         ByRank ->
@@ -516,7 +516,7 @@ viewHandPlaceholders player opponent =
     div [ class "text-center space-y-6 sm:space-y-10 px-2 sm:px-0" ]
         [ -- Opponent's hand placeholders (top)
           div []
-            [ div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2 invisible" ]
+            [ div [ class "text-xs sm:text-sm text-[color:var(--pencil)] mb-1 sm:mb-2 invisible" ]
                 [ text "\u{00A0}" ]
             , div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
                 opponentSlots
@@ -526,7 +526,7 @@ viewHandPlaceholders player opponent =
             ]
         , -- Player's hand placeholders (bottom)
           div []
-            [ div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2 invisible" ]
+            [ div [ class "text-xs sm:text-sm text-[color:var(--pencil)] mb-1 sm:mb-2 invisible" ]
                 [ text "\u{00A0}" ]
             , div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
                 playerSlots
@@ -727,7 +727,7 @@ viewAnimatedHandRow hand handType breakdown level animState playerState isCurren
     in
     div []
         [ -- Hand type header (smaller text)
-          div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2" ]
+          div [ class "text-xs sm:text-sm text-[color:var(--pencil)] mb-1 sm:mb-2" ]
             [ text handTypeText ]
         , -- Cards display
           div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
@@ -735,10 +735,10 @@ viewAnimatedHandRow hand handType breakdown level animState playerState isCurren
         , -- Formula display
           div [ class "h-5 sm:h-7 flex items-center justify-center gap-2 sm:gap-3 text-xs sm:text-base font-mono" ]
             [ span [ class "text-blue-400 font-bold" ] [ text (String.fromInt runningChips) ]
-            , span [ class "text-base-content/60" ] [ text "×" ]
+            , span [ class "text-[color:var(--pencil)]" ] [ text "×" ]
             , span [ class "text-red-400 font-bold" ] [ text (String.fromInt runningMult) ]
             , if showFinal then
-                span [ class "text-base-content/60" ] [ text "=" ]
+                span [ class "text-[color:var(--pencil)]" ] [ text "=" ]
 
               else
                 text ""
@@ -757,10 +757,10 @@ viewAnimatedHandRow hand handType breakdown level animState playerState isCurren
 viewCardPlaceholder : Bool -> Html Msg
 viewCardPlaceholder showIcon =
     div
-        [ class "w-9 h-[52px] sm:w-16 sm:h-24 border-2 border-dashed border-gray-400 rounded flex items-center justify-center" ]
+        [ class "w-9 h-[52px] sm:w-16 sm:h-24 border-2 border-dashed border-[color:var(--ink)] flex items-center justify-center" ]
         [ if showIcon then
             -- Show lock icon when opponent has locked in
-            Heroicons.Solid.lockClosed [ SvgAttr.class "w-4 h-4 sm:w-5 sm:h-5 text-gray-400" ]
+            Heroicons.Solid.lockClosed [ SvgAttr.class "w-4 h-4 sm:w-5 sm:h-5 text-[color:var(--pencil)]" ]
 
           else
             text ""
@@ -806,10 +806,10 @@ viewHandResults model gameState results =
                 |> Dict.toList
                 |> List.map
                     (\( playerId, result ) ->
-                        div [ class "bg-base-200 p-4 border-2 border-base-content" ]
+                        div [ class "bg-[color:var(--paper-2)] p-4 border-2 border-[color:var(--ink)]" ]
                             [ div [ class "text-base-content font-bold mb-2" ]
                                 [ text (getPlayerName gameState playerId) ]
-                            , div [ class "text-gray-300 mb-2" ]
+                            , div [ class "text-[color:var(--pencil)] mb-2" ]
                                 [ text (handTypeToString result.handType) ]
                             , div [ class "text-2xl font-bold text-blue-400" ]
                                 [ text (String.fromInt result.score ++ " points") ]
@@ -1101,7 +1101,7 @@ viewScoreBreakdownRowFromAnimation hand handType score breakdown level playerNam
     in
     div []
         [ -- Hand type header
-          div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2" ]
+          div [ class "text-xs sm:text-sm text-[color:var(--pencil)] mb-1 sm:mb-2" ]
             [ text handTypeText ]
         , -- Cards display
           div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
@@ -1187,10 +1187,10 @@ viewScoreBreakdownRowFromAnimation hand handType score breakdown level playerNam
         , -- Formula display
           div [ class "flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-lg font-mono" ]
             [ span [ class "text-blue-400 font-bold" ] [ text (String.fromInt runningChips) ]
-            , span [ class "text-base-content/60" ] [ text "×" ]
+            , span [ class "text-[color:var(--pencil)]" ] [ text "×" ]
             , span [ class "text-red-400 font-bold" ] [ text (String.fromInt runningMult) ]
             , if showFinal then
-                span [ class "text-base-content/60" ] [ text "=" ]
+                span [ class "text-[color:var(--pencil)]" ] [ text "=" ]
 
               else
                 text ""
@@ -1260,7 +1260,7 @@ viewScoreBreakdownRow result skillTree playerName isCurrentPlayer animState =
     in
     div []
         [ -- Hand type header
-          div [ class "text-xs sm:text-sm text-base-content/80 mb-1 sm:mb-2" ]
+          div [ class "text-xs sm:text-sm text-[color:var(--pencil)] mb-1 sm:mb-2" ]
             [ text handTypeText ]
         , -- Cards display
           div [ class "flex gap-1 sm:gap-2 justify-center mb-2 sm:mb-3" ]
@@ -1343,10 +1343,10 @@ viewScoreBreakdownRow result skillTree playerName isCurrentPlayer animState =
         , -- Formula display
           div [ class "flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-lg font-mono" ]
             [ span [ class "text-blue-400 font-bold" ] [ text (String.fromInt runningChips) ]
-            , span [ class "text-base-content/60" ] [ text "×" ]
+            , span [ class "text-[color:var(--pencil)]" ] [ text "×" ]
             , span [ class "text-red-400 font-bold" ] [ text (String.fromInt runningMult) ]
             , if showFinal then
-                span [ class "text-base-content/60" ] [ text "=" ]
+                span [ class "text-[color:var(--pencil)]" ] [ text "=" ]
 
               else
                 text ""
@@ -1415,7 +1415,7 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
         bothReady =
             playerReady && opponentReady
     in
-    div [ class "min-h-screen flex items-center justify-center bg-gradient-to-br from-base-300 via-base-200 to-base-100" ]
+    div [ class "min-h-screen flex items-center justify-center" ]
         [ div [ class "w-full max-w-2xl px-6" ]
             [ -- Header with emoji and title
               div [ class "text-center mb-8" ]
@@ -1437,11 +1437,11 @@ viewMatchSummary model gameState playerId playerName playerState opponentState o
                             "Defeat"
                         )
                     ]
-                , p [ class "text-base-content/60" ]
+                , p [ class "text-[color:var(--pencil)]" ]
                     [ text ("Match complete after " ++ String.fromInt gameState.roundNumber ++ " rounds") ]
                 ]
             , -- Match result summary
-              div [ class "text-center mb-8 text-lg text-base-content/80" ]
+              div [ class "text-center mb-8 text-lg text-[color:var(--pencil)]" ]
                 [ let
                     winnerName =
                         if isWinner then
@@ -1523,8 +1523,8 @@ viewRematchButton playerReady opponentReady playerName opponentName =
 
                 ( True, False ) ->
                     -- Player ready - show fill animation
-                    { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
-                    , borderClasses = "border-gray-200"
+                    { bgClasses = "bg-white text-base-content relative overflow-hidden"
+                    , borderClasses = "border-[color:var(--ink)]"
                     , textContent = "Rematch"
                     , clickable = False
                     , showFill = True
@@ -1532,8 +1532,8 @@ viewRematchButton playerReady opponentReady playerName opponentName =
 
                 ( False, True ) ->
                     -- Opponent ready - show fill animation
-                    { bgClasses = "bg-white text-gray-900 relative overflow-hidden"
-                    , borderClasses = "border-gray-200"
+                    { bgClasses = "bg-white text-base-content relative overflow-hidden"
+                    , borderClasses = "border-[color:var(--ink)]"
                     , textContent = "Rematch"
                     , clickable = True
                     , showFill = True
@@ -1541,8 +1541,8 @@ viewRematchButton playerReady opponentReady playerName opponentName =
 
                 ( False, False ) ->
                     -- Neither ready - white button with gray text
-                    { bgClasses = "bg-white hover:bg-gray-50 text-gray-700 shadow-md hover:shadow-lg"
-                    , borderClasses = "border-gray-200"
+                    { bgClasses = "bg-white hover:bg-gray-50 text-base-content  "
+                    , borderClasses = "border-[color:var(--ink)]"
                     , textContent = "Rematch"
                     , clickable = True
                     , showFill = False
@@ -1557,13 +1557,13 @@ viewRematchButton playerReady opponentReady playerName opponentName =
     in
     div [ class "flex flex-col gap-2" ]
         [ button
-            [ class ("w-full px-8 py-4 rounded-xl font-bold text-lg transition-all " ++ buttonState.bgClasses)
+            [ class ("w-full px-8 py-4 font-bold text-lg transition-all " ++ buttonState.bgClasses)
             , onClick_
             , disabled (not buttonState.clickable)
             ]
             [ -- Progress fill animation overlay
               if buttonState.showFill then
-                div [ class "absolute inset-0 pointer-events-none rounded-xl overflow-hidden" ]
+                div [ class "absolute inset-0 pointer-events-none overflow-hidden" ]
                     [ div
                         [ class "absolute inset-y-0 left-0 h-full bg-blue-500"
                         , Html.Attributes.style "animation" "progress-fill 0.5s ease-out forwards"
@@ -1587,15 +1587,15 @@ viewRematchButton playerReady opponentReady playerName opponentName =
         , -- Status text below button
           case ( playerReady, opponentReady ) of
             ( True, True ) ->
-                div [ class "text-center text-sm text-base-content/60" ]
+                div [ class "text-center text-sm text-[color:var(--pencil)]" ]
                     [ text "Both players ready!" ]
 
             ( True, False ) ->
-                div [ class "text-center text-sm text-base-content/60" ]
+                div [ class "text-center text-sm text-[color:var(--pencil)]" ]
                     [ text "You requested a rematch" ]
 
             ( False, True ) ->
-                div [ class "text-center text-sm text-base-content/60" ]
+                div [ class "text-center text-sm text-[color:var(--pencil)]" ]
                     [ text (opponentName ++ " requested a rematch") ]
 
             ( False, False ) ->
@@ -1616,9 +1616,9 @@ viewPlayerResultCard playerName lives initialLives isWinner colorClass =
     in
     div
         [ classList
-            [ ( "rounded-xl p-6 border-2 bg-base-100 shadow-lg", True )
+            [ ( "rounded-xl p-6 border-2 bg-white ", True )
             , ( "border-success ring-2 ring-success/20", isWinner )
-            , ( "border-base-300", not isWinner )
+            , ( "border-[color:var(--ink)]", not isWinner )
             ]
         ]
         [ h2 [ class ("text-xl font-bold mb-4 text-center " ++ colorClass) ]
@@ -1643,14 +1643,14 @@ viewPlayerResultCard playerName lives initialLives isWinner colorClass =
                 , -- Empty hearts
                   if lostLives > 0 then
                     List.repeat lostLives
-                        (Heroicons.Outline.heart [ SvgAttr.class "w-8 h-8 text-base-content/20" ])
+                        (Heroicons.Outline.heart [ SvgAttr.class "w-8 h-8 text-[color:var(--pencil)]" ])
 
                   else
                     []
                 ]
             )
         , -- Lives text
-          div [ class "text-center text-base-content/50 text-xs" ]
+          div [ class "text-center text-[color:var(--pencil)] text-xs" ]
             [ text (String.fromInt livesRemaining ++ "/" ++ String.fromInt initialLives ++ " lives") ]
         ]
 
@@ -1917,10 +1917,10 @@ viewTopCenterBar gameState player opponent pendingAnimation =
                     in
                     div
                         [ classList
-                            [ ( "w-2 h-2 rounded-full transition-all", True )
+                            [ ( "w-2 h-2  transition-all", True )
                             , ( "bg-base-content", isPast )
                             , ( "bg-base-content animate-pulse ring-2 ring-base-content/50", isCurrent )
-                            , ( "bg-base-content/30", isFuture )
+                            , ( "bg-[color:var(--ink)]", isFuture )
                             ]
                         ]
                         []
@@ -1939,13 +1939,13 @@ viewOpponentInfo opponent opponentName initialLives discardsPerRound scoreDiff =
                     |> List.map
                         (\i ->
                             if i > discardsPerRound - opponent.discardsRemaining then
-                                Heroicons.Solid.trash [ SvgAttr.class "w-4 h-4 text-gray-400" ]
+                                Heroicons.Solid.trash [ SvgAttr.class "w-4 h-4 text-[color:var(--pencil)]" ]
 
                             else
-                                Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                                Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-base-content" ]
                         )
                 )
-            , span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
+            , span [ class "hidden sm:inline text-[color:var(--pencil)]" ] [ text "·" ]
             , div [ class "flex items-center gap-0.5" ]
                 (List.range 1 initialLives
                     |> List.map
@@ -1954,7 +1954,7 @@ viewOpponentInfo opponent opponentName initialLives discardsPerRound scoreDiff =
                                 Heroicons.Solid.heart [ SvgAttr.class "w-4 h-4 text-red-400" ]
 
                             else
-                                Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                                Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-base-content" ]
                         )
                 )
             ]
@@ -1987,20 +1987,20 @@ viewPlayerInfo player playerName initialLives discardsPerRound scoreDiff =
                                 Heroicons.Solid.heart [ SvgAttr.class "w-4 h-4 text-red-400" ]
 
                             else
-                                Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                                Heroicons.Outline.heart [ SvgAttr.class "w-4 h-4 text-base-content" ]
                         )
                 )
-            , span [ class "hidden sm:inline text-gray-500" ] [ text "·" ]
+            , span [ class "hidden sm:inline text-[color:var(--pencil)]" ] [ text "·" ]
             , div [ class "flex items-center gap-0.5" ]
                 (List.range 1 discardsPerRound
                     |> List.reverse
                     |> List.map
                         (\i ->
                             if i > discardsPerRound - player.discardsRemaining then
-                                Heroicons.Solid.trash [ SvgAttr.class "w-4 h-4 text-gray-400" ]
+                                Heroicons.Solid.trash [ SvgAttr.class "w-4 h-4 text-[color:var(--pencil)]" ]
 
                             else
-                                Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-gray-600" ]
+                                Heroicons.Outline.trash [ SvgAttr.class "w-4 h-4 text-base-content" ]
                         )
                 )
             ]
@@ -2048,16 +2048,16 @@ viewGameLogModal =
                 ]
             , button
                 [ onClick CloseModal
-                , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
+                , class "sm:hidden px-3 py-2 bg-[color:var(--paper-2)] hover:bg-[color:var(--paper-2)] transition-colors flex items-center gap-2 relative z-50"
                 , Html.Attributes.type_ "button"
                 , Html.Attributes.title "Close"
                 ]
                 [ span [ class "text-sm font-medium text-base-content" ] [ text "Close" ]
-                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
+                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-[color:var(--pencil)]" ]
                 ]
             ]
         , div [ class "w-full max-w-4xl" ]
-            [ div [ class "text-gray-300 text-center" ]
+            [ div [ class "text-[color:var(--pencil)] text-center" ]
                 [ text "Game event log coming soon..." ]
             ]
         ]
@@ -2075,12 +2075,12 @@ viewDeckModal deckPlayerId currentPlayer opponent playerId playerName opponentNa
                 ]
             , button
                 [ onClick CloseModal
-                , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
+                , class "sm:hidden px-3 py-2 bg-[color:var(--paper-2)] hover:bg-[color:var(--paper-2)] transition-colors flex items-center gap-2 relative z-50"
                 , Html.Attributes.type_ "button"
                 , Html.Attributes.title "Close"
                 ]
                 [ span [ class "text-sm font-medium text-base-content" ] [ text "Close" ]
-                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
+                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-[color:var(--pencil)]" ]
                 ]
             ]
         , div [ class "w-full max-w-4xl" ]
@@ -2144,7 +2144,7 @@ viewDeckCards player =
     in
     div [ class "flex justify-center" ]
         [ div [ class "inline-block" ]
-            [ div [ class "text-xs text-base-content/70 mb-2 sm:mb-3" ]
+            [ div [ class "text-xs text-[color:var(--pencil)] mb-2 sm:mb-3" ]
                 [ text (String.fromInt cardsRemaining ++ " cards left") ]
             , div [ class "space-y-2 sm:space-y-3 min-w-0" ]
                 (List.map
@@ -2160,7 +2160,7 @@ viewDeckCards player =
                                 getMaxDuplicates cardsByRank
                         in
                         div [ class "flex items-start gap-1 sm:gap-2" ]
-                            [ div [ class "w-3 sm:w-4 text-center pt-1 text-[10px] sm:text-xs text-base-content/50 flex-shrink-0" ]
+                            [ div [ class "w-3 sm:w-4 text-center pt-1 text-[10px] sm:text-xs text-[color:var(--pencil)] flex-shrink-0" ]
                                 [ text (String.fromInt (List.length suitCards)) ]
                             , div [ class "flex-1 space-y-0.5 sm:space-y-1 overflow-x-auto" ]
                                 (List.range 0 (maxDupes - 1)
@@ -2210,7 +2210,7 @@ viewDeckCards player =
                                                                     ]
 
                                                             Nothing ->
-                                                                div [ class "w-6 h-9 sm:w-12 sm:h-[72px] bg-base-300/20 rounded flex-shrink-0" ]
+                                                                div [ class "w-6 h-9 sm:w-12 sm:h-[72px] bg-[color:var(--paper-2)] flex-shrink-0" ]
                                                                     []
                                                     )
                                                     ranks
@@ -2237,12 +2237,12 @@ viewLevelsModal currentPlayer opponent playerName opponentName =
                 ]
             , button
                 [ onClick CloseModal
-                , class "sm:hidden px-3 py-2 bg-base-300/50 hover:bg-base-300/70 rounded-lg transition-colors flex items-center gap-2 relative z-50"
+                , class "sm:hidden px-3 py-2 bg-[color:var(--paper-2)] hover:bg-[color:var(--paper-2)] transition-colors flex items-center gap-2 relative z-50"
                 , Html.Attributes.type_ "button"
                 , Html.Attributes.title "Close"
                 ]
                 [ span [ class "text-sm font-medium text-base-content" ] [ text "Close" ]
-                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-base-content/60" ]
+                , Heroicons.Solid.xCircle [ SvgAttr.class "w-5 h-5 text-[color:var(--pencil)]" ]
                 ]
             ]
         , div [ class "w-full max-w-2xl" ]
@@ -2358,16 +2358,16 @@ viewLevelsList player =
 
                         statsColorClass =
                             if countered then
-                                "text-base-content/40 line-through"
+                                "text-[color:var(--pencil)] line-through"
 
                             else
-                                "text-base-content/70"
+                                "text-[color:var(--pencil)]"
 
                         -- Background color gradient based on level (plateaus at 5+)
                         levelBgClass =
                             case min level 5 of
                                 1 ->
-                                    "bg-base-300/20"
+                                    "bg-[color:var(--paper-2)]"
 
                                 2 ->
                                     "bg-emerald-900/20"
@@ -2382,9 +2382,9 @@ viewLevelsList player =
                                     -- Level 5+
                                     "bg-amber-900/25"
                     in
-                    div [ class ("flex items-center justify-between py-1 px-2 rounded " ++ levelBgClass ++ " " ++ opacityClass) ]
+                    div [ class ("flex items-center justify-between py-1 px-2 " ++ levelBgClass ++ " " ++ opacityClass) ]
                         [ div [ class "flex items-center gap-2" ]
-                            [ span [ class "text-xs text-base-content/50 w-6" ]
+                            [ span [ class "text-xs text-[color:var(--pencil)] w-6" ]
                                 [ text ("Lv" ++ String.fromInt level) ]
                             , span [ class ("text-sm " ++ strikeClass) ]
                                 [ text (handTypeToString handType) ]
@@ -2541,7 +2541,7 @@ formatSuit suit =
 viewBadge : String -> Badge -> Html Msg
 viewBadge colorClass badge =
     div
-        [ class ("group relative flex items-center gap-1 px-2 py-1 rounded text-xs font-semibold " ++ colorClass)
+        [ class ("group relative flex items-center gap-1 px-2 py-1 text-xs font-semibold " ++ colorClass)
         , Html.Attributes.title badge.tooltip
         ]
         [ span [] [ text badge.name ] ]
@@ -2627,10 +2627,10 @@ viewCenterboardBadges player opponent =
 -}
 viewShop : Model -> ShopData -> Html Msg
 viewShop model shopData =
-    div [ class "h-screen-safe bg-base-200 lg:bg-gradient-to-br lg:from-base-200 lg:via-base-100 lg:to-base-200 overflow-auto" ]
+    div [ class "h-screen-safe bg-[color:var(--paper-2)] overflow-auto" ]
         [ div [ class "min-h-full flex flex-col lg:flex-row lg:h-screen-safe" ]
             [ -- Section 1: Header with lives (left column on desktop)
-              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-base-300/50 bg-base-200 lg:bg-base-100/50 lg:flex lg:flex-col lg:h-screen-safe" ]
+              div [ class "order-1 lg:order-none lg:w-[440px] xl:w-[540px] lg:flex-shrink-0 lg:border-r border-[color:var(--ink)] bg-[color:var(--paper-2)] lg:bg-white lg:flex lg:flex-col lg:h-screen-safe" ]
                 [ viewShopHeader shopData
                 , -- Cards Grid (hidden on mobile, shown on desktop)
                   div [ class "hidden lg:block flex-1 p-6 overflow-y-auto" ]
@@ -2650,7 +2650,7 @@ viewShop model shopData =
                         text ""
                 ]
             , -- Section 3: Mobile cards view (order-3)
-              div [ class "order-3 lg:hidden px-3 py-3 border-t border-base-300/50 bg-base-200" ]
+              div [ class "order-3 lg:hidden px-3 py-3 border-t border-[color:var(--ink)] bg-[color:var(--paper-2)]" ]
                 [ viewMobileShopCards shopData model.shopUIState ]
             , -- Mobile preview modal
               case model.shopUIState of
@@ -2667,12 +2667,12 @@ viewShop model shopData =
 -}
 viewShopHeader : ShopData -> Html Msg
 viewShopHeader shopData =
-    div [ class "p-6 border-b border-base-300/50 flex-shrink-0" ]
+    div [ class "p-6 border-b border-[color:var(--ink)] flex-shrink-0" ]
         [ div [ class "flex items-center justify-between mb-4" ]
-            [ div [ class "text-2xl font-light text-base-content" ]
+            [ div [ class "pixel text-sm text-base-content" ]
                 [ text "Command Center" ]
             , div [ class "flex items-center gap-2" ]
-                [ div [ class "text-xs uppercase tracking-wider text-base-content/40" ]
+                [ div [ class "text-xs pixel uppercase text-[color:var(--pencil)]" ]
                     [ text "Round" ]
                 , div [ class "text-lg font-semibold text-base-content" ]
                     [ text (String.fromInt shopData.currentRound) ]
@@ -2692,12 +2692,12 @@ viewShopHeader shopData =
                                     span [ class "text-error" ] [ text "♥" ]
 
                                 else
-                                    span [ class "text-base-content/20" ] [ text "♥" ]
+                                    span [ class "text-[color:var(--pencil)]" ] [ text "♥" ]
                             )
                     )
                 ]
             , -- VS divider
-              span [ class "text-xs text-base-content/30" ] [ text "vs" ]
+              span [ class "text-xs text-[color:var(--pencil)]" ] [ text "vs" ]
             , -- Opponent lives
               div [ class "flex items-center gap-2" ]
                 [ span [ class "text-xs text-opponent font-medium" ]
@@ -2710,7 +2710,7 @@ viewShopHeader shopData =
                                     span [ class "text-error" ] [ text "♥" ]
 
                                 else
-                                    span [ class "text-base-content/20" ] [ text "♥" ]
+                                    span [ class "text-[color:var(--pencil)]" ] [ text "♥" ]
                             )
                     )
                 ]
@@ -2757,9 +2757,9 @@ viewShopCardsGrid shopData maybeUIState =
         [ -- Arsenal Section (Permanent Upgrades)
           div [ class "mb-6" ]
             [ div [ class "mb-3 flex items-center gap-2" ]
-                [ div [ class "text-sm font-semibold uppercase tracking-wider text-base-content/40" ]
+                [ div [ class "text-sm font-semibold pixel uppercase text-[color:var(--pencil)]" ]
                     [ text "Arsenal" ]
-                , div [ class "text-xs text-base-content/40" ]
+                , div [ class "text-xs text-[color:var(--pencil)]" ]
                     [ text "Permanent Upgrades" ]
                 ]
             , div [ class "grid grid-cols-4 gap-3" ]
@@ -2774,9 +2774,9 @@ viewShopCardsGrid shopData maybeUIState =
         , -- Tactical Ops Section (Action Cards)
           div []
             [ div [ class "mb-3 flex items-center gap-2" ]
-                [ div [ class "text-sm font-semibold uppercase tracking-wider text-base-content/40" ]
+                [ div [ class "text-sm font-semibold pixel uppercase text-[color:var(--pencil)]" ]
                     [ text "Tactical Ops" ]
-                , div [ class "text-xs text-base-content/40" ]
+                , div [ class "text-xs text-[color:var(--pencil)]" ]
                     [ text "Temporary Battlefield Advantage" ]
                 ]
             , div [ class "grid grid-cols-4 gap-3" ]
@@ -2887,43 +2887,43 @@ viewShopCard shopCard shopData pickedIds destroyedIds canPick previewingCardId =
             if isSelected then
                 case accentColor of
                     "emerald" ->
-                        "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
+                        "border-emerald-500   scale-[1.02]"
 
                     "rose" ->
-                        "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
+                        "border-rose-500   scale-[1.02]"
 
                     "violet" ->
-                        "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
+                        "border-violet-500   scale-[1.02]"
 
                     "amber" ->
-                        "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
+                        "border-amber-500   scale-[1.02]"
 
                     _ ->
-                        "border-base-300/50"
+                        "border-[color:var(--ink)]"
 
             else if isPicked || isDestroyed then
-                "border-base-300/30 opacity-50"
+                "border-[color:var(--pencil)] opacity-40"
 
             else if not canPick then
-                "border-base-300/30 opacity-50 cursor-not-allowed"
+                "border-[color:var(--pencil)] opacity-40 cursor-not-allowed"
 
             else
                 -- Use full class names for Tailwind to detect
                 case accentColor of
                     "emerald" ->
-                        "border-base-300/50 hover:border-emerald-400 hover:shadow-md cursor-pointer"
+                        "border-[color:var(--ink)] shop-tile hover:border-emerald-400 cursor-pointer"
 
                     "rose" ->
-                        "border-base-300/50 hover:border-rose-400 hover:shadow-md cursor-pointer"
+                        "border-[color:var(--ink)] shop-tile hover:border-rose-400 cursor-pointer"
 
                     "violet" ->
-                        "border-base-300/50 hover:border-violet-400 hover:shadow-md cursor-pointer"
+                        "border-[color:var(--ink)] shop-tile hover:border-violet-400 cursor-pointer"
 
                     "amber" ->
-                        "border-base-300/50 hover:border-amber-400 hover:shadow-md cursor-pointer"
+                        "border-[color:var(--ink)] shop-tile hover:border-amber-400 cursor-pointer"
 
                     _ ->
-                        "border-base-300/50 cursor-pointer"
+                        "border-[color:var(--ink)] shop-tile cursor-pointer"
 
         labelColor =
             case accentColor of
@@ -2940,10 +2940,10 @@ viewShopCard shopCard shopData pickedIds destroyedIds canPick previewingCardId =
                     "text-violet-500"
 
                 _ ->
-                    "text-base-content/40"
+                    "text-[color:var(--pencil)]"
     in
     button
-        [ class ("w-full aspect-[2/3] rounded-xl p-2 flex flex-col transition-all relative overflow-hidden bg-base-100 border-2 " ++ borderClass)
+        [ class ("w-full aspect-[2/3] p-2 flex flex-col transition-all relative overflow-hidden bg-white border-[3px] " ++ borderClass)
         , onClick
             (if isDisabled then
                 NoOp
@@ -2955,7 +2955,7 @@ viewShopCard shopCard shopData pickedIds destroyedIds canPick previewingCardId =
         , Html.Attributes.disabled isDisabled
         ]
         [ -- Type badge
-          div [ class ("text-[10px] font-bold uppercase tracking-wider mb-2 " ++ labelColor) ]
+          div [ class ("text-[10px] font-bold pixel uppercase mb-2 " ++ labelColor) ]
             [ text typeLabel ]
         , -- Card name
           div [ class "flex-1 flex items-center justify-center" ]
@@ -2974,19 +2974,19 @@ viewShopCard shopCard shopData pickedIds destroyedIds canPick previewingCardId =
                             else
                                 "text-orange-400"
                     in
-                    div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                    div [ class "absolute inset-0 bg-white flex items-end justify-center pb-4" ]
                         [ span [ class ("text-xs font-medium " ++ textColorClass) ]
                             [ text pickerName ]
                         ]
 
                 Nothing ->
-                    div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
-                        [ span [ class "text-xs text-base-content/40 font-medium" ]
+                    div [ class "absolute inset-0 bg-white flex items-end justify-center pb-4" ]
+                        [ span [ class "text-xs text-[color:var(--pencil)] font-medium" ]
                             [ text "Picked" ]
                         ]
 
           else if isDestroyed then
-            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+            div [ class "absolute inset-0 bg-white flex items-end justify-center pb-4" ]
                 [ span [ class "text-xs text-rose-400 font-medium" ]
                     [ text "Destroyed" ]
                 ]
@@ -3035,9 +3035,9 @@ viewMobileShopCards shopData maybeUIState =
         [ -- Arsenal Section
           div [ class "mb-4" ]
             [ div [ class "mb-2 flex items-center gap-2" ]
-                [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
+                [ div [ class "text-xs font-semibold pixel uppercase text-[color:var(--pencil)]" ]
                     [ text "Arsenal" ]
-                , div [ class "text-[10px] text-base-content/40" ]
+                , div [ class "text-[10px] text-[color:var(--pencil)]" ]
                     [ text "Permanent Upgrades" ]
                 ]
             , div [ class "flex gap-2 overflow-x-auto pb-2" ]
@@ -3052,9 +3052,9 @@ viewMobileShopCards shopData maybeUIState =
         , -- Tactical Ops Section
           div []
             [ div [ class "mb-2 flex items-center gap-2" ]
-                [ div [ class "text-xs font-semibold uppercase tracking-wider text-base-content/40" ]
+                [ div [ class "text-xs font-semibold pixel uppercase text-[color:var(--pencil)]" ]
                     [ text "Tactical Ops" ]
-                , div [ class "text-[10px] text-base-content/40" ]
+                , div [ class "text-[10px] text-[color:var(--pencil)]" ]
                     [ text "Temporary Battlefield Advantage" ]
                 ]
             , div [ class "flex gap-2 overflow-x-auto pb-2" ]
@@ -3121,28 +3121,28 @@ viewMobileShopCard shopCard shopData pickedIds destroyedIds canPick previewingCa
             if isSelected then
                 case accentColor of
                     "emerald" ->
-                        "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[1.02]"
+                        "border-emerald-500   scale-[1.02]"
 
                     "rose" ->
-                        "border-rose-500 shadow-lg shadow-rose-500/20 scale-[1.02]"
+                        "border-rose-500   scale-[1.02]"
 
                     "violet" ->
-                        "border-violet-500 shadow-lg shadow-violet-500/20 scale-[1.02]"
+                        "border-violet-500   scale-[1.02]"
 
                     "amber" ->
-                        "border-amber-500 shadow-lg shadow-amber-500/20 scale-[1.02]"
+                        "border-amber-500   scale-[1.02]"
 
                     _ ->
-                        "border-base-300/50"
+                        "border-[color:var(--ink)]"
 
             else if isPicked || isDestroyed then
-                "border-base-300/30 opacity-50"
+                "border-[color:var(--pencil)] opacity-40"
 
             else if not canPick then
-                "border-base-300/30 opacity-50 cursor-not-allowed"
+                "border-[color:var(--pencil)] opacity-40 cursor-not-allowed"
 
             else
-                "border-base-300/50"
+                "border-[color:var(--ink)]"
 
         labelColor =
             case accentColor of
@@ -3159,10 +3159,10 @@ viewMobileShopCard shopCard shopData pickedIds destroyedIds canPick previewingCa
                     "text-violet-500"
 
                 _ ->
-                    "text-base-content/40"
+                    "text-[color:var(--pencil)]"
     in
     button
-        [ class ("w-[100px] aspect-[2/3] rounded-xl p-2 flex flex-col transition-all relative overflow-hidden flex-shrink-0 bg-base-100 border-2 " ++ borderClass)
+        [ class ("w-[100px] aspect-[2/3] p-2 flex flex-col transition-all relative overflow-hidden flex-shrink-0 bg-white border-2 " ++ borderClass)
         , onClick
             (if isDisabled then
                 NoOp
@@ -3174,7 +3174,7 @@ viewMobileShopCard shopCard shopData pickedIds destroyedIds canPick previewingCa
         , Html.Attributes.disabled isDisabled
         ]
         [ -- Type badge
-          div [ class ("text-[8px] lg:text-[10px] font-bold uppercase tracking-wider mb-1 " ++ labelColor) ]
+          div [ class ("text-[8px] lg:text-[10px] font-bold pixel uppercase mb-1 " ++ labelColor) ]
             [ text typeLabel ]
         , -- Card name
           div [ class "flex-1 flex items-center justify-center" ]
@@ -3193,19 +3193,19 @@ viewMobileShopCard shopCard shopData pickedIds destroyedIds canPick previewingCa
                             else
                                 "text-orange-400"
                     in
-                    div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+                    div [ class "absolute inset-0 bg-white flex items-end justify-center pb-4" ]
                         [ span [ class ("text-xs font-medium " ++ textColorClass) ]
                             [ text pickerName ]
                         ]
 
                 Nothing ->
-                    div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
-                        [ span [ class "text-xs text-base-content/40 font-medium" ]
+                    div [ class "absolute inset-0 bg-white flex items-end justify-center pb-4" ]
+                        [ span [ class "text-xs text-[color:var(--pencil)] font-medium" ]
                             [ text "Picked" ]
                         ]
 
           else if isDestroyed then
-            div [ class "absolute inset-0 bg-base-100/60 flex items-end justify-center pb-4 rounded-xl" ]
+            div [ class "absolute inset-0 bg-white flex items-end justify-center pb-4" ]
                 [ span [ class "text-xs text-rose-400 font-medium" ]
                     [ text "Destroyed" ]
                 ]
@@ -3359,7 +3359,7 @@ viewPickTimeline shopData =
         allSlots =
             destroySlots ++ pickSlots
     in
-    div [ class "p-3 lg:p-6 border-b border-base-300/50" ]
+    div [ class "p-3 lg:p-6 border-b border-[color:var(--ink)]" ]
         [ div [ class "flex flex-wrap gap-2 lg:gap-3" ]
             (allSlots
                 |> List.map
@@ -3400,43 +3400,43 @@ viewTimelineSlot slotNum slotType pickerName maybeCard isCurrent isPlayerAction 
             if maybeCard /= Nothing then
                 if slotType == "DESTROY" then
                     -- Glassy red effect for completed destroy phase
-                    ( "bg-gradient-to-br from-rose-500/20 to-rose-600/30 backdrop-blur-sm border-rose-400/40", "text-rose-400/80" )
+                    ( "bg-gradient-to-br    border-rose-400/40", "text-rose-400/80" )
 
                 else
                 -- Glassy effect in player color (blue or orange) for completed pick
                 if
                     isPlayerAction
                 then
-                    ( "bg-gradient-to-br from-blue-500/20 to-blue-600/30 backdrop-blur-sm border-blue-400/40", "text-blue-400/80" )
+                    ( "bg-gradient-to-br    border-blue-400/40", "text-blue-400/80" )
 
                 else
-                    ( "bg-gradient-to-br from-orange-500/20 to-orange-600/30 backdrop-blur-sm border-orange-400/40", "text-orange-400/80" )
+                    ( "bg-gradient-to-br    border-orange-400/40", "text-orange-400/80" )
 
             else if isCurrent then
                 -- Use player color for the glow (blue for player, orange for opponent)
                 if isPlayerAction then
-                    ( "bg-base-200/50 border-dashed animate-pulse border-blue-400", "text-base-content/40" )
+                    ( "bg-[color:var(--paper-2)] border-dashed animate-pulse border-blue-400", "text-[color:var(--pencil)]" )
 
                 else
-                    ( "bg-base-200/50 border-dashed animate-pulse border-orange-400", "text-base-content/40" )
+                    ( "bg-[color:var(--paper-2)] border-dashed animate-pulse border-orange-400", "text-[color:var(--pencil)]" )
 
             else
-                ( "bg-base-200/30 border-base-300/30", "text-base-content/40" )
+                ( "bg-[color:var(--paper-2)] border-[color:var(--ink)]", "text-[color:var(--pencil)]" )
     in
-    div [ class ("flex-1 min-w-[110px] lg:min-w-[180px] flex-shrink-0 rounded-lg p-2 lg:p-3 border transition-all " ++ containerClass) ]
-        [ div [ class ("text-[9px] lg:text-[10px] uppercase tracking-wider mb-0.5 lg:mb-1 " ++ labelColor) ]
+    div [ class ("flex-1 min-w-[110px] lg:min-w-[180px] flex-shrink-0 p-2 lg:p-3 border transition-all " ++ containerClass) ]
+        [ div [ class ("text-[9px] lg:text-[10px] pixel uppercase mb-0.5 lg:mb-1 " ++ labelColor) ]
             [ text label ]
         , case maybeCard of
             Just card ->
                 div [ class "min-w-0" ]
                     [ div [ class "text-xs lg:text-sm font-medium text-base-content truncate" ]
                         [ text (shopCardName card) ]
-                    , div [ class "text-[9px] lg:text-[10px] text-base-content/40" ]
+                    , div [ class "text-[9px] lg:text-[10px] text-[color:var(--pencil)]" ]
                         [ text pickerName ]
                     ]
 
             Nothing ->
-                div [ class "text-xs lg:text-sm text-base-content/30" ]
+                div [ class "text-xs lg:text-sm text-[color:var(--pencil)]" ]
                     [ text pickerName ]
         ]
 
@@ -3497,9 +3497,9 @@ viewMobilePreviewModal uiState shopCountdown skillTree =
                     False
     in
     if hasContent then
-        div [ class "lg:hidden fixed inset-0 z-50 bg-black/50" ]
+        div [ class "lg:hidden fixed inset-0 z-50 bg-[rgba(35,36,58,0.55)]" ]
             [ div [ class "absolute inset-x-0 bottom-0 flex items-end" ]
-                [ div [ class "relative w-full max-h-[85vh] bg-base-100 rounded-t-2xl shadow-2xl overflow-hidden animate-slide-up" ]
+                [ div [ class "relative w-full max-h-[85vh] bg-white rounded-t-2xl overflow-hidden animate-slide-up" ]
                     [ -- Content (scrollable)
                       div [ class "overflow-y-auto max-h-[85vh]" ]
                         [ viewPreviewPanelByState uiState shopCountdown skillTree ]
@@ -3517,9 +3517,9 @@ viewDestroyInstructions : Int -> Html Msg
 viewDestroyInstructions destroysRemaining =
     div [ class "flex-1 flex items-center justify-center" ]
         [ div [ class "text-center" ]
-            [ p [ class "text-base-content/60 text-lg font-light mb-2" ]
+            [ p [ class "text-[color:var(--pencil)] text-lg font-normal mb-2" ]
                 [ text "Destroy cards from the shop" ]
-            , p [ class "text-base-content/40 text-sm" ]
+            , p [ class "text-[color:var(--pencil)] text-sm" ]
                 [ text
                     (if destroysRemaining == 1 then
                         "1 destroy remaining"
@@ -3538,7 +3538,7 @@ viewWaitingMessage : String -> Html Msg
 viewWaitingMessage message =
     div [ class "flex-1 flex items-center justify-center" ]
         [ div [ class "text-center" ]
-            [ p [ class "text-base-content/40 text-lg font-light" ]
+            [ p [ class "text-[color:var(--pencil)] text-lg font-normal" ]
                 [ text message ]
             ]
         ]
@@ -3550,7 +3550,7 @@ viewEmptyBrowsingPreview : Html Msg
 viewEmptyBrowsingPreview =
     div [ class "flex-1 flex items-center justify-center" ]
         [ div [ class "text-center" ]
-            [ p [ class "text-base-content/40 text-lg font-light" ]
+            [ p [ class "text-[color:var(--pencil)] text-lg font-normal" ]
                 [ text "Select a card to preview" ]
             ]
         ]
@@ -3562,9 +3562,9 @@ viewShopCompletePreview : Maybe Int -> Html Msg
 viewShopCompletePreview shopCountdown =
     div [ class "flex-1 flex items-center justify-center" ]
         [ div [ class "text-center" ]
-            [ p [ class "text-base-content/60 text-lg font-light mb-2" ]
+            [ p [ class "text-[color:var(--pencil)] text-lg font-normal mb-2" ]
                 [ text "All Picks Complete" ]
-            , p [ class "text-base-content/40 text-sm" ]
+            , p [ class "text-[color:var(--pencil)] text-sm" ]
                 [ case shopCountdown of
                     Just seconds ->
                         text ("Starting in " ++ String.fromInt seconds ++ "...")
@@ -3624,7 +3624,7 @@ viewShopCardPreview data skillTree =
                     "text-violet-500/60"
 
                 _ ->
-                    "text-base-content/40"
+                    "text-[color:var(--pencil)]"
 
         buttonBgClass =
             case accentColor of
@@ -3641,14 +3641,14 @@ viewShopCardPreview data skillTree =
                     "bg-violet-500 hover:bg-violet-600"
 
                 _ ->
-                    "bg-base-300 hover:bg-base-400"
+                    "bg-[color:var(--paper-2)] hover:bg-base-400"
     in
     div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
         [ -- Header (always centered)
           div [ class "mb-8 flex-shrink-0 text-center" ]
-            [ div [ class ("text-xs uppercase tracking-widest mb-1 " ++ labelColorClass) ]
+            [ div [ class ("text-xs pixel uppercase mb-1 " ++ labelColorClass) ]
                 [ text typeLabel ]
-            , h2 [ class "text-4xl font-light text-base-content" ]
+            , h2 [ class "text-4xl font-normal text-base-content" ]
                 [ text (shopCardName data.card) ]
             ]
         , -- Description and upgrade details
@@ -3660,7 +3660,7 @@ viewShopCardPreview data skillTree =
               else
                 -- For other cards, show description
                 div [ class "mb-8" ]
-                    [ p [ class "text-base-content/60 text-lg leading-relaxed text-center" ]
+                    [ p [ class "text-[color:var(--pencil)] text-lg leading-relaxed text-center" ]
                         [ text (shopCardDescription data.card) ]
                     ]
             ]
@@ -3670,7 +3670,7 @@ viewShopCardPreview data skillTree =
               if not data.isDestroyMode then
                 button
                     [ onClick ClearCardPreview
-                    , class "lg:hidden px-6 py-3 rounded-full font-medium transition-all text-base-content bg-base-300/50 hover:bg-base-300"
+                    , class "lg:hidden px-6 py-3 font-medium transition-all text-base-content bg-[color:var(--paper-2)] hover:bg-[color:var(--paper-2)]"
                     ]
                     [ text "Cancel" ]
 
@@ -3832,26 +3832,26 @@ viewUpgradeDetails card skillTree =
             div [ class "flex items-center justify-center gap-6" ]
                 [ -- Current Level
                   div [ class "text-center" ]
-                    [ div [ class "text-xs uppercase tracking-wider text-base-content/40 mb-2" ]
+                    [ div [ class "text-xs pixel uppercase text-[color:var(--pencil)] mb-2" ]
                         [ text ("Level " ++ String.fromInt currentLevel) ]
                     , div [ class "flex items-center gap-3" ]
                         [ div [ class "text-center" ]
-                            [ div [ class "text-sm text-base-content/40" ] [ text "Chips" ]
+                            [ div [ class "text-sm text-[color:var(--pencil)]" ] [ text "Chips" ]
                             , div [ class "text-lg font-semibold text-base-content" ] [ text (String.fromInt currentChips) ]
                             ]
-                        , div [ class "text-base-content/20" ] [ text "×" ]
+                        , div [ class "text-[color:var(--pencil)]" ] [ text "×" ]
                         , div [ class "text-center" ]
-                            [ div [ class "text-sm text-base-content/40" ] [ text "Mult" ]
+                            [ div [ class "text-sm text-[color:var(--pencil)]" ] [ text "Mult" ]
                             , div [ class "text-lg font-semibold text-base-content" ] [ text (String.fromInt currentMult) ]
                             ]
                         ]
                     ]
                 , -- Arrow
-                  div [ class "text-base-content/40 text-2xl" ]
+                  div [ class "text-[color:var(--pencil)] text-2xl" ]
                     [ text "→" ]
                 , -- New Level
                   div [ class "text-center" ]
-                    [ div [ class "text-xs uppercase tracking-wider text-emerald-600 mb-2" ]
+                    [ div [ class "text-xs pixel uppercase text-emerald-600 mb-2" ]
                         [ text ("Level " ++ String.fromInt newLevel) ]
                     , div [ class "flex items-center gap-3" ]
                         [ div [ class "text-center" ]
@@ -3882,15 +3882,15 @@ viewDeckBuilderSelectionPreview data =
     div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
         [ -- Header (centered)
           div [ class "mb-8 flex-shrink-0 text-center" ]
-            [ div [ class "text-xs uppercase tracking-widest mb-1 text-violet-500/60" ]
+            [ div [ class "text-xs pixel uppercase mb-1 text-violet-500/60" ]
                 [ text "Logistics" ]
-            , h2 [ class "text-4xl font-light text-base-content" ]
+            , h2 [ class "text-4xl font-normal text-base-content" ]
                 [ text (shopCardName data.deckBuilderCard) ]
             ]
         , -- Card selection
           div [ class "overflow-y-auto" ]
             [ div [ class "mb-4 text-center" ]
-                [ p [ class "text-sm text-base-content/50" ]
+                [ p [ class "text-sm text-[color:var(--pencil)]" ]
                     [ text (shopCardDescription data.deckBuilderCard) ]
                 ]
             , div [ class "flex flex-wrap gap-3 mb-6 justify-center" ]
@@ -3920,12 +3920,12 @@ viewDeckBuilderSelectionPreview data =
                         NoOp
                     )
                 , class
-                    ("px-8 py-3 rounded-full font-medium transition-all "
+                    ("px-8 py-3 font-medium transition-all"
                         ++ (if hasSelection then
                                 "btn-arcade pixel text-[9px] " ++ buttonBgClass
 
                             else
-                                "text-base-content/30 bg-base-300/30 cursor-not-allowed"
+                                "text-[color:var(--pencil)] bg-[color:var(--paper-2)] cursor-not-allowed"
                            )
                     )
                 ]
@@ -3940,12 +3940,12 @@ viewDeckBuilderCardMinimal : Card -> Bool -> Html Msg
 viewDeckBuilderCardMinimal card isSelected =
     button
         [ class
-            ("w-[75px] lg:w-[140px] transition-all cursor-pointer rounded-lg overflow-hidden "
+            ("w-[75px] lg:w-[140px] transition-all cursor-pointer overflow-hidden"
                 ++ (if isSelected then
-                        "ring-2 ring-violet-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
+                        "ring-2 ring-violet-500 ring-offset-2 ring-offset-base-100 scale-105 "
 
                     else
-                        "hover:shadow-md hover:scale-102 border border-base-300/50"
+                        "hover:shadow-md hover:scale-102 border border-[color:var(--ink)]"
                    )
             )
         , onClick (ToggleDeckCardSelection card.id)
@@ -3986,15 +3986,15 @@ viewPlusBombSelectionPreview data =
     div [ class "flex-1 flex flex-col p-4 sm:p-8 overflow-hidden" ]
         [ -- Header (centered)
           div [ class "mb-8 flex-shrink-0 text-center" ]
-            [ div [ class "text-xs uppercase tracking-widest mb-1 text-amber-500/60" ]
+            [ div [ class "text-xs pixel uppercase mb-1 text-amber-500/60" ]
                 [ text "Sabotage" ]
-            , h2 [ class "text-4xl font-light text-base-content" ]
+            , h2 [ class "text-4xl font-normal text-base-content" ]
                 [ text "Napalm Strikes" ]
             ]
         , -- Card selection
           div [ class "overflow-y-auto" ]
             [ div [ class "mb-4 text-center" ]
-                [ p [ class "text-sm text-base-content/50" ]
+                [ p [ class "text-sm text-[color:var(--pencil)]" ]
                     [ text cardDescription ]
                 ]
             , div [ class "flex flex-wrap gap-3 mb-6 justify-center" ]
@@ -4024,12 +4024,12 @@ viewPlusBombSelectionPreview data =
                         NoOp
                     )
                 , class
-                    ("px-8 py-3 rounded-full font-medium transition-all "
+                    ("px-8 py-3 font-medium transition-all"
                         ++ (if hasSelection then
                                 "btn-arcade pixel text-[9px] " ++ buttonBgClass
 
                             else
-                                "text-base-content/30 bg-base-300/30 cursor-not-allowed"
+                                "text-[color:var(--pencil)] bg-[color:var(--paper-2)] cursor-not-allowed"
                            )
                     )
                 ]
@@ -4044,12 +4044,12 @@ viewPlusBombCardMinimal : Card -> Bool -> Html Msg
 viewPlusBombCardMinimal card isSelected =
     button
         [ class
-            ("w-[75px] lg:w-[140px] transition-all cursor-pointer rounded-lg overflow-hidden "
+            ("w-[75px] lg:w-[140px] transition-all cursor-pointer overflow-hidden"
                 ++ (if isSelected then
-                        "ring-2 ring-rose-500 ring-offset-2 ring-offset-base-100 scale-105 shadow-lg"
+                        "ring-2 ring-rose-500 ring-offset-2 ring-offset-base-100 scale-105 "
 
                     else
-                        "hover:shadow-md hover:scale-102 border border-base-300/50"
+                        "hover:shadow-md hover:scale-102 border border-[color:var(--ink)]"
                    )
             )
         , onClick (SelectPlusBombCard card.id)

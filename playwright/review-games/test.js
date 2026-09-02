@@ -81,7 +81,7 @@ async function backgammon(context, tag) {
   await mover.locator(source).first().click();
   await sleep(300);
   await mover.screenshot({ path: `${OUT}/${tag}-bg-02-selected.png` });
-  await mover.locator('.bg-point.target, [title="Borne off"][style*="dashed"]').first().click();
+  await mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)').first().click();
   await sleep(800);
   // finish the turn
   for (let i = 0; i < 4 && (await mover.locator(source).count()) > 0; i++) {

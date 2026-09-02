@@ -365,19 +365,39 @@ viewPoint board isTop index point =
          ]
             ++ click
         )
-        (viewStack tokens ++ [ span [ class "pixel text-[7px] relative", style "color" "var(--pencil)" ] [ text id ] ])
+        (viewStack { pick = isSource, picked = isSelected } tokens
+            ++ (if isTarget then
+                    [ div [ class "ghost relative shrink-0" ] [] ]
+
+                else
+                    []
+               )
+            ++ [ span [ class "pixel text-[7px] relative", style "color" "var(--pencil)" ] [ text id ] ]
+        )
 
 
-viewStack : List Token -> List (Html Msg)
-viewStack tokens =
+type alias Marks =
+    { pick : Bool, picked : Bool }
+
+
+noMarks : Marks
+noMarks =
+    { pick = False, picked = False }
+
+
+viewStack : Marks -> List Token -> List (Html Msg)
+viewStack marks tokens =
     let
         shown =
             List.take 5 tokens
 
         extra =
             List.length tokens - 5
+
+        lastIndex =
+            List.length shown - 1
     in
-    List.map viewChecker shown
+    List.indexedMap (\i t -> viewChecker (if i == lastIndex then marks else noMarks) t) shown
         ++ (if extra > 0 then
                 [ span [ class "pixel text-[8px] relative" ] [ text ("+" ++ String.fromInt extra) ] ]
 
@@ -386,13 +406,23 @@ viewStack tokens =
            )
 
 
-viewChecker : Token -> Html Msg
-viewChecker token =
+viewChecker : Marks -> Token -> Html Msg
+viewChecker marks token =
     let
         color =
             Protocol.tokenProp D.string "color" token |> Maybe.withDefault "white"
     in
-    div [ classList [ ( "checker relative shrink-0", True ), ( "white", color == "white" ), ( "black", color /= "white" ) ], title token.id ] []
+    div
+        [ classList
+            [ ( "checker relative shrink-0 transition-transform", True )
+            , ( "white", color == "white" )
+            , ( "black", color /= "white" )
+            , ( "pick", marks.pick && not marks.picked )
+            , ( "picked", marks.picked )
+            ]
+        , title token.id
+        ]
+        []
 
 
 viewBar : Board -> String -> Bool -> Html Msg
@@ -419,7 +449,6 @@ viewBar board ownerId isTop =
          , style "background" "var(--paper-2)"
          , style "border-left" "3px solid var(--ink)"
          , style "border-right" "3px solid var(--ink)"
-         , style "outline" (if isSelected then "3px solid var(--pen)" else if isSource then "3px dashed var(--pen)" else "none")
          , title "Bar"
          ]
             ++ (if isSource then
@@ -429,7 +458,7 @@ viewBar board ownerId isTop =
                     []
                )
         )
-        (viewStack tokens)
+        (viewStack { pick = isSource, picked = isSelected } tokens)
 
 
 viewTray : Board -> String -> Html Msg
@@ -449,7 +478,7 @@ viewTray board ownerId =
             [ ( "w-10 sm:w-14 flex flex-col items-center justify-center gap-1 px-1", True )
             , ( "cursor-pointer", isTarget )
             ]
-         , style "border" (if isTarget then "3px dashed var(--marker-green)" else "3px solid var(--ink)")
+         , style "border" "3px solid var(--ink)"
          , style "background" (if isTarget then "#eaf7ec" else "var(--paper-2)")
          , title "Borne off"
          ]
@@ -462,6 +491,11 @@ viewTray board ownerId =
         )
         [ span [ class "pixel text-[7px]", style "color" "var(--pencil)" ] [ text "OFF" ]
         , span [ class "pixel text-xs" ] [ text (String.fromInt count) ]
+        , if isTarget then
+            div [ class "ghost" ] []
+
+          else
+            text ""
         ]
 
 

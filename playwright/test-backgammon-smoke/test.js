@@ -89,9 +89,9 @@ async function main() {
     // Click a source, expect targets, click one: the dice count of unused dice drops.
     const usedBefore = await mover.locator('.die.used').count();
     await mover.locator(source).first().click();
-    await mover.waitForSelector('.bg-point.target, [title="Borne off"][style*="dashed"]', { timeout: 5000 });
+    await mover.waitForSelector('.bg-point.target, [title="Borne off"]:has(.ghost)', { timeout: 5000 });
     await mover.screenshot({ path: `${SHOTS}/04-targets.png` });
-    await mover.locator('.bg-point.target, [title="Borne off"][style*="dashed"]').first().click();
+    await mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)').first().click();
     await sleep(1200);
     const usedAfter = await mover.locator('.die.used').count();
     log(`used dice before: ${usedBefore}, after: ${usedAfter}`);
@@ -101,7 +101,7 @@ async function main() {
     for (let i = 0; i < 4 && (await mover.locator(source).count()) > 0; i++) {
       await mover.locator(source).first().click();
       await sleep(200);
-      await mover.locator('.bg-point.target, [title="Borne off"][style*="dashed"]').first().click();
+      await mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)').first().click();
       await sleep(700);
     }
     await waiter.waitForSelector('button:has-text("ROLL")', { timeout: 10000 });
