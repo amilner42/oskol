@@ -4,12 +4,14 @@ import Browser
 import Decoders exposing (..)
 import Dict
 import Encoders exposing (..)
+import Games.Tilt.Adapter as Tilt
+import Generic.View
 import Helpers exposing (..)
 import Html exposing (Html)
 import Json.Decode as D
 import Json.Encode as E
+import Protocol exposing (GamePayload, ServerMessage(..))
 import Set exposing (Set)
-import Task
 import Time
 import Types exposing (..)
 import Url exposing (percentEncode)
@@ -49,6 +51,7 @@ port navigateToUrl : String -> Cmd msg
 
 type alias Flags =
     { gameId : String
+    , gameSlug : String
     , playerId : Maybe String
     }
 
@@ -60,7 +63,12 @@ type alias Flags =
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { gameId = flags.gameId
+      , gameSlug = flags.gameSlug
       , playerId = flags.playerId
+      , payload = Nothing
+      , legal = []
+      , lastPlaying = Nothing
+      , generic = Generic.View.init
       , gameState = Loading
       , viewingModal = Nothing
       , selectedCards = Set.empty
@@ -335,15 +343,12 @@ advanceAnimationStep model currentTime =
                         , nextStepTime = Just (currentTime + delayMs)
                         }
             in
-            ( { model
-                | scoreAnimation = newAnimation
-                , viewingResults = not shouldDismiss
-              }
-            , if shouldDismiss then
-                sendToChannel encodeClearAnimation
-
-              else
-                Cmd.none
+            ( refreshView
+                { model
+                    | scoreAnimation = newAnimation
+                    , viewingResults = not shouldDismiss
+                }
+            , Cmd.none
             )
 
         Nothing ->
@@ -409,85 +414,30 @@ nextAnimationStep currentPhase currentIndex firstCardCount secondCardCount =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        ReceivedGameState gameState ->
-            -- Initial game state received when joining channel
-            -- Derive shop UI state if we're in shop view
+        ServerMessageReceived message ->
+            case message of
+                GameMessage payload ->
+                    applyPayload payload model
+
+                LobbyMessage ->
+                    ( { model | connectionStatus = Connected }, Cmd.none )
+
+                ErrorMessage err ->
+                    update (ChannelError err) model
+
+                RematchReadyMessage rematchGameId ->
+                    update (RematchGameReady rematchGameId) model
+
+                StatusMessage status ->
+                    update (ConnectionStatusChanged (connectionStatusFromString status)) model
+
+        GenericMsg genericMsg ->
             let
-                newShopUIState =
-                    case ( gameState, model.playerId ) of
-                        ( ShopView shopData, Just playerId ) ->
-                            Just (deriveShopUIState playerId shopData.shopState)
-
-                        _ ->
-                            Nothing
+                ( generic, maybeAction ) =
+                    Generic.View.update genericMsg model.generic
             in
-            ( { model
-                | gameState = Success gameState
-                , shopUIState = newShopUIState
-                , connectionStatus = Connected
-              }
-            , Cmd.none
-            )
-
-        GameStateUpdated playerView ->
-            -- Game state update from server broadcast
-            -- Derive shop UI state if we're in shop view
-            let
-                newShopUIState =
-                    case ( playerView, model.playerId ) of
-                        ( ShopView shopData, Just playerId ) ->
-                            Just (deriveShopUIState playerId shopData.shopState)
-
-                        _ ->
-                            Nothing
-
-                -- Check if animation should start or needs to be cleared
-                ( shouldStartAnimation, shouldClearAnimation, animationData ) =
-                    case playerView of
-                        PlayingView playingData ->
-                            case playingData.pendingAnimation of
-                                Just animation ->
-                                    -- New animation available and not already animating
-                                    ( model.scoreAnimation.phase == AnimationIdle, False, Just animation )
-
-                                Nothing ->
-                                    -- No pending animation - clear any running animation
-                                    ( False, True, Nothing )
-
-                        _ ->
-                            ( False, False, Nothing )
-
-                ( newAnimation, newViewingResults, newAnimationData ) =
-                    if shouldStartAnimation then
-                        ( { phase = OpponentBase
-                          , cardIndex = 0
-                          , nextStepTime = Nothing
-                          }
-                        , True
-                        , animationData
-                        )
-
-                    else if shouldClearAnimation then
-                        -- Server says no animation - force clear
-                        ( { phase = AnimationIdle
-                          , cardIndex = 0
-                          , nextStepTime = Nothing
-                          }
-                        , False
-                        , Nothing
-                        )
-
-                    else
-                        ( model.scoreAnimation, model.viewingResults, model.currentAnimationData )
-            in
-            ( { model
-                | gameState = Success playerView
-                , shopUIState = newShopUIState
-                , scoreAnimation = newAnimation
-                , viewingResults = newViewingResults
-                , currentAnimationData = newAnimationData
-              }
-            , Cmd.none
+            ( { model | generic = generic }
+            , maybeAction |> Maybe.map sendToChannel |> Maybe.withDefault Cmd.none
             )
 
         RematchGameReady rematchGameId ->
@@ -504,19 +454,24 @@ update msg model =
                 url =
                     case playerName of
                         Just name ->
-                            "/" ++ rematchGameId ++ "?name=" ++ percentEncode name
+                            "/" ++ model.gameSlug ++ "/" ++ rematchGameId ++ "?name=" ++ percentEncode name
 
                         Nothing ->
-                            "/" ++ rematchGameId
+                            "/" ++ model.gameSlug ++ "/" ++ rematchGameId
             in
             ( model
             , navigateToUrl url
             )
 
         ChannelError err ->
-            ( { model | gameState = Failure err }
-            , Cmd.none
-            )
+            -- Before the first payload an error is fatal; afterwards it is a
+            -- rejected action and the current state stays on screen.
+            case model.payload of
+                Nothing ->
+                    ( { model | gameState = Failure err }, Cmd.none )
+
+                Just _ ->
+                    ( model, Cmd.none )
 
         ConnectionStatusChanged status ->
             ( { model | connectionStatus = status }
@@ -557,65 +512,42 @@ update msg model =
 
         -- Game actions
         LockInHand ->
-            case ( model.gameState, model.playerId ) of
-                ( Success playerView, Just playerId ) ->
-                    let
-                        gameState =
-                            buildGameState model playerView
-                    in
-                    case getCurrentPlayer gameState playerId of
-                        Just currentPlayer ->
-                            let
-                                selectedCardsList =
-                                    currentPlayer.cardPiles.handPile
-                                        |> List.filter (\card -> Set.member card.id model.selectedCards)
-                            in
-                            ( { model
-                                | selectedCards = Set.empty
-                                , newCardIds = Set.empty
-                                , viewingModal = Nothing
-                              }
-                            , sendToChannel (encodeLockInHand selectedCardsList)
-                            )
+            let
+                selected =
+                    case model.gameState of
+                        Success (PlayingView playing) ->
+                            playing.yourHand
+                                |> List.filter (\card -> Set.member card.id model.selectedCards)
+                                |> List.map .id
 
-                        Nothing ->
-                            ( model, Cmd.none )
+                        _ ->
+                            Set.toList model.selectedCards
+            in
+            if List.isEmpty selected then
+                ( model, Cmd.none )
 
-                _ ->
-                    ( model, Cmd.none )
+            else
+                ( { model
+                    | selectedCards = Set.empty
+                    , newCardIds = Set.empty
+                    , viewingModal = Nothing
+                  }
+                , sendToChannel (encodePlayHand selected)
+                )
 
         DiscardCards cardIds ->
-            case ( model.gameState, model.playerId ) of
-                ( Success playerView, Just playerId ) ->
-                    let
-                        gameState =
-                            buildGameState model playerView
-                    in
-                    case getCurrentPlayer gameState playerId of
-                        Just currentPlayer ->
-                            let
-                                cardsToDiscard =
-                                    currentPlayer.cardPiles.handPile
-                                        |> List.filter (\card -> List.member card.id cardIds)
-                            in
-                            ( { model
-                                | selectedCards = Set.empty
-                                , newCardIds = Set.empty
-                              }
-                            , sendToChannel (encodeDiscardCards cardsToDiscard)
-                            )
-
-                        Nothing ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
+            ( { model
+                | selectedCards = Set.empty
+                , newCardIds = Set.empty
+              }
+            , sendToChannel (encodeDiscard cardIds)
+            )
 
         MakeShopPick cardId ->
             -- Send pick command to server - let GameStateUpdated handle state transition
             -- (Don't re-derive immediately as server may set pendingPlusBomb/pendingDeckBuilder)
             ( { model | previewingCardIndex = Nothing }
-            , sendToChannel (encodeMakeShopPick cardId)
+            , sendToChannel (encodeShopPick cardId)
             )
 
         PreviewShopCard cardId ->
@@ -756,13 +688,13 @@ update msg model =
             -- Send to server, which will set pendingDeckBuilder
             -- Next GameStateUpdated will transition us to SelectingDeckBuilderCards
             ( model
-            , sendToChannel (encodeConfirmDeckBuilder cardId)
+            , sendToChannel (encodeShopPick cardId)
             )
 
         ConfirmPlusBomb cardId ->
             -- Send to server, which will set pendingPlusBomb
             ( model
-            , sendToChannel (encodeConfirmPlusBomb cardId)
+            , sendToChannel (encodeShopPick cardId)
             )
 
         ToggleDeckCardSelection cardId ->
@@ -819,17 +751,17 @@ update msg model =
 
                         cmd =
                             if List.isEmpty selectedList then
-                                sendToChannel encodeSkipDeckBuilderSelection
+                                sendToChannel (encodeShopSelect [])
 
                             else
-                                sendToChannel (encodeCompleteDeckBuilderSelection selectedList)
+                                sendToChannel (encodeShopSelect selectedList)
                     in
                     ( model, cmd )
 
                 Just (SelectingPlusBombCard data) ->
                     case data.selectedCardId of
                         Just cardId ->
-                            ( model, sendToChannel (encodeCompletePlusBombSelection cardId) )
+                            ( model, sendToChannel (encodeShopSelect [ cardId ]) )
 
                         Nothing ->
                             ( model, Cmd.none )
@@ -841,7 +773,7 @@ update msg model =
             -- NEW: Cancel/skip selection
             case model.shopUIState of
                 Just (SelectingDeckBuilderCards _) ->
-                    ( model, sendToChannel encodeSkipDeckBuilderSelection )
+                    ( model, sendToChannel (encodeShopSelect []) )
 
                 _ ->
                     ( model, Cmd.none )
@@ -849,7 +781,7 @@ update msg model =
         -- OLD HANDLERS (kept for backwards compatibility during migration)
         PreviewDeckBuilder cardId ->
             ( model
-            , sendToChannel (encodeConfirmDeckBuilder cardId)
+            , sendToChannel (encodeShopPick cardId)
             )
 
         SelectDeckCard cardId ->
@@ -866,33 +798,33 @@ update msg model =
 
         CompleteDeckBuilderSelection cardIds ->
             ( { model | deckBuilderSelection = [] }
-            , sendToChannel (encodeCompleteDeckBuilderSelection cardIds)
+            , sendToChannel (encodeShopSelect cardIds)
             )
 
         SkipDeckBuilderSelection ->
             ( { model | deckBuilderSelection = [] }
-            , sendToChannel encodeSkipDeckBuilderSelection
+            , sendToChannel (encodeShopSelect [])
             )
 
         PreviewPlusBomb cardId ->
             ( model
-            , sendToChannel (encodeConfirmPlusBomb cardId)
+            , sendToChannel (encodeShopPick cardId)
             )
 
         CompletePlusBombSelection cardId ->
             ( { model | plusBombSelection = Nothing }
-            , sendToChannel (encodeCompletePlusBombSelection cardId)
+            , sendToChannel (encodeShopSelect [ cardId ])
             )
 
         DestroyShopCard cardId ->
             -- Send destroy command to server - let GameStateUpdated handle state transition
             ( { model | previewingCardIndex = Nothing }
-            , sendToChannel (encodeDestroyShopCard cardId)
+            , sendToChannel (encodeShopDestroy cardId)
             )
 
         CompleteDestroyPhase ->
             ( model
-            , sendToChannel encodeCompleteDestroyPhase
+            , sendToChannel encodeShopFinishDestroy
             )
 
         ShopCountdownTick ->
@@ -945,10 +877,11 @@ update msg model =
                     advanceAnimationStep model currentTime
 
         DismissResults ->
-            ( { model
-                | viewingResults = False
-                , scoreAnimation = { phase = AnimationIdle, cardIndex = 0, nextStepTime = Nothing }
-              }
+            ( refreshView
+                { model
+                    | viewingResults = False
+                    , scoreAnimation = { phase = AnimationIdle, cardIndex = 0, nextStepTime = Nothing }
+                }
             , Cmd.none
             )
 
@@ -983,82 +916,157 @@ subscriptions model =
 -}
 handleChannelMessage : E.Value -> Msg
 handleChannelMessage value =
-    case D.decodeValue channelMessageDecoder value of
-        Ok channelMsg ->
-            case channelMsg of
-                InitialGameState gameState ->
-                    ReceivedGameState gameState
-
-                GameUpdate gameState ->
-                    GameStateUpdated gameState
-
-                StatusUpdate status ->
-                    ConnectionStatusChanged status
-
-                RematchReady gameId ->
-                    RematchGameReady gameId
-
-                Error err ->
-                    ChannelError err
+    case D.decodeValue Protocol.serverMessageDecoder value of
+        Ok message ->
+            ServerMessageReceived message
 
         Err err ->
             ChannelError (D.errorToString err)
 
 
-{-| Decoder for channel messages
+connectionStatusFromString : String -> ConnectionStatus
+connectionStatusFromString status =
+    case status of
+        "connected" ->
+            Connected
+
+        "connecting" ->
+            Connecting
+
+        _ ->
+            Disconnected
+
+
+
+-- PAYLOAD -> VIEW
+
+
+{-| Absorb a server payload: remember it, start any score reveal it carries,
+highlight newly drawn cards, and rebuild the view.
 -}
-type ChannelMessage
-    = InitialGameState PlayerView
-    | GameUpdate PlayerView
-    | StatusUpdate ConnectionStatus
-    | RematchReady String
-    | Error String
+applyPayload : GamePayload -> Model -> ( Model, Cmd Msg )
+applyPayload payload model =
+    let
+        events =
+            payload.update.events
+
+        playerId =
+            payload.playerId
+
+        newAnimation =
+            Tilt.animationFromEvents playerId events
+
+        drawn =
+            Protocol.tokensMovedTo ("hand:" ++ playerId) events
+
+        startAnimation =
+            newAnimation /= Nothing
+
+        updated =
+            { model
+                | payload = Just payload
+                , playerId = Just playerId
+                , legal = payload.update.legal
+                , connectionStatus = Connected
+                , newCardIds =
+                    if List.isEmpty drawn then
+                        model.newCardIds
+
+                    else
+                        Set.fromList drawn
+                , currentAnimationData =
+                    if startAnimation then
+                        newAnimation
+
+                    else
+                        model.currentAnimationData
+                , scoreAnimation =
+                    if startAnimation then
+                        { phase = OpponentBase, cardIndex = 0, nextStepTime = Nothing }
+
+                    else
+                        model.scoreAnimation
+                , viewingResults = startAnimation || model.viewingResults
+            }
+    in
+    ( refreshView updated, Cmd.none )
 
 
-channelMessageDecoder : D.Decoder ChannelMessage
-channelMessageDecoder =
-    D.field "type" D.string
-        |> D.andThen
-            (\msgType ->
-                case msgType of
-                    "initial_state" ->
-                        D.map InitialGameState (D.field "game_state" playerViewDecoder)
+{-| Rebuild the Tilt view from the latest payload. While a score reveal is
+playing, the last playing-phase view stays on screen even if the server has
+already moved on to the shop or the match summary.
+-}
+refreshView : Model -> Model
+refreshView model =
+    case model.payload of
+        Nothing ->
+            model
 
-                    "game_state_updated" ->
-                        D.map GameUpdate (D.field "game_state" playerViewDecoder)
+        Just payload ->
+            if payload.game /= "tilt" then
+                model
 
-                    "connection_status" ->
-                        D.map StatusUpdate (D.field "status" connectionStatusDecoder)
+            else
+                let
+                    scene =
+                        payload.update.scene
 
-                    "rematch_ready" ->
-                        D.map RematchReady (D.field "game_id" D.string)
+                    adapted =
+                        Tilt.toPlayerView payload.playerId payload.rematchReady scene
 
-                    "error" ->
-                        D.map Error (D.field "message" D.string)
+                    withAnimation playing =
+                        { playing
+                            | pendingAnimation =
+                                if model.viewingResults then
+                                    model.currentAnimationData
 
-                    _ ->
-                        D.fail ("Unknown message type: " ++ msgType)
-            )
+                                else
+                                    Nothing
+                        }
 
+                    lastPlaying =
+                        case adapted of
+                            Just (PlayingView playing) ->
+                                Just playing
 
-connectionStatusDecoder : D.Decoder ConnectionStatus
-connectionStatusDecoder =
-    D.string
-        |> D.andThen
-            (\str ->
-                case str of
-                    "disconnected" ->
-                        D.succeed Disconnected
+                            _ ->
+                                model.lastPlaying
 
-                    "connecting" ->
-                        D.succeed Connecting
+                    shown =
+                        case adapted of
+                            Just (PlayingView playing) ->
+                                Just (PlayingView (withAnimation playing))
 
-                    "connected" ->
-                        D.succeed Connected
+                            Just other ->
+                                case ( model.viewingResults, model.lastPlaying ) of
+                                    ( True, Just playing ) ->
+                                        Just (PlayingView (withAnimation playing))
 
-                    _ ->
-                        D.fail ("Unknown connection status: " ++ str)
-            )
+                                    _ ->
+                                        Just other
+
+                            Nothing ->
+                                Nothing
+
+                    shopUIState =
+                        case shown of
+                            Just (ShopView shopData) ->
+                                Just (deriveShopUIStatePreservingSelections payload.playerId shopData.shopState model.shopUIState)
+
+                            _ ->
+                                Nothing
+                in
+                { model
+                    | lastPlaying = lastPlaying
+                    , shopUIState = shopUIState
+                    , gameState =
+                        case shown of
+                            Just view_ ->
+                                Success view_
+
+                            Nothing ->
+                                Failure "Could not read the game state"
+                }
 
 
 
@@ -1067,4 +1075,27 @@ connectionStatusDecoder =
 
 view : Model -> Html Msg
 view model =
-    View.Game.viewGame model
+    if model.gameSlug == "tilt" then
+        View.Game.viewGame model
+
+    else
+        case model.payload of
+            Just payload ->
+                Html.map GenericMsg
+                    (Generic.View.view
+                        { playerId = payload.playerId
+                        , scene = payload.update.scene
+                        , legal = payload.update.legal
+                        , model = model.generic
+                        , status =
+                            case payload.update.outcome of
+                                Protocol.Ongoing ->
+                                    "in progress"
+
+                                Protocol.Finished winners ->
+                                    "finished: " ++ String.join ", " winners
+                        }
+                    )
+
+            Nothing ->
+                Html.text "Connecting..."

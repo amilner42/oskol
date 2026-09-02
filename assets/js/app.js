@@ -81,168 +81,61 @@ if (process.env.NODE_ENV === "development") {
   })
 }
 
-// Elm App Integration
+// Elm game client. One client for every game: it speaks the gamekit protocol
+// and picks a renderer by game slug.
 import { Elm } from "../src/Main.elm";
 
-// Mount Elm app if the container exists
-const elmContainer = document.getElementById("elm-app");
-if (elmContainer) {
-  const app = Elm.Main.init({
-    node: elmContainer,
-    flags: {}
-  });
-
-  // Setup Phoenix Socket for Elm counter demo
-  const socket = new Socket("/socket", {});
-  socket.connect();
-
-  // Join the counter channel (using "demo" as the counter ID)
-  const channel = socket.channel("counter:demo", {});
-
-  channel.join()
-    .receive("ok", resp => {
-      console.log("Joined counter channel successfully", resp);
-      // Send initial count to Elm
-      if (app.ports.receiveFromChannel) {
-        app.ports.receiveFromChannel.send({
-          type: "counter_updated",
-          count: resp.count
-        });
-      }
-    })
-    .receive("error", resp => {
-      console.error("Unable to join counter channel", resp);
-    });
-
-  // Receive counter updates from server
-  channel.on("counter_updated", (payload) => {
-    console.log("Counter updated:", payload);
-    if (app.ports.receiveFromChannel) {
-      app.ports.receiveFromChannel.send({
-        type: "counter_updated",
-        count: payload.count
-      });
-    }
-  });
-
-  // Send increment/decrement actions from Elm -> server
-  if (app.ports.sendToChannel) {
-    app.ports.sendToChannel.subscribe((data) => {
-      console.log("Sending to channel:", data);
-      const action = data.action; // "increment" or "decrement"
-
-      channel.push(action, {})
-        .receive("ok", (msg) => console.log("Action success:", msg))
-        .receive("error", (msg) => console.error("Action error:", msg));
-    });
-  }
-
-  // Expose for debugging
-  window.elmApp = app;
-  window.counterChannel = channel;
-}
-
-// Elm Game Integration
 const elmGameContainer = document.getElementById("elm-game-app");
 if (elmGameContainer) {
   const gameId = elmGameContainer.dataset.gameId;
+  const gameSlug = elmGameContainer.dataset.gameSlug;
   const playerId = elmGameContainer.dataset.playerId || null;
 
   const gameApp = Elm.Main.init({
     node: elmGameContainer,
-    flags: {
-      gameId: gameId,
-      playerId: playerId
-    }
+    flags: { gameId, gameSlug, playerId }
   });
 
-  // Setup Phoenix Socket for game
+  const send = (message) => {
+    if (gameApp.ports.receiveFromChannel) {
+      gameApp.ports.receiveFromChannel.send(message);
+    }
+  };
+
   const gameSocket = new Socket("/socket", {});
   gameSocket.connect();
 
-  // Join the game channel
-  const gameChannel = gameSocket.channel(`game:${gameId}`, {
-    player_id: playerId
-  });
+  const gameChannel = gameSocket.channel(`game:${gameId}`, { player_id: playerId });
 
   gameChannel.join()
-    .receive("ok", resp => {
-      console.log("Joined game channel successfully", resp);
-      // Send initial game state to Elm
-      if (gameApp.ports.receiveFromChannel) {
-        gameApp.ports.receiveFromChannel.send({
-          type: "initial_state",
-          game_state: resp.game_state
-        });
-      }
-    })
-    .receive("error", resp => {
-      console.error("Unable to join game channel", resp);
-      if (gameApp.ports.receiveFromChannel) {
-        gameApp.ports.receiveFromChannel.send({
-          type: "error",
-          message: resp.reason || "Failed to join game"
-        });
-      }
-    });
+    .receive("ok", (resp) => send({ type: "payload", payload: resp.payload }))
+    .receive("error", (resp) => send({ type: "error", message: resp.reason || "Failed to join game" }));
 
-  // Listen for game state updates from server
-  gameChannel.on("game_state_updated", (payload) => {
-    console.log("Game state updated:", payload);
-    if (gameApp.ports.receiveFromChannel) {
-      gameApp.ports.receiveFromChannel.send({
-        type: "game_state_updated",
-        game_state: payload.game_state
-      });
-    }
-  });
+  gameChannel.on("update", (msg) => send({ type: "payload", payload: msg.payload }));
+  gameChannel.on("error", (msg) => send({ type: "error", message: msg.message || "Action failed" }));
+  gameChannel.on("rematch_ready", (msg) => send({ type: "rematch_ready", game_id: msg.game_id }));
 
-  // Listen for rematch ready event
-  gameChannel.on("rematch_ready", (payload) => {
-    console.log("Rematch ready:", payload);
-    if (gameApp.ports.receiveFromChannel) {
-      gameApp.ports.receiveFromChannel.send({
-        type: "rematch_ready",
-        game_id: payload.game_id
-      });
-    }
-  });
+  gameSocket.onOpen(() => send({ type: "connection_status", status: "connected" }));
+  gameSocket.onClose(() => send({ type: "connection_status", status: "disconnected" }));
 
-  // Send actions from Elm -> server
   if (gameApp.ports.sendToChannel) {
     gameApp.ports.sendToChannel.subscribe((data) => {
-      console.log("Sending to game channel:", data);
-      const action = data.action;
-
-      // Remove 'action' from payload, send only the params
-      const {action: _, ...payload} = data;
-
-      // Send the action to the channel
-      gameChannel.push(action, payload)
-        .receive("ok", (msg) => console.log("Action success:", msg))
-        .receive("error", (msg) => {
-          console.error("Action error:", msg);
-          if (gameApp.ports.receiveFromChannel) {
-            gameApp.ports.receiveFromChannel.send({
-              type: "error",
-              message: msg.reason || "Action failed"
-            });
-          }
-        });
+      if (data.type === "action") {
+        gameChannel.push("action", { action: { name: data.name, params: data.params } })
+          .receive("error", (msg) => send({ type: "error", message: msg.reason || "Action failed" }));
+      } else if (data.type === "rematch") {
+        gameChannel.push("rematch", {})
+          .receive("error", (msg) => send({ type: "error", message: msg.reason || "Rematch failed" }));
+      }
     });
   }
 
-  // Handle navigation from Elm
   if (gameApp.ports.navigateToUrl) {
     gameApp.ports.navigateToUrl.subscribe((url) => {
-      console.log("Navigating to:", url);
       window.location.href = url;
     });
   }
 
-  // Expose for debugging
-  window.gameApp = gameApp;
+  window.elmApp = gameApp;
   window.gameChannel = gameChannel;
-  window.gameSocket = gameSocket;
 }
-

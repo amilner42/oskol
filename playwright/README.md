@@ -17,6 +17,13 @@ playwright/
 
 ## Available Tests
 
+### `test-tilt-smoke/`
+Library → `/tilt` → lobby → start → both players play a hand. This is the test
+that covers the current gamekit/protocol stack. The older `test-*` folders
+predate the framework port and target the previous lobby URLs.
+
+**Run:** `node playwright/test-tilt-smoke/test.js` (set `PW_CHROMIUM=/path/to/chrome` if the pinned browser is missing)
+
 ### `test-suit-action-card/`
 End-to-end test covering lobby → game → shop flow, including the suit-changing card feature.
 

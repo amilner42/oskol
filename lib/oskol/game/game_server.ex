@@ -1,15 +1,21 @@
 defmodule Oskol.Game.GameServer do
+  @moduledoc """
+  One process per game room. Generic over every registered game: it owns the
+  lobby, the connections, and an opaque game instance that it drives through
+  `Oskol.GameKit`.
+  """
   use GenServer
   require Logger
 
   alias Oskol.Game.GameServerState
+  alias Oskol.GameKit
 
   @timeout :timer.hours(1)
 
-  # Client API
+  # ---------- Client API ----------
 
-  def start_link(game_id) do
-    GenServer.start_link(__MODULE__, game_id, name: via_tuple(game_id))
+  def start_link({game_id, slug}) do
+    GenServer.start_link(__MODULE__, {game_id, slug}, name: via_tuple(game_id))
   end
 
   def join_game(game_id, player_name, player_pid \\ nil) do
@@ -20,52 +26,51 @@ defmodule Oskol.Game.GameServer do
     GenServer.call(via_tuple(game_id), {:rejoin_game, player_name, player_pid})
   end
 
-  def get_state(game_id) do
-    GenServer.call(via_tuple(game_id), :get_state)
+  def get_state(game_id), do: GenServer.call(via_tuple(game_id), :get_state)
+
+  def select_format(game_id, player_id, format_id) do
+    GenServer.call(via_tuple(game_id), {:select_format, player_id, format_id})
   end
 
-  def select_format(game_id, player_id, format) do
-    GenServer.call(via_tuple(game_id), {:select_format, player_id, format})
+  def start_game(game_id, seed \\ nil) do
+    GenServer.call(via_tuple(game_id), {:start_game, seed})
   end
 
-  def start_game(game_id) do
-    GenServer.call(via_tuple(game_id), :start_game)
-  end
-
-  def set_game_state(game_id, game_state) do
-    GenServer.call(via_tuple(game_id), {:set_game_state, game_state})
-  end
-
-  # Generic player action - all game actions go through this
-  def player_action_async(game_id, player_id, action) do
+  @doc "Apply a client action asynchronously. Failures are broadcast as `{:action_failed, player_id, reason}`."
+  def player_action_async(game_id, player_id, action) when is_map(action) do
     GenServer.cast(via_tuple(game_id), {:player_action, player_id, action})
   end
 
-  # Server Callbacks
+  @doc "Synchronous variant used by tests and tooling."
+  def player_action(game_id, player_id, action) when is_map(action) do
+    GenServer.call(via_tuple(game_id), {:player_action, player_id, action})
+  end
+
+  def request_rematch(game_id, player_id) do
+    GenServer.call(via_tuple(game_id), {:request_rematch, player_id})
+  end
+
+  # ---------- Server ----------
 
   @impl true
-  def init(game_id) do
-    Logger.info("Starting game server for game: #{game_id}")
-
-    state = GameServerState.new(game_id)
-
-    {:ok, state, @timeout}
+  def init({game_id, slug}) do
+    Logger.info("Starting #{slug} game server: #{game_id}")
+    {:ok, GameServerState.new(game_id, slug), @timeout}
   end
 
   @impl true
   def handle_call({:join_game, player_name, player_pid}, _from, %GameServerState{} = state) do
     cond do
-      map_size(state.connections) >= 2 ->
+      GameServerState.full?(state) ->
         {:reply, {:error, :game_full}, state, @timeout}
 
       GameServerState.name_taken?(state, player_name) ->
         {:reply, {:error, :name_taken}, state, @timeout}
 
-      state.game_state != nil ->
+      GameServerState.started?(state) ->
         {:reply, {:error, :game_already_started}, state, @timeout}
 
       true ->
-        # Only monitor if we have a PID
         monitor_ref = if player_pid, do: Process.monitor(player_pid), else: nil
         player_id = generate_player_id()
 
@@ -76,243 +81,248 @@ defmodule Oskol.Game.GameServer do
           monitor_ref: monitor_ref
         }
 
-        new_connections = Map.put(state.connections, player_id, connection)
+        new_state =
+          %GameServerState{
+            state
+            | connections: Map.put(state.connections, player_id, connection),
+              seat_order: state.seat_order ++ [player_id]
+          }
+          |> GameServerState.touch()
+          |> GameServerState.update_lobby_status()
 
-        # Emit player_joined event
-        new_state = %GameServerState{
-          state
-          | connections: new_connections,
-            last_activity: System.system_time(:second)
-        }
-
-        new_state = GameServerState.update_lobby_status_with_format(new_state)
-
-        broadcast_state_change(new_state)
-
+        broadcast(new_state, [])
         {:reply, {:ok, player_id, new_state}, new_state, @timeout}
     end
   end
 
-  @impl true
   def handle_call({:rejoin_game, player_name, player_pid}, _from, %GameServerState{} = state) do
     case GameServerState.find_player_id_by_name(state, player_name) do
       nil ->
         {:reply, {:error, :player_not_found}, state, @timeout}
 
       player_id ->
-        old_connection = state.connections[player_id]
+        old = state.connections[player_id]
 
-        # Only allow rejoin if player is disconnected
-        if old_connection.connected do
+        if old.connected do
           {:reply, {:error, :player_already_connected}, state, @timeout}
         else
-          # Demonitor old process if it exists
-          if old_connection.monitor_ref do
-            Process.demonitor(old_connection.monitor_ref, [:flush])
-          end
-
-          # Monitor new process
+          if old.monitor_ref, do: Process.demonitor(old.monitor_ref, [:flush])
           monitor_ref = Process.monitor(player_pid)
+          updated = %{old | pid: player_pid, connected: true, monitor_ref: monitor_ref}
 
-          updated_connection = %{
-            old_connection
-            | pid: player_pid,
-              connected: true,
-              monitor_ref: monitor_ref
-          }
+          new_state =
+            %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
+            |> GameServerState.touch()
+            |> GameServerState.update_lobby_status()
 
-          new_connections = Map.put(state.connections, player_id, updated_connection)
-
-          # Emit player_reconnected event
-          new_state = %GameServerState{
-            state
-            | connections: new_connections,
-              last_activity: System.system_time(:second)
-          }
-
-          new_state = GameServerState.update_lobby_status_with_format(new_state)
-
-          # Don't broadcast on rejoin - rejoining player gets state in join() response
-          # Broadcasting would trigger animations for other players unnecessarily
-          # broadcast_state_change(new_state)
-
+          # No broadcast: the rejoining client receives state in its join reply.
           {:reply, {:ok, player_id, new_state}, new_state, @timeout}
         end
     end
   end
 
-  @impl true
-  def handle_call({:select_format, player_id, format}, _from, %GameServerState{} = state) do
+  def handle_call({:select_format, player_id, format_id}, _from, %GameServerState{} = state) do
     cond do
-      state.game_state != nil ->
+      GameServerState.started?(state) ->
         {:reply, {:error, :game_already_started}, state, @timeout}
 
       not Map.has_key?(state.connections, player_id) ->
         {:reply, {:error, :player_not_found}, state, @timeout}
 
+      format_id not in GameServerState.format_ids(state) ->
+        {:reply, {:error, :unknown_format}, state, @timeout}
+
       true ->
-        # Update format selection for this player
-        new_format_selections = Map.put(state.format_selections, player_id, format)
+        new_state =
+          %GameServerState{
+            state
+            | format_selections: Map.put(state.format_selections, player_id, format_id)
+          }
+          |> GameServerState.touch()
+          |> GameServerState.update_lobby_status()
 
-        new_state = %GameServerState{
-          state
-          | format_selections: new_format_selections,
-            last_activity: System.system_time(:second)
-        }
-
-        # Update lobby status to check if both players agreed
-        new_state = GameServerState.update_lobby_status_with_format(new_state)
-
-        broadcast_state_change(new_state)
-
+        broadcast(new_state, [])
         {:reply, {:ok, new_state}, new_state, @timeout}
     end
   end
 
-  @impl true
-  def handle_call(:start_game, _from, %GameServerState{} = state) do
-    cond do
-      state.game_state != nil ->
-        {:reply, {:error, :game_already_started}, state, @timeout}
+  def handle_call({:start_game, seed}, _from, %GameServerState{} = state) do
+    with false <- GameServerState.started?(state),
+         {:ok, format_id} <- GameServerState.check_format_agreement(state),
+         true <- map_size(state.connections) >= GameServerState.min_players(state),
+         seed <- seed || :rand.uniform(2_147_483_647),
+         {:ok, instance} <-
+           GameKit.start(state.slug, format_id, GameServerState.seats(state), seed) do
+      new_state =
+        %GameServerState{state | instance: instance, seed: seed} |> GameServerState.touch()
 
-      map_size(state.connections) != 2 ->
-        {:reply, {:error, :not_enough_players}, state, @timeout}
+      broadcast(new_state, [])
+      {:reply, {:ok, new_state}, new_state, @timeout}
+    else
+      true -> {:reply, {:error, :game_already_started}, state, @timeout}
+      :no_agreement -> {:reply, {:error, :no_format_agreement}, state, @timeout}
+      false -> {:reply, {:error, :not_enough_players}, state, @timeout}
+      {:error, reason} -> {:reply, {:error, reason}, state, @timeout}
+    end
+  end
+
+  def handle_call({:player_action, player_id, action}, _from, %GameServerState{} = state) do
+    case apply_action(state, player_id, action) do
+      {:ok, new_state, events} ->
+        broadcast(new_state, events)
+        {:reply, {:ok, new_state, events}, new_state, @timeout}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state, @timeout}
+    end
+  end
+
+  def handle_call({:request_rematch, player_id}, _from, %GameServerState{} = state) do
+    cond do
+      not GameServerState.started?(state) or not GameKit.finished?(state.instance) ->
+        {:reply, {:error, :game_not_finished}, state, @timeout}
+
+      not Map.has_key?(state.connections, player_id) ->
+        {:reply, {:error, :player_not_found}, state, @timeout}
+
+      state.rematch_game_id != nil ->
+        {:reply, {:ok, state.rematch_game_id}, state, @timeout}
 
       true ->
-        # Check if both players agreed on a format
-        case GameServerState.check_format_agreement(state) do
-          {:ok, format} ->
-            # Get all game config from agreed format
-            {initial_lives, hands_per_round, discards_per_round, shop_rounds} =
-              GameServerState.format_to_config(format)
+        ready = MapSet.put(state.rematch_ready, player_id)
+        new_state = %GameServerState{state | rematch_ready: ready} |> GameServerState.touch()
 
-            # Create player_names map from connections
-            player_names =
-              state.connections
-              |> Enum.map(fn {player_id, connection} -> {player_id, connection.name} end)
-              |> Map.new()
+        if MapSet.size(ready) == map_size(state.connections) do
+          rematch_id = rematch_id(state.game_id)
+          {:ok, format_id} = GameServerState.check_format_agreement(state)
+          :ok = spawn_rematch(rematch_id, state, format_id)
+          new_state = %GameServerState{new_state | rematch_game_id: rematch_id}
+          broadcast(new_state, [])
 
-            # Use Gleam engine to create game state
-            game_state =
-              Oskol.Game.GleamEngine.new_game(
-                player_names,
-                initial_lives,
-                hands_per_round,
-                discards_per_round,
-                shop_rounds
-              )
+          Phoenix.PubSub.broadcast(
+            Oskol.PubSub,
+            topic(state.game_id),
+            {:rematch_ready, rematch_id}
+          )
 
-            new_state = %GameServerState{
-              state
-              | game_state: game_state
-            }
-
-            broadcast_state_change(new_state)
-
-            {:reply, {:ok, new_state}, new_state, @timeout}
-
-          :no_agreement ->
-            {:reply, {:error, :no_format_agreement}, state, @timeout}
+          {:reply, {:ok, rematch_id}, new_state, @timeout}
+        else
+          broadcast(new_state, [])
+          {:reply, {:ok, nil}, new_state, @timeout}
         end
     end
   end
 
-  @impl true
-  def handle_call({:set_game_state, game_state}, _from, %GameServerState{} = state) do
-    new_state = %GameServerState{state | game_state: game_state}
-    broadcast_state_change(new_state)
-    {:reply, :ok, new_state, @timeout}
-  end
-
-  @impl true
   def handle_call(:get_state, _from, %GameServerState{} = state) do
     {:reply, state, state, @timeout}
   end
 
   @impl true
   def handle_cast({:player_action, player_id, action}, %GameServerState{} = state) do
-    # Check if game has started and player is connected
-    cond do
-      state.game_state == nil ->
-        # Game not started, ignore action
-        {:noreply, state, @timeout}
-
-      not Map.has_key?(state.connections, player_id) ->
-        # Player not found, ignore action
-        {:noreply, state, @timeout}
-
-      not state.connections[player_id].connected ->
-        # Player disconnected, ignore action
-        {:noreply, state, @timeout}
-
-      true ->
-        # Pass action directly to Gleam engine - no translation!
-        {new_game_state, _events} =
-          Oskol.Game.GleamEngine.apply_action(state.game_state, {player_id, action})
-
-        new_state = %GameServerState{
-          state
-          | game_state: new_game_state,
-            last_activity: System.system_time(:second)
-        }
-
-        broadcast_state_change(new_state)
+    case apply_action(state, player_id, action) do
+      {:ok, new_state, events} ->
+        broadcast(new_state, events)
         {:noreply, new_state, @timeout}
+
+      {:error, reason} ->
+        Phoenix.PubSub.broadcast(
+          Oskol.PubSub,
+          topic(state.game_id),
+          {:action_failed, player_id, to_string(reason)}
+        )
+
+        {:noreply, state, @timeout}
     end
   end
 
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %GameServerState{} = state) do
-    # Find which player disconnected
     player_id =
-      Enum.find_value(state.connections, fn {pid, conn} ->
-        if conn.monitor_ref == ref, do: pid, else: nil
+      Enum.find_value(state.connections, fn {id, conn} ->
+        if conn.monitor_ref == ref, do: id, else: nil
       end)
 
     if player_id do
       Logger.info("Player #{player_id} disconnected from game: #{state.game_id}")
+      updated = %{state.connections[player_id] | connected: false}
 
-      updated_connection = %{state.connections[player_id] | connected: false}
-      new_connections = Map.put(state.connections, player_id, updated_connection)
+      new_state =
+        %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
+        |> GameServerState.touch()
+        |> GameServerState.update_lobby_status()
 
-      # Emit player_disconnected event
-      new_state = %GameServerState{
-        state
-        | connections: new_connections,
-          last_activity: System.system_time(:second)
-      }
-
-      new_state = GameServerState.update_lobby_status_with_format(new_state)
-
-      broadcast_state_change(new_state)
-
+      broadcast(new_state, [])
       {:noreply, new_state, @timeout}
     else
       {:noreply, state, @timeout}
     end
   end
 
-  @impl true
   def handle_info(:timeout, %GameServerState{} = state) do
     Logger.info("Game #{state.game_id} timed out after 1 hour of inactivity")
     {:stop, :normal, state}
   end
 
-  # Private Functions
+  # ---------- Private ----------
 
-  defp via_tuple(game_id) do
-    {:via, Registry, {Oskol.GameRegistry, game_id}}
+  defp apply_action(%GameServerState{} = state, player_id, action) do
+    cond do
+      not GameServerState.started?(state) ->
+        {:error, :game_not_started}
+
+      not Map.has_key?(state.connections, player_id) ->
+        {:error, :player_not_found}
+
+      true ->
+        case GameKit.apply(state.instance, player_id, action) do
+          {:ok, instance, events} ->
+            new_state =
+              %GameServerState{state | instance: instance} |> GameServerState.touch()
+
+            {:ok, new_state, events}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
   end
+
+  defp spawn_rematch(rematch_id, %GameServerState{} = state, format_id) do
+    case Oskol.Game.GameSupervisor.start_game(rematch_id, state.slug) do
+      {:ok, _pid} ->
+        Enum.each(GameServerState.seats(state), fn {_old_id, name} ->
+          {:ok, new_id, _} = join_game(rematch_id, name, nil)
+          {:ok, _} = select_format(rematch_id, new_id, format_id)
+        end)
+
+        {:ok, _} = start_game(rematch_id)
+        :ok
+
+      {:error, {:already_started, _pid}} ->
+        :ok
+    end
+  end
+
+  defp rematch_id(current_id) do
+    case Regex.run(~r/^(.+)-r(\d+)$/, current_id) do
+      [_, base, n] -> "#{base}-r#{String.to_integer(n) + 1}"
+      nil -> "#{current_id}-r1"
+    end
+  end
+
+  defp via_tuple(game_id), do: {:via, Registry, {Oskol.GameRegistry, game_id}}
+
+  defp topic(game_id), do: "game:#{game_id}"
 
   defp generate_player_id do
     :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
   end
 
-  defp broadcast_state_change(%GameServerState{} = state) do
+  defp broadcast(%GameServerState{} = state, events) do
     Phoenix.PubSub.broadcast(
       Oskol.PubSub,
-      "game:#{state.game_id}",
-      {:game_state_updated, state}
+      topic(state.game_id),
+      {:game_state_updated, state, events}
     )
   end
 end

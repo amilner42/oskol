@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="Oskol Poker">
+    <.live_title default="Oskol">
       {assigns[:page_title]}
     </.live_title>
 
@@ -12,24 +12,24 @@
       <meta property="og:title" content={assigns.og_title} />
       <meta
         property="og:description"
-        content={assigns[:og_description] || "Play poker roguelike for two players"}
+        content={assigns[:og_description] || "Two-player games you can start in one click"}
       />
       <meta property="og:type" content="website" />
-      <meta property="og:site_name" content="Oskol Poker" />
+      <meta property="og:site_name" content="Oskol" />
       <meta name="twitter:card" content="summary" />
       <meta name="twitter:title" content={assigns.og_title} />
       <meta
         name="twitter:description"
-        content={assigns[:og_description] || "Play poker roguelike for two players"}
+        content={assigns[:og_description] || "Two-player games you can start in one click"}
       />
     <% else %>
-      <meta property="og:title" content="Poker Warfare" />
-      <meta property="og:description" content="May the strongest hand win" />
+      <meta property="og:title" content="Games for two" />
+      <meta property="og:description" content="Two-player games you can start in one click" />
       <meta property="og:type" content="website" />
-      <meta property="og:site_name" content="Oskol Poker" />
+      <meta property="og:site_name" content="Oskol" />
       <meta name="twitter:card" content="summary" />
-      <meta name="twitter:title" content="Poker Warfare" />
-      <meta name="twitter:description" content="May the strongest hand win" />
+      <meta name="twitter:title" content="Games for two" />
+      <meta name="twitter:description" content="Two-player games you can start in one click" />
     <% end %>
 
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />

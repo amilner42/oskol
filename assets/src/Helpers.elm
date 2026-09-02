@@ -563,17 +563,7 @@ buildOpponentPlayerState data =
         , drawPile = []
         , discardPile = []
         }
-    , skillTree =
-        { highCard = 1
-        , pair = 1
-        , twoPair = 1
-        , threeOfAKind = 1
-        , straight = 1
-        , flush = 1
-        , fullHouse = 1
-        , fourOfAKind = 1
-        , straightFlush = 1
-        }
+    , skillTree = data.opponentSkillTree
     , handsRemaining = data.opponentHandsRemaining
     , discardsRemaining = data.opponentDiscardsRemaining
     , currentRoundScore = data.opponentCurrentScore

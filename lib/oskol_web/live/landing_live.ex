@@ -1,40 +1,60 @@
 defmodule OskolWeb.LandingLive do
+  @moduledoc """
+  Two pages in one LiveView:
+
+    * `/` is the game library, listing every registered game.
+    * `/:slug` is one game's start page: name entry, invite link, and the
+      pre-game lobby where players agree on a format.
+  """
   use OskolWeb, :live_view
 
   alias Oskol.Game
-
-  @is_dev Mix.env() == :dev
+  alias Oskol.GameKit
 
   @impl true
   def mount(params, _session, socket) do
-    # Check for ?game= query param
-    game_name = params["game"] || ""
+    case socket.assigns.live_action do
+      :library ->
+        {:ok, assign(socket, page: :library, games: GameKit.games(), error: nil)}
 
-    # Initial step - will be updated in handle_params once connected
-    step = if game_name != "", do: :player_name, else: :game_name
+      :game ->
+        slug = params["slug"]
 
-    {:ok,
-     assign(socket,
-       step: step,
-       game_name: game_name,
-       player_name: "",
-       error: nil,
-       inviter_name: nil,
-       # Game connection state (used when in :joining or :lobby steps)
-       player_id: nil,
-       server_state: nil,
-       selected_format: nil,
-       disconnected_players: []
-     )}
+        case GameKit.game_info(slug) do
+          {:ok, info} ->
+            game_name = params["game"] || ""
+            step = if game_name != "", do: :player_name, else: :game_name
+
+            {:ok,
+             assign(socket,
+               page: :game,
+               slug: slug,
+               info: info,
+               step: step,
+               game_name: game_name,
+               player_name: "",
+               error: nil,
+               inviter_name: nil,
+               player_id: nil,
+               server_state: nil,
+               selected_format: nil,
+               disconnected_players: []
+             )}
+
+          :error ->
+            {:ok,
+             socket |> put_flash(:error, "Unknown game: #{slug}") |> push_navigate(to: ~p"/")}
+        end
+    end
   end
 
   @impl true
+  def handle_params(_params, _uri, %{assigns: %{page: :library}} = socket), do: {:noreply, socket}
+
   def handle_params(params, _uri, socket) do
-    # Handle URL changes (e.g., from push_patch)
     game_name = params["game"] || ""
     name_from_url = params["name"]
 
-    # Set Open Graph meta tags for invite links
     socket =
       if game_name != "" && !name_from_url do
         set_invite_meta_tags(socket, game_name)
@@ -44,23 +64,18 @@ defmodule OskolWeb.LandingLive do
 
     socket =
       cond do
-        # No game param - show game name input
         game_name == "" ->
           assign(socket, step: :game_name, game_name: "")
 
-        # Already past the player_name step (in joining or lobby) - don't change
         socket.assigns.step in [:joining, :lobby] ->
           socket
 
-        # Have both game and name params - try to auto-rejoin
         connected?(socket) && name_from_url && name_from_url != "" ->
           auto_rejoin_lobby(socket, game_name, name_from_url)
 
-        # Have a game param and connected - check for disconnected players
         connected?(socket) ->
           check_game_for_reconnect(socket, game_name)
 
-        # Have a game param but not connected yet - show player name (will recheck on connect)
         true ->
           assign(socket, step: :player_name, game_name: game_name)
       end
@@ -68,207 +83,110 @@ defmodule OskolWeb.LandingLive do
     {:noreply, socket}
   end
 
-  # Set Open Graph meta tags for invite links
   defp set_invite_meta_tags(socket, game_name) do
-    case Game.lookup_game(game_name) do
-      {:ok, _pid} ->
-        server_state = Game.get_server_state(game_name)
-
-        # Get the first connected player's name (the inviter)
-        inviter_name =
-          server_state.connections
-          |> Enum.find(fn {_id, conn} -> conn.connected end)
-          |> case do
-            {_id, conn} -> conn.name
-            nil -> nil
-          end
-
-        if inviter_name do
-          assign(socket,
-            og_title: "#{inviter_name} challenged you to Oskol Poker",
-            og_description: "Accept the challenge to engage in poker warfare"
-          )
-        else
-          socket
-        end
-
-      :not_found ->
-        socket
+    with {:ok, _pid} <- Game.lookup_game(game_name),
+         server_state <- Game.get_server_state(game_name),
+         {_id, conn} <- Enum.find(server_state.connections, fn {_id, c} -> c.connected end) do
+      assign(socket,
+        og_title: "#{conn.name} challenged you to #{socket.assigns.info["name"]}",
+        og_description: socket.assigns.info["tagline"]
+      )
+    else
+      _ -> socket
     end
   end
 
-  # Auto-rejoin lobby when name is in URL
   defp auto_rejoin_lobby(socket, game_name, player_name) do
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
-        # Subscribe to game updates
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
 
-        # Try to rejoin first (for reconnecting players)
         case Game.rejoin_game(game_name, player_name, self()) do
           {:ok, player_id, new_state} ->
-            # Check if game already started - redirect to game
-            if new_state.game_state != nil do
-              push_navigate(socket, to: ~p"/#{game_name}?name=#{player_name}")
+            if new_state.instance != nil do
+              push_navigate(socket, to: play_path(socket, game_name, player_name))
             else
-              assign(socket,
-                step: :lobby,
-                game_name: game_name,
-                player_name: player_name,
-                player_id: player_id,
-                server_state: new_state,
-                selected_format: Map.get(new_state.format_selections, player_id),
-                error: nil
-              )
+              enter_lobby(socket, game_name, player_name, player_id, new_state)
             end
 
           {:error, _reason} ->
-            # Couldn't rejoin - try joining as a new player if game is still in lobby
             server_state = Game.get_server_state(game_name)
 
-            if server_state.game_state == nil do
-              # Game is still in lobby - try to join as new player
+            if server_state.instance == nil do
               case Game.join_game(game_name, player_name, self()) do
                 {:ok, player_id, new_state} ->
-                  socket
-                  |> assign(
-                    step: :lobby,
-                    game_name: game_name,
-                    player_name: player_name,
-                    player_id: player_id,
-                    server_state: new_state,
-                    selected_format: nil,
-                    error: nil
-                  )
-                  |> push_patch(to: ~p"/?game=#{game_name}&name=#{player_name}")
+                  enter_lobby(socket, game_name, player_name, player_id, new_state)
 
-                {:error, _join_reason} ->
-                  # Join also failed - fall back to reconnect check
-                  check_game_for_reconnect(socket, game_name, player_name)
+                {:error, _} ->
+                  assign(socket, step: :player_name, game_name: game_name)
               end
             else
-              # Game in progress - fall back to reconnect check
-              check_game_for_reconnect(socket, game_name, player_name)
+              assign(socket,
+                step: :player_name,
+                game_name: game_name,
+                error: "Game already started"
+              )
             end
         end
 
       :not_found ->
-        # Game doesn't exist yet - create it and join with the name from URL
-        # This handles the rematch flow where both players have names in URL
-        {:ok, _pid} = Game.find_or_start_game(game_name)
-
-        # Subscribe to game updates
-        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
-
-        # Join the game with the name from URL
-        case Game.join_game(game_name, player_name, self()) do
-          {:ok, player_id, new_state} ->
-            socket
-            |> assign(
-              step: :lobby,
-              game_name: game_name,
-              player_name: player_name,
-              player_id: player_id,
-              server_state: new_state,
-              selected_format: nil,
-              error: nil
-            )
-            |> push_patch(to: ~p"/?game=#{game_name}&name=#{player_name}")
-
-          {:error, reason} ->
-            assign(socket, step: :player_name, game_name: game_name, error: format_error(reason))
-        end
+        assign(socket, step: :player_name, game_name: game_name)
     end
   end
 
-  # Check if the game has disconnected players and show reconnect screen
-  # Optional name_from_url parameter for auto-rejoin attempt
-  defp check_game_for_reconnect(socket, game_name, name_from_url \\ nil) do
+  defp check_game_for_reconnect(socket, game_name) do
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
         server_state = Game.get_server_state(game_name)
 
-        # Subscribe to game updates
-        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
-
-        # Get inviter name (first connected player)
-        inviter_name =
-          server_state.connections
-          |> Enum.find(fn {_id, conn} -> conn.connected end)
-          |> case do
-            {_id, conn} -> conn.name
-            nil -> nil
-          end
-
-        # Check for disconnected players
-        disconnected_players =
+        disconnected =
           server_state.connections
           |> Enum.filter(fn {_id, conn} -> not conn.connected end)
           |> Enum.map(fn {id, conn} -> {id, conn.name} end)
 
-        # If we have a name from URL and it matches a disconnected player, auto-rejoin
-        matching_disconnected =
-          if name_from_url do
-            Enum.find(disconnected_players, fn {_id, name} -> name == name_from_url end)
+        inviter =
+          server_state.connections
+          |> Enum.find(fn {_id, c} -> c.connected end)
+          |> case do
+            {_id, c} -> c.name
+            nil -> nil
           end
 
-        cond do
-          # Auto-rejoin if name from URL matches a disconnected player
-          matching_disconnected != nil ->
-            case Game.rejoin_game(game_name, name_from_url, self()) do
-              {:ok, player_id, new_state} ->
-                if new_state.game_state != nil do
-                  push_navigate(socket, to: ~p"/#{game_name}?name=#{name_from_url}")
-                else
-                  assign(socket,
-                    step: :lobby,
-                    game_name: game_name,
-                    player_name: name_from_url,
-                    player_id: player_id,
-                    server_state: new_state,
-                    selected_format: Map.get(new_state.format_selections, player_id),
-                    error: nil
-                  )
-                end
-
-              {:error, _reason} ->
-                # Still failed - show joining screen
-                assign(socket,
-                  step: :joining,
-                  game_name: game_name,
-                  server_state: server_state,
-                  disconnected_players: disconnected_players
-                )
-            end
-
-          # Game in progress - show join screen with reconnect options
-          server_state.game_state != nil ->
-            assign(socket,
-              step: :joining,
-              game_name: game_name,
-              server_state: server_state,
-              disconnected_players: disconnected_players
-            )
-
-          # Has disconnected players in lobby - show reconnect screen
-          length(disconnected_players) > 0 ->
-            assign(socket,
-              step: :joining,
-              game_name: game_name,
-              server_state: server_state,
-              disconnected_players: disconnected_players
-            )
-
-          # No disconnected players - show player name input
-          true ->
-            assign(socket, step: :player_name, game_name: game_name, inviter_name: inviter_name)
+        if disconnected != [] and server_state.instance != nil do
+          assign(socket,
+            step: :joining,
+            game_name: game_name,
+            server_state: server_state,
+            disconnected_players: disconnected
+          )
+        else
+          assign(socket,
+            step: :player_name,
+            game_name: game_name,
+            inviter_name: inviter,
+            server_state: server_state,
+            disconnected_players: disconnected
+          )
         end
 
       :not_found ->
-        # Game doesn't exist yet - show player name input
-        assign(socket, step: :player_name, game_name: game_name, inviter_name: nil)
+        assign(socket, step: :player_name, game_name: game_name)
     end
   end
+
+  defp enter_lobby(socket, game_name, player_name, player_id, server_state) do
+    assign(socket,
+      step: :lobby,
+      game_name: game_name,
+      player_name: player_name,
+      player_id: player_id,
+      server_state: server_state,
+      selected_format: Map.get(server_state.format_selections, player_id),
+      error: nil
+    )
+  end
+
+  # ---------- Events ----------
 
   @impl true
   def handle_event("new_game", %{"player_name" => player_name}, socket) do
@@ -277,30 +195,16 @@ defmodule OskolWeb.LandingLive do
     if player_name == "" do
       {:noreply, assign(socket, error: "Please enter a display name")}
     else
-      # Generate a random 6-character game ID
       game_id = generate_game_id()
-
-      # Start the game and join immediately
-      {:ok, _pid} = Game.find_or_start_game(game_id)
-
-      # Subscribe to game updates
+      {:ok, _pid} = Game.find_or_start_game(game_id, socket.assigns.slug)
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
 
-      # Join the game
       case Game.join_game(game_id, player_name, self()) do
         {:ok, player_id, new_state} ->
           {:noreply,
            socket
-           |> assign(
-             step: :lobby,
-             game_name: game_id,
-             player_name: player_name,
-             player_id: player_id,
-             server_state: new_state,
-             selected_format: nil,
-             error: nil
-           )
-           |> push_patch(to: ~p"/?game=#{game_id}&name=#{player_name}")}
+           |> enter_lobby(game_id, player_name, player_id, new_state)
+           |> push_patch(to: lobby_path(socket, game_id, player_name))}
 
         {:error, reason} ->
           {:noreply, assign(socket, error: format_error(reason))}
@@ -308,7 +212,142 @@ defmodule OskolWeb.LandingLive do
     end
   end
 
-  # Generate a random URL-safe game ID
+  def handle_event("submit_player_name", %{"player_name" => player_name}, socket) do
+    player_name = String.trim(player_name)
+
+    if player_name == "" do
+      {:noreply, assign(socket, error: "Please enter a display name")}
+    else
+      game_id = socket.assigns.game_name
+      {:ok, _pid} = Game.find_or_start_game(game_id, socket.assigns.slug)
+      Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+      server_state = Game.get_server_state(game_id)
+
+      disconnected =
+        server_state.connections
+        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
+        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
+
+      socket =
+        assign(socket,
+          player_name: player_name,
+          server_state: server_state,
+          disconnected_players: disconnected
+        )
+
+      case Game.join_game(game_id, player_name, self()) do
+        {:ok, player_id, new_state} ->
+          {:noreply,
+           socket
+           |> enter_lobby(game_id, player_name, player_id, new_state)
+           |> push_patch(to: lobby_path(socket, game_id, player_name))}
+
+        {:error, :name_taken} ->
+          case Game.rejoin_game(game_id, player_name, self()) do
+            {:ok, player_id, new_state} ->
+              if new_state.instance != nil do
+                {:noreply, push_navigate(socket, to: play_path(socket, game_id, player_name))}
+              else
+                {:noreply,
+                 socket
+                 |> enter_lobby(game_id, player_name, player_id, new_state)
+                 |> push_patch(to: lobby_path(socket, game_id, player_name))}
+              end
+
+            {:error, _reason} ->
+              {:noreply,
+               assign(socket, step: :joining, error: "Name already taken by another player")}
+          end
+
+        {:error, :game_full} ->
+          {:noreply, assign(socket, step: :joining, error: nil)}
+
+        {:error, :game_already_started} ->
+          {:noreply, assign(socket, step: :joining, error: "Game already started")}
+
+        {:error, reason} ->
+          {:noreply, assign(socket, error: format_error(reason))}
+      end
+    end
+  end
+
+  def handle_event("rejoin_as_player", %{"player_name" => name}, socket) do
+    game_id = socket.assigns.game_name
+
+    case Game.rejoin_game(game_id, name, self()) do
+      {:ok, player_id, new_state} ->
+        if new_state.instance != nil do
+          {:noreply, push_navigate(socket, to: play_path(socket, game_id, name))}
+        else
+          {:noreply,
+           socket
+           |> enter_lobby(game_id, name, player_id, new_state)
+           |> push_patch(to: lobby_path(socket, game_id, name))}
+        end
+
+      {:error, reason} ->
+        {:noreply, assign(socket, error: format_error(reason))}
+    end
+  end
+
+  def handle_event("select_format", %{"format" => format_id}, socket) do
+    case Game.select_format(socket.assigns.game_name, socket.assigns.player_id, format_id) do
+      {:ok, new_state} ->
+        {:noreply,
+         assign(socket, server_state: new_state, selected_format: format_id, error: nil)}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, error: format_error(reason))}
+    end
+  end
+
+  def handle_event("start_game", _params, socket) do
+    game_id = socket.assigns.game_name
+
+    case Game.start_game_session(game_id) do
+      {:ok, _new_state} ->
+        {:noreply,
+         push_navigate(socket, to: play_path(socket, game_id, socket.assigns.player_name))}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, error: format_error(reason))}
+    end
+  end
+
+  def handle_event("go_back", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(step: :game_name, error: nil)
+     |> push_patch(to: ~p"/#{socket.assigns.slug}")}
+  end
+
+  @impl true
+  def handle_info({:game_state_updated, new_state, _events}, socket) do
+    if new_state.instance != nil do
+      {:noreply,
+       push_navigate(socket,
+         to: play_path(socket, socket.assigns.game_name, socket.assigns.player_name)
+       )}
+    else
+      disconnected =
+        new_state.connections
+        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
+        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
+
+      {:noreply, assign(socket, server_state: new_state, disconnected_players: disconnected)}
+    end
+  end
+
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
+  defp lobby_path(socket, game_id, player_name) do
+    ~p"/#{socket.assigns.slug}?game=#{game_id}&name=#{player_name}"
+  end
+
+  defp play_path(socket, game_id, player_name) do
+    ~p"/#{socket.assigns.slug}/#{game_id}?name=#{player_name}"
+  end
+
   defp generate_game_id do
     :crypto.strong_rand_bytes(6)
     |> Base.url_encode64(padding: false)
@@ -317,187 +356,11 @@ defmodule OskolWeb.LandingLive do
     |> String.downcase()
   end
 
-  @impl true
-  def handle_event("submit_player_name", %{"player_name" => player_name}, socket) do
-    player_name = String.trim(player_name)
-
-    if player_name == "" do
-      {:noreply, assign(socket, error: "Please enter a display name")}
-    else
-      # Connect to game server
-      game_id = socket.assigns.game_name
-      {:ok, _pid} = Game.find_or_start_game(game_id)
-
-      # Subscribe to game updates
-      Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
-
-      # Get initial server state
-      server_state = Game.get_server_state(game_id)
-
-      # Check for disconnected players
-      disconnected_players =
-        server_state.connections
-        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
-        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
-
-      socket =
-        socket
-        |> assign(
-          player_name: player_name,
-          server_state: server_state,
-          disconnected_players: disconnected_players
-        )
-
-      # Try to join the game
-      case Game.join_game(game_id, player_name, self()) do
-        {:ok, player_id, new_state} ->
-          {:noreply,
-           socket
-           |> assign(
-             step: :lobby,
-             player_id: player_id,
-             server_state: new_state,
-             selected_format: nil,
-             error: nil
-           )
-           |> push_patch(to: ~p"/?game=#{game_id}&name=#{player_name}")}
-
-        {:error, :name_taken} ->
-          # Name taken - try to rejoin
-          case Game.rejoin_game(game_id, player_name, self()) do
-            {:ok, player_id, new_state} ->
-              # Check if game already started
-              if new_state.game_state != nil do
-                {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{player_name}")}
-              else
-                {:noreply,
-                 socket
-                 |> assign(
-                   step: :lobby,
-                   player_id: player_id,
-                   server_state: new_state,
-                   selected_format: Map.get(new_state.format_selections, player_id),
-                   error: nil
-                 )
-                 |> push_patch(to: ~p"/?game=#{game_id}&name=#{player_name}")}
-              end
-
-            {:error, _reason} ->
-              {:noreply,
-               assign(socket,
-                 step: :joining,
-                 error: "Name already taken by another player"
-               )}
-          end
-
-        {:error, :game_full} ->
-          {:noreply,
-           assign(socket,
-             step: :joining,
-             error: nil
-           )}
-
-        {:error, reason} ->
-          {:noreply, assign(socket, error: format_error(reason))}
-      end
-    end
-  end
-
-  @impl true
-  def handle_event("rejoin_as_player", %{"player_name" => name}, socket) do
-    game_id = socket.assigns.game_name
-
-    case Game.rejoin_game(game_id, name, self()) do
-      {:ok, player_id, new_state} ->
-        # Check if game already started
-        if new_state.game_state != nil do
-          {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{name}")}
-        else
-          {:noreply,
-           socket
-           |> assign(
-             step: :lobby,
-             player_id: player_id,
-             player_name: name,
-             server_state: new_state,
-             selected_format: Map.get(new_state.format_selections, player_id),
-             error: nil
-           )
-           |> push_patch(to: ~p"/?game=#{game_id}&name=#{name}")}
-        end
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  @impl true
-  def handle_event("select_format", %{"format" => format_str}, socket) do
-    format = String.to_existing_atom(format_str)
-    game_id = socket.assigns.game_name
-
-    case Game.select_format(game_id, socket.assigns.player_id, format) do
-      {:ok, new_state} ->
-        {:noreply, assign(socket, server_state: new_state, selected_format: format, error: nil)}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  @impl true
-  def handle_event("start_game", _params, socket) do
-    game_id = socket.assigns.game_name
-    player_name = socket.assigns.player_name
-
-    case Game.start_game_session(game_id) do
-      {:ok, _new_state} ->
-        # Navigate to game URL with player name for auto-rejoin
-        {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{player_name}")}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  @impl true
-  def handle_event("go_back", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(step: :game_name, error: nil)
-     |> push_patch(to: ~p"/")}
-  end
-
-  # Handle game state updates from PubSub
-  @impl true
-  def handle_info({:game_state_updated, new_state}, socket) do
-    # Check if game started - navigate to game URL
-    if new_state.game_state != nil do
-      game_id = socket.assigns.game_name
-      player_name = socket.assigns.player_name
-
-      {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{player_name}")}
-    else
-      # Update disconnected players list
-      disconnected_players =
-        new_state.connections
-        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
-        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
-
-      {:noreply,
-       assign(socket,
-         server_state: new_state,
-         disconnected_players: disconnected_players
-       )}
-    end
-  end
-
-  @impl true
-  def handle_info(_msg, socket), do: {:noreply, socket}
-
   defp format_error(:game_full), do: "Game is full"
   defp format_error(:name_taken), do: "Name already taken"
   defp format_error(:invalid_name), do: "Invalid name"
+  defp format_error(:unknown_format), do: "Unknown game mode"
+  defp format_error(:no_format_agreement), do: "Both players must pick the same mode"
   defp format_error(reason) when is_atom(reason), do: "Error: #{reason}"
   defp format_error(reason), do: "Error: #{inspect(reason)}"
 
@@ -506,6 +369,47 @@ defmodule OskolWeb.LandingLive do
   # ============================================================================
 
   @impl true
+  def render(%{page: :library} = assigns) do
+    ~H"""
+    <.brand_styles />
+    <div class="min-h-screen-safe flex flex-col bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
+      <.floating_battles />
+      <div class="relative z-10 w-full flex flex-col flex-1 overflow-auto">
+        <div class="shrink-0 h-[12vh] sm:h-[18vh]"></div>
+        <div class="text-center px-6 max-w-2xl w-full mx-auto">
+          <div class="mb-8 animate-logo">
+            <.logo_large />
+            <p class="text-base-content/50 text-sm tracking-widest uppercase">
+              Games for two
+            </p>
+          </div>
+          <div class="animate-content space-y-4" id="game-library">
+            <.link
+              :for={game <- @games}
+              navigate={~p"/#{game["slug"]}"}
+              id={"game-#{game["slug"]}"}
+              class="block text-left bg-white/90 backdrop-blur-sm border-2 border-white/50 hover:border-white rounded-2xl px-6 py-5 shadow-lg hover:shadow-xl hover:scale-[1.01] transition-all"
+            >
+              <div class="flex items-baseline justify-between gap-4">
+                <span class="text-gray-800 font-bold text-2xl">{game["name"]}</span>
+                <span class="text-gray-400 text-xs uppercase tracking-wider">
+                  {game["min_players"]} players
+                </span>
+              </div>
+              <p class="text-gray-600 text-sm mt-1">{game["tagline"]}</p>
+              <p class="text-gray-400 text-xs mt-2">{game["description"]}</p>
+            </.link>
+            <p class="text-base-content/40 text-xs pt-4">
+              Play with friends · No signup required
+            </p>
+          </div>
+        </div>
+        <div class="flex-1"></div>
+      </div>
+    </div>
+    """
+  end
+
   def render(assigns) do
     ~H"""
     <.brand_styles />
@@ -513,19 +417,27 @@ defmodule OskolWeb.LandingLive do
       <.floating_battles />
 
       <div class="relative z-10 w-full flex flex-col flex-1 overflow-auto">
-        <!-- Top spacer - pushes content down, logo stays at fixed distance from top -->
-        <div class="shrink-0 h-[20vh] sm:h-[30vh]"></div>
+        <div class="shrink-0 h-[16vh] sm:h-[24vh]"></div>
 
         <div class="text-center px-6 max-w-xl w-full mx-auto">
-          <!-- Logo section - stays at fixed position -->
           <div class="mb-8 animate-logo">
-            <.logo_large />
+            <.link
+              navigate={~p"/"}
+              class="text-base-content/40 text-xs tracking-widest uppercase hover:text-base-content/70"
+            >
+              ← All games
+            </.link>
+            <h1
+              class="text-5xl sm:text-6xl font-black text-gray-800 mt-3 mb-2 tracking-tight"
+              id="game-title"
+            >
+              {@info["name"]}
+            </h1>
             <p class="text-base-content/50 text-sm tracking-widest uppercase">
-              Poker warfare
+              {@info["tagline"]}
             </p>
           </div>
-          
-    <!-- Content section - grows below logo -->
+
           <div class="animate-content">
             <%= if @error do %>
               <div class="mb-4 text-red-500 text-sm font-medium bg-red-500/10 rounded-lg p-3">
@@ -546,6 +458,8 @@ defmodule OskolWeb.LandingLive do
                 />
               <% :lobby -> %>
                 <.lobby_screen
+                  slug={@slug}
+                  info={@info}
                   game_name={@game_name}
                   player_id={@player_id}
                   player_name={@player_name}
@@ -561,8 +475,7 @@ defmodule OskolWeb.LandingLive do
             <% end %>
           </div>
         </div>
-        
-    <!-- Bottom spacer - balances the layout -->
+
         <div class="flex-1"></div>
       </div>
     </div>
@@ -601,19 +514,18 @@ defmodule OskolWeb.LandingLive do
     """
   end
 
-  # ============================================================================
-  # JOINING SCREEN (when game is full or reconnect options available)
-  # ============================================================================
-
   defp joining_screen(assigns) do
-    # Check if game is in progress or still in lobby
-    game_in_progress = assigns.server_state && assigns.server_state.game_state != nil
+    game_in_progress = assigns.server_state && assigns.server_state.instance != nil
 
-    # Check if lobby can accept new players (less than 2 total connections)
     total_connections =
       if assigns.server_state, do: map_size(assigns.server_state.connections), else: 0
 
-    can_join_as_new = not game_in_progress and total_connections < 2
+    max_players =
+      if assigns.server_state,
+        do: Oskol.Game.GameServerState.max_players(assigns.server_state),
+        else: 2
+
+    can_join_as_new = not game_in_progress and total_connections < max_players
 
     assigns =
       assigns
@@ -683,25 +595,30 @@ defmodule OskolWeb.LandingLive do
         end
       end
 
+    formats = Map.get(assigns.info, "formats", [])
+
+    selected_format_name =
+      Enum.find_value(formats, fn f -> if f["id"] == assigns.selected_format, do: f["name"] end)
+
     assigns =
       assigns
       |> assign(:opponent_info, opponent_info)
-      |> assign(:is_dev, @is_dev)
+      |> assign(:formats, formats)
+      |> assign(:selected_format_name, selected_format_name)
+      |> assign(:max_players, Oskol.Game.GameServerState.max_players(assigns.server_state))
 
     ~H"""
     <div class="max-w-2xl mx-auto">
-      <!-- Player Status Cards -->
       <.players_status_cards
         connections={@server_state.connections}
         player_id={@player_id}
         format_selections={@server_state.format_selections}
       />
-      
-    <!-- Format Selection -->
+
       <div class="mb-4 sm:mb-8">
         <p class="text-base-content/40 text-xs mb-2 sm:mb-3 text-center">
           <%= cond do %>
-            <% map_size(@server_state.connections) < 2 -> %>
+            <% map_size(@server_state.connections) < @max_players -> %>
               Waiting for opponent to join...
             <% @selected_format == nil -> %>
               Choose a game mode
@@ -709,54 +626,23 @@ defmodule OskolWeb.LandingLive do
               Waiting for opponent to select...
             <% @selected_format != @opponent_info.format -> %>
               Select the same game mode to start
-            <% @selected_format == :short -> %>
-              Both players selected Skirmish
-            <% @selected_format == :standard -> %>
-              Both players selected Battle
-            <% @selected_format == :extended -> %>
-              Both players selected War
             <% true -> %>
-              Ready to start!
+              Both players selected {@selected_format_name}
           <% end %>
         </p>
-        <div class="grid grid-cols-3 gap-1.5 sm:gap-3">
+        <div class={["grid gap-1.5 sm:gap-3", "grid-cols-#{max(length(@formats), 1)}"]}>
           <.format_card_v2
-            format="short"
-            title="Skirmish"
-            subtitle="~5 min match"
-            description="Absolute chaos"
-            emoji="⚡"
-            lives={2}
-            shop_rounds={1}
-            selected={@selected_format == :short}
-            opponent_selected={@opponent_info && @opponent_info.format == :short}
-          />
-          <.format_card_v2
-            format="standard"
-            title="Battle"
-            subtitle="~15 min match"
-            description="Balanced play"
-            emoji="🎯"
-            lives={3}
-            shop_rounds={2}
-            selected={@selected_format == :standard}
-            opponent_selected={@opponent_info && @opponent_info.format == :standard}
-          />
-          <.format_card_v2
-            format="extended"
-            title="War"
-            subtitle="~30 min match"
-            description="Tactical precision"
-            emoji="🔥"
-            lives={5}
-            shop_rounds={2}
-            selected={@selected_format == :extended}
-            opponent_selected={@opponent_info && @opponent_info.format == :extended}
+            :for={{format, index} <- Enum.with_index(@formats)}
+            format={format["id"]}
+            index={index}
+            title={format["name"]}
+            subtitle={format["description"]}
+            selected={@selected_format == format["id"]}
+            opponent_selected={@opponent_info && @opponent_info.format == format["id"]}
           />
         </div>
       </div>
-      
-    <!-- Start Game Button -->
+
       <div class="text-center">
         <%= if @server_state.lobby_status == :ready_to_start do %>
           <.brand_button phx-click="start_game" color={:primary}>
@@ -771,16 +657,14 @@ defmodule OskolWeb.LandingLive do
             <.card_decorations />
           </button>
         <% end %>
-        
-    <!-- Invite link - secondary action -->
+
         <button
           type="button"
           phx-click={JS.dispatch("phx:share", to: "#share-link")}
           class="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/50 hover:text-base-content/70 transition-all"
           id="invite-button"
         >
-          <span id="share-link" class="hidden">{url(~p"/?game=#{@game_name}")}</span>
-          <!-- Share icon - mobile only -->
+          <span id="share-link" class="hidden">{url(~p"/#{@slug}?game=#{@game_name}")}</span>
           <svg class="w-3.5 h-3.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               stroke-linecap="round"
@@ -789,11 +673,8 @@ defmodule OskolWeb.LandingLive do
               d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
             />
           </svg>
-          <!-- Clipboard icon - desktop only, will change to checkmark -->
           <span class="hero-clipboard w-3.5 h-3.5 hidden sm:inline" id="invite-icon"></span>
-          <!-- Mobile text -->
           <span class="sm:hidden">Invite friend</span>
-          <!-- Desktop text -->
           <span class="hidden sm:inline">Copy Invite Link</span>
         </button>
       </div>
@@ -836,10 +717,15 @@ defmodule OskolWeb.LandingLive do
     """
   end
 
-  defp format_card_v2(assigns) do
-    # Determine if both players selected this format for special animation
-    both_selected = assigns.selected and assigns.opponent_selected
+  attr :format, :string, required: true
+  attr :index, :integer, default: 0
+  attr :title, :string, required: true
+  attr :subtitle, :string, default: ""
+  attr :selected, :boolean, default: false
+  attr :opponent_selected, :boolean, default: false
 
+  defp format_card_v2(assigns) do
+    both_selected = assigns.selected and assigns.opponent_selected
     assigns = assign(assigns, :both_selected, both_selected)
 
     ~H"""
@@ -850,16 +736,15 @@ defmodule OskolWeb.LandingLive do
       <button
         phx-click="select_format"
         phx-value-format={@format}
+        id={"format-#{@format}"}
         class={[
           "relative w-full p-2.5 sm:p-5 rounded-xl sm:rounded-2xl transition-all border-2 text-center group",
           "bg-white/90 backdrop-blur-sm shadow-lg hover:shadow-xl hover:scale-105",
           "border-white/50 hover:border-white"
         ]}
       >
-        <!-- Corner selection indicators -->
         <%= cond do %>
           <% @both_selected -> %>
-            <!-- Both selected - animated lock-in corners -->
             <div class="absolute -top-[2px] -left-[2px] w-5 h-5 sm:w-6 sm:h-6 border-t-[3px] border-l-[3px] rounded-tl-xl sm:rounded-tl-2xl corner-lock-in-a">
             </div>
             <div class="absolute -top-[2px] -right-[2px] w-5 h-5 sm:w-6 sm:h-6 border-t-[3px] border-r-[3px] rounded-tr-xl sm:rounded-tr-2xl corner-lock-in-b">
@@ -869,7 +754,6 @@ defmodule OskolWeb.LandingLive do
             <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 sm:w-6 sm:h-6 border-b-[3px] border-r-[3px] rounded-br-xl sm:rounded-br-2xl corner-lock-in-a">
             </div>
           <% @selected -> %>
-            <!-- Only you selected - all player corners -->
             <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-xl sm:rounded-tl-2xl">
             </div>
             <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-player rounded-tr-xl sm:rounded-tr-2xl">
@@ -879,7 +763,6 @@ defmodule OskolWeb.LandingLive do
             <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-player rounded-br-xl sm:rounded-br-2xl">
             </div>
           <% @opponent_selected -> %>
-            <!-- Only opponent selected - all opponent corners -->
             <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-opponent rounded-tl-xl sm:rounded-tl-2xl">
             </div>
             <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-xl sm:rounded-tr-2xl">
@@ -889,14 +772,11 @@ defmodule OskolWeb.LandingLive do
             <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-opponent rounded-br-xl sm:rounded-br-2xl">
             </div>
           <% true -> %>
-            <!-- No selection -->
         <% end %>
-        
-    <!-- Abstract SVG decoration per format -->
+
         <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
-          <%= case @format do %>
-            <% "short" -> %>
-              <!-- Bullet shapes flying right -->
+          <%= case rem(@index, 3) do %>
+            <% 0 -> %>
               <svg
                 class="absolute inset-0 w-full h-full"
                 viewBox="0 0 100 100"
@@ -923,21 +803,17 @@ defmodule OskolWeb.LandingLive do
                   fill="currentColor"
                 />
               </svg>
-            <% "standard" -> %>
-              <!-- Concentric circles -->
+            <% 1 -> %>
               <svg class="absolute -right-6 -bottom-6 w-28 h-28" viewBox="0 0 100 100">
                 <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="2" />
                 <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" stroke-width="2" />
                 <circle cx="50" cy="50" r="19" fill="none" stroke="currentColor" stroke-width="2" />
                 <circle cx="50" cy="50" r="6" fill="currentColor" />
               </svg>
-            <% "extended" -> %>
-              <!-- Train track going from bottom-left to top-right -->
+            <% _ -> %>
               <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
-                <!-- Two parallel rails -->
                 <line x1="5" y1="108" x2="115" y2="-2" stroke="currentColor" stroke-width="2.5" />
                 <line x1="20" y1="120" x2="130" y2="10" stroke="currentColor" stroke-width="2.5" />
-                <!-- Cross ties (chunky wooden sleepers) -->
                 <line x1="9" y1="104" x2="24" y2="116" stroke="currentColor" stroke-width="4" />
                 <line x1="21" y1="92" x2="36" y2="104" stroke="currentColor" stroke-width="4" />
                 <line x1="33" y1="80" x2="48" y2="92" stroke="currentColor" stroke-width="4" />
@@ -950,11 +826,9 @@ defmodule OskolWeb.LandingLive do
               </svg>
           <% end %>
         </div>
-        
-    <!-- Text content - centered and stacked -->
+
         <div class="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1">
           <div class="text-gray-800 font-bold text-sm sm:text-lg">{@title}</div>
-          <div class="text-gray-500 text-[10px] sm:text-xs hidden sm:block">{@description}</div>
           <div class="text-gray-400 text-[10px] sm:text-xs">{@subtitle}</div>
         </div>
       </button>

@@ -5,6 +5,8 @@ This mirrors the Elixir GameState structure from the server.
 -}
 
 import Dict exposing (Dict)
+import Generic.View
+import Protocol
 import Set exposing (Set)
 
 
@@ -68,6 +70,7 @@ type alias PlayingData =
     , opponentActiveDebuffs : List HandType
     , opponentScrambled : Bool
     , opponentSupplyChainLimited : Bool
+    , opponentSkillTree : SkillTree
     , roundNumber : Int
     , handsPerRound : Int
     , discardsPerRound : Int
@@ -517,7 +520,12 @@ type GameStatus
 -}
 type alias Model =
     { gameId : String
+    , gameSlug : String
     , playerId : Maybe String
+    , payload : Maybe Protocol.GamePayload -- Latest protocol payload from the server
+    , legal : List Protocol.Schema -- Legal action schemas for this player
+    , lastPlaying : Maybe PlayingData -- Last playing-phase view, shown while a score reveal plays
+    , generic : Generic.View.Model -- UI state for the generic renderer (non-Tilt games)
     , gameState : RemoteData String PlayerView
     , viewingModal : Maybe Modal
     , selectedCards : Set String
@@ -560,8 +568,8 @@ type CardSort
 
 type Msg
     = -- Channel messages
-      ReceivedGameState PlayerView
-    | GameStateUpdated PlayerView
+      ServerMessageReceived Protocol.ServerMessage
+    | GenericMsg Generic.View.Msg
     | RematchGameReady String
     | ChannelError String
     | ConnectionStatusChanged ConnectionStatus

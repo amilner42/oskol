@@ -1,66 +1,79 @@
 defmodule Oskol.Game.GameServerState do
   @moduledoc """
-  Represents the state of a game server process.
-  This tracks the process-level concerns (connections, PIDs, monitors)
-  while Gleam handles the pure game logic.
+  Process-level state for one game room: who is connected, what format they
+  picked, and the running game instance once it has started. The game itself
+  is an opaque Gleam instance; this module never inspects it.
   """
+
+  alias Oskol.GameKit
 
   @type game_id :: String.t()
   @type player_id :: String.t()
   @type lobby_status :: :waiting_for_players | :ready_to_start
-  @type game_format :: :short | :standard | :extended
 
   @type connection :: %{
           name: String.t(),
-          pid: pid(),
+          pid: pid() | nil,
           connected: boolean(),
           monitor_ref: reference() | nil
         }
 
   @type t :: %__MODULE__{
           game_id: game_id(),
-          game_state: term() | nil,
+          slug: String.t(),
+          info: map(),
+          instance: term() | nil,
+          seed: integer() | nil,
           connections: %{player_id() => connection()},
+          seat_order: [player_id()],
           lobby_status: lobby_status(),
           last_activity: integer(),
-          format_selections: %{player_id() => game_format()}
+          format_selections: %{player_id() => String.t()},
+          rematch_ready: MapSet.t(player_id()),
+          rematch_game_id: String.t() | nil
         }
 
   defstruct game_id: nil,
-            game_state: nil,
+            slug: nil,
+            info: %{},
+            instance: nil,
+            seed: nil,
             connections: %{},
+            seat_order: [],
             lobby_status: :waiting_for_players,
             last_activity: 0,
-            format_selections: %{}
+            format_selections: %{},
+            rematch_ready: MapSet.new(),
+            rematch_game_id: nil
 
-  @doc """
-  Creates a new game server state for the given game_id.
-  """
-  @spec new(game_id()) :: t()
-  def new(game_id) do
+  @spec new(game_id(), String.t()) :: t()
+  def new(game_id, slug) do
+    {:ok, info} = GameKit.game_info(slug)
+
     %__MODULE__{
       game_id: game_id,
-      game_state: nil,
-      connections: %{},
-      lobby_status: :waiting_for_players,
-      last_activity: System.system_time(:second),
-      format_selections: %{}
+      slug: slug,
+      info: info,
+      last_activity: System.system_time(:second)
     }
   end
 
-  @doc """
-  Checks if a player name is already taken in the connections.
-  """
-  @spec name_taken?(t(), String.t()) :: boolean()
-  def name_taken?(%__MODULE__{connections: connections}, name) do
-    connections
-    |> Map.values()
-    |> Enum.any?(fn conn -> conn.name == name end)
+  def started?(%__MODULE__{instance: instance}), do: instance != nil
+
+  def max_players(%__MODULE__{info: info}), do: Map.get(info, "max_players", 2)
+  def min_players(%__MODULE__{info: info}), do: Map.get(info, "min_players", 2)
+
+  def format_ids(%__MODULE__{info: info}) do
+    info |> Map.get("formats", []) |> Enum.map(& &1["id"])
   end
 
-  @doc """
-  Finds a player_id by their name. Returns nil if not found.
-  """
+  def full?(%__MODULE__{} = state), do: map_size(state.connections) >= max_players(state)
+
+  @spec name_taken?(t(), String.t()) :: boolean()
+  def name_taken?(%__MODULE__{connections: connections}, name) do
+    Enum.any?(connections, fn {_id, conn} -> conn.name == name end)
+  end
+
   @spec find_player_id_by_name(t(), String.t()) :: player_id() | nil
   def find_player_id_by_name(%__MODULE__{connections: connections}, name) do
     Enum.find_value(connections, fn {player_id, conn} ->
@@ -68,76 +81,39 @@ defmodule Oskol.Game.GameServerState do
     end)
   end
 
-  @doc """
-  Updates the lobby status based on current connections.
-  Only updates if the game hasn't started yet.
-  """
+  @doc "Players in seat order as `{id, name}` pairs."
+  def seats(%__MODULE__{} = state) do
+    Enum.map(state.seat_order, fn id -> {id, state.connections[id].name} end)
+  end
+
+  @doc "Returns `{:ok, format_id}` when every seated player chose the same format."
+  @spec check_format_agreement(t()) :: {:ok, String.t()} | :no_agreement
+  def check_format_agreement(%__MODULE__{} = state) do
+    ids = state.seat_order
+    selections = Enum.map(ids, &Map.get(state.format_selections, &1))
+
+    case Enum.uniq(selections) do
+      [format] when is_binary(format) and length(ids) >= 1 -> {:ok, format}
+      _ -> :no_agreement
+    end
+  end
+
+  @doc "Recompute lobby status: enough players, all connected, format agreed."
   @spec update_lobby_status(t()) :: t()
-  def update_lobby_status(%__MODULE__{game_state: nil} = state) do
-    connected_count = Enum.count(state.connections, fn {_id, conn} -> conn.connected end)
-    player_count = map_size(state.connections)
+  def update_lobby_status(%__MODULE__{instance: nil} = state) do
+    connected = Enum.count(state.connections, fn {_id, conn} -> conn.connected end)
+    count = map_size(state.connections)
 
-    lobby_status =
-      cond do
-        connected_count == 2 and player_count == 2 -> :ready_to_start
-        true -> :waiting_for_players
-      end
+    ready? =
+      count >= min_players(state) and count <= max_players(state) and connected == count and
+        match?({:ok, _}, check_format_agreement(state))
 
-    %__MODULE__{state | lobby_status: lobby_status}
+    %__MODULE__{state | lobby_status: if(ready?, do: :ready_to_start, else: :waiting_for_players)}
   end
 
   def update_lobby_status(%__MODULE__{} = state), do: state
 
-  @doc """
-  Converts a game format to its configuration (lives, hands_per_round, discards_per_round, shop_rounds).
-  """
-  @spec format_to_config(game_format()) ::
-          {pos_integer(), pos_integer(), pos_integer(), non_neg_integer()}
-  def format_to_config(:short), do: {2, 4, 3, 1}
-  def format_to_config(:standard), do: {3, 4, 3, 2}
-  def format_to_config(:extended), do: {5, 4, 3, 2}
-
-  @doc """
-  Checks if both players have selected the same format.
-  Returns {:ok, format} if agreed, :no_agreement if different or missing.
-  """
-  @spec check_format_agreement(t()) :: {:ok, game_format()} | :no_agreement
-  def check_format_agreement(%__MODULE__{format_selections: selections, connections: connections}) do
-    # Need exactly 2 players and 2 format selections
-    if map_size(connections) == 2 and map_size(selections) == 2 do
-      formats = Map.values(selections)
-      [format1, format2] = formats
-
-      if format1 == format2 do
-        {:ok, format1}
-      else
-        :no_agreement
-      end
-    else
-      :no_agreement
-    end
+  def touch(%__MODULE__{} = state) do
+    %__MODULE__{state | last_activity: System.system_time(:second)}
   end
-
-  @doc """
-  Updates lobby status to include format agreement check.
-  """
-  @spec update_lobby_status_with_format(t()) :: t()
-  def update_lobby_status_with_format(%__MODULE__{game_state: nil} = state) do
-    connected_count = Enum.count(state.connections, fn {_id, conn} -> conn.connected end)
-    player_count = map_size(state.connections)
-
-    lobby_status =
-      cond do
-        connected_count == 2 and player_count == 2 and
-            match?({:ok, _}, check_format_agreement(state)) ->
-          :ready_to_start
-
-        true ->
-          :waiting_for_players
-      end
-
-    %__MODULE__{state | lobby_status: lobby_status}
-  end
-
-  def update_lobby_status_with_format(%__MODULE__{} = state), do: state
 end
