@@ -4,7 +4,9 @@
 Oskol (oskol.io) hosts small two-player games. **Tilt** is a head-to-head
 poker roguelike: build poker hands, upgrade them in a shop, sabotage your
 opponent, take their last life. **Backgammon** is the classic race game with
-match play. Every game can be played with an optional time control.
+the doubling cube: single games, matches to 3, 5 or 7 with the Crawford rule,
+or unlimited play with the Jacoby rule. Every game can be played with an
+optional time control.
 
 Games are built on **gamekit**, a small framework with one rule: adding a game
 never touches the server or the client. A game is one Gleam module that
@@ -95,10 +97,11 @@ src/gamekit/        framework: rng, scene, event, action, game, instance,
 src/tilt/           Tilt: state, engine (actions + events + legal), projection
                     (scene), game (contract), codec (JSON), poker/, shop/
 src/backgammon/     Backgammon: board (rules + move generation), state (turns,
-                    dice, match play), engine, projection, game
+                    dice, cube, match play), engine, projection, game
 test/gamekit/       protocol, rng, clock tests
 test/tilt/          hand, score, engine, conformance (random playouts, replay)
-test/backgammon/    board rules, engine, conformance (single games and matches)
+test/backgammon/    board rules, engine, cube (take/drop, Crawford, Jacoby,
+                    resign, unlimited), conformance (single games and matches)
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: lobby, formats, actions, rematch
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
@@ -175,7 +178,9 @@ Notes:
   exact hands and sabotage flags to assert scores, ties, game over, and every
   shop card's effect; `test/backgammon/rules_test.gleam` builds boards to
   assert dice order, the larger-die rule, bar entry, bearing off, doubles,
-  hits, gammons, match play, and pip arithmetic over random games.
+  hits, gammons, match play, and pip arithmetic over random games;
+  `test/backgammon/cube_test.gleam` covers doubling, taking, dropping, the
+  Crawford game, Jacoby scoring, resigning and unlimited play.
 - When you add a rule, add a controlled-position test for it before the
   playouts: the playouts prove nothing crashes, the position tests prove the
   rule is right.
@@ -190,7 +195,7 @@ Notes:
 
 ## Future
 - A bespoke backgammon board view (it plays on the generic renderer today).
-- Doubling cube for backgammon matches.
+- Optional cube rules: beavers, automatic doubles.
 - Persist seed + event log per game for replay and crash recovery.
 - Bots derived from `legal` for solo play and balance reports.
 - Split-screen dev mode with a time scrubber over events.

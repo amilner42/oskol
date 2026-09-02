@@ -7,7 +7,7 @@ import gamekit/scene.{type Scene, type Viewer, type Zone}
 import gleam/int
 import gleam/json
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 
 pub const slug = "backgammon"
 
@@ -20,10 +20,28 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
     zones: list.flatten([
       point_zones(state),
       player_zones(state),
-      [dice_zone(state)],
+      [dice_zone(state), cube_zone(state)],
     ]),
     data: [
       #("to_move", json.nullable(state.to_move(state), json.string)),
+      #("to_act", json.nullable(state.to_act(state), json.string)),
+      #(
+        "cube",
+        json.object([
+          #("value", json.int(state.cube_value)),
+          #("owner", case state.cube_owner {
+            Some(c) -> json.string(state.player_of(state, c))
+            None -> json.null()
+          }),
+          #("enabled", json.bool(state.config.cube)),
+          #("crawford", json.bool(state.crawford)),
+          #("pending_from", case state.phase {
+            state.Doubled(by) -> json.string(state.player_of(state, by))
+            _ -> json.null()
+          }),
+        ]),
+      ),
+      #("unlimited", json.bool(state.unlimited(state))),
       #("dice", json.array(state.dice_left(state), json.int)),
       #("last_roll", json.array(state.last_roll, json.int)),
       #("target", json.int(state.config.target)),
@@ -39,6 +57,7 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
 pub fn phase_name(state: GameState) -> String {
   case state.phase {
     state.Rolling(_) -> "rolling"
+    state.Doubled(_) -> "doubled"
     state.Moving(_, _) -> "moving"
     state.Finished(_) -> "game_over"
   }
@@ -59,6 +78,10 @@ fn player_info(state: GameState, id: String) -> scene.PlayerInfo {
   |> scene.counter("bar", board.on_bar(state.board, color))
   |> scene.counter("score", state.score_of(state, id))
   |> scene.flag("to_move", state.to_move(state) == Some(id))
+  |> scene.flag("owns_cube", case state.cube_owner {
+    Some(c) -> state.player_of(state, c) == id
+    None -> False
+  })
   |> scene.player_data("color", json.string(board.color_name(color)))
 }
 
@@ -163,4 +186,21 @@ fn remove_one(dice: List(Int), die: Int) -> List(Int) {
 fn die_token(index: Int, value: Int, used: Bool) -> scene.Token {
   scene.token("die:" <> int.to_string(index), "die")
   |> scene.with_props([#("value", json.int(value)), #("used", json.bool(used))])
+}
+
+fn cube_zone(state: GameState) -> Zone {
+  let owner = case state.cube_owner {
+    Some(c) -> json.string(state.player_of(state, c))
+    None -> json.null()
+  }
+  let token =
+    scene.token("cube", "cube")
+    |> scene.with_props([
+      #("value", json.int(state.cube_value)),
+      #("owner", owner),
+    ])
+  scene.zone("cube", scene.Row, case state.config.cube {
+    True -> [token]
+    False -> []
+  })
 }

@@ -29,24 +29,51 @@ pub fn info() -> game.Info {
     slug: projection.slug,
     name: "Backgammon",
     tagline: "The classic race game",
-    description: "Roll, move, hit and bear off. Gammons count double, backgammons triple. Play a single game or a match to five points.",
+    description: "Roll, move, hit and bear off, with the doubling cube. Play a single game, a match to a target with the Crawford rule, or unlimited games with the Jacoby rule.",
     min_players: 2,
     max_players: 2,
     formats: [
-      game.Format(
-        "single",
-        "Single game",
-        "First to bear off wins",
-        dict.from_list([#("target", 1)]),
-      ),
-      game.Format(
-        "match5",
-        "Match to 5",
-        "Gammons and backgammons count",
-        dict.from_list([#("target", 5)]),
+      format("single", "Single game", "One game, no cube", 1, False, False),
+      format("match3", "Match to 3", "Cube and Crawford rule", 3, True, False),
+      format("match5", "Match to 5", "Cube and Crawford rule", 5, True, False),
+      format("match7", "Match to 7", "Cube and Crawford rule", 7, True, False),
+      format(
+        "unlimited",
+        "Unlimited",
+        "Keep playing, cube and Jacoby rule",
+        0,
+        True,
+        True,
       ),
     ],
   )
+}
+
+fn format(
+  id: String,
+  name: String,
+  description: String,
+  target: Int,
+  cube: Bool,
+  jacoby: Bool,
+) -> game.Format {
+  game.Format(
+    id: id,
+    name: name,
+    description: description,
+    config: dict.from_list([
+      #("target", target),
+      #("cube", bool_int(cube)),
+      #("jacoby", bool_int(jacoby)),
+    ]),
+  )
+}
+
+fn bool_int(b: Bool) -> Int {
+  case b {
+    True -> 1
+    False -> 0
+  }
 }
 
 pub fn init(
@@ -57,7 +84,11 @@ pub fn init(
   case list.length(seats) {
     2 ->
       Ok(state.new(
-        state.Config(target: game.config_get(config, "target", 1)),
+        state.Config(
+          target: game.config_get(config, "target", 1),
+          cube: game.config_get(config, "cube", 0) == 1,
+          jacoby: game.config_get(config, "jacoby", 0) == 1,
+        ),
         list.map(seats, fn(s) { #(s.id, s.name) }),
         rng,
       ))
@@ -68,6 +99,10 @@ pub fn init(
 pub fn decode_action(incoming: action.Incoming) -> Result(Action, String) {
   case incoming.name {
     "roll" -> Ok(engine.Roll)
+    "double" -> Ok(engine.Double)
+    "take" -> Ok(engine.Take)
+    "drop" -> Ok(engine.Drop)
+    "resign" -> Ok(engine.Resign)
     "move" -> {
       use from <- result.try(loc_param(incoming.params, "from"))
       use to <- result.try(loc_param(incoming.params, "to"))

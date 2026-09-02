@@ -13,6 +13,10 @@ import gleam/result
 pub type Action {
   Roll
   MoveChecker(from: Loc, to: Loc)
+  Double
+  Take
+  Drop
+  Resign
 }
 
 pub const dice_zone = "dice"
@@ -34,6 +38,47 @@ pub fn apply(
   action: Action,
 ) -> Result(#(GameState, List(Event)), String) {
   case action {
+    Double -> {
+      use next <- result.try(state.double(state, player_id))
+      Ok(
+        #(next, [
+          custom("double_offered", [
+            #("player_id", json.string(player_id)),
+            #("value", json.int(state.cube_value * 2)),
+          ]),
+        ]),
+      )
+    }
+    Take -> {
+      use next <- result.try(state.take(state, player_id))
+      Ok(
+        #(next, [
+          custom("double_taken", [
+            #("player_id", json.string(player_id)),
+            #("value", json.int(next.cube_value)),
+          ]),
+          ..turn_started(next)
+        ]),
+      )
+    }
+    Drop -> {
+      use #(next, end) <- result.try(state.drop(state, player_id))
+      Ok(
+        #(next, [
+          custom("double_dropped", [#("player_id", json.string(player_id))]),
+          ..end_events(state, next, end)
+        ]),
+      )
+    }
+    Resign -> {
+      use #(next, end) <- result.try(state.resign(state, player_id))
+      Ok(
+        #(next, [
+          custom("resigned", [#("player_id", json.string(player_id))]),
+          ..end_events(state, next, end)
+        ]),
+      )
+    }
     Roll -> {
       use #(next, dice) <- result.try(state.roll(state, player_id))
       let rolled =
@@ -100,43 +145,7 @@ pub fn apply(
         Error(_) -> []
       }
       let ending = case applied.game_end {
-        Some(end) -> {
-          let won =
-            custom("game_won", [
-              #("player_id", json.string(end.winner)),
-              #("kind", json.string(board.kind_name(end.kind))),
-              #("points", json.int(end.points)),
-              #(
-                "scores",
-                json.object(
-                  list.map(next.order, fn(id) {
-                    #(id, json.int(state.score_of(next, id)))
-                  }),
-                ),
-              ),
-            ])
-          let score_change =
-            event.CounterChanged(
-              end.winner,
-              "score",
-              state.score_of(state, end.winner),
-              state.score_of(next, end.winner),
-            )
-          case end.match_over {
-            True -> [
-              won,
-              score_change,
-              custom("match_over", [#("winner", json.string(end.winner))]),
-              event.PhaseChanged("game_over"),
-            ]
-            False -> [
-              won,
-              score_change,
-              custom("new_game", [#("game_number", json.int(next.game_number))]),
-              ..turn_started(next)
-            ]
-          }
-        }
+        Some(end) -> end_events(state, next, end)
         None ->
           case applied.turn_ended {
             True -> turn_started(next)
@@ -148,10 +157,83 @@ pub fn apply(
   }
 }
 
+/// Events for a finished game: the result, the score change, and either the
+/// end of the match or the start of the next game.
+fn end_events(
+  before: GameState,
+  next: GameState,
+  end: state.GameEnd,
+) -> List(Event) {
+  let won =
+    custom("game_won", [
+      #("player_id", json.string(end.winner)),
+      #("kind", json.string(state.end_kind_name(end.kind))),
+      #("points", json.int(end.points)),
+      #("cube", json.int(end.cube)),
+      #(
+        "scores",
+        json.object(
+          list.map(next.order, fn(id) {
+            #(id, json.int(state.score_of(next, id)))
+          }),
+        ),
+      ),
+    ])
+  let score_change =
+    event.CounterChanged(
+      end.winner,
+      "score",
+      state.score_of(before, end.winner),
+      state.score_of(next, end.winner),
+    )
+  case end.match_over {
+    True -> [
+      won,
+      score_change,
+      custom("match_over", [#("winner", json.string(end.winner))]),
+      event.PhaseChanged("game_over"),
+    ]
+    False -> [
+      won,
+      score_change,
+      custom("new_game", [
+        #("game_number", json.int(next.game_number)),
+        #("crawford", json.bool(next.crawford)),
+      ]),
+      ..turn_started(next)
+    ]
+  }
+}
+
 pub fn legal(state: GameState, player_id: String) -> List(Schema) {
-  case state.can_roll(state, player_id) {
-    True -> [action.simple("roll", "Roll dice")]
-    False ->
+  let resign = case state.can_resign(state, player_id) {
+    True -> [action.simple("resign", "Resign")]
+    False -> []
+  }
+  let main = case
+    state.can_roll(state, player_id),
+    state.must_answer_double(state, player_id)
+  {
+    True, _ -> {
+      let double = case state.can_double(state, player_id) {
+        True -> [
+          action.simple(
+            "double",
+            "Double to " <> int.to_string(state.cube_value * 2),
+          ),
+        ]
+        False -> []
+      }
+      [action.simple("roll", "Roll dice"), ..double]
+    }
+    _, True -> [
+      action.simple(
+        "take",
+        "Take (cube to " <> int.to_string(state.cube_value * 2) <> ")",
+      ),
+      action.simple("drop", "Drop"),
+    ]
+    _, _ ->
       state.legal_moves(state, player_id)
       |> list.map(fn(m) {
         let from = board.loc_id(m.from)
@@ -162,6 +244,7 @@ pub fn legal(state: GameState, player_id: String) -> List(Schema) {
         ])
       })
   }
+  list.append(main, resign)
 }
 
 fn label_for(m: board.Move) -> String {
@@ -173,9 +256,10 @@ fn label_for(m: board.Move) -> String {
   <> ")"
 }
 
-/// Only the player to move is on the clock.
+/// Only the player who must act is on the clock (the responder while a
+/// double is pending).
 pub fn on_the_clock(state: GameState) -> List(String) {
-  case state.to_move(state) {
+  case state.to_act(state) {
     Some(id) -> [id]
     None -> []
   }

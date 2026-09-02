@@ -147,7 +147,7 @@ view { playerId, scene, legal, model, status, clock } =
             , clock
             ]
         , div [ class "grid gap-2 sm:grid-cols-2" ] (List.map (viewPlayer playerId) scene.players)
-        , viewActions model legal
+        , viewActions scene playerId model legal
         , div [ class "space-y-3" ] (List.map (viewGroup scene model legal) (groupZones scene.zones))
         ]
 
@@ -444,16 +444,34 @@ tokenLabel token =
 -- ACTIONS
 
 
-viewActions : Model -> List Schema -> Html Msg
-viewActions model legal =
+viewActions : Scene -> String -> Model -> List Schema -> Html Msg
+viewActions scene playerId model legal =
+    let
+        -- Convention: a `to_move` flag on a player marks whose turn it is.
+        turnOf =
+            scene.players |> List.filter (Protocol.hasFlag "to_move") |> List.head
+
+        waitingHint =
+            case turnOf of
+                Just p ->
+                    if p.id == playerId then
+                        []
+
+                    else
+                        [ span [ class "text-gray-500 mr-2" ] [ text ("Waiting for " ++ p.name ++ "...") ] ]
+
+                Nothing ->
+                    if List.isEmpty legal then
+                        [ span [ class "text-gray-500" ] [ text "Waiting for your opponent..." ] ]
+
+                    else
+                        []
+    in
     div [ class "rounded-lg bg-white/5 p-3 flex flex-wrap gap-2 items-center min-h-[3.5rem]" ]
         (case model.activeAction |> Maybe.andThen (\i -> legal |> List.drop i |> List.head) of
             Nothing ->
-                if List.isEmpty legal then
-                    [ span [ class "text-gray-500" ] [ text "Waiting for your opponent..." ] ]
-
-                else
-                    List.indexedMap
+                waitingHint
+                    ++ List.indexedMap
                         (\index schema ->
                             button
                                 [ class "px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-sm"

@@ -254,13 +254,13 @@ pub fn a_roll_with_no_legal_move_passes_the_turn_test() {
     ])
   let s = new_game(2, "single")
   let s = state.GameState(..s, board: b, phase: state.Rolling(White))
-  assert engine.legal(s, "p1") == [engine_roll()]
+  assert list.first(engine.legal(s, "p1")) == Ok(engine_roll())
   let #(s, events) = apply(s, "p1", engine.Roll)
   assert has_custom(events, "dice_rolled")
   assert has_custom(events, "no_moves")
   let assert state.Rolling(Black) = s.phase
   assert state.to_move(s) == Some("p2")
-  assert engine.legal(s, "p2") == [engine_roll()]
+  assert list.first(engine.legal(s, "p2")) == Ok(engine_roll())
 }
 
 fn engine_roll() {
@@ -382,6 +382,7 @@ fn walk(s: state.GameState, chooser: rng.Rng, steps: Int) -> state.GameState {
   case steps, s.phase {
     0, _ -> s
     _, state.Finished(_) -> s
+    _, state.Doubled(_) -> s
     _, state.Rolling(c) -> {
       let #(next, _) = apply(s, state.player_of(s, c), engine.Roll)
       walk(next, chooser, steps - 1)

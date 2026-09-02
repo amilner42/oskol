@@ -75,9 +75,10 @@ async function main() {
 
     const checkersBefore = await mover.locator('button[title^="w"], button[title^="b"]').count();
     if (checkersBefore !== 30) throw new Error(`expected 30 checkers rendered, saw ${checkersBefore}`);
-    if (!(await waiter.textContent('body')).includes('Waiting for your opponent')) {
-      throw new Error('waiting player should see the waiting message');
-    }
+    const waiterBody = await waiter.textContent('body');
+    if (!/Waiting for (Alice|Bob)/.test(waiterBody)) throw new Error('waiting player should see whose turn it is');
+    if ((await waiter.locator(moveButton).count()) !== 0) throw new Error('waiting player must not see move buttons');
+    if (!waiterBody.includes('Resign')) throw new Error('resign should always be offered');
     const clockText = await mover.locator('.font-mono .tabular-nums').allTextContents();
     if (!clockText.some((t) => /^\d+:\d\d$/.test(t))) throw new Error(`clocks not rendered: ${clockText}`);
 

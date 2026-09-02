@@ -34,8 +34,10 @@ pub fn opening_roll_decides_who_moves_first_test() {
     "p1" -> "p2"
     _ -> "p1"
   }
-  assert engine.legal(s, mover) != []
-  assert engine.legal(s, other) == []
+  assert list.any(engine.legal(s, mover), fn(schema) { schema.name == "move" })
+  // The waiting player can only resign
+  assert list.map(engine.legal(s, other), fn(schema) { schema.name })
+    == ["resign"]
   assert engine.on_the_clock(s) == [mover]
 }
 
