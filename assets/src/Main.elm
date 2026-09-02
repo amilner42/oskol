@@ -8,12 +8,15 @@ import Games.Tilt.Adapter as Tilt
 import Generic.View
 import Helpers exposing (..)
 import Html exposing (Html)
+import Html.Attributes
 import Json.Decode as D
 import Json.Encode as E
 import Protocol exposing (GamePayload, ServerMessage(..))
 import Set exposing (Set)
+import Task
 import Time
 import Types exposing (..)
+import View.Clock
 import Url exposing (percentEncode)
 import View.Game
 
@@ -69,6 +72,8 @@ init flags =
       , legal = []
       , lastPlaying = Nothing
       , generic = Generic.View.init
+      , clockReceivedAt = 0
+      , nowMs = 0
       , gameState = Loading
       , viewingModal = Nothing
       , selectedCards = Set.empty
@@ -439,6 +444,14 @@ update msg model =
             ( { model | generic = generic }
             , maybeAction |> Maybe.map sendToChannel |> Maybe.withDefault Cmd.none
             )
+
+        ClockSynced posix ->
+            ( { model | clockReceivedAt = Time.posixToMillis posix, nowMs = Time.posixToMillis posix }
+            , Cmd.none
+            )
+
+        ClockTick posix ->
+            ( { model | nowMs = Time.posixToMillis posix }, Cmd.none )
 
         RematchGameReady rematchGameId ->
             -- Server has created rematch game, navigate to it with player name
@@ -902,6 +915,11 @@ subscriptions model =
 
           else
             Sub.none
+        , if clockRunning model then
+            Time.every 200 ClockTick
+
+          else
+            Sub.none
         , -- Shop countdown timer - tick every second
           case model.shopCountdown of
             Just _ ->
@@ -989,7 +1007,30 @@ applyPayload payload model =
                 , viewingResults = startAnimation || model.viewingResults
             }
     in
-    ( refreshView updated, Cmd.none )
+    ( refreshView updated, Task.perform ClockSynced Time.now )
+
+
+currentClock : Model -> Maybe Protocol.Clock
+currentClock model =
+    model.payload |> Maybe.map (\p -> p.update.clock)
+
+
+clockRunning : Model -> Bool
+clockRunning model =
+    case currentClock model of
+        Just clock ->
+            clock.enabled && List.any .running clock.players
+
+        Nothing ->
+            False
+
+
+nameOf : Model -> String -> String
+nameOf model playerId =
+    model.payload
+        |> Maybe.andThen (\p -> Protocol.findPlayer playerId p.update.scene)
+        |> Maybe.map .name
+        |> Maybe.withDefault playerId
 
 
 {-| Rebuild the Tilt view from the latest payload. While a score reveal is
@@ -1076,7 +1117,18 @@ refreshView model =
 view : Model -> Html Msg
 view model =
     if model.gameSlug == "tilt" then
-        View.Game.viewGame model
+        Html.div []
+            [ View.Game.viewGame model
+            , Html.div [ Html.Attributes.class "fixed top-1 right-1 z-40 pointer-events-none" ]
+                [ View.Clock.view
+                    { clock = currentClock model
+                    , playerId = Maybe.withDefault "" model.playerId
+                    , receivedAt = model.clockReceivedAt
+                    , now = model.nowMs
+                    , nameOf = nameOf model
+                    }
+                ]
+            ]
 
     else
         case model.payload of
@@ -1093,7 +1145,15 @@ view model =
                                     "in progress"
 
                                 Protocol.Finished winners ->
-                                    "finished: " ++ String.join ", " winners
+                                    "finished: " ++ String.join ", " (List.map (nameOf model) winners)
+                        , clock =
+                            View.Clock.view
+                                { clock = Just payload.update.clock
+                                , playerId = payload.playerId
+                                , receivedAt = model.clockReceivedAt
+                                , now = model.nowMs
+                                , nameOf = nameOf model
+                                }
                         }
                     )
 

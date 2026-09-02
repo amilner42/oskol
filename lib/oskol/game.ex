@@ -20,6 +20,7 @@ defmodule Oskol.Game do
   defdelegate rejoin_game(game_id, player_name, player_pid), to: GameServer
   defdelegate get_server_state(game_id), to: GameServer, as: :get_state
   defdelegate select_format(game_id, player_id, format_id), to: GameServer
+  defdelegate select_clock(game_id, player_id, clock_id), to: GameServer
   defdelegate request_rematch(game_id, player_id), to: GameServer
   defdelegate player_action_async(game_id, player_id, action), to: GameServer
   defdelegate player_action(game_id, player_id, action), to: GameServer

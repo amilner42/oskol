@@ -38,6 +38,8 @@ defmodule OskolWeb.LandingLive do
                player_id: nil,
                server_state: nil,
                selected_format: nil,
+               selected_clock: "none",
+               clock_presets: GameKit.clock_presets(),
                disconnected_players: []
              )}
 
@@ -182,6 +184,7 @@ defmodule OskolWeb.LandingLive do
       player_id: player_id,
       server_state: server_state,
       selected_format: Map.get(server_state.format_selections, player_id),
+      selected_clock: Map.get(server_state.clock_selections, player_id, "none"),
       error: nil
     )
   end
@@ -301,6 +304,16 @@ defmodule OskolWeb.LandingLive do
     end
   end
 
+  def handle_event("select_clock", %{"clock" => clock_id}, socket) do
+    case Game.select_clock(socket.assigns.game_name, socket.assigns.player_id, clock_id) do
+      {:ok, new_state} ->
+        {:noreply, assign(socket, server_state: new_state, selected_clock: clock_id, error: nil)}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, error: format_error(reason))}
+    end
+  end
+
   def handle_event("start_game", _params, socket) do
     game_id = socket.assigns.game_name
 
@@ -360,6 +373,7 @@ defmodule OskolWeb.LandingLive do
   defp format_error(:name_taken), do: "Name already taken"
   defp format_error(:invalid_name), do: "Invalid name"
   defp format_error(:unknown_format), do: "Unknown game mode"
+  defp format_error(:unknown_clock), do: "Unknown time control"
   defp format_error(:no_format_agreement), do: "Both players must pick the same mode"
   defp format_error(reason) when is_atom(reason), do: "Error: #{reason}"
   defp format_error(reason), do: "Error: #{inspect(reason)}"
@@ -465,6 +479,8 @@ defmodule OskolWeb.LandingLive do
                   player_name={@player_name}
                   server_state={@server_state}
                   selected_format={@selected_format}
+                  selected_clock={@selected_clock}
+                  clock_presets={@clock_presets}
                 />
             <% end %>
 
@@ -591,7 +607,8 @@ defmodule OskolWeb.LandingLive do
         if opponent_id do
           opponent_conn = assigns.server_state.connections[opponent_id]
           opponent_format = Map.get(assigns.server_state.format_selections, opponent_id)
-          %{name: opponent_conn.name, format: opponent_format}
+          opponent_clock = Map.get(assigns.server_state.clock_selections, opponent_id, "none")
+          %{name: opponent_conn.name, format: opponent_format, clock: opponent_clock}
         end
       end
 
@@ -626,6 +643,8 @@ defmodule OskolWeb.LandingLive do
               Waiting for opponent to select...
             <% @selected_format != @opponent_info.format -> %>
               Select the same game mode to start
+            <% @selected_clock != @opponent_info.clock -> %>
+              Agree on a time control to start
             <% true -> %>
               Both players selected {@selected_format_name}
           <% end %>
@@ -640,6 +659,31 @@ defmodule OskolWeb.LandingLive do
             selected={@selected_format == format["id"]}
             opponent_selected={@opponent_info && @opponent_info.format == format["id"]}
           />
+        </div>
+      </div>
+
+      <div class="mb-4 sm:mb-6">
+        <p class="text-base-content/40 text-xs mb-2 text-center">Time control</p>
+        <div class="flex flex-wrap justify-center gap-1.5" id="clock-picker">
+          <button
+            :for={preset <- @clock_presets}
+            phx-click="select_clock"
+            phx-value-clock={preset["id"]}
+            id={"clock-#{preset["id"]}"}
+            title={preset["description"]}
+            class={[
+              "px-3 py-1.5 rounded-lg text-xs font-semibold border-2 transition-all bg-white/90 text-gray-800",
+              @selected_clock == preset["id"] && "border-player",
+              @selected_clock != preset["id"] && @opponent_info &&
+                @opponent_info.clock == preset["id"] &&
+                "border-opponent",
+              @selected_clock != preset["id"] &&
+                !(@opponent_info && @opponent_info.clock == preset["id"]) &&
+                "border-white/50 hover:border-white"
+            ]}
+          >
+            {preset["name"]}
+          </button>
         </div>
       </div>
 

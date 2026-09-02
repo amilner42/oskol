@@ -1,9 +1,10 @@
 # Oskol - a library of two-player games
 
 ## Project Overview
-Oskol (oskol.io) hosts small two-player games. The first is **Tilt**, a
-head-to-head poker roguelike: build poker hands, upgrade them in a shop,
-sabotage your opponent, take their last life.
+Oskol (oskol.io) hosts small two-player games. **Tilt** is a head-to-head
+poker roguelike: build poker hands, upgrade them in a shop, sabotage your
+opponent, take their last life. **Backgammon** is the classic race game with
+match play. Every game can be played with an optional time control.
 
 Games are built on **gamekit**, a small framework with one rule: adding a game
 never touches the server or the client. A game is one Gleam module that
@@ -41,6 +42,7 @@ Game(
   legal:         fn(state, PlayerId) -> List(Schema),       // what this player may do now
   scene:         fn(state, Viewer) -> Scene,                // per-viewer projection
   outcome:       fn(state) -> Outcome,
+  clocks:        fn(state) -> List(PlayerId),               // who is on the clock right now
 )
 ```
 
@@ -51,7 +53,12 @@ Rules that keep this honest:
   every state change; the client animates from events, not from diffing.
 - **No presentation in the engine.** No animation flags, no wizard state.
   Multi-step interactions are action schemas with candidates.
-- **Ids are deterministic** (cards are `"AS"`, shop cards `"shop-<round>-<n>"`).
+- **Ids are deterministic** (cards are `"AS"`, shop cards `"shop-<round>-<n>"`,
+  checkers `"w1".."b15"`).
+- **Games never read the time.** `clocks(state)` names the players who should
+  be charged right now (both during simultaneous play, one on their turn, none
+  during a reveal). `gamekit/clock` owns the arithmetic, `gamekit/instance`
+  applies it with the host's `now`, and a player who runs out forfeits.
 
 ## The protocol (`src/gamekit/scene.gleam`, `event.gleam`, `action.gleam`)
 
@@ -63,8 +70,21 @@ The client only ever decodes these:
 - **Schemas**: legal actions as `{name, label, params}` where a `select` param
   carries its zone and candidate ids. Select params are arrays on the wire.
 - **Outcome**: `ongoing` or `finished(winners)`.
+- **Clock**: `enabled`, `label`, per-player `remaining_ms` and `running`,
+  `timed_out`. Running clocks keep ticking on the client from the snapshot.
 
 Actions in: `{"name": "play_hand", "params": {"cards": ["AS", "KD"]}}`.
+Legal actions may be enumerated (backgammon sends one `move` schema per legal
+move) or described with candidates (Tilt's `play_hand` selects from the hand).
+Schemas with nothing to choose become one-click buttons in the generic client.
+
+### Time controls
+Presets live in `gamekit/clock.presets()` (none, blitz, rapid, delay, per
+move) and are offered in every lobby; both players must agree, and "none" is
+the default so it never blocks a start. Fischer adds an increment after your
+move, Bronstein gives free seconds at the start of each move, per-move resets
+every turn. The Elixir room schedules a tick for the next possible expiry and
+calls `GameKit.expire/2`.
 
 ## File map
 
@@ -74,8 +94,11 @@ src/gamekit/        framework: rng, scene, event, action, game, instance,
                     text (agent/test rendering), conformance (generic checks)
 src/tilt/           Tilt: state, engine (actions + events + legal), projection
                     (scene), game (contract), codec (JSON), poker/, shop/
-test/gamekit/       protocol + rng tests
+src/backgammon/     Backgammon: board (rules + move generation), state (turns,
+                    dice, match play), engine, projection, game
+test/gamekit/       protocol, rng, clock tests
 test/tilt/          hand, score, engine, conformance (random playouts, replay)
+test/backgammon/    board rules, engine, conformance (single games and matches)
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: lobby, formats, actions, rematch
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
@@ -84,6 +107,8 @@ lib/oskol_web/controllers/page_controller.ex   "/:slug/:id" serves the Elm clien
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Tilt/Adapter.elm  Scene -> Tilt's PlayerView
 assets/src/Generic/View.elm      fallback renderer for games without a bespoke UI
+                                 (backgammon uses it today)
+assets/src/View/Clock.elm        clock display shared by both renderers
 assets/src/View/Game.elm         Tilt's bespoke UI
 ```
 
@@ -91,6 +116,7 @@ assets/src/View/Game.elm         Tilt's bespoke UI
 - `/` game library
 - `/tilt` start a Tilt game; `/tilt?game=<id>` is the invite link
 - `/tilt/<id>?name=<player>` a running game
+- `/backgammon`, `/backgammon/<id>` the same for backgammon
 
 ## Adding a game
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`.
@@ -105,12 +131,13 @@ assets/src/View/Game.elm         Tilt's bespoke UI
 ```bash
 mix deps.get          # Elixir + Gleam deps
 mix compile           # compiles Gleam (via mix_gleam) and Elixir
-bin/test-gleam        # Gleam unit + conformance tests (57 tests, seeded playouts)
+bin/test-gleam        # Gleam unit + conformance tests (seeded playouts for every game)
 mix test              # Elixir room, channel, LiveView tests
 mix assets.build      # Elm (via esbuild plugin) + Tailwind
 cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # Elm typecheck
 mix phx.server        # http://localhost:4000
-node playwright/test-tilt-smoke/test.js   # browser smoke test (server must be running)
+node playwright/test-tilt-smoke/test.js         # browser smoke test (server must be running)
+node playwright/test-backgammon-smoke/test.js   # backgammon on the generic renderer, with a clock
 ```
 
 Notes:
@@ -121,7 +148,9 @@ Notes:
   mix has touched it. Use `bin/test-gleam`, not bare `gleam test`.
 - Elixir test support lives in `test_support/`, not `test/support/`, because
   gleam compiles any `.ex` it finds under `test/`.
-- `mix run path/to/script.exs` trips over positional args in this setup; use
+- The gleam compile step forwards positional args to deps tasks. `mix test`
+  is aliased to compile first and then run with `--no-compile` so
+  `mix test path/to/file.exs` works; for scripts use
   `mix run -e 'Code.eval_file("path")'`.
 - In this environment the Elm package cache is populated by git clone
   (GitHub zipballs are blocked); see `.claude/skills`.
@@ -150,7 +179,8 @@ Notes:
 - Don't add emojis or files unless asked.
 
 ## Future
-- Backgammon as game two (dice, tracks, alternating turns; generic renderer first).
+- A bespoke backgammon board view (it plays on the generic renderer today).
+- Doubling cube for backgammon matches.
 - Persist seed + event log per game for replay and crash recovery.
 - Bots derived from `legal` for solo play and balance reports.
 - Split-screen dev mode with a time scrubber over events.

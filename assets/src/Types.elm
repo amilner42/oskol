@@ -8,6 +8,7 @@ import Dict exposing (Dict)
 import Generic.View
 import Protocol
 import Set exposing (Set)
+import Time
 
 
 
@@ -526,6 +527,8 @@ type alias Model =
     , legal : List Protocol.Schema -- Legal action schemas for this player
     , lastPlaying : Maybe PlayingData -- Last playing-phase view, shown while a score reveal plays
     , generic : Generic.View.Model -- UI state for the generic renderer (non-Tilt games)
+    , clockReceivedAt : Int -- Client time (ms) when the latest clock snapshot arrived
+    , nowMs : Int -- Client time (ms), refreshed while a clock runs
     , gameState : RemoteData String PlayerView
     , viewingModal : Maybe Modal
     , selectedCards : Set String
@@ -570,6 +573,8 @@ type Msg
     = -- Channel messages
       ServerMessageReceived Protocol.ServerMessage
     | GenericMsg Generic.View.Msg
+    | ClockSynced Time.Posix
+    | ClockTick Time.Posix
     | RematchGameReady String
     | ChannelError String
     | ConnectionStatusChanged ConnectionStatus

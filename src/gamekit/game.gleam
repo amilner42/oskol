@@ -59,6 +59,10 @@ pub type Game(state, action) {
     /// Project the state for one viewer, resolving hidden information.
     scene: fn(state, Viewer) -> Scene,
     outcome: fn(state) -> Outcome,
+    /// Players whose clock should be running right now. Return an empty
+    /// list whenever nobody should be charged (a reveal, a pause, game over).
+    /// The framework owns the clocks themselves; see `gamekit/clock`.
+    clocks: fn(state) -> List(PlayerId),
   )
 }
 

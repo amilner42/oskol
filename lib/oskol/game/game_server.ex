@@ -32,8 +32,16 @@ defmodule Oskol.Game.GameServer do
     GenServer.call(via_tuple(game_id), {:select_format, player_id, format_id})
   end
 
-  def start_game(game_id, seed \\ nil) do
-    GenServer.call(via_tuple(game_id), {:start_game, seed})
+  def select_clock(game_id, player_id, clock_id) do
+    GenServer.call(via_tuple(game_id), {:select_clock, player_id, clock_id})
+  end
+
+  @doc """
+  Start the game. `seed` defaults to a random one and `control` to the time
+  control the players agreed on in the lobby; tests pass both explicitly.
+  """
+  def start_game(game_id, seed \\ nil, control \\ nil) do
+    GenServer.call(via_tuple(game_id), {:start_game, seed, control})
   end
 
   @doc "Apply a client action asynchronously. Failures are broadcast as `{:action_failed, player_id, reason}`."
@@ -85,7 +93,8 @@ defmodule Oskol.Game.GameServer do
           %GameServerState{
             state
             | connections: Map.put(state.connections, player_id, connection),
-              seat_order: state.seat_order ++ [player_id]
+              seat_order: state.seat_order ++ [player_id],
+              clock_selections: Map.put(state.clock_selections, player_id, "none")
           }
           |> GameServerState.touch()
           |> GameServerState.update_lobby_status()
@@ -146,15 +155,51 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  def handle_call({:start_game, seed}, _from, %GameServerState{} = state) do
+  def handle_call({:select_clock, player_id, clock_id}, _from, %GameServerState{} = state) do
+    cond do
+      GameServerState.started?(state) ->
+        {:reply, {:error, :game_already_started}, state, @timeout}
+
+      not Map.has_key?(state.connections, player_id) ->
+        {:reply, {:error, :player_not_found}, state, @timeout}
+
+      clock_id not in GameKit.clock_ids() ->
+        {:reply, {:error, :unknown_clock}, state, @timeout}
+
+      true ->
+        new_state =
+          %GameServerState{
+            state
+            | clock_selections: Map.put(state.clock_selections, player_id, clock_id)
+          }
+          |> GameServerState.touch()
+          |> GameServerState.update_lobby_status()
+
+        broadcast(new_state, [])
+        {:reply, {:ok, new_state}, new_state, @timeout}
+    end
+  end
+
+  def handle_call({:start_game, seed, control}, _from, %GameServerState{} = state) do
     with false <- GameServerState.started?(state),
          {:ok, format_id} <- GameServerState.check_format_agreement(state),
+         {:ok, clock_id} <- GameServerState.check_clock_agreement(state),
          true <- map_size(state.connections) >= GameServerState.min_players(state),
          seed <- seed || :rand.uniform(2_147_483_647),
+         control <- control || GameKit.clock_control(clock_id),
          {:ok, instance} <-
-           GameKit.start(state.slug, format_id, GameServerState.seats(state), seed) do
+           GameKit.start(
+             state.slug,
+             format_id,
+             GameServerState.seats(state),
+             seed,
+             control,
+             GameKit.now()
+           ) do
       new_state =
-        %GameServerState{state | instance: instance, seed: seed} |> GameServerState.touch()
+        %GameServerState{state | instance: instance, seed: seed}
+        |> GameServerState.touch()
+        |> schedule_clock_tick()
 
       broadcast(new_state, [])
       {:reply, {:ok, new_state}, new_state, @timeout}
@@ -195,7 +240,8 @@ defmodule Oskol.Game.GameServer do
         if MapSet.size(ready) == map_size(state.connections) do
           rematch_id = rematch_id(state.game_id)
           {:ok, format_id} = GameServerState.check_format_agreement(state)
-          :ok = spawn_rematch(rematch_id, state, format_id)
+          {:ok, clock_id} = GameServerState.check_clock_agreement(state)
+          :ok = spawn_rematch(rematch_id, state, format_id, clock_id)
           new_state = %GameServerState{new_state | rematch_game_id: rematch_id}
           broadcast(new_state, [])
 
@@ -258,6 +304,20 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
+  def handle_info(:clock_tick, %GameServerState{} = state) do
+    state = %GameServerState{state | clock_timer: nil}
+
+    case state.instance && GameKit.expire(state.instance, GameKit.now()) do
+      {:ok, instance, events} ->
+        new_state = %GameServerState{state | instance: instance} |> GameServerState.touch()
+        broadcast(new_state, events)
+        {:noreply, new_state, @timeout}
+
+      _ ->
+        {:noreply, schedule_clock_tick(state), @timeout}
+    end
+  end
+
   def handle_info(:timeout, %GameServerState{} = state) do
     Logger.info("Game #{state.game_id} timed out after 1 hour of inactivity")
     {:stop, :normal, state}
@@ -274,10 +334,12 @@ defmodule Oskol.Game.GameServer do
         {:error, :player_not_found}
 
       true ->
-        case GameKit.apply(state.instance, player_id, action) do
+        case GameKit.apply(state.instance, player_id, action, GameKit.now()) do
           {:ok, instance, events} ->
             new_state =
-              %GameServerState{state | instance: instance} |> GameServerState.touch()
+              %GameServerState{state | instance: instance}
+              |> GameServerState.touch()
+              |> schedule_clock_tick()
 
             {:ok, new_state, events}
 
@@ -287,12 +349,13 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  defp spawn_rematch(rematch_id, %GameServerState{} = state, format_id) do
+  defp spawn_rematch(rematch_id, %GameServerState{} = state, format_id, clock_id) do
     case Oskol.Game.GameSupervisor.start_game(rematch_id, state.slug) do
       {:ok, _pid} ->
         Enum.each(GameServerState.seats(state), fn {_old_id, name} ->
           {:ok, new_id, _} = join_game(rematch_id, name, nil)
           {:ok, _} = select_format(rematch_id, new_id, format_id)
+          {:ok, _} = select_clock(rematch_id, new_id, clock_id)
         end)
 
         {:ok, _} = start_game(rematch_id)
@@ -307,6 +370,20 @@ defmodule Oskol.Game.GameServer do
     case Regex.run(~r/^(.+)-r(\d+)$/, current_id) do
       [_, base, n] -> "#{base}-r#{String.to_integer(n) + 1}"
       nil -> "#{current_id}-r1"
+    end
+  end
+
+  # Arrange to be woken when the earliest running clock could hit zero.
+  defp schedule_clock_tick(%GameServerState{} = state) do
+    if state.clock_timer, do: Process.cancel_timer(state.clock_timer)
+
+    case state.instance && GameKit.next_deadline(state.instance, GameKit.now()) do
+      {:ok, ms} ->
+        ref = Process.send_after(self(), :clock_tick, max(ms, 0) + 20)
+        %GameServerState{state | clock_timer: ref}
+
+      _ ->
+        %GameServerState{state | clock_timer: nil}
     end
   end
 

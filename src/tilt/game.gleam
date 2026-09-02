@@ -21,6 +21,7 @@ pub fn game() -> Game(GameState, Action) {
     legal: engine.legal,
     scene: projection.build,
     outcome: outcome,
+    clocks: engine.on_the_clock,
   )
 }
 

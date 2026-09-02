@@ -66,3 +66,35 @@ defmodule OskolWeb.LandingLiveTest do
     assert get(build_conn(), ~p"/chess/#{game_id}") |> response(404)
   end
 end
+
+defmodule OskolWeb.LandingLiveClockTest do
+  use OskolWeb.ConnCase, async: true
+
+  import Phoenix.LiveViewTest
+
+  test "the lobby offers time controls and needs agreement", %{conn: conn} do
+    {:ok, host, _} = live(conn, ~p"/backgammon")
+    host |> form("form[phx-submit=new_game]", %{"player_name" => "Alice"}) |> render_submit()
+    path = assert_patch(host)
+    %{"game" => game_id} = URI.decode_query(URI.parse(path).query)
+
+    {:ok, guest, _} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+
+    guest
+    |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
+    |> render_submit()
+
+    assert has_element?(host, "#clock-none")
+    assert has_element?(host, "#clock-blitz", "Blitz")
+    host |> element("#format-single") |> render_click()
+    guest |> element("#format-single") |> render_click()
+    host |> element("#clock-blitz") |> render_click()
+    assert render(host) =~ "Agree on a time control"
+    guest |> element("#clock-blitz") |> render_click()
+    assert render(host) =~ "Both players selected Single game"
+    host |> element("button", "Start Game") |> render_click()
+    assert_redirect(host, "/backgammon/#{game_id}?name=Alice")
+    state = Oskol.Game.get_server_state(game_id)
+    assert Oskol.GameKit.player_update(state.instance, "x")["clock"]["label"] == "3 min + 2 s"
+  end
+end

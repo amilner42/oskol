@@ -580,6 +580,27 @@ fn shop_finish_destroy(
   )
 }
 
+// ---------- Clocks ----------
+
+/// Who is being charged time right now: anyone who still has to act.
+pub fn on_the_clock(state: GameState) -> List(PlayerId) {
+  case state.phase {
+    state.Playing ->
+      state.players_in_order(state)
+      |> list.filter(fn(p) {
+        !player.has_locked_in(p) && p.status == player.Active
+      })
+      |> list.map(fn(p) { p.player_id })
+    state.Shopping ->
+      list.filter(state.order, fn(id) { engine_legal_nonempty(state, id) })
+    state.Finished -> []
+  }
+}
+
+fn engine_legal_nonempty(state: GameState, player_id: PlayerId) -> Bool {
+  legal(state, player_id) != []
+}
+
 // ---------- Legal actions ----------
 
 pub fn legal(state: GameState, player_id: PlayerId) -> List(Schema) {

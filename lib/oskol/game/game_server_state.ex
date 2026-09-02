@@ -29,6 +29,8 @@ defmodule Oskol.Game.GameServerState do
           lobby_status: lobby_status(),
           last_activity: integer(),
           format_selections: %{player_id() => String.t()},
+          clock_selections: %{player_id() => String.t()},
+          clock_timer: reference() | nil,
           rematch_ready: MapSet.t(player_id()),
           rematch_game_id: String.t() | nil
         }
@@ -43,6 +45,8 @@ defmodule Oskol.Game.GameServerState do
             lobby_status: :waiting_for_players,
             last_activity: 0,
             format_selections: %{},
+            clock_selections: %{},
+            clock_timer: nil,
             rematch_ready: MapSet.new(),
             rematch_game_id: nil
 
@@ -98,7 +102,18 @@ defmodule Oskol.Game.GameServerState do
     end
   end
 
-  @doc "Recompute lobby status: enough players, all connected, format agreed."
+  @doc "Returns `{:ok, clock_id}` when every seated player chose the same time control (default none)."
+  @spec check_clock_agreement(t()) :: {:ok, String.t()} | :no_agreement
+  def check_clock_agreement(%__MODULE__{} = state) do
+    selections = Enum.map(state.seat_order, &Map.get(state.clock_selections, &1, "none"))
+
+    case Enum.uniq(selections) do
+      [clock_id] when is_binary(clock_id) -> {:ok, clock_id}
+      _ -> :no_agreement
+    end
+  end
+
+  @doc "Recompute lobby status: enough players, all connected, format and clock agreed."
   @spec update_lobby_status(t()) :: t()
   def update_lobby_status(%__MODULE__{instance: nil} = state) do
     connected = Enum.count(state.connections, fn {_id, conn} -> conn.connected end)
@@ -106,7 +121,8 @@ defmodule Oskol.Game.GameServerState do
 
     ready? =
       count >= min_players(state) and count <= max_players(state) and connected == count and
-        match?({:ok, _}, check_format_agreement(state))
+        match?({:ok, _}, check_format_agreement(state)) and
+        match?({:ok, _}, check_clock_agreement(state))
 
     %__MODULE__{state | lobby_status: if(ready?, do: :ready_to_start, else: :waiting_for_players)}
   end

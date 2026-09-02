@@ -1,5 +1,7 @@
 module Protocol exposing
-    ( Connection
+    ( Clock
+    , ClockPlayer
+    , Connection
     , Event(..)
     , GamePayload
     , Layout(..)
@@ -17,6 +19,8 @@ module Protocol exposing
     , encodeAction
     , encodeRematch
     , findPlayer
+    , formatClock
+    , remainingNow
     , findZone
     , hasFlag
     , opponentOf
@@ -131,6 +135,25 @@ type alias Update =
     , legal : List Schema
     , outcome : Outcome
     , events : List Event
+    , clock : Clock
+    }
+
+
+{-| Clock state as of the moment the server built the update. A running
+clock keeps ticking on the client: see `remainingNow`.
+-}
+type alias Clock =
+    { enabled : Bool
+    , label : String
+    , players : List ClockPlayer
+    , timedOut : Maybe String
+    }
+
+
+type alias ClockPlayer =
+    { id : String
+    , remainingMs : Int
+    , running : Bool
     }
 
 
@@ -297,11 +320,29 @@ connectionDecoder =
 
 updateDecoder : Decoder Update
 updateDecoder =
-    D.map4 Update
+    D.map5 Update
         (D.field "scene" sceneDecoder)
         (D.field "legal" (D.list schemaDecoder))
         (D.field "outcome" outcomeDecoder)
         (D.field "events" (D.list eventDecoder))
+        (D.field "clock" clockDecoder)
+
+
+clockDecoder : Decoder Clock
+clockDecoder =
+    D.map4 Clock
+        (D.field "enabled" D.bool)
+        (D.field "label" D.string)
+        (D.field "players" (D.list clockPlayerDecoder))
+        (D.field "timed_out" (D.nullable D.string))
+
+
+clockPlayerDecoder : Decoder ClockPlayer
+clockPlayerDecoder =
+    D.map3 ClockPlayer
+        (D.field "id" D.string)
+        (D.field "remaining_ms" D.int)
+        (D.field "running" D.bool)
 
 
 sceneDecoder : Decoder Scene
@@ -464,6 +505,43 @@ outcomeDecoder =
                     _ ->
                         D.fail ("Unknown outcome: " ++ status)
             )
+
+
+
+-- CLOCK HELPERS
+
+
+{-| Time left for a player right now, given when the update arrived and the
+current time (both in milliseconds of the same clock).
+-}
+remainingNow : ClockPlayer -> Int -> Int -> Int
+remainingNow player receivedAt now =
+    if player.running then
+        max 0 (player.remainingMs - max 0 (now - receivedAt))
+
+    else
+        player.remainingMs
+
+
+{-| "4:05", or "9.4" under ten seconds.
+-}
+formatClock : Int -> String
+formatClock ms =
+    let
+        totalSeconds =
+            ms // 1000
+
+        minutes =
+            totalSeconds // 60
+
+        seconds =
+            modBy 60 totalSeconds
+    in
+    if ms < 10000 then
+        String.fromInt (ms // 1000) ++ "." ++ String.fromInt (modBy 10 (ms // 100))
+
+    else
+        String.fromInt minutes ++ ":" ++ String.padLeft 2 '0' (String.fromInt seconds)
 
 
 

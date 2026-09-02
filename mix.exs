@@ -110,6 +110,9 @@ defmodule Oskol.MixProject do
   defp aliases do
     [
       "deps.get": ["deps.get", "gleam.deps.get"],
+      # The gleam compiler step forwards positional args to deps tasks, which
+      # breaks `mix test path/to/test.exs`; compile first, then test without it.
+      test: ["compile", "test --no-compile"],
       setup: ["deps.get", "assets.setup", "assets.build"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind oskol", "cmd --cd assets node build.js"],
