@@ -412,6 +412,12 @@ defmodule OskolWeb.LandingLive do
               </div>
               <p class="text-gray-600 text-sm mt-1">{game["tagline"]}</p>
               <p class="text-gray-400 text-xs mt-2">{game["description"]}</p>
+              <div class="mt-3 flex items-center justify-between">
+                <span class="text-gray-400 text-xs">
+                  {game["formats"] |> Enum.map(& &1["name"]) |> Enum.join(" · ")}
+                </span>
+                <span class="text-blue-600 font-semibold text-sm">Play →</span>
+              </div>
             </.link>
             <p class="text-base-content/40 text-xs pt-4">
               Play with friends · No signup required
@@ -442,7 +448,7 @@ defmodule OskolWeb.LandingLive do
               ← All games
             </.link>
             <h1
-              class="text-5xl sm:text-6xl font-black text-gray-800 mt-3 mb-2 tracking-tight"
+              class="text-5xl sm:text-6xl font-black text-white mt-3 mb-2 tracking-tight drop-shadow-lg"
               id="game-title"
             >
               {@info["name"]}
@@ -649,7 +655,7 @@ defmodule OskolWeb.LandingLive do
               Both players selected {@selected_format_name}
           <% end %>
         </p>
-        <div class={["grid gap-1.5 sm:gap-3", "grid-cols-#{max(length(@formats), 1)}"]}>
+        <div class={["grid gap-1.5 sm:gap-3", format_grid_class(length(@formats))]}>
           <.format_card_v2
             :for={{format, index} <- Enum.with_index(@formats)}
             format={format["id"]}
@@ -725,6 +731,13 @@ defmodule OskolWeb.LandingLive do
     </div>
     """
   end
+
+  # Static class names so Tailwind can find them.
+  defp format_grid_class(1), do: "grid-cols-1"
+  defp format_grid_class(2), do: "grid-cols-2"
+  defp format_grid_class(3), do: "grid-cols-3"
+  defp format_grid_class(4), do: "grid-cols-2 sm:grid-cols-4"
+  defp format_grid_class(_), do: "grid-cols-2 sm:grid-cols-3"
 
   defp players_status_cards(assigns) do
     player_list = Map.to_list(assigns.connections)
