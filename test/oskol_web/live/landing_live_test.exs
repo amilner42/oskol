@@ -18,11 +18,32 @@ defmodule OskolWeb.LandingLiveTest do
     {:ok, view, html} = live(conn, ~p"/")
     assert html =~ "SELECT YOUR GAME"
     assert has_element?(view, "#game-backgammon", "Backgammon")
+    assert has_element?(view, "#game-poker", "Poker")
+    assert page_title(view) =~ "Two-player games from a link"
+  end
+
+  test "moving between the library and a game keeps the titles right", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/")
+    view |> element("#game-poker") |> render_click()
+    assert_patch(view, "/poker")
+    assert page_title(view) =~ "Play heads-up poker online"
+    view |> element("#other-games a[href='/backgammon']") |> render_click()
+    assert_patch(view, "/backgammon")
+    assert page_title(view) =~ "Play backgammon online"
+    assert has_element?(view, "#format-single.tile-mine")
+    view |> element("header a[href='/']", "ALL GAMES") |> render_click()
+    assert_patch(view, "/")
+    assert page_title(view) =~ "Two-player games from a link"
   end
 
   test "a game page lets the creator pick a mode and a clock, and links back", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/backgammon")
     assert html =~ "Backgammon"
+    assert page_title(view) =~ "Play backgammon online with a friend"
+    assert has_element?(view, "h1", "Play backgammon online with a friend")
+    assert has_element?(view, "#twist", "Original rules")
+    assert has_element?(view, "#rules h2", "BACKGAMMON IN BRIEF")
+    assert has_element?(view, "#other-games a[href='/poker']", "Poker")
     assert has_element?(view, "form[phx-submit=new_game]")
     assert has_element?(view, "#format-single.tile-mine")
     assert has_element?(view, "#format-match5", "Match to 5")

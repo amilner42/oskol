@@ -29,6 +29,8 @@ defmodule OskolWeb.Router do
   scope "/", OskolWeb do
     pipe_through :browser
 
+    get "/sitemap.xml", SitemapController, :index
+
     # The game library
     live "/", LandingLive, :library
     # One game's start page and lobby, e.g. /backgammon

@@ -14,6 +14,7 @@ defmodule OskolWeb.LandingLive do
   alias Oskol.Game.GameServerState
   alias Oskol.GameKit
   alias OskolWeb.GameArt
+  alias OskolWeb.GameCopy
 
   # ---------- Mount and navigation ----------
 
@@ -26,6 +27,12 @@ defmodule OskolWeb.LandingLive do
         page: :library,
         slug: nil,
         info: nil,
+        copy: nil,
+        meta_description: nil,
+        canonical: nil,
+        og_title: nil,
+        og_description: nil,
+        json_ld: nil,
         step: :create,
         setup: nil,
         game_name: "",
@@ -54,14 +61,30 @@ defmodule OskolWeb.LandingLive do
   def handle_params(params, _uri, socket) do
     case socket.assigns.live_action do
       :library ->
+        site = GameCopy.site()
+
         {:noreply,
-         assign(socket, page: :library, slug: nil, info: nil, page_title: nil, error: nil)}
+         assign(socket,
+           page: :library,
+           slug: nil,
+           info: nil,
+           copy: nil,
+           error: nil,
+           page_title: site.title,
+           meta_description: site.description,
+           canonical: url(~p"/"),
+           og_title: nil,
+           og_description: nil,
+           json_ld: library_json_ld(socket.assigns.games)
+         )}
 
       :game ->
         slug = params["slug"]
 
         case GameKit.game_info(slug) do
           {:ok, info} ->
+            copy = GameCopy.for_game(info)
+
             socket =
               if socket.assigns.slug != slug do
                 # Fresh game page: reset the flow
@@ -69,7 +92,13 @@ defmodule OskolWeb.LandingLive do
                   page: :game,
                   slug: slug,
                   info: info,
-                  page_title: info["name"],
+                  copy: copy,
+                  page_title: copy.title,
+                  meta_description: copy.description,
+                  canonical: url(~p"/#{slug}"),
+                  og_title: copy.title,
+                  og_description: copy.description,
+                  json_ld: game_json_ld(info, copy),
                   step: :create,
                   setup: GameServerState.default_setup(info),
                   game_name: "",
@@ -352,6 +381,37 @@ defmodule OskolWeb.LandingLive do
 
   def handle_info(_msg, socket), do: {:noreply, socket}
 
+  # Structured data for search engines: the catalog, and one game.
+  defp library_json_ld(games) do
+    Jason.encode!(%{
+      "@context" => "https://schema.org",
+      "@type" => "WebSite",
+      "name" => "Oskol",
+      "url" => url(~p"/"),
+      "description" => GameCopy.site().description,
+      "hasPart" =>
+        Enum.map(games, fn game ->
+          %{"@type" => "VideoGame", "name" => game["name"], "url" => url(~p"/#{game["slug"]}")}
+        end)
+    })
+  end
+
+  defp game_json_ld(info, copy) do
+    Jason.encode!(%{
+      "@context" => "https://schema.org",
+      "@type" => "VideoGame",
+      "name" => info["name"],
+      "url" => url(~p"/#{info["slug"]}"),
+      "description" => copy.description,
+      "applicationCategory" => "Game",
+      "operatingSystem" => "Web",
+      "numberOfPlayers" => 2,
+      "playMode" => "MultiPlayer",
+      "isAccessibleForFree" => true,
+      "offers" => %{"@type" => "Offer", "price" => "0", "priceCurrency" => "USD"}
+    })
+  end
+
   defp lobby_path(socket, game_id, player_name) do
     ~p"/#{socket.assigns.slug}?game=#{game_id}&name=#{player_name}"
   end
@@ -395,6 +455,8 @@ defmodule OskolWeb.LandingLive do
           <.game_page
             slug={@slug}
             info={@info}
+            copy={@copy}
+            games={@games}
             step={@step}
             setup={@setup}
             error={@error}
@@ -554,6 +616,8 @@ defmodule OskolWeb.LandingLive do
 
   attr :slug, :string, required: true
   attr :info, :map, required: true
+  attr :copy, :map, required: true
+  attr :games, :list, default: []
   attr :step, :atom, required: true
   attr :setup, :map, default: nil
   attr :error, :string, default: nil
@@ -583,7 +647,10 @@ defmodule OskolWeb.LandingLive do
           <p class="pixel text-[10px]" style="color: var(--accent)">
             {String.upcase(@info["tagline"])}
           </p>
-          <p class="mt-2 leading-relaxed" style="color: var(--ink)">{@info["description"]}</p>
+          <h1 class="mt-2 text-xl sm:text-2xl font-black leading-snug" style="color: var(--ink)">
+            {@copy.title}
+          </h1>
+          <p class="mt-2 leading-relaxed" style="color: var(--pencil)">{@copy.intro}</p>
         </div>
       </div>
     </section>
@@ -619,8 +686,103 @@ defmodule OskolWeb.LandingLive do
         <% end %>
       </div>
     </section>
+
+    <.about :if={@step == :create} info={@info} copy={@copy} games={@games} slug={@slug} />
     """
   end
+
+  # The part of a game's page that is for reading: how it works, the rules
+  # in brief, the modes and clocks on offer, a few questions, and the way to
+  # the other games.
+  attr :info, :map, required: true
+  attr :copy, :map, required: true
+  attr :games, :list, required: true
+  attr :slug, :string, required: true
+
+  defp about(assigns) do
+    presets = GameKit.clock_presets()
+
+    clocks =
+      for id <- Map.get(assigns.info, "clocks", []),
+          preset = Enum.find(presets, &(&1["id"] == id)),
+          do: preset
+
+    assigns =
+      assign(assigns,
+        clocks: clocks,
+        others: Enum.reject(assigns.games, &(&1["slug"] == assigns.slug))
+      )
+
+    ~H"""
+    <section class="mt-12 grid gap-4 sm:grid-cols-3" id="how-it-works">
+      <.step
+        :for={{line, i} <- Enum.with_index(@copy.how, 1)}
+        n={Integer.to_string(i)}
+        title={step_title(i)}
+      >
+        {line}
+      </.step>
+    </section>
+
+    <section class="mt-12 pix p-5 sm:p-8" id="rules">
+      <h2 class="pixel text-[10px] sm:text-xs mb-4" style="color: var(--ink)">
+        {String.upcase(@info["name"])} IN BRIEF
+      </h2>
+      <div class="space-y-3 leading-relaxed" style="color: var(--ink)">
+        <p :for={paragraph <- @copy.rules}>{paragraph}</p>
+      </div>
+    </section>
+
+    <section class="mt-8 grid gap-4 sm:grid-cols-2" id="modes">
+      <div class="pix-sm p-5">
+        <h2 class="pixel text-[10px] mb-3" style="color: var(--ink)">MODES</h2>
+        <ul class="space-y-2">
+          <li :for={format <- @info["formats"]}>
+            <span class="font-bold" style="color: var(--ink)">{format["name"]}</span>
+            <span class="text-sm" style="color: var(--pencil)">· {format["description"]}</span>
+          </li>
+        </ul>
+      </div>
+      <div class="pix-sm p-5">
+        <h2 class="pixel text-[10px] mb-3" style="color: var(--ink)">CLOCKS</h2>
+        <ul class="space-y-2">
+          <li :for={preset <- @clocks}>
+            <span class="font-bold" style="color: var(--ink)">{preset["name"]}</span>
+            <span class="text-sm" style="color: var(--pencil)">· {preset["description"]}</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section :if={@copy.faq != []} class="mt-8 pix p-5 sm:p-8" id="faq">
+      <h2 class="pixel text-[10px] sm:text-xs mb-4" style="color: var(--ink)">QUESTIONS</h2>
+      <dl class="space-y-4">
+        <div :for={{question, answer} <- @copy.faq}>
+          <dt class="font-bold" style="color: var(--ink)">{question}</dt>
+          <dd class="mt-1 leading-relaxed" style="color: var(--pencil)">{answer}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section :if={@others != []} class="mt-10 text-center" id="other-games">
+      <p class="pixel text-[10px] mb-3" style="color: var(--pencil)">ALSO ON OSKOL</p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <.link
+          :for={game <- @others}
+          patch={~p"/#{game["slug"]}"}
+          class="pix-flat px-4 py-2 font-bold hover:bg-[color:var(--highlighter)]"
+          style="color: var(--ink)"
+        >
+          {game["name"]} →
+        </.link>
+      </div>
+    </section>
+    """
+  end
+
+  defp step_title(1), do: "PICK A MODE"
+  defp step_title(2), do: "SET A CLOCK"
+  defp step_title(_), do: "SHARE THE LINK"
 
   attr :info, :map, required: true
   attr :setup, :map, required: true
@@ -631,10 +793,14 @@ defmodule OskolWeb.LandingLive do
     format = Enum.find(formats, &(&1["id"] == assigns.setup.format)) || List.first(formats)
     offered = Map.get(assigns.info, "clocks", [])
 
+    settings = (format && format["settings"]) || []
+
     assigns =
       assign(assigns,
         formats: formats,
-        settings: (format && format["settings"]) || [],
+        # A setting called "twist" gets its own heading; the rest follow
+        twist: Enum.find(settings, &(&1["id"] == "twist")),
+        settings: Enum.reject(settings, &(&1["id"] == "twist")),
         clocks: Enum.filter(assigns.clock_presets, &(&1["id"] in offered))
       )
 
@@ -653,6 +819,30 @@ defmodule OskolWeb.LandingLive do
             format={format}
             selected={@setup.format == format["id"]}
           />
+        </div>
+      </div>
+
+      <div id="twist">
+        <div class="flex items-baseline justify-between mb-2">
+          <h3 class="pixel text-[10px]" style="color: var(--ink)">TWIST</h3>
+          <span class="text-xs" style="color: var(--pencil)">rules that throw the book out</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <%= if @twist do %>
+            <.choice_chip
+              :for={choice <- @twist["choices"]}
+              setting={@twist}
+              choice={choice}
+              selected={Map.get(@setup.selections, "twist", @twist["default"]) == choice["id"]}
+            />
+          <% else %>
+            <span class="tile tile-mine px-3.5 py-1.5 text-sm font-semibold" style="color: var(--ink)">
+              Original rules
+            </span>
+            <span class="text-xs self-center" style="color: var(--pencil)">
+              more twists on the way
+            </span>
+          <% end %>
         </div>
       </div>
 
@@ -685,9 +875,9 @@ defmodule OskolWeb.LandingLive do
       </div>
 
       <div class="text-center space-y-3">
-        <.cta type="submit" id="create-game" color="green">CREATE GAME</.cta>
+        <.cta type="submit" id="create-game" color="green">START ▶</.cta>
         <p class="text-sm" style="color: var(--pencil)">
-          You'll get a link to send your opponent. They type a name and the game starts.
+          You'll get an invite link. Your opponent types a name and the game starts.
         </p>
       </div>
     </form>
