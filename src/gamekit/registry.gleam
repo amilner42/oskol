@@ -9,6 +9,7 @@ import gamekit/fixture
 import gamekit/game.{type Info, type Seat}
 import gamekit/instance.{type Instance}
 import gleam/list
+import poker/game as poker
 
 pub type Entry {
   Entry(
@@ -49,7 +50,7 @@ pub fn entry(definition: game.Game(state, action)) -> Entry {
 
 /// The registered games, in library display order.
 pub fn all() -> List(Entry) {
-  [entry(backgammon.game())]
+  [entry(poker.game()), entry(backgammon.game())]
 }
 
 pub fn find(slug: String) -> Result(Entry, Nil) {

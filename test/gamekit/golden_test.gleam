@@ -13,6 +13,7 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/string
+import poker/game as poker
 
 @external(erlang, "oskol_test_files", "list")
 fn list_dir(dir: String) -> Result(List(String), Dynamic)
@@ -107,6 +108,7 @@ pub fn every_committed_replay_reproduces_its_fingerprint_test() {
   list.each(replays, fn(r) {
     case r.game {
       "backgammon" -> check(backgammon.game(), r)
+      "poker" -> check(poker.game(), r)
       other ->
         panic as {
           "No typed game for replay " <> other <> ": add it to golden_test"
