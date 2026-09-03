@@ -191,6 +191,9 @@ Notes:
 - In this environment the Elm package cache is populated by git clone
   (GitHub zipballs are blocked); see `.claude/skills`.
 - The pixel font is self-hosted under `priv/static/fonts`.
+- Playwright scripts take the browser from `PW_CHROMIUM` when set (`bin/check`
+  falls back to a preinstalled Chromium under `/opt/pw-browsers`); CI runs
+  `npx playwright install chromium` instead.
 
 ## Development workflow for Claude
 - Do not leave servers running. For a browser check, run the server and the

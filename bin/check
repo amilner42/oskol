@@ -46,6 +46,13 @@ if [[ "${1:-}" == "--browser" ]]; then
   curl -sf -o /dev/null http://localhost:4000/ || { echo "server did not start; see $log"; exit 1; }
 
   step "browser smokes"
+  # Playwright's own Chromium download is not always available (sandboxes);
+  # the scripts accept a binary via PW_CHROMIUM, defaulting to a preinstalled
+  # one under /opt/pw-browsers when there is one.
+  if [[ -z "${PW_CHROMIUM:-}" ]]; then
+    PW_CHROMIUM="$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 || true)"
+    export PW_CHROMIUM
+  fi
   node playwright/test-tilt-smoke/test.js
   node playwright/test-backgammon-smoke/test.js
 fi
