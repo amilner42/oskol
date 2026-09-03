@@ -29,7 +29,7 @@ suite =
                 \_ ->
                     let
                         running =
-                            { id = "a", remainingMs = 5000, running = True }
+                            { id = "a", remainingMs = 5000, moveMs = 0, running = True }
 
                         stopped =
                             { running | running = False }

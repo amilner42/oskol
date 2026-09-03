@@ -7,6 +7,7 @@ game has one, the generic renderer otherwise.
 
 import Browser
 import Games.Backgammon.View as Backgammon
+import Games.Poker.View as Poker
 import Generic.View
 import Html exposing (Html)
 import Html.Attributes exposing (class)
@@ -71,6 +72,7 @@ type alias Model =
     , legal : List Protocol.Schema -- legal action schemas for this player
     , generic : Generic.View.Model
     , backgammon : Backgammon.Model
+    , poker : Poker.Model
     , clockReceivedAt : Int -- client time (ms) when the latest clock snapshot arrived
     , nowMs : Int -- client time (ms), refreshed while a clock runs
     , connectionStatus : ConnectionStatus
@@ -87,6 +89,7 @@ init flags =
       , legal = []
       , generic = Generic.View.init
       , backgammon = Backgammon.init
+      , poker = Poker.init
       , clockReceivedAt = 0
       , nowMs = 0
       , connectionStatus = Connecting
@@ -104,6 +107,8 @@ type Msg
     = ServerMessageReceived ServerMessage
     | GenericMsg Generic.View.Msg
     | BackgammonMsg Backgammon.Msg
+    | PokerMsg Poker.Msg
+    | PokerAutoDeal
     | ClockSynced Time.Posix
     | ClockTick Time.Posix
     | RematchGameReady String
@@ -159,6 +164,36 @@ update msg model =
 
                 Backgammon.WantRematch ->
                     update RequestRematch updated
+
+        PokerMsg pokerMsg ->
+            let
+                ( poker, out ) =
+                    Poker.update pokerMsg model.poker
+
+                updated =
+                    { model | poker = poker, error = Nothing }
+            in
+            case out of
+                Poker.NoOut ->
+                    ( updated, Cmd.none )
+
+                Poker.Send value ->
+                    ( updated, sendToChannel value )
+
+                Poker.WantRematch ->
+                    update RequestRematch updated
+
+        PokerAutoDeal ->
+            case pokerCtx model of
+                Just ctx ->
+                    if Poker.wantsAutoDeal ctx then
+                        ( model, sendToChannel (Protocol.encodeAction "deal" []) )
+
+                    else
+                        ( model, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
         ClockSynced posix ->
             ( { model | clockReceivedAt = Time.posixToMillis posix, nowMs = Time.posixToMillis posix }
@@ -237,6 +272,37 @@ clockRunning model =
             False
 
 
+finishedWinners : GamePayload -> Maybe (List String)
+finishedWinners payload =
+    case payload.update.outcome of
+        Protocol.Ongoing ->
+            Nothing
+
+        Protocol.Finished winners ->
+            Just winners
+
+
+pokerCtx : Model -> Maybe Poker.Ctx
+pokerCtx model =
+    case ( model.gameSlug, model.payload ) of
+        ( "poker", Just payload ) ->
+            Just
+                { playerId = payload.playerId
+                , scene = payload.update.scene
+                , legal = payload.update.legal
+                , model = model.poker
+                , clock = Just payload.update.clock
+                , receivedAt = model.clockReceivedAt
+                , now = model.nowMs
+                , nameOf = nameOf model
+                , rematchReady = payload.rematchReady
+                , finished = finishedWinners payload
+                }
+
+        _ ->
+            Nothing
+
+
 
 -- SUBSCRIPTIONS
 
@@ -250,6 +316,16 @@ subscriptions model =
 
           else
             Sub.none
+        , case pokerCtx model of
+            Just ctx ->
+                if Poker.wantsAutoDeal ctx then
+                    Time.every 3500 (\_ -> PokerAutoDeal)
+
+                else
+                    Sub.none
+
+            Nothing ->
+                Sub.none
         ]
 
 
@@ -296,45 +372,44 @@ view model =
                         }
 
                 finished =
-                    case payload.update.outcome of
-                        Protocol.Ongoing ->
-                            Nothing
-
-                        Protocol.Finished winners ->
-                            Just winners
+                    finishedWinners payload
 
                 game =
-                    if model.gameSlug == "backgammon" then
-                        Html.map BackgammonMsg
-                            (Backgammon.view
-                                { playerId = payload.playerId
-                                , scene = payload.update.scene
-                                , legal = payload.update.legal
-                                , model = model.backgammon
-                                , clock = clockView
-                                , nameOf = nameOf model
-                                , rematchReady = payload.rematchReady
-                                , finished = finished
-                                }
-                            )
+                    case ( model.gameSlug, pokerCtx model ) of
+                        ( "backgammon", _ ) ->
+                            Html.map BackgammonMsg
+                                (Backgammon.view
+                                    { playerId = payload.playerId
+                                    , scene = payload.update.scene
+                                    , legal = payload.update.legal
+                                    , model = model.backgammon
+                                    , clock = clockView
+                                    , nameOf = nameOf model
+                                    , rematchReady = payload.rematchReady
+                                    , finished = finished
+                                    }
+                                )
 
-                    else
-                        Html.map GenericMsg
-                            (Generic.View.view
-                                { playerId = payload.playerId
-                                , scene = payload.update.scene
-                                , legal = payload.update.legal
-                                , model = model.generic
-                                , status =
-                                    case finished of
-                                        Nothing ->
-                                            "in progress"
+                        ( "poker", Just ctx ) ->
+                            Html.map PokerMsg (Poker.view ctx)
 
-                                        Just winners ->
-                                            "finished: " ++ String.join ", " (List.map (nameOf model) winners)
-                                , clock = clockView
-                                }
-                            )
+                        _ ->
+                            Html.map GenericMsg
+                                (Generic.View.view
+                                    { playerId = payload.playerId
+                                    , scene = payload.update.scene
+                                    , legal = payload.update.legal
+                                    , model = model.generic
+                                    , status =
+                                        case finished of
+                                            Nothing ->
+                                                "in progress"
+
+                                            Just winners ->
+                                                "finished: " ++ String.join ", " (List.map (nameOf model) winners)
+                                    , clock = clockView
+                                    }
+                                )
             in
             Html.div []
                 [ game

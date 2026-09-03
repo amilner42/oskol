@@ -157,6 +157,7 @@ type alias Clock =
 type alias ClockPlayer =
     { id : String
     , remainingMs : Int
+    , moveMs : Int -- free time left on the current move (delay or action allowance)
     , running : Bool
     }
 
@@ -343,9 +344,10 @@ clockDecoder =
 
 clockPlayerDecoder : Decoder ClockPlayer
 clockPlayerDecoder =
-    D.map3 ClockPlayer
+    D.map4 ClockPlayer
         (D.field "id" D.string)
         (D.field "remaining_ms" D.int)
+        (D.oneOf [ D.field "move_ms" D.int, D.succeed 0 ])
         (D.field "running" D.bool)
 
 

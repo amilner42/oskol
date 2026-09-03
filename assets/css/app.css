@@ -526,6 +526,19 @@
 /* ---------- Game screens ---------- */
 .game-panel { border: 3px solid var(--ink); background: #fff; }
 .game-strip { background: var(--paper-2); border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink); }
+/* Poker table */
+.pcard { width: 2.75rem; aspect-ratio: 5 / 7; border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: #fff; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; font-weight: 800; line-height: 1; color: var(--ink); }
+.pcard .rank { font-size: 1.05rem; }
+.pcard .suit { font-size: 0.95rem; }
+.pcard.red { color: var(--red); }
+.pcard.lg { width: 4rem; }
+.pcard.lg .rank { font-size: 1.5rem; }
+.pcard.lg .suit { font-size: 1.3rem; }
+.pcard.back { background: repeating-linear-gradient(45deg, var(--pen) 0 3px, #fff 3px 7px); }
+.pcard.slot { background: transparent; border-style: dashed; box-shadow: none; border-color: var(--pencil); opacity: 0.5; }
+.felt { border: 3px solid var(--ink); border-radius: 999px; background: var(--paper-2); box-shadow: 4px 4px 0 0 var(--ink); }
+.chip { border: 2px solid var(--ink); border-radius: 999px; padding: 2px 10px; background: var(--highlighter); font-weight: 700; color: var(--ink); }
+.seat-active { outline: 3px solid var(--pen); outline-offset: 2px; }
 .card-face { border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: #fff; border-radius: 4px; }
 .card-face.selected { box-shadow: 3px 3px 0 0 var(--pen); border-color: var(--pen); }
 .new-card::before, .new-card::after { background-color: var(--highlighter) !important; }

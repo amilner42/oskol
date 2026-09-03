@@ -101,6 +101,46 @@ defmodule OskolWeb.LandingLiveTest do
     assert_redirect(late, "/backgammon/#{game_id}?name=Bob")
   end
 
+  test "a format's settings are offered as chips and land in the room's setup", %{conn: conn} do
+    {:ok, host, _} = live(conn, ~p"/poker")
+    # Cash is the first format: its stakes and top-up settings show, with defaults picked
+    assert has_element?(host, "#choice-stake-1-2.tile-mine")
+    assert has_element?(host, "#choice-top_up-yes.tile-mine")
+    assert has_element?(host, "#clock-poker.tile-mine")
+    host |> element("#choice-stake-5-10") |> render_click()
+    host |> element("#choice-top_up-no") |> render_click()
+    assert has_element?(host, "#choice-stake-5-10.tile-mine")
+
+    # Switching format swaps the settings and resets the choices
+    host |> element("#format-sng") |> render_click()
+    assert has_element?(host, "#choice-speed-regular.tile-mine")
+    refute has_element?(host, "#choice-stake-5-10")
+    host |> element("#choice-speed-turbo") |> render_click()
+
+    host |> form("form[phx-submit=new_game]", %{"player_name" => "Alice"}) |> render_submit()
+    path = assert_patch(host)
+    %{"game" => game_id} = URI.decode_query(URI.parse(path).query)
+    state = Oskol.Game.get_server_state(game_id)
+    assert state.setup.format == "sng"
+    assert state.setup.selections == %{"speed" => "turbo"}
+    assert state.setup.clock == "poker"
+
+    assert host |> element("#setup-summary") |> render() =~
+             "Sit &amp; go · Turbo · Standard clock"
+
+    {:ok, guest, _} = live(build_conn(), ~p"/poker?game=#{game_id}")
+
+    guest
+    |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
+    |> render_submit()
+
+    assert_redirect(guest, "/poker/#{game_id}?name=Bob")
+    started = Oskol.Game.get_server_state(game_id)
+    update = Oskol.GameKit.player_update(started.instance, started.seat_order |> hd())
+    assert update["scene"]["data"]["format"] == "sng"
+    assert update["clock"]["label"] == "20 s per action + 60 s bank"
+  end
+
   test "the play page serves the Elm client for a known game", %{conn: conn} do
     %{game_id: game_id} = Oskol.GameFixtures.started()
     conn = get(conn, ~p"/backgammon/#{game_id}?name=Alice")
