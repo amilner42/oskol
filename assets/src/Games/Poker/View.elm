@@ -498,8 +498,8 @@ viewBanner ctx t =
                             ( "split", _ ) ->
                                 "SPLIT POT"
 
-                            ( _, ( w, amount ) :: _ ) ->
-                                String.toUpper (ctx.nameOf w) ++ " WINS " ++ String.fromInt amount
+                            ( _, ( w, _ ) :: _ ) ->
+                                String.toUpper (ctx.nameOf w) ++ " WINS THE POT (" ++ String.fromInt t.pot ++ ")"
 
                             _ ->
                                 ""
