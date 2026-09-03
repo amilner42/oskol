@@ -69,11 +69,22 @@ defmodule Oskol.GameKit do
 
   # ---------- Lifecycle ----------
 
-  @doc "Start a game. `seats` is a list of `{player_id, name}` in seat order."
-  @spec start(String.t(), String.t(), [{player_id, String.t()}], integer(), control, integer()) ::
+  @doc """
+  Start a game. `seats` is a list of `{player_id, name}` in seat order;
+  `selections` the creator's `{setting_id, choice_id}` pairs for the format.
+  """
+  @spec start(
+          String.t(),
+          String.t(),
+          [{player_id, String.t()}],
+          integer(),
+          control,
+          integer(),
+          [{String.t(), String.t()}]
+        ) ::
           {:ok, instance} | {:error, String.t()}
-  def start(slug, format_id, seats, seed, control \\ :no_clock, now \\ now()) do
-    :gamekit@host.start(slug, format_id, seats, seed, control, now)
+  def start(slug, format_id, seats, seed, control \\ :no_clock, now \\ now(), selections \\ []) do
+    :gamekit@host.start(slug, format_id, selections, seats, seed, control, now)
   end
 
   @doc "Apply a client action (a decoded JSON map) for a player."

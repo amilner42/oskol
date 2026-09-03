@@ -21,6 +21,7 @@ pub fn game() -> Game(GameState, Action) {
     scene: projection.build,
     outcome: outcome,
     clocks: engine.on_the_clock,
+    timeout: fn(_, _) { game.Forfeit },
   )
 }
 
@@ -46,6 +47,8 @@ pub fn info() -> game.Info {
         True,
       ),
     ],
+    clocks: ["none", "blitz", "rapid", "delay", "per_move"],
+    default_clock: "none",
   )
 }
 
@@ -57,11 +60,11 @@ fn format(
   cube: Bool,
   jacoby: Bool,
 ) -> game.Format {
-  game.Format(
-    id: id,
-    name: name,
-    description: description,
-    config: dict.from_list([
+  game.format(
+    id,
+    name,
+    description,
+    dict.from_list([
       #("target", target),
       #("cube", bool_int(cube)),
       #("jacoby", bool_int(jacoby)),

@@ -11,6 +11,7 @@ import gamekit/event.{type Event}
 import gamekit/game.{type Game, type Outcome, type Seat}
 import gamekit/rng
 import gamekit/scene.{type PlayerId, type Scene, type Viewer}
+import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/json
 import gleam/list
@@ -29,14 +30,18 @@ pub opaque type Instance {
     outcome: fn() -> Outcome,
     /// Rebuild this instance with different clocks (same game state).
     with_clocks: fn(Clocks) -> Instance,
+    /// Resolve a player's clock running out: forfeit, or the game's own
+    /// auto action with the events it produced.
+    on_timeout: fn(PlayerId, Int) -> #(Instance, List(Event)),
   )
 }
 
-/// Start a game from a format id, the seated players, a seed, a time control
-/// and the current time.
+/// Start a game from a format id, the creator's setting selections, the
+/// seated players, a seed, a time control and the current time.
 pub fn start(
   definition: Game(state, action),
   format_id: String,
+  selections: List(#(String, String)),
   seats: List(Seat),
   seed: Int,
   control: Control,
@@ -46,13 +51,14 @@ pub fn start(
     game.find_format(definition.info, format_id)
     |> result.replace_error("Unknown format: " <> format_id),
   )
+  use config <- result.try(game.configure(format, dict.from_list(selections)))
   let seat_count = list.length(seats)
   use <- require(
     seat_count >= definition.info.min_players
       && seat_count <= definition.info.max_players,
     "Wrong number of players",
   )
-  use state <- result.try(definition.init(format.config, seats, rng.seed(seed)))
+  use state <- result.try(definition.init(config, seats, rng.seed(seed)))
   let ids = list.map(seats, fn(s) { s.id })
   let clocks =
     clock.new(control, ids)
@@ -135,6 +141,34 @@ fn wrap(
       }
     },
     with_clocks: fn(new_clocks) { wrap(definition, seats, state, new_clocks) },
+    on_timeout: fn(loser, now) {
+      case definition.timeout(state, loser) {
+        game.Forfeit -> {
+          let assert Some(#(_, stopped)) = clock.expire(clocks, now)
+          #(wrap(definition, seats, state, stopped), [])
+        }
+        game.Act(auto_action) ->
+          // The game acts for the player and play goes on; their clock is
+          // settled (bank spent) and restarted if it is still their turn.
+          case definition.apply(state, loser, auto_action) {
+            Ok(#(next_state, events)) -> {
+              let next_clocks =
+                clock.set_running(
+                  clocks,
+                  running_for(definition, next_state),
+                  now,
+                  Some(loser),
+                )
+              #(wrap(definition, seats, next_state, next_clocks), events)
+            }
+            Error(_) -> {
+              // The game had no action for them: fall back to a forfeit
+              let assert Some(#(_, stopped)) = clock.expire(clocks, now)
+              #(wrap(definition, seats, state, stopped), [])
+            }
+          }
+      }
+    },
   )
 }
 
@@ -178,25 +212,38 @@ pub fn finished(instance: Instance) -> Bool {
   }
 }
 
-/// If a running clock has reached zero, forfeit that player. Returns the new
-/// instance and the events describing it, or None when nothing expired.
+/// If a running clock has reached zero, resolve it the way the game wants:
+/// a forfeit, or an action taken for the player. Returns the new instance
+/// and the events describing it, or None when nothing expired.
 pub fn expire(instance: Instance, now: Int) -> Option(#(Instance, List(Event))) {
-  case clock.expire(instance.clocks, now) {
-    None -> None
-    Some(#(loser, clocks)) -> {
+  case clock.expired(instance.clocks, now) {
+    [] -> None
+    [loser, ..] -> {
       let name =
         list.find(instance.seats, fn(s) { s.id == loser })
         |> result.map(fn(s) { s.name })
         |> result.unwrap(loser)
-      let events = [
-        event.Custom(
-          "timeout",
-          json.object([#("player_id", json.string(loser))]),
-        ),
-        event.Message(name <> " ran out of time"),
-        event.PhaseChanged("game_over"),
-      ]
-      Some(#(instance.with_clocks(clocks), events))
+      let #(next, game_events) = instance.on_timeout(loser, now)
+      let forfeited = next.clocks.timed_out != None
+      let events =
+        list.flatten([
+          [
+            event.Custom(
+              "timeout",
+              json.object([
+                #("player_id", json.string(loser)),
+                #("forfeit", json.bool(forfeited)),
+              ]),
+            ),
+            event.Message(name <> " ran out of time"),
+          ],
+          game_events,
+          case forfeited {
+            True -> [event.PhaseChanged("game_over")]
+            False -> []
+          },
+        ])
+      Some(#(next, events))
     }
   }
 }

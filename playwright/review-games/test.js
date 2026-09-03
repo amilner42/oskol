@@ -37,39 +37,6 @@ async function lobby(context, slug, format, clock) {
   return { p1, p2, gameId };
 }
 
-async function tilt(context, tag) {
-  const { p1, p2 } = await lobby(context, 'tilt', 'short', null);
-  const cards = (page) => page.locator('button[class*="w-[18%]"]:not([disabled])');
-  await cards(p1).first().waitFor({ timeout: 20000 });
-  await sleep(600);
-  await p1.screenshot({ path: `${OUT}/${tag}-tilt-01-dealt.png` });
-  // Play hands until the shop appears (short format: 4 hands); snapshot the reveal on hand two.
-  for (let hand = 0; hand < 4; hand++) {
-    for (const page of [p1, p2]) {
-      await cards(page).first().waitFor({ timeout: 20000 });
-      await cards(page).nth(0).click();
-      await cards(page).nth(1).click();
-      await page.click('button:has-text("Play")');
-    }
-    if (hand === 1) {
-      await sleep(1000);
-      await p1.screenshot({ path: `${OUT}/${tag}-tilt-02a-reveal-1s.png` });
-      await sleep(2000);
-      await p1.screenshot({ path: `${OUT}/${tag}-tilt-02b-reveal-3s.png` });
-      await sleep(2000);
-      await p1.screenshot({ path: `${OUT}/${tag}-tilt-02c-reveal-5s.png` });
-      await sleep(2500);
-    } else {
-      await sleep(7500);
-    }
-  }
-  await p1.waitForSelector('text=Command Center', { timeout: 30000 }).catch(() => {});
-  await sleep(800);
-  await p1.screenshot({ path: `${OUT}/${tag}-tilt-03-shop.png`, fullPage: true });
-  log(`${tag}: tilt captured`);
-  await p1.close(); await p2.close();
-}
-
 async function backgammon(context, tag) {
   const { p1, p2 } = await lobby(context, 'backgammon', 'match5', 'rapid');
   const source = '.bg-point.source';
@@ -120,7 +87,6 @@ async function backgammon(context, tag) {
     const context = await browser.newContext({ viewport: vp });
   // External fonts are blocked in sandboxes and would stall the load event.
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-    try { await tilt(context, tag); } catch (e) { failed = true; console.error(`${tag} tilt: ${e.message}`); }
     try { await backgammon(context, tag); } catch (e) { failed = true; console.error(`${tag} backgammon: ${e.message}`); }
     await context.close();
   }

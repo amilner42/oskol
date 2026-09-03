@@ -74,7 +74,7 @@ pub fn random_playout_with(
     |> result.replace_error("Unknown format"),
   )
   use initial <- result.try(definition.init(
-    format.config,
+    game.default_config(format),
     seats,
     rng.seed(seed),
   ))
@@ -204,7 +204,7 @@ pub fn replay(
     |> result.replace_error("Unknown format"),
   )
   use initial <- result.try(definition.init(
-    format.config,
+    game.default_config(format),
     seats,
     rng.seed(seed),
   ))
@@ -230,7 +230,7 @@ pub fn walk(
     |> result.replace_error("Unknown format"),
   )
   use initial <- result.try(definition.init(
-    format.config,
+    game.default_config(format),
     seats,
     rng.seed(seed),
   ))

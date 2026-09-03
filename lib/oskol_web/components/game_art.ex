@@ -23,29 +23,10 @@ defmodule OskolWeb.GameArt do
   }
 
   @accents %{
-    "tilt" => "#e3453b",
     "backgammon" => "#2f5fd0"
   }
 
   @sprites %{
-    "tilt" => ~w(
-      ........................
-      ..KKKKKKKKKK............
-      ..KBWWWWWWWK............
-      ..KWWWBWWWKKKKKKKKKKKK..
-      ..KWWBBBWWKRWWWWWWWWWK..
-      ..KWBBBBBWKWWWWWWWWWWK..
-      ..KWBBBBBWKWWRRWWRRWWK..
-      ..KWWBWBWWKWRRRRRRRRWK..
-      ..KWWWBWWWKWRRRRRRRRWK..
-      ..KWWWBWWWKWWRRRRRRWWK..
-      ..KWWWWWWWKWWWRRRRWWWK..
-      ..KWWWWWWWKWWWWRRWWWWK..
-      ..KWWWWWWWKWWWWWWWWWWK..
-      YYYKKKKKKKKWWWWWWWWWWK..
-      YKY.......KWWWWWWWWWRK..
-      YYY.......KKKKKKKKKKKK..
-    ),
     "backgammon" => ~w(
       KKKKKKKKKKKKKKKKKKKKKKKK
       KWWTRRRTTTNKKNWWRTTTLLRK

@@ -52,28 +52,26 @@ defmodule OskolWeb.GameChannelConnectionTest do
   end
 
   test "spectators receive every update without legal actions" do
-    %{game_id: game_id, state: state, p1: p1} = started()
+    %{game_id: game_id, state: state, mover: mover} = started()
     {_, _watcher} = join_room(game_id, "watcher")
-    cards = hand_cards(state.instance, p1, 1)
-    {:ok, _, _} = play(game_id, p1, cards)
+    {:ok, _, _} = move(game_id, mover, legal_move(state.instance, mover))
 
     assert_push "update", %{payload: payload}
     assert payload.player_id == "watcher"
     assert payload.update["legal"] == []
     assert payload.update["scene"]["viewer"] == nil
-    assert Enum.any?(payload.update["events"], &(&1["kind"] == "hand_locked_in"))
+    assert Enum.any?(payload.update["events"], &(&1["kind"] == "move_staged"))
   end
 
   test "an update for one player never carries another player's legal actions" do
-    %{game_id: game_id, state: state, p1: p1, p2: p2} = started()
-    {_, _socket2} = join_room(game_id, p2)
-    cards = hand_cards(state.instance, p1, 1)
-    {:ok, _, _} = play(game_id, p1, cards)
+    %{game_id: game_id, state: state, mover: mover, waiting: waiting} = started()
+    {_, _socket2} = join_room(game_id, waiting)
+    {:ok, _, _} = move(game_id, mover, legal_move(state.instance, mover))
 
     assert_push "update", %{payload: payload}
-    assert payload.player_id == p2
-    assert payload.update["scene"]["viewer"] == p2
-    # p2 has not locked in yet, so p2 can still play
-    assert Enum.map(payload.update["legal"], & &1["name"]) == ["play_hand", "discard"]
+    assert payload.player_id == waiting
+    assert payload.update["scene"]["viewer"] == waiting
+    # The mover's staged move is private: the waiting player still only sees resign
+    assert Enum.map(payload.update["legal"], & &1["name"]) == ["resign"]
   end
 end

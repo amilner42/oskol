@@ -24,6 +24,10 @@ pub type Control {
   Bronstein(base_ms: Int, delay_ms: Int)
   /// A fresh allowance for every move; nothing carries over.
   PerMove(ms: Int)
+  /// Poker style: every action gets `move_ms`, and running over dips into
+  /// a bank of `bank_ms` that never refills. What expiry means is the
+  /// game's call (see `Game.timeout`): poker checks or folds and plays on.
+  MoveBank(move_ms: Int, bank_ms: Int)
 }
 
 pub type Preset {
@@ -43,6 +47,24 @@ pub fn presets() -> List(Preset) {
       Bronstein(300_000, 10_000),
     ),
     Preset("per_move", "Per move", "30 s for every move", PerMove(30_000)),
+    Preset(
+      "poker",
+      "Standard",
+      "20 s per action, 60 s time bank",
+      MoveBank(20_000, 60_000),
+    ),
+    Preset(
+      "poker_fast",
+      "Fast",
+      "12 s per action, 30 s time bank",
+      MoveBank(12_000, 30_000),
+    ),
+    Preset(
+      "poker_slow",
+      "Slow",
+      "45 s per action, 2 min time bank",
+      MoveBank(45_000, 120_000),
+    ),
   ]
 }
 
@@ -61,6 +83,8 @@ pub fn control_label(control: Control) -> String {
     Bronstein(base, delay) ->
       minutes(base) <> ", " <> seconds(delay) <> " delay"
     PerMove(ms) -> seconds(ms) <> " per move"
+    MoveBank(move, bank) ->
+      seconds(move) <> " per action + " <> seconds(bank) <> " bank"
   }
 }
 
@@ -98,6 +122,7 @@ pub fn new(control: Control, player_ids: List(PlayerId)) -> Clocks {
     Fischer(base, _) -> base
     Bronstein(base, _) -> base
     PerMove(ms) -> ms
+    MoveBank(_, bank) -> bank
   }
   Clocks(
     control: control,
@@ -174,7 +199,15 @@ pub fn set_running(
           let is_running = clock.running_since != None
           let wants = list.contains(should_run, id)
           case is_running, wants {
-            True, True -> clock
+            True, True ->
+              // An actor who stays on the clock gets a fresh action
+              // allowance under a move bank; other controls keep ticking
+              // through a multi-step turn.
+              case control, actor == Some(id) {
+                MoveBank(_, _), True ->
+                  start(control, stop(control, settle(clock, now), True), now)
+                _, _ -> clock
+              }
             False, False -> clock
             True, False -> stop(control, settle(clock, now), actor == Some(id))
             False, True -> start(control, clock, now)
@@ -203,6 +236,8 @@ fn start(control: Control, clock: PlayerClock, now: Int) -> PlayerClock {
       PlayerClock(..clock, running_since: Some(now), delay_left_ms: delay)
     PerMove(ms) ->
       PlayerClock(remaining_ms: ms, running_since: Some(now), delay_left_ms: 0)
+    MoveBank(move, _) ->
+      PlayerClock(..clock, running_since: Some(now), delay_left_ms: move)
     _ -> PlayerClock(..clock, running_since: Some(now), delay_left_ms: 0)
   }
 }
@@ -220,7 +255,10 @@ pub fn expired(clocks: Clocks, now: Int) -> List(PlayerId) {
     _, None ->
       list.filter(clocks.order, fn(id) {
         let clock = get(clocks, id)
-        clock.running_since != None && settle(clock, now).remaining_ms <= 0
+        let settled = settle(clock, now)
+        clock.running_since != None
+        && settled.delay_left_ms <= 0
+        && settled.remaining_ms <= 0
       })
   }
 }
@@ -269,6 +307,8 @@ pub fn to_json(clocks: Clocks, now: Int) -> Json {
         json.object([
           #("id", json.string(id)),
           #("remaining_ms", json.int(remaining(clocks, id, now))),
+          // Free time left on the current move (delay or action allowance)
+          #("move_ms", json.int(settle(get(clocks, id), now).delay_left_ms)),
           #("running", json.bool(running(clocks, id))),
         ])
       }),
@@ -294,6 +334,12 @@ pub fn control_to_json(control: Control) -> Json {
       ])
     PerMove(ms) ->
       json.object([#("type", json.string("per_move")), #("ms", json.int(ms))])
+    MoveBank(move, bank) ->
+      json.object([
+        #("type", json.string("move_bank")),
+        #("move_ms", json.int(move)),
+        #("bank_ms", json.int(bank)),
+      ])
   }
 }
 

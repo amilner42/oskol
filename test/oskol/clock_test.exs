@@ -37,25 +37,26 @@ defmodule Oskol.Game.ClockTest do
   test "a player who runs out of time forfeits and everyone is told" do
     %{game_id: game_id, p1: p1, p2: p2} = lobby()
     Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
-    # Both Tilt players are on the clock at once; 150 ms each.
+    # Only the player to move is charged; 150 ms.
     {:ok, state} = GameServer.start_game(game_id, 11, {:fischer, 150, 0})
+    mover = mover(state.instance, [p1, p2])
+    waiting = if mover == p1, do: p2, else: p1
     update = GameKit.player_update(state.instance, p1)
     assert update["clock"]["enabled"]
     assert update["clock"]["label"] == "0 min + 0 s"
-    assert Enum.all?(update["clock"]["players"], & &1["running"])
+    running = update["clock"]["players"] |> Enum.filter(& &1["running"]) |> Enum.map(& &1["id"])
+    assert running == [mover]
 
     # First broadcast is the start itself; the next one is the forfeit.
     assert_receive {:game_state_updated, _started, []}
     assert_receive {:game_state_updated, %{instance: instance}, events}, 1000
     assert GameKit.finished?(instance)
-    assert {:finished, [^p2]} = GameKit.outcome(instance)
+    assert {:finished, [^waiting]} = GameKit.outcome(instance)
     assert Enum.any?(events, &(&1 |> elem(0) == :message))
 
     # The game refuses further play but still answers with an update
-    assert {:error, "The game is over"} =
-             Game.player_action(game_id, p1, %{"name" => "discard", "params" => %{"cards" => []}})
-
-    assert GameKit.player_update(instance, p2)["clock"]["timed_out"] == p1
+    assert {:error, "The game is over"} = Game.player_action(game_id, mover, simple("roll"))
+    assert GameKit.player_update(instance, waiting)["clock"]["timed_out"] == mover
   end
 
   test "a turn-based game only charges the player to move" do

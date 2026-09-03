@@ -13,7 +13,6 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/string
-import tilt/game as tilt
 
 @external(erlang, "oskol_test_files", "list")
 fn list_dir(dir: String) -> Result(List(String), Dynamic)
@@ -107,7 +106,6 @@ pub fn every_committed_replay_reproduces_its_fingerprint_test() {
   assert replays != []
   list.each(replays, fn(r) {
     case r.game {
-      "tilt" -> check(tilt.game(), r)
       "backgammon" -> check(backgammon.game(), r)
       other ->
         panic as {

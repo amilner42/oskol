@@ -11,15 +11,35 @@ import gamekit/scene.{type PlayerId, type Scene, type Viewer}
 import gleam/dict.{type Dict}
 import gleam/json.{type Json}
 import gleam/list
+import gleam/result
 
 /// Lobby-chosen settings. Kept to integers so it is trivially JSON and every
 /// game can read what it needs with a default.
 pub type Config =
   Dict(String, Int)
 
-/// A named preset of settings offered in the lobby.
+/// One value a setting can take. Picking it merges `config` into the
+/// format's config.
+pub type Choice {
+  Choice(id: String, name: String, config: Config)
+}
+
+/// A setting the game's creator picks within a format: a stake, a speed, a
+/// twist. Every setting has a default so a format always starts.
+pub type Setting {
+  Setting(id: String, name: String, choices: List(Choice), default: String)
+}
+
+/// A named preset of settings offered in the lobby, with the settings the
+/// creator may still tune.
 pub type Format {
-  Format(id: String, name: String, description: String, config: Config)
+  Format(
+    id: String,
+    name: String,
+    description: String,
+    config: Config,
+    settings: List(Setting),
+  )
 }
 
 pub type Info {
@@ -31,6 +51,10 @@ pub type Info {
     min_players: Int,
     max_players: Int,
     formats: List(Format),
+    /// Ids of the time-control presets (see `gamekit/clock`) this game
+    /// offers, in display order. The default is always offered.
+    clocks: List(String),
+    default_clock: String,
   )
 }
 
@@ -42,6 +66,13 @@ pub type Outcome {
   Ongoing
   /// An empty winners list is a draw.
   Finished(winners: List(PlayerId))
+}
+
+/// What happens when a player's clock runs out. Most games forfeit; poker
+/// checks or folds for the player and the hand goes on.
+pub type Timeout(action) {
+  Forfeit
+  Act(action)
 }
 
 pub type Game(state, action) {
@@ -63,6 +94,24 @@ pub type Game(state, action) {
     /// list whenever nobody should be charged (a reveal, a pause, game over).
     /// The framework owns the clocks themselves; see `gamekit/clock`.
     clocks: fn(state) -> List(PlayerId),
+    /// What to do when this player's clock runs out on their turn.
+    timeout: fn(state, PlayerId) -> Timeout(action),
+  )
+}
+
+/// A format with nothing to tune.
+pub fn format(
+  id: String,
+  name: String,
+  description: String,
+  config: Config,
+) -> Format {
+  Format(
+    id: id,
+    name: name,
+    description: description,
+    config: config,
+    settings: [],
   )
 }
 
@@ -77,6 +126,30 @@ pub fn find_format(info: Info, format_id: String) -> Result(Format, Nil) {
   list.find(info.formats, fn(f) { f.id == format_id })
 }
 
+/// The config for a format with the creator's selections (setting id to
+/// choice id) applied over the defaults. Unknown choices are an error;
+/// unknown settings are ignored.
+pub fn configure(
+  format: Format,
+  selections: Dict(String, String),
+) -> Result(Config, String) {
+  list.try_fold(format.settings, format.config, fn(config, setting) {
+    let chosen = case dict.get(selections, setting.id) {
+      Ok(id) -> id
+      Error(_) -> setting.default
+    }
+    case list.find(setting.choices, fn(c) { c.id == chosen }) {
+      Ok(choice) -> Ok(dict.merge(config, choice.config))
+      Error(_) -> Error("Unknown " <> setting.name <> ": " <> chosen)
+    }
+  })
+}
+
+/// The config a format starts with when nothing is tuned.
+pub fn default_config(format: Format) -> Config {
+  configure(format, dict.new()) |> result.unwrap(format.config)
+}
+
 pub fn info_to_json(info: Info) -> Json {
   json.object([
     #("slug", json.string(info.slug)),
@@ -86,6 +159,8 @@ pub fn info_to_json(info: Info) -> Json {
     #("min_players", json.int(info.min_players)),
     #("max_players", json.int(info.max_players)),
     #("formats", json.array(info.formats, format_to_json)),
+    #("clocks", json.array(info.clocks, json.string)),
+    #("default_clock", json.string(info.default_clock)),
   ])
 }
 
@@ -95,6 +170,25 @@ pub fn format_to_json(format: Format) -> Json {
     #("name", json.string(format.name)),
     #("description", json.string(format.description)),
     #("config", json.dict(format.config, fn(k) { k }, json.int)),
+    #(
+      "settings",
+      json.array(format.settings, fn(s) {
+        json.object([
+          #("id", json.string(s.id)),
+          #("name", json.string(s.name)),
+          #("default", json.string(s.default)),
+          #(
+            "choices",
+            json.array(s.choices, fn(c) {
+              json.object([
+                #("id", json.string(c.id)),
+                #("name", json.string(c.name)),
+              ])
+            }),
+          ),
+        ])
+      }),
+    ),
   ])
 }
 

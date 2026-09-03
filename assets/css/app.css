@@ -576,7 +576,3 @@
   border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: var(--highlighter);
 }
 
-/* Tilt shop tiles */
-.shop-tile { box-shadow: 4px 4px 0 0 var(--ink); }
-.shop-tile:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 0 var(--ink); }
-.shop-tile-on { box-shadow: 5px 5px 0 0 currentColor; transform: translate(-1px, -1px); }

@@ -73,8 +73,8 @@ defmodule Oskol.Game.RoomTest do
             flunk("bots ended with #{inspect(other)}")
         end
 
-        # Short formats always end within the cap
-        if @format in ["short", "single"], do: assert(match?({:finished, _}, result))
+        # A single game always ends within the cap
+        if @format == "single", do: assert(match?({:finished, _}, result))
 
         for p <- [p1, p2] do
           update = GameKit.player_update(state.instance, p)
@@ -91,9 +91,8 @@ defmodule Oskol.Game.RoomTest do
         1..12
         |> Task.async_stream(
           fn n ->
-            slug = if rem(n, 2) == 0, do: "tilt", else: "backgammon"
-            format = if slug == "tilt", do: "short", else: "single"
-            %{game_id: game_id} = room(slug, format)
+            format = if rem(n, 2) == 0, do: "single", else: "match3"
+            %{game_id: game_id} = room("backgammon", format)
             {:ok, _} = GameServer.start_game(game_id, n)
             {game_id, Bots.play(game_id, n, 120)}
           end,
@@ -116,7 +115,7 @@ defmodule Oskol.Game.RoomTest do
   describe "connections" do
     test "a player whose process dies is marked disconnected and can rejoin" do
       pid = sleeper()
-      %{game_id: game_id, p1: p1} = room("tilt", "short", pid1: pid, pid2: self())
+      %{game_id: game_id, p1: p1} = room("backgammon", "single", pid1: pid, pid2: self())
       assert Game.get_server_state(game_id).lobby_status == :ready_to_start
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
 
@@ -133,7 +132,7 @@ defmodule Oskol.Game.RoomTest do
 
     test "reconnecting mid-game keeps the seat and the running instance" do
       pid = sleeper()
-      %{game_id: game_id, p1: p1} = room("tilt", "short", pid1: pid, pid2: self())
+      %{game_id: game_id, p1: p1, p2: p2} = room("backgammon", "single", pid1: pid, pid2: self())
       {:ok, started} = GameServer.start_game(game_id, 5)
 
       send(pid, :stop)
@@ -142,9 +141,9 @@ defmodule Oskol.Game.RoomTest do
       assert Game.get_server_state(game_id).instance == started.instance
       assert {:ok, ^p1, _} = Game.rejoin_game(game_id, "Alice", self())
 
-      cards = hand_cards(started.instance, p1, 1)
-      assert {:ok, _, events} = play(game_id, p1, cards)
-      assert Enum.any?(events, &match?({:custom, "hand_locked_in", _}, &1))
+      mover = mover(started.instance, [p1, p2])
+      assert {:ok, _, events} = move(game_id, mover, legal_move(started.instance, mover))
+      assert Enum.any?(events, &match?({:custom, "move_staged", _}, &1))
     end
 
     test "nobody can join a started game, and a third seat is refused" do
@@ -157,21 +156,21 @@ defmodule Oskol.Game.RoomTest do
 
   describe "rematch" do
     test "keeps the format and the time control" do
-      %{game_id: game_id, p1: p1, p2: p2} = room("tilt", "short", clock: "blitz")
+      %{game_id: game_id, p1: p1, p2: p2} = room("backgammon", "single", clock: "blitz")
       {:ok, state} = GameServer.start_game(game_id, 8)
       assert GameKit.player_update(state.instance, p1)["clock"]["enabled"] == true
 
-      assert {:finished, _} = Bots.play(game_id, 8, 3000)
+      assert {:finished, _} = Bots.play(game_id, 8, 6000)
       assert {:ok, nil} = Game.request_rematch(game_id, p1)
       assert {:ok, rematch_id} = Game.request_rematch(game_id, p2)
 
       rematch = Game.get_server_state(rematch_id)
-      assert Map.values(rematch.format_selections) |> Enum.uniq() == ["short"]
+      assert Map.values(rematch.format_selections) |> Enum.uniq() == ["single"]
       assert Map.values(rematch.clock_selections) |> Enum.uniq() == ["blitz"]
       [new_p1 | _] = rematch.seat_order
       update = GameKit.player_update(rematch.instance, new_p1)
       assert update["clock"]["enabled"] == true
-      assert update["clock"]["label"] =~ ~r/blitz/i or update["clock"]["label"] != ""
+      assert update["clock"]["label"] != ""
       refute GameKit.finished?(rematch.instance)
     end
   end

@@ -1,17 +1,16 @@
 module MainUpdateTest exposing (suite)
 
 {-| The app's update loop fed with real payloads: replaying a fixture through
-`applyPayload` must never lose the game state, and the score reveal must
-start and hold the board until dismissed.
+`applyPayload` must keep the latest payload and legal actions, and the
+channel messages must land where they should.
 -}
 
 import Dict
 import Expect
 import FixtureLoader exposing (Fixture)
-import Main
-import Protocol exposing (Event(..), GamePayload, Update)
+import Main exposing (ConnectionStatus(..), Model, Msg(..))
+import Protocol exposing (GamePayload, ServerMessage(..), Update)
 import Test exposing (Test, describe, test)
-import Types exposing (..)
 
 
 payload : Fixture -> String -> Update -> GamePayload
@@ -39,12 +38,12 @@ feed fixture model update =
 suite : Test
 suite =
     describe "Main.update with fixture payloads"
-        (List.map replay FixtureLoader.all ++ [ tiltReveal ])
+        (List.map replay FixtureLoader.all ++ [ channelMessages ])
 
 
 replay : Fixture -> Test
 replay fixture =
-    test (fixture.name ++ " replays without losing state") <|
+    test (fixture.name ++ " replays and always shows the latest payload") <|
         \_ ->
             let
                 updates =
@@ -53,78 +52,39 @@ replay fixture =
                 final =
                     List.foldl (\u m -> feed fixture m u) (start fixture) updates
 
-                ok m =
-                    case ( fixture.game, m.gameState ) of
-                        ( "tilt", Success _ ) ->
-                            True
-
-                        ( "tilt", _ ) ->
-                            False
-
-                        _ ->
-                            m.payload /= Nothing
+                last =
+                    List.reverse updates |> List.head
             in
             Expect.all
-                [ \m -> Expect.equal True (ok m)
-                , \m -> Expect.equal (List.length updates > 0) True
+                [ \m -> Expect.equal (Maybe.map .legal last) (Just m.legal)
+                , \m -> Expect.equal (Maybe.map .scene last) (Maybe.map (\p -> p.update.scene) m.payload)
                 , \m -> Expect.equal (Just "p1") m.playerId
+                , \m -> Expect.equal Connected m.connectionStatus
                 ]
                 final
 
 
-tiltReveal : Test
-tiltReveal =
-    test "a hands_resolved payload starts the reveal and holds the playing view until dismissed" <|
+channelMessages : Test
+channelMessages =
+    test "errors and connection status are kept, a lobby message only marks the connection live" <|
         \_ ->
-            case FixtureLoader.byGame "tilt" of
-                fixture :: _ ->
-                    let
-                        updates =
-                            (fixture.initial :: List.map .updates fixture.steps) |> List.filterMap (Dict.get "p1")
+            let
+                model =
+                    Main.init { gameId = "g", gameSlug = "backgammon", playerId = Just "p1" } |> Tuple.first
 
-                        isResolved u =
-                            List.any
-                                (\e ->
-                                    case e of
-                                        Custom "hands_resolved" _ ->
-                                            True
+                withError =
+                    Main.update (ServerMessageReceived (ErrorMessage "Not your turn")) model |> Tuple.first
 
-                                        _ ->
-                                            False
-                                )
-                                u.events
+                dropped =
+                    Main.update (ServerMessageReceived (StatusMessage "disconnected")) withError |> Tuple.first
 
-                        beforeAndAt =
-                            updates |> List.indexedMap Tuple.pair |> List.filter (\( _, u ) -> isResolved u) |> List.head
-                    in
-                    case beforeAndAt of
-                        Just ( index, resolved ) ->
-                            let
-                                model =
-                                    List.foldl (\u m -> feed fixture m u) (start fixture) (List.take index updates)
-
-                                afterReveal =
-                                    feed fixture model resolved
-
-                                dismissed =
-                                    Main.update DismissResults afterReveal |> Tuple.first
-                            in
-                            Expect.all
-                                [ \_ -> Expect.equal True afterReveal.viewingResults
-                                , \_ -> Expect.notEqual Nothing afterReveal.currentAnimationData
-                                , \_ ->
-                                    case afterReveal.gameState of
-                                        Success (PlayingView p) ->
-                                            Expect.notEqual Nothing p.pendingAnimation
-
-                                        _ ->
-                                            Expect.fail "reveal should show the playing view"
-                                , \_ -> Expect.equal False dismissed.viewingResults
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "fixture has no hands_resolved step"
-
-                [] ->
-                    Expect.fail "no tilt fixture"
+                lobby =
+                    Main.update (ServerMessageReceived LobbyMessage) dropped |> Tuple.first
+            in
+            Expect.all
+                [ \_ -> Expect.equal (Just "Not your turn") withError.error
+                , \_ -> Expect.equal Disconnected dropped.connectionStatus
+                , \_ -> Expect.equal Connected lobby.connectionStatus
+                , \_ -> Expect.equal Nothing lobby.payload
+                ]
+                ()

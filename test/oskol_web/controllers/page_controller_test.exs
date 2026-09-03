@@ -5,6 +5,6 @@ defmodule OskolWeb.PageControllerTest do
     conn = get(conn, ~p"/")
     html = html_response(conn, 200)
     assert html =~ "SELECT YOUR GAME"
-    assert html =~ "Tilt"
+    assert html =~ "Backgammon"
   end
 end

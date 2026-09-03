@@ -93,7 +93,7 @@ pub fn playout_json(
     |> result.replace_error("Unknown format"),
   )
   use initial <- result.try(definition.init(
-    format.config,
+    game.default_config(format),
     seats,
     rng.seed(seed),
   ))

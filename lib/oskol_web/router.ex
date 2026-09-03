@@ -31,9 +31,9 @@ defmodule OskolWeb.Router do
 
     # The game library
     live "/", LandingLive, :library
-    # One game's start page and lobby, e.g. /tilt
+    # One game's start page and lobby, e.g. /backgammon
     live "/:slug", LandingLive, :game
-    # A running game, e.g. /tilt/abc123
+    # A running game, e.g. /backgammon/abc123
     get "/:slug/:id", PageController, :play
   end
 end
