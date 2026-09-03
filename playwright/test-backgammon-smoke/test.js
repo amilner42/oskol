@@ -40,29 +40,24 @@ async function main() {
     watch(p1, 'p1');
     await p1.goto(`${BASE}/backgammon`);
     await p1.waitForSelector('[data-phx-main].phx-connected');
+    // The creator picks everything, then shares the link.
     await p1.fill('input[name="player_name"]', 'Alice');
+    await p1.click('#format-match3');
+    await p1.click('#clock-blitz');
     await p1.click('#create-game');
-    await p1.waitForSelector('#format-match3');
+    await p1.waitForSelector('#share-link');
     const gameId = new URL(p1.url()).searchParams.get('game');
     log(`Game ${gameId} created`);
+    await p1.screenshot({ path: `${SHOTS}/01-lobby.png` });
 
+    // The opponent opens the link, types a name, and the game starts.
     const p2 = await context.newPage();
     watch(p2, 'p2');
     await p2.goto(`${BASE}/backgammon?game=${gameId}`);
     await p2.waitForSelector('[data-phx-main].phx-connected');
-    await sleep(500);
+    await p2.waitForSelector('text=Match to 3');
     await p2.fill('input[name="player_name"]', 'Bob');
     await p2.click('#join-game');
-    await p2.waitForSelector('#format-match3');
-
-    await p1.click('#format-match3');
-    await p2.click('#format-match3');
-    await p1.click('#clock-blitz');
-    await p1.waitForSelector('text=Agree on a time control');
-    await p2.click('#clock-blitz');
-    await p1.waitForSelector('text=Both picked Match to 3');
-    await p1.screenshot({ path: `${SHOTS}/01-lobby.png` });
-    await p1.click('#start-game');
     await p1.waitForURL(`**/backgammon/${gameId}**`);
     await p2.waitForURL(`**/backgammon/${gameId}**`);
     log('Both players on the game page');

@@ -4,12 +4,14 @@ defmodule OskolWeb.LandingLive do
   start page is a patch, not a page load:
 
     * `/` the library: every registered game as a poster.
-    * `/:slug` one game's start page: create a game, or join through an invite
-      link, then the lobby where both players agree on a format and a clock.
+    * `/:slug` one game's start page. The creator picks a mode, its settings
+      and a clock, types a name and gets a link. The opponent opens the link,
+      types a name, and the game starts.
   """
   use OskolWeb, :live_view
 
   alias Oskol.Game
+  alias Oskol.Game.GameServerState
   alias Oskol.GameKit
   alias OskolWeb.GameArt
 
@@ -24,15 +26,14 @@ defmodule OskolWeb.LandingLive do
         page: :library,
         slug: nil,
         info: nil,
-        step: :game_name,
+        step: :create,
+        setup: nil,
         game_name: "",
         player_name: "",
         error: nil,
         inviter_name: nil,
         player_id: nil,
         server_state: nil,
-        selected_format: nil,
-        selected_clock: "none",
         disconnected_players: [],
         page_title: nil
       )
@@ -69,14 +70,13 @@ defmodule OskolWeb.LandingLive do
                   slug: slug,
                   info: info,
                   page_title: info["name"],
-                  step: :game_name,
+                  step: :create,
+                  setup: GameServerState.default_setup(info),
                   game_name: "",
                   error: nil,
                   inviter_name: nil,
                   player_id: nil,
                   server_state: nil,
-                  selected_format: nil,
-                  selected_clock: "none",
                   disconnected_players: []
                 )
               else
@@ -105,13 +105,13 @@ defmodule OskolWeb.LandingLive do
 
     cond do
       game_name == "" ->
-        assign(socket, step: :game_name, game_name: "")
+        assign(socket, step: :create, game_name: "")
 
-      socket.assigns.step in [:joining, :lobby] and socket.assigns.game_name == game_name ->
+      socket.assigns.step in [:joining, :waiting] and socket.assigns.game_name == game_name ->
         socket
 
       connected?(socket) && name_from_url && name_from_url != "" ->
-        auto_rejoin_lobby(socket, game_name, name_from_url)
+        auto_rejoin(socket, game_name, name_from_url)
 
       connected?(socket) ->
         check_game_for_reconnect(socket, game_name)
@@ -127,14 +127,16 @@ defmodule OskolWeb.LandingLive do
          {_id, conn} <- Enum.find(server_state.connections, fn {_id, c} -> c.connected end) do
       assign(socket,
         og_title: "#{conn.name} challenged you to #{socket.assigns.info["name"]}",
-        og_description: socket.assigns.info["tagline"]
+        og_description: GameServerState.summary(server_state)
       )
     else
       _ -> socket
     end
   end
 
-  defp auto_rejoin_lobby(socket, game_name, player_name) do
+  # A player came back with their name in the URL: reconnect them, or seat
+  # them if the game has not started and there is room.
+  defp auto_rejoin(socket, game_name, player_name) do
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
@@ -144,7 +146,7 @@ defmodule OskolWeb.LandingLive do
             if new_state.instance != nil do
               push_navigate(socket, to: play_path(socket, game_name, player_name))
             else
-              enter_lobby(socket, game_name, player_name, player_id, new_state)
+              enter_waiting(socket, game_name, player_name, player_id, new_state)
             end
 
           {:error, _reason} ->
@@ -153,7 +155,7 @@ defmodule OskolWeb.LandingLive do
             if server_state.instance == nil do
               case Game.join_game(game_name, player_name, self()) do
                 {:ok, player_id, new_state} ->
-                  enter_lobby(socket, game_name, player_name, player_id, new_state)
+                  after_join(socket, game_name, player_name, player_id, new_state)
 
                 {:error, _} ->
                   assign(socket, step: :player_name, game_name: game_name)
@@ -212,22 +214,46 @@ defmodule OskolWeb.LandingLive do
     end
   end
 
-  defp enter_lobby(socket, game_name, player_name, player_id, server_state) do
+  defp enter_waiting(socket, game_name, player_name, player_id, server_state) do
     assign(socket,
-      step: :lobby,
+      step: :waiting,
       game_name: game_name,
       player_name: player_name,
       player_id: player_id,
       server_state: server_state,
-      selected_format: Map.get(server_state.format_selections, player_id),
-      selected_clock: Map.get(server_state.clock_selections, player_id, "none"),
       error: nil
     )
+  end
+
+  # After seating a player: straight into the game if it started, else wait.
+  defp after_join(socket, game_name, player_name, player_id, server_state) do
+    if server_state.instance != nil do
+      push_navigate(socket, to: play_path(socket, game_name, player_name))
+    else
+      socket
+      |> enter_waiting(game_name, player_name, player_id, server_state)
+      |> push_patch(to: lobby_path(socket, game_name, player_name))
+    end
   end
 
   # ---------- Events ----------
 
   @impl true
+  def handle_event("pick_format", %{"format" => format_id}, socket) do
+    setup = %{socket.assigns.setup | format: format_id, selections: %{}}
+    {:noreply, assign(socket, setup: setup, error: nil)}
+  end
+
+  def handle_event("pick_setting", %{"setting" => setting, "choice" => choice}, socket) do
+    setup = socket.assigns.setup
+    setup = %{setup | selections: Map.put(setup.selections, setting, choice)}
+    {:noreply, assign(socket, setup: setup, error: nil)}
+  end
+
+  def handle_event("pick_clock", %{"clock" => clock_id}, socket) do
+    {:noreply, assign(socket, setup: %{socket.assigns.setup | clock: clock_id}, error: nil)}
+  end
+
   def handle_event("new_game", %{"player_name" => player_name}, socket) do
     player_name = String.trim(player_name)
 
@@ -238,15 +264,11 @@ defmodule OskolWeb.LandingLive do
       {:ok, _pid} = Game.find_or_start_game(game_id, socket.assigns.slug)
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
 
-      case Game.join_game(game_id, player_name, self()) do
-        {:ok, player_id, new_state} ->
-          {:noreply,
-           socket
-           |> enter_lobby(game_id, player_name, player_id, new_state)
-           |> push_patch(to: lobby_path(socket, game_id, player_name))}
-
-        {:error, reason} ->
-          {:noreply, assign(socket, error: format_error(reason))}
+      with {:ok, _} <- Game.configure(game_id, socket.assigns.setup),
+           {:ok, player_id, new_state} <- Game.join_game(game_id, player_name, self()) do
+        {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
+      else
+        {:error, reason} -> {:noreply, assign(socket, error: format_error(reason))}
       end
     end
   end
@@ -276,22 +298,12 @@ defmodule OskolWeb.LandingLive do
 
       case Game.join_game(game_id, player_name, self()) do
         {:ok, player_id, new_state} ->
-          {:noreply,
-           socket
-           |> enter_lobby(game_id, player_name, player_id, new_state)
-           |> push_patch(to: lobby_path(socket, game_id, player_name))}
+          {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
 
         {:error, :name_taken} ->
           case Game.rejoin_game(game_id, player_name, self()) do
             {:ok, player_id, new_state} ->
-              if new_state.instance != nil do
-                {:noreply, push_navigate(socket, to: play_path(socket, game_id, player_name))}
-              else
-                {:noreply,
-                 socket
-                 |> enter_lobby(game_id, player_name, player_id, new_state)
-                 |> push_patch(to: lobby_path(socket, game_id, player_name))}
-              end
+              {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
 
             {:error, _reason} ->
               {:noreply, assign(socket, step: :joining, error: "That name is already taken")}
@@ -314,48 +326,7 @@ defmodule OskolWeb.LandingLive do
 
     case Game.rejoin_game(game_id, name, self()) do
       {:ok, player_id, new_state} ->
-        if new_state.instance != nil do
-          {:noreply, push_navigate(socket, to: play_path(socket, game_id, name))}
-        else
-          {:noreply,
-           socket
-           |> enter_lobby(game_id, name, player_id, new_state)
-           |> push_patch(to: lobby_path(socket, game_id, name))}
-        end
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  def handle_event("select_format", %{"format" => format_id}, socket) do
-    case Game.select_format(socket.assigns.game_name, socket.assigns.player_id, format_id) do
-      {:ok, new_state} ->
-        {:noreply,
-         assign(socket, server_state: new_state, selected_format: format_id, error: nil)}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  def handle_event("select_clock", %{"clock" => clock_id}, socket) do
-    case Game.select_clock(socket.assigns.game_name, socket.assigns.player_id, clock_id) do
-      {:ok, new_state} ->
-        {:noreply, assign(socket, server_state: new_state, selected_clock: clock_id, error: nil)}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  def handle_event("start_game", _params, socket) do
-    game_id = socket.assigns.game_name
-
-    case Game.start_game_session(game_id) do
-      {:ok, _new_state} ->
-        {:noreply,
-         push_navigate(socket, to: play_path(socket, game_id, socket.assigns.player_name))}
+        {:noreply, after_join(socket, game_id, name, player_id, new_state)}
 
       {:error, reason} ->
         {:noreply, assign(socket, error: format_error(reason))}
@@ -364,7 +335,7 @@ defmodule OskolWeb.LandingLive do
 
   @impl true
   def handle_info({:game_state_updated, new_state, _events}, socket) do
-    if new_state.instance != nil do
+    if new_state.instance != nil and socket.assigns.player_name != "" do
       {:noreply,
        push_navigate(socket,
          to: play_path(socket, socket.assigns.game_name, socket.assigns.player_name)
@@ -402,7 +373,9 @@ defmodule OskolWeb.LandingLive do
   defp format_error(:invalid_name), do: "Invalid name"
   defp format_error(:unknown_format), do: "Unknown game mode"
   defp format_error(:unknown_clock), do: "Unknown time control"
-  defp format_error(:no_format_agreement), do: "Both players must pick the same mode and clock"
+  defp format_error(:unknown_setting), do: "Unknown setting"
+  defp format_error(:unknown_choice), do: "Unknown choice"
+  defp format_error(:game_already_started), do: "That game already started"
   defp format_error(reason) when is_atom(reason), do: "Error: #{reason}"
   defp format_error(reason), do: "Error: #{inspect(reason)}"
 
@@ -423,6 +396,7 @@ defmodule OskolWeb.LandingLive do
             slug={@slug}
             info={@info}
             step={@step}
+            setup={@setup}
             error={@error}
             game_name={@game_name}
             inviter_name={@inviter_name}
@@ -430,8 +404,6 @@ defmodule OskolWeb.LandingLive do
             disconnected_players={@disconnected_players}
             player_id={@player_id}
             player_name={@player_name}
-            selected_format={@selected_format}
-            selected_clock={@selected_clock}
             clock_presets={@clock_presets}
           />
         <% end %>
@@ -484,7 +456,7 @@ defmodule OskolWeb.LandingLive do
         <span class="hl px-1">PLAY IN SECONDS.</span>
       </h1>
       <p class="mt-5 text-base sm:text-lg max-w-xl mx-auto" style="color: var(--pencil)">
-        Two-player games with nothing to install and no signup. Pick a cabinet, share the invite, and your opponent is in.
+        The classics, two players, nothing to install and no signup. Pick a cabinet, share the invite, and your opponent is in.
       </p>
     </section>
 
@@ -496,9 +468,9 @@ defmodule OskolWeb.LandingLive do
     </section>
 
     <section class="mt-14 grid gap-4 sm:grid-cols-3">
-      <.step n="1" title="PICK A GAME">Every game has its own page and link.</.step>
-      <.step n="2" title="SHARE THE INVITE">Your opponent opens it, types a name, done.</.step>
-      <.step n="3" title="PRESS START">Agree on a mode and an optional clock, then play.</.step>
+      <.step n="1" title="PICK A GAME">Choose a mode, the settings and an optional clock.</.step>
+      <.step n="2" title="SHARE THE INVITE">Your opponent opens it and types a name.</.step>
+      <.step n="3" title="PLAY">The game starts the moment they join.</.step>
     </section>
     """
   end
@@ -583,6 +555,7 @@ defmodule OskolWeb.LandingLive do
   attr :slug, :string, required: true
   attr :info, :map, required: true
   attr :step, :atom, required: true
+  attr :setup, :map, default: nil
   attr :error, :string, default: nil
   attr :game_name, :string, default: ""
   attr :inviter_name, :string, default: nil
@@ -590,8 +563,6 @@ defmodule OskolWeb.LandingLive do
   attr :disconnected_players, :list, default: []
   attr :player_id, :string, default: nil
   attr :player_name, :string, default: ""
-  attr :selected_format, :string, default: nil
-  attr :selected_clock, :string, default: "none"
   attr :clock_presets, :list, default: []
 
   defp game_page(assigns) do
@@ -628,26 +599,22 @@ defmodule OskolWeb.LandingLive do
           {@error}
         </p>
         <%= case @step do %>
-          <% :game_name -> %>
-            <.create_form />
+          <% :create -> %>
+            <.create_form info={@info} setup={@setup} clock_presets={@clock_presets} />
           <% :player_name -> %>
-            <.join_form inviter_name={@inviter_name} />
+            <.join_form inviter_name={@inviter_name} server_state={@server_state} />
           <% :joining -> %>
             <.joining
               server_state={@server_state}
               disconnected_players={@disconnected_players}
               game_name={@game_name}
             />
-          <% :lobby -> %>
-            <.lobby
+          <% :waiting -> %>
+            <.waiting
               slug={@slug}
-              info={@info}
               game_name={@game_name}
               player_id={@player_id}
               server_state={@server_state}
-              selected_format={@selected_format}
-              selected_clock={@selected_clock}
-              clock_presets={@clock_presets}
             />
         <% end %>
       </div>
@@ -655,30 +622,101 @@ defmodule OskolWeb.LandingLive do
     """
   end
 
+  attr :info, :map, required: true
+  attr :setup, :map, required: true
+  attr :clock_presets, :list, required: true
+
   defp create_form(assigns) do
+    formats = Map.get(assigns.info, "formats", [])
+    format = Enum.find(formats, &(&1["id"] == assigns.setup.format)) || List.first(formats)
+    offered = Map.get(assigns.info, "clocks", [])
+
+    assigns =
+      assign(assigns,
+        formats: formats,
+        settings: (format && format["settings"]) || [],
+        clocks: Enum.filter(assigns.clock_presets, &(&1["id"] in offered))
+      )
+
     ~H"""
-    <p class="pixel text-[10px] mb-3" style="color: var(--pen)">PLAYER 1 · ENTER YOUR NAME</p>
-    <form phx-submit="new_game" class="grid gap-3 sm:grid-cols-[1fr_auto] items-center">
-      <.name_input placeholder="e.g. Alice" />
-      <.cta type="submit" id="create-game">CREATE GAME</.cta>
-      <p class="sm:col-span-2 text-sm" style="color: var(--pencil)">
-        You'll get a link to send your opponent. They need no account either.
-      </p>
+    <form phx-submit="new_game" class="space-y-7">
+      <div>
+        <p class="pixel text-[10px] mb-3" style="color: var(--pen)">PLAYER 1 · YOUR NAME</p>
+        <.name_input placeholder="e.g. Alice" />
+      </div>
+
+      <div>
+        <h3 class="pixel text-[10px] mb-2" style="color: var(--ink)">GAME MODE</h3>
+        <div class={["grid gap-3", format_grid_class(length(@formats))]}>
+          <.format_tile
+            :for={format <- @formats}
+            format={format}
+            selected={@setup.format == format["id"]}
+          />
+        </div>
+      </div>
+
+      <div :for={setting <- @settings} id={"setting-#{setting["id"]}"}>
+        <h3 class="pixel text-[10px] mb-2" style="color: var(--ink)">
+          {String.upcase(setting["name"])}
+        </h3>
+        <div class="flex flex-wrap gap-2">
+          <.choice_chip
+            :for={choice <- setting["choices"]}
+            setting={setting}
+            choice={choice}
+            selected={Map.get(@setup.selections, setting["id"], setting["default"]) == choice["id"]}
+          />
+        </div>
+      </div>
+
+      <div>
+        <div class="flex items-baseline justify-between mb-2">
+          <h3 class="pixel text-[10px]" style="color: var(--ink)">TIME CONTROL</h3>
+          <span class="text-xs" style="color: var(--pencil)">optional</span>
+        </div>
+        <div class="flex flex-wrap gap-2" id="clock-picker">
+          <.clock_chip
+            :for={preset <- @clocks}
+            preset={preset}
+            selected={@setup.clock == preset["id"]}
+          />
+        </div>
+      </div>
+
+      <div class="text-center space-y-3">
+        <.cta type="submit" id="create-game" color="green">CREATE GAME</.cta>
+        <p class="text-sm" style="color: var(--pencil)">
+          You'll get a link to send your opponent. They type a name and the game starts.
+        </p>
+      </div>
     </form>
     """
   end
 
   attr :inviter_name, :string, default: nil
+  attr :server_state, :any, default: nil
 
   defp join_form(assigns) do
+    summary =
+      if assigns.server_state, do: GameServerState.summary(assigns.server_state), else: nil
+
+    assigns = assign(assigns, summary: summary)
+
     ~H"""
     <p :if={@inviter_name} class="mb-1 text-lg">
       <span class="text-opponent font-bold">{@inviter_name}</span> challenged you.
+    </p>
+    <p :if={@summary} id="setup-summary" class="mb-3 text-sm font-semibold" style="color: var(--ink)">
+      {@summary}
     </p>
     <p class="pixel text-[10px] mb-3" style="color: var(--red)">PLAYER 2 · ENTER YOUR NAME</p>
     <form phx-submit="submit_player_name" class="grid gap-3 sm:grid-cols-[1fr_auto] items-center">
       <.name_input placeholder="e.g. Bob" />
       <.cta type="submit" id="join-game">JOIN GAME</.cta>
+      <p class="sm:col-span-2 text-sm" style="color: var(--pencil)">
+        The game starts as soon as you join.
+      </p>
     </form>
     """
   end
@@ -692,7 +730,7 @@ defmodule OskolWeb.LandingLive do
 
     max_players =
       if assigns.server_state,
-        do: Oskol.Game.GameServerState.max_players(assigns.server_state),
+        do: GameServerState.max_players(assigns.server_state),
         else: 2
 
     count = if assigns.server_state, do: map_size(assigns.server_state.connections), else: 0
@@ -736,15 +774,11 @@ defmodule OskolWeb.LandingLive do
   end
 
   attr :slug, :string, required: true
-  attr :info, :map, required: true
   attr :game_name, :string, required: true
   attr :player_id, :string, required: true
   attr :server_state, :any, required: true
-  attr :selected_format, :string, default: nil
-  attr :selected_clock, :string, default: "none"
-  attr :clock_presets, :list, default: []
 
-  defp lobby(assigns) do
+  defp waiting(assigns) do
     state = assigns.server_state
     me = state.connections[assigns.player_id]
 
@@ -752,39 +786,15 @@ defmodule OskolWeb.LandingLive do
       state.connections
       |> Enum.find(fn {id, _} -> id != assigns.player_id end)
       |> case do
-        {id, conn} ->
-          %{
-            name: conn.name,
-            connected: conn.connected,
-            format: Map.get(state.format_selections, id),
-            clock: Map.get(state.clock_selections, id, "none")
-          }
-
-        nil ->
-          nil
-      end
-
-    formats = Map.get(assigns.info, "formats", [])
-    format_name = Enum.find_value(formats, &(&1["id"] == assigns.selected_format && &1["name"]))
-    ready = state.lobby_status == :ready_to_start
-
-    status =
-      cond do
-        opponent == nil -> "Waiting for your opponent to open the link…"
-        assigns.selected_format == nil -> "Choose a game mode"
-        opponent.format == nil -> "Waiting for #{opponent.name} to choose a mode…"
-        assigns.selected_format != opponent.format -> "Pick the same mode to start"
-        assigns.selected_clock != opponent.clock -> "Agree on a time control to start"
-        true -> "Both picked #{format_name}. Ready when you are."
+        {_id, conn} -> conn.name
+        nil -> nil
       end
 
     assigns =
       assign(assigns,
         me: me,
         opponent: opponent,
-        formats: formats,
-        ready: ready,
-        status: status,
+        summary: GameServerState.summary(state),
         invite_url: url(~p"/#{assigns.slug}?game=#{assigns.game_name}")
       )
 
@@ -801,112 +811,82 @@ defmodule OskolWeb.LandingLive do
         <div class="text-center min-w-[7rem]">
           <p class="pixel text-[9px] mb-1" style="color: var(--red)">2P</p>
           <%= if @opponent do %>
-            <p class="text-opponent text-xl sm:text-2xl font-black truncate">{@opponent.name}</p>
+            <p class="text-opponent text-xl sm:text-2xl font-black truncate">{@opponent}</p>
           <% else %>
             <p class="text-xl sm:text-2xl font-black blink" style="color: var(--pencil)">?</p>
           <% end %>
         </div>
       </div>
 
-      <div :if={@opponent == nil} class="pix-sm p-4 text-center" style="background: var(--paper-2)">
+      <p id="setup-summary" class="text-center font-semibold" style="color: var(--ink)">
+        {@summary}
+      </p>
+
+      <div class="pix-sm p-4 text-center" style="background: var(--paper-2)">
         <p class="pixel text-[10px] mb-2" style="color: var(--ink)">INVITE PLAYER 2</p>
         <.invite_box url={@invite_url} />
       </div>
 
-      <div>
-        <div class="flex items-baseline justify-between mb-2">
-          <h3 class="pixel text-[10px]" style="color: var(--ink)">GAME MODE</h3>
-          <span class="text-xs" style="color: var(--pencil)">both players choose</span>
-        </div>
-        <div class={["grid gap-3", format_grid_class(length(@formats))]}>
-          <.format_tile
-            :for={format <- @formats}
-            format={format}
-            mine={@selected_format == format["id"]}
-            theirs={@opponent != nil and @opponent.format == format["id"]}
-          />
-        </div>
-      </div>
-
-      <div>
-        <div class="flex items-baseline justify-between mb-2">
-          <h3 class="pixel text-[10px]" style="color: var(--ink)">TIME CONTROL</h3>
-          <span class="text-xs" style="color: var(--pencil)">optional</span>
-        </div>
-        <div class="flex flex-wrap gap-2" id="clock-picker">
-          <.clock_chip
-            :for={preset <- @clock_presets}
-            preset={preset}
-            mine={@selected_clock == preset["id"]}
-            theirs={@opponent != nil and @opponent.clock == preset["id"]}
-          />
-        </div>
-      </div>
-
-      <div class="space-y-3 text-center">
-        <p
-          class={["text-sm", @ready && "font-semibold"]}
-          style={if @ready, do: "color: var(--marker-green)", else: "color: var(--pencil)"}
-        >
-          {@status}
-        </p>
-        <.cta phx-click="start_game" disabled={not @ready} id="start-game" color="green">
-          <span class={@ready && "blink"}>PRESS START</span>
-        </.cta>
-        <div :if={@opponent != nil}>
-          <.invite_box url={@invite_url} compact />
-        </div>
-      </div>
+      <p class="text-center text-sm" style="color: var(--pencil)">
+        Waiting for your opponent to open the link… the game starts the moment they join.
+      </p>
     </div>
     """
   end
 
   attr :format, :map, required: true
-  attr :mine, :boolean, default: false
-  attr :theirs, :boolean, default: false
+  attr :selected, :boolean, default: false
 
   defp format_tile(assigns) do
     ~H"""
     <button
-      phx-click="select_format"
+      type="button"
+      phx-click="pick_format"
       phx-value-format={@format["id"]}
       id={"format-#{@format["id"]}"}
-      class={[
-        "tile text-left px-4 py-3",
-        @mine and @theirs and "tile-both",
-        @mine and not @theirs and "tile-mine",
-        @theirs and not @mine and "tile-theirs"
-      ]}
+      class={["tile text-left px-4 py-3", @selected and "tile-mine"]}
     >
       <div class="flex items-center justify-between gap-2">
         <span class="font-bold" style="color: var(--ink)">{@format["name"]}</span>
-        <span class="pixel text-[8px] flex gap-1">
-          <span :if={@mine} class="text-player">1P</span>
-          <span :if={@theirs} class="text-opponent">2P</span>
-        </span>
+        <span :if={@selected} class="pixel text-[8px] text-player">1P</span>
       </div>
       <div class="text-xs mt-0.5" style="color: var(--pencil)">{@format["description"]}</div>
     </button>
     """
   end
 
+  attr :setting, :map, required: true
+  attr :choice, :map, required: true
+  attr :selected, :boolean, default: false
+
+  defp choice_chip(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="pick_setting"
+      phx-value-setting={@setting["id"]}
+      phx-value-choice={@choice["id"]}
+      id={"choice-#{@setting["id"]}-#{@choice["id"]}"}
+      class={["tile px-3.5 py-1.5 text-sm font-semibold", @selected and "tile-mine"]}
+      style="color: var(--ink)"
+    >
+      {@choice["name"]}
+    </button>
+    """
+  end
+
   attr :preset, :map, required: true
-  attr :mine, :boolean, default: false
-  attr :theirs, :boolean, default: false
+  attr :selected, :boolean, default: false
 
   defp clock_chip(assigns) do
     ~H"""
     <button
-      phx-click="select_clock"
+      type="button"
+      phx-click="pick_clock"
       phx-value-clock={@preset["id"]}
       id={"clock-#{@preset["id"]}"}
       title={@preset["description"]}
-      class={[
-        "tile px-3.5 py-1.5 text-sm font-semibold",
-        @mine and @theirs and "tile-both",
-        @mine and not @theirs and "tile-mine",
-        @theirs and not @mine and "tile-theirs"
-      ]}
+      class={["tile px-3.5 py-1.5 text-sm font-semibold", @selected and "tile-mine"]}
       style="color: var(--ink)"
     >
       {@preset["name"]}

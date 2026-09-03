@@ -17,8 +17,10 @@ async function lobby(context, slug, format, clock) {
   await p1.goto(`${BASE}/${slug}`);
   await p1.waitForSelector('[data-phx-main].phx-connected');
   await p1.fill('input[name="player_name"]', 'Alice');
+  await p1.click(`#format-${format}`);
+  if (clock) await p1.click(`#clock-${clock}`);
   await p1.click('#create-game');
-  await p1.waitForSelector(`#format-${format}`);
+  await p1.waitForSelector('#share-link');
   const gameId = new URL(p1.url()).searchParams.get('game');
   const p2 = await context.newPage();
   await p2.goto(`${BASE}/${slug}?game=${gameId}`);
@@ -26,12 +28,6 @@ async function lobby(context, slug, format, clock) {
   await sleep(400);
   await p2.fill('input[name="player_name"]', 'Bob');
   await p2.click('#join-game');
-  await p2.waitForSelector(`#format-${format}`);
-  await p1.click(`#format-${format}`);
-  await p2.click(`#format-${format}`);
-  if (clock) { await p1.click(`#clock-${clock}`); await p2.click(`#clock-${clock}`); }
-  await p1.waitForSelector('text=Both picked');
-  await p1.click('#start-game');
   await p1.waitForURL(`**/${slug}/${gameId}**`);
   await p2.waitForURL(`**/${slug}/${gameId}**`);
   return { p1, p2, gameId };

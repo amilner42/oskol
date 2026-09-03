@@ -14,12 +14,12 @@ defmodule OskolWeb.GameChannelTest do
     {reply, socket}
   end
 
-  test "joining a lobby returns the lobby payload" do
+  test "joining a room that has not started returns the lobby payload" do
     %{game_id: game_id, p1: p1} = lobby()
     {reply, _socket} = join_room(game_id, p1)
     assert reply.payload.type == "lobby"
     assert reply.payload.game == "backgammon"
-    assert Enum.map(reply.payload.connections, & &1.name) == ["Alice", "Bob"]
+    assert Enum.map(reply.payload.connections, & &1.name) == ["Alice"]
   end
 
   test "joining a running game returns this player's scene and legal actions" do

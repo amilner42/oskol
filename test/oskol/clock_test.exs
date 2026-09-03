@@ -4,30 +4,25 @@ defmodule Oskol.Game.ClockTest do
   import Oskol.GameFixtures
 
   alias Oskol.Game
-  alias Oskol.Game.GameServer
   alias Oskol.GameKit
 
-  test "clock presets are offered and default to none" do
+  test "clock presets are offered, a game says which, and none is the default" do
     assert [%{"id" => "none"} | _] = GameKit.clock_presets()
-    %{game_id: game_id, p1: p1} = lobby()
-    state = GameServer.get_state(game_id)
-    assert state.clock_selections[p1] == "none"
-    assert Oskol.Game.GameServerState.check_clock_agreement(state) == {:ok, "none"}
+    {:ok, info} = GameKit.game_info("backgammon")
+    assert "blitz" in info["clocks"]
+    assert info["default_clock"] == "none"
+    %{game_id: game_id} = lobby()
+    assert Game.get_server_state(game_id).setup.clock == "none"
   end
 
-  test "players must agree on a time control" do
-    %{game_id: game_id, p1: p1, p2: p2} = lobby()
-    {:ok, state} = Game.select_clock(game_id, p1, "blitz")
-    assert Oskol.Game.GameServerState.check_clock_agreement(state) == :no_agreement
-    assert {:error, :no_format_agreement} = Game.start_game_session(game_id)
-    assert {:error, :unknown_clock} = Game.select_clock(game_id, p2, "hourglass")
-    {:ok, state} = Game.select_clock(game_id, p2, "blitz")
-    assert Oskol.Game.GameServerState.check_clock_agreement(state) == {:ok, "blitz"}
-    assert {:ok, started} = Game.start_game_session(game_id)
+  test "the creator picks the time control and it applies when the game starts" do
+    %{game_id: game_id, p1: p1} = lobby("single", clock: "blitz")
+    assert {:error, :unknown_clock} = Game.configure(game_id, %{clock: "hourglass"})
+    {:ok, _p2, started} = Game.join_game(game_id, "Bob", nil)
     assert GameKit.player_update(started.instance, p1)["clock"]["label"] == "3 min + 2 s"
   end
 
-  test "updates carry the clock and a lobby with no clock has it disabled" do
+  test "updates carry the clock and a game with no clock has it disabled" do
     %{state: state, p1: p1} = started()
     update = GameKit.player_update(state.instance, p1)
     assert update["clock"]["enabled"] == false
@@ -35,10 +30,10 @@ defmodule Oskol.Game.ClockTest do
   end
 
   test "a player who runs out of time forfeits and everyone is told" do
-    %{game_id: game_id, p1: p1, p2: p2} = lobby()
+    %{game_id: game_id, p1: p1} = lobby("single", seed: 11, control: {:fischer, 150, 0})
     Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
     # Only the player to move is charged; 150 ms.
-    {:ok, state} = GameServer.start_game(game_id, 11, {:fischer, 150, 0})
+    {:ok, p2, state} = Game.join_game(game_id, "Bob", nil)
     mover = mover(state.instance, [p1, p2])
     waiting = if mover == p1, do: p2, else: p1
     update = GameKit.player_update(state.instance, p1)
@@ -60,13 +55,7 @@ defmodule Oskol.Game.ClockTest do
   end
 
   test "a turn-based game only charges the player to move" do
-    game_id = unique_game_id("bg")
-    {:ok, _} = Game.start_game(game_id, "backgammon")
-    {:ok, p1, _} = Game.join_game(game_id, "Alice", nil)
-    {:ok, p2, _} = Game.join_game(game_id, "Bob", nil)
-    {:ok, _} = Game.select_format(game_id, p1, "single")
-    {:ok, _} = Game.select_format(game_id, p2, "single")
-    {:ok, state} = GameServer.start_game(game_id, 3, {:fischer, 60_000, 1000})
+    %{state: state, p1: p1} = started(3, "single", control: {:fischer, 60_000, 1000})
     update = GameKit.player_update(state.instance, p1)
     running = update["clock"]["players"] |> Enum.filter(& &1["running"]) |> Enum.map(& &1["id"])
     assert running == [update["scene"]["data"]["to_move"]]

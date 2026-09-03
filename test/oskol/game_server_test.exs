@@ -7,33 +7,46 @@ defmodule Oskol.Game.GameServerTest do
   alias Oskol.Game.GameServer
   alias Oskol.GameKit
 
-  describe "lobby" do
+  describe "setup" do
     test "unknown game slug is rejected" do
       assert {:error, :unknown_game} = Game.start_game(unique_game_id(), "chess")
     end
 
-    test "players join, agree on a format, and become ready" do
+    test "a fresh room has the game's defaults and the creator's choices are validated" do
       game_id = unique_game_id()
       {:ok, _} = Game.start_game(game_id, "backgammon")
+      state = Game.get_server_state(game_id)
+      assert state.setup.format == "single"
+      assert state.setup.clock == "none"
+
+      assert {:error, :unknown_format} = Game.configure(game_id, %{format: "marathon"})
+      assert {:error, :unknown_clock} = Game.configure(game_id, %{clock: "hourglass"})
+
+      assert {:error, :unknown_setting} =
+               Game.configure(game_id, %{selections: %{"stake" => "x"}})
+
+      assert {:ok, state} = Game.configure(game_id, %{"format" => "match3", "clock" => "blitz"})
+      assert state.setup.format == "match3"
+      assert state.setup.clock == "blitz"
+      assert Oskol.Game.GameServerState.summary(state) == "Match to 3 · Blitz clock"
+    end
+
+    test "the game starts the moment the table is full" do
+      game_id = unique_game_id()
+      {:ok, _} = Game.start_game(game_id, "backgammon")
+      {:ok, _} = Game.configure(game_id, %{format: "match3", seed: 9})
       {:ok, p1, state} = Game.join_game(game_id, "Alice", self())
       assert state.lobby_status == :waiting_for_players
-      {:ok, p2, _} = Game.join_game(game_id, "Bob", self())
-      {:ok, _} = Game.select_format(game_id, p1, "match3")
-      {:ok, state} = Game.select_format(game_id, p2, "match3")
-      assert state.lobby_status == :ready_to_start
+      assert state.instance == nil
+      {:ok, p2, state} = Game.join_game(game_id, "Bob", self())
+      assert state.instance != nil
+      assert state.seed == 9
       assert state.seat_order == [p1, p2]
+      assert {:error, :game_already_started} = Game.configure(game_id, %{format: "single"})
     end
 
-    test "different formats do not make the lobby ready" do
-      %{game_id: game_id, p2: p2} = lobby("single")
-      {:ok, state} = Game.select_format(game_id, p2, "match5")
-      assert state.lobby_status == :waiting_for_players
-      assert {:error, :no_format_agreement} = Game.start_game_session(game_id)
-    end
-
-    test "rejects unknown formats, duplicate names, and a third player" do
-      %{game_id: game_id, p1: p1} = lobby()
-      assert {:error, :unknown_format} = Game.select_format(game_id, p1, "marathon")
+    test "rejects duplicate names and a third player" do
+      %{game_id: game_id} = started()
       assert {:error, :game_full} = Game.join_game(game_id, "Carol", nil)
 
       other = unique_game_id()
@@ -116,8 +129,8 @@ defmodule Oskol.Game.GameServerTest do
       assert {:error, :game_not_finished} = Game.request_rematch(game_id, p1)
     end
 
-    test "creates a new room with the same players and format once everyone is ready" do
-      %{game_id: game_id, p1: p1, p2: p2} = started(3)
+    test "creates a new room with the same players and setup once everyone is ready" do
+      %{game_id: game_id, p1: p1, p2: p2} = started(3, "single", clock: "rapid")
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
       assert {:finished, _} = Oskol.Bots.play(game_id, 3, 6000)
       assert GameKit.finished?(GameServer.get_state(game_id).instance)
@@ -130,13 +143,16 @@ defmodule Oskol.Game.GameServerTest do
       rematch = GameServer.get_state(rematch_id)
       assert rematch.instance != nil
       assert rematch.slug == "backgammon"
+      assert rematch.setup.format == "single"
+      assert rematch.setup.clock == "rapid"
+      # A fresh seed, not the old game's
+      assert rematch.seed != 3
 
       assert Enum.map(rematch.connections, fn {_id, c} -> c.name end) |> Enum.sort() == [
                "Alice",
                "Bob"
              ]
 
-      assert Map.values(rematch.format_selections) |> Enum.uniq() == ["single"]
       # Asking again returns the same rematch id
       assert {:ok, ^rematch_id} = Game.request_rematch(game_id, p1)
     end

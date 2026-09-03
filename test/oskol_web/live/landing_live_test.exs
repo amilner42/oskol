@@ -3,17 +3,36 @@ defmodule OskolWeb.LandingLiveTest do
 
   import Phoenix.LiveViewTest
 
+  # The creator picks everything and submits their name.
+  defp create(conn, opts \\ []) do
+    {:ok, host, _} = live(conn, ~p"/backgammon")
+    if f = opts[:format], do: host |> element("#format-#{f}") |> render_click()
+    if c = opts[:clock], do: host |> element("#clock-#{c}") |> render_click()
+    host |> form("form[phx-submit=new_game]", %{"player_name" => "Alice"}) |> render_submit()
+    path = assert_patch(host)
+    %{"game" => game_id} = URI.decode_query(URI.parse(path).query)
+    {host, game_id}
+  end
+
   test "the library lists every registered game", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/")
     assert html =~ "SELECT YOUR GAME"
     assert has_element?(view, "#game-backgammon", "Backgammon")
   end
 
-  test "a game page offers a new game and links back to the library", %{conn: conn} do
+  test "a game page lets the creator pick a mode and a clock, and links back", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/backgammon")
     assert html =~ "Backgammon"
     assert has_element?(view, "form[phx-submit=new_game]")
+    assert has_element?(view, "#format-single.tile-mine")
+    assert has_element?(view, "#format-match5", "Match to 5")
+    assert has_element?(view, "#clock-none.tile-mine")
+    assert has_element?(view, "#clock-blitz", "Blitz")
     assert has_element?(view, "a[href='/']", "ALL GAMES")
+
+    view |> element("#format-match3") |> render_click()
+    assert has_element?(view, "#format-match3.tile-mine")
+    refute has_element?(view, "#format-single.tile-mine")
   end
 
   test "picking a game from the library is a patch, not a page load", %{conn: conn} do
@@ -31,41 +50,55 @@ defmodule OskolWeb.LandingLiveTest do
     assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, ~p"/nope")
   end
 
-  test "creating a game enters the lobby with the game's formats", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/backgammon")
-
-    html =
-      view
-      |> form("form[phx-submit=new_game]", %{"player_name" => "Alice"})
-      |> render_submit()
-
+  test "creating a game shows the share link and waits for the opponent", %{conn: conn} do
+    {host, game_id} = create(conn, format: "match5", clock: "blitz")
+    html = render(host)
     assert html =~ "Waiting for your opponent"
-    assert has_element?(view, "#format-single", "Single game")
-    assert has_element?(view, "#format-match5", "Match to 5")
-    assert has_element?(view, "#format-unlimited")
-    assert_patch(view)
-    assert view |> element("#share-link") |> render() =~ "/backgammon?game="
+    assert host |> element("#share-link") |> render() =~ "/backgammon?game=#{game_id}"
+    assert host |> element("#setup-summary") |> render() =~ "Match to 5 · Blitz clock"
+    state = Oskol.Game.get_server_state(game_id)
+    assert state.setup.format == "match5"
+    assert state.setup.clock == "blitz"
+    assert state.instance == nil
   end
 
-  test "two players can agree on a format and start", %{conn: conn} do
-    {:ok, host, _} = live(conn, ~p"/backgammon")
-    host |> form("form[phx-submit=new_game]", %{"player_name" => "Alice"}) |> render_submit()
-    path = assert_patch(host)
-    %{"game" => game_id} = URI.decode_query(URI.parse(path).query)
+  test "the opponent opens the link, types a name, and both are in the game", %{conn: conn} do
+    {host, game_id} = create(conn, format: "match3", clock: "blitz")
 
+    {:ok, guest, html} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+    assert html =~ "Alice"
+    assert html =~ "challenged you"
+    assert guest |> element("#setup-summary") |> render() =~ "Match to 3 · Blitz clock"
+
+    guest
+    |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
+    |> render_submit()
+
+    assert_redirect(guest, "/backgammon/#{game_id}?name=Bob")
+    # The creator is told over pubsub; allow for a busy test run
+    assert_redirect(host, "/backgammon/#{game_id}?name=Alice", 2000)
+
+    state = Oskol.Game.get_server_state(game_id)
+    assert state.instance != nil
+    assert Oskol.GameKit.player_update(state.instance, "x")["clock"]["label"] == "3 min + 2 s"
+  end
+
+  test "a later visitor to a started game may only reconnect as a seated player", %{conn: conn} do
+    {_host, game_id} = create(conn)
     {:ok, guest, _} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
 
     guest
     |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
     |> render_submit()
 
-    host |> element("#format-single") |> render_click()
-    guest |> element("#format-single") |> render_click()
+    assert_redirect(guest, "/backgammon/#{game_id}?name=Bob")
 
-    assert render(host) =~ "Both picked Single game"
-    host |> element("#start-game") |> render_click()
-    assert_redirect(host, "/backgammon/#{game_id}?name=Alice")
-    assert Oskol.Game.get_server_state(game_id).instance != nil
+    # Both players' pages went to the game, so their seats show as reconnectable
+    {:ok, late, html} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+    assert html =~ "RECONNECT AS"
+    refute has_element?(late, "form[phx-submit=submit_player_name]")
+    late |> element("button[phx-value-player_name=Bob]") |> render_click()
+    assert_redirect(late, "/backgammon/#{game_id}?name=Bob")
   end
 
   test "the play page serves the Elm client for a known game", %{conn: conn} do
@@ -74,37 +107,5 @@ defmodule OskolWeb.LandingLiveTest do
     assert html_response(conn, 200) =~ "data-game-slug=\"backgammon\""
     assert html_response(conn, 200) =~ "data-player-id=\""
     assert get(build_conn(), ~p"/chess/#{game_id}") |> response(404)
-  end
-end
-
-defmodule OskolWeb.LandingLiveClockTest do
-  use OskolWeb.ConnCase, async: true
-
-  import Phoenix.LiveViewTest
-
-  test "the lobby offers time controls and needs agreement", %{conn: conn} do
-    {:ok, host, _} = live(conn, ~p"/backgammon")
-    host |> form("form[phx-submit=new_game]", %{"player_name" => "Alice"}) |> render_submit()
-    path = assert_patch(host)
-    %{"game" => game_id} = URI.decode_query(URI.parse(path).query)
-
-    {:ok, guest, _} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
-
-    guest
-    |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
-    |> render_submit()
-
-    assert has_element?(host, "#clock-none")
-    assert has_element?(host, "#clock-blitz", "Blitz")
-    host |> element("#format-single") |> render_click()
-    guest |> element("#format-single") |> render_click()
-    host |> element("#clock-blitz") |> render_click()
-    assert render(host) =~ "Agree on a time control"
-    guest |> element("#clock-blitz") |> render_click()
-    assert render(host) =~ "Both picked Single game"
-    host |> element("#start-game") |> render_click()
-    assert_redirect(host, "/backgammon/#{game_id}?name=Alice")
-    state = Oskol.Game.get_server_state(game_id)
-    assert Oskol.GameKit.player_update(state.instance, "x")["clock"]["label"] == "3 min + 2 s"
   end
 end

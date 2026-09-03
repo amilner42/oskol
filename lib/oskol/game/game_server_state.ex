@@ -1,8 +1,8 @@
 defmodule Oskol.Game.GameServerState do
   @moduledoc """
-  Process-level state for one game room: who is connected, what format they
-  picked, and the running game instance once it has started. The game itself
-  is an opaque Gleam instance; this module never inspects it.
+  Process-level state for one game room: who is connected, how the creator
+  set the game up, and the running game instance once it has started. The
+  game itself is an opaque Gleam instance; this module never inspects it.
   """
 
   alias Oskol.GameKit
@@ -18,6 +18,18 @@ defmodule Oskol.Game.GameServerState do
           monitor_ref: reference() | nil
         }
 
+  @typedoc """
+  What the creator picked: a format, its setting choices, a clock preset,
+  and (for tests and tooling) an explicit seed or raw clock control.
+  """
+  @type setup :: %{
+          format: String.t(),
+          selections: %{String.t() => String.t()},
+          clock: String.t(),
+          seed: integer() | nil,
+          control: term() | nil
+        }
+
   @type t :: %__MODULE__{
           game_id: game_id(),
           slug: String.t(),
@@ -28,8 +40,7 @@ defmodule Oskol.Game.GameServerState do
           seat_order: [player_id()],
           lobby_status: lobby_status(),
           last_activity: integer(),
-          format_selections: %{player_id() => String.t()},
-          clock_selections: %{player_id() => String.t()},
+          setup: setup(),
           clock_timer: reference() | nil,
           rematch_ready: MapSet.t(player_id()),
           rematch_game_id: String.t() | nil
@@ -44,8 +55,7 @@ defmodule Oskol.Game.GameServerState do
             seat_order: [],
             lobby_status: :waiting_for_players,
             last_activity: 0,
-            format_selections: %{},
-            clock_selections: %{},
+            setup: %{format: nil, selections: %{}, clock: "none", seed: nil, control: nil},
             clock_timer: nil,
             rematch_ready: MapSet.new(),
             rematch_game_id: nil
@@ -58,18 +68,113 @@ defmodule Oskol.Game.GameServerState do
       game_id: game_id,
       slug: slug,
       info: info,
+      setup: default_setup(info),
       last_activity: System.system_time(:second)
     }
+  end
+
+  @doc "The game's first format with every setting at its default and the default clock."
+  @spec default_setup(map()) :: setup()
+  def default_setup(info) do
+    %{
+      format: info["formats"] |> List.first() |> Map.get("id"),
+      selections: %{},
+      clock: Map.get(info, "default_clock", "none"),
+      seed: nil,
+      control: nil
+    }
+  end
+
+  @doc """
+  Merge a creator's choices into the setup, checking them against the game's
+  formats, settings and clocks. Keys may be atoms or strings.
+  """
+  @spec validate_setup(t(), map()) ::
+          {:ok, setup()}
+          | {:error, :unknown_format | :unknown_clock | :unknown_setting | :unknown_choice}
+  def validate_setup(%__MODULE__{info: info, setup: current}, attrs) do
+    attrs = Map.new(attrs, fn {k, v} -> {to_key(k), v} end)
+    merged = Map.merge(current, Map.take(attrs, [:format, :selections, :clock, :seed, :control]))
+
+    with {:ok, format} <- fetch_format(info, merged.format),
+         :ok <- check_clock(info, merged.clock),
+         {:ok, selections} <- check_selections(format, merged.selections || %{}) do
+      {:ok, %{merged | selections: selections}}
+    end
+  end
+
+  defp to_key(k) when is_atom(k), do: k
+  defp to_key("format"), do: :format
+  defp to_key("selections"), do: :selections
+  defp to_key("clock"), do: :clock
+  defp to_key("seed"), do: :seed
+  defp to_key("control"), do: :control
+  defp to_key(other), do: other
+
+  defp fetch_format(info, id) do
+    case Enum.find(info["formats"] || [], &(&1["id"] == id)) do
+      nil -> {:error, :unknown_format}
+      format -> {:ok, format}
+    end
+  end
+
+  defp check_clock(info, id) do
+    offered = Map.get(info, "clocks", GameKit.clock_ids())
+
+    if id in offered and id in GameKit.clock_ids(),
+      do: :ok,
+      else: {:error, :unknown_clock}
+  end
+
+  defp check_selections(format, selections) do
+    settings = format["settings"] || []
+
+    Enum.reduce_while(selections, {:ok, %{}}, fn {setting_id, choice_id}, {:ok, acc} ->
+      setting_id = to_string(setting_id)
+      choice_id = to_string(choice_id)
+
+      case Enum.find(settings, &(&1["id"] == setting_id)) do
+        nil ->
+          {:halt, {:error, :unknown_setting}}
+
+        setting ->
+          if Enum.any?(setting["choices"], &(&1["id"] == choice_id)),
+            do: {:cont, {:ok, Map.put(acc, setting_id, choice_id)}},
+            else: {:halt, {:error, :unknown_choice}}
+      end
+    end)
+  end
+
+  @doc "The format map the room is set up with."
+  def format(%__MODULE__{info: info, setup: setup}) do
+    Enum.find(info["formats"], &(&1["id"] == setup.format))
+  end
+
+  @doc "One line describing the setup: format, chosen settings, clock."
+  @spec summary(t()) :: String.t()
+  def summary(%__MODULE__{setup: setup} = state) do
+    format = format(state) || %{"name" => setup.format, "settings" => []}
+
+    choices =
+      for setting <- format["settings"] || [],
+          chosen = Map.get(setup.selections, setting["id"], setting["default"]),
+          choice = Enum.find(setting["choices"], &(&1["id"] == chosen)),
+          do: choice["name"]
+
+    clock =
+      case Enum.find(GameKit.clock_presets(), &(&1["id"] == setup.clock)) do
+        %{"id" => "none"} -> []
+        %{"name" => name} -> ["#{name} clock"]
+        nil -> []
+      end
+
+    Enum.join([format["name"] | choices] ++ clock, " · ")
   end
 
   def started?(%__MODULE__{instance: instance}), do: instance != nil
 
   def max_players(%__MODULE__{info: info}), do: Map.get(info, "max_players", 2)
   def min_players(%__MODULE__{info: info}), do: Map.get(info, "min_players", 2)
-
-  def format_ids(%__MODULE__{info: info}) do
-    info |> Map.get("formats", []) |> Enum.map(& &1["id"])
-  end
 
   def full?(%__MODULE__{} = state), do: map_size(state.connections) >= max_players(state)
 
@@ -90,39 +195,14 @@ defmodule Oskol.Game.GameServerState do
     Enum.map(state.seat_order, fn id -> {id, state.connections[id].name} end)
   end
 
-  @doc "Returns `{:ok, format_id}` when every seated player chose the same format."
-  @spec check_format_agreement(t()) :: {:ok, String.t()} | :no_agreement
-  def check_format_agreement(%__MODULE__{} = state) do
-    ids = state.seat_order
-    selections = Enum.map(ids, &Map.get(state.format_selections, &1))
-
-    case Enum.uniq(selections) do
-      [format] when is_binary(format) and length(ids) >= 1 -> {:ok, format}
-      _ -> :no_agreement
-    end
-  end
-
-  @doc "Returns `{:ok, clock_id}` when every seated player chose the same time control (default none)."
-  @spec check_clock_agreement(t()) :: {:ok, String.t()} | :no_agreement
-  def check_clock_agreement(%__MODULE__{} = state) do
-    selections = Enum.map(state.seat_order, &Map.get(state.clock_selections, &1, "none"))
-
-    case Enum.uniq(selections) do
-      [clock_id] when is_binary(clock_id) -> {:ok, clock_id}
-      _ -> :no_agreement
-    end
-  end
-
-  @doc "Recompute lobby status: enough players, all connected, format and clock agreed."
+  @doc "Recompute lobby status: enough players and all of them connected."
   @spec update_lobby_status(t()) :: t()
   def update_lobby_status(%__MODULE__{instance: nil} = state) do
     connected = Enum.count(state.connections, fn {_id, conn} -> conn.connected end)
     count = map_size(state.connections)
 
     ready? =
-      count >= min_players(state) and count <= max_players(state) and connected == count and
-        match?({:ok, _}, check_format_agreement(state)) and
-        match?({:ok, _}, check_clock_agreement(state))
+      count >= min_players(state) and count <= max_players(state) and connected == count
 
     %__MODULE__{state | lobby_status: if(ready?, do: :ready_to_start, else: :waiting_for_players)}
   end
