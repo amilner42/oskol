@@ -75,9 +75,14 @@ async function main() {
 
     const checkers = await mover.locator('.checker').count();
     if (checkers !== 30) throw new Error(`expected 30 checkers on the board, saw ${checkers}`);
+    // The waiter's page may still be joining its channel: wait for its board.
+    await waiter.waitForSelector('.checker', { timeout: 20000 });
     if ((await waiter.locator(source).count()) !== 0) throw new Error('waiting player must not have selectable points');
-    const waiterBody = await waiter.textContent('body');
-    if (!/WAITING FOR (ALICE|BOB)/.test(waiterBody)) throw new Error('waiting player should see whose turn it is');
+    try {
+      await waiter.waitForFunction(() => /WAITING FOR (ALICE|BOB)/.test(document.body.textContent), null, { timeout: 10000 });
+    } catch (_) {
+      throw new Error('waiting player should see whose turn it is');
+    }
     const clockText = await mover.locator('.font-mono .tabular-nums').allTextContents();
     if (!clockText.some((t) => /^\d+:\d\d$/.test(t))) throw new Error(`clocks not rendered: ${clockText}`);
 
