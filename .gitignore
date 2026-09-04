@@ -49,3 +49,8 @@ package-lock.json
 
 # Gleam build artifacts
 /build/
+
+# Derived test corpora: regenerate with `mix oskol.fixtures payloads`.
+# The golden replays in test/fixtures/replays are committed on purpose.
+/test/fixtures/payloads/
+/assets/tests/Fixtures.elm

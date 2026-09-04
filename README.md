@@ -1,10 +1,18 @@
 # Oskol
 
-> **Heads up:** Oskol is a purely vibe-coded side project. It has plenty of rough edges and bugs, but it works. It was inspired by wanting to play something like Balatro competitively against my friends.
+> **Heads up:** Oskol is a purely vibe-coded side project. It has plenty of rough edges and bugs, but it works.
 >
 > I'm **not looking for contributors**, but folks are welcome to fork the repo and deploy their own versions. Licensed under AGPLv3 — see [LICENSE](LICENSE).
 
 **Live at:** [oskol.io](https://oskol.io)
+
+Oskol is a small library of two-player games: the classics, easy to play with a friend from a link, each with optional twists that throw the book out. Today: heads-up no-limit hold'em (cash game or sit-and-go) and backgammon with the doubling cube.
+
+Games are written in Gleam on top of **gamekit**, a tiny framework where a game is one module implementing a small contract (init, decode action, apply, legal actions, scene, outcome, clocks, timeout). The Elixir/Phoenix host and the Elm client are generic: they speak a fixed protocol of scenes, events and action schemas, so adding a game never touches them. See [CLAUDE.md](CLAUDE.md) for the architecture and how to add a game.
+
+- `/` the game library
+- `/poker` set up a poker game and share the invite link it gives you
+- `/backgammon` the same for backgammon
 
 ## Running locally
 
@@ -24,11 +32,3 @@ Ready to run in production? Please [check our deployment guides](https://hexdocs
 * Docs: https://hexdocs.pm/phoenix
 * Forum: https://elixirforum.com/c/phoenix-forum
 * Source: https://github.com/phoenixframework/phoenix
-
-
-### Feedback
-
-- Prefer opponents hand to be smaller, maybe with expand button
-- toast for discards
-- make more clear what the new cards are after a discard
-- once you hit play, make it clear you are waiting for your opponent to play

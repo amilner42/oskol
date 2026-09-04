@@ -1,40 +1,137 @@
 defmodule OskolWeb.LandingLive do
+  @moduledoc """
+  The front door, as one LiveView so moving between the library and a game's
+  start page is a patch, not a page load:
+
+    * `/` the library: every registered game as a poster.
+    * `/:slug` one game's start page. The creator picks a mode, its settings
+      and a clock, types a name and gets a link. The opponent opens the link,
+      types a name, and the game starts.
+  """
   use OskolWeb, :live_view
 
   alias Oskol.Game
+  alias Oskol.Game.GameServerState
+  alias Oskol.GameKit
+  alias OskolWeb.GameArt
+  alias OskolWeb.GameCopy
 
-  @is_dev Mix.env() == :dev
+  # ---------- Mount and navigation ----------
 
   @impl true
   def mount(params, _session, socket) do
-    # Check for ?game= query param
-    game_name = params["game"] || ""
+    socket =
+      assign(socket,
+        games: GameKit.games(),
+        clock_presets: GameKit.clock_presets(),
+        page: :library,
+        slug: nil,
+        info: nil,
+        copy: nil,
+        meta_description: nil,
+        canonical: nil,
+        og_title: nil,
+        og_description: nil,
+        json_ld: nil,
+        step: :create,
+        setup: nil,
+        game_name: "",
+        player_name: "",
+        error: nil,
+        inviter_name: nil,
+        player_id: nil,
+        server_state: nil,
+        disconnected_players: [],
+        page_title: nil
+      )
 
-    # Initial step - will be updated in handle_params once connected
-    step = if game_name != "", do: :player_name, else: :game_name
+    case socket.assigns.live_action do
+      :game ->
+        case GameKit.game_info(params["slug"]) do
+          {:ok, _} -> {:ok, socket}
+          # A real 404 (not a redirect): crawlers and typos should not land on the library.
+          :error -> raise OskolWeb.NotFoundError
+        end
 
-    {:ok,
-     assign(socket,
-       step: step,
-       game_name: game_name,
-       player_name: "",
-       error: nil,
-       inviter_name: nil,
-       # Game connection state (used when in :joining or :lobby steps)
-       player_id: nil,
-       server_state: nil,
-       selected_format: nil,
-       disconnected_players: []
-     )}
+      _ ->
+        {:ok, socket}
+    end
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
-    # Handle URL changes (e.g., from push_patch)
+    case socket.assigns.live_action do
+      :library ->
+        site = GameCopy.site()
+
+        {:noreply,
+         assign(socket,
+           page: :library,
+           slug: nil,
+           info: nil,
+           copy: nil,
+           error: nil,
+           page_title: site.title,
+           meta_description: site.description,
+           canonical: url(~p"/"),
+           og_title: nil,
+           og_description: nil,
+           json_ld: library_json_ld(socket.assigns.games)
+         )}
+
+      :game ->
+        slug = params["slug"]
+
+        case GameKit.game_info(slug) do
+          {:ok, info} ->
+            copy = GameCopy.for_game(info)
+
+            socket =
+              if socket.assigns.slug != slug do
+                # Fresh game page: reset the flow, and stop listening to a
+                # room from the previous page.
+                if socket.assigns.game_name not in [nil, ""] do
+                  Phoenix.PubSub.unsubscribe(Oskol.PubSub, "game:#{socket.assigns.game_name}")
+                end
+
+                assign(socket,
+                  page: :game,
+                  slug: slug,
+                  info: info,
+                  copy: copy,
+                  page_title: copy.title,
+                  meta_description: copy.description,
+                  canonical: url(~p"/#{slug}"),
+                  og_title: copy.title,
+                  og_description: copy.description,
+                  json_ld: game_json_ld(info, copy),
+                  step: :create,
+                  setup: GameServerState.default_setup(info),
+                  game_name: "",
+                  player_name: nil,
+                  error: nil,
+                  inviter_name: nil,
+                  player_id: nil,
+                  server_state: nil,
+                  disconnected_players: []
+                )
+              else
+                assign(socket, page: :game)
+              end
+
+            {:noreply, route_game(socket, params)}
+
+          :error ->
+            {:noreply, push_patch(socket, to: ~p"/")}
+        end
+    end
+  end
+
+  # Decide which step of the game page to show from `?game=` and `?name=`.
+  defp route_game(socket, params) do
     game_name = params["game"] || ""
     name_from_url = params["name"]
 
-    # Set Open Graph meta tags for invite links
     socket =
       if game_name != "" && !name_from_url do
         set_invite_meta_tags(socket, game_name)
@@ -42,273 +139,309 @@ defmodule OskolWeb.LandingLive do
         socket
       end
 
-    socket =
-      cond do
-        # No game param - show game name input
-        game_name == "" ->
-          assign(socket, step: :game_name, game_name: "")
+    cond do
+      game_name == "" ->
+        assign(socket, step: :create, game_name: "")
 
-        # Already past the player_name step (in joining or lobby) - don't change
-        socket.assigns.step in [:joining, :lobby] ->
-          socket
-
-        # Have both game and name params - try to auto-rejoin
-        connected?(socket) && name_from_url && name_from_url != "" ->
-          auto_rejoin_lobby(socket, game_name, name_from_url)
-
-        # Have a game param and connected - check for disconnected players
-        connected?(socket) ->
-          check_game_for_reconnect(socket, game_name)
-
-        # Have a game param but not connected yet - show player name (will recheck on connect)
-        true ->
-          assign(socket, step: :player_name, game_name: game_name)
-      end
-
-    {:noreply, socket}
-  end
-
-  # Set Open Graph meta tags for invite links
-  defp set_invite_meta_tags(socket, game_name) do
-    case Game.lookup_game(game_name) do
-      {:ok, _pid} ->
-        server_state = Game.get_server_state(game_name)
-
-        # Get the first connected player's name (the inviter)
-        inviter_name =
-          server_state.connections
-          |> Enum.find(fn {_id, conn} -> conn.connected end)
-          |> case do
-            {_id, conn} -> conn.name
-            nil -> nil
-          end
-
-        if inviter_name do
-          assign(socket,
-            og_title: "#{inviter_name} challenged you to Oskol Poker",
-            og_description: "Accept the challenge to engage in poker warfare"
-          )
-        else
-          socket
-        end
-
-      :not_found ->
+      socket.assigns.step in [:joining, :waiting] and socket.assigns.game_name == game_name ->
         socket
+
+      connected?(socket) && name_from_url && name_from_url != "" ->
+        auto_rejoin(socket, game_name, name_from_url)
+
+      connected?(socket) ->
+        check_game_for_reconnect(socket, game_name)
+
+      true ->
+        assign(socket, step: :player_name, game_name: game_name)
     end
   end
 
-  # Auto-rejoin lobby when name is in URL
-  defp auto_rejoin_lobby(socket, game_name, player_name) do
+  defp set_invite_meta_tags(socket, game_name) do
+    with {:ok, _pid} <- Game.lookup_game(game_name),
+         server_state <- Game.get_server_state(game_name),
+         {_id, conn} <- Enum.find(server_state.connections, fn {_id, c} -> c.connected end) do
+      assign(socket,
+        og_title: "#{conn.name} challenged you to #{socket.assigns.info["name"]}",
+        og_description: GameServerState.summary(server_state)
+      )
+    else
+      _ -> socket
+    end
+  end
+
+  # A player came back with their name in the URL: reconnect them, or seat
+  # them if the game has not started and there is room.
+  defp auto_rejoin(socket, game_name, player_name) do
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
-        # Subscribe to game updates
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
 
-        # Try to rejoin first (for reconnecting players)
         case Game.rejoin_game(game_name, player_name, self()) do
           {:ok, player_id, new_state} ->
-            # Check if game already started - redirect to game
-            if new_state.game_state != nil do
-              push_navigate(socket, to: ~p"/#{game_name}?name=#{player_name}")
+            if new_state.instance != nil do
+              push_navigate(socket, to: play_path(socket, game_name, player_name))
             else
-              assign(socket,
-                step: :lobby,
-                game_name: game_name,
-                player_name: player_name,
-                player_id: player_id,
-                server_state: new_state,
-                selected_format: Map.get(new_state.format_selections, player_id),
-                error: nil
-              )
+              enter_waiting(socket, game_name, player_name, player_id, new_state)
             end
 
           {:error, _reason} ->
-            # Couldn't rejoin - try joining as a new player if game is still in lobby
             server_state = Game.get_server_state(game_name)
 
-            if server_state.game_state == nil do
-              # Game is still in lobby - try to join as new player
+            if server_state.instance == nil do
               case Game.join_game(game_name, player_name, self()) do
                 {:ok, player_id, new_state} ->
-                  socket
-                  |> assign(
-                    step: :lobby,
-                    game_name: game_name,
-                    player_name: player_name,
-                    player_id: player_id,
-                    server_state: new_state,
-                    selected_format: nil,
-                    error: nil
-                  )
-                  |> push_patch(to: ~p"/?game=#{game_name}&name=#{player_name}")
+                  after_join(socket, game_name, player_name, player_id, new_state)
 
-                {:error, _join_reason} ->
-                  # Join also failed - fall back to reconnect check
-                  check_game_for_reconnect(socket, game_name, player_name)
+                {:error, _} ->
+                  assign(socket, step: :player_name, game_name: game_name)
               end
             else
-              # Game in progress - fall back to reconnect check
-              check_game_for_reconnect(socket, game_name, player_name)
+              assign(socket,
+                step: :player_name,
+                game_name: game_name,
+                error: "That game already started"
+              )
             end
         end
 
       :not_found ->
-        # Game doesn't exist yet - create it and join with the name from URL
-        # This handles the rematch flow where both players have names in URL
-        {:ok, _pid} = Game.find_or_start_game(game_name)
-
-        # Subscribe to game updates
-        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
-
-        # Join the game with the name from URL
-        case Game.join_game(game_name, player_name, self()) do
-          {:ok, player_id, new_state} ->
-            socket
-            |> assign(
-              step: :lobby,
-              game_name: game_name,
-              player_name: player_name,
-              player_id: player_id,
-              server_state: new_state,
-              selected_format: nil,
-              error: nil
-            )
-            |> push_patch(to: ~p"/?game=#{game_name}&name=#{player_name}")
-
-          {:error, reason} ->
-            assign(socket, step: :player_name, game_name: game_name, error: format_error(reason))
-        end
+        assign(socket, step: :player_name, game_name: game_name)
     end
   end
 
-  # Check if the game has disconnected players and show reconnect screen
-  # Optional name_from_url parameter for auto-rejoin attempt
-  defp check_game_for_reconnect(socket, game_name, name_from_url \\ nil) do
+  defp check_game_for_reconnect(socket, game_name) do
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
         server_state = Game.get_server_state(game_name)
 
-        # Subscribe to game updates
-        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
-
-        # Get inviter name (first connected player)
-        inviter_name =
-          server_state.connections
-          |> Enum.find(fn {_id, conn} -> conn.connected end)
-          |> case do
-            {_id, conn} -> conn.name
-            nil -> nil
-          end
-
-        # Check for disconnected players
-        disconnected_players =
+        disconnected =
           server_state.connections
           |> Enum.filter(fn {_id, conn} -> not conn.connected end)
           |> Enum.map(fn {id, conn} -> {id, conn.name} end)
 
-        # If we have a name from URL and it matches a disconnected player, auto-rejoin
-        matching_disconnected =
-          if name_from_url do
-            Enum.find(disconnected_players, fn {_id, name} -> name == name_from_url end)
+        inviter =
+          server_state.connections
+          |> Enum.find(fn {_id, c} -> c.connected end)
+          |> case do
+            {_id, c} -> c.name
+            nil -> nil
           end
 
-        cond do
-          # Auto-rejoin if name from URL matches a disconnected player
-          matching_disconnected != nil ->
-            case Game.rejoin_game(game_name, name_from_url, self()) do
-              {:ok, player_id, new_state} ->
-                if new_state.game_state != nil do
-                  push_navigate(socket, to: ~p"/#{game_name}?name=#{name_from_url}")
-                else
-                  assign(socket,
-                    step: :lobby,
-                    game_name: game_name,
-                    player_name: name_from_url,
-                    player_id: player_id,
-                    server_state: new_state,
-                    selected_format: Map.get(new_state.format_selections, player_id),
-                    error: nil
-                  )
-                end
-
-              {:error, _reason} ->
-                # Still failed - show joining screen
-                assign(socket,
-                  step: :joining,
-                  game_name: game_name,
-                  server_state: server_state,
-                  disconnected_players: disconnected_players
-                )
-            end
-
-          # Game in progress - show join screen with reconnect options
-          server_state.game_state != nil ->
-            assign(socket,
-              step: :joining,
-              game_name: game_name,
-              server_state: server_state,
-              disconnected_players: disconnected_players
-            )
-
-          # Has disconnected players in lobby - show reconnect screen
-          length(disconnected_players) > 0 ->
-            assign(socket,
-              step: :joining,
-              game_name: game_name,
-              server_state: server_state,
-              disconnected_players: disconnected_players
-            )
-
-          # No disconnected players - show player name input
-          true ->
-            assign(socket, step: :player_name, game_name: game_name, inviter_name: inviter_name)
+        if disconnected != [] and server_state.instance != nil do
+          assign(socket,
+            step: :joining,
+            game_name: game_name,
+            server_state: server_state,
+            disconnected_players: disconnected
+          )
+        else
+          assign(socket,
+            step: :player_name,
+            game_name: game_name,
+            inviter_name: inviter,
+            server_state: server_state,
+            disconnected_players: disconnected
+          )
         end
 
       :not_found ->
-        # Game doesn't exist yet - show player name input
-        assign(socket, step: :player_name, game_name: game_name, inviter_name: nil)
+        assign(socket, step: :player_name, game_name: game_name)
     end
   end
 
-  @impl true
-  def handle_event("new_game", %{"player_name" => player_name}, socket) do
-    player_name = String.trim(player_name)
+  defp enter_waiting(socket, game_name, player_name, player_id, server_state) do
+    assign(socket,
+      step: :waiting,
+      game_name: game_name,
+      player_name: player_name,
+      player_id: player_id,
+      server_state: server_state,
+      error: nil
+    )
+  end
 
-    if player_name == "" do
-      {:noreply, assign(socket, error: "Please enter a display name")}
+  # After seating a player: straight into the game if it started, else wait.
+  defp after_join(socket, game_name, player_name, player_id, server_state) do
+    if server_state.instance != nil do
+      push_navigate(socket, to: play_path(socket, game_name, player_name))
     else
-      # Generate a random 6-character game ID
-      game_id = generate_game_id()
+      socket
+      |> enter_waiting(game_name, player_name, player_id, server_state)
+      |> push_patch(to: lobby_path(socket, game_name, player_name))
+    end
+  end
 
-      # Start the game and join immediately
-      {:ok, _pid} = Game.find_or_start_game(game_id)
+  # ---------- Events ----------
 
-      # Subscribe to game updates
+  @impl true
+  def handle_event("pick_format", %{"format" => format_id}, socket) when is_binary(format_id) do
+    setup = %{socket.assigns.setup | format: format_id, selections: %{}}
+    {:noreply, assign(socket, setup: setup, error: nil)}
+  end
+
+  def handle_event("pick_setting", %{"setting" => setting, "choice" => choice}, socket)
+      when is_binary(setting) and is_binary(choice) do
+    setup = socket.assigns.setup
+    setup = %{setup | selections: Map.put(setup.selections, setting, choice)}
+    {:noreply, assign(socket, setup: setup, error: nil)}
+  end
+
+  def handle_event("pick_clock", %{"clock" => clock_id}, socket) when is_binary(clock_id) do
+    {:noreply, assign(socket, setup: %{socket.assigns.setup | clock: clock_id}, error: nil)}
+  end
+
+  def handle_event("new_game", %{"player_name" => player_name}, socket) do
+    case clean_name(player_name) do
+      {:error, message} ->
+        {:noreply, assign(socket, error: message)}
+
+      {:ok, player_name} ->
+        game_id = generate_game_id()
+        {:ok, _pid} = Game.find_or_start_game(game_id, socket.assigns.slug)
+        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+
+        with {:ok, _} <- Game.configure(game_id, socket.assigns.setup),
+             {:ok, player_id, new_state} <- Game.join_game(game_id, player_name, self()) do
+          {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
+        else
+          {:error, reason} -> {:noreply, assign(socket, error: format_error(reason))}
+        end
+    end
+  end
+
+  # Joining never creates a room: an invite to a room that is gone (idle for
+  # an hour, or a restart) says so rather than quietly seating the guest as
+  # the host of a fresh game with default settings.
+  def handle_event("submit_player_name", %{"player_name" => player_name}, socket) do
+    game_id = socket.assigns.game_name
+
+    with {:ok, player_name} <- clean_name(player_name),
+         {:ok, _pid} <- Game.lookup_game(game_id) do
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+      server_state = Game.get_server_state(game_id)
 
-      # Join the game
+      disconnected =
+        server_state.connections
+        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
+        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
+
+      socket =
+        assign(socket,
+          player_name: player_name,
+          server_state: server_state,
+          disconnected_players: disconnected
+        )
+
       case Game.join_game(game_id, player_name, self()) do
         {:ok, player_id, new_state} ->
-          {:noreply,
-           socket
-           |> assign(
-             step: :lobby,
-             game_name: game_id,
-             player_name: player_name,
-             player_id: player_id,
-             server_state: new_state,
-             selected_format: nil,
-             error: nil
-           )
-           |> push_patch(to: ~p"/?game=#{game_id}&name=#{player_name}")}
+          {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
+
+        {:error, :name_taken} ->
+          case Game.rejoin_game(game_id, player_name, self()) do
+            {:ok, player_id, new_state} ->
+              {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
+
+            {:error, _reason} ->
+              {:noreply, assign(socket, step: :joining, error: "That name is already taken")}
+          end
+
+        {:error, :game_full} ->
+          {:noreply, assign(socket, step: :joining, error: nil)}
+
+        {:error, :game_already_started} ->
+          {:noreply, assign(socket, step: :joining, error: "That game already started")}
 
         {:error, reason} ->
           {:noreply, assign(socket, error: format_error(reason))}
       end
+    else
+      {:error, message} when is_binary(message) ->
+        {:noreply, assign(socket, error: message)}
+
+      _ ->
+        {:noreply,
+         assign(socket,
+           step: :create,
+           game_name: "",
+           error: "That game is over. Start a new one and send a fresh link."
+         )}
     end
   end
 
-  # Generate a random URL-safe game ID
+  def handle_event("rejoin_as_player", %{"player_name" => name}, socket) do
+    game_id = socket.assigns.game_name
+
+    case Game.rejoin_game(game_id, name, self()) do
+      {:ok, player_id, new_state} ->
+        {:noreply, after_join(socket, game_id, name, player_id, new_state)}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, error: format_error(reason))}
+    end
+  end
+
+  @impl true
+  def handle_info({:game_state_updated, new_state, _events}, socket) do
+    if new_state.instance != nil and socket.assigns.player_name != "" do
+      {:noreply,
+       push_navigate(socket,
+         to: play_path(socket, socket.assigns.game_name, socket.assigns.player_name)
+       )}
+    else
+      disconnected =
+        new_state.connections
+        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
+        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
+
+      {:noreply, assign(socket, server_state: new_state, disconnected_players: disconnected)}
+    end
+  end
+
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
+  # Structured data for search engines: the catalog, and one game. Encoded
+  # HTML-safe because it is rendered raw inside a <script> tag.
+  defp library_json_ld(games) do
+    json_ld(%{
+      "@context" => "https://schema.org",
+      "@type" => "WebSite",
+      "name" => "Oskol",
+      "url" => url(~p"/"),
+      "description" => GameCopy.site().description,
+      "hasPart" =>
+        Enum.map(games, fn game ->
+          %{"@type" => "VideoGame", "name" => game["name"], "url" => url(~p"/#{game["slug"]}")}
+        end)
+    })
+  end
+
+  defp game_json_ld(info, copy) do
+    json_ld(%{
+      "@context" => "https://schema.org",
+      "@type" => "VideoGame",
+      "name" => info["name"],
+      "url" => url(~p"/#{info["slug"]}"),
+      "description" => copy.description,
+      "applicationCategory" => "Game",
+      "operatingSystem" => "Web",
+      "numberOfPlayers" => 2,
+      "playMode" => "MultiPlayer",
+      "isAccessibleForFree" => true,
+      "offers" => %{"@type" => "Offer", "price" => "0", "priceCurrency" => "USD"}
+    })
+  end
+
+  defp json_ld(data), do: Jason.encode!(data, escape: :html_safe)
+
+  defp lobby_path(socket, game_id, player_name) do
+    ~p"/#{socket.assigns.slug}?game=#{game_id}&name=#{player_name}"
+  end
+
+  defp play_path(socket, game_id, player_name) do
+    ~p"/#{socket.assigns.slug}/#{game_id}?name=#{player_name}"
+  end
+
   defp generate_game_id do
     :crypto.strong_rand_bytes(6)
     |> Base.url_encode64(padding: false)
@@ -317,187 +450,38 @@ defmodule OskolWeb.LandingLive do
     |> String.downcase()
   end
 
-  @impl true
-  def handle_event("submit_player_name", %{"player_name" => player_name}, socket) do
-    player_name = String.trim(player_name)
+  @max_name_length 24
 
-    if player_name == "" do
-      {:noreply, assign(socket, error: "Please enter a display name")}
-    else
-      # Connect to game server
-      game_id = socket.assigns.game_name
-      {:ok, _pid} = Game.find_or_start_game(game_id)
+  # A display name: trimmed, bounded, printable. It goes into every payload,
+  # the invite URL and the page title.
+  defp clean_name(name) when is_binary(name) do
+    name = String.trim(name)
 
-      # Subscribe to game updates
-      Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+    cond do
+      name == "" ->
+        {:error, "Pick a display name first"}
 
-      # Get initial server state
-      server_state = Game.get_server_state(game_id)
+      String.length(name) > @max_name_length ->
+        {:error, "Names are #{@max_name_length} characters at most"}
 
-      # Check for disconnected players
-      disconnected_players =
-        server_state.connections
-        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
-        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
+      String.match?(name, ~r/[\p{C}]/u) ->
+        {:error, "Invalid name"}
 
-      socket =
-        socket
-        |> assign(
-          player_name: player_name,
-          server_state: server_state,
-          disconnected_players: disconnected_players
-        )
-
-      # Try to join the game
-      case Game.join_game(game_id, player_name, self()) do
-        {:ok, player_id, new_state} ->
-          {:noreply,
-           socket
-           |> assign(
-             step: :lobby,
-             player_id: player_id,
-             server_state: new_state,
-             selected_format: nil,
-             error: nil
-           )
-           |> push_patch(to: ~p"/?game=#{game_id}&name=#{player_name}")}
-
-        {:error, :name_taken} ->
-          # Name taken - try to rejoin
-          case Game.rejoin_game(game_id, player_name, self()) do
-            {:ok, player_id, new_state} ->
-              # Check if game already started
-              if new_state.game_state != nil do
-                {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{player_name}")}
-              else
-                {:noreply,
-                 socket
-                 |> assign(
-                   step: :lobby,
-                   player_id: player_id,
-                   server_state: new_state,
-                   selected_format: Map.get(new_state.format_selections, player_id),
-                   error: nil
-                 )
-                 |> push_patch(to: ~p"/?game=#{game_id}&name=#{player_name}")}
-              end
-
-            {:error, _reason} ->
-              {:noreply,
-               assign(socket,
-                 step: :joining,
-                 error: "Name already taken by another player"
-               )}
-          end
-
-        {:error, :game_full} ->
-          {:noreply,
-           assign(socket,
-             step: :joining,
-             error: nil
-           )}
-
-        {:error, reason} ->
-          {:noreply, assign(socket, error: format_error(reason))}
-      end
+      true ->
+        {:ok, name}
     end
   end
 
-  @impl true
-  def handle_event("rejoin_as_player", %{"player_name" => name}, socket) do
-    game_id = socket.assigns.game_name
+  defp clean_name(_), do: {:error, "Invalid name"}
 
-    case Game.rejoin_game(game_id, name, self()) do
-      {:ok, player_id, new_state} ->
-        # Check if game already started
-        if new_state.game_state != nil do
-          {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{name}")}
-        else
-          {:noreply,
-           socket
-           |> assign(
-             step: :lobby,
-             player_id: player_id,
-             player_name: name,
-             server_state: new_state,
-             selected_format: Map.get(new_state.format_selections, player_id),
-             error: nil
-           )
-           |> push_patch(to: ~p"/?game=#{game_id}&name=#{name}")}
-        end
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  @impl true
-  def handle_event("select_format", %{"format" => format_str}, socket) do
-    format = String.to_existing_atom(format_str)
-    game_id = socket.assigns.game_name
-
-    case Game.select_format(game_id, socket.assigns.player_id, format) do
-      {:ok, new_state} ->
-        {:noreply, assign(socket, server_state: new_state, selected_format: format, error: nil)}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  @impl true
-  def handle_event("start_game", _params, socket) do
-    game_id = socket.assigns.game_name
-    player_name = socket.assigns.player_name
-
-    case Game.start_game_session(game_id) do
-      {:ok, _new_state} ->
-        # Navigate to game URL with player name for auto-rejoin
-        {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{player_name}")}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
-    end
-  end
-
-  @impl true
-  def handle_event("go_back", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(step: :game_name, error: nil)
-     |> push_patch(to: ~p"/")}
-  end
-
-  # Handle game state updates from PubSub
-  @impl true
-  def handle_info({:game_state_updated, new_state}, socket) do
-    # Check if game started - navigate to game URL
-    if new_state.game_state != nil do
-      game_id = socket.assigns.game_name
-      player_name = socket.assigns.player_name
-
-      {:noreply, push_navigate(socket, to: ~p"/#{game_id}?name=#{player_name}")}
-    else
-      # Update disconnected players list
-      disconnected_players =
-        new_state.connections
-        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
-        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
-
-      {:noreply,
-       assign(socket,
-         server_state: new_state,
-         disconnected_players: disconnected_players
-       )}
-    end
-  end
-
-  @impl true
-  def handle_info(_msg, socket), do: {:noreply, socket}
-
-  defp format_error(:game_full), do: "Game is full"
-  defp format_error(:name_taken), do: "Name already taken"
+  defp format_error(:game_full), do: "That game is full"
+  defp format_error(:name_taken), do: "That name is already taken"
   defp format_error(:invalid_name), do: "Invalid name"
+  defp format_error(:unknown_format), do: "Unknown game mode"
+  defp format_error(:unknown_clock), do: "Unknown time control"
+  defp format_error(:unknown_setting), do: "Unknown setting"
+  defp format_error(:unknown_choice), do: "Unknown choice"
+  defp format_error(:game_already_started), do: "That game already started"
   defp format_error(reason) when is_atom(reason), do: "Error: #{reason}"
   defp format_error(reason), do: "Error: #{inspect(reason)}"
 
@@ -508,933 +492,720 @@ defmodule OskolWeb.LandingLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <.brand_styles />
-    <div class="min-h-screen-safe flex flex-col bg-gradient-to-br from-base-300 via-base-200 to-base-100 relative overflow-hidden">
-      <.floating_battles />
+    <div class="paper min-h-screen-safe flex flex-col">
+      <.topbar page={@page} />
+      <main class="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pb-16">
+        <%= if @page == :library do %>
+          <.library games={@games} />
+        <% else %>
+          <.game_page
+            slug={@slug}
+            info={@info}
+            copy={@copy}
+            games={@games}
+            step={@step}
+            setup={@setup}
+            error={@error}
+            game_name={@game_name}
+            inviter_name={@inviter_name}
+            server_state={@server_state}
+            disconnected_players={@disconnected_players}
+            player_id={@player_id}
+            player_name={@player_name}
+            clock_presets={@clock_presets}
+          />
+        <% end %>
+      </main>
+      <footer
+        class="pixel text-[9px] sm:text-[10px] text-center pb-6 px-4"
+        style="color: var(--pencil)"
+      >
+        NO ACCOUNTS · A GAME STAYS OPEN FOR AN HOUR AFTER THE LAST MOVE
+      </footer>
+    </div>
+    """
+  end
 
-      <div class="relative z-10 w-full flex flex-col flex-1 overflow-auto">
-        <!-- Top spacer - pushes content down, logo stays at fixed distance from top -->
-        <div class="shrink-0 h-[20vh] sm:h-[30vh]"></div>
+  # ---------- Shell ----------
 
-        <div class="text-center px-6 max-w-xl w-full mx-auto">
-          <!-- Logo section - stays at fixed position -->
-          <div class="mb-8 animate-logo">
-            <.logo_large />
-            <p class="text-base-content/50 text-sm tracking-widest uppercase">
-              Poker warfare
-            </p>
-          </div>
-          
-    <!-- Content section - grows below logo -->
-          <div class="animate-content">
-            <%= if @error do %>
-              <div class="mb-4 text-red-500 text-sm font-medium bg-red-500/10 rounded-lg p-3">
-                {@error}
-              </div>
-            <% end %>
+  attr :page, :atom, required: true
 
-            <%= case @step do %>
-              <% :game_name -> %>
-                <.game_name_form />
-              <% :player_name -> %>
-                <.player_name_form game_name={@game_name} inviter_name={@inviter_name} />
-              <% :joining -> %>
-                <.joining_screen
-                  game_name={@game_name}
-                  server_state={@server_state}
-                  disconnected_players={@disconnected_players}
-                />
-              <% :lobby -> %>
-                <.lobby_screen
-                  game_name={@game_name}
-                  player_id={@player_id}
-                  player_name={@player_name}
-                  server_state={@server_state}
-                  selected_format={@selected_format}
-                />
-            <% end %>
+  defp topbar(assigns) do
+    ~H"""
+    <header class="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-5 pb-2 flex items-center justify-between">
+      <.link patch={~p"/"} class="flex items-center gap-1.5 pixel" aria-label="Oskol home">
+        <span class="mark-letter">O</span>
+        <span class="mark-letter red">S</span>
+        <span class="mark-letter">K</span>
+        <span class="mark-letter red">O</span>
+        <span class="mark-letter">L</span>
+      </.link>
+      <span class="pixel text-[9px] sm:text-[10px]" style="color: var(--pencil)">
+        <%= if @page == :library do %>
+          2 PLAYERS · NO SIGNUP
+        <% else %>
+          <.link patch={~p"/"} class="hover:text-[color:var(--pen)]">◀ ALL GAMES</.link>
+        <% end %>
+      </span>
+    </header>
+    """
+  end
 
-            <%= if @step in [:game_name, :player_name] do %>
-              <p class="text-base-content/40 text-xs mt-6">
-                Play with friends · No signup required
-              </p>
-            <% end %>
-          </div>
+  # ---------- Library ----------
+
+  attr :games, :list, required: true
+
+  defp library(assigns) do
+    ~H"""
+    <section class="pt-8 sm:pt-14 pb-8 text-center">
+      <p class="pixel text-[10px] sm:text-xs blink" style="color: var(--red)">▶ INSERT COIN ◀</p>
+      <h1 class="pixel mt-4 text-2xl sm:text-4xl leading-relaxed" style="color: var(--ink)">
+        SEND A LINK.<br />
+        <span class="hl px-1">PLAY IN SECONDS.</span>
+      </h1>
+      <p class="mt-5 text-base sm:text-lg max-w-xl mx-auto" style="color: var(--pencil)">
+        The classics, two players, nothing to install and no signup. Pick a cabinet, share the invite, and your opponent is in.
+      </p>
+    </section>
+
+    <p class="pixel text-[10px] sm:text-xs mb-3 text-center" style="color: var(--ink)">
+      SELECT YOUR GAME
+    </p>
+    <section id="game-library" class="grid gap-6 sm:gap-8 sm:grid-cols-2">
+      <.cabinet :for={game <- @games} game={game} />
+    </section>
+
+    <section class="mt-14 grid gap-4 sm:grid-cols-3">
+      <.step n="1" title="PICK A GAME">Choose a mode, the settings and an optional clock.</.step>
+      <.step n="2" title="SHARE THE INVITE">Your opponent opens it and types a name.</.step>
+      <.step n="3" title="PLAY">The game starts the moment they join.</.step>
+    </section>
+    """
+  end
+
+  attr :game, :map, required: true
+
+  defp cabinet(assigns) do
+    assigns =
+      assign(assigns,
+        accent: GameArt.accent(assigns.game["slug"]),
+        format_names: assigns.game["formats"] |> Enum.map(& &1["name"])
+      )
+
+    ~H"""
+    <.link
+      patch={~p"/#{@game["slug"]}"}
+      id={"game-#{@game["slug"]}"}
+      class="cabinet pix block"
+      style={"--accent: #{@accent}"}
+    >
+      <div class="marquee pixel text-xs sm:text-sm px-4 py-3 flex items-center justify-between">
+        <span class="uppercase">{@game["name"]}</span>
+        <span class="cursor">▶</span>
+      </div>
+      <div class="screen px-6 py-5 sm:py-6 flex items-center justify-center">
+        <GameArt.art slug={@game["slug"]} class="h-32 sm:h-40 w-auto" />
+      </div>
+      <div class="px-4 sm:px-5 py-4">
+        <p class="font-semibold text-base sm:text-lg" style="color: var(--ink)">{@game["tagline"]}</p>
+        <p class="mt-1 text-sm leading-relaxed" style="color: var(--pencil)">
+          {@game["description"]}
+        </p>
+        <div class="mt-3 flex flex-wrap gap-1.5">
+          <.chip :for={name <- @format_names}>{name}</.chip>
+          <.chip>Optional clock</.chip>
         </div>
-        
-    <!-- Bottom spacer - balances the layout -->
-        <div class="flex-1"></div>
+        <div class="mt-4 flex items-center justify-between">
+          <span class="pixel text-[9px]" style="color: var(--pencil)">1P VS 2P</span>
+          <span class="btn-arcade pixel text-[10px] px-4 py-2.5 rounded-full">PLAY</span>
+        </div>
+      </div>
+    </.link>
+    """
+  end
+
+  attr :n, :string, required: true
+  attr :title, :string, required: true
+  slot :inner_block, required: true
+
+  defp step(assigns) do
+    ~H"""
+    <div class="pix-sm p-4 flex gap-3 items-start">
+      <span
+        class="pixel text-[10px] shrink-0 w-8 h-8 grid place-items-center"
+        style="background: var(--highlighter); border: 2px solid var(--ink)"
+      >
+        {@n}
+      </span>
+      <div>
+        <div class="pixel text-[10px]" style="color: var(--ink)">{@title}</div>
+        <div class="text-sm mt-1.5" style="color: var(--pencil)">{render_slot(@inner_block)}</div>
       </div>
     </div>
     """
   end
 
-  # ============================================================================
-  # FORM COMPONENTS
-  # ============================================================================
+  slot :inner_block, required: true
 
-  defp game_name_form(assigns) do
+  defp chip(assigns) do
     ~H"""
-    <form phx-submit="new_game" class="space-y-3">
-      <.brand_input name="player_name" placeholder="name" />
-      <.brand_button type="submit" color={:primary}>
-        New Game
-      </.brand_button>
-    </form>
+    <span
+      class="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5"
+      style="border: 2px solid var(--ink); background: var(--paper-2); color: var(--ink)"
+    >
+      {render_slot(@inner_block)}
+    </span>
     """
   end
 
-  defp player_name_form(assigns) do
-    ~H"""
-    <%= if @inviter_name do %>
-      <p class="text-base-content/60 text-sm mb-4 text-center">
-        <span class="text-opponent font-semibold">{@inviter_name}</span> has challenged you
-      </p>
-    <% end %>
+  # ---------- Game page ----------
 
-    <form phx-submit="submit_player_name" class="space-y-3">
-      <.brand_input name="player_name" placeholder="name" />
-      <.brand_button type="submit" color={:primary}>
-        Join Game
-      </.brand_button>
-    </form>
+  attr :slug, :string, required: true
+  attr :info, :map, required: true
+  attr :copy, :map, required: true
+  attr :games, :list, default: []
+  attr :step, :atom, required: true
+  attr :setup, :map, default: nil
+  attr :error, :string, default: nil
+  attr :game_name, :string, default: ""
+  attr :inviter_name, :string, default: nil
+  attr :server_state, :any, default: nil
+  attr :disconnected_players, :list, default: []
+  attr :player_id, :string, default: nil
+  attr :player_name, :string, default: ""
+  attr :clock_presets, :list, default: []
+
+  defp game_page(assigns) do
+    assigns = assign(assigns, accent: GameArt.accent(assigns.slug))
+
+    ~H"""
+    <section
+      class="cabinet pix mt-4 sm:mt-8"
+      style={"--accent: #{@accent}; transform: none;"}
+      id={"game-hero-#{@slug}"}
+    >
+      <div class="marquee pixel text-sm sm:text-base px-5 py-3 uppercase" id="game-title">
+        {@info["name"]}
+      </div>
+      <div class="screen grid sm:grid-cols-[auto_1fr] gap-4 sm:gap-8 items-center px-5 sm:px-8 py-5 sm:py-6">
+        <GameArt.art slug={@slug} class="h-28 sm:h-36 w-auto mx-auto" />
+        <div class="text-center sm:text-left">
+          <p class="pixel text-[10px]" style="color: var(--accent)">
+            {String.upcase(@info["tagline"])}
+          </p>
+          <h1 class="mt-2 text-xl sm:text-2xl font-black leading-snug" style="color: var(--ink)">
+            {@copy.title}
+          </h1>
+          <p class="mt-2 leading-relaxed" style="color: var(--pencil)">{@copy.intro}</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="mt-8 sm:mt-10">
+      <div class="pix p-5 sm:p-8">
+        <p
+          :if={@error}
+          id="form-error"
+          class="mb-4 text-sm font-semibold px-4 py-3"
+          style="border: 2px solid var(--red); color: var(--red); background: #fff3f2"
+        >
+          {@error}
+        </p>
+        <%= case @step do %>
+          <% :create -> %>
+            <.create_form info={@info} setup={@setup} clock_presets={@clock_presets} />
+          <% :player_name -> %>
+            <.join_form inviter_name={@inviter_name} server_state={@server_state} />
+          <% :joining -> %>
+            <.joining
+              server_state={@server_state}
+              disconnected_players={@disconnected_players}
+              game_name={@game_name}
+            />
+          <% :waiting -> %>
+            <.waiting
+              slug={@slug}
+              game_name={@game_name}
+              player_id={@player_id}
+              server_state={@server_state}
+            />
+        <% end %>
+      </div>
+    </section>
+
+    <.about :if={@step == :create} info={@info} copy={@copy} games={@games} slug={@slug} />
     """
   end
 
-  # ============================================================================
-  # JOINING SCREEN (when game is full or reconnect options available)
-  # ============================================================================
+  # The part of a game's page that is for reading: how it works, the rules
+  # in brief, the modes and clocks on offer, a few questions, and the way to
+  # the other games.
+  attr :info, :map, required: true
+  attr :copy, :map, required: true
+  attr :games, :list, required: true
+  attr :slug, :string, required: true
 
-  defp joining_screen(assigns) do
-    # Check if game is in progress or still in lobby
-    game_in_progress = assigns.server_state && assigns.server_state.game_state != nil
+  defp about(assigns) do
+    presets = GameKit.clock_presets()
 
-    # Check if lobby can accept new players (less than 2 total connections)
-    total_connections =
-      if assigns.server_state, do: map_size(assigns.server_state.connections), else: 0
-
-    can_join_as_new = not game_in_progress and total_connections < 2
+    clocks =
+      for id <- Map.get(assigns.info, "clocks", []),
+          preset = Enum.find(presets, &(&1["id"] == id)),
+          do: preset
 
     assigns =
-      assigns
-      |> assign(:game_in_progress, game_in_progress)
-      |> assign(:can_join_as_new, can_join_as_new)
+      assign(assigns,
+        clocks: clocks,
+        others: Enum.reject(assigns.games, &(&1["slug"] == assigns.slug))
+      )
+
+    ~H"""
+    <section class="mt-12 grid gap-4 sm:grid-cols-3" id="how-it-works">
+      <.step
+        :for={{line, i} <- Enum.with_index(@copy.how, 1)}
+        n={Integer.to_string(i)}
+        title={step_title(i)}
+      >
+        {line}
+      </.step>
+    </section>
+
+    <section class="mt-12 pix p-5 sm:p-8" id="rules">
+      <h2 class="pixel text-[10px] sm:text-xs mb-4" style="color: var(--ink)">
+        {String.upcase(@info["name"])} IN BRIEF
+      </h2>
+      <div class="space-y-3 leading-relaxed" style="color: var(--ink)">
+        <p :for={paragraph <- @copy.rules}>{paragraph}</p>
+      </div>
+    </section>
+
+    <section class="mt-8 grid gap-4 sm:grid-cols-2" id="modes">
+      <div class="pix-sm p-5">
+        <h2 class="pixel text-[10px] mb-3" style="color: var(--ink)">MODES</h2>
+        <ul class="space-y-2">
+          <li :for={format <- @info["formats"]}>
+            <span class="font-bold" style="color: var(--ink)">{format["name"]}</span>
+            <span class="text-sm" style="color: var(--pencil)">· {format["description"]}</span>
+          </li>
+        </ul>
+      </div>
+      <div class="pix-sm p-5">
+        <h2 class="pixel text-[10px] mb-3" style="color: var(--ink)">CLOCKS</h2>
+        <ul class="space-y-2">
+          <li :for={preset <- @clocks}>
+            <span class="font-bold" style="color: var(--ink)">{preset["name"]}</span>
+            <span class="text-sm" style="color: var(--pencil)">· {preset["description"]}</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section :if={@copy.faq != []} class="mt-8 pix p-5 sm:p-8" id="faq">
+      <h2 class="pixel text-[10px] sm:text-xs mb-4" style="color: var(--ink)">QUESTIONS</h2>
+      <dl class="space-y-4">
+        <div :for={{question, answer} <- @copy.faq}>
+          <dt class="font-bold" style="color: var(--ink)">{question}</dt>
+          <dd class="mt-1 leading-relaxed" style="color: var(--pencil)">{answer}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section :if={@others != []} class="mt-10 text-center" id="other-games">
+      <p class="pixel text-[10px] mb-3" style="color: var(--pencil)">ALSO ON OSKOL</p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <.link
+          :for={game <- @others}
+          patch={~p"/#{game["slug"]}"}
+          class="pix-flat px-4 py-2 font-bold hover:bg-[color:var(--highlighter)]"
+          style="color: var(--ink)"
+        >
+          {game["name"]} →
+        </.link>
+      </div>
+    </section>
+    """
+  end
+
+  defp step_title(1), do: "PICK A MODE"
+  defp step_title(2), do: "SET A CLOCK"
+  defp step_title(_), do: "SHARE THE LINK"
+
+  attr :info, :map, required: true
+  attr :setup, :map, required: true
+  attr :clock_presets, :list, required: true
+
+  defp create_form(assigns) do
+    formats = Map.get(assigns.info, "formats", [])
+    format = Enum.find(formats, &(&1["id"] == assigns.setup.format)) || List.first(formats)
+    offered = Map.get(assigns.info, "clocks", [])
+
+    settings = (format && format["settings"]) || []
+
+    assigns =
+      assign(assigns,
+        formats: formats,
+        # A setting called "twist" gets its own heading; the rest follow
+        twist: Enum.find(settings, &(&1["id"] == "twist")),
+        settings: Enum.reject(settings, &(&1["id"] == "twist")),
+        clocks: Enum.filter(assigns.clock_presets, &(&1["id"] in offered))
+      )
+
+    ~H"""
+    <form phx-submit="new_game" class="space-y-7">
+      <div>
+        <p class="pixel text-[10px] mb-3" style="color: var(--pen)">PLAYER 1 · YOUR NAME</p>
+        <.name_input placeholder="e.g. Alice" />
+      </div>
+
+      <div>
+        <h3 class="pixel text-[10px] mb-2" style="color: var(--ink)">GAME MODE</h3>
+        <div class={["grid gap-3", format_grid_class(length(@formats))]}>
+          <.format_tile
+            :for={format <- @formats}
+            format={format}
+            selected={@setup.format == format["id"]}
+          />
+        </div>
+      </div>
+
+      <div id="twist">
+        <div class="flex items-baseline justify-between mb-2">
+          <h3 class="pixel text-[10px]" style="color: var(--ink)">TWIST</h3>
+          <span class="text-xs" style="color: var(--pencil)">rules that throw the book out</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <%= if @twist do %>
+            <.choice_chip
+              :for={choice <- @twist["choices"]}
+              setting={@twist}
+              choice={choice}
+              selected={Map.get(@setup.selections, "twist", @twist["default"]) == choice["id"]}
+            />
+          <% else %>
+            <span class="tile tile-mine px-3.5 py-1.5 text-sm font-semibold" style="color: var(--ink)">
+              Original rules
+            </span>
+            <span class="text-xs self-center" style="color: var(--pencil)">
+              more twists on the way
+            </span>
+          <% end %>
+        </div>
+      </div>
+
+      <div :for={setting <- @settings} id={"setting-#{setting["id"]}"}>
+        <h3 class="pixel text-[10px] mb-2" style="color: var(--ink)">
+          {String.upcase(setting["name"])}
+        </h3>
+        <div class="flex flex-wrap gap-2">
+          <.choice_chip
+            :for={choice <- setting["choices"]}
+            setting={setting}
+            choice={choice}
+            selected={Map.get(@setup.selections, setting["id"], setting["default"]) == choice["id"]}
+          />
+        </div>
+      </div>
+
+      <div>
+        <div class="flex items-baseline justify-between mb-2">
+          <h3 class="pixel text-[10px]" style="color: var(--ink)">TIME CONTROL</h3>
+          <span class="text-xs" style="color: var(--pencil)">optional</span>
+        </div>
+        <div class="flex flex-wrap gap-2" id="clock-picker">
+          <.clock_chip
+            :for={preset <- @clocks}
+            preset={preset}
+            selected={@setup.clock == preset["id"]}
+          />
+        </div>
+      </div>
+
+      <div class="text-center space-y-3">
+        <.cta type="submit" id="create-game" color="green">START ▶</.cta>
+        <p class="text-sm" style="color: var(--pencil)">
+          You'll get an invite link. Your opponent types a name and the game starts.
+        </p>
+      </div>
+    </form>
+    """
+  end
+
+  attr :inviter_name, :string, default: nil
+  attr :server_state, :any, default: nil
+
+  defp join_form(assigns) do
+    summary =
+      if assigns.server_state, do: GameServerState.summary(assigns.server_state), else: nil
+
+    assigns = assign(assigns, summary: summary)
+
+    ~H"""
+    <p :if={@inviter_name} class="mb-1 text-lg">
+      <span class="text-opponent font-bold">{@inviter_name}</span> challenged you.
+    </p>
+    <p :if={@summary} id="setup-summary" class="mb-3 text-sm font-semibold" style="color: var(--ink)">
+      {@summary}
+    </p>
+    <p class="pixel text-[10px] mb-3" style="color: var(--red)">PLAYER 2 · ENTER YOUR NAME</p>
+    <form phx-submit="submit_player_name" class="grid gap-3 sm:grid-cols-[1fr_auto] items-center">
+      <.name_input placeholder="e.g. Bob" />
+      <.cta type="submit" id="join-game">JOIN GAME</.cta>
+      <p class="sm:col-span-2 text-sm" style="color: var(--pencil)">
+        The game starts as soon as you join.
+      </p>
+    </form>
+    """
+  end
+
+  attr :server_state, :any, default: nil
+  attr :disconnected_players, :list, default: []
+  attr :game_name, :string, required: true
+
+  defp joining(assigns) do
+    in_progress = assigns.server_state && assigns.server_state.instance != nil
+
+    max_players =
+      if assigns.server_state,
+        do: GameServerState.max_players(assigns.server_state),
+        else: 2
+
+    count = if assigns.server_state, do: map_size(assigns.server_state.connections), else: 0
+    assigns = assign(assigns, can_join: not in_progress and count < max_players)
 
     ~H"""
     <div class="space-y-4">
-      <div class="h-6 mb-2"></div>
-
-      <%= if length(@disconnected_players) > 0 do %>
-        <div class="space-y-3">
-          <%= for {_player_id, player_name} <- @disconnected_players do %>
-            <.brand_button
-              phx-click="rejoin_as_player"
-              phx-value-player_name={player_name}
-              color={:yellow}
-            >
-              Reconnect as {player_name}
-            </.brand_button>
-          <% end %>
+      <%= if @disconnected_players != [] do %>
+        <p class="pixel text-[10px]" style="color: var(--pen)">CONTINUE? RECONNECT AS</p>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <button
+            :for={{_id, name} <- @disconnected_players}
+            phx-click="rejoin_as_player"
+            phx-value-player_name={name}
+            class="btn-arcade yellow pixel text-[10px] px-4 py-3"
+          >
+            {name}
+          </button>
         </div>
-
-        <%= if @can_join_as_new do %>
-          <div class="flex items-center gap-4 my-4">
-            <div class="flex-1 h-px bg-white/20"></div>
-            <span class="text-base-content/40 text-sm">or</span>
-            <div class="flex-1 h-px bg-white/20"></div>
-          </div>
-
-          <form phx-submit="submit_player_name" class="space-y-3">
-            <.brand_input name="player_name" placeholder="Your name" />
-            <.brand_button type="submit" color={:primary}>
-              Join as New Player
-            </.brand_button>
+        <%= if @can_join do %>
+          <p class="text-sm pt-2" style="color: var(--pencil)">Or join as a new player:</p>
+          <form
+            phx-submit="submit_player_name"
+            class="grid gap-3 sm:grid-cols-[1fr_auto] items-center"
+          >
+            <.name_input placeholder="Your name" />
+            <.cta type="submit">JOIN GAME</.cta>
           </form>
         <% end %>
       <% else %>
-        <p class="text-base-content/60 text-sm text-center">
-          This game is full.
-        </p>
+        <p class="pixel text-[10px]" style="color: var(--red)">GAME FULL</p>
+        <.link patch={~p"/"} class="inline-block font-semibold" style="color: var(--pen)">
+          Start your own →
+        </.link>
       <% end %>
-
-      <p class="text-base-content/40 text-xs mt-6 text-center">
-        Game: {@game_name}
+      <p class="pixel text-[9px]" style="color: var(--pencil)">
+        GAME CODE {String.upcase(@game_name)}
       </p>
     </div>
     """
   end
 
-  # ============================================================================
-  # LOBBY SCREEN
-  # ============================================================================
+  attr :slug, :string, required: true
+  attr :game_name, :string, required: true
+  attr :player_id, :string, required: true
+  attr :server_state, :any, required: true
 
-  defp lobby_screen(assigns) do
-    opponent_info =
-      if assigns[:player_id] do
-        opponent_id =
-          assigns.server_state.connections
-          |> Map.keys()
-          |> Enum.find(&(&1 != assigns.player_id))
+  defp waiting(assigns) do
+    state = assigns.server_state
+    me = state.connections[assigns.player_id]
 
-        if opponent_id do
-          opponent_conn = assigns.server_state.connections[opponent_id]
-          opponent_format = Map.get(assigns.server_state.format_selections, opponent_id)
-          %{name: opponent_conn.name, format: opponent_format}
-        end
+    opponent =
+      state.connections
+      |> Enum.find(fn {id, _} -> id != assigns.player_id end)
+      |> case do
+        {_id, conn} -> conn.name
+        nil -> nil
       end
 
     assigns =
-      assigns
-      |> assign(:opponent_info, opponent_info)
-      |> assign(:is_dev, @is_dev)
+      assign(assigns,
+        me: me,
+        opponent: opponent,
+        summary: GameServerState.summary(state),
+        invite_url: url(~p"/#{assigns.slug}?game=#{assigns.game_name}")
+      )
 
     ~H"""
-    <div class="max-w-2xl mx-auto">
-      <!-- Player Status Cards -->
-      <.players_status_cards
-        connections={@server_state.connections}
-        player_id={@player_id}
-        format_selections={@server_state.format_selections}
-      />
-      
-    <!-- Format Selection -->
-      <div class="mb-4 sm:mb-8">
-        <p class="text-base-content/40 text-xs mb-2 sm:mb-3 text-center">
-          <%= cond do %>
-            <% map_size(@server_state.connections) < 2 -> %>
-              Waiting for opponent to join...
-            <% @selected_format == nil -> %>
-              Choose a game mode
-            <% !@opponent_info || @opponent_info.format == nil -> %>
-              Waiting for opponent to select...
-            <% @selected_format != @opponent_info.format -> %>
-              Select the same game mode to start
-            <% @selected_format == :short -> %>
-              Both players selected Skirmish
-            <% @selected_format == :standard -> %>
-              Both players selected Battle
-            <% @selected_format == :extended -> %>
-              Both players selected War
-            <% true -> %>
-              Ready to start!
+    <div class="space-y-7">
+      <div class="flex items-center justify-center gap-4 sm:gap-8">
+        <div class="text-center min-w-[7rem]">
+          <p class="pixel text-[9px] mb-1" style="color: var(--pen)">1P</p>
+          <p class="text-player text-xl sm:text-2xl font-black truncate">
+            {(@me && @me.name) || "You"}
+          </p>
+        </div>
+        <span class="pixel text-[10px]" style="color: var(--pencil)">VS</span>
+        <div class="text-center min-w-[7rem]">
+          <p class="pixel text-[9px] mb-1" style="color: var(--red)">2P</p>
+          <%= if @opponent do %>
+            <p class="text-opponent text-xl sm:text-2xl font-black truncate">{@opponent}</p>
+          <% else %>
+            <p class="text-xl sm:text-2xl font-black blink" style="color: var(--pencil)">?</p>
           <% end %>
-        </p>
-        <div class="grid grid-cols-3 gap-1.5 sm:gap-3">
-          <.format_card_v2
-            format="short"
-            title="Skirmish"
-            subtitle="~5 min match"
-            description="Absolute chaos"
-            emoji="⚡"
-            lives={2}
-            shop_rounds={1}
-            selected={@selected_format == :short}
-            opponent_selected={@opponent_info && @opponent_info.format == :short}
-          />
-          <.format_card_v2
-            format="standard"
-            title="Battle"
-            subtitle="~15 min match"
-            description="Balanced play"
-            emoji="🎯"
-            lives={3}
-            shop_rounds={2}
-            selected={@selected_format == :standard}
-            opponent_selected={@opponent_info && @opponent_info.format == :standard}
-          />
-          <.format_card_v2
-            format="extended"
-            title="War"
-            subtitle="~30 min match"
-            description="Tactical precision"
-            emoji="🔥"
-            lives={5}
-            shop_rounds={2}
-            selected={@selected_format == :extended}
-            opponent_selected={@opponent_info && @opponent_info.format == :extended}
-          />
         </div>
       </div>
-      
-    <!-- Start Game Button -->
-      <div class="text-center">
-        <%= if @server_state.lobby_status == :ready_to_start do %>
-          <.brand_button phx-click="start_game" color={:primary}>
-            Start Game
-          </.brand_button>
-        <% else %>
-          <button
-            disabled
-            class="relative w-full px-8 py-4 rounded-xl font-bold text-lg text-white/50 transition-all shadow-xl overflow-hidden cursor-not-allowed bg-gradient-to-r from-blue-600/50 to-blue-500/50"
-          >
-            <span class="relative z-10">Start Game</span>
-            <.card_decorations />
-          </button>
-        <% end %>
-        
-    <!-- Invite link - secondary action -->
-        <button
-          type="button"
-          phx-click={JS.dispatch("phx:share", to: "#share-link")}
-          class="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-base-content/50 hover:text-base-content/70 transition-all"
-          id="invite-button"
-        >
-          <span id="share-link" class="hidden">{url(~p"/?game=#{@game_name}")}</span>
-          <!-- Share icon - mobile only -->
-          <svg class="w-3.5 h-3.5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"
-            />
-          </svg>
-          <!-- Clipboard icon - desktop only, will change to checkmark -->
-          <span class="hero-clipboard w-3.5 h-3.5 hidden sm:inline" id="invite-icon"></span>
-          <!-- Mobile text -->
-          <span class="sm:hidden">Invite friend</span>
-          <!-- Desktop text -->
-          <span class="hidden sm:inline">Copy Invite Link</span>
-        </button>
+
+      <p id="setup-summary" class="text-center font-semibold" style="color: var(--ink)">
+        {@summary}
+      </p>
+
+      <div class="pix-sm p-4 text-center" style="background: var(--paper-2)">
+        <p class="pixel text-[10px] mb-2" style="color: var(--ink)">INVITE PLAYER 2</p>
+        <.invite_box url={@invite_url} />
       </div>
+
+      <p class="text-center text-sm" style="color: var(--pencil)">
+        Waiting for your opponent to open the link… the game starts the moment they join.
+      </p>
     </div>
     """
   end
 
-  defp players_status_cards(assigns) do
-    player_list = Map.to_list(assigns.connections)
+  attr :format, :map, required: true
+  attr :selected, :boolean, default: false
 
-    {player_conn, opponent_conn} =
-      case player_list do
-        [{id1, conn1}, {_id2, conn2}] ->
-          if id1 == assigns.player_id, do: {conn1, conn2}, else: {conn2, conn1}
-
-        [{id1, conn1}] ->
-          if id1 == assigns.player_id, do: {conn1, nil}, else: {nil, conn1}
-
-        [] ->
-          {nil, nil}
-      end
-
-    assigns =
-      assigns
-      |> assign(:player_conn, player_conn)
-      |> assign(:opponent_conn, opponent_conn)
-
+  defp format_tile(assigns) do
     ~H"""
-    <div class="flex items-center justify-center gap-2 sm:gap-4 mb-4 sm:mb-8">
-      <span class="text-player font-bold text-lg sm:text-2xl">
-        {(@player_conn && @player_conn.name) || "You"}
+    <button
+      type="button"
+      phx-click="pick_format"
+      phx-value-format={@format["id"]}
+      id={"format-#{@format["id"]}"}
+      class={["tile text-left px-4 py-3", @selected and "tile-mine"]}
+    >
+      <div class="flex items-center justify-between gap-2">
+        <span class="font-bold" style="color: var(--ink)">{@format["name"]}</span>
+        <span :if={@selected} class="pixel text-[8px] text-player">1P</span>
+      </div>
+      <div class="text-xs mt-0.5" style="color: var(--pencil)">{@format["description"]}</div>
+    </button>
+    """
+  end
+
+  attr :setting, :map, required: true
+  attr :choice, :map, required: true
+  attr :selected, :boolean, default: false
+
+  defp choice_chip(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="pick_setting"
+      phx-value-setting={@setting["id"]}
+      phx-value-choice={@choice["id"]}
+      id={"choice-#{@setting["id"]}-#{@choice["id"]}"}
+      class={["tile px-3.5 py-1.5 text-sm font-semibold", @selected and "tile-mine"]}
+      style="color: var(--ink)"
+    >
+      {@choice["name"]}
+    </button>
+    """
+  end
+
+  attr :preset, :map, required: true
+  attr :selected, :boolean, default: false
+
+  defp clock_chip(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="pick_clock"
+      phx-value-clock={@preset["id"]}
+      id={"clock-#{@preset["id"]}"}
+      title={@preset["description"]}
+      class={["tile px-3.5 py-1.5 text-sm font-semibold", @selected and "tile-mine"]}
+      style="color: var(--ink)"
+    >
+      {@preset["name"]}
+    </button>
+    """
+  end
+
+  attr :url, :string, required: true
+  attr :compact, :boolean, default: false
+
+  defp invite_box(assigns) do
+    ~H"""
+    <button
+      type="button"
+      id={if @compact, do: "invite-button-compact", else: "invite-button"}
+      phx-hook="Share"
+      data-url={@url}
+      class={[
+        "inline-flex items-center gap-2 max-w-full",
+        @compact && "text-xs font-semibold hover:underline",
+        !@compact && "pix-flat px-3 py-2 text-sm hover:bg-[color:var(--highlighter)]"
+      ]}
+      style="color: var(--ink)"
+    >
+      <span class="hero-link w-4 h-4 shrink-0"></span>
+      <span :if={!@compact} id="share-link" class="truncate font-mono">{@url}</span>
+      <span data-label class="pixel text-[9px] whitespace-nowrap">
+        {if @compact, do: "COPY INVITE LINK", else: "COPY"}
       </span>
-      <span class="text-base-content/40 text-sm sm:text-lg">vs</span>
-      <%= if @opponent_conn do %>
-        <span class="text-opponent font-bold text-lg sm:text-2xl">{@opponent_conn.name}</span>
-      <% else %>
-        <span class="text-opponent font-bold text-lg sm:text-2xl">?</span>
-      <% end %>
-    </div>
+    </button>
     """
   end
 
-  defp format_card_v2(assigns) do
-    # Determine if both players selected this format for special animation
-    both_selected = assigns.selected and assigns.opponent_selected
+  # ---------- Primitives ----------
 
-    assigns = assign(assigns, :both_selected, both_selected)
-
-    ~H"""
-    <div class={[
-      "relative",
-      @both_selected && "lock-in-wrapper"
-    ]}>
-      <button
-        phx-click="select_format"
-        phx-value-format={@format}
-        class={[
-          "relative w-full p-2.5 sm:p-5 rounded-xl sm:rounded-2xl transition-all border-2 text-center group",
-          "bg-white/90 backdrop-blur-sm shadow-lg hover:shadow-xl hover:scale-105",
-          "border-white/50 hover:border-white"
-        ]}
-      >
-        <!-- Corner selection indicators -->
-        <%= cond do %>
-          <% @both_selected -> %>
-            <!-- Both selected - animated lock-in corners -->
-            <div class="absolute -top-[2px] -left-[2px] w-5 h-5 sm:w-6 sm:h-6 border-t-[3px] border-l-[3px] rounded-tl-xl sm:rounded-tl-2xl corner-lock-in-a">
-            </div>
-            <div class="absolute -top-[2px] -right-[2px] w-5 h-5 sm:w-6 sm:h-6 border-t-[3px] border-r-[3px] rounded-tr-xl sm:rounded-tr-2xl corner-lock-in-b">
-            </div>
-            <div class="absolute -bottom-[2px] -left-[2px] w-5 h-5 sm:w-6 sm:h-6 border-b-[3px] border-l-[3px] rounded-bl-xl sm:rounded-bl-2xl corner-lock-in-b">
-            </div>
-            <div class="absolute -bottom-[2px] -right-[2px] w-5 h-5 sm:w-6 sm:h-6 border-b-[3px] border-r-[3px] rounded-br-xl sm:rounded-br-2xl corner-lock-in-a">
-            </div>
-          <% @selected -> %>
-            <!-- Only you selected - all player corners -->
-            <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-player rounded-tl-xl sm:rounded-tl-2xl">
-            </div>
-            <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-player rounded-tr-xl sm:rounded-tr-2xl">
-            </div>
-            <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] border-player rounded-bl-xl sm:rounded-bl-2xl">
-            </div>
-            <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-player rounded-br-xl sm:rounded-br-2xl">
-            </div>
-          <% @opponent_selected -> %>
-            <!-- Only opponent selected - all opponent corners -->
-            <div class="absolute -top-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-l-[3px] border-opponent rounded-tl-xl sm:rounded-tl-2xl">
-            </div>
-            <div class="absolute -top-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-t-[3px] border-r-[3px] border-opponent rounded-tr-xl sm:rounded-tr-2xl">
-            </div>
-            <div class="absolute -bottom-[2px] -left-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-l-[3px] border-opponent rounded-bl-xl sm:rounded-bl-2xl">
-            </div>
-            <div class="absolute -bottom-[2px] -right-[2px] w-4 h-4 sm:w-5 sm:h-5 border-b-[3px] border-r-[3px] border-opponent rounded-br-xl sm:rounded-br-2xl">
-            </div>
-          <% true -> %>
-            <!-- No selection -->
-        <% end %>
-        
-    <!-- Abstract SVG decoration per format -->
-        <div class="absolute inset-0 overflow-hidden text-gray-400 opacity-20">
-          <%= case @format do %>
-            <% "short" -> %>
-              <!-- Bullet shapes flying right -->
-              <svg
-                class="absolute inset-0 w-full h-full"
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-              >
-                <path
-                  d="M5 20 Q3 20 3 18 L3 16 Q3 14 5 14 L12 14 L16 17 L12 20 Z"
-                  fill="currentColor"
-                />
-                <path
-                  d="M70 35 Q68 35 68 33 L68 31 Q68 29 70 29 L77 29 L81 32 L77 35 Z"
-                  fill="currentColor"
-                />
-                <path
-                  d="M25 55 Q23 55 23 53 L23 51 Q23 49 25 49 L32 49 L36 52 L32 55 Z"
-                  fill="currentColor"
-                />
-                <path
-                  d="M80 75 Q78 75 78 73 L78 71 Q78 69 80 69 L87 69 L91 72 L87 75 Z"
-                  fill="currentColor"
-                />
-                <path
-                  d="M15 85 Q13 85 13 83 L13 81 Q13 79 15 79 L22 79 L26 82 L22 85 Z"
-                  fill="currentColor"
-                />
-              </svg>
-            <% "standard" -> %>
-              <!-- Concentric circles -->
-              <svg class="absolute -right-6 -bottom-6 w-28 h-28" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="45" fill="none" stroke="currentColor" stroke-width="2" />
-                <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" stroke-width="2" />
-                <circle cx="50" cy="50" r="19" fill="none" stroke="currentColor" stroke-width="2" />
-                <circle cx="50" cy="50" r="6" fill="currentColor" />
-              </svg>
-            <% "extended" -> %>
-              <!-- Train track going from bottom-left to top-right -->
-              <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100">
-                <!-- Two parallel rails -->
-                <line x1="5" y1="108" x2="115" y2="-2" stroke="currentColor" stroke-width="2.5" />
-                <line x1="20" y1="120" x2="130" y2="10" stroke="currentColor" stroke-width="2.5" />
-                <!-- Cross ties (chunky wooden sleepers) -->
-                <line x1="9" y1="104" x2="24" y2="116" stroke="currentColor" stroke-width="4" />
-                <line x1="21" y1="92" x2="36" y2="104" stroke="currentColor" stroke-width="4" />
-                <line x1="33" y1="80" x2="48" y2="92" stroke="currentColor" stroke-width="4" />
-                <line x1="45" y1="68" x2="60" y2="80" stroke="currentColor" stroke-width="4" />
-                <line x1="57" y1="56" x2="72" y2="68" stroke="currentColor" stroke-width="4" />
-                <line x1="69" y1="44" x2="84" y2="56" stroke="currentColor" stroke-width="4" />
-                <line x1="81" y1="32" x2="96" y2="44" stroke="currentColor" stroke-width="4" />
-                <line x1="93" y1="20" x2="108" y2="32" stroke="currentColor" stroke-width="4" />
-                <line x1="105" y1="8" x2="120" y2="20" stroke="currentColor" stroke-width="4" />
-              </svg>
-          <% end %>
-        </div>
-        
-    <!-- Text content - centered and stacked -->
-        <div class="relative z-10 flex flex-col items-center gap-0.5 sm:gap-1">
-          <div class="text-gray-800 font-bold text-sm sm:text-lg">{@title}</div>
-          <div class="text-gray-500 text-[10px] sm:text-xs hidden sm:block">{@description}</div>
-          <div class="text-gray-400 text-[10px] sm:text-xs">{@subtitle}</div>
-        </div>
-      </button>
-    </div>
-    """
-  end
-
-  # ============================================================================
-  # BRAND COMPONENTS (inlined)
-  # ============================================================================
-
-  defp brand_styles(assigns) do
-    ~H"""
-    <style>
-      @keyframes drift-right {
-        0% { transform: translateX(-150px) translateY(var(--y-offset, 0px)) rotate(var(--rot, 0deg)); }
-        50% { transform: translateX(calc(100vw / 2 - 50px)) translateY(calc(var(--y-offset, 0px) + var(--y-wave, -15px))) rotate(calc(var(--rot, 0deg) + 3deg)); }
-        100% { transform: translateX(calc(100vw + 150px)) translateY(var(--y-offset, 0px)) rotate(var(--rot, 0deg)); }
-      }
-      @keyframes drift-left {
-        0% { transform: translateX(calc(100vw + 150px)) translateY(var(--y-offset, 0px)) rotate(var(--rot, 0deg)); }
-        50% { transform: translateX(calc(100vw / 2 - 50px)) translateY(calc(var(--y-offset, 0px) + var(--y-wave, -15px))) rotate(calc(var(--rot, 0deg) - 3deg)); }
-        100% { transform: translateX(-150px) translateY(var(--y-offset, 0px)) rotate(var(--rot, 0deg)); }
-      }
-      .floating-battle {
-        position: absolute;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-        opacity: 0.25;
-        left: 0;
-        top: var(--row, 10%);
-      }
-      .floating-battle.drift-r { animation: drift-right var(--speed, 20s) linear infinite; }
-      .floating-battle.drift-l { animation: drift-left var(--speed, 20s) linear infinite; }
-      .battle-hand { display: flex; gap: 2px; }
-      .battle-hand.loser { opacity: 0.5; }
-      .battle-vs {
-        font-size: 9px;
-        font-weight: bold;
-        color: #fff;
-        text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-        padding: 1px 6px;
-        background: linear-gradient(135deg, #dc2626, #db2777);
-        border-radius: 3px;
-      }
-      .mini-card {
-        width: 24px;
-        height: 34px;
-        background: linear-gradient(145deg, #fff, #f0f0f0);
-        border-radius: 3px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        font-size: 10px;
-        line-height: 1;
-      }
-      .mini-card .rank { font-size: 9px; }
-      .mini-card .suit { font-size: 8px; margin-top: -2px; }
-      .mini-card.red { color: #dc2626; }
-      .mini-card.black { color: #1f2937; }
-      @keyframes pulse-glow {
-        0%, 100% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.3); }
-        50% { box-shadow: 0 0 30px rgba(34, 197, 94, 0.6); }
-      }
-      .ready-glow { animation: pulse-glow 2s ease-in-out infinite; }
-      @keyframes logo-slide-up {
-        0% { transform: translateY(80px); }
-        100% { transform: translateY(0); }
-      }
-      @keyframes content-fade-in {
-        0% { opacity: 0; transform: translateY(20px); }
-        100% { opacity: 1; transform: translateY(0); }
-      }
-      .animate-logo {
-        animation: logo-slide-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      }
-      .animate-content {
-        animation: content-fade-in 0.4s ease-out 0.3s forwards;
-        opacity: 0;
-      }
-    </style>
-    <script>
-      window.addEventListener("phx:copy", (event) => {
-        const text = event.target.innerText || event.target.textContent;
-        navigator.clipboard.writeText(text).then(() => {
-          // Brief visual feedback - change icon to checkmark
-          const button = event.target.closest('button');
-          const svg = button.querySelector('svg');
-          const originalPath = svg.innerHTML;
-          svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
-          svg.classList.add('text-green-500');
-          setTimeout(() => {
-            svg.innerHTML = originalPath;
-            svg.classList.remove('text-green-500');
-          }, 1000);
-        });
-      });
-
-      window.addEventListener("phx:share", (event) => {
-        const text = event.target.innerText || event.target.textContent;
-        const button = event.target.closest('button');
-        const inviteIcon = button.querySelector('#invite-icon');
-
-        // Check if invite-icon is actually visible (not just present in DOM)
-        // On mobile it exists but is hidden via 'hidden sm:inline' class
-        const isDesktop = inviteIcon && window.getComputedStyle(inviteIcon).display !== 'none';
-
-        // Desktop: Always copy to clipboard (invite-icon is visible)
-        if (isDesktop) {
-          navigator.clipboard.writeText(text).then(() => {
-            inviteIcon.classList.remove('hero-clipboard');
-            inviteIcon.classList.add('hero-check', 'text-green-500');
-            setTimeout(() => {
-              inviteIcon.classList.remove('hero-check', 'text-green-500');
-              inviteIcon.classList.add('hero-clipboard');
-            }, 1000);
-          });
-        }
-        // Mobile: Use native share if available, otherwise copy
-        else if (navigator.share) {
-          navigator.share({
-            url: text
-          }).catch((error) => {
-            // User cancelled or error occurred - silently ignore
-            console.log('Share cancelled or failed:', error);
-          });
-        } else {
-          // Mobile fallback: copy and show checkmark on SVG
-          navigator.clipboard.writeText(text).then(() => {
-            const svg = button.querySelector('svg');
-            if (svg) {
-              const originalPath = svg.innerHTML;
-              svg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />';
-              svg.classList.add('text-green-500');
-              setTimeout(() => {
-                svg.innerHTML = originalPath;
-                svg.classList.remove('text-green-500');
-              }, 1000);
-            }
-          });
-        }
-      });
-    </script>
-    """
-  end
-
-  defp logo_large(assigns) do
-    ~H"""
-    <div class="flex justify-center gap-2 mb-8">
-      <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold transform -rotate-12 hover:rotate-0 transition-transform">
-        <span class="text-gray-800">O</span>
-      </div>
-      <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold transform -rotate-6 hover:rotate-0 transition-transform">
-        <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">
-          S
-        </span>
-      </div>
-      <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold hover:rotate-0 transition-transform">
-        <span class="text-gray-800">K</span>
-      </div>
-      <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold transform rotate-6 hover:rotate-0 transition-transform">
-        <span class="bg-gradient-to-br from-red-600 to-pink-600 bg-clip-text text-transparent">
-          O
-        </span>
-      </div>
-      <div class="w-16 h-22 sm:w-20 sm:h-28 bg-white rounded-xl shadow-2xl flex items-center justify-center text-4xl sm:text-5xl font-bold transform rotate-12 hover:rotate-0 transition-transform">
-        <span class="text-gray-800">L</span>
-      </div>
-    </div>
-    """
-  end
-
-  attr :name, :string, required: true
   attr :placeholder, :string, default: ""
 
-  defp brand_input(assigns) do
+  defp name_input(assigns) do
     ~H"""
     <input
       type="text"
-      name={@name}
+      name="player_name"
       placeholder={@placeholder}
-      class="w-full bg-white/90 backdrop-blur-sm border-2 border-white/50 rounded-xl px-5 py-4 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-white text-center text-lg transition-all shadow-lg"
-      autocomplete="one-time-code"
+      maxlength="24"
+      class="name-field w-full px-4 py-3 text-lg"
+      style="color: var(--ink)"
+      autocomplete="off"
       autocorrect="off"
-      autocapitalize="off"
+      autocapitalize="words"
       spellcheck="false"
       data-1p-ignore="true"
       data-lpignore="true"
-      data-form-type="other"
-      data-google-autofill="off"
       phx-mounted={JS.focus()}
     />
     """
   end
 
   attr :type, :string, default: "button"
-  attr :color, :atom, default: :primary
-  attr :class, :string, default: ""
-  attr :rest, :global
+  attr :disabled, :boolean, default: false
+  attr :color, :string, default: "red"
+  attr :rest, :global, include: ~w(phx-click id)
   slot :inner_block, required: true
 
-  defp brand_button(assigns) do
-    gradient =
-      case assigns.color do
-        :primary -> "from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600"
-        :yellow -> "from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600"
-        :green -> "from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-        # Legacy colors
-        :red -> "from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700"
-        :blue -> "from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600"
-      end
-
-    assigns = assign(assigns, :gradient, gradient)
-
+  defp cta(assigns) do
     ~H"""
     <button
       type={@type}
+      disabled={@disabled}
       class={[
-        "relative w-full px-8 py-4 rounded-xl font-bold text-lg text-white transition-all shadow-xl overflow-hidden",
-        "hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98]",
-        "bg-gradient-to-r #{@gradient}",
-        @class
+        "btn-arcade pixel text-[11px] sm:text-xs w-full sm:w-auto sm:min-w-[12rem] px-6 py-4",
+        @color
       ]}
       {@rest}
     >
-      <span class="relative z-10">{render_slot(@inner_block)}</span>
-      <.card_decorations />
+      {render_slot(@inner_block)}
     </button>
     """
   end
 
-  defp card_decorations(assigns) do
-    ~H"""
-    <span
-      class="absolute text-white/20 text-2xl"
-      style="top: 8%; left: 8%; transform: rotate(-15deg);"
-    >
-      &#9824;
-    </span>
-    <span class="absolute text-white/20 text-xl" style="top: 60%; left: 5%; transform: rotate(10deg);">
-      &#9830;
-    </span>
-    <span
-      class="absolute text-white/20 text-3xl"
-      style="top: 15%; right: 10%; transform: rotate(20deg);"
-    >
-      &#9829;
-    </span>
-    <span
-      class="absolute text-white/20 text-xl"
-      style="top: 55%; right: 8%; transform: rotate(-8deg);"
-    >
-      &#9827;
-    </span>
-    <span class="absolute text-white/20 text-lg" style="top: 35%; left: 20%; transform: rotate(5deg);">
-      &#9829;
-    </span>
-    <span
-      class="absolute text-white/20 text-2xl"
-      style="top: 40%; right: 22%; transform: rotate(-12deg);"
-    >
-      &#9824;
-    </span>
-    """
-  end
-
-  defp mini_card(assigns) do
-    color_class = if assigns.suit in [:hearts, :diamonds], do: "red", else: "black"
-
-    suit_symbol =
-      case assigns.suit do
-        :hearts -> "&#9829;"
-        :diamonds -> "&#9830;"
-        :clubs -> "&#9827;"
-        :spades -> "&#9824;"
-      end
-
-    assigns =
-      assigns
-      |> assign(:color_class, color_class)
-      |> assign(:suit_symbol, suit_symbol)
-
-    ~H"""
-    <div class={"mini-card #{@color_class}"}>
-      <span class="rank">{@rank}</span>
-      <span class="suit">{raw(@suit_symbol)}</span>
-    </div>
-    """
-  end
-
-  defp floating_battles(assigns) do
-    ~H"""
-    <!-- Battle 1 -->
-    <div
-      class="floating-battle drift-r"
-      style="--row: 6%; --speed: 28s; --rot: -2deg; --y-wave: -10px;"
-    >
-      <div class="battle-hand">
-        <.mini_card rank="7" suit={:hearts} />
-        <.mini_card rank="7" suit={:spades} />
-        <.mini_card rank="7" suit={:diamonds} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand loser">
-        <.mini_card rank="K" suit={:spades} />
-        <.mini_card rank="K" suit={:hearts} />
-      </div>
-    </div>
-    <!-- Battle 2 -->
-    <div
-      class="floating-battle drift-l"
-      style="--row: 18%; --speed: 32s; --rot: 3deg; --y-wave: -12px; animation-delay: -8s;"
-    >
-      <div class="battle-hand">
-        <.mini_card rank="3" suit={:clubs} />
-        <.mini_card rank="3" suit={:diamonds} />
-        <.mini_card rank="3" suit={:spades} />
-        <.mini_card rank="9" suit={:hearts} />
-        <.mini_card rank="9" suit={:clubs} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand loser">
-        <.mini_card rank="5" suit={:hearts} />
-        <.mini_card rank="6" suit={:spades} />
-        <.mini_card rank="7" suit={:diamonds} />
-        <.mini_card rank="8" suit={:clubs} />
-        <.mini_card rank="9" suit={:hearts} />
-      </div>
-    </div>
-    <!-- Battle 3 -->
-    <div
-      class="floating-battle drift-r"
-      style="--row: 28%; --speed: 25s; --rot: -3deg; --y-wave: -8px; animation-delay: -14s;"
-    >
-      <div class="battle-hand">
-        <.mini_card rank="A" suit={:spades} />
-        <.mini_card rank="A" suit={:hearts} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand loser">
-        <.mini_card rank="K" suit={:diamonds} />
-        <.mini_card rank="K" suit={:clubs} />
-      </div>
-    </div>
-    <!-- Battle 4 -->
-    <div
-      class="floating-battle drift-l"
-      style="--row: 38%; --speed: 35s; --rot: 2deg; --y-wave: -14px; animation-delay: -5s;"
-    >
-      <div class="battle-hand">
-        <.mini_card rank="J" suit={:spades} />
-        <.mini_card rank="J" suit={:hearts} />
-        <.mini_card rank="J" suit={:clubs} />
-        <.mini_card rank="J" suit={:diamonds} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand loser">
-        <.mini_card rank="2" suit={:hearts} />
-        <.mini_card rank="6" suit={:hearts} />
-        <.mini_card rank="9" suit={:hearts} />
-        <.mini_card rank="J" suit={:hearts} />
-        <.mini_card rank="K" suit={:hearts} />
-      </div>
-    </div>
-    <!-- Battle 5 -->
-    <div
-      class="floating-battle drift-r"
-      style="--row: 48%; --speed: 30s; --rot: -4deg; --y-wave: -10px; animation-delay: -20s;"
-    >
-      <div class="battle-hand loser">
-        <.mini_card rank="A" suit={:hearts} />
-        <.mini_card rank="A" suit={:spades} />
-        <.mini_card rank="5" suit={:diamonds} />
-        <.mini_card rank="5" suit={:clubs} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand">
-        <.mini_card rank="Q" suit={:spades} />
-        <.mini_card rank="Q" suit={:hearts} />
-        <.mini_card rank="Q" suit={:clubs} />
-      </div>
-    </div>
-    <!-- Battle 6 -->
-    <div
-      class="floating-battle drift-l"
-      style="--row: 58%; --speed: 38s; --rot: 3deg; --y-wave: -12px; animation-delay: -12s;"
-    >
-      <div class="battle-hand">
-        <.mini_card rank="4" suit={:clubs} />
-        <.mini_card rank="5" suit={:clubs} />
-        <.mini_card rank="6" suit={:clubs} />
-        <.mini_card rank="7" suit={:clubs} />
-        <.mini_card rank="8" suit={:clubs} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand loser">
-        <.mini_card rank="9" suit={:hearts} />
-        <.mini_card rank="9" suit={:spades} />
-        <.mini_card rank="9" suit={:diamonds} />
-        <.mini_card rank="9" suit={:clubs} />
-      </div>
-    </div>
-    <!-- Battle 7 -->
-    <div
-      class="floating-battle drift-r"
-      style="--row: 68%; --speed: 26s; --rot: -2deg; --y-wave: -9px; animation-delay: -25s;"
-    >
-      <div class="battle-hand">
-        <.mini_card rank="5" suit={:spades} />
-        <.mini_card rank="5" suit={:hearts} />
-        <.mini_card rank="5" suit={:clubs} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand loser">
-        <.mini_card rank="J" suit={:diamonds} />
-        <.mini_card rank="J" suit={:clubs} />
-      </div>
-    </div>
-    <!-- Battle 8 -->
-    <div
-      class="floating-battle drift-l"
-      style="--row: 78%; --speed: 33s; --rot: 4deg; --y-wave: -11px; animation-delay: -18s;"
-    >
-      <div class="battle-hand loser">
-        <.mini_card rank="10" suit={:spades} />
-        <.mini_card rank="J" suit={:hearts} />
-        <.mini_card rank="Q" suit={:clubs} />
-        <.mini_card rank="K" suit={:diamonds} />
-        <.mini_card rank="A" suit={:spades} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand">
-        <.mini_card rank="K" suit={:clubs} />
-        <.mini_card rank="K" suit={:diamonds} />
-        <.mini_card rank="K" suit={:spades} />
-        <.mini_card rank="4" suit={:hearts} />
-        <.mini_card rank="4" suit={:spades} />
-      </div>
-    </div>
-    <!-- Battle 9 -->
-    <div
-      class="floating-battle drift-r"
-      style="--row: 88%; --speed: 29s; --rot: -3deg; --y-wave: -13px; animation-delay: -30s;"
-    >
-      <div class="battle-hand">
-        <.mini_card rank="3" suit={:diamonds} />
-        <.mini_card rank="7" suit={:diamonds} />
-        <.mini_card rank="10" suit={:diamonds} />
-        <.mini_card rank="Q" suit={:diamonds} />
-        <.mini_card rank="A" suit={:diamonds} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand loser">
-        <.mini_card rank="4" suit={:spades} />
-        <.mini_card rank="5" suit={:hearts} />
-        <.mini_card rank="6" suit={:clubs} />
-        <.mini_card rank="7" suit={:diamonds} />
-        <.mini_card rank="8" suit={:spades} />
-      </div>
-    </div>
-    <!-- Battle 10 -->
-    <div
-      class="floating-battle drift-l"
-      style="--row: 95%; --speed: 24s; --rot: 2deg; --y-wave: -8px; animation-delay: -7s;"
-    >
-      <div class="battle-hand">
-        <.mini_card rank="8" suit={:diamonds} />
-        <.mini_card rank="8" suit={:hearts} />
-      </div>
-      <div class="battle-vs">VS</div>
-      <div class="battle-hand loser">
-        <.mini_card rank="3" suit={:hearts} />
-        <.mini_card rank="3" suit={:diamonds} />
-      </div>
-    </div>
-    """
-  end
+  # Static class names so Tailwind can find them.
+  defp format_grid_class(1), do: "grid-cols-1"
+  defp format_grid_class(2), do: "grid-cols-2"
+  defp format_grid_class(3), do: "grid-cols-1 sm:grid-cols-3"
+  defp format_grid_class(4), do: "grid-cols-2 sm:grid-cols-4"
+  defp format_grid_class(_), do: "grid-cols-2 sm:grid-cols-3"
 end

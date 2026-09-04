@@ -26,6 +26,8 @@ const config = {
   },
   plugins: plugins,
   logLevel: "info",
+  minify: deploy,
+  define: { "process.env.NODE_ENV": JSON.stringify(deploy ? "production" : "development") },
 };
 
 if (watch) {

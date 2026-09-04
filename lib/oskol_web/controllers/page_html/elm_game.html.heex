@@ -4,7 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <title>Oskol - Poker Roguelike</title>
+    <title>{String.capitalize(@slug)} · Oskol</title>
+    <meta name="robots" content="noindex" />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
@@ -36,10 +37,11 @@
       }
     </style>
   </head>
-  <body class="h-full">
+  <body class="h-full paper">
     <div
       id="elm-game-app"
       data-game-id={@game_id}
+      data-game-slug={@slug}
       data-player-id={if @player_id, do: @player_id, else: ""}
     >
     </div>

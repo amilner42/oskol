@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Run the Gleam test suite.
+#
+# mix (via mix_gleam) and the gleam CLI share the build/ directory, and mix
+# compiles the oskol package without emitting beams into it. The gleam CLI's
+# cache then believes the package is up to date and runtime lookups fail with
+# "A function was called but it did not exist". Dropping just our package's
+# build output before running forces a fresh, complete compile (deps stay).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rm -rf build/dev/erlang/oskol
+exec gleam test "$@"

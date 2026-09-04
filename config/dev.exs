@@ -15,6 +15,8 @@ config :oskol, OskolWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "wQYiBumdsjOT3DphnuUS1vD+hyZ5TqzjdDuHlbqkfE2fss/NcD0FqE/1dvz0UO69",
   watchers: [
+    # Elm + JS bundle via esbuild (assets/build.js)
+    node: ["build.js", "--watch", cd: Path.expand("../assets", __DIR__)],
     tailwind: {Tailwind, :install_and_run, [:oskol, ~w(--watch)]}
   ]
 

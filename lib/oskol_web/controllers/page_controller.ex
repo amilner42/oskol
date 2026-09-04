@@ -1,51 +1,34 @@
 defmodule OskolWeb.PageController do
   use OskolWeb, :controller
 
-  alias Oskol.Game.GleamEngine
+  alias Oskol.Game.GameServerState
+  alias Oskol.GameKit
 
-  def home(conn, _params) do
-    render(conn, :home)
+  @doc "Serves the Elm client for a running game."
+  def play(conn, %{"slug" => slug, "id" => game_id} = params) do
+    if GameKit.exists?(slug) do
+      player_id = get_session(conn, :player_id) || player_id_from_name(game_id, params["name"])
+
+      render(conn, :elm_game,
+        layout: false,
+        game_id: game_id,
+        slug: slug,
+        player_id: player_id
+      )
+    else
+      conn |> put_status(:not_found) |> put_view(OskolWeb.ErrorHTML) |> render(:"404")
+    end
   end
 
-  def elm_game(conn, %{"id" => game_id} = params) do
-    # Try to get player_id from session first
-    player_id =
-      case get_session(conn, :player_id) do
-        nil ->
-          # If not in session, try to look up by name from game state
-          case params["name"] do
-            nil ->
-              nil
+  defp player_id_from_name(_game_id, nil), do: nil
 
-            name ->
-              # Get game state and find player_id by name
-              try do
-                game_server_state = Oskol.Game.GameServer.get_state(game_id)
-
-                # If game has started, look up player_id from player_names
-                if game_server_state.game_state do
-                  # Find the player_id where the name matches
-                  player_names = GleamEngine.get_player_names(game_server_state.game_state)
-
-                  Enum.find_value(player_names, fn {pid, player_name} ->
-                    if player_name == name, do: pid, else: nil
-                  end)
-                else
-                  nil
-                end
-              catch
-                :exit, _ -> nil
-              end
-          end
-
-        session_player_id ->
-          session_player_id
-      end
-
-    render(conn, :elm_game,
-      layout: false,
-      game_id: game_id,
-      player_id: player_id
-    )
+  defp player_id_from_name(game_id, name) do
+    try do
+      game_id
+      |> Oskol.Game.GameServer.get_state()
+      |> GameServerState.find_player_id_by_name(name)
+    catch
+      :exit, _ -> nil
+    end
   end
 end

@@ -1,3 +1,20 @@
+# `gleam build` and `gleam test` write an escript named gleam@@compile.erl
+# into each package's artefact directory. It is not an Erlang module, and the
+# Erlang compiler would choke on it, so this tiny compiler step removes it
+# before the erlang compiler runs.
+defmodule Mix.Tasks.Compile.GleamClean do
+  use Mix.Task.Compiler
+
+  @impl true
+  def run(_args) do
+    "build/*/erlang/*/_gleam_artefacts/gleam@@compile.erl"
+    |> Path.wildcard()
+    |> Enum.each(&File.rm/1)
+
+    {:noop, []}
+  end
+end
+
 defmodule Oskol.MixProject do
   use Mix.Project
 
@@ -15,13 +32,12 @@ defmodule Oskol.MixProject do
       ],
       erlc_include_path: "build/dev/erlang/oskol/include",
       erlc_options: [{:d, :GLEAM}],
-      erlc_exclude_paths: ["build/dev/erlang/*/gleam@@compile.erl"],
       prune_code_paths: false,
       start_permanent: Mix.env() == :prod,
       archives: [mix_gleam: "~> 0.6"],
       aliases: aliases(),
       deps: deps(),
-      compilers: [:gleam, :phoenix_live_view | Mix.compilers()],
+      compilers: [:gleam, :gleam_clean, :phoenix_live_view | Mix.compilers()],
       listeners: [Phoenix.CodeReloader]
     ]
   end
@@ -43,7 +59,9 @@ defmodule Oskol.MixProject do
   end
 
   # Specifies which paths to compile per environment.
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  # Elixir test support lives outside test/ so the Gleam compiler does not
+  # try to build it as part of the Gleam package.
+  defp elixirc_paths(:test), do: ["lib", "test_support"]
   defp elixirc_paths(_), do: ["lib"]
 
   # Specifies your project dependencies.
@@ -92,9 +110,12 @@ defmodule Oskol.MixProject do
   defp aliases do
     [
       "deps.get": ["deps.get", "gleam.deps.get"],
+      # The gleam compiler step forwards positional args to deps tasks, which
+      # breaks `mix test path/to/test.exs`; compile first, then test without it.
+      test: ["compile", "test --no-compile"],
       setup: ["deps.get", "assets.setup", "assets.build"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind oskol", "esbuild oskol"],
+      "assets.build": ["compile", "tailwind oskol", "cmd --cd assets node build.js"],
       "assets.deploy": [
         "tailwind oskol --minify",
         "cmd --cd assets node build.js --deploy",
