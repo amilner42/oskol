@@ -6,7 +6,8 @@ from a link: no accounts, phone-friendly, free. Each game is the real thing
 first, and will offer optional twists that throw the book out (a reroll in
 backgammon, two hands in hold'em). **Poker** is heads-up No-Limit Texas
 Hold'em as a cash game (pick the stakes, chips carry over, optional auto
-top-up) or a sit-and-go (1,500 chips, blinds rise, last chip wins).
+top-up; leaving mid-hand folds it) or a sit-and-go (1,500 chips, blinds
+rise, last chip wins).
 **Backgammon** is the classic race game with the doubling cube: single games,
 matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
 Jacoby rule. Every game can be played with an optional time control.
@@ -88,7 +89,10 @@ Rules that keep this honest:
   be charged right now. `gamekit/clock` owns the arithmetic, `gamekit/instance`
   applies it with the host's `now`, and when a clock runs out the instance
   asks `timeout`: backgammon forfeits, poker checks or folds (or deals the
-  next hand) and play goes on.
+  next hand) and play goes on. An action that arrives after a clock ran
+  out is applied after the timeout if it is still legal, never instead of
+  it. Clock-driven turns do not count as room activity: a table nobody is
+  at still goes idle after an hour.
 
 ## The protocol (`src/gamekit/scene.gleam`, `event.gleam`, `action.gleam`)
 

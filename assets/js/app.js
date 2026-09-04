@@ -136,7 +136,11 @@ if (elmGameContainer) {
 
   gameChannel.join()
     .receive("ok", (resp) => send({ type: "payload", payload: resp.payload }))
-    .receive("error", (resp) => send({ type: "error", message: resp.reason || "Failed to join game" }));
+    .receive("error", (resp) => {
+      // A room that is gone stays gone: report it instead of rejoining forever.
+      send({ type: "error", message: resp.reason || "Failed to join game" });
+      gameChannel.leave();
+    });
 
   gameChannel.on("update", (msg) => send({ type: "payload", payload: msg.payload }));
   gameChannel.on("error", (msg) => send({ type: "error", message: msg.message || "Action failed" }));

@@ -200,13 +200,15 @@ pub fn set_running(
           let wants = list.contains(should_run, id)
           case is_running, wants {
             True, True ->
-              // An actor who stays on the clock gets a fresh action
-              // allowance under a move bank; other controls keep ticking
-              // through a multi-step turn.
-              case control, actor == Some(id) {
-                MoveBank(_, _), True ->
+              // Under a move bank every applied action puts a new decision
+              // in front of whoever stays on the clock (the actor again, or
+              // the button when the opponent dealt), so the allowance
+              // restarts; other controls keep ticking through a multi-step
+              // turn.
+              case control {
+                MoveBank(_, _) ->
                   start(control, stop(control, settle(clock, now), True), now)
-                _, _ -> clock
+                _ -> clock
               }
             False, False -> clock
             True, False -> stop(control, settle(clock, now), actor == Some(id))

@@ -7,7 +7,9 @@ defmodule Oskol.Game.GameServer do
   The creator sets the room up (format, settings, clock) and shares a link;
   the game starts the moment the table is full.
   """
-  use GenServer
+  # Rooms hold their whole state in memory, so a restart could only ever
+  # produce an empty room with a taken id: an idle stop is final.
+  use GenServer, restart: :temporary
   require Logger
 
   alias Oskol.Game.GameServerState
@@ -143,21 +145,23 @@ defmodule Oskol.Game.GameServer do
       player_id ->
         old = state.connections[player_id]
 
-        if old.connected do
-          {:reply, {:error, :player_already_connected}, state, @timeout}
-        else
-          if old.monitor_ref, do: Process.demonitor(old.monitor_ref, [:flush])
-          monitor_ref = Process.monitor(player_pid)
-          updated = %{old | pid: player_pid, connected: true, monitor_ref: monitor_ref}
+        # The newest channel is the live one, even when the previous socket
+        # has not timed out yet (a phone coming back before the old
+        # websocket closed): its monitor is dropped so the old socket's exit
+        # cannot mark a present player as away.
+        if old.monitor_ref, do: Process.demonitor(old.monitor_ref, [:flush])
+        monitor_ref = Process.monitor(player_pid)
+        updated = %{old | pid: player_pid, connected: true, monitor_ref: monitor_ref}
 
-          new_state =
-            %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
-            |> GameServerState.touch()
-            |> GameServerState.update_lobby_status()
+        new_state =
+          %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
+          |> GameServerState.touch()
+          |> GameServerState.update_lobby_status()
 
-          # No broadcast: the rejoining client receives state in its join reply.
-          {:reply, {:ok, player_id, new_state}, new_state, @timeout}
-        end
+        # The rejoining client gets the state in its reply; everyone else
+        # learns the seat is live again.
+        broadcast(new_state, [])
+        {:reply, {:ok, player_id, new_state}, new_state, @timeout}
     end
   end
 
@@ -263,21 +267,26 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
+  # Clock-driven turns are not activity: a table both players walked away
+  # from must still go idle, even if the clock keeps dealing hands.
   def handle_info(:clock_tick, %GameServerState{} = state) do
     state = %GameServerState{state | clock_timer: nil}
 
-    case state.instance && GameKit.expire(state.instance, GameKit.now()) do
-      {:ok, instance, events} ->
-        new_state =
-          %GameServerState{state | instance: instance}
-          |> GameServerState.touch()
-          |> schedule_clock_tick()
+    if GameServerState.idle?(state, @timeout) do
+      handle_info(:timeout, state)
+    else
+      case state.instance && GameKit.expire(state.instance, GameKit.now()) do
+        {:ok, instance, events} ->
+          new_state =
+            %GameServerState{state | instance: instance}
+            |> schedule_clock_tick()
 
-        broadcast(new_state, events)
-        {:noreply, new_state, @timeout}
+          broadcast(new_state, events)
+          {:noreply, new_state, @timeout}
 
-      _ ->
-        {:noreply, schedule_clock_tick(state), @timeout}
+        _ ->
+          {:noreply, schedule_clock_tick(state), @timeout}
+      end
     end
   end
 

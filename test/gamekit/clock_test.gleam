@@ -103,6 +103,18 @@ pub fn move_bank_gives_every_action_fresh_time_and_dips_into_the_bank_test() {
   assert clock.remaining(c, b, 20_000) == 9000
 }
 
+pub fn move_bank_restarts_the_allowance_when_the_opponent_acts_test() {
+  // a (the button) is on the clock between hands; b deals at 3000. a now
+  // faces a new decision and gets the full action time again.
+  let c =
+    clock.new(clock.MoveBank(5000, 10_000), [a, b])
+    |> clock.set_running([a], 0, None)
+  let c = clock.set_running(c, [a], 3000, Some(b))
+  assert clock.remaining(c, a, 8000) == 10_000
+  assert clock.remaining(c, a, 9000) == 9000
+  assert clock.next_deadline(c, 3000) == Some(15_000)
+}
+
 pub fn move_bank_expires_only_when_action_time_and_bank_are_both_gone_test() {
   let c =
     clock.new(clock.MoveBank(5000, 3000), [a, b])

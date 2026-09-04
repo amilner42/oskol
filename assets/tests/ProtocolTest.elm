@@ -33,12 +33,18 @@ suite =
 
                         stopped =
                             { running | running = False }
+
+                        -- the first moveMs of the move are free (a delay or an action allowance)
+                        withFreeTime =
+                            { running | moveMs = 1500 }
                     in
                     Expect.equal
-                        [ 3000, 5000, 0 ]
+                        [ 3000, 5000, 0, 4500, 5000 ]
                         [ Protocol.remainingNow running 1000 3000
                         , Protocol.remainingNow stopped 1000 3000
                         , Protocol.remainingNow running 1000 99000
+                        , Protocol.remainingNow withFreeTime 1000 3000
+                        , Protocol.remainingNow withFreeTime 1000 2000
                         ]
             , test "encodeAction wraps name and params in the envelope the channel expects" <|
                 \_ ->

@@ -73,6 +73,7 @@ ctx playerId update model =
     , clock = Html.text ""
     , nameOf = identity
     , rematchReady = []
+    , away = []
     , finished =
         case update.outcome of
             Protocol.Finished winners ->

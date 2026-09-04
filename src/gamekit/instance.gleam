@@ -96,9 +96,21 @@ fn wrap(
     clocks: clocks,
     apply: fn(player_id, raw, now) {
       let current = wrap(definition, seats, state, clocks)
-      // A clock that already ran out decides the game before any new action.
+      // A clock that already ran out decides before any new action. The
+      // action is then still tried on what that left (an opponent's resign,
+      // say); one the timeout made stale is dropped, but never lost
+      // silently along with the timeout itself.
       case expire(current, now) {
-        Some(timed_out) -> Ok(timed_out)
+        Some(#(timed_out, timeout_events)) ->
+          case timed_out.clocks.timed_out {
+            None ->
+              case timed_out.apply(player_id, raw, now) {
+                Ok(#(after, more)) ->
+                  Ok(#(after, list.append(timeout_events, more)))
+                Error(_) -> Ok(#(timed_out, timeout_events))
+              }
+            Some(_) -> Ok(#(timed_out, timeout_events))
+          }
         None -> {
           use <- require(clocks.timed_out == None, "The game is over")
           use incoming <- result.try(action.decode_incoming(raw))

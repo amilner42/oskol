@@ -209,6 +209,7 @@ type alias Ctx =
     , nameOf : String -> String
     , rematchReady : List String
     , finished : Maybe (List String)
+    , away : List String -- seated players whose connection is down
     }
 
 
@@ -221,11 +222,20 @@ view ctx =
         me =
             Protocol.findPlayer ctx.playerId ctx.scene
 
-        them =
-            ctx.scene.players |> List.filter (\p -> p.id /= ctx.playerId) |> List.head
-
         spectating =
             me == Nothing
+
+        -- A spectator watches from the first player's seat.
+        bottom =
+            case me of
+                Just p ->
+                    Just p
+
+                Nothing ->
+                    List.head ctx.scene.players
+
+        them =
+            ctx.scene.players |> List.filter (\p -> Just p.id /= Maybe.map .id bottom) |> List.head
     in
     div [ class "paper min-h-screen flex flex-col items-center px-3 py-3 gap-3 select-none" ]
         [ viewHeader ctx t
@@ -236,17 +246,12 @@ view ctx =
             Nothing ->
                 text ""
         , viewFelt ctx t
-        , case me of
+        , case bottom of
             Just p ->
-                viewSeat ctx t p True
+                viewSeat ctx t p (not spectating)
 
             Nothing ->
-                case ctx.scene.players of
-                    p :: _ ->
-                        viewSeat ctx t p False
-
-                    [] ->
-                        text ""
+                text ""
         , if spectating then
             div [ class "pixel text-[10px]", A.style "color" "var(--pencil)" ] [ text "SPECTATING" ]
 
@@ -342,6 +347,11 @@ viewSeat ctx t player mine =
                         [ text player.name ]
                     , if isButton then
                         span [ class "pixel text-[8px] px-1.5 py-0.5", A.style "border" "2px solid var(--ink)", A.style "background" "var(--highlighter)", A.title "Dealer button" ] [ text "D" ]
+
+                      else
+                        text ""
+                    , if List.member player.id ctx.away then
+                        span [ class "pixel text-[8px] px-1.5 py-0.5", A.style "border" "2px solid var(--red)", A.style "color" "var(--red)", A.title "Connection lost" ] [ text "AWAY" ]
 
                       else
                         text ""
@@ -498,8 +508,8 @@ viewBanner ctx t =
                             ( "split", _ ) ->
                                 "SPLIT POT"
 
-                            ( _, ( w, _ ) :: _ ) ->
-                                String.toUpper (ctx.nameOf w) ++ " WINS THE POT (" ++ String.fromInt t.pot ++ ")"
+                            ( _, ( w, amount ) :: _ ) ->
+                                String.toUpper (ctx.nameOf w) ++ " WINS " ++ String.fromInt amount
 
                             _ ->
                                 ""

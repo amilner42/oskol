@@ -209,6 +209,11 @@ defmodule Oskol.Game.GameServerState do
 
   def update_lobby_status(%__MODULE__{} = state), do: state
 
+  @doc "True when nothing a player did has touched the room for `ms`."
+  def idle?(%__MODULE__{} = state, ms) do
+    System.system_time(:second) - state.last_activity >= div(ms, 1000)
+  end
+
   def touch(%__MODULE__{} = state) do
     %__MODULE__{state | last_activity: System.system_time(:second)}
   end

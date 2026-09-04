@@ -63,6 +63,7 @@ ctx playerId update model =
     , now = 0
     , nameOf = identity
     , rematchReady = []
+    , away = []
     , finished =
         case update.outcome of
             Protocol.Finished winners ->

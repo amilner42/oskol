@@ -12,6 +12,11 @@ defmodule OskolWeb.GameChannel do
 
   @impl true
   def join("game:" <> game_id, %{"player_id" => player_id}, socket) do
+    # A visitor without a seat (no name, or a name nobody holds) watches as
+    # a spectator: the id is opaque to the room, so they can only receive
+    # the spectator projection.
+    player_id = player_id || "spectator-" <> Nanoid.generate(8)
+
     try do
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
       state = GameServer.get_state(game_id)
@@ -28,9 +33,6 @@ defmodule OskolWeb.GameChannel do
             case GameServer.rejoin_game(game_id, name, self()) do
               {:ok, ^player_id, joined} ->
                 joined
-
-              {:error, :player_already_connected} ->
-                state
 
               {:error, reason} ->
                 Logger.warning("Channel rejoin failed: #{inspect(reason)}")
@@ -51,8 +53,15 @@ defmodule OskolWeb.GameChannel do
 
   @impl true
   def handle_in("action", %{"action" => action}, socket) when is_map(action) do
-    GameServer.player_action_async(socket.assigns.game_id, socket.assigns.player_id, action)
-    {:reply, :ok, socket}
+    # A cast to a room that has gone would vanish silently: say so instead.
+    case Oskol.Game.lookup_game(socket.assigns.game_id) do
+      {:ok, _pid} ->
+        GameServer.player_action_async(socket.assigns.game_id, socket.assigns.player_id, action)
+        {:reply, :ok, socket}
+
+      _ ->
+        {:reply, {:error, %{reason: "Game not found"}}, socket}
+    end
   end
 
   def handle_in("action", _payload, socket) do
@@ -60,9 +69,13 @@ defmodule OskolWeb.GameChannel do
   end
 
   def handle_in("rematch", _payload, socket) do
-    case GameServer.request_rematch(socket.assigns.game_id, socket.assigns.player_id) do
-      {:ok, _} -> {:reply, :ok, socket}
-      {:error, reason} -> {:reply, {:error, %{reason: to_string(reason)}}, socket}
+    try do
+      case GameServer.request_rematch(socket.assigns.game_id, socket.assigns.player_id) do
+        {:ok, _} -> {:reply, :ok, socket}
+        {:error, reason} -> {:reply, {:error, %{reason: to_string(reason)}}, socket}
+      end
+    catch
+      :exit, _ -> {:reply, {:error, %{reason: "Game not found"}}, socket}
     end
   end
 

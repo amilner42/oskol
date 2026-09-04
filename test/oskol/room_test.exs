@@ -127,7 +127,12 @@ defmodule Oskol.Game.RoomTest do
       assert {:error, :player_not_found} = Game.rejoin_game(game_id, "Zed", self())
       assert {:ok, ^p1, state} = Game.rejoin_game(game_id, "Alice", self())
       assert state.connections[p1].connected
-      assert {:error, :player_already_connected} = Game.rejoin_game(game_id, "Alice", self())
+      # A newer connection replaces the live one: a phone coming back before
+      # its old socket closed must not end up untracked.
+      newer = sleeper()
+      assert {:ok, ^p1, state} = Game.rejoin_game(game_id, "Alice", newer)
+      assert state.connections[p1].pid == newer
+      assert state.connections[p1].connected
     end
 
     test "reconnecting mid-game keeps the seat and the running instance" do
@@ -150,6 +155,21 @@ defmodule Oskol.Game.RoomTest do
     test "nobody can join a started game" do
       %{game_id: game_id} = room("backgammon", "single")
       assert {:error, :game_full} = Game.join_game(game_id, "Carol", nil)
+    end
+  end
+
+  describe "lifecycle" do
+    test "an idle room stops for good and is not restarted" do
+      %{game_id: game_id} = room("backgammon", "single", seed: 3)
+      {:ok, pid} = Game.lookup_game(game_id)
+      ref = Process.monitor(pid)
+
+      send(pid, :timeout)
+      assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
+      children = DynamicSupervisor.which_children(Oskol.Game.GameSupervisor)
+      refute Enum.any?(children, fn {_, child, _, _} -> child == pid end)
+      # The registry drops the name a moment after the process is gone
+      assert eventually(fn -> Game.lookup_game(game_id) == :not_found end, 300)
     end
   end
 

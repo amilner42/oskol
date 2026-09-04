@@ -226,14 +226,39 @@ the clock to client time.
 -}
 applyPayload : GamePayload -> Model -> ( Model, Cmd Msg )
 applyPayload payload model =
-    ( { model
-        | payload = Just payload
-        , playerId = Just payload.playerId
-        , legal = payload.update.legal
-        , connectionStatus = Connected
-      }
-    , Task.perform ClockSynced Time.now
+    let
+        updated =
+            { model
+                | payload = Just payload
+                , playerId = Just payload.playerId
+                , legal = payload.update.legal
+                , connectionStatus = Connected
+            }
+
+        -- A rematch accepted while this client was away arrives in the
+        -- payload rather than as a rematch_ready push: follow it.
+        follow =
+            case payload.rematchGameId of
+                Just rematchGameId ->
+                    if List.member payload.playerId payload.rematchReady && (model.payload |> Maybe.andThen .rematchGameId) /= Just rematchGameId then
+                        navigateToUrl ("/" ++ model.gameSlug ++ "/" ++ rematchGameId ++ "?name=" ++ percentEncode (myName updated))
+
+                    else
+                        Cmd.none
+
+                Nothing ->
+                    Cmd.none
+    in
+    ( updated
+    , Cmd.batch [ Task.perform ClockSynced Time.now, follow ]
     )
+
+
+{-| Seated players whose connection is currently down.
+-}
+awayIds : GamePayload -> List String
+awayIds payload =
+    payload.players |> List.filter (\p -> not p.connected) |> List.map .id
 
 
 connectionStatusFromString : String -> ConnectionStatus
@@ -297,6 +322,7 @@ pokerCtx model =
                 , nameOf = nameOf model
                 , rematchReady = payload.rematchReady
                 , finished = finishedWinners payload
+                , away = awayIds payload
                 }
 
         _ ->
@@ -347,18 +373,27 @@ view : Model -> Html Msg
 view model =
     case model.payload of
         Nothing ->
-            Html.div [ class "paper min-h-screen flex items-center justify-center" ]
-                [ Html.p [ class "pixel text-xs" ]
-                    [ Html.text
-                        (case model.connectionStatus of
-                            Disconnected ->
-                                "DISCONNECTED"
+            Html.div [ class "paper min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center" ]
+                (case model.error of
+                    Just err ->
+                        [ Html.p [ class "pixel text-xs" ] [ Html.text "THIS GAME IS GONE" ]
+                        , Html.p [ class "text-sm", Html.Attributes.style "color" "var(--pencil)" ] [ Html.text err ]
+                        , Html.a [ Html.Attributes.href ("/" ++ model.gameSlug), class "btn-arcade" ] [ Html.text "START A NEW ONE" ]
+                        ]
 
-                            _ ->
-                                "CONNECTING..."
-                        )
-                    ]
-                ]
+                    Nothing ->
+                        [ Html.p [ class "pixel text-xs" ]
+                            [ Html.text
+                                (case model.connectionStatus of
+                                    Disconnected ->
+                                        "DISCONNECTED"
+
+                                    _ ->
+                                        "CONNECTING..."
+                                )
+                            ]
+                        ]
+                )
 
         Just payload ->
             let
@@ -387,6 +422,7 @@ view model =
                                     , nameOf = nameOf model
                                     , rematchReady = payload.rematchReady
                                     , finished = finished
+                                    , away = awayIds payload
                                     }
                                 )
 

@@ -135,17 +135,37 @@ type alias Ctx =
     , nameOf : String -> String
     , rematchReady : List String
     , finished : Maybe (List String)
+    , away : List String -- seated players whose connection is down
     }
+
+
+{-| The seat this viewer watches from: their own, or the first player's for
+a spectator. Seating (bottom of the board, the 1P pill) follows it; ownership
+of checkers and actions still follows `ctx.playerId`.
+-}
+seatOf : Ctx -> Maybe PlayerInfo
+seatOf ctx =
+    case Protocol.findPlayer ctx.playerId ctx.scene of
+        Just p ->
+            Just p
+
+        Nothing ->
+            List.head ctx.scene.players
+
+
+seatId : Ctx -> String
+seatId ctx =
+    seatOf ctx |> Maybe.map .id |> Maybe.withDefault ctx.playerId
 
 
 view : Ctx -> Html Msg
 view ctx =
     let
         me =
-            Protocol.findPlayer ctx.playerId ctx.scene
+            seatOf ctx
 
         them =
-            Protocol.opponentOf ctx.playerId ctx.scene
+            Protocol.opponentOf (seatId ctx) ctx.scene
 
         myColor =
             me |> Maybe.andThen (Protocol.playerData D.string "color") |> Maybe.withDefault "white"
@@ -221,12 +241,12 @@ viewHeader ctx me them =
             else
                 "MATCH TO " ++ String.fromInt target
     in
-    div [ class "w-full max-w-5xl flex items-center justify-between gap-3" ]
-        [ div [ class "flex items-center gap-3" ]
+    div [ class "w-full max-w-5xl flex flex-wrap items-center justify-between gap-2 sm:gap-3" ]
+        [ div [ class "flex flex-wrap items-center gap-2 sm:gap-3" ]
             [ span [ class "pixel text-[10px] sm:text-xs" ] [ text "BACKGAMMON" ]
             , span [ class "pixel text-[8px] sm:text-[9px] px-2 py-1", style "background" "var(--highlighter)", style "border" "2px solid var(--ink)" ]
                 [ text matchLabel ]
-            , span [ class "pixel text-[8px] sm:text-[9px]", style "color" "var(--pencil)" ]
+            , span [ class "pixel text-[8px] sm:text-[9px] hidden sm:inline", style "color" "var(--pencil)" ]
                 [ text ("GAME " ++ String.fromInt gameNumber) ]
             , if crawford then
                 span [ class "pixel text-[8px] px-2 py-1", style "border" "2px solid var(--red)", style "color" "var(--red)" ] [ text "CRAWFORD" ]
@@ -234,21 +254,26 @@ viewHeader ctx me them =
               else
                 text ""
             ]
-        , div [ class "flex items-center gap-3" ]
-            [ viewScorePill "1P" me "var(--pen)"
-            , viewScorePill "2P" them "var(--red)"
+        , div [ class "flex items-center gap-2 sm:gap-3" ]
+            [ viewScorePill ctx "1P" me "var(--pen)"
+            , viewScorePill ctx "2P" them "var(--red)"
             ]
         ]
 
 
-viewScorePill : String -> Maybe PlayerInfo -> String -> Html Msg
-viewScorePill tag player color =
+viewScorePill : Ctx -> String -> Maybe PlayerInfo -> String -> Html Msg
+viewScorePill ctx tag player color =
     case player of
         Just p ->
             div [ class "flex items-center gap-2 pix-sm px-2 py-1" ]
                 [ span [ class "pixel text-[8px]", style "color" color ] [ text tag ]
                 , span [ class "font-bold text-sm truncate max-w-[6rem]" ] [ text p.name ]
                 , span [ class "pixel text-[10px]" ] [ text (String.fromInt (Protocol.counter "score" p)) ]
+                , if List.member p.id ctx.away then
+                    span [ class "pixel text-[8px]", style "color" "var(--red)", title "Connection lost" ] [ text "AWAY" ]
+
+                  else
+                    text ""
                 ]
 
         Nothing ->
@@ -294,7 +319,7 @@ viewBoard board =
             half bottom
 
         me =
-            board.ctx.playerId
+            seatId board.ctx
 
         themId =
             Protocol.opponentOf me board.ctx.scene |> Maybe.map .id |> Maybe.withDefault ""

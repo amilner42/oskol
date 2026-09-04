@@ -67,8 +67,32 @@ defmodule OskolWeb.LandingLiveTest do
     assert has_element?(view, "#game-backgammon")
   end
 
-  test "an unknown game redirects to the library", %{conn: conn} do
-    assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, ~p"/nope")
+  test "an unknown game is a 404", %{conn: conn} do
+    assert_error_sent 404, fn -> get(conn, ~p"/nope") end
+  end
+
+  test "an invite to a room that is gone does not create one", %{conn: conn} do
+    {:ok, guest, _} = live(conn, ~p"/backgammon?game=gone-room")
+
+    html =
+      guest
+      |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
+      |> render_submit()
+
+    assert html =~ "That game is over"
+    assert has_element?(guest, "form[phx-submit=new_game]")
+    assert :not_found = Oskol.Game.lookup_game("gone-room")
+  end
+
+  test "names are bounded", %{conn: conn} do
+    {:ok, host, _} = live(conn, ~p"/backgammon")
+
+    html =
+      host
+      |> form("form[phx-submit=new_game]", %{"player_name" => String.duplicate("a", 25)})
+      |> render_submit()
+
+    assert html =~ "24 characters at most"
   end
 
   test "creating a game shows the share link and waits for the opponent", %{conn: conn} do

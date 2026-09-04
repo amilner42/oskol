@@ -38,6 +38,8 @@ defmodule OskolWeb.GameChannelTest do
     %{game_id: game_id, state: state, mover: mover, waiting: waiting} = started()
     {_, socket1} = join_room(game_id, mover)
     {_, socket2} = join_room(game_id, waiting)
+    # Each join announces a live seat to everyone; those updates carry no events
+    flush_updates()
     action = legal_move(state.instance, mover)
 
     ref = push(socket1, "action", %{"action" => action})
@@ -83,5 +85,13 @@ defmodule OskolWeb.GameChannelTest do
     assert reply.payload.update["legal"] == []
     assert reply.payload.update["scene"]["viewer"] == nil
     assert Game.get_server_state(game_id).connections |> map_size() == 2
+  end
+
+  defp flush_updates do
+    receive do
+      %Phoenix.Socket.Message{event: "update"} -> flush_updates()
+    after
+      100 -> :ok
+    end
   end
 end

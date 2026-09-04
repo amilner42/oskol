@@ -284,11 +284,48 @@ pub fn a_cash_game_tops_up_short_stacks_and_tracks_the_net_test() {
   // Alice sits with 200 again; she bought 180 in all and is up the 20 she won
   assert state.net(s, p1) == 20
   assert state.net(s, p2) == -20
-  // Leaving ends the session in Alice's favour
+  // Leaving ends the session in Alice's favour: her big blind is folded
+  // to Bob, which does not change who is ahead
   let assert Ok(#(s, _)) = state.leave(s, p1)
   assert s.phase == state.Finished(Some(p1))
-  // The chips in the interrupted hand went back to their owners
-  assert state.stack(s, p1) == 200 && state.stack(s, p2) == 230
+  assert state.stack(s, p1) == 198 && state.stack(s, p2) == 232
+}
+
+pub fn leaving_a_cash_table_mid_hand_is_a_fold_test() {
+  let config =
+    state.Config(
+      format: state.Cash,
+      buy_in: 200,
+      top_up: False,
+      levels: [#(10, 20)],
+      hands_per_level: 0,
+    )
+  let s = spot_with(config, #(150, 250), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Raise(60))
+  let s = play(s, p2, engine.AllIn)
+  // Walking out rather than folding must not get the 60 back
+  let assert Ok(#(s, happenings)) = state.leave(s, p1)
+  assert s.phase == state.Finished(Some(p2))
+  assert state.stack(s, p1) == 90 && state.stack(s, p2) == 310
+  assert list.contains(happenings, state.Acted(p1, "fold", 0))
+}
+
+pub fn all_in_is_a_call_when_there_is_nothing_to_raise_into_test() {
+  // Bob (the button) is all in for 300; Alice may call or fold, not shove 1000
+  let s = spot(#(1000, 300), p2, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p2, engine.AllIn)
+  assert names(s, p1) == ["fold", "call", "resign"]
+  assert state.act(s, p1, state.AllIn)
+    == Error("Nothing to raise into: call instead")
+}
+
+pub fn nobody_is_asked_to_decide_nothing_after_a_short_call_test() {
+  // The button has 15: posts 10 and calls 5 all in. The big blind is owed
+  // nothing by an opponent with no chips, so the board runs out at once.
+  let s = spot(#(15, 1000), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Call)
+  assert state.to_act(s) == None
+  assert s.phase == state.HandOver
 }
 
 pub fn a_cash_game_without_top_up_ends_when_someone_is_felted_test() {

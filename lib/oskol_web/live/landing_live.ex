@@ -49,7 +49,8 @@ defmodule OskolWeb.LandingLive do
       :game ->
         case GameKit.game_info(params["slug"]) do
           {:ok, _} -> {:ok, socket}
-          :error -> {:ok, socket |> put_flash(:error, "Unknown game") |> push_navigate(to: ~p"/")}
+          # A real 404 (not a redirect): crawlers and typos should not land on the library.
+          :error -> raise OskolWeb.NotFoundError
         end
 
       _ ->
@@ -87,7 +88,12 @@ defmodule OskolWeb.LandingLive do
 
             socket =
               if socket.assigns.slug != slug do
-                # Fresh game page: reset the flow
+                # Fresh game page: reset the flow, and stop listening to a
+                # room from the previous page.
+                if socket.assigns.game_name not in [nil, ""] do
+                  Phoenix.PubSub.unsubscribe(Oskol.PubSub, "game:#{socket.assigns.game_name}")
+                end
+
                 assign(socket,
                   page: :game,
                   slug: slug,
@@ -102,6 +108,7 @@ defmodule OskolWeb.LandingLive do
                   step: :create,
                   setup: GameServerState.default_setup(info),
                   game_name: "",
+                  player_name: nil,
                   error: nil,
                   inviter_name: nil,
                   player_id: nil,
@@ -268,48 +275,49 @@ defmodule OskolWeb.LandingLive do
   # ---------- Events ----------
 
   @impl true
-  def handle_event("pick_format", %{"format" => format_id}, socket) do
+  def handle_event("pick_format", %{"format" => format_id}, socket) when is_binary(format_id) do
     setup = %{socket.assigns.setup | format: format_id, selections: %{}}
     {:noreply, assign(socket, setup: setup, error: nil)}
   end
 
-  def handle_event("pick_setting", %{"setting" => setting, "choice" => choice}, socket) do
+  def handle_event("pick_setting", %{"setting" => setting, "choice" => choice}, socket)
+      when is_binary(setting) and is_binary(choice) do
     setup = socket.assigns.setup
     setup = %{setup | selections: Map.put(setup.selections, setting, choice)}
     {:noreply, assign(socket, setup: setup, error: nil)}
   end
 
-  def handle_event("pick_clock", %{"clock" => clock_id}, socket) do
+  def handle_event("pick_clock", %{"clock" => clock_id}, socket) when is_binary(clock_id) do
     {:noreply, assign(socket, setup: %{socket.assigns.setup | clock: clock_id}, error: nil)}
   end
 
   def handle_event("new_game", %{"player_name" => player_name}, socket) do
-    player_name = String.trim(player_name)
+    case clean_name(player_name) do
+      {:error, message} ->
+        {:noreply, assign(socket, error: message)}
 
-    if player_name == "" do
-      {:noreply, assign(socket, error: "Pick a display name first")}
-    else
-      game_id = generate_game_id()
-      {:ok, _pid} = Game.find_or_start_game(game_id, socket.assigns.slug)
-      Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+      {:ok, player_name} ->
+        game_id = generate_game_id()
+        {:ok, _pid} = Game.find_or_start_game(game_id, socket.assigns.slug)
+        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
 
-      with {:ok, _} <- Game.configure(game_id, socket.assigns.setup),
-           {:ok, player_id, new_state} <- Game.join_game(game_id, player_name, self()) do
-        {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
-      else
-        {:error, reason} -> {:noreply, assign(socket, error: format_error(reason))}
-      end
+        with {:ok, _} <- Game.configure(game_id, socket.assigns.setup),
+             {:ok, player_id, new_state} <- Game.join_game(game_id, player_name, self()) do
+          {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
+        else
+          {:error, reason} -> {:noreply, assign(socket, error: format_error(reason))}
+        end
     end
   end
 
+  # Joining never creates a room: an invite to a room that is gone (idle for
+  # an hour, or a restart) says so rather than quietly seating the guest as
+  # the host of a fresh game with default settings.
   def handle_event("submit_player_name", %{"player_name" => player_name}, socket) do
-    player_name = String.trim(player_name)
+    game_id = socket.assigns.game_name
 
-    if player_name == "" do
-      {:noreply, assign(socket, error: "Pick a display name first")}
-    else
-      game_id = socket.assigns.game_name
-      {:ok, _pid} = Game.find_or_start_game(game_id, socket.assigns.slug)
+    with {:ok, player_name} <- clean_name(player_name),
+         {:ok, _pid} <- Game.lookup_game(game_id) do
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
       server_state = Game.get_server_state(game_id)
 
@@ -347,6 +355,17 @@ defmodule OskolWeb.LandingLive do
         {:error, reason} ->
           {:noreply, assign(socket, error: format_error(reason))}
       end
+    else
+      {:error, message} when is_binary(message) ->
+        {:noreply, assign(socket, error: message)}
+
+      _ ->
+        {:noreply,
+         assign(socket,
+           step: :create,
+           game_name: "",
+           error: "That game is over. Start a new one and send a fresh link."
+         )}
     end
   end
 
@@ -430,6 +449,30 @@ defmodule OskolWeb.LandingLive do
     |> String.slice(0, 6)
     |> String.downcase()
   end
+
+  @max_name_length 24
+
+  # A display name: trimmed, bounded, printable. It goes into every payload,
+  # the invite URL and the page title.
+  defp clean_name(name) when is_binary(name) do
+    name = String.trim(name)
+
+    cond do
+      name == "" ->
+        {:error, "Pick a display name first"}
+
+      String.length(name) > @max_name_length ->
+        {:error, "Names are #{@max_name_length} characters at most"}
+
+      String.match?(name, ~r/[\p{C}]/u) ->
+        {:error, "Invalid name"}
+
+      true ->
+        {:ok, name}
+    end
+  end
+
+  defp clean_name(_), do: {:error, "Invalid name"}
 
   defp format_error(:game_full), do: "That game is full"
   defp format_error(:name_taken), do: "That name is already taken"

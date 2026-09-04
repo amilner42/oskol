@@ -18,6 +18,6 @@ config :logger, level: :info
 config :sentry,
   dsn:
     "https://f8fa809a8c03794cd455b50a6021cb75@o4510418103894016.ingest.us.sentry.io/4510418104221696",
-  environment_name: Mix.env(),
+  environment_name: config_env(),
   enable_source_code_context: true,
   root_source_code_paths: [File.cwd!()]

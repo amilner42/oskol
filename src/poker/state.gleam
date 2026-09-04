@@ -482,13 +482,19 @@ pub fn act(
       case raise_bounds(state, id) {
         Ok(_) ->
           Ok(#(put_chips(state, id, my_stack), Acted(id, "all_in", total), True))
-        // Calling for less than the bet, or the opponent cannot call more
-        Error(_) ->
+        // Calling for less than the bet. When nothing can be raised into
+        // and the stack covers the call, this would over-commit: call.
+        Error(_) -> {
+          use <- require(
+            my_stack <= to_call(state, id),
+            "Nothing to raise into: call instead",
+          )
           Ok(#(
             put_chips(state, id, my_stack),
             Acted(id, "all_in", total),
             False,
           ))
+        }
       }
     }
   }
@@ -507,11 +513,14 @@ pub fn act(
       )
     }
     False ->
-      // Whoever is left to act must still have chips to act with
+      // Whoever is left to act must still have chips, and a decision: a
+      // player owed nothing by an opponent who is all in has none.
       Hand(
         ..hand,
         pending: list.filter(hand.pending, fn(p) {
-          p != id && stack(state, p) > 0
+          p != id
+          && stack(state, p) > 0
+          && { to_call(state, p) > 0 || stack(state, other(state, p)) > 0 }
         }),
       )
   }
@@ -714,8 +723,11 @@ pub fn next_hand(
   id: PlayerId,
 ) -> Result(#(GameState, List(Happening)), String) {
   use <- require(is_player(state, id), "Not at this table")
-  use <- require(state.phase == HandOver, "A hand is in progress")
-  Ok(deal(state))
+  case state.phase {
+    Finished(_) -> Error("The game is over")
+    Betting -> Error("A hand is in progress")
+    HandOver -> Ok(deal(state))
+  }
 }
 
 /// Leave the table: in a sit-and-go that concedes; at a cash table the
@@ -729,6 +741,35 @@ pub fn leave(
     Finished(_) -> Error("The game is over")
     _ -> {
       let opp = other(state, id)
+      // Walking out of a live hand at a cash table is a fold: the chips in
+      // the pot go to the opponent, exactly as folding would. In a
+      // sit-and-go the leaver concedes, so the hand's chips do not matter.
+      let #(state, happenings) = case
+        state.config.format,
+        state.hand,
+        state.phase
+      {
+        Cash, Some(hand), Betting -> {
+          let folded =
+            GameState(
+              ..state,
+              hand: Some(Hand(..hand, folded: Some(id), pending: [])),
+            )
+          let #(state, ended) = end_by_fold(folded)
+          #(state, [Acted(id, "fold", 0), ..ended])
+        }
+        _, Some(hand), Betting -> #(
+          GameState(
+            ..state,
+            stacks: list.fold(state.order, state.stacks, fn(stacks, p) {
+              dict.insert(stacks, p, stack(state, p) + committed_of(hand, p))
+            }),
+            hand: Some(Hand(..hand, pending: [])),
+          ),
+          [],
+        )
+        _, _, _ -> #(state, [])
+      }
       let winner = case state.config.format {
         SitAndGo -> Some(opp)
         Cash ->
@@ -738,24 +779,10 @@ pub fn leave(
             order.Eq -> None
           }
       }
-      // Return the current hand's chips to their owners first
-      let state = case state.hand, state.phase {
-        Some(hand), Betting ->
-          GameState(
-            ..state,
-            stacks: list.fold(state.order, state.stacks, fn(stacks, p) {
-              dict.insert(stacks, p, stack(state, p) + committed_of(hand, p))
-            }),
-            hand: Some(Hand(..hand, pending: [])),
-          )
-        _, _ -> state
-      }
-      Ok(
-        #(GameState(..state, phase: Finished(winner)), [
-          Left(id),
-          GameOver(winner),
-        ]),
-      )
+      Ok(#(
+        GameState(..state, phase: Finished(winner)),
+        list.append(happenings, [Left(id), GameOver(winner)]),
+      ))
     }
   }
 }

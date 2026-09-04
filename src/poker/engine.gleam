@@ -285,14 +285,16 @@ fn betting_options(state: GameState, id: String) -> List(Schema) {
       }
     Error(_) -> []
   }
-  let all_in = case sizing, call == my_stack && my_stack > 0 {
-    [_], _ -> [
+  // All in is a shortcut for the biggest raise; with nothing to raise into
+  // the short call is offered as a call.
+  let all_in = case sizing {
+    [_] -> [
       action.simple(
         "all_in",
         "All in (" <> int.to_string(state.bet_of(hand, id) + my_stack) <> ")",
       ),
     ]
-    _, _ -> []
+    _ -> []
   }
   list.flatten([fold, check_or_call, sizing, all_in])
 }

@@ -134,9 +134,13 @@ fn scene_data(
   {
     state.SitAndGo, per if per > 0 -> {
       let last_level = list.length(state.config.levels) - 1
-      case state.level >= last_level {
-        True -> json.null()
-        False -> json.int(per - state.hands_played % per)
+      // Levels advance on the deal, so between hands the rise the next
+      // deal will bring is already due.
+      let due = int.min(state.hands_played / per, last_level)
+      case state.level >= last_level, due > state.level {
+        True, _ -> json.null()
+        False, True -> json.int(0)
+        False, False -> json.int(per - state.hands_played % per)
       }
     }
     _, _ -> json.null()

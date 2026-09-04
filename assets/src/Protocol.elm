@@ -523,7 +523,9 @@ current time (both in milliseconds of the same clock).
 remainingNow : ClockPlayer -> Int -> Int -> Int
 remainingNow player receivedAt now =
     if player.running then
-        max 0 (player.remainingMs - max 0 (now - receivedAt))
+        -- The first `moveMs` of the move are free (a delay or an action
+        -- allowance); only time past that comes off the bank.
+        max 0 (player.remainingMs - max 0 (now - receivedAt - player.moveMs))
 
     else
         player.remainingMs

@@ -4,10 +4,6 @@ defmodule OskolWeb.PageController do
   alias Oskol.Game.GameServerState
   alias Oskol.GameKit
 
-  def home(conn, _params) do
-    render(conn, :home)
-  end
-
   @doc "Serves the Elm client for a running game."
   def play(conn, %{"slug" => slug, "id" => game_id} = params) do
     if GameKit.exists?(slug) do
