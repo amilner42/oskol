@@ -297,6 +297,99 @@ pub fn doubles_play_up_to_four_times_test() {
   expect(b, White, [3, 3, 3, 3], ["13>10/3 10>7/3 7>4/3 4>1/3"])
 }
 
+pub fn entering_from_the_bar_must_use_the_higher_die_when_only_one_die_plays_test() {
+  // Both entry points are open but every follow-up is blocked, so only one
+  // die can be played and it must be the 6.
+  let b =
+    positions.setup([
+      #(White, Bar, 1),
+      #(White, Off, 14),
+      #(Black, Point(16), 2),
+      #(Black, Point(1), 13),
+    ])
+  expect(b, White, [6, 3], ["bar>19/6"])
+}
+
+pub fn entering_on_a_blot_then_playing_the_other_die_test() {
+  // The 3 entry is blocked; the 5 enters on a blot and hits it, then the 3
+  // may move the entered checker or another one.
+  let b =
+    positions.setup([
+      #(White, Bar, 1),
+      #(White, Point(13), 1),
+      #(White, Off, 13),
+      #(Black, Point(20), 1),
+      #(Black, Point(22), 2),
+      #(Black, Point(1), 12),
+    ])
+  expect(b, White, [5, 3], ["bar>20/5 20>17/3", "bar>20/5 13>10/3"])
+}
+
+pub fn two_on_the_bar_with_one_open_entry_plays_only_one_die_test() {
+  // Both checkers must enter before anything else; only the 2 point is open,
+  // so the second bar checker strands the 6 and the turn is one move long.
+  let b =
+    positions.setup([
+      #(White, Bar, 2),
+      #(White, Point(13), 13),
+      #(Black, Point(19), 2),
+      #(Black, Point(1), 13),
+    ])
+  expect(b, White, [6, 2], ["bar>23/2"])
+}
+
+pub fn a_checker_hit_during_bear_off_must_come_all_the_way_around_test() {
+  // White was bearing off, got hit, and must enter and travel home before
+  // any further bear-off: no `off` move appears anywhere.
+  let b =
+    positions.setup([
+      #(White, Bar, 1),
+      #(White, Point(2), 2),
+      #(White, Point(3), 2),
+      #(White, Off, 10),
+      #(Black, Point(24), 15),
+    ])
+  expect(b, White, [6, 4], ["bar>19/6 19>15/4", "bar>21/4 21>15/6"])
+}
+
+pub fn higher_die_bear_off_interacts_with_the_exact_die_test() {
+  // The 6 lifts the rearmost checker from the 5 point; the 4 can bear off
+  // the 3 point only once nothing sits behind it.
+  let b =
+    positions.setup([
+      #(White, Point(5), 1),
+      #(White, Point(3), 1),
+      #(White, Off, 13),
+      #(Black, Point(20), 15),
+    ])
+  expect(b, White, [6, 4], ["5>off/6 3>off/4", "5>1/4 3>off/6"])
+}
+
+pub fn when_no_die_bears_off_the_player_must_still_move_within_home_test() {
+  // Both dice are smaller than the last checker's distance: no bear-off,
+  // but the moves within the home board are compulsory.
+  let b =
+    positions.setup([
+      #(White, Point(6), 1),
+      #(White, Off, 14),
+      #(Black, Point(20), 15),
+    ])
+  expect(b, White, [3, 2], ["6>3/3 3>1/2", "6>4/2 4>1/3"])
+}
+
+pub fn a_forced_hit_on_the_way_off_beats_a_one_move_bear_off_test() {
+  // Bearing straight off with the 5 plays only one die; hitting the blot
+  // with the 2 and then bearing off plays both, so it is the only play.
+  let b =
+    positions.setup([
+      #(White, Point(4), 1),
+      #(White, Off, 14),
+      #(Black, Point(2), 1),
+      #(Black, Point(23), 14),
+    ])
+  expect(b, White, [5, 2], ["4>2/2 2>off/5"])
+}
+
 pub fn a_fully_blocked_roll_has_no_sequences_test() {
   let b =
     positions.setup([

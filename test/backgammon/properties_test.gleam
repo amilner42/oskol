@@ -150,8 +150,26 @@ fn nothing_leaks(s: state.GameState) -> Result(Nil, String) {
   }
 }
 
-pub fn staged_moves_never_leak_during_random_games_test() {
-  list.each(list.range(1, 8), fn(seed) {
+// Split by seed so each stays inside the per-test timeout: the scene
+// comparisons make these the slowest tests in the suite.
+pub fn staged_moves_never_leak_during_random_games_a_test() {
+  never_leak([1, 2])
+}
+
+pub fn staged_moves_never_leak_during_random_games_b_test() {
+  never_leak([3, 4])
+}
+
+pub fn staged_moves_never_leak_during_random_games_c_test() {
+  never_leak([5, 6])
+}
+
+pub fn staged_moves_never_leak_during_random_games_d_test() {
+  never_leak([7, 8])
+}
+
+fn never_leak(seeds: List(Int)) {
+  list.each(seeds, fn(seed) {
     let assert Ok(report) =
       conformance.random_playout_with(
         backgammon.game(),

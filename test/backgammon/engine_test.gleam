@@ -41,6 +41,61 @@ pub fn opening_roll_decides_who_moves_first_test() {
   assert engine.on_the_clock(s) == [mover]
 }
 
+pub fn the_opening_roll_gives_the_first_turn_to_the_higher_die_test() {
+  // White rolls the first die, Black the second; the higher plays first
+  // with both dice.
+  list.each(list.range(1, 40), fn(seed) {
+    let s = new_game(seed, "single")
+    let assert state.Moving(color, dice) = s.phase
+    let assert [a, b] = s.last_roll
+    assert a != b
+    assert dice == [a, b]
+    assert color
+      == case a > b {
+        True -> board.White
+        False -> board.Black
+      }
+    assert s.staged == [] && s.turn_board == s.board
+  })
+  let firsts =
+    list.map(list.range(1, 40), fn(seed) {
+      let assert state.Moving(color, _) = new_game(seed, "single").phase
+      color
+    })
+  assert list.contains(firsts, board.White)
+  assert list.contains(firsts, board.Black)
+}
+
+pub fn tied_opening_rolls_are_rerolled_test() {
+  // Seeds whose first two die draws tie must still open with distinct dice:
+  // the tie was rerolled.
+  let tied =
+    list.filter(list.range(1, 300), fn(seed) {
+      let r = rng.seed(seed)
+      let #(a, r) = rng.int(r, 6)
+      let #(b, _) = rng.int(r, 6)
+      a == b
+    })
+  assert tied != []
+  list.each(tied, fn(seed) {
+    let s = new_game(seed, "single")
+    let assert state.Moving(_, _) = s.phase
+    let assert [a, b] = s.last_roll
+    assert a != b
+  })
+}
+
+pub fn a_timeout_forfeits_in_any_phase_test() {
+  let g = backgammon.game()
+  let moving = new_game(5, "single")
+  assert g.timeout(moving, "p1") == game.Forfeit
+  assert g.timeout(moving, "p2") == game.Forfeit
+  let rolling = state.GameState(..moving, phase: state.Rolling(board.White))
+  assert g.timeout(rolling, "p1") == game.Forfeit
+  let doubled = state.GameState(..moving, phase: state.Doubled(board.White))
+  assert g.timeout(doubled, "p2") == game.Forfeit
+}
+
 pub fn rolling_out_of_turn_is_rejected_test() {
   let s = new_game(2, "single")
   let assert Some(mover) = state.to_move(s)
