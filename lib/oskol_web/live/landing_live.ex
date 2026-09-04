@@ -381,9 +381,10 @@ defmodule OskolWeb.LandingLive do
 
   def handle_info(_msg, socket), do: {:noreply, socket}
 
-  # Structured data for search engines: the catalog, and one game.
+  # Structured data for search engines: the catalog, and one game. Encoded
+  # HTML-safe because it is rendered raw inside a <script> tag.
   defp library_json_ld(games) do
-    Jason.encode!(%{
+    json_ld(%{
       "@context" => "https://schema.org",
       "@type" => "WebSite",
       "name" => "Oskol",
@@ -397,7 +398,7 @@ defmodule OskolWeb.LandingLive do
   end
 
   defp game_json_ld(info, copy) do
-    Jason.encode!(%{
+    json_ld(%{
       "@context" => "https://schema.org",
       "@type" => "VideoGame",
       "name" => info["name"],
@@ -411,6 +412,8 @@ defmodule OskolWeb.LandingLive do
       "offers" => %{"@type" => "Offer", "price" => "0", "priceCurrency" => "USD"}
     })
   end
+
+  defp json_ld(data), do: Jason.encode!(data, escape: :html_safe)
 
   defp lobby_path(socket, game_id, player_name) do
     ~p"/#{socket.assigns.slug}?game=#{game_id}&name=#{player_name}"

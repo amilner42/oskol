@@ -127,9 +127,9 @@ consistent fixture =
                         )
                     |> Expect.equal True
         , test "token ids are unique within each zone" <|
-            -- Tilt deals each player their own deck, so "KS" legitimately sits
-            -- in deck:p1 and hand:p2 at once: the contract is per zone, which
-            -- is what token_moved events (from zone, to zone) need.
+            -- The contract is per zone, not per scene: a game may deal each
+            -- player their own deck, so the same id can sit in two zones at
+            -- once, which is all token_moved events (from zone, to zone) need.
             \_ ->
                 (fixture.initial :: List.map .updates fixture.steps)
                     |> List.concatMap Dict.values
