@@ -213,6 +213,14 @@ pub fn settings_shape_the_game_test() {
     game.configure(sng, dict.from_list([#("speed", "hyper")]))
   let assert Ok(s) = poker.init(config, seats(), rng.seed(1))
   assert s.config.hands_per_level == 3 && s.config.buy_in == 1500
+  assert s.config.levels == poker.levels
+  let assert Ok(config) =
+    game.configure(sng, dict.from_list([#("speed", "turbo")]))
+  let assert Ok(s) = poker.init(config, seats(), rng.seed(1))
+  assert s.config.hands_per_level == 6
+  let assert Ok(config) = game.configure(sng, dict.new())
+  let assert Ok(s) = poker.init(config, seats(), rng.seed(1))
+  assert s.config.hands_per_level == 10
   assert game.configure(sng, dict.from_list([#("speed", "ludicrous")]))
     == Error("Unknown Speed: ludicrous")
 }

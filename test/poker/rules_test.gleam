@@ -359,6 +359,244 @@ pub fn a_timeout_checks_when_it_is_free_and_folds_otherwise_test() {
   assert engine.on_the_clock(s) == [s.next_button]
 }
 
+pub fn the_button_posts_the_small_blind_on_the_deal_test() {
+  let #(s, happenings) =
+    state.new(sng_config(), [#(p1, "Alice"), #(p2, "Bob")], rng.seed(1))
+  // The first player has the button: small blind for them, big for the other
+  assert happenings
+    == [
+      state.Dealt(1, p1),
+      state.BlindPosted(p1, 10, False),
+      state.BlindPosted(p2, 20, True),
+    ]
+  assert state.stack(s, p1) == 990 && state.stack(s, p2) == 980
+  assert state.to_act(s) == Some(p1)
+}
+
+pub fn the_non_button_acts_first_on_every_postflop_street_test() {
+  let s = spot(#(1000, 1000), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Call)
+  let s = play(s, p2, engine.Check)
+  assert state.to_act(s) == Some(p2)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p1, engine.Check)
+  // Turn: still the big blind first
+  assert board(s) == 4
+  assert state.to_act(s) == Some(p2)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p1, engine.Check)
+  // River too
+  assert board(s) == 5
+  assert state.to_act(s) == Some(p2)
+}
+
+pub fn postflop_bets_start_at_the_big_blind_and_raises_at_the_last_raise_test() {
+  let s = spot(#(1000, 1000), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Call)
+  let s = play(s, p2, engine.Check)
+  // Flop: the minimum bet is one big blind
+  assert state.raise_bounds(s, p2) == Ok(#(20, 980))
+  assert engine.apply(s, p2, engine.Bet(10))
+    == Error("A bet must be between 20 and 980")
+  let s = play(s, p2, engine.Bet(40))
+  // A raise must add at least the bet: to 80
+  assert state.raise_bounds(s, p1) == Ok(#(80, 980))
+  assert engine.apply(s, p1, engine.Raise(70))
+    == Error("A raise must be between 80 and 980")
+  let s = play(s, p1, engine.Raise(100))
+  // That raise added 60, so the re-raise must add at least 60
+  assert state.raise_bounds(s, p2) == Ok(#(160, 980))
+  let s = play(s, p2, engine.Call)
+  // Turn: the min-raise resets to the big blind
+  assert board(s) == 4
+  assert state.raise_bounds(s, p2) == Ok(#(20, 880))
+}
+
+pub fn a_short_all_in_raise_does_not_reopen_the_betting_test() {
+  // Bob has 130 in all: after Alice's raise to 100 his shove is a raise of
+  // only 30, below the minimum of 80. Alice may call or fold, never reraise.
+  let s = spot(#(1000, 130), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Raise(100))
+  // The shove is the only raise Bob has: min and max collapse to his stack
+  assert state.raise_bounds(s, p2) == Ok(#(130, 130))
+  let s = play(s, p2, engine.AllIn)
+  assert names(s, p1) == ["fold", "call", "resign"]
+  assert state.to_call(s, p1) == 30
+  assert state.act(s, p1, state.Raise(200)) == Error("You cannot raise")
+  let s = play(s, p1, engine.Call)
+  // The board runs out and the covered stack plays for all 130
+  assert board(s) == 5
+  assert s.phase == state.Finished(Some(p1))
+  assert state.stack(s, p1) == 1130 && state.stack(s, p2) == 0
+}
+
+pub fn an_uncalled_all_in_comes_back_when_the_raise_is_folded_out_test() {
+  let s = spot(#(1000, 1000), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Raise(60))
+  let s = play(s, p2, engine.AllIn)
+  let s = play(s, p1, engine.Fold)
+  // Bob wins only what Alice put in; his uncalled 940 comes straight back
+  assert s.phase == state.HandOver
+  assert state.stack(s, p1) == 940 && state.stack(s, p2) == 1060
+  let assert Some(result) = s.last_result
+  assert result.winners == [#(p2, 60)]
+}
+
+pub fn a_short_all_in_call_returns_the_uncalled_part_of_the_bet_test() {
+  // Alice bets 500 on the flop; Bob can only call 280. The unmatched 220
+  // comes back to Alice before the showdown pays out.
+  let s = spot(#(1000, 300), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Call)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p1, engine.Bet(500))
+  let s = play(s, p2, engine.AllIn)
+  assert board(s) == 5
+  assert s.phase == state.Finished(Some(p1))
+  assert state.stack(s, p1) == 1300 && state.stack(s, p2) == 0
+  let assert Some(result) = s.last_result
+  assert result.winners == [#(p1, 300)]
+}
+
+pub fn an_all_in_on_the_river_goes_to_showdown_test() {
+  let s = spot(#(1000, 1000), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Call)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p1, engine.Check)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p1, engine.Check)
+  // River: Bob shoves, Alice can only call or fold
+  let s = play(s, p2, engine.AllIn)
+  assert names(s, p1) == ["fold", "call", "resign"]
+  let s = play(s, p1, engine.Call)
+  assert s.phase == state.Finished(Some(p1))
+  assert state.stack(s, p1) == 2000 && state.stack(s, p2) == 0
+}
+
+pub fn the_better_kicker_decides_the_showdown_test() {
+  let s = spot(#(1000, 1000), p1, "AC KD", "AH QD", "AS 7H 2S 9C 3D")
+  let s = play(s, p1, engine.Call)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p1, engine.Check)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p1, engine.Check)
+  let s = play(s, p2, engine.Check)
+  let s = play(s, p1, engine.Check)
+  // Both have a pair of aces; the king kicker beats the queen
+  let assert Some(result) = s.last_result
+  assert result.winners == [#(p1, 20)]
+  assert result.won == state.ByShowdown
+  assert state.stack(s, p1) == 1020 && state.stack(s, p2) == 980
+}
+
+pub fn when_the_board_plays_for_both_the_pot_splits_test() {
+  let s = spot(#(1000, 1000), p1, "2C 3C", "4D 5D", "10S JS QD KC AH")
+  let s = play(s, p1, engine.AllIn)
+  let s = play(s, p2, engine.Call)
+  // The board's ace-high straight is both players' best hand
+  let assert Some(result) = s.last_result
+  assert result.won == state.Split
+  assert dict.get(result.descriptions, p1) == Ok("a straight, ace high")
+  assert dict.get(result.descriptions, p2) == Ok("a straight, ace high")
+  assert state.stack(s, p1) == 1000 && state.stack(s, p2) == 1000
+}
+
+pub fn a_split_with_a_short_stack_returns_the_uncalled_chips_first_test() {
+  // Bob shoves 1000, Alice calls for her last 190: on a tie each side takes
+  // its own chips back, including Bob's uncalled 800.
+  let s = spot(#(200, 1000), p1, "AS KD", "AD KC", "2C 7D 9H 4S QC")
+  let s = play(s, p1, engine.Call)
+  let s = play(s, p2, engine.AllIn)
+  let s = play(s, p1, engine.Call)
+  assert board(s) == 5
+  let assert Some(result) = s.last_result
+  assert result.won == state.Split
+  assert state.stack(s, p1) == 200 && state.stack(s, p2) == 1000
+}
+
+pub fn a_cash_game_carries_chips_between_hands_and_swaps_the_button_test() {
+  let config =
+    state.Config(
+      format: state.Cash,
+      buy_in: 200,
+      top_up: False,
+      levels: [#(1, 2)],
+      hands_per_level: 0,
+    )
+  let s = spot_with(config, #(150, 250), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Raise(60))
+  let s = play(s, p2, engine.Fold)
+  assert state.stack(s, p1) == 170 && state.stack(s, p2) == 230
+  let assert Ok(#(s, happenings)) = state.next_hand(s, p2)
+  // No top-up: the stacks carry over minus the new 1/2 blinds
+  assert !list.any(happenings, fn(h) {
+    case h {
+      state.ToppedUp(_, _) -> True
+      _ -> False
+    }
+  })
+  let assert Some(hand) = s.hand
+  assert hand.button == p2
+  assert state.stack(s, p1) == 168 && state.stack(s, p2) == 229
+}
+
+pub fn a_felted_cash_player_with_top_up_plays_on_test() {
+  let config =
+    state.Config(
+      format: state.Cash,
+      buy_in: 200,
+      top_up: True,
+      levels: [#(1, 2)],
+      hands_per_level: 0,
+    )
+  let s = spot_with(config, #(100, 100), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.AllIn)
+  let s = play(s, p2, engine.Call)
+  // Bob is felted, but the table refills him instead of ending the session
+  assert state.stack(s, p1) == 200 && state.stack(s, p2) == 0
+  assert s.phase == state.HandOver
+  let assert Ok(#(s, happenings)) = state.next_hand(s, p1)
+  assert list.contains(happenings, state.ToppedUp(p2, 200))
+  assert s.phase == state.Betting
+  // The net result remembers the rebuy
+  assert state.net(s, p1) == 100 && state.net(s, p2) == -100
+}
+
+pub fn a_stack_below_the_small_blind_posts_what_it_has_test() {
+  let #(s, _) =
+    state.new(sng_config(), [#(p1, "Alice"), #(p2, "Bob")], rng.seed(5))
+  // Rewind to between hands with Alice (on the button) down to 5 chips
+  let s =
+    state.GameState(
+      ..s,
+      phase: state.HandOver,
+      hand: None,
+      stacks: dict.from_list([#(p1, 5), #(p2, 2995)]),
+      invested: dict.from_list([#(p1, 1500), #(p2, 1500)]),
+    )
+  let assert Ok(#(s, happenings)) = state.next_hand(s, p2)
+  // The short blind goes in all in and plays only for what it is
+  assert list.contains(happenings, state.BlindPosted(p1, 5, False))
+  assert board(s) == 5
+  assert s.phase != state.Betting
+  assert state.stack(s, p1) + state.stack(s, p2) == 3000
+  assert state.stack(s, p2) >= 2990
+  let assert Some(result) = s.last_result
+  assert list.all(result.winners, fn(w) { w.1 <= 5 })
+}
+
+pub fn resigning_a_sit_and_go_mid_hand_concedes_the_match_test() {
+  let s = spot(#(1000, 1000), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
+  let s = play(s, p1, engine.Raise(60))
+  // The leaver concedes outright; the abandoned hand's chips go back
+  let assert Ok(#(s, happenings)) = state.leave(s, p2)
+  assert s.phase == state.Finished(Some(p1))
+  assert state.stack(s, p1) == 1000 && state.stack(s, p2) == 1000
+  assert list.contains(happenings, state.GameOver(Some(p1)))
+}
+
 pub fn out_of_turn_and_out_of_range_actions_are_refused_test() {
   let s = spot(#(1000, 1000), p1, "AS AD", "KS KD", "2C 7D 9H 4S JC")
   assert engine.apply(s, p2, engine.Check) == Error("Not your turn")
