@@ -6,6 +6,7 @@ game has one, the generic renderer otherwise.
 -}
 
 import Browser
+import Browser.Dom
 import Games.Backgammon.View as Backgammon
 import Games.Chess.View as Chess
 import Games.Poker.View as Poker
@@ -175,6 +176,9 @@ update msg model =
                 Backgammon.WantRematch ->
                     update RequestRematch updated
 
+                Backgammon.NeedZones targets ->
+                    ( updated, measureDropZones targets )
+
         ChessMsg chessMsg ->
             let
                 ( chess, out ) =
@@ -280,6 +284,34 @@ applyPayload payload model =
     ( updated
     , Cmd.batch [ Task.perform ClockSynced Time.now, follow ]
     )
+
+
+{-| Measure the drop zones for a backgammon drag: the client rects of the
+origin's legal destinations, by the DOM ids the board view puts on them.
+Coordinates are viewport-relative (`getElement` reports page coordinates,
+so the scroll offset is subtracted); a target the DOM does not have right
+now is simply skipped.
+-}
+measureDropZones : List String -> Cmd Msg
+measureDropZones targets =
+    targets
+        |> List.map
+            (\loc ->
+                Browser.Dom.getElement (Backgammon.dropZoneId loc)
+                    |> Task.map
+                        (\found ->
+                            Just
+                                { loc = loc
+                                , left = found.element.x - found.viewport.x
+                                , top = found.element.y - found.viewport.y
+                                , width = found.element.width
+                                , height = found.element.height
+                                }
+                        )
+                    |> Task.onError (\_ -> Task.succeed Nothing)
+            )
+        |> Task.sequence
+        |> Task.perform (List.filterMap identity >> Backgammon.GotDropZones >> BackgammonMsg)
 
 
 {-| Seated players whose connection is currently down.

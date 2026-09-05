@@ -5,6 +5,7 @@ real fixture payloads.
 -}
 
 import Dict
+import Drag
 import Expect
 import FixtureLoader exposing (Fixture)
 import Games.Backgammon.View as View exposing (Msg(..), Out(..))
@@ -201,6 +202,50 @@ suite =
                         |> Expect.equal (Just (SelectFrom "6"))
              ]
             )
+        , describe "dragging a checker"
+            (let
+                press =
+                    { origin = "13", color = "white", tap = Just (SelectFrom "13"), targets = [ "8" ], x = 100, y = 100 }
+
+                zone =
+                    { loc = "8", left = 200, top = 300, width = 50, height = 120 }
+
+                step msg =
+                    Tuple.first >> View.update msg
+             in
+             [ test "pressing a checker asks Main for that origin's drop zones" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> Tuple.second
+                        |> Expect.equal (NeedZones [ "8" ])
+             , test "a drop on a legal zone stages the move, like a tap would" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> step (GotDropZones [ zone ])
+                        |> step (DragMoved { x = 225, y = 360 })
+                        |> step (DragReleased { x = 225, y = 360 })
+                        |> Expect.equal ( View.init, Send (Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "8" ) ]) )
+             , test "a drop off every zone sends nothing and snaps back" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> step (GotDropZones [ zone ])
+                        |> step (DragMoved { x = 150, y = 150 })
+                        |> step (DragReleased { x = 150, y = 150 })
+                        |> Expect.equal ( View.init, NoOut )
+             , test "a release under the threshold resolves the stored tap" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> step (DragMoved { x = 104, y = 103 })
+                        |> step (DragReleased { x = 104, y = 103 })
+                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle }, NoOut )
+             , test "pointercancel snaps back without sending" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> step (DragMoved { x = 225, y = 360 })
+                        |> step DragCancelled
+                        |> Expect.equal ( View.init, NoOut )
+             ]
+            )
         , describe "rendering fixtures" (List.map perFixture (FixtureLoader.byGame "backgammon"))
         ]
 
@@ -331,6 +376,66 @@ perFixture fixture =
                                 |> Event.expect (SelectFrom from)
                         )
                     |> Maybe.withDefault Expect.pass
+        , test "exactly the legal origins offer a draggable checker" <|
+            \_ ->
+                (List.map (\u -> ( "p1", u )) p1Views ++ List.map (\u -> ( "p2", u )) p2Views)
+                    |> List.map
+                        (\( id, u ) ->
+                            render id u
+                                |> Query.findAll [ attribute (Html.Attributes.attribute "data-drag-capture" "") ]
+                                |> Query.count (Expect.equal (List.length (legalFroms u.legal)))
+                        )
+                    |> allPass
+        , test "mid-drag, a ghost checker rides the pointer and the origin's points highlight" <|
+            \_ ->
+                p1Views
+                    |> List.filter (\u -> legalFroms u.legal /= [])
+                    |> List.head
+                    |> Maybe.map
+                        (\u ->
+                            let
+                                from =
+                                    legalFroms u.legal |> List.head |> Maybe.withDefault ""
+
+                                pointDests =
+                                    u.legal
+                                        |> List.filter (\s -> s.name == "move")
+                                        |> List.filter (\s -> List.any (\p -> p.name == "from" && p.kind == Choice [ ( from, from ) ]) s.params)
+                                        |> List.filterMap
+                                            (\s ->
+                                                s.params
+                                                    |> List.filter (\p -> p.name == "to")
+                                                    |> List.head
+                                                    |> Maybe.andThen
+                                                        (\p ->
+                                                            case p.kind of
+                                                                Choice ((to, _) :: _) ->
+                                                                    Just to
+
+                                                                _ ->
+                                                                    Nothing
+                                                        )
+                                            )
+                                        |> List.filter ((/=) "off")
+                                        |> unique
+
+                                model =
+                                    View.init
+                                        |> View.update (DragPressed { origin = from, color = "white", tap = Nothing, targets = [], x = 0, y = 0 })
+                                        |> Tuple.first
+                                        |> View.update (DragMoved { x = 40, y = 40 })
+                                        |> Tuple.first
+
+                                rendered =
+                                    View.view (ctx "p1" u model) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.has [ class "bg-drag-ghost" ]
+                                , \_ -> rendered |> Query.findAll [ class "bg-point", class "target" ] |> Query.count (Expect.equal (List.length pointDests))
+                                ]
+                                ()
+                        )
+                    |> Maybe.withDefault Expect.pass
         , test "after selecting a source the destinations show ghost checkers" <|
             \_ ->
                 p1Views
@@ -348,7 +453,7 @@ perFixture fixture =
                                         |> List.filter (\s -> List.any (\p -> p.name == "from" && p.kind == Choice [ ( from, from ) ]) s.params)
                                         |> List.length
                             in
-                            View.view (ctx "p1" u { selectedFrom = Just from })
+                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "ghost" ]
                                 |> Query.count (Expect.equal destinations)

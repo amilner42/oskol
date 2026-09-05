@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), TapContext, init, resolveTap, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Press, TapContext, dropZoneId, init, resolveTap, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -14,8 +14,20 @@ falls back to two taps: a checker's point (or the bar), then a destination.
 Legal moves come from the `move` schemas the server sends, so the board
 never invents legality.
 
+Checkers can also be dragged, through the `Drag` state machine: the top
+checker of every legal origin (a point, or the bar) is a drag source. A
+press remembers what a plain tap there would have done, so tap-to-move is
+untouched; past the threshold a ghost checker rides the pointer and that
+origin's destinations highlight. Drop targets are hit-tested geometrically:
+pressing asks Main (the `NeedZones` Out) for the client rects of the
+origin's legal destinations via `Browser.Dom.getElement` -- the whole point
+column, or the tray, under the ids `dropZoneId` names -- and releasing on
+one stages that move. Releasing anywhere else snaps the checker back and
+sends nothing.
+
 -}
 
+import Drag
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, style, title)
 import Html.Events exposing (onClick)
@@ -26,7 +38,24 @@ import View.Clock
 
 
 type alias Model =
-    { selectedFrom : Maybe String }
+    { selectedFrom : Maybe String
+    , drag : Drag.State String Msg -- the item a drag carries is my checker colour
+    }
+
+
+{-| A press on a draggable checker: where, my colour (for the ghost), what
+a plain tap there would have done (resolved at press time, by the same
+`resolveTap` the click handlers use), and the origin's legal destinations
+(so Main can measure their drop zones).
+-}
+type alias Press =
+    { origin : String
+    , color : String
+    , tap : Maybe Msg
+    , targets : List String
+    , x : Float
+    , y : Float
+    }
 
 
 type Msg
@@ -36,6 +65,12 @@ type Msg
     | Clear
     | Simple String
     | Rematch
+    | DragPressed Press
+    | DragMoved { x : Float, y : Float }
+    | DragReleased { x : Float, y : Float }
+    | DragCancelled
+    | GotDropZones (List Drag.Zone)
+    | Ignore
 
 
 type Out
@@ -43,11 +78,12 @@ type Out
     | Send E.Value
     | SendMany (List E.Value)
     | WantRematch
+    | NeedZones (List String)
 
 
 init : Model
 init =
-    { selectedFrom = Nothing }
+    { selectedFrom = Nothing, drag = Drag.idle }
 
 
 update : Msg -> Model -> ( Model, Out )
@@ -74,6 +110,42 @@ update msg model =
 
         Rematch ->
             ( model, WantRematch )
+
+        DragPressed p ->
+            ( { model | drag = Drag.press { origin = p.origin, item = p.color, tap = p.tap, x = p.x, y = p.y } }
+            , NeedZones p.targets
+            )
+
+        DragMoved pos ->
+            ( { model | drag = Drag.move pos model.drag }, NoOut )
+
+        DragReleased pos ->
+            case Drag.release pos model.drag of
+                ( drag, Drag.Drop from to ) ->
+                    -- A drop stages the move exactly as a tap would.
+                    update (PlayMove from to) { model | drag = drag }
+
+                ( drag, Drag.Tap tap ) ->
+                    update tap { model | drag = drag }
+
+                ( drag, Drag.None ) ->
+                    ( { model | drag = drag }, NoOut )
+
+        DragCancelled ->
+            ( { model | drag = Drag.idle }, NoOut )
+
+        GotDropZones zones ->
+            ( { model | drag = Drag.setZones zones model.drag }, NoOut )
+
+        Ignore ->
+            ( model, NoOut )
+
+
+{-| The DOM id Main uses to measure a drop target (a point number or "off").
+-}
+dropZoneId : String -> String
+dropZoneId loc =
+    "bg-drop-" ++ loc
 
 
 encodeMove : String -> String -> E.Value
@@ -289,12 +361,20 @@ view ctx =
         sources =
             legalMoves |> List.map .from |> unique
 
+        drag =
+            Drag.active ctx.model.drag
+
+        -- While a drag is up, its origin's destinations highlight; otherwise
+        -- the tapped selection's, if any.
         targets =
-            case ctx.model.selectedFrom of
-                Just from ->
+            case ( drag, ctx.model.selectedFrom ) of
+                ( Just d, _ ) ->
+                    legalMoves |> List.filter (\m -> m.from == d.origin) |> List.map .to
+
+                ( Nothing, Just from ) ->
                     legalMoves |> List.filter (\m -> m.from == from) |> List.map .to
 
-                Nothing ->
+                ( Nothing, Nothing ) ->
                     []
 
         board =
@@ -302,6 +382,8 @@ view ctx =
             , myColor = myColor
             , sources = sources
             , targets = targets
+            , drag = drag
+            , hovered = Drag.hover ctx.model.drag
             , tap = tapContext ctx legalMoves sources
             }
     in
@@ -315,12 +397,39 @@ view ctx =
                 ]
             , viewRail ctx
             ]
+        , case drag of
+            Just d ->
+                viewDragGhost d
+
+            Nothing ->
+                text ""
         , case ctx.finished of
             Just winners ->
                 viewGameOver ctx winners
 
             Nothing ->
                 text ""
+        ]
+
+
+{-| The checker riding the pointer during a drag, in viewport coordinates
+(the same space the drop zones are measured in).
+-}
+viewDragGhost : Drag.Active String -> Html Msg
+viewDragGhost d =
+    div
+        [ class "bg-drag-ghost"
+        , style "left" (String.fromFloat d.x ++ "px")
+        , style "top" (String.fromFloat d.y ++ "px")
+        ]
+        [ div
+            [ classList
+                [ ( "checker", True )
+                , ( "white", d.item == "white" )
+                , ( "black", d.item /= "white" )
+                ]
+            ]
+            []
         ]
 
 
@@ -558,6 +667,8 @@ type alias Board =
     , myColor : String
     , sources : List String
     , targets : List String
+    , drag : Maybe (Drag.Active String)
+    , hovered : Maybe String
     , tap : TapContext
     }
 
@@ -637,6 +748,9 @@ viewPoint board isTop index point =
         isSelected =
             board.ctx.model.selectedFrom == Just id
 
+        isHovered =
+            isTarget && board.hovered == Just id
+
         click =
             case resolveTap board.tap id of
                 Just msg ->
@@ -653,13 +767,15 @@ viewPoint board isTop index point =
             , ( "source", isSource )
             , ( "target", isTarget )
             , ( "selected", isSelected )
+            , ( "drop-hover", isHovered )
             ]
          , attribute "style" ("--point: " ++ pointColor (index + (if isTop then 0 else 1)))
          , title ("Point " ++ id)
+         , Html.Attributes.id (dropZoneId id)
          ]
             ++ click
         )
-        (viewStack { pick = isSource, picked = isSelected } tokens
+        (viewStack { pick = isSource, picked = isSelected, lifted = liftedAt board id, dragAttrs = dragAttrs board id } tokens
             ++ (if isTarget then
                     [ div [ class "ghost relative shrink-0" ] [] ]
 
@@ -669,13 +785,51 @@ viewPoint board isTop index point =
         )
 
 
+{-| The origin of the active drag shows its top checker dimmed in place.
+-}
+liftedAt : Board -> String -> Bool
+liftedAt board loc =
+    board.drag |> Maybe.map (\d -> d.origin == loc) |> Maybe.withDefault False
+
+
+{-| Drag handlers for the top checker of a legal origin. The press carries
+what a tap there would do -- the same `resolveTap` answer the click
+handlers use -- and the origin's legal destinations, for Main to measure.
+-}
+dragAttrs : Board -> String -> List (Html.Attribute Msg)
+dragAttrs board origin =
+    if List.member origin board.sources then
+        Drag.sourceAttrs
+            { press =
+                \pos ->
+                    DragPressed
+                        { origin = origin
+                        , color = board.myColor
+                        , tap = resolveTap board.tap origin
+                        , targets = board.tap.moves |> List.filter (\m -> m.from == origin) |> List.map .to |> unique
+                        , x = pos.x
+                        , y = pos.y
+                        }
+            , move = DragMoved
+            , release = DragReleased
+            , cancel = DragCancelled
+            , ignore = Ignore
+            }
+
+    else
+        []
+
+
+{-| What the top checker of a stack carries: the tap affordances, the
+dimmed in-place state while it is being dragged, and its drag handlers.
+-}
 type alias Marks =
-    { pick : Bool, picked : Bool }
+    { pick : Bool, picked : Bool, lifted : Bool, dragAttrs : List (Html.Attribute Msg) }
 
 
 noMarks : Marks
 noMarks =
-    { pick = False, picked = False }
+    { pick = False, picked = False, lifted = False, dragAttrs = [] }
 
 
 viewStack : Marks -> List Token -> List (Html Msg)
@@ -713,15 +867,18 @@ viewChecker marks count token =
             Protocol.tokenProp D.string "color" token |> Maybe.withDefault "white"
     in
     div
-        [ classList
+        ([ classList
             [ ( "checker relative shrink-0 transition-transform", True )
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
             , ( "pick", marks.pick && not marks.picked )
             , ( "picked", marks.picked )
+            , ( "lifted", marks.lifted )
             ]
-        , title token.id
-        ]
+         , title token.id
+         ]
+            ++ marks.dragAttrs
+        )
         (case count of
             Just n ->
                 [ span [ class "checker-count" ] [ text (String.fromInt n) ] ]
@@ -767,7 +924,19 @@ viewBar board ownerId isTop =
          ]
             ++ click
         )
-        (viewStack { pick = isSource, picked = isSelected } tokens)
+        (viewStack
+            { pick = isSource
+            , picked = isSelected
+            , lifted = mine && liftedAt board "bar"
+            , dragAttrs =
+                if mine then
+                    dragAttrs board "bar"
+
+                else
+                    []
+            }
+            tokens
+        )
 
 
 viewTray : Board -> String -> Html Msg
@@ -798,9 +967,16 @@ viewTray board ownerId =
         ([ classList
             [ ( "bg-tray w-9 sm:w-14 flex flex-col items-center justify-center gap-1 px-1", True )
             , ( "target", isTarget )
+            , ( "drop-hover", isTarget && board.hovered == Just "off" )
             ]
          , title "Borne off"
          ]
+            ++ (if mine then
+                    [ Html.Attributes.id (dropZoneId "off") ]
+
+                else
+                    []
+               )
             ++ click
         )
         [ span [ class "pixel text-[7px]", style "color" "rgba(35, 36, 58, 0.5)" ] [ text "OFF" ]

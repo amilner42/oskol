@@ -62,6 +62,7 @@ if [[ "${1:-}" == "--browser" ]]; then
     export PW_CHROMIUM
   fi
   node playwright/test-backgammon-smoke/test.js
+  node playwright/test-backgammon-drag/test.js
   node playwright/test-poker-smoke/test.js
   node playwright/test-go-smoke/test.js
   node playwright/test-chess-smoke/test.js

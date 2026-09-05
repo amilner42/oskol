@@ -602,6 +602,21 @@
 }
 .checker-count { font-size: 10px; font-weight: 800; line-height: 1; color: var(--ink); }
 .checker.black .checker-count { color: #fff; }
+/* Drag-and-drop (src/Drag.elm). Only drag sources opt out of touch
+   scrolling -- the page itself keeps scrolling normally elsewhere. */
+[data-drag-capture] { touch-action: none; cursor: grab; }
+.checker.lifted { opacity: 0.35; }
+.bg-drag-ghost {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(3px 4px 0 rgba(35, 36, 58, 0.35));
+}
+.bg-drag-ghost .checker { width: 1.4rem; }
+@media (min-width: 640px) { .bg-drag-ghost .checker { width: 1.9rem; } }
+.bg-point.drop-hover::before { background: color-mix(in oklab, var(--point) 30%, var(--bg-sky)); }
+.bg-tray.drop-hover { border-color: var(--bg-sky); background: color-mix(in oklab, var(--bg-sky) 40%, #fff); }
 .bg-bar { background: var(--ink); border-radius: 2px; }
 .bg-bar .checker.black { border-color: #fff; }
 .bg-tray { border: 3px solid var(--ink); background: #fff; color: var(--ink); }
