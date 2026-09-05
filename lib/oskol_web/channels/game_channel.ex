@@ -11,44 +11,32 @@ defmodule OskolWeb.GameChannel do
   alias Oskol.GameKit
 
   @impl true
-  def join("game:" <> game_id, %{"player_id" => player_id}, socket) do
-    # A visitor without a seat (no name, or a name nobody holds) watches as
-    # a spectator: the id is opaque to the room, so they can only receive
-    # the spectator projection.
-    player_id = player_id || "spectator-" <> Nanoid.generate(8)
-
+  def join("game:" <> game_id, %{"token" => token}, socket) when is_binary(token) do
     try do
-      Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
-      state = GameServer.get_state(game_id)
+      # The seat token is the whole credential. Attaching first also
+      # registers this channel as the seat's live connection, and the join
+      # reply must describe the room after that, or the joining client
+      # would see itself as disconnected.
+      case GameServer.attach(game_id, token, self()) do
+        {:ok, player_id, state} ->
+          Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+          socket = socket |> assign(:game_id, game_id) |> assign(:player_id, player_id)
+          {:ok, %{payload: payload(state, player_id, [])}, socket}
 
-      # Register this channel process as the live connection for the player.
-      # The join reply must describe the room after that, or the joining
-      # client would see itself as disconnected.
-      state =
-        case get_in(state.connections, [player_id, :name]) do
-          nil ->
-            state
-
-          name ->
-            case GameServer.rejoin_game(game_id, name, self()) do
-              {:ok, ^player_id, joined} ->
-                joined
-
-              {:error, reason} ->
-                Logger.warning("Channel rejoin failed: #{inspect(reason)}")
-                state
-            end
-        end
-
-      socket = socket |> assign(:game_id, game_id) |> assign(:player_id, player_id)
-      {:ok, %{payload: payload(state, player_id, [])}, socket}
+        {:error, reason} ->
+          # Never say which of the two it was, and never leak room state.
+          Logger.info("Channel join refused for #{game_id}: #{inspect(reason)}")
+          {:error, %{reason: "unauthorized"}}
+      end
     catch
       :exit, _ -> {:error, %{reason: "Game not found"}}
     end
   end
 
+  # No token, no seat, and no view of the table: a visitor has to go through
+  # the invite link, which decides what (if anything) they may join as.
   def join("game:" <> _game_id, _params, _socket) do
-    {:error, %{reason: "player_id required"}}
+    {:error, %{reason: "unauthorized"}}
   end
 
   @impl true
@@ -98,6 +86,13 @@ defmodule OskolWeb.GameChannel do
     {:noreply, socket}
   end
 
+  # The same token attached somewhere else: that connection is now the seat,
+  # so this one stops rather than lingering as a second live view of it.
+  def handle_info(:seat_taken_over, socket) do
+    push(socket, "error", %{message: "This seat was opened somewhere else"})
+    {:stop, :normal, socket}
+  end
+
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   @doc "The message a client sees for the current room state."
@@ -111,12 +106,10 @@ defmodule OskolWeb.GameChannel do
   end
 
   def payload(%GameServerState{} = state, player_id, events) do
-    update =
-      if Map.has_key?(state.connections, player_id) do
-        GameKit.player_update(state.instance, player_id, events)
-      else
-        GameKit.spectator_update(state.instance, events)
-      end
+    # Only a token-authenticated seat ever reaches this channel, so every
+    # update is that seat's own projection: hidden information stays hidden
+    # by the host's per-viewer filtering.
+    update = GameKit.player_update(state.instance, player_id, events)
 
     %{
       type: "game",

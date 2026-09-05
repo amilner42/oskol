@@ -2,6 +2,7 @@ defmodule Oskol.GameFixtures do
   @moduledoc "Helpers to spin up game rooms in tests. Backgammon is the reference game."
 
   alias Oskol.Game
+  alias Oskol.Game.GameServerState
   alias Oskol.GameKit
 
   def unique_game_id(prefix \\ "t") do
@@ -24,8 +25,8 @@ defmodule Oskol.GameFixtures do
         control: Keyword.get(opts, :control)
       })
 
-    {:ok, p1, _} = Game.join_game(game_id, "Alice", Keyword.get(opts, :pid1))
-    %{game_id: game_id, p1: p1}
+    {:ok, p1, state} = Game.join_game(game_id, "Alice", Keyword.get(opts, :pid1))
+    %{game_id: game_id, p1: p1, t1: GameServerState.token_for(state, p1)}
   end
 
   @doc """
@@ -41,9 +42,17 @@ defmodule Oskol.GameFixtures do
 
     fixture
     |> Map.put(:p2, p2)
+    |> Map.put(:t2, GameServerState.token_for(state, p2))
     |> Map.put(:state, state)
     |> Map.put(:mover, mover)
     |> Map.put(:waiting, waiting)
+    |> Map.put(:mover_token, GameServerState.token_for(state, mover))
+    |> Map.put(:waiting_token, GameServerState.token_for(state, waiting))
+  end
+
+  @doc "The current seat token for a player in a room."
+  def token_for(game_id, player_id) do
+    game_id |> Game.get_server_state() |> GameServerState.token_for(player_id)
   end
 
   @doc "Whoever holds a `move` schema."

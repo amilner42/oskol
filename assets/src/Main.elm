@@ -55,6 +55,7 @@ type alias Flags =
     { gameId : String
     , gameSlug : String
     , playerId : Maybe String
+    , seatToken : Maybe String
     }
 
 
@@ -68,6 +69,7 @@ type alias Model =
     { gameId : String
     , gameSlug : String
     , playerId : Maybe String
+    , seatToken : Maybe String -- this seat's credential, carried into a rematch
     , payload : Maybe GamePayload -- latest protocol payload from the server
     , legal : List Protocol.Schema -- legal action schemas for this player
     , generic : Generic.View.Model
@@ -85,6 +87,7 @@ init flags =
     ( { gameId = flags.gameId
       , gameSlug = flags.gameSlug
       , playerId = flags.playerId
+      , seatToken = flags.seatToken
       , payload = Nothing
       , legal = []
       , generic = Generic.View.init
@@ -205,7 +208,7 @@ update msg model =
 
         RematchGameReady rematchGameId ->
             ( model
-            , navigateToUrl ("/" ++ model.gameSlug ++ "/" ++ rematchGameId ++ "?name=" ++ percentEncode (myName model))
+            , navigateToUrl (rematchUrl model rematchGameId)
             )
 
         ChannelError err ->
@@ -241,7 +244,7 @@ applyPayload payload model =
             case payload.rematchGameId of
                 Just rematchGameId ->
                     if List.member payload.playerId payload.rematchReady && (model.payload |> Maybe.andThen .rematchGameId) /= Just rematchGameId then
-                        navigateToUrl ("/" ++ model.gameSlug ++ "/" ++ rematchGameId ++ "?name=" ++ percentEncode (myName updated))
+                        navigateToUrl (rematchUrl updated rematchGameId)
 
                     else
                         Cmd.none
@@ -274,9 +277,22 @@ connectionStatusFromString status =
             Disconnected
 
 
-myName : Model -> String
-myName model =
-    model.playerId |> Maybe.map (nameOf model) |> Maybe.withDefault ""
+{-| A rematch is the same players in the same seats, so the seat token
+carries over unchanged: it is the only thing the new room needs.
+-}
+rematchUrl : Model -> String -> String
+rematchUrl model rematchGameId =
+    "/"
+        ++ model.gameSlug
+        ++ "/"
+        ++ rematchGameId
+        ++ (case model.seatToken of
+                Just token ->
+                    "?t=" ++ percentEncode token
+
+                Nothing ->
+                    ""
+           )
 
 
 nameOf : Model -> String -> String

@@ -23,12 +23,34 @@ defmodule Oskol.Game.GameServer do
     GenServer.start_link(__MODULE__, {game_id, slug}, name: via_tuple(game_id))
   end
 
+  @doc """
+  Take a free seat. Mints the seat's token; the caller reads it back with
+  `GameServerState.token_for/2`. The display name is display only.
+  """
   def join_game(game_id, player_name, player_pid \\ nil) do
     GenServer.call(via_tuple(game_id), {:join_game, player_name, player_pid})
   end
 
-  def rejoin_game(game_id, player_name, player_pid) do
-    GenServer.call(via_tuple(game_id), {:rejoin_game, player_name, player_pid})
+  @doc """
+  Attach a connection to the seat a token opens.
+
+  This is the only way to reach a seat with an already-connected player: a
+  second connection bearing the same valid token is the same person, so the
+  latest one wins and the previous socket is dropped. A wrong or stale token
+  is `{:error, :invalid_token}` — it never falls back to any other seat.
+  """
+  def attach(game_id, token, player_pid) do
+    GenServer.call(via_tuple(game_id), {:attach, token, player_pid})
+  end
+
+  @doc """
+  Reclaim a seat whose player is away, from the invite link. Rotates that
+  seat's token before attaching, so a link that leaked earlier cannot
+  silently shadow the seat later. Returns `{:ok, player_id, token, state}`.
+  A seat whose player is connected is `{:error, :seat_connected}`.
+  """
+  def claim_seat(game_id, player_id, player_pid) do
+    GenServer.call(via_tuple(game_id), {:claim_seat, player_id, player_pid})
   end
 
   def get_state(game_id), do: GenServer.call(via_tuple(game_id), :get_state)
@@ -107,6 +129,7 @@ defmodule Oskol.Game.GameServer do
 
         connection = %{
           name: player_name,
+          token: GameServerState.new_token(),
           pid: player_pid,
           connected: player_pid != nil,
           monitor_ref: monitor_ref
@@ -137,32 +160,57 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  def handle_call({:rejoin_game, player_name, player_pid}, _from, %GameServerState{} = state) do
-    case GameServerState.find_player_id_by_name(state, player_name) do
+  def handle_call({:attach, token, player_pid}, _from, %GameServerState{} = state) do
+    case GameServerState.find_player_id_by_token(state, token) do
       nil ->
-        {:reply, {:error, :player_not_found}, state, @timeout}
+        {:reply, {:error, :invalid_token}, state, @timeout}
 
       player_id ->
-        old = state.connections[player_id]
+        new_state = do_attach(state, player_id, player_pid)
 
-        # The newest channel is the live one, even when the previous socket
-        # has not timed out yet (a phone coming back before the old
-        # websocket closed): its monitor is dropped so the old socket's exit
-        # cannot mark a present player as away.
-        if old.monitor_ref, do: Process.demonitor(old.monitor_ref, [:flush])
-        monitor_ref = Process.monitor(player_pid)
-        updated = %{old | pid: player_pid, connected: true, monitor_ref: monitor_ref}
-
-        new_state =
-          %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
-          |> GameServerState.touch()
-          |> GameServerState.update_lobby_status()
-
-        # The rejoining client gets the state in its reply; everyone else
+        # The attaching client gets the state in its reply; everyone else
         # learns the seat is live again.
         broadcast(new_state, [])
         {:reply, {:ok, player_id, new_state}, new_state, @timeout}
     end
+  end
+
+  def handle_call({:claim_seat, player_id, player_pid}, _from, %GameServerState{} = state) do
+    case state.connections[player_id] do
+      nil ->
+        {:reply, {:error, :player_not_found}, state, @timeout}
+
+      %{connected: true} ->
+        # A seat with a live player is locked: only its token gets in.
+        {:reply, {:error, :seat_connected}, state, @timeout}
+
+      conn ->
+        token = GameServerState.new_token()
+        rotated = %{conn | token: token}
+        state = %GameServerState{state | connections: Map.put(state.connections, player_id, rotated)}
+        new_state = do_attach(state, player_id, player_pid)
+
+        broadcast(new_state, [])
+        {:reply, {:ok, player_id, token, new_state}, new_state, @timeout}
+    end
+  end
+
+  # A rematch is the same players in the same seats: the new room is seeded
+  # with the old ids, names and tokens, so the link each player already
+  # holds carries them into it.
+  def handle_call({:seed_seat, player_id, name, token}, _from, %GameServerState{} = state) do
+    connection = %{name: name, token: token, pid: nil, connected: false, monitor_ref: nil}
+
+    new_state =
+      %GameServerState{
+        state
+        | connections: Map.put(state.connections, player_id, connection),
+          seat_order: state.seat_order ++ [player_id]
+      }
+      |> GameServerState.touch()
+      |> GameServerState.update_lobby_status()
+
+    {:reply, {:ok, player_id, new_state}, new_state, @timeout}
   end
 
   def handle_call({:start_game, seed, control}, _from, %GameServerState{} = state) do
@@ -327,6 +375,29 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
+  # Point a seat at a new connection. The newest socket is the live one,
+  # even when the previous one has not timed out yet (a phone coming back
+  # before the old websocket closed, or the same player opening a second
+  # tab with their token): the old monitor is dropped so its exit cannot
+  # mark a present player as away, and the old socket is closed so only one
+  # connection ever holds the seat.
+  defp do_attach(%GameServerState{} = state, player_id, player_pid) do
+    old = state.connections[player_id]
+
+    if old.monitor_ref, do: Process.demonitor(old.monitor_ref, [:flush])
+
+    if old.pid && old.pid != player_pid && Process.alive?(old.pid) do
+      send(old.pid, :seat_taken_over)
+    end
+
+    monitor_ref = Process.monitor(player_pid)
+    updated = %{old | pid: player_pid, connected: true, monitor_ref: monitor_ref}
+
+    %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
+    |> GameServerState.touch()
+    |> GameServerState.update_lobby_status()
+  end
+
   defp apply_action(%GameServerState{} = state, player_id, action) do
     cond do
       not GameServerState.started?(state) ->
@@ -352,15 +423,21 @@ defmodule Oskol.Game.GameServer do
   end
 
   # A rematch is a new room with the same setup (fresh seed) and the same
-  # names; the second join starts it.
+  # players in the same seats: ids, names and seat tokens carry over, so the
+  # link each player is already holding works in the new room.
   defp spawn_rematch(rematch_id, %GameServerState{} = state) do
     case Oskol.Game.GameSupervisor.start_game(rematch_id, state.slug) do
       {:ok, _pid} ->
         {:ok, _} = configure(rematch_id, %{state.setup | seed: nil})
 
-        Enum.each(GameServerState.seats(state), fn {_old_id, name} ->
-          {:ok, _new_id, _} = join_game(rematch_id, name, nil)
+        Enum.each(state.seat_order, fn id ->
+          conn = state.connections[id]
+
+          {:ok, ^id, _} =
+            GenServer.call(via_tuple(rematch_id), {:seed_seat, id, conn.name, conn.token})
         end)
+
+        {:ok, _} = start_game(rematch_id)
 
         :ok
 
