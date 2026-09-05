@@ -803,7 +803,7 @@ viewTray board ownerId =
          ]
             ++ click
         )
-        [ span [ class "pixel text-[7px]", style "color" "var(--bg-num)" ] [ text "OFF" ]
+        [ span [ class "pixel text-[7px]", style "color" "rgba(35, 36, 58, 0.5)" ] [ text "OFF" ]
         , span [ class "pixel text-xs" ] [ text (String.fromInt count) ]
         , if isTarget then
             div [ class "ghost" ] []
