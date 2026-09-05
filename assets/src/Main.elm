@@ -165,6 +165,9 @@ update msg model =
                 Backgammon.Send value ->
                     ( updated, sendToChannel value )
 
+                Backgammon.SendMany values ->
+                    ( updated, Cmd.batch (List.map sendToChannel values) )
+
                 Backgammon.WantRematch ->
                     update RequestRematch updated
 
@@ -434,7 +437,9 @@ view model =
                                     , scene = payload.update.scene
                                     , legal = payload.update.legal
                                     , model = model.backgammon
-                                    , clock = clockView
+                                    , clock = Just payload.update.clock
+                                    , receivedAt = model.clockReceivedAt
+                                    , now = model.nowMs
                                     , nameOf = nameOf model
                                     , rematchReady = payload.rematchReady
                                     , finished = finished

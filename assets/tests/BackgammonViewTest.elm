@@ -23,14 +23,14 @@ suite : Test
 suite =
     describe "backgammon board"
         [ describe "update"
-            [ test "selecting a source then a destination sends one move" <|
+            [ test "playing a move sends it and clears the selection" <|
                 \_ ->
                     let
                         ( m1, out1 ) =
                             View.update (SelectFrom "13") View.init
 
                         ( m2, out2 ) =
-                            View.update (MoveTo "8") m1
+                            View.update (PlayMove "13" "8") m1
                     in
                     Expect.all
                         [ \_ -> Expect.equal (Just "13") m1.selectedFrom
@@ -48,9 +48,16 @@ suite =
                         |> Tuple.first
                         |> .selectedFrom
                         |> Expect.equal Nothing
-            , test "a destination without a source does nothing" <|
+            , test "playing a pair sends both moves in order" <|
                 \_ ->
-                    View.update (MoveTo "8") View.init |> Tuple.second |> Expect.equal NoOut
+                    View.update (PlayPair { from = "13", to = "9" } { from = "11", to = "9" }) View.init
+                        |> Tuple.second
+                        |> Expect.equal
+                            (SendMany
+                                [ Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "9" ) ]
+                                , Protocol.encodeAction "move" [ ( "from", E.string "11" ), ( "to", E.string "9" ) ]
+                                ]
+                            )
             , test "simple actions send their name with no params" <|
                 \_ ->
                     View.update (Simple "roll") View.init
@@ -60,6 +67,140 @@ suite =
                 \_ ->
                     View.update Rematch View.init |> Tuple.second |> Expect.equal WantRematch
             ]
+        , describe "destination-first tap resolution"
+            (let
+                base =
+                    { selected = Nothing
+                    , moves = []
+                    , sources = []
+                    , mineAt = \_ -> 0
+                    , unusedDice = []
+                    }
+             in
+             [ test "exactly one legal move landing on the point plays it" <|
+                \_ ->
+                    View.resolveTap { base | moves = [ { from = "13", to = "8" } ], unusedDice = [ 5, 3 ] } "8"
+                        |> Expect.equal (Just (PlayMove "13" "8"))
+             , test "two moves from different origins onto an empty point stage the pair" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "13", to = "9" }, { from = "11", to = "9" }, { from = "24", to = "20" } ]
+                            , unusedDice = [ 4, 2 ]
+                        }
+                        "9"
+                        |> Expect.equal (Just (PlayPair { from = "13", to = "9" } { from = "11", to = "9" }))
+             , test "two moves onto a point I already occupy are ambiguous" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "13", to = "9" }, { from = "11", to = "9" } ]
+                            , mineAt =
+                                \loc ->
+                                    if loc == "9" then
+                                        1
+
+                                    else
+                                        0
+                            , unusedDice = [ 4, 2 ]
+                        }
+                        "9"
+                        |> Expect.equal Nothing
+             , test "doubles with two checkers at the origin stage the pair onto an empty point" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "13", to = "10" } ]
+                            , mineAt =
+                                \loc ->
+                                    if loc == "13" then
+                                        5
+
+                                    else
+                                        0
+                            , unusedDice = [ 3, 3, 3, 3 ]
+                        }
+                        "10"
+                        |> Expect.equal (Just (PlayPair { from = "13", to = "10" } { from = "13", to = "10" }))
+             , test "doubles with one checker at the origin play a single move" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "13", to = "10" } ]
+                            , mineAt =
+                                \loc ->
+                                    if loc == "13" then
+                                        1
+
+                                    else
+                                        0
+                            , unusedDice = [ 3, 3 ]
+                        }
+                        "10"
+                        |> Expect.equal (Just (PlayMove "13" "10"))
+             , test "bearing off never auto-stages a pair" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "3", to = "off" } ]
+                            , mineAt =
+                                \loc ->
+                                    if loc == "3" then
+                                        3
+
+                                    else
+                                        0
+                            , unusedDice = [ 3, 3, 3, 3 ]
+                        }
+                        "off"
+                        |> Expect.equal (Just (PlayMove "3" "off"))
+             , test "a point that is also one of my movable origins selects the origin instead" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "8", to = "5" }, { from = "13", to = "8" } ]
+                            , sources = [ "8", "13" ]
+                            , unusedDice = [ 5, 3 ]
+                        }
+                        "8"
+                        |> Expect.equal (Just (SelectFrom "8"))
+             , test "three moves landing on the same point are ambiguous" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "13", to = "9" }, { from = "11", to = "9" }, { from = "12", to = "9" } ]
+                            , unusedDice = [ 4, 2 ]
+                        }
+                        "9"
+                        |> Expect.equal Nothing
+             , test "with a selection, a legal destination plays that move" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | selected = Just "13"
+                            , moves = [ { from = "13", to = "8" }, { from = "6", to = "8" } ]
+                            , sources = [ "13", "6" ]
+                        }
+                        "8"
+                        |> Expect.equal (Just (PlayMove "13" "8"))
+             , test "with a selection, tapping the selected point clears it" <|
+                \_ ->
+                    View.resolveTap
+                        { base | selected = Just "13", moves = [ { from = "13", to = "8" } ], sources = [ "13" ] }
+                        "13"
+                        |> Expect.equal (Just Clear)
+             , test "with a selection, tapping another origin switches the selection" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | selected = Just "13"
+                            , moves = [ { from = "13", to = "8" }, { from = "6", to = "2" } ]
+                            , sources = [ "13", "6" ]
+                        }
+                        "6"
+                        |> Expect.equal (Just (SelectFrom "6"))
+             ]
+            )
         , describe "rendering fixtures" (List.map perFixture (FixtureLoader.byGame "backgammon"))
         ]
 
@@ -70,7 +211,9 @@ ctx playerId update model =
     , scene = update.scene
     , legal = update.legal
     , model = model
-    , clock = Html.text ""
+    , clock = Nothing
+    , receivedAt = 0
+    , now = 0
     , nameOf = identity
     , rematchReady = []
     , away = []
