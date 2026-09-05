@@ -16,10 +16,32 @@ defmodule OskolWeb.LandingLiveTest do
 
   test "the library lists every registered game", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/")
-    assert html =~ "SELECT YOUR GAME"
+    assert html =~ "THE CLASSICS."
     assert has_element?(view, "#game-backgammon", "Backgammon")
     assert has_element?(view, "#game-poker", "Poker")
     assert page_title(view) =~ "Two-player games from a link"
+  end
+
+  test "games with no engine yet are shown but are not playable and not claimed", %{conn: conn} do
+    {:ok, view, html} = live(conn, ~p"/")
+
+    for {slug, name} <- [{"chess", "Chess"}, {"go", "Go"}] do
+      assert has_element?(view, "##{"game-" <> slug}", name)
+      # A disabled button, not a link: nothing to click and nowhere to go.
+      assert has_element?(view, "##{"game-" <> slug} button[disabled]", "SOON")
+      refute has_element?(view, "##{"game-" <> slug} a")
+      refute has_element?(view, "a[href='/#{slug}']")
+    end
+
+    # Plain HTML is fine; a structured-data claim that they are playable is not.
+    [json_ld] =
+      Regex.run(~r|<script type="application/ld\+json">(.*?)</script>|s, html,
+        capture: :all_but_first
+      )
+
+    parts = Jason.decode!(String.trim(json_ld))["hasPart"]
+    assert parts |> Enum.map(& &1["name"]) |> Enum.sort() == ["Backgammon", "Poker"]
+    refute Enum.any?(parts, &String.ends_with?(&1["url"], ["/chess", "/go"]))
   end
 
   test "moving between the library and a game keeps the titles right", %{conn: conn} do
@@ -41,9 +63,12 @@ defmodule OskolWeb.LandingLiveTest do
     assert html =~ "Backgammon"
     assert page_title(view) =~ "Play backgammon online with a friend"
     assert has_element?(view, "h1", "Play backgammon online with a friend")
-    assert has_element?(view, "#twist", "Original rules")
+    # Backgammon offers no twist yet, so the form does not show an empty section
+    refute has_element?(view, "#twist")
     assert has_element?(view, "#rules h2", "BACKGAMMON IN BRIEF")
     assert has_element?(view, "#other-games a[href='/poker']", "Poker")
+    assert has_element?(view, "#modes h2", "MODES")
+    assert has_element?(view, "#faq h2", "QUESTIONS")
     assert has_element?(view, "form[phx-submit=new_game]")
     assert has_element?(view, "#format-single.tile-mine")
     assert has_element?(view, "#format-match5", "Match to 5")

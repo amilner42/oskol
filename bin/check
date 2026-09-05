@@ -36,9 +36,17 @@ if [[ "${1:-}" == "--browser" ]]; then
 
   step "server"
   log="${TMPDIR:-/tmp}/oskol-check-server.log"
-  setsid bash -c 'exec mix phx.server' >"$log" 2>&1 &
-  server=$!
-  trap 'kill -- -'"$server"' 2>/dev/null || true' EXIT
+  # A new session so the whole process group can be killed; macOS has no
+  # setsid, so fall back to killing the one process there.
+  if command -v setsid >/dev/null; then
+    setsid bash -c 'exec mix phx.server' >"$log" 2>&1 &
+    server=$!
+    trap 'kill -- -'"$server"' 2>/dev/null || true' EXIT
+  else
+    bash -c 'exec mix phx.server' >"$log" 2>&1 &
+    server=$!
+    trap 'kill '"$server"' 2>/dev/null || true' EXIT
+  fi
   for _ in $(seq 1 90); do
     curl -sf -o /dev/null http://localhost:4000/ && break
     sleep 1

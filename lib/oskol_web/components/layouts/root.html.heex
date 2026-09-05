@@ -5,9 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
     <meta name="theme-color" content="#f7f4ea" />
-    <.live_title default="Oskol" suffix=" · Oskol">
-      {assigns[:page_title]}
-    </.live_title>
+    <.live_title suffix=" · Oskol">{head_title(assigns)}</.live_title>
     <meta
       name="description"
       content={

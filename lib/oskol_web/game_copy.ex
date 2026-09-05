@@ -1,15 +1,14 @@
 defmodule OskolWeb.GameCopy do
   @moduledoc """
   Landing-page prose per game: the title and description search engines
-  show, how to play, the rules in brief, and a few questions. Presentation
-  only; the games themselves live in Gleam and never read this.
+  show, a one-line intro, the rules in brief, and a few questions.
+  Presentation only; the games themselves live in Gleam and never read this.
   """
 
   @type copy :: %{
           title: String.t(),
           description: String.t(),
           intro: String.t(),
-          how: [String.t()],
           rules: [String.t()],
           faq: [{String.t(), String.t()}]
         }
@@ -19,13 +18,7 @@ defmodule OskolWeb.GameCopy do
       title: "Play heads-up poker online with a friend",
       description:
         "Heads-up no-limit Texas hold'em for two, free, no accounts. Pick a cash game or a sit-and-go, send a link, and your friend is dealt in.",
-      intro:
-        "Two players, one deck, no-limit betting. Set the stakes or the sit-and-go speed, share the link, and the first hand is dealt the moment your friend types a name. Works on a phone.",
-      how: [
-        "Choose a cash game with the stakes you like, or a sit-and-go where the blinds climb until one of you has every chip.",
-        "Pick a clock or none. Running out of time never loses you the game: you check when you can, fold when you can't.",
-        "Share the link. Your friend types a name and the cards come out."
-      ],
+      intro: "No-limit hold'em for two, from a link. Free, no accounts, plays on a phone.",
       rules: [
         "Each player gets two cards face down, then five community cards come out in three rounds: the flop, the turn and the river. You make the best five-card hand from any of the seven.",
         "Heads-up, the player with the dealer button posts the small blind and acts first before the flop, last after it. Betting is no-limit: a bet is at least the big blind, a raise at least the size of the last raise, and you can move all in at any time.",
@@ -46,12 +39,7 @@ defmodule OskolWeb.GameCopy do
       description:
         "Backgammon for two with the doubling cube, free, no accounts. A single game, a match to 3, 5 or 7, or unlimited play; send a link and roll.",
       intro:
-        "The classic race game with the doubling cube, the Crawford rule in matches and the Jacoby rule in unlimited play. Set the match, share the link, and your friend rolls the moment they type a name. Works on a phone.",
-      how: [
-        "Choose a single game, a match to 3, 5 or 7 points, or unlimited play.",
-        "Add a clock if you like: blitz, rapid, a delay, or a fixed time per move.",
-        "Share the link. Your friend types a name and the opening roll decides who moves."
-      ],
+        "The race game with the doubling cube, from a link. Free, no accounts, plays on a phone.",
       rules: [
         "Each player has fifteen checkers racing around the board in opposite directions. Roll two dice and move checkers by the numbers shown; doubles move four times. A single checker on a point is a blot and can be hit and sent to the bar, from where it must re-enter before anything else moves.",
         "Once all your checkers are in your home board you bear them off. The first player to bear off all fifteen wins; a gammon (the loser has borne off nothing) counts double and a backgammon (the loser still has a checker on the bar or in the winner's home board) triple.",
@@ -78,11 +66,6 @@ defmodule OskolWeb.GameCopy do
         title: "Play #{info["name"]} online with a friend",
         description: "#{info["name"]} for two, free, no accounts. Send a link and play.",
         intro: info["description"],
-        how: [
-          "Choose a mode and an optional clock.",
-          "Share the link.",
-          "Your friend types a name and the game starts."
-        ],
         rules: [info["description"]],
         faq: []
       }
