@@ -39,7 +39,9 @@ defmodule OskolWeb.LandingLive do
         player_name: "",
         error: nil,
         inviter_name: nil,
+        setup_summary: nil,
         player_id: nil,
+        seat_token: nil,
         server_state: nil,
         disconnected_players: [],
         page_title: nil
@@ -111,7 +113,9 @@ defmodule OskolWeb.LandingLive do
                   player_name: nil,
                   error: nil,
                   inviter_name: nil,
+                  setup_summary: nil,
                   player_id: nil,
+                  seat_token: nil,
                   server_state: nil,
                   disconnected_players: []
                 )
@@ -127,13 +131,18 @@ defmodule OskolWeb.LandingLive do
     end
   end
 
-  # Decide which step of the game page to show from `?game=` and `?name=`.
+  # Decide which step of the game page to show from `?game=` and `?t=`.
+  #
+  # `?t=` is a seat token: the only thing that attaches to a seat. Without
+  # one this is the plain invite link, and what it offers depends on the
+  # room (see `route_invite/2`). A name in the URL is not identity and is
+  # not read here.
   defp route_game(socket, params) do
     game_name = params["game"] || ""
-    name_from_url = params["name"]
+    token = params["t"]
 
     socket =
-      if game_name != "" && !name_from_url do
+      if game_name != "" && !token do
         set_invite_meta_tags(socket, game_name)
       else
         socket
@@ -141,19 +150,23 @@ defmodule OskolWeb.LandingLive do
 
     cond do
       game_name == "" ->
-        assign(socket, step: :create, game_name: "")
+        assign(socket, step: :create, game_name: "", seat_token: nil)
 
-      socket.assigns.step in [:joining, :waiting] and socket.assigns.game_name == game_name ->
+      socket.assigns.step == :waiting and socket.assigns.game_name == game_name ->
         socket
 
-      connected?(socket) && name_from_url && name_from_url != "" ->
-        auto_rejoin(socket, game_name, name_from_url)
+      # Attaching claims a seat, so it waits for the live connection: the
+      # static render's process is about to go away.
+      is_binary(token) && token != "" ->
+        if connected?(socket),
+          do: attach_with_token(socket, game_name, token),
+          else: assign(socket, step: :player_name, game_name: game_name)
 
-      connected?(socket) ->
-        check_game_for_reconnect(socket, game_name)
-
+      # Deciding what the invite offers is a read, and it runs on the static
+      # render too, so a visitor never sees a join form the table has no
+      # room for.
       true ->
-        assign(socket, step: :player_name, game_name: game_name)
+        route_invite(socket, game_name)
     end
   end
 
@@ -170,79 +183,68 @@ defmodule OskolWeb.LandingLive do
     end
   end
 
-  # A player came back with their name in the URL: reconnect them, or seat
-  # them if the game has not started and there is room.
-  defp auto_rejoin(socket, game_name, player_name) do
+  # A player came back holding their seat token: attach them to that seat.
+  # A token that is not current grants nothing — it falls through to the
+  # plain invite, which may still offer the seat if its player is away.
+  defp attach_with_token(socket, game_name, token) do
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_name}")
 
-        case Game.rejoin_game(game_name, player_name, self()) do
+        case Game.attach(game_name, token, self()) do
           {:ok, player_id, new_state} ->
-            if new_state.instance != nil do
-              push_navigate(socket, to: play_path(socket, game_name, player_name))
-            else
-              enter_waiting(socket, game_name, player_name, player_id, new_state)
-            end
+            seated(socket, game_name, player_id, token, new_state)
 
           {:error, _reason} ->
-            server_state = Game.get_server_state(game_name)
-
-            if server_state.instance == nil do
-              case Game.join_game(game_name, player_name, self()) do
-                {:ok, player_id, new_state} ->
-                  after_join(socket, game_name, player_name, player_id, new_state)
-
-                {:error, _} ->
-                  assign(socket, step: :player_name, game_name: game_name)
-              end
-            else
-              assign(socket,
-                step: :player_name,
-                game_name: game_name,
-                error: "That game already started"
-              )
-            end
+            route_invite(assign(socket, seat_token: nil), game_name)
         end
 
       :not_found ->
-        assign(socket, step: :player_name, game_name: game_name)
+        assign(socket, step: :player_name, game_name: game_name, seat_token: nil)
     end
   end
 
-  defp check_game_for_reconnect(socket, game_name) do
+  # The plain invite link. What it offers depends on the table:
+  #
+  #   * room with a free seat -> the normal join flow (type a name).
+  #   * full, everyone connected -> nothing at all. No seat, no scene.
+  #   * full, someone away -> offer their seat back (one name, or a choice
+  #     of both when the table emptied out).
+  #
+  # A visitor who is not (yet) a player never gets the room struct into
+  # their assigns: it holds both seats' tokens, and only the strings a view
+  # actually shows have any business being here.
+  defp route_invite(socket, game_name) do
+    socket = assign(socket, server_state: nil)
+
     case Game.lookup_game(game_name) do
       {:ok, _pid} ->
         server_state = Game.get_server_state(game_name)
+        disconnected = GameServerState.disconnected_seats(server_state)
 
-        disconnected =
-          server_state.connections
-          |> Enum.filter(fn {_id, conn} -> not conn.connected end)
-          |> Enum.map(fn {id, conn} -> {id, conn.name} end)
+        cond do
+          not GameServerState.full?(server_state) ->
+            assign(socket,
+              step: :player_name,
+              game_name: game_name,
+              inviter_name: inviter_name(server_state),
+              setup_summary: GameServerState.summary(server_state),
+              disconnected_players: disconnected
+            )
 
-        inviter =
-          server_state.connections
-          |> Enum.find(fn {_id, c} -> c.connected end)
-          |> case do
-            {_id, c} -> c.name
-            nil -> nil
-          end
+          disconnected == [] ->
+            assign(socket,
+              step: :table_full,
+              game_name: game_name,
+              disconnected_players: []
+            )
 
-        if disconnected != [] and server_state.instance != nil do
-          assign(socket,
-            step: :joining,
-            game_name: game_name,
-            server_state: server_state,
-            disconnected_players: disconnected
-          )
-        else
-          assign(socket,
-            step: :player_name,
-            game_name: game_name,
-            inviter_name: inviter,
-            server_state: server_state,
-            disconnected_players: disconnected
-          )
+          true ->
+            assign(socket,
+              step: :reconnect,
+              game_name: game_name,
+              disconnected_players: disconnected
+            )
         end
 
       :not_found ->
@@ -250,25 +252,37 @@ defmodule OskolWeb.LandingLive do
     end
   end
 
-  defp enter_waiting(socket, game_name, player_name, player_id, server_state) do
+  defp inviter_name(server_state) do
+    case Enum.find(server_state.connections, fn {_id, c} -> c.connected end) do
+      {_id, c} -> c.name
+      nil -> nil
+    end
+  end
+
+  defp enter_waiting(socket, game_name, player_id, token, server_state) do
     assign(socket,
       step: :waiting,
       game_name: game_name,
-      player_name: player_name,
+      player_name: get_in(server_state.connections, [player_id, :name]) || "",
       player_id: player_id,
+      seat_token: token,
       server_state: server_state,
       error: nil
     )
   end
 
-  # After seating a player: straight into the game if it started, else wait.
-  defp after_join(socket, game_name, player_name, player_id, server_state) do
+  # A seat is ours and we hold its token: straight into the game if it has
+  # started, else wait in the lobby. Either way the URL now carries the
+  # token, so a refresh comes back to the same seat.
+  defp seated(socket, game_name, player_id, token, server_state) do
     if server_state.instance != nil do
-      push_navigate(socket, to: play_path(socket, game_name, player_name))
+      socket
+      |> assign(seat_token: token, player_id: player_id)
+      |> push_navigate(to: play_path(socket, game_name, token))
     else
       socket
-      |> enter_waiting(game_name, player_name, player_id, server_state)
-      |> push_patch(to: lobby_path(socket, game_name, player_name))
+      |> enter_waiting(game_name, player_id, token, server_state)
+      |> push_patch(to: lobby_path(socket, game_name, token))
     end
   end
 
@@ -303,7 +317,8 @@ defmodule OskolWeb.LandingLive do
 
         with {:ok, _} <- Game.configure(game_id, socket.assigns.setup),
              {:ok, player_id, new_state} <- Game.join_game(game_id, player_name, self()) do
-          {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
+          token = GameServerState.token_for(new_state, player_id)
+          {:noreply, seated(socket, game_id, player_id, token, new_state)}
         else
           {:error, reason} -> {:noreply, assign(socket, error: format_error(reason))}
         end
@@ -321,36 +336,25 @@ defmodule OskolWeb.LandingLive do
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
       server_state = Game.get_server_state(game_id)
 
-      disconnected =
-        server_state.connections
-        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
-        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
-
       socket =
         assign(socket,
           player_name: player_name,
-          server_state: server_state,
-          disconnected_players: disconnected
+          setup_summary: GameServerState.summary(server_state),
+          disconnected_players: GameServerState.disconnected_seats(server_state)
         )
 
       case Game.join_game(game_id, player_name, self()) do
         {:ok, player_id, new_state} ->
-          {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
+          token = GameServerState.token_for(new_state, player_id)
+          {:noreply, seated(socket, game_id, player_id, token, new_state)}
 
+        # A name is not a seat: a clash is just a clash, and the table
+        # decides on its own whether there is anything else to offer.
         {:error, :name_taken} ->
-          case Game.rejoin_game(game_id, player_name, self()) do
-            {:ok, player_id, new_state} ->
-              {:noreply, after_join(socket, game_id, player_name, player_id, new_state)}
+          {:noreply, assign(socket, error: "That name is already taken")}
 
-            {:error, _reason} ->
-              {:noreply, assign(socket, step: :joining, error: "That name is already taken")}
-          end
-
-        {:error, :game_full} ->
-          {:noreply, assign(socket, step: :joining, error: nil)}
-
-        {:error, :game_already_started} ->
-          {:noreply, assign(socket, step: :joining, error: "That game already started")}
+        {:error, reason} when reason in [:game_full, :game_already_started] ->
+          {:noreply, route_invite(assign(socket, error: nil), game_id)}
 
         {:error, reason} ->
           {:noreply, assign(socket, error: format_error(reason))}
@@ -369,32 +373,37 @@ defmodule OskolWeb.LandingLive do
     end
   end
 
-  def handle_event("rejoin_as_player", %{"player_name" => name}, socket) do
+  # Taking a seat back from the invite link. Its token is rotated first, so
+  # whatever link the previous occupant of this browser had is dead and only
+  # the URL we are about to hand out opens the seat.
+  def handle_event("reclaim_seat", %{"player_id" => player_id}, socket) do
     game_id = socket.assigns.game_name
 
-    case Game.rejoin_game(game_id, name, self()) do
-      {:ok, player_id, new_state} ->
-        {:noreply, after_join(socket, game_id, name, player_id, new_state)}
+    Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
+
+    case Game.claim_seat(game_id, player_id, self()) do
+      {:ok, ^player_id, token, new_state} ->
+        {:noreply, seated(socket, game_id, player_id, token, new_state)}
 
       {:error, reason} ->
-        {:noreply, assign(socket, error: format_error(reason))}
+        {:noreply, route_invite(assign(socket, error: format_error(reason)), game_id)}
     end
   end
 
   @impl true
   def handle_info({:game_state_updated, new_state, _events}, socket) do
-    if new_state.instance != nil and socket.assigns.player_name != "" do
+    # Only a client that holds a seat token follows the room into the game.
+    if new_state.instance != nil and socket.assigns.seat_token != nil do
       {:noreply,
        push_navigate(socket,
-         to: play_path(socket, socket.assigns.game_name, socket.assigns.player_name)
+         to: play_path(socket, socket.assigns.game_name, socket.assigns.seat_token)
        )}
     else
-      disconnected =
-        new_state.connections
-        |> Enum.filter(fn {_id, conn} -> not conn.connected end)
-        |> Enum.map(fn {id, conn} -> {id, conn.name} end)
-
-      {:noreply, assign(socket, server_state: new_state, disconnected_players: disconnected)}
+      {:noreply,
+       assign(socket,
+         server_state: new_state,
+         disconnected_players: GameServerState.disconnected_seats(new_state)
+       )}
     end
   end
 
@@ -434,12 +443,14 @@ defmodule OskolWeb.LandingLive do
 
   defp json_ld(data), do: Jason.encode!(data, escape: :html_safe)
 
-  defp lobby_path(socket, game_id, player_name) do
-    ~p"/#{socket.assigns.slug}?game=#{game_id}&name=#{player_name}"
+  # Both carry the seat token, and nothing else identifying: it is the
+  # credential this browser comes back with.
+  defp lobby_path(socket, game_id, token) do
+    ~p"/#{socket.assigns.slug}?game=#{game_id}&t=#{token}"
   end
 
-  defp play_path(socket, game_id, player_name) do
-    ~p"/#{socket.assigns.slug}/#{game_id}?name=#{player_name}"
+  defp play_path(socket, game_id, token) do
+    ~p"/#{socket.assigns.slug}/#{game_id}?t=#{token}"
   end
 
   defp generate_game_id do
@@ -482,6 +493,9 @@ defmodule OskolWeb.LandingLive do
   defp format_error(:unknown_setting), do: "Unknown setting"
   defp format_error(:unknown_choice), do: "Unknown choice"
   defp format_error(:game_already_started), do: "That game already started"
+  defp format_error(:seat_connected), do: "That player is back at the table"
+  defp format_error(:invalid_token), do: "That link is no longer valid"
+  defp format_error(:player_not_found), do: "That player is not at this table"
   defp format_error(reason) when is_atom(reason), do: "Error: #{reason}"
   defp format_error(reason), do: "Error: #{inspect(reason)}"
 
@@ -508,6 +522,7 @@ defmodule OskolWeb.LandingLive do
             error={@error}
             game_name={@game_name}
             inviter_name={@inviter_name}
+            setup_summary={@setup_summary}
             server_state={@server_state}
             disconnected_players={@disconnected_players}
             player_id={@player_id}
@@ -688,6 +703,7 @@ defmodule OskolWeb.LandingLive do
   attr :error, :string, default: nil
   attr :game_name, :string, default: ""
   attr :inviter_name, :string, default: nil
+  attr :setup_summary, :string, default: nil
   attr :server_state, :any, default: nil
   attr :disconnected_players, :list, default: []
   attr :player_id, :string, default: nil
@@ -734,10 +750,11 @@ defmodule OskolWeb.LandingLive do
           <% :create -> %>
             <.create_form info={@info} setup={@setup} clock_presets={@clock_presets} />
           <% :player_name -> %>
-            <.join_form inviter_name={@inviter_name} server_state={@server_state} />
-          <% :joining -> %>
-            <.joining
-              server_state={@server_state}
+            <.join_form inviter_name={@inviter_name} summary={@setup_summary} />
+          <% :table_full -> %>
+            <.table_full game_name={@game_name} />
+          <% :reconnect -> %>
+            <.reconnect
               disconnected_players={@disconnected_players}
               game_name={@game_name}
             />
@@ -922,14 +939,9 @@ defmodule OskolWeb.LandingLive do
   end
 
   attr :inviter_name, :string, default: nil
-  attr :server_state, :any, default: nil
+  attr :summary, :string, default: nil
 
   defp join_form(assigns) do
-    summary =
-      if assigns.server_state, do: GameServerState.summary(assigns.server_state), else: nil
-
-    assigns = assign(assigns, summary: summary)
-
     ~H"""
     <p :if={@inviter_name} class="mb-1 text-lg">
       <span class="text-opponent font-bold">{@inviter_name}</span> challenged you.
@@ -948,51 +960,54 @@ defmodule OskolWeb.LandingLive do
     """
   end
 
-  attr :server_state, :any, default: nil
+  # Both players are at the table and neither has gone anywhere. There is
+  # nothing to offer a third visitor: no seat, and no view of the game.
+  attr :game_name, :string, required: true
+
+  defp table_full(assigns) do
+    ~H"""
+    <div class="space-y-4" id="table-full">
+      <p class="pixel text-[10px]" style="color: var(--red)">TABLE FULL</p>
+      <p class="text-base" style="color: var(--ink)">
+        Both players are at this table and connected. If one of them is you,
+        open the link you were given when you sat down.
+      </p>
+      <.link patch={~p"/"} class="inline-block font-semibold" style="color: var(--pen)">
+        Start your own →
+      </.link>
+      <p class="pixel text-[9px]" style="color: var(--pencil)">
+        GAME CODE {String.upcase(@game_name)}
+      </p>
+    </div>
+    """
+  end
+
+  # A seat at a full table is free because its player is away. Offer it
+  # back: one name to confirm, or both when the table emptied out and we
+  # cannot tell which of them this is.
   attr :disconnected_players, :list, default: []
   attr :game_name, :string, required: true
 
-  defp joining(assigns) do
-    in_progress = assigns.server_state && assigns.server_state.instance != nil
-
-    max_players =
-      if assigns.server_state,
-        do: GameServerState.max_players(assigns.server_state),
-        else: 2
-
-    count = if assigns.server_state, do: map_size(assigns.server_state.connections), else: 0
-    assigns = assign(assigns, can_join: not in_progress and count < max_players)
-
+  defp reconnect(assigns) do
     ~H"""
-    <div class="space-y-4">
-      <%= if @disconnected_players != [] do %>
-        <p class="pixel text-[10px]" style="color: var(--pen)">CONTINUE? RECONNECT AS</p>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <button
-            :for={{_id, name} <- @disconnected_players}
-            phx-click="rejoin_as_player"
-            phx-value-player_name={name}
-            class="btn-arcade yellow pixel text-[10px] px-4 py-3"
-          >
-            {name}
-          </button>
-        </div>
-        <%= if @can_join do %>
-          <p class="text-sm pt-2" style="color: var(--pencil)">Or join as a new player:</p>
-          <form
-            phx-submit="submit_player_name"
-            class="grid gap-3 sm:grid-cols-[1fr_auto] items-center"
-          >
-            <.name_input placeholder="Your name" />
-            <.cta type="submit">JOIN GAME</.cta>
-          </form>
-        <% end %>
-      <% else %>
-        <p class="pixel text-[10px]" style="color: var(--red)">GAME FULL</p>
-        <.link patch={~p"/"} class="inline-block font-semibold" style="color: var(--pen)">
-          Start your own →
-        </.link>
-      <% end %>
+    <div class="space-y-4" id="reconnect">
+      <p class="pixel text-[10px]" style="color: var(--pen)">
+        {if length(@disconnected_players) == 1, do: "CONTINUE?", else: "WHO ARE YOU?"}
+      </p>
+      <p :if={length(@disconnected_players) == 1} class="text-base" style="color: var(--ink)">
+        Rejoin as <span class="font-bold">{@disconnected_players |> List.first() |> elem(1)}</span>?
+      </p>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <button
+          :for={{id, name} <- @disconnected_players}
+          phx-click="reclaim_seat"
+          phx-value-player_id={id}
+          id={"reclaim-#{id}"}
+          class="btn-arcade yellow pixel text-[10px] px-4 py-3"
+        >
+          {name}
+        </button>
+      </div>
       <p class="pixel text-[9px]" style="color: var(--pencil)">
         GAME CODE {String.upcase(@game_name)}
       </p>

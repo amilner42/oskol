@@ -117,10 +117,13 @@ if (elmGameContainer) {
   const gameId = elmGameContainer.dataset.gameId;
   const gameSlug = elmGameContainer.dataset.gameSlug;
   const playerId = elmGameContainer.dataset.playerId || null;
+  // The seat token: the credential this client joins the channel with, and
+  // what a rematch link has to carry to keep the same seat.
+  const seatToken = elmGameContainer.dataset.seatToken || null;
 
   const gameApp = Elm.Main.init({
     node: elmGameContainer,
-    flags: { gameId, gameSlug, playerId }
+    flags: { gameId, gameSlug, playerId, seatToken }
   });
 
   const send = (message) => {
@@ -132,7 +135,7 @@ if (elmGameContainer) {
   const gameSocket = new Socket("/socket", {});
   gameSocket.connect();
 
-  const gameChannel = gameSocket.channel(`game:${gameId}`, { player_id: playerId });
+  const gameChannel = gameSocket.channel(`game:${gameId}`, { token: seatToken });
 
   gameChannel.join()
     .receive("ok", (resp) => send({ type: "payload", payload: resp.payload }))

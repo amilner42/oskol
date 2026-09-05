@@ -24,7 +24,15 @@ defmodule Oskol.Game.RoomTest do
 
     {:ok, p1, _} = Game.join_game(game_id, "Alice", Keyword.get(opts, :pid1))
     {:ok, p2, state} = Game.join_game(game_id, "Bob", Keyword.get(opts, :pid2))
-    %{game_id: game_id, p1: p1, p2: p2, state: state}
+
+    %{
+      game_id: game_id,
+      p1: p1,
+      p2: p2,
+      t1: Oskol.Game.GameServerState.token_for(state, p1),
+      t2: Oskol.Game.GameServerState.token_for(state, p2),
+      state: state
+    }
   end
 
   defp eventually(fun, tries \\ 50) do
@@ -116,7 +124,7 @@ defmodule Oskol.Game.RoomTest do
   describe "connections" do
     test "a creator whose process dies is marked disconnected and can come back" do
       pid = sleeper()
-      %{game_id: game_id, p1: p1} = lobby("single", pid1: pid)
+      %{game_id: game_id, p1: p1, t1: t1} = lobby("single", pid1: pid)
       assert Game.get_server_state(game_id).connections[p1].connected
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
 
@@ -124,28 +132,58 @@ defmodule Oskol.Game.RoomTest do
       assert eventually(fn -> not Game.get_server_state(game_id).connections[p1].connected end)
       assert_receive {:game_state_updated, %{instance: nil}, []}
 
-      assert {:error, :player_not_found} = Game.rejoin_game(game_id, "Zed", self())
-      assert {:ok, ^p1, state} = Game.rejoin_game(game_id, "Alice", self())
+      # A name is not a credential, and neither is the public player id.
+      assert {:error, :invalid_token} = Game.attach(game_id, "Alice", self())
+      assert {:error, :invalid_token} = Game.attach(game_id, p1, self())
+      assert {:error, :invalid_token} = Game.attach(game_id, nil, self())
+
+      assert {:ok, ^p1, state} = Game.attach(game_id, t1, self())
       assert state.connections[p1].connected
       # A newer connection replaces the live one: a phone coming back before
       # its old socket closed must not end up untracked.
       newer = sleeper()
-      assert {:ok, ^p1, state} = Game.rejoin_game(game_id, "Alice", newer)
+      assert {:ok, ^p1, state} = Game.attach(game_id, t1, newer)
       assert state.connections[p1].pid == newer
       assert state.connections[p1].connected
+    end
+
+    test "a seat with a live player can only be reached with its own token" do
+      pid = sleeper()
+      %{game_id: game_id, p1: p1, t1: t1} = lobby("single", pid1: pid)
+      assert Game.get_server_state(game_id).connections[p1].connected
+
+      # Locked while connected: the invite link cannot take this seat.
+      assert {:error, :seat_connected} = Game.claim_seat(game_id, p1, self())
+      assert {:error, :invalid_token} = Game.attach(game_id, "guess", self())
+      # The token still works: the same person on a second device.
+      assert {:ok, ^p1, _} = Game.attach(game_id, t1, self())
+    end
+
+    test "reclaiming an empty seat rotates its token" do
+      %{game_id: game_id, p1: p1, t1: old} = lobby("single")
+      refute Game.get_server_state(game_id).connections[p1].connected
+
+      assert {:ok, ^p1, new_token, state} = Game.claim_seat(game_id, p1, self())
+      refute new_token == old
+      assert state.connections[p1].connected
+      assert state.connections[p1].name == "Alice"
+      # The leaked link is dead; the fresh one is the seat.
+      assert {:error, :invalid_token} = Game.attach(game_id, old, self())
+      assert {:ok, ^p1, _} = Game.attach(game_id, new_token, self())
+      assert {:error, :player_not_found} = Game.claim_seat(game_id, "nobody", self())
     end
 
     test "reconnecting mid-game keeps the seat and the running instance" do
       pid = sleeper()
 
-      %{game_id: game_id, p1: p1, p2: p2, state: started} =
+      %{game_id: game_id, p1: p1, t1: t1, p2: p2, state: started} =
         room("backgammon", "single", pid1: pid, pid2: self())
 
       send(pid, :stop)
       assert eventually(fn -> not Game.get_server_state(game_id).connections[p1].connected end)
       # The game goes on: the instance is untouched and the seat is still theirs
       assert Game.get_server_state(game_id).instance == started.instance
-      assert {:ok, ^p1, _} = Game.rejoin_game(game_id, "Alice", self())
+      assert {:ok, ^p1, _} = Game.attach(game_id, t1, self())
 
       mover = mover(started.instance, [p1, p2])
       assert {:ok, _, events} = move(game_id, mover, legal_move(started.instance, mover))
@@ -187,6 +225,16 @@ defmodule Oskol.Game.RoomTest do
       rematch = Game.get_server_state(rematch_id)
       assert rematch.setup.format == "single"
       assert rematch.setup.clock == "blitz"
+      # Same players, same seats, same tokens: the link each player holds
+      # carries them into the new room.
+      original = Game.get_server_state(game_id)
+      assert rematch.seat_order == original.seat_order
+
+      for id <- original.seat_order do
+        assert rematch.connections[id].name == original.connections[id].name
+        assert rematch.connections[id].token == original.connections[id].token
+      end
+
       [new_p1 | _] = rematch.seat_order
       update = GameKit.player_update(rematch.instance, new_p1)
       assert update["clock"]["enabled"] == true

@@ -27,7 +27,7 @@ payload fixture playerId update =
 
 start : Fixture -> Model
 start fixture =
-    Main.init { gameId = "fixture", gameSlug = fixture.game, playerId = Just "p1" } |> Tuple.first
+    Main.init { gameId = "fixture", gameSlug = fixture.game, playerId = Just "p1", seatToken = Just "tok" } |> Tuple.first
 
 
 feed : Fixture -> Model -> Update -> Model
@@ -70,7 +70,7 @@ channelMessages =
         \_ ->
             let
                 model =
-                    Main.init { gameId = "g", gameSlug = "backgammon", playerId = Just "p1" } |> Tuple.first
+                    Main.init { gameId = "g", gameSlug = "backgammon", playerId = Just "p1", seatToken = Just "tok" } |> Tuple.first
 
                 withError =
                     Main.update (ServerMessageReceived (ErrorMessage "Not your turn")) model |> Tuple.first

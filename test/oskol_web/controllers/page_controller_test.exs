@@ -54,9 +54,39 @@ defmodule OskolWeb.PageControllerTest do
   end
 
   test "a running game page is not indexed", %{conn: conn} do
-    %{game_id: game_id} = Oskol.GameFixtures.started()
-    html = conn |> get(~p"/backgammon/#{game_id}?name=Alice") |> html_response(200)
+    %{game_id: game_id, t1: t1} = Oskol.GameFixtures.started()
+    html = conn |> get(~p"/backgammon/#{game_id}?t=#{t1}") |> html_response(200)
     assert html =~ ~s(<meta name="robots" content="noindex")
+    assert html =~ ~s(<meta name="referrer" content="no-referrer")
     assert html =~ "<title>Backgammon · Oskol</title>"
+  end
+
+  describe "the play page is seat-token only" do
+    test "a name in the URL grants nothing", %{conn: conn} do
+      %{game_id: game_id} = Oskol.GameFixtures.started()
+
+      for query <- ["?name=Alice", "", "?t=", "?t=not-a-token"] do
+        conn = get(conn, "/backgammon/#{game_id}#{query}")
+        assert redirected_to(conn) == "/backgammon?game=#{game_id}"
+        refute conn.resp_body =~ "elm-game-app"
+      end
+    end
+
+    test "a valid token serves the client with that seat and its token", %{conn: conn} do
+      %{game_id: game_id, p1: p1, t1: t1, t2: t2} = Oskol.GameFixtures.started()
+      html = conn |> get(~p"/backgammon/#{game_id}?t=#{t1}") |> html_response(200)
+      assert html =~ ~s(data-player-id="#{p1}")
+      assert html =~ ~s(data-seat-token="#{t1}")
+      # A page served to one player never carries the other's token.
+      refute html =~ t2
+    end
+
+    test "a token from another room does not open this one", %{conn: conn} do
+      %{game_id: game_id} = Oskol.GameFixtures.started()
+      %{t1: other_token} = Oskol.GameFixtures.started()
+
+      conn = get(conn, "/backgammon/#{game_id}?t=#{other_token}")
+      assert redirected_to(conn) == "/backgammon?game=#{game_id}"
+    end
   end
 end

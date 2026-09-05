@@ -6,6 +6,8 @@
     <meta name="csrf-token" content={get_csrf_token()} />
     <title>{String.capitalize(@slug)} · Oskol</title>
     <meta name="robots" content="noindex" />
+    <!-- The seat token lives in this page's URL: never send it out as a referrer. -->
+    <meta name="referrer" content="no-referrer" />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
@@ -43,6 +45,7 @@
       data-game-id={@game_id}
       data-game-slug={@slug}
       data-player-id={if @player_id, do: @player_id, else: ""}
+      data-seat-token={if @seat_token, do: @seat_token, else: ""}
     >
     </div>
   </body>

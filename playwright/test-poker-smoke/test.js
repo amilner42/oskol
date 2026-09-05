@@ -71,6 +71,53 @@ async function main() {
       const backs = await page.locator('[data-card="back"]').count();
       if (faces !== 2 || backs !== 2) throw new Error(`${who} sees ${faces} faces and ${backs} backs`);
     }
+    // ---- Seat tokens: the link is the credential, and only your own ----
+    const tokenOf = (page) => new URL(page.url()).searchParams.get('t');
+    const [t1, t2] = [tokenOf(p1), tokenOf(p2)];
+    if (!t1 || !t2) throw new Error('a player landed at the table without a seat token');
+    if (t1 === t2) throw new Error('both players got the same seat token');
+    for (const [page, who, theirs] of [[p1, 'Alice', t2], [p2, 'Bob', t1]]) {
+      const html = await page.content();
+      if (html.includes(theirs)) throw new Error(`${who}'s page carries the other seat's token`);
+    }
+
+    // A third party with the invite link, while both players are connected:
+    // no seat, no table, no cards.
+    const outsider = await browser.newContext({ viewport: { width: 420, height: 860 } });
+    const spy = await outsider.newPage();
+
+    await spy.goto(`${BASE}/poker?game=${gameId}`);
+    await spy.waitForSelector('#table-full');
+    if ((await spy.locator('[data-card]').count()) !== 0) throw new Error('the invite link showed cards');
+
+    // The play URL itself, with no token and with a guessed one, must not
+    // serve the table to them either.
+    for (const url of [`${BASE}/poker/${gameId}`, `${BASE}/poker/${gameId}?t=${'a'.repeat(32)}`]) {
+      await spy.goto(url);
+      await spy.waitForSelector('#table-full');
+      if ((await spy.locator('#elm-game-app').count()) !== 0) throw new Error(`${url} served the game client`);
+      if ((await spy.locator('[data-card]').count()) !== 0) throw new Error(`${url} showed cards`);
+      if ((await spy.locator('#actions').count()) !== 0) throw new Error(`${url} offered actions`);
+    }
+
+    // And the channel refuses them directly, token or not.
+    const joined = await spy.evaluate(async (id) => {
+      const attempt = (params) => new Promise((resolve) => {
+        const ws = new WebSocket(`ws://${location.host}/socket/websocket?vsn=2.0.0`);
+        const done = (v) => { try { ws.close(); } catch (e) {} resolve(v); };
+        ws.onerror = () => done(false);
+        ws.onopen = () => ws.send(JSON.stringify(['1', '1', `game:${id}`, 'phx_join', params]));
+        ws.onmessage = (e) => done(JSON.parse(e.data)[4]?.status === 'ok');
+        setTimeout(() => done(false), 4000);
+      });
+      const results = await Promise.all([attempt({}), attempt({ token: null }), attempt({ token: 'a'.repeat(32) })]);
+      return results.some(Boolean);
+    }, gameId);
+    if (joined) throw new Error('an unauthenticated channel join was accepted');
+    await spy.screenshot({ path: `${SHOTS}/05-outsider.png` });
+    await outsider.close();
+    log('Outsider on the base link: no seat, no scene, no channel');
+
     const hand1 = await p1.locator('#hand-number').textContent();
 
     // Whoever is to act folds: the hand ends, the pot goes across.

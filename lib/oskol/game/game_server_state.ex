@@ -11,8 +11,15 @@ defmodule Oskol.Game.GameServerState do
   @type player_id :: String.t()
   @type lobby_status :: :waiting_for_players | :ready_to_start
 
+  @typedoc """
+  One seat. `token` is the seat credential: a secret, unguessable string
+  minted when the seat is taken. It is what a channel join or a reconnect
+  authenticates with, and it never leaves the server except to the player
+  who holds that seat. The display name grants nothing.
+  """
   @type connection :: %{
           name: String.t(),
+          token: String.t(),
           pid: pid() | nil,
           connected: boolean(),
           monitor_ref: reference() | nil
@@ -183,12 +190,52 @@ defmodule Oskol.Game.GameServerState do
     Enum.any?(connections, fn {_id, conn} -> conn.name == name end)
   end
 
-  @spec find_player_id_by_name(t(), String.t()) :: player_id() | nil
-  def find_player_id_by_name(%__MODULE__{connections: connections}, name) do
+  @doc """
+  Mint a seat token: 24 crypto-random bytes, URL-safe, unpadded (32 chars).
+  """
+  @spec new_token() :: String.t()
+  def new_token do
+    :crypto.strong_rand_bytes(24) |> Base.url_encode64(padding: false)
+  end
+
+  @doc """
+  The seat a token opens, or `nil`. Compared in constant time so a caller
+  cannot learn a token one character at a time.
+  """
+  @spec find_player_id_by_token(t(), String.t() | nil) :: player_id() | nil
+  def find_player_id_by_token(%__MODULE__{}, token)
+      when not is_binary(token) or byte_size(token) == 0,
+      do: nil
+
+  def find_player_id_by_token(%__MODULE__{connections: connections}, token) do
     Enum.find_value(connections, fn {player_id, conn} ->
-      if conn.name == name, do: player_id, else: nil
+      if secure_compare(conn.token, token), do: player_id, else: nil
     end)
   end
+
+  @doc "The token for a seat, or `nil` if there is no such seat."
+  @spec token_for(t(), player_id()) :: String.t() | nil
+  def token_for(%__MODULE__{connections: connections}, player_id) do
+    case connections[player_id] do
+      nil -> nil
+      conn -> conn.token
+    end
+  end
+
+  @doc "Seats whose player is currently away, as `{id, name}` in seat order."
+  @spec disconnected_seats(t()) :: [{player_id(), String.t()}]
+  def disconnected_seats(%__MODULE__{} = state) do
+    for id <- state.seat_order,
+        conn = state.connections[id],
+        conn != nil and not conn.connected,
+        do: {id, conn.name}
+  end
+
+  defp secure_compare(a, b) when is_binary(a) and is_binary(b) do
+    Plug.Crypto.secure_compare(a, b)
+  end
+
+  defp secure_compare(_, _), do: false
 
   @doc "Players in seat order as `{id, name}` pairs."
   def seats(%__MODULE__{} = state) do

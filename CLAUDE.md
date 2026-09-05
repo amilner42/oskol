@@ -13,7 +13,10 @@ matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
 Jacoby rule. Every game can be played with an optional time control.
 
 The first player picks everything (mode, settings, clock), shares a link, and
-the game starts the moment the second player types a name.
+the game starts the moment the second player types a name. Taking a seat
+mints a **seat token**: the player's URL carries it, and it is what
+authenticates every channel join and reconnect. A display name is display
+only and grants nothing.
 
 Games are built on **gamekit**, a small framework with one rule: adding a game
 never touches the server or the client. A game is one Gleam module that
@@ -155,7 +158,9 @@ assets/css/app.css               the multicade/notebook design system (paper, pi
 ## URLs
 - `/` game library
 - `/poker` create a poker game; `/poker?game=<id>` is the invite link
-- `/poker/<id>?name=<player>` a running game
+- `/poker/<id>?t=<token>` a running game. `t` is the seat token: a secret
+  minted when a player takes a seat, and the only thing that opens it. The
+  bare `/poker/<id>` grants nothing and bounces to the invite link.
 - `/backgammon`, `/backgammon/<id>` the same for backgammon
 
 ## Adding a game

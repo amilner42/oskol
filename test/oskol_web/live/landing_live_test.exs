@@ -182,16 +182,22 @@ defmodule OskolWeb.LandingLiveTest do
     |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
     |> render_submit()
 
-    assert_redirect(guest, "/backgammon/#{game_id}?name=Bob")
+    # Each player is sent to the table with their own seat token, never a name.
+    state = Oskol.Game.get_server_state(game_id)
+    [p1, p2] = state.seat_order
+    t1 = Oskol.Game.GameServerState.token_for(state, p1)
+    t2 = Oskol.Game.GameServerState.token_for(state, p2)
+
+    assert_redirect(guest, "/backgammon/#{game_id}?t=#{t2}")
     # The creator is told over pubsub; allow for a busy test run
-    assert_redirect(host, "/backgammon/#{game_id}?name=Alice", 2000)
+    assert_redirect(host, "/backgammon/#{game_id}?t=#{t1}", 2000)
 
     state = Oskol.Game.get_server_state(game_id)
     assert state.instance != nil
     assert Oskol.GameKit.player_update(state.instance, "x")["clock"]["label"] == "3 min + 2 s"
   end
 
-  test "a later visitor to a started game may only reconnect as a seated player", %{conn: conn} do
+  test "a later visitor to a started game chooses which empty seat to take", %{conn: conn} do
     {_host, game_id} = create(conn)
     {:ok, guest, _} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
 
@@ -199,14 +205,114 @@ defmodule OskolWeb.LandingLiveTest do
     |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
     |> render_submit()
 
-    assert_redirect(guest, "/backgammon/#{game_id}?name=Bob")
+    assert_redirect(guest)
 
-    # Both players' pages went to the game, so their seats show as reconnectable
+    # Both LiveViews navigated away, so both seats read as away: the invite
+    # link asks who this is, and picking a seat rotates its token.
+    state = Oskol.Game.get_server_state(game_id)
+    [p1, p2] = state.seat_order
+    old_token = Oskol.Game.GameServerState.token_for(state, p2)
+
     {:ok, late, html} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
-    assert html =~ "RECONNECT AS"
+    assert html =~ "WHO ARE YOU?"
+    assert html =~ "Alice"
+    assert html =~ "Bob"
     refute has_element?(late, "form[phx-submit=submit_player_name]")
-    late |> element("button[phx-value-player_name=Bob]") |> render_click()
-    assert_redirect(late, "/backgammon/#{game_id}?name=Bob")
+    # The chooser offers seats by id; it never puts a token on the page.
+    refute html =~ old_token
+
+    late |> element("#reclaim-#{p2}") |> render_click()
+    new_token = Oskol.GameFixtures.token_for(game_id, p2)
+    refute new_token == old_token
+    assert_redirect(late, "/backgammon/#{game_id}?t=#{new_token}")
+    assert Oskol.Game.get_server_state(game_id).connections[p2].name == "Bob"
+    refute p1 == p2
+  end
+
+  test "one seat away: the invite offers that seat back by name", %{conn: conn} do
+    {host, game_id} = create(conn)
+    {:ok, guest, _} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+
+    guest
+    |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
+    |> render_submit()
+
+    assert_redirect(guest)
+    assert_redirect(host, 2000)
+
+    # Put Alice back at the table with her token, leaving only Bob away.
+    state = Oskol.Game.get_server_state(game_id)
+    [p1, p2] = state.seat_order
+    t1 = Oskol.Game.GameServerState.token_for(state, p1)
+    {:ok, ^p1, _} = Oskol.Game.attach(game_id, t1, self())
+
+    {:ok, _late, html} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+    assert html =~ "CONTINUE?"
+    assert html =~ "Rejoin as"
+    assert html =~ "Bob"
+    # Alice is connected: her seat is not on offer.
+    refute html =~ "reclaim-#{p1}"
+    assert html =~ "reclaim-#{p2}"
+  end
+
+  # The security bar: a stranger on the invite link of a full, live table
+  # gets no seat, no token and no game state at all.
+  test "both players connected: the invite link is a dead end", %{conn: conn} do
+    {host, game_id} = create(conn)
+    {:ok, guest, _} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+
+    guest
+    |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
+    |> render_submit()
+
+    assert_redirect(guest)
+    assert_redirect(host, 2000)
+
+    state = Oskol.Game.get_server_state(game_id)
+    [p1, p2] = state.seat_order
+    t1 = Oskol.Game.GameServerState.token_for(state, p1)
+    t2 = Oskol.Game.GameServerState.token_for(state, p2)
+    {:ok, ^p1, _} = Oskol.Game.attach(game_id, t1, self())
+    {:ok, ^p2, _} = Oskol.Game.attach(game_id, t2, spawn(fn -> Process.sleep(30_000) end))
+
+    {:ok, stranger, html} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+    assert html =~ "TABLE FULL"
+    refute html =~ t1
+    refute html =~ t2
+    refute has_element?(stranger, "form[phx-submit=submit_player_name]")
+    refute has_element?(stranger, "button[phx-click=reclaim_seat]")
+
+    # And a made-up token is not a way in either.
+    {:ok, _forger, html} = live(build_conn(), ~p"/backgammon?game=#{game_id}&t=nonsense")
+    assert html =~ "TABLE FULL"
+
+    assert Enum.all?(Oskol.Game.get_server_state(game_id).connections, fn {_, c} ->
+             c.connected
+           end)
+  end
+
+  test "a seat token brings a player straight back to their game", %{conn: conn} do
+    {_host, game_id} = create(conn)
+    {:ok, guest, _} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+
+    guest
+    |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
+    |> render_submit()
+
+    assert_redirect(guest)
+
+    state = Oskol.Game.get_server_state(game_id)
+    [_p1, p2] = state.seat_order
+    t2 = Oskol.Game.GameServerState.token_for(state, p2)
+
+    # Straight through to the table, and the token is unchanged: only the
+    # invite-link route rotates it.
+    assert {:error, {:live_redirect, %{to: to}}} =
+             live(build_conn(), ~p"/backgammon?game=#{game_id}&t=#{t2}")
+
+    assert to == "/backgammon/#{game_id}?t=#{t2}"
+    # The seat is still Bob's: attaching from the lobby did not disturb it.
+    assert Oskol.Game.get_server_state(game_id).connections[p2].name == "Bob"
   end
 
   test "a format's settings are offered as chips and land in the room's setup", %{conn: conn} do
@@ -242,7 +348,7 @@ defmodule OskolWeb.LandingLiveTest do
     |> form("form[phx-submit=submit_player_name]", %{"player_name" => "Bob"})
     |> render_submit()
 
-    assert_redirect(guest, "/poker/#{game_id}?name=Bob")
+    assert_redirect(guest)
     started = Oskol.Game.get_server_state(game_id)
     update = Oskol.GameKit.player_update(started.instance, started.seat_order |> hd())
     assert update["scene"]["data"]["format"] == "sng"
@@ -250,8 +356,8 @@ defmodule OskolWeb.LandingLiveTest do
   end
 
   test "the play page serves the Elm client for a known game", %{conn: conn} do
-    %{game_id: game_id} = Oskol.GameFixtures.started()
-    conn = get(conn, ~p"/backgammon/#{game_id}?name=Alice")
+    %{game_id: game_id, t1: t1} = Oskol.GameFixtures.started()
+    conn = get(conn, ~p"/backgammon/#{game_id}?t=#{t1}")
     assert html_response(conn, 200) =~ "data-game-slug=\"backgammon\""
     assert html_response(conn, 200) =~ "data-player-id=\""
     assert get(build_conn(), ~p"/chess/#{game_id}") |> response(404)

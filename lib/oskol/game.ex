@@ -17,7 +17,8 @@ defmodule Oskol.Game do
   end
 
   defdelegate join_game(game_id, player_name, player_pid), to: GameServer
-  defdelegate rejoin_game(game_id, player_name, player_pid), to: GameServer
+  defdelegate attach(game_id, token, player_pid), to: GameServer
+  defdelegate claim_seat(game_id, player_id, player_pid), to: GameServer
   defdelegate get_server_state(game_id), to: GameServer, as: :get_state
   defdelegate configure(game_id, attrs), to: GameServer
   defdelegate request_rematch(game_id, player_id), to: GameServer
