@@ -96,7 +96,7 @@ defmodule OskolWeb.LandingLiveTest do
     assert_patch(view, "/backgammon")
     assert page_title(view) =~ "Play backgammon online"
     assert has_element?(view, "#format-single.tile-mine")
-    view |> element("header a[href='/']", "ALL GAMES") |> render_click()
+    view |> element("header a[aria-label='Oskol home']") |> render_click()
     assert_patch(view, "/")
     assert page_title(view) =~ "Two-player games from a link"
   end
@@ -117,7 +117,6 @@ defmodule OskolWeb.LandingLiveTest do
     assert has_element?(view, "#format-match5", "Match to 5")
     assert has_element?(view, "#clock-none.tile-mine")
     assert has_element?(view, "#clock-blitz", "Blitz")
-    assert has_element?(view, "a[href='/']", "ALL GAMES")
 
     view |> element("#format-match3") |> render_click()
     assert has_element?(view, "#format-match3.tile-mine")
@@ -130,7 +129,7 @@ defmodule OskolWeb.LandingLiveTest do
     assert_patch(view, "/backgammon")
     assert has_element?(view, "#game-title", "Backgammon")
     assert has_element?(view, "form[phx-submit=new_game]")
-    view |> element("header a[href='/']", "ALL GAMES") |> render_click()
+    view |> element("header a[aria-label='Oskol home']") |> render_click()
     assert_patch(view, "/")
     assert has_element?(view, "#game-backgammon")
   end
@@ -358,6 +357,81 @@ defmodule OskolWeb.LandingLiveTest do
     update = Oskol.GameKit.player_update(started.instance, started.seat_order |> hd())
     assert update["scene"]["data"]["format"] == "sng"
     assert update["clock"]["label"] == "20 s per action + 60 s bank"
+  end
+
+  test "creating a game mints a 6-digit code", %{conn: conn} do
+    {_host, game_id} = create(conn)
+    assert game_id =~ ~r/^\d{6}$/
+  end
+
+  test "JOIN GAME sits top right everywhere, and ALL GAMES is gone", %{conn: conn} do
+    for path <- [~p"/", ~p"/poker", ~p"/backgammon", ~p"/chess", ~p"/go"] do
+      {:ok, view, html} = live(conn, path)
+      assert has_element?(view, "header #open-join", "JOIN GAME")
+      refute html =~ "ALL GAMES"
+    end
+  end
+
+  test "the code prompt opens, and a sixth digit auto-submits into the invite flow", %{conn: conn} do
+    {_host, game_id} = create(conn)
+
+    {:ok, view, _} = live(build_conn(), ~p"/")
+    refute has_element?(view, "#join-modal")
+    view |> element("#open-join") |> render_click()
+    assert has_element?(view, "#join-modal input[inputmode=numeric][pattern='[0-9]*']")
+
+    # Typing the sixth digit routes straight to the game's normal invite link.
+    view
+    |> form("#join-modal form", %{"code" => game_id})
+    |> render_change()
+
+    assert_redirect(view, "/backgammon?game=#{game_id}")
+
+    # And that link is the ordinary join flow, nothing bespoke.
+    {:ok, guest, html} = live(build_conn(), ~p"/backgammon?game=#{game_id}")
+    assert html =~ "challenged you"
+    assert has_element?(guest, "form[phx-submit=submit_player_name]")
+  end
+
+  test "the JOIN button works too, from a game page", %{conn: conn} do
+    {_host, game_id} = create(conn)
+
+    {:ok, view, _} = live(build_conn(), ~p"/poker")
+    view |> element("#open-join") |> render_click()
+
+    view
+    |> form("#join-modal form", %{"code" => game_id})
+    |> render_submit()
+
+    assert_redirect(view, "/backgammon?game=#{game_id}")
+  end
+
+  test "a code with no live game gets a friendly error and nothing more", %{conn: conn} do
+    code =
+      Stream.repeatedly(&Oskol.Game.generate_game_id/0)
+      |> Enum.find(&(Oskol.Game.lookup_game(&1) == :not_found))
+
+    {:ok, view, _} = live(conn, ~p"/")
+    view |> element("#open-join") |> render_click()
+
+    html =
+      view
+      |> form("#join-modal form", %{"code" => code})
+      |> render_change()
+
+    assert html =~ "No game with that code"
+    assert has_element?(view, "#join-modal")
+
+    # A short code on submit asks for the full code rather than pretending.
+    html =
+      view
+      |> form("#join-modal form", %{"code" => "123"})
+      |> render_submit()
+
+    assert html =~ "Enter the 6-digit game code"
+
+    view |> element("#close-join") |> render_click()
+    refute has_element?(view, "#join-modal")
   end
 
   test "the play page serves the Elm client for a known game", %{conn: conn} do

@@ -44,7 +44,10 @@ defmodule OskolWeb.LandingLive do
         seat_token: nil,
         server_state: nil,
         disconnected_players: [],
-        page_title: nil
+        page_title: nil,
+        join_open: false,
+        join_code: "",
+        join_error: nil
       )
 
     case socket.assigns.live_action do
@@ -311,8 +314,7 @@ defmodule OskolWeb.LandingLive do
         {:noreply, assign(socket, error: message)}
 
       {:ok, player_name} ->
-        game_id = generate_game_id()
-        {:ok, _pid} = Game.find_or_start_game(game_id, socket.assigns.slug)
+        {:ok, game_id} = Game.create_game(socket.assigns.slug)
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
 
         with {:ok, _} <- Game.configure(game_id, socket.assigns.setup),
@@ -390,6 +392,58 @@ defmodule OskolWeb.LandingLive do
     end
   end
 
+  # ---------- Join by code ----------
+  #
+  # The top-right JOIN GAME prompt: 6 digits in, and out comes a
+  # push_navigate to that room's normal invite link — the same flow a
+  # shared base link takes. Nothing is duplicated here, and nothing about
+  # the room is revealed beyond "a live game answers to this code".
+
+  def handle_event("open_join", _params, socket) do
+    {:noreply, assign(socket, join_open: true, join_code: "", join_error: nil)}
+  end
+
+  def handle_event("close_join", _params, socket) do
+    {:noreply, assign(socket, join_open: false, join_code: "", join_error: nil)}
+  end
+
+  # Auto-submit: the moment a sixth digit lands, try the code.
+  def handle_event("join_change", %{"code" => code}, socket) do
+    code = clean_code(code)
+
+    if String.length(code) == 6 do
+      {:noreply, try_join(socket, code)}
+    else
+      {:noreply, assign(socket, join_code: code, join_error: nil)}
+    end
+  end
+
+  def handle_event("join_submit", %{"code" => code}, socket) do
+    code = clean_code(code)
+
+    if String.length(code) == 6 do
+      {:noreply, try_join(socket, code)}
+    else
+      {:noreply, assign(socket, join_code: code, join_error: "Enter the 6-digit game code")}
+    end
+  end
+
+  defp clean_code(code) when is_binary(code) do
+    code |> String.replace(~r/\D/, "") |> String.slice(0, 6)
+  end
+
+  defp clean_code(_), do: ""
+
+  defp try_join(socket, code) do
+    case Game.lookup_slug(code) do
+      {:ok, slug} ->
+        push_navigate(socket, to: ~p"/#{slug}?game=#{code}")
+
+      :not_found ->
+        assign(socket, join_code: code, join_error: "No game with that code")
+    end
+  end
+
   @impl true
   def handle_info({:game_state_updated, new_state, _events}, socket) do
     # Only a client that holds a seat token follows the room into the game.
@@ -453,14 +507,6 @@ defmodule OskolWeb.LandingLive do
     ~p"/#{socket.assigns.slug}/#{game_id}?t=#{token}"
   end
 
-  defp generate_game_id do
-    :crypto.strong_rand_bytes(6)
-    |> Base.url_encode64(padding: false)
-    |> String.replace(~r/[^a-zA-Z0-9]/, "")
-    |> String.slice(0, 6)
-    |> String.downcase()
-  end
-
   @max_name_length 24
 
   # A display name: trimmed, bounded, printable. It goes into every payload,
@@ -507,7 +553,8 @@ defmodule OskolWeb.LandingLive do
   def render(assigns) do
     ~H"""
     <div class="paper min-h-screen-safe flex flex-col">
-      <.topbar page={@page} />
+      <.topbar />
+      <.join_modal :if={@join_open} code={@join_code} error={@join_error} />
       <main class="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pb-10 sm:pb-16">
         <%= if @page == :library do %>
           <.library games={@games} />
@@ -543,8 +590,6 @@ defmodule OskolWeb.LandingLive do
 
   # ---------- Shell ----------
 
-  attr :page, :atom, required: true
-
   defp topbar(assigns) do
     ~H"""
     <header class="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5 pb-2 flex items-center justify-between gap-3">
@@ -556,15 +601,90 @@ defmodule OskolWeb.LandingLive do
           OSKOL
         </span>
       </.link>
-      <.link
-        :if={@page != :library}
-        patch={~p"/"}
-        class="pixel text-[9px] sm:text-[10px] whitespace-nowrap hover:text-[color:var(--pen)]"
-        style="color: var(--pencil)"
+      <button
+        type="button"
+        id="open-join"
+        phx-click="open_join"
+        class="btn-arcade yellow pixel text-[9px] sm:text-[10px] whitespace-nowrap px-3.5 py-2.5"
       >
-        ◀ ALL GAMES
-      </.link>
+        JOIN GAME
+      </button>
     </header>
+    """
+  end
+
+  # The 6-digit code prompt behind JOIN GAME. `inputmode` and `pattern` get
+  # phones the number pad; a sixth digit auto-submits via `join_change`.
+  attr :code, :string, required: true
+  attr :error, :string, default: nil
+
+  defp join_modal(assigns) do
+    ~H"""
+    <div
+      id="join-modal"
+      class="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[16vh]"
+      phx-window-keydown="close_join"
+      phx-key="escape"
+    >
+      <div
+        class="absolute inset-0"
+        style="background: rgba(26, 26, 46, 0.5)"
+        phx-click="close_join"
+        aria-hidden="true"
+      >
+      </div>
+      <div
+        class="pix relative w-full max-w-sm p-5 sm:p-6"
+        style="background: var(--paper)"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Join a game by code"
+      >
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="pixel text-[10px] sm:text-xs" style="color: var(--ink)">JOIN GAME</h2>
+          <button
+            type="button"
+            id="close-join"
+            phx-click="close_join"
+            aria-label="Close"
+            class="pixel text-[10px] px-2 py-1 hover:text-[color:var(--red)]"
+            style="color: var(--pencil)"
+          >
+            ✕
+          </button>
+        </div>
+        <p class="text-sm mb-3" style="color: var(--pencil)">
+          Type the 6-digit code from your friend.
+        </p>
+        <form phx-change="join_change" phx-submit="join_submit" class="space-y-3">
+          <input
+            type="text"
+            id="join-code-input"
+            name="code"
+            value={@code}
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            autocomplete="one-time-code"
+            placeholder="000000"
+            class="name-field w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.4em]"
+            style="color: var(--ink)"
+            autocorrect="off"
+            spellcheck="false"
+            phx-mounted={JS.focus()}
+          />
+          <p
+            :if={@error}
+            id="join-error"
+            class="pixel text-[9px] leading-relaxed"
+            style="color: var(--red)"
+          >
+            {@error}
+          </p>
+          <.cta type="submit" id="join-submit" color="green">JOIN ▶</.cta>
+        </form>
+      </div>
+    </div>
     """
   end
 
