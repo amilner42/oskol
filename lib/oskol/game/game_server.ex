@@ -187,7 +187,12 @@ defmodule Oskol.Game.GameServer do
       conn ->
         token = GameServerState.new_token()
         rotated = %{conn | token: token}
-        state = %GameServerState{state | connections: Map.put(state.connections, player_id, rotated)}
+
+        state = %GameServerState{
+          state
+          | connections: Map.put(state.connections, player_id, rotated)
+        }
+
         new_state = do_attach(state, player_id, player_pid)
 
         broadcast(new_state, [])

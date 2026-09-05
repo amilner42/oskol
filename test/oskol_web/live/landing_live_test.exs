@@ -285,7 +285,10 @@ defmodule OskolWeb.LandingLiveTest do
     # And a made-up token is not a way in either.
     {:ok, _forger, html} = live(build_conn(), ~p"/backgammon?game=#{game_id}&t=nonsense")
     assert html =~ "TABLE FULL"
-    assert Enum.all?(Oskol.Game.get_server_state(game_id).connections, fn {_, c} -> c.connected end)
+
+    assert Enum.all?(Oskol.Game.get_server_state(game_id).connections, fn {_, c} ->
+             c.connected
+           end)
   end
 
   test "a seat token brings a player straight back to their game", %{conn: conn} do

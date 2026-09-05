@@ -995,8 +995,7 @@ defmodule OskolWeb.LandingLive do
         {if length(@disconnected_players) == 1, do: "CONTINUE?", else: "WHO ARE YOU?"}
       </p>
       <p :if={length(@disconnected_players) == 1} class="text-base" style="color: var(--ink)">
-        Rejoin as
-        <span class="font-bold">{@disconnected_players |> List.first() |> elem(1)}</span>?
+        Rejoin as <span class="font-bold">{@disconnected_players |> List.first() |> elem(1)}</span>?
       </p>
       <div class="grid gap-3 sm:grid-cols-2">
         <button
