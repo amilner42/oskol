@@ -167,6 +167,8 @@ defmodule OskolWeb.LandingLiveTest do
     html = render(host)
     assert html =~ "Waiting for your opponent"
     assert host |> element("#share-link") |> render() =~ "/backgammon?game=#{game_id}"
+    # Both invite options are shown: the link and the 6-digit code.
+    assert host |> element("#game-code") |> render() =~ game_id
     assert host |> element("#setup-summary") |> render() =~ "Match to 5 · Blitz clock"
     state = Oskol.Game.get_server_state(game_id)
     assert state.setup.format == "match5"

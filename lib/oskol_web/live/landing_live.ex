@@ -1177,10 +1177,17 @@ defmodule OskolWeb.LandingLive do
       <div class="pix-sm p-4 text-center" style="background: var(--paper-2)">
         <p class="pixel text-[10px] mb-2" style="color: var(--ink)">INVITE PLAYER 2</p>
         <.invite_box url={@invite_url} />
+        <div class="mt-3 pt-3" style="border-top: 2px dashed var(--pencil)">
+          <p class="pixel text-[9px] mb-1" style="color: var(--pencil)">OR THEY CAN JOIN WITH CODE</p>
+          <p id="game-code" class="pixel text-xl sm:text-2xl tracking-[0.3em]" style="color: var(--ink)">
+            {@game_name}
+          </p>
+        </div>
       </div>
 
       <p class="text-center text-sm" style="color: var(--pencil)">
-        Waiting for your opponent to open the link… the game starts the moment they join.
+        Waiting for your opponent to open the link or enter the code… the game starts the moment
+        they join.
       </p>
     </div>
     """
