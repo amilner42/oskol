@@ -119,8 +119,7 @@ pub fn seven_cards_pick_the_strongest_five_test() {
   // A six-high straight is preferred to the wheel hiding in the same seven
   assert best("AS 2D 3C 4H 5S 6D 9C") == evaluator.Strength(Straight, [6])
   // The steel wheel beats the plain seven-high straight in the same seven
-  assert best("AS 2S 3S 4S 5S 6D 7D")
-    == evaluator.Strength(StraightFlush, [5])
+  assert best("AS 2S 3S 4S 5S 6D 7D") == evaluator.Strength(StraightFlush, [5])
   // Quads are chosen over the full house the same seven could make
   assert best("AC AD AH AS KD KC KH") == evaluator.Strength(Quads, [14, 13])
 }
