@@ -41,10 +41,10 @@ defmodule OskolWeb.PageControllerTest do
     assert body =~ "<loc>http://localhost:4002/</loc>"
     assert body =~ "<loc>http://localhost:4002/poker</loc>"
     assert body =~ "<loc>http://localhost:4002/backgammon</loc>"
+    assert body =~ "<loc>http://localhost:4002/go</loc>"
     refute body =~ "game="
     # Placeholders have no route, so they must not be offered for crawling
     refute body =~ "chess"
-    refute body =~ "/go</loc>"
   end
 
   test "robots allows crawling and points at the sitemap", %{conn: conn} do

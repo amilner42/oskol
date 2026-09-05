@@ -21,7 +21,7 @@ import Html.Attributes exposing (class, classList, disabled, style, title)
 import Html.Events exposing (onClick)
 import Json.Decode as D
 import Json.Encode as E
-import Protocol exposing (ParamKind(..), Scene, Schema, Token, Zone)
+import Protocol exposing (Layout(..), ParamKind(..), Scene, Schema, Token, Zone)
 import Set exposing (Set)
 
 
@@ -274,6 +274,54 @@ viewColumn model legal zone =
 
 viewZone : Scene -> Model -> List Schema -> Zone -> Html Msg
 viewZone scene model legal zone =
+    case zone.layout of
+        Grid columns _ ->
+            viewGridZone model legal zone columns
+
+        _ ->
+            viewFlowZone scene model legal zone
+
+
+{-| A board: tokens laid out by their grid position. Any token can be a
+button (a stone, an empty intersection offered as a move candidate).
+-}
+viewGridZone : Model -> List Schema -> Zone -> Int -> Html Msg
+viewGridZone model legal zone columns =
+    let
+        selectable =
+            selectableIn model legal zone.id
+
+        cell token =
+            div
+                (class "flex items-center justify-center"
+                    :: (case token.position of
+                            Just ( column, row ) ->
+                                [ style "grid-column" (String.fromInt (column + 1))
+                                , style "grid-row" (String.fromInt (row + 1))
+                                ]
+
+                            Nothing ->
+                                []
+                       )
+                )
+                [ viewToken model selectable True token ]
+    in
+    div [ class "game-panel p-3 overflow-x-auto" ]
+        [ div [ class "pixel text-[8px] mb-2", style "color" "var(--pencil)" ]
+            [ text (String.toUpper zone.id) ]
+        , div
+            [ style "display" "grid"
+            , style "grid-template-columns" ("repeat(" ++ String.fromInt columns ++ ", 1.65rem)")
+            , style "grid-auto-rows" "1.65rem"
+            , style "gap" "1px"
+            , style "width" "max-content"
+            ]
+            (List.map cell zone.tokens)
+        ]
+
+
+viewFlowZone : Scene -> Model -> List Schema -> Zone -> Html Msg
+viewFlowZone scene model legal zone =
     let
         selectable =
             selectableIn model legal zone.id

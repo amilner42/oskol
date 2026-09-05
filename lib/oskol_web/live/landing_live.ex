@@ -578,11 +578,6 @@ defmodule OskolWeb.LandingLive do
       "slug" => "chess",
       "name" => "Chess",
       "tagline" => "The immortal game"
-    },
-    %{
-      "slug" => "go",
-      "name" => "Go",
-      "tagline" => "The oldest game"
     }
   ]
 
