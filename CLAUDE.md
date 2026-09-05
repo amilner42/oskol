@@ -10,7 +10,10 @@ top-up; leaving mid-hand folds it) or a sit-and-go (1,500 chips, blinds
 rise, last chip wins).
 **Backgammon** is the classic race game with the doubling cube: single games,
 matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
-Jacoby rule. Every game can be played with an optional time control.
+Jacoby rule. **Go** is the territory game on a 9x9, 13x13 or 19x19 board:
+area (Tromp-Taylor) scoring, positional superko, komi 5.5/6.5/7.5, two
+passes end the game; it ships on the generic renderer. Every game can be
+played with an optional time control.
 
 The first player picks everything (mode, settings, clock), shares a link, and
 the game starts the moment the second player types a name. Taking a seat
@@ -136,10 +139,13 @@ src/poker/          Poker: card, evaluator (best of seven), state (the rules,
                     projection (scene), game (contract, formats and settings)
 src/backgammon/     Backgammon: board (rules + move generation), state (turns,
                     dice, cube, match play), engine, projection, game
+src/go/             Go: board (capture, suicide, Tromp-Taylor score), state
+                    (turns, passes, positional superko), engine, projection, game
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/poker/         evaluator, rules in controlled spots, conformance (chip
                     conservation, hidden information, replay)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
+test/go/            board rules, ko/superko/snapback, scoring, oracle, conformance
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: setup, auto-start, actions, clocks, rematch
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)

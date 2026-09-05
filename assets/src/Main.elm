@@ -416,15 +416,6 @@ view model =
 
         Just payload ->
             let
-                clockView =
-                    View.Clock.view
-                        { clock = Just payload.update.clock
-                        , playerId = payload.playerId
-                        , receivedAt = model.clockReceivedAt
-                        , now = model.nowMs
-                        , nameOf = nameOf model
-                        }
-
                 finished =
                     finishedWinners payload
 
@@ -457,14 +448,12 @@ view model =
                                     , scene = payload.update.scene
                                     , legal = payload.update.legal
                                     , model = model.generic
-                                    , status =
-                                        case finished of
-                                            Nothing ->
-                                                "in progress"
-
-                                            Just winners ->
-                                                "finished: " ++ String.join ", " (List.map (nameOf model) winners)
-                                    , clock = clockView
+                                    , clock = Just payload.update.clock
+                                    , receivedAt = model.clockReceivedAt
+                                    , now = model.nowMs
+                                    , nameOf = nameOf model
+                                    , finished = finished
+                                    , away = awayIds payload
                                     }
                                 )
             in

@@ -55,6 +55,28 @@ defmodule OskolWeb.GameCopy do
         {"Can we play a match?",
          "Yes: to 3, 5 or 7 points with the Crawford rule, or unlimited play with the Jacoby rule."}
       ]
+    },
+    "go" => %{
+      title: "Play go online with a friend",
+      description:
+        "Go for two on a 9x9, 13x13 or 19x19 board, free, no accounts. Area scoring with komi; send a link and place the first stone.",
+      intro:
+        "Territory and capture on the classic board, from a link. Free, no accounts, plays on a phone.",
+      rules: [
+        "Black and white take turns placing stones on empty intersections; black moves first. Stones of one color standing together are a group, and a group with no empty point beside it is captured and removed. Captures are taken before your own liberties are counted, so you may capture into a tight spot, but a move that leaves your own group with no liberties is forbidden.",
+        "No move may recreate a whole-board position that has already appeared (positional superko): the simple ko fight and every longer repetition are both covered by the same rule. Passing is always allowed, and two passes in a row end the game.",
+        "Scoring is by area, Tromp-Taylor style: your stones on the board plus the empty points that reach only your color. Empty regions touching both colors count for neither. White adds komi (5.5, 6.5 or 7.5 by choice) for moving second, so there are no ties. You can also resign at any time."
+      ],
+      faq: [
+        {"Which board should we pick?",
+         "9x9 is a quick game and the default; 13x13 is a middle ground; 19x19 is the full game and takes a while."},
+        {"What is komi?",
+         "Compensation added to white's score for going second. Pick 5.5, 6.5 or 7.5 when you set up the game; the half point means a game can never tie."},
+        {"How does the game end?",
+         "Two passes in a row, and the board is counted as it stands: stones plus surrounded empty points, komi to white. Or one player resigns."},
+        {"Do we need accounts?",
+         "No. Type a name and play. A game stays open for an hour after the last move."}
+      ]
     }
   }
 
