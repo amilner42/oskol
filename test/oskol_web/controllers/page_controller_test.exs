@@ -4,7 +4,7 @@ defmodule OskolWeb.PageControllerTest do
   test "GET / renders the game library with its title and description", %{conn: conn} do
     conn = get(conn, ~p"/")
     html = html_response(conn, 200)
-    assert html =~ "THE CLASSICS."
+    assert html =~ "PLAY THE CLASSICS."
     assert html =~ "Backgammon"
     assert html =~ "Poker"
     assert html =~ ~s(>Two-player games from a link · Oskol</title>)

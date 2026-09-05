@@ -457,15 +457,31 @@
   pointer-events: none;
   background: repeating-linear-gradient(0deg, rgba(35, 36, 58, 0.06) 0 2px, transparent 2px 4px);
 }
-.cabinet:hover .screen svg { transform: translateY(-2px); }
-.screen svg { transition: transform 0.2s; image-rendering: pixelated; }
+.cabinet:hover .screen .game-art { transform: translateY(-2px); }
+.screen .game-art { transition: transform 0.2s; }
+.screen svg { image-rendering: pixelated; }
+
+/* Animated game art: the frames are stacked into a reel and one steps()
+   animation walks the reel up by exactly one frame at a time, so the whole
+   loop is a single compositor-friendly transform. Reduced motion gets no
+   animation at all, which leaves frame one showing. */
+.game-art { overflow: hidden; margin-inline: auto; }
+.game-art-reel > svg { display: block; width: 100%; height: auto; }
+@media (prefers-reduced-motion: no-preference) {
+  .game-art-anim .game-art-reel {
+    animation: game-art-reel var(--art-duration) steps(var(--art-frames)) infinite;
+    will-change: transform;
+  }
+}
+@keyframes game-art-reel { to { transform: translateY(-100%); } }
 
 /* A game with no engine yet: same cabinet, powered down. It does not lift
    on hover because there is nothing to click. */
 .cabinet-soon:hover, .cabinet-soon:focus-visible { transform: none; box-shadow: 6px 6px 0 0 var(--ink); }
-.cabinet-soon .marquee { filter: saturate(0.55); }
-.cabinet-soon .screen { opacity: 0.75; }
-.cabinet-soon:hover .screen svg { transform: none; }
+/* Muted enough to read as unavailable, not so muted that the art stops
+   playing: the animation is the tease. */
+.cabinet-soon .marquee { filter: saturate(0.7); }
+.cabinet-soon:hover .screen .game-art { transform: none; }
 
 .cabinet .cursor { opacity: 0; }
 .cabinet:hover .cursor, .cabinet:focus-visible .cursor { opacity: 1; animation: blink 0.8s steps(1) infinite; }
@@ -503,19 +519,6 @@
 .hl { background: linear-gradient(transparent 55%, var(--highlighter) 55%, var(--highlighter) 92%, transparent 92%); }
 
 /* Wordmark tiles */
-.mark-letter {
-  display: inline-grid;
-  place-items: center;
-  width: 2rem;
-  height: 2rem;
-  background: #fff;
-  color: var(--ink);
-  border: 2px solid var(--ink);
-  box-shadow: 3px 3px 0 0 var(--ink);
-  font-size: 0.75rem;
-}
-.mark-letter.red { color: var(--red); }
-
 .text-player { color: var(--pen); }
 .text-opponent { color: var(--red); }
 .border-player { border-color: var(--pen); }
