@@ -533,12 +533,13 @@ defmodule OskolWeb.LandingLive do
   defp topbar(assigns) do
     ~H"""
     <header class="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5 pb-2 flex items-center justify-between gap-3">
-      <.link patch={~p"/"} class="flex items-center gap-1 sm:gap-1.5 pixel" aria-label="Oskol home">
-        <span class="mark-letter">O</span>
-        <span class="mark-letter red">S</span>
-        <span class="mark-letter">K</span>
-        <span class="mark-letter red">O</span>
-        <span class="mark-letter">L</span>
+      <.link patch={~p"/"} class="pixel inline-block" aria-label="Oskol home">
+        <span
+          class="pixel text-xs sm:text-sm tracking-[0.35em] px-3.5 py-2.5 inline-block"
+          style="background: #fff; color: var(--ink); border: 3px solid var(--ink); box-shadow: 4px 4px 0 0 var(--ink)"
+        >
+          OSKOL
+        </span>
       </.link>
       <.link
         :if={@page != :library}
@@ -561,14 +562,12 @@ defmodule OskolWeb.LandingLive do
     %{
       "slug" => "chess",
       "name" => "Chess",
-      "tagline" => "The immortal game",
-      "description" => "Real chess, real clocks — castling, en passant and all. Coming soon."
+      "tagline" => "The immortal game"
     },
     %{
       "slug" => "go",
       "name" => "Go",
-      "tagline" => "The oldest game",
-      "description" => "Territory, captures and ko, on 9, 13 or 19 lines. Coming soon."
+      "tagline" => "The oldest game"
     }
   ]
 
@@ -580,20 +579,23 @@ defmodule OskolWeb.LandingLive do
 
   defp library(assigns) do
     ~H"""
-    <section class="pt-5 sm:pt-10 pb-6 sm:pb-8 text-center">
+    <section class="pt-10 sm:pt-14 pb-10 sm:pb-12 text-center">
       <h1
         class="pixel text-lg sm:text-3xl leading-[1.7] sm:leading-[1.6]"
         style="color: var(--ink)"
       >
-        THE CLASSICS.<br />
+        PLAY THE CLASSICS.<br />
         <span class="hl px-1">WITH A TWIST.</span>
       </h1>
       <p class="mt-4 text-base sm:text-lg max-w-md sm:max-w-xl mx-auto" style="color: var(--pencil)">
-        Pick a game, send a link — your friends are in within seconds. Free, no accounts.
+        Free · No sign up · No ads
       </p>
-      <p class="mt-3 text-sm max-w-md sm:max-w-xl mx-auto" style="color: var(--pencil)">
-        Every game plays by the book — until you flip a twist.
-      </p>
+    </section>
+
+    <section class="mb-8 sm:mb-10 grid grid-cols-3 gap-3 sm:gap-4">
+      <.step n="1" title="PICK GAME">Choose a mode, the settings and an optional clock.</.step>
+      <.step n="2" title="SHARE LINK">Your opponent opens it and types a name.</.step>
+      <.step n="3" title="GAME ON">The game starts the moment they join.</.step>
     </section>
 
     <section id="game-library" class="grid gap-5 sm:gap-8 sm:grid-cols-2">
@@ -619,17 +621,8 @@ defmodule OskolWeb.LandingLive do
         <span class="uppercase">{@game["name"]}</span>
         <span class="cursor">▶</span>
       </div>
-      <div class="screen px-6 py-4 sm:py-6 flex items-center justify-center">
-        <GameArt.art slug={@game["slug"]} class="h-24 sm:h-40 w-auto" />
-      </div>
-      <div class="px-4 sm:px-5 py-4">
-        <p class="font-semibold text-base sm:text-lg" style="color: var(--ink)">{@game["tagline"]}</p>
-        <p class="mt-1 text-sm leading-relaxed" style="color: var(--pencil)">
-          {@game["description"]}
-        </p>
-        <span class="btn-arcade pixel text-[10px] mt-4 block text-center px-4 py-3.5">
-          PLAY {String.upcase(@game["name"])} ▶
-        </span>
+      <div class="screen px-3 py-3 sm:px-4 sm:py-4 flex items-center justify-center">
+        <GameArt.art slug={@game["slug"]} class="h-40 sm:h-56" />
       </div>
     </.link>
     """
@@ -652,23 +645,35 @@ defmodule OskolWeb.LandingLive do
         <span class="uppercase">{@game["name"]}</span>
         <span class="text-[9px] opacity-80">SOON</span>
       </div>
-      <div class="screen px-6 py-4 sm:py-6 flex items-center justify-center">
-        <GameArt.art slug={@game["slug"]} class="h-24 sm:h-40 w-auto" />
-      </div>
-      <div class="px-4 sm:px-5 py-4">
-        <p class="font-semibold text-base sm:text-lg" style="color: var(--ink)">{@game["tagline"]}</p>
-        <p class="mt-1 text-sm leading-relaxed" style="color: var(--pencil)">
-          {@game["description"]}
-        </p>
-        <button
-          type="button"
-          disabled
-          class="btn-arcade pixel text-[10px] mt-4 block w-full text-center px-4 py-3.5"
-        >
-          SOON
-        </button>
+      <div class="screen px-3 py-3 sm:px-4 sm:py-4 flex items-center justify-center">
+        <GameArt.art slug={@game["slug"]} class="h-40 sm:h-56" />
       </div>
     </article>
+    """
+  end
+
+  attr :n, :string, required: true
+  attr :title, :string, required: true
+  slot :inner_block, required: true
+
+  defp step(assigns) do
+    ~H"""
+    <div class="pix-sm p-3 sm:p-4 flex gap-2.5 sm:gap-3 items-center sm:items-start">
+      <span
+        class="pixel text-xs sm:text-sm shrink-0 w-8 h-8 sm:w-9 sm:h-9 grid place-items-center"
+        style="background: var(--highlighter); color: var(--ink)"
+      >
+        {@n}
+      </span>
+      <div class="min-w-0">
+        <div class="pixel text-[8px] sm:text-[10px] leading-relaxed" style="color: var(--ink)">
+          <span :for={word <- String.split(@title)} class="block">{word}</span>
+        </div>
+        <div class="hidden sm:block text-sm mt-1.5" style="color: var(--pencil)">
+          {render_slot(@inner_block)}
+        </div>
+      </div>
+    </div>
     """
   end
 
@@ -702,7 +707,8 @@ defmodule OskolWeb.LandingLive do
         {@info["name"]}
       </div>
       <div class="flex items-center gap-3 sm:gap-6 px-4 sm:px-6 py-3.5 sm:py-5">
-        <GameArt.art slug={@slug} class="h-14 sm:h-24 w-auto shrink-0" />
+        <!-- Still here: this page's job is the form below it, not a loop to watch. -->
+        <GameArt.art slug={@slug} animate={false} class="h-14 sm:h-24 shrink-0" />
         <div class="min-w-0">
           <h1 class="text-lg sm:text-2xl font-black leading-snug" style="color: var(--ink)">
             {@copy.title}

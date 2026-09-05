@@ -16,10 +16,47 @@ defmodule OskolWeb.LandingLiveTest do
 
   test "the library lists every registered game", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/")
-    assert html =~ "THE CLASSICS."
+    assert html =~ "PLAY THE CLASSICS."
     assert has_element?(view, "#game-backgammon", "Backgammon")
     assert has_element?(view, "#game-poker", "Poker")
     assert page_title(view) =~ "Two-player games from a link"
+  end
+
+  test "the library cards lead with art: every game's frames, and no subtext", %{conn: conn} do
+    {:ok, view, html} = live(conn, ~p"/")
+
+    for slug <- ~w(poker backgammon chess go) do
+      frames = OskolWeb.GameArt.frame_count(slug)
+      assert frames > 1, "#{slug} needs frames to animate"
+      card = view |> element("#game-#{slug}") |> render()
+      # One <svg> per frame, stacked into the reel the CSS animation steps through.
+      assert length(String.split(card, "<svg")) == frames + 1
+      assert card =~ "game-art-anim"
+    end
+
+    # The card is just the marquee and the art; the whole card is the link.
+    refute html =~ "Heads-up no-limit hold"
+    refute html =~ "Sit down at a cash table"
+    assert has_element?(view, "a#game-poker")
+  end
+
+  test "each card's accent colour appears inside its own art", %{conn: conn} do
+    # Marquee and animation have to read as one designed object, so the
+    # accent is the felt border, the points, the dark pieces, the board wood.
+    {:ok, view, _} = live(conn, ~p"/")
+
+    for slug <- ~w(poker backgammon chess go) do
+      accent = OskolWeb.GameArt.accent(slug)
+      card = view |> element("#game-#{slug}") |> render()
+      assert card =~ ~s(fill="#{accent}"), "#{slug} art never uses its accent #{accent}"
+    end
+  end
+
+  test "a game page's art is still, so it never competes with the form", %{conn: conn} do
+    {:ok, view, _} = live(conn, ~p"/poker")
+    hero = view |> element("#game-hero-poker") |> render()
+    assert length(String.split(hero, "<svg")) == 2
+    refute hero =~ "game-art-anim"
   end
 
   test "games with no engine yet are shown but are not playable and not claimed", %{conn: conn} do
@@ -27,9 +64,10 @@ defmodule OskolWeb.LandingLiveTest do
 
     for {slug, name} <- [{"chess", "Chess"}, {"go", "Go"}] do
       assert has_element?(view, "##{"game-" <> slug}", name)
-      # A disabled button, not a link: nothing to click and nowhere to go.
-      assert has_element?(view, "##{"game-" <> slug} button[disabled]", "SOON")
+      # Not a link: nothing to click and nowhere to go. SOON lives in the marquee.
+      assert has_element?(view, "##{"game-" <> slug}", "SOON")
       refute has_element?(view, "##{"game-" <> slug} a")
+      refute has_element?(view, "##{"game-" <> slug} button")
       refute has_element?(view, "a[href='/#{slug}']")
     end
 
