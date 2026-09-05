@@ -154,6 +154,33 @@ pub fn undo_returns_a_hit_checker_to_its_point_test() {
   assert board.count(s.board, White, Point(8)) == 1
 }
 
+pub fn undo_unwinds_a_chain_of_staged_moves_back_to_the_start_test() {
+  let s0 = position(7, open_board(), [3, 3, 3, 3])
+  let #(s, _) = apply(s0, "p1", engine.MoveChecker(Point(13), Point(10)))
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(10), Point(7)))
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(8), Point(5)))
+  assert state.dice_left(s) == [3]
+  assert list.length(s.staged) == 3
+  let #(s, _) = apply(s, "p1", engine.Undo)
+  assert state.dice_left(s) == [3, 3]
+  assert board.count(s.board, White, Point(8)) == 1
+  let #(s, _) = apply(s, "p1", engine.Undo)
+  let #(s, _) = apply(s, "p1", engine.Undo)
+  assert s == s0
+}
+
+pub fn undo_returns_an_entered_checker_to_the_bar_test() {
+  let b =
+    setup([#(White, Bar, 1), #(White, Point(13), 2), #(Black, Point(1), 2)])
+  let s = position(8, b, [5, 3])
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Bar, Point(20)))
+  assert board.on_bar(s.board, White) == 0
+  assert board.count(s.board, White, Point(20)) == 1
+  let #(s, _) = apply(s, "p1", engine.Undo)
+  assert board.on_bar(s.board, White) == 1
+  assert s.board == b
+}
+
 pub fn play_needs_every_usable_die_test() {
   let s = position(4, open_board(), [5, 3])
   assert engine.apply(s, "p1", engine.Play)

@@ -91,6 +91,39 @@ pub fn the_best_five_of_seven_is_found_test() {
   assert ties("5S 3D KC KD 8C 8H AS", "4S 2H KC KD 8C 8H AD")
 }
 
+pub fn flushes_rank_by_their_highest_card_test() {
+  assert beats("AD 9D 7D 4D 2D", "KH QH JH 9H 2H")
+  assert beats("AD 9D 7D 4D 2D", "KS QS JS 10S 2S")
+}
+
+pub fn board_quads_go_to_the_best_kicker_test() {
+  // Quads on the board: the ace kicker outkicks the king
+  assert beats("9C 9D 9H 9S 5D AC 2H", "9C 9D 9H 9S 5D KC QH")
+  // Neither hole card beats the board's own kicker: the board plays, a tie
+  assert ties("9C 9D 9H 9S KD 4C 2H", "9C 9D 9H 9S KD 3S 2S")
+}
+
+pub fn full_houses_compare_trips_first_then_the_pair_test() {
+  // Kings full of fours beats queens full of aces
+  assert beats("KC KD KH 4S 4D", "QC QD QH AS AD")
+  // Same trips: the pair decides
+  assert beats("KC KD KH 5S 5D", "KS KH KD 4S 4D")
+}
+
+pub fn a_straight_flush_beats_quads_test() {
+  assert beats("9H 8H 7H 6H 5H", "AC AD AH AS KD")
+  assert best("6H 5H 4H 3H 2H AC AD").category == StraightFlush
+}
+
+pub fn seven_cards_pick_the_strongest_five_test() {
+  // A six-high straight is preferred to the wheel hiding in the same seven
+  assert best("AS 2D 3C 4H 5S 6D 9C") == evaluator.Strength(Straight, [6])
+  // The steel wheel beats the plain seven-high straight in the same seven
+  assert best("AS 2S 3S 4S 5S 6D 7D") == evaluator.Strength(StraightFlush, [5])
+  // Quads are chosen over the full house the same seven could make
+  assert best("AC AD AH AS KD KC KH") == evaluator.Strength(Quads, [14, 13])
+}
+
 pub fn descriptions_read_naturally_test() {
   assert evaluator.describe(best("AS KS QS JS 10S")) == "a royal flush"
   assert evaluator.describe(best("9H 8H 7H 6H 5H"))

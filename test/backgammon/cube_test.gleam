@@ -246,6 +246,115 @@ fn bear_off_and_play(
   apply(s, "p1", engine.Play)
 }
 
+pub fn nobody_may_double_before_the_first_roll_test() {
+  // The opening roll starts the game already in Moving: there is no chance
+  // to double before the first roll, for either player.
+  let s = new_game(20, "match5")
+  let assert state.Moving(_, _) = s.phase
+  assert state.can_double(s, "p1") == False
+  assert state.can_double(s, "p2") == False
+  assert names(s, "p1") |> list.contains("double") == False
+  assert names(s, "p2") |> list.contains("double") == False
+  assert engine.apply(s, "p1", engine.Double)
+    == Error("You can only double before rolling")
+  assert engine.apply(s, "p2", engine.Double)
+    == Error("You can only double before rolling")
+}
+
+pub fn black_may_double_from_the_center_on_their_turn_test() {
+  let s = new_game(21, "match5")
+  let s = state.GameState(..s, phase: state.Rolling(Black))
+  assert names(s, "p2") == ["roll", "double", "resign"]
+  let #(s, _) = apply(s, "p2", engine.Double)
+  let assert state.Doubled(Black) = s.phase
+  assert names(s, "p1") == ["take", "drop", "resign"]
+  let #(s, _) = apply(s, "p1", engine.Take)
+  assert s.cube_value == 2
+  assert s.cube_owner == Some(White)
+  let assert state.Rolling(Black) = s.phase
+}
+
+pub fn a_backgammon_scores_three_times_the_cube_test() {
+  // Black has borne off nothing and still has a checker on the bar.
+  let b =
+    setup([
+      #(White, Off, 14),
+      #(White, Point(1), 1),
+      #(Black, Bar, 1),
+      #(Black, Point(19), 14),
+    ])
+  let s = new_game(22, "match7")
+  let s =
+    state.GameState(
+      ..s,
+      board: b,
+      phase: state.Moving(White, [1, 2]),
+      cube_value: 2,
+      cube_owner: Some(White),
+    )
+  let #(s, events) = bear_off_and_play(s)
+  assert state.score_of(s, "p1") == 6
+  assert list.any(events, fn(e) {
+    case e {
+      event.Custom("game_won", payload) ->
+        json.to_string(payload) |> string.contains("\"kind\":\"backgammon\"")
+        && json.to_string(payload) |> string.contains("\"points\":6")
+      _ -> False
+    }
+  })
+  // A checker left in the winner's home board is a backgammon too.
+  let in_home =
+    setup([
+      #(White, Off, 14),
+      #(White, Point(1), 1),
+      #(Black, Point(3), 1),
+      #(Black, Point(19), 14),
+    ])
+  let s2 = new_game(22, "match7")
+  let s2 =
+    state.GameState(..s2, board: in_home, phase: state.Moving(White, [1, 2]))
+  let #(s2, _) = bear_off_and_play(s2)
+  assert state.score_of(s2, "p1") == 3
+}
+
+pub fn jacoby_applies_to_backgammons_too_test() {
+  let b =
+    setup([
+      #(White, Off, 14),
+      #(White, Point(1), 1),
+      #(Black, Bar, 1),
+      #(Black, Point(19), 14),
+    ])
+  let centred = new_game(23, "unlimited")
+  let centred =
+    state.GameState(..centred, board: b, phase: state.Moving(White, [1, 2]))
+  let #(after, _) = bear_off_and_play(centred)
+  assert state.score_of(after, "p1") == 1
+  let turned =
+    state.GameState(..centred, cube_value: 2, cube_owner: Some(Black))
+  let #(after, _) = bear_off_and_play(turned)
+  assert state.score_of(after, "p1") == 6
+}
+
+pub fn the_match_ends_when_points_overshoot_the_target_test() {
+  // Match to 3, gammon with the cube at 2: four points, the match is over.
+  let b =
+    setup([#(White, Off, 14), #(White, Point(1), 1), #(Black, Point(19), 15)])
+  let s = new_game(24, "match3")
+  let s =
+    state.GameState(
+      ..s,
+      board: b,
+      phase: state.Moving(White, [1, 2]),
+      cube_value: 2,
+      cube_owner: Some(White),
+    )
+  let #(s, events) = bear_off_and_play(s)
+  assert has_custom(events, "match_over")
+  assert state.score_of(s, "p1") == 4
+  let assert state.Finished(White) = s.phase
+}
+
 // ---------- Crawford ----------
 
 pub fn the_crawford_game_forbids_doubling_then_it_resumes_test() {
