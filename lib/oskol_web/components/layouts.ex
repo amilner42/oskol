@@ -12,6 +12,13 @@ defmodule OskolWeb.Layouts do
   embed_templates "layouts/*"
 
   @doc """
+  The `<title>` text, never blank. A page that forgets to set `:page_title`
+  would otherwise render nothing but the " · Oskol" suffix, which is what a
+  crawler would index.
+  """
+  def head_title(assigns), do: assigns[:page_title] || OskolWeb.GameCopy.site().title
+
+  @doc """
   Renders your app layout.
 
   This function is typically invoked from every template,

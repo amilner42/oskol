@@ -494,7 +494,7 @@ defmodule OskolWeb.LandingLive do
     ~H"""
     <div class="paper min-h-screen-safe flex flex-col">
       <.topbar page={@page} />
-      <main class="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pb-16">
+      <main class="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pb-10 sm:pb-16">
         <%= if @page == :library do %>
           <.library games={@games} />
         <% else %>
@@ -517,10 +517,10 @@ defmodule OskolWeb.LandingLive do
         <% end %>
       </main>
       <footer
-        class="pixel text-[9px] sm:text-[10px] text-center pb-6 px-4"
+        class="pixel text-[8px] sm:text-[10px] leading-loose text-center pb-6 px-4"
         style="color: var(--pencil)"
       >
-        NO ACCOUNTS · A GAME STAYS OPEN FOR AN HOUR AFTER THE LAST MOVE
+        FREE · NO ACCOUNTS · BY THE BOOK — UNTIL YOU FLIP A TWIST
       </footer>
     </div>
     """
@@ -532,53 +532,73 @@ defmodule OskolWeb.LandingLive do
 
   defp topbar(assigns) do
     ~H"""
-    <header class="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-5 pb-2 flex items-center justify-between">
-      <.link patch={~p"/"} class="flex items-center gap-1.5 pixel" aria-label="Oskol home">
+    <header class="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5 pb-2 flex items-center justify-between gap-3">
+      <.link patch={~p"/"} class="flex items-center gap-1 sm:gap-1.5 pixel" aria-label="Oskol home">
         <span class="mark-letter">O</span>
         <span class="mark-letter red">S</span>
         <span class="mark-letter">K</span>
         <span class="mark-letter red">O</span>
         <span class="mark-letter">L</span>
       </.link>
-      <span class="pixel text-[9px] sm:text-[10px]" style="color: var(--pencil)">
-        <%= if @page == :library do %>
-          2 PLAYERS · NO SIGNUP
-        <% else %>
-          <.link patch={~p"/"} class="hover:text-[color:var(--pen)]">◀ ALL GAMES</.link>
-        <% end %>
-      </span>
+      <.link
+        :if={@page != :library}
+        patch={~p"/"}
+        class="pixel text-[9px] sm:text-[10px] whitespace-nowrap hover:text-[color:var(--pen)]"
+        style="color: var(--pencil)"
+      >
+        ◀ ALL GAMES
+      </.link>
     </header>
     """
   end
 
   # ---------- Library ----------
 
+  # Games with no engine yet. They are plain HTML on the library and nothing
+  # else: no route, no sitemap entry, and deliberately absent from the
+  # JSON-LD, which may only claim games you can actually play.
+  @coming_soon [
+    %{
+      "slug" => "chess",
+      "name" => "Chess",
+      "tagline" => "The immortal game",
+      "description" => "Real chess, real clocks — castling, en passant and all. Coming soon."
+    },
+    %{
+      "slug" => "go",
+      "name" => "Go",
+      "tagline" => "The oldest game",
+      "description" => "Territory, captures and ko, on 9, 13 or 19 lines. Coming soon."
+    }
+  ]
+
+  @doc false
+  def coming_soon, do: @coming_soon
+
   attr :games, :list, required: true
+  attr :coming_soon, :list, default: @coming_soon
 
   defp library(assigns) do
     ~H"""
-    <section class="pt-8 sm:pt-14 pb-8 text-center">
-      <p class="pixel text-[10px] sm:text-xs blink" style="color: var(--red)">▶ INSERT COIN ◀</p>
-      <h1 class="pixel mt-4 text-2xl sm:text-4xl leading-relaxed" style="color: var(--ink)">
-        SEND A LINK.<br />
-        <span class="hl px-1">PLAY IN SECONDS.</span>
+    <section class="pt-5 sm:pt-10 pb-6 sm:pb-8 text-center">
+      <h1
+        class="pixel text-lg sm:text-3xl leading-[1.7] sm:leading-[1.6]"
+        style="color: var(--ink)"
+      >
+        THE CLASSICS.<br />
+        <span class="hl px-1">WITH A TWIST.</span>
       </h1>
-      <p class="mt-5 text-base sm:text-lg max-w-xl mx-auto" style="color: var(--pencil)">
-        The classics, two players, nothing to install and no signup. Pick a cabinet, share the invite, and your opponent is in.
+      <p class="mt-4 text-base sm:text-lg max-w-md sm:max-w-xl mx-auto" style="color: var(--pencil)">
+        Pick a game, send a link — your friends are in within seconds. Free, no accounts.
+      </p>
+      <p class="mt-3 text-sm max-w-md sm:max-w-xl mx-auto" style="color: var(--pencil)">
+        Every game plays by the book — until you flip a twist.
       </p>
     </section>
 
-    <p class="pixel text-[10px] sm:text-xs mb-3 text-center" style="color: var(--ink)">
-      SELECT YOUR GAME
-    </p>
-    <section id="game-library" class="grid gap-6 sm:gap-8 sm:grid-cols-2">
+    <section id="game-library" class="grid gap-5 sm:gap-8 sm:grid-cols-2">
       <.cabinet :for={game <- @games} game={game} />
-    </section>
-
-    <section class="mt-14 grid gap-4 sm:grid-cols-3">
-      <.step n="1" title="PICK A GAME">Choose a mode, the settings and an optional clock.</.step>
-      <.step n="2" title="SHARE THE INVITE">Your opponent opens it and types a name.</.step>
-      <.step n="3" title="PLAY">The game starts the moment they join.</.step>
+      <.soon_cabinet :for={game <- @coming_soon} game={game} />
     </section>
     """
   end
@@ -586,11 +606,7 @@ defmodule OskolWeb.LandingLive do
   attr :game, :map, required: true
 
   defp cabinet(assigns) do
-    assigns =
-      assign(assigns,
-        accent: GameArt.accent(assigns.game["slug"]),
-        format_names: assigns.game["formats"] |> Enum.map(& &1["name"])
-      )
+    assigns = assign(assigns, accent: GameArt.accent(assigns.game["slug"]))
 
     ~H"""
     <.link
@@ -603,58 +619,56 @@ defmodule OskolWeb.LandingLive do
         <span class="uppercase">{@game["name"]}</span>
         <span class="cursor">▶</span>
       </div>
-      <div class="screen px-6 py-5 sm:py-6 flex items-center justify-center">
-        <GameArt.art slug={@game["slug"]} class="h-32 sm:h-40 w-auto" />
+      <div class="screen px-6 py-4 sm:py-6 flex items-center justify-center">
+        <GameArt.art slug={@game["slug"]} class="h-24 sm:h-40 w-auto" />
       </div>
       <div class="px-4 sm:px-5 py-4">
         <p class="font-semibold text-base sm:text-lg" style="color: var(--ink)">{@game["tagline"]}</p>
         <p class="mt-1 text-sm leading-relaxed" style="color: var(--pencil)">
           {@game["description"]}
         </p>
-        <div class="mt-3 flex flex-wrap gap-1.5">
-          <.chip :for={name <- @format_names}>{name}</.chip>
-          <.chip>Optional clock</.chip>
-        </div>
-        <div class="mt-4 flex items-center justify-between">
-          <span class="pixel text-[9px]" style="color: var(--pencil)">1P VS 2P</span>
-          <span class="btn-arcade pixel text-[10px] px-4 py-2.5 rounded-full">PLAY</span>
-        </div>
+        <span class="btn-arcade pixel text-[10px] mt-4 block text-center px-4 py-3.5">
+          PLAY {String.upcase(@game["name"])} ▶
+        </span>
       </div>
     </.link>
     """
   end
 
-  attr :n, :string, required: true
-  attr :title, :string, required: true
-  slot :inner_block, required: true
+  # The same anatomy as a playable cabinet, but it is not a link and its
+  # button is disabled: nothing here navigates or dead-clicks.
+  attr :game, :map, required: true
 
-  defp step(assigns) do
+  defp soon_cabinet(assigns) do
+    assigns = assign(assigns, accent: GameArt.accent(assigns.game["slug"]))
+
     ~H"""
-    <div class="pix-sm p-4 flex gap-3 items-start">
-      <span
-        class="pixel text-[10px] shrink-0 w-8 h-8 grid place-items-center"
-        style="background: var(--highlighter); border: 2px solid var(--ink)"
-      >
-        {@n}
-      </span>
-      <div>
-        <div class="pixel text-[10px]" style="color: var(--ink)">{@title}</div>
-        <div class="text-sm mt-1.5" style="color: var(--pencil)">{render_slot(@inner_block)}</div>
-      </div>
-    </div>
-    """
-  end
-
-  slot :inner_block, required: true
-
-  defp chip(assigns) do
-    ~H"""
-    <span
-      class="text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5"
-      style="border: 2px solid var(--ink); background: var(--paper-2); color: var(--ink)"
+    <article
+      id={"game-#{@game["slug"]}"}
+      class="cabinet cabinet-soon pix block"
+      style={"--accent: #{@accent}"}
     >
-      {render_slot(@inner_block)}
-    </span>
+      <div class="marquee pixel text-xs sm:text-sm px-4 py-3 flex items-center justify-between">
+        <span class="uppercase">{@game["name"]}</span>
+        <span class="text-[9px] opacity-80">SOON</span>
+      </div>
+      <div class="screen px-6 py-4 sm:py-6 flex items-center justify-center">
+        <GameArt.art slug={@game["slug"]} class="h-24 sm:h-40 w-auto" />
+      </div>
+      <div class="px-4 sm:px-5 py-4">
+        <p class="font-semibold text-base sm:text-lg" style="color: var(--ink)">{@game["tagline"]}</p>
+        <p class="mt-1 text-sm leading-relaxed" style="color: var(--pencil)">
+          {@game["description"]}
+        </p>
+        <button
+          type="button"
+          disabled
+          class="btn-arcade pixel text-[10px] mt-4 block w-full text-center px-4 py-3.5"
+        >
+          SOON
+        </button>
+      </div>
+    </article>
     """
   end
 
@@ -680,29 +694,28 @@ defmodule OskolWeb.LandingLive do
 
     ~H"""
     <section
-      class="cabinet pix mt-4 sm:mt-8"
+      class="cabinet pix mt-3 sm:mt-6"
       style={"--accent: #{@accent}; transform: none;"}
       id={"game-hero-#{@slug}"}
     >
-      <div class="marquee pixel text-sm sm:text-base px-5 py-3 uppercase" id="game-title">
+      <div class="marquee pixel text-xs sm:text-base px-4 sm:px-5 py-3 uppercase" id="game-title">
         {@info["name"]}
       </div>
-      <div class="screen grid sm:grid-cols-[auto_1fr] gap-4 sm:gap-8 items-center px-5 sm:px-8 py-5 sm:py-6">
-        <GameArt.art slug={@slug} class="h-28 sm:h-36 w-auto mx-auto" />
-        <div class="text-center sm:text-left">
-          <p class="pixel text-[10px]" style="color: var(--accent)">
-            {String.upcase(@info["tagline"])}
-          </p>
-          <h1 class="mt-2 text-xl sm:text-2xl font-black leading-snug" style="color: var(--ink)">
+      <div class="flex items-center gap-3 sm:gap-6 px-4 sm:px-6 py-3.5 sm:py-5">
+        <GameArt.art slug={@slug} class="h-14 sm:h-24 w-auto shrink-0" />
+        <div class="min-w-0">
+          <h1 class="text-lg sm:text-2xl font-black leading-snug" style="color: var(--ink)">
             {@copy.title}
           </h1>
-          <p class="mt-2 leading-relaxed" style="color: var(--pencil)">{@copy.intro}</p>
+          <p class="mt-1.5 text-sm sm:text-base leading-relaxed" style="color: var(--pencil)">
+            {@copy.intro}
+          </p>
         </div>
       </div>
     </section>
 
-    <section class="mt-8 sm:mt-10">
-      <div class="pix p-5 sm:p-8">
+    <section class="mt-4 sm:mt-6">
+      <div class="pix p-4 sm:p-8">
         <p
           :if={@error}
           id="form-error"
@@ -760,38 +773,28 @@ defmodule OskolWeb.LandingLive do
       )
 
     ~H"""
-    <section class="mt-12 grid gap-4 sm:grid-cols-3" id="how-it-works">
-      <.step
-        :for={{line, i} <- Enum.with_index(@copy.how, 1)}
-        n={Integer.to_string(i)}
-        title={step_title(i)}
-      >
-        {line}
-      </.step>
-    </section>
-
-    <section class="mt-12 pix p-5 sm:p-8" id="rules">
-      <h2 class="pixel text-[10px] sm:text-xs mb-4" style="color: var(--ink)">
+    <section class="mt-8 sm:mt-12 pix p-4 sm:p-8" id="rules">
+      <h2 class="pixel text-[10px] sm:text-xs mb-3 sm:mb-4 leading-loose" style="color: var(--ink)">
         {String.upcase(@info["name"])} IN BRIEF
       </h2>
-      <div class="space-y-3 leading-relaxed" style="color: var(--ink)">
+      <div class="space-y-3 text-sm sm:text-base leading-relaxed" style="color: var(--ink)">
         <p :for={paragraph <- @copy.rules}>{paragraph}</p>
       </div>
     </section>
 
-    <section class="mt-8 grid gap-4 sm:grid-cols-2" id="modes">
-      <div class="pix-sm p-5">
-        <h2 class="pixel text-[10px] mb-3" style="color: var(--ink)">MODES</h2>
-        <ul class="space-y-2">
+    <section class="mt-5 sm:mt-8 grid gap-4 sm:grid-cols-2" id="modes">
+      <div class="pix-sm p-4 sm:p-5">
+        <h2 class="pixel text-[10px] mb-3 leading-loose" style="color: var(--ink)">MODES</h2>
+        <ul class="space-y-2 text-sm sm:text-base">
           <li :for={format <- @info["formats"]}>
             <span class="font-bold" style="color: var(--ink)">{format["name"]}</span>
             <span class="text-sm" style="color: var(--pencil)">· {format["description"]}</span>
           </li>
         </ul>
       </div>
-      <div class="pix-sm p-5">
-        <h2 class="pixel text-[10px] mb-3" style="color: var(--ink)">CLOCKS</h2>
-        <ul class="space-y-2">
+      <div class="pix-sm p-4 sm:p-5">
+        <h2 class="pixel text-[10px] mb-3 leading-loose" style="color: var(--ink)">CLOCKS</h2>
+        <ul class="space-y-2 text-sm sm:text-base">
           <li :for={preset <- @clocks}>
             <span class="font-bold" style="color: var(--ink)">{preset["name"]}</span>
             <span class="text-sm" style="color: var(--pencil)">· {preset["description"]}</span>
@@ -800,9 +803,11 @@ defmodule OskolWeb.LandingLive do
       </div>
     </section>
 
-    <section :if={@copy.faq != []} class="mt-8 pix p-5 sm:p-8" id="faq">
-      <h2 class="pixel text-[10px] sm:text-xs mb-4" style="color: var(--ink)">QUESTIONS</h2>
-      <dl class="space-y-4">
+    <section :if={@copy.faq != []} class="mt-5 sm:mt-8 pix p-4 sm:p-8" id="faq">
+      <h2 class="pixel text-[10px] sm:text-xs mb-3 sm:mb-4 leading-loose" style="color: var(--ink)">
+        QUESTIONS
+      </h2>
+      <dl class="space-y-4 text-sm sm:text-base">
         <div :for={{question, answer} <- @copy.faq}>
           <dt class="font-bold" style="color: var(--ink)">{question}</dt>
           <dd class="mt-1 leading-relaxed" style="color: var(--pencil)">{answer}</dd>
@@ -810,25 +815,20 @@ defmodule OskolWeb.LandingLive do
       </dl>
     </section>
 
-    <section :if={@others != []} class="mt-10 text-center" id="other-games">
-      <p class="pixel text-[10px] mb-3" style="color: var(--pencil)">ALSO ON OSKOL</p>
+    <section :if={@others != []} class="mt-8 sm:mt-10 text-center" id="other-games">
       <div class="flex flex-wrap justify-center gap-3">
         <.link
           :for={game <- @others}
           patch={~p"/#{game["slug"]}"}
-          class="pix-flat px-4 py-2 font-bold hover:bg-[color:var(--highlighter)]"
+          class="pix-flat px-4 py-3 font-bold hover:bg-[color:var(--highlighter)]"
           style="color: var(--ink)"
         >
-          {game["name"]} →
+          Play {game["name"]} →
         </.link>
       </div>
     </section>
     """
   end
-
-  defp step_title(1), do: "PICK A MODE"
-  defp step_title(2), do: "SET A CLOCK"
-  defp step_title(_), do: "SHARE THE LINK"
 
   attr :info, :map, required: true
   attr :setup, :map, required: true
@@ -851,15 +851,15 @@ defmodule OskolWeb.LandingLive do
       )
 
     ~H"""
-    <form phx-submit="new_game" class="space-y-7">
+    <form phx-submit="new_game" class="space-y-4 sm:space-y-6">
       <div>
-        <p class="pixel text-[10px] mb-3" style="color: var(--pen)">PLAYER 1 · YOUR NAME</p>
+        <h3 class="pixel text-[10px] mb-2" style="color: var(--pen)">YOUR NAME</h3>
         <.name_input placeholder="e.g. Alice" />
       </div>
 
       <div>
-        <h3 class="pixel text-[10px] mb-2" style="color: var(--ink)">GAME MODE</h3>
-        <div class={["grid gap-3", format_grid_class(length(@formats))]}>
+        <h3 class="pixel text-[10px] mb-2" style="color: var(--ink)">MODE</h3>
+        <div class={["grid gap-2 sm:gap-3", format_grid_class(length(@formats))]}>
           <.format_tile
             :for={format <- @formats}
             format={format}
@@ -868,27 +868,15 @@ defmodule OskolWeb.LandingLive do
         </div>
       </div>
 
-      <div id="twist">
-        <div class="flex items-baseline justify-between mb-2">
-          <h3 class="pixel text-[10px]" style="color: var(--ink)">TWIST</h3>
-          <span class="text-xs" style="color: var(--pencil)">rules that throw the book out</span>
-        </div>
+      <div :if={@twist} id="twist">
+        <h3 class="pixel text-[10px] mb-2" style="color: var(--ink)">TWIST</h3>
         <div class="flex flex-wrap gap-2">
-          <%= if @twist do %>
-            <.choice_chip
-              :for={choice <- @twist["choices"]}
-              setting={@twist}
-              choice={choice}
-              selected={Map.get(@setup.selections, "twist", @twist["default"]) == choice["id"]}
-            />
-          <% else %>
-            <span class="tile tile-mine px-3.5 py-1.5 text-sm font-semibold" style="color: var(--ink)">
-              Original rules
-            </span>
-            <span class="text-xs self-center" style="color: var(--pencil)">
-              more twists on the way
-            </span>
-          <% end %>
+          <.choice_chip
+            :for={choice <- @twist["choices"]}
+            setting={@twist}
+            choice={choice}
+            selected={Map.get(@setup.selections, "twist", @twist["default"]) == choice["id"]}
+          />
         </div>
       </div>
 
@@ -907,10 +895,7 @@ defmodule OskolWeb.LandingLive do
       </div>
 
       <div>
-        <div class="flex items-baseline justify-between mb-2">
-          <h3 class="pixel text-[10px]" style="color: var(--ink)">TIME CONTROL</h3>
-          <span class="text-xs" style="color: var(--pencil)">optional</span>
-        </div>
+        <h3 class="pixel text-[10px] mb-2" style="color: var(--ink)">CLOCK</h3>
         <div class="flex flex-wrap gap-2" id="clock-picker">
           <.clock_chip
             :for={preset <- @clocks}
@@ -920,10 +905,10 @@ defmodule OskolWeb.LandingLive do
         </div>
       </div>
 
-      <div class="text-center space-y-3">
+      <div class="text-center space-y-2 pt-0.5">
         <.cta type="submit" id="create-game" color="green">START ▶</.cta>
         <p class="text-sm" style="color: var(--pencil)">
-          You'll get an invite link. Your opponent types a name and the game starts.
+          You get a link to send. The game starts when your friend opens it.
         </p>
       </div>
     </form>
@@ -1080,13 +1065,12 @@ defmodule OskolWeb.LandingLive do
       phx-click="pick_format"
       phx-value-format={@format["id"]}
       id={"format-#{@format["id"]}"}
-      class={["tile text-left px-4 py-3", @selected and "tile-mine"]}
+      class={["tile text-left px-3 sm:px-4 py-3", @selected and "tile-mine"]}
     >
-      <div class="flex items-center justify-between gap-2">
-        <span class="font-bold" style="color: var(--ink)">{@format["name"]}</span>
-        <span :if={@selected} class="pixel text-[8px] text-player">1P</span>
+      <div class="font-bold leading-snug" style="color: var(--ink)">{@format["name"]}</div>
+      <div class="text-[11px] sm:text-xs mt-0.5 leading-tight" style="color: var(--pencil)">
+        {@format["description"]}
       </div>
-      <div class="text-xs mt-0.5" style="color: var(--pencil)">{@format["description"]}</div>
     </button>
     """
   end
@@ -1103,7 +1087,7 @@ defmodule OskolWeb.LandingLive do
       phx-value-setting={@setting["id"]}
       phx-value-choice={@choice["id"]}
       id={"choice-#{@setting["id"]}-#{@choice["id"]}"}
-      class={["tile px-3.5 py-1.5 text-sm font-semibold", @selected and "tile-mine"]}
+      class={["tile px-3.5 py-2.5 text-sm font-semibold", @selected and "tile-mine"]}
       style="color: var(--ink)"
     >
       {@choice["name"]}
@@ -1122,7 +1106,7 @@ defmodule OskolWeb.LandingLive do
       phx-value-clock={@preset["id"]}
       id={"clock-#{@preset["id"]}"}
       title={@preset["description"]}
-      class={["tile px-3.5 py-1.5 text-sm font-semibold", @selected and "tile-mine"]}
+      class={["tile px-3.5 py-2.5 text-sm font-semibold", @selected and "tile-mine"]}
       style="color: var(--ink)"
     >
       {@preset["name"]}

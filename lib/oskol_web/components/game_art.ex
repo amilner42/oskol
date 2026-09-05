@@ -24,7 +24,9 @@ defmodule OskolWeb.GameArt do
 
   @accents %{
     "poker" => "#1f8a4c",
-    "backgammon" => "#2f5fd0"
+    "backgammon" => "#2f5fd0",
+    "chess" => "#3d3f5c",
+    "go" => "#b97a4f"
   }
 
   @sprites %{
@@ -63,6 +65,42 @@ defmodule OskolWeb.GameArt do
       KRRRTTTLLRNKKNTTTWWRTTTK
       KRRRTTTLLRNKKNTTTWWRTTTK
       KKKKKKKKKKKKKKKKKKKKKKKK
+    ),
+    "chess" => ~w(
+      ......KK........KK......
+      ......KK........KK......
+      ....KKKKKK....KKKKKK....
+      ......KK........KK......
+      .....KWWK......KLLK.....
+      ....KWWWWK....KLLLLK....
+      ...KWWWWWWK..KLLLLLLK...
+      ...KWWWWWWK..KLLLLLLK...
+      ....KWWWWK....KLLLLK....
+      .....KWWK......KLLK.....
+      ....KWWWWK....KLLLLK....
+      ...KWWWWWWK..KLLLLLLK...
+      ...KKKKKKKK..KKKKKKKK...
+      KKKKKKKKKKKKKKKKKKKKKKKK
+      KWWWKKKWWWKKKWWWKKKWWWKK
+      KKKKKKKKKKKKKKKKKKKKKKKK
+    ),
+    "go" => ~w(
+      ........................
+      ..TTTTTTTTTTTTTTTTTTTT..
+      ..TNNNNNNNNNNNNNNNNNNT..
+      ..TNTTNTTNTTNTTNTTNTTT..
+      ..TNTKKKTNTWWWTNTTNTTT..
+      ..TNNKKKNNNWWWNNNNNNNT..
+      ..TNTKKKTNTWWWTNTTNTTT..
+      ..TNTKKKWWWTNTKKKTNTTT..
+      ..TNNKKKWWWNNNKKKNNNNT..
+      ..TNTKKKWWWTNTKKKTNTTT..
+      ..TNTTNTTNTTNTTNTTNTTT..
+      ..TNNNNNNNNNNNNNNNNNNT..
+      ..TNTTNTTNTTNTTNTTNTTT..
+      ..TNTTNTTNTTNTTNTTNTTT..
+      ..TTTTTTTTTTTTTTTTTTTT..
+      ........................
     ),
     "default" => ~w(
       ........................

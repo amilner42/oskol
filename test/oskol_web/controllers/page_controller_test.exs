@@ -4,10 +4,10 @@ defmodule OskolWeb.PageControllerTest do
   test "GET / renders the game library with its title and description", %{conn: conn} do
     conn = get(conn, ~p"/")
     html = html_response(conn, 200)
-    assert html =~ "SELECT YOUR GAME"
+    assert html =~ "THE CLASSICS."
     assert html =~ "Backgammon"
     assert html =~ "Poker"
-    assert html =~ ~r|<title[^>]*>\s*Two-player games from a link\s*· Oskol</title>|
+    assert html =~ ~s(>Two-player games from a link · Oskol</title>)
     assert html =~ ~s(<meta name="description" content="Free two-player games)
     assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/")
     assert html =~ ~s("@type":"WebSite")
@@ -16,7 +16,9 @@ defmodule OskolWeb.PageControllerTest do
   test "a game page carries its own title, description, canonical link and structured data",
        %{conn: conn} do
     html = conn |> get(~p"/poker") |> html_response(200)
-    assert html =~ ~r|<title[^>]*>\s*Play heads-up poker online with a friend\s*· Oskol</title>|
+    # The whole title, not just the suffix: crawlers must see a real one.
+    assert html =~ ~s(>Play heads-up poker online with a friend · Oskol</title>)
+    refute html =~ ~s(> · Oskol</title>)
     assert html =~ ~s(<meta name="description" content="Heads-up no-limit Texas hold)
     assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/poker")
 
@@ -40,6 +42,9 @@ defmodule OskolWeb.PageControllerTest do
     assert body =~ "<loc>http://localhost:4002/poker</loc>"
     assert body =~ "<loc>http://localhost:4002/backgammon</loc>"
     refute body =~ "game="
+    # Placeholders have no route, so they must not be offered for crawling
+    refute body =~ "chess"
+    refute body =~ "/go</loc>"
   end
 
   test "robots allows crawling and points at the sitemap", %{conn: conn} do

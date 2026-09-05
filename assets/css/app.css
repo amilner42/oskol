@@ -460,6 +460,13 @@
 .cabinet:hover .screen svg { transform: translateY(-2px); }
 .screen svg { transition: transform 0.2s; image-rendering: pixelated; }
 
+/* A game with no engine yet: same cabinet, powered down. It does not lift
+   on hover because there is nothing to click. */
+.cabinet-soon:hover, .cabinet-soon:focus-visible { transform: none; box-shadow: 6px 6px 0 0 var(--ink); }
+.cabinet-soon .marquee { filter: saturate(0.55); }
+.cabinet-soon .screen { opacity: 0.75; }
+.cabinet-soon:hover .screen svg { transform: none; }
+
 .cabinet .cursor { opacity: 0; }
 .cabinet:hover .cursor, .cabinet:focus-visible .cursor { opacity: 1; animation: blink 0.8s steps(1) infinite; }
 
