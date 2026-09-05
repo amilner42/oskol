@@ -162,8 +162,11 @@ consistent fixture =
                                 |> List.all
                                     (\e ->
                                         case e of
-                                            TokenMoved id _ _ ->
-                                                id == "" || List.any (\z -> List.any (\t -> t.id == id) z.tokens) u.scene.zones
+                                            TokenMoved id _ to ->
+                                                -- A destroyed token (to == Nothing) may keep its id
+                                                -- when it left a zone the viewer can see: the client
+                                                -- needs it to animate the capture (see gamekit/event).
+                                                id == "" || to == Nothing || List.any (\z -> List.any (\t -> t.id == id) z.tokens) u.scene.zones
 
                                             _ ->
                                                 True

@@ -53,11 +53,13 @@ fn first_move_json(inst: Instance, player: String) -> Dynamic {
 
 pub fn registry_lists_the_games_test() {
   assert list.map(registry.infos(), fn(i) { i.slug })
-    == ["poker", "backgammon", "go"]
+    == ["poker", "backgammon", "chess", "go"]
   assert host.game_exists("backgammon")
   assert host.game_exists("go")
-  assert host.game_exists("chess") == False
+  assert host.game_exists("chess")
+  assert host.game_exists("checkers") == False
   assert host.format_ids("go") == ["9x9", "13x13", "19x19"]
+  assert host.format_ids("chess") == ["standard"]
   assert host.format_ids("backgammon")
     == ["single", "match3", "match5", "match7", "unlimited"]
   assert string.contains(host.games_json(), "\"slug\":\"backgammon\"")

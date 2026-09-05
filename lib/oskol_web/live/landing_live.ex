@@ -572,14 +572,9 @@ defmodule OskolWeb.LandingLive do
 
   # Games with no engine yet. They are plain HTML on the library and nothing
   # else: no route, no sitemap entry, and deliberately absent from the
-  # JSON-LD, which may only claim games you can actually play.
-  @coming_soon [
-    %{
-      "slug" => "chess",
-      "name" => "Chess",
-      "tagline" => "The immortal game"
-    }
-  ]
+  # JSON-LD, which may only claim games you can actually play. Empty today:
+  # every catalog game has an engine.
+  @coming_soon []
 
   @doc false
   def coming_soon, do: @coming_soon

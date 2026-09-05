@@ -9,7 +9,7 @@ defmodule Oskol.Game.GameServerTest do
 
   describe "setup" do
     test "unknown game slug is rejected" do
-      assert {:error, :unknown_game} = Game.start_game(unique_game_id(), "chess")
+      assert {:error, :unknown_game} = Game.start_game(unique_game_id(), "checkers")
     end
 
     test "a fresh room has the game's defaults and the creator's choices are validated" do
