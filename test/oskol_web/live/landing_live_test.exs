@@ -214,7 +214,9 @@ defmodule OskolWeb.LandingLiveTest do
     assert_redirect(guest)
 
     # Both LiveViews navigated away, so both seats read as away: the invite
-    # link asks who this is, and picking a seat rotates its token.
+    # link asks who this is, and picking a seat rotates its token. The room
+    # notices the departures via monitors, so wait for both to land.
+    wait_until_all_away(game_id)
     state = Oskol.Game.get_server_state(game_id)
     [p1, p2] = state.seat_order
     old_token = Oskol.Game.GameServerState.token_for(state, p2)
@@ -442,5 +444,17 @@ defmodule OskolWeb.LandingLiveTest do
     assert html_response(conn, 200) =~ "data-game-slug=\"backgammon\""
     assert html_response(conn, 200) =~ "data-player-id=\""
     assert get(build_conn(), ~p"/checkers/#{game_id}") |> response(404)
+  end
+
+  defp wait_until_all_away(game_id, attempts \\ 50) do
+    state = Oskol.Game.get_server_state(game_id)
+
+    if Enum.all?(state.connections, fn {_id, c} -> not c.connected end) do
+      :ok
+    else
+      if attempts == 0, do: flunk("seats never read as away")
+      Process.sleep(20)
+      wait_until_all_away(game_id, attempts - 1)
+    end
   end
 end

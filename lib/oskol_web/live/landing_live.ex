@@ -1179,7 +1179,11 @@ defmodule OskolWeb.LandingLive do
         <.invite_box url={@invite_url} />
         <div class="mt-3 pt-3" style="border-top: 2px dashed var(--pencil)">
           <p class="pixel text-[9px] mb-1" style="color: var(--pencil)">OR THEY CAN JOIN WITH CODE</p>
-          <p id="game-code" class="pixel text-xl sm:text-2xl tracking-[0.3em]" style="color: var(--ink)">
+          <p
+            id="game-code"
+            class="pixel text-xl sm:text-2xl tracking-[0.3em]"
+            style="color: var(--ink)"
+          >
             {@game_name}
           </p>
         </div>
