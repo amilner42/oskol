@@ -666,7 +666,6 @@ viewPoint board isTop index point =
                 else
                     []
                )
-            ++ [ span [ class "pixel text-[7px] relative", style "color" "var(--bg-num)" ] [ text id ] ]
         )
 
 

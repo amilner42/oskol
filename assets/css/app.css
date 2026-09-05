@@ -560,7 +560,6 @@
   --bg-sky: #3fa7d6;
   --bg-sky-pale: #d8e9f4;
   --bg-felt: #f0f6fb;
-  --bg-num: rgba(35, 36, 58, 0.5);
 }
 .bg-board { background: var(--bg-felt); border: 3px solid var(--ink); box-shadow: 6px 6px 0 0 var(--ink); }
 .bg-point { position: relative; }
