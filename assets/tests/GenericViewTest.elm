@@ -10,9 +10,10 @@ import Generic.View as View exposing (Msg(..))
 import Html
 import Json.Encode as E
 import Protocol exposing (ParamKind(..), Schema)
+import Html.Attributes exposing (title)
 import Test exposing (Test, describe, test)
 import Test.Html.Query as Query
-import Test.Html.Selector exposing (class, style, tag, text)
+import Test.Html.Selector exposing (attribute, class, style, tag, text)
 
 
 simple : Schema
@@ -102,8 +103,12 @@ suite =
                     , scene = gridScene
                     , legal = [ placing ]
                     , model = View.init
-                    , status = "in progress"
-                    , clock = Html.text ""
+                    , clock = Nothing
+                    , receivedAt = 0
+                    , now = 0
+                    , nameOf = identity
+                    , finished = Nothing
+                    , away = []
                     }
                     |> Query.fromHtml
                     |> Expect.all
@@ -111,8 +116,73 @@ suite =
                         , Query.has [ style "grid-template-columns" "repeat(3, 1.65rem)" ]
                         , Query.has [ style "grid-column" "2", style "grid-row" "3" ]
                         ]
+        , test "an intersections grid draws board lines on wood and bare tap targets" <|
+            \_ ->
+                let
+                    rendered =
+                        View.view
+                            { playerId = "p1"
+                            , scene = gobanScene
+                            , legal = [ placing ]
+                            , model = View.init
+                            , clock = Nothing
+                            , receivedAt = 0
+                            , now = 0
+                            , nameOf = identity
+                            , finished = Nothing
+                            , away = []
+                            }
+                            |> Query.fromHtml
+                in
+                Expect.all
+                    [ -- The goban ground, no cell gaps.
+                      Query.has [ style "background" "#dcb35c", style "gap" "0" ]
+
+                    -- The empty crossing is a tap target, not a disc or card.
+                    , Query.find [ tag "button", attribute (title "p1-2") ]
+                        >> Query.hasNot [ class "checker" ]
+
+                    -- The stone still renders as a disc.
+                    , Query.find [ tag "button", attribute (title "s1") ]
+                        >> Query.has [ class "checker" ]
+
+                    -- A star point dot is drawn on the declared crossing.
+                    , Query.has [ style "width" "5px", style "height" "5px" ]
+                    ]
+                    rendered
         , describe "renders every fixture scene" (List.map renders FixtureLoader.all)
         ]
+
+
+gobanScene : Protocol.Scene
+gobanScene =
+    let
+        withStyle =
+            E.object
+                [ ( "grid_style", E.string "intersections" )
+                , ( "star_points", E.list (\( c, r ) -> E.list E.int [ c, r ]) [ ( 1, 2 ) ] )
+                ]
+    in
+    { gridScene
+        | data = withStyle
+        , zones =
+            List.map
+                (\zone ->
+                    { zone
+                        | tokens =
+                            List.map
+                                (\token ->
+                                    if token.kind == "point" then
+                                        { token | props = E.object [] }
+
+                                    else
+                                        token
+                                )
+                                zone.tokens
+                    }
+                )
+                gridScene.zones
+    }
 
 
 placing : Schema
@@ -155,7 +225,7 @@ renders fixture =
                 |> Dict.get "p1"
                 |> Maybe.map
                     (\u ->
-                        View.view { playerId = "p1", scene = u.scene, legal = u.legal, model = View.init, status = "in progress", clock = Html.text "" }
+                        View.view { playerId = "p1", scene = u.scene, legal = u.legal, model = View.init, clock = Nothing, receivedAt = 0, now = 0, nameOf = identity, finished = Nothing, away = [] }
                             |> Query.fromHtml
                             |> Expect.all
                                 [ Query.findAll [ tag "button" ] >> Query.count (Expect.atLeast (List.length u.legal))

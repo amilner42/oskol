@@ -27,6 +27,15 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
     data: [
       #("to_move", json.nullable(state.to_move(state), json.string)),
       #("size", json.int(state.config.size)),
+      // Rendering hints for the generic renderer: a go board is played on
+      // the line crossings, not in cells, and marks its star points.
+      #("grid_style", json.string("intersections")),
+      #(
+        "star_points",
+        json.array(star_points(state.config.size), fn(p) {
+          json.preprocessed_array([json.int(p.0), json.int(p.1)])
+        }),
+      ),
       #("komi", json.float(state.komi(state))),
       #("passes", json.int(state.passes)),
       #("winner_id", case state.phase {
@@ -86,10 +95,31 @@ fn board_zone(state: GameState) -> Zone {
           ])
         }
         Error(_) ->
+          // No props: an empty intersection is a bare tap target, drawn by
+          // the renderer as the crossing itself.
           scene.token(board.point_id(state.board, point), "point")
           |> scene.at(col, row)
-          |> scene.with_props([#("color", json.string("#c8a05f"))])
       }
     })
   scene.zone(engine.board_zone, scene.Grid(size, size), tokens)
+}
+
+/// The standard hoshi for each board size.
+fn star_points(size: Int) -> List(#(Int, Int)) {
+  case size {
+    9 -> [#(2, 2), #(6, 2), #(4, 4), #(2, 6), #(6, 6)]
+    13 -> [#(3, 3), #(9, 3), #(6, 6), #(3, 9), #(9, 9)]
+    19 -> [
+      #(3, 3),
+      #(9, 3),
+      #(15, 3),
+      #(3, 9),
+      #(9, 9),
+      #(15, 9),
+      #(3, 15),
+      #(9, 15),
+      #(15, 15),
+    ]
+    _ -> []
+  }
 }

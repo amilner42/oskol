@@ -66,6 +66,15 @@ async function run(browser, tag, viewport, errors) {
     }
     const clockText = await p1.locator('.font-mono .tabular-nums').allTextContents();
     if (!clockText.some((t) => /^\d+:\d\d$/.test(t))) throw new Error(`clocks not rendered: ${clockText}`);
+
+    // Backgammon-style layout: opponent's bar above the board, the viewer's
+    // below it, and the whole play experience above the fold (no scrolling).
+    const bars = p1.locator('.player-bar');
+    if ((await bars.count()) !== 2) throw new Error('expected two player bars hugging the board');
+    if (!/YOU/.test(await bars.nth(1).innerText())) throw new Error('the viewer bar must hug the bottom of the board');
+    if (/YOU/.test(await bars.nth(0).innerText())) throw new Error('the opponent bar must hug the top of the board');
+    const fits = await p1.evaluate(() => document.scrollingElement.scrollHeight <= window.innerHeight + 1);
+    if (!fits) throw new Error('the page scrolls during active play');
     await p1.screenshot({ path: `${SHOTS}/${tag}-01-black-to-move.png` });
     await p2.screenshot({ path: `${SHOTS}/${tag}-02-white-waiting.png` });
 
