@@ -100,6 +100,8 @@ jobs:
           curl -sf -o /dev/null http://localhost:4000/ || (cat server.log && exit 1)
       - run: node playwright/test-backgammon-smoke/test.js
       - run: node playwright/test-poker-smoke/test.js
+      - run: node playwright/test-go-smoke/test.js
+      - run: node playwright/test-chess-smoke/test.js
       - name: Server log
         if: failure()
         run: cat server.log

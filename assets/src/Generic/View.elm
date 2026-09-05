@@ -18,8 +18,8 @@ Conventions it understands (all optional props on tokens):
 
 Player conventions: a `to_move` flag marks whose turn it is; `color` in a
 player's data draws a swatch; every counter the scene sends is shown in
-that player's bar. A scene may declare `grid_style: "intersections"` (see
-the grid zone docs below).
+that player's bar. A scene may declare `grid_style: "intersections"` or
+`grid_style: "checker"` (see the grid zone docs below).
 
 Zones whose ids share a prefix before ":" and number more than six (for
 example `point:1`..`point:24`) are drawn as one horizontal strip.
@@ -496,8 +496,12 @@ A scene may declare `grid_style: "intersections"` in its data (go, and any
 other game played on the line crossings): each cell then draws its share of
 the board lines on a wood ground, star points come from `star_points`
 (`[[col,row],...]`), prop-less tokens become bare tap targets on the
-crossings, and stones sit on top. Without the declaration a grid renders as
-plain cells, exactly as before.
+crossings, and stones sit on top.
+
+`grid_style: "checker"` (chess, and any game on alternating squares) paints
+the light/dark pattern on the board itself -- the two colors may be hinted
+with `checker_colors: [light, dark]` -- so a scene only sends tokens for
+occupied squares. Without a declaration a grid renders as plain cells.
 -}
 viewGridZone : Scene -> Model -> List Schema -> Zone -> Int -> Int -> Html Msg
 viewGridZone scene model legal zone columns rows =
@@ -505,8 +509,22 @@ viewGridZone scene model legal zone columns rows =
         selectable =
             selectableIn model legal zone.id
 
+        gridStyle =
+            D.decodeValue (D.field "grid_style" D.string) scene.data |> Result.withDefault ""
+
         intersections =
-            D.decodeValue (D.field "grid_style" D.string) scene.data == Ok "intersections"
+            gridStyle == "intersections"
+
+        checker =
+            gridStyle == "checker"
+
+        ( checkerLight, checkerDark ) =
+            case D.decodeValue (D.field "checker_colors" (D.list D.string)) scene.data of
+                Ok (light :: dark :: _) ->
+                    ( light, dark )
+
+                _ ->
+                    ( "#dce8f2", "#8fb4d2" )
 
         stars =
             if intersections then
@@ -562,6 +580,17 @@ viewGridZone scene model legal zone columns rows =
                         , style "background" "#dcb35c"
                         , style "padding" "0.4rem"
                         , style "border" "2px solid var(--ink)"
+                        ]
+
+                    else if checker then
+                        -- The light/dark square pattern is painted on the
+                        -- container, so empty squares need no tokens. The
+                        -- top-left square is light, as on a chessboard.
+                        [ style "gap" "0"
+                        , style "border" "2px solid var(--ink)"
+                        , style "background-image"
+                            ("repeating-conic-gradient(" ++ checkerLight ++ " 0% 25%, " ++ checkerDark ++ " 25% 50%)")
+                        , style "background-size" "3.3rem 3.3rem"
                         ]
 
                     else

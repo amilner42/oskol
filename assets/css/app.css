@@ -638,3 +638,69 @@
 .clock-chip.running { border-color: var(--ink); color: var(--ink); background: var(--highlighter); }
 .clock-chip.expired { border-color: var(--red); color: var(--red); }
 
+/* Chess: a plain 8x8 board in the multicade blues. Pieces are solid glyphs
+   colored per side so both read crisply on light and dark squares. */
+.chess-board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  grid-auto-rows: 1fr;
+  aspect-ratio: 1;
+  border: 3px solid var(--ink);
+  box-shadow: 6px 6px 0 0 var(--ink);
+  user-select: none;
+  font-size: min(9.5vw, 3.1rem);
+}
+.chess-sq { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.chess-sq.light { background: #dce8f2; }
+.chess-sq.dark { background: #8fb4d2; }
+/* Overlays paint above the square color but below the piece. */
+.chess-sq.last { box-shadow: inset 0 0 0 100vmax rgba(246, 211, 101, 0.5); }
+.chess-sq.selected { box-shadow: inset 0 0 0 100vmax rgba(63, 167, 214, 0.55); }
+.chess-sq.check::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(227, 69, 59, 0.8) 18%, rgba(227, 69, 59, 0.3) 52%, transparent 72%);
+}
+.chess-piece {
+  position: relative;
+  line-height: 1;
+  /* Text presentation only: the emoji font ignores CSS colors. */
+  font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "DejaVu Sans", "Arial Unicode MS", sans-serif;
+  font-variant-emoji: text;
+}
+.chess-piece.white {
+  color: #fff;
+  -webkit-text-stroke: 1px var(--ink);
+  text-shadow: 0 2px 2px rgba(35, 36, 58, 0.35);
+}
+.chess-piece.black {
+  color: var(--ink);
+  -webkit-text-stroke: 1px var(--ink);
+  text-shadow: 0 2px 2px rgba(35, 36, 58, 0.25);
+}
+.chess-hint {
+  position: absolute;
+  width: 34%;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  background: rgba(35, 36, 58, 0.3);
+  pointer-events: none;
+}
+.chess-hint.capture {
+  width: 94%;
+  background: transparent;
+  border: 4px solid rgba(35, 36, 58, 0.3);
+}
+.chess-coord {
+  position: absolute;
+  font-size: min(2.2vw, 0.6rem);
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+}
+.chess-sq.light .chess-coord { color: #8fb4d2; }
+.chess-sq.dark .chess-coord { color: #dce8f2; }
+.chess-coord.file { right: 6%; bottom: 5%; }
+.chess-coord.rank { left: 6%; top: 5%; }
+

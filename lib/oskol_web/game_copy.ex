@@ -34,6 +34,25 @@ defmodule OskolWeb.GameCopy do
          "Only at a showdown. The server never sends a card you're not entitled to see, so there's nothing to peek at."}
       ]
     },
+    "chess" => %{
+      title: "Play chess online with a friend",
+      description:
+        "Chess for two, free, no accounts. The full FIDE game with an optional clock: send a link and White moves first.",
+      intro: "The immortal game, from a link. Free, no accounts, plays on a phone.",
+      rules: [
+        "The full FIDE rules: castling, en passant, promotion to a piece of your choice, and a move may never leave your own king in check. Checkmate wins; stalemate is a draw.",
+        "Draws are automatic, no claims needed: threefold repetition of the position, fifty moves by each side without a capture or pawn move, and dead positions such as king against king.",
+        "Play with no clock or pick a time control. If your flag falls you lose, unless your opponent cannot possibly checkmate you, which is a draw."
+      ],
+      faq: [
+        {"Do we need accounts?",
+         "No. Type a name and play. A game stays open for an hour after the last move."},
+        {"Can I offer a draw?",
+         "Not yet. The draws that matter are automatic: repetition, the fifty-move rule and dead positions end the game on their own."},
+        {"Who plays White?", "The player who creates the game. Share the link and Black is in."},
+        {"Can I take a move back?", "No. As over the board: touch move, more or less."}
+      ]
+    },
     "backgammon" => %{
       title: "Play backgammon online with a friend",
       description:

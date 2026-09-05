@@ -4,6 +4,7 @@
 //// in the generic client changes.
 
 import backgammon/game as backgammon
+import chess/game as chess
 import gamekit/clock.{type Control}
 import gamekit/fixture
 import gamekit/game.{type Info, type Seat}
@@ -51,7 +52,12 @@ pub fn entry(definition: game.Game(state, action)) -> Entry {
 
 /// The registered games, in library display order.
 pub fn all() -> List(Entry) {
-  [entry(poker.game()), entry(backgammon.game()), entry(go.game())]
+  [
+    entry(poker.game()),
+    entry(backgammon.game()),
+    entry(chess.game()),
+    entry(go.game()),
+  ]
 }
 
 pub fn find(slug: String) -> Result(Entry, Nil) {

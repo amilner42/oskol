@@ -4,6 +4,7 @@
 //// When the change is intended, regenerate with `mix oskol.fixtures`.
 
 import backgammon/game as backgammon
+import chess/game as chess
 import gamekit/conformance.{type Step, Step}
 import gamekit/game.{type Game, type Seat, Seat}
 import gamekit/registry
@@ -109,6 +110,7 @@ pub fn every_committed_replay_reproduces_its_fingerprint_test() {
   list.each(replays, fn(r) {
     case r.game {
       "backgammon" -> check(backgammon.game(), r)
+      "chess" -> check(chess.game(), r)
       "poker" -> check(poker.game(), r)
       "go" -> check(go.game(), r)
       other ->

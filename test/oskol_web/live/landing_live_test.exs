@@ -20,6 +20,7 @@ defmodule OskolWeb.LandingLiveTest do
     assert has_element?(view, "#game-backgammon", "Backgammon")
     assert has_element?(view, "#game-poker", "Poker")
     assert has_element?(view, "#game-go", "Go")
+    assert has_element?(view, "#game-chess", "Chess")
     assert page_title(view) =~ "Two-player games from a link"
   end
 
@@ -63,18 +64,13 @@ defmodule OskolWeb.LandingLiveTest do
   test "games with no engine yet are shown but are not playable and not claimed", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/")
 
-    for {slug, name} <- [{"chess", "Chess"}] do
-      assert has_element?(view, "##{"game-" <> slug}", name)
-      # Not a link: nothing to click and nowhere to go. SOON lives in the marquee.
-      assert has_element?(view, "##{"game-" <> slug}", "SOON")
-      refute has_element?(view, "##{"game-" <> slug} a")
-      refute has_element?(view, "##{"game-" <> slug} button")
-      refute has_element?(view, "a[href='/#{slug}']")
-    end
+    # Every catalog game has an engine now: no SOON placeholders remain.
+    refute html =~ "SOON"
 
-    # Go graduated from the placeholders: its card is a live link.
-    assert has_element?(view, "a#game-go")
-    refute has_element?(view, "#game-go", "SOON")
+    for slug <- ~w(go chess) do
+      assert has_element?(view, "a#game-#{slug}")
+      refute has_element?(view, "#game-#{slug}", "SOON")
+    end
 
     # Plain HTML is fine; a structured-data claim that they are playable is not.
     [json_ld] =
@@ -83,9 +79,12 @@ defmodule OskolWeb.LandingLiveTest do
       )
 
     parts = Jason.decode!(String.trim(json_ld))["hasPart"]
-    assert parts |> Enum.map(& &1["name"]) |> Enum.sort() == ["Backgammon", "Go", "Poker"]
+
+    assert parts |> Enum.map(& &1["name"]) |> Enum.sort() ==
+             ["Backgammon", "Chess", "Go", "Poker"]
+
     assert Enum.any?(parts, &String.ends_with?(&1["url"], "/go"))
-    refute Enum.any?(parts, &String.ends_with?(&1["url"], "/chess"))
+    assert Enum.any?(parts, &String.ends_with?(&1["url"], "/chess"))
   end
 
   test "moving between the library and a game keeps the titles right", %{conn: conn} do
@@ -366,6 +365,6 @@ defmodule OskolWeb.LandingLiveTest do
     conn = get(conn, ~p"/backgammon/#{game_id}?t=#{t1}")
     assert html_response(conn, 200) =~ "data-game-slug=\"backgammon\""
     assert html_response(conn, 200) =~ "data-player-id=\""
-    assert get(build_conn(), ~p"/chess/#{game_id}") |> response(404)
+    assert get(build_conn(), ~p"/checkers/#{game_id}") |> response(404)
   end
 end

@@ -21,6 +21,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.screenshot({ path: `${OUT}/${name}-02-poker-start.png`, fullPage: true });
     await page.goto(`${BASE}/backgammon`); await page.waitForSelector('[data-phx-main].phx-connected'); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-02-backgammon-start.png`, fullPage: true });
+    await page.goto(`${BASE}/chess`); await page.waitForSelector('[data-phx-main].phx-connected'); await sleep(1200);
+    await page.screenshot({ path: `${OUT}/${name}-02-chess-start.png`, fullPage: true });
     await page.fill('input[name="player_name"]', 'Alice'); await page.click('#format-match5'); await page.click('#create-game');
     await page.waitForSelector('#share-link'); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-03-backgammon-lobby.png`, fullPage: true });
