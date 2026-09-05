@@ -79,6 +79,7 @@ defmodule OskolWeb.LandingLiveTest do
       )
 
     parts = Jason.decode!(String.trim(json_ld))["hasPart"]
+
     assert parts |> Enum.map(& &1["name"]) |> Enum.sort() ==
              ["Backgammon", "Chess", "Go", "Poker"]
 
@@ -364,6 +365,6 @@ defmodule OskolWeb.LandingLiveTest do
     conn = get(conn, ~p"/backgammon/#{game_id}?t=#{t1}")
     assert html_response(conn, 200) =~ "data-game-slug=\"backgammon\""
     assert html_response(conn, 200) =~ "data-player-id=\""
-    assert get(build_conn(), ~p"/go/#{game_id}") |> response(404)
+    assert get(build_conn(), ~p"/checkers/#{game_id}") |> response(404)
   end
 end

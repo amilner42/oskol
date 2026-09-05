@@ -12,6 +12,8 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 
+pub const board_zone = "board"
+
 pub type Action {
   MovePiece(move: Move)
   Resign
@@ -48,15 +50,11 @@ pub fn apply(
       use played <- result.try(state.play(state, player_id, move))
       let next = played.state
       let capture = case played.captured_token, played.info.captured {
-        Some(token), Some(#(sq, _)) -> [
-          event.destroyed(token, zone_id(sq)),
-        ]
+        Some(token), Some(_) -> [event.destroyed(token, board_zone)]
         _, _ -> []
       }
       let rook = case played.rook_token {
-        Some(#(token, from, to)) -> [
-          event.moved(token, zone_id(from), zone_id(to)),
-        ]
+        Some(#(token, _, _)) -> [event.moved(token, board_zone, board_zone)]
         None -> []
       }
       let promotion = case played.info.promoted {
@@ -107,11 +105,7 @@ pub fn apply(
           ],
           capture,
           [
-            event.moved(
-              played.mover_token,
-              zone_id(move.from),
-              zone_id(move.to),
-            ),
+            event.moved(played.mover_token, board_zone, board_zone),
           ],
           rook,
           promotion,
@@ -269,12 +263,6 @@ fn dict_kind(state: GameState, sq: Int) -> Option(Kind) {
 }
 
 // ---------- Names ----------
-
-pub fn zone_id(sq: Int) -> String {
-  let name = board.square_name(sq)
-  let assert [file, rank] = string.to_graphemes(name)
-  rank <> ":" <> file
-}
 
 pub fn kind_name(kind: Kind) -> String {
   case kind {

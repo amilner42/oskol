@@ -15,6 +15,7 @@ import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
+import gleam/result
 
 fn seats() {
   [Seat(white, "Alice"), Seat(black, "Bob")]
@@ -132,9 +133,9 @@ pub fn a_capture_destroys_the_token_test() {
   let assert Ok(#(s, _)) = engine.apply(s, black, engine.MovePiece(mv("d7d5")))
   let assert Ok(#(_, events)) =
     engine.apply(s, white, engine.MovePiece(mv("e4d5")))
-  // The black d-pawn (bp4) is destroyed out of 5:d, then the mover arrives.
-  assert list.contains(events, event.destroyed("bp4", "5:d"))
-  assert list.contains(events, event.moved("wp5", "4:e", "5:d"))
+  // The black d-pawn (bp4) is destroyed, then the mover arrives.
+  assert list.contains(events, event.destroyed("bp4", "board"))
+  assert list.contains(events, event.moved("wp5", "board", "board"))
 }
 
 pub fn castling_emits_two_token_moves_test() {
@@ -179,22 +180,35 @@ pub fn the_scene_shows_the_full_board_to_everyone_test() {
   let mine = chess.game().scene(s, scene.Player(white))
   let theirs = chess.game().scene(s, scene.Player(black))
   let watching = chess.game().scene(s, scene.Spectator)
-  assert list.length(mine.zones) == 64
+  assert list.map(mine.zones, fn(z) { z.id }) == ["board"]
   assert count_tokens(mine) == 32
   assert count_tokens(theirs) == 32
   assert count_tokens(watching) == 32
-  // Stable ids: the white king sits in zone 1:e.
-  assert scene.zone_token_ids(mine, "1:e") == ["wk"]
-  assert scene.zone_token_ids(mine, "8:d") == ["bq"]
-  assert scene.zone_token_ids(mine, "2:a") == ["wp1"]
+  // Stable ids and positions: a8 is column 0 row 0.
+  assert token_at(mine, 4, 7) == ["wk"]
+  assert token_at(mine, 3, 0) == ["bq"]
+  assert token_at(mine, 0, 6) == ["wp1"]
 }
 
 pub fn tokens_survive_moves_test() {
   let s = new_game()
   let assert Ok(#(s, _)) = engine.apply(s, white, engine.MovePiece(mv("g1f3")))
   let viewed = chess.game().scene(s, scene.Player(black))
-  assert scene.zone_token_ids(viewed, "3:f") == ["wn2"]
-  assert scene.zone_token_ids(viewed, "1:g") == []
+  assert token_at(viewed, 5, 5) == ["wn2"]
+  assert token_at(viewed, 6, 7) == []
+}
+
+fn token_at(viewed: scene.Scene, column: Int, row: Int) -> List(String) {
+  scene.find_zone(viewed, "board")
+  |> result.map(fn(zone) {
+    list.filter_map(zone.tokens, fn(t) {
+      case t.position == Some(#(column, row)) {
+        True -> Ok(t.id)
+        False -> Error(Nil)
+      }
+    })
+  })
+  |> result.unwrap([])
 }
 
 fn count_tokens(viewed: scene.Scene) -> Int {

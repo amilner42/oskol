@@ -7,6 +7,7 @@ game has one, the generic renderer otherwise.
 
 import Browser
 import Games.Backgammon.View as Backgammon
+import Games.Chess.View as Chess
 import Games.Poker.View as Poker
 import Generic.View
 import Html exposing (Html)
@@ -74,6 +75,7 @@ type alias Model =
     , legal : List Protocol.Schema -- legal action schemas for this player
     , generic : Generic.View.Model
     , backgammon : Backgammon.Model
+    , chess : Chess.Model
     , poker : Poker.Model
     , clockReceivedAt : Int -- client time (ms) when the latest clock snapshot arrived
     , nowMs : Int -- client time (ms), refreshed while a clock runs
@@ -92,6 +94,7 @@ init flags =
       , legal = []
       , generic = Generic.View.init
       , backgammon = Backgammon.init
+      , chess = Chess.init
       , poker = Poker.init
       , clockReceivedAt = 0
       , nowMs = 0
@@ -110,6 +113,7 @@ type Msg
     = ServerMessageReceived ServerMessage
     | GenericMsg Generic.View.Msg
     | BackgammonMsg Backgammon.Msg
+    | ChessMsg Chess.Msg
     | PokerMsg Poker.Msg
     | PokerAutoDeal
     | ClockSynced Time.Posix
@@ -169,6 +173,24 @@ update msg model =
                     ( updated, Cmd.batch (List.map sendToChannel values) )
 
                 Backgammon.WantRematch ->
+                    update RequestRematch updated
+
+        ChessMsg chessMsg ->
+            let
+                ( chess, out ) =
+                    Chess.update chessMsg model.chess
+
+                updated =
+                    { model | chess = chess, error = Nothing }
+            in
+            case out of
+                Chess.NoOut ->
+                    ( updated, Cmd.none )
+
+                Chess.Send value ->
+                    ( updated, sendToChannel value )
+
+                Chess.WantRematch ->
                     update RequestRematch updated
 
         PokerMsg pokerMsg ->
@@ -428,6 +450,23 @@ view model =
                                     , scene = payload.update.scene
                                     , legal = payload.update.legal
                                     , model = model.backgammon
+                                    , clock = Just payload.update.clock
+                                    , receivedAt = model.clockReceivedAt
+                                    , now = model.nowMs
+                                    , nameOf = nameOf model
+                                    , rematchReady = payload.rematchReady
+                                    , finished = finished
+                                    , away = awayIds payload
+                                    }
+                                )
+
+                        ( "chess", _ ) ->
+                            Html.map ChessMsg
+                                (Chess.view
+                                    { playerId = payload.playerId
+                                    , scene = payload.update.scene
+                                    , legal = payload.update.legal
+                                    , model = model.chess
                                     , clock = Just payload.update.clock
                                     , receivedAt = model.clockReceivedAt
                                     , now = model.nowMs
