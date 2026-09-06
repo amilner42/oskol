@@ -253,17 +253,28 @@ update msg model =
             ( model, Cmd.none )
 
 
-{-| Absorb a server payload: remember it and the legal actions, and resync
-the clock to client time.
+{-| Absorb a server payload: remember it and the legal actions, resync the
+clock to client time, and let backgammon roll for the viewer when there is
+no doubling decision to make (`Backgammon.autoRoll`; fires at most once
+per arriving state, so nothing here can loop).
 -}
 applyPayload : GamePayload -> Model -> ( Model, Cmd Msg )
 applyPayload payload model =
     let
+        ( backgammon, rollCmd ) =
+            if model.gameSlug == "backgammon" then
+                Backgammon.autoRoll payload.update.legal model.backgammon
+                    |> Tuple.mapSecond (Maybe.map sendToChannel >> Maybe.withDefault Cmd.none)
+
+            else
+                ( model.backgammon, Cmd.none )
+
         updated =
             { model
                 | payload = Just payload
                 , playerId = Just payload.playerId
                 , legal = payload.update.legal
+                , backgammon = backgammon
                 , connectionStatus = Connected
             }
 
@@ -282,7 +293,7 @@ applyPayload payload model =
                     Cmd.none
     in
     ( updated
-    , Cmd.batch [ Task.perform ClockSynced Time.now, follow ]
+    , Cmd.batch [ Task.perform ClockSynced Time.now, follow, rollCmd ]
     )
 
 

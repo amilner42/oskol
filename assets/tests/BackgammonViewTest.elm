@@ -237,13 +237,66 @@ suite =
                     View.update (DragPressed press) View.init
                         |> step (DragMoved { x = 104, y = 103 })
                         |> step (DragReleased { x = 104, y = 103 })
-                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle }, NoOut )
+                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle, autoRolled = False }, NoOut )
              , test "pointercancel snaps back without sending" <|
                 \_ ->
                     View.update (DragPressed press) View.init
                         |> step (DragMoved { x = 225, y = 360 })
                         |> step DragCancelled
                         |> Expect.equal ( View.init, NoOut )
+             ]
+            )
+        , describe "auto-roll"
+            (let
+                schema name =
+                    { name = name, label = name, params = [] }
+             in
+             [ test "rolls by itself when doubling is not on offer" <|
+                \_ ->
+                    View.autoRoll [ schema "roll", schema "resign" ] View.init
+                        |> Expect.equal
+                            ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True }
+                            , Just (Protocol.encodeAction "roll" [])
+                            )
+             , test "the same state never rolls twice" <|
+                \_ ->
+                    View.autoRoll [ schema "roll" ] { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True }
+                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True }, Nothing )
+             , test "keeps the choice when double is also legal" <|
+                \_ ->
+                    View.autoRoll [ schema "roll", schema "double" ] View.init
+                        |> Expect.equal ( View.init, Nothing )
+             , test "disarms as soon as rolling stops being the pending action" <|
+                \_ ->
+                    View.autoRoll [ schema "move" ] { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True }
+                        |> Expect.equal ( View.init, Nothing )
+             , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
+                \_ ->
+                    let
+                        step legal ( model, sends ) =
+                            let
+                                ( next, out ) =
+                                    View.autoRoll legal model
+                            in
+                            ( next
+                            , sends
+                                + (if out == Nothing then
+                                    0
+
+                                   else
+                                    1
+                                  )
+                            )
+                    in
+                    -- pre-roll state arrives twice (reconnect replay), then
+                    -- the rolled state, then the next turn's pre-roll.
+                    ( View.init, 0 )
+                        |> step [ schema "roll" ]
+                        |> step [ schema "roll" ]
+                        |> step [ schema "move" ]
+                        |> step [ schema "roll" ]
+                        |> Tuple.second
+                        |> Expect.equal 2
              ]
             )
         , describe "rendering fixtures" (List.map perFixture (FixtureLoader.byGame "backgammon"))
@@ -384,6 +437,36 @@ perFixture fixture =
                                     Expect.fail "pointerdown on a source point should prime a drag press"
                         )
                     |> Maybe.withDefault Expect.pass
+        , test "the cube is a fixture exactly when the format has one, and the bar one column" <|
+            \_ ->
+                p1Views
+                    |> List.map
+                        (\u ->
+                            let
+                                rendered =
+                                    render "p1" u
+
+                                cubes =
+                                    if cubeEnabled u then
+                                        1
+
+                                    else
+                                        0
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.findAll [ class "cube" ] |> Query.count (Expect.equal cubes)
+                                , \_ -> rendered |> Query.findAll [ class "bg-bar" ] |> Query.count (Expect.equal 1)
+                                ]
+                                ()
+                        )
+                    |> allPass
+        , test "a centred cube shows 64" <|
+            \_ ->
+                p1Views
+                    |> List.filter cubeEnabled
+                    |> List.head
+                    |> Maybe.map (\u -> render "p1" u |> Query.find [ class "cube" ] |> Query.has [ text "64" ])
+                    |> Maybe.withDefault Expect.pass
         , test "exactly the legal origins offer a draggable checker" <|
             \_ ->
                 (List.map (\u -> ( "p1", u )) p1Views ++ List.map (\u -> ( "p2", u )) p2Views)
@@ -461,9 +544,9 @@ perFixture fixture =
                                         |> List.filter (\s -> List.any (\p -> p.name == "from" && p.kind == Choice [ ( from, from ) ]) s.params)
                                         |> List.length
                             in
-                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle })
+                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle, autoRolled = False })
                                 |> Query.fromHtml
-                                |> Query.findAll [ class "ghost" ]
+                                |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal destinations)
                         )
                     |> Maybe.withDefault Expect.pass
@@ -474,6 +557,11 @@ perFixture fixture =
                     |> List.map (\u -> render "p1" u |> Query.has [ text "REMATCH" ])
                     |> allPass
         ]
+
+
+cubeEnabled : Protocol.Update -> Bool
+cubeEnabled u =
+    Protocol.sceneData (D.field "enabled" D.bool) "cube" u.scene |> Maybe.withDefault False
 
 
 {-| A full PointerEvent payload, everything the library's decoder reads.

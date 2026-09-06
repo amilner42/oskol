@@ -135,7 +135,7 @@ async function playTurnWithDrags(page, { touch, label }) {
     if ((await src.count()) === 0) break;
     const used = await usedDice(page);
     await src.first().click();
-    const target = page.locator('.bg-point.target, [title="Borne off"]:has(.ghost)');
+    const target = page.locator('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)');
     try { await target.first().waitFor({ timeout: 3000 }); } catch (_) { break; }
     await target.first().click();
     await page.waitForFunction((n) => document.querySelectorAll('.die.used').length > n, used, { timeout: 5000 });
