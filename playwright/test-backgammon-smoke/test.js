@@ -89,9 +89,9 @@ async function main() {
     // Click a source, expect targets, click one: the dice count of unused dice drops.
     const usedBefore = await mover.locator('.die.used').count();
     await mover.locator(source).first().click();
-    await mover.waitForSelector('.bg-point.target, [title="Borne off"]:has(.ghost)', { timeout: 5000 });
+    await mover.waitForSelector('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)', { timeout: 5000 });
     await mover.screenshot({ path: `${SHOTS}/04-targets.png` });
-    await mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)').first().click();
+    await mover.locator('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)').first().click();
     await sleep(1200);
     const usedAfter = await mover.locator('.die.used').count();
     log(`used dice before: ${usedBefore}, after: ${usedAfter}`);
@@ -103,7 +103,7 @@ async function main() {
       const src = mover.locator(source);
       if ((await src.count()) === 0) break;
       await src.first().click();
-      const target = mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)');
+      const target = mover.locator('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)');
       try { await target.first().waitFor({ timeout: 3000 }); } catch (_) { break; }
       await target.first().click();
       await mover.waitForFunction(() => !document.querySelector('.bg-point.selected'), null, { timeout: 5000 });

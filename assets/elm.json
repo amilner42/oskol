@@ -14,9 +14,12 @@
             "elm/time": "1.0.0",
             "elm/url": "1.0.0",
             "elm-community/json-extra": "4.3.0",
-            "jasonliang-dev/elm-heroicons": "2.3.0"
+            "jasonliang-dev/elm-heroicons": "2.3.0",
+            "mpizenberg/elm-pointer-events": "5.0.0"
         },
         "indirect": {
+            "elm/bytes": "1.0.8",
+            "elm/file": "1.0.5",
             "elm/parser": "1.1.0",
             "elm/virtual-dom": "1.0.5",
             "rtfeldman/elm-iso8601-date-strings": "1.1.4"
@@ -27,7 +30,6 @@
             "elm-explorations/test": "2.2.0"
         },
         "indirect": {
-            "elm/bytes": "1.0.8",
             "elm/random": "1.0.0"
         }
     }
