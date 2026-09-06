@@ -359,7 +359,7 @@ perFixture fixture =
                     |> List.filter (\u -> (Protocol.sceneData (D.nullable D.string) "to_act" u.scene |> Maybe.withDefault Nothing) == Just "p1")
                     |> List.map (\u -> render "p2" u |> Query.has [ text "WAITING FOR P1" ])
                     |> allPass
-        , test "clicking a source point selects it" <|
+        , test "pressing anywhere on a source point primes a drag whose tap is the old click" <|
             \_ ->
                 p1Views
                     |> List.filter (\u -> legalFroms u.legal |> List.any (\f -> f /= "bar"))
@@ -369,11 +369,19 @@ perFixture fixture =
                             let
                                 from =
                                     legalFroms u.legal |> List.filter (\f -> f /= "bar") |> List.head |> Maybe.withDefault ""
+
+                                result =
+                                    render "p1" u
+                                        |> Query.find [ class "bg-point", class "source", attribute (Html.Attributes.title ("Point " ++ from)) ]
+                                        |> Event.simulate (Event.custom "pointerdown" (pointerEvent 10 10))
+                                        |> Event.toResult
                             in
-                            render "p1" u
-                                |> Query.find [ class "bg-point", class "source", attribute (Html.Attributes.title ("Point " ++ from)) ]
-                                |> Event.simulate Event.click
-                                |> Event.expect (SelectFrom from)
+                            case result of
+                                Ok (DragPressed p) ->
+                                    Expect.equal ( from, Just (SelectFrom from) ) ( p.origin, p.tap )
+
+                                _ ->
+                                    Expect.fail "pointerdown on a source point should prime a drag press"
                         )
                     |> Maybe.withDefault Expect.pass
         , test "exactly the legal origins offer a draggable checker" <|
@@ -386,7 +394,7 @@ perFixture fixture =
                                 |> Query.count (Expect.equal (List.length (legalFroms u.legal)))
                         )
                     |> allPass
-        , test "mid-drag, a ghost checker rides the pointer and the origin's points highlight" <|
+        , test "mid-drag, a ghost rides the pointer and translucent checkers mark the destinations, without boxes" <|
             \_ ->
                 p1Views
                     |> List.filter (\u -> legalFroms u.legal /= [])
@@ -397,7 +405,7 @@ perFixture fixture =
                                 from =
                                     legalFroms u.legal |> List.head |> Maybe.withDefault ""
 
-                                pointDests =
+                                dests =
                                     u.legal
                                         |> List.filter (\s -> s.name == "move")
                                         |> List.filter (\s -> List.any (\p -> p.name == "from" && p.kind == Choice [ ( from, from ) ]) s.params)
@@ -416,7 +424,6 @@ perFixture fixture =
                                                                     Nothing
                                                         )
                                             )
-                                        |> List.filter ((/=) "off")
                                         |> unique
 
                                 model =
@@ -431,7 +438,8 @@ perFixture fixture =
                             in
                             Expect.all
                                 [ \_ -> rendered |> Query.has [ class "bg-drag-ghost" ]
-                                , \_ -> rendered |> Query.findAll [ class "bg-point", class "target" ] |> Query.count (Expect.equal (List.length pointDests))
+                                , \_ -> rendered |> Query.findAll [ class "drop-ghost" ] |> Query.count (Expect.equal (List.length dests))
+                                , \_ -> rendered |> Query.findAll [ class "target" ] |> Query.count (Expect.equal 0)
                                 ]
                                 ()
                         )
@@ -465,6 +473,35 @@ perFixture fixture =
                     |> List.filter (\u -> u.outcome /= Protocol.Ongoing)
                     |> List.map (\u -> render "p1" u |> Query.has [ text "REMATCH" ])
                     |> allPass
+        ]
+
+
+{-| A full PointerEvent payload, everything the library's decoder reads.
+-}
+pointerEvent : Float -> Float -> E.Value
+pointerEvent x y =
+    E.object
+        [ ( "pointerId", E.int 1 )
+        , ( "isPrimary", E.bool True )
+        , ( "pointerType", E.string "mouse" )
+        , ( "width", E.float 1 )
+        , ( "height", E.float 1 )
+        , ( "pressure", E.float 0 )
+        , ( "tiltX", E.float 0 )
+        , ( "tiltY", E.float 0 )
+        , ( "altKey", E.bool False )
+        , ( "ctrlKey", E.bool False )
+        , ( "metaKey", E.bool False )
+        , ( "shiftKey", E.bool False )
+        , ( "button", E.int 0 )
+        , ( "clientX", E.float x )
+        , ( "clientY", E.float y )
+        , ( "offsetX", E.float x )
+        , ( "offsetY", E.float y )
+        , ( "pageX", E.float x )
+        , ( "pageY", E.float y )
+        , ( "screenX", E.float x )
+        , ( "screenY", E.float y )
         ]
 
 

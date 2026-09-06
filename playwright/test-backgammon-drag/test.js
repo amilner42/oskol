@@ -3,11 +3,13 @@
  *
  * 1. Alice (desktop, 1280x900, mouse) and Bob (phone, 390x844, touch) start
  *    a single game.
- * 2. Whoever moves first: an ILLEGAL drag (into the centre band) shows the
- *    ghost and the highlighted targets mid-drag but changes nothing on
- *    release; a LEGAL drag onto a highlighted point stages exactly one move
- *    (one die used, no double-fire from the synthetic click); tap-to-move
- *    still stages the next move after dragging.
+ * 2. Whoever moves first: a COLD one-motion LEGAL drag -- the very first
+ *    gesture on the page, grabbing a mid-stack checker, no prior click --
+ *    stages exactly one move (one die used, no double-fire from the
+ *    synthetic click); mid-drag the destinations are translucent drop-ghost
+ *    checkers and never dashed target boxes. Then an ILLEGAL drag (into the
+ *    centre band) changes nothing on release, and tap-to-move still stages
+ *    the next move after dragging.
  * 3. The turn is played; the other player rolls and drags too, so both the
  *    mouse and the touch path are exercised whichever seat won the opening.
  *
@@ -26,7 +28,8 @@ const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const DRAGGABLE = '[data-drag-capture]';
-const TARGET = '.bg-point.target, .bg-tray.target';
+const DROP_GHOST = '.checker.drop-ghost';
+const BOXY = '.bg-point.target, .bg-tray.target';
 
 async function center(locator) {
   const box = await locator.boundingBox();
@@ -34,11 +37,21 @@ async function center(locator) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-/** A real pointer drag, mouse or touch, from the first draggable checker.
- * `pickDrop` runs mid-drag (ghost up, targets highlighted) and returns the
- * drop position; `midShot` is captured right before release. */
+/** Somewhere on the first draggable column: a mid-stack checker when the
+ * stack has one (never the top disc), the bare column otherwise. */
+async function grabSpot(page) {
+  const column = page.locator(DRAGGABLE).first();
+  const checkers = column.locator('.checker');
+  if ((await checkers.count()) >= 2) return center(checkers.nth(1));
+  return center(column);
+}
+
+/** A real pointer drag, mouse or touch, grabbing the first draggable column
+ * mid-stack. `pickDrop` runs mid-drag (ghost up, drop-ghosts marking the
+ * destinations) and returns the drop position; `midShot` is captured right
+ * before release. */
 async function drag(page, { touch, pickDrop, midShot }) {
-  const from = await center(page.locator(DRAGGABLE).first());
+  const from = await grabSpot(page);
   const cdp = touch ? await page.context().newCDPSession(page) : null;
   const start = async () =>
     touch
@@ -54,7 +67,8 @@ async function drag(page, { touch, pickDrop, midShot }) {
   await start();
   await moveTo(from.x + 14, from.y + 14); // past the 8px threshold
   await page.waitForSelector('.bg-drag-ghost', { timeout: 5000 });
-  if ((await page.locator(TARGET).count()) === 0) throw new Error('no highlighted targets mid-drag');
+  await page.waitForSelector(DROP_GHOST, { timeout: 5000 });
+  if (await page.locator(BOXY).count()) throw new Error('dashed target boxes rendered mid-drag');
   const drop = await pickDrop(page);
   await moveTo(drop.x, drop.y);
   await sleep(150);
@@ -72,12 +86,15 @@ async function offTargetSpot(page) {
   return { x: board.x + board.width / 2, y: board.y + board.height / 2 };
 }
 
-async function firstTargetSpot(page) {
-  return center(page.locator(TARGET).first());
+async function firstDropGhostSpot(page) {
+  const onPoint = page.locator(`.bg-point ${DROP_GHOST}`);
+  if (await onPoint.count()) return center(onPoint.first());
+  return center(page.locator(DROP_GHOST).first());
 }
 
-/** Play a whole turn: illegal drag (no-op), legal drag (one die), then taps
- * (still working after the drag) until the turn can be played. */
+/** Play a whole turn: a cold one-motion legal drag first (one die), then an
+ * illegal drag (no-op), then taps (still working after the drags) until the
+ * turn can be played. */
 async function playTurnWithDrags(page, { touch, label }) {
   // The opening mover already has dice; later turns start with ROLL.
   const roll = page.locator('button:has-text("ROLL")');
@@ -90,23 +107,26 @@ async function playTurnWithDrags(page, { touch, label }) {
   }
   await page.waitForSelector(DRAGGABLE, { timeout: 15000 });
 
-  // Illegal drag: ghost and targets mid-flight, nothing on release.
+  // Cold legal drag: the first gesture ever on this board, mid-stack, one
+  // continuous motion. Exactly one move staged (a click double-fire would
+  // stage two).
   const before = await usedDice(page);
-  await drag(page, { touch, pickDrop: offTargetSpot });
-  await sleep(600);
-  if ((await usedDice(page)) !== before) throw new Error(`${label}: an off-target drop staged a move`);
-  if (await page.locator('.bg-point.selected').count()) throw new Error(`${label}: an off-target drop left a selection`);
-  log(`${label}: illegal drag was a no-op`);
-
-  // Legal drag: exactly one move staged (a click double-fire would stage two).
   await drag(page, {
     touch,
-    pickDrop: firstTargetSpot,
+    pickDrop: firstDropGhostSpot,
     midShot: `${SHOTS}/${label}-mid-drag.png`,
   });
   await page.waitForFunction((n) => document.querySelectorAll('.die.used').length === n + 1, before, { timeout: 5000 });
   await page.screenshot({ path: `${SHOTS}/${label}-after-drop.png` });
-  log(`${label}: legal drag staged one move`);
+  log(`${label}: cold one-motion drag staged one move`);
+
+  // Illegal drag: ghost and drop-ghosts mid-flight, nothing on release.
+  const staged = await usedDice(page);
+  await drag(page, { touch, pickDrop: offTargetSpot });
+  await sleep(600);
+  if ((await usedDice(page)) !== staged) throw new Error(`${label}: an off-target drop staged a move`);
+  if (await page.locator('.bg-point.selected').count()) throw new Error(`${label}: an off-target drop left a selection`);
+  log(`${label}: illegal drag was a no-op`);
 
   // Tap-to-move still works after dragging; finish the turn on taps.
   let tapped = false;

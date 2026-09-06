@@ -615,8 +615,10 @@
 }
 .bg-drag-ghost .checker { width: 1.4rem; }
 @media (min-width: 640px) { .bg-drag-ghost .checker { width: 1.9rem; } }
-.bg-point.drop-hover::before { background: color-mix(in oklab, var(--point) 30%, var(--bg-sky)); }
-.bg-tray.drop-hover { border-color: var(--bg-sky); background: color-mix(in oklab, var(--bg-sky) 40%, #fff); }
+/* Where the dragged checker would land: a translucent checker of the
+   mover's colour that firms up under the pointer. */
+.checker.drop-ghost { opacity: 0.35; transition: opacity 80ms ease-out, transform 80ms ease-out; }
+.checker.drop-ghost.firm { opacity: 0.85; transform: scale(1.06); }
 .bg-bar { background: var(--ink); border-radius: 2px; }
 .bg-bar .checker.black { border-color: #fff; }
 .bg-tray { border: 3px solid var(--ink); background: #fff; color: var(--ink); }

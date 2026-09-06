@@ -14,11 +14,13 @@ falls back to two taps: a checker's point (or the bar), then a destination.
 Legal moves come from the `move` schemas the server sends, so the board
 never invents legality.
 
-Checkers can also be dragged, through the `Drag` state machine: the top
-checker of every legal origin (a point, or the bar) is a drag source. A
-press remembers what a plain tap there would have done, so tap-to-move is
-untouched; past the threshold a ghost checker rides the pointer and that
-origin's destinations highlight. Drop targets are hit-tested geometrically:
+Checkers can also be dragged, through the `Drag` state machine: every
+legal origin (the whole point column, or the bar) is a drag source, so
+grabbing any checker of the stack -- or the point itself -- drags that
+origin's top checker. A press remembers what a plain tap there would have
+done, so tap-to-move is untouched; past the threshold a ghost checker
+rides the pointer and a translucent checker of the mover's colour marks
+each legal destination. Drop targets are hit-tested geometrically:
 pressing asks Main (the `NeedZones` Out) for the client rects of the
 origin's legal destinations via `Browser.Dom.getElement` -- the whole point
 column, or the tray, under the ids `dropZoneId` names -- and releasing on
@@ -748,8 +750,8 @@ viewPoint board isTop index point =
         isSelected =
             board.ctx.model.selectedFrom == Just id
 
-        isHovered =
-            isTarget && board.hovered == Just id
+        dragging =
+            board.drag /= Nothing
 
         click =
             case resolveTap board.tap id of
@@ -758,6 +760,15 @@ viewPoint board isTop index point =
 
                 Nothing ->
                     []
+
+        -- A movable origin is draggable across its whole column (any checker
+        -- of the stack, or the point itself); a short press there still taps.
+        interaction =
+            if isSource then
+                dragAttrs board id
+
+            else
+                click
     in
     div
         ([ classList
@@ -765,24 +776,45 @@ viewPoint board isTop index point =
             , ( "top", isTop )
             , ( "bottom flex-col-reverse", not isTop )
             , ( "source", isSource )
-            , ( "target", isTarget )
+            , ( "target", isTarget && not dragging )
             , ( "selected", isSelected )
-            , ( "drop-hover", isHovered )
             ]
          , attribute "style" ("--point: " ++ pointColor (index + (if isTop then 0 else 1)))
          , title ("Point " ++ id)
          , Html.Attributes.id (dropZoneId id)
          ]
-            ++ click
+            ++ interaction
         )
-        (viewStack { pick = isSource, picked = isSelected, lifted = liftedAt board id, dragAttrs = dragAttrs board id } tokens
+        (viewStack { pick = isSource, picked = isSelected, lifted = liftedAt board id } tokens
             ++ (if isTarget then
-                    [ div [ class "ghost relative shrink-0" ] [] ]
+                    [ if dragging then
+                        dropGhost board (board.hovered == Just id)
+
+                      else
+                        div [ class "ghost relative shrink-0" ] []
+                    ]
 
                 else
                     []
                )
         )
+
+
+{-| Where a dragged checker would land: a translucent checker of the
+dragger's colour, firming up under the pointer. No boxes, no outlines --
+the tap flow keeps its own dashed slot.
+-}
+dropGhost : Board -> Bool -> Html Msg
+dropGhost board firm =
+    div
+        [ classList
+            [ ( "checker drop-ghost relative shrink-0", True )
+            , ( "white", board.myColor == "white" )
+            , ( "black", board.myColor /= "white" )
+            , ( "firm", firm )
+            ]
+        ]
+        []
 
 
 {-| The origin of the active drag shows its top checker dimmed in place.
@@ -792,7 +824,7 @@ liftedAt board loc =
     board.drag |> Maybe.map (\d -> d.origin == loc) |> Maybe.withDefault False
 
 
-{-| Drag handlers for the top checker of a legal origin. The press carries
+{-| Drag handlers for a legal origin's whole column. The press carries
 what a tap there would do -- the same `resolveTap` answer the click
 handlers use -- and the origin's legal destinations, for Main to measure.
 -}
@@ -820,16 +852,16 @@ dragAttrs board origin =
         []
 
 
-{-| What the top checker of a stack carries: the tap affordances, the
-dimmed in-place state while it is being dragged, and its drag handlers.
+{-| What the top checker of a stack carries: the tap affordances, and the
+dimmed in-place state while its origin is being dragged.
 -}
 type alias Marks =
-    { pick : Bool, picked : Bool, lifted : Bool, dragAttrs : List (Html.Attribute Msg) }
+    { pick : Bool, picked : Bool, lifted : Bool }
 
 
 noMarks : Marks
 noMarks =
-    { pick = False, picked = False, lifted = False, dragAttrs = [] }
+    { pick = False, picked = False, lifted = False }
 
 
 viewStack : Marks -> List Token -> List (Html Msg)
@@ -867,7 +899,7 @@ viewChecker marks count token =
             Protocol.tokenProp D.string "color" token |> Maybe.withDefault "white"
     in
     div
-        ([ classList
+        [ classList
             [ ( "checker relative shrink-0 transition-transform", True )
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
@@ -875,10 +907,8 @@ viewChecker marks count token =
             , ( "picked", marks.picked )
             , ( "lifted", marks.lifted )
             ]
-         , title token.id
-         ]
-            ++ marks.dragAttrs
-        )
+        , title token.id
+        ]
         (case count of
             Just n ->
                 [ span [ class "checker-count" ] [ text (String.fromInt n) ] ]
@@ -914,6 +944,14 @@ viewBar board ownerId isTop =
 
             else
                 []
+
+        -- My whole bar drags when a bar entry is legal; a short press taps.
+        interaction =
+            if mine && isSource then
+                dragAttrs board "bar"
+
+            else
+                click
     in
     div
         ([ classList
@@ -922,18 +960,12 @@ viewBar board ownerId isTop =
             ]
          , title "Bar"
          ]
-            ++ click
+            ++ interaction
         )
         (viewStack
             { pick = isSource
             , picked = isSelected
             , lifted = mine && liftedAt board "bar"
-            , dragAttrs =
-                if mine then
-                    dragAttrs board "bar"
-
-                else
-                    []
             }
             tokens
         )
@@ -966,8 +998,7 @@ viewTray board ownerId =
     div
         ([ classList
             [ ( "bg-tray w-9 sm:w-14 flex flex-col items-center justify-center gap-1 px-1", True )
-            , ( "target", isTarget )
-            , ( "drop-hover", isTarget && board.hovered == Just "off" )
+            , ( "target", isTarget && board.drag == Nothing )
             ]
          , title "Borne off"
          ]
@@ -982,7 +1013,12 @@ viewTray board ownerId =
         [ span [ class "pixel text-[7px]", style "color" "rgba(35, 36, 58, 0.5)" ] [ text "OFF" ]
         , span [ class "pixel text-xs" ] [ text (String.fromInt count) ]
         , if isTarget then
-            div [ class "ghost" ] []
+            case board.drag of
+                Just _ ->
+                    dropGhost board (board.hovered == Just "off")
+
+                Nothing ->
+                    div [ class "ghost" ] []
 
           else
             text ""
