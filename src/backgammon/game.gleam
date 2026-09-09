@@ -60,15 +60,34 @@ fn format(
   cube: Bool,
   jacoby: Bool,
 ) -> game.Format {
-  game.format(
-    id,
-    name,
-    description,
-    dict.from_list([
+  game.Format(
+    id: id,
+    name: name,
+    description: description,
+    config: dict.from_list([
       #("target", target),
       #("cube", bool_int(cube)),
       #("jacoby", bool_int(jacoby)),
     ]),
+    settings: [pick_dice_twist()],
+  )
+}
+
+/// The "Pick dice" twist: once per game, pick both dice instead of rolling.
+/// Off by default -- the real thing first.
+fn pick_dice_twist() -> game.Setting {
+  game.Setting(
+    id: "twist",
+    name: "Pick dice",
+    choices: [
+      game.Choice("off", "Off", dict.from_list([#("pick_dice", 0)])),
+      game.Choice(
+        "pick_dice",
+        "Pick your dice, once a game",
+        dict.from_list([#("pick_dice", 1)]),
+      ),
+    ],
+    default: "off",
   )
 }
 
@@ -91,6 +110,7 @@ pub fn init(
           target: game.config_get(config, "target", 1),
           cube: game.config_get(config, "cube", 0) == 1,
           jacoby: game.config_get(config, "jacoby", 0) == 1,
+          pick_dice: game.config_get(config, "pick_dice", 0) == 1,
         ),
         list.map(seats, fn(s) { #(s.id, s.name) }),
         rng,
@@ -102,6 +122,11 @@ pub fn init(
 pub fn decode_action(incoming: action.Incoming) -> Result(Action, String) {
   case incoming.name {
     "roll" -> Ok(engine.Roll)
+    "pick" -> {
+      use a <- result.try(action.int_param(incoming.params, "die1"))
+      use b <- result.try(action.int_param(incoming.params, "die2"))
+      Ok(engine.Pick(a, b))
+    }
     "undo" -> Ok(engine.Undo)
     "play" -> Ok(engine.Play)
     "double" -> Ok(engine.Double)

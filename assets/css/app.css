@@ -618,6 +618,14 @@
   box-shadow: 3px 3px 0 0 var(--ink); background: #fff;
 }
 .die.used { opacity: 0.35; box-shadow: none; }
+/* Picker-scale die faces (the "Pick dice" twist). */
+.die.mini {
+  width: 1.75rem; height: 1.75rem;
+  box-shadow: 2px 2px 0 0 var(--ink);
+  cursor: pointer; padding: 0;
+}
+.die.mini.spent { opacity: 0.35; box-shadow: none; cursor: default; }
+.die.mini.empty { background: transparent; border-style: dashed; box-shadow: none; cursor: default; }
 .cube {
   display: grid; place-items: center;
   width: 2rem; height: 2rem;

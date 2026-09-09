@@ -162,9 +162,11 @@ defmodule Oskol.Game.GameServerState do
   def summary(%__MODULE__{setup: setup} = state) do
     format = format(state) || %{"name" => setup.format, "settings" => []}
 
+    # A setting left "off" (a twist not taken) says nothing worth a slot.
     choices =
       for setting <- format["settings"] || [],
           chosen = Map.get(setup.selections, setting["id"], setting["default"]),
+          chosen != "off",
           choice = Enum.find(setting["choices"], &(&1["id"] == chosen)),
           do: choice["name"]
 

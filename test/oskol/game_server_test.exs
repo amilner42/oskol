@@ -29,6 +29,13 @@ defmodule Oskol.Game.GameServerTest do
       assert state.setup.format == "match3"
       assert state.setup.clock == "blitz"
       assert Oskol.Game.GameServerState.summary(state) == "Match to 3 · Blitz clock"
+
+      # The twist flows through configure and earns a summary slot only when on
+      assert {:ok, state} =
+               Game.configure(game_id, %{selections: %{"twist" => "pick_dice"}})
+
+      assert Oskol.Game.GameServerState.summary(state) ==
+               "Match to 3 · Pick your dice, once a game · Blitz clock"
     end
 
     test "the game starts the moment the table is full" do

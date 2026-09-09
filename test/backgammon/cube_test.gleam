@@ -84,11 +84,14 @@ fn has_custom(events: List(event.Event), kind: String) -> Bool {
 
 pub fn formats_configure_target_cube_and_jacoby_test() {
   let single = new_game(1, "single")
-  assert single.config == state.Config(target: 1, cube: False, jacoby: False)
+  assert single.config
+    == state.Config(target: 1, cube: False, jacoby: False, pick_dice: False)
   let match3 = new_game(1, "match3")
-  assert match3.config == state.Config(target: 3, cube: True, jacoby: False)
+  assert match3.config
+    == state.Config(target: 3, cube: True, jacoby: False, pick_dice: False)
   let unlimited = new_game(1, "unlimited")
-  assert unlimited.config == state.Config(target: 0, cube: True, jacoby: True)
+  assert unlimited.config
+    == state.Config(target: 0, cube: True, jacoby: True, pick_dice: False)
   assert state.unlimited(unlimited)
   assert list.map(backgammon.info().formats, fn(f) { f.id })
     == ["single", "match3", "match5", "match7", "unlimited"]
