@@ -7,12 +7,16 @@ defmodule Oskol.Game.GameServer do
   The creator sets the room up (format, settings, clock) and shares a link;
   the game starts the moment the table is full.
   """
-  # Rooms hold their whole state in memory, so a restart could only ever
-  # produce an empty room with a taken id: an idle stop is final.
+  # Rooms hold their whole state in memory; the database holds the durable
+  # picture (seed + action log, written behind by Oskol.Game.Persister). A
+  # crashed or idle-stopped room is not restarted here: the next lookup
+  # rehydrates it from the log (Oskol.Game.Rehydrator), so an idle stop is
+  # graceful, not final.
   use GenServer, restart: :temporary
   require Logger
 
   alias Oskol.Game.GameServerState
+  alias Oskol.Game.Persister
   alias Oskol.GameKit
 
   @timeout :timer.hours(1)
@@ -21,6 +25,10 @@ defmodule Oskol.Game.GameServer do
 
   def start_link({game_id, slug}) do
     GenServer.start_link(__MODULE__, {game_id, slug}, name: via_tuple(game_id))
+  end
+
+  def start_link({game_id, slug, restore}) do
+    GenServer.start_link(__MODULE__, {game_id, slug, restore}, name: via_tuple(game_id))
   end
 
   @doc """
@@ -90,7 +98,24 @@ defmodule Oskol.Game.GameServer do
   @impl true
   def init({game_id, slug}) do
     Logger.info("Starting #{slug} game server: #{game_id}")
-    {:ok, GameServerState.new(game_id, slug), @timeout}
+    state = GameServerState.new(game_id, slug)
+    Persister.game_created(game_id, slug, state.setup)
+    {:ok, state, @timeout}
+  end
+
+  # Rehydration: rebuild the room from its persisted row and action log.
+  # Replay happens in init so no call can reach a half-restored room.
+  def init({game_id, slug, {:restore, game, actions}}) do
+    Logger.info("Rehydrating #{slug} game server: #{game_id} (#{length(actions)} log entries)")
+
+    case restore_state(GameServerState.new(game_id, slug), game, actions) do
+      {:ok, state} ->
+        {:ok, state, @timeout}
+
+      {:error, reason} ->
+        Logger.error("Could not rehydrate game #{game_id}: #{inspect(reason)}")
+        :ignore
+    end
   end
 
   @impl true
@@ -103,6 +128,7 @@ defmodule Oskol.Game.GameServer do
         case GameServerState.validate_setup(state, attrs) do
           {:ok, setup} ->
             new_state = %GameServerState{state | setup: setup} |> GameServerState.touch()
+            Persister.game_configured(state.game_id, setup)
             broadcast(new_state, [])
             {:reply, {:ok, new_state}, new_state, @timeout}
 
@@ -143,6 +169,8 @@ defmodule Oskol.Game.GameServer do
           }
           |> GameServerState.touch()
           |> GameServerState.update_lobby_status()
+
+        Persister.players_updated(new_state.game_id, players_json(new_state))
 
         # The table is full: the game starts right away.
         new_state =
@@ -195,6 +223,8 @@ defmodule Oskol.Game.GameServer do
 
         new_state = do_attach(state, player_id, player_pid)
 
+        # The rotated token must be on disk before it is the only way in.
+        Persister.players_updated(new_state.game_id, players_json(new_state))
         broadcast(new_state, [])
         {:reply, {:ok, player_id, token, new_state}, new_state, @timeout}
     end
@@ -215,6 +245,7 @@ defmodule Oskol.Game.GameServer do
       |> GameServerState.touch()
       |> GameServerState.update_lobby_status()
 
+    Persister.players_updated(new_state.game_id, players_json(new_state))
     {:reply, {:ok, player_id, new_state}, new_state, @timeout}
   end
 
@@ -328,12 +359,16 @@ defmodule Oskol.Game.GameServer do
     if GameServerState.idle?(state, @timeout) do
       handle_info(:timeout, state)
     else
-      case state.instance && GameKit.expire(state.instance, GameKit.now()) do
+      now = GameKit.now()
+
+      case state.instance && GameKit.expire(state.instance, now) do
         {:ok, instance, events} ->
           new_state =
-            %GameServerState{state | instance: instance}
+            %GameServerState{state | instance: instance, action_count: state.action_count + 1}
             |> schedule_clock_tick()
 
+          persist_entry(state, "expire", nil, nil, now)
+          persist_finish(new_state)
           broadcast(new_state, events)
           {:noreply, new_state, @timeout}
 
@@ -352,6 +387,7 @@ defmodule Oskol.Game.GameServer do
 
   defp do_start(%GameServerState{} = state, seed, control) do
     setup = state.setup
+    now = GameKit.now()
 
     with false <- GameServerState.started?(state),
          true <- map_size(state.connections) >= GameServerState.min_players(state),
@@ -364,14 +400,15 @@ defmodule Oskol.Game.GameServer do
              GameServerState.seats(state),
              seed,
              control,
-             GameKit.now(),
+             now,
              Map.to_list(setup.selections)
            ) do
       new_state =
-        %GameServerState{state | instance: instance, seed: seed}
+        %GameServerState{state | instance: instance, seed: seed, clock_base: now, action_count: 0}
         |> GameServerState.touch()
         |> schedule_clock_tick()
 
+      Persister.game_started(state.game_id, seed, setup, players_json(new_state))
       {:ok, new_state}
     else
       true -> {:error, :game_already_started}
@@ -412,19 +449,53 @@ defmodule Oskol.Game.GameServer do
         {:error, :player_not_found}
 
       true ->
-        case GameKit.apply(state.instance, player_id, action, GameKit.now()) do
+        now = GameKit.now()
+
+        case GameKit.apply(state.instance, player_id, action, now) do
           {:ok, instance, events} ->
             new_state =
-              %GameServerState{state | instance: instance}
+              %GameServerState{state | instance: instance, action_count: state.action_count + 1}
               |> GameServerState.touch()
               |> schedule_clock_tick()
 
+            persist_entry(state, "action", player_id, action, now)
+            persist_finish(new_state)
             {:ok, new_state, events}
 
           {:error, reason} ->
             {:error, reason}
         end
     end
+  end
+
+  # Append one log entry at the room's current index, with its offset from
+  # the instance's start `now` (that offset is what makes clock deductions
+  # and timeouts replayable).
+  defp persist_entry(%GameServerState{} = state, kind, player_id, payload, now) do
+    Persister.action_applied(
+      state.game_id,
+      state.action_count,
+      kind,
+      player_id,
+      payload,
+      now - (state.clock_base || now)
+    )
+  end
+
+  defp persist_finish(%GameServerState{} = state) do
+    if GameKit.finished?(state.instance) do
+      case GameKit.outcome(state.instance) do
+        {:finished, winners} -> Persister.game_finished(state.game_id, winners)
+        _ -> :ok
+      end
+    end
+  end
+
+  defp players_json(%GameServerState{} = state) do
+    Enum.map(state.seat_order, fn id ->
+      conn = state.connections[id]
+      %{"id" => id, "name" => conn.name, "token" => conn.token}
+    end)
   end
 
   # A rematch is a new room with the same setup (fresh seed) and the same
@@ -469,6 +540,113 @@ defmodule Oskol.Game.GameServer do
 
       _ ->
         %GameServerState{state | clock_timer: nil}
+    end
+  end
+
+  # ---------- Rehydration ----------
+
+  # Rebuild the room from its persisted row: setup from config, seats (ids,
+  # names, tokens) verbatim so every player's link still works, and — if the
+  # game had started — the instance replayed from seed + action log.
+  defp restore_state(%GameServerState{} = state, game, actions) do
+    with {:ok, setup} <- restore_setup(state, game.config) do
+      {connections, seat_order} = restore_seats(game.players)
+
+      state =
+        %GameServerState{state | setup: setup, connections: connections, seat_order: seat_order}
+        |> GameServerState.update_lobby_status()
+        |> GameServerState.touch()
+
+      if game.seed == nil or game.status == "waiting" do
+        {:ok, state}
+      else
+        replay(state, game, actions)
+      end
+    end
+  end
+
+  defp restore_setup(%GameServerState{} = state, config) do
+    case GameServerState.validate_setup(state, %{
+           format: config["format"],
+           selections: config["selections"] || %{},
+           clock: config["clock"] || "none",
+           seed: config["seed"]
+         }) do
+      {:ok, setup} -> {:ok, setup}
+      {:error, reason} -> {:error, {:bad_config, reason}}
+    end
+  end
+
+  defp restore_seats(players) do
+    Enum.reduce(players, {%{}, []}, fn player, {connections, order} ->
+      connection = %{
+        name: player["name"],
+        token: player["token"],
+        pid: nil,
+        connected: false,
+        monitor_ref: nil
+      }
+
+      {Map.put(connections, player["id"], connection), order ++ [player["id"]]}
+    end)
+  end
+
+  # Replay the log through the exact calls that produced it, with the whole
+  # recorded timeline shifted so its last entry lands at the current
+  # monotonic time: clock arithmetic only ever compares `now`s, so the
+  # clocks come back as they stood after the last step, the downtime charges
+  # nobody, and whoever is on the clock starts being charged again now.
+  defp replay(%GameServerState{} = state, game, actions) do
+    setup = state.setup
+    control = setup.control || GameKit.clock_control(setup.clock)
+    last_at = if actions == [], do: 0, else: List.last(actions).at_ms
+    base = GameKit.now() - last_at
+
+    with {:ok, instance} <-
+           GameKit.start(
+             state.slug,
+             setup.format,
+             GameServerState.seats(state),
+             game.seed,
+             control,
+             base,
+             Map.to_list(setup.selections)
+           ),
+         {:ok, instance} <- replay_actions(instance, actions, base) do
+      new_state =
+        %GameServerState{
+          state
+          | instance: instance,
+            seed: game.seed,
+            clock_base: base,
+            action_count: length(actions)
+        }
+        |> schedule_clock_tick()
+
+      {:ok, new_state}
+    end
+  end
+
+  defp replay_actions(instance, actions, base) do
+    Enum.reduce_while(actions, {:ok, instance}, fn entry, {:ok, instance} ->
+      case replay_entry(instance, entry, base) do
+        {:ok, next} -> {:cont, {:ok, next}}
+        {:error, reason} -> {:halt, {:error, {:replay_failed, entry.index, reason}}}
+      end
+    end)
+  end
+
+  defp replay_entry(instance, %{kind: "action"} = entry, base) do
+    case GameKit.apply(instance, entry.player_id, entry.payload, base + entry.at_ms) do
+      {:ok, next, _events} -> {:ok, next}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp replay_entry(instance, %{kind: "expire"} = entry, base) do
+    case GameKit.expire(instance, base + entry.at_ms) do
+      {:ok, next, _events} -> {:ok, next}
+      :none -> {:ok, instance}
     end
   end
 

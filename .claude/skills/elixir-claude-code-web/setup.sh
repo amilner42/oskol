@@ -231,7 +231,7 @@ main() {
     echo ""
     log_info "Next steps:"
     log_info "  1. Start Phoenix server: mix phx.server"
-    log_info "  2. Visit: http://localhost:4000"
+    log_info "  2. Visit: http://localhost:4400"
     echo ""
     log_info "For future sessions, run:"
     log_info "  . ~/.asdf/asdf.sh && export HEX_CACERTS_PATH=/etc/ssl/certs/ca-certificates.crt"

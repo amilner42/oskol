@@ -63,7 +63,7 @@ Edit `test.js` to modify:
 - **All other picks are simple shop cards**: Could be level ups or action cards, simple confirm-only picks
 - The test will log a warning if no suit-changing card is found
 - Run multiple times to see different card combinations
-- Server must be running on `http://localhost:4000`
+- Server must be running on `http://localhost:4400`
 
 ## Troubleshooting
 

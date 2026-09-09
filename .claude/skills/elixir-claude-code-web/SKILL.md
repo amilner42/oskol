@@ -25,7 +25,7 @@ The script handles:
 - Phoenix assets
 - Playwright for testing
 
-After setup, the server runs at http://localhost:4000
+After setup, the server runs at http://localhost:4400
 
 ## Running Tests
 

@@ -8,6 +8,18 @@ jobs:
   test:
     name: compile, Gleam, Elm, Elixir
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -60,6 +72,18 @@ jobs:
     name: Playwright smokes
     runs-on: ubuntu-latest
     needs: test
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -90,14 +114,16 @@ jobs:
         run: mix local.hex --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
       - run: mix deps.get
       - run: mix assets.build
+      - name: Dev database
+        run: mix ecto.create --quiet && mix ecto.migrate --quiet
       - name: Start the server
         run: |
           mix phx.server > server.log 2>&1 &
           for i in $(seq 1 90); do
-            curl -sf -o /dev/null http://localhost:4000/ && break
+            curl -sf -o /dev/null http://localhost:4400/ && break
             sleep 1
           done
-          curl -sf -o /dev/null http://localhost:4000/ || (cat server.log && exit 1)
+          curl -sf -o /dev/null http://localhost:4400/ || (cat server.log && exit 1)
       - run: node playwright/test-backgammon-smoke/test.js
       - run: node playwright/test-poker-smoke/test.js
       - run: node playwright/test-go-smoke/test.js

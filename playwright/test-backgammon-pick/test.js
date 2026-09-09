@@ -15,7 +15,7 @@
 const playwright = require('playwright');
 const fs = require('fs');
 
-const BASE = process.env.BASE_URL || 'http://localhost:4000';
+const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = process.env.PICK_SHOTS || 'playwright/screenshots/test-backgammon-pick';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

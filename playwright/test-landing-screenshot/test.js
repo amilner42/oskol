@@ -13,7 +13,7 @@ async function main() {
   const page = await browser.newPage();
 
   console.log('Navigating to landing page...');
-  await page.goto('http://localhost:4000');
+  await page.goto('http://localhost:4400');
   await new Promise(r => setTimeout(r, 2000));
 
   await page.screenshot({

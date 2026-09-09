@@ -21,6 +21,30 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
+  database_url =
+    System.get_env("DATABASE_URL") ||
+      raise """
+      environment variable DATABASE_URL is missing.
+      For example: ecto://USER:PASS@HOST/DATABASE
+      """
+
+  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+
+  config :oskol, Oskol.Repo,
+    url: database_url,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    # Fly Managed Postgres fronts the database with pgbouncer in transaction
+    # pooling mode: named prepared statements do not survive the pooler, so
+    # postgrex must use unnamed ones.
+    prepare: :unnamed,
+    socket_options: maybe_ipv6
+
+  # Run pending migrations when the app boots. fly.toml has no
+  # release_command, and with min_machines_running = 0 a machine can wake
+  # from a stopped state at any time: migrating on boot keeps the schema in
+  # step with the code without a separate deploy step.
+  config :oskol, :migrate_on_boot, true
+
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
   # want to use a different value for prod and you most likely don't want

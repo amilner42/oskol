@@ -28,9 +28,13 @@ step "Elm tests"
 (cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm)
 
 step "Elixir tests"
+# The mix test alias also creates/migrates the test database.
 mix test
 
 if [[ "${1:-}" == "--browser" ]]; then
+  step "dev database"
+  mix ecto.create --quiet && mix ecto.migrate --quiet
+
   step "assets"
   mix assets.build >/dev/null
 
@@ -48,10 +52,10 @@ if [[ "${1:-}" == "--browser" ]]; then
     trap 'kill '"$server"' 2>/dev/null || true' EXIT
   fi
   for _ in $(seq 1 90); do
-    curl -sf -o /dev/null http://localhost:4000/ && break
+    curl -sf -o /dev/null http://localhost:4400/ && break
     sleep 1
   done
-  curl -sf -o /dev/null http://localhost:4000/ || { echo "server did not start; see $log"; exit 1; }
+  curl -sf -o /dev/null http://localhost:4400/ || { echo "server did not start; see $log"; exit 1; }
 
   step "browser smokes"
   # Playwright's own Chromium download is not always available (sandboxes);

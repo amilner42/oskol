@@ -148,6 +148,10 @@ test/backgammon/    board rules, engine, cube, oracle, properties, turns
 test/go/            board rules, ko/superko/snapback, scoring, oracle, conformance
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: setup, auto-start, actions, clocks, rematch
+lib/oskol/persistence.ex        games + game_actions tables (seed + action log per room)
+lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
+lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
+lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 lib/oskol_web/live/landing_live.ex       "/" library, "/:slug" create page and waiting page
 lib/oskol_web/components/game_art.ex     per-game accent colour + poster illustration
@@ -194,7 +198,7 @@ mix test              # Elixir room, bots, channel, LiveView tests
 cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # Elm typecheck
 cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm  # Elm tests (needs `mix oskol.fixtures payloads`)
 mix assets.build      # Elm (via esbuild plugin) + Tailwind
-mix phx.server        # http://localhost:4000
+mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
 node playwright/test-poker-smoke/test.js        # poker: create, join, fold, next hand, flop
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
@@ -304,8 +308,24 @@ give it golden replays and Elm contract coverage for free.
 - Don't call system randomness in a game.
 - Don't add emojis or files unless asked.
 
+## Persistence
+
+Games survive deploys and machine sleep. Every room writes behind (never
+blocking play) to Postgres via `Oskol.Game.Persister`: a `games` row (code,
+setup, seed, seats with their tokens, status, winners) and one `game_actions`
+row per state-mutating step — player actions and clock expiries alike, each
+with its millisecond offset from the instance's start. A lookup that finds no
+live process replays seed + log through the same gamekit calls at those
+offsets (timeline shifted to "now", so downtime charges nobody) and the room
+carries on; seat tokens round-trip, so every player's link still works. The
+hour-idle shutdown is therefore graceful. Dev/test use local databases
+(`oskol_dev`/`oskol_test`, created by `mix ecto.setup` / the `mix test`
+alias); prod reads `DATABASE_URL` (Fly Managed Postgres via pgbouncer, so
+postgrex runs with `prepare: :unnamed`) and migrates on boot. A room's raw
+`control:` (tests only) does not persist; real rooms use clock preset ids,
+which do.
+
 ## Future
 - Twists as settings: a reroll in backgammon, two hands play one in hold'em,
   Chess960 when chess arrives.
-- Persist seed + event log per game for replay and crash recovery.
 - Bots derived from `legal` for solo play and balance reports.
