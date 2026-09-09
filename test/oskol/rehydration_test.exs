@@ -128,7 +128,8 @@ defmodule Oskol.RehydrationTest do
     # A deploy: every room process dies with its supervisor.
     :ok = Supervisor.terminate_child(Oskol.Supervisor, GameSupervisor)
     {:ok, _} = Supervisor.restart_child(Oskol.Supervisor, GameSupervisor)
-    assert GameSupervisor.find_game(game_id) == :error
+    # Registry sweeps dead rooms asynchronously; wait for the entry to clear.
+    wait_until(fn -> GameSupervisor.find_game(game_id) == :error end)
 
     assert {:ok, _pid} = Game.lookup_game(game_id)
     assert Game.get_server_state(game_id).action_count == 15
@@ -191,5 +192,19 @@ defmodule Oskol.RehydrationTest do
     |> Repo.update_all(set: [updated_at: updated_at])
 
     id
+  end
+
+  defp wait_until(fun, attempts \\ 50) do
+    cond do
+      fun.() ->
+        :ok
+
+      attempts == 0 ->
+        flunk("condition never became true")
+
+      true ->
+        Process.sleep(20)
+        wait_until(fun, attempts - 1)
+    end
   end
 end
