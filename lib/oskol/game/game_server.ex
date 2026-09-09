@@ -34,9 +34,11 @@ defmodule Oskol.Game.GameServer do
   @doc """
   Take a free seat. Mints the seat's token; the caller reads it back with
   `GameServerState.token_for/2`. The display name is display only.
+  `guest_id` is the visitor's guest-cookie id, recorded on the seat purely
+  for bookkeeping: it grants nothing.
   """
-  def join_game(game_id, player_name, player_pid \\ nil) do
-    GenServer.call(via_tuple(game_id), {:join_game, player_name, player_pid})
+  def join_game(game_id, player_name, player_pid \\ nil, guest_id \\ nil) do
+    GenServer.call(via_tuple(game_id), {:join_game, player_name, player_pid, guest_id})
   end
 
   @doc """
@@ -138,7 +140,11 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  def handle_call({:join_game, player_name, player_pid}, _from, %GameServerState{} = state) do
+  def handle_call(
+        {:join_game, player_name, player_pid, guest_id},
+        _from,
+        %GameServerState{} = state
+      ) do
     cond do
       GameServerState.full?(state) ->
         {:reply, {:error, :game_full}, state, @timeout}
@@ -156,6 +162,7 @@ defmodule Oskol.Game.GameServer do
         connection = %{
           name: player_name,
           token: GameServerState.new_token(),
+          guest_id: guest_id,
           pid: player_pid,
           connected: player_pid != nil,
           monitor_ref: monitor_ref
@@ -233,8 +240,19 @@ defmodule Oskol.Game.GameServer do
   # A rematch is the same players in the same seats: the new room is seeded
   # with the old ids, names and tokens, so the link each player already
   # holds carries them into it.
-  def handle_call({:seed_seat, player_id, name, token}, _from, %GameServerState{} = state) do
-    connection = %{name: name, token: token, pid: nil, connected: false, monitor_ref: nil}
+  def handle_call(
+        {:seed_seat, player_id, name, token, guest_id},
+        _from,
+        %GameServerState{} = state
+      ) do
+    connection = %{
+      name: name,
+      token: token,
+      guest_id: guest_id,
+      pid: nil,
+      connected: false,
+      monitor_ref: nil
+    }
 
     new_state =
       %GameServerState{
@@ -494,7 +512,7 @@ defmodule Oskol.Game.GameServer do
   defp players_json(%GameServerState{} = state) do
     Enum.map(state.seat_order, fn id ->
       conn = state.connections[id]
-      %{"id" => id, "name" => conn.name, "token" => conn.token}
+      %{"id" => id, "name" => conn.name, "token" => conn.token, "guest_id" => conn.guest_id}
     end)
   end
 
@@ -510,7 +528,10 @@ defmodule Oskol.Game.GameServer do
           conn = state.connections[id]
 
           {:ok, ^id, _} =
-            GenServer.call(via_tuple(rematch_id), {:seed_seat, id, conn.name, conn.token})
+            GenServer.call(
+              via_tuple(rematch_id),
+              {:seed_seat, id, conn.name, conn.token, conn.guest_id}
+            )
         end)
 
         {:ok, _} = start_game(rematch_id)
@@ -582,6 +603,8 @@ defmodule Oskol.Game.GameServer do
       connection = %{
         name: player["name"],
         token: player["token"],
+        # Rows written before guests existed have no key here: nil is fine.
+        guest_id: player["guest_id"],
         pid: nil,
         connected: false,
         monitor_ref: nil
