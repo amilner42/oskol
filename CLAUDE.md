@@ -141,7 +141,13 @@ src/backgammon/     Backgammon: board (rules + move generation), state (turns,
                     dice, cube, match play), engine, projection, game
 src/go/             Go: board (capture, suicide, Tromp-Taylor score), state
                     (turns, passes, positional superko), engine, projection, game
+src/oskol/          the platform's own decisions, in Gleam (see "Platform
+                    decisions live in Gleam" below): core (ctx, session,
+                    error, envelope), caps (the IO a handler may do),
+                    rooms (codes, names, errors, invite), guests/identity,
+                    landing/copy, handlers (rooms, landing)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
+test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/poker/         evaluator, rules in controlled spots, conformance (chip
                     conservation, hidden information, replay)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
@@ -158,6 +164,9 @@ lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in
 lib/oskol_web/live/landing_live.ex       "/" library, "/:slug" create page and waiting page
 lib/oskol_web/components/game_art.ex     per-game accent colour + poster illustration
 lib/oskol_web/controllers/page_controller.ex   "/:slug/:id" serves the Elm client
+lib/oskol/gleam/ctx_builder.ex   builds the Gleam Ctx and Session for a caller
+lib/oskol/gleam/caps/*.ex        the real IO behind src/oskol/caps/*.gleam
+lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Poker/View.elm  the poker table on the protocol Scene
 assets/src/Games/Backgammon/View.elm  the backgammon board
@@ -167,8 +176,44 @@ assets/css/app.css               the multicade/notebook design system (paper, pi
                                  pix, btn-arcade, tile, pcard, felt, bg-board...)
 ```
 
+## Platform decisions live in Gleam (`src/oskol/`)
+
+Games were always Gleam. So is the platform's decision-making: what a name
+has to be, when a game code is free, what an invite link offers, what a
+refusal says, what a JSON page carries. The rule is the same one the games
+follow — Gleam is pure, Elixir does the IO:
+
+```
+Phoenix (router, plugs, LiveView, GenServers)          [Elixir, thin]
+  -> handler(ctx, session, request)                    [GLEAM, all decisions]
+       ctx.<domain>.<cap>(...) performs injected IO
+  -> assigns / JSON on the wire                        [Elixir, thin]
+```
+
+- `Ctx` (src/oskol/core/ctx.gleam) is a record of capability closures, one
+  group per domain, built by `Oskol.Gleam.CtxBuilder.build/1`. Each
+  `src/oskol/caps/<d>.gleam` has an Elixir twin at
+  `lib/oskol/gleam/caps/<d>.ex`; they must agree on constructor tag and
+  field order (a Gleam record is a tagged tuple).
+- `Session` is the caller: a guest id, or nothing. It authenticates nothing.
+- Caps are fine-grained and speak the domain types in `src/oskol/*` — never
+  Ecto structs or raw maps. A room process crosses as the opaque
+  `rooms/room.Room`.
+- Caps whose failure is product behaviour return `Result` and the handler
+  turns it into the sentence a player reads (`rooms/errors.message`).
+  Everything else raises Elixir-side and surfaces as a 500, as before.
+- Tests build a `Ctx` of stubs that panic (`test/oskol/fakes.gleam`), so a
+  handler test that reaches IO it did not arrange for fails loudly.
+- The LiveView and the JSON API call the same handlers, so the page and the
+  API cannot drift apart.
+
 ## URLs
 - `/` game library
+- `/papi/library`, `/papi/games/:slug` (GET and POST) the landing pages as
+  JSON for the Elm client. Public like the pages, session-based guest
+  identity, CSRF token in `x-csrf-token`. Envelope: `{"ok": true, ...}` or
+  `{"ok": false, "error": {"code", "message"}}` (404 not_found,
+  422 validation_failed, 500 server_error).
 - `/poker` create a poker game; `/poker?game=<id>` is the invite link
 - `/poker/<id>?t=<token>` a running game. `t` is the seat token: a secret
   minted when a player takes a seat, and the only thing that opens it. The

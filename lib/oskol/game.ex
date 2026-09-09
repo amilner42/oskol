@@ -1,9 +1,16 @@
 defmodule Oskol.Game do
   @moduledoc """
   Facade for game rooms. Rooms are generic over every registered game.
+
+  The decisions here — mint a code until one is free, look a room up and
+  rehydrate it if no process answers — live in the Gleam handler
+  `oskol/handlers/rooms`; this module is the Elixir door onto it and keeps
+  the process plumbing (`Oskol.Game.GameServer`) it drives.
   """
 
   alias Oskol.Game.{GameServer, GameSupervisor}
+  alias Oskol.Gleam.Caps
+  alias Oskol.Gleam.CtxBuilder
 
   defdelegate start_game(game_id, slug), to: GameSupervisor
   defdelegate find_game(game_id), to: GameSupervisor
@@ -16,9 +23,9 @@ defmodule Oskol.Game do
   and idle shutdowns.
   """
   def lookup_game(game_id) do
-    case GameSupervisor.find_game(game_id) do
-      {:ok, pid} -> {:ok, pid}
-      :error -> Oskol.Game.Rehydrator.resume(game_id)
+    case :oskol@handlers@rooms.lookup(CtxBuilder.build(), game_id) do
+      {:some, room} -> {:ok, Caps.Rooms.process(room)}
+      :none -> :not_found
     end
   end
 
@@ -28,8 +35,9 @@ defmodule Oskol.Game do
   answers to the code — nothing else about it.
   """
   def lookup_slug(game_id) do
-    with {:ok, _pid} <- lookup_game(game_id) do
-      {:ok, GameServer.get_state(game_id).slug}
+    case :oskol@handlers@rooms.lookup_slug(CtxBuilder.build(), game_id) do
+      {:some, slug} -> {:ok, slug}
+      :none -> :not_found
     end
   catch
     # The room died between the lookup and the call: same answer as no room.
@@ -37,15 +45,13 @@ defmodule Oskol.Game do
   end
 
   @id_space 1_000_000
-  @id_attempts 50
 
   @doc "A game code: 6 crypto-random digits."
   def generate_game_id do
     :crypto.strong_rand_bytes(8)
     |> :binary.decode_unsigned()
     |> rem(@id_space)
-    |> Integer.to_string()
-    |> String.pad_leading(6, "0")
+    |> :oskol@rooms@code.from_random()
   end
 
   @doc """
@@ -53,32 +59,22 @@ defmodule Oskol.Game do
   unique keys make the claim atomic: a collision with a live room comes back
   as `already_started` and we mint again. `generate` is injectable for tests.
   """
-  def create_game(slug, generate \\ &generate_game_id/0, attempts \\ @id_attempts)
+  def create_game(
+        slug,
+        generate \\ &generate_game_id/0,
+        attempts \\ :oskol@handlers@rooms.attempts()
+      ) do
+    ctx = CtxBuilder.build(generate: generate)
 
-  def create_game(_slug, _generate, 0), do: {:error, :no_free_id}
-
-  def create_game(slug, generate, attempts) do
-    game_id = generate.()
-
-    # The registry only guards live rooms; persisted games (finished ones
-    # are kept) also hold their codes, so a code with a row is taken too.
-    if persisted?(game_id) do
-      create_game(slug, generate, attempts - 1)
-    else
-      case GameSupervisor.start_game(game_id, slug) do
-        {:ok, _pid} -> {:ok, game_id}
-        {:error, {:already_started, _pid}} -> create_game(slug, generate, attempts - 1)
-        {:error, reason} -> {:error, reason}
-      end
+    case :oskol@handlers@rooms.create_room(ctx, slug, attempts) do
+      {:ok, game_id} -> {:ok, game_id}
+      {:error, reason} -> {:error, Caps.Rooms.reason(reason)}
     end
   end
 
-  # A database hiccup must not block creating games: the id space plus the
-  # registry still make collisions with live rooms impossible.
-  defp persisted?(game_id) do
-    Oskol.Persistence.game_exists?(game_id)
-  rescue
-    _ -> false
+  @doc "The sentence a room reason is shown as (Gleam `rooms/errors.message`)."
+  def error_message(reason) do
+    reason |> Caps.Rooms.room_error() |> :oskol@rooms@errors.message()
   end
 
   defdelegate join_game(game_id, player_name, player_pid), to: GameServer

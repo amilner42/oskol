@@ -15,6 +15,27 @@ defmodule OskolWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # The JSON the Elm client reads. Public, like the pages it replaces: no
+  # accounts, no auth. The session is still fetched, because guest identity
+  # rides in it (and the cookie plug renews it), and forgery protection is
+  # on — the client sends the token in `x-csrf-token`.
+  pipeline :papi do
+    plug :accepts, ["json"]
+    plug :fetch_session
+    plug OskolWeb.Plugs.GuestId
+    plug :protect_from_forgery
+  end
+
+  # Declared before the game routes so `/papi/...` is not captured by
+  # `/:slug/:id`.
+  scope "/papi", OskolWeb.Api do
+    pipe_through :papi
+
+    get "/library", LandingController, :library
+    get "/games/:slug", LandingController, :show
+    post "/games/:slug", LandingController, :create
+  end
+
   # Enable LiveDashboard in development. Declared before the game routes so
   # `/dev/dashboard` is not captured by `/:slug/:id`.
   if Application.compile_env(:oskol, :dev_routes) do

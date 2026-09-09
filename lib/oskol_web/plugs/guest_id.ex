@@ -22,32 +22,28 @@ defmodule OskolWeb.Plugs.GuestId do
 
   import Plug.Conn
 
+  alias Oskol.Gleam.CtxBuilder
+  alias Oskol.Gleam.Interop
+
   @cookie "_oskol_guest"
   @one_year 60 * 60 * 24 * 365
-  # 16 crypto-random bytes, URL-safe base64, unpadded: exactly 22 chars.
-  @id_format ~r/^[A-Za-z0-9_-]{22}$/
 
   def init(opts), do: opts
 
   def call(conn, _opts) do
     conn = fetch_cookies(conn)
 
+    # Which id this request carries — the cookie's, or a fresh one when it is
+    # not one we minted — is decided in Gleam (oskol/guests/identity).
     id =
-      case conn.req_cookies[@cookie] do
-        id when is_binary(id) ->
-          if Regex.match?(@id_format, id), do: id, else: mint()
-
-        _ ->
-          mint()
-      end
+      :oskol@guests@identity.for_request(
+        CtxBuilder.build(),
+        Interop.opt(conn.req_cookies[@cookie])
+      )
 
     conn
     # Set on every response: a returning visit renews the year.
     |> put_resp_cookie(@cookie, id, max_age: @one_year, http_only: true, same_site: "Lax")
     |> put_session(:guest_id, id)
-  end
-
-  defp mint do
-    :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
   end
 end

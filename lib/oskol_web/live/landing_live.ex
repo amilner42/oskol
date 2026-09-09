@@ -13,6 +13,8 @@ defmodule OskolWeb.LandingLive do
   alias Oskol.Game
   alias Oskol.Game.GameServerState
   alias Oskol.GameKit
+  alias Oskol.Gleam.CtxBuilder
+  alias Oskol.Gleam.Interop
   alias OskolWeb.GameArt
   alias OskolWeb.GameCopy
 
@@ -23,12 +25,13 @@ defmodule OskolWeb.LandingLive do
     # Silent guest identity: the cookie plug put the id in the session, so it
     # is here on the static render already. Touching the row returns the name
     # this guest last played under — the create and join forms prefill it.
-    guest_id = session["guest_id"]
-    guest_name = if guest_id, do: Oskol.Guests.touch(guest_id)
+    guest_session = CtxBuilder.session(session)
+    guest_name = Interop.unopt(:oskol@guests@identity.remembered_name(ctx(), guest_session))
 
     socket =
       assign(socket,
-        guest_id: guest_id,
+        guest_id: session["guest_id"],
+        guest_session: guest_session,
         guest_name: guest_name,
         games: GameKit.games(),
         clock_presets: GameKit.clock_presets(),
@@ -227,40 +230,52 @@ defmodule OskolWeb.LandingLive do
   # actually shows have any business being here.
   defp route_invite(socket, game_name) do
     socket = assign(socket, server_state: nil)
+    server_state = live_state(game_name)
 
-    case Game.lookup_game(game_name) do
-      {:ok, _pid} ->
-        server_state = Game.get_server_state(game_name)
-        disconnected = GameServerState.disconnected_seats(server_state)
-
-        cond do
-          not GameServerState.full?(server_state) ->
-            assign(socket,
-              step: :player_name,
-              game_name: game_name,
-              inviter_name: inviter_name(server_state),
-              setup_summary: GameServerState.summary(server_state),
-              disconnected_players: disconnected
-            )
-
-          disconnected == [] ->
-            assign(socket,
-              step: :table_full,
-              game_name: game_name,
-              disconnected_players: []
-            )
-
-          true ->
-            assign(socket,
-              step: :reconnect,
-              game_name: game_name,
-              disconnected_players: disconnected
-            )
-        end
-
-      :not_found ->
+    case :oskol@rooms@invite.step(invite_table(server_state)) do
+      :no_room ->
         assign(socket, step: :player_name, game_name: game_name)
+
+      {:open, inviter, disconnected} ->
+        assign(socket,
+          step: :player_name,
+          game_name: game_name,
+          inviter_name: Interop.unopt(inviter),
+          setup_summary: GameServerState.summary(server_state),
+          disconnected_players: disconnected
+        )
+
+      :full ->
+        assign(socket,
+          step: :table_full,
+          game_name: game_name,
+          disconnected_players: []
+        )
+
+      {:reclaim, disconnected} ->
+        assign(socket,
+          step: :reconnect,
+          game_name: game_name,
+          disconnected_players: disconnected
+        )
     end
+  end
+
+  # The room behind a code, or nil. Looking one up may rehydrate it.
+  defp live_state(game_id) do
+    case Game.lookup_game(game_id) do
+      {:ok, _pid} -> Game.get_server_state(game_id)
+      :not_found -> nil
+    end
+  end
+
+  # The facts `oskol/rooms/invite` decides on.
+  defp invite_table(nil), do: :none
+
+  defp invite_table(server_state) do
+    {:some,
+     {:table, GameServerState.full?(server_state), Interop.opt(inviter_name(server_state)),
+      GameServerState.disconnected_seats(server_state)}}
   end
 
   defp inviter_name(server_state) do
@@ -316,24 +331,33 @@ defmodule OskolWeb.LandingLive do
     {:noreply, assign(socket, setup: %{socket.assigns.setup | clock: clock_id}, error: nil)}
   end
 
+  # Creating and joining are decided in Gleam (oskol/handlers/rooms): the
+  # name check, minting a code, setting the room up, taking the seat and
+  # remembering the guest's name all happen there, so this page and the JSON
+  # API cannot drift apart.
   def handle_event("new_game", %{"player_name" => player_name}, socket) do
-    case clean_name(player_name) do
-      {:error, message} ->
+    setup = socket.assigns.setup
+    gleam_setup = {:setup, setup.format, Map.to_list(setup.selections), setup.clock}
+
+    case :oskol@handlers@rooms.create(
+           ctx(),
+           socket.assigns.guest_session,
+           socket.assigns.slug,
+           gleam_setup,
+           player_name
+         ) do
+      {:ok, {:seated, game_id, player_id, token, name, _started}} ->
+        socket = assign(socket, guest_name: name)
+        {:noreply, seated(socket, game_id, player_id, token, Game.get_server_state(game_id))}
+
+      {:error, {:rejected, message}} ->
         {:noreply, assign(socket, error: message)}
 
-      {:ok, player_name} ->
-        {:ok, game_id} = Game.create_game(socket.assigns.slug)
-        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
-
-        with {:ok, _} <- Game.configure(game_id, socket.assigns.setup),
-             {:ok, player_id, new_state} <-
-               Game.join_game(game_id, player_name, self(), socket.assigns.guest_id) do
-          token = GameServerState.token_for(new_state, player_id)
-          socket = remember_guest_name(socket, player_name)
-          {:noreply, seated(socket, game_id, player_id, token, new_state)}
-        else
-          {:error, reason} -> {:noreply, assign(socket, error: format_error(reason))}
-        end
+      # No code was free, or the room would not start: nothing the visitor
+      # can do about it, and nothing to show them. Same 500 as before.
+      {:error, {:unavailable, reason}} ->
+        raise "could not create a #{socket.assigns.slug} room: " <>
+                :oskol@rooms@errors.message(reason)
     end
   end
 
@@ -343,46 +367,25 @@ defmodule OskolWeb.LandingLive do
   def handle_event("submit_player_name", %{"player_name" => player_name}, socket) do
     game_id = socket.assigns.game_name
 
-    with {:ok, player_name} <- clean_name(player_name),
-         {:ok, _pid} <- Game.lookup_game(game_id) do
-      Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
-      server_state = Game.get_server_state(game_id)
+    case :oskol@handlers@rooms.join(
+           ctx(),
+           socket.assigns.guest_session,
+           game_id,
+           player_name
+         ) do
+      {:ok, {:seated, ^game_id, player_id, token, name, _started}} ->
+        socket = assign(socket, guest_name: name, player_name: name)
+        {:noreply, seated(socket, game_id, player_id, token, Game.get_server_state(game_id))}
 
-      socket =
-        assign(socket,
-          player_name: player_name,
-          setup_summary: GameServerState.summary(server_state),
-          disconnected_players: GameServerState.disconnected_seats(server_state)
-        )
+      {:error, {:refused, message}} ->
+        {:noreply, socket |> refresh_table(game_id) |> assign(error: message)}
 
-      case Game.join_game(game_id, player_name, self(), socket.assigns.guest_id) do
-        {:ok, player_id, new_state} ->
-          token = GameServerState.token_for(new_state, player_id)
-          socket = remember_guest_name(socket, player_name)
-          {:noreply, seated(socket, game_id, player_id, token, new_state)}
+      # The table moved on: what the invite link offers now is its decision.
+      {:error, :reroute} ->
+        {:noreply, route_invite(assign(socket, error: nil), game_id)}
 
-        # A name is not a seat: a clash is just a clash, and the table
-        # decides on its own whether there is anything else to offer.
-        {:error, :name_taken} ->
-          {:noreply, assign(socket, error: "That name is already taken")}
-
-        {:error, reason} when reason in [:game_full, :game_already_started] ->
-          {:noreply, route_invite(assign(socket, error: nil), game_id)}
-
-        {:error, reason} ->
-          {:noreply, assign(socket, error: format_error(reason))}
-      end
-    else
-      {:error, message} when is_binary(message) ->
-        {:noreply, assign(socket, error: message)}
-
-      _ ->
-        {:noreply,
-         assign(socket,
-           step: :create,
-           game_name: "",
-           error: "That game is over. Start a new one and send a fresh link."
-         )}
+      {:error, {:gone, message}} ->
+        {:noreply, assign(socket, step: :create, game_name: "", error: message)}
     end
   end
 
@@ -399,7 +402,7 @@ defmodule OskolWeb.LandingLive do
         {:noreply, seated(socket, game_id, player_id, token, new_state)}
 
       {:error, reason} ->
-        {:noreply, route_invite(assign(socket, error: format_error(reason)), game_id)}
+        {:noreply, route_invite(assign(socket, error: Game.error_message(reason)), game_id)}
     end
   end
 
@@ -518,50 +521,23 @@ defmodule OskolWeb.LandingLive do
     ~p"/#{socket.assigns.slug}/#{game_id}?t=#{token}"
   end
 
-  # A seat was taken under this name: remember it on the guest's row so the
-  # next create or join form is prefilled with it. Last writer wins.
-  defp remember_guest_name(socket, name) do
-    if socket.assigns.guest_id, do: Oskol.Guests.save_name(socket.assigns.guest_id, name)
-    assign(socket, guest_name: name)
-  end
+  # Every capability a handler may use, closed over this LiveView: it is the
+  # process that follows a room's broadcasts and that takes a seat.
+  defp ctx, do: CtxBuilder.build(player_pid: self())
 
-  @max_name_length 24
+  # The join form is shown again: refresh what it says about the table.
+  defp refresh_table(socket, game_id) do
+    case live_state(game_id) do
+      nil ->
+        socket
 
-  # A display name: trimmed, bounded, printable. It goes into every payload,
-  # the invite URL and the page title.
-  defp clean_name(name) when is_binary(name) do
-    name = String.trim(name)
-
-    cond do
-      name == "" ->
-        {:error, "Pick a display name first"}
-
-      String.length(name) > @max_name_length ->
-        {:error, "Names are #{@max_name_length} characters at most"}
-
-      String.match?(name, ~r/[\p{C}]/u) ->
-        {:error, "Invalid name"}
-
-      true ->
-        {:ok, name}
+      server_state ->
+        assign(socket,
+          setup_summary: GameServerState.summary(server_state),
+          disconnected_players: GameServerState.disconnected_seats(server_state)
+        )
     end
   end
-
-  defp clean_name(_), do: {:error, "Invalid name"}
-
-  defp format_error(:game_full), do: "That game is full"
-  defp format_error(:name_taken), do: "That name is already taken"
-  defp format_error(:invalid_name), do: "Invalid name"
-  defp format_error(:unknown_format), do: "Unknown game mode"
-  defp format_error(:unknown_clock), do: "Unknown time control"
-  defp format_error(:unknown_setting), do: "Unknown setting"
-  defp format_error(:unknown_choice), do: "Unknown choice"
-  defp format_error(:game_already_started), do: "That game already started"
-  defp format_error(:seat_connected), do: "That player is back at the table"
-  defp format_error(:invalid_token), do: "That link is no longer valid"
-  defp format_error(:player_not_found), do: "That player is not at this table"
-  defp format_error(reason) when is_atom(reason), do: "Error: #{reason}"
-  defp format_error(reason), do: "Error: #{inspect(reason)}"
 
   # ============================================================================
   # RENDER
