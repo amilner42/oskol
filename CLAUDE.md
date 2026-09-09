@@ -149,6 +149,8 @@ test/go/            board rules, ko/superko/snapback, scoring, oracle, conforman
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: setup, auto-start, actions, clocks, rematch
 lib/oskol/persistence.ex        games + game_actions tables (seed + action log per room)
+lib/oskol/guests.ex             silent guest identity: guests table + placeholder users table
+lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every visit
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
 lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
@@ -324,6 +326,16 @@ alias); prod reads `DATABASE_URL` (Fly Managed Postgres via pgbouncer, so
 postgrex runs with `prepare: :unnamed`) and migrates on boot. A room's raw
 `control:` (tests only) does not persist; real rooms use clock preset ids,
 which do.
+
+Every visitor silently becomes a guest: `OskolWeb.Plugs.GuestId` mints an
+opaque crypto-random id into a year-long HttpOnly cookie (renewed on every
+visit) and mirrors it into the session, so LiveView mounts see it on the
+static render. `Oskol.Guests` touches the guest's row on mount and remembers
+the last display name they played under (last writer wins); that name
+prefills the create and join forms, and each seat in `games.players` records
+the guest id. The id authenticates nothing — seats are still opened only by
+seat tokens. `users` is a deliberately skeletal placeholder (it ships empty)
+for the future account-claim path via `guests.user_id`.
 
 ## Future
 - Twists as settings: a reroll in backgammon, two hands play one in hold'em,

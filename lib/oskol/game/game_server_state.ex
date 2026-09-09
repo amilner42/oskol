@@ -20,6 +20,7 @@ defmodule Oskol.Game.GameServerState do
   @type connection :: %{
           name: String.t(),
           token: String.t(),
+          guest_id: String.t() | nil,
           pid: pid() | nil,
           connected: boolean(),
           monitor_ref: reference() | nil

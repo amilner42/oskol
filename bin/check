@@ -72,6 +72,7 @@ if [[ "${1:-}" == "--browser" ]]; then
   node playwright/test-poker-smoke/test.js
   node playwright/test-go-smoke/test.js
   node playwright/test-chess-smoke/test.js
+  node playwright/test-guest-prefill/test.js
 fi
 
 step "all green"

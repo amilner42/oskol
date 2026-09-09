@@ -19,9 +19,17 @@ defmodule OskolWeb.LandingLive do
   # ---------- Mount and navigation ----------
 
   @impl true
-  def mount(params, _session, socket) do
+  def mount(params, session, socket) do
+    # Silent guest identity: the cookie plug put the id in the session, so it
+    # is here on the static render already. Touching the row returns the name
+    # this guest last played under — the create and join forms prefill it.
+    guest_id = session["guest_id"]
+    guest_name = if guest_id, do: Oskol.Guests.touch(guest_id)
+
     socket =
       assign(socket,
+        guest_id: guest_id,
+        guest_name: guest_name,
         games: GameKit.games(),
         clock_presets: GameKit.clock_presets(),
         page: :library,
@@ -318,8 +326,10 @@ defmodule OskolWeb.LandingLive do
         Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
 
         with {:ok, _} <- Game.configure(game_id, socket.assigns.setup),
-             {:ok, player_id, new_state} <- Game.join_game(game_id, player_name, self()) do
+             {:ok, player_id, new_state} <-
+               Game.join_game(game_id, player_name, self(), socket.assigns.guest_id) do
           token = GameServerState.token_for(new_state, player_id)
+          socket = remember_guest_name(socket, player_name)
           {:noreply, seated(socket, game_id, player_id, token, new_state)}
         else
           {:error, reason} -> {:noreply, assign(socket, error: format_error(reason))}
@@ -345,9 +355,10 @@ defmodule OskolWeb.LandingLive do
           disconnected_players: GameServerState.disconnected_seats(server_state)
         )
 
-      case Game.join_game(game_id, player_name, self()) do
+      case Game.join_game(game_id, player_name, self(), socket.assigns.guest_id) do
         {:ok, player_id, new_state} ->
           token = GameServerState.token_for(new_state, player_id)
+          socket = remember_guest_name(socket, player_name)
           {:noreply, seated(socket, game_id, player_id, token, new_state)}
 
         # A name is not a seat: a clash is just a clash, and the table
@@ -507,6 +518,13 @@ defmodule OskolWeb.LandingLive do
     ~p"/#{socket.assigns.slug}/#{game_id}?t=#{token}"
   end
 
+  # A seat was taken under this name: remember it on the guest's row so the
+  # next create or join form is prefilled with it. Last writer wins.
+  defp remember_guest_name(socket, name) do
+    if socket.assigns.guest_id, do: Oskol.Guests.save_name(socket.assigns.guest_id, name)
+    assign(socket, guest_name: name)
+  end
+
   @max_name_length 24
 
   # A display name: trimmed, bounded, printable. It goes into every payload,
@@ -574,6 +592,7 @@ defmodule OskolWeb.LandingLive do
             disconnected_players={@disconnected_players}
             player_id={@player_id}
             player_name={@player_name}
+            guest_name={@guest_name}
             clock_presets={@clock_presets}
           />
         <% end %>
@@ -880,6 +899,7 @@ defmodule OskolWeb.LandingLive do
   attr :disconnected_players, :list, default: []
   attr :player_id, :string, default: nil
   attr :player_name, :string, default: ""
+  attr :guest_name, :string, default: nil
   attr :clock_presets, :list, default: []
 
   defp game_page(assigns) do
@@ -920,9 +940,18 @@ defmodule OskolWeb.LandingLive do
         </p>
         <%= case @step do %>
           <% :create -> %>
-            <.create_form info={@info} setup={@setup} clock_presets={@clock_presets} />
+            <.create_form
+              info={@info}
+              setup={@setup}
+              clock_presets={@clock_presets}
+              guest_name={@guest_name}
+            />
           <% :player_name -> %>
-            <.join_form inviter_name={@inviter_name} summary={@setup_summary} />
+            <.join_form
+              inviter_name={@inviter_name}
+              summary={@setup_summary}
+              guest_name={@guest_name}
+            />
           <% :table_full -> %>
             <.table_full game_name={@game_name} />
           <% :reconnect -> %>
@@ -1028,6 +1057,7 @@ defmodule OskolWeb.LandingLive do
   attr :info, :map, required: true
   attr :setup, :map, required: true
   attr :clock_presets, :list, required: true
+  attr :guest_name, :string, default: nil
 
   defp create_form(assigns) do
     formats = Map.get(assigns.info, "formats", [])
@@ -1049,7 +1079,7 @@ defmodule OskolWeb.LandingLive do
     <form phx-submit="new_game" class="space-y-4 sm:space-y-6">
       <div>
         <h3 class="pixel text-[10px] mb-2" style="color: var(--pen)">YOUR NAME</h3>
-        <.name_input placeholder="e.g. Alice" />
+        <.name_input id="create-name" placeholder="e.g. Alice" value={@guest_name} />
       </div>
 
       <div>
@@ -1112,6 +1142,7 @@ defmodule OskolWeb.LandingLive do
 
   attr :inviter_name, :string, default: nil
   attr :summary, :string, default: nil
+  attr :guest_name, :string, default: nil
 
   defp join_form(assigns) do
     ~H"""
@@ -1123,7 +1154,7 @@ defmodule OskolWeb.LandingLive do
     </p>
     <p class="pixel text-[10px] mb-3" style="color: var(--red)">PLAYER 2 · ENTER YOUR NAME</p>
     <form phx-submit="submit_player_name" class="grid gap-3 sm:grid-cols-[1fr_auto] items-center">
-      <.name_input placeholder="e.g. Bob" />
+      <.name_input id="join-name" placeholder="e.g. Bob" value={@guest_name} />
       <.cta type="submit" id="join-game">JOIN GAME</.cta>
       <p class="sm:col-span-2 text-sm" style="color: var(--pencil)">
         The game starts as soon as you join.
@@ -1346,13 +1377,23 @@ defmodule OskolWeb.LandingLive do
 
   # ---------- Primitives ----------
 
+  # `value` prefills the guest's saved name (empty guests just see the
+  # placeholder). `phx-update="ignore"` because this input belongs to the
+  # visitor once rendered: the form has no phx-change, so without it any
+  # re-render (picking a mode or a clock) would clobber what they typed
+  # with the server's stale value.
+  attr :id, :string, required: true
   attr :placeholder, :string, default: ""
+  attr :value, :string, default: nil
 
   defp name_input(assigns) do
     ~H"""
     <input
       type="text"
+      id={@id}
       name="player_name"
+      value={@value}
+      phx-update="ignore"
       placeholder={@placeholder}
       maxlength="24"
       class="name-field w-full px-4 py-3 text-lg"
