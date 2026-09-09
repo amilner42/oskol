@@ -12,6 +12,8 @@ import gleam/result
 
 pub type Action {
   Roll
+  /// The "Pick dice" twist: take the turn with chosen dice, once per game.
+  Pick(a: Int, b: Int)
   /// Stage a move on your own board.
   MoveChecker(from: Loc, to: Loc)
   /// Take back the last staged move.
@@ -86,20 +88,11 @@ pub fn apply(
     }
     Roll -> {
       use #(next, dice) <- result.try(state.roll(state, player_id))
-      let rolled =
-        custom("dice_rolled", [
-          #("player_id", json.string(player_id)),
-          #("dice", json.array(dice, json.int)),
-        ])
-      let events = case next.phase {
-        state.Rolling(_) -> [
-          rolled,
-          custom("no_moves", [#("player_id", json.string(player_id))]),
-          ..turn_started(next)
-        ]
-        _ -> [rolled]
-      }
-      Ok(#(next, events))
+      Ok(#(next, dice_events(next, player_id, dice, False)))
+    }
+    Pick(a, b) -> {
+      use #(next, dice) <- result.try(state.pick(state, player_id, a, b))
+      Ok(#(next, dice_events(next, player_id, dice, True)))
     }
     MoveChecker(from, to) -> {
       use #(next, _staged) <- result.try(state.stage(state, player_id, from, to))
@@ -196,6 +189,30 @@ pub fn apply(
   }
 }
 
+/// Events for a turn's dice, rolled or picked: everyone sees which, so a
+/// picked roll is fully transparent to the opponent.
+fn dice_events(
+  next: GameState,
+  player_id: String,
+  dice: List(Int),
+  picked: Bool,
+) -> List(Event) {
+  let rolled =
+    custom("dice_rolled", [
+      #("player_id", json.string(player_id)),
+      #("dice", json.array(dice, json.int)),
+      #("picked", json.bool(picked)),
+    ])
+  case next.phase {
+    state.Rolling(_) -> [
+      rolled,
+      custom("no_moves", [#("player_id", json.string(player_id))]),
+      ..turn_started(next)
+    ]
+    _ -> [rolled]
+  }
+}
+
 /// Events for a finished game: the result, the score change, and either the
 /// end of the match or the start of the next game.
 fn end_events(
@@ -263,7 +280,16 @@ pub fn legal(state: GameState, player_id: String) -> List(Schema) {
         ]
         False -> []
       }
-      [action.simple("roll", "Roll dice"), ..double]
+      let pick = case state.can_pick(state, player_id) {
+        True -> [
+          action.Schema("pick", "Pick dice", [
+            action.number("die1", 1, 6),
+            action.number("die2", 1, 6),
+          ]),
+        ]
+        False -> []
+      }
+      list.flatten([[action.simple("roll", "Roll dice")], double, pick])
     }
     _, True -> [
       action.simple(

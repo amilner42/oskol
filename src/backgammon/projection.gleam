@@ -112,6 +112,10 @@ fn player_info(state: GameState, id: String) -> scene.PlayerInfo {
     Some(c) -> state.player_of(state, c) == id
     None -> False
   })
+  |> scene.flag(
+    "has_pick",
+    state.config.pick_dice && !list.contains(state.picks_used, id),
+  )
   |> scene.player_data("color", json.string(board.color_name(color)))
 }
 
@@ -167,6 +171,7 @@ fn player_zones(state: GameState) -> List(Zone) {
 fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
   let rolled = state.last_roll
   let left = state.dice_left(state)
+  let picked = state.last_roll_picked
   let tokens = case state.phase {
     state.Moving(_, _) -> {
       // Every die of the roll (four for doubles); only the mover sees which
@@ -176,9 +181,10 @@ fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
         True -> left
         False -> all
       }
-      mark_used(all, unused, 0, [])
+      mark_used(all, unused, picked, 0, [])
     }
-    _ -> list.index_map(rolled, fn(value, i) { die_token(i, value, True) })
+    _ ->
+      list.index_map(rolled, fn(value, i) { die_token(i, value, True, picked) })
   }
   scene.zone(engine.dice_zone, scene.Row, tokens)
 }
@@ -186,6 +192,7 @@ fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
 fn mark_used(
   all: List(Int),
   left: List(Int),
+  picked: Bool,
   index: Int,
   acc: List(scene.Token),
 ) -> List(scene.Token) {
@@ -194,13 +201,13 @@ fn mark_used(
     [value, ..rest] ->
       case list.contains(left, value) {
         True ->
-          mark_used(rest, remove_one(left, value), index + 1, [
-            die_token(index, value, False),
+          mark_used(rest, remove_one(left, value), picked, index + 1, [
+            die_token(index, value, False, picked),
             ..acc
           ])
         False ->
-          mark_used(rest, left, index + 1, [
-            die_token(index, value, True),
+          mark_used(rest, left, picked, index + 1, [
+            die_token(index, value, True, picked),
             ..acc
           ])
       }
@@ -215,9 +222,13 @@ fn remove_one(dice: List(Int), die: Int) -> List(Int) {
   }
 }
 
-fn die_token(index: Int, value: Int, used: Bool) -> scene.Token {
+fn die_token(index: Int, value: Int, used: Bool, picked: Bool) -> scene.Token {
   scene.token("die:" <> int.to_string(index), "die")
-  |> scene.with_props([#("value", json.int(value)), #("used", json.bool(used))])
+  |> scene.with_props([
+    #("value", json.int(value)),
+    #("used", json.bool(used)),
+    #("picked", json.bool(picked)),
+  ])
 }
 
 fn cube_zone(state: GameState) -> Zone {

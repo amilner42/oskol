@@ -43,6 +43,7 @@ type alias Model =
     { selectedFrom : Maybe String
     , drag : Drag.State String Msg -- the item a drag carries is my checker colour
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
+    , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
     }
 
 
@@ -73,6 +74,11 @@ type Msg
     | DragReleased { x : Float, y : Float }
     | DragCancelled
     | GotDropZones (List Drag.Zone)
+    | OpenPicker
+    | PickFace Int
+    | UnpickAt Int
+    | CancelPick
+    | ConfirmPick
     | Ignore
 
 
@@ -86,21 +92,22 @@ type Out
 
 init : Model
 init =
-    { selectedFrom = Nothing, drag = Drag.idle, autoRolled = False }
+    { selectedFrom = Nothing, drag = Drag.idle, autoRolled = False, picker = Nothing }
 
 
 {-| Roll for the viewer when there is nothing to ask: at the start of a
-turn whose legal actions include `roll` but not `double` (Crawford, the
-opponent owns the cube), the choice is no choice, so the client sends the
-roll itself. Main calls this once per arriving payload. The guard is an
-edge: `autoRolled` arms when the qualifying state first appears and clears
+turn whose legal actions offer `roll` alone -- no `double` (Crawford, the
+opponent owns the cube) and no `pick` (the twist is off, or the pick is
+spent) -- the choice is no choice, so the client sends the roll itself.
+Main calls this once per arriving payload. The guard is an edge:
+`autoRolled` arms when the qualifying state first appears and clears
 only when rolling stops being the pending action, so one turn rolls once
 -- replayed payloads of the same state (reconnects) are skipped, and a
 failed send cannot loop because nothing retries until the state changes.
 -}
 autoRoll : List Schema -> Model -> ( Model, Maybe E.Value )
 autoRoll legal model =
-    if hasAction "roll" legal && not (hasAction "double" legal) then
+    if hasAction "roll" legal && not (hasAction "double" legal) && not (hasAction "pick" legal) then
         if model.autoRolled then
             ( model, Nothing )
 
@@ -164,6 +171,42 @@ update msg model =
 
         GotDropZones zones ->
             ( { model | drag = Drag.setZones zones model.drag }, NoOut )
+
+        OpenPicker ->
+            ( { model | picker = Just [] }, NoOut )
+
+        PickFace value ->
+            case model.picker of
+                Just chosen ->
+                    if List.length chosen < 2 then
+                        ( { model | picker = Just (chosen ++ [ value ]) }, NoOut )
+
+                    else
+                        ( model, NoOut )
+
+                Nothing ->
+                    ( model, NoOut )
+
+        UnpickAt index ->
+            case model.picker of
+                Just chosen ->
+                    ( { model | picker = Just (List.take index chosen ++ List.drop (index + 1) chosen) }, NoOut )
+
+                Nothing ->
+                    ( model, NoOut )
+
+        CancelPick ->
+            ( { model | picker = Nothing }, NoOut )
+
+        ConfirmPick ->
+            case model.picker of
+                Just [ a, b ] ->
+                    ( init
+                    , Send (Protocol.encodeAction "pick" [ ( "die1", E.int a ), ( "die2", E.int b ) ])
+                    )
+
+                _ ->
+                    ( model, NoOut )
 
         Ignore ->
             ( model, NoOut )
@@ -588,6 +631,17 @@ viewPlayerBar ctx player isMe =
 
                   else
                     text ""
+                , if Protocol.hasFlag "has_pick" p then
+                    span
+                        [ class "pixel text-[7px] px-1 py-0.5 shrink-0 bg-has-pick"
+                        , style "border" "2px solid var(--bg-sky)"
+                        , style "color" "var(--bg-sky)"
+                        , title "Still holds the dice pick"
+                        ]
+                        [ text "PICK" ]
+
+                  else
+                    text ""
                 , if List.member p.id ctx.away then
                     span [ class "pixel text-[7px] shrink-0", style "color" "var(--red)", title "Connection lost" ] [ text "AWAY" ]
 
@@ -737,7 +791,7 @@ viewBoard board =
     -- unbroken column through the middle, the trays on the far right. The
     -- centre band splits at the bar: cube-side actions (double, take, drop,
     -- undo, play) on the left half, the dice and their roll on the right.
-    div [ class "bg-board p-1.5 sm:p-3 select-none" ]
+    div [ class "bg-board relative p-1.5 sm:p-3 select-none" ]
         -- minmax(0, 6fr) so a wide button in a band can never steal width
         -- from the other half's points.
         [ div [ class "grid grid-cols-[auto_minmax(0,6fr)_auto_minmax(0,6fr)_auto] gap-1 sm:gap-2" ]
@@ -755,6 +809,12 @@ viewBoard board =
             , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomRight)
             , viewTray board me
             ]
+        , case ( board.ctx.model.picker, hasAction "pick" board.ctx.legal ) of
+            ( Just chosen, True ) ->
+                viewPicker chosen
+
+            _ ->
+                text ""
         ]
 
 
@@ -1110,11 +1170,30 @@ viewRightBand board =
         statusText s =
             span [ class "pixel text-[8px] sm:text-[9px] px-1", style "color" "var(--pencil)" ] [ text s ]
 
-        -- ROLL appears only when it is a real choice against DOUBLE; with
-        -- no double on offer the client already rolled by itself.
+        -- ROLL appears only when it is a real choice -- against DOUBLE or
+        -- PICK DICE; with roll the sole option the client already rolled
+        -- by itself.
         roll =
-            if hasAction "double" ctx.legal then
-                actionButton ctx "roll" "sky" |> Maybe.map List.singleton |> Maybe.withDefault []
+            if hasAction "double" ctx.legal || hasAction "pick" ctx.legal then
+                List.filterMap identity
+                    [ actionButton ctx "roll" "sky"
+                    , pickButton ctx
+                    ]
+
+            else
+                []
+
+        pickedTag =
+            if List.any (\t -> Protocol.tokenProp D.bool "picked" t == Just True) dice then
+                [ span
+                    [ class "pixel text-[7px] px-1 py-0.5"
+                    , style "background" "var(--bg-sky)"
+                    , style "color" "#fff"
+                    , title "These dice were picked, not rolled"
+                    , Html.Attributes.id "dice-picked-tag"
+                    ]
+                    [ text "PICKED" ]
+                ]
 
             else
                 []
@@ -1135,7 +1214,104 @@ viewRightBand board =
             else
                 []
     in
-    List.map viewDie dice ++ roll ++ status
+    List.map viewDie dice ++ pickedTag ++ roll ++ status
+
+
+{-| The twist's button: opens the dice picker. Legal exactly when `pick`
+is -- once per game, gone for good after use.
+-}
+pickButton : Ctx -> Maybe (Html Msg)
+pickButton ctx =
+    if hasAction "pick" ctx.legal then
+        Just
+            (button
+                [ class "btn-arcade pixel text-[9px] px-2 py-3 sm:px-4 text-center leading-relaxed plain"
+                , Html.Attributes.id "pick-dice-open"
+                , onClick OpenPicker
+                ]
+                [ text "PICK DICE" ]
+            )
+
+    else
+        Nothing
+
+
+{-| The pick-dice panel, floated over the board's centre so opening it
+never reflows the one-screen layout: six faces to tap (twice for
+doubles), the two chosen dice (tap one to take it back), confirm and
+cancel.
+-}
+viewPicker : List Int -> Html Msg
+viewPicker chosen =
+    let
+        slot index =
+            case List.drop index chosen |> List.head of
+                Just value ->
+                    button
+                        [ class "die mini"
+                        , title "Tap to take this die back"
+                        , onClick (UnpickAt index)
+                        ]
+                        [ miniFace value ]
+
+                Nothing ->
+                    div [ class "die mini empty" ] []
+    in
+    div [ class "absolute inset-x-0 top-1/2 -translate-y-1/2 z-20 flex justify-center pointer-events-none" ]
+        [ div [ class "pix bg-white p-2 sm:p-3 flex flex-col items-center gap-2 pointer-events-auto", Html.Attributes.id "pick-dice-panel" ]
+            [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text "PICK YOUR DICE" ]
+            , div [ class "flex gap-1 sm:gap-1.5" ]
+                (List.range 1 6
+                    |> List.map
+                        (\value ->
+                            button
+                                [ class "die mini"
+                                , classList [ ( "spent", List.length chosen >= 2 ) ]
+                                , Html.Attributes.id ("pick-face-" ++ String.fromInt value)
+                                , disabled (List.length chosen >= 2)
+                                , onClick (PickFace value)
+                                ]
+                                [ miniFace value ]
+                        )
+                )
+            , div [ class "flex items-center gap-1.5 sm:gap-2" ]
+                [ slot 0
+                , slot 1
+                , button
+                    [ class "btn-arcade pixel text-[9px] px-3 py-2 sky"
+                    , Html.Attributes.id "pick-confirm"
+                    , disabled (List.length chosen /= 2)
+                    , onClick ConfirmPick
+                    ]
+                    [ text "PICK" ]
+                , button
+                    [ class "btn-arcade pixel text-[9px] px-3 py-2 plain"
+                    , Html.Attributes.id "pick-cancel"
+                    , onClick CancelPick
+                    ]
+                    [ text "X" ]
+                ]
+            ]
+        ]
+
+
+{-| A die face at picker scale.
+-}
+miniFace : Int -> Html Msg
+miniFace value =
+    div [ class "grid grid-cols-3 grid-rows-3 w-4 h-4" ]
+        (List.range 0 8
+            |> List.map
+                (\i ->
+                    div [ class "flex items-center justify-center" ]
+                        [ div
+                            [ classList [ ( "w-1 h-1 rounded-full", True ), ( "invisible", not (List.member i (pipsOn value)) ) ]
+                            , style "background" "var(--ink)"
+                            ]
+                            []
+                        ]
+                )
+        )
 
 
 viewDie : Token -> Html Msg
@@ -1153,38 +1329,41 @@ viewDie token =
 
 pips : Int -> List (Html Msg)
 pips value =
-    let
-        on =
-            case value of
-                1 ->
-                    [ 4 ]
-
-                2 ->
-                    [ 2, 6 ]
-
-                3 ->
-                    [ 2, 4, 6 ]
-
-                4 ->
-                    [ 0, 2, 6, 8 ]
-
-                5 ->
-                    [ 0, 2, 4, 6, 8 ]
-
-                _ ->
-                    [ 0, 2, 3, 5, 6, 8 ]
-    in
     List.range 0 8
         |> List.map
             (\i ->
                 div [ class "flex items-center justify-center" ]
                     [ div
-                        [ classList [ ( "w-1.5 h-1.5 rounded-full", True ), ( "invisible", not (List.member i on) ) ]
+                        [ classList [ ( "w-1.5 h-1.5 rounded-full", True ), ( "invisible", not (List.member i (pipsOn value)) ) ]
                         , style "background" "var(--ink)"
                         ]
                         []
                     ]
             )
+
+
+{-| Which cells of the 3x3 grid a die face lights.
+-}
+pipsOn : Int -> List Int
+pipsOn value =
+    case value of
+        1 ->
+            [ 4 ]
+
+        2 ->
+            [ 2, 6 ]
+
+        3 ->
+            [ 2, 4, 6 ]
+
+        4 ->
+            [ 0, 2, 6, 8 ]
+
+        5 ->
+            [ 0, 2, 4, 6, 8 ]
+
+        _ ->
+            [ 0, 2, 3, 5, 6, 8 ]
 
 
 {-| The doubling cube's permanent home: a slim rail on the board's far

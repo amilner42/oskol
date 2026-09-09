@@ -106,8 +106,13 @@ defmodule OskolWeb.LandingLiveTest do
     assert html =~ "Backgammon"
     assert page_title(view) =~ "Play backgammon online with a friend"
     assert has_element?(view, "h1", "Play backgammon online with a friend")
-    # Backgammon offers no twist yet, so the form does not show an empty section
-    refute has_element?(view, "#twist")
+    # Backgammon's first twist: pick your dice, off by default
+    assert has_element?(view, "#twist h3", "TWIST")
+    assert has_element?(view, "#choice-twist-off.tile-mine")
+    assert has_element?(view, "#choice-twist-pick_dice", "Pick your dice, once a game")
+    view |> element("#choice-twist-pick_dice") |> render_click()
+    assert has_element?(view, "#choice-twist-pick_dice.tile-mine")
+    refute has_element?(view, "#choice-twist-off.tile-mine")
     assert has_element?(view, "#rules h2", "BACKGAMMON IN BRIEF")
     assert has_element?(view, "#other-games a[href='/poker']", "Poker")
     assert has_element?(view, "#modes h2", "MODES")
