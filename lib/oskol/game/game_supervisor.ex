@@ -19,6 +19,24 @@ defmodule Oskol.Game.GameSupervisor do
     end
   end
 
+  @doc """
+  Starts a room rebuilt from its persisted row and action log. `:ignore`
+  from init (a log that no longer replays) surfaces as an error.
+  """
+  def restore_game(game_id, game, actions) do
+    if Oskol.GameKit.exists?(game.slug) do
+      case DynamicSupervisor.start_child(
+             __MODULE__,
+             {Oskol.Game.GameServer, {game_id, game.slug, {:restore, game, actions}}}
+           ) do
+        :ignore -> {:error, :restore_failed}
+        other -> other
+      end
+    else
+      {:error, :unknown_game}
+    end
+  end
+
   def find_game(game_id) do
     case Registry.lookup(Oskol.GameRegistry, game_id) do
       [{pid, _}] -> {:ok, pid}

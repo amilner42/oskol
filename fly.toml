@@ -12,6 +12,8 @@ kill_signal = 'SIGTERM'
 [env]
   PHX_HOST = 'oskol.io'
   PORT = '8080'
+  # Fly's private network (where the Managed Postgres pgbouncer lives) is IPv6.
+  ECTO_IPV6 = 'true'
 
 [http_service]
   internal_port = 8080

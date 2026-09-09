@@ -12,6 +12,21 @@ defmodule OskolWeb.GameChannel do
 
   @impl true
   def join("game:" <> game_id, %{"token" => token}, socket) when is_binary(token) do
+    # Rehydrate the room first if it only lives in the database (a deploy or
+    # an idle shutdown happened since this client's page loaded).
+    case Oskol.Game.lookup_game(game_id) do
+      {:ok, _pid} -> join_room(game_id, token, socket)
+      :not_found -> {:error, %{reason: "Game not found"}}
+    end
+  end
+
+  # No token, no seat, and no view of the table: a visitor has to go through
+  # the invite link, which decides what (if anything) they may join as.
+  def join("game:" <> _game_id, _params, _socket) do
+    {:error, %{reason: "unauthorized"}}
+  end
+
+  defp join_room(game_id, token, socket) do
     try do
       # The seat token is the whole credential. Attaching first also
       # registers this channel as the seat's live connection, and the join
@@ -31,12 +46,6 @@ defmodule OskolWeb.GameChannel do
     catch
       :exit, _ -> {:error, %{reason: "Game not found"}}
     end
-  end
-
-  # No token, no seat, and no view of the table: a visitor has to go through
-  # the invite link, which decides what (if anything) they may join as.
-  def join("game:" <> _game_id, _params, _socket) do
-    {:error, %{reason: "unauthorized"}}
   end
 
   @impl true

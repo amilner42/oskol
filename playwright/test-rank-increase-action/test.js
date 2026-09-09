@@ -35,7 +35,7 @@ async function main() {
     log('STEP 1: Setting up 2-player game...');
 
     const primary = await context.newPage();
-    await primary.goto(`http://localhost:4000/g/${gameId}`);
+    await primary.goto(`http://localhost:4400/g/${gameId}`);
     await sleep(2000);
     await primary.screenshot({ path: 'playwright/screenshots/test-rank-increase-action/01-lobby-initial.png', fullPage: true });
 
@@ -47,7 +47,7 @@ async function main() {
     log('✓ Primary joined');
 
     const opponent = await context.newPage();
-    await opponent.goto(`http://localhost:4000/g/${gameId}`);
+    await opponent.goto(`http://localhost:4400/g/${gameId}`);
     await sleep(2000);
 
     await opponent.fill('input[name="player_name"]', 'Opponent');
@@ -373,7 +373,7 @@ async function main() {
 
     log('\n=== TEST COMPLETE ===');
     log('Screenshots saved to playwright/screenshots/test-rank-increase-action/');
-    log(`Game URL: http://localhost:4000/g/${gameId}`);
+    log(`Game URL: http://localhost:4400/g/${gameId}`);
 
   } catch (error) {
     log(`ERROR: ${error.message}`);

@@ -6,7 +6,7 @@
 const playwright = require('playwright');
 const fs = require('fs');
 
-const BASE = process.env.BASE_URL || 'http://localhost:4000';
+const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const OUT = process.argv[2] || 'playwright/screenshots/review-games';
 fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

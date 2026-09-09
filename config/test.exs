@@ -1,5 +1,17 @@
 import Config
 
+# Same credential story as dev.exs: local trust auth or the CI container.
+config :oskol, Oskol.Repo,
+  username: System.get_env("PGUSER") || "postgres",
+  password: System.get_env("PGPASSWORD") || "postgres",
+  hostname: System.get_env("PGHOST") || "localhost",
+  database: "oskol_test#{System.get_env("MIX_TEST_PARTITION")}",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: System.schedulers_online() * 2
+
+# No periodic pruning during tests; `Oskol.Game.Pruner.prune_now/0` runs it.
+config :oskol, :prune_interval_ms, nil
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :oskol, OskolWeb.Endpoint,

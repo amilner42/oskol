@@ -8,6 +8,7 @@
 import Config
 
 config :oskol,
+  ecto_repos: [Oskol.Repo],
   generators: [timestamp_type: :utc_datetime]
 
 # Configures the endpoint

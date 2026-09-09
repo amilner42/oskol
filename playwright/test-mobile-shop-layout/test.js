@@ -36,7 +36,7 @@ async function main() {
     log('STEP 1: Player 1 creates game...');
 
     const page1 = await context.newPage();
-    await page1.goto('http://localhost:4000/');
+    await page1.goto('http://localhost:4400/');
     await sleep(2000);
 
     await page1.fill('input[name="player_name"]', 'Player1');
@@ -55,7 +55,7 @@ async function main() {
     log('STEP 2: Player 2 joins...');
 
     const page2 = await context.newPage();
-    await page2.goto(`http://localhost:4000/?game=${gameId}`);
+    await page2.goto(`http://localhost:4400/?game=${gameId}`);
     await sleep(2000);
 
     await page2.fill('input[name="player_name"]', 'Player2');

@@ -9,10 +9,16 @@ defmodule Oskol.Game do
   defdelegate find_game(game_id), to: GameSupervisor
   defdelegate find_or_start_game(game_id, slug), to: GameSupervisor
 
+  @doc """
+  The live room for a code. When no process answers but the database still
+  has the game, the room is rehydrated (seed + action log replayed, seats
+  and tokens restored) before answering — this is how games survive deploys
+  and idle shutdowns.
+  """
   def lookup_game(game_id) do
     case GameSupervisor.find_game(game_id) do
       {:ok, pid} -> {:ok, pid}
-      :error -> :not_found
+      :error -> Oskol.Game.Rehydrator.resume(game_id)
     end
   end
 
@@ -54,11 +60,25 @@ defmodule Oskol.Game do
   def create_game(slug, generate, attempts) do
     game_id = generate.()
 
-    case GameSupervisor.start_game(game_id, slug) do
-      {:ok, _pid} -> {:ok, game_id}
-      {:error, {:already_started, _pid}} -> create_game(slug, generate, attempts - 1)
-      {:error, reason} -> {:error, reason}
+    # The registry only guards live rooms; persisted games (finished ones
+    # are kept) also hold their codes, so a code with a row is taken too.
+    if persisted?(game_id) do
+      create_game(slug, generate, attempts - 1)
+    else
+      case GameSupervisor.start_game(game_id, slug) do
+        {:ok, _pid} -> {:ok, game_id}
+        {:error, {:already_started, _pid}} -> create_game(slug, generate, attempts - 1)
+        {:error, reason} -> {:error, reason}
+      end
     end
+  end
+
+  # A database hiccup must not block creating games: the id space plus the
+  # registry still make collisions with live rooms impossible.
+  defp persisted?(game_id) do
+    Oskol.Persistence.game_exists?(game_id)
+  rescue
+    _ -> false
   end
 
   defdelegate join_game(game_id, player_name, player_pid), to: GameServer

@@ -50,7 +50,9 @@ defmodule Oskol.Game.GameServerState do
           setup: setup(),
           clock_timer: reference() | nil,
           rematch_ready: MapSet.t(player_id()),
-          rematch_game_id: String.t() | nil
+          rematch_game_id: String.t() | nil,
+          action_count: non_neg_integer(),
+          clock_base: integer() | nil
         }
 
   defstruct game_id: nil,
@@ -65,7 +67,12 @@ defmodule Oskol.Game.GameServerState do
             setup: %{format: nil, selections: %{}, clock: "none", seed: nil, control: nil},
             clock_timer: nil,
             rematch_ready: MapSet.new(),
-            rematch_game_id: nil
+            rematch_game_id: nil,
+            # How many log entries (actions + expiries) the instance has
+            # applied, and the `now` the instance started at: together they
+            # let the write-behind log record each entry's index and offset.
+            action_count: 0,
+            clock_base: nil
 
   @spec new(game_id(), String.t()) :: t()
   def new(game_id, slug) do

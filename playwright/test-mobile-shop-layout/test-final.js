@@ -38,7 +38,7 @@ async function main() {
     const desktopPage = await desktopContext.newPage();
 
     // Player 1 creates game (mobile)
-    await mobilePage.goto('http://localhost:4000/');
+    await mobilePage.goto('http://localhost:4400/');
     await sleep(2000);
     await mobilePage.fill('input[name="player_name"]', 'MobilePlayer');
     await sleep(300);
@@ -49,7 +49,7 @@ async function main() {
     log(`Game ID: ${gameId}`);
 
     // Player 2 joins (desktop)
-    await desktopPage.goto(`http://localhost:4000/?game=${gameId}`);
+    await desktopPage.goto(`http://localhost:4400/?game=${gameId}`);
     await sleep(2000);
     await desktopPage.fill('input[name="player_name"]', 'DesktopPlayer');
     await sleep(300);

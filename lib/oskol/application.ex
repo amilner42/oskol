@@ -13,12 +13,21 @@ defmodule Oskol.Application do
       config: %{metadata: [:file, :line]}
     })
 
+    # In prod the pending migrations run before the tree comes up: no
+    # release_command in fly.toml, and a machine waking from a stopped
+    # state always matches the schema its code expects.
+    if Application.get_env(:oskol, :migrate_on_boot, false), do: Oskol.Release.migrate()
+
     children = [
       OskolWeb.Telemetry,
+      Oskol.Repo,
       {DNSCluster, query: Application.get_env(:oskol, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Oskol.PubSub},
       {Registry, keys: :unique, name: Oskol.GameRegistry},
+      # The persister must outlive and precede the rooms that cast to it.
+      {Oskol.Game.Persister, []},
       Oskol.Game.GameSupervisor,
+      {Oskol.Game.Pruner, []},
       # Start a worker by calling: Oskol.Worker.start_link(arg)
       # {Oskol.Worker, arg},
       # Start to serve requests, typically the last entry

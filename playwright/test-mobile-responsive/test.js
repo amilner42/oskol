@@ -42,7 +42,7 @@ async function main() {
     log('STEP 1: Player 1 (mobile) creates game...');
 
     const mobilePage = await mobileContext.newPage();
-    await mobilePage.goto('http://localhost:4000/');
+    await mobilePage.goto('http://localhost:4400/');
     await sleep(2000);
     await mobilePage.screenshot({ path: `${SCREENSHOT_DIR}/01-mobile-landing.png` });
 
@@ -64,7 +64,7 @@ async function main() {
     log('STEP 2: Player 2 (desktop) joins...');
 
     const desktopPage = await desktopContext.newPage();
-    await desktopPage.goto(`http://localhost:4000/?game=${actualGameId}`);
+    await desktopPage.goto(`http://localhost:4400/?game=${actualGameId}`);
     await sleep(2000);
 
     await desktopPage.fill('input[name="player_name"]', 'DesktopPlayer');

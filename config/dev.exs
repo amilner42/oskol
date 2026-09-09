@@ -1,5 +1,17 @@
 import Config
 
+# Local PostgreSQL. The defaults match both a homebrew postgres with trust
+# auth (the password is ignored) and the CI service container (postgres:17
+# with POSTGRES_PASSWORD=postgres).
+config :oskol, Oskol.Repo,
+  username: System.get_env("PGUSER") || "postgres",
+  password: System.get_env("PGPASSWORD") || "postgres",
+  hostname: System.get_env("PGHOST") || "localhost",
+  database: "oskol_dev",
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
@@ -9,7 +21,10 @@ import Config
 config :oskol, OskolWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
+  # 4400 rather than Phoenix's usual 4000, which other apps on a dev machine
+  # tend to occupy. PORT overrides it; the Playwright scripts follow suit
+  # (process.env.PORT || 4400).
+  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4400")],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

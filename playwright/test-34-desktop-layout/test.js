@@ -39,7 +39,7 @@ async function main() {
     log('STEP 1: Player 1 creates game...');
 
     const page1 = await context1.newPage();
-    await page1.goto('http://localhost:4000/');
+    await page1.goto('http://localhost:4400/');
     await sleep(2000);
     await page1.screenshot({ path: `${SCREENSHOT_DIR}/01-landing.png`, fullPage: true });
 
@@ -61,7 +61,7 @@ async function main() {
     log('STEP 2: Player 2 joins...');
 
     const page2 = await context2.newPage();
-    await page2.goto(`http://localhost:4000/?game=${actualGameId}`);
+    await page2.goto(`http://localhost:4400/?game=${actualGameId}`);
     await sleep(2000);
 
     await page2.fill('input[name="player_name"]', 'Player2');
