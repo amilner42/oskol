@@ -1,38 +1,8 @@
 defmodule OskolWeb.PageControllerTest do
   use OskolWeb.ConnCase
 
-  test "GET / renders the game library with its title and description", %{conn: conn} do
-    conn = get(conn, ~p"/")
-    html = html_response(conn, 200)
-    assert html =~ "PLAY THE CLASSICS."
-    assert html =~ "Backgammon"
-    assert html =~ "Poker"
-    assert html =~ ~s(>Two-player games from a link · Oskol</title>)
-    assert html =~ ~s(<meta name="description" content="Free two-player games)
-    assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/")
-    assert html =~ ~s("@type":"WebSite")
-  end
-
-  test "a game page carries its own title, description, canonical link and structured data",
-       %{conn: conn} do
-    html = conn |> get(~p"/poker") |> html_response(200)
-    # The whole title, not just the suffix: crawlers must see a real one.
-    assert html =~ ~s(>Play heads-up poker online with a friend · Oskol</title>)
-    refute html =~ ~s(> · Oskol</title>)
-    assert html =~ ~s(<meta name="description" content="Heads-up no-limit Texas hold)
-    assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/poker")
-
-    assert html =~
-             ~s(<meta property="og:title" content="Play heads-up poker online with a friend")
-
-    assert html =~ ~s("@type":"VideoGame")
-    assert html =~ "<h1"
-    assert html =~ "POKER IN BRIEF"
-    assert html =~ "QUESTIONS"
-    # An invite link is the same page and must not compete with it
-    assert conn |> get(~p"/poker?game=abc123") |> html_response(200) =~
-             ~s(<link rel="canonical" href="http://localhost:4002/poker")
-  end
+  # `/` and `/:slug` belong to `OskolWeb.SpaController` now; their heads are
+  # covered in `spa_controller_test.exs`.
 
   test "the sitemap lists the library and every game", %{conn: conn} do
     conn = get(conn, ~p"/sitemap.xml")
@@ -67,17 +37,22 @@ defmodule OskolWeb.PageControllerTest do
       for query <- ["?name=Alice", "", "?t=", "?t=not-a-token"] do
         conn = get(conn, "/backgammon/#{game_id}#{query}")
         assert redirected_to(conn) == "/backgammon?game=#{game_id}"
-        refute conn.resp_body =~ "elm-game-app"
+        refute conn.resp_body =~ ~s(id="elm-app")
       end
     end
 
-    test "a valid token serves the client with that seat and its token", %{conn: conn} do
-      %{game_id: game_id, p1: p1, t1: t1, t2: t2} = Oskol.GameFixtures.started()
+    test "a valid token serves the client", %{conn: conn} do
+      %{game_id: game_id, t1: t1, t2: t2} = Oskol.GameFixtures.started()
       html = conn |> get(~p"/backgammon/#{game_id}?t=#{t1}") |> html_response(200)
-      assert html =~ ~s(data-player-id="#{p1}")
-      assert html =~ ~s(data-seat-token="#{t1}")
-      # A page served to one player never carries the other's token.
+      # The client reads the game id and the seat token out of the URL it was
+      # served at; the page itself carries neither, and never the other seat's.
+      assert html =~ ~s(id="elm-app")
       refute html =~ t2
+    end
+
+    test "an unknown game slug is a 404", %{conn: conn} do
+      %{game_id: game_id} = Oskol.GameFixtures.started()
+      assert conn |> get("/checkers/#{game_id}") |> response(404)
     end
 
     test "a token from another room does not open this one", %{conn: conn} do

@@ -105,11 +105,17 @@ defmodule OskolWeb.GameChannel do
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   @doc "The message a client sees for the current room state."
-  def payload(%GameServerState{instance: nil} = state, _player_id, _events) do
+  def payload(%GameServerState{instance: nil} = state, player_id, _events) do
+    # A room with no game in it yet is the waiting room, and the client
+    # renders it: who is seated (this seat first, by `player_id`), and the
+    # one line describing what they are waiting to play.
     %{
       type: "lobby",
       game: state.slug,
+      game_id: state.game_id,
+      player_id: player_id,
       connections: connections_json(state),
+      summary: GameServerState.summary(state),
       lobby_status: Atom.to_string(state.lobby_status)
     }
   end

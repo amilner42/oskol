@@ -43,9 +43,12 @@ Three layers, two fixed boundaries:
 2. **Elixir owns the platform** (`lib/`). Rooms, setup, reconnect, rematch,
    routes. It never sees a card or a piece: it calls `Oskol.GameKit`, which
    wraps `gamekit/host` and speaks only opaque instances and JSON.
-3. **Elm owns the client** (`assets/src/`). One app decodes the fixed protocol
-   and renders any game. Poker and backgammon have bespoke views; other games
-   get the generic renderer for free.
+3. **Elm owns the client** (`assets/src/`). One `Browser.application` owns
+   every URL: the library, a game's start page, and the table. It decodes the
+   fixed protocol and renders any game — poker and backgammon have bespoke
+   views, other games get the generic renderer for free — and reads the
+   landing pages' data from a JSON API (`/papi`). Elixir serves the SPA shell
+   with the head a crawler needs, and nothing else.
 
 ## The game contract (`src/gamekit/game.gleam`)
 
@@ -155,9 +158,19 @@ lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in 
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
 lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
-lib/oskol_web/live/landing_live.ex       "/" library, "/:slug" create page and waiting page
-lib/oskol_web/components/game_art.ex     per-game accent colour + poster illustration
-lib/oskol_web/controllers/page_controller.ex   "/:slug/:id" serves the Elm client
+lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
+                                 plus the title, description, canonical, og
+                                 and JSON-LD a crawler reads
+lib/oskol_web/controllers/page_controller.ex   "/:slug/:id" serves the same client
+assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
+assets/src/Route.elm             the three client routes, mirroring the server's
+assets/src/Api.elm               the /papi envelope + CSRF header
+assets/src/Api/Catalog.elm       the landing pages' data and its decoders
+assets/src/Page/Library.elm      "/" the library: phone tiles, desktop cabinets
+assets/src/Page/GameLanding.elm  "/:slug" create page, and what an invite offers
+assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
+assets/src/GameArt.elm           per-game accent + pixel-art reel + phone motif
+assets/src/Ui/Shell.elm          the OSKOL plate, the code prompt, the footer
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Poker/View.elm  the poker table on the protocol Scene
 assets/src/Games/Backgammon/View.elm  the backgammon board
@@ -168,12 +181,43 @@ assets/css/app.css               the multicade/notebook design system (paper, pi
 ```
 
 ## URLs
+
+All three are Elm routes, and all three are server routes: a visitor may
+arrive at any of them cold, and moving between them afterwards is a
+`pushUrl`, not a page load.
+
 - `/` game library
 - `/poker` create a poker game; `/poker?game=<id>` is the invite link
-- `/poker/<id>?t=<token>` a running game. `t` is the seat token: a secret
-  minted when a player takes a seat, and the only thing that opens it. The
-  bare `/poker/<id>` grants nothing and bounces to the invite link.
+- `/poker/<id>?t=<token>` a running game — and, until the second player
+  arrives, the waiting room: a room with no instance yet answers the game
+  channel with a lobby payload. `t` is the seat token: a secret minted when a
+  player takes a seat, and the only thing that opens it. The bare
+  `/poker/<id>` grants nothing and bounces to the invite link.
 - `/backgammon`, `/backgammon/<id>` the same for backgammon
+
+## The landing API (`/papi`)
+
+The landing pages read and write over JSON. Every response is the same
+envelope: `{"ok": true, ...payload}`, or `{"ok": false, "error": {"code",
+"message"}}` — including on a non-2xx status, so the client parses bodies
+rather than leaning on the status. Requests go same-origin, so the guest
+cookie rides along and identity needs nothing from the client; writes carry
+the page's CSRF token in `x-csrf-token`.
+
+```
+GET  /papi/library                     {ok, games, coming_soon}
+GET  /papi/games/:slug                 {ok, game, formats, clock_presets, copy, guest_name}
+POST /papi/games/:slug                 {format, name, clock, selections} -> {ok, id, path}
+GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
+POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path}
+GET  /papi/codes/:code                 {ok, slug}
+```
+
+`path` is the URL that opens the seat that was just taken: the client goes
+there, and the seat waits in the lobby until its opponent arrives. `state` is
+`open` (a free seat), `away` (a seat whose player is gone), `full` (nothing
+to offer) or `missing` (the room is over) — the same four cases the server
+used to decide for itself.
 
 ## Adding a game
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`. Give
@@ -203,6 +247,7 @@ mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
 node playwright/test-poker-smoke/test.js        # poker: create, join, fold, next hand, flop
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
+node playwright/test-spa-landing/test.js        # landing pages + a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
 ```
@@ -286,15 +331,23 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   scenes, pure update logic, and rendered DOM facts (my cards are faces and
   the opponent's are backs, buttons follow the legal actions, the slider is
   bounded by the schema; 30 checkers, sources marked only for legal moves).
-- `MainUpdateTest`: fixture payloads replayed through `Main.applyPayload`.
+- `PlayUpdateTest`: fixture payloads replayed through `Page.Play.applyPayload`.
+- `RouteTest`, `SessionTest`, `CatalogTest`: the client's routes round-trip,
+  the boot flags, and the `/papi` envelope and decoders (which are lax about
+  keys they do not need and strict about the ones they do).
+- `LibraryTest`, `GameLandingTest`: the landing pages on decoded responses —
+  both library grids, the mode and clock pickers, the settings that follow a
+  mode, inline validation, and the invite's three answers.
+- `GameArtTest`: the sprite decomposition paints back exactly its grid.
 
 **Elixir (`mix test`)**
 - `test/oskol/room_test.exs`: `Oskol.Bots` (test_support) plays random
   legal actions through the room for every registered game and format,
   many rooms concurrently; disconnect, rejoin, rematch keeps the setup.
   Channel tests cover join replies, spectators, per-player payloads, and
-  reconnects; LiveView tests the library, the create page with its settings,
-  the invite and the auto-start.
+  reconnects; `spa_controller_test.exs` covers what is still the server's on
+  the two landing routes — the shell, the head a crawler reads, the 404 for a
+  slug that names no game, and the guest cookie and the name it remembers.
 
 **Browser (`bin/check --browser`)**: Playwright smokes create real games and
 play them; review scripts take screenshots for eyeballing.

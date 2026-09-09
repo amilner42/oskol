@@ -15,18 +15,21 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // External fonts are blocked in sandboxes and would stall the load event.
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     const page = await ctx.newPage();
-    await page.goto(`${BASE}/`); await page.waitForSelector('[data-phx-main].phx-connected'); await sleep(1200);
+    // The library renders the cabinets on desktop and the tiles on a phone; one of them is hidden.
+    await page.goto(`${BASE}/`); await page.waitForSelector('#game-library a', { state: 'attached' }); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-01-library.png` });
-    await page.goto(`${BASE}/poker`); await page.waitForSelector('[data-phx-main].phx-connected'); await sleep(1200);
+    await page.goto(`${BASE}/poker`); await page.waitForSelector('#create-name'); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-02-poker-start.png`, fullPage: true });
-    await page.goto(`${BASE}/backgammon`); await page.waitForSelector('[data-phx-main].phx-connected'); await sleep(1200);
+    await page.goto(`${BASE}/backgammon`); await page.waitForSelector('#create-name'); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-02-backgammon-start.png`, fullPage: true });
-    await page.goto(`${BASE}/chess`); await page.waitForSelector('[data-phx-main].phx-connected'); await sleep(1200);
+    await page.goto(`${BASE}/chess`); await page.waitForSelector('#create-name'); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-02-chess-start.png`, fullPage: true });
+    // The lobby: create a backgammon game, which lands on /backgammon/<id>?t=<token>.
+    await page.goto(`${BASE}/backgammon`); await page.waitForSelector('#create-name');
     await page.fill('input[name="player_name"]', 'Alice'); await page.click('#format-match5'); await page.click('#create-game');
     await page.waitForSelector('#share-link'); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-03-backgammon-lobby.png`, fullPage: true });
-    await page.goto(`${BASE}/backgammon`); await page.waitForSelector('[data-phx-main].phx-connected'); await sleep(1200);
+    await page.goto(`${BASE}/backgammon`); await page.waitForSelector('#create-name'); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-04-backgammon-start.png` });
     await ctx.close();
   }

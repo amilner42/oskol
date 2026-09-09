@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <meta :if={@guest_name} name="guest-name" content={@guest_name} />
     <title>{String.capitalize(@slug)} · Oskol</title>
     <meta name="robots" content="noindex" />
     <!-- The seat token lives in this page's URL: never send it out as a referrer. -->
@@ -40,13 +41,9 @@
     </style>
   </head>
   <body class="h-full paper">
-    <div
-      id="elm-game-app"
-      data-game-id={@game_id}
-      data-game-slug={@slug}
-      data-player-id={if @player_id, do: @player_id, else: ""}
-      data-seat-token={if @seat_token, do: @seat_token, else: ""}
-    >
-    </div>
+    <%!-- The game id and the seat token are in this page's URL, and that is
+          where the client reads them: Elm routes `/:slug/:id?t=` itself,
+          whether it was served here or navigated here. --%>
+    <div id="elm-app"></div>
   </body>
 </html>

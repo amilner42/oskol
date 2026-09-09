@@ -20,12 +20,15 @@ defmodule OskolWeb.PageController do
         conn |> put_status(:not_found) |> put_view(OskolWeb.ErrorHTML) |> render(:"404")
 
       player_id = seat_for_token(game_id, params["t"]) ->
+        guest_id = get_session(conn, :guest_id)
+
         render(conn, :elm_game,
           layout: false,
           game_id: game_id,
           slug: slug,
           player_id: player_id,
-          seat_token: params["t"]
+          seat_token: params["t"],
+          guest_name: guest_id && Oskol.Guests.touch(guest_id)
         )
 
       true ->

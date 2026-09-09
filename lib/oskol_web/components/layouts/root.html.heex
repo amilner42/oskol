@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
     <meta name="theme-color" content="#f7f4ea" />
+    <%!-- A seat token travels in the URL of the game page the client routes
+          to, so no page of the app may send one out as a referrer. --%>
+    <meta name="referrer" content="no-referrer" />
+    <%!-- The name this browser last played under, against the silent guest
+          cookie: the create and join forms prefill it on the first paint. --%>
+    <meta :if={assigns[:guest_name]} name="guest-name" content={@guest_name} />
     <.live_title suffix=" · Oskol">{head_title(assigns)}</.live_title>
     <meta
       name="description"
