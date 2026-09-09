@@ -1049,4 +1049,93 @@ defmodule OskolWeb.GameArt do
     </div>
     """
   end
+
+  attr :slug, :string, required: true
+  attr :class, :string, default: ""
+
+  @doc """
+  The phone-sized motif: one game drawn as a few lines. The library's pixel
+  art is a reel of frames per game, which is the point of it on a desktop
+  screen and far too much on a phone, so the small grid uses these instead:
+  no animation, no sprite decomposition, a handful of nodes. Strokes are the
+  notebook ink and the game's own accent (`--accent`, set by the tile), so
+  nothing here introduces a colour.
+  """
+  def motif(assigns) do
+    ~H"""
+    <svg
+      class={["game-motif", @class]}
+      viewBox="0 0 64 64"
+      fill="none"
+      stroke="var(--ink)"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <.motif_shapes slug={@slug} />
+    </svg>
+    """
+  end
+
+  # Five cards fanned from one corner, the front one showing a pip.
+  defp motif_shapes(%{slug: "poker"} = assigns) do
+    ~H"""
+    <g transform="translate(32 50)">
+      <rect
+        :for={angle <- [-36, -18, 0, 18, 36]}
+        x="-8"
+        y="-26"
+        width="16"
+        height="24"
+        rx="2.5"
+        fill="#fff"
+        transform={"rotate(#{angle})"}
+      />
+      <path d="M0 -18 5 -12 0 -6 -5 -12Z" stroke="var(--accent)" />
+    </g>
+    """
+  end
+
+  # Three points and two checkers: a board reduced to its silhouette.
+  defp motif_shapes(%{slug: "backgammon"} = assigns) do
+    ~H"""
+    <path d="M12 14 26 14 19 40Z" fill="var(--accent)" fill-opacity="0.3" stroke="var(--accent)" />
+    <path d="M26 14 40 14 33 40Z" fill="#fff" />
+    <path d="M40 14 54 14 47 40Z" fill="var(--accent)" fill-opacity="0.3" stroke="var(--accent)" />
+    <path d="M11 46 53 46" />
+    <circle cx="25" cy="54" r="6" fill="#fff" />
+    <circle cx="41" cy="54" r="6" fill="var(--ink)" />
+    """
+  end
+
+  # The knight, outlined: muzzle, ear, mane, plinth.
+  defp motif_shapes(%{slug: "chess"} = assigns) do
+    ~H"""
+    <path d="M22 50h20l2 6H20Z" />
+    <path d="M40 50c1-8 1-14-1-19s-5-10-8-14l-1-5-4 5c-4 1-7 3-10 7l-3 5c0 2 1 3 3 3l4-1 2 3-2 4c-1 4-2 8-2 12" />
+    <path d="M31 20c-3 4-5 8-6 12" stroke="var(--accent)" />
+    <circle cx="26" cy="26" r="1.2" fill="var(--ink)" stroke="none" />
+    """
+  end
+
+  # Stones on the lines: the board in accent, the play in ink and white.
+  defp motif_shapes(%{slug: "go"} = assigns) do
+    ~H"""
+    <g stroke="var(--accent)" stroke-width="1.5">
+      <path :for={n <- [14, 26, 38, 50]} d={"M#{n} 14V50"} />
+      <path :for={n <- [14, 26, 38, 50]} d={"M14 #{n}H50"} />
+    </g>
+    <circle cx="26" cy="26" r="6" fill="var(--ink)" />
+    <circle cx="38" cy="38" r="6" fill="#fff" />
+    """
+  end
+
+  # A game with no motif of its own: a piece on a square.
+  defp motif_shapes(assigns) do
+    ~H"""
+    <rect x="14" y="14" width="36" height="36" rx="3" />
+    <circle cx="32" cy="32" r="8" stroke="var(--accent)" />
+    """
+  end
 end

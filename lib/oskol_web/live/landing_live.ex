@@ -723,10 +723,72 @@ defmodule OskolWeb.LandingLive do
       <.step n="3" title="GAME ON">The game starts the moment they join.</.step>
     </section>
 
-    <section id="game-library" class="grid gap-5 sm:gap-8 sm:grid-cols-2">
+    <section id="game-tiles" class="grid grid-cols-2 gap-4 sm:hidden">
+      <.tile_cabinet :for={game <- @games} game={game} />
+      <.soon_tile_cabinet :for={game <- @coming_soon} game={game} />
+    </section>
+
+    <section id="game-library" class="hidden sm:grid gap-5 sm:gap-8 sm:grid-cols-2">
       <.cabinet :for={game <- @games} game={game} />
       <.soon_cabinet :for={game <- @coming_soon} game={game} />
     </section>
+    """
+  end
+
+  # The phone library: one square per game, two across, each carrying a
+  # motif instead of the cabinet's animated art. The art reel is the whole
+  # point of a cabinet on a desktop screen and far too heavy on a phone, so
+  # the two grids swap at `sm` and only one of them is ever laid out.
+  attr :game, :map, required: true
+
+  defp tile_cabinet(assigns) do
+    assigns = assign(assigns, accent: GameArt.accent(assigns.game["slug"]))
+
+    ~H"""
+    <.link
+      patch={~p"/#{@game["slug"]}"}
+      id={"game-tile-#{@game["slug"]}"}
+      class="cabinet game-tile pix block"
+      style={"--accent: #{@accent}"}
+    >
+      <.tile_face game={@game}>
+        <span class="cursor">▶</span>
+      </.tile_face>
+    </.link>
+    """
+  end
+
+  # A phone tile for a game with no engine yet: not a link, same face.
+  attr :game, :map, required: true
+
+  defp soon_tile_cabinet(assigns) do
+    assigns = assign(assigns, accent: GameArt.accent(assigns.game["slug"]))
+
+    ~H"""
+    <article
+      id={"game-tile-#{@game["slug"]}"}
+      class="cabinet cabinet-soon game-tile pix block"
+      style={"--accent: #{@accent}"}
+    >
+      <.tile_face game={@game}>
+        <span class="text-[8px] opacity-80">SOON</span>
+      </.tile_face>
+    </article>
+    """
+  end
+
+  attr :game, :map, required: true
+  slot :inner_block, required: true
+
+  defp tile_face(assigns) do
+    ~H"""
+    <div class="marquee pixel text-[9px] px-2.5 py-2.5 flex items-center justify-between gap-1">
+      <span class="uppercase truncate">{@game["name"]}</span>
+      {render_slot(@inner_block)}
+    </div>
+    <div class="screen grid place-items-center p-3">
+      <GameArt.motif slug={@game["slug"]} />
+    </div>
     """
   end
 

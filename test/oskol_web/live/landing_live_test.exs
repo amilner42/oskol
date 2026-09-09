@@ -54,6 +54,26 @@ defmodule OskolWeb.LandingLiveTest do
     end
   end
 
+  test "the phone library is tiles: a motif each, no reel, same destinations", %{conn: conn} do
+    # Two grids, one of which is laid out at a time: the cabinets and their
+    # frame reels are hidden below `sm` and the square tiles above it, so a
+    # phone never mounts the heavy art at all.
+    {:ok, view, html} = live(conn, ~p"/")
+
+    assert has_element?(view, "#game-tiles.sm\\:hidden")
+    assert has_element?(view, "#game-library.hidden.sm\\:grid")
+
+    for slug <- ~w(poker backgammon chess go) do
+      tile = view |> element("a#game-tile-#{slug}") |> render()
+      # One motif, drawn once: no reel, no animation.
+      assert length(String.split(tile, "<svg")) == 2
+      refute tile =~ "game-art-anim"
+      assert tile =~ ~s(href="/#{slug}")
+    end
+
+    refute html =~ "SOON"
+  end
+
   test "a game page's art is still, so it never competes with the form", %{conn: conn} do
     {:ok, view, _} = live(conn, ~p"/poker")
     hero = view |> element("#game-hero-poker") |> render()

@@ -459,7 +459,8 @@
 }
 .cabinet:hover .screen .game-art { transform: translateY(-2px); }
 .screen .game-art { transition: transform 0.2s; }
-.screen svg { image-rendering: pixelated; }
+/* Only the pixel art wants hard pixels; the phone tiles' motifs are lines. */
+.game-art svg { image-rendering: pixelated; }
 
 /* Animated game art: the frames are stacked into a reel and one steps()
    animation walks the reel up by exactly one frame at a time, so the whole
@@ -474,6 +475,15 @@
   }
 }
 @keyframes game-art-reel { to { transform: translateY(-100%); } }
+
+/* Phone library: the same cabinet anatomy squared off, with a line-art
+   motif on the screen instead of the animated art. Nothing below the
+   screen, so it loses the cabinet's bottom rule. */
+.game-tile { aspect-ratio: 1; box-shadow: 4px 4px 0 0 var(--ink); }
+.game-tile:hover, .game-tile:focus-visible { box-shadow: 6px 6px 0 0 var(--ink); }
+.game-tile .marquee { border-bottom-width: 2px; }
+.game-tile .screen { flex: 1; border-bottom: 0; min-height: 0; }
+.game-motif { width: 100%; height: 100%; }
 
 /* A game with no engine yet: same cabinet, powered down. It does not lift
    on hover because there is nothing to click. */
