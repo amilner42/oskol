@@ -5,6 +5,7 @@ real fixture payloads.
 -}
 
 import Dict
+import Drag
 import Expect
 import FixtureLoader exposing (Fixture)
 import Games.Backgammon.View as View exposing (Msg(..), Out(..))
@@ -201,6 +202,103 @@ suite =
                         |> Expect.equal (Just (SelectFrom "6"))
              ]
             )
+        , describe "dragging a checker"
+            (let
+                press =
+                    { origin = "13", color = "white", tap = Just (SelectFrom "13"), targets = [ "8" ], x = 100, y = 100 }
+
+                zone =
+                    { loc = "8", left = 200, top = 300, width = 50, height = 120 }
+
+                step msg =
+                    Tuple.first >> View.update msg
+             in
+             [ test "pressing a checker asks Main for that origin's drop zones" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> Tuple.second
+                        |> Expect.equal (NeedZones [ "8" ])
+             , test "a drop on a legal zone stages the move, like a tap would" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> step (GotDropZones [ zone ])
+                        |> step (DragMoved { x = 225, y = 360 })
+                        |> step (DragReleased { x = 225, y = 360 })
+                        |> Expect.equal ( View.init, Send (Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "8" ) ]) )
+             , test "a drop off every zone sends nothing and snaps back" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> step (GotDropZones [ zone ])
+                        |> step (DragMoved { x = 150, y = 150 })
+                        |> step (DragReleased { x = 150, y = 150 })
+                        |> Expect.equal ( View.init, NoOut )
+             , test "a release under the threshold resolves the stored tap" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> step (DragMoved { x = 104, y = 103 })
+                        |> step (DragReleased { x = 104, y = 103 })
+                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle, autoRolled = False }, NoOut )
+             , test "pointercancel snaps back without sending" <|
+                \_ ->
+                    View.update (DragPressed press) View.init
+                        |> step (DragMoved { x = 225, y = 360 })
+                        |> step DragCancelled
+                        |> Expect.equal ( View.init, NoOut )
+             ]
+            )
+        , describe "auto-roll"
+            (let
+                schema name =
+                    { name = name, label = name, params = [] }
+             in
+             [ test "rolls by itself when doubling is not on offer" <|
+                \_ ->
+                    View.autoRoll [ schema "roll", schema "resign" ] View.init
+                        |> Expect.equal
+                            ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True }
+                            , Just (Protocol.encodeAction "roll" [])
+                            )
+             , test "the same state never rolls twice" <|
+                \_ ->
+                    View.autoRoll [ schema "roll" ] { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True }
+                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True }, Nothing )
+             , test "keeps the choice when double is also legal" <|
+                \_ ->
+                    View.autoRoll [ schema "roll", schema "double" ] View.init
+                        |> Expect.equal ( View.init, Nothing )
+             , test "disarms as soon as rolling stops being the pending action" <|
+                \_ ->
+                    View.autoRoll [ schema "move" ] { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True }
+                        |> Expect.equal ( View.init, Nothing )
+             , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
+                \_ ->
+                    let
+                        step legal ( model, sends ) =
+                            let
+                                ( next, out ) =
+                                    View.autoRoll legal model
+                            in
+                            ( next
+                            , sends
+                                + (if out == Nothing then
+                                    0
+
+                                   else
+                                    1
+                                  )
+                            )
+                    in
+                    -- pre-roll state arrives twice (reconnect replay), then
+                    -- the rolled state, then the next turn's pre-roll.
+                    ( View.init, 0 )
+                        |> step [ schema "roll" ]
+                        |> step [ schema "roll" ]
+                        |> step [ schema "move" ]
+                        |> step [ schema "roll" ]
+                        |> Tuple.second
+                        |> Expect.equal 2
+             ]
+            )
         , describe "rendering fixtures" (List.map perFixture (FixtureLoader.byGame "backgammon"))
         ]
 
@@ -314,7 +412,7 @@ perFixture fixture =
                     |> List.filter (\u -> (Protocol.sceneData (D.nullable D.string) "to_act" u.scene |> Maybe.withDefault Nothing) == Just "p1")
                     |> List.map (\u -> render "p2" u |> Query.has [ text "WAITING FOR P1" ])
                     |> allPass
-        , test "clicking a source point selects it" <|
+        , test "pressing anywhere on a source point primes a drag whose tap is the old click" <|
             \_ ->
                 p1Views
                     |> List.filter (\u -> legalFroms u.legal |> List.any (\f -> f /= "bar"))
@@ -324,11 +422,109 @@ perFixture fixture =
                             let
                                 from =
                                     legalFroms u.legal |> List.filter (\f -> f /= "bar") |> List.head |> Maybe.withDefault ""
+
+                                result =
+                                    render "p1" u
+                                        |> Query.find [ class "bg-point", class "source", attribute (Html.Attributes.title ("Point " ++ from)) ]
+                                        |> Event.simulate (Event.custom "pointerdown" (pointerEvent 10 10))
+                                        |> Event.toResult
                             in
-                            render "p1" u
-                                |> Query.find [ class "bg-point", class "source", attribute (Html.Attributes.title ("Point " ++ from)) ]
-                                |> Event.simulate Event.click
-                                |> Event.expect (SelectFrom from)
+                            case result of
+                                Ok (DragPressed p) ->
+                                    Expect.equal ( from, Just (SelectFrom from) ) ( p.origin, p.tap )
+
+                                _ ->
+                                    Expect.fail "pointerdown on a source point should prime a drag press"
+                        )
+                    |> Maybe.withDefault Expect.pass
+        , test "the cube is a fixture exactly when the format has one, and the bar one column" <|
+            \_ ->
+                p1Views
+                    |> List.map
+                        (\u ->
+                            let
+                                rendered =
+                                    render "p1" u
+
+                                cubes =
+                                    if cubeEnabled u then
+                                        1
+
+                                    else
+                                        0
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.findAll [ class "cube" ] |> Query.count (Expect.equal cubes)
+                                , \_ -> rendered |> Query.findAll [ class "bg-bar" ] |> Query.count (Expect.equal 1)
+                                ]
+                                ()
+                        )
+                    |> allPass
+        , test "a centred cube shows 64" <|
+            \_ ->
+                p1Views
+                    |> List.filter cubeEnabled
+                    |> List.head
+                    |> Maybe.map (\u -> render "p1" u |> Query.find [ class "cube" ] |> Query.has [ text "64" ])
+                    |> Maybe.withDefault Expect.pass
+        , test "exactly the legal origins offer a draggable checker" <|
+            \_ ->
+                (List.map (\u -> ( "p1", u )) p1Views ++ List.map (\u -> ( "p2", u )) p2Views)
+                    |> List.map
+                        (\( id, u ) ->
+                            render id u
+                                |> Query.findAll [ attribute (Html.Attributes.attribute "data-drag-capture" "") ]
+                                |> Query.count (Expect.equal (List.length (legalFroms u.legal)))
+                        )
+                    |> allPass
+        , test "mid-drag, a ghost rides the pointer and translucent checkers mark the destinations, without boxes" <|
+            \_ ->
+                p1Views
+                    |> List.filter (\u -> legalFroms u.legal /= [])
+                    |> List.head
+                    |> Maybe.map
+                        (\u ->
+                            let
+                                from =
+                                    legalFroms u.legal |> List.head |> Maybe.withDefault ""
+
+                                dests =
+                                    u.legal
+                                        |> List.filter (\s -> s.name == "move")
+                                        |> List.filter (\s -> List.any (\p -> p.name == "from" && p.kind == Choice [ ( from, from ) ]) s.params)
+                                        |> List.filterMap
+                                            (\s ->
+                                                s.params
+                                                    |> List.filter (\p -> p.name == "to")
+                                                    |> List.head
+                                                    |> Maybe.andThen
+                                                        (\p ->
+                                                            case p.kind of
+                                                                Choice ((to, _) :: _) ->
+                                                                    Just to
+
+                                                                _ ->
+                                                                    Nothing
+                                                        )
+                                            )
+                                        |> unique
+
+                                model =
+                                    View.init
+                                        |> View.update (DragPressed { origin = from, color = "white", tap = Nothing, targets = [], x = 0, y = 0 })
+                                        |> Tuple.first
+                                        |> View.update (DragMoved { x = 40, y = 40 })
+                                        |> Tuple.first
+
+                                rendered =
+                                    View.view (ctx "p1" u model) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.has [ class "bg-drag-ghost" ]
+                                , \_ -> rendered |> Query.findAll [ class "drop-ghost" ] |> Query.count (Expect.equal (List.length dests))
+                                , \_ -> rendered |> Query.findAll [ class "target" ] |> Query.count (Expect.equal 0)
+                                ]
+                                ()
                         )
                     |> Maybe.withDefault Expect.pass
         , test "after selecting a source the destinations show ghost checkers" <|
@@ -348,9 +544,9 @@ perFixture fixture =
                                         |> List.filter (\s -> List.any (\p -> p.name == "from" && p.kind == Choice [ ( from, from ) ]) s.params)
                                         |> List.length
                             in
-                            View.view (ctx "p1" u { selectedFrom = Just from })
+                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle, autoRolled = False })
                                 |> Query.fromHtml
-                                |> Query.findAll [ class "ghost" ]
+                                |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal destinations)
                         )
                     |> Maybe.withDefault Expect.pass
@@ -360,6 +556,40 @@ perFixture fixture =
                     |> List.filter (\u -> u.outcome /= Protocol.Ongoing)
                     |> List.map (\u -> render "p1" u |> Query.has [ text "REMATCH" ])
                     |> allPass
+        ]
+
+
+cubeEnabled : Protocol.Update -> Bool
+cubeEnabled u =
+    Protocol.sceneData (D.field "enabled" D.bool) "cube" u.scene |> Maybe.withDefault False
+
+
+{-| A full PointerEvent payload, everything the library's decoder reads.
+-}
+pointerEvent : Float -> Float -> E.Value
+pointerEvent x y =
+    E.object
+        [ ( "pointerId", E.int 1 )
+        , ( "isPrimary", E.bool True )
+        , ( "pointerType", E.string "mouse" )
+        , ( "width", E.float 1 )
+        , ( "height", E.float 1 )
+        , ( "pressure", E.float 0 )
+        , ( "tiltX", E.float 0 )
+        , ( "tiltY", E.float 0 )
+        , ( "altKey", E.bool False )
+        , ( "ctrlKey", E.bool False )
+        , ( "metaKey", E.bool False )
+        , ( "shiftKey", E.bool False )
+        , ( "button", E.int 0 )
+        , ( "clientX", E.float x )
+        , ( "clientY", E.float y )
+        , ( "offsetX", E.float x )
+        , ( "offsetY", E.float y )
+        , ( "pageX", E.float x )
+        , ( "pageY", E.float y )
+        , ( "screenX", E.float x )
+        , ( "screenY", E.float y )
         ]
 
 

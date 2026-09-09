@@ -572,20 +572,9 @@
 .bg-point.top::before { clip-path: polygon(0 0, 100% 0, 50% 92%); }
 .bg-point.bottom::before { clip-path: polygon(0 100%, 100% 100%, 50% 8%); }
 .bg-point.source::before { background: color-mix(in oklab, var(--point) 60%, var(--bg-sky)); }
-.bg-point.target::before { background: color-mix(in oklab, var(--point) 45%, #fff); }
-.bg-point.target { outline: 2px dashed var(--bg-sky); outline-offset: -2px; }
 .bg-point.selected::before { background: color-mix(in oklab, var(--point) 40%, var(--ink)); }
 .checker.pick { box-shadow: 0 0 0 3px var(--bg-sky), inset -2px -2px 0 0 rgba(0, 0, 0, 0.15); cursor: pointer; }
 .checker.picked { transform: translateY(-4px); box-shadow: 0 0 0 3px var(--bg-sky), 0 6px 0 0 rgba(35, 36, 58, 0.25); }
-.ghost {
-  width: 84%;
-  aspect-ratio: 1;
-  border-radius: 9999px;
-  border: 3px dashed var(--bg-sky);
-  background: rgba(63, 167, 214, 0.22);
-  animation: ghost-pulse 1s ease-in-out infinite;
-}
-@keyframes ghost-pulse { 50% { transform: scale(0.88); opacity: 0.7; } }
 .checker {
   width: 84%;
   aspect-ratio: 1;
@@ -602,10 +591,26 @@
 }
 .checker-count { font-size: 10px; font-weight: 800; line-height: 1; color: var(--ink); }
 .checker.black .checker-count { color: #fff; }
+/* Drag-and-drop (src/Drag.elm). Only drag sources opt out of touch
+   scrolling -- the page itself keeps scrolling normally elsewhere. */
+[data-drag-capture] { touch-action: none; cursor: grab; }
+.checker.lifted { opacity: 0.35; }
+.bg-drag-ghost {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(3px 4px 0 rgba(35, 36, 58, 0.35));
+}
+.bg-drag-ghost .checker { width: 1.4rem; }
+@media (min-width: 640px) { .bg-drag-ghost .checker { width: 1.9rem; } }
+/* Where the dragged checker would land: a translucent checker of the
+   mover's colour that firms up under the pointer. */
+.checker.drop-ghost { opacity: 0.35; transition: opacity 80ms ease-out, transform 80ms ease-out; }
+.checker.drop-ghost.firm { opacity: 0.85; transform: scale(1.06); }
 .bg-bar { background: var(--ink); border-radius: 2px; }
 .bg-bar .checker.black { border-color: #fff; }
 .bg-tray { border: 3px solid var(--ink); background: #fff; color: var(--ink); }
-.bg-tray.target { border-color: var(--bg-sky); background: color-mix(in oklab, var(--bg-sky) 18%, #fff); }
 .die {
   display: grid; place-items: center;
   width: 2.5rem; height: 2.5rem;
@@ -615,8 +620,16 @@
 .die.used { opacity: 0.35; box-shadow: none; }
 .cube {
   display: grid; place-items: center;
-  width: 2.4rem; height: 2.4rem;
+  width: 2rem; height: 2rem;
   border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: #fff;
+  transition: transform 120ms ease-out;
+}
+@media (min-width: 640px) { .cube { width: 2.4rem; height: 2.4rem; } }
+/* A double on offer: the cube steps forward at the offered value. */
+.cube.pending {
+  border-color: var(--bg-sky);
+  box-shadow: 3px 3px 0 0 var(--bg-sky);
+  transform: scale(1.2);
 }
 .btn-arcade.sky { background: var(--bg-sky); color: #fff; }
 .btn-arcade.plain { background: #fff; color: var(--ink); }

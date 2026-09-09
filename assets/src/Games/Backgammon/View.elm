@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), TapContext, init, resolveTap, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Press, TapContext, autoRoll, dropZoneId, init, resolveTap, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -14,8 +14,22 @@ falls back to two taps: a checker's point (or the bar), then a destination.
 Legal moves come from the `move` schemas the server sends, so the board
 never invents legality.
 
+Checkers can also be dragged, through the `Drag` state machine: every
+legal origin (the whole point column, or the bar) is a drag source, so
+grabbing any checker of the stack -- or the point itself -- drags that
+origin's top checker. A press remembers what a plain tap there would have
+done, so tap-to-move is untouched; past the threshold a ghost checker
+rides the pointer and a translucent checker of the mover's colour marks
+each legal destination. Drop targets are hit-tested geometrically:
+pressing asks Main (the `NeedZones` Out) for the client rects of the
+origin's legal destinations via `Browser.Dom.getElement` -- the whole point
+column, or the tray, under the ids `dropZoneId` names -- and releasing on
+one stages that move. Releasing anywhere else snaps the checker back and
+sends nothing.
+
 -}
 
+import Drag
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, style, title)
 import Html.Events exposing (onClick)
@@ -26,7 +40,25 @@ import View.Clock
 
 
 type alias Model =
-    { selectedFrom : Maybe String }
+    { selectedFrom : Maybe String
+    , drag : Drag.State String Msg -- the item a drag carries is my checker colour
+    , autoRolled : Bool -- an automatic roll has been sent for the current server state
+    }
+
+
+{-| A press on a draggable checker: where, my colour (for the ghost), what
+a plain tap there would have done (resolved at press time, by the same
+`resolveTap` the click handlers use), and the origin's legal destinations
+(so Main can measure their drop zones).
+-}
+type alias Press =
+    { origin : String
+    , color : String
+    , tap : Maybe Msg
+    , targets : List String
+    , x : Float
+    , y : Float
+    }
 
 
 type Msg
@@ -36,6 +68,12 @@ type Msg
     | Clear
     | Simple String
     | Rematch
+    | DragPressed Press
+    | DragMoved { x : Float, y : Float }
+    | DragReleased { x : Float, y : Float }
+    | DragCancelled
+    | GotDropZones (List Drag.Zone)
+    | Ignore
 
 
 type Out
@@ -43,11 +81,37 @@ type Out
     | Send E.Value
     | SendMany (List E.Value)
     | WantRematch
+    | NeedZones (List String)
 
 
 init : Model
 init =
-    { selectedFrom = Nothing }
+    { selectedFrom = Nothing, drag = Drag.idle, autoRolled = False }
+
+
+{-| Roll for the viewer when there is nothing to ask: at the start of a
+turn whose legal actions include `roll` but not `double` (Crawford, the
+opponent owns the cube), the choice is no choice, so the client sends the
+roll itself. Main calls this once per arriving payload. The guard is an
+edge: `autoRolled` arms when the qualifying state first appears and clears
+only when rolling stops being the pending action, so one turn rolls once
+-- replayed payloads of the same state (reconnects) are skipped, and a
+failed send cannot loop because nothing retries until the state changes.
+-}
+autoRoll : List Schema -> Model -> ( Model, Maybe E.Value )
+autoRoll legal model =
+    if hasAction "roll" legal && not (hasAction "double" legal) then
+        if model.autoRolled then
+            ( model, Nothing )
+
+        else
+            ( { model | autoRolled = True }, Just (Protocol.encodeAction "roll" []) )
+
+    else if model.autoRolled then
+        ( { model | autoRolled = False }, Nothing )
+
+    else
+        ( model, Nothing )
 
 
 update : Msg -> Model -> ( Model, Out )
@@ -74,6 +138,42 @@ update msg model =
 
         Rematch ->
             ( model, WantRematch )
+
+        DragPressed p ->
+            ( { model | drag = Drag.press { origin = p.origin, item = p.color, tap = p.tap, x = p.x, y = p.y } }
+            , NeedZones p.targets
+            )
+
+        DragMoved pos ->
+            ( { model | drag = Drag.move pos model.drag }, NoOut )
+
+        DragReleased pos ->
+            case Drag.release pos model.drag of
+                ( drag, Drag.Drop from to ) ->
+                    -- A drop stages the move exactly as a tap would.
+                    update (PlayMove from to) { model | drag = drag }
+
+                ( drag, Drag.Tap tap ) ->
+                    update tap { model | drag = drag }
+
+                ( drag, Drag.None ) ->
+                    ( { model | drag = drag }, NoOut )
+
+        DragCancelled ->
+            ( { model | drag = Drag.idle }, NoOut )
+
+        GotDropZones zones ->
+            ( { model | drag = Drag.setZones zones model.drag }, NoOut )
+
+        Ignore ->
+            ( model, NoOut )
+
+
+{-| The DOM id Main uses to measure a drop target (a point number or "off").
+-}
+dropZoneId : String -> String
+dropZoneId loc =
+    "bg-drop-" ++ loc
 
 
 encodeMove : String -> String -> E.Value
@@ -289,12 +389,20 @@ view ctx =
         sources =
             legalMoves |> List.map .from |> unique
 
+        drag =
+            Drag.active ctx.model.drag
+
+        -- While a drag is up, its origin's destinations highlight; otherwise
+        -- the tapped selection's, if any.
         targets =
-            case ctx.model.selectedFrom of
-                Just from ->
+            case ( drag, ctx.model.selectedFrom ) of
+                ( Just d, _ ) ->
+                    legalMoves |> List.filter (\m -> m.from == d.origin) |> List.map .to
+
+                ( Nothing, Just from ) ->
                     legalMoves |> List.filter (\m -> m.from == from) |> List.map .to
 
-                Nothing ->
+                ( Nothing, Nothing ) ->
                     []
 
         board =
@@ -302,6 +410,8 @@ view ctx =
             , myColor = myColor
             , sources = sources
             , targets = targets
+            , drag = drag
+            , hovered = Drag.hover ctx.model.drag
             , tap = tapContext ctx legalMoves sources
             }
     in
@@ -315,12 +425,39 @@ view ctx =
                 ]
             , viewRail ctx
             ]
+        , case drag of
+            Just d ->
+                viewDragGhost d
+
+            Nothing ->
+                text ""
         , case ctx.finished of
             Just winners ->
                 viewGameOver ctx winners
 
             Nothing ->
                 text ""
+        ]
+
+
+{-| The checker riding the pointer during a drag, in viewport coordinates
+(the same space the drop zones are measured in).
+-}
+viewDragGhost : Drag.Active String -> Html Msg
+viewDragGhost d =
+    div
+        [ class "bg-drag-ghost"
+        , style "left" (String.fromFloat d.x ++ "px")
+        , style "top" (String.fromFloat d.y ++ "px")
+        ]
+        [ div
+            [ classList
+                [ ( "checker", True )
+                , ( "white", d.item == "white" )
+                , ( "black", d.item /= "white" )
+                ]
+            ]
+            []
         ]
 
 
@@ -558,6 +695,8 @@ type alias Board =
     , myColor : String
     , sources : List String
     , targets : List String
+    , drag : Maybe (Drag.Active String)
+    , hovered : Maybe String
     , tap : TapContext
     }
 
@@ -594,16 +733,25 @@ viewBoard board =
         themId =
             Protocol.opponentOf me board.ctx.scene |> Maybe.map .id |> Maybe.withDefault ""
     in
+    -- Classic geometry: the cube's rail on the far left, the bar one
+    -- unbroken column through the middle, the trays on the far right. The
+    -- centre band splits at the bar: cube-side actions (double, take, drop,
+    -- undo, play) on the left half, the dice and their roll on the right.
     div [ class "bg-board p-1.5 sm:p-3 select-none" ]
-        [ div [ class "grid grid-cols-[6fr_auto_6fr_auto] gap-1 sm:gap-2" ]
-            [ div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topLeft)
-            , viewBar board themId True
+        -- minmax(0, 6fr) so a wide button in a band can never steal width
+        -- from the other half's points.
+        [ div [ class "grid grid-cols-[auto_minmax(0,6fr)_auto_minmax(0,6fr)_auto] gap-1 sm:gap-2" ]
+            [ viewCubeRail board
+            , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topLeft)
+            , viewBarColumn board themId
             , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topRight)
             , viewTray board themId
-            , div [ class "col-span-4 flex items-center justify-center gap-2 sm:gap-4 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
-                (viewMiddle board)
+            , div [ class "min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
+                (viewLeftBand board)
+            , div [ class "min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
+                (viewRightBand board)
+            , div [] []
             , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomLeft)
-            , viewBar board me False
             , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomRight)
             , viewTray board me
             ]
@@ -637,6 +785,9 @@ viewPoint board isTop index point =
         isSelected =
             board.ctx.model.selectedFrom == Just id
 
+        dragging =
+            board.drag /= Nothing
+
         click =
             case resolveTap board.tap id of
                 Just msg ->
@@ -644,6 +795,15 @@ viewPoint board isTop index point =
 
                 Nothing ->
                     []
+
+        -- A movable origin is draggable across its whole column (any checker
+        -- of the stack, or the point itself); a short press there still taps.
+        interaction =
+            if isSource then
+                dragAttrs board id
+
+            else
+                click
     in
     div
         ([ classList
@@ -651,17 +811,17 @@ viewPoint board isTop index point =
             , ( "top", isTop )
             , ( "bottom flex-col-reverse", not isTop )
             , ( "source", isSource )
-            , ( "target", isTarget )
             , ( "selected", isSelected )
             ]
          , attribute "style" ("--point: " ++ pointColor (index + (if isTop then 0 else 1)))
          , title ("Point " ++ id)
+         , Html.Attributes.id (dropZoneId id)
          ]
-            ++ click
+            ++ interaction
         )
-        (viewStack { pick = isSource, picked = isSelected } tokens
+        (viewStack { pick = isSource, picked = isSelected, lifted = liftedAt board id } tokens
             ++ (if isTarget then
-                    [ div [ class "ghost relative shrink-0" ] [] ]
+                    [ dropGhost board (dragging && board.hovered == Just id) ]
 
                 else
                     []
@@ -669,13 +829,68 @@ viewPoint board isTop index point =
         )
 
 
+{-| Where a checker could land (dragging or after a tap-select): a
+translucent checker of the mover's colour, firming up under the pointer
+while dragging. No boxes, no outlines, ever.
+-}
+dropGhost : Board -> Bool -> Html Msg
+dropGhost board firm =
+    div
+        [ classList
+            [ ( "checker drop-ghost relative shrink-0", True )
+            , ( "white", board.myColor == "white" )
+            , ( "black", board.myColor /= "white" )
+            , ( "firm", firm )
+            ]
+        ]
+        []
+
+
+{-| The origin of the active drag shows its top checker dimmed in place.
+-}
+liftedAt : Board -> String -> Bool
+liftedAt board loc =
+    board.drag |> Maybe.map (\d -> d.origin == loc) |> Maybe.withDefault False
+
+
+{-| Drag handlers for a legal origin's whole column. The press carries
+what a tap there would do -- the same `resolveTap` answer the click
+handlers use -- and the origin's legal destinations, for Main to measure.
+-}
+dragAttrs : Board -> String -> List (Html.Attribute Msg)
+dragAttrs board origin =
+    if List.member origin board.sources then
+        Drag.sourceAttrs
+            { press =
+                \pos ->
+                    DragPressed
+                        { origin = origin
+                        , color = board.myColor
+                        , tap = resolveTap board.tap origin
+                        , targets = board.tap.moves |> List.filter (\m -> m.from == origin) |> List.map .to |> unique
+                        , x = pos.x
+                        , y = pos.y
+                        }
+            , move = DragMoved
+            , release = DragReleased
+            , cancel = DragCancelled
+            , ignore = Ignore
+            }
+
+    else
+        []
+
+
+{-| What the top checker of a stack carries: the tap affordances, and the
+dimmed in-place state while its origin is being dragged.
+-}
 type alias Marks =
-    { pick : Bool, picked : Bool }
+    { pick : Bool, picked : Bool, lifted : Bool }
 
 
 noMarks : Marks
 noMarks =
-    { pick = False, picked = False }
+    { pick = False, picked = False, lifted = False }
 
 
 viewStack : Marks -> List Token -> List (Html Msg)
@@ -719,6 +934,7 @@ viewChecker marks count token =
             , ( "black", color /= "white" )
             , ( "pick", marks.pick && not marks.picked )
             , ( "picked", marks.picked )
+            , ( "lifted", marks.lifted )
             ]
         , title token.id
         ]
@@ -731,14 +947,25 @@ viewChecker marks count token =
         )
 
 
-viewBar : Board -> String -> Bool -> Html Msg
-viewBar board ownerId isTop =
+{-| The bar: one unbroken column from the board's top edge to its bottom,
+straight through the centre band. Hit checkers enter from their owner's
+end -- the opponent's stack down from the top, the viewer's up from the
+bottom. The viewer's whole column drags when a bar entry is legal.
+-}
+viewBarColumn : Board -> String -> Html Msg
+viewBarColumn board themId =
     let
-        tokens =
-            Protocol.zoneTokens ("bar:" ++ ownerId) board.ctx.scene
+        seat =
+            seatId board.ctx
+
+        theirTokens =
+            Protocol.zoneTokens ("bar:" ++ themId) board.ctx.scene
+
+        myTokens =
+            Protocol.zoneTokens ("bar:" ++ seat) board.ctx.scene
 
         mine =
-            ownerId == board.ctx.playerId
+            seat == board.ctx.playerId
 
         isSource =
             mine && List.member "bar" board.sources
@@ -757,17 +984,33 @@ viewBar board ownerId isTop =
 
             else
                 []
+
+        -- The whole bar drags when a bar entry is legal; a short press taps.
+        interaction =
+            if mine && isSource then
+                dragAttrs board "bar"
+
+            else
+                click
     in
     div
-        ([ classList
-            [ ( "bg-bar w-7 sm:w-11 flex flex-col items-center gap-px py-1", True )
-            , ( "flex-col-reverse", not isTop )
-            ]
+        ([ class "bg-bar row-span-3 w-7 sm:w-11 flex flex-col items-center gap-px py-1"
          , title "Bar"
          ]
-            ++ click
+            ++ interaction
         )
-        (viewStack { pick = isSource, picked = isSelected } tokens)
+        (viewStack noMarks theirTokens
+            ++ [ div [ class "flex-1" ] [] ]
+            ++ [ div [ class "flex flex-col-reverse items-center gap-px w-full" ]
+                    (viewStack
+                        { pick = isSource
+                        , picked = isSelected
+                        , lifted = mine && liftedAt board "bar"
+                        }
+                        myTokens
+                    )
+               ]
+        )
 
 
 viewTray : Board -> String -> Html Msg
@@ -797,16 +1040,21 @@ viewTray board ownerId =
     div
         ([ classList
             [ ( "bg-tray w-9 sm:w-14 flex flex-col items-center justify-center gap-1 px-1", True )
-            , ( "target", isTarget )
             ]
          , title "Borne off"
          ]
+            ++ (if mine then
+                    [ Html.Attributes.id (dropZoneId "off") ]
+
+                else
+                    []
+               )
             ++ click
         )
         [ span [ class "pixel text-[7px]", style "color" "rgba(35, 36, 58, 0.5)" ] [ text "OFF" ]
         , span [ class "pixel text-xs" ] [ text (String.fromInt count) ]
         , if isTarget then
-            div [ class "ghost" ] []
+            dropGhost board (board.drag /= Nothing && board.hovered == Just "off")
 
           else
             text ""
@@ -816,12 +1064,26 @@ viewTray board ownerId =
 
 -- CENTRE BAND
 --
--- Dice, cube, and every action, on the board itself: nothing to act on
--- ever renders below the fold.
+-- Every action on the board itself: nothing to act on ever renders below
+-- the fold. The band splits at the bar. Left half: cube-side decisions
+-- (double, take, drop) and the staging controls (undo, play). Right half:
+-- the dice, their roll when doubling is also on offer (otherwise the turn
+-- rolls itself -- see `autoRoll`), and the waiting status.
 
 
-viewMiddle : Board -> List (Html Msg)
-viewMiddle board =
+viewLeftBand : Board -> List (Html Msg)
+viewLeftBand board =
+    List.filterMap identity
+        [ actionButton board.ctx "double" "plain"
+        , actionButton board.ctx "take" "sky"
+        , actionButton board.ctx "drop" "plain"
+        , actionButton board.ctx "undo" "plain"
+        , actionButton board.ctx "play" "sky"
+        ]
+
+
+viewRightBand : Board -> List (Html Msg)
+viewRightBand board =
     let
         ctx =
             board.ctx
@@ -836,9 +1098,6 @@ viewMiddle board =
                 |> List.filter
                     (\t -> not (deciding && Protocol.tokenProp D.bool "used" t == Just True))
 
-        cube =
-            Protocol.zoneTokens "cube" ctx.scene |> List.head
-
         pendingFrom =
             Protocol.sceneData (D.field "pending_from" (D.nullable D.string)) "cube" ctx.scene |> Maybe.withDefault Nothing
 
@@ -851,21 +1110,20 @@ viewMiddle board =
         statusText s =
             span [ class "pixel text-[8px] sm:text-[9px] px-1", style "color" "var(--pencil)" ] [ text s ]
 
-        actions =
-            List.filterMap identity
-                [ actionButton ctx "roll" "sky"
-                , actionButton ctx "double" "plain"
-                , actionButton ctx "take" "sky"
-                , actionButton ctx "drop" "plain"
-                , actionButton ctx "undo" "plain"
-                , actionButton ctx "play" "sky"
-                ]
+        -- ROLL appears only when it is a real choice against DOUBLE; with
+        -- no double on offer the client already rolled by itself.
+        roll =
+            if hasAction "double" ctx.legal then
+                actionButton ctx "roll" "sky" |> Maybe.map List.singleton |> Maybe.withDefault []
 
-        status =
-            if ctx.finished /= Nothing then
+            else
                 []
 
-            else if actions /= [] then
+        anyAction =
+            roll /= [] || viewLeftBand board /= []
+
+        status =
+            if ctx.finished /= Nothing || anyAction then
                 []
 
             else if pendingFrom /= Nothing && not myTurn then
@@ -877,16 +1135,7 @@ viewMiddle board =
             else
                 []
     in
-    List.map viewDie dice
-        ++ (case cube of
-                Just token ->
-                    [ viewCube ctx token ]
-
-                Nothing ->
-                    []
-           )
-        ++ actions
-        ++ status
+    List.map viewDie dice ++ roll ++ status
 
 
 viewDie : Token -> Html Msg
@@ -938,21 +1187,73 @@ pips value =
             )
 
 
-viewCube : Ctx -> Token -> Html Msg
-viewCube ctx token =
+{-| The doubling cube's permanent home: a slim rail on the board's far
+left, mirroring the trays. The cube always shows -- 64 while centred, as
+tradition has it, its value once turned -- and its height tracks the
+owner: centred with a centred cube, at the bottom when the viewer's seat
+owns it, at the top when the opponent does. A pending offer parks it in
+the middle, prominent, at the value on offer (a double is worth twice the
+cube; the engine turns it on the take).
+-}
+viewCubeRail : Board -> Html Msg
+viewCubeRail board =
     let
+        ctx =
+            board.ctx
+
+        cubeData decoder field fallback =
+            Protocol.sceneData (D.field field decoder) "cube" ctx.scene |> Maybe.withDefault fallback
+
+        enabled =
+            cubeData D.bool "enabled" False
+
         value =
-            Protocol.tokenProp D.int "value" token |> Maybe.withDefault 1
-    in
-    div [ class "cube pixel text-[10px]", title "Doubling cube" ]
-        [ text
-            (if value == 1 then
+            cubeData D.int "value" 1
+
+        owner =
+            cubeData (D.nullable D.string) "owner" Nothing
+
+        pending =
+            cubeData (D.nullable D.string) "pending_from" Nothing /= Nothing
+
+        shown =
+            if pending then
+                String.fromInt (value * 2)
+
+            else if value <= 1 then
                 "64"
 
-             else
+            else
                 String.fromInt value
-            )
+
+        justify =
+            if pending then
+                "justify-center"
+
+            else
+                case owner of
+                    Just id ->
+                        if id == seatId ctx then
+                            "justify-end"
+
+                        else
+                            "justify-start"
+
+                    Nothing ->
+                        "justify-center"
+    in
+    -- A cube-less format keeps the rail (the board's geometry holds) but
+    -- hangs no cube on it.
+    div
+        [ class ("row-span-3 w-9 sm:w-14 flex flex-col items-center py-2 " ++ justify)
+        , title "Doubling cube"
         ]
+        (if enabled then
+            [ div [ classList [ ( "cube pixel text-[10px]", True ), ( "pending", pending ) ] ] [ text shown ] ]
+
+         else
+            []
+        )
 
 
 actionButton : Ctx -> String -> String -> Maybe (Html Msg)
@@ -960,7 +1261,7 @@ actionButton ctx name variant =
     if hasAction name ctx.legal then
         Just
             (button
-                [ class ("btn-arcade pixel text-[9px] px-3 py-3 sm:px-4 whitespace-nowrap " ++ variant)
+                [ class ("btn-arcade pixel text-[9px] px-2 py-3 sm:px-4 text-center leading-relaxed " ++ variant)
                 , onClick (Simple name)
                 ]
                 [ text (String.toUpper (labelOf name ctx.legal)) ]

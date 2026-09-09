@@ -6,6 +6,7 @@ game has one, the generic renderer otherwise.
 -}
 
 import Browser
+import Browser.Dom
 import Games.Backgammon.View as Backgammon
 import Games.Chess.View as Chess
 import Games.Poker.View as Poker
@@ -175,6 +176,9 @@ update msg model =
                 Backgammon.WantRematch ->
                     update RequestRematch updated
 
+                Backgammon.NeedZones targets ->
+                    ( updated, measureDropZones targets )
+
         ChessMsg chessMsg ->
             let
                 ( chess, out ) =
@@ -249,17 +253,28 @@ update msg model =
             ( model, Cmd.none )
 
 
-{-| Absorb a server payload: remember it and the legal actions, and resync
-the clock to client time.
+{-| Absorb a server payload: remember it and the legal actions, resync the
+clock to client time, and let backgammon roll for the viewer when there is
+no doubling decision to make (`Backgammon.autoRoll`; fires at most once
+per arriving state, so nothing here can loop).
 -}
 applyPayload : GamePayload -> Model -> ( Model, Cmd Msg )
 applyPayload payload model =
     let
+        ( backgammon, rollCmd ) =
+            if model.gameSlug == "backgammon" then
+                Backgammon.autoRoll payload.update.legal model.backgammon
+                    |> Tuple.mapSecond (Maybe.map sendToChannel >> Maybe.withDefault Cmd.none)
+
+            else
+                ( model.backgammon, Cmd.none )
+
         updated =
             { model
                 | payload = Just payload
                 , playerId = Just payload.playerId
                 , legal = payload.update.legal
+                , backgammon = backgammon
                 , connectionStatus = Connected
             }
 
@@ -278,8 +293,36 @@ applyPayload payload model =
                     Cmd.none
     in
     ( updated
-    , Cmd.batch [ Task.perform ClockSynced Time.now, follow ]
+    , Cmd.batch [ Task.perform ClockSynced Time.now, follow, rollCmd ]
     )
+
+
+{-| Measure the drop zones for a backgammon drag: the client rects of the
+origin's legal destinations, by the DOM ids the board view puts on them.
+Coordinates are viewport-relative (`getElement` reports page coordinates,
+so the scroll offset is subtracted); a target the DOM does not have right
+now is simply skipped.
+-}
+measureDropZones : List String -> Cmd Msg
+measureDropZones targets =
+    targets
+        |> List.map
+            (\loc ->
+                Browser.Dom.getElement (Backgammon.dropZoneId loc)
+                    |> Task.map
+                        (\found ->
+                            Just
+                                { loc = loc
+                                , left = found.element.x - found.viewport.x
+                                , top = found.element.y - found.viewport.y
+                                , width = found.element.width
+                                , height = found.element.height
+                                }
+                        )
+                    |> Task.onError (\_ -> Task.succeed Nothing)
+            )
+        |> Task.sequence
+        |> Task.perform (List.filterMap identity >> Backgammon.GotDropZones >> BackgammonMsg)
 
 
 {-| Seated players whose connection is currently down.
