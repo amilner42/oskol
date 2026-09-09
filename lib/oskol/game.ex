@@ -72,11 +72,6 @@ defmodule Oskol.Game do
     end
   end
 
-  @doc "The sentence a room reason is shown as (Gleam `rooms/errors.message`)."
-  def error_message(reason) do
-    reason |> Caps.Rooms.room_error() |> :oskol@rooms@errors.message()
-  end
-
   defdelegate join_game(game_id, player_name, player_pid), to: GameServer
   defdelegate join_game(game_id, player_name, player_pid, guest_id), to: GameServer
   defdelegate attach(game_id, token, player_pid), to: GameServer

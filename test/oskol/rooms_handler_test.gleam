@@ -1,5 +1,6 @@
 //// The room lifecycle handler, on stub capabilities: every branch of
-//// minting a code, looking a room up, creating one and joining one.
+//// minting a code, looking a room up, reading an invite, creating a room
+//// and taking a seat in one.
 
 import gleam/option.{None, Some}
 import oskol/caps/ids as ids_caps
@@ -9,6 +10,7 @@ import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/fakes
 import oskol/handlers/rooms
 import oskol/rooms/errors
+import oskol/rooms/invite
 import oskol/rooms/room.{Seat, Seated, Setup}
 
 const backgammon = "backgammon"
@@ -270,6 +272,75 @@ pub fn a_game_that_already_started_is_re_routed_test() {
 
   assert rooms.join(ctx, fakes.no_guest(), "123456", "Bob")
     == Error(rooms.Reroute)
+}
+
+// ---------- Reclaiming a seat ----------
+
+fn a_table() -> room.Table {
+  room.Table(full: True, inviter: None, summary: "Single game", disconnected: [
+    #("p2", "Bob"),
+  ])
+}
+
+fn reclaiming(ctx: Ctx, claim: Result(room.Seat, errors.RoomError)) -> Ctx {
+  let ctx = fakes.with_room(ctx, Some(fakes.room()), Some(a_table()))
+
+  Ctx(
+    ..ctx,
+    rooms: rooms_caps.RoomsCaps(
+      ..ctx.rooms,
+      subscribe: fn(_) { Nil },
+      claim: fn(_, _) { claim },
+    ),
+  )
+}
+
+// The seat keeps the name it was taken under: it is the room's, not the
+// visitor's, and it is read before the seat stops being an empty one.
+pub fn a_reclaimed_seat_keeps_its_name_test() {
+  let ctx =
+    fakes.ctx()
+    |> reclaiming(Ok(Seat(player_id: "p2", token: "fresh", started: True)))
+
+  assert rooms.claim(ctx, "123456", "p2")
+    == Ok(Seated(
+      game_id: "123456",
+      player_id: "p2",
+      token: "fresh",
+      name: "Bob",
+      started: True,
+    ))
+}
+
+pub fn reclaiming_a_seat_in_a_room_that_is_over_test() {
+  let ctx = fakes.with_room(fakes.ctx(), None, None)
+
+  assert rooms.claim(ctx, "123456", "p2")
+    == Error(rooms.Gone(rooms.gone_message))
+}
+
+pub fn reclaiming_a_seat_whose_player_came_back_test() {
+  let ctx = fakes.ctx() |> reclaiming(Error(errors.SeatConnected))
+
+  assert rooms.claim(ctx, "123456", "p2")
+    == Error(rooms.Refused("That player is back at the table"))
+}
+
+// ---------- What an invite is worth ----------
+
+pub fn an_invite_reads_the_table_behind_the_code_test() {
+  let ctx = fakes.with_room(fakes.ctx(), Some(fakes.room()), Some(a_table()))
+
+  assert rooms.offer(ctx, "123456")
+    == #(invite.Reclaim([#("p2", "Bob")]), Some(a_table()))
+}
+
+// A code with no room never asks a room anything: the table capability
+// panics.
+pub fn an_invite_to_a_room_that_is_gone_is_worth_nothing_test() {
+  let ctx = fakes.with_room(fakes.ctx(), None, None)
+
+  assert rooms.offer(ctx, "123456") == #(invite.NoRoom, None)
 }
 
 pub fn any_other_refusal_is_shown_as_it_is_test() {

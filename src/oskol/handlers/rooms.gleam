@@ -3,14 +3,16 @@
 //// `LandingLive`'s create and join events; the LiveView and the JSON API
 //// both come through here, so they cannot drift.
 
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import oskol/caps/rooms.{AlreadyStarted, SpawnFailed}
 import oskol/core/ctx.{type Ctx}
 import oskol/core/session.{type Session}
 import oskol/guests/identity
 import oskol/rooms/errors.{type RoomError}
+import oskol/rooms/invite.{type InviteStep}
 import oskol/rooms/name as display_name
-import oskol/rooms/room.{type Room, type Seated, type Setup, Seated}
+import oskol/rooms/room.{type Room, type Seated, type Setup, type Table, Seated}
 
 /// How many codes to try before giving up. A function, not a constant, so
 /// the Elixir facade can read it instead of keeping its own copy.
@@ -90,6 +92,21 @@ pub fn lookup_slug(ctx: Ctx, game_id: String) -> Option(String) {
   }
 }
 
+/// The table behind an invite link, if a room still answers to the code.
+/// Looking it up rehydrates a room that was only sleeping.
+pub fn table(ctx: Ctx, game_id: String) -> Option(Table) {
+  case lookup(ctx, game_id) {
+    Some(_) -> ctx.rooms.table(game_id)
+    None -> None
+  }
+}
+
+/// What that invite link offers.
+pub fn offer(ctx: Ctx, game_id: String) -> #(InviteStep, Option(Table)) {
+  let table = table(ctx, game_id)
+  #(invite.step(table), table)
+}
+
 // ---------- Taking a seat ----------
 
 /// Create a room, set it up, and seat the creator in it.
@@ -154,6 +171,38 @@ pub fn join(
           }
         }
       }
+  }
+}
+
+/// Take a seat back from the invite link. The seat's token is rotated by
+/// the room, so whatever link its previous occupant held is dead and only
+/// the one we are about to hand out opens it.
+pub fn claim(
+  ctx: Ctx,
+  game_id: String,
+  player_id: String,
+) -> Result(Seated, JoinError) {
+  // The table is read before the seat is claimed: afterwards the seat is
+  // no longer one of the empty ones, and its name would be gone with it.
+  case table(ctx, game_id) {
+    None -> Error(Gone(gone_message))
+    Some(table) -> {
+      ctx.rooms.subscribe(game_id)
+
+      case ctx.rooms.claim(game_id, player_id) {
+        Ok(seat) -> Ok(seated(game_id, seat_name(table, player_id), seat))
+        Error(reason) -> Error(Refused(errors.message(reason)))
+      }
+    }
+  }
+}
+
+/// A reclaimed seat keeps the name it was taken under; the room knows it,
+/// and it is not ours to change.
+fn seat_name(table: Table, player_id: String) -> String {
+  case list.key_find(table.disconnected, player_id) {
+    Ok(name) -> name
+    Error(_) -> ""
   }
 }
 

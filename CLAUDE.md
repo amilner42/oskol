@@ -197,10 +197,10 @@ refusal says, what a JSON page carries. The rule is the same one the games
 follow — Gleam is pure, Elixir does the IO:
 
 ```
-Phoenix (router, plugs, LiveView, GenServers)          [Elixir, thin]
+Phoenix (router, plugs, controllers, GenServers)       [Elixir, thin]
   -> handler(ctx, session, request)                    [GLEAM, all decisions]
        ctx.<domain>.<cap>(...) performs injected IO
-  -> assigns / JSON on the wire                        [Elixir, thin]
+  -> JSON on the wire                                  [Elixir, thin]
 ```
 
 - `Ctx` (src/oskol/core/ctx.gleam) is a record of capability closures, one
@@ -217,8 +217,9 @@ Phoenix (router, plugs, LiveView, GenServers)          [Elixir, thin]
   Everything else raises Elixir-side and surfaces as a 500, as before.
 - Tests build a `Ctx` of stubs that panic (`test/oskol/fakes.gleam`), so a
   handler test that reaches IO it did not arrange for fails loudly.
-- The LiveView and the JSON API call the same handlers, so the page and the
-  API cannot drift apart.
+- `Oskol.Game` (minting a code, finding a room) and the `/papi` controller
+  are two doors onto the same handlers, so nothing that decides anything
+  exists twice.
 
 ## URLs
 
@@ -250,19 +251,26 @@ cookie rides along and identity needs nothing from the client; writes carry
 the page's CSRF token in `x-csrf-token`.
 
 ```
-GET  /papi/library                     {ok, games, coming_soon}
+GET  /papi/library                     {ok, games, coming_soon, guest_name}
 GET  /papi/games/:slug                 {ok, game, formats, clock_presets, copy, guest_name}
-POST /papi/games/:slug                 {format, name, clock, selections} -> {ok, id, path}
+POST /papi/games/:slug                 {format, name, clock, selections}
+                                         -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
-POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path}
+POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
 GET  /papi/codes/:code                 {ok, slug}
 ```
 
-`path` is the URL that opens the seat that was just taken: the client goes
-there, and the seat waits in the lobby until its opponent arrives. `state` is
-`open` (a free seat), `away` (a seat whose player is gone), `full` (nothing
-to offer) or `missing` (the room is over) — the same four cases the server
-used to decide for itself.
+`path` is the URL that opens the seat that was just taken (`/:slug/:id?t=`,
+carrying its token): the client goes there, and the seat waits in the lobby
+until its opponent arrives. `state` is `open` (a free seat), `away` (a seat
+whose player is gone), `full` (nothing to offer) or `missing` (the room is
+over) — the same four cases the server used to decide for itself.
+
+A game's own `clocks` are preset ids; `clock_presets` carries every preset,
+so the picker can name the ones the game offers. Statuses: 404 `not_found`
+(no such game, no such code, a room that is over), 422 `validation_failed`
+(a name, a mode, a clock or a seat the room refused), 500 `server_error`.
+Every decision behind these lives in `src/oskol/handlers/landing.gleam`.
 
 ## Adding a game
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`. Give

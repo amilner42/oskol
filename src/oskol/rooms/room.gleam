@@ -3,6 +3,7 @@
 //// it back to Elixir, exactly as the platform holds a game instance.
 
 import gleam/dynamic.{type Dynamic}
+import gleam/option.{type Option}
 
 /// A live room. It is an Erlang process, and it stays opaque on purpose:
 /// every question about a room is answered by a capability, never by
@@ -34,4 +35,23 @@ pub type Seated {
     name: String,
     started: Bool,
   )
+}
+
+/// The table as an invite link finds it: whether it is full, who is sitting
+/// at it right now, the one line describing what is being played, and the
+/// seats whose player is away (#(player_id, name), in seat order).
+pub type Table {
+  Table(
+    full: Bool,
+    inviter: Option(String),
+    summary: String,
+    disconnected: List(#(String, String)),
+  )
+}
+
+/// The URL that opens a seat: the game page, carrying the seat token. It is
+/// the only thing that opens the seat, so it is also the only thing a
+/// player who just took one is given.
+pub fn seat_path(slug: String, game_id: String, token: String) -> String {
+  "/" <> slug <> "/" <> game_id <> "?t=" <> token
 }

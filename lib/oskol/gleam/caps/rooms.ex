@@ -3,9 +3,10 @@ defmodule Oskol.Gleam.Caps.Rooms do
   Real IO for src/oskol/caps/rooms.gleam. Keep field order in lockstep.
 
   The closures run in the process that built them: it is the one that
-  follows a room's broadcasts, and `player_pid` is the one that takes the
-  seat, so a LiveView builds a context that seats the LiveView and a
-  controller one that seats nobody (no process to monitor, no live socket).
+  follows a room's broadcasts, and `player_pid` is the one whose life the
+  seat is tied to. A stateless request passes none, so the seat it takes has
+  no live connection until the browser opens the link the response hands
+  out and the game channel attaches to it.
   """
 
   import Oskol.Gleam.Interop
@@ -27,7 +28,7 @@ defmodule Oskol.Gleam.Caps.Rooms do
     player_pid = Keyword.get(opts, :player_pid)
 
     {:rooms_caps, fn game_id -> GameSupervisor.find_game(game_id) |> found() end,
-     fn game_id -> Rehydrator.resume(game_id) |> found() end,
+     fn game_id -> Rehydrator.resume(game_id) |> found() end, &table/1,
      fn game_id -> opt(GameServer.get_state(game_id).slug) end,
      fn game_id, slug ->
        case GameSupervisor.start_game(game_id, slug) do
@@ -57,7 +58,40 @@ defmodule Oskol.Gleam.Caps.Rooms do
          {:error, reason} ->
            {:error, room_error(reason)}
        end
+     end,
+     fn game_id, player_id ->
+       # Claiming attaches, and attaching needs a process to watch. A
+       # stateless caller watches itself: the seat is live for the length of
+       # the request and away again after it, until the browser opens the
+       # link this call hands back.
+       case Game.claim_seat(game_id, player_id, player_pid || self()) do
+         {:ok, ^player_id, token, state} ->
+           {:ok, {:seat, player_id, token, state.instance != nil}}
+
+         {:error, reason} ->
+           {:error, room_error(reason)}
+       end
      end}
+  end
+
+  # The table as an invite link finds it. A room that died between the
+  # lookup and this call answers like no room at all.
+  defp table(game_id) do
+    state = GameServer.get_state(game_id)
+
+    {:some,
+     {:table, GameServerState.full?(state), opt(inviter_name(state)),
+      GameServerState.summary(state), GameServerState.disconnected_seats(state)}}
+  catch
+    :exit, _ -> :none
+  end
+
+  # Somebody who is at the table right now, if anybody is.
+  defp inviter_name(state) do
+    case Enum.find(state.connections, fn {_id, conn} -> conn.connected end) do
+      {_id, conn} -> conn.name
+      nil -> nil
+    end
   end
 
   # A live room crosses as the Gleam `rooms/room.Room` wrapper: opaque

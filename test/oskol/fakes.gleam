@@ -29,6 +29,28 @@ pub fn room() -> Room {
   Room(process: dynamic.string("a room"))
 }
 
+/// Room caps that answer a lookup and a table read. Everything a room can
+/// be asked to *do* still panics.
+pub fn with_room(
+  ctx: Ctx,
+  found: Option(Room),
+  table: Option(room.Table),
+) -> Ctx {
+  Ctx(
+    ..ctx,
+    rooms: rooms_caps.RoomsCaps(
+      ..ctx.rooms,
+      find: fn(_) { found },
+      resume: fn(_) { option.None },
+      table: fn(_) { table },
+    ),
+  )
+}
+
+pub fn with_slug(ctx: Ctx, slug: Option(String)) -> Ctx {
+  Ctx(..ctx, rooms: rooms_caps.RoomsCaps(..ctx.rooms, slug_of: fn(_) { slug }))
+}
+
 pub fn guest(id: String) -> Session {
   Session(guest_id: Some(id))
 }

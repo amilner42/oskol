@@ -32,8 +32,11 @@ defmodule OskolWeb.Router do
     pipe_through :papi
 
     get "/library", LandingController, :library
+    get "/codes/:code", LandingController, :code
     get "/games/:slug", LandingController, :show
     post "/games/:slug", LandingController, :create
+    get "/games/:slug/rooms/:id", LandingController, :room
+    post "/games/:slug/rooms/:id", LandingController, :seat
   end
 
   # Enable LiveDashboard in development. Declared before the game routes so
