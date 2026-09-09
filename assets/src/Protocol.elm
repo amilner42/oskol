@@ -5,6 +5,7 @@ module Protocol exposing
     , Event(..)
     , GamePayload
     , Layout(..)
+    , Lobby
     , Outcome(..)
     , Param
     , ParamKind(..)
@@ -20,17 +21,17 @@ module Protocol exposing
     , encodeRematch
     , eventDecoder
     , findPlayer
-    , formatClock
-    , remainingNow
     , findZone
+    , formatClock
     , hasFlag
     , opponentOf
     , payloadDecoder
     , playerData
+    , remainingNow
     , sceneData
-    , serverMessageDecoder
-    , schemaDecoder
     , sceneDecoder
+    , schemaDecoder
+    , serverMessageDecoder
     , tokenProp
     , tokensMovedTo
     , updateDecoder
@@ -180,8 +181,22 @@ type alias GamePayload =
     }
 
 
+{-| A room that has no game in it yet: who is seated, and what they are
+waiting to play. It is the same channel and the same seat token as a game
+payload — only the instance is missing.
+-}
+type alias Lobby =
+    { game : String
+    , gameId : String
+    , playerId : Maybe String
+    , connections : List Connection
+    , summary : Maybe String
+    , status : String
+    }
+
+
 type ServerMessage
-    = LobbyMessage
+    = LobbyMessage Lobby
     | GameMessage GamePayload
     | ErrorMessage String
     | RematchReadyMessage String
@@ -293,7 +308,7 @@ payloadOrLobbyDecoder =
             (\kind ->
                 case kind of
                     "lobby" ->
-                        D.succeed LobbyMessage
+                        D.map LobbyMessage lobbyDecoder
 
                     "game" ->
                         D.map GameMessage payloadDecoder
@@ -301,6 +316,17 @@ payloadOrLobbyDecoder =
                     _ ->
                         D.fail ("Unknown payload type: " ++ kind)
             )
+
+
+lobbyDecoder : Decoder Lobby
+lobbyDecoder =
+    D.map6 Lobby
+        (D.field "game" D.string)
+        (D.oneOf [ D.field "game_id" D.string, D.succeed "" ])
+        (D.oneOf [ D.field "player_id" (D.nullable D.string), D.succeed Nothing ])
+        (D.oneOf [ D.field "connections" (D.list connectionDecoder), D.succeed [] ])
+        (D.oneOf [ D.field "summary" (D.nullable D.string), D.succeed Nothing ])
+        (D.oneOf [ D.field "lobby_status" D.string, D.succeed "waiting_for_players" ])
 
 
 payloadDecoder : Decoder GamePayload

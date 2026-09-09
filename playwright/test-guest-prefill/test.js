@@ -29,7 +29,7 @@ async function run(browser, errors) {
     const page = await context.newPage();
     watch(page, 'guest');
     await page.goto(`${BASE}/backgammon`);
-    await page.waitForSelector('[data-phx-main].phx-connected');
+    await page.waitForSelector('#create-name');
     if ((await page.inputValue('input[name="player_name"]')) !== '')
       throw new Error('a brand-new guest must start with an empty name field');
     await page.fill('input[name="player_name"]', 'Alice');
@@ -39,7 +39,7 @@ async function run(browser, errors) {
 
     // Same browser, back to the create page: the site remembers.
     await page.goto(`${BASE}/backgammon`);
-    await page.waitForSelector('[data-phx-main].phx-connected');
+    await page.waitForSelector('#create-name');
     const prefilled = await page.inputValue('input[name="player_name"]');
     if (prefilled !== 'Alice') throw new Error(`expected prefill "Alice", saw "${prefilled}"`);
     await page.screenshot({ path: `${SHOTS}/01-prefilled.png` });
@@ -52,7 +52,7 @@ async function run(browser, errors) {
       const other = await fresh.newPage();
       watch(other, 'fresh');
       await other.goto(`${BASE}/backgammon`);
-      await other.waitForSelector('[data-phx-main].phx-connected');
+      await other.waitForSelector('#create-name');
       const empty = await other.inputValue('input[name="player_name"]');
       if (empty !== '') throw new Error(`a fresh visitor saw a prefilled name: "${empty}"`);
       await other.screenshot({ path: `${SHOTS}/02-fresh-empty.png` });

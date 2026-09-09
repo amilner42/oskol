@@ -53,10 +53,13 @@ defmodule OskolWeb.Router do
 
     get "/sitemap.xml", SitemapController, :index
 
+    # The Elm app serves all three; the first two carry the head a crawler
+    # reads, the third is a seat at a table and is noindex.
+    #
     # The game library
-    live "/", LandingLive, :library
-    # One game's start page and lobby, e.g. /backgammon
-    live "/:slug", LandingLive, :game
+    get "/", SpaController, :library
+    # One game's start page, e.g. /backgammon
+    get "/:slug", SpaController, :game
     # A running game, e.g. /backgammon/abc123
     get "/:slug/:id", PageController, :play
   end

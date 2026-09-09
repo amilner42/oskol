@@ -95,18 +95,18 @@ async function main() {
     const p1 = await desktop.newPage();
     watch(p1, 'desktop');
     await p1.goto(`${BASE}/backgammon`);
-    await p1.waitForSelector('[data-phx-main].phx-connected');
+    await p1.waitForSelector('#create-name');
     await p1.fill('input[name="player_name"]', 'Alice');
     await p1.click('#format-match3'); // the cube plays in match formats
     await p1.click('#create-game');
     await p1.waitForSelector('#share-link');
-    const gameId = new URL(p1.url()).searchParams.get('game');
+    const gameId = new URL(p1.url()).pathname.split('/')[2];
     log(`Game ${gameId} created`);
 
     const p2 = await phone.newPage();
     watch(p2, 'phone');
     await p2.goto(`${BASE}/backgammon?game=${gameId}`);
-    await p2.waitForSelector('[data-phx-main].phx-connected');
+    await p2.waitForSelector('#join-game');
     await p2.waitForSelector('text=Match to 3');
     await p2.fill('input[name="player_name"]', 'Bob');
     await p2.click('#join-game');

@@ -120,68 +120,93 @@ document.addEventListener("pointerdown", (e) => {
   }
 }, true);
 
-// Elm game client. One client for every game: it speaks the gamekit protocol
-// and picks a renderer by game slug.
+// The Elm app: the whole front end. It owns routing (/, /:slug, /:slug/:id),
+// the landing pages, and the one game client that speaks the gamekit
+// protocol and picks a renderer by game slug.
+//
+// Everything below this line is what Elm cannot do itself: the Phoenix
+// channel, and the platform's share sheet / clipboard.
 import { Elm } from "../src/Main.elm";
 
-const elmGameContainer = document.getElementById("elm-game-app");
-if (elmGameContainer) {
-  const gameId = elmGameContainer.dataset.gameId;
-  const gameSlug = elmGameContainer.dataset.gameSlug;
-  const playerId = elmGameContainer.dataset.playerId || null;
-  // The seat token: the credential this client joins the channel with, and
-  // what a rematch link has to carry to keep the same seat.
-  const seatToken = elmGameContainer.dataset.seatToken || null;
+const meta = (name) => document.querySelector(`meta[name='${name}']`)?.getAttribute("content") || null;
 
-  const gameApp = Elm.Main.init({
-    node: elmGameContainer,
-    flags: { gameId, gameSlug, playerId, seatToken }
-  });
+const app = Elm.Main.init({
+  flags: {
+    csrf: meta("csrf-token") || "",
+    // The name this browser last played under, remembered against the
+    // silent guest cookie and rendered into the page that served the app.
+    guestName: meta("guest-name"),
+  },
+});
 
-  const send = (message) => {
-    if (gameApp.ports.receiveFromChannel) {
-      gameApp.ports.receiveFromChannel.send(message);
-    }
-  };
+window.elmApp = app;
 
-  const gameSocket = new Socket("/socket", {});
-  gameSocket.connect();
+// ---- The game channel ----
+//
+// A page load is no longer what opens a game: the Play page asks for its
+// room by port, so joining a game the client navigated to and joining one it
+// was served both take the same path. A second request (a rematch, or
+// another table) leaves the first channel before opening the next.
+let gameSocket = null;
+let gameChannel = null;
 
-  const gameChannel = gameSocket.channel(`game:${gameId}`, { token: seatToken });
+const send = (message) => app.ports.receiveFromChannel?.send(message);
 
-  gameChannel.join()
+app.ports.joinGameChannel?.subscribe(({ gameId, seatToken }) => {
+  if (gameChannel) {
+    gameChannel.leave();
+    gameChannel = null;
+  }
+
+  if (!gameSocket) {
+    gameSocket = new Socket("/socket", {});
+    gameSocket.connect();
+    gameSocket.onOpen(() => send({ type: "connection_status", status: "connected" }));
+    gameSocket.onClose(() => send({ type: "connection_status", status: "disconnected" }));
+  }
+
+  const channel = gameSocket.channel(`game:${gameId}`, { token: seatToken });
+  gameChannel = channel;
+
+  channel.join()
     .receive("ok", (resp) => send({ type: "payload", payload: resp.payload }))
     .receive("error", (resp) => {
       // A room that is gone stays gone: report it instead of rejoining forever.
       send({ type: "error", message: resp.reason || "Failed to join game" });
-      gameChannel.leave();
+      channel.leave();
     });
 
-  gameChannel.on("update", (msg) => send({ type: "payload", payload: msg.payload }));
-  gameChannel.on("error", (msg) => send({ type: "error", message: msg.message || "Action failed" }));
-  gameChannel.on("rematch_ready", (msg) => send({ type: "rematch_ready", game_id: msg.game_id }));
+  channel.on("update", (msg) => send({ type: "payload", payload: msg.payload }));
+  channel.on("error", (msg) => send({ type: "error", message: msg.message || "Action failed" }));
+  channel.on("rematch_ready", (msg) => send({ type: "rematch_ready", game_id: msg.game_id }));
 
-  gameSocket.onOpen(() => send({ type: "connection_status", status: "connected" }));
-  gameSocket.onClose(() => send({ type: "connection_status", status: "disconnected" }));
+  window.gameChannel = channel;
+});
 
-  if (gameApp.ports.sendToChannel) {
-    gameApp.ports.sendToChannel.subscribe((data) => {
-      if (data.type === "action") {
-        gameChannel.push("action", { action: { name: data.name, params: data.params } })
-          .receive("error", (msg) => send({ type: "error", message: msg.reason || "Action failed" }));
-      } else if (data.type === "rematch") {
-        gameChannel.push("rematch", {})
-          .receive("error", (msg) => send({ type: "error", message: msg.reason || "Rematch failed" }));
-      }
-    });
+app.ports.sendToChannel?.subscribe((data) => {
+  if (!gameChannel) return;
+  if (data.type === "action") {
+    gameChannel.push("action", { action: { name: data.name, params: data.params } })
+      .receive("error", (msg) => send({ type: "error", message: msg.reason || "Action failed" }));
+  } else if (data.type === "rematch") {
+    gameChannel.push("rematch", {})
+      .receive("error", (msg) => send({ type: "error", message: msg.reason || "Rematch failed" }));
   }
+});
 
-  if (gameApp.ports.navigateToUrl) {
-    gameApp.ports.navigateToUrl.subscribe((url) => {
-      window.location.href = url;
-    });
+// ---- Invite links: native share on phones, clipboard elsewhere ----
+app.ports.shareInvite?.subscribe(async (url) => {
+  const reply = (result) => app.ports.shareResult?.send(result);
+  const mobile = window.matchMedia("(max-width: 640px)").matches;
+  if (mobile && navigator.share) {
+    try { await navigator.share({ url }); } catch (_) {}
+    reply("shared");
+    return;
   }
-
-  window.elmApp = gameApp;
-  window.gameChannel = gameChannel;
-}
+  try {
+    await navigator.clipboard.writeText(url);
+    reply("copied");
+  } catch (_) {
+    reply("failed");
+  }
+});

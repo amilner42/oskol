@@ -1,558 +1,379 @@
-port module Main exposing (ConnectionStatus(..), Flags, Model, Msg(..), applyPayload, init, main, update)
+module Main exposing (main)
 
-{-| The one client for every game. It decodes the gamekit protocol, keeps the
-latest payload, and hands the scene to a renderer: a bespoke view where a
-game has one, the generic renderer otherwise.
+{-| SPA shell: routing, page dispatch, and the chrome the landing pages sit
+in (`Ui.Shell` — the OSKOL plate, the JOIN GAME prompt, the footer).
+
+Three routes, and they are the server's three routes:
+
+    /            Page.Library
+    /:slug       Page.GameLanding
+    /:slug/:id   Page.Play — the game, unchanged
+
+The JOIN GAME prompt lives here rather than in a page because it is chrome:
+six digits in, and out comes that room's ordinary invite link, which is the
+same flow a shared link takes. Nothing about the room is revealed beyond
+"a live game answers to this code".
+
 -}
 
-import Browser
-import Browser.Dom
-import Games.Backgammon.View as Backgammon
-import Games.Chess.View as Chess
-import Games.Poker.View as Poker
-import Generic.View
+import Api
+import Api.Catalog as Catalog
+import Browser exposing (Document)
+import Browser.Events
+import Browser.Navigation as Nav
 import Html exposing (Html)
-import Html.Attributes exposing (class)
+import Html.Attributes
 import Json.Decode as D
-import Json.Encode as E
-import Protocol exposing (GamePayload, ServerMessage(..))
-import Task
-import Time
-import Url exposing (percentEncode)
-import View.Clock
+import Page.GameLanding
+import Page.Library
+import Page.Play
+import Route exposing (Route)
+import Session exposing (Session)
+import Ui.Notebook as Notebook
+import Ui.Shell as Shell
+import Url exposing (Url)
 
 
-
--- MAIN
-
-
-main : Program Flags Model Msg
+main : Program D.Value Model Msg
 main =
-    Browser.element
+    Browser.application
         { init = init
         , view = view
         , update = update
         , subscriptions = subscriptions
+        , onUrlRequest = LinkClicked
+        , onUrlChange = UrlChanged
         }
 
 
-
--- PORTS
-
-
-port sendToChannel : E.Value -> Cmd msg
-
-
-port receiveFromChannel : (E.Value -> msg) -> Sub msg
-
-
-port navigateToUrl : String -> Cmd msg
-
-
-
--- MODEL
-
-
-type alias Flags =
-    { gameId : String
-    , gameSlug : String
-    , playerId : Maybe String
-    , seatToken : Maybe String
-    }
-
-
-type ConnectionStatus
-    = Disconnected
-    | Connecting
-    | Connected
-
-
 type alias Model =
-    { gameId : String
-    , gameSlug : String
-    , playerId : Maybe String
-    , seatToken : Maybe String -- this seat's credential, carried into a rematch
-    , payload : Maybe GamePayload -- latest protocol payload from the server
-    , legal : List Protocol.Schema -- legal action schemas for this player
-    , generic : Generic.View.Model
-    , backgammon : Backgammon.Model
-    , chess : Chess.Model
-    , poker : Poker.Model
-    , clockReceivedAt : Int -- client time (ms) when the latest clock snapshot arrived
-    , nowMs : Int -- client time (ms), refreshed while a clock runs
-    , connectionStatus : ConnectionStatus
-    , error : Maybe String
+    { key : Nav.Key
+    , origin : String
+    , session : Session
+    , route : Maybe Route
+    , page : Page
+    , joinOpen : Bool
+    , joinCode : String
+    , joinError : Maybe String
     }
 
 
-init : Flags -> ( Model, Cmd Msg )
-init flags =
-    ( { gameId = flags.gameId
-      , gameSlug = flags.gameSlug
-      , playerId = flags.playerId
-      , seatToken = flags.seatToken
-      , payload = Nothing
-      , legal = []
-      , generic = Generic.View.init
-      , backgammon = Backgammon.init
-      , chess = Chess.init
-      , poker = Poker.init
-      , clockReceivedAt = 0
-      , nowMs = 0
-      , connectionStatus = Connecting
-      , error = Nothing
-      }
-    , Cmd.none
-    )
-
-
-
--- UPDATE
+type Page
+    = NotFound
+    | Library Page.Library.Model
+    | GameLanding Page.GameLanding.Model
+    | Play Page.Play.Model
 
 
 type Msg
-    = ServerMessageReceived ServerMessage
-    | GenericMsg Generic.View.Msg
-    | BackgammonMsg Backgammon.Msg
-    | ChessMsg Chess.Msg
-    | PokerMsg Poker.Msg
-    | PokerAutoDeal
-    | ClockSynced Time.Posix
-    | ClockTick Time.Posix
-    | RematchGameReady String
-    | ChannelError String
-    | ConnectionStatusChanged ConnectionStatus
-    | RequestRematch
+    = LinkClicked Browser.UrlRequest
+    | UrlChanged Url
+    | LibraryMsg Page.Library.Msg
+    | GameLandingMsg Page.GameLanding.Msg
+    | PlayMsg Page.Play.Msg
+    | OpenedJoin
+    | ClosedJoin
+    | JoinCodeInput String
+    | JoinSubmitted
+    | GotJoinSlug (Result Api.Error String)
     | NoOp
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case msg of
-        ServerMessageReceived message ->
-            case message of
-                GameMessage payload ->
-                    applyPayload payload model
-
-                LobbyMessage ->
-                    ( { model | connectionStatus = Connected }, Cmd.none )
-
-                ErrorMessage err ->
-                    update (ChannelError err) model
-
-                RematchReadyMessage rematchGameId ->
-                    update (RematchGameReady rematchGameId) model
-
-                StatusMessage status ->
-                    update (ConnectionStatusChanged (connectionStatusFromString status)) model
-
-        GenericMsg genericMsg ->
-            let
-                ( generic, maybeAction ) =
-                    Generic.View.update genericMsg model.generic
-            in
-            ( { model | generic = generic, error = Nothing }
-            , maybeAction |> Maybe.map sendToChannel |> Maybe.withDefault Cmd.none
-            )
-
-        BackgammonMsg bgMsg ->
-            let
-                ( bg, out ) =
-                    Backgammon.update bgMsg model.backgammon
-
-                updated =
-                    { model | backgammon = bg, error = Nothing }
-            in
-            case out of
-                Backgammon.NoOut ->
-                    ( updated, Cmd.none )
-
-                Backgammon.Send value ->
-                    ( updated, sendToChannel value )
-
-                Backgammon.SendMany values ->
-                    ( updated, Cmd.batch (List.map sendToChannel values) )
-
-                Backgammon.WantRematch ->
-                    update RequestRematch updated
-
-                Backgammon.NeedZones targets ->
-                    ( updated, measureDropZones targets )
-
-        ChessMsg chessMsg ->
-            let
-                ( chess, out ) =
-                    Chess.update chessMsg model.chess
-
-                updated =
-                    { model | chess = chess, error = Nothing }
-            in
-            case out of
-                Chess.NoOut ->
-                    ( updated, Cmd.none )
-
-                Chess.Send value ->
-                    ( updated, sendToChannel value )
-
-                Chess.WantRematch ->
-                    update RequestRematch updated
-
-        PokerMsg pokerMsg ->
-            let
-                ( poker, out ) =
-                    Poker.update pokerMsg model.poker
-
-                updated =
-                    { model | poker = poker, error = Nothing }
-            in
-            case out of
-                Poker.NoOut ->
-                    ( updated, Cmd.none )
-
-                Poker.Send value ->
-                    ( updated, sendToChannel value )
-
-                Poker.WantRematch ->
-                    update RequestRematch updated
-
-        PokerAutoDeal ->
-            case pokerCtx model of
-                Just ctx ->
-                    if Poker.wantsAutoDeal ctx then
-                        ( model, sendToChannel (Protocol.encodeAction "deal" []) )
-
-                    else
-                        ( model, Cmd.none )
-
-                Nothing ->
-                    ( model, Cmd.none )
-
-        ClockSynced posix ->
-            ( { model | clockReceivedAt = Time.posixToMillis posix, nowMs = Time.posixToMillis posix }
-            , Cmd.none
-            )
-
-        ClockTick posix ->
-            ( { model | nowMs = Time.posixToMillis posix }, Cmd.none )
-
-        RematchGameReady rematchGameId ->
-            ( model
-            , navigateToUrl (rematchUrl model rematchGameId)
-            )
-
-        ChannelError err ->
-            ( { model | error = Just err }, Cmd.none )
-
-        ConnectionStatusChanged status ->
-            ( { model | connectionStatus = status }, Cmd.none )
-
-        RequestRematch ->
-            ( model, sendToChannel Protocol.encodeRematch )
-
-        NoOp ->
-            ( model, Cmd.none )
-
-
-{-| Absorb a server payload: remember it and the legal actions, resync the
-clock to client time, and let backgammon roll for the viewer when there is
-no doubling decision to make (`Backgammon.autoRoll`; fires at most once
-per arriving state, so nothing here can loop).
--}
-applyPayload : GamePayload -> Model -> ( Model, Cmd Msg )
-applyPayload payload model =
+init : D.Value -> Url -> Nav.Key -> ( Model, Cmd Msg )
+init flags url key =
     let
-        ( backgammon, rollCmd ) =
-            if model.gameSlug == "backgammon" then
-                Backgammon.autoRoll payload.update.legal model.backgammon
-                    |> Tuple.mapSecond (Maybe.map sendToChannel >> Maybe.withDefault Cmd.none)
-
-            else
-                ( model.backgammon, Cmd.none )
-
-        updated =
-            { model
-                | payload = Just payload
-                , playerId = Just payload.playerId
-                , legal = payload.update.legal
-                , backgammon = backgammon
-                , connectionStatus = Connected
-            }
-
-        -- A rematch accepted while this client was away arrives in the
-        -- payload rather than as a rematch_ready push: follow it.
-        follow =
-            case payload.rematchGameId of
-                Just rematchGameId ->
-                    if List.member payload.playerId payload.rematchReady && (model.payload |> Maybe.andThen .rematchGameId) /= Just rematchGameId then
-                        navigateToUrl (rematchUrl updated rematchGameId)
-
-                    else
-                        Cmd.none
-
-                Nothing ->
-                    Cmd.none
+        session =
+            D.decodeValue Session.decoder flags
+                |> Result.withDefault { csrf = "", guestName = Nothing }
     in
-    ( updated
-    , Cmd.batch [ Task.perform ClockSynced Time.now, follow, rollCmd ]
-    )
+    routeTo url
+        { key = key
+        , origin = origin url
+        , session = session
+        , route = Nothing
+        , page = NotFound
+        , joinOpen = False
+        , joinCode = ""
+        , joinError = Nothing
+        }
 
 
-{-| Measure the drop zones for a backgammon drag: the client rects of the
-origin's legal destinations, by the DOM ids the board view puts on them.
-Coordinates are viewport-relative (`getElement` reports page coordinates,
-so the scroll offset is subtracted); a target the DOM does not have right
-now is simply skipped.
+{-| Scheme, host and port of the page we were served from: what an invite
+link has to start with to be worth sending.
 -}
-measureDropZones : List String -> Cmd Msg
-measureDropZones targets =
-    targets
-        |> List.map
-            (\loc ->
-                Browser.Dom.getElement (Backgammon.dropZoneId loc)
-                    |> Task.map
-                        (\found ->
-                            Just
-                                { loc = loc
-                                , left = found.element.x - found.viewport.x
-                                , top = found.element.y - found.viewport.y
-                                , width = found.element.width
-                                , height = found.element.height
-                                }
-                        )
-                    |> Task.onError (\_ -> Task.succeed Nothing)
-            )
-        |> Task.sequence
-        |> Task.perform (List.filterMap identity >> Backgammon.GotDropZones >> BackgammonMsg)
+origin : Url -> String
+origin url =
+    let
+        scheme =
+            case url.protocol of
+                Url.Https ->
+                    "https://"
 
-
-{-| Seated players whose connection is currently down.
--}
-awayIds : GamePayload -> List String
-awayIds payload =
-    payload.players |> List.filter (\p -> not p.connected) |> List.map .id
-
-
-connectionStatusFromString : String -> ConnectionStatus
-connectionStatusFromString status =
-    case status of
-        "connected" ->
-            Connected
-
-        "connecting" ->
-            Connecting
-
-        _ ->
-            Disconnected
-
-
-{-| A rematch is the same players in the same seats, so the seat token
-carries over unchanged: it is the only thing the new room needs.
--}
-rematchUrl : Model -> String -> String
-rematchUrl model rematchGameId =
-    "/"
-        ++ model.gameSlug
-        ++ "/"
-        ++ rematchGameId
-        ++ (case model.seatToken of
-                Just token ->
-                    "?t=" ++ percentEncode token
+                Url.Http ->
+                    "http://"
+    in
+    scheme
+        ++ url.host
+        ++ (case url.port_ of
+                Just number ->
+                    ":" ++ String.fromInt number
 
                 Nothing ->
                     ""
            )
 
 
-nameOf : Model -> String -> String
-nameOf model playerId =
-    model.payload
-        |> Maybe.andThen (\p -> Protocol.findPlayer playerId p.update.scene)
-        |> Maybe.map .name
-        |> Maybe.withDefault playerId
+routeTo : Url -> Model -> ( Model, Cmd Msg )
+routeTo url oldModel =
+    let
+        route =
+            Route.fromUrl url
 
-
-clockRunning : Model -> Bool
-clockRunning model =
-    case model.payload of
-        Just payload ->
-            payload.update.clock.enabled && List.any .running payload.update.clock.players
-
+        model =
+            { oldModel | route = route, joinOpen = False, joinError = Nothing, joinCode = "" }
+    in
+    case route of
         Nothing ->
-            False
+            ( { model | page = NotFound }, Cmd.none )
 
+        Just Route.Library ->
+            Page.Library.init model.session
+                |> wrap model Library LibraryMsg
 
-finishedWinners : GamePayload -> Maybe (List String)
-finishedWinners payload =
-    case payload.update.outcome of
-        Protocol.Ongoing ->
-            Nothing
+        Just (Route.GameLanding slug gameId token) ->
+            Page.GameLanding.init model.session slug gameId token
+                |> landing model
 
-        Protocol.Finished winners ->
-            Just winners
-
-
-pokerCtx : Model -> Maybe Poker.Ctx
-pokerCtx model =
-    case ( model.gameSlug, model.payload ) of
-        ( "poker", Just payload ) ->
-            Just
-                { playerId = payload.playerId
-                , scene = payload.update.scene
-                , legal = payload.update.legal
-                , model = model.poker
-                , clock = Just payload.update.clock
-                , receivedAt = model.clockReceivedAt
-                , now = model.nowMs
-                , nameOf = nameOf model
-                , rematchReady = payload.rematchReady
-                , finished = finishedWinners payload
-                , away = awayIds payload
+        Just (Route.Play slug gameId token) ->
+            Page.Play.init
+                { origin = model.origin
+                , slug = slug
+                , gameId = gameId
+                , seatToken = token
                 }
+                |> wrap model Play PlayMsg
+
+
+wrap : Model -> (pageModel -> Page) -> (pageMsg -> Msg) -> ( pageModel, Cmd pageMsg ) -> ( Model, Cmd Msg )
+wrap model toPage toMsg ( pageModel, cmd ) =
+    ( { model | page = toPage pageModel }, Cmd.map toMsg cmd )
+
+
+{-| The game page asks for two things the shell owns: the URL to go to, and
+the name to remember for the next form.
+-}
+landing : Model -> ( Page.GameLanding.Model, Cmd Page.GameLanding.Msg, Page.GameLanding.Out ) -> ( Model, Cmd Msg )
+landing model ( pageModel, cmd, out ) =
+    let
+        withPage =
+            { model | page = GameLanding pageModel }
+    in
+    case out of
+        Page.GameLanding.NoOut ->
+            ( withPage, Cmd.map GameLandingMsg cmd )
+
+        Page.GameLanding.Redirect path ->
+            ( withPage
+            , Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.replaceUrl model.key path ]
+            )
+
+        Page.GameLanding.TookSeat seat ->
+            ( { withPage | session = Session.withGuestName seat.name model.session }
+            , Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.pushUrl model.key seat.path ]
+            )
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case ( msg, model.page ) of
+        ( LinkClicked (Browser.Internal url), _ ) ->
+            case Route.fromUrl url of
+                Just _ ->
+                    ( model, Nav.pushUrl model.key (Url.toString url) )
+
+                Nothing ->
+                    -- Same origin but not one of ours (the sitemap, the dev
+                    -- dashboard): hand it to the server.
+                    ( model, Nav.load (Url.toString url) )
+
+        ( LinkClicked (Browser.External href), _ ) ->
+            ( model, Nav.load href )
+
+        ( UrlChanged url, _ ) ->
+            routeTo url model
+
+        ( LibraryMsg pageMsg, Library pageModel ) ->
+            Page.Library.update pageMsg pageModel
+                |> wrap model Library LibraryMsg
+
+        ( GameLandingMsg pageMsg, GameLanding pageModel ) ->
+            Page.GameLanding.update pageMsg pageModel
+                |> landing model
+
+        ( PlayMsg pageMsg, Play pageModel ) ->
+            let
+                ( newPageModel, cmd, out ) =
+                    Page.Play.update pageMsg pageModel
+            in
+            ( { model | page = Play newPageModel }
+            , Cmd.batch
+                [ Cmd.map PlayMsg cmd
+                , case out of
+                    Page.Play.Navigate url ->
+                        Nav.pushUrl model.key url
+
+                    Page.Play.NoOut ->
+                        Cmd.none
+                ]
+            )
+
+        ( OpenedJoin, _ ) ->
+            ( { model | joinOpen = True, joinCode = "", joinError = Nothing }
+            , Notebook.focus NoOp Shell.joinCodeInputId
+            )
+
+        ( ClosedJoin, _ ) ->
+            ( { model | joinOpen = False, joinCode = "", joinError = Nothing }, Cmd.none )
+
+        ( JoinCodeInput raw, _ ) ->
+            let
+                code =
+                    cleanCode raw
+            in
+            -- Auto-submit: the moment a sixth digit lands, try the code.
+            if String.length code == 6 then
+                tryJoin { model | joinCode = code, joinError = Nothing }
+
+            else
+                ( { model | joinCode = code, joinError = Nothing }, Cmd.none )
+
+        ( JoinSubmitted, _ ) ->
+            if String.length model.joinCode == 6 then
+                tryJoin model
+
+            else
+                ( { model | joinError = Just "Enter the 6-digit game code" }, Cmd.none )
+
+        ( GotJoinSlug (Ok slug), _ ) ->
+            ( { model | joinOpen = False }
+            , Nav.pushUrl model.key (Route.href (Route.invite slug model.joinCode))
+            )
+
+        ( GotJoinSlug (Err _), _ ) ->
+            ( { model | joinError = Just "No game with that code" }, Cmd.none )
 
         _ ->
-            Nothing
+            ( model, Cmd.none )
 
 
+cleanCode : String -> String
+cleanCode code =
+    code |> String.filter Char.isDigit |> String.left 6
 
--- SUBSCRIPTIONS
+
+tryJoin : Model -> ( Model, Cmd Msg )
+tryJoin model =
+    ( model, Catalog.lookupCode model.session model.joinCode GotJoinSlug )
 
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ receiveFromChannel handleChannelMessage
-        , if clockRunning model then
-            Time.every 200 ClockTick
+        [ case model.page of
+            Play pageModel ->
+                Sub.map PlayMsg (Page.Play.subscriptions pageModel)
+
+            _ ->
+                Sub.none
+        , if model.joinOpen then
+            Browser.Events.onKeyDown (escape ClosedJoin)
 
           else
             Sub.none
-        , case pokerCtx model of
-            Just ctx ->
-                if Poker.wantsAutoDeal ctx then
-                    Time.every 3500 (\_ -> PokerAutoDeal)
-
-                else
-                    Sub.none
-
-            Nothing ->
-                Sub.none
         ]
 
 
-handleChannelMessage : E.Value -> Msg
-handleChannelMessage value =
-    case D.decodeValue Protocol.serverMessageDecoder value of
-        Ok message ->
-            ServerMessageReceived message
+escape : msg -> D.Decoder msg
+escape msg =
+    D.field "key" D.string
+        |> D.andThen
+            (\key ->
+                if key == "Escape" then
+                    D.succeed msg
 
-        Err err ->
-            ChannelError (D.errorToString err)
+                else
+                    D.fail "ignored key"
+            )
 
 
 
 -- VIEW
 
 
-view : Model -> Html Msg
+view : Model -> Document Msg
 view model =
-    case model.payload of
-        Nothing ->
-            Html.div [ class "paper min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center" ]
-                (case model.error of
-                    Just err ->
-                        [ Html.p [ class "pixel text-xs" ] [ Html.text "THIS GAME IS GONE" ]
-                        , Html.p [ class "text-sm", Html.Attributes.style "color" "var(--pencil)" ] [ Html.text err ]
-                        , Html.a [ Html.Attributes.href ("/" ++ model.gameSlug), class "btn-arcade" ] [ Html.text "START A NEW ONE" ]
-                        ]
+    { title = title model ++ " · Oskol"
+    , body =
+        [ case model.page of
+            Play pageModel ->
+                if Page.Play.framed pageModel then
+                    framed model [ Html.map PlayMsg (Page.Play.view pageModel) ]
 
-                    Nothing ->
-                        [ Html.p [ class "pixel text-xs" ]
-                            [ Html.text
-                                (case model.connectionStatus of
-                                    Disconnected ->
-                                        "DISCONNECTED"
+                else
+                    Html.map PlayMsg (Page.Play.view pageModel)
 
-                                    _ ->
-                                        "CONNECTING..."
-                                )
-                            ]
-                        ]
-                )
+            Library pageModel ->
+                framed model [ Html.map LibraryMsg (Page.Library.view pageModel) ]
 
-        Just payload ->
-            let
-                finished =
-                    finishedWinners payload
+            GameLanding pageModel ->
+                framed model [ Html.map GameLandingMsg (Page.GameLanding.view pageModel) ]
 
-                game =
-                    case ( model.gameSlug, pokerCtx model ) of
-                        ( "backgammon", _ ) ->
-                            Html.map BackgammonMsg
-                                (Backgammon.view
-                                    { playerId = payload.playerId
-                                    , scene = payload.update.scene
-                                    , legal = payload.update.legal
-                                    , model = model.backgammon
-                                    , clock = Just payload.update.clock
-                                    , receivedAt = model.clockReceivedAt
-                                    , now = model.nowMs
-                                    , nameOf = nameOf model
-                                    , rematchReady = payload.rematchReady
-                                    , finished = finished
-                                    , away = awayIds payload
-                                    }
-                                )
+            NotFound ->
+                framed model [ notFound ]
+        ]
+    }
 
-                        ( "chess", _ ) ->
-                            Html.map ChessMsg
-                                (Chess.view
-                                    { playerId = payload.playerId
-                                    , scene = payload.update.scene
-                                    , legal = payload.update.legal
-                                    , model = model.chess
-                                    , clock = Just payload.update.clock
-                                    , receivedAt = model.clockReceivedAt
-                                    , now = model.nowMs
-                                    , nameOf = nameOf model
-                                    , rematchReady = payload.rematchReady
-                                    , finished = finished
-                                    , away = awayIds payload
-                                    }
-                                )
 
-                        ( "poker", Just ctx ) ->
-                            Html.map PokerMsg (Poker.view ctx)
+framed : Model -> List (Html Msg) -> Html Msg
+framed model content =
+    Shell.view
+        { joinOpen = model.joinOpen
+        , joinCode = model.joinCode
+        , joinError = model.joinError
+        , onOpenJoin = OpenedJoin
+        , onCloseJoin = ClosedJoin
+        , onJoinCodeInput = JoinCodeInput
+        , onJoinSubmit = JoinSubmitted
+        }
+        content
 
-                        _ ->
-                            Html.map GenericMsg
-                                (Generic.View.view
-                                    { playerId = payload.playerId
-                                    , scene = payload.update.scene
-                                    , legal = payload.update.legal
-                                    , model = model.generic
-                                    , clock = Just payload.update.clock
-                                    , receivedAt = model.clockReceivedAt
-                                    , now = model.nowMs
-                                    , nameOf = nameOf model
-                                    , finished = finished
-                                    , away = awayIds payload
-                                    }
-                                )
-            in
-            Html.div []
-                [ game
-                , case model.error of
-                    Just err ->
-                        Html.div [ class "fixed bottom-2 left-1/2 -translate-x-1/2 z-40 pixel text-[10px] bg-white border-2 border-black px-3 py-2" ]
-                            [ Html.text err ]
 
-                    Nothing ->
-                        Html.text ""
-                , case model.connectionStatus of
-                    Disconnected ->
-                        Html.div [ class "fixed top-2 left-1/2 -translate-x-1/2 z-40 pixel text-[10px] bg-white border-2 border-black px-3 py-2" ]
-                            [ Html.text "RECONNECTING..." ]
+notFound : Html Msg
+notFound =
+    Html.section [ Html.Attributes.class "mt-8 sm:mt-12 pix p-4 sm:p-8", Html.Attributes.id "not-found" ]
+        [ Html.p
+            [ Html.Attributes.class "pixel text-[10px] mb-3", Notebook.style "color: var(--red)" ]
+            [ Html.text "NOT FOUND" ]
+        , Html.a
+            [ Html.Attributes.href (Route.href Route.library)
+            , Html.Attributes.class "inline-block font-semibold"
+            , Notebook.style "color: var(--pen)"
+            ]
+            [ Html.text "Back to the library →" ]
+        ]
 
-                    _ ->
-                        Html.text ""
-                ]
+
+title : Model -> String
+title model =
+    case model.page of
+        Library _ ->
+            Page.Library.title
+
+        GameLanding pageModel ->
+            Page.GameLanding.title pageModel
+
+        Play pageModel ->
+            Page.Play.title pageModel
+
+        NotFound ->
+            "Not found"

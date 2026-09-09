@@ -1,4 +1,4 @@
-module MainUpdateTest exposing (suite)
+module PlayUpdateTest exposing (suite)
 
 {-| The app's update loop fed with real payloads: replaying a fixture through
 `applyPayload` must keep the latest payload and legal actions, and the
@@ -8,7 +8,7 @@ channel messages must land where they should.
 import Dict
 import Expect
 import FixtureLoader exposing (Fixture)
-import Main exposing (ConnectionStatus(..), Model, Msg(..))
+import Page.Play as Play exposing (ConnectionStatus(..), Model, Msg(..))
 import Protocol exposing (GamePayload, ServerMessage(..), Update)
 import Test exposing (Test, describe, test)
 
@@ -27,17 +27,28 @@ payload fixture playerId update =
 
 start : Fixture -> Model
 start fixture =
-    Main.init { gameId = "fixture", gameSlug = fixture.game, playerId = Just "p1", seatToken = Just "tok" } |> Tuple.first
+    Play.init
+        { origin = "http://localhost:4400"
+        , slug = fixture.game
+        , gameId = "fixture"
+        , seatToken = Just "tok"
+        }
+        |> Tuple.first
 
 
 feed : Fixture -> Model -> Update -> Model
 feed fixture model update =
-    Main.applyPayload (payload fixture "p1" update) model |> Tuple.first
+    Play.applyPayload (payload fixture "p1" update) model |> first3
+
+
+first3 : ( a, b, c ) -> a
+first3 ( a, _, _ ) =
+    a
 
 
 suite : Test
 suite =
-    describe "Main.update with fixture payloads"
+    describe "Page.Play.update with fixture payloads"
         (List.map replay FixtureLoader.all ++ [ channelMessages ])
 
 
@@ -70,21 +81,42 @@ channelMessages =
         \_ ->
             let
                 model =
-                    Main.init { gameId = "g", gameSlug = "backgammon", playerId = Just "p1", seatToken = Just "tok" } |> Tuple.first
+                    Play.init
+                        { origin = "http://localhost:4400"
+                        , slug = "backgammon"
+                        , gameId = "g"
+                        , seatToken = Just "tok"
+                        }
+                        |> Tuple.first
 
                 withError =
-                    Main.update (ServerMessageReceived (ErrorMessage "Not your turn")) model |> Tuple.first
+                    Play.update (ServerMessageReceived (ErrorMessage "Not your turn")) model |> first3
 
                 dropped =
-                    Main.update (ServerMessageReceived (StatusMessage "disconnected")) withError |> Tuple.first
+                    Play.update (ServerMessageReceived (StatusMessage "disconnected")) withError |> first3
 
                 lobby =
-                    Main.update (ServerMessageReceived LobbyMessage) dropped |> Tuple.first
+                    Play.update (ServerMessageReceived (LobbyMessage waitingRoom)) dropped |> first3
             in
             Expect.all
                 [ \_ -> Expect.equal (Just "Not your turn") withError.error
                 , \_ -> Expect.equal Disconnected dropped.connectionStatus
                 , \_ -> Expect.equal Connected lobby.connectionStatus
                 , \_ -> Expect.equal Nothing lobby.payload
+                , \_ -> Expect.equal (Just "p1") lobby.playerId
+                , \_ -> Expect.equal (Just waitingRoom) lobby.lobby
                 ]
                 ()
+
+
+{-| A room with a seat taken and nobody in the other one.
+-}
+waitingRoom : Protocol.Lobby
+waitingRoom =
+    { game = "backgammon"
+    , gameId = "g"
+    , playerId = Just "p1"
+    , connections = [ { id = "p1", name = "Alice", connected = True } ]
+    , summary = Just "Single game"
+    , status = "waiting_for_players"
+    }

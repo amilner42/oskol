@@ -40,18 +40,18 @@ async function main() {
     const p1 = await context.newPage();
     watch(p1, 'p1');
     await p1.goto(`${BASE}/chess`);
-    await p1.waitForSelector('[data-phx-main].phx-connected');
+    await p1.waitForSelector('#create-name');
     await p1.fill('input[name="player_name"]', 'Alice');
     await p1.click('#clock-blitz');
     await p1.click('#create-game');
     await p1.waitForSelector('#share-link');
-    const gameId = new URL(p1.url()).searchParams.get('game');
+    const gameId = new URL(p1.url()).pathname.split('/')[2];
     log(`Game ${gameId} created`);
 
     const p2 = await context.newPage();
     watch(p2, 'p2');
     await p2.goto(`${BASE}/chess?game=${gameId}`);
-    await p2.waitForSelector('[data-phx-main].phx-connected');
+    await p2.waitForSelector('#join-game');
     await p2.fill('input[name="player_name"]', 'Bob');
     await p2.click('#join-game');
     await p1.waitForURL(`**/chess/${gameId}**`);

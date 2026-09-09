@@ -63,20 +63,20 @@ async function main() {
     const p1 = await context.newPage();
     watch(p1, 'p1');
     await p1.goto(`${BASE}/backgammon`);
-    await p1.waitForSelector('[data-phx-main].phx-connected');
+    await p1.waitForSelector('#create-name');
     await p1.fill('input[name="player_name"]', 'Alice');
     // Single game, twist ON.
     await p1.click('#choice-twist-pick_dice');
     await p1.waitForSelector('#choice-twist-pick_dice.tile-mine');
     await p1.click('#create-game');
     await p1.waitForSelector('#share-link');
-    const gameId = new URL(p1.url()).searchParams.get('game');
+    const gameId = new URL(p1.url()).pathname.split('/')[2];
     log(`Game ${gameId} created with the twist on`);
 
     const p2 = await context.newPage();
     watch(p2, 'p2');
     await p2.goto(`${BASE}/backgammon?game=${gameId}`);
-    await p2.waitForSelector('[data-phx-main].phx-connected');
+    await p2.waitForSelector('#join-game');
     await p2.fill('input[name="player_name"]', 'Bob');
     await p2.click('#join-game');
     await p1.waitForURL(`**/backgammon/${gameId}**`);

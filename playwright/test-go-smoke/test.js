@@ -32,19 +32,19 @@ async function run(browser, tag, viewport, errors) {
     const p1 = await context.newPage();
     watch(p1, 'p1');
     await p1.goto(`${BASE}/go`);
-    await p1.waitForSelector('[data-phx-main].phx-connected');
+    await p1.waitForSelector('#create-name');
     await p1.fill('input[name="player_name"]', 'Alice');
     await p1.click('#format-9x9');
     await p1.click('#clock-rapid');
     await p1.click('#create-game');
     await p1.waitForSelector('#share-link');
-    const gameId = new URL(p1.url()).searchParams.get('game');
+    const gameId = new URL(p1.url()).pathname.split('/')[2];
     log(`${tag}: game ${gameId} created`);
 
     const p2 = await context.newPage();
     watch(p2, 'p2');
     await p2.goto(`${BASE}/go?game=${gameId}`);
-    await p2.waitForSelector('[data-phx-main].phx-connected');
+    await p2.waitForSelector('#join-game');
     await sleep(300);
     await p2.fill('input[name="player_name"]', 'Bob');
     await p2.click('#join-game');
