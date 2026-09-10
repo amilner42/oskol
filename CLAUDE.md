@@ -310,6 +310,8 @@ node playwright/test-poker-smoke/test.js        # poker: create, join, fold, nex
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
+node playwright/test-backgammon-landscape/test.js  # backgammon on a sideways phone: the board
+                                               # fits the screen height exactly, nothing scrolls
 node playwright/test-spa-landing/test.js        # landing pages + a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)

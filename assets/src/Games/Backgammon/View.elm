@@ -7,6 +7,15 @@ fits one phone screen with no scrolling: identity bars hug the board on the
 viewer's side and the opponent's, and every action (roll, double, take, drop,
 play, undo) lives in the board's centre band.
 
+Turn the phone and the board takes the screen: in landscape the layout is
+driven by height instead of width (`.bg-page` in app.css derives every
+board dimension from `100dvh`), and the chrome -- the header and both
+identity bars, clocks and all -- moves into a column beside the board
+rather than above and below it. The class hooks that landscape needs
+(`bg-page`, `bg-main`, `bg-stack`, `bg-header`, `bg-grid`, `bg-points`,
+`bg-band`, `bg-cube-rail`, `is-me`) are the only reason this view names
+them; the arrangement itself is entirely CSS.
+
 Moving is destination-first: tapping a point where exactly one legal move
 lands plays it, tapping a point where an unambiguous pair of moves would
 land two checkers (making a point) stages both, and anything ambiguous
@@ -289,7 +298,7 @@ choice name schema =
         |> Maybe.andThen
             (\p ->
                 case p.kind of
-                    Choice ((id, _) :: _) ->
+                    Choice (( id, _ ) :: _) ->
                         Just id
 
                     _ ->
@@ -492,10 +501,10 @@ view ctx =
             , tap = tapContext ctx legalMoves sources
             }
     in
-    div [ class "paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2" ]
+    div [ class "bg-page paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2" ]
         [ viewHeader ctx
-        , div [ class "flex-1 min-h-0 w-full max-w-5xl grid gap-3 sm:gap-4 content-center lg:grid-cols-[minmax(0,1fr)_15rem]" ]
-            [ div [ class "min-w-0 flex flex-col justify-center gap-2" ]
+        , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl grid gap-3 sm:gap-4 content-center lg:grid-cols-[minmax(0,1fr)_15rem]" ]
+            [ div [ class "bg-stack min-w-0 flex flex-col justify-center gap-2" ]
                 [ viewPlayerBar ctx them False
                 , viewBoard board
                 , viewPlayerBar ctx me True
@@ -609,11 +618,20 @@ viewHeader ctx =
             else
                 "MATCH TO " ++ String.fromInt target
     in
-    div [ class "w-full max-w-5xl flex items-center justify-between gap-2" ]
+    div [ class "bg-header w-full max-w-5xl flex items-center justify-between gap-2" ]
         [ div [ class "flex items-center gap-2 sm:gap-3 min-w-0" ]
             [ span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap" ] [ text "BACKGAMMON" ]
             , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--ink)", style "background" "#fff" ]
-                [ text (matchLabel ++ (if target > 1 then " · G" ++ String.fromInt gameNumber else "")) ]
+                [ text
+                    (matchLabel
+                        ++ (if target > 1 then
+                                " · G" ++ String.fromInt gameNumber
+
+                            else
+                                ""
+                           )
+                    )
+                ]
             , if crawford then
                 span [ class "pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--bg-sky)", style "color" "var(--bg-sky)" ] [ text "CRAWFORD" ]
 
@@ -651,6 +669,10 @@ viewPlayerBar ctx player isMe =
                 [ classList
                     [ ( "player-bar flex items-center gap-2 px-2 py-1.5 sm:px-3 sm:py-2", True )
                     , ( "active", active )
+
+                    -- which side of the board this bar belongs to: in
+                    -- landscape the two are placed, not stacked.
+                    , ( "is-me", isMe )
                     ]
                 ]
                 [ div [ class ("swatch shrink-0 " ++ color), title (p.name ++ " plays " ++ color) ] []
@@ -849,19 +871,19 @@ viewBoard board =
     div [ class "bg-board relative p-1.5 sm:p-3 select-none" ]
         -- minmax(0, 6fr) so a wide button in a band can never steal width
         -- from the other half's points.
-        [ div [ class "grid grid-cols-[auto_minmax(0,6fr)_auto_minmax(0,6fr)_auto] gap-1 sm:gap-2" ]
+        [ div [ class "bg-grid grid grid-cols-[auto_minmax(0,6fr)_auto_minmax(0,6fr)_auto] gap-1 sm:gap-2" ]
             [ viewCubeRail board
-            , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topLeft)
+            , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topLeft)
             , viewBarColumn board themId
-            , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topRight)
+            , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topRight)
             , viewTray board themId
-            , div [ class "min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
+            , div [ class "bg-band min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
                 (viewLeftBand board)
-            , div [ class "min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
+            , div [ class "bg-band min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
                 (viewRightBand board)
             , div [] []
-            , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomLeft)
-            , div [ class "grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomRight)
+            , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomLeft)
+            , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomRight)
             , viewTray board me
             ]
         , case ( board.ctx.model.picker, hasAction "pick" board.ctx.legal ) of
@@ -928,7 +950,18 @@ viewPoint board isTop index point =
             , ( "source", isSource )
             , ( "selected", isSelected )
             ]
-         , attribute "style" ("--point: " ++ pointColor (index + (if isTop then 0 else 1)))
+         , attribute "style"
+            ("--point: "
+                ++ pointColor
+                    (index
+                        + (if isTop then
+                            0
+
+                           else
+                            1
+                          )
+                    )
+            )
          , title ("Point " ++ id)
          , Html.Attributes.id (dropZoneId id)
          ]
@@ -1022,7 +1055,13 @@ viewStack marks tokens =
     in
     List.indexedMap
         (\i t ->
-            viewChecker (if i == lastIndex then marks else noMarks)
+            viewChecker
+                (if i == lastIndex then
+                    marks
+
+                 else
+                    noMarks
+                )
                 (if i == lastIndex && extra > 0 then
                     Just (extra + 5)
 
@@ -1564,7 +1603,7 @@ viewCubeRail board =
     -- A cube-less format keeps the rail (the board's geometry holds) but
     -- hangs no cube on it.
     div
-        [ class ("row-span-3 w-9 sm:w-14 flex flex-col items-center py-2 " ++ justify)
+        [ class ("bg-cube-rail row-span-3 w-9 sm:w-14 flex flex-col items-center py-2 " ++ justify)
         , title "Doubling cube"
         ]
         (if enabled then

@@ -715,6 +715,118 @@
 .clock-chip.running { border-color: var(--ink); color: var(--ink); background: var(--highlighter); }
 .clock-chip.expired { border-color: var(--red); color: var(--red); }
 
+/* Backgammon in landscape: a turned phone is the best seat in the house.
+   Everywhere else the board is sized by width and stacks vertically
+   (opponent's bar, board, your bar). Here that is turned on its head:
+
+     - the board's height is the viewport's, exactly. `--bg-point-h` is
+       what is left of 100dvh (dynamic, so the browser's own chrome is
+       already deducted) once the centre band, the grid gaps, the board's
+       padding, its border and the room its drop shadow needs are taken
+       off, halved for the two rows of points. Every other board dimension
+       -- point width, the rails, the trays, the checkers, the dice --
+       follows from it, so the board is as wide as that height deserves
+       and no wider, and it can never be taller than the screen.
+     - the chrome moves out of the board's way instead of stealing its
+       height: `.bg-main` and `.bg-stack` become `display: contents` so
+       the header and the two identity bars (names, pips, score, clock
+       chip and its delay pip) become items of the page grid and sit in a
+       column beside the board, the opponent's at the top and yours at the
+       bottom, the way they read on the board itself.
+     - the dice, the roll animation, the action buttons and the "no legal
+       moves" message stay where they always are, in the board's centre
+       band, just at landscape scale.
+
+   Bounded to phone-sized screens (a short *and* narrow viewport) so a
+   desktop window, however it is shaped, keeps the layout above. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  .bg-page {
+    --bg-pad: 3px;       /* the board's own padding */
+    --bg-gap: 2px;       /* between the board's rows and columns */
+    --bg-band-h: 3rem;   /* the centre band: dice, buttons, status */
+    --bg-drop: 4px;      /* the board's drop shadow, kept on screen */
+    /* The height is what drives the board -- unless the screen is too
+       narrow to be proportionate to it (a squarish landscape), in which
+       case the width has the last word and the board merely fits. The
+       ratio is the board's own: a point is 0.21 of its height wide, and
+       the board is 12 points, three rails and its gaps across. */
+    --bg-point-h: min(
+      calc((100dvh - var(--bg-band-h) - 2 * var(--bg-gap) - 2 * var(--bg-pad) - 6px - var(--bg-drop)) / 2),
+      calc((100vw - 8rem) / 3.4)
+    );
+    --bg-pw: calc(var(--bg-point-h) * 0.21);
+    --bg-half: calc(var(--bg-pw) * 6 + 5px); /* six points and their hairlines */
+    display: grid;
+    /* The board first, at whatever width its height earns it; the chrome
+       gets the rest of the screen, never the other way round. */
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 0.4rem;
+    /* exactly the room the board's drop shadow was reserved */
+    padding: calc(var(--bg-drop) / 2) 0.25rem;
+  }
+  .bg-page .bg-main,
+  .bg-page .bg-stack { display: contents; }
+  .bg-page .bg-header { grid-column: 2; grid-row: 1; max-width: 16rem; justify-self: start; }
+  .bg-page .bg-header,
+  .bg-page .bg-header > div { flex-wrap: wrap; row-gap: 2px; }
+  .bg-page .player-bar {
+    grid-column: 2;
+    max-width: 16rem;
+    justify-self: start;
+    width: 100%;
+    flex-wrap: wrap;
+    row-gap: 1px;
+    padding: 2px 5px;
+    box-shadow: 3px 3px 0 0 var(--ink);
+  }
+  .bg-page .player-bar.active { box-shadow: 3px 3px 0 0 var(--bg-sky); }
+  .bg-page .player-bar:not(.is-me) { grid-row: 2; }
+  .bg-page .player-bar.is-me { grid-row: 4; }
+  .bg-page .bg-board {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    justify-self: center;
+    align-self: center;
+    width: max-content;
+    max-width: 100%;
+    padding: var(--bg-pad);
+    box-shadow: var(--bg-drop) var(--bg-drop) 0 0 var(--ink);
+  }
+  .bg-page .bg-grid {
+    gap: var(--bg-gap);
+    /* The halves are exactly six points wide, so no button and no message
+       in a centre band can ever widen the board or shift its points. */
+    grid-template-columns: auto var(--bg-half) auto var(--bg-half) auto;
+  }
+  .bg-page .bg-points { gap: 1px; }
+  .bg-page .bg-point { height: var(--bg-point-h); }
+  .bg-page .bg-cube-rail,
+  .bg-page .bg-tray { width: calc(var(--bg-pw) * 1.5); padding-top: 0; padding-bottom: 0; }
+  .bg-page .bg-bar { width: calc(var(--bg-pw) * 1.15); }
+  .bg-page .cube { width: 1.5rem; height: 1.5rem; }
+  .bg-page .bg-band {
+    height: var(--bg-band-h);
+    min-height: var(--bg-band-h);
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    padding: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+  /* The band is short and its halves are fixed: what it says wraps inside
+     itself rather than pushing the points around. */
+  .bg-page .bg-band .pixel { line-height: 1.25; }
+  .bg-page #bg-no-moves { font-size: 7px; min-width: 0; }
+  .bg-page .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
+  /* four dice (doubles) and a message have to share one half-band */
+  .bg-page .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--ink); }
+  .bg-page .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
+  /* the pips shrink with the face, or they run into each other */
+  .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
+}
+
 /* Chess: a plain 8x8 board in the multicade blues. Pieces are solid glyphs
    colored per side so both read crisply on light and dark squares. */
 .chess-board {

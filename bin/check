@@ -70,6 +70,9 @@ if [[ "${1:-}" == "--browser" ]]; then
   node playwright/test-backgammon-pick/test.js
   node playwright/test-backgammon-drag/test.js
   node playwright/test-backgammon-board/test.js
+  # A phone held sideways: the board fits the screen height exactly. It
+  # arranges its own danced room too (as the dance smoke does).
+  PORT=4400 node playwright/test-backgammon-landscape/test.js
   # Arranges its own room (a seed that dances, replayed into the dev
   # database) and opens it, so it also covers rehydrating mid-dance.
   PORT=4400 node playwright/test-backgammon-dance/test.js
