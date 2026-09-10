@@ -16,6 +16,8 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
   // Only the mover sees their staged moves; everyone else sees the board as
   // it was when the turn began.
   let is_mover = viewer_id != None && state.to_move(state) == viewer_id
+  // Read off the real state before the board is swapped for this viewer's.
+  let no_moves = state.no_moves(state)
   let state =
     state.GameState(..state, board: state.visible_board(state, viewer_id))
   scene.Scene(
@@ -55,6 +57,9 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
           False -> 0
         }),
       ),
+      // The roll played nothing: everyone sees the dice and why the turn
+      // is about to pass, until the mover commits it.
+      #("no_moves", json.bool(no_moves)),
       #(
         "turn_complete",
         json.bool(case viewer_id {
@@ -88,7 +93,11 @@ pub fn phase_name(state: GameState) -> String {
   case state.phase {
     state.Rolling(_) -> "rolling"
     state.Doubled(_) -> "doubled"
-    state.Moving(_, _) -> "moving"
+    state.Moving(_, _) ->
+      case state.no_moves(state) {
+        True -> "no_moves"
+        False -> "moving"
+      }
     state.Finished(_) -> "game_over"
   }
 }

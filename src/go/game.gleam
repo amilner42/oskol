@@ -39,6 +39,7 @@ pub fn info() -> game.Info {
     ],
     clocks: ["none", "blitz", "rapid", "delay", "per_move"],
     default_clock: "none",
+    turn_delay_ms: 0,
   )
 }
 

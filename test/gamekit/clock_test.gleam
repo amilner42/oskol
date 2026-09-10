@@ -129,6 +129,112 @@ pub fn move_bank_expires_only_when_action_time_and_bank_are_both_gone_test() {
   assert clock.next_deadline(c, 8000) == Some(5000)
 }
 
+// ---------- a game's turn delay (backgammon's twelve seconds) ----------
+
+const delay = 12_000
+
+pub fn a_turn_delay_leaves_no_clock_alone_test() {
+  let c =
+    clock.new(clock.NoClock, [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  assert clock.enabled(c) == False
+  assert clock.next_deadline(c, 0) == None
+  assert clock.expired(c, 999_999) == []
+}
+
+pub fn a_turn_delay_is_free_time_before_a_fischer_bank_test() {
+  let c =
+    clock.new(clock.Fischer(10_000, 2000), [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  // Nothing is charged inside the delay, however long the turn takes to
+  // start moving.
+  assert clock.remaining(c, a, 11_999) == 10_000
+  assert clock.remaining(c, a, 12_000) == 10_000
+  assert clock.remaining(c, a, 15_000) == 7000
+  assert clock.next_deadline(c, 0) == Some(22_000)
+  assert clock.expired(c, 21_999) == []
+  assert clock.expired(c, 22_000) == [a]
+}
+
+pub fn an_unused_turn_delay_is_never_banked_test() {
+  let c =
+    clock.new(clock.Fischer(10_000, 0), [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  // a moves after two seconds: the ten unused seconds of delay evaporate.
+  let c = clock.set_running(c, [b], 2000, Some(a))
+  assert clock.remaining(c, a, 99_999) == 10_000
+  // ...and the next turn gets its own fresh twelve, not twenty-two.
+  let c = clock.set_running(c, [a], 3000, Some(b))
+  assert clock.remaining(c, a, 15_000) == 10_000
+  assert clock.remaining(c, a, 16_000) == 9000
+}
+
+pub fn a_turn_delay_and_a_bronstein_delay_overlap_test() {
+  // The longer of the two wins; they do not stack.
+  let short =
+    clock.new(clock.Bronstein(10_000, 3000), [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  assert clock.remaining(short, a, 12_000) == 10_000
+  assert clock.remaining(short, a, 13_000) == 9000
+  let long =
+    clock.new(clock.Bronstein(10_000, 20_000), [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  assert clock.remaining(long, a, 20_000) == 10_000
+  assert clock.remaining(long, a, 21_000) == 9000
+}
+
+pub fn a_turn_delay_precedes_a_per_move_allowance_test() {
+  let c =
+    clock.new(clock.PerMove(5000), [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  assert clock.remaining(c, a, 12_000) == 5000
+  assert clock.remaining(c, a, 14_000) == 3000
+  assert clock.expired(c, 16_999) == []
+  assert clock.expired(c, 17_000) == [a]
+  // The next turn starts the pair over again
+  let c = clock.set_running(c, [b], 8000, Some(a))
+  let c = clock.set_running(c, [a], 9000, Some(b))
+  assert clock.remaining(c, a, 21_000) == 5000
+  assert clock.remaining(c, a, 23_000) == 3000
+}
+
+pub fn a_turn_delay_takes_over_a_shorter_move_bank_allowance_test() {
+  let c =
+    clock.new(clock.MoveBank(5000, 10_000), [a, b])
+    |> clock.with_turn_delay(delay)
+    |> clock.set_running([a], 0, None)
+  assert clock.remaining(c, a, 12_000) == 10_000
+  assert clock.remaining(c, a, 14_000) == 8000
+  assert clock.next_deadline(c, 0) == Some(22_000)
+  // Acting again restarts the free time at the longer of the two
+  let c = clock.set_running(c, [a], 14_000, Some(a))
+  assert clock.remaining(c, a, 26_000) == 8000
+  assert clock.remaining(c, a, 27_000) == 7000
+}
+
+pub fn a_negative_turn_delay_is_no_delay_test() {
+  let c =
+    clock.new(clock.Fischer(10_000, 0), [a, b])
+    |> clock.with_turn_delay(-5000)
+    |> clock.set_running([a], 0, None)
+  assert clock.remaining(c, a, 1000) == 9000
+}
+
+pub fn the_clock_label_names_the_turn_delay_test() {
+  let c = clock.new(clock.Fischer(180_000, 2000), [a, b])
+  assert clock.label(c) == "3 min + 2 s"
+  assert clock.label(clock.with_turn_delay(c, delay))
+    == "3 min + 2 s, 12 s delay every turn"
+  assert clock.label(clock.with_turn_delay(clock.new(clock.NoClock, [a]), delay))
+    == "No clock"
+}
+
 pub fn poker_presets_exist_test() {
   let assert Ok(p) = clock.preset("poker")
   assert clock.control_label(p.control) == "20 s per action + 60 s bank"

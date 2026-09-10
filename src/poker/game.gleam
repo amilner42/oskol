@@ -133,6 +133,7 @@ pub fn info() -> game.Info {
     ],
     clocks: ["poker", "poker_fast", "poker_slow", "none"],
     default_clock: "poker",
+    turn_delay_ms: 0,
   )
 }
 

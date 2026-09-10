@@ -62,6 +62,7 @@ pub fn start(
   let ids = list.map(seats, fn(s) { s.id })
   let clocks =
     clock.new(control, ids)
+    |> clock.with_turn_delay(definition.info.turn_delay_ms)
     |> clock.set_running(running_for(definition, state), now, None)
   Ok(wrap(definition, seats, state, clocks))
 }

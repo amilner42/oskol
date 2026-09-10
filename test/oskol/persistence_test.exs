@@ -72,7 +72,10 @@ defmodule Oskol.PersistenceTest do
   end
 
   test "a clock forfeit writes an expire entry and finishes the game" do
-    %{game_id: game_id, p1: p1} = lobby("single", seed: 11, control: {:fischer, 150, 0})
+    # Go: no turn delay in front of the clock, so the forfeit lands at once.
+    %{game_id: game_id, p1: p1} =
+      lobby("9x9", slug: "go", seed: 11, control: {:fischer, 150, 0})
+
     Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
     {:ok, p2, state} = Game.join_game(game_id, "Bob", nil)
     mover = mover(state.instance, [p1, p2])

@@ -201,7 +201,7 @@ pub fn a_picked_roll_drives_the_same_forced_move_logic_test() {
     == [#("8", "4")]
 }
 
-pub fn a_picked_roll_with_no_moves_passes_the_turn_test() {
+pub fn a_picked_roll_with_no_moves_dances_like_a_rolled_one_test() {
   // White is on the bar against a blocked 23 and 24: a picked 1-2 dances.
   let b =
     setup([
@@ -214,7 +214,11 @@ pub fn a_picked_roll_with_no_moves_passes_the_turn_test() {
   let s = new_game(7, "single", True)
   let s = rolling(state.GameState(..s, board: b, turn_board: b, last_roll: []))
   let assert Ok(#(next, events)) = engine.apply(s, "p1", engine.Pick(1, 2))
-  let assert state.Rolling(Black) = next.phase
+  // The picked dice stand on White's own turn until White passes it.
+  let assert state.Moving(White, _) = next.phase
+  assert state.no_moves(next)
+  let assert Ok(#(passed, _)) = engine.apply(next, "p1", engine.Play)
+  let assert state.Rolling(Black) = passed.phase
   let assert Ok(_) =
     list.find(events, fn(e) {
       case e {

@@ -49,8 +49,8 @@ async function assertHalf(page, selector, half, label) {
 async function playFullTurn(page, label) {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
-    if (await page.locator('button:has-text("PLAY")').count()) {
-      await page.click('button:has-text("PLAY")');
+    if (await page.locator('#bg-action-play').count()) {
+      await page.click('#bg-action-play');
       await sleep(400);
       return;
     }

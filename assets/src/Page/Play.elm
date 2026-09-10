@@ -358,7 +358,12 @@ applyPayload payload model =
     let
         ( backgammon, rollCmd ) =
             if model.gameSlug == "backgammon" then
-                Backgammon.autoRoll payload.update.legal model.backgammon
+                -- Note the dice that just landed (they animate from the
+                -- event, not from a diff), then roll if there is nothing
+                -- to decide.
+                model.backgammon
+                    |> Backgammon.noteEvents payload.update.events
+                    |> Backgammon.autoRoll payload.update.legal
                     |> Tuple.mapSecond (Maybe.map sendToChannel >> Maybe.withDefault Cmd.none)
 
             else

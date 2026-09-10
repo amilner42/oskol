@@ -190,7 +190,9 @@ pub fn apply(
 }
 
 /// Events for a turn's dice, rolled or picked: everyone sees which, so a
-/// picked roll is fully transparent to the opponent.
+/// picked roll is fully transparent to the opponent. A roll that can play
+/// nothing announces itself here and the turn stays put: the mover still
+/// owns it until they commit the empty turn with `play`.
 fn dice_events(
   next: GameState,
   player_id: String,
@@ -203,13 +205,12 @@ fn dice_events(
       #("dice", json.array(dice, json.int)),
       #("picked", json.bool(picked)),
     ])
-  case next.phase {
-    state.Rolling(_) -> [
+  case state.no_moves(next) {
+    True -> [
       rolled,
       custom("no_moves", [#("player_id", json.string(player_id))]),
-      ..turn_started(next)
     ]
-    _ -> [rolled]
+    False -> [rolled]
   }
 }
 
@@ -314,7 +315,11 @@ pub fn legal(state: GameState, player_id: String) -> List(Schema) {
         False -> []
       }
       let play = case state.can_play(state, player_id) {
-        True -> [action.simple("play", "Play")]
+        True ->
+          case state.no_moves(state) {
+            True -> [action.simple("play", "No moves — pass turn")]
+            False -> [action.simple("play", "Play")]
+          }
         False -> []
       }
       list.flatten([moves, undo, play])

@@ -3,6 +3,7 @@
 import backgammon/board.{Bar, Black, Move, Off, Point, White}
 import backgammon/engine
 import backgammon/game as backgammon
+import backgammon/projection
 import backgammon/state
 import gamekit/action
 import gamekit/event
@@ -240,7 +241,7 @@ pub fn doubles_grant_four_moves_in_one_turn_test() {
   assert has_custom(events, "turn_started")
 }
 
-pub fn a_roll_with_no_legal_move_passes_the_turn_test() {
+pub fn a_roll_with_no_legal_move_stands_until_the_mover_passes_test() {
   // White is on the bar against a closed board.
   let b =
     setup([
@@ -260,9 +261,94 @@ pub fn a_roll_with_no_legal_move_passes_the_turn_test() {
   let #(s, events) = apply(s, "p1", engine.Roll)
   assert has_custom(events, "dice_rolled")
   assert has_custom(events, "no_moves")
+  // The dice stand on the mover's own turn: nothing has passed yet, and
+  // the turn did not start for the opponent.
+  let assert state.Moving(White, _) = s.phase
+  assert state.no_moves(s)
+  assert state.to_move(s) == Some("p1")
+  assert state.turn_dice(s) == state.dice_left(s)
+  assert !has_custom(events, "turn_started")
+  // Both seats see the same dice, and only the mover has anything to do.
+  assert engine.legal(s, "p1")
+    == [action.simple("play", "No moves — pass turn"), resign()]
+  assert engine.legal(s, "p2") == [resign()]
+  // Committing the empty turn is what hands the dice over.
+  let #(s, played) = apply(s, "p1", engine.Play)
   let assert state.Rolling(Black) = s.phase
+  assert !state.no_moves(s)
   assert state.to_move(s) == Some("p2")
+  assert has_custom(played, "turn_played")
+  assert has_custom(played, "turn_started")
   assert list.first(engine.legal(s, "p2")) == Ok(engine_roll())
+}
+
+/// A dance the other way round: Black rolls into a closed board, and the
+/// scene says so to the mover, the opponent and a spectator alike.
+pub fn a_dance_is_a_rendered_state_for_everyone_test() {
+  let b =
+    setup([
+      #(Black, Bar, 1),
+      #(Black, Point(13), 14),
+      #(White, Point(1), 2),
+      #(White, Point(2), 2),
+      #(White, Point(3), 2),
+      #(White, Point(4), 2),
+      #(White, Point(5), 2),
+      #(White, Point(6), 2),
+      #(White, Point(24), 3),
+    ])
+  let s = new_game(9, "single")
+  let s = state.GameState(..s, board: b, phase: state.Rolling(Black))
+  let #(s, _) = apply(s, "p2", engine.Roll)
+  assert state.no_moves(s)
+  list.each([scene.Player("p1"), scene.Player("p2"), scene.Spectator], fn(v) {
+    let sc = projection.build(s, v)
+    assert sc.phase == "no_moves"
+    assert list.key_find(sc.data, "no_moves") == Ok(json.bool(True))
+    // Every die of the roll is on the board, none of them spent.
+    let assert Ok(zone) = list.find(sc.zones, fn(z) { z.id == "dice" })
+    assert list.length(zone.tokens) == list.length(state.turn_dice(s))
+  })
+  // Passing clears it everywhere.
+  let #(s, _) = apply(s, "p2", engine.Play)
+  assert projection.build(s, scene.Spectator).phase == "rolling"
+  assert list.key_find(projection.build(s, scene.Spectator).data, "no_moves")
+    == Ok(json.bool(False))
+}
+
+/// Doubles that play nothing dance exactly like a plain roll: all four dice
+/// stand, and the turn is still the mover's.
+pub fn doubles_that_play_nothing_dance_too_test() {
+  let b =
+    setup([
+      #(White, Bar, 1),
+      #(White, Point(13), 14),
+      #(Black, Point(19), 2),
+      #(Black, Point(20), 2),
+      #(Black, Point(21), 2),
+      #(Black, Point(22), 2),
+      #(Black, Point(23), 2),
+      #(Black, Point(24), 2),
+      #(Black, Point(1), 3),
+    ])
+  let s = new_game(2, "single")
+  // Pick the double, so the position is exact rather than seed-hunted.
+  let s =
+    state.GameState(
+      ..s,
+      board: b,
+      phase: state.Rolling(White),
+      config: state.Config(..s.config, pick_dice: True),
+    )
+  let #(s, _) = apply(s, "p1", engine.Pick(1, 1))
+  assert state.no_moves(s)
+  assert state.turn_dice(s) == [1, 1, 1, 1]
+  assert state.dice_left(s) == [1, 1, 1, 1]
+  assert state.to_move(s) == Some("p1")
+}
+
+fn resign() {
+  action.simple("resign", "Resign")
 }
 
 fn engine_roll() {

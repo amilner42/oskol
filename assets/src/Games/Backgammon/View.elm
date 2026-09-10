@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Press, TapContext, autoRoll, dropZoneId, init, resolveTap, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Press, TapContext, autoRoll, dropZoneId, init, noteEvents, resolveTap, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -33,6 +33,7 @@ import Drag
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, style, title)
 import Html.Events exposing (onClick)
+import Html.Keyed as Keyed
 import Json.Decode as D
 import Json.Encode as E
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
@@ -44,6 +45,7 @@ type alias Model =
     , drag : Drag.State String Msg -- the item a drag carries is my checker colour
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
+    , rollSeq : Int -- how many rolls this client has watched land (see `noteEvents`)
     }
 
 
@@ -92,7 +94,39 @@ type Out
 
 init : Model
 init =
-    { selectedFrom = Nothing, drag = Drag.idle, autoRolled = False, picker = Nothing }
+    { selectedFrom = Nothing, drag = Drag.idle, autoRolled = False, picker = Nothing, rollSeq = 0 }
+
+
+{-| Clear the interaction state (selection, drag, picker) without forgetting
+how many rolls have landed: `rollSeq` keys the dice, and forgetting it would
+replay the tumble on every tap.
+-}
+reset : Model -> Model
+reset model =
+    { init | rollSeq = model.rollSeq }
+
+
+{-| Count the rolls this client has seen. The dice tumble because a roll's
+dice are new DOM elements (they are keyed by `rollSeq`), so the animation
+comes from the `dice_rolled` event rather than from diffing the scene: a
+reconnect that arrives without events simply shows the dice, already
+settled. Main calls this once per arriving payload.
+-}
+noteEvents : List Protocol.Event -> Model -> Model
+noteEvents events model =
+    let
+        rolls =
+            List.length (List.filter isRoll events)
+
+        isRoll event =
+            case event of
+                Protocol.Custom "dice_rolled" _ ->
+                    True
+
+                _ ->
+                    False
+    in
+    { model | rollSeq = model.rollSeq + rolls }
 
 
 {-| Roll for the viewer when there is nothing to ask: at the start of a
@@ -126,22 +160,22 @@ update msg model =
     case msg of
         SelectFrom loc ->
             if model.selectedFrom == Just loc then
-                ( init, NoOut )
+                ( reset model, NoOut )
 
             else
                 ( { model | selectedFrom = Just loc }, NoOut )
 
         Clear ->
-            ( init, NoOut )
+            ( reset model, NoOut )
 
         PlayMove from to ->
-            ( init, Send (encodeMove from to) )
+            ( reset model, Send (encodeMove from to) )
 
         PlayPair a b ->
-            ( init, SendMany [ encodeMove a.from a.to, encodeMove b.from b.to ] )
+            ( reset model, SendMany [ encodeMove a.from a.to, encodeMove b.from b.to ] )
 
         Simple name ->
-            ( init, Send (Protocol.encodeAction name []) )
+            ( reset model, Send (Protocol.encodeAction name []) )
 
         Rematch ->
             ( model, WantRematch )
@@ -201,7 +235,7 @@ update msg model =
         ConfirmPick ->
             case model.picker of
                 Just [ a, b ] ->
-                    ( init
+                    ( reset model
                     , Send (Protocol.encodeAction "pick" [ ( "die1", E.int a ), ( "die2", E.int b ) ])
                     )
 
@@ -680,13 +714,28 @@ viewClockChip ctx playerId =
 
                             expired =
                                 c.timedOut == Just player.id || remaining <= 0
+
+                            -- The turn's free seconds: the number below is
+                            -- held until they are gone.
+                            delay =
+                                Protocol.delayNow player ctx.receivedAt ctx.now
                         in
                         span
                             [ classList
                                 [ ( "clock-chip font-mono text-xs sm:text-sm lg:hidden", True )
                                 , ( "running", player.running && not expired )
+                                , ( "held", delay > 0 && not expired )
                                 , ( "expired", expired )
                                 ]
+                            , title
+                                (if delay > 0 && not expired then
+                                    "Delay: this clock is held for "
+                                        ++ String.fromInt ((delay + 999) // 1000)
+                                        ++ " s"
+
+                                 else
+                                    "Time left"
+                                )
                             ]
                             [ span [ class "tabular-nums font-bold" ]
                                 [ text
@@ -697,6 +746,12 @@ viewClockChip ctx playerId =
                                         Protocol.formatClock remaining
                                     )
                                 ]
+                            , if delay > 0 && not expired then
+                                span [ class "delay-pip pixel text-[7px]" ]
+                                    [ text ("+" ++ String.fromInt ((delay + 999) // 1000)) ]
+
+                              else
+                                text ""
                             ]
 
                     Nothing ->
@@ -1158,6 +1213,13 @@ viewRightBand board =
                 |> List.filter
                     (\t -> not (deciding && Protocol.tokenProp D.bool "used" t == Just True))
 
+        -- The roll played nothing: the dice stand and the turn is about to
+        -- pass. Both seats and any spectator see it, and it stays put until
+        -- the mover presses the button, so nobody misses the dice that did
+        -- it (see `no_moves` in the backgammon projection).
+        noMoves =
+            Protocol.sceneData D.bool "no_moves" ctx.scene |> Maybe.withDefault False
+
         pendingFrom =
             Protocol.sceneData (D.field "pending_from" (D.nullable D.string)) "cube" ctx.scene |> Maybe.withDefault Nothing
 
@@ -1202,7 +1264,13 @@ viewRightBand board =
             roll /= [] || viewLeftBand board /= []
 
         status =
-            if ctx.finished /= Nothing || anyAction then
+            if ctx.finished /= Nothing then
+                []
+
+            else if noMoves then
+                [ viewNoMoves myTurn waitingName ]
+
+            else if anyAction then
                 []
 
             else if pendingFrom /= Nothing && not myTurn then
@@ -1214,7 +1282,53 @@ viewRightBand board =
             else
                 []
     in
-    List.map viewDie dice ++ pickedTag ++ roll ++ status
+    viewDice ctx.model.rollSeq dice ++ pickedTag ++ roll ++ status
+
+
+{-| The dice of the turn. They are keyed by the roll that produced them, so
+every new roll builds fresh elements and the CSS tumble in `.die.rolling`
+plays once, for about a second, before the pips settle. Staging a move
+patches the same elements (the key has not moved), so marking a die spent
+never restarts the animation.
+-}
+viewDice : Int -> List Token -> List (Html Msg)
+viewDice rollSeq dice =
+    [ Keyed.node "div"
+        [ class "flex items-center gap-2 sm:gap-3" ]
+        (List.map
+            (\token ->
+                ( "roll-" ++ String.fromInt rollSeq ++ "-" ++ token.id
+                , viewDie token
+                )
+            )
+            dice
+        )
+    ]
+
+
+{-| "No legal moves": said in plain words next to the dice that did it, to
+whoever is looking. The mover also gets the button that passes the turn on
+(the `play` action, which the engine labels for the occasion); everyone
+else just reads it and waits.
+-}
+viewNoMoves : Bool -> String -> Html Msg
+viewNoMoves myTurn moverName =
+    span
+        [ class "pixel text-[8px] sm:text-[9px] px-1 leading-relaxed text-center"
+        , style "color" "var(--bg-sky)"
+        , title "Nothing this roll can play: the turn passes"
+        , Html.Attributes.id "bg-no-moves"
+        ]
+        [ text
+            (if myTurn then
+                "NO LEGAL MOVES"
+
+             else
+                String.toUpper moverName ++ " HAS NO LEGAL MOVES"
+            )
+        , Html.br [] []
+        , text "TURN PASSES"
+        ]
 
 
 {-| The twist's button: opens the dice picker. Legal exactly when `pick`
@@ -1314,6 +1428,12 @@ miniFace value =
         )
 
 
+{-| A die: its settled face, plus a reel of tumbling faces laid over it.
+The reel is what the roll animation shows -- CSS walks it in `steps()` for
+about a second and then hides it for good (`forwards`), leaving the real
+face underneath. Reduced motion drops the reel and the face is all there
+ever was.
+-}
 viewDie : Token -> Html Msg
 viewDie token =
     let
@@ -1323,8 +1443,28 @@ viewDie token =
         used =
             Protocol.tokenProp D.bool "used" token |> Maybe.withDefault False
     in
-    div [ classList [ ( "die", True ), ( "used", used ) ] ]
-        [ div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips value) ]
+    div [ classList [ ( "die", True ), ( "used", used ), ( "rolling", not used ) ] ]
+        [ div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips value)
+        , div [ class "die-tumble", attribute "aria-hidden" "true" ]
+            [ div [ class "die-reel" ]
+                (List.map
+                    (\face ->
+                        div [ class "die-frame" ]
+                            [ div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips face) ]
+                    )
+                    (tumbleFaces value)
+                )
+            ]
+        ]
+
+
+{-| The faces a die shows while it tumbles: five of them, none of them the
+one it lands on, in a fixed order per value so the same roll always looks
+the same (and a test can name them).
+-}
+tumbleFaces : Int -> List Int
+tumbleFaces value =
+    List.range 1 5 |> List.map (\i -> modBy 6 (value + i - 1) + 1)
 
 
 pips : Int -> List (Html Msg)
@@ -1441,6 +1581,7 @@ actionButton ctx name variant =
         Just
             (button
                 [ class ("btn-arcade pixel text-[9px] px-2 py-3 sm:px-4 text-center leading-relaxed " ++ variant)
+                , Html.Attributes.id ("bg-action-" ++ name)
                 , onClick (Simple name)
                 ]
                 [ text (String.toUpper (labelOf name ctx.legal)) ]

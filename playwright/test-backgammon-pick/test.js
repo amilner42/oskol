@@ -31,12 +31,14 @@ async function stageWholeTurn(mover) {
     await target.first().click();
     await sleep(400);
   }
-  const play = mover.locator('button:has-text("PLAY")');
+  // The same button ends an ordinary turn and passes a danced one (where it
+  // reads NO MOVES - PASS TURN instead of PLAY).
+  const play = mover.locator('#bg-action-play');
   try {
     await play.waitFor({ timeout: 5000 });
     await play.click();
   } catch (_) {
-    // A dance: the turn passed by itself.
+    // Not this player's turn any more.
   }
   await sleep(600);
 }

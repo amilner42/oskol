@@ -10,7 +10,9 @@ top-up; leaving mid-hand folds it) or a sit-and-go (1,500 chips, blinds
 rise, last chip wins).
 **Backgammon** is the classic race game with the doubling cube: single games,
 matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
-Jacoby rule. **Go** is the territory game on a 9x9, 13x13 or 19x19 board:
+Jacoby rule. A roll that can play nothing is a state, not a skipped turn:
+the dice stand for both players under "no legal moves" until the mover
+passes, and every time control gives each turn its first 12 seconds free. **Go** is the territory game on a 9x9, 13x13 or 19x19 board:
 area (Tromp-Taylor) scoring, positional superko, komi 5.5/6.5/7.5, two
 passes end the game; it ships on the generic renderer. Every game can be
 played with an optional time control.
@@ -128,7 +130,13 @@ hole cards are face up to you and a count to everyone else until a showdown.
 Presets live in `gamekit/clock.presets()`. Fischer, Bronstein and per-move
 suit board games; `MoveBank` (every action gets a fresh allowance and running
 over spends a bank that never refills) is poker's. A game lists which presets
-it offers. The Elixir room schedules a tick for the next possible expiry and
+it offers. A game may also declare a **turn delay** (`Info.turn_delay_ms`,
+applied by `instance.start` through `clock.with_turn_delay`): the first N
+milliseconds of every turn are free under every control, and unused delay is
+never banked. It overlaps rather than stacks with a control's own free time
+(the longer of the two wins). Backgammon takes 12 seconds, which is what
+live play does and what the dice animation runs inside; every other game
+leaves it at zero. The Elixir room schedules a tick for the next possible expiry and
 calls `GameKit.expire/2`, which applies the game's `timeout`.
 
 ## File map
@@ -300,6 +308,8 @@ mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
 node playwright/test-poker-smoke/test.js        # poker: create, join, fold, next hand, flop
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
+node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
+                                               # room itself), the roll animation, the delay
 node playwright/test-spa-landing/test.js        # landing pages + a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)

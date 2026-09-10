@@ -49,6 +49,11 @@ pub fn info() -> game.Info {
     ],
     clocks: ["none", "blitz", "rapid", "delay", "per_move"],
     default_clock: "none",
+    // Live backgammon runs on a delay, not a bare clock: the first twelve
+    // seconds of every turn are free under every control offered here, so
+    // rolling, reading the dice and a turn that plays nothing all cost
+    // nothing. Unused delay is not banked.
+    turn_delay_ms: 12_000,
   )
 }
 

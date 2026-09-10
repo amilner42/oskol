@@ -111,8 +111,8 @@ async function main() {
     }
     // Moves are staged privately; the turn ends with PLAY.
     if ((await waiter.locator('.checker').count()) !== 30) throw new Error('opponent view should not change during staging');
-    await mover.waitForSelector('button:has-text("PLAY")', { timeout: 10000 });
-    await mover.click('button:has-text("PLAY")');
+    await mover.waitForSelector('#bg-action-play', { timeout: 10000 });
+    await mover.click('#bg-action-play');
     await waiter.waitForSelector('button:has-text("ROLL")', { timeout: 10000 });
     if ((await waiter.locator('button:has-text("DOUBLE")').count()) !== 1) throw new Error('doubling should be offered before rolling');
     await waiter.click('button:has-text("ROLL")');

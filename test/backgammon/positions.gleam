@@ -136,6 +136,7 @@ pub fn position(seed: Int, b: Board, dice: List(Int)) -> state.GameState {
     board: b,
     turn_board: b,
     staged: [],
+    turn_dead: board.legal_moves(b, White, dice) == [],
     phase: state.Moving(White, dice),
     last_roll: list.take(dice, 2),
   )

@@ -17,6 +17,7 @@ module Protocol exposing
     , Update
     , Zone
     , counter
+    , delayNow
     , encodeAction
     , encodeRematch
     , eventDecoder
@@ -555,6 +556,19 @@ remainingNow player receivedAt now =
 
     else
         player.remainingMs
+
+
+{-| Free time left on this move right now: a game's turn delay, a Bronstein
+delay or an action allowance, counting down while the main clock is held.
+Zero once it is spent (or when the clock is not running).
+-}
+delayNow : ClockPlayer -> Int -> Int -> Int
+delayNow player receivedAt now =
+    if player.running then
+        max 0 (player.moveMs - max 0 (now - receivedAt))
+
+    else
+        0
 
 
 {-| "4:05", or "9.4" under ten seconds.

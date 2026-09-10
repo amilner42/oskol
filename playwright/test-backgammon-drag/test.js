@@ -143,7 +143,7 @@ async function playTurnWithDrags(page, { touch, label }) {
   }
   if (tapped) log(`${label}: tap-to-move still works after dragging`);
 
-  const play = page.locator('button:has-text("PLAY")');
+  const play = page.locator('#bg-action-play');
   await play.waitFor({ timeout: 10000 });
   await play.click();
   log(`${label}: turn played`);

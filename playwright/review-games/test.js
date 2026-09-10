@@ -59,8 +59,8 @@ async function backgammon(context, tag) {
     await sleep(400);
   }
   await mover.screenshot({ path: `${OUT}/${tag}-bg-02b-staged.png` });
-  await mover.waitForSelector('button:has-text("PLAY")', { timeout: 10000 });
-  await mover.click('button:has-text("PLAY")');
+  await mover.waitForSelector('#bg-action-play', { timeout: 10000 });
+  await mover.click('#bg-action-play');
   await waiter.waitForSelector('button:has-text("DOUBLE")', { timeout: 15000 });
   await waiter.screenshot({ path: `${OUT}/${tag}-bg-03-roll-or-double.png` });
   await waiter.click('button:has-text("DOUBLE")');

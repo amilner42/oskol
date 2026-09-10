@@ -237,7 +237,7 @@ suite =
                     View.update (DragPressed press) View.init
                         |> step (DragMoved { x = 104, y = 103 })
                         |> step (DragReleased { x = 104, y = 103 })
-                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle, autoRolled = False, picker = Nothing }, NoOut )
+                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle, autoRolled = False, picker = Nothing, rollSeq = 0 }, NoOut )
              , test "pointercancel snaps back without sending" <|
                 \_ ->
                     View.update (DragPressed press) View.init
@@ -255,13 +255,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True, picker = Nothing }
+                            ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True, picker = Nothing, rollSeq = 0 }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True, picker = Nothing }
-                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True, picker = Nothing }, Nothing )
+                    View.autoRoll [ schema "roll" ] { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True, picker = Nothing, rollSeq = 0 }
+                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True, picker = Nothing, rollSeq = 0 }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -272,7 +272,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True, picker = Nothing }
+                    View.autoRoll [ schema "move" ] { selectedFrom = Nothing, drag = Drag.idle, autoRolled = True, picker = Nothing, rollSeq = 0 }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -331,7 +331,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = False, picker = Just [ 3 ] }, NoOut )
+                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, autoRolled = False, picker = Just [ 3 ], rollSeq = 0 }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -412,8 +412,206 @@ suite =
                             Expect.fail "no backgammon fixture"
              ]
             )
+        , describe "a roll that plays nothing"
+            (let
+                schema name label =
+                    { name = name, label = label, params = [] }
+
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                -- The same update the server would send on a dance: the
+                -- scene says `no_moves`, and the mover's only action is the
+                -- pass the engine labelled for it.
+                danced u =
+                    { u
+                        | scene = withData "no_moves" (E.bool True) u.scene
+                        , legal = [ schema "play" "No moves — pass turn", schema "resign" "Resign" ]
+                    }
+             in
+             [ test "the mover is told, beside the dice, and gets the pass button" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                rendered =
+                                    View.view (ctx "p1" (danced u) View.init) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.has [ id "bg-no-moves", text "NO LEGAL MOVES" ]
+                                , \_ -> rendered |> Query.has [ id "bg-no-moves", text "TURN PASSES" ]
+                                , \_ ->
+                                    rendered
+                                        |> Query.find [ id "bg-action-play" ]
+                                        |> Query.has [ text "NO MOVES — PASS TURN" ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the waiting player reads it too, named, with nothing to press" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                -- p2 is not the player to act, and a
+                                -- watcher's own legal list is empty.
+                                rendered =
+                                    View.view (ctx "p2" { u | scene = withData "no_moves" (E.bool True) u.scene, legal = [] } View.init)
+                                        |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.has [ id "bg-no-moves", text "TURN PASSES" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-action-play" ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "an ordinary turn says nothing of the kind" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (ctx "p1" u View.init)
+                                |> Query.fromHtml
+                                |> Query.hasNot [ id "bg-no-moves" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the danced dice are all still on the board, none of them spent" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                dice =
+                                    Protocol.zoneTokens "dice" u.scene |> List.length
+                            in
+                            View.view (ctx "p1" (danced u) View.init)
+                                |> Query.fromHtml
+                                |> Query.findAll [ class "die" ]
+                                |> Query.count (Expect.equal dice)
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             ]
+            )
+        , describe "the dice roll animation"
+            [ test "a dice_rolled event advances the roll key, other events do not" <|
+                \_ ->
+                    Expect.all
+                        [ \_ ->
+                            View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] View.init
+                                |> .rollSeq
+                                |> Expect.equal 1
+                        , \_ ->
+                            View.noteEvents [ Protocol.Custom "turn_started" E.null, Protocol.Message "hi" ] View.init
+                                |> .rollSeq
+                                |> Expect.equal 0
+                        , \_ ->
+                            -- A reconnect brings a payload with no events:
+                            -- the dice are simply there, already settled.
+                            View.noteEvents [] View.init |> .rollSeq |> Expect.equal 0
+                        ]
+                        ()
+            , test "clearing the interaction state does not forget the roll" <|
+                \_ ->
+                    View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] View.init
+                        |> View.update (SelectFrom "13")
+                        |> Tuple.first
+                        |> View.update Clear
+                        |> Tuple.first
+                        |> .rollSeq
+                        |> Expect.equal 1
+            , test "every unspent die carries a tumbling reel of five other faces" <|
+                \_ ->
+                    case FixtureLoader.byGame "backgammon" |> List.head |> Maybe.andThen (\f -> Dict.get "p1" f.initial) of
+                        Just u ->
+                            let
+                                unspent =
+                                    Protocol.zoneTokens "dice" u.scene
+                                        |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
+                                        |> List.length
+
+                                rendered =
+                                    View.view (ctx "p1" u View.init) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.findAll [ class "rolling" ] |> Query.count (Expect.equal unspent)
+                                , \_ -> rendered |> Query.findAll [ class "die-frame" ] |> Query.count (Expect.equal (unspent * 5))
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+            ]
+        , describe "a clock held by the turn delay"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                withClock moveMs now u =
+                    let
+                        base =
+                            ctx "p1" u View.init
+                    in
+                    { base
+                        | clock =
+                            Just
+                                { enabled = True
+                                , label = "3 min + 2 s, 12 s delay every turn"
+                                , timedOut = Nothing
+                                , players =
+                                    [ { id = "p1", remainingMs = 180000, moveMs = moveMs, running = True }
+                                    , { id = "p2", remainingMs = 180000, moveMs = 0, running = False }
+                                    ]
+                                }
+                        , receivedAt = 0
+                        , now = now
+                    }
+             in
+             [ test "the delay counts down beside the frozen clock" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            -- One in the player's bar (phones), one in the
+                            -- desktop rail: both say the same thing.
+                            View.view (withClock 12000 3000 u)
+                                |> Query.fromHtml
+                                |> Query.findAll [ class "delay-pip" ]
+                                |> Query.each (Query.has [ text "+9" ])
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "once the delay is spent the clock is plain again" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (withClock 12000 12001 u)
+                                |> Query.fromHtml
+                                |> Query.hasNot [ class "delay-pip" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             ]
+            )
         , describe "rendering fixtures" (List.map perFixture (FixtureLoader.byGame "backgammon"))
         ]
+
+
+{-| A scene with one entry of its `data` replaced: the states the renderer
+must show are easier to name here than to hunt for in a playout.
+-}
+withData : String -> E.Value -> Protocol.Scene -> Protocol.Scene
+withData field value scene =
+    let
+        existing =
+            D.decodeValue (D.dict D.value) scene.data |> Result.withDefault Dict.empty
+    in
+    { scene | data = E.dict identity identity (Dict.insert field value existing) }
 
 
 ctx : String -> Protocol.Update -> View.Model -> View.Ctx
@@ -657,7 +855,7 @@ perFixture fixture =
                                         |> List.filter (\s -> List.any (\p -> p.name == "from" && p.kind == Choice [ ( from, from ) ]) s.params)
                                         |> List.length
                             in
-                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle, autoRolled = False, picker = Nothing })
+                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle, autoRolled = False, picker = Nothing, rollSeq = 0 })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal destinations)

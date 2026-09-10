@@ -56,6 +56,10 @@ pub type GameState {
     crawford: Bool,
     /// The Crawford game has been played (or is being played).
     crawford_done: Bool,
+    /// This turn's roll can play nothing at all: decided once, when the dice
+    /// landed, and true until the mover commits the empty turn. Only
+    /// meaningful in `Moving`; read it through `no_moves`.
+    turn_dead: Bool,
     /// The board as the opponent sees it: before any move staged this turn.
     turn_board: Board,
     /// Moves staged this turn, oldest first. Committed by `play`.
@@ -123,6 +127,7 @@ pub fn new(
       cube_owner: None,
       crawford: False,
       crawford_done: False,
+      turn_dead: False,
       turn_board: board.initial(),
       staged: [],
       rng: rng,
@@ -152,12 +157,18 @@ fn die(rng: Rng) -> #(Int, Rng) {
   #(n + 1, rng)
 }
 
+/// Begin the moving phase with these dice. A roll that can play nothing is
+/// still a turn: the phase is `Moving` with every die unplayable, so the
+/// dice stand on the board for both players and the turn passes only when
+/// the mover commits it with `play` (see `no_moves`).
 fn start_moving(state: GameState, color: Color, dice: List(Int)) -> GameState {
-  let state = GameState(..state, turn_board: state.board, staged: [])
-  case board.legal_moves(state.board, color, dice) {
-    [] -> GameState(..state, phase: Rolling(board.opponent(color)))
-    _ -> GameState(..state, phase: Moving(color, dice))
-  }
+  GameState(
+    ..state,
+    turn_board: state.board,
+    staged: [],
+    turn_dead: board.legal_moves(state.board, color, dice) == [],
+    phase: Moving(color, dice),
+  )
 }
 
 // ---------- Queries ----------
@@ -262,6 +273,18 @@ pub fn can_play(state: GameState, player_id: PlayerId) -> Bool {
     Moving(c, dice), Ok(mine) if c == mine ->
       board.legal_moves(state.board, c, dice) == []
     _, _ -> False
+  }
+}
+
+/// The roll played nothing: the mover has rolled and not one die can be
+/// used, so the whole turn is forfeit. (Failing to enter from the bar is
+/// what backgammon calls a dance.) It stays a real state until the mover
+/// commits the empty turn with `play`, so both seats -- and anyone who
+/// joins or reconnects meanwhile -- see the dice that did it.
+pub fn no_moves(state: GameState) -> Bool {
+  case state.phase {
+    Moving(_, _) -> state.turn_dead
+    _ -> False
   }
 }
 

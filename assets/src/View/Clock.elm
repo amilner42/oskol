@@ -5,7 +5,7 @@ protocol clock and the names from the scene.
 -}
 
 import Html exposing (Html, div, span, text)
-import Html.Attributes exposing (class, classList)
+import Html.Attributes exposing (class, classList, title)
 import Protocol exposing (Clock, ClockPlayer)
 
 
@@ -44,6 +44,12 @@ viewPlayer playerId receivedAt now nameOf timedOut player =
 
         expired =
             timedOut == Just player.id || remaining <= 0
+
+        -- Free time in hand (a delay, or an action allowance): the main
+        -- clock is held while it runs down, so say so rather than showing
+        -- a frozen number with no explanation.
+        delay =
+            Protocol.delayNow player receivedAt now
     in
     div
         [ classList
@@ -54,7 +60,16 @@ viewPlayer playerId receivedAt now nameOf timedOut player =
             ]
         ]
         [ span [ class "truncate max-w-[6rem]" ] [ text (nameOf player.id) ]
-        , span [ class "tabular-nums font-bold" ]
+        , if delay > 0 && not expired then
+            span
+                [ class "delay-pip pixel text-[7px]"
+                , title "Delay: your clock is held until this runs out"
+                ]
+                [ text ("+" ++ String.fromInt ((delay + 999) // 1000)) ]
+
+          else
+            text ""
+        , span [ classList [ ( "tabular-nums font-bold", True ), ( "held", delay > 0 && not expired ) ] ]
             [ text
                 (if expired then
                     "0:00"

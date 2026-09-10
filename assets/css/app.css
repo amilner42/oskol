@@ -622,15 +622,61 @@
 .bg-bar .checker.black { border-color: #fff; }
 .bg-tray { border: 3px solid var(--ink); background: #fff; color: var(--ink); }
 .die {
+  --die-size: 2.5rem;
   display: grid; place-items: center;
-  width: 2.5rem; height: 2.5rem;
+  width: var(--die-size); height: var(--die-size);
   border: 2px solid var(--ink); border-radius: 6px;
   box-shadow: 3px 3px 0 0 var(--ink); background: #fff;
 }
 .die.used { opacity: 0.35; box-shadow: none; }
+/* Rolling dice: a reel of five faces laid over the settled one, walked by a
+   single steps() animation -- the same trick the library's game art uses --
+   and hidden for good when it lands. The die shakes underneath it. Both
+   animations run once; the whole thing is over in about a second, which is
+   also what the clock's turn delay is there to pay for. Reduced motion gets
+   neither, and reads the settled face from the first frame. */
+.die { position: relative; overflow: hidden; }
+.die-tumble {
+  position: absolute; inset: 0;
+  background: #fff;
+  overflow: hidden;
+  pointer-events: none;
+  display: none;
+}
+.die-reel { display: flex; flex-direction: column; align-items: center; }
+.die-frame { height: var(--die-size); display: grid; place-items: center; }
+@media (prefers-reduced-motion: no-preference) {
+  .die.rolling .die-tumble {
+    display: block;
+    animation: die-land 0.95s steps(1) forwards;
+  }
+  .die.rolling .die-reel {
+    animation: die-reel 0.9s steps(4) forwards;
+  }
+  .die.rolling { animation: die-shake 0.9s ease-out; }
+}
+@keyframes die-reel { to { transform: translateY(-80%); } }
+@keyframes die-land { to { opacity: 0; visibility: hidden; } }
+@keyframes die-shake {
+  0% { transform: translateY(-3px) rotate(-8deg); }
+  25% { transform: translateY(2px) rotate(7deg); }
+  50% { transform: translateY(-2px) rotate(-5deg); }
+  75% { transform: translateY(1px) rotate(3deg); }
+  100% { transform: none; }
+}
+/* A clock held by a delay: the number stops moving, so the seconds still
+   free are shown beside it and the frozen figure is dimmed. */
+.delay-pip {
+  border: 2px solid var(--bg-sky);
+  color: var(--bg-sky);
+  background: #fff;
+  padding: 0 3px;
+  line-height: 1.4;
+}
+.held { opacity: 0.55; }
 /* Picker-scale die faces (the "Pick dice" twist). */
 .die.mini {
-  width: 1.75rem; height: 1.75rem;
+  --die-size: 1.75rem;
   box-shadow: 2px 2px 0 0 var(--ink);
   cursor: pointer; padding: 0;
 }

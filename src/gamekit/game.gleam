@@ -55,6 +55,10 @@ pub type Info {
     /// offers, in display order. The default is always offered.
     clocks: List(String),
     default_clock: String,
+    /// A simple delay this game grants on every turn under every control it
+    /// offers: the first `turn_delay_ms` of a turn are free, and unused
+    /// delay is never banked. Zero leaves the controls exactly as they are.
+    turn_delay_ms: Int,
   )
 }
 
@@ -161,6 +165,7 @@ pub fn info_to_json(info: Info) -> Json {
     #("formats", json.array(info.formats, format_to_json)),
     #("clocks", json.array(info.clocks, json.string)),
     #("default_clock", json.string(info.default_clock)),
+    #("turn_delay_ms", json.int(info.turn_delay_ms)),
   ])
 }
 

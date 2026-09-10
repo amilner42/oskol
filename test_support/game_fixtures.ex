@@ -11,11 +11,13 @@ defmodule Oskol.GameFixtures do
 
   @doc """
   A backgammon room set up by its creator (Alice), waiting for an opponent.
-  Options: `clock:` preset id, `seed:`, `control:` raw clock control.
+  Options: `clock:` preset id, `seed:`, `control:` raw clock control, and
+  `slug:` for the platform tests that want a game without backgammon's
+  twelve-second turn delay (a clock forfeit inside a test's patience).
   """
   def lobby(format \\ "single", opts \\ []) do
     game_id = unique_game_id()
-    {:ok, _} = Game.start_game(game_id, "backgammon")
+    {:ok, _} = Game.start_game(game_id, Keyword.get(opts, :slug, "backgammon"))
 
     {:ok, _} =
       Game.configure(game_id, %{
@@ -55,10 +57,10 @@ defmodule Oskol.GameFixtures do
     game_id |> Game.get_server_state() |> GameServerState.token_for(player_id)
   end
 
-  @doc "Whoever holds a `move` schema."
+  @doc "Whoever has something to do beyond resigning: the player to move."
   def mover(instance, players) do
     Enum.find(players, fn p ->
-      Enum.any?(GameKit.player_update(instance, p)["legal"], &(&1["name"] == "move"))
+      Enum.any?(GameKit.player_update(instance, p)["legal"], &(&1["name"] != "resign"))
     end)
   end
 

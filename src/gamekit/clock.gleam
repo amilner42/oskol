@@ -88,6 +88,16 @@ pub fn control_label(control: Control) -> String {
   }
 }
 
+/// What these clocks are, the game's turn delay included.
+pub fn label(clocks: Clocks) -> String {
+  case clocks.control, clocks.turn_delay_ms {
+    NoClock, _ -> control_label(NoClock)
+    control, 0 -> control_label(control)
+    control, delay ->
+      control_label(control) <> ", " <> seconds(delay) <> " delay every turn"
+  }
+}
+
 fn minutes(ms: Int) -> String {
   int.to_string(ms / 60_000) <> " min"
 }
@@ -113,6 +123,12 @@ pub type Clocks {
     order: List(PlayerId),
     players: Dict(PlayerId, PlayerClock),
     timed_out: Option(PlayerId),
+    /// A simple delay every game of this kind grants on top of whatever the
+    /// control already gives: the first `turn_delay_ms` of a player's turn
+    /// are free under every control. Unused delay is never banked -- it is a
+    /// delay, not an increment. Games opt in with `Info.turn_delay_ms`;
+    /// zero (the default) leaves a control exactly as it was.
+    turn_delay_ms: Int,
   )
 }
 
@@ -140,7 +156,13 @@ pub fn new(control: Control, player_ids: List(PlayerId)) -> Clocks {
       }),
     ),
     timed_out: None,
+    turn_delay_ms: 0,
   )
+}
+
+/// Grant every turn its first `ms` free under whatever control is running.
+pub fn with_turn_delay(clocks: Clocks, ms: Int) -> Clocks {
+  Clocks(..clocks, turn_delay_ms: int.max(0, ms))
 }
 
 pub fn enabled(clocks: Clocks) -> Bool {
@@ -207,12 +229,17 @@ pub fn set_running(
               // turn.
               case control {
                 MoveBank(_, _) ->
-                  start(control, stop(control, settle(clock, now), True), now)
+                  start(
+                    control,
+                    clocks.turn_delay_ms,
+                    stop(control, settle(clock, now), True),
+                    now,
+                  )
                 _ -> clock
               }
             False, False -> clock
             True, False -> stop(control, settle(clock, now), actor == Some(id))
-            False, True -> start(control, clock, now)
+            False, True -> start(control, clocks.turn_delay_ms, clock, now)
           }
         })
       Clocks(..clocks, players: players)
@@ -232,15 +259,28 @@ fn stop(control: Control, clock: PlayerClock, moved: Bool) -> PlayerClock {
   )
 }
 
-fn start(control: Control, clock: PlayerClock, now: Int) -> PlayerClock {
+/// Free time at the start of a move: whatever the control grants, or the
+/// game's turn delay, whichever is longer -- they are the same kind of
+/// free time, so they overlap rather than stack.
+fn start(
+  control: Control,
+  turn_delay: Int,
+  clock: PlayerClock,
+  now: Int,
+) -> PlayerClock {
+  let free = case control {
+    Bronstein(_, delay) -> int.max(delay, turn_delay)
+    MoveBank(move, _) -> int.max(move, turn_delay)
+    _ -> turn_delay
+  }
   case control {
-    Bronstein(_, delay) ->
-      PlayerClock(..clock, running_since: Some(now), delay_left_ms: delay)
     PerMove(ms) ->
-      PlayerClock(remaining_ms: ms, running_since: Some(now), delay_left_ms: 0)
-    MoveBank(move, _) ->
-      PlayerClock(..clock, running_since: Some(now), delay_left_ms: move)
-    _ -> PlayerClock(..clock, running_since: Some(now), delay_left_ms: 0)
+      PlayerClock(
+        remaining_ms: ms,
+        running_since: Some(now),
+        delay_left_ms: free,
+      )
+    _ -> PlayerClock(..clock, running_since: Some(now), delay_left_ms: free)
   }
 }
 
@@ -302,7 +342,8 @@ pub fn to_json(clocks: Clocks, now: Int) -> Json {
   json.object([
     #("enabled", json.bool(enabled(clocks))),
     #("control", control_to_json(clocks.control)),
-    #("label", json.string(control_label(clocks.control))),
+    #("label", json.string(label(clocks))),
+    #("turn_delay_ms", json.int(clocks.turn_delay_ms)),
     #(
       "players",
       json.array(clocks.order, fn(id) {

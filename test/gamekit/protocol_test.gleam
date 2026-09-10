@@ -175,12 +175,16 @@ pub fn clocks_follow_the_game_and_forfeit_on_timeout_test() {
   let assert Ok(#(inst, _)) = host.apply(inst, me, raw, 4000)
   // Staging a move does not end the turn: still their clock
   assert clock.running(instance.clocks(inst), me)
-  assert clock.remaining(instance.clocks(inst), me, 9000) == 1000
+  // Backgammon runs on a twelve-second delay every turn, so nine seconds in
+  // the bank is untouched and three seconds of delay are left.
+  assert clock.remaining(instance.clocks(inst), me, 9000) == 10_000
   assert clock.remaining(instance.clocks(inst), them, 9000) == 10_000
-  assert host.next_deadline(inst, 9000) == Ok(1000)
-  // They never play and run out
-  assert host.expire(inst, 9999) == Error(Nil)
-  let assert Ok(#(over, events)) = host.expire(inst, 10_000)
+  assert host.next_deadline(inst, 9000) == Ok(13_000)
+  // The bank only starts draining once the delay is spent
+  assert clock.remaining(instance.clocks(inst), me, 14_000) == 8000
+  // They never play and run out: twelve seconds of delay, then ten of bank
+  assert host.expire(inst, 21_999) == Error(Nil)
+  let assert Ok(#(over, events)) = host.expire(inst, 22_000)
   assert host.outcome(over) == game.Finished([them])
   assert instance.legal(over, me) == []
   let loser = case me {
@@ -191,9 +195,9 @@ pub fn clocks_follow_the_game_and_forfeit_on_timeout_test() {
     e == event.Message(loser <> " ran out of time")
   })
   // Further actions are refused
-  let assert Error(_) = host.apply(over, me, raw, 10_500)
+  let assert Error(_) = host.apply(over, me, raw, 22_500)
   assert string.contains(
-    host.player_update_json(over, me, [], 10_500),
+    host.player_update_json(over, me, [], 22_500),
     "\"timed_out\":\"" <> me <> "\"",
   )
 }
