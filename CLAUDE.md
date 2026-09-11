@@ -21,7 +21,12 @@ The first player picks everything (mode, settings, clock), shares a link, and
 the game starts the moment the second player types a name. Taking a seat
 mints a **seat token**: the player's URL carries it, and it is what
 authenticates every channel join and reconnect. A display name is display
-only and grants nothing.
+only and grants nothing. A socket also names its **client** (a per-tab id
+the browser mints; it authenticates nothing): the room compares it with
+itself to tell one tab reconnecting -- a reload, a route change, a phone
+waking its websocket up -- from another tab taking the seat over, which is
+the only case the connection that had it is told about
+(`src/oskol/rooms/seat.gleam`).
 
 Games are built on **gamekit**, a small framework with one rule: adding a game
 never touches the server or the client. A game is one Gleam module that
@@ -172,6 +177,7 @@ lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in 
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
 lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
+src/oskol/rooms/seat.gleam       what an attach means: the same client back, or a takeover
 lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
                                  plus the title, description, canonical, og
                                  and JSON-LD a crawler reads

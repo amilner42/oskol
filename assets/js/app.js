@@ -150,16 +150,42 @@ window.elmApp = app;
 let gameSocket = null;
 let gameChannel = null;
 
+// Who this browser tab is, for the life of the tab: the seat uses it to tell
+// this client coming back (a reload, a route change, a socket the phone
+// brought back from sleep) from another tab taking the seat over, which is
+// the only case anyone should be told about. It authenticates nothing --
+// the seat token is still the only way in.
+const clientId = (() => {
+  const key = "oskol:client";
+  try {
+    const existing = sessionStorage.getItem(key);
+    if (existing) return existing;
+    const minted = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
+    sessionStorage.setItem(key, minted);
+    return minted;
+  } catch (_) {
+    // Private modes without storage: this tab is simply anonymous, and the
+    // server falls back to the socket itself.
+    return null;
+  }
+})();
+
 const send = (message) => app.ports.receiveFromChannel?.send(message);
 
 app.ports.joinGameChannel?.subscribe(({ gameId, seatToken }) => {
   if (gameChannel) {
+    // Unbind before leaving: leaving is asynchronous, and a channel still
+    // on its way out must not keep talking to Elm on behalf of a table this
+    // client has moved on from.
+    gameChannel.off("update");
+    gameChannel.off("error");
+    gameChannel.off("rematch_ready");
     gameChannel.leave();
     gameChannel = null;
   }
 
   if (!gameSocket) {
-    gameSocket = new Socket("/socket", {});
+    gameSocket = new Socket("/socket", { params: { client: clientId } });
     gameSocket.connect();
     gameSocket.onOpen(() => send({ type: "connection_status", status: "connected" }));
     gameSocket.onClose(() => send({ type: "connection_status", status: "disconnected" }));

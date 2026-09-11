@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Press, TapContext, autoRoll, dropZoneId, init, noteEvents, resolveTap, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Press, Roll, TapContext, autoRoll, dropZoneId, init, noteEvents, resolveTap, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -54,8 +54,24 @@ type alias Model =
     , drag : Drag.State String Msg -- the item a drag carries is my checker colour
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
-    , rollSeq : Int -- how many rolls this client has watched land (see `noteEvents`)
+    , roll : Roll -- the dice on the board, and whether this client saw them land
     }
+
+
+{-| The dice currently on the board: which roll they belong to, and whether
+this client watched that roll land.
+
+`seq` keys the dice, so a new roll builds new elements and the CSS in
+`.die.rolling` plays once. `watched` is what keeps the throw honest: it is
+set only by a `dice_rolled` event arriving on the channel, so dice that came
+out of a snapshot -- a join, a reload, a room rehydrated from its log, a
+spectator sitting down in the middle of a turn -- mount already settled.
+Replaying a throw that happened while nobody was looking is a lie about
+what just happened at the table.
+
+-}
+type alias Roll =
+    { seq : Int, watched : Bool }
 
 
 {-| A press on a draggable checker: where, my colour (for the ghost), what
@@ -103,23 +119,33 @@ type Out
 
 init : Model
 init =
-    { selectedFrom = Nothing, drag = Drag.idle, autoRolled = False, picker = Nothing, rollSeq = 0 }
+    { selectedFrom = Nothing
+    , drag = Drag.idle
+    , autoRolled = False
+    , picker = Nothing
+
+    -- A client starts by being told where the game is, not by watching it
+    -- get there: whatever dice the first payload brings are already on the
+    -- table.
+    , roll = { seq = 0, watched = False }
+    }
 
 
 {-| Clear the interaction state (selection, drag, picker) without forgetting
-how many rolls have landed: `rollSeq` keys the dice, and forgetting it would
+which roll is on the board: `roll` keys the dice, and forgetting it would
 replay the tumble on every tap.
 -}
 reset : Model -> Model
 reset model =
-    { init | rollSeq = model.rollSeq }
+    { init | roll = model.roll }
 
 
-{-| Count the rolls this client has seen. The dice tumble because a roll's
-dice are new DOM elements (they are keyed by `rollSeq`), so the animation
-comes from the `dice_rolled` event rather than from diffing the scene: a
-reconnect that arrives without events simply shows the dice, already
-settled. Main calls this once per arriving payload.
+{-| Watch the channel for dice landing. A `dice_rolled` event is this client
+seeing the throw happen, so it moves the board on to a new roll and marks it
+watched -- the one and only way the dice are allowed to animate. A payload
+without one (a join reply, a reconnect, a rehydrated room, an opponent
+staging a move) leaves the roll exactly where it was, so nothing remounts
+and nothing replays. Main calls this once per arriving payload.
 -}
 noteEvents : List Protocol.Event -> Model -> Model
 noteEvents events model =
@@ -135,7 +161,11 @@ noteEvents events model =
                 _ ->
                     False
     in
-    { model | rollSeq = model.rollSeq + rolls }
+    if rolls == 0 then
+        model
+
+    else
+        { model | roll = { seq = model.roll.seq + rolls, watched = True } }
 
 
 {-| Roll for the viewer when there is nothing to ask: at the start of a
@@ -1321,7 +1351,7 @@ viewRightBand board =
             else
                 []
     in
-    viewDice ctx.model.rollSeq dice ++ pickedTag ++ roll ++ status
+    viewDice ctx.model.roll dice ++ pickedTag ++ roll ++ status
 
 
 {-| The dice of the turn. They are keyed by the roll that produced them, so
@@ -1329,15 +1359,22 @@ every new roll builds fresh elements and the CSS tumble in `.die.rolling`
 plays once, for about a second, before the pips settle. Staging a move
 patches the same elements (the key has not moved), so marking a die spent
 never restarts the animation.
+
+Two of them tumble, never four: a double is a two-die roll, and the pair
+it earns lands (`.die.earned`) when the tumble is over.
+
+None of them move unless this client watched the roll land (`Roll.watched`):
+dice that arrived in a snapshot are already on the table.
+
 -}
-viewDice : Int -> List Token -> List (Html Msg)
-viewDice rollSeq dice =
+viewDice : Roll -> List Token -> List (Html Msg)
+viewDice roll dice =
     [ Keyed.node "div"
         [ class "flex items-center gap-2 sm:gap-3" ]
         (List.map
             (\token ->
-                ( "roll-" ++ String.fromInt rollSeq ++ "-" ++ token.id
-                , viewDie token
+                ( "roll-" ++ String.fromInt roll.seq ++ "-" ++ token.id
+                , viewDie roll.watched (dieIndex token) token
                 )
             )
             dice
@@ -1472,29 +1509,74 @@ The reel is what the roll animation shows -- CSS walks it in `steps()` for
 about a second and then hides it for good (`forwards`), leaving the real
 face underneath. Reduced motion drops the reel and the face is all there
 ever was.
+
+Only the dice that were actually thrown tumble. A double is still a
+two-die roll, so `die:0` and `die:1` are the ones in the air; the two the
+double earns (`die:2`, `die:3`) carry no reel and appear beside them when
+the tumble settles.
+
+And only a roll this client watched land moves at all: `watched` is false
+for dice that came out of a snapshot, and then a die is its face and
+nothing else -- no reel in the DOM, no classes, no throw to replay.
+
 -}
-viewDie : Token -> Html Msg
-viewDie token =
+viewDie : Bool -> Int -> Token -> Html Msg
+viewDie watched index token =
     let
         value =
             Protocol.tokenProp D.int "value" token |> Maybe.withDefault 1
 
         used =
             Protocol.tokenProp D.bool "used" token |> Maybe.withDefault False
+
+        -- Of a roll this client watched land, the two dice that were
+        -- thrown; of one it was only told about, none.
+        thrown =
+            watched && index < 2 && not used
+
+        earned =
+            watched && index >= 2 && not used
     in
-    div [ classList [ ( "die", True ), ( "used", used ), ( "rolling", not used ) ] ]
-        [ div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips value)
-        , div [ class "die-tumble", attribute "aria-hidden" "true" ]
-            [ div [ class "die-reel" ]
-                (List.map
-                    (\face ->
-                        div [ class "die-frame" ]
-                            [ div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips face) ]
-                    )
-                    (tumbleFaces value)
-                )
+    div
+        [ classList
+            [ ( "die", True )
+            , ( "used", used )
+            , ( "rolling", thrown )
+            , ( "earned", earned )
             ]
         ]
+        (div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips value)
+            :: (if thrown then
+                    [ div [ class "die-tumble", attribute "aria-hidden" "true" ]
+                        [ div [ class "die-reel" ]
+                            (List.map
+                                (\face ->
+                                    div [ class "die-frame" ]
+                                        [ div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips face) ]
+                                )
+                                (tumbleFaces value)
+                            )
+                        ]
+                    ]
+
+                else
+                    []
+               )
+        )
+
+
+{-| Which die of the roll this token is: the projection numbers them
+`die:0` upwards, in the order they were thrown (the two extra dice of a
+double come last).
+-}
+dieIndex : Token -> Int
+dieIndex token =
+    token.id
+        |> String.split ":"
+        |> List.drop 1
+        |> List.head
+        |> Maybe.andThen String.toInt
+        |> Maybe.withDefault 0
 
 
 {-| The faces a die shows while it tumbles: five of them, none of them the

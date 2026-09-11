@@ -22,6 +22,10 @@ defmodule Oskol.Game.GameServerState do
           token: String.t(),
           guest_id: String.t() | nil,
           pid: pid() | nil,
+          # The client behind `pid`: the socket's transport, which survives
+          # the channel rejoining. It is what tells a reconnect from a
+          # takeover (`src/oskol/rooms/seat.gleam`).
+          client: pid() | nil,
           connected: boolean(),
           monitor_ref: reference() | nil
         }

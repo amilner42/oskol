@@ -655,7 +655,10 @@ view model =
                 [ game
                 , case model.error of
                     Just err ->
-                        Html.div [ class "fixed bottom-2 left-1/2 -translate-x-1/2 z-40 pixel text-[10px] bg-white border-2 border-black px-3 py-2" ]
+                        Html.div
+                            [ class "fixed bottom-2 left-1/2 -translate-x-1/2 z-40 pixel text-[10px] bg-white border-2 border-black px-3 py-2"
+                            , id "play-error"
+                            ]
                             [ Html.text err ]
 
                     Nothing ->

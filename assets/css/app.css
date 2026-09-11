@@ -654,8 +654,17 @@
     animation: die-reel 0.9s steps(4) forwards;
   }
   .die.rolling { animation: die-shake 0.9s ease-out; }
+  /* The two dice a double earns: no reel, because they were never thrown.
+     They wait out the tumble (`backwards` holds the from-state through the
+     delay) and drop in beside the pair that was. */
+  .die.earned { animation: die-earned 0.28s ease-out 0.92s backwards; }
 }
 @keyframes die-reel { to { transform: translateY(-80%); } }
+@keyframes die-earned {
+  from { opacity: 0; transform: scale(0.5); }
+  70% { opacity: 1; transform: scale(1.12); }
+  to { opacity: 1; transform: none; }
+}
 @keyframes die-land { to { opacity: 0; visibility: hidden; } }
 @keyframes die-shake {
   0% { transform: translateY(-3px) rotate(-8deg); }
@@ -745,13 +754,20 @@
     --bg-gap: 2px;       /* between the board's rows and columns */
     --bg-band-h: 3rem;   /* the centre band: dice, buttons, status */
     --bg-drop: 4px;      /* the board's drop shadow, kept on screen */
+    /* Air above and below the board, so a sideways phone does not read as
+       a board jammed against the bezel. It is also what the drop shadow
+       falls into, which is why it is never less than --bg-drop. */
+    --bg-edge: 6px;
     /* The height is what drives the board -- unless the screen is too
        narrow to be proportionate to it (a squarish landscape), in which
        case the width has the last word and the board merely fits. The
        ratio is the board's own: a point is 0.21 of its height wide, and
-       the board is 12 points, three rails and its gaps across. */
+       the board is 12 points, three rails and its gaps across. Everything
+       the board is not -- the band, the gaps, its padding, its border and
+       the air at both edges -- comes off the height first, so the board
+       can never be taller than the screen. */
     --bg-point-h: min(
-      calc((100dvh - var(--bg-band-h) - 2 * var(--bg-gap) - 2 * var(--bg-pad) - 6px - var(--bg-drop)) / 2),
+      calc((100dvh - var(--bg-band-h) - 2 * var(--bg-gap) - 2 * var(--bg-pad) - 6px - 2 * var(--bg-edge)) / 2),
       calc((100vw - 8rem) / 3.4)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
@@ -763,8 +779,9 @@
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0 0.4rem;
-    /* exactly the room the board's drop shadow was reserved */
-    padding: calc(var(--bg-drop) / 2) 0.25rem;
+    /* the air the height formula already took off, with the drop shadow
+       falling inside the bottom of it */
+    padding: var(--bg-edge) 0.25rem;
   }
   .bg-page .bg-main,
   .bg-page .bg-stack { display: contents; }

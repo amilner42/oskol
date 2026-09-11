@@ -48,9 +48,14 @@ defmodule Oskol.Game.GameServer do
   second connection bearing the same valid token is the same person, so the
   latest one wins and the previous socket is dropped. A wrong or stale token
   is `{:error, :invalid_token}` — it never falls back to any other seat.
+
+  `client` identifies the browser behind the connection (the socket's
+  transport, which outlives any one channel), and it is what tells a
+  reconnect from a takeover: see `src/oskol/rooms/seat.gleam`. Callers with
+  nothing better to offer pass the connection itself.
   """
-  def attach(game_id, token, player_pid) do
-    GenServer.call(via_tuple(game_id), {:attach, token, player_pid})
+  def attach(game_id, token, player_pid, client \\ nil) do
+    GenServer.call(via_tuple(game_id), {:attach, token, player_pid, client || player_pid})
   end
 
   @doc """
@@ -164,6 +169,7 @@ defmodule Oskol.Game.GameServer do
           token: GameServerState.new_token(),
           guest_id: guest_id,
           pid: player_pid,
+          client: player_pid,
           connected: player_pid != nil,
           monitor_ref: monitor_ref
         }
@@ -195,13 +201,13 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  def handle_call({:attach, token, player_pid}, _from, %GameServerState{} = state) do
+  def handle_call({:attach, token, player_pid, client}, _from, %GameServerState{} = state) do
     case GameServerState.find_player_id_by_token(state, token) do
       nil ->
         {:reply, {:error, :invalid_token}, state, @timeout}
 
       player_id ->
-        new_state = do_attach(state, player_id, player_pid)
+        new_state = do_attach(state, player_id, player_pid, client)
 
         # The attaching client gets the state in its reply; everyone else
         # learns the seat is live again.
@@ -228,7 +234,7 @@ defmodule Oskol.Game.GameServer do
           | connections: Map.put(state.connections, player_id, rotated)
         }
 
-        new_state = do_attach(state, player_id, player_pid)
+        new_state = do_attach(state, player_id, player_pid, player_pid)
 
         # The rotated token must be on disk before it is the only way in.
         Persister.players_updated(new_state.game_id, players_json(new_state))
@@ -250,6 +256,7 @@ defmodule Oskol.Game.GameServer do
       token: token,
       guest_id: guest_id,
       pid: nil,
+      client: nil,
       connected: false,
       monitor_ref: nil
     }
@@ -435,23 +442,40 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  # Point a seat at a new connection. The newest socket is the live one,
+  # Point a seat at a new connection. The newest connection is the live one,
   # even when the previous one has not timed out yet (a phone coming back
-  # before the old websocket closed, or the same player opening a second
-  # tab with their token): the old monitor is dropped so its exit cannot
-  # mark a present player as away, and the old socket is closed so only one
-  # connection ever holds the seat.
-  defp do_attach(%GameServerState{} = state, player_id, player_pid) do
+  # before the old websocket closed, or the same player opening a second tab
+  # with their token): the old monitor is dropped so its exit cannot mark a
+  # present player as away, and only one connection ever holds the seat.
+  #
+  # Whether the one being replaced is *told* is the seat rule in
+  # `src/oskol/rooms/seat.gleam`, and it turns on the client: a client
+  # rejoins its own channel routinely (its own routes, a duplicate join, a
+  # socket back from a sleeping phone) and none of that is a takeover. Only
+  # another live client displaces the connection that had the seat.
+  defp do_attach(%GameServerState{} = state, player_id, player_pid, client) do
     old = state.connections[player_id]
 
     if old.monitor_ref, do: Process.demonitor(old.monitor_ref, [:flush])
 
-    if old.pid && old.pid != player_pid && Process.alive?(old.pid) do
+    holder =
+      if old.pid && Process.alive?(old.pid) && old.client, do: {:some, old.client}, else: :none
+
+    attach = :oskol@rooms@seat.attach(holder, client)
+
+    if :oskol@rooms@seat.displaces_holder(attach) do
       send(old.pid, :seat_taken_over)
     end
 
     monitor_ref = Process.monitor(player_pid)
-    updated = %{old | pid: player_pid, connected: true, monitor_ref: monitor_ref}
+
+    updated = %{
+      old
+      | pid: player_pid,
+        client: client,
+        connected: true,
+        monitor_ref: monitor_ref
+    }
 
     %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
     |> GameServerState.touch()
@@ -606,6 +630,7 @@ defmodule Oskol.Game.GameServer do
         # Rows written before guests existed have no key here: nil is fine.
         guest_id: player["guest_id"],
         pid: nil,
+        client: nil,
         connected: false,
         monitor_ref: nil
       }

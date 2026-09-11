@@ -87,6 +87,18 @@ async function main() {
     );
     const dice = await dancer.page.locator('.die').count();
     must(dice > 0, `the dice that danced are on the board (${dice} of them)`);
+    // The room came out of its log: the throw happened while nobody was
+    // looking here, so the dice are simply on the table.
+    must(
+      (await dancer.page.locator('.die-tumble').count()) === 0 &&
+        (await other.page.locator('.die-tumble').count()) === 0,
+      'a rehydrated room does not replay the roll to anyone'
+    );
+    // And opening your own seat link is not somebody taking your seat.
+    must(
+      !(await dancer.page.locator('#play-error').count()) && !(await dancer.page.locator('#game-gone').count()),
+      'opening the seat link says nothing about the seat being opened elsewhere'
+    );
     must(await dancer.page.locator('#bg-action-play').count(), 'the dancer has the pass button');
     must(!(await other.page.locator('#bg-action-play').count()), 'the opponent has nothing to press');
     const label = await dancer.page.textContent('#bg-action-play');
@@ -105,7 +117,64 @@ async function main() {
     must(!(await dancer.page.locator('#bg-no-moves').count()), 'the message is gone once the turn passed');
     await other.page.screenshot({ path: `${SHOTS}/dice-settled.png` });
 
-    // 5: a fresh game on a clock, showing the delay.
+    // 5: a reload mid-turn resumes quietly -- the dice that were already
+    // thrown are on the table, and nobody is told they lost the seat.
+    await other.page.reload();
+    await other.page.waitForSelector('.bg-board', { timeout: 15000 });
+    await sleep(400);
+    must(
+      (await other.page.locator('.die').count()) > 0,
+      'a reload mid-turn comes back to the same dice'
+    );
+    must(
+      (await other.page.locator('.die-tumble').count()) === 0,
+      'a reload does not throw the dice again'
+    );
+    must(
+      !(await other.page.locator('#play-error').count()) && !(await other.page.locator('#game-gone').count()),
+      'a reload resumes without a word about the seat'
+    );
+    await other.page.screenshot({ path: `${SHOTS}/reload-settled.png` });
+
+    // A phone going to sleep and waking up: the socket drops and comes
+    // back, which is the same tab, not a new player.
+    await context.setOffline(true);
+    await sleep(800);
+    await context.setOffline(false);
+    await other.page.waitForFunction(
+      () => !document.body.textContent.includes('RECONNECTING'),
+      null,
+      { timeout: 20000 }
+    );
+    await sleep(600);
+    must(
+      !(await other.page.locator('#play-error').count()) && !(await other.page.locator('#game-gone').count()),
+      'a dropped socket coming back is the same player, not a takeover'
+    );
+    must(
+      (await other.page.locator('.die-tumble').count()) === 0,
+      'and it does not throw the dice again either'
+    );
+
+    // The seat still knows a real takeover when it sees one: another
+    // browser (its own context, its own socket) on the same link, and the
+    // one that had the seat is the one that hears about it.
+    const otherBrowser = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    const secondTab = await otherBrowser.newPage();
+    const seatUrl = other.page.url();
+    await secondTab.goto(seatUrl);
+    await secondTab.waitForSelector('.bg-board', { timeout: 15000 });
+    await other.page.waitForSelector('#play-error, #game-gone', { timeout: 10000 });
+    const toast = await other.page.textContent('#play-error, #game-gone');
+    must(/somewhere else/i.test(toast) || /GONE/i.test(toast), `the old connection is told: "${toast.trim()}"`);
+    must(
+      !(await secondTab.locator('#play-error').count()),
+      'the browser that took the seat is playing, not apologising'
+    );
+    await other.page.screenshot({ path: `${SHOTS}/taken-over.png` });
+    await otherBrowser.close();
+
+    // 6: a fresh game on a clock, showing the delay.
     const p1 = await context.newPage();
     watch(p1, 'clock-p1');
     await p1.goto(`${BASE}/backgammon`);

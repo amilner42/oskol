@@ -32,7 +32,15 @@ defmodule OskolWeb.GameChannel do
       # registers this channel as the seat's live connection, and the join
       # reply must describe the room after that, or the joining client
       # would see itself as disconnected.
-      case GameServer.attach(game_id, token, self()) do
+      #
+      # Who this connection belongs to: the browser tab, which outlives both
+      # the channel and the socket under it -- a rejoin, a reload, a phone
+      # waking its websocket back up are all the same client. The room needs
+      # that to tell a reconnect from someone else taking the seat. A socket
+      # that named no client is its own.
+      client = socket.assigns[:client] || socket.transport_pid
+
+      case GameServer.attach(game_id, token, self(), client) do
         {:ok, player_id, state} ->
           Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
           socket = socket |> assign(:game_id, game_id) |> assign(:player_id, player_id)
@@ -95,9 +103,12 @@ defmodule OskolWeb.GameChannel do
     {:noreply, socket}
   end
 
-  # The same token attached somewhere else: that connection is now the seat,
-  # so this one stops rather than lingering as a second live view of it.
+  # Another browser attached to this seat: that connection is the seat now,
+  # so this one says so and stops rather than lingering as a second live
+  # view of it. The same browser coming back never gets here -- the room
+  # tells a reconnect from a takeover (`src/oskol/rooms/seat.gleam`).
   def handle_info(:seat_taken_over, socket) do
+    Logger.info("Seat #{socket.assigns.player_id} taken over in #{socket.assigns.game_id}")
     push(socket, "error", %{message: "This seat was opened somewhere else"})
     {:stop, :normal, socket}
   end

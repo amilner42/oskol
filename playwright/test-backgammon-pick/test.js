@@ -20,6 +20,11 @@ const SHOTS = process.env.PICK_SHOTS || 'playwright/screenshots/test-backgammon-
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function must(condition, message) {
+  if (!condition) throw new Error(message);
+  log(`ok: ${message}`);
+}
+
 async function stageWholeTurn(mover) {
   const source = '.bg-point.source, .bg-bar:has(.checker.pick)';
   for (let i = 0; i < 5; i++) {
@@ -124,6 +129,60 @@ async function main() {
     await picker.screenshot({ path: `${SHOTS}/03-picker-6-6.png` });
     await picker.click('#pick-confirm');
     log('Picked 6-6');
+
+    // A double is a two-die roll that came up twice: exactly two dice
+    // tumble, and the two the double earns wait out the tumble and then
+    // drop in beside them. Sampled structurally (which dice own a reel,
+    // what animation holds the others back) so it cannot go flaky on a
+    // slow machine, plus the opacity when the sample lands inside the wait.
+    const readDice = (page) =>
+      page.evaluate(() => {
+        const dice = [...document.querySelectorAll('.die:not(.mini)')];
+        const look = (d) => {
+          const tumble = d.querySelector('.die-tumble');
+          const anim = d.getAnimations().find((a) => a.animationName === 'die-earned');
+          return {
+            earned: d.classList.contains('earned'),
+            rolling: d.classList.contains('rolling'),
+            reel: !!tumble,
+            reelShown: tumble ? getComputedStyle(tumble).visibility !== 'hidden' : false,
+            opacity: Number(getComputedStyle(d).opacity),
+            waitMs: anim ? anim.effect.getComputedTiming().delay : null,
+            waited: anim ? anim.currentTime : null,
+          };
+        };
+        return dice.map(look);
+      });
+
+    await picker.waitForSelector('.die.earned', { timeout: 10000 });
+    const mid = await readDice(picker);
+    must(mid.length === 4, `a double puts four dice on the board (${mid.length})`);
+    must(mid.filter((d) => d.reel).length === 2, 'exactly two of them tumble');
+    must(
+      mid.filter((d) => d.earned).length === 2 && mid.filter((d) => d.earned).every((d) => !d.reel),
+      'the two the double earned never tumble'
+    );
+    must(
+      mid.filter((d) => d.earned).every((d) => d.waitMs >= 800),
+      'the earned pair waits out the tumble before it appears'
+    );
+    const stillWaiting = mid.filter((d) => d.earned && d.waited !== null && d.waited < d.waitMs);
+    must(
+      stillWaiting.every((d) => d.opacity < 0.5),
+      `while the dice are in the air the earned pair is not there yet (${stillWaiting.length} sampled)`
+    );
+    await picker.screenshot({ path: `${SHOTS}/07-doubles-tumbling.png` });
+
+    await sleep(1400);
+    const settled = await readDice(picker);
+    must(settled.length === 4 && settled.every((d) => d.opacity > 0.9), 'all four dice have settled');
+    must(settled.every((d) => !d.reelShown), 'no reel is left showing');
+    await picker.screenshot({ path: `${SHOTS}/08-doubles-settled.png` });
+    const seenByOpponent = await readDice(opener);
+    must(
+      seenByOpponent.length === 4 && seenByOpponent.filter((d) => d.reel).length === 2,
+      'the opponent watched the same two dice tumble'
+    );
 
     // A doubles pick: four dice, marked PICKED on both boards.
     await picker.waitForSelector('#dice-picked-tag', { timeout: 10000 });

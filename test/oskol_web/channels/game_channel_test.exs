@@ -20,6 +20,39 @@ defmodule OskolWeb.GameChannelTest do
     |> subscribe_and_join(OskolWeb.GameChannel, "game:#{game_id}", params)
   end
 
+  # A join from a named browser tab: `client` is what the real client mints
+  # per tab, and the transport is the websocket under it -- a fresh one every
+  # time the connection comes back. Pass `transport: :elsewhere` for a socket
+  # of its own; the default is the test process, whose pushes the test can
+  # see.
+  defp join_as(game_id, token, client, opts \\ []) do
+    socket = socket(OskolWeb.UserSocket, "user", %{client: client})
+
+    socket =
+      case Keyword.get(opts, :transport) do
+        :elsewhere -> %{socket | transport_pid: spawn(fn -> Process.sleep(:infinity) end)}
+        _ -> socket
+      end
+
+    {:ok, reply, joined} =
+      subscribe_and_join(socket, OskolWeb.GameChannel, "game:#{game_id}", %{"token" => token})
+
+    {reply, joined}
+  end
+
+  # A join from another browser. Every socket in a test shares the test
+  # process as its transport, which is what the room falls back to reading as
+  # "the same client", so a second tab has to be spelled out.
+  defp join_as_other_client(game_id, token) do
+    other_browser = spawn(fn -> Process.sleep(:infinity) end)
+
+    {:ok, reply, socket} =
+      %{socket(OskolWeb.UserSocket, "user", %{}) | transport_pid: other_browser}
+      |> subscribe_and_join(OskolWeb.GameChannel, "game:#{game_id}", %{"token" => token})
+
+    {reply, socket}
+  end
+
   test "joining a room that has not started returns the lobby payload" do
     %{game_id: game_id, t1: t1} = lobby()
     {reply, _socket} = join_room(game_id, t1)
@@ -111,14 +144,60 @@ defmodule OskolWeb.GameChannelTest do
     assert reply.payload.player_id == p1
   end
 
-  test "the same token twice takes the seat over and drops the older socket" do
+  test "the same client rejoining its seat resumes quietly" do
+    # A reload, a route change, a socket that came back: the same browser
+    # picking its game up again. It must not be told it lost the seat.
+    %{game_id: game_id, p1: p1, t1: t1} = started()
+    {_, first} = join_room(game_id, t1)
+    Process.unlink(first.channel_pid)
+    flush_updates()
+
+    {reply, second} = join_room(game_id, t1)
+    assert reply.payload.player_id == p1
+    refute_receive %Phoenix.Socket.Message{event: "error"}, 300
+    # The seat is live, and it is the new connection that holds it.
+    state = Game.get_server_state(game_id)
+    assert state.connections[p1].connected
+    assert state.connections[p1].pid == second.channel_pid
+  end
+
+  test "a tab whose socket dropped and came back is not a new player" do
+    # The phone slept and woke up: a brand new websocket, the same tab. The
+    # seat is identified by the tab, so the room resumes it in silence even
+    # though the old socket has not been noticed dying yet.
+    %{game_id: game_id, p1: p1, t1: t1} = started()
+    {_, first} = join_as(game_id, t1, "tab-1", transport: :elsewhere)
+    Process.unlink(first.channel_pid)
+    gone = Process.monitor(first.channel_pid)
+    flush_updates()
+
+    # The same tab on a brand new websocket, while the old one is still up.
+    {reply, second} = join_as(game_id, t1, "tab-1")
+    assert reply.payload.player_id == p1
+    refute_receive {:DOWN, ^gone, :process, _, _}, 300
+    refute_receive %Phoenix.Socket.Message{event: "error"}, 100
+    state = Game.get_server_state(game_id)
+    assert state.connections[p1].connected
+    assert state.connections[p1].pid == second.channel_pid
+
+    # A second tab on the same link is another client, whatever socket it
+    # arrives on, and the one holding the seat is told.
+    ref = Process.monitor(second.channel_pid)
+    {_, _} = join_as(game_id, t1, "tab-2")
+    assert_push "error", %{message: "This seat was opened somewhere else"}
+    assert_receive {:DOWN, ^ref, :process, _, _}, 1000
+  end
+
+  test "another browser on the same token takes the seat over and the old one is told" do
     %{game_id: game_id, p1: p1, t1: t1} = started()
     {_, first} = join_room(game_id, t1)
     Process.unlink(first.channel_pid)
     ref = Process.monitor(first.channel_pid)
+    flush_updates()
 
-    {reply, _second} = join_room(game_id, t1)
+    {reply, _second} = join_as_other_client(game_id, t1)
     assert reply.payload.player_id == p1
+    assert_push "error", %{message: "This seat was opened somewhere else"}
     assert_receive {:DOWN, ^ref, :process, _, _}, 1000
     # The seat is still live: the takeover must not have marked it away.
     assert Game.get_server_state(game_id).connections[p1].connected

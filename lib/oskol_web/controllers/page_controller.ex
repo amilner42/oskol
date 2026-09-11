@@ -22,7 +22,14 @@ defmodule OskolWeb.PageController do
       player_id = seat_for_token(game_id, params["t"]) ->
         guest_id = get_session(conn, :guest_id)
 
-        render(conn, :elm_game,
+        # `elm_game` is a whole document, so it takes neither layout. Wrapped
+        # in the root layout it would carry that layout's `app.js` as well as
+        # its own, and a page that loads the bundle twice boots two Elm apps:
+        # two sockets, two channel joins on one seat, and the second one
+        # taking the seat off the first.
+        conn
+        |> put_root_layout(false)
+        |> render(:elm_game,
           layout: false,
           game_id: game_id,
           slug: slug,

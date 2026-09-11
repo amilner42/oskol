@@ -147,6 +147,41 @@ defmodule Oskol.Game.RoomTest do
       assert state.connections[p1].connected
     end
 
+    test "a seat tells its own client coming back from another one taking it" do
+      # The room is told which client each connection belongs to (a socket's
+      # transport, one per browser). The same client reattaching is a
+      # reconnect and nothing is said to the connection it replaces; a
+      # different one takes the seat over, and the connection that had it
+      # hears about it. The rule itself is `oskol/rooms/seat`.
+      phone = sleeper()
+      %{game_id: game_id, p1: p1, t1: t1} = lobby("single")
+
+      # Same browser, new channel: quiet.
+      first = sleeper()
+      assert {:ok, ^p1, _} = Game.attach(game_id, t1, first, phone)
+      second = sleeper()
+      assert {:ok, ^p1, state} = Game.attach(game_id, t1, second, phone)
+      assert state.connections[p1].pid == second
+      assert state.connections[p1].connected
+      refute_receive :seat_taken_over, 100
+      assert Process.alive?(first)
+
+      # Another browser: the connection holding the seat is told.
+      Game.attach(game_id, t1, self(), phone)
+      laptop = sleeper()
+      assert {:ok, ^p1, state} = Game.attach(game_id, t1, sleeper(), laptop)
+      assert_receive :seat_taken_over, 100
+      assert state.connections[p1].connected
+
+      # And a seat nobody is holding just resumes, whoever turns up.
+      state = Game.get_server_state(game_id)
+      send(state.connections[p1].pid, :stop)
+      assert eventually(fn -> not Game.get_server_state(game_id).connections[p1].connected end)
+      assert {:ok, ^p1, state} = Game.attach(game_id, t1, self(), phone)
+      assert state.connections[p1].connected
+      refute_receive :seat_taken_over, 100
+    end
+
     test "a seat with a live player can only be reached with its own token" do
       pid = sleeper()
       %{game_id: game_id, p1: p1, t1: t1} = lobby("single", pid1: pid)

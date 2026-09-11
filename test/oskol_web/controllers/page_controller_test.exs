@@ -50,6 +50,19 @@ defmodule OskolWeb.PageControllerTest do
       refute html =~ t2
     end
 
+    test "the client is served exactly once", %{conn: conn} do
+      # This page is a whole document and takes no layout. Two copies of the
+      # bundle would boot two Elm apps in one browser, and the second one's
+      # channel would take the seat off the first: the player's own reconnect
+      # telling them their seat was opened somewhere else.
+      %{game_id: game_id, t1: t1} = Oskol.GameFixtures.started()
+      html = conn |> get(~p"/backgammon/#{game_id}?t=#{t1}") |> html_response(200)
+
+      assert length(String.split(html, "/assets/js/app.js")) - 1 == 1
+      assert length(String.split(html, ~s(id="elm-app"))) - 1 == 1
+      assert length(String.split(html, "<html")) - 1 == 1
+    end
+
     test "an unknown game slug is a 404", %{conn: conn} do
       %{game_id: game_id} = Oskol.GameFixtures.started()
       assert conn |> get("/checkers/#{game_id}") |> response(404)
