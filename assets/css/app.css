@@ -757,7 +757,7 @@
     /* Air above and below the board, so a sideways phone does not read as
        a board jammed against the bezel. It is also what the drop shadow
        falls into, which is why it is never less than --bg-drop. */
-    --bg-edge: 6px;
+    --bg-edge: 10px;
     /* The height is what drives the board -- unless the screen is too
        narrow to be proportionate to it (a squarish landscape), in which
        case the width has the last word and the board merely fits. The
