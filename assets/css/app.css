@@ -852,6 +852,64 @@
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
 }
 
+/* Backgammon on a desktop screen: the board takes the window. Below `lg`
+   the board is sized by width (a phone, a narrow window) and capped at a
+   fixed point height; on a big monitor that left it small in the middle
+   of the page. From 1024px up the point height is derived from the
+   window's height the way the landscape layout above does it -- what is
+   left of 100dvh once the page's padding, the header, the two identity
+   bars, the centre band, the gaps, the board's padding, border and drop
+   shadow are taken off, halved for the two rows of points -- capped by
+   the width beside the clock rail. Point width, the rails, the bar, the
+   trays, the checkers and the dice all follow from it.
+
+   The page becomes a single centred column as wide as the board and its
+   rail (`max-content`), so the header spans exactly the board, however
+   big it is. Nothing scrolls: the height formula is what guarantees it. */
+@media (min-width: 1024px) {
+  .bg-page {
+    --bg-page-py: 2rem;      /* sm:py-4, top and bottom */
+    --bg-header-h: 3rem;     /* the header row and the gap under it */
+    --bg-bars-h: 7rem;       /* two identity bars and the stack's gaps */
+    --bg-band-h: 4rem;       /* the centre band: dice, buttons, status */
+    --bg-gap: 0.5rem;        /* sm:gap-2, between the board's rows and columns */
+    --bg-pad: 0.75rem;       /* sm:p-3, the board's own padding */
+    --bg-drop: 6px;          /* the board's drop shadow */
+    /* 6px is the board's border. The width cap is the board's own ratio
+       (a point is 0.21 of its height wide; 12 points, three rails and the
+       gaps across) against what is left beside the 15rem rail, its gap
+       and the page's padding. */
+    --bg-point-h: min(
+      calc((100dvh - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-gap) - 2 * var(--bg-pad) - 6px - var(--bg-drop)) / 2),
+      calc((100vw - 26rem) / 3.4)
+    );
+    --bg-pw: calc(var(--bg-point-h) * 0.21);
+    --bg-half: calc(var(--bg-pw) * 6 + 5 * 0.25rem); /* six points and their sm:gap-1 */
+    display: grid;
+    grid-template-columns: minmax(0, max-content);
+    grid-template-rows: auto minmax(0, 1fr);
+    justify-content: center;
+  }
+  .bg-page .bg-main { width: 100%; }
+  /* The stack is exactly as wide as the board, so the identity bars hug it. */
+  .bg-page .bg-stack { width: max-content; max-width: 100%; justify-self: center; }
+  .bg-page .bg-board { width: max-content; max-width: 100%; }
+  .bg-page .bg-grid {
+    /* The halves are exactly six points wide, so no button and no message
+       in a centre band can ever widen the board or shift its points. */
+    grid-template-columns: auto var(--bg-half) auto var(--bg-half) auto;
+  }
+  .bg-page .bg-point { height: var(--bg-point-h); }
+  .bg-page .bg-cube-rail,
+  .bg-page .bg-tray { width: calc(var(--bg-pw) * 1.5); }
+  .bg-page .bg-bar { width: calc(var(--bg-pw) * 1.15); }
+  .bg-page .bg-band { min-height: var(--bg-band-h); }
+  /* The dice grow with the board, within reason. */
+  .bg-page .bg-band .die { --die-size: clamp(2.5rem, calc(var(--bg-pw) * 0.7), 3.5rem); }
+  .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
+  .bg-page .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
+}
+
 /* Chess: a plain 8x8 board in the multicade blues. Pieces are solid glyphs
    colored per side so both read crisply on light and dark squares. */
 .chess-board {

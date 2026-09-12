@@ -9,7 +9,8 @@ play, undo) lives in the board's centre band.
 
 Turn the phone and the board takes the screen: in landscape the layout is
 driven by height instead of width (`.bg-page` in app.css derives every
-board dimension from `100dvh`), and the chrome -- the header and both
+board dimension from `100dvh`; a desktop window gets the same treatment,
+so a big monitor gets a big board), and the chrome -- the header and both
 identity bars, clocks and all -- moves into a column beside the board
 rather than above and below it. The class hooks that landscape needs
 (`bg-page`, `bg-main`, `bg-stack`, `bg-header`, `bg-grid`, `bg-points`,
@@ -555,9 +556,13 @@ view ctx =
             , tap = tapContext ctx legalMoves sources
             }
     in
+    -- On a desktop screen (`lg` and up) the board is sized by the window's
+    -- height, not by a fixed width: `.bg-page` in app.css derives every
+    -- board dimension from `100dvh`, and the page becomes a column as wide
+    -- as the board and its rail, so the header spans exactly that.
     div [ class "bg-page paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2" ]
         [ viewHeader ctx
-        , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl grid gap-3 sm:gap-4 content-center lg:grid-cols-[minmax(0,1fr)_15rem]" ]
+        , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid gap-3 sm:gap-4 content-center lg:grid-cols-[minmax(0,1fr)_15rem]" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center gap-2" ]
                 [ viewPlayerBar ctx them False
                 , viewBoard board
@@ -672,7 +677,7 @@ viewHeader ctx =
             else
                 "MATCH TO " ++ String.fromInt target
     in
-    div [ class "bg-header w-full max-w-5xl flex items-center justify-between gap-2" ]
+    div [ class "bg-header w-full max-w-5xl lg:max-w-none flex items-center justify-between gap-2" ]
         [ div [ class "flex items-center gap-2 sm:gap-3 min-w-0" ]
             [ span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap" ] [ text "BACKGAMMON" ]
             , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--ink)", style "background" "#fff" ]
