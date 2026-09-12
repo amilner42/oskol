@@ -559,6 +559,96 @@ suite =
                             Expect.fail "no backgammon fixture"
              ]
             )
+        , describe "the mover's dice"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                moverOf u =
+                    Protocol.sceneData (D.nullable D.string) "to_move" u.scene
+                        |> Maybe.withDefault Nothing
+                        |> Maybe.withDefault ""
+
+                colorOf id u =
+                    Protocol.findPlayer id u.scene
+                        |> Maybe.andThen (Protocol.playerData D.string "color")
+                        |> Maybe.withDefault "?"
+
+                other id =
+                    if id == "p1" then
+                        "p2"
+
+                    else
+                        "p1"
+
+                -- The dice in the left and the right halves of the centre band.
+                diceInBand index playerId u =
+                    View.view (ctx playerId u View.init)
+                        |> Query.fromHtml
+                        |> Query.findAll [ class "bg-band" ]
+                        |> Query.index index
+                        |> Query.findAll [ class "die" ]
+             in
+             [ test "they are thrown in the mover's checker colour" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                color =
+                                    colorOf (moverOf u) u
+
+                                check playerId =
+                                    View.view (ctx playerId u View.init)
+                                        |> Query.fromHtml
+                                        |> Query.findAll [ class "die" ]
+                                        |> Query.each (Query.has [ class color ])
+                            in
+                            Expect.all [ \_ -> check "p1", \_ -> check "p2", \_ -> List.member color [ "white", "black" ] |> Expect.equal True ] ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the mover sees them on their own side, the right half" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                n =
+                                    Protocol.zoneTokens "dice" u.scene |> List.length
+                            in
+                            Expect.all
+                                [ \_ -> diceInBand 0 (moverOf u) u |> Query.count (Expect.equal 0)
+                                , \_ -> diceInBand 1 (moverOf u) u |> Query.count (Expect.equal n)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the opponent sees them across the board, the left half" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                n =
+                                    Protocol.zoneTokens "dice" u.scene |> List.length
+
+                                watcher =
+                                    other (moverOf u)
+
+                                theirs =
+                                    { u | legal = [] }
+                            in
+                            Expect.all
+                                [ \_ -> diceInBand 0 watcher theirs |> Query.count (Expect.equal n)
+                                , \_ -> diceInBand 1 watcher theirs |> Query.count (Expect.equal 0)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             ]
+            )
         , describe "the dice roll animation"
             [ test "a dice_rolled event is a roll watched landing; other events are not" <|
                 \_ ->

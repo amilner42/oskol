@@ -629,6 +629,13 @@
   box-shadow: 3px 3px 0 0 var(--ink); background: #fff;
 }
 .die.used { opacity: 0.35; box-shadow: none; }
+.die-pip { background: var(--ink); }
+/* Each player throws their own dice, in their checkers' colour: white with
+   dark pips, or dark with white pips and the black checker's inner ring. */
+.die.black { background: var(--ink); box-shadow: 3px 3px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
+.die.black .die-pip { background: #fff; }
+.die.black .die-tumble { background: var(--ink); }
+.die.black.used { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
 /* Rolling dice: a reel of five faces laid over the settled one, walked by a
    single steps() animation -- the same trick the library's game art uses --
    and hidden for good when it lands. The die shakes underneath it. Both
@@ -839,6 +846,7 @@
   .bg-page .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
   /* four dice (doubles) and a message have to share one half-band */
   .bg-page .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--ink); }
+  .bg-page .bg-band .die.black { box-shadow: 2px 2px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
   .bg-page .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   /* the pips shrink with the face, or they run into each other */
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
