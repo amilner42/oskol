@@ -726,6 +726,14 @@
 }
 .die.used { opacity: 0.35; box-shadow: none; }
 .die-pip { background: var(--ink); }
+/* The dice row: its gap is a variable so a die that has not landed yet can
+   cancel it (see `die-earned`). For the mover the row is a control -- a
+   tap hands "next" to the die after -- and the next die stands up. */
+.dice-row { --dice-gap: 0.5rem; gap: var(--dice-gap); }
+@media (min-width: 640px) { .dice-row { --dice-gap: 0.75rem; } }
+.dice-row.rotates { cursor: pointer; }
+.die.next { transform: translateY(-4px); box-shadow: 0 0 0 3px var(--bg-accent), 3px 3px 0 0 var(--ink); }
+.die.black.next { box-shadow: 0 0 0 3px var(--bg-accent), 3px 3px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
 /* Each player throws their own dice, in their checkers' colour: white with
    dark pips, or dark with white pips and the black checker's inner ring. */
 .die.black { background: var(--ink); box-shadow: 3px 3px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
@@ -763,8 +771,12 @@
   .die.earned { animation: die-earned 0.28s ease-out 0.92s backwards; }
 }
 @keyframes die-reel { to { transform: translateY(-80%); } }
+/* A die a double earns takes no room until it lands: zero wide, no
+   border, no shadow, and its gap cancelled, so the two dice in the air
+   sit exactly where a plain roll's would and the throw gives nothing
+   away. Then it opens out beside them. */
 @keyframes die-earned {
-  from { opacity: 0; transform: scale(0.5); }
+  from { opacity: 0; transform: scale(0.5); width: 0; border-width: 0; box-shadow: none; margin-left: calc(-1 * var(--dice-gap)); }
   70% { opacity: 1; transform: scale(1.12); }
   to { opacity: 1; transform: none; }
 }
@@ -956,8 +968,10 @@
   .bg-page #bg-no-moves { font-size: 7px; min-width: 0; }
   .bg-page .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
   /* four dice (doubles) and a message have to share one half-band */
+  .bg-page .bg-band .dice-row { --dice-gap: 0.3rem; }
   .bg-page .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--ink); }
   .bg-page .bg-band .die.black { box-shadow: 2px 2px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
+  .bg-page .bg-band .die.next { box-shadow: 0 0 0 2px var(--bg-accent), 2px 2px 0 0 var(--ink); }
   .bg-page .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   /* the pips shrink with the face, or they run into each other */
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }

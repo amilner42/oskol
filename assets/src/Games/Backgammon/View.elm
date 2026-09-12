@@ -55,6 +55,7 @@ type alias Model =
     { selectedFrom : Maybe String
     , drag : Drag.State String Msg -- the item a drag carries is my checker colour
     , plans : List ( String, List Move ) -- for the active drag: each destination and the moves that get there
+    , rotation : Int -- how many times the dice were tapped this roll: which unused die is next
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
     , roll : Roll -- the dice on the board, and whether this client saw them land
@@ -98,6 +99,7 @@ type Msg
     | PlayMove String String
     | PlayPair Move Move
     | PlayPath (List Move) -- one checker, several dice, in order
+    | RotateDice -- the next die becomes the one after it; the selection stays
     | Clear
     | Simple String
     | Rematch
@@ -127,6 +129,7 @@ init =
     { selectedFrom = Nothing
     , drag = Drag.idle
     , plans = []
+    , rotation = 0
     , autoRolled = False
     , picker = Nothing
 
@@ -143,7 +146,7 @@ replay the tumble on every tap.
 -}
 reset : Model -> Model
 reset model =
-    { init | roll = model.roll }
+    { init | roll = model.roll, rotation = model.rotation }
 
 
 {-| Watch the channel for dice landing. A `dice_rolled` event is this client
@@ -171,7 +174,8 @@ noteEvents events model =
         model
 
     else
-        { model | roll = { seq = model.roll.seq + rolls, watched = True } }
+        -- a fresh roll: the dice are next in the order they land
+        { model | roll = { seq = model.roll.seq + rolls, watched = True }, rotation = 0 }
 
 
 {-| Roll for the viewer when there is nothing to ask: at the start of a
@@ -213,6 +217,9 @@ update msg model =
         Clear ->
             ( reset model, NoOut )
 
+        RotateDice ->
+            ( { model | rotation = model.rotation + 1 }, NoOut )
+
         PlayMove from to ->
             ( reset model, Send (encodeMove from to) )
 
@@ -223,7 +230,8 @@ update msg model =
             ( reset model, SendMany (List.map (\m -> encodeMove m.from m.to) steps) )
 
         Simple name ->
-            ( reset model, Send (Protocol.encodeAction name []) )
+            -- a turn played or a roll asked for: the next roll starts unrotated
+            ( { init | roll = model.roll }, Send (Protocol.encodeAction name []) )
 
         Rematch ->
             ( model, WantRematch )
@@ -398,9 +406,9 @@ type alias TapContext =
 
   - a selection is active: play selected -> dest if legal; tapping the
     selected checker again plays it with the next die (the first unused
-    one, reading the dice left to right) if that move is legal, and just
-    clears the selection if not -- so a double tap is a fast move; a tap
-    on another of my source points switches the selection;
+    one, reading the dice left to right, that can play it), and just
+    clears the selection if none can -- so a double tap is a fast move; a
+    tap on another of my source points switches the selection;
   - no selection, dest is one of my movable points (or the bar): select it;
   - exactly one legal move lands on dest: play it -- unless the dice are
     doubles and a second identical move would land a second checker on an
@@ -588,19 +596,21 @@ reachableFrom tc origin =
 
 
 {-| The move that plays `from` with the next die: the first die not yet
-used this turn, in the order the dice sit on the board. Nothing if that
-die has no legal move from there -- the next tap does not fall through
-to the other die.
+used this turn, in the order the dice sit on the board (rotated by taps
+on them), that has a legal move from there. If the leftmost die cannot
+play that checker but the one after it can, that one plays -- no need to
+rotate first. Nothing if no die can.
 -}
 nextDieMove : TapContext -> String -> Maybe Move
 nextDieMove tc from =
-    List.head tc.unusedDice
-        |> Maybe.andThen
+    tc.unusedDice
+        |> List.filterMap
             (\die ->
                 tc.moves
                     |> List.filter (\m -> m.from == from && m.die == die)
                     |> List.head
             )
+        |> List.head
 
 
 {-| At most two dice values are ever distinct; two or more unused dice with
@@ -786,6 +796,28 @@ viewDragGhost d =
         ]
 
 
+{-| The dice not yet used this turn, in the order they are next: as they
+sit on the board, rotated once per tap on the dice (`RotateDice`), so
+the first of them is always the next die.
+-}
+unusedDiceTokens : Ctx -> List Token
+unusedDiceTokens ctx =
+    let
+        unused =
+            Protocol.zoneTokens "dice" ctx.scene
+                |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
+
+        by =
+            case List.length unused of
+                0 ->
+                    0
+
+                n ->
+                    modBy n ctx.model.rotation
+    in
+    List.drop by unused ++ List.take by unused
+
+
 tapContext : Ctx -> List Move -> List String -> TapContext
 tapContext ctx legalMoves sources =
     let
@@ -806,8 +838,7 @@ tapContext ctx legalMoves sources =
                         |> List.length
 
         unusedDice =
-            Protocol.zoneTokens "dice" ctx.scene
-                |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
+            unusedDiceTokens ctx
                 |> List.filterMap (Protocol.tokenProp D.int "value")
 
         theirsAt point =
@@ -1624,8 +1655,36 @@ viewRoll board =
 
             else
                 []
+        -- The mover's dice are a control: the next die (the one a second
+        -- tap on a checker plays) stands up, and a tap on the dice makes
+        -- the die after it the next one. With a checker selected, the die
+        -- that stands up is the one that will actually play it: the first
+        -- that can, reading left to right. Nobody else's dice do anything.
+        myMove =
+            toMoveId ctx == Just ctx.playerId && ctx.scene.phase == "moving"
+
+        unused =
+            unusedDiceTokens ctx
+
+        next =
+            if myMove then
+                case ctx.model.selectedFrom |> Maybe.andThen (nextDieMove board.tap) of
+                    Just m ->
+                        unused
+                            |> List.filter (\t -> Protocol.tokenProp D.int "value" t == Just m.die)
+                            |> List.head
+                            |> Maybe.map .id
+
+                    Nothing ->
+                        List.head unused |> Maybe.map .id
+
+            else
+                Nothing
+
+        rotates =
+            myMove && List.length unused >= 2
     in
-    viewDice (moverColor ctx) ctx.model.roll dice ++ pickedTag ++ danced
+    viewDice { color = moverColor ctx, next = next, rotates = rotates } ctx.model.roll dice ++ pickedTag ++ danced
 
 
 {-| The dice of the turn, in the mover's colour. They are keyed by the roll that produced them, so
@@ -1635,20 +1694,33 @@ patches the same elements (the key has not moved), so marking a die spent
 never restarts the animation.
 
 Two of them tumble, never four: a double is a two-die roll, and the pair
-it earns lands (`.die.earned`) when the tumble is over.
+it earns lands (`.die.earned`) when the tumble is over -- and takes no
+room until then, so the throw does not give the double away.
 
 None of them move unless this client watched the roll land (`Roll.watched`):
 dice that arrived in a snapshot are already on the table.
 
+For the mover, `next` names the die a second tap on a checker plays, and
+`rotates` makes the row a control that hands "next" to the die after it.
+
 -}
-viewDice : String -> Roll -> List Token -> List (Html Msg)
-viewDice color roll dice =
+viewDice : { color : String, next : Maybe String, rotates : Bool } -> Roll -> List Token -> List (Html Msg)
+viewDice opts roll dice =
     [ Keyed.node "div"
-        [ class "flex items-center gap-2 sm:gap-3" ]
+        ([ classList [ ( "dice-row flex items-center", True ), ( "rotates", opts.rotates ) ]
+         , Html.Attributes.id "dice-row"
+         ]
+            ++ (if opts.rotates then
+                    [ onClick RotateDice, title "Tap to play the other die next" ]
+
+                else
+                    []
+               )
+        )
         (List.map
             (\token ->
                 ( "roll-" ++ String.fromInt roll.seq ++ "-" ++ token.id
-                , viewDie color roll.watched (dieIndex token) token
+                , viewDie opts.color (opts.next == Just token.id) roll.watched (dieIndex token) token
                 )
             )
             dice
@@ -1795,8 +1867,8 @@ for dice that came out of a snapshot, and then a die is its face and
 nothing else -- no reel in the DOM, no classes, no throw to replay.
 
 -}
-viewDie : String -> Bool -> Int -> Token -> Html Msg
-viewDie color watched index token =
+viewDie : String -> Bool -> Bool -> Int -> Token -> Html Msg
+viewDie color next watched index token =
     let
         value =
             Protocol.tokenProp D.int "value" token |> Maybe.withDefault 1
@@ -1818,9 +1890,11 @@ viewDie color watched index token =
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
             , ( "used", used )
+            , ( "next", next && not used )
             , ( "rolling", thrown )
             , ( "earned", earned )
             ]
+        , attribute "data-die" token.id
         ]
         (div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips value)
             :: (if thrown then
