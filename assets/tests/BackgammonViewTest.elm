@@ -51,7 +51,7 @@ suite =
                         |> Expect.equal Nothing
             , test "playing a pair sends both moves in order" <|
                 \_ ->
-                    View.update (PlayPair { from = "13", to = "9" } { from = "11", to = "9" }) View.init
+                    View.update (PlayPair { from = "13", to = "9", die = 4 } { from = "11", to = "9", die = 2 }) View.init
                         |> Tuple.second
                         |> Expect.equal
                             (SendMany
@@ -80,22 +80,22 @@ suite =
              in
              [ test "exactly one legal move landing on the point plays it" <|
                 \_ ->
-                    View.resolveTap { base | moves = [ { from = "13", to = "8" } ], unusedDice = [ 5, 3 ] } "8"
+                    View.resolveTap { base | moves = [ { from = "13", to = "8", die = 5 } ], unusedDice = [ 5, 3 ] } "8"
                         |> Expect.equal (Just (PlayMove "13" "8"))
              , test "two moves from different origins onto an empty point stage the pair" <|
                 \_ ->
                     View.resolveTap
                         { base
-                            | moves = [ { from = "13", to = "9" }, { from = "11", to = "9" }, { from = "24", to = "20" } ]
+                            | moves = [ { from = "13", to = "9", die = 4 }, { from = "11", to = "9", die = 2 }, { from = "24", to = "20", die = 4 } ]
                             , unusedDice = [ 4, 2 ]
                         }
                         "9"
-                        |> Expect.equal (Just (PlayPair { from = "13", to = "9" } { from = "11", to = "9" }))
+                        |> Expect.equal (Just (PlayPair { from = "13", to = "9", die = 4 } { from = "11", to = "9", die = 2 }))
              , test "two moves onto a point I already occupy are ambiguous" <|
                 \_ ->
                     View.resolveTap
                         { base
-                            | moves = [ { from = "13", to = "9" }, { from = "11", to = "9" } ]
+                            | moves = [ { from = "13", to = "9", die = 4 }, { from = "11", to = "9", die = 2 } ]
                             , mineAt =
                                 \loc ->
                                     if loc == "9" then
@@ -111,7 +111,7 @@ suite =
                 \_ ->
                     View.resolveTap
                         { base
-                            | moves = [ { from = "13", to = "10" } ]
+                            | moves = [ { from = "13", to = "10", die = 3 } ]
                             , mineAt =
                                 \loc ->
                                     if loc == "13" then
@@ -122,12 +122,12 @@ suite =
                             , unusedDice = [ 3, 3, 3, 3 ]
                         }
                         "10"
-                        |> Expect.equal (Just (PlayPair { from = "13", to = "10" } { from = "13", to = "10" }))
+                        |> Expect.equal (Just (PlayPair { from = "13", to = "10", die = 3 } { from = "13", to = "10", die = 3 }))
              , test "doubles with one checker at the origin play a single move" <|
                 \_ ->
                     View.resolveTap
                         { base
-                            | moves = [ { from = "13", to = "10" } ]
+                            | moves = [ { from = "13", to = "10", die = 3 } ]
                             , mineAt =
                                 \loc ->
                                     if loc == "13" then
@@ -143,7 +143,7 @@ suite =
                 \_ ->
                     View.resolveTap
                         { base
-                            | moves = [ { from = "3", to = "off" } ]
+                            | moves = [ { from = "3", to = "off", die = 3 } ]
                             , mineAt =
                                 \loc ->
                                     if loc == "3" then
@@ -159,7 +159,7 @@ suite =
                 \_ ->
                     View.resolveTap
                         { base
-                            | moves = [ { from = "8", to = "5" }, { from = "13", to = "8" } ]
+                            | moves = [ { from = "8", to = "5", die = 3 }, { from = "13", to = "8", die = 5 } ]
                             , sources = [ "8", "13" ]
                             , unusedDice = [ 5, 3 ]
                         }
@@ -169,7 +169,7 @@ suite =
                 \_ ->
                     View.resolveTap
                         { base
-                            | moves = [ { from = "13", to = "9" }, { from = "11", to = "9" }, { from = "12", to = "9" } ]
+                            | moves = [ { from = "13", to = "9", die = 4 }, { from = "11", to = "9", die = 2 }, { from = "12", to = "9", die = 3 } ]
                             , unusedDice = [ 4, 2 ]
                         }
                         "9"
@@ -179,23 +179,70 @@ suite =
                     View.resolveTap
                         { base
                             | selected = Just "13"
-                            , moves = [ { from = "13", to = "8" }, { from = "6", to = "8" } ]
+                            , moves = [ { from = "13", to = "8", die = 5 }, { from = "6", to = "8", die = 2 } ]
                             , sources = [ "13", "6" ]
                         }
                         "8"
                         |> Expect.equal (Just (PlayMove "13" "8"))
-             , test "with a selection, tapping the selected point clears it" <|
+             , test "with a selection and no dice left, tapping the selected point clears it" <|
                 \_ ->
                     View.resolveTap
-                        { base | selected = Just "13", moves = [ { from = "13", to = "8" } ], sources = [ "13" ] }
+                        { base | selected = Just "13", moves = [ { from = "13", to = "8", die = 5 } ], sources = [ "13" ] }
                         "13"
                         |> Expect.equal (Just Clear)
+             , test "tapping the selected checker again plays it with the next die" <|
+                \_ ->
+                    -- dice 5 then 3, both unused: the 5 goes first
+                    View.resolveTap
+                        { base
+                            | selected = Just "13"
+                            , moves = [ { from = "13", to = "10", die = 3 }, { from = "13", to = "8", die = 5 } ]
+                            , sources = [ "13" ]
+                            , unusedDice = [ 5, 3 ]
+                        }
+                        "13"
+                        |> Expect.equal (Just (PlayMove "13" "8"))
+             , test "the next die is the first unused one, reading left to right" <|
+                \_ ->
+                    -- the 5 is spent: the 3 is next
+                    View.resolveTap
+                        { base
+                            | selected = Just "13"
+                            , moves = [ { from = "13", to = "10", die = 3 } ]
+                            , sources = [ "13" ]
+                            , unusedDice = [ 3 ]
+                        }
+                        "13"
+                        |> Expect.equal (Just (PlayMove "13" "10"))
+             , test "if the next die cannot play that checker, the second tap only clears" <|
+                \_ ->
+                    -- the 5 is next but only the 3 is legal from 13: no fall-through
+                    View.resolveTap
+                        { base
+                            | selected = Just "13"
+                            , moves = [ { from = "13", to = "10", die = 3 } ]
+                            , sources = [ "13" ]
+                            , unusedDice = [ 5, 3 ]
+                        }
+                        "13"
+                        |> Expect.equal (Just Clear)
+             , test "the second tap works from the bar too" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | selected = Just "bar"
+                            , moves = [ { from = "bar", to = "21", die = 4 }, { from = "bar", to = "23", die = 2 } ]
+                            , sources = [ "bar" ]
+                            , unusedDice = [ 2, 4 ]
+                        }
+                        "bar"
+                        |> Expect.equal (Just (PlayMove "bar" "23"))
              , test "with a selection, tapping another origin switches the selection" <|
                 \_ ->
                     View.resolveTap
                         { base
                             | selected = Just "13"
-                            , moves = [ { from = "13", to = "8" }, { from = "6", to = "2" } ]
+                            , moves = [ { from = "13", to = "8", die = 5 }, { from = "6", to = "2", die = 4 } ]
                             , sources = [ "13", "6" ]
                         }
                         "6"
