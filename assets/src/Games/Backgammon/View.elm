@@ -692,7 +692,7 @@ viewHeader ctx =
                     )
                 ]
             , if crawford then
-                span [ class "pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--bg-sky)", style "color" "var(--bg-sky)" ] [ text "CRAWFORD" ]
+                span [ class "pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--bg-accent)", style "color" "var(--bg-accent)" ] [ text "CRAWFORD" ]
 
               else
                 text ""
@@ -931,10 +931,10 @@ viewHalf board top band bottom =
 pointColor : Int -> String
 pointColor index =
     if modBy 2 index == 0 then
-        "var(--bg-sky)"
+        "var(--bg-point-a)"
 
     else
-        "var(--bg-sky-pale)"
+        "var(--bg-point-b)"
 
 
 viewPoint : Board -> Bool -> Int -> Int -> Html Msg
@@ -1397,7 +1397,7 @@ viewRoll board =
             if List.any (\t -> Protocol.tokenProp D.bool "picked" t == Just True) dice then
                 [ span
                     [ class "pixel text-[7px] px-1 py-0.5"
-                    , style "background" "var(--bg-sky)"
+                    , style "background" "var(--bg-accent)"
                     , style "color" "#fff"
                     , title "These dice were picked, not rolled"
                     , Html.Attributes.id "dice-picked-tag"
@@ -1464,7 +1464,7 @@ viewNoMoves : Bool -> String -> Html Msg
 viewNoMoves myTurn moverName =
     span
         [ class "pixel text-[8px] sm:text-[9px] px-1 leading-relaxed text-center"
-        , style "color" "var(--bg-sky)"
+        , style "color" "var(--bg-accent)"
         , title "Nothing this roll can play: the turn passes"
         , Html.Attributes.id "bg-no-moves"
         ]
@@ -1812,7 +1812,7 @@ viewGameOver ctx winners =
     in
     div [ class "fixed inset-0 z-50 flex items-center justify-center p-4", style "background" "rgba(35, 36, 58, 0.55)" ]
         [ div [ class "bg-card bg-white p-6 sm:p-8 max-w-md w-full text-center flex flex-col gap-4" ]
-            [ span [ class "pixel text-[10px]", style "color" "var(--bg-sky)" ] [ text "GAME OVER" ]
+            [ span [ class "pixel text-[10px]", style "color" "var(--bg-accent)" ] [ text "GAME OVER" ]
             , span [ class "pixel text-base sm:text-lg leading-relaxed" ]
                 [ text
                     (if iWon then

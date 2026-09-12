@@ -563,21 +563,25 @@
 .card-face.selected { box-shadow: 3px 3px 0 0 var(--pen); border-color: var(--pen); }
 .new-card::before, .new-card::after { background-color: var(--highlighter) !important; }
 
-/* Backgammon: the table is one dark slab. The opponent's identity bar, the
-   board's frame and the viewer's bar are the same ink; two pale felt fields
-   are recessed into it; the cube rail (left), the bar (centre) and the
-   bear-off trays (right) are parts of the frame, not boxes on the field.
-   Sky is the accent: the points, the player to act, the dice on offer.
+/* Backgammon: the table is one wooden slab. The opponent's identity bar,
+   the board's frame and the viewer's bar are the same walnut; two light
+   oak fields are recessed into it; the cube rail (left), the bar (centre)
+   and the bear-off trays (right) are parts of the frame, not boxes on the
+   field. Points alternate walnut and tan; amber is the accent: the player
+   to act, a picked checker, an offer.
 
    Every board dimension follows from one number, the point height
    (`--bg-point-h`): set here for portrait (width-driven, capped), by the
    landscape block below for a sideways phone and by the desktop block for
    a big window, both of which derive it from the viewport height. */
 :root {
-  --bg-sky: #3fa7d6;
-  --bg-sky-pale: #cfe0ec;
-  --bg-felt: #eaf1f7;
-  --bg-slot: #363852;   /* a recess in the frame */
+  --bg-frame: #4a3223;      /* walnut: the slab, the frame, the bars */
+  --bg-slot: #38251a;       /* a recess in the frame */
+  --bg-felt: #ecdcbf;       /* light oak */
+  --bg-point-a: #7b4b2e;    /* walnut points */
+  --bg-point-b: #d6b48c;    /* tan points */
+  --bg-accent: #e3a63a;     /* amber: the player to act, a picked checker, an offer */
+  --bg-sky: #3fa7d6;        /* the other tables' accent (their bars, below) */
 }
 .bg-page {
   --bg-point-h: 9rem;
@@ -600,18 +604,18 @@
 
 /* The slab: bars and board in one rounded frame with a soft drop. */
 .bg-stack {
-  background: var(--ink);
+  background: var(--bg-frame);
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 14px 34px rgba(35, 36, 58, 0.28);
+  box-shadow: 0 14px 34px rgba(40, 24, 12, 0.38);
 }
-.bg-board { background: var(--ink); padding: var(--bg-lip) var(--bg-frame-w); }
+.bg-board { background: var(--bg-frame); padding: var(--bg-lip) var(--bg-frame-w); }
 .bg-grid { gap: 0; }
 /* A felt half: six points, the band, six points; recessed into the frame. */
 .bg-half {
   background: var(--bg-felt);
   border-radius: 6px;
-  box-shadow: inset 0 2px 5px rgba(35, 36, 58, 0.22);
+  box-shadow: inset 0 2px 5px rgba(60, 38, 20, 0.3);
 }
 .bg-points { padding: 0 3px; }
 .bg-point { position: relative; height: var(--bg-point-h); }
@@ -626,9 +630,9 @@
 /* Where a picked-up checker may go is shown (`selected`, `drop-ghost`);
    which checkers could be picked up is not (`.bg-point.source` is a hook
    for interaction and tests, and paints nothing). */
-.bg-point.selected::before { background: color-mix(in oklab, var(--point) 40%, var(--ink)); }
+.bg-point.selected::before { background: color-mix(in oklab, var(--point) 45%, var(--bg-frame)); }
 .bg-band { min-height: var(--bg-band-h); }
-.checker.picked { transform: translateY(-4px); box-shadow: 0 0 0 3px var(--bg-sky), 0 6px 0 0 rgba(35, 36, 58, 0.25); }
+.checker.picked { transform: translateY(-4px); box-shadow: 0 0 0 3px var(--bg-accent), 0 6px 0 0 rgba(40, 24, 12, 0.3); }
 .checker {
   width: 84%;
   aspect-ratio: 1;
@@ -639,7 +643,7 @@
 }
 .checker.white {
   background: #fff;
-  box-shadow: inset 0 0 0 3px rgba(35, 36, 58, 0.08), 0 1px 0 0 rgba(35, 36, 58, 0.35);
+  box-shadow: inset 0 0 0 3px rgba(35, 36, 58, 0.08), 0 1px 0 0 rgba(40, 24, 12, 0.4);
 }
 .checker.black {
   background: var(--ink);
@@ -656,7 +660,7 @@
   z-index: 60;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  filter: drop-shadow(3px 4px 0 rgba(35, 36, 58, 0.35));
+  filter: drop-shadow(3px 4px 0 rgba(40, 24, 12, 0.4));
 }
 .bg-drag-ghost .checker { width: 1.4rem; }
 @media (min-width: 640px) { .bg-drag-ghost .checker { width: 1.9rem; } }
@@ -758,8 +762,8 @@
 /* A clock held by a delay: the number stops moving, so the seconds still
    free are shown beside it and the frozen figure is dimmed. */
 .delay-pip {
-  border: 2px solid var(--bg-sky);
-  color: var(--bg-sky);
+  border: 2px solid var(--bg-accent);
+  color: var(--bg-accent);
   background: #fff;
   padding: 0 3px;
   line-height: 1.4;
@@ -784,32 +788,32 @@
 @media (min-width: 640px) { .cube { width: 2.4rem; height: 2.4rem; } }
 /* A double on offer: the cube steps forward at the offered value. */
 .cube.pending {
-  border-color: var(--bg-sky);
-  box-shadow: 0 0 0 3px var(--bg-sky), 0 3px 0 3px rgba(0, 0, 0, 0.45);
+  border-color: var(--bg-accent);
+  box-shadow: 0 0 0 3px var(--bg-accent), 0 3px 0 3px rgba(0, 0, 0, 0.45);
   transform: scale(1.2);
 }
-.btn-arcade.sky { background: var(--bg-sky); color: #fff; }
+.btn-arcade.sky { background: var(--bg-accent); color: var(--bg-frame); }
 .btn-arcade.plain { background: #fff; color: var(--ink); }
 /* Identity bars: the top and bottom of the slab. White on ink; the player
    to act carries the sky treatment. Scoped to the backgammon page: the
    generic and chess tables draw their bars on paper. */
-.bg-page .player-bar { border: 0; box-shadow: none; background: var(--ink); color: #fff; }
-.bg-page .player-bar.active { background: color-mix(in oklab, var(--bg-sky) 30%, var(--ink)); }
+.bg-page .player-bar { border: 0; box-shadow: none; background: var(--bg-frame); color: #fff; }
+.bg-page .player-bar.active { background: color-mix(in oklab, var(--bg-accent) 32%, var(--bg-frame)); }
 .bg-page .swatch { border-color: rgba(255, 255, 255, 0.75); }
-.bg-page .swatch.black { background: var(--ink); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
+.bg-page .swatch.black { background: var(--ink); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
 .bg-page .bar-turn { color: #fff; }
 .bg-page .bar-pips { color: rgba(255, 255, 255, 0.6); }
-.bg-page .bar-tag.you { background: var(--bg-sky); color: #fff; }
+.bg-page .bar-tag.you { background: var(--bg-accent); color: var(--bg-frame); }
 .bg-page .bar-tag.outline { border: 2px solid rgba(255, 255, 255, 0.6); }
-.bg-page .bar-tag.pick { border: 2px solid var(--bg-sky); color: var(--bg-sky); }
+.bg-page .bar-tag.pick { border: 2px solid var(--bg-accent); color: var(--bg-accent); }
 .bg-page .bar-tag.away { color: var(--red); }
 .bg-page .score-chip { border: 2px solid rgba(255, 255, 255, 0.55); background: transparent; color: #fff; padding: 2px 6px; }
 .bg-page .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
-.bg-page .clock-chip.running { border-color: var(--highlighter); color: var(--highlighter); background: transparent; }
+.bg-page .clock-chip.running { border-color: var(--bg-accent); color: var(--bg-accent); background: transparent; }
 .bg-page .clock-chip.expired { border-color: var(--red); color: var(--red); }
-.bg-page .delay-pip { border-color: var(--bg-sky); color: #fff; background: var(--bg-sky); }
+.bg-page .delay-pip { border-color: var(--bg-accent); color: var(--bg-frame); background: var(--bg-accent); }
 /* The game-over card. */
-.bg-card { border-radius: 14px; box-shadow: 0 18px 40px rgba(35, 36, 58, 0.35); }
+.bg-card { border-radius: 14px; box-shadow: 0 18px 40px rgba(40, 24, 12, 0.4); }
 /* The bars as every other table draws them. */
 .player-bar { border: 3px solid var(--ink); background: #fff; box-shadow: 4px 4px 0 0 var(--ink); }
 .player-bar.active { border-color: var(--bg-sky); box-shadow: 4px 4px 0 0 var(--bg-sky); background: color-mix(in oklab, var(--bg-sky) 14%, #fff); }
@@ -908,7 +912,7 @@
     width: max-content;
     max-width: 100%;
     border-radius: 10px;
-    box-shadow: 0 8px 22px rgba(35, 36, 58, 0.3);
+    box-shadow: 0 8px 22px rgba(40, 24, 12, 0.4);
   }
   .bg-page .bg-grid {
     /* The halves are exactly six points wide, so no button and no message
