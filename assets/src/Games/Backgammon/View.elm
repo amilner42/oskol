@@ -1272,15 +1272,17 @@ viewRightBand board =
         ctx =
             board.ctx
 
-        -- The dice zone keeps last turn's spent dice around until the next
-        -- roll; during a roll/double/take/drop decision they are noise.
-        deciding =
-            List.any (\n -> hasAction n ctx.legal) [ "roll", "take", "drop" ]
-
+        -- Dice are on the board only while a roll is live: the moving
+        -- phase, and a dance (`no_moves`), where the dice that played
+        -- nothing stand until the mover passes. The projection keeps last
+        -- turn's roll in the zone through the next player's roll/double
+        -- decision, but a turn that is over has no dice to show.
         dice =
-            Protocol.zoneTokens "dice" ctx.scene
-                |> List.filter
-                    (\t -> not (deciding && Protocol.tokenProp D.bool "used" t == Just True))
+            if List.member ctx.scene.phase [ "moving", "no_moves" ] then
+                Protocol.zoneTokens "dice" ctx.scene
+
+            else
+                []
 
         -- The roll played nothing: the dice stand and the turn is about to
         -- pass. Both seats and any spectator see it, and it stays put until

@@ -497,6 +497,68 @@ suite =
                             Expect.fail "no backgammon fixture"
              ]
             )
+        , describe "dice between turns"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                -- The projection leaves last turn's roll in the dice zone
+                -- while the next player decides to roll or double; the
+                -- phase is what says the turn is over.
+                between phase u =
+                    let
+                        scene =
+                            u.scene
+                    in
+                    { u | scene = { scene | phase = phase }, legal = [] }
+
+                diceShown playerId u expectation =
+                    View.view (ctx playerId u View.init)
+                        |> Query.fromHtml
+                        |> Query.findAll [ class "die" ]
+                        |> Query.count expectation
+             in
+             [ test "the dice zone in the fixture is not empty, so the cases below mean something" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            Protocol.zoneTokens "dice" u.scene |> List.length |> Expect.greaterThan 0
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "once the turn has passed nobody sees any dice" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            Expect.all
+                                [ \_ -> diceShown "p1" (between "rolling" u) (Expect.equal 0)
+                                , \_ -> diceShown "p2" (between "rolling" u) (Expect.equal 0)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a pending double shows no dice either" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            diceShown "p2" (between "doubled" u) (Expect.equal 0)
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a live roll shows every die of it" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            diceShown "p2" { u | scene = (\s -> { s | phase = "moving" }) u.scene }
+                                (Expect.equal (Protocol.zoneTokens "dice" u.scene |> List.length))
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             ]
+            )
         , describe "the dice roll animation"
             [ test "a dice_rolled event is a roll watched landing; other events are not" <|
                 \_ ->
