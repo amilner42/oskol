@@ -1200,11 +1200,12 @@ viewBarColumn board themId =
         )
 
 
-{-| A bear-off tray: a slot in the frame where the borne-off checkers
-stack edge-on, the way they do on a real board -- the opponent's from the
-top of theirs, the viewer's from the bottom of theirs -- with the count
-at the inner end. The viewer's tray is also where a bearing-off checker
-is dropped or tapped to.
+{-| A bear-off tray: three holders in the frame's rail, five checkers
+each, the way a real board keeps them. Borne-off checkers stack edge-on,
+filling the holders from the outer end -- the opponent's from the top of
+their tray, the viewer's from the bottom of theirs -- with the count at
+the inner end. The viewer's tray is also where a bearing-off checker is
+dropped or tapped to.
 -}
 viewTray : Board -> String -> Bool -> Html Msg
 viewTray board ownerId isMine =
@@ -1232,13 +1233,20 @@ viewTray board ownerId isMine =
 
             else
                 []
+
+        stacking =
+            if isMine then
+                "bottom flex-col-reverse"
+
+            else
+                "top flex-col"
+
+        holder index =
+            div [ class ("off-holder flex " ++ stacking) ]
+                (List.repeat (clamp 0 5 (count - 5 * index)) (div [ class ("off-stick " ++ color) ] []))
     in
     div
-        ([ classList
-            [ ( "bg-tray relative flex flex-col items-center", True )
-            , ( "top", not isMine )
-            , ( "bottom flex-col-reverse", isMine )
-            ]
+        ([ class ("bg-tray relative flex " ++ stacking)
          , title "Borne off"
          ]
             ++ (if mine then
@@ -1249,7 +1257,7 @@ viewTray board ownerId isMine =
                )
             ++ click
         )
-        (List.repeat count (div [ class ("off-stick " ++ color) ] [])
+        (List.map holder [ 0, 1, 2 ]
             ++ [ span [ class "off-count pixel text-[8px]" ]
                     [ text
                         (if count > 0 then

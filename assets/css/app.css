@@ -588,7 +588,7 @@
   --bg-frame-w: 8px;    /* the frame's side thickness */
   --bg-lip: 4px;        /* the frame between a bar and the felt */
   --bg-band-h: 3.5rem;  /* the centre band: dice, buttons, status */
-  --bg-rail-w: 2.25rem; /* cube rail and trays */
+  --bg-rail-w: 2.6rem;  /* cube rail and trays */
   --bg-bar-w: 1.75rem;
 }
 @media (min-width: 640px) {
@@ -672,30 +672,44 @@
    sit on it. */
 .bg-bar { width: var(--bg-bar-w); }
 .bg-bar .checker.black { border-color: #fff; }
-/* The bear-off trays: two slots in the frame's right rail, one per player,
-   where the checkers borne off stack edge-on -- the opponent's from the
-   top of theirs, the viewer's from the bottom of theirs. Fifteen fit. */
+/* The bear-off trays: in the frame's right rail, one per player, each
+   three holders of five, the way a real board keeps them. The checkers
+   borne off stack edge-on, filling the holders from the outer end -- the
+   opponent's from the top of theirs, the viewer's from the bottom of
+   theirs. A stick is a fifth of a holder, so a full holder is full. */
 .bg-trays { width: var(--bg-rail-w); }
 .bg-tray {
+  --tray-pad: 4px;
+  --holder-pad: 3px;
+  --holder-h: calc((var(--bg-point-h) - 2 * var(--tray-pad) - 2 * var(--tray-pad)) / 3);
   height: var(--bg-point-h);
+  gap: var(--tray-pad);
+  padding: var(--tray-pad);
+}
+.off-holder {
+  flex: 1 1 0;
+  min-height: 0;
   gap: 2px;
-  padding: 5px 5px;
-  border-radius: 6px;
+  padding: var(--holder-pad);
+  border-radius: 4px;
   background: var(--bg-slot);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45);
 }
 .off-stick {
-  width: 100%;
   flex: none;
-  height: calc((var(--bg-point-h) - 24px) / 15 - 2px);
-  max-height: 9px;
+  height: calc((var(--holder-h) - 2 * var(--holder-pad) - 8px) / 5);
   border-radius: 2px;
 }
 .off-stick.white { background: #fff; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
-.off-stick.black { background: var(--ink); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4); }
-.off-count { position: absolute; left: 0; right: 0; text-align: center; color: rgba(255, 255, 255, 0.7); pointer-events: none; }
-.bg-tray.top .off-count { bottom: 5px; }
-.bg-tray.bottom .off-count { top: 5px; }
+.off-stick.black { background: var(--ink); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
+.off-count {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  padding: 1px 4px; border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45); color: rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+.bg-tray.top .off-count { bottom: 6px; }
+.bg-tray.bottom .off-count { top: 6px; }
 .bg-tray .drop-ghost { position: absolute; left: 8%; }
 .bg-tray.bottom .drop-ghost { top: 1.5rem; }
 /* The cube rail: the frame's left rail, where the cube hangs. */
@@ -777,15 +791,17 @@
 }
 .die.mini.spent { opacity: 0.35; box-shadow: none; cursor: default; }
 .die.mini.empty { background: transparent; border-style: dashed; box-shadow: none; cursor: default; }
-/* The cube hangs on the ink rail: white, so it reads there. */
+/* The cube hangs on the rail: white, so it reads there, and sized by the
+   rail -- a real cube is bigger than the dice. */
 .cube {
+  --cube-size: clamp(2.4rem, calc(var(--bg-rail-w) * 0.85), 4.5rem);
   display: grid; place-items: center;
-  width: 2rem; height: 2rem;
-  border: 2px solid #fff; border-radius: 5px; background: #fff;
+  width: var(--cube-size); height: var(--cube-size);
+  font-size: clamp(9px, calc(var(--cube-size) * 0.3), 20px);
+  border: 2px solid #fff; border-radius: 12%; background: #fff;
   box-shadow: 0 3px 0 0 rgba(0, 0, 0, 0.45);
   transition: transform 120ms ease-out;
 }
-@media (min-width: 640px) { .cube { width: 2.4rem; height: 2.4rem; } }
 /* A double on offer: the cube steps forward at the offered value. */
 .cube.pending {
   border-color: var(--bg-accent);
@@ -798,7 +814,7 @@
    to act carries the sky treatment. Scoped to the backgammon page: the
    generic and chess tables draw their bars on paper. */
 .bg-page .player-bar { border: 0; box-shadow: none; background: var(--bg-frame); color: #fff; }
-.bg-page .player-bar.active { background: color-mix(in oklab, var(--bg-accent) 32%, var(--bg-frame)); }
+.bg-page .player-bar.active { background: color-mix(in oklab, var(--bg-accent) 32%, var(--bg-frame)); border: 0; box-shadow: none; }
 .bg-page .swatch { border-color: rgba(255, 255, 255, 0.75); }
 .bg-page .swatch.black { background: var(--ink); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
 .bg-page .bar-turn { color: #fff; }
@@ -920,10 +936,8 @@
     grid-template-columns: auto var(--bg-half) auto var(--bg-half) auto;
   }
   .bg-page .bg-points { gap: 1px; }
-  .bg-page .bg-cube-rail,
-  .bg-page .bg-tray { padding-top: 0; padding-bottom: 0; }
-  .bg-page .bg-tray { padding: 3px 3px; }
-  .bg-page .cube { width: 1.5rem; height: 1.5rem; }
+  .bg-page .bg-cube-rail { padding-top: 0; padding-bottom: 0; }
+  .bg-page .bg-tray { --tray-pad: 3px; --holder-pad: 2px; }
   .bg-page .bg-band {
     height: var(--bg-band-h);
     min-height: var(--bg-band-h);
