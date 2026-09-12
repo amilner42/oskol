@@ -410,11 +410,15 @@ type alias TapContext =
     clears the selection if none can -- so a double tap is a fast move; a
     tap on another of my source points switches the selection;
   - no selection, dest is one of my movable points (or the bar): select it;
-  - exactly one legal move lands on dest: play it -- unless the dice are
-    doubles and a second identical move would land a second checker on an
-    empty-of-mine point, in which case stage the pair (make the point);
-  - exactly two legal moves from different origins land on an
-    empty-of-mine dest (one per die, necessarily): stage both;
+  - exactly one legal move lands on dest, a point I do not hold (or off):
+    play it -- unless the dice are doubles and a second identical move
+    would land a second checker there, in which case stage the pair (make
+    the point);
+  - exactly two legal moves from different origins land on a dest I do
+    not hold (one per die, necessarily): stage both (a quick point). An
+    opponent's blot there is fine: the point is made and the blot hit;
+  - a point I already hold is never played by tapping it: select an
+    origin instead;
   - anything else is ambiguous: no auto-move, select an origin instead.
 
 -}
@@ -426,6 +430,13 @@ resolveTap tc dest =
 
         isSource =
             List.member dest tc.sources
+
+        -- A tap on a destination is a quick move only onto a point I do
+        -- not already hold: it makes a fresh point (on nothing, or on an
+        -- opponent's blot, hit and all). Adding to a point of mine is not
+        -- what a tap there means.
+        fresh loc =
+            tc.mineAt loc == 0
     in
     case tc.selected of
         Just from ->
@@ -459,14 +470,17 @@ resolveTap tc dest =
             else
                 case landing of
                     [ m ] ->
-                        if dest /= "off" && isDoubles tc.unusedDice && tc.mineAt m.from >= 2 && tc.mineAt dest == 0 then
+                        if dest /= "off" && isDoubles tc.unusedDice && tc.mineAt m.from >= 2 && fresh dest then
                             Just (PlayPair m m)
 
-                        else
+                        else if dest == "off" || fresh dest then
                             Just (PlayMove m.from m.to)
 
+                        else
+                            Nothing
+
                     [ a, b ] ->
-                        if a.from /= b.from && dest /= "off" && tc.mineAt dest == 0 then
+                        if a.from /= b.from && dest /= "off" && fresh dest then
                             Just (PlayPair a b)
 
                         else

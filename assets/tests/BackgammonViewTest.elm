@@ -93,6 +93,62 @@ suite =
                         }
                         "9"
                         |> Expect.equal (Just (PlayPair { from = "13", to = "9", die = 4 } { from = "11", to = "9", die = 2 }))
+             , test "two moves onto an opponent's blot make the point and hit" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "13", to = "9", die = 4 }, { from = "11", to = "9", die = 2 } ]
+                            , sources = [ "13", "11" ]
+                            , unusedDice = [ 4, 2 ]
+                            , theirsAt =
+                                \loc ->
+                                    if loc == "9" then
+                                        1
+
+                                    else
+                                        0
+                        }
+                        "9"
+                        |> Expect.equal (Just (PlayPair { from = "13", to = "9", die = 4 } { from = "11", to = "9", die = 2 }))
+             , test "one move onto a point I already hold is not played by tapping it" <|
+                \_ ->
+                    -- three on the 7, one on the 10, a 3 left: tapping the 7
+                    -- does not drag the 10 in
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "10", to = "7", die = 3 } ]
+                            , sources = [ "10" ]
+                            , unusedDice = [ 3 ]
+                            , mineAt =
+                                \loc ->
+                                    if loc == "7" then
+                                        3
+
+                                    else if loc == "10" then
+                                        1
+
+                                    else
+                                        0
+                        }
+                        "7"
+                        |> Expect.equal Nothing
+             , test "one move onto an opponent's blot is played by tapping it" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "10", to = "7", die = 3 } ]
+                            , sources = [ "10" ]
+                            , unusedDice = [ 3 ]
+                            , theirsAt =
+                                \loc ->
+                                    if loc == "7" then
+                                        1
+
+                                    else
+                                        0
+                        }
+                        "7"
+                        |> Expect.equal (Just (PlayMove "10" "7"))
              , test "two moves onto a point I already occupy are ambiguous" <|
                 \_ ->
                     View.resolveTap
