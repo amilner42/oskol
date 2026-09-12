@@ -109,7 +109,7 @@ async function assertFits(page, phone, who) {
   const points = await page.locator('.bg-point').count();
   must(points === 24, `${label}: all 24 points are rendered`);
   const strays = [];
-  for (const selector of ['.bg-point', '.bg-bar', '.bg-tray', '.bg-cube-rail', '.bg-band']) {
+  for (const selector of ['.bg-point', '.bg-bar', '.cube', '.bg-band']) {
     const els = await page.locator(selector).all();
     for (const el of els) {
       const b = await el.boundingBox();
@@ -124,10 +124,19 @@ async function assertFits(page, phone, who) {
   }
   must(
     strays.length === 0,
-    `${label}: points, bar, trays, cube rail and both bands all sit inside the board${
+    `${label}: points, bar, cube and both bands all sit inside the board${
       strays.length ? ` (out: ${[...new Set(strays)].join(', ')})` : ''
     }`
   );
+  // The bear-off trays live in the identity bars, one each, inside them.
+  for (const who of ['.player-bar:not(.is-me)', '.player-bar.is-me']) {
+    const bar = await box(page, who);
+    const tray = await box(page, `${who} .bg-tray`);
+    must(
+      tray.x >= bar.x - 1 && tray.x + tray.width <= bar.x + bar.width + 1 && tray.y >= bar.y - 1 && tray.y + tray.height <= bar.y + bar.height + 1,
+      `${label}: the tray sits inside ${who}`
+    );
+  }
 }
 
 /** Play until this page has dice of its own on the board (or give up). */
