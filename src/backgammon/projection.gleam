@@ -190,7 +190,11 @@ fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
         True -> left
         False -> all
       }
-      mark_used(all, unused, picked, 0, [])
+      // The dice spent are the roll less the dice left. They are marked
+      // from the left: of a double, the leftmost die reads as used first,
+      // so the row fades left to right whatever order the moves came in.
+      let spent = list.fold(unused, all, remove_one)
+      mark_used(all, spent, picked, 0, [])
     }
     _ ->
       list.index_map(rolled, fn(value, i) { die_token(i, value, True, picked) })
@@ -200,7 +204,7 @@ fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
 
 fn mark_used(
   all: List(Int),
-  left: List(Int),
+  spent: List(Int),
   picked: Bool,
   index: Int,
   acc: List(scene.Token),
@@ -208,15 +212,15 @@ fn mark_used(
   case all {
     [] -> list.reverse(acc)
     [value, ..rest] ->
-      case list.contains(left, value) {
+      case list.contains(spent, value) {
         True ->
-          mark_used(rest, remove_one(left, value), picked, index + 1, [
-            die_token(index, value, False, picked),
+          mark_used(rest, remove_one(spent, value), picked, index + 1, [
+            die_token(index, value, True, picked),
             ..acc
           ])
         False ->
-          mark_used(rest, left, picked, index + 1, [
-            die_token(index, value, True, picked),
+          mark_used(rest, spent, picked, index + 1, [
+            die_token(index, value, False, picked),
             ..acc
           ])
       }

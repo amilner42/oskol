@@ -958,6 +958,32 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
+             , test "a double is one value: nothing stands up, nothing rotates" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                rendered =
+                                    View.view (ctx "p1" (withDice [ 3, 3, 3, 3 ] u) (model 0)) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.hasNot [ class "next" ]
+                                , \_ -> rendered |> Query.hasNot [ class "rotates" ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "one die left is no choice either" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (ctx "p1" (withDice [ 4 ] u) (model 0))
+                                |> Query.fromHtml
+                                |> Query.hasNot [ class "rotates" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
              , test "a new roll starts unrotated" <|
                 \_ ->
                     View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] (model 3)

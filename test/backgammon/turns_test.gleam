@@ -251,3 +251,25 @@ pub fn a_new_turn_starts_with_nothing_staged_test() {
   let _ = Some(1)
   Nil
 }
+
+/// A double's four dice fade from the left as they are spent, whatever
+/// the moves were, so the row always reads left to right.
+pub fn a_spent_double_fades_from_the_left_test() {
+  let s = position(1, open_board(), [3, 3, 3, 3])
+  let used_ids = fn(s: state.GameState) {
+    let sc = backgammon.game().scene(s, scene.Player("p1"))
+    let assert Ok(z) = scene.find_zone(sc, "dice")
+    z.tokens
+    |> list.filter(fn(t) {
+      list.key_find(t.props, "used") == Ok(json.bool(True))
+    })
+    |> list.map(fn(t) { t.id })
+  }
+  assert used_ids(s) == []
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(13), Point(10)))
+  assert used_ids(s) == ["die:0"]
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(8), Point(5)))
+  assert used_ids(s) == ["die:0", "die:1"]
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(10), Point(7)))
+  assert used_ids(s) == ["die:0", "die:1", "die:2"]
+}

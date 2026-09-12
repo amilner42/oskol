@@ -743,8 +743,7 @@
 .dice-row { --dice-gap: 0.5rem; gap: var(--dice-gap); }
 @media (min-width: 640px) { .dice-row { --dice-gap: 0.75rem; } }
 .dice-row.rotates { cursor: pointer; }
-.die.next { transform: translateY(-4px); box-shadow: 0 0 0 3px var(--bg-accent), 3px 3px 0 0 var(--ink); }
-.die.black.next { box-shadow: 0 0 0 3px var(--bg-accent), 3px 3px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
+.die.next { transform: translateY(-5px); }
 /* Each player throws their own dice, in their checkers' colour: white with
    dark pips, or dark with white pips and the black checker's inner ring. */
 .die.black { background: var(--ink); box-shadow: 3px 3px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
@@ -982,7 +981,6 @@
   .bg-page .bg-band .dice-row { --dice-gap: 0.3rem; }
   .bg-page .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--ink); }
   .bg-page .bg-band .die.black { box-shadow: 2px 2px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
-  .bg-page .bg-band .die.next { box-shadow: 0 0 0 2px var(--bg-accent), 2px 2px 0 0 var(--ink); }
   .bg-page .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   /* the pips shrink with the face, or they run into each other */
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
