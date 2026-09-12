@@ -154,7 +154,8 @@ async function main() {
         return dice.map(look);
       });
 
-    await picker.waitForSelector('.die.earned', { timeout: 10000 });
+    // Attached, not visible: the earned pair takes no room until it lands.
+    await picker.waitForSelector('.die.earned', { state: 'attached', timeout: 10000 });
     const mid = await readDice(picker);
     must(mid.length === 4, `a double puts four dice on the board (${mid.length})`);
     must(mid.filter((d) => d.reel).length === 2, 'exactly two of them tumble');

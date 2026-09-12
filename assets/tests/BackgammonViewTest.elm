@@ -216,14 +216,25 @@ suite =
                         }
                         "13"
                         |> Expect.equal (Just (PlayMove "13" "10"))
-             , test "if the next die cannot play that checker, the second tap only clears" <|
+             , test "if the leftmost die cannot play that checker, the one after it does" <|
                 \_ ->
-                    -- the 5 is next but only the 3 is legal from 13: no fall-through
+                    -- the 5 is next but only the 3 is legal from 13: the 3 plays
                     View.resolveTap
                         { base
                             | selected = Just "13"
                             , moves = [ { from = "13", to = "10", die = 3 } ]
                             , sources = [ "13" ]
+                            , unusedDice = [ 5, 3 ]
+                        }
+                        "13"
+                        |> Expect.equal (Just (PlayMove "13" "10"))
+             , test "if no die can play that checker, the second tap only clears" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | selected = Just "13"
+                            , moves = [ { from = "8", to = "5", die = 3 } ]
+                            , sources = [ "13", "8" ]
                             , unusedDice = [ 5, 3 ]
                         }
                         "13"
@@ -411,7 +422,7 @@ suite =
                     View.update (DragPressed press) View.init
                         |> step (DragMoved { x = 104, y = 103 })
                         |> step (DragReleased { x = 104, y = 103 })
-                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle, plans = [], autoRolled = False, picker = Nothing, roll = settled }, NoOut )
+                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, roll = settled }, NoOut )
              , test "pointercancel snaps back without sending" <|
                 \_ ->
                     View.update (DragPressed press) View.init
@@ -429,13 +440,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], autoRolled = True, picker = Nothing, roll = settled }
+                            ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { selectedFrom = Nothing, drag = Drag.idle, plans = [], autoRolled = True, picker = Nothing, roll = settled }
-                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], autoRolled = True, picker = Nothing, roll = settled }, Nothing )
+                    View.autoRoll [ schema "roll" ] { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
+                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -446,7 +457,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { selectedFrom = Nothing, drag = Drag.idle, plans = [], autoRolled = True, picker = Nothing, roll = settled }
+                    View.autoRoll [ schema "move" ] { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -505,7 +516,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], autoRolled = False, picker = Just [ 3 ], roll = settled }, NoOut )
+                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], roll = settled }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -823,6 +834,81 @@ suite =
                             Expect.fail "no backgammon fixture"
              ]
             )
+        , describe "tapping the dice"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                -- p1 to move with an ordinary roll, all of it unused
+                twoDice u =
+                    withDice [ 6, 4 ] u
+
+                model rotation =
+                    { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, roll = settled }
+
+                selecting from m =
+                    { m | selectedFrom = Just from }
+
+                nextDie rotation u =
+                    View.view (ctx "p1" (twoDice u) (model rotation))
+                        |> Query.fromHtml
+                        |> Query.find [ class "die", class "next" ]
+             in
+             [ test "a tap on the dice keeps the selected checker and rotates" <|
+                \_ ->
+                    View.update RotateDice (selecting "13" (model 0))
+                        |> Expect.equal ( selecting "13" (model 1), NoOut )
+             , test "with a checker selected, the die that stands up is the one that will play it" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                -- the 6 (leftmost) cannot move 13; the 4 can
+                                onlyFour =
+                                    { u | legal = [ { name = "play", label = "Play", params = [] }, moveSchema "13" "9" 4 ] }
+                            in
+                            View.view (ctx "p1" (twoDice onlyFour) (selecting "13" (model 0)))
+                                |> Query.fromHtml
+                                |> Query.find [ class "die", class "next" ]
+                                |> Query.has [ attribute (Html.Attributes.attribute "data-die" "die:1") ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the next die stands out: the first one, then the one after" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            Expect.all
+                                [ \_ -> nextDie 0 u |> Query.has [ attribute (Html.Attributes.attribute "data-die" "die:0") ]
+                                , \_ -> nextDie 1 u |> Query.has [ attribute (Html.Attributes.attribute "data-die" "die:1") ]
+                                , \_ -> nextDie 2 u |> Query.has [ attribute (Html.Attributes.attribute "data-die" "die:0") ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the mover's dice are a control; the other player's are not" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            Expect.all
+                                [ \_ -> View.view (ctx "p1" (twoDice u) (model 0)) |> Query.fromHtml |> Query.has [ class "dice-row", class "rotates" ]
+                                , \_ -> View.view (ctx "p2" { u | legal = [] } View.init) |> Query.fromHtml |> Query.hasNot [ class "rotates" ]
+                                , \_ -> View.view (ctx "p2" { u | legal = [] } View.init) |> Query.fromHtml |> Query.hasNot [ class "next" ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a new roll starts unrotated" <|
+                \_ ->
+                    View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] (model 3)
+                        |> .rotation
+                        |> Expect.equal 0
+             ]
+            )
         , describe "the dice roll animation"
             [ test "a dice_rolled event is a roll watched landing; other events are not" <|
                 \_ ->
@@ -1037,6 +1123,20 @@ suite =
             )
         , describe "rendering fixtures" (List.map perFixture (FixtureLoader.byGame "backgammon"))
         ]
+
+
+{-| A `move` schema as the engine sends it: from, to and the die it spends.
+-}
+moveSchema : String -> String -> Int -> Schema
+moveSchema from to die =
+    { name = "move"
+    , label = from ++ " → " ++ to ++ " (" ++ String.fromInt die ++ ")"
+    , params =
+        [ { name = "from", kind = Choice [ ( from, from ) ] }
+        , { name = "to", kind = Choice [ ( to, to ) ] }
+        , { name = "die", kind = Choice [ ( String.fromInt die, String.fromInt die ) ] }
+        ]
+    }
 
 
 {-| A scene with one entry of its `data` replaced: the states the renderer
@@ -1371,7 +1471,7 @@ perFixture fixture =
                                         |> List.length
                                         |> min 1
                             in
-                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle, plans = [], autoRolled = False, picker = Nothing, roll = settled })
+                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, roll = settled })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal destinations)
