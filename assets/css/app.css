@@ -581,9 +581,10 @@
 }
 .bg-point.top::before { clip-path: polygon(0 0, 100% 0, 50% 92%); }
 .bg-point.bottom::before { clip-path: polygon(0 100%, 100% 100%, 50% 8%); }
-.bg-point.source::before { background: color-mix(in oklab, var(--point) 60%, var(--bg-sky)); }
+/* Where a picked-up checker may go is shown (`selected`, `drop-ghost`);
+   which checkers could be picked up is not (`.bg-point.source` is a hook
+   for interaction and tests, and paints nothing). */
 .bg-point.selected::before { background: color-mix(in oklab, var(--point) 40%, var(--ink)); }
-.checker.pick { box-shadow: 0 0 0 3px var(--bg-sky), inset -2px -2px 0 0 rgba(0, 0, 0, 0.15); cursor: pointer; }
 .checker.picked { transform: translateY(-4px); box-shadow: 0 0 0 3px var(--bg-sky), 0 6px 0 0 rgba(35, 36, 58, 0.25); }
 .checker {
   width: 84%;

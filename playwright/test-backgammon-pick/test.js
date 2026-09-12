@@ -26,7 +26,7 @@ function must(condition, message) {
 }
 
 async function stageWholeTurn(mover) {
-  const source = '.bg-point.source, .bg-bar:has(.checker.pick)';
+  const source = '.bg-point.source, .bg-bar[data-drag-capture]';
   for (let i = 0; i < 5; i++) {
     const src = mover.locator(source);
     if ((await src.count()) === 0) break;

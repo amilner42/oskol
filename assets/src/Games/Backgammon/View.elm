@@ -1006,7 +1006,7 @@ viewPoint board isTop index point =
             [ ( "bg-point h-36 sm:h-44 flex flex-col items-center gap-px px-px", True )
             , ( "top", isTop )
             , ( "bottom flex-col-reverse", not isTop )
-            , ( "source", isSource )
+            , ( "source", isSource ) -- a legal origin; paints nothing, tests and scripts read it
             , ( "selected", isSelected )
             ]
          , attribute "style"
@@ -1026,7 +1026,7 @@ viewPoint board isTop index point =
          ]
             ++ interaction
         )
-        (viewStack { pick = isSource, picked = isSelected, lifted = liftedAt board id } tokens
+        (viewStack { picked = isSelected, lifted = liftedAt board id } tokens
             ++ (if isTarget then
                     [ dropGhost board (dragging && board.hovered == Just id) ]
 
@@ -1088,16 +1088,18 @@ dragAttrs board origin =
         []
 
 
-{-| What the top checker of a stack carries: the tap affordances, and the
-dimmed in-place state while its origin is being dragged.
+{-| What the top checker of a stack carries: raised once tapped as the
+origin of a move, and dimmed in place while its origin is being dragged.
+Which checkers *could* move is deliberately not marked: the board shows
+where a checker goes once it is picked up, never which ones to pick.
 -}
 type alias Marks =
-    { pick : Bool, picked : Bool, lifted : Bool }
+    { picked : Bool, lifted : Bool }
 
 
 noMarks : Marks
 noMarks =
-    { pick = False, picked = False, lifted = False }
+    { picked = False, lifted = False }
 
 
 viewStack : Marks -> List Token -> List (Html Msg)
@@ -1145,7 +1147,6 @@ viewChecker marks count token =
             [ ( "checker relative shrink-0 transition-transform", True )
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
-            , ( "pick", marks.pick && not marks.picked )
             , ( "picked", marks.picked )
             , ( "lifted", marks.lifted )
             ]
@@ -1216,8 +1217,7 @@ viewBarColumn board themId =
             ++ [ div [ class "flex-1" ] [] ]
             ++ [ div [ class "flex flex-col-reverse items-center gap-px w-full" ]
                     (viewStack
-                        { pick = isSource
-                        , picked = isSelected
+                        { picked = isSelected
                         , lifted = mine && liftedAt board "bar"
                         }
                         myTokens
