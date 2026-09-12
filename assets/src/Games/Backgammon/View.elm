@@ -1673,15 +1673,21 @@ viewRoll board =
         -- tap on a checker plays) stands up, and a tap on the dice makes
         -- the die after it the next one. With a checker selected, the die
         -- that stands up is the one that will actually play it: the first
-        -- that can, reading left to right. Nobody else's dice do anything.
+        -- that can, reading left to right. Only when there is a choice:
+        -- a double is one value, and one die left is no choice. Nobody
+        -- else's dice do anything.
         myMove =
             toMoveId ctx == Just ctx.playerId && ctx.scene.phase == "moving"
 
         unused =
             unusedDiceTokens ctx
 
+        hasChoice =
+            myMove
+                && (unused |> List.filterMap (Protocol.tokenProp D.int "value") |> unique |> List.length) >= 2
+
         next =
-            if myMove then
+            if hasChoice then
                 case ctx.model.selectedFrom |> Maybe.andThen (nextDieMove board.tap) of
                     Just m ->
                         unused
@@ -1696,7 +1702,7 @@ viewRoll board =
                 Nothing
 
         rotates =
-            myMove && List.length unused >= 2
+            hasChoice
     in
     viewDice { color = moverColor ctx, next = next, rotates = rotates } ctx.model.roll dice ++ pickedTag ++ danced
 
