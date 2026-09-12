@@ -31,9 +31,10 @@ action_for = fn schema ->
   %{"name" => schema["name"], "params" => Map.new(schema["params"], &{&1["name"], value.(&1)})}
 end
 
+# Everyone's scene says `no_moves`; the dancer is the player to move.
 dancing? = fn instance, player_id ->
-  update = GameKit.player_update(instance, player_id)
-  update["scene"]["data"]["no_moves"] == true
+  data = GameKit.player_update(instance, player_id)["scene"]["data"]
+  data["no_moves"] == true and data["to_move"] == player_id
 end
 
 # Random legal play, never resigning, stopping the moment someone dances.
