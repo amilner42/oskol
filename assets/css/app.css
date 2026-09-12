@@ -590,6 +590,13 @@
   --bg-band-h: 3.5rem;  /* the centre band: dice, buttons, status */
   --bg-rail-w: 2.6rem;  /* cube rail and trays */
   --bg-bar-w: 1.75rem;
+  /* The point width, worked back from the slab's width (the page less its
+     padding, capped like `.bg-main`), so a checker on the bar can be the
+     size of one on a point: the bar is wider than a point, and checkers
+     are sized by their column. The landscape and desktop layouts set it
+     from the point height instead. */
+  --bg-slab-w: min(100vw - 1rem, 64rem);
+  --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-rail-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - 2 * 6px - 10 * 0.125rem) / 12);
 }
 @media (min-width: 640px) {
   .bg-page {
@@ -599,6 +606,8 @@
     --bg-band-h: 4rem;
     --bg-rail-w: 3.5rem;
     --bg-bar-w: 2.75rem;
+    --bg-slab-w: min(100vw - 3rem, 64rem);
+    --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-rail-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - 2 * 6px - 10 * 0.25rem) / 12);
   }
 }
 
@@ -674,6 +683,8 @@
 /* The bar: the frame runs through the middle of the board; checkers hit
    sit on it. */
 .bg-bar { width: var(--bg-bar-w); }
+/* A checker on the bar is the size of one on a point, not of the bar. */
+.bg-bar .checker { width: calc((var(--bg-pw) - 2px) * 0.84); } /* a point has 1px of side padding */
 .bg-bar .checker.black { border-color: #fff; }
 /* The bear-off trays: in the frame's right rail, one per player, each
    three holders of five, the way a real board keeps them. The checkers
