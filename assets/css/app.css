@@ -575,12 +575,12 @@
    landscape block below for a sideways phone and by the desktop block for
    a big window, both of which derive it from the viewport height. */
 :root {
-  --bg-frame: #4a3223;      /* walnut: the slab, the frame, the bars */
-  --bg-slot: #38251a;       /* a recess in the frame */
-  --bg-felt: #ecdcbf;       /* light oak */
-  --bg-point-a: #7b4b2e;    /* walnut points */
-  --bg-point-b: #d6b48c;    /* tan points */
-  --bg-accent: #e3a63a;     /* amber: the player to act, a picked checker, an offer */
+  --bg-frame: #5a4636;      /* walnut, softened: the slab, the frame, the bars */
+  --bg-slot: #493829;       /* a recess in the frame */
+  --bg-felt: #efe4d0;       /* light oak */
+  --bg-point-a: #8c6a4f;    /* walnut points */
+  --bg-point-b: #dcc6a8;    /* tan points */
+  --bg-accent: #dcaa52;     /* amber: the player to act, a picked checker, an offer */
   --bg-sky: #3fa7d6;        /* the other tables' accent (their bars, below) */
 }
 .bg-page {
@@ -609,7 +609,10 @@
   overflow: hidden;
   box-shadow: 0 14px 34px rgba(40, 24, 12, 0.38);
 }
-.bg-board { background: var(--bg-frame); padding: var(--bg-lip) var(--bg-frame-w); }
+/* The frame's top and bottom are the lips under the bars; its sides are
+   folded into the cube rail and the tray column, so the cube and the
+   holders sit centred between the slab's edge and the felt. */
+.bg-board { background: var(--bg-frame); padding: var(--bg-lip) 0; }
 .bg-grid { gap: 0; }
 /* A felt half: six points, the band, six points; recessed into the frame. */
 .bg-half {
@@ -677,14 +680,14 @@
    borne off stack edge-on, filling the holders from the outer end -- the
    opponent's from the top of theirs, the viewer's from the bottom of
    theirs. A stick is a fifth of a holder, so a full holder is full. */
-.bg-trays { width: var(--bg-rail-w); }
+.bg-trays { width: calc(var(--bg-rail-w) + var(--bg-frame-w)); }
 .bg-tray {
   --tray-pad: 4px;
   --holder-pad: 3px;
   --holder-h: calc((var(--bg-point-h) - 2 * var(--tray-pad) - 2 * var(--tray-pad)) / 3);
   height: var(--bg-point-h);
   gap: var(--tray-pad);
-  padding: var(--tray-pad);
+  padding: var(--tray-pad) calc(var(--tray-pad) + var(--bg-frame-w) / 2);
 }
 .off-holder {
   flex: 1 1 0;
@@ -713,7 +716,7 @@
 .bg-tray .drop-ghost { position: absolute; left: 8%; }
 .bg-tray.bottom .drop-ghost { top: 1.5rem; }
 /* The cube rail: the frame's left rail, where the cube hangs. */
-.bg-cube-rail { width: var(--bg-rail-w); }
+.bg-cube-rail { width: calc(var(--bg-rail-w) + var(--bg-frame-w)); }
 .die {
   --die-size: 2.5rem;
   display: grid; place-items: center;
