@@ -563,16 +563,58 @@
 .card-face.selected { box-shadow: 3px 3px 0 0 var(--pen); border-color: var(--pen); }
 .new-card::before, .new-card::after { background-color: var(--highlighter) !important; }
 
-/* Backgammon board: blue, black and white. The board reads as a clean,
-   modern backgammon board on the multicade page: sky accent #3fa7d6,
-   near-black navy (--ink) and white, points alternating in blue tones. */
+/* Backgammon: the table is one dark slab. The opponent's identity bar, the
+   board's frame and the viewer's bar are the same ink; two pale felt fields
+   are recessed into it; the cube rail (left), the bar (centre) and the
+   bear-off trays (right) are parts of the frame, not boxes on the field.
+   Sky is the accent: the points, the player to act, the dice on offer.
+
+   Every board dimension follows from one number, the point height
+   (`--bg-point-h`): set here for portrait (width-driven, capped), by the
+   landscape block below for a sideways phone and by the desktop block for
+   a big window, both of which derive it from the viewport height. */
 :root {
   --bg-sky: #3fa7d6;
-  --bg-sky-pale: #d8e9f4;
-  --bg-felt: #f0f6fb;
+  --bg-sky-pale: #cfe0ec;
+  --bg-felt: #eaf1f7;
+  --bg-slot: #363852;   /* a recess in the frame */
 }
-.bg-board { background: var(--bg-felt); border: 3px solid var(--ink); box-shadow: 6px 6px 0 0 var(--ink); }
-.bg-point { position: relative; }
+.bg-page {
+  --bg-point-h: 9rem;
+  --bg-frame-w: 8px;    /* the frame's side thickness */
+  --bg-lip: 4px;        /* the frame between a bar and the felt */
+  --bg-band-h: 3.5rem;  /* the centre band: dice, buttons, status */
+  --bg-rail-w: 2.25rem; /* cube rail and trays */
+  --bg-bar-w: 1.75rem;
+}
+@media (min-width: 640px) {
+  .bg-page {
+    --bg-point-h: 11rem;
+    --bg-frame-w: 12px;
+    --bg-lip: 6px;
+    --bg-band-h: 4rem;
+    --bg-rail-w: 3.5rem;
+    --bg-bar-w: 2.75rem;
+  }
+}
+
+/* The slab: bars and board in one rounded frame with a soft drop. */
+.bg-stack {
+  background: var(--ink);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 14px 34px rgba(35, 36, 58, 0.28);
+}
+.bg-board { background: var(--ink); padding: var(--bg-lip) var(--bg-frame-w); }
+.bg-grid { gap: 0; }
+/* A felt half: six points, the band, six points; recessed into the frame. */
+.bg-half {
+  background: var(--bg-felt);
+  border-radius: 6px;
+  box-shadow: inset 0 2px 5px rgba(35, 36, 58, 0.22);
+}
+.bg-points { padding: 0 3px; }
+.bg-point { position: relative; height: var(--bg-point-h); }
 .bg-point::before {
   content: "";
   position: absolute;
@@ -585,20 +627,23 @@
    which checkers could be picked up is not (`.bg-point.source` is a hook
    for interaction and tests, and paints nothing). */
 .bg-point.selected::before { background: color-mix(in oklab, var(--point) 40%, var(--ink)); }
+.bg-band { min-height: var(--bg-band-h); }
 .checker.picked { transform: translateY(-4px); box-shadow: 0 0 0 3px var(--bg-sky), 0 6px 0 0 rgba(35, 36, 58, 0.25); }
 .checker {
   width: 84%;
   aspect-ratio: 1;
   border-radius: 9999px;
   border: 2px solid var(--ink);
-  box-shadow: inset -2px -2px 0 0 rgba(0, 0, 0, 0.15);
   display: grid;
   place-items: center;
 }
-.checker.white { background: #fff; }
+.checker.white {
+  background: #fff;
+  box-shadow: inset 0 0 0 3px rgba(35, 36, 58, 0.08), 0 1px 0 0 rgba(35, 36, 58, 0.35);
+}
 .checker.black {
   background: var(--ink);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28), inset -2px -2px 0 0 rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28), 0 1px 0 0 rgba(0, 0, 0, 0.45);
 }
 .checker-count { font-size: 10px; font-weight: 800; line-height: 1; color: var(--ink); }
 .checker.black .checker-count { color: #fff; }
@@ -619,9 +664,38 @@
    mover's colour that firms up under the pointer. */
 .checker.drop-ghost { opacity: 0.35; transition: opacity 80ms ease-out, transform 80ms ease-out; }
 .checker.drop-ghost.firm { opacity: 0.85; transform: scale(1.06); }
-.bg-bar { background: var(--ink); border-radius: 2px; }
+/* The bar: the frame runs through the middle of the board; checkers hit
+   sit on it. */
+.bg-bar { width: var(--bg-bar-w); }
 .bg-bar .checker.black { border-color: #fff; }
-.bg-tray { border: 3px solid var(--ink); background: #fff; color: var(--ink); }
+/* The bear-off trays: two slots in the frame's right rail, one per player,
+   where the checkers borne off stack edge-on -- the opponent's from the
+   top of theirs, the viewer's from the bottom of theirs. Fifteen fit. */
+.bg-trays { width: var(--bg-rail-w); }
+.bg-tray {
+  height: var(--bg-point-h);
+  gap: 2px;
+  padding: 5px 5px;
+  border-radius: 6px;
+  background: var(--bg-slot);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+.off-stick {
+  width: 100%;
+  flex: none;
+  height: calc((var(--bg-point-h) - 24px) / 15 - 2px);
+  max-height: 9px;
+  border-radius: 2px;
+}
+.off-stick.white { background: #fff; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
+.off-stick.black { background: var(--ink); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4); }
+.off-count { position: absolute; left: 0; right: 0; text-align: center; color: rgba(255, 255, 255, 0.7); pointer-events: none; }
+.bg-tray.top .off-count { bottom: 5px; }
+.bg-tray.bottom .off-count { top: 5px; }
+.bg-tray .drop-ghost { position: absolute; left: 8%; }
+.bg-tray.bottom .drop-ghost { top: 1.5rem; }
+/* The cube rail: the frame's left rail, where the cube hangs. */
+.bg-cube-rail { width: var(--bg-rail-w); }
 .die {
   --die-size: 2.5rem;
   display: grid; place-items: center;
@@ -699,23 +773,44 @@
 }
 .die.mini.spent { opacity: 0.35; box-shadow: none; cursor: default; }
 .die.mini.empty { background: transparent; border-style: dashed; box-shadow: none; cursor: default; }
+/* The cube hangs on the ink rail: white, so it reads there. */
 .cube {
   display: grid; place-items: center;
   width: 2rem; height: 2rem;
-  border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: #fff;
+  border: 2px solid #fff; border-radius: 5px; background: #fff;
+  box-shadow: 0 3px 0 0 rgba(0, 0, 0, 0.45);
   transition: transform 120ms ease-out;
 }
 @media (min-width: 640px) { .cube { width: 2.4rem; height: 2.4rem; } }
 /* A double on offer: the cube steps forward at the offered value. */
 .cube.pending {
   border-color: var(--bg-sky);
-  box-shadow: 3px 3px 0 0 var(--bg-sky);
+  box-shadow: 0 0 0 3px var(--bg-sky), 0 3px 0 3px rgba(0, 0, 0, 0.45);
   transform: scale(1.2);
 }
 .btn-arcade.sky { background: var(--bg-sky); color: #fff; }
 .btn-arcade.plain { background: #fff; color: var(--ink); }
-/* Identity bars: your name and checker colour at your side of the board,
-   the opponent's at theirs; the player to act carries the sky treatment. */
+/* Identity bars: the top and bottom of the slab. White on ink; the player
+   to act carries the sky treatment. Scoped to the backgammon page: the
+   generic and chess tables draw their bars on paper. */
+.bg-page .player-bar { border: 0; box-shadow: none; background: var(--ink); color: #fff; }
+.bg-page .player-bar.active { background: color-mix(in oklab, var(--bg-sky) 30%, var(--ink)); }
+.bg-page .swatch { border-color: rgba(255, 255, 255, 0.75); }
+.bg-page .swatch.black { background: var(--ink); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
+.bg-page .bar-turn { color: #fff; }
+.bg-page .bar-pips { color: rgba(255, 255, 255, 0.6); }
+.bg-page .bar-tag.you { background: var(--bg-sky); color: #fff; }
+.bg-page .bar-tag.outline { border: 2px solid rgba(255, 255, 255, 0.6); }
+.bg-page .bar-tag.pick { border: 2px solid var(--bg-sky); color: var(--bg-sky); }
+.bg-page .bar-tag.away { color: var(--red); }
+.bg-page .score-chip { border: 2px solid rgba(255, 255, 255, 0.55); background: transparent; color: #fff; padding: 2px 6px; }
+.bg-page .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
+.bg-page .clock-chip.running { border-color: var(--highlighter); color: var(--highlighter); background: transparent; }
+.bg-page .clock-chip.expired { border-color: var(--red); color: var(--red); }
+.bg-page .delay-pip { border-color: var(--bg-sky); color: #fff; background: var(--bg-sky); }
+/* The game-over card. */
+.bg-card { border-radius: 14px; box-shadow: 0 18px 40px rgba(35, 36, 58, 0.35); }
+/* The bars as every other table draws them. */
 .player-bar { border: 3px solid var(--ink); background: #fff; box-shadow: 4px 4px 0 0 var(--ink); }
 .player-bar.active { border-color: var(--bg-sky); box-shadow: 4px 4px 0 0 var(--bg-sky); background: color-mix(in oklab, var(--bg-sky) 14%, #fff); }
 .score-chip { border: 2px solid var(--ink); background: #fff; padding: 2px 6px; }
@@ -733,23 +828,25 @@
 .clock-chip.expired { border-color: var(--red); color: var(--red); }
 
 /* Backgammon in landscape: a turned phone is the best seat in the house.
-   Everywhere else the board is sized by width and stacks vertically
-   (opponent's bar, board, your bar). Here that is turned on its head:
+   Everywhere else the board is sized by width and the slab stacks
+   vertically (opponent's bar, board, your bar). Here that is turned on
+   its head:
 
      - the board's height is the viewport's, exactly. `--bg-point-h` is
        what is left of 100dvh (dynamic, so the browser's own chrome is
-       already deducted) once the centre band, the grid gaps, the board's
-       padding, its border and the room its drop shadow needs are taken
-       off, halved for the two rows of points. Every other board dimension
-       -- point width, the rails, the trays, the checkers, the dice --
-       follows from it, so the board is as wide as that height deserves
-       and no wider, and it can never be taller than the screen.
+       already deducted) once the centre band, the frame's top and bottom
+       and the air at both edges are taken off, halved for the two rows
+       of points. Every other board dimension -- point width, the rails,
+       the trays, the checkers, the dice -- follows from it, so the board
+       is as wide as that height deserves and no wider, and it can never
+       be taller than the screen.
      - the chrome moves out of the board's way instead of stealing its
        height: `.bg-main` and `.bg-stack` become `display: contents` so
        the header and the two identity bars (names, pips, score, clock
        chip and its delay pip) become items of the page grid and sit in a
        column beside the board, the opponent's at the top and yours at the
-       bottom, the way they read on the board itself.
+       bottom, the way they read on the board itself. Out of the slab,
+       each bar and the board carry their own corners.
      - the dice, the roll animation, the action buttons and the "no legal
        moves" message stay where they always are, in the board's centre
        band, just at landscape scale.
@@ -758,28 +855,25 @@
    desktop window, however it is shaped, keeps the layout above. */
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
   .bg-page {
-    --bg-pad: 3px;       /* the board's own padding */
-    --bg-gap: 2px;       /* between the board's rows and columns */
-    --bg-band-h: 3rem;   /* the centre band: dice, buttons, status */
-    --bg-drop: 4px;      /* the board's drop shadow, kept on screen */
+    --bg-frame-w: 6px;
+    --bg-lip: 6px;
+    --bg-band-h: 3rem;
     /* Air above and below the board, so a sideways phone does not read as
-       a board jammed against the bezel. It is also what the drop shadow
-       falls into, which is why it is never less than --bg-drop. */
+       a board jammed against the bezel. */
     --bg-edge: 10px;
     /* The height is what drives the board -- unless the screen is too
        narrow to be proportionate to it (a squarish landscape), in which
        case the width has the last word and the board merely fits. The
        ratio is the board's own: a point is 0.21 of its height wide, and
-       the board is 12 points, three rails and its gaps across. Everything
-       the board is not -- the band, the gaps, its padding, its border and
-       the air at both edges -- comes off the height first, so the board
-       can never be taller than the screen. */
+       the board is 12 points, three rails and its frame across. */
     --bg-point-h: min(
-      calc((100dvh - var(--bg-band-h) - 2 * var(--bg-gap) - 2 * var(--bg-pad) - 6px - 2 * var(--bg-edge)) / 2),
+      calc((100dvh - var(--bg-band-h) - 2 * var(--bg-lip) - 2 * var(--bg-edge)) / 2),
       calc((100vw - 8rem) / 3.4)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
-    --bg-half: calc(var(--bg-pw) * 6 + 5px); /* six points and their hairlines */
+    --bg-half: calc(var(--bg-pw) * 6 + 5px + 6px); /* six points, their hairlines, the felt's inset */
+    --bg-rail-w: calc(var(--bg-pw) * 1.5);
+    --bg-bar-w: calc(var(--bg-pw) * 1.15);
     display: grid;
     /* The board first, at whatever width its height earns it; the chrome
        gets the rest of the screen, never the other way round. */
@@ -787,8 +881,6 @@
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0 0.4rem;
-    /* the air the height formula already took off, with the drop shadow
-       falling inside the bottom of it */
     padding: var(--bg-edge) 0.25rem;
   }
   .bg-page .bg-main,
@@ -803,10 +895,9 @@
     width: 100%;
     flex-wrap: wrap;
     row-gap: 1px;
-    padding: 2px 5px;
-    box-shadow: 3px 3px 0 0 var(--ink);
+    padding: 4px 7px;
+    border-radius: 8px;
   }
-  .bg-page .player-bar.active { box-shadow: 3px 3px 0 0 var(--bg-sky); }
   .bg-page .player-bar:not(.is-me) { grid-row: 2; }
   .bg-page .player-bar.is-me { grid-row: 4; }
   .bg-page .bg-board {
@@ -816,20 +907,18 @@
     align-self: center;
     width: max-content;
     max-width: 100%;
-    padding: var(--bg-pad);
-    box-shadow: var(--bg-drop) var(--bg-drop) 0 0 var(--ink);
+    border-radius: 10px;
+    box-shadow: 0 8px 22px rgba(35, 36, 58, 0.3);
   }
   .bg-page .bg-grid {
-    gap: var(--bg-gap);
     /* The halves are exactly six points wide, so no button and no message
        in a centre band can ever widen the board or shift its points. */
     grid-template-columns: auto var(--bg-half) auto var(--bg-half) auto;
   }
   .bg-page .bg-points { gap: 1px; }
-  .bg-page .bg-point { height: var(--bg-point-h); }
   .bg-page .bg-cube-rail,
-  .bg-page .bg-tray { width: calc(var(--bg-pw) * 1.5); padding-top: 0; padding-bottom: 0; }
-  .bg-page .bg-bar { width: calc(var(--bg-pw) * 1.15); }
+  .bg-page .bg-tray { padding-top: 0; padding-bottom: 0; }
+  .bg-page .bg-tray { padding: 3px 3px; }
   .bg-page .cube { width: 1.5rem; height: 1.5rem; }
   .bg-page .bg-band {
     height: var(--bg-band-h);
@@ -853,46 +942,46 @@
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
 }
 
-/* Backgammon on a desktop screen: the board takes the window. Below `lg`
-   the board is sized by width (a phone, a narrow window) and capped at a
-   fixed point height; on a big monitor that left it small in the middle
-   of the page. From 1024px up the point height is derived from the
-   window's height the way the landscape layout above does it -- what is
-   left of 100dvh once the page's padding, the header, the two identity
-   bars, the centre band, the gaps, the board's padding, border and drop
-   shadow are taken off, halved for the two rows of points -- capped by
-   the width beside the clock rail. Point width, the rails, the bar, the
-   trays, the checkers and the dice all follow from it.
+/* Backgammon on a desktop screen: the table takes the window. Below `lg`
+   the board is sized by width and capped at a fixed point height; on a
+   big monitor that left it small in the middle of the page. From 1024px
+   up the point height is derived from the window's height the way the
+   landscape layout above does it -- what is left of 100dvh once the
+   page's padding, the header, the two identity bars, the centre band and
+   the frame are taken off, halved for the two rows of points -- capped by
+   the window's width. Point width, the rails, the bar, the trays, the
+   checkers and the dice all follow from it.
 
-   The page becomes a single centred column as wide as the board and its
-   rail (`max-content`), so the header spans exactly the board, however
-   big it is. Nothing scrolls: the height formula is what guarantees it. */
+   The page becomes a single centred column as wide as the slab
+   (`max-content`), so the header spans exactly the table, however big it
+   is. Nothing scrolls: the height formula is what guarantees it. */
 @media (min-width: 1024px) {
   .bg-page {
     --bg-page-py: 2rem;      /* sm:py-4, top and bottom */
     --bg-header-h: 3rem;     /* the header row and the gap under it */
-    --bg-bars-h: 7rem;       /* two identity bars and the stack's gaps */
+    --bg-bars-h: 6rem;       /* the two identity bars */
     --bg-band-h: 4rem;       /* the centre band: dice, buttons, status */
-    --bg-gap: 0.5rem;        /* sm:gap-2, between the board's rows and columns */
-    --bg-pad: 0.75rem;       /* sm:p-3, the board's own padding */
-    --bg-drop: 6px;          /* the board's drop shadow */
-    /* 6px is the board's border. The width cap is the board's own ratio
-       (a point is 0.21 of its height wide; 12 points, three rails and the
-       gaps across) against what is left beside the 15rem rail, its gap
-       and the page's padding. */
+    --bg-frame-w: 14px;
+    --bg-lip: 6px;
+    --bg-drop: 1.5rem;       /* room under the slab for its shadow */
+    /* The width cap is the board's own ratio (a point is 0.21 of its
+       height wide; 12 points, three rails and the frame across) against
+       the window less the page's padding. */
     --bg-point-h: min(
-      calc((100dvh - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-gap) - 2 * var(--bg-pad) - 6px - var(--bg-drop)) / 2),
-      calc((100vw - 26rem) / 3.4)
+      calc((100dvh - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop)) / 2),
+      calc((100vw - 8rem) / 3.4)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
-    --bg-half: calc(var(--bg-pw) * 6 + 5 * 0.25rem); /* six points and their sm:gap-1 */
+    --bg-half: calc(var(--bg-pw) * 6 + 5 * 0.25rem + 6px); /* six points, their sm:gap-1, the felt's inset */
+    --bg-rail-w: calc(var(--bg-pw) * 1.5);
+    --bg-bar-w: calc(var(--bg-pw) * 1.15);
     display: grid;
     grid-template-columns: minmax(0, max-content);
     grid-template-rows: auto minmax(0, 1fr);
     justify-content: center;
   }
   .bg-page .bg-main { width: 100%; }
-  /* The stack is exactly as wide as the board, so the identity bars hug it. */
+  /* The slab is exactly as wide as the board, so the identity bars hug it. */
   .bg-page .bg-stack { width: max-content; max-width: 100%; justify-self: center; }
   .bg-page .bg-board { width: max-content; max-width: 100%; }
   .bg-page .bg-grid {
@@ -900,11 +989,7 @@
        in a centre band can ever widen the board or shift its points. */
     grid-template-columns: auto var(--bg-half) auto var(--bg-half) auto;
   }
-  .bg-page .bg-point { height: var(--bg-point-h); }
-  .bg-page .bg-cube-rail,
-  .bg-page .bg-tray { width: calc(var(--bg-pw) * 1.5); }
-  .bg-page .bg-bar { width: calc(var(--bg-pw) * 1.15); }
-  .bg-page .bg-band { min-height: var(--bg-band-h); }
+  .bg-page .player-bar { padding: 10px 16px; }
   /* The dice grow with the board, within reason. */
   .bg-page .bg-band .die { --die-size: clamp(2.5rem, calc(var(--bg-pw) * 0.7), 3.5rem); }
   .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }

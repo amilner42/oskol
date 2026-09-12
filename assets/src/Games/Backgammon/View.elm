@@ -3,9 +3,11 @@ module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Press
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
 The whole play experience (both players, board, dice, cube, actions, clocks)
-fits one phone screen with no scrolling: identity bars hug the board on the
-viewer's side and the opponent's, and every action (roll, double, take, drop,
-play, undo) lives in the board's centre band.
+fits one phone screen with no scrolling. The table is one dark slab: the
+opponent's identity bar, the board and the viewer's bar share a frame, and
+the cube rail, the bar and the bear-off trays are parts of that frame, not
+boxes on the field. Every action (roll, double, take, drop, play, undo)
+lives in the board's centre band, and each player's clock in their bar.
 
 Turn the phone and the board takes the screen: in landscape the layout is
 driven by height instead of width (`.bg-page` in app.css derives every
@@ -47,7 +49,6 @@ import Html.Keyed as Keyed
 import Json.Decode as D
 import Json.Encode as E
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
-import View.Clock
 
 
 type alias Model =
@@ -562,13 +563,12 @@ view ctx =
     -- as the board and its rail, so the header spans exactly that.
     div [ class "bg-page paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2" ]
         [ viewHeader ctx
-        , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid gap-3 sm:gap-4 content-center lg:grid-cols-[minmax(0,1fr)_15rem]" ]
-            [ div [ class "bg-stack min-w-0 flex flex-col justify-center gap-2" ]
+        , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid content-center" ]
+            [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
                 [ viewPlayerBar ctx them False
                 , viewBoard board
                 , viewPlayerBar ctx me True
                 ]
-            , viewRail ctx
             ]
         , case drag of
             Just d ->
@@ -709,8 +709,9 @@ viewHeader ctx =
 -- PLAYER BARS
 --
 -- One identity bar per player, anchored at that player's side of the board:
--- checker swatch, name, YOU, match score, pips, cube badge and (on phones)
--- that player's clock. The player to act gets the sky treatment.
+-- checker swatch, name, YOU, match score, pips, cube badge and that
+-- player's clock. The bars are the top and bottom of the table's frame;
+-- the player to act gets the sky treatment.
 
 
 viewPlayerBar : Ctx -> Maybe PlayerInfo -> Bool -> Html Msg
@@ -737,20 +738,18 @@ viewPlayerBar ctx player isMe =
                 [ div [ class ("swatch shrink-0 " ++ color), title (p.name ++ " plays " ++ color) ] []
                 , span [ class "font-bold text-sm sm:text-base truncate" ] [ text p.name ]
                 , if isMe && p.id == ctx.playerId then
-                    span [ class "pixel text-[7px] px-1 py-0.5 shrink-0", style "background" "var(--bg-sky)", style "color" "#fff" ] [ text "YOU" ]
+                    span [ class "bar-tag you pixel text-[7px] px-1 py-0.5 shrink-0" ] [ text "YOU" ]
 
                   else
                     text ""
                 , if Protocol.hasFlag "owns_cube" p then
-                    span [ class "pixel text-[7px] px-1 py-0.5 shrink-0", style "border" "2px solid var(--ink)", title "Owns the doubling cube" ] [ text "CUBE" ]
+                    span [ class "bar-tag outline pixel text-[7px] px-1 py-0.5 shrink-0", title "Owns the doubling cube" ] [ text "CUBE" ]
 
                   else
                     text ""
                 , if Protocol.hasFlag "has_pick" p then
                     span
-                        [ class "pixel text-[7px] px-1 py-0.5 shrink-0 bg-has-pick"
-                        , style "border" "2px solid var(--bg-sky)"
-                        , style "color" "var(--bg-sky)"
+                        [ class "bar-tag pick pixel text-[7px] px-1 py-0.5 shrink-0 bg-has-pick"
                         , title "Still holds the dice pick"
                         ]
                         [ text "PICK" ]
@@ -758,17 +757,15 @@ viewPlayerBar ctx player isMe =
                   else
                     text ""
                 , if List.member p.id ctx.away then
-                    span [ class "pixel text-[7px] shrink-0", style "color" "var(--red)", title "Connection lost" ] [ text "AWAY" ]
+                    span [ class "bar-tag away pixel text-[7px] shrink-0", title "Connection lost" ] [ text "AWAY" ]
 
                   else
                     text ""
                 , span
-                    [ classList [ ( "pixel text-[8px] shrink-0", True ), ( "blink", active ), ( "invisible", not active ) ]
-                    , style "color" "var(--bg-sky)"
-                    ]
+                    [ classList [ ( "bar-turn pixel text-[8px] shrink-0", True ), ( "blink", active ), ( "invisible", not active ) ] ]
                     [ text "▶" ]
                 , div [ class "flex-1" ] []
-                , span [ class "pixel text-[7px] sm:text-[8px] whitespace-nowrap", style "color" "var(--pencil)", title "Pip count" ]
+                , span [ class "bar-pips pixel text-[7px] sm:text-[8px] whitespace-nowrap", title "Pip count" ]
                     [ text (String.fromInt (Protocol.counter "pips" p) ++ " PIPS") ]
                 , span [ class "score-chip pixel text-[9px] sm:text-[10px] shrink-0", title "Match score" ]
                     [ text (String.fromInt (Protocol.counter "score" p)) ]
@@ -779,8 +776,7 @@ viewPlayerBar ctx player isMe =
             text ""
 
 
-{-| This player's clock, inline in their bar (phones and tablets). On
-desktop the shared clock stack lives in the rail instead.
+{-| This player's clock, inline in their bar, at every size.
 -}
 viewClockChip : Ctx -> String -> Html Msg
 viewClockChip ctx playerId =
@@ -803,7 +799,7 @@ viewClockChip ctx playerId =
                         in
                         span
                             [ classList
-                                [ ( "clock-chip font-mono text-xs sm:text-sm lg:hidden", True )
+                                [ ( "clock-chip font-mono text-xs sm:text-sm", True )
                                 , ( "running", player.running && not expired )
                                 , ( "held", delay > 0 && not expired )
                                 , ( "expired", expired )
@@ -843,37 +839,6 @@ viewClockChip ctx playerId =
 
         Nothing ->
             text ""
-
-
-
--- DESKTOP RAIL
-
-
-viewRail : Ctx -> Html Msg
-viewRail ctx =
-    let
-        clock =
-            View.Clock.view
-                { clock = ctx.clock
-                , playerId = seatId ctx
-                , receivedAt = ctx.receivedAt
-                , now = ctx.now
-                , nameOf = ctx.nameOf
-                }
-
-        enabled =
-            ctx.clock |> Maybe.map .enabled |> Maybe.withDefault False
-    in
-    div [ class "hidden lg:flex flex-col gap-3 justify-center" ]
-        [ if enabled then
-            div [ class "game-panel p-3 flex flex-col gap-2 items-end" ]
-                [ span [ class "pixel text-[8px] self-start", style "color" "var(--pencil)" ] [ text "CLOCK" ]
-                , clock
-                ]
-
-          else
-            text ""
-        ]
 
 
 
@@ -924,26 +889,24 @@ viewBoard board =
             Protocol.opponentOf me board.ctx.scene |> Maybe.map .id |> Maybe.withDefault ""
     in
     -- Classic geometry: the cube's rail on the far left, the bar one
-    -- unbroken column through the middle, the trays on the far right. The
-    -- centre band splits at the bar: cube-side actions (double, take, drop,
-    -- undo, play) on the left half, the dice and their roll on the right.
-    div [ class "bg-board relative p-1.5 sm:p-3 select-none" ]
+    -- unbroken column through the middle, the trays on the far right, all
+    -- three parts of the frame. Between them two felt halves, each a
+    -- column of six points, the centre band, six points. The band splits
+    -- at the bar: cube-side actions (double, take, drop, undo, play) on the
+    -- left half, the dice and their roll on the right.
+    div [ class "bg-board relative select-none" ]
         -- minmax(0, 6fr) so a wide button in a band can never steal width
         -- from the other half's points.
-        [ div [ class "bg-grid grid grid-cols-[auto_minmax(0,6fr)_auto_minmax(0,6fr)_auto] gap-1 sm:gap-2" ]
+        [ div [ class "bg-grid grid grid-cols-[auto_minmax(0,6fr)_auto_minmax(0,6fr)_auto]" ]
             [ viewCubeRail board
-            , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topLeft)
+            , viewHalf board topLeft (viewLeftBand board) bottomLeft
             , viewBarColumn board themId
-            , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) topRight)
-            , viewTray board themId
-            , div [ class "bg-band min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
-                (viewLeftBand board)
-            , div [ class "bg-band min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 min-h-[3.5rem] sm:min-h-[4rem] py-1" ]
-                (viewRightBand board)
-            , div [] []
-            , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomLeft)
-            , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottomRight)
-            , viewTray board me
+            , viewHalf board topRight (viewRightBand board) bottomRight
+            , div [ class "bg-trays flex flex-col" ]
+                [ viewTray board themId False
+                , div [ class "bg-tray-gap flex-1" ] []
+                , viewTray board me True
+                ]
             ]
         , case ( board.ctx.model.picker, hasAction "pick" board.ctx.legal ) of
             ( Just chosen, True ) ->
@@ -954,13 +917,24 @@ viewBoard board =
         ]
 
 
+{-| One felt half of the board: six points, the centre band, six points.
+-}
+viewHalf : Board -> List Int -> List (Html Msg) -> List Int -> Html Msg
+viewHalf board top band bottom =
+    div [ class "bg-half min-w-0 flex flex-col" ]
+        [ div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board True) top)
+        , div [ class "bg-band min-w-0 flex flex-wrap items-center justify-center gap-2 sm:gap-3 py-1" ] band
+        , div [ class "bg-points grid grid-cols-6 gap-0.5 sm:gap-1" ] (List.indexedMap (viewPoint board False) bottom)
+        ]
+
+
 pointColor : Int -> String
 pointColor index =
     if modBy 2 index == 0 then
-        "#3fa7d6"
+        "var(--bg-sky)"
 
     else
-        "#d8e9f4"
+        "var(--bg-sky-pale)"
 
 
 viewPoint : Board -> Bool -> Int -> Int -> Html Msg
@@ -1003,7 +977,7 @@ viewPoint board isTop index point =
     in
     div
         ([ classList
-            [ ( "bg-point h-36 sm:h-44 flex flex-col items-center gap-px px-px", True )
+            [ ( "bg-point flex flex-col items-center gap-px px-px", True )
             , ( "top", isTop )
             , ( "bottom flex-col-reverse", not isTop )
             , ( "source", isSource ) -- a legal origin; paints nothing, tests and scripts read it
@@ -1208,7 +1182,7 @@ viewBarColumn board themId =
                 click
     in
     div
-        ([ class "bg-bar row-span-3 w-7 sm:w-11 flex flex-col items-center gap-px py-1"
+        ([ class "bg-bar flex flex-col items-center gap-px py-1"
          , title "Bar"
          ]
             ++ interaction
@@ -1226,14 +1200,23 @@ viewBarColumn board themId =
         )
 
 
-viewTray : Board -> String -> Html Msg
-viewTray board ownerId =
+{-| A bear-off tray: a slot in the frame where the borne-off checkers
+stack edge-on, the way they do on a real board -- the opponent's from the
+top of theirs, the viewer's from the bottom of theirs -- with the count
+at the inner end. The viewer's tray is also where a bearing-off checker
+is dropped or tapped to.
+-}
+viewTray : Board -> String -> Bool -> Html Msg
+viewTray board ownerId isMine =
     let
         count =
             Protocol.findZone ("off:" ++ ownerId) board.ctx.scene |> Maybe.map .count |> Maybe.withDefault 0
 
         mine =
             ownerId == board.ctx.playerId
+
+        color =
+            colorOf (Protocol.findPlayer ownerId board.ctx.scene)
 
         isTarget =
             mine && List.member "off" board.targets
@@ -1252,7 +1235,9 @@ viewTray board ownerId =
     in
     div
         ([ classList
-            [ ( "bg-tray w-9 sm:w-14 flex flex-col items-center justify-center gap-1 px-1", True )
+            [ ( "bg-tray relative flex flex-col items-center", True )
+            , ( "top", not isMine )
+            , ( "bottom flex-col-reverse", isMine )
             ]
          , title "Borne off"
          ]
@@ -1264,14 +1249,24 @@ viewTray board ownerId =
                )
             ++ click
         )
-        [ span [ class "pixel text-[7px]", style "color" "rgba(35, 36, 58, 0.5)" ] [ text "OFF" ]
-        , span [ class "pixel text-xs" ] [ text (String.fromInt count) ]
-        , if isTarget then
-            dropGhost board (board.drag /= Nothing && board.hovered == Just "off")
+        (List.repeat count (div [ class ("off-stick " ++ color) ] [])
+            ++ [ span [ class "off-count pixel text-[8px]" ]
+                    [ text
+                        (if count > 0 then
+                            String.fromInt count
 
-          else
-            text ""
-        ]
+                         else
+                            "OFF"
+                        )
+                    ]
+               ]
+            ++ (if isTarget then
+                    [ dropGhost board (board.drag /= Nothing && board.hovered == Just "off") ]
+
+                else
+                    []
+               )
+        )
 
 
 
@@ -1706,7 +1701,7 @@ pipsOn value =
             [ 0, 2, 3, 5, 6, 8 ]
 
 
-{-| The doubling cube's permanent home: a slim rail on the board's far
+{-| The doubling cube's permanent home: the frame's rail on the board's far
 left, mirroring the trays. The cube always shows -- 64 while centred, as
 tradition has it, its value once turned -- and its height tracks the
 owner: centred with a centred cube, at the bottom when the viewer's seat
@@ -1764,7 +1759,7 @@ viewCubeRail board =
     -- A cube-less format keeps the rail (the board's geometry holds) but
     -- hangs no cube on it.
     div
-        [ class ("bg-cube-rail row-span-3 w-9 sm:w-14 flex flex-col items-center py-2 " ++ justify)
+        [ class ("bg-cube-rail flex flex-col items-center py-2 " ++ justify)
         , title "Doubling cube"
         ]
         (if enabled then
@@ -1816,7 +1811,7 @@ viewGameOver ctx winners =
                 |> String.join " · "
     in
     div [ class "fixed inset-0 z-50 flex items-center justify-center p-4", style "background" "rgba(35, 36, 58, 0.55)" ]
-        [ div [ class "pix bg-white p-6 sm:p-8 max-w-md w-full text-center flex flex-col gap-4" ]
+        [ div [ class "bg-card bg-white p-6 sm:p-8 max-w-md w-full text-center flex flex-col gap-4" ]
             [ span [ class "pixel text-[10px]", style "color" "var(--bg-sky)" ] [ text "GAME OVER" ]
             , span [ class "pixel text-base sm:text-lg leading-relaxed" ]
                 [ text
