@@ -304,9 +304,12 @@ encodeMove from to =
 
 
 type alias Move =
-    { from : String, to : String }
+    { from : String, to : String, die : Int }
 
 
+{-| The legal moves, each with the die it spends (0 if the schema did not
+say, which only an older server would do).
+-}
 moves : List Schema -> List Move
 moves legal =
     legal
@@ -315,7 +318,11 @@ moves legal =
             (\s ->
                 case ( choice "from" s, choice "to" s ) of
                     ( Just from, Just to ) ->
-                        Just { from = from, to = to }
+                        Just
+                            { from = from
+                            , to = to
+                            , die = choice "die" s |> Maybe.andThen String.toInt |> Maybe.withDefault 0
+                            }
 
                     _ ->
                         Nothing
@@ -370,8 +377,11 @@ type alias TapContext =
 
 {-| Resolve a tap on `dest`.
 
-  - a selection is active: play selected -> dest if legal, toggle the
-    selection off, or switch to another of my source points;
+  - a selection is active: play selected -> dest if legal; tapping the
+    selected checker again plays it with the next die (the first unused
+    one, reading the dice left to right) if that move is legal, and just
+    clears the selection if not -- so a double tap is a fast move; a tap
+    on another of my source points switches the selection;
   - no selection, dest is one of my movable points (or the bar): select it;
   - exactly one legal move lands on dest: play it -- unless the dice are
     doubles and a second identical move would land a second checker on an
@@ -396,7 +406,12 @@ resolveTap tc dest =
                 Just (PlayMove from dest)
 
             else if dest == from then
-                Just Clear
+                case nextDieMove tc from of
+                    Just m ->
+                        Just (PlayMove m.from m.to)
+
+                    Nothing ->
+                        Just Clear
 
             else if isSource then
                 Just (SelectFrom dest)
@@ -426,6 +441,22 @@ resolveTap tc dest =
 
                     _ ->
                         Nothing
+
+
+{-| The move that plays `from` with the next die: the first die not yet
+used this turn, in the order the dice sit on the board. Nothing if that
+die has no legal move from there -- the next tap does not fall through
+to the other die.
+-}
+nextDieMove : TapContext -> String -> Maybe Move
+nextDieMove tc from =
+    List.head tc.unusedDice
+        |> Maybe.andThen
+            (\die ->
+                tc.moves
+                    |> List.filter (\m -> m.from == from && m.die == die)
+                    |> List.head
+            )
 
 
 {-| At most two dice values are ever distinct; two or more unused dice with

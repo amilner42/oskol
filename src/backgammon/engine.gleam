@@ -305,9 +305,13 @@ pub fn legal(state: GameState, player_id: String) -> List(Schema) {
         |> list.map(fn(m) {
           let from = board.loc_id(m.from)
           let to = board.loc_id(m.to)
+          // The die the move spends rides along so a client can offer
+          // "this checker, next die"; the action itself is still from/to.
+          let die = int.to_string(m.die)
           action.Schema("move", label_for(m), [
             action.choice("from", [#(from, from)]),
             action.choice("to", [#(to, to)]),
+            action.choice("die", [#(die, die)]),
           ])
         })
       let undo = case state.can_undo(state, player_id) {
