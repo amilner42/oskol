@@ -4,9 +4,12 @@ module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path,
 
 The whole play experience (both players, board, dice, cube, actions, clocks)
 fits one phone screen with no scrolling. The table is one dark slab: the
-opponent's identity bar, the board and the viewer's bar share a frame, and
-the cube rail, the bar and the bear-off trays are parts of that frame, not
-boxes on the field. Every action (roll, double, take, drop, play, undo)
+opponent's identity bar, the board and the viewer's bar share a frame. The
+points take the slab's whole width: the doubling cube lives on the bar (in
+the middle while centred, at the band end of the owner's half once
+turned) and each player's bear-off tray is a row of holders in their own
+identity bar, beside their name and clock, so no column of the board is
+spent on either. Every action (roll, double, take, drop, play, undo)
 lives in the board's centre band, and each player's clock in their bar.
 
 Turn the phone and the board takes the screen: in landscape the layout is
@@ -16,8 +19,8 @@ so a big monitor gets a big board), and the chrome -- the header and both
 identity bars, clocks and all -- moves into a column beside the board
 rather than above and below it. The class hooks that landscape needs
 (`bg-page`, `bg-main`, `bg-stack`, `bg-header`, `bg-grid`, `bg-points`,
-`bg-band`, `bg-cube-rail`, `is-me`) are the only reason this view names
-them; the arrangement itself is entirely CSS.
+`bg-band`, `bg-bar`, `is-me`) are the only reason this view names them;
+the arrangement itself is entirely CSS.
 
 Moving is destination-first: tapping a point where exactly one legal move
 lands plays it, tapping a point where an unambiguous pair of moves would
@@ -751,6 +754,9 @@ view ctx =
                 ( Nothing, Nothing ) ->
                     []
 
+        themId =
+            Protocol.opponentOf (seatId ctx) ctx.scene |> Maybe.map .id |> Maybe.withDefault ""
+
         board =
             { ctx = ctx
             , myColor = myColor
@@ -769,9 +775,9 @@ view ctx =
         [ viewHeader ctx
         , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid content-center" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
-                [ viewPlayerBar ctx them False
+                [ viewPlayerBar ctx them False (viewTray board themId False)
                 , viewBoard board
-                , viewPlayerBar ctx me True
+                , viewPlayerBar ctx me True (viewTray board (seatId ctx) True)
                 ]
             ]
         , case drag of
@@ -946,13 +952,13 @@ viewHeader ctx =
 -- PLAYER BARS
 --
 -- One identity bar per player, anchored at that player's side of the board:
--- checker swatch, name, YOU, match score, pips, cube badge and that
--- player's clock. The bars are the top and bottom of the table's frame;
--- the player to act gets the sky treatment.
+-- checker swatch, name, YOU, match score, pips, cube badge, that player's
+-- bear-off tray and their clock. The bars are the top and bottom of the
+-- table's frame; the player to act gets the sky treatment.
 
 
-viewPlayerBar : Ctx -> Maybe PlayerInfo -> Bool -> Html Msg
-viewPlayerBar ctx player isMe =
+viewPlayerBar : Ctx -> Maybe PlayerInfo -> Bool -> Html Msg -> Html Msg
+viewPlayerBar ctx player isMe tray =
     case player of
         Just p ->
             let
@@ -964,7 +970,7 @@ viewPlayerBar ctx player isMe =
             in
             div
                 [ classList
-                    [ ( "player-bar flex items-center gap-2 px-2 py-1.5 sm:px-3 sm:py-2", True )
+                    [ ( "player-bar flex items-center gap-1.5 sm:gap-2 px-2 py-1.5 sm:px-3 sm:py-2", True )
                     , ( "active", active )
 
                     -- which side of the board this bar belongs to: in
@@ -1002,6 +1008,7 @@ viewPlayerBar ctx player isMe =
                     [ classList [ ( "bar-turn pixel text-[8px] shrink-0", True ), ( "blink", active ), ( "invisible", not active ) ] ]
                     [ text "▶" ]
                 , div [ class "flex-1" ] []
+                , tray
                 , span [ class "bar-pips pixel text-[7px] sm:text-[8px] whitespace-nowrap", title "Pip count" ]
                     [ text (String.fromInt (Protocol.counter "pips" p) ++ " PIPS") ]
                 , span [ class "score-chip pixel text-[9px] sm:text-[10px] shrink-0", title "Match score" ]
@@ -1119,31 +1126,22 @@ viewBoard board =
         ( bottomLeft, bottomRight ) =
             half bottom
 
-        me =
-            seatId board.ctx
-
         themId =
-            Protocol.opponentOf me board.ctx.scene |> Maybe.map .id |> Maybe.withDefault ""
+            Protocol.opponentOf (seatId board.ctx) board.ctx.scene |> Maybe.map .id |> Maybe.withDefault ""
     in
-    -- Classic geometry: the cube's rail on the far left, the bar one
-    -- unbroken column through the middle, the trays on the far right, all
-    -- three parts of the frame. Between them two felt halves, each a
-    -- column of six points, the centre band, six points. The band splits
-    -- at the bar: cube-side actions (double, take, drop, undo, play) on the
-    -- left half, the dice and their roll on the right.
+    -- Two felt halves, each a column of six points, the centre band, six
+    -- points, with the bar one unbroken column through the middle: the
+    -- frame's sides are the board's own padding, so the points get every
+    -- pixel of the slab's width. The cube hangs on the bar. The band
+    -- splits at the bar: cube-side actions (double, take, drop, undo,
+    -- play) on the left half, the dice and their roll on the right.
     div [ class "bg-board relative select-none" ]
         -- minmax(0, 6fr) so a wide button in a band can never steal width
         -- from the other half's points.
-        [ div [ class "bg-grid grid grid-cols-[auto_minmax(0,6fr)_auto_minmax(0,6fr)_auto]" ]
-            [ viewCubeRail board
-            , viewHalf board topLeft (viewLeftBand board) bottomLeft
+        [ div [ class "bg-grid grid grid-cols-[minmax(0,6fr)_auto_minmax(0,6fr)]" ]
+            [ viewHalf board topLeft (viewLeftBand board) bottomLeft
             , viewBarColumn board themId
             , viewHalf board topRight (viewRightBand board) bottomRight
-            , div [ class "bg-trays flex flex-col" ]
-                [ viewTray board themId False
-                , div [ class "bg-tray-gap flex-1" ] []
-                , viewTray board me True
-                ]
             ]
         , case ( board.ctx.model.picker, hasAction "pick" board.ctx.legal ) of
             ( Just chosen, True ) ->
@@ -1419,31 +1417,40 @@ viewBarColumn board themId =
             else
                 click
     in
+    -- Three rows, the halves' own: the opponent's hit checkers hang from
+    -- the top of the upper row, the viewer's stand on the bottom of the
+    -- lower one, and the cube sits in the middle row while centred or at
+    -- the band end of its owner's row once turned (`viewCube`).
     div
-        ([ class "bg-bar flex flex-col items-center gap-px py-1"
+        ([ class "bg-bar grid justify-items-center"
          , title "Bar"
          ]
             ++ interaction
         )
-        (viewStack noMarks theirTokens
-            ++ [ div [ class "flex-1" ] [] ]
-            ++ [ div [ class "flex flex-col-reverse items-center gap-px w-full" ]
-                    (viewStack
-                        { picked = isSelected
-                        , lifted = mine && liftedAt board "bar"
-                        }
-                        myTokens
-                    )
-               ]
-        )
+        [ div [ class "bg-bar-row theirs flex flex-col items-center justify-between gap-px w-full py-1" ]
+            [ div [ class "flex flex-col items-center gap-px w-full" ] (viewStack noMarks theirTokens)
+            , viewCube board Theirs
+            ]
+        , div [ class "bg-bar-row centre flex items-center justify-center w-full" ]
+            [ viewCube board Centred ]
+        , div [ class "bg-bar-row mine flex flex-col-reverse items-center justify-between gap-px w-full py-1" ]
+            [ div [ class "flex flex-col-reverse items-center gap-px w-full" ]
+                (viewStack
+                    { picked = isSelected
+                    , lifted = mine && liftedAt board "bar"
+                    }
+                    myTokens
+                )
+            , viewCube board Mine
+            ]
+        ]
 
 
-{-| A bear-off tray: three holders in the frame's rail, five checkers
-each, the way a real board keeps them. Borne-off checkers stack edge-on,
-filling the holders from the outer end -- the opponent's from the top of
-their tray, the viewer's from the bottom of theirs -- with the count at
-the inner end. The viewer's tray is also where a bearing-off checker is
-dropped or tapped to.
+{-| A bear-off tray: three holders of five, the way a real board keeps
+them, laid along the player's identity bar. Borne-off checkers stack
+edge-on, filling the holders from the left, with the count after them.
+The viewer's tray is also where a bearing-off checker is dropped or
+tapped to.
 -}
 viewTray : Board -> String -> Bool -> Html Msg
 viewTray board ownerId isMine =
@@ -1472,19 +1479,19 @@ viewTray board ownerId isMine =
             else
                 []
 
-        stacking =
+        side =
             if isMine then
-                "bottom flex-col-reverse"
+                "mine"
 
             else
-                "top flex-col"
+                "theirs"
 
         holder index =
-            div [ class ("off-holder flex " ++ stacking) ]
+            div [ class "off-holder flex flex-row items-stretch" ]
                 (List.repeat (clamp 0 5 (count - 5 * index)) (div [ class ("off-stick " ++ color) ] []))
     in
     div
-        ([ class ("bg-tray relative flex " ++ stacking)
+        ([ class ("bg-tray relative flex flex-row items-center shrink-0 " ++ side)
          , title "Borne off"
          ]
             ++ (if mine then
@@ -1496,16 +1503,14 @@ viewTray board ownerId isMine =
             ++ click
         )
         (List.map holder [ 0, 1, 2 ]
-            ++ [ span [ class "off-count pixel text-[8px]" ]
-                    [ text
-                        (if count > 0 then
-                            String.fromInt count
+            -- empty holders say what they are on their own; the count
+            -- appears once there is one, and the bar has no room to spare
+            ++ (if count > 0 then
+                    [ span [ class "off-count pixel text-[8px]" ] [ text (String.fromInt count) ] ]
 
-                         else
-                            "OFF"
-                        )
-                    ]
-               ]
+                else
+                    []
+               )
             ++ (if isTarget then
                     [ dropGhost board (board.drag /= Nothing && board.hovered == Just "off") ]
 
@@ -1996,16 +2001,24 @@ pipsOn value =
             [ 0, 2, 3, 5, 6, 8 ]
 
 
-{-| The doubling cube's permanent home: the frame's rail on the board's far
-left, mirroring the trays. The cube always shows -- 64 while centred, as
-tradition has it, its value once turned -- and its height tracks the
-owner: centred with a centred cube, at the bottom when the viewer's seat
-owns it, at the top when the opponent does. A pending offer parks it in
-the middle, prominent, at the value on offer (a double is worth twice the
-cube; the engine turns it on the take).
+{-| Where on the bar a cube belongs: the middle row while nobody owns it
+(and while an offer is pending), else the band end of its owner's row.
 -}
-viewCubeRail : Board -> Html Msg
-viewCubeRail board =
+type CubeSlot
+    = Centred
+    | Theirs
+    | Mine
+
+
+{-| The doubling cube, in the bar's slot that is its home right now, or
+nothing if this is not that slot. The cube always shows -- 64 while
+centred, as tradition has it, its value once turned. A pending offer
+parks it in the middle, prominent, at the value on offer (a double is
+worth twice the cube; the engine turns it on the take). A cube-less
+format hangs no cube anywhere.
+-}
+viewCube : Board -> CubeSlot -> Html Msg
+viewCube board slot =
     let
         ctx =
             board.ctx
@@ -2035,34 +2048,31 @@ viewCubeRail board =
             else
                 String.fromInt value
 
-        justify =
+        home =
             if pending then
-                "justify-center"
+                Centred
 
             else
                 case owner of
                     Just id ->
                         if id == seatId ctx then
-                            "justify-end"
+                            Mine
 
                         else
-                            "justify-start"
+                            Theirs
 
                     Nothing ->
-                        "justify-center"
+                        Centred
     in
-    -- A cube-less format keeps the rail (the board's geometry holds) but
-    -- hangs no cube on it.
-    div
-        [ class ("bg-cube-rail flex flex-col items-center py-2 " ++ justify)
-        , title "Doubling cube"
-        ]
-        (if enabled then
-            [ div [ classList [ ( "cube pixel text-[10px]", True ), ( "pending", pending ) ] ] [ text shown ] ]
+    if enabled && home == slot then
+        div
+            [ classList [ ( "cube pixel text-[10px]", True ), ( "pending", pending ) ]
+            , title "Doubling cube"
+            ]
+            [ text shown ]
 
-         else
-            []
-        )
+    else
+        text ""
 
 
 actionButton : Ctx -> String -> String -> Maybe (Html Msg)

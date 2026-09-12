@@ -312,6 +312,9 @@ cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # E
 cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm  # Elm tests (needs `mix oskol.fixtures payloads`)
 mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
+mix oskol.seed        # local backgammon rooms at codes 000001.. parked in positions worth
+                      # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated,
+                      # P1 to act; prints each seat's link (lib/oskol/dev/seeds.ex)
 node playwright/test-poker-smoke/test.js        # poker: create, join, fold, next hand, flop
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the

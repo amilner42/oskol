@@ -565,9 +565,8 @@
 
 /* Backgammon: the table is one wooden slab. The opponent's identity bar,
    the board's frame and the viewer's bar are the same walnut; two light
-   oak fields are recessed into it; the cube rail (left), the bar (centre)
-   and the bear-off trays (right) are parts of the frame, not boxes on the
-   field. Points alternate walnut and tan; amber is the accent: the player
+   oak fields are recessed into it; the bar runs through the centre with
+   the cube on it, and each player's bear-off tray sits in their own bar. Points alternate walnut and tan; amber is the accent: the player
    to act, a picked checker, an offer.
 
    Every board dimension follows from one number, the point height
@@ -588,15 +587,15 @@
   --bg-frame-w: 8px;    /* the frame's side thickness */
   --bg-lip: 4px;        /* the frame between a bar and the felt */
   --bg-band-h: 3.5rem;  /* the centre band: dice, buttons, status */
-  --bg-rail-w: 2.6rem;  /* cube rail and trays */
-  --bg-bar-w: 1.75rem;
+  --bg-bar-w: 2.1rem;   /* the bar: hit checkers and the cube */
   /* The point width, worked back from the slab's width (the page less its
-     padding, capped like `.bg-main`), so a checker on the bar can be the
-     size of one on a point: the bar is wider than a point, and checkers
-     are sized by their column. The landscape and desktop layouts set it
-     from the point height instead. */
+     padding, capped like `.bg-main`): twelve points, the bar and the
+     frame's two sides are all the board is across, so a checker on the
+     bar can be the size of one on a point (the bar is wider than a point,
+     and checkers are sized by their column). The landscape and desktop
+     layouts set it from the point height instead. */
   --bg-slab-w: min(100vw - 1rem, 64rem);
-  --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-rail-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - 2 * 6px - 10 * 0.125rem) / 12);
+  --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - 2 * 6px - 10 * 0.125rem) / 12);
 }
 @media (min-width: 640px) {
   .bg-page {
@@ -604,10 +603,9 @@
     --bg-frame-w: 12px;
     --bg-lip: 6px;
     --bg-band-h: 4rem;
-    --bg-rail-w: 3.5rem;
     --bg-bar-w: 2.75rem;
     --bg-slab-w: min(100vw - 3rem, 64rem);
-    --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-rail-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - 2 * 6px - 10 * 0.25rem) / 12);
+    --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - 2 * 6px - 10 * 0.25rem) / 12);
   }
 }
 
@@ -619,9 +617,8 @@
   box-shadow: 0 14px 34px rgba(40, 24, 12, 0.38);
 }
 /* The frame's top and bottom are the lips under the bars; its sides are
-   folded into the cube rail and the tray column, so the cube and the
-   holders sit centred between the slab's edge and the felt. */
-.bg-board { background: var(--bg-frame); padding: var(--bg-lip) 0; }
+   the board's own padding. */
+.bg-board { background: var(--bg-frame); padding: var(--bg-lip) var(--bg-frame-w); }
 .bg-grid { gap: 0; }
 /* A felt half: six points, the band, six points; recessed into the frame. */
 .bg-half {
@@ -681,53 +678,60 @@
 .checker.drop-ghost { opacity: 0.35; transition: opacity 80ms ease-out, transform 80ms ease-out; }
 .checker.drop-ghost.firm { opacity: 0.85; transform: scale(1.06); }
 /* The bar: the frame runs through the middle of the board; checkers hit
-   sit on it. */
-.bg-bar { width: var(--bg-bar-w); }
+   sit on it, and the cube hangs on it. Its three rows are the halves'
+   own -- points, band, points -- so the opponent's hit checkers hang
+   from the top, the viewer's stand on the bottom, and the cube's slots
+   (the middle row, or the band end of an owner's row) line up with the
+   felt beside them. The middle row takes any height the band grows to. */
+.bg-bar {
+  width: var(--bg-bar-w);
+  grid-template-rows: var(--bg-point-h) minmax(var(--bg-band-h), 1fr) var(--bg-point-h);
+}
 /* A checker on the bar is the size of one on a point, not of the bar. */
 .bg-bar .checker { width: calc((var(--bg-pw) - 2px) * 0.84); } /* a point has 1px of side padding */
 .bg-bar .checker.black { border-color: #fff; }
-/* The bear-off trays: in the frame's right rail, one per player, each
-   three holders of five, the way a real board keeps them. The checkers
-   borne off stack edge-on, filling the holders from the outer end -- the
-   opponent's from the top of theirs, the viewer's from the bottom of
-   theirs. A stick is a fifth of a holder, so a full holder is full. */
-.bg-trays { width: calc(var(--bg-rail-w) + var(--bg-frame-w)); }
+/* The bear-off trays: one per player, in that player's identity bar,
+   three holders of five laid along it the way a real board keeps them,
+   turned on their side. The checkers borne off stack edge-on, filling
+   the holders from the left; a stick is a fifth of a holder, so a full
+   holder is full. The count reads after the holders. */
 .bg-tray {
-  --tray-pad: 4px;
-  --holder-pad: 3px;
-  --holder-h: calc((var(--bg-point-h) - 2 * var(--tray-pad) - 2 * var(--tray-pad)) / 3);
-  height: var(--bg-point-h);
+  --tray-pad: 2px;
+  --holder-pad: 2px;
+  --stick-w: 2px;
+  --stick-gap: 1px;
+  --holder-h: 1rem;
   gap: var(--tray-pad);
-  padding: var(--tray-pad) calc(var(--tray-pad) + var(--bg-frame-w) / 2);
+}
+@media (min-width: 640px) {
+  .bg-tray { --tray-pad: 3px; --stick-w: 3px; --stick-gap: 2px; --holder-h: 1.1rem; }
 }
 .off-holder {
-  flex: 1 1 0;
-  min-height: 0;
-  gap: 2px;
+  flex: none;
+  height: var(--holder-h);
+  width: calc(5 * var(--stick-w) + 4 * var(--stick-gap) + 2 * var(--holder-pad));
+  gap: var(--stick-gap);
   padding: var(--holder-pad);
-  border-radius: 4px;
+  border-radius: 3px;
   background: var(--bg-slot);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.45);
 }
 .off-stick {
   flex: none;
-  height: calc((var(--holder-h) - 2 * var(--holder-pad) - 8px) / 5);
-  border-radius: 2px;
+  width: var(--stick-w);
+  border-radius: 1px;
 }
-.off-stick.white { background: #fff; box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
+.off-stick.white { background: #fff; box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35); }
 .off-stick.black { background: var(--ink); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
 .off-count {
-  position: absolute; left: 50%; transform: translateX(-50%);
+  margin-left: 2px;
   padding: 1px 4px; border-radius: 3px;
-  background: rgba(0, 0, 0, 0.45); color: rgba(255, 255, 255, 0.8);
+  background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.8);
   pointer-events: none;
 }
-.bg-tray.top .off-count { bottom: 6px; }
-.bg-tray.bottom .off-count { top: 6px; }
-.bg-tray .drop-ghost { position: absolute; left: 8%; }
-.bg-tray.bottom .drop-ghost { top: 1.5rem; }
-/* The cube rail: the frame's left rail, where the cube hangs. */
-.bg-cube-rail { width: calc(var(--bg-rail-w) + var(--bg-frame-w)); }
+/* A bearing-off checker's landing: the ghost sits over the first holder. */
+.bg-tray .drop-ghost { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 1.1rem; }
+.bg-tray .drop-ghost.firm { transform: translateY(-50%) scale(1.06); }
 .die {
   --die-size: 2.5rem;
   display: grid; place-items: center;
@@ -742,6 +746,14 @@
    tap hands "next" to the die after -- and the next die stands up. */
 .dice-row { --dice-gap: 0.5rem; gap: var(--dice-gap); }
 @media (min-width: 640px) { .dice-row { --dice-gap: 0.75rem; } }
+/* On a phone the dice follow the points, so a double's four dice fit the
+   half-band they share (six points wide) on the narrowest screen. */
+@media (max-width: 639px) {
+  .bg-page .bg-band .dice-row { --dice-gap: 0.4rem; }
+  .bg-page .bg-band .die { --die-size: clamp(1.5rem, calc(var(--bg-pw) * 1.25), 2.5rem); }
+  .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
+  .bg-page .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
+}
 .dice-row.rotates { cursor: pointer; }
 .die.next { transform: translateY(-5px); }
 /* Each player throws their own dice, in their checkers' colour: white with
@@ -816,10 +828,10 @@
 }
 .die.mini.spent { opacity: 0.35; box-shadow: none; cursor: default; }
 .die.mini.empty { background: transparent; border-style: dashed; box-shadow: none; cursor: default; }
-/* The cube hangs on the rail: white, so it reads there, and sized by the
-   rail -- a real cube is bigger than the dice. */
+/* The cube hangs on the bar: white, so it reads there, and sized by the
+   bar -- as big as its column allows. */
 .cube {
-  --cube-size: clamp(2.4rem, calc(var(--bg-rail-w) * 0.85), 4.5rem);
+  --cube-size: clamp(1.6rem, calc(var(--bg-bar-w) * 0.92), 4.5rem);
   display: grid; place-items: center;
   width: var(--cube-size); height: var(--cube-size);
   font-size: clamp(9px, calc(var(--cube-size) * 0.3), 20px);
@@ -881,7 +893,7 @@
        what is left of 100dvh (dynamic, so the browser's own chrome is
        already deducted) once the centre band, the frame's top and bottom
        and the air at both edges are taken off, halved for the two rows
-       of points. Every other board dimension -- point width, the rails,
+       of points. Every other board dimension -- point width, the bar,
        the trays, the checkers, the dice -- follows from it, so the board
        is as wide as that height deserves and no wider, and it can never
        be taller than the screen.
@@ -910,14 +922,14 @@
        narrow to be proportionate to it (a squarish landscape), in which
        case the width has the last word and the board merely fits. The
        ratio is the board's own: a point is 0.21 of its height wide, and
-       the board is 12 points, three rails and its frame across. */
+       the board is 12 points, the bar and its frame across, with the
+       chrome's column to fit beside it. */
     --bg-point-h: min(
       calc((100dvh - var(--bg-band-h) - 2 * var(--bg-lip) - 2 * var(--bg-edge)) / 2),
-      calc((100vw - 8rem) / 3.4)
+      calc((100vw - 10rem) / 2.9)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
     --bg-half: calc(var(--bg-pw) * 6 + 5px + 6px); /* six points, their hairlines, the felt's inset */
-    --bg-rail-w: calc(var(--bg-pw) * 1.5);
     --bg-bar-w: calc(var(--bg-pw) * 1.15);
     display: grid;
     /* The board first, at whatever width its height earns it; the chrome
@@ -958,11 +970,9 @@
   .bg-page .bg-grid {
     /* The halves are exactly six points wide, so no button and no message
        in a centre band can ever widen the board or shift its points. */
-    grid-template-columns: auto var(--bg-half) auto var(--bg-half) auto;
+    grid-template-columns: var(--bg-half) auto var(--bg-half);
   }
   .bg-page .bg-points { gap: 1px; }
-  .bg-page .bg-cube-rail { padding-top: 0; padding-bottom: 0; }
-  .bg-page .bg-tray { --tray-pad: 3px; --holder-pad: 2px; }
   .bg-page .bg-band {
     height: var(--bg-band-h);
     min-height: var(--bg-band-h);
@@ -993,7 +1003,7 @@
    landscape layout above does it -- what is left of 100dvh once the
    page's padding, the header, the two identity bars, the centre band and
    the frame are taken off, halved for the two rows of points -- capped by
-   the window's width. Point width, the rails, the bar, the trays, the
+   the window's width. Point width, the bar, the trays, the
    checkers and the dice all follow from it.
 
    The page becomes a single centred column as wide as the slab
@@ -1009,15 +1019,14 @@
     --bg-lip: 6px;
     --bg-drop: 1.5rem;       /* room under the slab for its shadow */
     /* The width cap is the board's own ratio (a point is 0.21 of its
-       height wide; 12 points, three rails and the frame across) against
-       the window less the page's padding. */
+       height wide; 12 points, the bar and the frame across) against the
+       window less the page's padding. */
     --bg-point-h: min(
       calc((100dvh - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop)) / 2),
-      calc((100vw - 8rem) / 3.4)
+      calc((100vw - 8rem) / 2.9)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
     --bg-half: calc(var(--bg-pw) * 6 + 5 * 0.25rem + 6px); /* six points, their sm:gap-1, the felt's inset */
-    --bg-rail-w: calc(var(--bg-pw) * 1.5);
     --bg-bar-w: calc(var(--bg-pw) * 1.15);
     display: grid;
     grid-template-columns: minmax(0, max-content);
@@ -1031,9 +1040,10 @@
   .bg-page .bg-grid {
     /* The halves are exactly six points wide, so no button and no message
        in a centre band can ever widen the board or shift its points. */
-    grid-template-columns: auto var(--bg-half) auto var(--bg-half) auto;
+    grid-template-columns: var(--bg-half) auto var(--bg-half);
   }
   .bg-page .player-bar { padding: 10px 16px; }
+  .bg-page .bg-tray { --holder-h: 1.4rem; --stick-w: 4px; }
   /* The dice grow with the board, within reason. */
   .bg-page .bg-band .die { --die-size: clamp(2.5rem, calc(var(--bg-pw) * 0.7), 3.5rem); }
   .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
