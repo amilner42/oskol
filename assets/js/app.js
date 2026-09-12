@@ -211,9 +211,15 @@ app.ports.joinGameChannel?.subscribe(({ gameId, seatToken }) => {
 
 app.ports.sendToChannel?.subscribe((data) => {
   if (!gameChannel) return;
-  if (data.type === "action") {
-    gameChannel.push("action", { action: { name: data.name, params: data.params } })
+  const pushAction = (a) =>
+    gameChannel.push("action", { action: { name: a.name, params: a.params } })
       .receive("error", (msg) => send({ type: "error", message: msg.reason || "Action failed" }));
+  if (data.type === "action") {
+    pushAction(data);
+  } else if (data.type === "actions") {
+    // Several actions that belong together (one checker moved by several
+    // dice): pushed in order, on one channel, so the room sees them in order.
+    data.actions.forEach(pushAction);
   } else if (data.type === "rematch") {
     gameChannel.push("rematch", {})
       .receive("error", (msg) => send({ type: "error", message: msg.reason || "Rematch failed" }));

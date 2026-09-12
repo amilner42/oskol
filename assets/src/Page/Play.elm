@@ -238,7 +238,10 @@ update msg model =
                     stay updated (sendToChannel value)
 
                 Backgammon.SendMany values ->
-                    stay updated (Cmd.batch (List.map sendToChannel values))
+                    -- One port message, not a batch: the moves of one
+                    -- checker have to reach the room in order, and Cmd.batch
+                    -- promises no order.
+                    stay updated (sendToChannel (E.object [ ( "type", E.string "actions" ), ( "actions", E.list identity values ) ]))
 
                 Backgammon.WantRematch ->
                     update RequestRematch updated

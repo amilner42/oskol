@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Press, Roll, TapContext, autoRoll, dropZoneId, init, noteEvents, resolveTap, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -54,6 +54,7 @@ import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token
 type alias Model =
     { selectedFrom : Maybe String
     , drag : Drag.State String Msg -- the item a drag carries is my checker colour
+    , plans : List ( String, List Move ) -- for the active drag: each destination and the moves that get there
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
     , roll : Roll -- the dice on the board, and whether this client saw them land
@@ -86,6 +87,7 @@ type alias Press =
     , color : String
     , tap : Maybe Msg
     , targets : List String
+    , plans : List ( String, List Move ) -- how each target is reached when it takes several dice
     , x : Float
     , y : Float
     }
@@ -95,6 +97,7 @@ type Msg
     = SelectFrom String
     | PlayMove String String
     | PlayPair Move Move
+    | PlayPath (List Move) -- one checker, several dice, in order
     | Clear
     | Simple String
     | Rematch
@@ -123,6 +126,7 @@ init : Model
 init =
     { selectedFrom = Nothing
     , drag = Drag.idle
+    , plans = []
     , autoRolled = False
     , picker = Nothing
 
@@ -215,6 +219,9 @@ update msg model =
         PlayPair a b ->
             ( reset model, SendMany [ encodeMove a.from a.to, encodeMove b.from b.to ] )
 
+        PlayPath steps ->
+            ( reset model, SendMany (List.map (\m -> encodeMove m.from m.to) steps) )
+
         Simple name ->
             ( reset model, Send (Protocol.encodeAction name []) )
 
@@ -222,7 +229,7 @@ update msg model =
             ( model, WantRematch )
 
         DragPressed p ->
-            ( { model | drag = Drag.press { origin = p.origin, item = p.color, tap = p.tap, x = p.x, y = p.y } }
+            ( { model | drag = Drag.press { origin = p.origin, item = p.color, tap = p.tap, x = p.x, y = p.y }, plans = p.plans }
             , NeedZones p.targets
             )
 
@@ -232,8 +239,14 @@ update msg model =
         DragReleased pos ->
             case Drag.release pos model.drag of
                 ( drag, Drag.Drop from to ) ->
-                    -- A drop stages the move exactly as a tap would.
-                    update (PlayMove from to) { model | drag = drag }
+                    -- A drop stages the move exactly as a tap would: one
+                    -- die, or the dice in a row that reach there.
+                    case List.filter (\( dest, _ ) -> dest == to) model.plans |> List.head of
+                        Just ( _, steps ) ->
+                            update (PlayPath steps) { model | drag = drag }
+
+                        Nothing ->
+                            update (PlayMove from to) { model | drag = drag }
 
                 ( drag, Drag.Tap tap ) ->
                     update tap { model | drag = drag }
@@ -370,8 +383,14 @@ type alias TapContext =
     -- my checkers currently at a location ("bar", "off" or a point id)
     , mineAt : String -> Int
 
-    -- values of the dice not yet used this turn
+    -- values of the dice not yet used this turn, in the order they sit on the board
     , unusedDice : List Int
+
+    -- which way my checkers travel: -1 for white (24 down to 1), +1 for black
+    , direction : Int
+
+    -- the opponent's checkers at a point
+    , theirsAt : String -> Int
     }
 
 
@@ -404,6 +423,12 @@ resolveTap tc dest =
         Just from ->
             if List.any (\m -> m.from == from && m.to == dest) tc.moves then
                 Just (PlayMove from dest)
+
+            else if List.any (\p -> p.to == dest) (pathsFrom tc from) then
+                pathsFrom tc from
+                    |> List.filter (\p -> p.to == dest)
+                    |> List.head
+                    |> Maybe.map (\p -> PlayPath p.steps)
 
             else if dest == from then
                 case nextDieMove tc from of
@@ -441,6 +466,125 @@ resolveTap tc dest =
 
                     _ ->
                         Nothing
+
+
+{-| Where one checker at `origin` can go using several dice in a row --
+both dice either way round, or two, three or four of a double -- beyond
+what a single die reaches (those are `moves`). The first step has to be
+a legal move the server listed; every later step lands on a point the
+opponent does not hold (two or more checkers), never off the board.
+
+When the two orders of a non-double reach the same point by different
+routes, the route whose stop hits a blot wins; when both or neither do,
+the dice go left to right. A double has one route.
+
+-}
+type alias Path =
+    { to : String, steps : List Move }
+
+
+pathsFrom : TapContext -> String -> List Path
+pathsFrom tc origin =
+    let
+        orderings =
+            case tc.unusedDice of
+                d :: rest ->
+                    if rest == [] then
+                        []
+
+                    else if List.all ((==) d) rest then
+                        List.range 2 (List.length tc.unusedDice) |> List.map (\n -> List.repeat n d)
+
+                    else
+                        case unique tc.unusedDice of
+                            [ a, b ] ->
+                                [ [ a, b ], [ b, a ] ]
+
+                            _ ->
+                                []
+
+                [] ->
+                    []
+
+        singleTo =
+            tc.moves |> List.filter (\m -> m.from == origin) |> List.map .to
+
+        firstStep die =
+            tc.moves
+                |> List.filter (\m -> m.from == origin && m.die == die && m.to /= "off")
+                |> List.head
+
+        step cur die =
+            String.toInt cur
+                |> Maybe.map (\p -> p + tc.direction * die)
+                |> Maybe.andThen
+                    (\p ->
+                        if p >= 1 && p <= 24 && tc.theirsAt (String.fromInt p) < 2 then
+                            Just { from = cur, to = String.fromInt p, die = die }
+
+                        else
+                            Nothing
+                    )
+
+        walk dice =
+            case dice of
+                first :: rest ->
+                    firstStep first
+                        |> Maybe.andThen
+                            (\m ->
+                                List.foldl
+                                    (\die acc ->
+                                        acc |> Maybe.andThen (\steps -> step (lastTo steps) die |> Maybe.map (\n -> steps ++ [ n ]))
+                                    )
+                                    (Just [ m ])
+                                    rest
+                            )
+                        |> Maybe.map (\steps -> { to = lastTo steps, steps = steps })
+
+                [] ->
+                    Nothing
+
+        lastTo steps =
+            steps |> List.reverse |> List.head |> Maybe.map .to |> Maybe.withDefault origin
+
+        hits path =
+            path.steps
+                |> List.take (List.length path.steps - 1)
+                |> List.any (\m -> tc.theirsAt m.to == 1)
+
+        -- one path per destination: a hitting route first, then dice order
+        pick path found =
+            case List.filter (\p -> p.to == path.to) found of
+                [] ->
+                    found ++ [ path ]
+
+                kept :: _ ->
+                    if hits path && not (hits kept) then
+                        List.map
+                            (\p ->
+                                if p.to == path.to then
+                                    path
+
+                                else
+                                    p
+                            )
+                            found
+
+                    else
+                        found
+    in
+    orderings
+        |> List.filterMap walk
+        |> List.filter (\p -> not (List.member p.to singleTo))
+        |> List.foldl pick []
+
+
+{-| Every destination a checker at `origin` can reach: one die, or several.
+-}
+reachableFrom : TapContext -> String -> List String
+reachableFrom tc origin =
+    (tc.moves |> List.filter (\m -> m.from == origin) |> List.map .to)
+        ++ (pathsFrom tc origin |> List.map .to)
 
 
 {-| The move that plays `from` with the next die: the first die not yet
@@ -565,15 +709,20 @@ view ctx =
         drag =
             Drag.active ctx.model.drag
 
-        -- While a drag is up, its origin's destinations highlight; otherwise
-        -- the tapped selection's, if any.
+        tap =
+            tapContext ctx legalMoves sources
+
+        -- While a drag is up, everywhere its checker can be dropped shows,
+        -- one die or several. A tapped selection shows only the move a
+        -- second tap would play (the next die), so the board never lights
+        -- up with every option.
         targets =
             case ( drag, ctx.model.selectedFrom ) of
                 ( Just d, _ ) ->
-                    legalMoves |> List.filter (\m -> m.from == d.origin) |> List.map .to
+                    reachableFrom tap d.origin
 
                 ( Nothing, Just from ) ->
-                    legalMoves |> List.filter (\m -> m.from == from) |> List.map .to
+                    nextDieMove tap from |> Maybe.map (\m -> [ m.to ]) |> Maybe.withDefault []
 
                 ( Nothing, Nothing ) ->
                     []
@@ -585,7 +734,7 @@ view ctx =
             , targets = targets
             , drag = drag
             , hovered = Drag.hover ctx.model.drag
-            , tap = tapContext ctx legalMoves sources
+            , tap = tap
             }
     in
     -- On a desktop screen (`lg` and up) the board is sized by the window's
@@ -660,12 +809,24 @@ tapContext ctx legalMoves sources =
             Protocol.zoneTokens "dice" ctx.scene
                 |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
                 |> List.filterMap (Protocol.tokenProp D.int "value")
+
+        theirsAt point =
+            Protocol.zoneTokens ("point:" ++ point) ctx.scene
+                |> List.filter (\t -> Protocol.tokenProp D.string "color" t /= Just myColor)
+                |> List.length
     in
     { selected = ctx.model.selectedFrom
     , moves = legalMoves
     , sources = sources
     , mineAt = mineAt
     , unusedDice = unusedDice
+    , direction =
+        if myColor == "white" then
+            -1
+
+        else
+            1
+    , theirsAt = theirsAt
     }
 
 
@@ -1079,7 +1240,8 @@ dragAttrs board origin =
                         { origin = origin
                         , color = board.myColor
                         , tap = resolveTap board.tap origin
-                        , targets = board.tap.moves |> List.filter (\m -> m.from == origin) |> List.map .to |> unique
+                        , targets = reachableFrom board.tap origin |> unique
+                        , plans = pathsFrom board.tap origin |> List.map (\p -> ( p.to, p.steps ))
                         , x = pos.x
                         , y = pos.y
                         }
