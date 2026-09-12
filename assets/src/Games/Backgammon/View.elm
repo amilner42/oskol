@@ -9,7 +9,8 @@ play, undo) lives in the board's centre band.
 
 Turn the phone and the board takes the screen: in landscape the layout is
 driven by height instead of width (`.bg-page` in app.css derives every
-board dimension from `100dvh`), and the chrome -- the header and both
+board dimension from `100dvh`; a desktop window gets the same treatment,
+so a big monitor gets a big board), and the chrome -- the header and both
 identity bars, clocks and all -- moves into a column beside the board
 rather than above and below it. The class hooks that landscape needs
 (`bg-page`, `bg-main`, `bg-stack`, `bg-header`, `bg-grid`, `bg-points`,
@@ -487,6 +488,30 @@ toActId ctx =
     Protocol.sceneData (D.nullable D.string) "to_act" ctx.scene |> Maybe.withDefault Nothing
 
 
+{-| Whose roll is on the board. `to_act` can differ (the player weighing a
+double is acting on the mover's turn); the dice are always the mover's.
+-}
+toMoveId : Ctx -> Maybe String
+toMoveId ctx =
+    Protocol.sceneData (D.nullable D.string) "to_move" ctx.scene |> Maybe.withDefault Nothing
+
+
+{-| The dice are thrown on the mover's side of the board: the viewer's own
+half of the centre band (the right) when the roll is theirs, the other
+half when it is the opponent's.
+-}
+moverIsMe : Ctx -> Bool
+moverIsMe ctx =
+    toMoveId ctx == Just (seatId ctx)
+
+
+{-| The colour the dice are thrown in: the mover's checkers'.
+-}
+moverColor : Ctx -> String
+moverColor ctx =
+    toMoveId ctx |> Maybe.andThen (\id -> Protocol.findPlayer id ctx.scene) |> colorOf
+
+
 view : Ctx -> Html Msg
 view ctx =
     let
@@ -531,9 +556,13 @@ view ctx =
             , tap = tapContext ctx legalMoves sources
             }
     in
+    -- On a desktop screen (`lg` and up) the board is sized by the window's
+    -- height, not by a fixed width: `.bg-page` in app.css derives every
+    -- board dimension from `100dvh`, and the page becomes a column as wide
+    -- as the board and its rail, so the header spans exactly that.
     div [ class "bg-page paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2" ]
         [ viewHeader ctx
-        , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl grid gap-3 sm:gap-4 content-center lg:grid-cols-[minmax(0,1fr)_15rem]" ]
+        , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid gap-3 sm:gap-4 content-center lg:grid-cols-[minmax(0,1fr)_15rem]" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center gap-2" ]
                 [ viewPlayerBar ctx them False
                 , viewBoard board
@@ -648,7 +677,7 @@ viewHeader ctx =
             else
                 "MATCH TO " ++ String.fromInt target
     in
-    div [ class "bg-header w-full max-w-5xl flex items-center justify-between gap-2" ]
+    div [ class "bg-header w-full max-w-5xl lg:max-w-none flex items-center justify-between gap-2" ]
         [ div [ class "flex items-center gap-2 sm:gap-3 min-w-0" ]
             [ span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap" ] [ text "BACKGAMMON" ]
             , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--ink)", style "background" "#fff" ]
@@ -1251,18 +1280,34 @@ viewTray board ownerId =
 -- Every action on the board itself: nothing to act on ever renders below
 -- the fold. The band splits at the bar. Left half: cube-side decisions
 -- (double, take, drop) and the staging controls (undo, play). Right half:
--- the dice, their roll when doubling is also on offer (otherwise the turn
+-- the roll button when doubling is also on offer (otherwise the turn
 -- rolls itself -- see `autoRoll`), and the waiting status.
+--
+-- The dice themselves are thrown on the mover's side, like a real set:
+-- the right half when the roll is the viewer's, the left half when it is
+-- the opponent's, in the mover's colour either way (`viewRoll`). Whose
+-- turn it is reads off the board with no words.
 
 
 viewLeftBand : Board -> List (Html Msg)
 viewLeftBand board =
+    leftButtons board.ctx
+        ++ (if moverIsMe board.ctx then
+                []
+
+            else
+                viewRoll board
+           )
+
+
+leftButtons : Ctx -> List (Html Msg)
+leftButtons ctx =
     List.filterMap identity
-        [ actionButton board.ctx "double" "plain"
-        , actionButton board.ctx "take" "sky"
-        , actionButton board.ctx "drop" "plain"
-        , actionButton board.ctx "undo" "plain"
-        , actionButton board.ctx "play" "sky"
+        [ actionButton ctx "double" "plain"
+        , actionButton ctx "take" "sky"
+        , actionButton ctx "drop" "plain"
+        , actionButton ctx "undo" "plain"
+        , actionButton ctx "play" "sky"
         ]
 
 
@@ -1272,22 +1317,6 @@ viewRightBand board =
         ctx =
             board.ctx
 
-        -- Dice are on the board only while a roll is live: the moving
-        -- phase, and a dance (`no_moves`), where the dice that played
-        -- nothing stand until the mover passes. The projection keeps last
-        -- turn's roll in the zone through the next player's roll/double
-        -- decision, but a turn that is over has no dice to show.
-        dice =
-            if List.member ctx.scene.phase [ "moving", "no_moves" ] then
-                Protocol.zoneTokens "dice" ctx.scene
-
-            else
-                []
-
-        -- The roll played nothing: the dice stand and the turn is about to
-        -- pass. Both seats and any spectator see it, and it stays put until
-        -- the mover presses the button, so nobody misses the dice that did
-        -- it (see `no_moves` in the backgammon projection).
         noMoves =
             Protocol.sceneData D.bool "no_moves" ctx.scene |> Maybe.withDefault False
 
@@ -1316,6 +1345,59 @@ viewRightBand board =
             else
                 []
 
+        anyAction =
+            roll /= [] || leftButtons ctx /= []
+
+        -- A dance says its piece beside the dice (`viewRoll`), not here.
+        status =
+            if ctx.finished /= Nothing || noMoves then
+                []
+
+            else if anyAction then
+                []
+
+            else if pendingFrom /= Nothing && not myTurn then
+                [ statusText "WAITING FOR THE TAKE…" ]
+
+            else if not myTurn then
+                [ statusText ("WAITING FOR " ++ String.toUpper waitingName) ]
+
+            else
+                []
+    in
+    (if moverIsMe ctx then
+        viewRoll board
+
+     else
+        []
+    )
+        ++ roll
+        ++ status
+
+
+{-| The roll on the board: the mover's dice in the mover's colour, the tag
+the pick twist earns, and the word when the roll played nothing.
+
+Dice are on the board only while a roll is live: the moving phase, and a
+dance (`no_moves`), where the dice that played nothing stand until the
+mover passes. The projection keeps last turn's roll in the zone through
+the next player's roll/double decision, but a turn that is over has no
+dice to show.
+
+-}
+viewRoll : Board -> List (Html Msg)
+viewRoll board =
+    let
+        ctx =
+            board.ctx
+
+        dice =
+            if List.member ctx.scene.phase [ "moving", "no_moves" ] then
+                Protocol.zoneTokens "dice" ctx.scene
+
+            else
+                []
+
         pickedTag =
             if List.any (\t -> Protocol.tokenProp D.bool "picked" t == Just True) dice then
                 [ span
@@ -1331,32 +1413,26 @@ viewRightBand board =
             else
                 []
 
-        anyAction =
-            roll /= [] || viewLeftBand board /= []
+        -- The roll played nothing: the dice stand and the turn is about to
+        -- pass. Both seats and any spectator see it, and it stays put until
+        -- the mover presses the button, so nobody misses the dice that did
+        -- it (see `no_moves` in the backgammon projection).
+        noMoves =
+            Protocol.sceneData D.bool "no_moves" ctx.scene |> Maybe.withDefault False
 
-        status =
-            if ctx.finished /= Nothing then
-                []
-
-            else if noMoves then
-                [ viewNoMoves myTurn waitingName ]
-
-            else if anyAction then
-                []
-
-            else if pendingFrom /= Nothing && not myTurn then
-                [ statusText "WAITING FOR THE TAKE…" ]
-
-            else if not myTurn then
-                [ statusText ("WAITING FOR " ++ String.toUpper waitingName) ]
+        danced =
+            if noMoves && ctx.finished == Nothing then
+                [ viewNoMoves (toActId ctx == Just ctx.playerId)
+                    (toActId ctx |> Maybe.map ctx.nameOf |> Maybe.withDefault "OPPONENT")
+                ]
 
             else
                 []
     in
-    viewDice ctx.model.roll dice ++ pickedTag ++ roll ++ status
+    viewDice (moverColor ctx) ctx.model.roll dice ++ pickedTag ++ danced
 
 
-{-| The dice of the turn. They are keyed by the roll that produced them, so
+{-| The dice of the turn, in the mover's colour. They are keyed by the roll that produced them, so
 every new roll builds fresh elements and the CSS tumble in `.die.rolling`
 plays once, for about a second, before the pips settle. Staging a move
 patches the same elements (the key has not moved), so marking a die spent
@@ -1369,14 +1445,14 @@ None of them move unless this client watched the roll land (`Roll.watched`):
 dice that arrived in a snapshot are already on the table.
 
 -}
-viewDice : Roll -> List Token -> List (Html Msg)
-viewDice roll dice =
+viewDice : String -> Roll -> List Token -> List (Html Msg)
+viewDice color roll dice =
     [ Keyed.node "div"
         [ class "flex items-center gap-2 sm:gap-3" ]
         (List.map
             (\token ->
                 ( "roll-" ++ String.fromInt roll.seq ++ "-" ++ token.id
-                , viewDie roll.watched (dieIndex token) token
+                , viewDie color roll.watched (dieIndex token) token
                 )
             )
             dice
@@ -1506,7 +1582,8 @@ miniFace value =
         )
 
 
-{-| A die: its settled face, plus a reel of tumbling faces laid over it.
+{-| A die in the mover's colour (`white` or `black`, the checkers'
+classes): its settled face, plus a reel of tumbling faces laid over it.
 The reel is what the roll animation shows -- CSS walks it in `steps()` for
 about a second and then hides it for good (`forwards`), leaving the real
 face underneath. Reduced motion drops the reel and the face is all there
@@ -1522,8 +1599,8 @@ for dice that came out of a snapshot, and then a die is its face and
 nothing else -- no reel in the DOM, no classes, no throw to replay.
 
 -}
-viewDie : Bool -> Int -> Token -> Html Msg
-viewDie watched index token =
+viewDie : String -> Bool -> Int -> Token -> Html Msg
+viewDie color watched index token =
     let
         value =
             Protocol.tokenProp D.int "value" token |> Maybe.withDefault 1
@@ -1542,6 +1619,8 @@ viewDie watched index token =
     div
         [ classList
             [ ( "die", True )
+            , ( "white", color == "white" )
+            , ( "black", color /= "white" )
             , ( "used", used )
             , ( "rolling", thrown )
             , ( "earned", earned )
@@ -1597,9 +1676,7 @@ pips value =
             (\i ->
                 div [ class "flex items-center justify-center" ]
                     [ div
-                        [ classList [ ( "w-1.5 h-1.5 rounded-full", True ), ( "invisible", not (List.member i (pipsOn value)) ) ]
-                        , style "background" "var(--ink)"
-                        ]
+                        [ classList [ ( "die-pip w-1.5 h-1.5 rounded-full", True ), ( "invisible", not (List.member i (pipsOn value)) ) ] ]
                         []
                     ]
             )
