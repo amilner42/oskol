@@ -49,7 +49,30 @@ first3 ( a, _, _ ) =
 suite : Test
 suite =
     describe "Page.Play.update with fixture payloads"
-        (List.map replay FixtureLoader.all ++ [ channelMessages ])
+        (List.map replay FixtureLoader.all ++ [ channelMessages, tabTitle ])
+
+
+{-| The tab names the opponent once the game is on.
+-}
+tabTitle : Test
+tabTitle =
+    test "the tab names the opponent once the game is on" <|
+        \_ ->
+            case FixtureLoader.byGame "backgammon" |> List.head of
+                Just fixture ->
+                    case Dict.get "p1" fixture.initial of
+                        Just update ->
+                            Expect.all
+                                [ \_ -> Play.title (start fixture) |> Expect.equal "Backgammon"
+                                , \_ -> Play.title (feed fixture (start fixture) update) |> Expect.equal "Bob · Backgammon"
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no p1 view in the fixture"
+
+                Nothing ->
+                    Expect.fail "no backgammon fixture"
 
 
 replay : Fixture -> Test

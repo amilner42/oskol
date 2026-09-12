@@ -138,9 +138,31 @@ init config =
     )
 
 
+{-| The tab's title: the game, and once it is on, who you are playing
+("Mikey · Backgammon"), so a row of tabs reads as a row of opponents. A
+spectator's tab names both players.
+-}
 title : Model -> String
 title model =
-    String.toUpper (String.left 1 model.gameSlug) ++ String.dropLeft 1 model.gameSlug
+    let
+        game =
+            String.toUpper (String.left 1 model.gameSlug) ++ String.dropLeft 1 model.gameSlug
+    in
+    case model.payload of
+        Just payload ->
+            case List.filter (\p -> p.id /= payload.playerId) payload.players |> List.map .name of
+                [] ->
+                    game
+
+                others ->
+                    if List.any (\p -> p.id == payload.playerId) payload.players then
+                        String.join " vs " others ++ " · " ++ game
+
+                    else
+                        String.join " vs " (List.map .name payload.players) ++ " · " ++ game
+
+        Nothing ->
+            game
 
 
 {-| True while this page is the lobby (or on its way to it): those states
