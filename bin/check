@@ -17,6 +17,7 @@ mix compile
 
 step "mix format (CI checks it; catch it here first)"
 mix format --check-formatted
+gleam format --check src test
 
 step "Gleam unit, rules, property and golden tests"
 bin/test-gleam
