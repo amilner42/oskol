@@ -5,8 +5,8 @@ in (`Ui.Shell` — the OSKOL wordmark, the JOIN GAME prompt, the footer).
 
 Three routes, and they are the server's three routes:
 
-    /            Page.Library
-    /:slug       Page.GameLanding
+    /            Page.GameLanding "backgammon" — the home page, the board
+    /:slug       Page.GameLanding — the invite a shared link opens
     /:slug/:id   Page.Play — the game, unchanged
 
 The JOIN GAME prompt lives here rather than in a page because it is chrome:
@@ -26,8 +26,6 @@ import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as D
 import Page.GameLanding
-import Page.HomeBoard
-import Page.Library
 import Page.Play
 import Route exposing (Route)
 import Session exposing (Session)
@@ -62,7 +60,6 @@ type alias Model =
 
 type Page
     = NotFound
-    | Library Page.Library.Model
     | GameLanding Page.GameLanding.Model
     | Play Page.Play.Model
 
@@ -70,7 +67,6 @@ type Page
 type Msg
     = LinkClicked Browser.UrlRequest
     | UrlChanged Url
-    | LibraryMsg Page.Library.Msg
     | GameLandingMsg Page.GameLanding.Msg
     | PlayMsg Page.Play.Msg
     | OpenedJoin
@@ -213,10 +209,6 @@ update msg model =
         ( UrlChanged url, _ ) ->
             routeTo url model
 
-        ( LibraryMsg pageMsg, Library pageModel ) ->
-            Page.Library.update pageMsg pageModel
-                |> wrap model Library LibraryMsg
-
         ( GameLandingMsg pageMsg, GameLanding pageModel ) ->
             Page.GameLanding.update pageMsg pageModel
                 |> landing model
@@ -303,9 +295,6 @@ subscriptions model =
             Play pageModel ->
                 Sub.map PlayMsg (Page.Play.subscriptions pageModel)
 
-            Library pageModel ->
-                Sub.map LibraryMsg (Page.Library.subscriptions pageModel)
-
             _ ->
                 Sub.none
         , if model.joinOpen then
@@ -345,23 +334,14 @@ view model =
                 else
                     Html.map PlayMsg (Page.Play.view pageModel)
 
-            Library pageModel ->
-                framed model [ Html.map LibraryMsg (Page.Library.view pageModel) ]
-
             GameLanding pageModel ->
                 if Page.GameLanding.isHome pageModel then
                     -- The home page is the board, edge to edge: its own chrome.
                     Shell.bare (shellConfig model)
-                        [ Page.HomeBoard.view
-                            { you = Page.GameLanding.homeName pageModel
-                            , actions = List.map (Html.map GameLandingMsg) (Page.GameLanding.homeActions pageModel)
-                            , join = Shell.joinButton (shellConfig model)
-                            , soon = Page.GameLanding.homeSoon
-                            , theme = Page.GameLanding.homeTheme pageModel
-                            , picker = Html.map GameLandingMsg (Page.GameLanding.themePicker pageModel)
-                            }
-                        , Html.map GameLandingMsg (Page.GameLanding.createModal pageModel)
-                        ]
+                        (Page.GameLanding.home
+                            { join = Shell.joinButton (shellConfig model), toMsg = GameLandingMsg }
+                            pageModel
+                        )
 
                 else
                     framed model [ Html.map GameLandingMsg (Page.GameLanding.view pageModel) ]
@@ -408,9 +388,6 @@ notFound =
 title : Model -> String
 title model =
     case model.page of
-        Library _ ->
-            Page.Library.title
-
         GameLanding pageModel ->
             Page.GameLanding.title pageModel
 

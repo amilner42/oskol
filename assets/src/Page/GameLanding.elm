@@ -1,26 +1,21 @@
 module Page.GameLanding exposing
     ( Model
-    , themePicker
-    , createModal
-    , homeActions
-    , homeSoon
-    , homeTheme
-    , homeName
-    , isHome
     , Msg(..)
     , Out(..)
     , cleanName
-    , formatGridClass
+    , home
     , init
+    , isHome
     , title
     , update
     , view
     )
 
-{-| `/:slug` — one game's start page.
+{-| `/` (and `/:slug`) — the game's start page.
 
-Without a room in the URL it is the create page: the creator picks a mode,
-its settings and a clock, types a name and gets a link. With `?game=` it is
+Without a room in the URL it is the home page: the board edge to edge
+(`Page.HomeBoard`) with CREATE GAME, whose dialog picks a mode, its settings
+and a clock, takes a name and gets a link. With `?game=` it is
 the invite that link opens, and what it offers depends on the table (see
 `Api.Catalog.Room`): a free seat, a seat whose player is away, or nothing at
 all. With `?t=` as well it is a seat token, and the only thing to do with
@@ -35,8 +30,7 @@ seat waits where it will play, on a live connection rather than a poll.
 
 import Api
 import Dict
-import Api.Catalog as Catalog exposing (ClockPreset, Format, Game, GamePage, RoomSeat, Setting)
-import GameArt
+import Api.Catalog as Catalog exposing (ClockPreset, Format, GamePage, RoomSeat)
 import Html exposing (Html)
 import Html.Attributes exposing (class, href, id)
 import Html.Events exposing (onClick, onSubmit)
@@ -62,7 +56,6 @@ type alias Model =
     , slug : String
     , gameId : Maybe String
     , page : Maybe GamePage
-    , otherGames : List Game
     , loadError : Maybe String
     , step : Step
     , format : String
@@ -81,7 +74,6 @@ type alias Model =
 
 type Msg
     = GotGame (Result Api.Error GamePage)
-    | GotLibrary (Result Api.Error Catalog.Library)
     | GotRoom (Result Api.Error Catalog.Room)
     | PickedFormat String
     | PickedSetting String String
@@ -121,7 +113,6 @@ init session slug gameId token =
             , slug = slug
             , gameId = gameId
             , page = Nothing
-            , otherGames = []
             , loadError = Nothing
             , step =
                 if gameId == Nothing then
@@ -164,9 +155,6 @@ init session slug gameId token =
             ( model
             , Cmd.batch
                 [ Catalog.fetchGame session slug GotGame
-
-                -- The way to the other games, at the foot of the page.
-                , Catalog.fetchLibrary session GotLibrary
                 , Notebook.focus NoOp "create-name"
                 ]
             , NoOut
@@ -228,15 +216,6 @@ update msg model =
 
         GotGame (Err err) ->
             ( { model | loadError = Just (Api.errorMessage err) }, Cmd.none, NoOut )
-
-        GotLibrary result ->
-            ( { model
-                | otherGames =
-                    result |> Result.map .games |> Result.withDefault model.otherGames
-              }
-            , Cmd.none
-            , NoOut
-            )
 
         GotRoom (Ok room) ->
             ( applyRoom room model, Cmd.none, NoOut )
@@ -399,7 +378,9 @@ isControl char =
 -- VIEW
 
 
-
+{-| The page when it is not the home page: an invite, and what it offers.
+The home page is `home`, which `Main` draws without the paper frame.
+-}
 view : Model -> Html Msg
 view model =
     case model.page of
@@ -420,25 +401,26 @@ view model =
                 Nothing ->
                     Html.text ""
 
-        Just page ->
-            Html.div [] (gamePage model page)
+        Just _ ->
+            Html.div [] (formPage model)
 
 
-gamePage : Model -> GamePage -> List (Html Msg)
-gamePage model page =
-    if model.step == Create then
-        [ startPanel model, createModal model ]
-
-    else
-        formPage model page
-
-
-{-| The home page before anything is chosen: the ways in, as tiles. Playing
-a friend is the live one; the others are on their way and say so.
+{-| The home page: the board with its menu (CREATE GAME, the shell's JOIN
+GAME passed in as `join`, and the ones marked soon), the theme picker in its
+top bar, and CREATE GAME's dialog over it when it is open.
 -}
-startPanel : Model -> Html Msg
-startPanel model =
-    Page.HomeBoard.view { you = homeName model, actions = homeActions model, join = Html.text "", soon = homeSoon, theme = homeTheme model, picker = themePicker model }
+home : { join : Html msg, toMsg : Msg -> msg } -> Model -> List (Html msg)
+home { join, toMsg } model =
+    [ Page.HomeBoard.view
+        { you = homeName model
+        , actions = List.map (Html.map toMsg) (homeActions model)
+        , join = join
+        , soon = homeSoon
+        , theme = homeTheme model
+        , picker = Html.map toMsg (themePicker model)
+        }
+    , Html.map toMsg (createModal model)
+    ]
 
 
 {-| The board the home page wears: this player's pick, or the default.
@@ -724,20 +706,9 @@ soonButton label =
         ]
 
 
-comingTile : String -> String -> Html msg
-comingTile label note =
-    Html.div [ class "q-card home-cta home-cta-soon px-5 py-4 sm:px-6 sm:py-5 flex flex-col justify-between gap-3" ]
-        [ Html.div []
-            [ Html.div [ class "pixel text-[11px] sm:text-xs", style "color: var(--ink)" ] [ Html.text label ]
-            , Html.div [ class "q-note text-sm mt-1" ] [ Html.text note ]
-            ]
-        , Html.span [ class "q-note pixel text-[8px]" ] [ Html.text "SOON" ]
-        ]
-
-
-formPage : Model -> GamePage -> List (Html Msg)
-formPage model page =
-    [ hero model page
+formPage : Model -> List (Html Msg)
+formPage model =
+    [ hero model
     , Html.section []
         [ Html.div [ class "q-card p-5 sm:p-7" ]
             ((case model.error of
@@ -754,8 +725,9 @@ formPage model page =
                     []
              )
                 ++ (case model.step of
+                        -- The create step is the home page (`home`).
                         Create ->
-                            [ createForm model page ]
+                            []
 
                         PlayerName ->
                             joinForm model
@@ -772,112 +744,23 @@ formPage model page =
 
 
 
-{-| The head of the page, centred: the pixel title, and on the create page
-the three steps as one line under it. Nothing else belongs up here.
+{-| The head of the page, centred: the pixel title. Nothing else belongs
+up here.
 -}
-hero : Model -> GamePage -> Html Msg
-hero model _ =
+hero : Model -> Html Msg
+hero model =
     Html.section [ class "pt-8 sm:pt-12 pb-7 sm:pb-10 text-center", id ("game-hero-" ++ model.slug) ]
-        ([ Html.h1
+        [ Html.h1
             [ class "pixel text-lg sm:text-3xl leading-[1.7] sm:leading-[1.6]", id "game-title" ]
             [ Html.text "PLAY BACKGAMMON."
             , Html.br [] []
             , Html.span [ class "hl px-1" ] [ Html.text "WITH A FRIEND." ]
             ]
-         ]
-            ++ (if model.step == Create && model.started then
-                    [ Html.p [ class "q-steps q-note mt-5 sm:mt-6 text-base sm:text-xl flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-10 gap-y-2" ]
-                        [ stepWord "1" "create game"
-                        , stepWord "2" "share code"
-                        , stepWord "3" "play a friend"
-                        ]
-                    ]
-
-                else
-                    []
-               )
-        )
-
-
-stepWord : String -> String -> Html msg
-stepWord n words =
-    Html.span [ class "inline-flex items-center gap-2 sm:gap-2.5 whitespace-nowrap" ]
-        [ Html.span [ class "q-num", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text n ]
-        , Html.text words
         ]
 
 
 
--- THE CREATE FORM
-
-
-createForm : Model -> GamePage -> Html Msg
-createForm model page =
-    let
-        format =
-            currentFormat model page
-
-        settings =
-            format |> Maybe.map .settings |> Maybe.withDefault []
-
-        twist =
-            settings |> List.filter (\setting -> setting.id == "twist") |> List.head
-
-        rest =
-            settings |> List.filter (\setting -> setting.id /= "twist")
-    in
-    Html.form [ onSubmit Submitted, class "space-y-5 sm:space-y-6" ]
-        ([ Html.div []
-            [ Notebook.eyebrow "YOUR NAME"
-            , Notebook.nameInput
-                { id = "create-name"
-                , placeholder = "e.g. Alice"
-                , value = model.playerName
-                , onInput = NameChanged
-                }
-            ]
-         , Html.div []
-            [ Notebook.eyebrow "MODE"
-            , Html.div
-                [ class ("grid gap-2 sm:gap-2.5 " ++ formatGridClass (List.length page.formats)) ]
-                (List.map (formatTile model.format) page.formats)
-            ]
-         ]
-            -- A setting called "twist" gets its own heading; the rest follow.
-            ++ (case twist of
-                    Just setting ->
-                        [ Html.div [ id "twist" ]
-                            [ Notebook.eyebrow "TWIST"
-                            , chipRow (List.map (choiceChip model.selections setting) setting.choices)
-                            ]
-                        ]
-
-                    Nothing ->
-                        []
-               )
-            ++ List.map
-                (\setting ->
-                    Html.div [ id ("setting-" ++ setting.id) ]
-                        [ Notebook.eyebrow (String.toUpper setting.name)
-                        , chipRow (List.map (choiceChip model.selections setting) setting.choices)
-                        ]
-                )
-                rest
-            ++ [ Html.div []
-                    [ Notebook.eyebrow "CLOCK"
-                    , Html.div [ class "flex flex-wrap gap-2", id "clock-picker" ]
-                        (Catalog.offeredClocks page.game page.clocks
-                            |> List.map (clockChip model.clock)
-                        )
-                    ]
-               , Html.div
-                    [ class "pt-1 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4" ]
-                    [ Notebook.submitCta { id = "create-game", label = "Start and get a link" }
-                    , Html.p [ class "q-note text-sm" ]
-                        [ Html.text "You get a link to send. The game starts when your friend opens it." ]
-                    ]
-               ]
-        )
+-- THE CREATE DIALOG'S PARTS
 
 
 currentFormat : Model -> GamePage -> Maybe Format
@@ -888,83 +771,6 @@ currentFormat model page =
 
         [] ->
             List.head page.formats
-
-
-chipRow : List (Html msg) -> Html msg
-chipRow =
-    Html.div [ class "flex flex-wrap gap-2" ]
-
-
-formatTile : String -> Format -> Html Msg
-formatTile selected format =
-    Html.button
-        [ Html.Attributes.type_ "button"
-        , onClick (PickedFormat format.id)
-        , id ("format-" ++ format.id)
-        , class (optionClass "q-opt text-left px-3 sm:px-3.5 py-2.5" (selected == format.id))
-        ]
-        [ Html.div [ class "font-semibold leading-snug text-[15px]" ] [ Html.text format.name ]
-        , Html.div [ class "q-note text-[12px] mt-0.5 leading-tight" ]
-            [ Html.text format.description ]
-        ]
-
-
-choiceChip : List ( String, String ) -> Setting -> Catalog.Choice -> Html Msg
-choiceChip selections setting choice =
-    Html.button
-        [ Html.Attributes.type_ "button"
-        , onClick (PickedSetting setting.id choice.id)
-        , id ("choice-" ++ setting.id ++ "-" ++ choice.id)
-        , class
-            (optionClass "q-opt px-3.5 py-2.5 text-sm font-medium"
-                (Catalog.settingChoice selections setting == choice.id)
-            )
-        ]
-        [ Html.text choice.name ]
-
-
-clockChip : String -> ClockPreset -> Html Msg
-clockChip selected preset =
-    Html.button
-        [ Html.Attributes.type_ "button"
-        , onClick (PickedClock preset.id)
-        , id ("clock-" ++ preset.id)
-        , Html.Attributes.title preset.description
-        , class (optionClass "q-opt px-3.5 py-2.5 text-sm font-medium" (selected == preset.id))
-        ]
-        [ Html.text preset.name ]
-
-
-{-| The one selected option in a row is ink; the rest are paper.
--}
-optionClass : String -> Bool -> String
-optionClass base selected =
-    if selected then
-        base ++ " q-opt-on"
-
-    else
-        base
-
-
-{-| Static class names so Tailwind can find them.
--}
-formatGridClass : Int -> String
-formatGridClass count =
-    case count of
-        1 ->
-            "grid-cols-1"
-
-        2 ->
-            "grid-cols-2"
-
-        3 ->
-            "grid-cols-1 sm:grid-cols-3"
-
-        4 ->
-            "grid-cols-2 sm:grid-cols-4"
-
-        _ ->
-            "grid-cols-2 sm:grid-cols-3"
 
 
 
@@ -1078,67 +884,3 @@ gameCode : String -> Html msg
 gameCode code =
     Html.p [ class "pixel q-eyebrow text-[9px] pt-1" ]
         [ Html.text ("GAME CODE " ++ String.toUpper code) ]
-
-
-
--- THE PART THAT IS FOR READING
-
-
-{-| How it works, the rules in brief, the modes and clocks on offer, a few
-questions, and the way to the other games.
--}
-about : Model -> GamePage -> List (Html Msg)
-about model page =
-    [ Html.section [ class "mt-10 sm:mt-14 pt-8 sm:pt-10 q-rule", id "rules" ]
-        [ Notebook.eyebrow (String.toUpper page.game.name ++ " IN BRIEF")
-        , Html.div
-            [ class "space-y-3 text-[15px] sm:text-base leading-relaxed max-w-3xl"
-            , style "color: var(--ink)"
-            ]
-            (List.map (\paragraph -> Html.p [] [ Html.text paragraph ]) page.copy.rules)
-        ]
-    , Html.section [ class "mt-6 sm:mt-8 grid gap-4 sm:grid-cols-2", id "modes" ]
-        [ Html.div [ class "q-card p-4 sm:p-5" ]
-            [ Notebook.eyebrow "MODES"
-            , Html.ul [ class "space-y-2 text-[15px]" ]
-                (page.formats |> List.map (\f -> nameAndNote f.name f.description))
-            ]
-        , Html.div [ class "q-card p-4 sm:p-5" ]
-            [ Notebook.eyebrow "CLOCKS"
-            , Html.ul [ class "space-y-2 text-[15px]" ]
-                (Catalog.clocksInGameOrder page.game page.clocks
-                    |> List.map (\preset -> nameAndNote preset.name preset.description)
-                )
-            ]
-        ]
-    ]
-        ++ (if List.isEmpty page.copy.faq then
-                []
-
-            else
-                [ Html.section [ class "mt-8 sm:mt-10 pt-8 sm:pt-10 q-rule", id "faq" ]
-                    [ Notebook.eyebrow "QUESTIONS"
-                    , Html.dl [ class "space-y-4 text-[15px] sm:text-base max-w-3xl" ]
-                        (page.copy.faq
-                            |> List.map
-                                (\( question, answer ) ->
-                                    Html.div []
-                                        [ Html.dt [ class "font-semibold", style "color: var(--ink)" ]
-                                            [ Html.text question ]
-                                        , Html.dd [ class "q-note mt-1 leading-relaxed" ]
-                                            [ Html.text answer ]
-                                        ]
-                                )
-                        )
-                    ]
-                ]
-           )
-
-
-nameAndNote : String -> String -> Html msg
-nameAndNote name note =
-    Html.li []
-        [ Html.span [ class "font-semibold", style "color: var(--ink)" ] [ Html.text name ]
-        , Html.text " "
-        , Html.span [ class "q-note text-sm" ] [ Html.text ("· " ++ note) ]
-        ]

@@ -51,8 +51,10 @@ suite =
         , describe "href"
             [ test "the library" <|
                 \_ -> Expect.equal "/" (Route.href Route.library)
-            , test "a game's start page" <|
-                \_ -> Expect.equal "/backgammon" (Route.href (Route.gameLanding "backgammon"))
+            , test "backgammon's start page is the home page" <|
+                \_ -> Expect.equal "/" (Route.href (Route.gameLanding "backgammon"))
+            , test "and the home page parses back as the home, not a second address" <|
+                \_ -> Expect.equal (Just Library) (parse (Route.href (Route.gameLanding "backgammon")))
             , test "an invite link: the room, and nothing identifying" <|
                 \_ -> Expect.equal "/backgammon?game=123456" (Route.href (Route.invite "backgammon" "123456"))
             , test "a seat's own link" <|
@@ -67,7 +69,6 @@ suite =
         , describe "round trip"
             (List.map roundTrip
                 [ Library
-                , GameLanding "backgammon" Nothing Nothing
                 , GameLanding "backgammon" (Just "123456") Nothing
                 , GameLanding "backgammon" (Just "123456") (Just "a/b+c")
                 , Play "backgammon" "123456" (Just "secret")

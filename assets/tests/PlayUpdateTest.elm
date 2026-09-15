@@ -116,7 +116,7 @@ prefsRace =
                 let
                     picked =
                         Play.update
-                            (BackgammonMsg (Backgammon.PickTheme "midnight"))
+                            (BackgammonMsg (Backgammon.PickTheme "sand"))
                             (startAt "backgammon")
                             |> first3
 
@@ -124,7 +124,7 @@ prefsRace =
                         Play.update (GotPrefs (Ok (Dict.fromList [ ( "backgammon_theme", "walnut" ) ]))) picked
                             |> first3
                 in
-                Expect.equal (Dict.get "backgammon_theme" stale.prefs) (Just "midnight")
+                Expect.equal (Dict.get "backgammon_theme" stale.prefs) (Just "sand")
         , test "a board picked on another browser arrives when nothing was picked here" <|
             \_ ->
                 let

@@ -189,16 +189,16 @@ defmodule OskolWeb.Api.LandingApiTest do
         |> post(~p"/papi/games/backgammon", %{
           "format" => "match5",
           "name" => "Alice",
-          "clock" => "rapid",
+          "clock" => "bg10",
           "selections" => %{"twist" => "pick_dice"}
         })
         |> json_response(200)
 
       state = Game.get_server_state(body["id"])
       assert state.setup.format == "match5"
-      assert state.setup.clock == "rapid"
+      assert state.setup.clock == "bg10"
       assert state.setup.selections == %{"twist" => "pick_dice"}
-      assert GameServerState.summary(state) =~ "Rapid clock"
+      assert GameServerState.summary(state) =~ "10 min clock"
     end
 
     test "a clock the game does not offer is refused", %{conn: conn} do
@@ -292,12 +292,12 @@ defmodule OskolWeb.Api.LandingApiTest do
 
   describe "GET /papi/games/:slug/rooms/:id" do
     test "a free seat is an open invite, with who is waiting and what for", %{conn: conn} do
-      %{game_id: game_id} = GameFixtures.lobby("match3", clock: "blitz", pid1: self())
+      %{game_id: game_id} = GameFixtures.lobby("match3", clock: "bg3", pid1: self())
 
       body = conn |> get(~p"/papi/games/backgammon/rooms/#{game_id}") |> json_response(200)
 
       assert %{"ok" => true, "state" => "open", "inviter_name" => "Alice"} = body
-      assert body["summary"] == "Match to 3 · Blitz clock"
+      assert body["summary"] == "Match to 3 · 3 min clock"
       assert body["disconnected"] == []
     end
 

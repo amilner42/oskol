@@ -25,17 +25,17 @@ defmodule Oskol.Game.GameServerTest do
       assert {:error, :unknown_setting} =
                Game.configure(game_id, %{selections: %{"stake" => "x"}})
 
-      assert {:ok, state} = Game.configure(game_id, %{"format" => "match3", "clock" => "blitz"})
+      assert {:ok, state} = Game.configure(game_id, %{"format" => "match3", "clock" => "bg5"})
       assert state.setup.format == "match3"
-      assert state.setup.clock == "blitz"
-      assert Oskol.Game.GameServerState.summary(state) == "Match to 3 · Blitz clock"
+      assert state.setup.clock == "bg5"
+      assert Oskol.Game.GameServerState.summary(state) == "Match to 3 · 5 min clock"
 
       # The twist flows through configure and earns a summary slot only when on
       assert {:ok, state} =
                Game.configure(game_id, %{selections: %{"twist" => "pick_dice"}})
 
       assert Oskol.Game.GameServerState.summary(state) ==
-               "Match to 3 · Pick your dice, once a game · Blitz clock"
+               "Match to 3 · Pick your dice, once a game · 5 min clock"
     end
 
     test "the game starts the moment the table is full" do
@@ -137,7 +137,7 @@ defmodule Oskol.Game.GameServerTest do
     end
 
     test "creates a new room with the same players and setup once everyone is ready" do
-      %{game_id: game_id, p1: p1, p2: p2} = started(3, "single", clock: "rapid")
+      %{game_id: game_id, p1: p1, p2: p2} = started(3, "single", clock: "bg10")
       Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
       assert {:finished, _} = Oskol.Bots.play(game_id, 3, 6000)
       assert GameKit.finished?(GameServer.get_state(game_id).instance)
@@ -151,7 +151,7 @@ defmodule Oskol.Game.GameServerTest do
       assert rematch.instance != nil
       assert rematch.slug == "backgammon"
       assert rematch.setup.format == "single"
-      assert rematch.setup.clock == "rapid"
+      assert rematch.setup.clock == "bg10"
       # A fresh seed, not the old game's
       assert rematch.seed != 3
 

@@ -37,13 +37,13 @@ defmodule Oskol.PersistenceTest do
   end
 
   test "a lobby writes a waiting row with the setup and the seated player" do
-    %{game_id: game_id, p1: p1, t1: t1} = lobby("match3", clock: "blitz")
+    %{game_id: game_id, p1: p1, t1: t1} = lobby("match3", clock: "bg3")
 
     row = game_row(game_id)
     assert row.slug == "backgammon"
     assert row.status == "waiting"
     assert row.config["format"] == "match3"
-    assert row.config["clock"] == "blitz"
+    assert row.config["clock"] == "bg3"
     assert [%{"id" => ^p1, "name" => "Alice", "token" => ^t1}] = row.players
   end
 

@@ -1,17 +1,18 @@
 /**
- * Smoke test for backgammon on the generic renderer, with a blitz clock.
+ * Smoke test for backgammon, with a 3 minute clock and the game's 12 s delay.
  *
- * 1. /backgammon -> create game, second player joins via invite link
- * 2. Both pick "Single game" and the Blitz clock, start
- * 3. The player to move sees move buttons; clicking one moves a checker
- * 4. Clocks render and the mover's clock is running
+ * 1. / -> CREATE GAME -> the dialog: Match to 3, 3 min; the second player
+ *    joins by the invite link (playwright/lib/flows.js does both)
+ * 2. The player to move sees selectable points; a tap plays a die
+ * 3. Clocks render; the first 12 s of a turn are free
+ * 4. PLAY ends the turn; the opponent is offered ROLL and DOUBLE
  *
  * Run with the server up:  node playwright/test-backgammon-smoke/test.js
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { createGame, joinByLink } = require('../lib/flows');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = 'playwright/screenshots/test-backgammon-smoke';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -38,28 +39,20 @@ async function main() {
   try {
     const p1 = await context.newPage();
     watch(p1, 'p1');
-    await p1.goto(`${BASE}/backgammon`);
-    await p1.waitForSelector('#create-name');
-    // The creator picks everything, then shares the link.
-    await p1.fill('input[name="player_name"]', 'Alice');
-    await p1.click('#format-match3');
-    await p1.click('#clock-blitz');
-    await p1.click('#create-game');
-    await p1.waitForSelector('#share-link');
-    const gameId = new URL(p1.url()).pathname.split('/')[2];
+    // The creator picks everything on the home page, then shares the link.
+    const game = await createGame(p1, { name: 'Alice', mode: 'match3', clock: 'bg3' });
+    const gameId = game.gameId;
     log(`Game ${gameId} created`);
     await p1.screenshot({ path: `${SHOTS}/01-lobby.png` });
 
     // The opponent opens the link, types a name, and the game starts.
     const p2 = await context.newPage();
     watch(p2, 'p2');
-    await p2.goto(`${BASE}/backgammon?game=${gameId}`);
-    await p2.waitForSelector('#join-game');
-    await p2.waitForSelector('text=Match to 3');
-    await p2.fill('input[name="player_name"]', 'Bob');
-    await p2.click('#join-game');
+    const joined = await joinByLink(p2, game.inviteUrl, 'Bob');
+    if (!/Match to 3/.test(joined.summary) || !/3 min/.test(joined.summary)) {
+      throw new Error(`the invite should say what the game is, said: ${joined.summary}`);
+    }
     await p1.waitForURL(`**/backgammon/${gameId}**`);
-    await p2.waitForURL(`**/backgammon/${gameId}**`);
     log('Both players on the game page');
 
     // Bespoke board: whoever moves first has selectable source points.
@@ -85,6 +78,12 @@ async function main() {
     }
     const clockText = await mover.locator('.font-mono .tabular-nums').allTextContents();
     if (!clockText.some((t) => /^\d+:\d\d$/.test(t))) throw new Error(`clocks not rendered: ${clockText}`);
+    // 3 minutes each, and the turn's first 12 s are free: nobody's bank has
+    // moved yet, and a couple of seconds into the turn it still has not.
+    if (!clockText.every((t) => !/^\d+:\d\d$/.test(t) || t === '3:00')) throw new Error(`expected 3:00 each, saw ${clockText}`);
+    await sleep(2500);
+    const stillFree = await mover.locator('.font-mono .tabular-nums').allTextContents();
+    if (!stillFree.every((t) => !/^\d+:\d\d$/.test(t) || t === '3:00')) throw new Error(`the 12 s delay should be free, saw ${stillFree}`);
 
     // One tap on a source plays it with the next die: a die is spent, at once.
     const usedBefore = await mover.locator('.die.used').count();

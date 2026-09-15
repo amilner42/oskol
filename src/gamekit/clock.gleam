@@ -77,6 +77,9 @@ pub fn preset_ids() -> List(String) {
 pub fn control_label(control: Control) -> String {
   case control {
     NoClock -> "No clock"
+    // A bank with no increment (backgammon's, whose delay is the game's own)
+    // is just its minutes.
+    Fischer(base, 0) -> minutes(base)
     Fischer(base, inc) -> minutes(base) <> " + " <> seconds(inc)
     Bronstein(base, delay) ->
       minutes(base) <> ", " <> seconds(delay) <> " delay"
