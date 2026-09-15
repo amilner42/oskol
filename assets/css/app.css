@@ -872,7 +872,7 @@ a.q-card:hover, a.q-card:focus-visible {
 .die-pip { background: var(--ink); }
 /* The dice row: its gap is a variable so a die that has not landed yet can
    cancel it (see `die-earned`). For the mover the row is a control -- a
-   tap hands "next" to the die after -- and the next die stands up. */
+   tap swaps the two dice -- and the next die is always the left one. */
 .dice-row { --dice-gap: 0.5rem; gap: var(--dice-gap); }
 @media (min-width: 640px) { .dice-row { --dice-gap: 0.75rem; } }
 /* On a phone the dice follow the points, so a double's four dice fit the
@@ -883,8 +883,16 @@ a.q-card:hover, a.q-card:focus-visible {
   .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
   .bg-page .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
 }
-.dice-row.rotates { cursor: pointer; }
-.die.next { transform: translateY(-5px); }
+.dice-row.swaps { cursor: pointer; }
+/* Swapping is flex `order`, never a move in the DOM (that would restart
+   the die's roll animation), and each die slides in from where it was:
+   the left slot from the right, the right slot from the left, by one die
+   and the gap. The two animation names are the same slide; the view
+   alternates them so every tap restarts it. */
+.die.slot-0 { order: 0; --slide-from: calc(100% + var(--dice-gap)); }
+.die.slot-1 { order: 1; --slide-from: calc(-100% - var(--dice-gap)); }
+@keyframes die-slide-a { from { transform: translateX(var(--slide-from)); } to { transform: none; } }
+@keyframes die-slide-b { from { transform: translateX(var(--slide-from)); } to { transform: none; } }
 /* Each player throws their own dice, in their checkers' colour: white with
    dark pips, or dark with white pips and the black checker's inner ring. */
 .die.black { background: var(--ink); box-shadow: 3px 3px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
@@ -920,6 +928,12 @@ a.q-card:hover, a.q-card:focus-visible {
      They wait out the tumble (`backwards` holds the from-state through the
      delay) and drop in beside the pair that was. */
   .die.earned { animation: die-earned 0.28s ease-out 0.92s backwards; }
+  /* The swap's slide (see `slot-0` above). After the roll rules on
+     purpose: a swapped die is usually one that was thrown, and its
+     finished shake must give way to the slide, not the other way round.
+     The reel is the child's own animation and is untouched. */
+  .die.slid-a { animation: die-slide-a 0.22s ease-out; }
+  .die.slid-b { animation: die-slide-b 0.22s ease-out; }
 }
 @keyframes die-reel { to { transform: translateY(-80%); } }
 /* A die a double earns takes no room until it lands: zero wide, no
