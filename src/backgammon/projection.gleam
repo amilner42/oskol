@@ -150,7 +150,6 @@ pub fn record_json(state: GameState) -> json.Json {
   ])
 }
 
-
 /// Between the games of a match: how the game just played ended, and who
 /// has said they are ready for the next one. Everyone sees it, spectators
 /// too. Like `resign_offer`, the key is present only in that phase.
