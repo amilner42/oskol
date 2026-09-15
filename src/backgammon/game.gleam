@@ -155,6 +155,7 @@ pub fn decode_action(incoming: action.Incoming) -> Result(Action, String) {
     }
     "accept_resign" -> Ok(engine.AcceptResign)
     "decline_resign" -> Ok(engine.DeclineResign)
+    "ready" -> Ok(engine.Ready)
     "move" -> {
       use from <- result.try(loc_param(incoming.params, "from"))
       use to <- result.try(loc_param(incoming.params, "to"))

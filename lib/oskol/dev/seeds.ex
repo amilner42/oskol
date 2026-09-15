@@ -81,6 +81,13 @@ defmodule Oskol.Dev.Seeds do
         what:
           "pick-dice twist on: P1 to roll, and may pick the dice (pick 6-6 to watch a double land)",
         find: &can_pick?/2
+      },
+      %{
+        code: "000009",
+        format: "match5",
+        what:
+          "match to 5: a game has just been won off the board, which waits for both players to press READY",
+        find: &between_games?/2
       }
     ]
   end
@@ -218,6 +225,11 @@ defmodule Oskol.Dev.Seeds do
   defp owns_cube?(u, me), do: data(u)["cube"]["owner"] == me and has?(u, "move")
 
   defp can_pick?(u, _me), do: has?(u, "pick")
+
+  defp between_games?(u, _me),
+    do:
+      has?(u, "ready") and data(u)["between_games"]["ready"] == [] and
+        data(u)["between_games"]["kind"] != "dropped"
 
   defp data(u), do: u["scene"]["data"]
 

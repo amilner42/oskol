@@ -1654,13 +1654,18 @@ viewTray board ownerId isMine =
 
 viewLeftBand : Board -> List (Html Msg)
 viewLeftBand board =
-    leftButtons board.ctx
-        ++ (if moverIsMe board.ctx then
-                []
+    case betweenGames board.ctx of
+        Just between ->
+            [ viewGameResult board.ctx between ]
 
-            else
-                viewRoll board
-           )
+        Nothing ->
+            leftButtons board.ctx
+                ++ (if moverIsMe board.ctx then
+                        []
+
+                    else
+                        viewRoll board
+                   )
 
 
 leftButtons : Ctx -> List (Html Msg)
@@ -1695,6 +1700,16 @@ resignOffer ctx =
 
 viewRightBand : Board -> List (Html Msg)
 viewRightBand board =
+    case betweenGames board.ctx of
+        Just between ->
+            viewReadyUp board.ctx between
+
+        Nothing ->
+            viewRightBandInPlay board
+
+
+viewRightBandInPlay : Board -> List (Html Msg)
+viewRightBandInPlay board =
     let
         ctx =
             board.ctx
@@ -1764,6 +1779,138 @@ viewRightBand board =
     )
         ++ roll
         ++ status
+
+
+
+-- BETWEEN GAMES
+--
+-- A game of a match (or of unlimited play) is over and the next one waits
+-- until both players say READY. The finished game's final position stays on
+-- the board -- nothing on it is legal, so nothing on it answers a tap -- and
+-- the band says how the game went (left half) and who is ready (right half).
+-- Everything here reads the scene's `between_games` and the `ready` schema;
+-- the client decides nothing about it.
+
+
+{-| How the game just played ended, and who has said they are ready for
+the next one (the scene's `between_games`, present only in that phase).
+-}
+type alias BetweenGames =
+    { ready : List String, winner : String, kind : String, points : Int }
+
+
+betweenGames : Ctx -> Maybe BetweenGames
+betweenGames ctx =
+    Protocol.sceneData
+        (D.map4 BetweenGames
+            (D.field "ready" (D.list D.string))
+            (D.field "winner" D.string)
+            (D.field "kind" D.string)
+            (D.field "points" D.int)
+        )
+        "between_games"
+        ctx.scene
+
+
+{-| The result of the game just played and the match score: who won, how
+many points, how, and the score as it now stands (the viewer's first; a
+spectator reads it in seat order).
+-}
+viewGameResult : Ctx -> BetweenGames -> Html Msg
+viewGameResult ctx between =
+    let
+        headline =
+            (if between.winner == ctx.playerId then
+                "YOU WIN"
+
+             else
+                String.toUpper (ctx.nameOf between.winner) ++ " WINS"
+            )
+                ++ " +"
+                ++ String.fromInt between.points
+
+        how =
+            case between.kind of
+                "dropped" ->
+                    "DOUBLE DROPPED"
+
+                other ->
+                    String.toUpper other
+
+        scoreOf p =
+            String.fromInt (Protocol.counter "score" p)
+
+        seated =
+            List.any (\p -> p.id == ctx.playerId) ctx.scene.players
+
+        score =
+            case ( seated, seatOf ctx, Protocol.opponentOf (seatId ctx) ctx.scene ) of
+                ( True, Just me, Just them ) ->
+                    scoreOf me ++ "-" ++ scoreOf them
+
+                _ ->
+                    ctx.scene.players |> List.map scoreOf |> String.join "-"
+    in
+    span
+        [ class "pixel text-[8px] sm:text-[9px] px-1 leading-relaxed text-center min-w-0"
+        , Html.Attributes.id "bg-game-result"
+        ]
+        [ span [ style "color" "var(--bg-accent)" ] [ text headline ]
+        , Html.br [] []
+        , span [ style "color" "var(--pencil)" ] [ text (how ++ " · " ++ score) ]
+        ]
+
+
+{-| READY for a player who has not pressed it (and, beside it, word that
+the opponent already has); once pressed, who is still to press it. A
+spectator reads who is ready.
+-}
+viewReadyUp : Ctx -> BetweenGames -> List (Html Msg)
+viewReadyUp ctx between =
+    let
+        status s =
+            span
+                [ class "pixel text-[8px] sm:text-[9px] px-1 leading-relaxed text-center"
+                , style "color" "var(--pencil)"
+                , Html.Attributes.id "bg-ready-status"
+                ]
+                [ text s ]
+
+        seated =
+            List.any (\p -> p.id == ctx.playerId) ctx.scene.players
+
+        opponentName =
+            Protocol.opponentOf (seatId ctx) ctx.scene
+                |> Maybe.map (.name >> String.toUpper)
+                |> Maybe.withDefault "OPPONENT"
+
+        theyAreReady =
+            List.any (\id -> id /= ctx.playerId) between.ready
+    in
+    case actionButton ctx "ready" "sky" of
+        Just ready ->
+            ready
+                :: (if theyAreReady then
+                        [ status (opponentName ++ " IS READY") ]
+
+                    else
+                        []
+                   )
+
+        Nothing ->
+            if seated && List.member ctx.playerId between.ready then
+                [ status ("WAITING FOR " ++ opponentName) ]
+
+            else if seated then
+                []
+
+            else
+                case between.ready of
+                    id :: _ ->
+                        [ status (String.toUpper (ctx.nameOf id) ++ " IS READY") ]
+
+                    [] ->
+                        [ status "NEXT GAME SOON" ]
 
 
 {-| The roll on the board: the mover's dice in the mover's colour, the tag
