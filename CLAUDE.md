@@ -349,6 +349,9 @@ Notes:
   `npx playwright install chromium` instead.
 
 ## Development workflow for Claude
+- Work is tracked in Aveline, not here: `aveline -w oskol get-orientation`
+  is the loop (ticket, branch, PR, adversarial review, CI, merge, deploy,
+  worklog). This file is the code truth that loop points back to.
 - Do not leave servers running. For a browser check, run the server and the
   Playwright script in one bounded foreground command, then stop it.
 - Verify with `bin/check` before reporting.

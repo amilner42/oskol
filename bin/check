@@ -15,6 +15,9 @@ step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 step "mix compile"
 mix compile
 
+step "mix format (CI checks it; catch it here first)"
+mix format --check-formatted
+
 step "Gleam unit, rules, property and golden tests"
 bin/test-gleam
 
