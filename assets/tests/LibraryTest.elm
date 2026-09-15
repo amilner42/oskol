@@ -26,17 +26,19 @@ suite =
             \_ ->
                 loaded
                     |> Expect.all
-                        [ Query.find [ tag "h1" ] >> Query.has [ text "Play the classics" ]
-                        , Query.has [ text "create game → share code → play" ]
-                        , Query.hasNot [ text "PLAY THE CLASSICS." ]
-                        , Query.hasNot [ text "WITH A TWIST." ]
+                        [ Query.find [ tag "h1" ] >> Query.has [ text "PLAY THE CLASSICS." ]
+                        , Query.find [ tag "h1" ] >> Query.has [ text "WITH A TWIST." ]
+                        , Query.has [ text "create game" ]
+                        , Query.has [ text "share code" ]
+                        , Query.has [ text "play a friend" ]
+                        , Query.findAll [ class "q-num" ] >> Query.count (Expect.equal 3)
                         , Query.hasNot [ text "Free · No sign up · No ads" ]
                         ]
-        , test "one grid: two across on a phone, four from sm up" <|
+        , test "one grid: two across at every width" <|
             \_ ->
                 loaded
                     |> Query.find [ id "game-library" ]
-                    |> Query.has [ class "grid-cols-2", class "sm:grid-cols-4" ]
+                    |> Query.has [ class "grid-cols-2" ]
         , test "one tile per game, playable or not, and the playable ones link" <|
             \_ ->
                 loaded

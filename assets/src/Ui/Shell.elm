@@ -13,6 +13,8 @@ import Html exposing (Html)
 import Html.Attributes exposing (attribute, class, href, id, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Route
+import Svg
+import Svg.Attributes as SvgAttr
 import Ui.Notebook as Notebook exposing (style)
 
 
@@ -58,19 +60,22 @@ topbar config =
         [ class "w-full max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5 pb-2 flex items-center justify-between gap-3" ]
         [ Html.a
             [ href (Route.href Route.library)
-            , class "inline-block"
+            , class "inline-flex items-center"
             , attribute "aria-label" "Oskol home"
             ]
             -- Plain pixel type, no plate: the wordmark is the one loud thing
             -- the page still says, and a box around it makes it a button.
-            [ Html.span
-                [ class "pixel text-[12px] sm:text-[13px] inline-block"
+            [ bird
+            , Html.span
+                -- the pixel face sits low in its line box; leading-none and a
+                -- one-pixel lift put its optical centre on the bird's
+                [ class "pixel text-[15px] sm:text-[18px] block leading-none relative top-[1px]"
                 , style "color: var(--ink)"
                 ]
                 [ Html.text "OSKOL" ]
             ]
         , Html.div [ class "flex items-center gap-3" ]
-            [ Html.span [ class "hidden sm:inline q-note text-sm" ] [ Html.text "Have a code?" ]
+            [ Html.span [ class "hidden sm:block q-note text-sm leading-none" ] [ Html.text "Have a code?" ]
             , Html.button
                 [ type_ "button"
                 , id "open-join"
@@ -151,4 +156,30 @@ joinModal config =
                     ++ [ Notebook.submitCta { id = "join-submit", label = "Join game" } ]
                 )
             ]
+        ]
+
+
+{-| The oskol itself: a small bird in profile, one line, before the
+wordmark at the type's height. The drawing is Lucide's "bird" icon
+(lucide.dev, MIT), a monoline built for this size.
+-}
+bird : Html msg
+bird =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 24 24"
+        , SvgAttr.class "block h-[1.9em] w-auto mr-2 shrink-0"
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "2"
+        , SvgAttr.strokeLinecap "round"
+        , SvgAttr.strokeLinejoin "round"
+        , attribute "aria-hidden" "true"
+        , attribute "style" "color: var(--ink)"
+        ]
+        [ Svg.path [ SvgAttr.d "M16 7h.01" ] []
+        , Svg.path [ SvgAttr.d "M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20" ] []
+        , Svg.path [ SvgAttr.d "m20 7 2 .5-2 .5" ] []
+        , Svg.path [ SvgAttr.d "M10 18v3" ] []
+        , Svg.path [ SvgAttr.d "M14 17.75V21" ] []
+        , Svg.path [ SvgAttr.d "M7 18a6 6 0 0 0 3.84-10.61" ] []
         ]

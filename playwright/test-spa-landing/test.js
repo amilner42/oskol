@@ -40,11 +40,12 @@ async function shots(browser, viewport, tag, errors) {
     await page.screenshot({ path: `${SHOTS}/${tag}-01-library.png`, fullPage: true });
 
     // One grid of tiles at every width; the head says two things and no more.
-    const head = (await page.textContent('h1')).trim();
-    if (head !== 'Play the classics') throw new Error(`the headline reads "${head}"`);
-    const sub = await page.textContent('h1 + p');
-    if (sub.trim() !== 'create game → share code → play')
-      throw new Error(`the subtitle reads "${sub}"`);
+    const head = (await page.textContent('h1')).replace(/\s+/g, ' ').trim();
+    if (!head.includes('PLAY THE CLASSICS.') || !head.includes('WITH A TWIST.'))
+      throw new Error(`the headline reads "${head}"`);
+    const sub = (await page.textContent('h1 + p')).replace(/\s+/g, ' ').replace(/(\d)/g, ' $1 ').replace(/\s+/g, ' ').trim();
+    if (sub !== '1 create game 2 share code 3 play a friend')
+      throw new Error(`the steps read "${sub}"`);
     const tiles = await page.locator('#game-library a.q-card').count();
     if (tiles !== 4) throw new Error(`expected 4 game tiles, saw ${tiles}`);
     // Nothing scrolls sideways at either width.

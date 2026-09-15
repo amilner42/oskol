@@ -283,6 +283,9 @@ subscriptions model =
             Play pageModel ->
                 Sub.map PlayMsg (Page.Play.subscriptions pageModel)
 
+            Library pageModel ->
+                Sub.map LibraryMsg (Page.Library.subscriptions pageModel)
+
             _ ->
                 Sub.none
         , if model.joinOpen then
