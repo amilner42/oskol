@@ -79,6 +79,9 @@ if [[ "${1:-}" == "--browser" ]]; then
   # Arranges its own room (a seed that dances, replayed into the dev
   # database) and opens it, so it also covers rehydrating mid-dance.
   PORT=4400 node playwright/test-backgammon-dance/test.js
+  # A finished match played again, with its analysis stubbed in the browser;
+  # it arranges its own room (setup.exs) the same way.
+  PORT=4400 node playwright/test-backgammon-replay/test.js
   node playwright/test-poker-smoke/test.js
   node playwright/test-go-smoke/test.js
   node playwright/test-chess-smoke/test.js

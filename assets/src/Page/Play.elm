@@ -593,6 +593,23 @@ inviteUrl model =
     model.origin ++ Route.href (Route.invite model.gameSlug model.gameId)
 
 
+{-| Where a finished game of this room is replayed: the replay opens on the
+seat's own token, so a spectator (no seat in the scene) is offered none.
+-}
+replayHref : Model -> GamePayload -> Int -> Maybe String
+replayHref model payload number =
+    case model.seatToken of
+        Just token ->
+            if List.any (\p -> p.id == payload.playerId) payload.players then
+                Just (Route.href (Route.replay model.gameSlug model.gameId (Just token) (Just number)))
+
+            else
+                Nothing
+
+        Nothing ->
+            Nothing
+
+
 nameOf : Model -> String -> String
 nameOf model playerId =
     model.payload
@@ -771,6 +788,7 @@ view model =
                                     , finished = finished
                                     , away = awayIds payload
                                     , theme = theme model
+                                    , replayHref = replayHref model payload
                                     }
                                 )
 

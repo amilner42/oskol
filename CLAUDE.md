@@ -209,6 +209,10 @@ assets/src/Api/Catalog.elm       the landing pages' data and its decoders
 assets/src/Page/Library.elm      "/" the library: one grid of quiet game tiles
 assets/src/Page/GameLanding.elm  "/:slug" create page, and what an invite offers
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
+assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again, with the
+                                 engine's analysis (polls /reviews while any is pending)
+assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay reads them:
+                                 decoders, the board at each step, verdicts per record line
 assets/src/GameArt.elm           per-game accent + pixel-art reel + phone motif
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
@@ -276,6 +280,11 @@ arrive at any of them cold, and moving between them afterwards is a
   player takes a seat, and the only thing that opens it. The bare
   `/poker/<id>` grants nothing and bounces to the invite link.
 - `/backgammon`, `/backgammon/<id>` the same for backgammon
+- `/backgammon/<id>/replay?t=<token>&game=<n>` a room's games played again,
+  a line of the record at a time, with the analysis engine's verdicts. It
+  opens on a seat's token, like the table (the bare URL bounces to the
+  invite link); the table offers it from the match history and at game
+  over. Board, steps and verdicts all come from `/record` and `/reviews`.
 
 ## The landing API (`/papi`)
 
@@ -295,8 +304,15 @@ GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, discon
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id/reviews   {ok, players, games: [{game_number,
                                            status, turns, review}]}
+                                         review: {levels, timing_ms, players, turns}; a
+                                         turn names its record lines (entry,
+                                         double_entry, answer_entry) and each
+                                         candidate move its position and landings
+POST /papi/games/:slug/rooms/:id/reviews/retry  {t, game_number} -> as GET, a failed
+                                         game queued again (a seat only)
 GET  /papi/games/:slug/rooms/:id/record?t=<seat token>
-                                       {ok, slug, id, record}  (the game's `record`)
+                                       {ok, slug, id, you, record}  (the game's `record`;
+                                       `you` is the seat the token opens)
 GET  /papi/codes/:code                 {ok, slug}
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
@@ -399,13 +415,19 @@ mix oskol.seed        # local backgammon rooms at codes 000001.. parked in posit
                       # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated,
                       # P1 to act; prints each seat's link (lib/oskol/dev/seeds.ex);
                       # 000010 is a single game played to the end, with a review
-                      # (start the fly proxy first, or the review fails and waits)
+                      # (start the fly proxy first, or the review fails and waits);
+                      # 000011 a match to 3 played to the end: its replay is
+                      # /backgammon/000011/replay?t=<P1's token>
 node playwright/test-poker-smoke/test.js        # poker: create, join, fold, next hand, flop
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
 node playwright/test-backgammon-landscape/test.js  # backgammon on a sideways phone: the board
                                                # fits the screen height exactly, nothing scrolls
+node playwright/test-backgammon-replay/test.js  # the replay of a finished match (it arranges
+                                               # the room): steps, keys, swipes, analysis
+                                               # pending -> done, retry, phones; the analysis
+                                               # is stubbed unless REPLAY_REAL=1
 node playwright/test-spa-landing/test.js        # landing pages + a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
@@ -509,6 +531,10 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   settings that follow a mode, inline validation, and the invite's three
   answers.
 - `GameArtTest`: the sprite decomposition paints back exactly its grid.
+- `ReplayTest`: the replay on the real record and analysis of seed 000011
+  (`ReplayFixtures`): decoders, the board at every step, stepping, keys,
+  swipes, game switching, and the analysis filling in without moving the
+  viewer; polling only while something is pending.
 
 **Elixir (`mix test`)**
 - `test/oskol/room_test.exs`: `Oskol.Bots` (test_support) plays random

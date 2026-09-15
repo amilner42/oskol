@@ -469,13 +469,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched }
+                            ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched }
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched }, Nothing )
+                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -486,7 +486,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched }
+                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -545,7 +545,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched }, NoOut )
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -785,6 +785,9 @@ suite =
                             Expect.all
                                 [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "YOU WIN +2" ]
                                 , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "GAMMON · 0-0" ]
+
+                                -- the game just played can be replayed from here
+                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.find [ class "bg-replay-link" ] |> Query.has [ text "REPLAY ▸" ]
                                 , \_ -> rendered |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "READY" ]
                                 , \_ -> rendered |> Query.hasNot [ id "bg-ready-status" ]
 
@@ -1179,7 +1182,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model swaps =
-                    { drag = Drag.idle, plans = [], swaps = swaps, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched }
+                    { drag = Drag.idle, plans = [], swaps = swaps, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }
 
                 rendered swaps u =
                     View.view (ctx "p1" (twoDice u) (model swaps)) |> Query.fromHtml
@@ -2106,6 +2109,15 @@ suite =
                             Expect.all
                                 [ \_ -> card |> Query.find [ id "bg-review-moves" ] |> Event.simulate Event.click |> Event.expect (ViewTurn 0)
 
+                                -- and the replay, with its analysis, of the game just played
+                                , \_ -> card |> Query.find [ id "bg-replay" ] |> Query.has [ attribute (Html.Attributes.href "/backgammon/123456/replay?t=tok&game=1") ]
+
+                                -- a spectator has no seat to open a replay on
+                                , \_ ->
+                                    View.view (let c = ctx "p1" over View.init in { c | replayHref = \_ -> Nothing })
+                                        |> Query.fromHtml
+                                        |> Query.hasNot [ id "bg-replay" ]
+
                                 -- while reviewing, the card is out of the way and LIVE brings it back
                                 , \_ ->
                                     View.view (ctx "p1" over (View.update (ViewTurn 0) View.init |> Tuple.first))
@@ -2466,6 +2478,7 @@ ctx playerId update model =
     , rematchReady = []
     , away = []
     , theme = View.defaultTheme
+    , replayHref = \n -> Just ("/backgammon/123456/replay?t=tok&game=" ++ String.fromInt n)
     , finished =
         case update.outcome of
             Protocol.Finished winners ->
@@ -2719,7 +2732,7 @@ perFixture fixture =
                     |> List.head
                     |> Maybe.map
                         (\u ->
-                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched })
+                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal 0)

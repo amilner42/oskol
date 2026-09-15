@@ -125,6 +125,9 @@ jobs:
           done
           curl -sf -o /dev/null http://localhost:4400/ || (cat server.log && exit 1)
       - run: node playwright/test-backgammon-smoke/test.js
+      # Arranges its own finished match (mix run setup.exs); the analysis is
+      # stubbed in the browser, so no engine is needed.
+      - run: node playwright/test-backgammon-replay/test.js
       - run: node playwright/test-poker-smoke/test.js
       - run: node playwright/test-go-smoke/test.js
       - run: node playwright/test-chess-smoke/test.js
