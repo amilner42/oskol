@@ -7,9 +7,11 @@ import backgammon/engine
 import backgammon/game as backgammon
 import backgammon/state
 import gamekit/action
+import gamekit/clock
 import gamekit/conformance
 import gamekit/event
 import gamekit/game.{Seat}
+import gamekit/instance
 import gamekit/rng
 import gamekit/scene
 import gleam/dict
@@ -348,6 +350,8 @@ pub fn declining_a_resignation_resumes_the_same_turn_and_dice_test() {
   assert names(s, "p2") == ["accept_resign", "decline_resign"]
   assert engine.apply(s, "p1", engine.Play) == Error("A resignation is pending")
   assert engine.apply(s, "p1", engine.Undo) == Error("A resignation is pending")
+  // The responder joins the clock; the mover's keeps running
+  assert engine.on_the_clock(s) == ["p2", "p1"]
   let #(s, events) = apply(s, "p2", engine.DeclineResign)
   assert has_custom(events, "resign_declined")
   assert has_custom(events, "turn_started")
@@ -365,7 +369,8 @@ pub fn a_resignation_may_be_offered_while_a_double_is_pending_test() {
   let #(s, _) = apply(s, "p1", engine.Double)
   // The player weighing the take resigns instead: the doubler answers
   let #(s, _) = apply(s, "p2", engine.Resign(Single))
-  assert engine.on_the_clock(s) == ["p1"]
+  // The doubler answers the offer, and the taker's clock keeps running
+  assert engine.on_the_clock(s) == ["p1", "p2"]
   assert engine.apply(s, "p2", engine.Take) == Error("A resignation is pending")
   let #(declined, _) = apply(s, "p1", engine.DeclineResign)
   let assert state.Doubled(White) = declined.phase
@@ -420,6 +425,54 @@ pub fn an_accepted_resignation_can_end_the_match_test() {
   let #(s, _) = apply(s, "p1", engine.AcceptResign)
   assert state.score_of(s, "p1") == 4
   assert s.crawford && s.game_number == 2
+}
+
+pub fn an_offer_never_stops_the_offerer_clock_test() {
+  // Fischer 60 s + 10 s, with backgammon's 12 s turn delay. The mover is
+  // on the clock from the opening roll; offering to resign must not stop
+  // it, and being declined must not restart it with a fresh delay or an
+  // increment -- otherwise a player about to flag could stall forever.
+  let assert Ok(inst) =
+    instance.start(
+      backgammon.game(),
+      "match5",
+      [],
+      seats(),
+      40,
+      clock.Fischer(60_000, 10_000),
+      0,
+    )
+  let clocks = instance.clocks(inst)
+  let #(mover, other) = case clock.running(clocks, "p1") {
+    True -> #("p1", "p2")
+    False -> #("p2", "p1")
+  }
+  assert clock.running(clocks, other) == False
+  let send = fn(inst, who, text, now) {
+    let assert Ok(raw) = conformance.parse(text)
+    let assert Ok(#(next, _)) = instance.apply(inst, who, raw, now)
+    next
+  }
+  let inst =
+    send(
+      inst,
+      mover,
+      "{\"name\":\"resign\",\"params\":{\"stakes\":\"single\"}}",
+      5000,
+    )
+  let clocks = instance.clocks(inst)
+  assert clock.running(clocks, mover) && clock.running(clocks, other)
+  let inst =
+    send(inst, other, "{\"name\":\"decline_resign\",\"params\":{}}", 6000)
+  let clocks = instance.clocks(inst)
+  assert clock.running(clocks, mover) && !clock.running(clocks, other)
+  // 13 s into the turn: the 12 s delay from the roll is spent and one
+  // second is charged. A re-granted delay would have left it untouched, an
+  // increment would have added ten seconds.
+  assert clock.remaining(clocks, mover, 13_000) == 59_000
+  // The responder was charged for the second they took, inside their own
+  // delay, and banked the increment for having acted.
+  assert clock.remaining(clocks, other, 13_000) == 70_000
 }
 
 pub fn resign_actions_decode_with_and_without_stakes_test() {

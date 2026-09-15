@@ -218,9 +218,28 @@ pub fn to_act(state: GameState) -> Option(PlayerId) {
   case state.resign_offer, state.phase {
     _, Finished(_) -> None
     Some(ResignOffer(by, _)), _ -> Some(player_of(state, board.opponent(by)))
-    None, Rolling(c) -> Some(player_of(state, c))
-    None, Moving(c, _) -> Some(player_of(state, c))
-    None, Doubled(by) -> Some(player_of(state, board.opponent(by)))
+    None, _ -> phase_actor(state)
+  }
+}
+
+/// The player the phase itself is waiting on, resignation offers aside.
+fn phase_actor(state: GameState) -> Option(PlayerId) {
+  case state.phase {
+    Rolling(c) -> Some(player_of(state, c))
+    Moving(c, _) -> Some(player_of(state, c))
+    Doubled(by) -> Some(player_of(state, board.opponent(by)))
+    Finished(_) -> None
+  }
+}
+
+/// Whose clocks run. The player to act -- and, while a resignation is on
+/// offer, also whoever the phase was already charging: an offer never
+/// stops the offerer's clock, so offering and being declined cannot buy
+/// time (a fresh turn delay, a Fischer increment) over and over.
+pub fn charged(state: GameState) -> List(PlayerId) {
+  case state.resign_offer {
+    None -> option.values([to_act(state)])
+    Some(_) -> option.values([to_act(state), phase_actor(state)]) |> list.unique
   }
 }
 

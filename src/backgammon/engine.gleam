@@ -415,10 +415,8 @@ fn label_for(m: board.Move) -> String {
 }
 
 /// Only the player who must act is on the clock (the responder while a
-/// double or a resignation is pending).
+/// double is pending). A resignation on offer adds its responder to the
+/// clock without taking the offerer off it (`state.charged`).
 pub fn on_the_clock(state: GameState) -> List(String) {
-  case state.to_act(state) {
-    Some(id) -> [id]
-    None -> []
-  }
+  state.charged(state)
 }
