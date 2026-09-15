@@ -21,8 +21,9 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
   let no_moves = state.no_moves(state)
   let state =
     state.GameState(..state, board: state.visible_board(state, viewer_id))
-  // The match record, oldest first (the state keeps it newest first).
-  let entries = list.reverse(state.record)
+  // The record of the game on the board, oldest first (the state keeps the
+  // whole match newest first), and the results of the games before it.
+  let current = record.current_game(state.record, state.game_number)
   scene.Scene(
     game: slug,
     phase: phase_name(state),
@@ -88,23 +89,61 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
         state.Finished(color) -> json.string(state.player_of(state, color))
         _ -> json.null()
       }),
-      // The match record, oldest first, and the games it has finished. Both
-      // are public: a committed turn is on the board for everyone.
-      #("record", json.array(entries, record.to_json)),
+      // The record of this game only (a finished match: its last game),
+      // oldest first, and one result line per finished game. Every update
+      // carries them, so they are bounded by a game, not by the match: the
+      // turns of earlier games are served on request (`record_json`, the
+      // room's `/record`). All of it is public: a committed turn is on the
+      // board for everyone.
+      #("record", json.array(current, record.to_json)),
       #(
         "games",
-        json.array(
-          list.filter(entries, fn(e) {
-            case e {
-              record.GameOver(..) -> True
-              _ -> False
-            }
-          }),
-          record.to_json,
-        ),
+        json.array(record.results(list.reverse(state.record)), record.to_json),
       ),
     ]),
   )
+}
+
+/// The whole record, for the room's `/record` endpoint (the game contract's
+/// `record`): who played which colour, the match length, and every game,
+/// oldest first, with every entry the scene would have carried while it was
+/// being played -- turns with their positions, cube actions, and the result
+/// line that ends each finished game. The game in progress, if there is
+/// one, is last and has no result yet. Replay and analysis read this.
+pub fn record_json(state: GameState) -> json.Json {
+  let games = record.by_game(list.reverse(state.record))
+  let in_progress = case state.phase {
+    state.Finished(_) -> False
+    _ -> True
+  }
+  let games = case in_progress {
+    True -> games
+    // The match is over: the last group, after the final result, is empty.
+    False -> list.take(games, list.length(games) - 1)
+  }
+  json.object([
+    #(
+      "players",
+      json.array(state.order, fn(id) {
+        json.object([
+          #("id", json.string(id)),
+          #("name", json.string(state.name_of(state, id))),
+          #("color", json.string(board.color_name(color_for(state, id)))),
+        ])
+      }),
+    ),
+    #("target", json.int(state.config.target)),
+    #(
+      "games",
+      json.array(list.index_map(games, fn(g, i) { #(g, i) }), fn(pair) {
+        let #(entries, i) = pair
+        json.object([
+          #("number", json.int(i + 1)),
+          #("entries", json.array(entries, record.to_json)),
+        ])
+      }),
+    ),
+  ])
 }
 
 /// A resignation on offer: from whom, at what stakes, worth how much if

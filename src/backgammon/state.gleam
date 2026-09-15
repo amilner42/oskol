@@ -738,8 +738,10 @@ fn remove_one(dice: List(Int), die: Int) -> List(Int) {
   }
 }
 
-/// The record line for a committed turn: the roll as it landed and the
-/// moves in the mover's notation (none for a dance).
+/// The record line for a committed turn: the roll, high die first as a
+/// record reads (`31`, never `13`, and the opening roll too, whichever
+/// side threw which die), and the moves in the mover's notation (none for
+/// a dance).
 fn turn_entry(
   state: GameState,
   player_id: PlayerId,
@@ -748,7 +750,7 @@ fn turn_entry(
 ) -> record.Entry {
   record.Turn(
     player: player_id,
-    dice: state.last_roll,
+    dice: list.sort(state.last_roll, fn(a, b) { int.compare(b, a) }),
     picked: state.last_roll_picked,
     moves: record.notation(
       color,
@@ -756,7 +758,33 @@ fn turn_entry(
         record.Played(s.move.from, s.move.to, s.hit != None)
       }),
     ),
-    position: record.snapshot(state.board),
+    position: snapshot(state),
+    landed: landed(state.board, moves),
+  )
+}
+
+/// Where the checkers that moved this turn stand now, one point per
+/// checker (by id: a checker that moved twice counts once), low first; a
+/// checker borne off has no point. `board` is the board the turn left.
+fn landed(board: Board, moves: List(Staged)) -> List(Int) {
+  moves
+  |> list.map(fn(s) { s.mover })
+  |> list.unique
+  |> list.filter_map(fn(id) {
+    case dict.get(board.checkers, id) {
+      Ok(#(_, board.Point(p))) -> Ok(p)
+      _ -> Error(Nil)
+    }
+  })
+  |> list.sort(int.compare)
+}
+
+/// The position as the record keeps it: the board and the cube.
+pub fn snapshot(state: GameState) -> record.Snapshot {
+  record.snapshot(
+    state.board,
+    state.cube_value,
+    option.map(state.cube_owner, player_of(state, _)),
   )
 }
 
