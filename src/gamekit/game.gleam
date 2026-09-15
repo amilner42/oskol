@@ -73,8 +73,8 @@ pub type Outcome {
   Finished(winners: List(PlayerId))
 }
 
-/// What happens when a player's clock runs out. Most games forfeit; poker
-/// checks or folds for the player and the hand goes on.
+/// What happens when a player's clock runs out: the game is forfeit, or an
+/// action is taken for the player and play goes on.
 pub type Timeout(action) {
   Forfeit
   Act(action)

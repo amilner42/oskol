@@ -1,17 +1,14 @@
 //// Every game the platform knows about.
 ////
 //// Adding a game means adding one entry here. Nothing else on the server or
-//// in the generic client changes.
+//// in the client changes except, for a game with its own look, a view.
 
 import backgammon/game as backgammon
-import chess/game as chess
 import gamekit/clock.{type Control}
 import gamekit/fixture
 import gamekit/game.{type Info, type Seat}
 import gamekit/instance.{type Instance}
 import gleam/list
-import go/game as go
-import poker/game as poker
 
 pub type Entry {
   Entry(
@@ -52,12 +49,7 @@ pub fn entry(definition: game.Game(state, action)) -> Entry {
 
 /// The registered games, in library display order.
 pub fn all() -> List(Entry) {
-  [
-    entry(poker.game()),
-    entry(backgammon.game()),
-    entry(chess.game()),
-    entry(go.game()),
-  ]
+  [entry(backgammon.game())]
 }
 
 pub fn find(slug: String) -> Result(Entry, Nil) {

@@ -377,7 +377,7 @@ defmodule Oskol.Game.GameServer do
   end
 
   # Clock-driven turns are not activity: a table both players walked away
-  # from must still go idle, even if the clock keeps dealing hands.
+  # from must still go idle, even if a timeout keeps acting for them.
   def handle_info(:clock_tick, %GameServerState{} = state) do
     state = %GameServerState{state | clock_timer: nil}
 

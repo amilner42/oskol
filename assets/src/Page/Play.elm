@@ -14,8 +14,8 @@ port module Page.Play exposing
     )
 
 {-| `/:slug/:id` — the one client for every game. It decodes the gamekit
-protocol, keeps the latest payload, and hands the scene to a renderer: a
-bespoke view where a game has one, the generic renderer otherwise.
+protocol, keeps the latest payload, and hands the scene to the game's
+view (backgammon is the one game there is).
 
 This is the SPA's third page, and it was the whole app before it: the game
 experience below `view` is unchanged, and so is the channel wiring. What
@@ -36,9 +36,6 @@ import Api.Catalog as Catalog
 import Browser.Dom
 import Dict exposing (Dict)
 import Games.Backgammon.View as Backgammon
-import Games.Chess.View as Chess
-import Games.Poker.View as Poker
-import Generic.View
 import Html exposing (Html)
 import Html.Attributes exposing (attribute, class, id)
 import Html.Events exposing (onClick)
@@ -116,10 +113,7 @@ type alias Model =
     , payload : Maybe GamePayload -- latest protocol payload from the server
     , lobby : Maybe Protocol.Lobby -- the room before it has a game in it
     , legal : List Protocol.Schema -- legal action schemas for this player
-    , generic : Generic.View.Model
     , backgammon : Backgammon.Model
-    , chess : Chess.Model
-    , poker : Poker.Model
     , clockReceivedAt : Int -- client time (ms) when the latest clock snapshot arrived
     , nowMs : Int -- client time (ms), refreshed while a clock runs
     , connectionStatus : ConnectionStatus
@@ -149,10 +143,7 @@ init session config =
       , payload = Nothing
       , lobby = Nothing
       , legal = []
-      , generic = Generic.View.init
       , backgammon = Backgammon.init
-      , chess = Chess.init
-      , poker = Poker.init
       , clockReceivedAt = 0
       , nowMs = 0
       , connectionStatus = Connecting
@@ -217,11 +208,7 @@ framed model =
 type Msg
     = ChannelRequested
     | ServerMessageReceived ServerMessage
-    | GenericMsg Generic.View.Msg
     | BackgammonMsg Backgammon.Msg
-    | ChessMsg Chess.Msg
-    | PokerMsg Poker.Msg
-    | PokerAutoDeal
     | ClockSynced Time.Posix
     | ClockTick Time.Posix
     | RematchGameReady String
@@ -278,14 +265,6 @@ update msg model =
 
                 StatusMessage status ->
                     update (ConnectionStatusChanged (connectionStatusFromString status)) model
-
-        GenericMsg genericMsg ->
-            let
-                ( generic, maybeAction ) =
-                    Generic.View.update genericMsg model.generic
-            in
-            stay { model | generic = generic, error = Nothing }
-                (maybeAction |> Maybe.map sendToChannel |> Maybe.withDefault Cmd.none)
 
         BackgammonMsg bgMsg ->
             let
@@ -345,54 +324,6 @@ update msg model =
                         ]
                     , Remember backgammonThemeKey name
                     )
-
-        ChessMsg chessMsg ->
-            let
-                ( chess, out ) =
-                    Chess.update chessMsg model.chess
-
-                updated =
-                    { model | chess = chess, error = Nothing }
-            in
-            case out of
-                Chess.NoOut ->
-                    stay updated Cmd.none
-
-                Chess.Send value ->
-                    stay updated (sendToChannel value)
-
-                Chess.WantRematch ->
-                    update RequestRematch updated
-
-        PokerMsg pokerMsg ->
-            let
-                ( poker, out ) =
-                    Poker.update pokerMsg model.poker
-
-                updated =
-                    { model | poker = poker, error = Nothing }
-            in
-            case out of
-                Poker.NoOut ->
-                    stay updated Cmd.none
-
-                Poker.Send value ->
-                    stay updated (sendToChannel value)
-
-                Poker.WantRematch ->
-                    update RequestRematch updated
-
-        PokerAutoDeal ->
-            case pokerCtx model of
-                Just ctx ->
-                    if Poker.wantsAutoDeal ctx then
-                        stay model (sendToChannel (Protocol.encodeAction "deal" []))
-
-                    else
-                        stay model Cmd.none
-
-                Nothing ->
-                    stay model Cmd.none
 
         ClockSynced posix ->
             stay
@@ -660,29 +591,6 @@ theme model =
         |> Maybe.withDefault Backgammon.defaultTheme
 
 
-pokerCtx : Model -> Maybe Poker.Ctx
-pokerCtx model =
-    case ( model.gameSlug, model.payload ) of
-        ( "poker", Just payload ) ->
-            Just
-                { playerId = payload.playerId
-                , scene = payload.update.scene
-                , legal = payload.update.legal
-                , model = model.poker
-                , clock = Just payload.update.clock
-                , receivedAt = model.clockReceivedAt
-                , now = model.nowMs
-                , nameOf = nameOf model
-                , rematchReady = payload.rematchReady
-                , finished = finishedWinners payload
-                , away = awayIds payload
-                }
-
-        _ ->
-            Nothing
-
-
-
 -- SUBSCRIPTIONS
 
 
@@ -696,16 +604,6 @@ subscriptions model =
 
           else
             Sub.none
-        , case pokerCtx model of
-            Just ctx ->
-                if Poker.wantsAutoDeal ctx then
-                    Time.every 3500 (\_ -> PokerAutoDeal)
-
-                else
-                    Sub.none
-
-            Nothing ->
-                Sub.none
         ]
 
 
@@ -756,8 +654,8 @@ view model =
                     finishedWinners payload
 
                 game =
-                    case ( model.gameSlug, pokerCtx model ) of
-                        ( "backgammon", _ ) ->
+                    case model.gameSlug of
+                        "backgammon" ->
                             Html.map BackgammonMsg
                                 (Backgammon.view
                                     { playerId = payload.playerId
@@ -775,41 +673,11 @@ view model =
                                     }
                                 )
 
-                        ( "chess", _ ) ->
-                            Html.map ChessMsg
-                                (Chess.view
-                                    { playerId = payload.playerId
-                                    , scene = payload.update.scene
-                                    , legal = payload.update.legal
-                                    , model = model.chess
-                                    , clock = Just payload.update.clock
-                                    , receivedAt = model.clockReceivedAt
-                                    , now = model.nowMs
-                                    , nameOf = nameOf model
-                                    , rematchReady = payload.rematchReady
-                                    , finished = finished
-                                    , away = awayIds payload
-                                    }
-                                )
-
-                        ( "poker", Just ctx ) ->
-                            Html.map PokerMsg (Poker.view ctx)
-
                         _ ->
-                            Html.map GenericMsg
-                                (Generic.View.view
-                                    { playerId = payload.playerId
-                                    , scene = payload.update.scene
-                                    , legal = payload.update.legal
-                                    , model = model.generic
-                                    , clock = Just payload.update.clock
-                                    , receivedAt = model.clockReceivedAt
-                                    , now = model.nowMs
-                                    , nameOf = nameOf model
-                                    , finished = finished
-                                    , away = awayIds payload
-                                    }
-                                )
+                            -- Every registered game has a view; a slug
+                            -- without one never reaches a table.
+                            Html.p [ class "pixel text-xs text-center" ]
+                                [ Html.text "NO VIEW FOR THIS GAME" ]
             in
             Html.div []
                 [ game

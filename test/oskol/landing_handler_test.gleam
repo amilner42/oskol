@@ -26,10 +26,8 @@ pub fn the_library_lists_every_registered_game_test() {
   let body = landing.library_json(reading(), fakes.no_guest())
 
   assert string.starts_with(body, "{\"ok\":true,\"games\":[")
-  assert string.contains(body, "\"slug\":\"poker\"")
   assert string.contains(body, "\"slug\":\"backgammon\"")
-  assert string.contains(body, "\"slug\":\"chess\"")
-  assert string.contains(body, "\"slug\":\"go\"")
+  assert !string.contains(body, "\"slug\":\"poker\"")
   // A game map carries what the library grid draws with.
   assert string.contains(body, "\"name\":\"Backgammon\"")
   assert string.contains(body, "\"tagline\":")
@@ -147,23 +145,23 @@ pub fn creating_a_game_answers_with_its_code_and_the_seat_url_test() {
 }
 
 pub fn the_creators_settings_reach_the_room_test() {
-  let selections = [#("stakes", "deep"), #("twist", "off")]
+  let selections = [#("twist", "pick_dice")]
   let ctx =
     reading()
     |> creating(room.Setup(
-      format: "cash",
+      format: "match5",
       selections: selections,
-      clock: "poker_fast",
+      clock: "rapid",
     ))
 
   let assert Ok(_) =
     landing.create_json(
       ctx,
       fakes.no_guest(),
-      "poker",
-      "cash",
+      "backgammon",
+      "match5",
       "Alice",
-      "poker_fast",
+      "rapid",
       selections,
     )
 }
@@ -402,10 +400,10 @@ pub fn a_code_resolves_to_the_game_it_belongs_to_test() {
   let ctx =
     reading()
     |> fakes.with_room(Some(fakes.room()), None)
-    |> fakes.with_slug(Some("poker"))
+    |> fakes.with_slug(Some("backgammon"))
 
   assert landing.code_json(ctx, "123456")
-    == Ok("{\"ok\":true,\"slug\":\"poker\"}")
+    == Ok("{\"ok\":true,\"slug\":\"backgammon\"}")
 }
 
 pub fn a_code_nothing_answers_to_is_not_found_test() {

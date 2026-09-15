@@ -72,9 +72,10 @@ defmodule Oskol.PersistenceTest do
   end
 
   test "a clock forfeit writes an expire entry and finishes the game" do
-    # Go: no turn delay in front of the clock, so the forfeit lands at once.
+    # 150 ms of bank behind backgammon's 12 s turn delay: the forfeit lands
+    # just over 12 s after the opening roll.
     %{game_id: game_id, p1: p1} =
-      lobby("9x9", slug: "go", seed: 11, control: {:fischer, 150, 0})
+      lobby("single", seed: 11, control: {:fischer, 150, 0})
 
     Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
     {:ok, p2, state} = Game.join_game(game_id, "Bob", nil)
@@ -82,7 +83,7 @@ defmodule Oskol.PersistenceTest do
     waiting = if mover == p1, do: p2, else: p1
 
     assert_receive {:game_state_updated, _started, []}
-    assert_receive {:game_state_updated, %{instance: instance}, _events}, 1000
+    assert_receive {:game_state_updated, %{instance: instance}, _events}, 14_000
     assert Oskol.GameKit.finished?(instance)
 
     assert [%{kind: "expire", player_id: nil, payload: nil}] = action_rows(game_id)
