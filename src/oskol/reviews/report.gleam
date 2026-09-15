@@ -135,11 +135,22 @@ fn review_decoder() -> Decoder(Review) {
     None,
     decode.one_of(
       {
-        use moves <- decode.field("moves", decode.string)
+        // The engine has called the move level both "move" and "moves".
+        use moves <- decode.field(
+          "move",
+          decode.one_of(decode.string, [decode.at(["moves"], decode.string)]),
+        )
         use cube <- decode.field("cube", decode.string)
         decode.success(Some(Levels(moves, cube)))
       },
-      [decode.success(None)],
+      [
+        {
+          use moves <- decode.field("moves", decode.string)
+          use cube <- decode.field("cube", decode.string)
+          decode.success(Some(Levels(moves, cube)))
+        },
+        decode.success(None),
+      ],
     ),
   )
   // Whatever shape a later engine gives it, a total that is not a number is

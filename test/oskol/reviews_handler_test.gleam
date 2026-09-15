@@ -462,6 +462,41 @@ pub fn only_a_seat_may_ask_for_a_retry_test() {
   assert recorded("saves") == []
 }
 
+pub fn the_depth_the_engine_searched_at_is_read_either_way_test() {
+  // The engine has written the move level as "move" (with a luck level
+  // beside it) and as "moves"; both are the same answer to a page.
+  let log = finished_log(4)
+  let n = turn_count(log, 1)
+  let with_levels = fn(levels: String) {
+    string.replace(
+      engine_answer(n),
+      "{\"levels\":{\"moves\":\"2ply\",\"cube\":\"3ply\"}",
+      "{\"levels\":" <> levels,
+    )
+  }
+  let rendered = fn(levels: String) {
+    let ctx =
+      with_analysis(
+        log,
+        [Stored(1, Done, 1, Some(with_levels(levels)))],
+        no_engine,
+      )
+    let assert Ok(body) = reviews.reviews_json(ctx, "backgammon", "123456")
+    string.contains(body, "\"levels\":{\"moves\":\"4ply\",\"cube\":\"4ply\"}")
+  }
+  assert rendered("{\"move\":\"4ply\",\"cube\":\"4ply\",\"luck\":\"3ply\"}")
+  assert rendered("{\"moves\":\"4ply\",\"cube\":\"4ply\"}")
+  // Nothing the page can name is simply not there
+  let ctx =
+    with_analysis(
+      log,
+      [Stored(1, Done, 1, Some(with_levels("{\"cube\":\"4ply\"}")))],
+      no_engine,
+    )
+  let assert Ok(body) = reviews.reviews_json(ctx, "backgammon", "123456")
+  assert string.contains(body, "\"levels\":null")
+}
+
 pub fn a_game_with_no_review_yet_is_queued_and_pending_test() {
   // A game finished before reviews existed: the first request asks
   let ctx = with_analysis(finished_log(4), [], no_engine)
