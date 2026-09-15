@@ -157,8 +157,10 @@ pub fn picks_reset_each_game_of_a_match_test() {
     )
   let assert Ok(#(s, _)) =
     engine.apply(s, "p1", engine.MoveChecker(Point(1), Off))
-  let assert Ok(#(next, events)) = engine.apply(s, "p1", engine.Play)
-  // A new game of the match began, and both picks are back.
+  let assert Ok(#(s, _)) = engine.apply(s, "p1", engine.Play)
+  let assert Ok(#(s, _)) = engine.apply(s, "p1", engine.Ready)
+  let assert Ok(#(next, events)) = engine.apply(s, "p2", engine.Ready)
+  // Both ready: a new game of the match began, and both picks are back.
   let assert Ok(_) =
     list.find(events, fn(e) {
       case e {

@@ -27,6 +27,8 @@ pub type Action {
   Resign(stakes: board.WinKind)
   AcceptResign
   DeclineResign
+  /// Between the games of a match: ready for the next one.
+  Ready
 }
 
 pub const dice_zone = "dice"
@@ -115,6 +117,15 @@ pub fn apply(
           ..turn_started(next)
         ]),
       )
+    }
+    Ready -> {
+      use #(next, started) <- result.try(state.ready(state, player_id))
+      let readied =
+        custom("player_ready", [#("player_id", json.string(player_id))])
+      case started {
+        True -> Ok(#(next, [readied, ..new_game_events(next)]))
+        False -> Ok(#(next, [readied]))
+      }
     }
     Roll -> {
       use #(next, dice) <- result.try(state.roll(state, player_id))
@@ -245,7 +256,8 @@ fn dice_events(
 }
 
 /// Events for a finished game: the result, the score change, and either the
-/// end of the match or the start of the next game.
+/// end of the match or the pause before the next game, which starts when
+/// both players are ready (`new_game_events`).
 fn end_events(
   before: GameState,
   next: GameState,
@@ -281,16 +293,20 @@ fn end_events(
       custom("match_over", [#("winner", json.string(end.winner))]),
       event.PhaseChanged("game_over"),
     ]
-    False -> [
-      won,
-      score_change,
-      custom("new_game", [
-        #("game_number", json.int(next.game_number)),
-        #("crawford", json.bool(next.crawford)),
-      ]),
-      ..turn_started(next)
-    ]
+    False -> [won, score_change, event.PhaseChanged("between_games")]
   }
+}
+
+/// The next game of a match has started: its number, whether it is the
+/// Crawford game, and who moves first off the opening roll.
+fn new_game_events(next: GameState) -> List(Event) {
+  [
+    custom("new_game", [
+      #("game_number", json.int(next.game_number)),
+      #("crawford", json.bool(next.crawford)),
+    ]),
+    ..turn_started(next)
+  ]
 }
 
 pub fn legal(state: GameState, player_id: String) -> List(Schema) {
@@ -304,7 +320,16 @@ pub fn legal(state: GameState, player_id: String) -> List(Schema) {
         ]
         False -> []
       }
-    None -> legal_in_play(state, player_id)
+    None ->
+      case state.phase {
+        // Between games the only thing to do is say you are ready.
+        state.BetweenGames(_, _) ->
+          case state.can_ready(state, player_id) {
+            True -> [action.simple("ready", "Ready")]
+            False -> []
+          }
+        _ -> legal_in_play(state, player_id)
+      }
   }
 }
 
@@ -416,7 +441,8 @@ fn label_for(m: board.Move) -> String {
 
 /// Only the player who must act is on the clock (the responder while a
 /// double is pending). A resignation on offer adds its responder to the
-/// clock without taking the offerer off it (`state.charged`).
+/// clock without taking the offerer off it (`state.charged`). Between
+/// games nobody is: the next game waits on both players, unhurried.
 pub fn on_the_clock(state: GameState) -> List(String) {
   state.charged(state)
 }

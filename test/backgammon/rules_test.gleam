@@ -414,9 +414,12 @@ pub fn match_play_continues_with_a_fresh_board_until_the_target_test() {
   let s = position(5, "match5", backgammon_position, [1, 2])
   let #(s, _) = apply(s, "p1", engine.MoveChecker(Point(1), Off))
   let #(s, events) = apply(s, "p1", engine.Play)
-  assert has_custom(events, "game_won") && has_custom(events, "new_game")
+  assert has_custom(events, "game_won")
   assert has_custom(events, "match_over") == False
   assert state.score_of(s, "p1") == 3
+  let #(s, _) = apply(s, "p1", engine.Ready)
+  let #(s, events) = apply(s, "p2", engine.Ready)
+  assert has_custom(events, "new_game")
   assert s.game_number == 2
   assert dict.size(s.board.checkers) == 30
   assert board.count(s.board, White, Point(24)) == 2
@@ -481,6 +484,7 @@ fn walk(s: state.GameState, chooser: rng.Rng, steps: Int) -> state.GameState {
     0, _ -> s
     _, state.Finished(_) -> s
     _, state.Doubled(_) -> s
+    _, state.BetweenGames(_, _) -> s
     _, state.Rolling(c) -> {
       let #(next, _) = apply(s, state.player_of(s, c), engine.Roll)
       walk(next, chooser, steps - 1)
