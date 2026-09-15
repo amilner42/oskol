@@ -402,30 +402,29 @@ update msg model =
                     { model | browsing = Just number, viewing = Nothing, stale = False }
 
                 have =
-                    case model.archive of
-                        Fetched games ->
-                            List.any (\( n, _ ) -> n == number) games
-
-                        _ ->
-                            False
+                    archivedGame number model.archive /= Nothing
             in
             if have || model.archive == Fetching then
                 ( browsed, NoOut )
 
             else
                 -- never fetched, failed, or fetched before this game ended
+                -- (the archive keeps finished games only, so it lacks it)
                 ( { browsed | archive = Fetching }, WantRecord )
 
         BrowseCurrent ->
             ( { model | browsing = Nothing, viewing = Nothing, stale = False }, NoOut )
 
         GotRecord result ->
+            -- Only finished games are kept. `/record` also carries the game
+            -- in progress (or, between games, the empty next one); that one
+            -- is the scene's to show, and a copy kept here would go stale.
             ( { model
                 | archive =
                     result
                         |> Result.toMaybe
                         |> Maybe.andThen (D.decodeValue archiveDecoder >> Result.toMaybe)
-                        |> Maybe.map Fetched
+                        |> Maybe.map (List.filter (Tuple.second >> endsInResult) >> Fetched)
                         |> Maybe.withDefault FetchFailed
               }
             , NoOut
@@ -1382,7 +1381,7 @@ type alias Board =
     , drag : Maybe (Drag.Active String)
     , hovered : Maybe String
     , tap : TapContext
-    , landed : Dict.Dict Int Int -- point -> how many checkers the last turn landed there
+    , landed : Landed -- where the last turn landed checkers, and whose they are
     }
 
 
@@ -1522,7 +1521,7 @@ viewPoint board isTop index point =
          ]
             ++ interaction
         )
-        (viewStackTinted (Dict.get point board.landed |> Maybe.withDefault 0) { lifted = liftedAt board id } tokens
+        (viewStackTinted board.landed.color (Dict.get point board.landed.points |> Maybe.withDefault 0) { lifted = liftedAt board id } tokens
             ++ (if isTarget then
                     [ dropGhost board (dragging && board.hovered == Just id) ]
 
@@ -1632,10 +1631,12 @@ viewStack marks tokens =
 
 
 {-| A point's stack with its top `n` checkers marked as the ones the last
-turn landed there.
+turn landed there, as long as they are the mover's `color`. A point holds
+one colour at a time: if its top is the other colour, what landed there
+has been hit since (the viewer staging a hit on a blot the last turn left).
 -}
-viewStackTinted : Int -> Marks -> List Token -> List (Html Msg)
-viewStackTinted n marks tokens =
+viewStackTinted : String -> Int -> Marks -> List Token -> List (Html Msg)
+viewStackTinted color n marks tokens =
     let
         shown =
             List.take 5 tokens
@@ -1648,7 +1649,7 @@ viewStackTinted n marks tokens =
     in
     List.indexedMap
         (\i t ->
-            viewCheckerWith (i > lastIndex - n)
+            viewCheckerWith (i > lastIndex - n && (Protocol.tokenProp D.string "color" t |> Maybe.withDefault "white") == color)
                 (if i == lastIndex then
                     marks
 
@@ -2839,6 +2840,33 @@ archiveDecoder =
         )
 
 
+{-| Whether a game's entries end with its result line: a finished game.
+-}
+endsInResult : List Entry -> Bool
+endsInResult entries =
+    case List.reverse entries of
+        (GameOverEntry _) :: _ ->
+            True
+
+        _ ->
+            False
+
+
+{-| The finished game `number`'s entries, if the archive has them.
+-}
+archivedGame : Int -> Archive -> Maybe (List Entry)
+archivedGame number archive =
+    case archive of
+        Fetched games ->
+            games
+                |> List.filter (\( n, _ ) -> n == number)
+                |> List.head
+                |> Maybe.map Tuple.second
+
+        _ ->
+            Nothing
+
+
 {-| The entries the list shows: the game on the board, or the finished game
 being browsed once its record has arrived.
 -}
@@ -2849,16 +2877,7 @@ shownEntries ctx =
             recordOf ctx.scene
 
         Just number ->
-            case ctx.model.archive of
-                Fetched games ->
-                    games
-                        |> List.filter (\( n, _ ) -> n == number)
-                        |> List.head
-                        |> Maybe.map Tuple.second
-                        |> Maybe.withDefault []
-
-                _ ->
-                    []
+            archivedGame number ctx.model.archive |> Maybe.withDefault []
 
 
 entryDecoder : D.Decoder (Maybe Entry)
@@ -2965,32 +2984,54 @@ viewedTurn ctx =
 
 
 {-| Where the turn in focus landed checkers, as the engine recorded it:
-the turn being viewed, or live the last turn played. Point to how many.
+the turn being viewed, or live the last turn of the game on the board.
+Live reads the scene's own record, never the list: the list may be
+showing an earlier game (`browsing`), whose last turn landed on a board
+that is not this one. The colour is the mover's: only their checkers
+wear the ring, so a checker of the other colour sitting on one of those
+points (the viewer staging a hit on a blot that just landed) does not.
 -}
-lastLanded : Ctx -> Dict.Dict Int Int
+lastLanded : Ctx -> Landed
 lastLanded live =
     let
         focus =
             case live.model.viewing of
                 Just index ->
-                    Just index
+                    shownEntries live |> List.drop index |> List.head
 
                 Nothing ->
-                    lastTurnIndex live
+                    let
+                        entries =
+                            recordOf live.scene
+                    in
+                    lastTurnIn entries |> Maybe.andThen (\i -> entries |> List.drop i |> List.head)
     in
-    case focus |> Maybe.andThen (\i -> shownEntries live |> List.drop i |> List.head) of
+    case focus of
         Just (TurnEntry turn) ->
-            List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty turn.landed
+            { color = colorOf (Protocol.findPlayer turn.player live.scene)
+            , points = List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty turn.landed
+            }
 
         _ ->
-            Dict.empty
+            { color = "", points = Dict.empty }
+
+
+{-| The checkers a turn landed: the mover's colour, and point to how many.
+-}
+type alias Landed =
+    { color : String, points : Dict.Dict Int Int }
 
 
 {-| The index of the last turn in the list, to open the review on.
 -}
 lastTurnIndex : Ctx -> Maybe Int
 lastTurnIndex ctx =
-    shownEntries ctx
+    lastTurnIn (shownEntries ctx)
+
+
+lastTurnIn : List Entry -> Maybe Int
+lastTurnIn entries =
+    entries
         |> List.indexedMap Tuple.pair
         |> List.filter
             (\( _, e ) ->
@@ -3157,9 +3198,14 @@ snapshotScene ctx turn =
                         }
                     )
 
+        -- Everything that describes the live moment goes: a resignation on
+        -- offer, the pause between games (whose result the bands would
+        -- print beside this turn, in place of its dice) and a winner.
         data =
             D.decodeValue (D.dict D.value) scene.data
                 |> Result.withDefault Dict.empty
+                |> Dict.remove "between_games"
+                |> Dict.insert "winner_id" E.null
                 |> Dict.insert "to_move" (E.string turn.player)
                 |> Dict.insert "to_act" E.null
                 |> Dict.insert "dice" (E.list E.int turn.dice)
@@ -3215,15 +3261,21 @@ viewRecordBody ctx asSheet =
                     listOf (recordLines ctx isMatch gameNumber True (recordOf ctx.scene)) "Nothing played yet."
 
                 Just number ->
-                    case ctx.model.archive of
-                        Fetched _ ->
-                            listOf (recordLines ctx isMatch number False (shownEntries ctx)) ("Nothing was played in game " ++ String.fromInt number ++ ".")
+                    -- A finished game always has its result line, so a game
+                    -- the archive has is never empty; one it lacks (the
+                    -- answer came back without it) is fetched again on a tap.
+                    case ( ctx.model.archive, archivedGame number ctx.model.archive ) of
+                        ( _, Just entries ) ->
+                            listOf (recordLines ctx isMatch number False entries) ""
 
-                        FetchFailed ->
-                            listOf [] ("Game " ++ String.fromInt number ++ " would not load. Tap it again.")
+                        ( Fetching, Nothing ) ->
+                            listOf [] ("Loading game " ++ String.fromInt number ++ "…")
+
+                        ( NotFetched, Nothing ) ->
+                            listOf [] ("Loading game " ++ String.fromInt number ++ "…")
 
                         _ ->
-                            listOf [] ("Loading game " ++ String.fromInt number ++ "…")
+                            listOf [] ("Game " ++ String.fromInt number ++ " would not load. Tap it again.")
 
         listOf lines empty =
             if lines == [] then
@@ -3287,16 +3339,34 @@ viewRecordBody ctx asSheet =
 
 
 {-| One finished game in the match history: which game, who won it and how,
-and the score it left. Tapping it opens that game's moves in the list.
+and the score it left. Tapping it opens that game's moves in the list, for
+a seat: the moves come from `/record`, which opens only on a seat token, so
+a spectator (a scene with no viewer) reads the result lines and nothing
+more.
 -}
 viewGameRow : Ctx -> GameResult -> Html Msg
 viewGameRow ctx g =
+    let
+        seated =
+            ctx.scene.viewer /= Nothing
+    in
     div
-        [ classList [ ( "bg-record-game cursor-pointer", True ), ( "is-browsing", ctx.model.browsing == Just g.number ) ]
-        , attribute "data-game" (String.fromInt g.number)
-        , title ("Game " ++ String.fromInt g.number ++ " · tap to see its moves")
-        , onClick (BrowseGame g.number)
-        ]
+        ([ classList
+            [ ( "bg-record-game", True )
+            , ( "cursor-pointer", seated )
+            , ( "is-browsing", ctx.model.browsing == Just g.number )
+            ]
+         , attribute "data-game" (String.fromInt g.number)
+         ]
+            ++ (if seated then
+                    [ title ("Game " ++ String.fromInt g.number ++ " · tap to see its moves")
+                    , onClick (BrowseGame g.number)
+                    ]
+
+                else
+                    [ title ("Game " ++ String.fromInt g.number) ]
+               )
+        )
         [ span [ class "pixel text-[7px]", style "color" "var(--pencil)" ] [ text ("G" ++ String.fromInt g.number) ]
         , span [ class "font-bold truncate" ] [ text (playerName ctx g.winner) ]
         , span [ style "color" "var(--pencil)" ] [ text (g.result ++ " · " ++ pointsText g.points) ]

@@ -326,6 +326,8 @@ update msg model =
                                 )
 
                         Nothing ->
+                            -- a spectator is never offered a game to open;
+                            -- should one ask anyway, it is a failed fetch
                             update (BackgammonMsg (Backgammon.GotRecord (Err ()))) updated
 
                 Backgammon.ChoseTheme name ->
