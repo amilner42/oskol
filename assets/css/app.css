@@ -508,6 +508,10 @@
   transition: transform 0.08s, box-shadow 0.08s, filter 0.15s;
 }
 .btn-arcade.pen { background: var(--pen); }
+/* Header scale: a thinner plate and a shallower drop, so it sits in a line
+   of text without dominating it. */
+.btn-arcade.compact { border-width: 2px; box-shadow: 0 3px 0 0 var(--ink); }
+.btn-arcade.compact:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 0 var(--ink); }
 .btn-arcade.green { background: var(--marker-green); color: var(--ink); }
 .btn-arcade.yellow { background: var(--highlighter); color: var(--ink); }
 .btn-arcade:hover:not(:disabled) { filter: brightness(1.06); }
@@ -946,9 +950,12 @@
   }
   .bg-page .bg-main,
   .bg-page .bg-stack { display: contents; }
-  .bg-page .bg-header { grid-column: 2; grid-row: 3; max-width: 16rem; justify-self: start; }
+  /* The header is centred in its column, between the two bars: its lines
+     (wordmark and match tag, then the resign button) are centred over the
+     bars' width, not flushed to their left edge. */
+  .bg-page .bg-header { grid-column: 2; grid-row: 3; max-width: 16rem; justify-self: start; justify-content: center; text-align: center; }
   .bg-page .bg-header,
-  .bg-page .bg-header > div { flex-wrap: wrap; row-gap: 2px; }
+  .bg-page .bg-header > div { flex-wrap: wrap; row-gap: 3px; justify-content: center; }
   .bg-page .player-bar {
     grid-column: 2;
     max-width: 16rem;

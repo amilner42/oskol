@@ -56,6 +56,8 @@ import Html.Keyed as Keyed
 import Json.Decode as D
 import Json.Encode as E
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
+import Svg
+import Svg.Attributes as SvgAttr
 
 
 type alias Model =
@@ -912,10 +914,41 @@ viewHeader ctx =
                 text ""
             ]
         , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
-            button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-resign-open", onClick OpenResign ] [ text "RESIGN" ]
+            -- A real button, not a link in the margin: the arcade plate at
+            -- header scale, with a flag so it reads before its label does.
+            -- It opens the offer panel (`viewResignPanel`); a resignation
+            -- is stakes the opponent answers, never sent from here.
+            button
+                [ class "btn-arcade plain compact pixel text-[7px] sm:text-[8px] px-1.5 py-1 sm:px-2 inline-flex items-center gap-1 shrink-0"
+                , Html.Attributes.id "bg-resign-open"
+                , title "Offer to resign"
+                , onClick OpenResign
+                ]
+                [ flagIcon, text "RESIGN" ]
 
           else
             text ""
+        ]
+
+
+{-| A small flag, drawn in one stroke of the current colour: the pole and
+a notched pennant. Decorative; the label carries the meaning.
+-}
+flagIcon : Html Msg
+flagIcon =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 12 12"
+        , SvgAttr.width "10"
+        , SvgAttr.height "10"
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "1.5"
+        , SvgAttr.strokeLinecap "round"
+        , SvgAttr.strokeLinejoin "round"
+        , attribute "aria-hidden" "true"
+        ]
+        [ Svg.path [ SvgAttr.d "M2.5 11V1.5" ] []
+        , Svg.path [ SvgAttr.d "M2.5 2h7l-1.6 2.5L9.5 7h-7" ] []
         ]
 
 
