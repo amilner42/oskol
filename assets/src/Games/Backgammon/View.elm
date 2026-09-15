@@ -1033,13 +1033,17 @@ viewHeader ctx =
                 text ""
             ]
         , div [ class "flex items-center gap-2 sm:gap-3 shrink-0" ]
-            [ button
-                [ class "bg-record-toggle pixel text-[8px] underline lg:hidden"
+            [ -- On a phone the icon is the control, as the board picker's
+              -- swatch is: the word would cost a match badge its game number.
+              button
+                [ class "bg-record-toggle pixel text-[8px] inline-flex items-center gap-1 px-1 py-0.5 lg:hidden"
                 , style "color" "var(--pencil)"
                 , Html.Attributes.id "bg-record-toggle"
+                , title "Moves"
+                , attribute "aria-label" "Moves"
                 , onClick ToggleRecord
                 ]
-                [ text "MOVES" ]
+                [ listIcon, span [ class "hidden sm:inline underline" ] [ text "MOVES" ] ]
             , viewThemePicker ctx
             , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
                 -- A real button, not a link in the margin: the arcade plate at
@@ -1115,6 +1119,24 @@ viewThemeOption current ( id, label ) =
         [ span [ class ("bg-theme-chip " ++ themeClass id) ] []
         , span [] [ text label ]
         ]
+
+
+{-| The move list's control: four ruled lines, the first short like a
+heading.
+-}
+listIcon : Html Msg
+listIcon =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 12 12"
+        , SvgAttr.width "12"
+        , SvgAttr.height "12"
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "1.5"
+        , SvgAttr.strokeLinecap "round"
+        , attribute "aria-hidden" "true"
+        ]
+        [ Svg.path [ SvgAttr.d "M1.5 2h5M1.5 5h9M1.5 8h9M1.5 11h9" ] [] ]
 
 
 {-| A small flag, drawn in one stroke of the current colour: the pole and

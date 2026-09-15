@@ -2092,7 +2092,7 @@ perFixture fixture =
                             in
                             Expect.all
                                 [ \_ -> header |> Query.findAll [ tag "button", class "btn-arcade", text "RESIGN" ] |> Query.count (Expect.equal expected)
-                                , \_ -> header |> Query.findAll [ tag "svg" ] |> Query.count (Expect.equal expected)
+                                , \_ -> header |> Query.findAll [ id "bg-resign-open" ] |> Query.keep (tag "svg") |> Query.count (Expect.equal expected)
                                 ]
                                 ()
                         )
