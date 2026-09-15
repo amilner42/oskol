@@ -25,8 +25,8 @@ the arrangement itself is entirely CSS.
 Moving is one touch. A tap on a checker of mine that can move (its whole
 point, or the bar) plays it with the next die: the first unused die,
 reading the dice as they sit, that has a legal move from there. A tap on
-the dice hands "next" to the die after, so the other die is one tap away
-too. Destinations still answer a tap of their own: a point where exactly
+the dice swaps them, so the next die is always the left one and the
+other die is one tap away too. Destinations still answer a tap of their own: a point where exactly
 one legal move lands plays it, and a point where an unambiguous pair of
 moves would land two checkers (making a point) stages both. There is no
 selection to make or clear; anything a tap cannot say, a drag can. Legal
@@ -56,12 +56,14 @@ import Html.Keyed as Keyed
 import Json.Decode as D
 import Json.Encode as E
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
+import Svg
+import Svg.Attributes as SvgAttr
 
 
 type alias Model =
     { drag : Drag.State String Msg -- the item a drag carries is my checker colour
     , plans : List ( String, List Move ) -- for the active drag: each destination and the moves that get there
-    , rotation : Int -- how many times the dice were tapped this roll: which unused die is next
+    , swaps : Int -- taps on the dice this roll: odd means the two dice have changed places
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
     , resigning : Bool -- the resign panel is open: which stakes to offer
@@ -106,7 +108,7 @@ type Msg
     = PlayMove String String
     | PlayPair Move Move
     | PlayPath (List Move) -- one checker, several dice, in order
-    | RotateDice -- the next die becomes the one after it
+    | SwapDice -- the two dice change places: the next die is the left one
     | Simple String
     | Rematch
     | DragPressed Press
@@ -140,7 +142,7 @@ init : Model
 init =
     { drag = Drag.idle
     , plans = []
-    , rotation = 0
+    , swaps = 0
     , autoRolled = False
     , picker = Nothing
     , resigning = False
@@ -159,7 +161,7 @@ replay the tumble on every tap.
 -}
 reset : Model -> Model
 reset model =
-    { init | roll = model.roll, rotation = model.rotation }
+    { init | roll = model.roll, swaps = model.swaps }
 
 
 {-| Watch the channel for dice landing. A `dice_rolled` event is this client
@@ -188,7 +190,7 @@ noteEvents events model =
 
     else
         -- a fresh roll: the dice are next in the order they land
-        { model | roll = { seq = model.roll.seq + rolls, watched = True }, rotation = 0 }
+        { model | roll = { seq = model.roll.seq + rolls, watched = True }, swaps = 0 }
 
 
 {-| Roll for the viewer when there is nothing to ask: at the start of a
@@ -220,8 +222,8 @@ autoRoll legal model =
 update : Msg -> Model -> ( Model, Out )
 update msg model =
     case msg of
-        RotateDice ->
-            ( { model | rotation = model.rotation + 1 }, NoOut )
+        SwapDice ->
+            ( { model | swaps = model.swaps + 1 }, NoOut )
 
         PlayMove from to ->
             ( reset model, Send (encodeMove from to) )
@@ -838,25 +840,33 @@ viewDragGhost d =
 
 
 {-| The dice not yet used this turn, in the order they are next: as they
-sit on the board, rotated once per tap on the dice (`RotateDice`), so
-the first of them is always the next die.
+sit on the board (`diceInOrder`), so the first of them is always the
+next die -- the left one.
 -}
 unusedDiceTokens : Ctx -> List Token
 unusedDiceTokens ctx =
-    let
-        unused =
-            Protocol.zoneTokens "dice" ctx.scene
-                |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
+    diceInOrder ctx.model.swaps (Protocol.zoneTokens "dice" ctx.scene)
+        |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
 
-        by =
-            case List.length unused of
-                0 ->
-                    0
 
-                n ->
-                    modBy n ctx.model.rotation
-    in
-    List.drop by unused ++ List.take by unused
+{-| The dice as they sit on the board, left to right. A two-die roll
+changes places on every tap on the dice (`SwapDice`), so an odd count
+shows them the other way round; a double has nothing to swap and the
+four sit as they were thrown. This one order drives both what the row
+shows and which die a tap on a checker plays.
+-}
+diceInOrder : Int -> List Token -> List Token
+diceInOrder swaps dice =
+    case dice of
+        [ a, b ] ->
+            if modBy 2 swaps == 1 then
+                [ b, a ]
+
+            else
+                dice
+
+        _ ->
+            dice
 
 
 tapContext : Ctx -> List Move -> List String -> TapContext
@@ -967,7 +977,17 @@ viewHeader ctx =
         , div [ class "flex items-center gap-2 sm:gap-3 shrink-0" ]
             [ viewThemePicker ctx
             , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
-                button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-resign-open", onClick OpenResign ] [ text "RESIGN" ]
+                -- A real button, not a link in the margin: the arcade plate at
+                -- header scale, with a flag so it reads before its label does.
+                -- It opens the offer panel (`viewResignPanel`); a resignation
+                -- is stakes the opponent answers, never sent from here.
+                button
+                    [ class "btn-arcade plain compact pixel text-[7px] sm:text-[8px] px-1.5 py-1 sm:px-2 inline-flex items-center gap-1 shrink-0"
+                    , Html.Attributes.id "bg-resign-open"
+                    , title "Offer to resign"
+                    , onClick OpenResign
+                    ]
+                    [ flagIcon, text "RESIGN" ]
 
               else
                 text ""
@@ -1029,6 +1049,27 @@ viewThemeOption current ( id, label ) =
         ]
         [ span [ class ("bg-theme-chip " ++ themeClass id) ] []
         , span [] [ text label ]
+        ]
+
+
+{-| A small flag, drawn in one stroke of the current colour: the pole and
+a notched pennant. Decorative; the label carries the meaning.
+-}
+flagIcon : Html Msg
+flagIcon =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 12 12"
+        , SvgAttr.width "10"
+        , SvgAttr.height "10"
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "1.5"
+        , SvgAttr.strokeLinecap "round"
+        , SvgAttr.strokeLinejoin "round"
+        , attribute "aria-hidden" "true"
+        ]
+        [ Svg.path [ SvgAttr.d "M2.5 11V1.5" ] []
+        , Svg.path [ SvgAttr.d "M2.5 2h7l-1.6 2.5L9.5 7h-7" ] []
         ]
 
 
@@ -1779,10 +1820,9 @@ viewRoll board =
             else
                 []
         -- The mover's dice are a control: the next die (the one a tap on
-        -- a checker plays) stands up, and a tap on the dice makes the die
-        -- after it the next one. Only when there is a choice: a double is
-        -- one value, and one die left is no choice. Nobody else's dice do
-        -- anything.
+        -- a checker plays) is the left one, and a tap on the dice swaps
+        -- them. Only when there is a choice: a double is one value, and
+        -- one die left is no choice. Nobody else's dice do anything.
         myMove =
             toMoveId ctx == Just ctx.playerId && ctx.scene.phase == "moving"
 
@@ -1800,10 +1840,10 @@ viewRoll board =
             else
                 Nothing
 
-        rotates =
+        swaps =
             hasChoice
     in
-    viewDice { color = moverColor ctx, next = next, rotates = rotates } ctx.model.roll dice ++ pickedTag ++ danced
+    viewDice { color = moverColor ctx, next = next, swaps = swaps, swapped = ctx.model.swaps } ctx.model.roll dice ++ pickedTag ++ danced
 
 
 {-| The dice of the turn, in the mover's colour. They are keyed by the roll that produced them, so
@@ -1821,18 +1861,56 @@ room until then, so the throw does not give the double away.
 None of them move unless this client watched the roll land (`Roll.watched`):
 dice that arrived in a snapshot are already on the table.
 
-For the mover, `next` names the die a tap on a checker plays, and
-`rotates` makes the row a control that hands "next" to the die after it.
+For the mover, `next` names the die a tap on a checker plays -- always
+the left one -- and `swaps` makes the row a control: a tap swaps the two
+dice. The swap is a change of flex `order` and a short slide, never a
+move in the DOM: the children stay in the order they were thrown (their
+keys never move), because taking a die out of the DOM and putting it back
+would restart its roll animation. Each die gets its slot (`slot-0` is the
+left) and, once the dice have been swapped at all, a slide class whose
+name alternates with the count (`swapped`), so every tap restarts the
+slide and nothing else.
 
 -}
-viewDice : { color : String, next : Maybe String, rotates : Bool } -> Roll -> List Token -> List (Html Msg)
+viewDice : { color : String, next : Maybe String, swaps : Bool, swapped : Int } -> Roll -> List Token -> List (Html Msg)
 viewDice opts roll dice =
+    let
+        ordered =
+            diceInOrder opts.swapped dice
+
+        slotOf token =
+            case dice of
+                [ _, _ ] ->
+                    ordered
+                        |> List.indexedMap Tuple.pair
+                        |> List.filter (\( _, t ) -> t.id == token.id)
+                        |> List.head
+                        |> Maybe.map Tuple.first
+
+                _ ->
+                    Nothing
+
+        slide =
+            case dice of
+                [ _, _ ] ->
+                    if opts.swapped == 0 then
+                        Nothing
+
+                    else if modBy 2 opts.swapped == 1 then
+                        Just "slid-a"
+
+                    else
+                        Just "slid-b"
+
+                _ ->
+                    Nothing
+    in
     [ Keyed.node "div"
-        ([ classList [ ( "dice-row flex items-center", True ), ( "rotates", opts.rotates ) ]
+        ([ classList [ ( "dice-row flex items-center", True ), ( "swaps", opts.swaps ) ]
          , Html.Attributes.id "dice-row"
          ]
-            ++ (if opts.rotates then
-                    [ onClick RotateDice, title "Tap to play the other die next" ]
+            ++ (if opts.swaps then
+                    [ onClick SwapDice, title "Tap to swap the dice: the left one plays next" ]
 
                 else
                     []
@@ -1841,7 +1919,7 @@ viewDice opts roll dice =
         (List.map
             (\token ->
                 ( "roll-" ++ String.fromInt roll.seq ++ "-" ++ token.id
-                , viewDie opts.color (opts.next == Just token.id) roll.watched (dieIndex token) token
+                , viewDie { color = opts.color, next = opts.next == Just token.id, slot = slotOf token, slide = slide } roll.watched (dieIndex token) token
                 )
             )
             dice
@@ -2070,9 +2148,15 @@ when UNDO freed it would re-add the class and re-create the reel, and
 the browser would run the landing all over again. Only `used` changes.
 
 -}
-viewDie : String -> Bool -> Bool -> Int -> Token -> Html Msg
-viewDie color next watched index token =
+viewDie : { color : String, next : Bool, slot : Maybe Int, slide : Maybe String } -> Bool -> Int -> Token -> Html Msg
+viewDie marks watched index token =
     let
+        color =
+            marks.color
+
+        next =
+            marks.next
+
         value =
             Protocol.tokenProp D.int "value" token |> Maybe.withDefault 1
 
@@ -2096,6 +2180,10 @@ viewDie color next watched index token =
             , ( "next", next && not used )
             , ( "rolling", thrown )
             , ( "earned", earned )
+            , ( "slot-0", marks.slot == Just 0 )
+            , ( "slot-1", marks.slot == Just 1 )
+            , ( "slid-a", marks.slide == Just "slid-a" )
+            , ( "slid-b", marks.slide == Just "slid-b" )
             ]
         , attribute "data-die" token.id
         ]

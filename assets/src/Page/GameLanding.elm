@@ -358,15 +358,15 @@ isControl char =
 -- VIEW
 
 
+
 view : Model -> Html Msg
 view model =
     case model.page of
         Nothing ->
             case model.loadError of
                 Just message ->
-                    Html.section [ class "mt-8 sm:mt-12 pix p-4 sm:p-8", id "game-missing" ]
-                        [ Html.p [ class "pixel text-[10px] mb-3", style "color: var(--red)" ]
-                            [ Html.text "NO SUCH GAME" ]
+                    Html.section [ class "mt-8 sm:mt-12 q-card p-5 sm:p-8", id "game-missing" ]
+                        [ Notebook.eyebrow "NO SUCH GAME"
                         , Html.p [ class "text-base", style "color: var(--ink)" ] [ Html.text message ]
                         , Html.a
                             [ href (Route.href Route.library)
@@ -385,36 +385,15 @@ view model =
 
 gamePage : Model -> GamePage -> List (Html Msg)
 gamePage model page =
-    [ Html.section
-        [ class "cabinet pix mt-3 sm:mt-6"
-        , style ("--accent: " ++ GameArt.accent model.slug ++ "; transform: none;")
-        , id ("game-hero-" ++ model.slug)
-        ]
-        [ Html.div
-            [ class "marquee pixel text-xs sm:text-base px-4 sm:px-5 py-3 uppercase", id "game-title" ]
-            [ Html.text page.game.name ]
-        , Html.div [ class "flex items-center gap-3 sm:gap-6 px-4 sm:px-6 py-3.5 sm:py-5" ]
-            -- Still here: this page's job is the form below it, not a loop
-            -- to watch.
-            [ GameArt.art { slug = model.slug, class = "h-14 sm:h-24 shrink-0", animate = False }
-            , Html.div [ class "min-w-0" ]
-                [ Html.h1
-                    [ class "text-lg sm:text-2xl font-black leading-snug", style "color: var(--ink)" ]
-                    [ Html.text page.copy.title ]
-                , Html.p
-                    [ class "mt-1.5 text-sm sm:text-base leading-relaxed", style "color: var(--pencil)" ]
-                    [ Html.text page.copy.intro ]
-                ]
-            ]
-        ]
-    , Html.section [ class "mt-4 sm:mt-6" ]
-        [ Html.div [ class "pix p-4 sm:p-8" ]
+    [ hero model page
+    , Html.section []
+        [ Html.div [ class "q-card p-5 sm:p-7" ]
             ((case model.error of
                 Just message ->
                     [ Html.p
                         [ id "form-error"
                         , class "mb-4 text-sm font-semibold px-4 py-3"
-                        , style "border: 2px solid var(--red); color: var(--red); background: #fff3f2"
+                        , style "border: 1.5px solid var(--red); color: var(--red); background: #fff3f2"
                         ]
                         [ Html.text message ]
                     ]
@@ -446,6 +425,30 @@ gamePage model page =
            )
 
 
+{-| The head of the page: the game named in pixel type, one quiet headline,
+one line of intro, and the game's own tile beside it.
+-}
+hero : Model -> GamePage -> Html Msg
+hero model page =
+    Html.section
+        [ class "pt-6 sm:pt-10 pb-6 sm:pb-9 flex items-center gap-4 sm:gap-10"
+        , id ("game-hero-" ++ model.slug)
+        ]
+        [ Html.div [ class "flex-1 min-w-0" ]
+            [ Html.div [ class "pixel q-eyebrow text-[9px] mb-2.5 uppercase", id "game-title" ]
+                [ Html.text page.game.name ]
+            , Html.h1 [ class "q-title text-[26px] sm:text-5xl" ] [ Html.text page.copy.title ]
+            , Html.p [ class "q-note mt-3 text-[15px] sm:text-lg leading-relaxed" ]
+                [ Html.text page.copy.intro ]
+            ]
+        , Html.div
+            [ class "q-card shrink-0 p-2 sm:p-3 w-[92px] sm:w-[188px]"
+            , style ("--accent: " ++ GameArt.accent model.slug)
+            ]
+            [ GameArt.art { slug = model.slug, class = "w-full", animate = False } ]
+        ]
+
+
 
 -- THE CREATE FORM
 
@@ -465,9 +468,9 @@ createForm model page =
         rest =
             settings |> List.filter (\setting -> setting.id /= "twist")
     in
-    Html.form [ onSubmit Submitted, class "space-y-4 sm:space-y-6" ]
+    Html.form [ onSubmit Submitted, class "space-y-5 sm:space-y-6" ]
         ([ Html.div []
-            [ heading "color: var(--pen)" "YOUR NAME"
+            [ Notebook.eyebrow "YOUR NAME"
             , Notebook.nameInput
                 { id = "create-name"
                 , placeholder = "e.g. Alice"
@@ -476,9 +479,9 @@ createForm model page =
                 }
             ]
          , Html.div []
-            [ heading "color: var(--ink)" "MODE"
+            [ Notebook.eyebrow "MODE"
             , Html.div
-                [ class ("grid gap-2 sm:gap-3 " ++ formatGridClass (List.length page.formats)) ]
+                [ class ("grid gap-2 sm:gap-2.5 " ++ formatGridClass (List.length page.formats)) ]
                 (List.map (formatTile model.format) page.formats)
             ]
          ]
@@ -486,7 +489,7 @@ createForm model page =
             ++ (case twist of
                     Just setting ->
                         [ Html.div [ id "twist" ]
-                            [ heading "color: var(--ink)" "TWIST"
+                            [ Notebook.eyebrow "TWIST"
                             , chipRow (List.map (choiceChip model.selections setting) setting.choices)
                             ]
                         ]
@@ -497,21 +500,22 @@ createForm model page =
             ++ List.map
                 (\setting ->
                     Html.div [ id ("setting-" ++ setting.id) ]
-                        [ heading "color: var(--ink)" (String.toUpper setting.name)
+                        [ Notebook.eyebrow (String.toUpper setting.name)
                         , chipRow (List.map (choiceChip model.selections setting) setting.choices)
                         ]
                 )
                 rest
             ++ [ Html.div []
-                    [ heading "color: var(--ink)" "CLOCK"
+                    [ Notebook.eyebrow "CLOCK"
                     , Html.div [ class "flex flex-wrap gap-2", id "clock-picker" ]
                         (Catalog.offeredClocks page.game page.clocks
                             |> List.map (clockChip model.clock)
                         )
                     ]
-               , Html.div [ class "text-center space-y-2 pt-0.5" ]
-                    [ Notebook.submitCta { id = "create-game", color = "green", label = "START ▶" }
-                    , Html.p [ class "text-sm", style "color: var(--pencil)" ]
+               , Html.div
+                    [ class "pt-1 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4" ]
+                    [ Notebook.submitCta { id = "create-game", label = "Start and get a link" }
+                    , Html.p [ class "q-note text-sm" ]
                         [ Html.text "You get a link to send. The game starts when your friend opens it." ]
                     ]
                ]
@@ -528,11 +532,6 @@ currentFormat model page =
             List.head page.formats
 
 
-heading : String -> String -> Html msg
-heading colour text =
-    Html.h3 [ class "pixel text-[10px] mb-2", style colour ] [ Html.text text ]
-
-
 chipRow : List (Html msg) -> Html msg
 chipRow =
     Html.div [ class "flex flex-wrap gap-2" ]
@@ -544,12 +543,10 @@ formatTile selected format =
         [ Html.Attributes.type_ "button"
         , onClick (PickedFormat format.id)
         , id ("format-" ++ format.id)
-        , class (tileClass "tile text-left px-3 sm:px-4 py-3" (selected == format.id))
+        , class (optionClass "q-opt text-left px-3 sm:px-3.5 py-2.5" (selected == format.id))
         ]
-        [ Html.div [ class "font-bold leading-snug", style "color: var(--ink)" ]
-            [ Html.text format.name ]
-        , Html.div
-            [ class "text-[11px] sm:text-xs mt-0.5 leading-tight", style "color: var(--pencil)" ]
+        [ Html.div [ class "font-semibold leading-snug text-[15px]" ] [ Html.text format.name ]
+        , Html.div [ class "q-note text-[12px] mt-0.5 leading-tight" ]
             [ Html.text format.description ]
         ]
 
@@ -561,10 +558,9 @@ choiceChip selections setting choice =
         , onClick (PickedSetting setting.id choice.id)
         , id ("choice-" ++ setting.id ++ "-" ++ choice.id)
         , class
-            (tileClass "tile px-3.5 py-2.5 text-sm font-semibold"
+            (optionClass "q-opt px-3.5 py-2.5 text-sm font-medium"
                 (Catalog.settingChoice selections setting == choice.id)
             )
-        , style "color: var(--ink)"
         ]
         [ Html.text choice.name ]
 
@@ -576,16 +572,17 @@ clockChip selected preset =
         , onClick (PickedClock preset.id)
         , id ("clock-" ++ preset.id)
         , Html.Attributes.title preset.description
-        , class (tileClass "tile px-3.5 py-2.5 text-sm font-semibold" (selected == preset.id))
-        , style "color: var(--ink)"
+        , class (optionClass "q-opt px-3.5 py-2.5 text-sm font-medium" (selected == preset.id))
         ]
         [ Html.text preset.name ]
 
 
-tileClass : String -> Bool -> String
-tileClass base selected =
+{-| The one selected option in a row is ink; the rest are paper.
+-}
+optionClass : String -> Bool -> String
+optionClass base selected =
     if selected then
-        base ++ " tile-mine"
+        base ++ " q-opt-on"
 
     else
         base
@@ -620,8 +617,8 @@ joinForm : Model -> List (Html Msg)
 joinForm model =
     (case model.inviterName of
         Just inviter ->
-            [ Html.p [ class "mb-1 text-lg" ]
-                [ Html.span [ class "text-opponent font-bold" ] [ Html.text inviter ]
+            [ Html.p [ class "q-title text-xl sm:text-2xl mb-1" ]
+                [ Html.span [ class "text-opponent" ] [ Html.text inviter ]
                 , Html.text " challenged you."
                 ]
             ]
@@ -632,18 +629,14 @@ joinForm model =
         ++ (case model.summary of
                 Just summary ->
                     [ Html.p
-                        [ id "setup-summary"
-                        , class "mb-3 text-sm font-semibold"
-                        , style "color: var(--ink)"
-                        ]
+                        [ id "setup-summary", class "q-note mb-4 text-[15px]" ]
                         [ Html.text summary ]
                     ]
 
                 Nothing ->
                     []
            )
-        ++ [ Html.p [ class "pixel text-[10px] mb-3", style "color: var(--red)" ]
-                [ Html.text "PLAYER 2 · ENTER YOUR NAME" ]
+        ++ [ Notebook.eyebrow "PLAYER 2 · YOUR NAME"
            , Html.form
                 [ onSubmit Submitted, class "grid gap-3 sm:grid-cols-[1fr_auto] items-center" ]
                 [ Notebook.nameInput
@@ -652,8 +645,8 @@ joinForm model =
                     , value = model.playerName
                     , onInput = NameChanged
                     }
-                , Notebook.submitCta { id = "join-game", color = "red", label = "JOIN GAME" }
-                , Html.p [ class "sm:col-span-2 text-sm", style "color: var(--pencil)" ]
+                , Notebook.submitCta { id = "join-game", label = "Join game" }
+                , Html.p [ class "sm:col-span-2 q-note text-sm" ]
                     [ Html.text "The game starts as soon as you join." ]
                 ]
            ]
@@ -664,8 +657,8 @@ nothing to offer a third visitor: no seat, and no view of the game.
 -}
 tableFull : String -> Html Msg
 tableFull gameId =
-    Html.div [ class "space-y-4", id "table-full" ]
-        [ Html.p [ class "pixel text-[10px]", style "color: var(--red)" ] [ Html.text "TABLE FULL" ]
+    Html.div [ class "space-y-3", id "table-full" ]
+        [ Notebook.eyebrow "TABLE FULL"
         , Html.p [ class "text-base", style "color: var(--ink)" ]
             [ Html.text "Both players are at this table and connected. If one of them is you, open the link you were given when you sat down." ]
         , Html.a
@@ -684,22 +677,20 @@ tell which of them this is.
 -}
 reconnect : Model -> Html Msg
 reconnect model =
-    Html.div [ class "space-y-4", id "reconnect" ]
-        ([ Html.p [ class "pixel text-[10px]", style "color: var(--pen)" ]
-            [ Html.text
-                (if List.length model.disconnected == 1 then
-                    "CONTINUE?"
+    Html.div [ class "space-y-3", id "reconnect" ]
+        ([ Notebook.eyebrow
+            (if List.length model.disconnected == 1 then
+                "CONTINUE?"
 
-                 else
-                    "WHO ARE YOU?"
-                )
-            ]
+             else
+                "WHO ARE YOU?"
+            )
          ]
             ++ (case model.disconnected of
                     [ seat ] ->
                         [ Html.p [ class "text-base", style "color: var(--ink)" ]
                             [ Html.text "Rejoin as "
-                            , Html.span [ class "font-bold" ] [ Html.text seat.name ]
+                            , Html.span [ class "font-semibold" ] [ Html.text seat.name ]
                             , Html.text "?"
                             ]
                         ]
@@ -707,7 +698,7 @@ reconnect model =
                     _ ->
                         []
                )
-            ++ [ Html.div [ class "grid gap-3 sm:grid-cols-2" ]
+            ++ [ Html.div [ class "flex flex-wrap gap-3" ]
                     (model.disconnected
                         |> List.map
                             (\seat ->
@@ -715,7 +706,7 @@ reconnect model =
                                     [ Html.Attributes.type_ "button"
                                     , onClick (ReclaimedSeat seat.id)
                                     , id ("reclaim-" ++ seat.id)
-                                    , class "btn-arcade yellow pixel text-[10px] px-4 py-3"
+                                    , class "q-btn yellow px-5 py-3 text-base"
                                     ]
                                     [ Html.text seat.name ]
                             )
@@ -727,7 +718,7 @@ reconnect model =
 
 gameCode : String -> Html msg
 gameCode code =
-    Html.p [ class "pixel text-[9px]", style "color: var(--pencil)" ]
+    Html.p [ class "pixel q-eyebrow text-[9px] pt-1" ]
         [ Html.text ("GAME CODE " ++ String.toUpper code) ]
 
 
@@ -740,22 +731,23 @@ questions, and the way to the other games.
 -}
 about : Model -> GamePage -> List (Html Msg)
 about model page =
-    [ Html.section [ class "mt-8 sm:mt-12 pix p-4 sm:p-8", id "rules" ]
-        [ aboutHeading "text-[10px] sm:text-xs mb-3 sm:mb-4"
-            (String.toUpper page.game.name ++ " IN BRIEF")
+    [ Html.section [ class "mt-10 sm:mt-14 pt-8 sm:pt-10 q-rule", id "rules" ]
+        [ Notebook.eyebrow (String.toUpper page.game.name ++ " IN BRIEF")
         , Html.div
-            [ class "space-y-3 text-sm sm:text-base leading-relaxed", style "color: var(--ink)" ]
+            [ class "space-y-3 text-[15px] sm:text-base leading-relaxed max-w-3xl"
+            , style "color: var(--ink)"
+            ]
             (List.map (\paragraph -> Html.p [] [ Html.text paragraph ]) page.copy.rules)
         ]
-    , Html.section [ class "mt-5 sm:mt-8 grid gap-4 sm:grid-cols-2", id "modes" ]
-        [ Html.div [ class "pix-sm p-4 sm:p-5" ]
-            [ aboutHeading "text-[10px] mb-3" "MODES"
-            , Html.ul [ class "space-y-2 text-sm sm:text-base" ]
+    , Html.section [ class "mt-6 sm:mt-8 grid gap-4 sm:grid-cols-2", id "modes" ]
+        [ Html.div [ class "q-card p-4 sm:p-5" ]
+            [ Notebook.eyebrow "MODES"
+            , Html.ul [ class "space-y-2 text-[15px]" ]
                 (page.formats |> List.map (\f -> nameAndNote f.name f.description))
             ]
-        , Html.div [ class "pix-sm p-4 sm:p-5" ]
-            [ aboutHeading "text-[10px] mb-3" "CLOCKS"
-            , Html.ul [ class "space-y-2 text-sm sm:text-base" ]
+        , Html.div [ class "q-card p-4 sm:p-5" ]
+            [ Notebook.eyebrow "CLOCKS"
+            , Html.ul [ class "space-y-2 text-[15px]" ]
                 (Catalog.clocksInGameOrder page.game page.clocks
                     |> List.map (\preset -> nameAndNote preset.name preset.description)
                 )
@@ -766,19 +758,16 @@ about model page =
                 []
 
             else
-                [ Html.section [ class "mt-5 sm:mt-8 pix p-4 sm:p-8", id "faq" ]
-                    [ aboutHeading "text-[10px] sm:text-xs mb-3 sm:mb-4" "QUESTIONS"
-                    , Html.dl [ class "space-y-4 text-sm sm:text-base" ]
+                [ Html.section [ class "mt-8 sm:mt-10 pt-8 sm:pt-10 q-rule", id "faq" ]
+                    [ Notebook.eyebrow "QUESTIONS"
+                    , Html.dl [ class "space-y-4 text-[15px] sm:text-base max-w-3xl" ]
                         (page.copy.faq
                             |> List.map
                                 (\( question, answer ) ->
                                     Html.div []
-                                        [ Html.dt [ class "font-bold", style "color: var(--ink)" ]
+                                        [ Html.dt [ class "font-semibold", style "color: var(--ink)" ]
                                             [ Html.text question ]
-                                        , Html.dd
-                                            [ class "mt-1 leading-relaxed"
-                                            , style "color: var(--pencil)"
-                                            ]
+                                        , Html.dd [ class "q-note mt-1 leading-relaxed" ]
                                             [ Html.text answer ]
                                         ]
                                 )
@@ -791,15 +780,15 @@ about model page =
                     []
 
                 others ->
-                    [ Html.section [ class "mt-8 sm:mt-10 text-center", id "other-games" ]
-                        [ Html.div [ class "flex flex-wrap justify-center gap-3" ]
+                    [ Html.section [ class "mt-8 sm:mt-10", id "other-games" ]
+                        [ Notebook.eyebrow "THE OTHER GAMES"
+                        , Html.div [ class "flex flex-wrap gap-3" ]
                             (others
                                 |> List.map
                                     (\game ->
                                         Html.a
                                             [ href (Route.href (Route.gameLanding game.slug))
-                                            , class "pix-flat px-4 py-3 font-bold hover:bg-[color:var(--highlighter)]"
-                                            , style "color: var(--ink)"
+                                            , class "q-btn plain px-4 py-2.5 text-[15px]"
                                             ]
                                             [ Html.text ("Play " ++ game.name ++ " →") ]
                                     )
@@ -809,17 +798,10 @@ about model page =
            )
 
 
-aboutHeading : String -> String -> Html msg
-aboutHeading size text =
-    Html.h2 [ class ("pixel " ++ size ++ " leading-loose"), style "color: var(--ink)" ]
-        [ Html.text text ]
-
-
 nameAndNote : String -> String -> Html msg
 nameAndNote name note =
     Html.li []
-        [ Html.span [ class "font-bold", style "color: var(--ink)" ] [ Html.text name ]
+        [ Html.span [ class "font-semibold", style "color: var(--ink)" ] [ Html.text name ]
         , Html.text " "
-        , Html.span [ class "text-sm", style "color: var(--pencil)" ]
-            [ Html.text ("· " ++ note) ]
+        , Html.span [ class "q-note text-sm" ] [ Html.text ("· " ++ note) ]
         ]

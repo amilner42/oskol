@@ -385,6 +385,30 @@
   src: url("/fonts/press-start-2p-latin.woff2") format("woff2");
 }
 
+/* Self-hosted quiet sans (IBM Plex Sans, OFL). Same reason as the pixel
+   font: no third party on the critical path, stable screenshots. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-600.woff2") format("woff2");
+}
+
 /* ---------- Multicade x notebook design system ----------
    Light and airy like a fresh notebook page, with 8-bit arcade bones:
    pixel headings, hard-shadow borders, marquees, scanlines. */
@@ -508,6 +532,10 @@
   transition: transform 0.08s, box-shadow 0.08s, filter 0.15s;
 }
 .btn-arcade.pen { background: var(--pen); }
+/* Header scale: a thinner plate and a shallower drop, so it sits in a line
+   of text without dominating it. */
+.btn-arcade.compact { border-width: 2px; box-shadow: 0 3px 0 0 var(--ink); }
+.btn-arcade.compact:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 0 var(--ink); }
 .btn-arcade.green { background: var(--marker-green); color: var(--ink); }
 .btn-arcade.yellow { background: var(--highlighter); color: var(--ink); }
 .btn-arcade:hover:not(:disabled) { filter: brightness(1.06); }
@@ -542,6 +570,109 @@
   box-shadow: inset 4px 4px 0 0 var(--paper-2);
 }
 .name-field:focus { outline: none; border-color: var(--pen); box-shadow: 4px 4px 0 0 var(--pen); }
+
+/* ---------- Quiet notebook: the landing pages ----------
+   The paper, the grid and the pixel font stay, demoted: pixel type is for
+   the wordmark and the small section eyebrows only, rules are 1.5px, the
+   offset shadow is 3px, and one quiet sans headline is in charge. These
+   classes are the landing's own — the game tables keep `.pix`, `.tile`,
+   `.btn-arcade` and the rest untouched. */
+.quiet {
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* One headline in charge: everything else is body copy or an eyebrow. */
+.q-title {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.q-note { color: var(--pencil); }
+/* The three steps' numbers: a circle drawn by hand, a little off round and
+   a little off level, the digit in ink. */
+.q-num {
+  display: inline-grid; place-items: center;
+  width: 1.55em; height: 1.55em;
+  border: 1.5px solid var(--pencil);
+  border-radius: 52% 48% 50% 50% / 48% 52% 48% 52%;
+  transform: rotate(-6deg);
+  color: var(--pencil);
+  font-size: 0.78em; font-weight: 500; line-height: 1;
+}
+.q-steps > span:nth-child(2) .q-num { border-radius: 48% 52% 47% 53% / 53% 47% 52% 48%; transform: rotate(4deg); }
+.q-steps > span:nth-child(3) .q-num { border-radius: 50% 50% 53% 47% / 47% 53% 50% 50%; transform: rotate(-7deg); }
+.q-eyebrow {
+  color: var(--pencil);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* A sheet on the paper: one hairline and a small offset shadow. */
+.q-card {
+  background: #fff;
+  border: 1px solid rgba(35, 36, 58, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(35, 36, 58, 0.06), 0 8px 24px -12px rgba(35, 36, 58, 0.25);
+}
+a.q-card, button.q-card { transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+a.q-card:hover, a.q-card:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(35, 36, 58, 0.22);
+  box-shadow: 0 2px 4px rgba(35, 36, 58, 0.06), 0 18px 36px -14px rgba(35, 36, 58, 0.35);
+  outline: none;
+}
+/* A game with no engine yet: the same tile, dimmed, and nothing to click. */
+.q-card-soon { box-shadow: none; }
+.q-card-soon .q-art { filter: saturate(0.25); opacity: 0.6; }
+
+/* The art sits on the second paper tone, under a hairline. */
+.q-art {
+  /* the game's own accent, barely there, under its art */
+  background: color-mix(in oklab, var(--accent, var(--pencil)) 9%, #fff);
+  border-bottom: 1px solid rgba(35, 36, 58, 0.08);
+  overflow: hidden;
+}
+.q-card-soon .q-art { background: var(--paper-2); }
+
+/* Option rows: a mode, a setting's choice, a clock. Restrained colour —
+   the selected one is ink, the rest are paper. */
+.q-opt {
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s;
+}
+.q-opt:hover:not(.q-opt-on) { background: var(--paper-2); }
+.q-opt-on { background: var(--ink); color: #fff; }
+.q-opt-on .q-note { color: rgba(255, 255, 255, 0.72); }
+
+.q-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 3px 3px 0 0 var(--ink);
+  transition: transform 0.08s, box-shadow 0.08s, filter 0.15s;
+}
+.q-btn.yellow { background: var(--highlighter); color: var(--ink); }
+.q-btn.plain { background: #fff; color: var(--ink); }
+.q-btn:hover:not(:disabled) { filter: brightness(1.05); }
+.q-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 var(--ink); }
+.q-btn:disabled { background: #d9d9dd; color: #8a8a94; border-color: #a9a9b2; box-shadow: 3px 3px 0 0 #a9a9b2; cursor: not-allowed; }
+
+.q-field {
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+}
+.q-field:focus { outline: none; border-color: var(--pen); box-shadow: 3px 3px 0 0 var(--pen); }
+
+.q-rule { border-top: 1.5px solid var(--ink); }
 
 /* ---------- Game screens ---------- */
 .game-panel { border: 3px solid var(--ink); background: #fff; }
@@ -842,7 +973,7 @@
 .die-pip { background: var(--bg-checker-light-ink); }
 /* The dice row: its gap is a variable so a die that has not landed yet can
    cancel it (see `die-earned`). For the mover the row is a control -- a
-   tap hands "next" to the die after -- and the next die stands up. */
+   tap swaps the two dice -- and the next die is always the left one. */
 .dice-row { --dice-gap: 0.5rem; gap: var(--dice-gap); }
 @media (min-width: 640px) { .dice-row { --dice-gap: 0.75rem; } }
 /* On a phone the dice follow the points, so a double's four dice fit the
@@ -853,8 +984,16 @@
   .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
   .bg-page .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
 }
-.dice-row.rotates { cursor: pointer; }
-.die.next { transform: translateY(-5px); }
+.dice-row.swaps { cursor: pointer; }
+/* Swapping is flex `order`, never a move in the DOM (that would restart
+   the die's roll animation), and each die slides in from where it was:
+   the left slot from the right, the right slot from the left, by one die
+   and the gap. The two animation names are the same slide; the view
+   alternates them so every tap restarts it. */
+.die.slot-0 { order: 0; --slide-from: calc(100% + var(--dice-gap)); }
+.die.slot-1 { order: 1; --slide-from: calc(-100% - var(--dice-gap)); }
+@keyframes die-slide-a { from { transform: translateX(var(--slide-from)); } to { transform: none; } }
+@keyframes die-slide-b { from { transform: translateX(var(--slide-from)); } to { transform: none; } }
 /* Each player throws their own dice, in their checkers' colour: white with
    dark pips, or dark with white pips and the black checker's inner ring. */
 .die.black { background: var(--bg-checker-dark); box-shadow: 3px 3px 0 0 var(--bg-checker-edge), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
@@ -890,6 +1029,12 @@
      They wait out the tumble (`backwards` holds the from-state through the
      delay) and drop in beside the pair that was. */
   .die.earned { animation: die-earned 0.28s ease-out 0.92s backwards; }
+  /* The swap's slide (see `slot-0` above). After the roll rules on
+     purpose: a swapped die is usually one that was thrown, and its
+     finished shake must give way to the slide, not the other way round.
+     The reel is the child's own animation and is untouched. */
+  .die.slid-a { animation: die-slide-a 0.22s ease-out; }
+  .die.slid-b { animation: die-slide-b 0.22s ease-out; }
 }
 @keyframes die-reel { to { transform: translateY(-80%); } }
 /* A die a double earns takes no room until it lands: zero wide, no
@@ -1001,9 +1146,14 @@
        height: `.bg-main` and `.bg-stack` become `display: contents` so
        the header and the two identity bars (names, pips, score, clock
        chip and its delay pip) become items of the page grid and sit in a
-       column beside the board, the opponent's at the top and yours at the
-       bottom, the way they read on the board itself. Out of the slab,
-       each bar and the board carry their own corners.
+       column beside the board that mirrors it: the opponent's bar at the
+       top, yours at the bottom, and the header (game, match, resign) in
+       the middle, centred between them by two equal flexible rows. The
+       two bars read towards the board's middle: the opponent's wraps
+       downwards from the top edge, yours wraps upwards from the bottom
+       (`wrap-reverse`), so the same items sit at the same distance from
+       their own edge. Out of the slab, each bar and the board carry
+       their own corners.
      - the dice, the roll animation, the action buttons and the "no legal
        moves" message stay where they always are, in the board's centre
        band, just at landscape scale.
@@ -1035,16 +1185,20 @@
     /* The board first, at whatever width its height earns it; the chrome
        gets the rest of the screen, never the other way round. */
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    /* their bar, air, the header, the same air, my bar */
+    grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0 0.4rem;
     padding: var(--bg-edge) 0.25rem;
   }
   .bg-page .bg-main,
   .bg-page .bg-stack { display: contents; }
-  .bg-page .bg-header { grid-column: 2; grid-row: 1; max-width: 16rem; justify-self: start; }
+  /* The header is centred in its column, between the two bars: its lines
+     (wordmark and match tag, then the resign button) are centred over the
+     bars' width, not flushed to their left edge. */
+  .bg-page .bg-header { grid-column: 2; grid-row: 3; max-width: 16rem; justify-self: start; justify-content: center; text-align: center; }
   .bg-page .bg-header,
-  .bg-page .bg-header > div { flex-wrap: wrap; row-gap: 2px; }
+  .bg-page .bg-header > div { flex-wrap: wrap; row-gap: 3px; justify-content: center; }
   .bg-page .player-bar {
     grid-column: 2;
     max-width: 16rem;
@@ -1055,8 +1209,8 @@
     padding: 4px 7px;
     border-radius: 8px;
   }
-  .bg-page .player-bar:not(.is-me) { grid-row: 2; }
-  .bg-page .player-bar.is-me { grid-row: 4; }
+  .bg-page .player-bar:not(.is-me) { grid-row: 1; align-self: start; }
+  .bg-page .player-bar.is-me { grid-row: 5; align-self: end; flex-wrap: wrap-reverse; }
   .bg-page .bg-board {
     grid-column: 1;
     grid-row: 1 / -1;

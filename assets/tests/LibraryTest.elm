@@ -1,10 +1,11 @@
 module LibraryTest exposing (suite)
 
-{-| The library renders both grids on every visit and lets CSS choose: the
-phone's four square tiles (`#game-tiles`, `sm:hidden`) and the desktop
-cabinets (`#game-library`, `hidden sm:grid`). Which one a visitor sees is a
-media query, so what a test can hold onto is that both are there, complete,
-and pointing at the right pages.
+{-| The library is one grid of calm tiles (`#game-library`, two across on a
+phone and four from `sm` up), under a head that says two things and nothing
+else. Each tile carries both drawings — the motif a phone sees and the reel
+a desktop screen sees — and CSS picks; what a test can hold onto is that
+both are there, that every game has a tile, and that the playable ones are
+links.
 -}
 
 import Api
@@ -22,72 +23,54 @@ import Test.Html.Selector exposing (attribute, class, id, tag, text)
 suite : Test
 suite =
     describe "Page.Library"
-        [ test "the phone grid is two across and hidden from sm up" <|
+        [ test "the head is the title and the three words, and no other copy" <|
             \_ ->
                 loaded
-                    |> Query.find [ id "game-tiles" ]
-                    |> Query.has [ class "grid-cols-2", class "sm:hidden" ]
-        , test "the desktop grid is hidden below sm" <|
+                    |> Expect.all
+                        [ Query.find [ tag "h1" ] >> Query.has [ text "PLAY THE CLASSICS." ]
+                        , Query.find [ tag "h1" ] >> Query.has [ text "WITH A TWIST." ]
+                        , Query.has [ text "create game" ]
+                        , Query.has [ text "share code" ]
+                        , Query.has [ text "play a friend" ]
+                        , Query.findAll [ class "q-num" ] >> Query.count (Expect.equal 3)
+                        , Query.hasNot [ text "Free · No sign up · No ads" ]
+                        ]
+        , test "one grid: two across at every width" <|
             \_ ->
                 loaded
                     |> Query.find [ id "game-library" ]
-                    |> Query.has [ class "hidden", class "sm:grid" ]
-        , test "one tile and one cabinet per game, playable or not" <|
+                    |> Query.has [ class "grid-cols-2" ]
+        , test "one tile per game, playable or not, and the playable ones link" <|
             \_ ->
                 loaded
                     |> Expect.all
-                        [ Query.find [ id "game-tiles" ]
-                            >> Query.findAll [ class "game-tile" ]
-                            >> Query.count (Expect.equal 3)
-                        , Query.find [ id "game-tiles" ]
-                            >> Query.findAll [ tag "a" ]
-                            >> Query.count (Expect.equal 2)
-                        , Query.find [ id "game-library" ]
-                            >> Query.findAll [ class "cabinet" ]
+                        [ Query.find [ id "game-library" ]
+                            >> Query.findAll [ class "q-card" ]
                             >> Query.count (Expect.equal 3)
                         , Query.find [ id "game-library" ]
                             >> Query.findAll [ tag "a" ]
                             >> Query.count (Expect.equal 2)
-                        ]
-        , test "both link to the game's start page" <|
-            \_ ->
-                loaded
-                    |> Expect.all
-                        [ Query.find [ id "game-tile-poker" ]
-                            >> Query.has [ tag "a", attribute (Attr.href "/poker") ]
                         , Query.find [ id "game-poker" ]
                             >> Query.has [ tag "a", attribute (Attr.href "/poker") ]
+                        , Query.find [ id "game-backgammon" ]
+                            >> Query.has [ tag "a", attribute (Attr.href "/backgammon") ]
                         ]
-        , test "the phone tile carries the motif: one small drawing, no reel" <|
-            \_ ->
-                loaded
-                    |> Query.find [ id "game-tile-poker" ]
-                    |> Expect.all
-                        [ Query.has [ attribute (Attr.attribute "viewBox" "0 0 64 64") ]
-                        , Query.hasNot [ class "game-art-anim" ]
-                        ]
-        , test "the desktop cabinet carries the reel, and it animates" <|
+        , test "a tile carries the phone's motif and the desktop's reel" <|
             \_ ->
                 loaded
                     |> Query.find [ id "game-poker" ]
-                    |> Query.has [ class "game-art", class "game-art-anim", class "game-art-reel" ]
-        , test "a game with no engine yet is not a link and says SOON" <|
+                    |> Expect.all
+                        [ Query.has [ attribute (Attr.attribute "viewBox" "0 0 64 64") ]
+                        , Query.has [ class "game-art", class "game-art-anim", class "game-art-reel" ]
+                        ]
+        , test "a game with no engine yet is dimmed, says Soon and is not a link" <|
             \_ ->
                 loaded
                     |> Query.find [ id "game-checkers" ]
                     |> Expect.all
-                        [ Query.has [ tag "article", class "cabinet-soon", text "SOON" ]
+                        [ Query.has [ tag "article", class "q-card-soon", text "Soon" ]
                         , Query.hasNot [ tag "a" ]
-                        ]
-        , test "the headline and the three steps are always there" <|
-            \_ ->
-                loaded
-                    |> Query.has
-                        [ text "PLAY THE CLASSICS."
-                        , text "WITH A TWIST."
-                        , text "PICK"
-                        , text "SHARE"
-                        , text "ON"
+                        , Query.hasNot [ class "game-art-anim" ]
                         ]
         , test "a catalogue that will not load says so instead of an empty page" <|
             \_ ->

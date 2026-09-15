@@ -1,5 +1,6 @@
 module GameArt exposing
-    ( Rect
+    ( reelMs
+    , Rect
     , accent
     , art
     , frameCount
@@ -38,6 +39,14 @@ import Svg.Attributes as SvgAttr
 frameMs : Int
 frameMs =
     800
+
+
+{-| How long one full run of a game's reel takes: the library holds the
+spotlight on a card for exactly this long before moving on.
+-}
+reelMs : String -> Int
+reelMs slug =
+    List.length (framesFor slug) * frameMs
 
 
 {-| A rectangle covering a run of equal cells.
