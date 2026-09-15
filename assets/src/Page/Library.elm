@@ -126,14 +126,21 @@ tileFace game badge =
             , animate = badge == Nothing
             }
         ]
-    , Html.div [ class "px-3 py-2.5 sm:px-4 sm:py-3.5 flex items-baseline justify-between gap-2" ]
-        [ Html.span [ class "font-semibold text-[15px] sm:text-base truncate" ]
-            [ Html.text game.name ]
-        , case badge of
-            Just label ->
-                Html.span [ class "q-note text-xs shrink-0" ] [ Html.text label ]
+    , Html.div [ class "px-3 py-2.5 sm:px-4 sm:py-3.5" ]
+        [ Html.div [ class "flex items-baseline justify-between gap-2" ]
+            [ Html.span [ class "font-semibold text-[15px] sm:text-base truncate" ]
+                [ Html.text game.name ]
+            , case badge of
+                Just label ->
+                    Html.span [ class "q-note text-xs shrink-0" ] [ Html.text label ]
 
-            Nothing ->
-                Html.text ""
+                Nothing ->
+                    Html.text ""
+            ]
+
+        -- The line is worth its room on a desktop screen and not on a phone,
+        -- where the name and the drawing already say it.
+        , Html.p [ class "hidden sm:block q-note text-[13px] leading-snug mt-1" ]
+            [ Html.text game.description ]
         ]
     ]
