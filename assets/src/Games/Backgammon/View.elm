@@ -942,8 +942,12 @@ viewHeader ctx =
     in
     div [ class "bg-header w-full max-w-5xl lg:max-w-none flex items-center justify-between gap-2" ]
         [ div [ class "flex items-center gap-2 sm:gap-3 min-w-0" ]
-            [ span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap" ] [ text "BACKGAMMON" ]
-            , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--ink)", style "background" "#fff" ]
+            -- The row must survive its longest labels on the narrowest
+            -- phone ("MATCH TO 7 · G1" beside CRAWFORD at 320px), so the
+            -- badge is the piece that gives way: it clips rather than
+            -- running under the picker on the right.
+            [ span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap shrink-0" ] [ text "BACKGAMMON" ]
+            , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 min-w-0 truncate", style "border" "2px solid var(--ink)", style "background" "#fff" ]
                 [ text
                     (matchLabel
                         ++ (if target > 1 then
@@ -955,7 +959,7 @@ viewHeader ctx =
                     )
                 ]
             , if crawford then
-                span [ class "pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--bg-accent)", style "color" "var(--bg-accent)" ] [ text "CRAWFORD" ]
+                span [ class "pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap shrink-0", style "border" "2px solid var(--bg-accent)", style "color" "var(--bg-accent)" ] [ text "CRAWFORD" ]
 
               else
                 text ""

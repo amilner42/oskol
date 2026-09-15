@@ -417,7 +417,7 @@ update msg model =
             stay { model | shareLabel = Nothing } Cmd.none
 
         GotPrefs (Ok prefs) ->
-            stay (absorb prefs model) Cmd.none
+            keep (absorb prefs model) model
 
         GotPrefs (Err _) ->
             -- A preference is a nicety: a board that stays the colour this
@@ -425,7 +425,7 @@ update msg model =
             stay model Cmd.none
 
         PrefSaved (Ok prefs) ->
-            stay (absorb prefs model) Cmd.none
+            keep (absorb prefs model) model
 
         PrefSaved (Err _) ->
             stay model Cmd.none
@@ -595,6 +595,20 @@ finishedWinners payload =
 
         Protocol.Finished winners ->
             Just winners
+
+
+{-| Absorbing the server's answer also writes it to this browser, or the
+two would disagree for good: a board picked on another browser would arrive
+a round trip late on every single load here, painting the old one first.
+-}
+keep : Model -> Model -> ( Model, Cmd Msg, Out )
+keep updated before =
+    updated.prefs
+        |> Dict.toList
+        |> List.filter (\( key, value ) -> Dict.get key before.prefs /= Just value)
+        |> List.map (\( key, value ) -> storePref { key = key, value = value })
+        |> Cmd.batch
+        |> stay updated
 
 
 {-| What the server says this guest keeps, over what this browser had:

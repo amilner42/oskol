@@ -48,6 +48,10 @@ async function themeClass(page) {
     await p1.goto(`${BASE}/backgammon`);
     await p1.waitForSelector('#create-name');
     await p1.fill('input[name="player_name"]', 'Alice');
+    // A match, so the header carries its longest label; a single game's
+    // "SINGLE GAME" would not prove the row fits.
+    await p1.waitForSelector('#format-match7');
+    await p1.click('#format-match7');
     await p1.click('#create-game');
     await p1.waitForSelector('#game-code');
     const gameId = await p1.textContent('#game-code');
@@ -117,7 +121,21 @@ async function themeClass(page) {
       });
       await p1.click('#bg-theme-button');
       if (overflow > 0) throw new Error(`${tag}: something is ${overflow}px past the edge`);
-      log(`${tag}: header and list fit inside the screen`);
+      // And the header's own row: the match badge must stop before the
+      // picker rather than running under it.
+      const collide = await p1.evaluate(() => {
+        const badge = document.querySelector('.bg-header span[style*="border"]');
+        const picker = document.querySelector('#bg-theme-button');
+        if (!badge || !picker) return 0;
+        const a = badge.getBoundingClientRect();
+        const b = picker.getBoundingClientRect();
+        // The landscape header wraps onto two rows; two things on different
+        // rows cannot overlap however their x ranges read.
+        const sameRow = a.bottom > b.top + 1 && b.bottom > a.top + 1;
+        return sameRow ? Math.ceil(a.right - b.left) : 0;
+      });
+      if (collide > 0) throw new Error(`${tag}: the header badge overlaps the picker by ${collide}px`);
+      log(`${tag}: header and list fit, nothing overlaps`);
     }
 
     if (errors.length) throw new Error('browser errors:\n' + errors.join('\n'));
