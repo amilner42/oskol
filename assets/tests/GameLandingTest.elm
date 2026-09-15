@@ -7,6 +7,7 @@ a mode, the inline errors, and the invite's three states.
 
 import Api
 import Api.Catalog as Catalog
+import Dict
 import Expect
 import Page.GameLanding as GameLanding
 import Session exposing (Session)
@@ -331,7 +332,7 @@ page { guestName } slug gameId =
 
 session : Maybe String -> Session
 session guestName =
-    { csrf = "token", guestName = guestName }
+    { csrf = "token", guestName = guestName, prefs = Dict.empty }
 
 
 send : GameLanding.Msg -> GameLanding.Model -> GameLanding.Model

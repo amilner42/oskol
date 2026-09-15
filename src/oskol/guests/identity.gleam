@@ -1,13 +1,15 @@
 //// Silent guest identity. Every visitor gets an opaque id in a year-long
-//// cookie and a row the site uses only to remember the name they last
-//// played under. The id authenticates nothing: losing it costs a prefilled
-//// form and nothing else.
+//// cookie and a row the site uses only to remember them conveniently: the
+//// name they last played under, and the display preferences they picked
+//// (`oskol/guests/prefs`). The id authenticates nothing: losing it costs a
+//// prefilled form and a board colour, and nothing else.
 
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import oskol/core/ctx.{type Ctx}
 import oskol/core/session.{type Session}
+import oskol/guests/prefs.{type Prefs}
 
 /// 16 crypto-random bytes, URL-safe base64, unpadded: exactly 22 chars.
 pub const id_length = 22
@@ -48,6 +50,31 @@ pub fn remembered_name(ctx: Ctx, session: Session) -> Option(String) {
 pub fn remember(ctx: Ctx, session: Session, name: String) -> Nil {
   case session.guest_id {
     Some(id) -> ctx.guests.save_name(id, name)
+    None -> Nil
+  }
+}
+
+/// The display preferences this visitor has kept: their board's colours and
+/// whatever else is their own taste. Only the ones the site still knows
+/// about (`prefs.known`), so a retired theme never reaches a client.
+pub fn preferences(ctx: Ctx, session: Session) -> Prefs {
+  case session.guest_id {
+    Some(id) -> prefs.known(ctx.guests.prefs(id))
+    None -> []
+  }
+}
+
+/// Keep one preference for this visitor. A visitor with no guest id keeps
+/// nothing here — their browser's own storage is all they have, which is
+/// exactly what a cleared cookie costs.
+pub fn remember_preference(
+  ctx: Ctx,
+  session: Session,
+  key: String,
+  value: String,
+) -> Nil {
+  case session.guest_id {
+    Some(id) -> ctx.guests.save_pref(id, key, value)
     None -> Nil
   }
 }

@@ -10,6 +10,7 @@ links.
 
 import Api
 import Api.Catalog as Catalog
+import Dict
 import Expect
 import Html.Attributes as Attr
 import Page.Library as Library
@@ -96,7 +97,7 @@ loaded =
 
 session : () -> Session
 session () =
-    { csrf = "token", guestName = Nothing }
+    { csrf = "token", guestName = Nothing, prefs = Dict.empty }
 
 
 send : Library.Msg -> Library.Model -> Library.Model

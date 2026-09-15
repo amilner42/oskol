@@ -8,9 +8,16 @@ channel messages must land where they should.
 import Dict
 import Expect
 import FixtureLoader exposing (Fixture)
+import Games.Backgammon.View as Backgammon
 import Page.Play as Play exposing (ConnectionStatus(..), Model, Msg(..))
 import Protocol exposing (GamePayload, ServerMessage(..), Update)
+import Session exposing (Session)
 import Test exposing (Test, describe, test)
+
+
+testSession : Session
+testSession =
+    { csrf = "tok", guestName = Nothing, prefs = Dict.empty }
 
 
 payload : Fixture -> String -> Update -> GamePayload
@@ -27,7 +34,7 @@ payload fixture playerId update =
 
 start : Fixture -> Model
 start fixture =
-    Play.init
+    Play.init testSession
         { origin = "http://localhost:4400"
         , slug = fixture.game
         , gameId = "fixture"
@@ -49,7 +56,7 @@ first3 ( a, _, _ ) =
 suite : Test
 suite =
     describe "Page.Play.update with fixture payloads"
-        (List.map replay FixtureLoader.all ++ [ channelMessages, tabTitle ])
+        (List.map replay FixtureLoader.all ++ [ channelMessages, tabTitle, prefsRace ])
 
 
 {-| The tab names the opponent once the game is on.
@@ -98,13 +105,55 @@ replay fixture =
                 final
 
 
+{-| A pick made at the table outranks any answer still in flight: the GET
+that left before the tap must not drag the board back.
+-}
+prefsRace : Test
+prefsRace =
+    describe "display preferences"
+        [ test "a board picked here survives a stale answer from the server" <|
+            \_ ->
+                let
+                    picked =
+                        Play.update
+                            (BackgammonMsg (Backgammon.PickTheme "midnight"))
+                            (startAt "backgammon")
+                            |> first3
+
+                    stale =
+                        Play.update (GotPrefs (Ok (Dict.fromList [ ( "backgammon_theme", "walnut" ) ]))) picked
+                            |> first3
+                in
+                Expect.equal (Dict.get "backgammon_theme" stale.prefs) (Just "midnight")
+        , test "a board picked on another browser arrives when nothing was picked here" <|
+            \_ ->
+                let
+                    answered =
+                        Play.update (GotPrefs (Ok (Dict.fromList [ ( "backgammon_theme", "neon" ) ]))) (startAt "backgammon")
+                            |> first3
+                in
+                Expect.equal (Dict.get "backgammon_theme" answered.prefs) (Just "neon")
+        ]
+
+
+startAt : String -> Model
+startAt slug =
+    Play.init testSession
+        { origin = "http://localhost:4400"
+        , slug = slug
+        , gameId = "g"
+        , seatToken = Just "tok"
+        }
+        |> Tuple.first
+
+
 channelMessages : Test
 channelMessages =
     test "errors and connection status are kept, a lobby message only marks the connection live" <|
         \_ ->
             let
                 model =
-                    Play.init
+                    Play.init testSession
                         { origin = "http://localhost:4400"
                         , slug = "backgammon"
                         , gameId = "g"

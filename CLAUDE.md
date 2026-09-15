@@ -171,7 +171,7 @@ test/go/            board rules, ko/superko/snapback, scoring, oracle, conforman
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: setup, auto-start, actions, clocks, rematch
 lib/oskol/persistence.ex        games + game_actions tables (seed + action log per room)
-lib/oskol/guests.ex             silent guest identity: guests table + placeholder users table
+lib/oskol/guests.ex             silent guest identity: guests table (name + prefs) + placeholder users
 lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every visit
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
@@ -203,6 +203,9 @@ assets/css/app.css               the multicade/notebook design system (paper, pi
                                  pix, btn-arcade, tile, pcard, felt, bg-board...)
                                  plus the landing's quiet notebook (quiet, q-card,
                                  q-title, q-eyebrow, q-opt, q-btn, q-field)
+                                 and the eight backgammon boards (.bg-theme-*)
+src/oskol/guests/prefs.gleam     the display preferences a guest may keep, and
+                                 the values each one allows
 ```
 
 ## Platform decisions live in Gleam (`src/oskol/`)
@@ -274,6 +277,8 @@ POST /papi/games/:slug                 {format, name, clock, selections}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
 GET  /papi/codes/:code                 {ok, slug}
+GET  /papi/me/prefs                    {ok, prefs}
+POST /papi/me/prefs                    {key, value} -> {ok, prefs}
 ```
 
 `path` is the URL that opens the seat that was just taken (`/:slug/:id?t=`,
@@ -287,6 +292,15 @@ so the picker can name the ones the game offers. Statuses: 404 `not_found`
 (no such game, no such code, a room that is over), 422 `validation_failed`
 (a name, a mode, a clock or a seat the room refused), 500 `server_error`.
 Every decision behind these lives in `src/oskol/handlers/landing.gleam`.
+
+`/papi/me/prefs` is the visitor's own display taste — today the backgammon
+board's colours, under `backgammon_theme`. Gleam owns the whitelist
+(`src/oskol/guests/prefs.gleam`): an unknown key or a value that names no
+theme is a 422 and nothing is written. It is display only: a theme never
+reaches a scene, an event or the game channel, and each player's board is
+their own. The client also keeps the pick in `localStorage` (the `storePref`
+port), which is what paints the board before the round trip and all a
+visitor whose guest cookie is gone has.
 
 ## Adding a game
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`. Give
@@ -467,8 +481,10 @@ visit) and mirrors it into the session, so LiveView mounts see it on the
 static render. `Oskol.Guests` touches the guest's row on mount and remembers
 the last display name they played under (last writer wins); that name
 prefills the create and join forms, and each seat in `games.players` records
-the guest id. The id authenticates nothing — seats are still opened only by
-seat tokens. `users` is a deliberately skeletal placeholder (it ships empty)
+the guest id. The same row carries `prefs` (jsonb): display preferences that
+follow the guest between browsers, written through `/papi/me/prefs` and
+whitelisted in `src/oskol/guests/prefs.gleam`. The id authenticates nothing —
+seats are still opened only by seat tokens. `users` is a deliberately skeletal placeholder (it ships empty)
 for the future account-claim path via `guests.user_id`.
 
 ## Future

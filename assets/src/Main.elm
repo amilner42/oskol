@@ -20,6 +20,7 @@ import Api
 import Api.Catalog as Catalog
 import Browser exposing (Document)
 import Browser.Events
+import Dict
 import Browser.Navigation as Nav
 import Html exposing (Html)
 import Html.Attributes
@@ -84,7 +85,7 @@ init flags url key =
     let
         session =
             D.decodeValue Session.decoder flags
-                |> Result.withDefault { csrf = "", guestName = Nothing }
+                |> Result.withDefault { csrf = "", guestName = Nothing, prefs = Dict.empty }
     in
     routeTo url
         { key = key
@@ -145,7 +146,7 @@ routeTo url oldModel =
                 |> landing model
 
         Just (Route.Play slug gameId token) ->
-            Page.Play.init
+            Page.Play.init model.session
                 { origin = model.origin
                 , slug = slug
                 , gameId = gameId
@@ -215,14 +216,23 @@ update msg model =
                 ( newPageModel, cmd, out ) =
                     Page.Play.update pageMsg pageModel
             in
-            ( { model | page = Play newPageModel }
+            ( { model
+                | page = Play newPageModel
+                , session =
+                    case out of
+                        Page.Play.Remember key value ->
+                            Session.withPref key value model.session
+
+                        _ ->
+                            model.session
+              }
             , Cmd.batch
                 [ Cmd.map PlayMsg cmd
                 , case out of
                     Page.Play.Navigate url ->
                         Nav.pushUrl model.key url
 
-                    Page.Play.NoOut ->
+                    _ ->
                         Cmd.none
                 ]
             )
