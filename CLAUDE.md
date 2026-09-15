@@ -12,7 +12,10 @@ rise, last chip wins).
 matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
 Jacoby rule. A roll that can play nothing is a state, not a skipped turn:
 the dice stand for both players under "no legal moves" until the mover
-passes, and every time control gives each turn its first 12 seconds free. **Go** is the territory game on a 9x9, 13x13 or 19x19 board:
+passes, and every time control gives each turn its first 12 seconds free.
+Between the games of a match (or of unlimited play) the finished game's
+position stays up, nobody is on the clock, and the next game starts when
+both players have pressed READY. **Go** is the territory game on a 9x9, 13x13 or 19x19 board:
 area (Tromp-Taylor) scoring, positional superko, komi 5.5/6.5/7.5, two
 passes end the game; it ships on the generic renderer. Every game can be
 played with an optional time control.
@@ -183,6 +186,7 @@ lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
 lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
+lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 src/oskol/rooms/seat.gleam       what an attach means: the same client back, or a takeover
 lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
@@ -487,6 +491,15 @@ alias); prod reads `DATABASE_URL` (Fly Managed Postgres via pgbouncer, so
 postgrex runs with `prepare: :unnamed`) and migrates on boot. A room's raw
 `control:` (tests only) does not persist; real rooms use clock preset ids,
 which do.
+
+A rules change that makes old logs stop replaying needs those logs patched,
+because a room is rebuilt from its log under today's rules. The one so far:
+the between-games READY. `Oskol.Game.ReadyUpPatch` inserts the `ready`
+steps old backgammon match logs lack (at the time of the game's end); the
+data migration `PatchReadyUpLogs` ran it
+once at boot, before any room could rehydrate, and `mix
+oskol.patch_ready_up` / `Oskol.Release.patch_ready_up/1` show what it does
+(dry run unless told to write).
 
 Every visitor silently becomes a guest: `OskolWeb.Plugs.GuestId` mints an
 opaque crypto-random id into a year-long HttpOnly cookie (renewed on every

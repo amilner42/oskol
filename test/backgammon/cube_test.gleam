@@ -72,6 +72,13 @@ fn apply(
   result
 }
 
+/// Between the games of a match both players press ready; the second one
+/// starts the next game.
+fn both_ready(s: state.GameState) -> #(state.GameState, List(event.Event)) {
+  let #(s, _) = apply(s, "p1", engine.Ready)
+  apply(s, "p2", engine.Ready)
+}
+
 fn names(s: state.GameState, id: String) -> List(String) {
   list.map(engine.legal(s, id), fn(schema) { schema.name })
 }
@@ -157,8 +164,9 @@ pub fn dropping_concedes_the_cube_value_and_starts_a_new_game_test() {
   let #(s, events) = apply(s, "p2", engine.Drop)
   assert has_custom(events, "double_dropped")
   assert has_custom(events, "game_won")
-  assert has_custom(events, "new_game")
   assert state.score_of(s, "p1") == 2
+  let #(s, events) = both_ready(s)
+  assert has_custom(events, "new_game")
   assert s.game_number == 2
   assert s.cube_value == 1 && s.cube_owner == None
   assert dict.size(s.board.checkers) == 30
@@ -320,7 +328,6 @@ pub fn accepting_a_resignation_pays_stakes_times_cube_test() {
       let #(s, events) = apply(s, "p1", engine.AcceptResign)
       assert has_custom(events, "resign_accepted")
       assert has_custom(events, "game_won")
-      assert has_custom(events, "new_game")
       let won = payload_of(events, "game_won")
       assert string.contains(won, "\"kind\":\"resigned\"")
       assert string.contains(
@@ -330,8 +337,10 @@ pub fn accepting_a_resignation_pays_stakes_times_cube_test() {
       assert string.contains(won, "\"points\":" <> int.to_string(points))
       assert state.score_of(s, "p1") == points
       assert state.score_of(s, "p2") == 0
-      assert s.game_number == 2
       assert s.resign_offer == None
+      let #(s, events) = both_ready(s)
+      assert has_custom(events, "new_game")
+      assert s.game_number == 2
       assert s.cube_value == 1 && s.cube_owner == None
     },
   )
@@ -378,6 +387,7 @@ pub fn a_resignation_may_be_offered_while_a_double_is_pending_test() {
   // Accepted, the cube was never turned: one point, not two
   let #(accepted, _) = apply(s, "p1", engine.AcceptResign)
   assert state.score_of(accepted, "p1") == 1
+  let #(accepted, _) = both_ready(accepted)
   assert accepted.game_number == 2
 }
 
@@ -424,6 +434,7 @@ pub fn an_accepted_resignation_can_end_the_match_test() {
   let #(s, _) = apply(s, "p2", engine.Resign(Gammon))
   let #(s, _) = apply(s, "p1", engine.AcceptResign)
   assert state.score_of(s, "p1") == 4
+  let #(s, _) = both_ready(s)
   assert s.crawford && s.game_number == 2
 }
 
@@ -621,8 +632,9 @@ pub fn the_crawford_game_forbids_doubling_then_it_resumes_test() {
     setup([#(White, Off, 14), #(White, Point(1), 1), #(Black, Point(19), 15)])
   let s = new_game(11, "match3")
   let s = state.GameState(..s, board: b, phase: state.Moving(White, [1, 2]))
-  let #(s, events) = bear_off_and_play(s)
+  let #(s, _) = bear_off_and_play(s)
   assert state.score_of(s, "p1") == 2
+  let #(s, events) = both_ready(s)
   assert s.crawford && s.crawford_done
   assert list.any(events, fn(e) {
     case e {
@@ -647,6 +659,7 @@ pub fn the_crawford_game_forbids_doubling_then_it_resumes_test() {
   let #(s, _) = apply(s, "p2", engine.MoveChecker(Point(24), Off))
   let #(s, _) = apply(s, "p2", engine.Play)
   assert state.score_of(s, "p2") == 1
+  let #(s, _) = both_ready(s)
   assert s.crawford == False && s.crawford_done
   let s = state.GameState(..s, phase: state.Rolling(Black))
   assert names(s, "p2") == ["roll", "double", "resign"]
