@@ -34,9 +34,14 @@ async function themeClass(page) {
     executablePath: process.env.PW_CHROMIUM || undefined,
     args: ['--no-sandbox', '--disable-dev-shm-usage'],
   });
-  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const phone = { viewport: { width: 390, height: 844 } };
+  const context = await browser.newContext(phone);
+  // Bob browses separately: his own guest cookie and his own localStorage,
+  // so what his board does is not an artefact of sharing Alice's.
+  const theirs = await browser.newContext(phone);
   const errors = [];
   context.on('weberror', (e) => errors.push(e.error().message));
+  theirs.on('weberror', (e) => errors.push(e.error().message));
 
   try {
     const p1 = await context.newPage();
@@ -47,7 +52,7 @@ async function themeClass(page) {
     await p1.waitForSelector('#game-code');
     const gameId = await p1.textContent('#game-code');
 
-    const p2 = await context.newPage();
+    const p2 = await theirs.newPage();
     await p2.goto(`${BASE}/backgammon?game=${gameId.trim()}`);
     await p2.waitForSelector('#join-game');
     await p2.fill('input[name="player_name"]', 'Bob');
@@ -74,7 +79,11 @@ async function themeClass(page) {
     await p1.screenshot({ path: `${OUT}/phone-picker-open.png` });
     await p1.click('#bg-theme-button');
 
-    // The opponent's board is untouched: a theme is display only.
+    // The opponent's board is untouched: a theme is display only. Reloaded
+    // first, so this is what the server would tell a second browser -- not
+    // just a tab nobody disturbed.
+    await p2.reload();
+    await p2.waitForSelector('.bg-page', { timeout: 20000 });
     const bobs = await themeClass(p2);
     if (bobs !== 'bg-theme-walnut') {
       throw new Error(`the opponent's board changed too: ${bobs}`);
@@ -96,10 +105,19 @@ async function themeClass(page) {
       await p1.waitForSelector('#bg-theme-list');
       await sleep(200);
       await p1.screenshot({ path: `${OUT}/${tag}-picker-open.png` });
+      // With the list open: nothing of it (nor of the header behind it) may
+      // stick out past the viewport.
+      const overflow = await p1.evaluate(() => {
+        const width = document.documentElement.clientWidth;
+        const spill = [...document.querySelectorAll('.bg-page *')]
+          .map((el) => el.getBoundingClientRect())
+          .filter((r) => r.width > 0)
+          .reduce((worst, r) => Math.max(worst, Math.ceil(r.right - width), Math.ceil(-r.left)), 0);
+        return Math.max(spill, document.documentElement.scrollWidth - width);
+      });
       await p1.click('#bg-theme-button');
-      const overflow = await p1.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-      if (overflow > 0) throw new Error(`${tag}: the page scrolls sideways by ${overflow}px`);
-      log(`${tag}: header and list fit, no sideways scroll`);
+      if (overflow > 0) throw new Error(`${tag}: something is ${overflow}px past the edge`);
+      log(`${tag}: header and list fit inside the screen`);
     }
 
     if (errors.length) throw new Error('browser errors:\n' + errors.join('\n'));

@@ -126,6 +126,7 @@ type alias Model =
     , error : Maybe String
     , session : Session -- the CSRF token /papi writes carry
     , prefs : Dict String String -- this viewer's display preferences (a board's colours)
+    , picked : List String -- preference keys this viewer set here, which no answer may undo
     }
 
 
@@ -158,6 +159,7 @@ init session config =
       , error = Nothing
       , session = session
       , prefs = session.prefs
+      , picked = []
       }
     , Cmd.batch
         -- One tick late, deliberately: a port message sent while the program
@@ -315,7 +317,10 @@ update msg model =
                     -- Three places keep it: the page (instantly), this
                     -- browser (so the next first paint is right) and the
                     -- guest's row (so their other browsers follow).
-                    ( { updated | prefs = Dict.insert backgammonThemeKey name updated.prefs }
+                    ( { updated
+                        | prefs = Dict.insert backgammonThemeKey name updated.prefs
+                        , picked = backgammonThemeKey :: updated.picked
+                      }
                     , Cmd.batch
                         [ storePref { key = backgammonThemeKey, value = name }
                         , Catalog.savePref model.session backgammonThemeKey name PrefSaved
@@ -412,10 +417,7 @@ update msg model =
             stay { model | shareLabel = Nothing } Cmd.none
 
         GotPrefs (Ok prefs) ->
-            -- The row wins over what this browser had stored, except where
-            -- it says nothing: a guest who has never picked keeps whatever
-            -- this browser knows.
-            stay { model | prefs = Dict.union prefs model.prefs } Cmd.none
+            stay (absorb prefs model) Cmd.none
 
         GotPrefs (Err _) ->
             -- A preference is a nicety: a board that stays the colour this
@@ -423,7 +425,7 @@ update msg model =
             stay model Cmd.none
 
         PrefSaved (Ok prefs) ->
-            stay { model | prefs = Dict.union prefs model.prefs } Cmd.none
+            stay (absorb prefs model) Cmd.none
 
         PrefSaved (Err _) ->
             stay model Cmd.none
@@ -593,6 +595,22 @@ finishedWinners payload =
 
         Protocol.Finished winners ->
             Just winners
+
+
+{-| What the server says this guest keeps, over what this browser had:
+the row is the copy that follows them between browsers, so it wins where
+this page has not been touched. It never wins over a pick made here: an
+answer to a request that left before the tap must not drag the board back
+to the board that was.
+-}
+absorb : Dict String String -> Model -> Model
+absorb prefs model =
+    { model
+        | prefs =
+            Dict.union
+                (Dict.filter (\key _ -> not (List.member key model.picked)) prefs)
+                model.prefs
+    }
 
 
 {-| The board this viewer looks at: what they picked, or the default.
