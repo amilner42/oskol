@@ -922,7 +922,7 @@
 /* Picker-scale die faces (the "Pick dice" twist). */
 .die.mini {
   --die-size: 1.75rem;
-  box-shadow: 2px 2px 0 0 var(--ink);
+  box-shadow: 2px 2px 0 0 var(--bg-checker-edge);
   cursor: pointer; padding: 0;
 }
 .die.mini.spent { opacity: 0.35; box-shadow: none; cursor: default; }
@@ -1089,8 +1089,8 @@
   .bg-page .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
   /* four dice (doubles) and a message have to share one half-band */
   .bg-page .bg-band .dice-row { --dice-gap: 0.3rem; }
-  .bg-page .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--ink); }
-  .bg-page .bg-band .die.black { box-shadow: 2px 2px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
+  .bg-page .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--bg-checker-edge); }
+  .bg-page .bg-band .die.black { box-shadow: 2px 2px 0 0 var(--bg-checker-edge), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
   .bg-page .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   /* the pips shrink with the face, or they run into each other */
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
