@@ -733,6 +733,131 @@ suite =
                             Expect.fail "no backgammon fixture"
              ]
             )
+        , describe "between the games of a match"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                ready =
+                    { name = "ready", label = "Ready", params = [] }
+
+                -- p1 has just won a gammon; `readyIds` have said they are ready
+                between readyIds u =
+                    let
+                        scene =
+                            u.scene
+                                |> withData "between_games"
+                                    (E.object
+                                        [ ( "ready", E.list E.string readyIds )
+                                        , ( "winner", E.string "p1" )
+                                        , ( "kind", E.string "gammon" )
+                                        , ( "stakes", E.string "gammon" )
+                                        , ( "points", E.int 2 )
+                                        , ( "cube", E.int 1 )
+                                        ]
+                                    )
+                                |> withData "to_act" E.null
+                                |> withData "to_move" E.null
+                    in
+                    { u | scene = { scene | phase = "between_games" } }
+
+                render viewer legal u =
+                    View.view (ctx viewer { u | legal = legal } View.init) |> Query.fromHtml
+
+                withFixture check =
+                    case firstUpdate of
+                        Just u ->
+                            check u
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             in
+             [ test "the band shows the result, the score and READY" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            let
+                                rendered =
+                                    render "p1" [ ready ] (between [] u)
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "YOU WIN +2" ]
+                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "GAMMON · 0-0" ]
+                                , \_ -> rendered |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "READY" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-ready-status" ]
+
+                                -- the final position is only to look at
+                                , \_ -> rendered |> Query.hasNot [ id "dice-row" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-resign-open" ]
+                                ]
+                                ()
+                        )
+             , test "READY sends the ready action" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            render "p1" [ ready ] (between [] u)
+                                |> Query.find [ id "bg-action-ready" ]
+                                |> Event.simulate Event.click
+                                |> Event.expect (Simple "ready")
+                        )
+             , test "after pressing it, the player waits for the opponent" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            let
+                                opponent =
+                                    Protocol.opponentOf "p1" u.scene |> Maybe.map (.name >> String.toUpper) |> Maybe.withDefault "?"
+
+                                rendered =
+                                    render "p1" [] (between [ "p1" ] u)
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.hasNot [ id "bg-action-ready" ]
+                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text ("WAITING FOR " ++ opponent) ]
+                                ]
+                                ()
+                        )
+             , test "the other player sees that the opponent is ready, and still has READY" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            let
+                                opponent =
+                                    Protocol.opponentOf "p2" u.scene |> Maybe.map (.name >> String.toUpper) |> Maybe.withDefault "?"
+
+                                rendered =
+                                    render "p2" [ ready ] (between [ "p1" ] u)
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "P1 WINS +2" ]
+                                , \_ -> rendered |> Query.has [ id "bg-action-ready" ]
+                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text (opponent ++ " IS READY") ]
+                                ]
+                                ()
+                        )
+             , test "a spectator reads who is ready and has nothing to press" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            let
+                                paused =
+                                    between [ "p2" ] u
+
+                                rendered =
+                                    render "spectator" [] { paused | scene = asSpectator paused.scene }
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.hasNot [ id "bg-action-ready" ]
+                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text "P2 IS READY" ]
+                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "P1 WINS +2" ]
+                                ]
+                                ()
+                        )
+             ]
+            )
         , describe "the board picker"
             (let
                 firstUpdate =
