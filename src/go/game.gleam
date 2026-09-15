@@ -21,6 +21,7 @@ pub fn game() -> Game(GameState, Action) {
     outcome: outcome,
     clocks: engine.on_the_clock,
     timeout: fn(_, _) { game.Forfeit },
+    record: game.no_record,
   )
 }
 

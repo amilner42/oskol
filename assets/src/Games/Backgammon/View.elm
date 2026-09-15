@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, defaultTheme, dropZoneId, themeClass, init, noteEvents, pathsFrom, reachableFrom, resolveTap, themes, tumbleFaces, update, view)
+module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, themeClass, themes, tumbleFaces, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -48,6 +48,7 @@ sends nothing.
 
 -}
 
+import Dict
 import Drag
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, style, title)
@@ -69,7 +70,23 @@ type alias Model =
     , resigning : Bool -- the resign panel is open: which stakes to offer
     , themesOpen : Bool -- the board-colour list in the header is showing
     , roll : Roll -- the dice on the board, and whether this client saw them land
+    , recordOpen : Bool -- the move list is open as a sheet over the board (phones)
+    , viewing : Maybe Int -- a past turn of the game the list shows (its index, oldest first) is on the board instead of the live game
+    , stale : Bool -- the game moved on while a past turn was on the board
+    , browsing : Maybe Int -- the list shows this finished game (its number) rather than the one on the board
+    , archive : Archive -- the earlier games of the match, fetched the first time one is opened
     }
+
+
+{-| The earlier games' turns. The scene carries only the game on the board
+(and a result line per finished game), so a finished game's moves are
+asked for when a player opens it, from the room's `/record`.
+-}
+type Archive
+    = NotFetched
+    | Fetching
+    | Fetched (List ( Int, List Entry )) -- each game's number and its entries, oldest first
+    | FetchFailed
 
 
 {-| The dice currently on the board: which roll they belong to, and whether
@@ -124,6 +141,12 @@ type Msg
     | OpenResign
     | CancelResign
     | OfferResign String -- the stakes id from the resign schema's choice
+    | ToggleRecord -- open or close the move list sheet
+    | ViewTurn Int -- put this turn of the record on the board, read-only
+    | ViewLive -- back to the live game
+    | BrowseGame Int -- the list shows this finished game's moves
+    | BrowseCurrent -- the list goes back to the game on the board
+    | GotRecord (Result () D.Value) -- the room's whole record, as `/record` sent it
     | ToggleThemes
     | PickTheme String
     | Ignore
@@ -136,6 +159,7 @@ type Out
     | WantRematch
     | NeedZones (List String)
     | ChoseTheme String -- this player's board colours: display only, never sent to the room
+    | WantRecord -- fetch the room's whole record (the earlier games); the answer comes back as GotRecord
 
 
 init : Model
@@ -152,6 +176,11 @@ init =
     -- get there: whatever dice the first payload brings are already on the
     -- table.
     , roll = { seq = 0, watched = False }
+    , recordOpen = False
+    , viewing = Nothing
+    , stale = False
+    , browsing = Nothing
+    , archive = NotFetched
     }
 
 
@@ -161,7 +190,7 @@ replay the tumble on every tap.
 -}
 reset : Model -> Model
 reset model =
-    { init | roll = model.roll, swaps = model.swaps }
+    { init | roll = model.roll, swaps = model.swaps, recordOpen = model.recordOpen, viewing = model.viewing, stale = model.stale, browsing = model.browsing, archive = model.archive }
 
 
 {-| Watch the channel for dice landing. A `dice_rolled` event is this client
@@ -184,13 +213,40 @@ noteEvents events model =
 
                 _ ->
                     False
+
+        -- A payload with events is the game moving on. A viewer looking at
+        -- a past turn is not yanked back; LIVE says there is something new.
+        -- Unless the game they were looking into has just ended: its turns
+        -- leave the scene with it (they are under its result line now), so
+        -- there is nothing left to hold on the board.
+        newGame =
+            List.any
+                (\event ->
+                    case event of
+                        Protocol.Custom "new_game" _ ->
+                            True
+
+                        _ ->
+                            False
+                )
+                events
+
+        noted =
+            if model.viewing /= Nothing && model.browsing == Nothing && newGame then
+                { model | viewing = Nothing, stale = False }
+
+            else if model.viewing /= Nothing && events /= [] then
+                { model | stale = True }
+
+            else
+                model
     in
     if rolls == 0 then
-        model
+        noted
 
     else
         -- a fresh roll: the dice are next in the order they land
-        { model | roll = { seq = model.roll.seq + rolls, watched = True }, swaps = 0 }
+        { noted | roll = { seq = noted.roll.seq + rolls, watched = True }, swaps = 0 }
 
 
 {-| Roll for the viewer when there is nothing to ask: at the start of a
@@ -236,7 +292,7 @@ update msg model =
 
         Simple name ->
             -- a turn played or a roll asked for: the next roll starts unrotated
-            ( { init | roll = model.roll }, Send (Protocol.encodeAction name []) )
+            ( { init | roll = model.roll, recordOpen = model.recordOpen, viewing = model.viewing, stale = model.stale, browsing = model.browsing, archive = model.archive }, Send (Protocol.encodeAction name []) )
 
         Rematch ->
             ( model, WantRematch )
@@ -318,7 +374,9 @@ update msg model =
                     ( model, NoOut )
 
         OpenResign ->
-            ( { model | resigning = True }, NoOut )
+            -- The offer is made on the live board: a past turn up on the
+            -- slab has nothing legal, so the panel would never show there.
+            ( { model | resigning = True, viewing = Nothing, stale = False }, NoOut )
 
         CancelResign ->
             ( { model | resigning = False }, NoOut )
@@ -326,6 +384,50 @@ update msg model =
         OfferResign stakes ->
             ( reset model
             , Send (Protocol.encodeAction "resign" [ ( "stakes", E.string stakes ) ])
+            )
+        ToggleRecord ->
+            ( { model | recordOpen = not model.recordOpen }, NoOut )
+
+        ViewTurn index ->
+            -- The sheet closes so the board it hides can be seen; MOVES
+            -- reopens it, LIVE on the board comes back to the game.
+            ( { model | viewing = Just index, recordOpen = False, drag = Drag.idle, picker = Nothing, resigning = False }, NoOut )
+
+        ViewLive ->
+            ( { model | viewing = Nothing, stale = False, browsing = Nothing }, NoOut )
+
+        BrowseGame number ->
+            let
+                browsed =
+                    { model | browsing = Just number, viewing = Nothing, stale = False }
+
+                have =
+                    archivedGame number model.archive /= Nothing
+            in
+            if have || model.archive == Fetching then
+                ( browsed, NoOut )
+
+            else
+                -- never fetched, failed, or fetched before this game ended
+                -- (the archive keeps finished games only, so it lacks it)
+                ( { browsed | archive = Fetching }, WantRecord )
+
+        BrowseCurrent ->
+            ( { model | browsing = Nothing, viewing = Nothing, stale = False }, NoOut )
+
+        GotRecord result ->
+            -- Only finished games are kept. `/record` also carries the game
+            -- in progress (or, between games, the empty next one); that one
+            -- is the scene's to show, and a copy kept here would go stale.
+            ( { model
+                | archive =
+                    result
+                        |> Result.toMaybe
+                        |> Maybe.andThen (D.decodeValue archiveDecoder >> Result.toMaybe)
+                        |> Maybe.map (List.filter (Tuple.second >> endsInResult) >> Fetched)
+                        |> Maybe.withDefault FetchFailed
+              }
+            , NoOut
             )
 
         Ignore ->
@@ -743,8 +845,24 @@ moverColor ctx =
 
 
 view : Ctx -> Html Msg
-view ctx =
+view live =
     let
+        -- A past turn on the board: the slab is drawn from that turn's
+        -- snapshot with nothing legal, so no tap, drag or button lands on it;
+        -- the header and the record still read the live game.
+        ctx =
+            case viewedTurn live of
+                Just ( index, turn ) ->
+                    { live
+                        | scene = snapshotScene live turn
+                        , legal = []
+                        , finished = Nothing
+                        , model = viewingModel index live.model
+                    }
+
+                Nothing ->
+                    live
+
         me =
             seatOf ctx
 
@@ -788,21 +906,33 @@ view ctx =
             , drag = drag
             , hovered = Drag.hover ctx.model.drag
             , tap = tap
+            , landed = lastLanded live
             }
     in
     -- On a desktop screen (`lg` and up) the board is sized by the window's
     -- height, not by a fixed width: `.bg-page` in app.css derives every
     -- board dimension from `100dvh`, and the page becomes a column as wide
     -- as the board and its rail, so the header spans exactly that.
-    div [ class ("bg-page " ++ themeClass ctx.theme ++ " paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2") ]
-        [ viewHeader ctx
+    div [ classList [ ( "bg-page " ++ themeClass live.theme ++ " paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ) ] ]
+        [ viewHeader live
         , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid content-center" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
                 [ viewPlayerBar ctx them False (viewTray board themId False)
                 , viewBoard board
                 , viewPlayerBar ctx me True (viewTray board (seatId ctx) True)
                 ]
+
+            -- The record beside the slab: a desktop column as tall as the
+            -- board, or the side column of a phone held sideways (app.css
+            -- places it; below that it is the sheet behind MOVES).
+            , div [ class "bg-record hidden lg:block", Html.Attributes.id "bg-record" ]
+                [ div [ class "bg-record-inner" ] [ viewRecordBody live False ] ]
             ]
+        , if live.model.recordOpen then
+            viewRecordSheet live
+
+          else
+            text ""
         , case drag of
             Just d ->
                 viewDragGhost d
@@ -811,7 +941,7 @@ view ctx =
                 text ""
         , case ctx.finished of
             Just winners ->
-                viewGameOver ctx winners
+                viewGameOver live winners
 
             Nothing ->
                 text ""
@@ -975,7 +1105,18 @@ viewHeader ctx =
                 text ""
             ]
         , div [ class "flex items-center gap-2 sm:gap-3 shrink-0" ]
-            [ viewThemePicker ctx
+            [ -- On a phone the icon is the control, as the board picker's
+              -- swatch is: the word would cost a match badge its game number.
+              button
+                [ class "bg-record-toggle pixel text-[8px] inline-flex items-center gap-1 px-1 py-0.5 lg:hidden"
+                , style "color" "var(--pencil)"
+                , Html.Attributes.id "bg-record-toggle"
+                , title "Moves"
+                , attribute "aria-label" "Moves"
+                , onClick ToggleRecord
+                ]
+                [ listIcon, span [ class "bg-ctl-label hidden sm:inline underline" ] [ text "MOVES" ] ]
+            , viewThemePicker ctx
             , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
                 -- A real button, not a link in the margin: the arcade plate at
                 -- header scale, with a flag so it reads before its label does.
@@ -987,7 +1128,7 @@ viewHeader ctx =
                     , title "Offer to resign"
                     , onClick OpenResign
                     ]
-                    [ flagIcon, text "RESIGN" ]
+                    [ flagIcon, span [ class "bg-ctl-label" ] [ text "RESIGN" ] ]
 
               else
                 text ""
@@ -1029,7 +1170,7 @@ viewThemePicker ctx =
 
             -- On a phone the swatch is the control: the header has no room
             -- for eleven more characters, and the list names every board.
-            , span [ class "hidden sm:inline" ] [ text (Tuple.second current) ]
+            , span [ class "bg-ctl-label hidden sm:inline" ] [ text (Tuple.second current) ]
             ]
         , if ctx.model.themesOpen then
             div [ class "bg-theme-list", attribute "id" "bg-theme-list" ]
@@ -1050,6 +1191,24 @@ viewThemeOption current ( id, label ) =
         [ span [ class ("bg-theme-chip " ++ themeClass id) ] []
         , span [] [ text label ]
         ]
+
+
+{-| The move list's control: four ruled lines, the first short like a
+heading.
+-}
+listIcon : Html Msg
+listIcon =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 12 12"
+        , SvgAttr.width "12"
+        , SvgAttr.height "12"
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "1.5"
+        , SvgAttr.strokeLinecap "round"
+        , attribute "aria-hidden" "true"
+        ]
+        [ Svg.path [ SvgAttr.d "M1.5 2h5M1.5 5h9M1.5 8h9M1.5 11h9" ] [] ]
 
 
 {-| A small flag, drawn in one stroke of the current colour: the pole and
@@ -1222,6 +1381,7 @@ type alias Board =
     , drag : Maybe (Drag.Active String)
     , hovered : Maybe String
     , tap : TapContext
+    , landed : Landed -- where the last turn landed checkers, and whose they are
     }
 
 
@@ -1361,7 +1521,7 @@ viewPoint board isTop index point =
          ]
             ++ interaction
         )
-        (viewStack { lifted = liftedAt board id } tokens
+        (viewStackTinted board.landed.color (Dict.get point board.landed.points |> Maybe.withDefault 0) { lifted = liftedAt board id } tokens
             ++ (if isTarget then
                     [ dropGhost board (dragging && board.hovered == Just id) ]
 
@@ -1470,10 +1630,52 @@ viewStack marks tokens =
         shown
 
 
+{-| A point's stack with its top `n` checkers marked as the ones the last
+turn landed there, as long as they are the mover's `color`. A point holds
+one colour at a time: if its top is the other colour, what landed there
+has been hit since (the viewer staging a hit on a blot the last turn left).
+-}
+viewStackTinted : String -> Int -> Marks -> List Token -> List (Html Msg)
+viewStackTinted color n marks tokens =
+    let
+        shown =
+            List.take 5 tokens
+
+        extra =
+            List.length tokens - 5
+
+        lastIndex =
+            List.length shown - 1
+    in
+    List.indexedMap
+        (\i t ->
+            viewCheckerWith (i > lastIndex - n && (Protocol.tokenProp D.string "color" t |> Maybe.withDefault "white") == color)
+                (if i == lastIndex then
+                    marks
+
+                 else
+                    noMarks
+                )
+                (if i == lastIndex && extra > 0 then
+                    Just (extra + 5)
+
+                 else
+                    Nothing
+                )
+                t
+        )
+        shown
+
+
 {-| A checker; the top one of a tall stack carries the stack's full count.
 -}
 viewChecker : Marks -> Maybe Int -> Token -> Html Msg
-viewChecker marks count token =
+viewChecker =
+    viewCheckerWith False
+
+
+viewCheckerWith : Bool -> Marks -> Maybe Int -> Token -> Html Msg
+viewCheckerWith justMoved marks count token =
     let
         color =
             Protocol.tokenProp D.string "color" token |> Maybe.withDefault "white"
@@ -1484,6 +1686,7 @@ viewChecker marks count token =
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
             , ( "lifted", marks.lifted )
+            , ( "just-moved", justMoved )
             ]
         , title token.id
         ]
@@ -1654,18 +1857,48 @@ viewTray board ownerId isMine =
 
 viewLeftBand : Board -> List (Html Msg)
 viewLeftBand board =
-    case betweenGames board.ctx of
-        Just between ->
-            [ viewGameResult board.ctx between ]
+    viewLiveButton board.ctx
+        ++ (case betweenGames board.ctx of
+                Just between ->
+                    [ viewGameResult board.ctx between ]
+
+                Nothing ->
+                    leftButtons board.ctx
+                        ++ (if moverIsMe board.ctx then
+                                []
+
+                            else
+                                viewRoll board
+                           )
+           )
+
+
+{-| The way back from a past turn: in the board's own band, where the
+actions would be, so it is never off screen. It says when the game has
+moved on meanwhile.
+-}
+viewLiveButton : Ctx -> List (Html Msg)
+viewLiveButton ctx =
+    case ctx.model.viewing of
+        Just _ ->
+            [ button
+                [ classList [ ( "btn-arcade pixel text-[8px] sm:text-[9px] px-2 py-1.5 sm:px-3 sm:py-2 sky bg-live", True ), ( "stale", ctx.model.stale ) ]
+                , Html.Attributes.id "bg-live"
+                , onClick ViewLive
+                , title "Back to the live game"
+                ]
+                [ text
+                    (if ctx.model.stale then
+                        "LIVE · NEW"
+
+                     else
+                        "LIVE"
+                    )
+                ]
+            ]
 
         Nothing ->
-            leftButtons board.ctx
-                ++ (if moverIsMe board.ctx then
-                        []
-
-                    else
-                        viewRoll board
-                   )
+            []
 
 
 leftButtons : Ctx -> List (Html Msg)
@@ -1748,9 +1981,10 @@ viewRightBandInPlay board =
         offer =
             resignOffer ctx
 
-        -- A dance says its piece beside the dice (`viewRoll`), not here.
+        -- A dance says its piece beside the dice (`viewRoll`), not here,
+        -- and a past turn on the board is nobody's wait.
         status =
-            if ctx.finished /= Nothing || noMoves then
+            if ctx.finished /= Nothing || noMoves || ctx.model.viewing /= Nothing then
                 []
 
             else if anyAction then
@@ -1971,7 +2205,7 @@ viewRoll board =
         -- them. Only when there is a choice: a double is one value, and
         -- one die left is no choice. Nobody else's dice do anything.
         myMove =
-            toMoveId ctx == Just ctx.playerId && ctx.scene.phase == "moving"
+            toMoveId ctx == Just ctx.playerId && ctx.scene.phase == "moving" && ctx.model.viewing == Nothing
 
         unused =
             unusedDiceTokens ctx
@@ -2524,6 +2758,759 @@ actionButton ctx name variant =
 -- GAME OVER
 
 
+-- THE RECORD
+--
+-- What has been played. The engine writes it -- every committed turn in the
+-- notation the books use, every cube action, every game result with the
+-- running score -- and keeps it in the game state, so a room rebuilt from
+-- its log shows the same list. The scene carries the game on the board
+-- (`record`, oldest first) and one result line per finished game (`games`);
+-- a finished game's own turns come from the room's `/record` when a player
+-- opens it from the match history (`Archive`). Nothing in any of it is
+-- secret. This view only lays it out: one game's turns at a time, its
+-- result at the end, and the finished games as a match history above.
+
+
+type Entry
+    = TurnEntry Turn
+    | CubeEntry { player : String, label : String }
+    | GameOverEntry GameResult
+
+
+type alias Turn =
+    { player : String, dice : List Int, picked : Bool, moves : List String, position : Snapshot, landed : List Int }
+
+
+{-| The board a turn left, as the engine counted it: per colour, how many
+checkers on each of the 24 points (point 1 first), on the bar, borne off,
+and the pip count; and the cube as it stood. The client draws it; it never
+derives it.
+-}
+type alias Snapshot =
+    { white : Side, black : Side, cube : { value : Int, owner : Maybe String } }
+
+
+type alias Side =
+    { points : List Int, bar : Int, off : Int, pips : Int }
+
+
+type alias GameResult =
+    { number : Int, winner : String, result : String, points : Int, scores : List ( String, Int ) }
+
+
+{-| The record as the scene carries it. An entry of a kind this client does
+not know is skipped rather than failing the whole list.
+-}
+recordOf : Scene -> List Entry
+recordOf scene =
+    Protocol.sceneData (D.list entryDecoder) "record" scene
+        |> Maybe.withDefault []
+        |> List.filterMap identity
+
+
+{-| The finished games' result lines, oldest first, as the scene carries
+them (`games`).
+-}
+gamesOf : Scene -> List GameResult
+gamesOf scene =
+    Protocol.sceneData (D.list entryDecoder) "games" scene
+        |> Maybe.withDefault []
+        |> List.filterMap
+            (\e ->
+                case e of
+                    Just (GameOverEntry g) ->
+                        Just g
+
+                    _ ->
+                        Nothing
+            )
+
+
+{-| The room's whole record as `/record` sends it: every game with its
+number and entries.
+-}
+archiveDecoder : D.Decoder (List ( Int, List Entry ))
+archiveDecoder =
+    D.field "games"
+        (D.list
+            (D.map2 (\n entries -> ( n, List.filterMap identity entries ))
+                (D.field "number" D.int)
+                (D.field "entries" (D.list entryDecoder))
+            )
+        )
+
+
+{-| Whether a game's entries end with its result line: a finished game.
+-}
+endsInResult : List Entry -> Bool
+endsInResult entries =
+    case List.reverse entries of
+        (GameOverEntry _) :: _ ->
+            True
+
+        _ ->
+            False
+
+
+{-| The finished game `number`'s entries, if the archive has them.
+-}
+archivedGame : Int -> Archive -> Maybe (List Entry)
+archivedGame number archive =
+    case archive of
+        Fetched games ->
+            games
+                |> List.filter (\( n, _ ) -> n == number)
+                |> List.head
+                |> Maybe.map Tuple.second
+
+        _ ->
+            Nothing
+
+
+{-| The entries the list shows: the game on the board, or the finished game
+being browsed once its record has arrived.
+-}
+shownEntries : Ctx -> List Entry
+shownEntries ctx =
+    case ctx.model.browsing of
+        Nothing ->
+            recordOf ctx.scene
+
+        Just number ->
+            archivedGame number ctx.model.archive |> Maybe.withDefault []
+
+
+entryDecoder : D.Decoder (Maybe Entry)
+entryDecoder =
+    let
+        cube label =
+            D.map (\p -> Just (CubeEntry { player = p, label = label })) (D.field "player" D.string)
+    in
+    D.field "kind" D.string
+        |> D.andThen
+            (\kind ->
+                case kind of
+                    "turn" ->
+                        D.map6 (\p d k m pos l -> Just (TurnEntry (Turn p d k m pos l)))
+                            (D.field "player" D.string)
+                            (D.field "dice" (D.list D.int))
+                            (D.field "picked" D.bool)
+                            (D.field "moves" (D.list D.string))
+                            (D.field "position" snapshotDecoder)
+                            -- where each checker that moved ended up; absent
+                            -- from records written before it existed
+                            (D.oneOf [ D.field "landed" (D.list D.int), D.succeed [] ])
+
+                    "double" ->
+                        D.map2 (\p v -> Just (CubeEntry { player = p, label = "Doubles to " ++ String.fromInt v }))
+                            (D.field "player" D.string)
+                            (D.field "value" D.int)
+
+                    "take" ->
+                        cube "Takes"
+
+                    "drop" ->
+                        cube "Drops"
+
+                    "resign" ->
+                        cube "Resigns"
+
+                    "game_over" ->
+                        D.map5 (\n w r pts sc -> Just (GameOverEntry (GameResult n w r pts sc)))
+                            (D.field "number" D.int)
+                            (D.field "winner" D.string)
+                            (D.field "result" D.string)
+                            (D.field "points" D.int)
+                            (D.field "scores" (D.keyValuePairs D.int))
+
+                    _ ->
+                        D.succeed Nothing
+            )
+
+
+snapshotDecoder : D.Decoder Snapshot
+snapshotDecoder =
+    let
+        side =
+            D.map4 Side
+                (D.field "points" (D.list D.int))
+                (D.field "bar" D.int)
+                (D.field "off" D.int)
+                (D.field "pips" D.int)
+    in
+    D.map3 Snapshot
+        (D.field "white" side)
+        (D.field "black" side)
+        (D.field "cube"
+            (D.map2 (\v o -> { value = v, owner = o })
+                (D.field "value" D.int)
+                (D.field "owner" (D.nullable D.string))
+            )
+        )
+
+
+
+-- A PAST TURN ON THE BOARD
+--
+-- Tapping a turn of the record puts the board it left on the slab. The
+-- board view reads a Scene, so the snapshot is turned into one: the same
+-- zones and tokens the projection would send for that position (checker
+-- ids counted up per colour, the turn's dice on the mover's side, the
+-- bar and tray counts, the cube as it stood), and nothing legal. It is
+-- only drawing: every count comes from the engine's snapshot.
+
+
+{-| The turn on the board, if a past one is.
+-}
+viewedTurn : Ctx -> Maybe ( Int, Turn )
+viewedTurn ctx =
+    case ctx.model.viewing of
+        Just index ->
+            shownEntries ctx
+                |> List.drop index
+                |> List.head
+                |> Maybe.andThen
+                    (\entry ->
+                        case entry of
+                            TurnEntry t ->
+                                Just ( index, t )
+
+                            _ ->
+                                Nothing
+                    )
+
+        Nothing ->
+            Nothing
+
+
+{-| Where the turn in focus landed checkers, as the engine recorded it:
+the turn being viewed, or live the last turn of the game on the board.
+Live reads the scene's own record, never the list: the list may be
+showing an earlier game (`browsing`), whose last turn landed on a board
+that is not this one. The colour is the mover's: only their checkers
+wear the ring, so a checker of the other colour sitting on one of those
+points (the viewer staging a hit on a blot that just landed) does not.
+-}
+lastLanded : Ctx -> Landed
+lastLanded live =
+    let
+        focus =
+            case live.model.viewing of
+                Just index ->
+                    shownEntries live |> List.drop index |> List.head
+
+                Nothing ->
+                    let
+                        entries =
+                            recordOf live.scene
+                    in
+                    lastTurnIn entries |> Maybe.andThen (\i -> entries |> List.drop i |> List.head)
+    in
+    case focus of
+        Just (TurnEntry turn) ->
+            { color = colorOf (Protocol.findPlayer turn.player live.scene)
+            , points = List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty turn.landed
+            }
+
+        _ ->
+            { color = "", points = Dict.empty }
+
+
+{-| The checkers a turn landed: the mover's colour, and point to how many.
+-}
+type alias Landed =
+    { color : String, points : Dict.Dict Int Int }
+
+
+{-| The index of the last turn in the list, to open the review on.
+-}
+lastTurnIndex : Ctx -> Maybe Int
+lastTurnIndex ctx =
+    lastTurnIn (shownEntries ctx)
+
+
+lastTurnIn : List Entry -> Maybe Int
+lastTurnIn entries =
+    entries
+        |> List.indexedMap Tuple.pair
+        |> List.filter
+            (\( _, e ) ->
+                case e of
+                    TurnEntry _ ->
+                        True
+
+                    _ ->
+                        False
+            )
+        |> List.reverse
+        |> List.head
+        |> Maybe.map Tuple.first
+
+
+{-| The model the board is drawn with while a past turn is up: no drag,
+no picker, no selection, and dice keyed to the turn (a negative sequence
+no live roll can have) that never tumble.
+-}
+viewingModel : Int -> Model -> Model
+viewingModel index model =
+    { model
+        | drag = Drag.idle
+        , plans = []
+        , picker = Nothing
+        , swaps = 0
+        , roll = { seq = -1 - index, watched = False }
+    }
+
+
+snapshotScene : Ctx -> Turn -> Scene
+snapshotScene ctx turn =
+    let
+        scene =
+            ctx.scene
+
+        sideOf player =
+            if colorOf (Just player) == "white" then
+                ( "white", turn.position.white )
+
+            else
+                ( "black", turn.position.black )
+
+        -- (zone id, token) for one colour, ids counted up the way the
+        -- engine's are: w1.. / b1..
+        placed player =
+            let
+                ( color, side ) =
+                    sideOf player
+
+                prefix =
+                    String.left 1 color
+
+                checker n =
+                    { id = prefix ++ String.fromInt n
+                    , kind = "checker"
+                    , faceUp = True
+                    , position = Nothing
+                    , props = E.object [ ( "color", E.string color ) ]
+                    }
+
+                spots =
+                    List.repeat side.bar ("bar:" ++ player.id)
+                        ++ (side.points
+                                |> List.indexedMap (\i n -> List.repeat n ("point:" ++ String.fromInt (i + 1)))
+                                |> List.concat
+                           )
+                        ++ List.repeat side.off ("off:" ++ player.id)
+            in
+            List.indexedMap (\i zoneId -> ( zoneId, checker (i + 1) )) spots
+
+        all =
+            List.concatMap placed scene.players
+
+        tokensIn zoneId =
+            all |> List.filter (\( z, _ ) -> z == zoneId) |> List.map Tuple.second
+
+        zone id owner =
+            let
+                tokens =
+                    tokensIn id
+            in
+            { id = id, owner = owner, layout = Protocol.Stack, tokens = tokens, count = List.length tokens }
+
+        pointZones =
+            List.range 1 24 |> List.map (\p -> zone ("point:" ++ String.fromInt p) Nothing)
+
+        playerZones =
+            scene.players |> List.concatMap (\p -> [ zone ("bar:" ++ p.id) (Just p.id), zone ("off:" ++ p.id) (Just p.id) ])
+
+        dice =
+            { id = "dice"
+            , owner = Nothing
+            , layout = Protocol.Row
+            , tokens =
+                (case turn.dice of
+                    [ a, b ] ->
+                        if a == b then
+                            [ a, a, a, a ]
+
+                        else
+                            turn.dice
+
+                    _ ->
+                        turn.dice
+                )
+                    |> List.indexedMap
+                        (\i v ->
+                            { id = "die:" ++ String.fromInt i
+                            , kind = "die"
+                            , faceUp = True
+                            , position = Nothing
+                            , props = E.object [ ( "value", E.int v ), ( "used", E.bool False ), ( "picked", E.bool turn.picked ) ]
+                            }
+                        )
+            , count = List.length turn.dice
+            }
+
+        -- the cube as it stood after the turn: its value and owner from the
+        -- snapshot (a turn is never committed with a double on offer); the
+        -- live one only says whether this match has a cube at all
+        cubeOwner =
+            turn.position.cube.owner |> Maybe.map E.string |> Maybe.withDefault E.null
+
+        cubeData =
+            D.decodeValue (D.field "cube" (D.dict D.value)) scene.data
+                |> Result.withDefault Dict.empty
+                |> Dict.insert "value" (E.int turn.position.cube.value)
+                |> Dict.insert "owner" cubeOwner
+                |> Dict.insert "pending_from" E.null
+                |> E.dict identity identity
+
+        cube =
+            scene.zones
+                |> List.filter (\z -> z.id == "cube")
+                |> List.map
+                    (\z ->
+                        { z
+                            | tokens =
+                                List.map
+                                    (\t -> { t | props = E.object [ ( "value", E.int turn.position.cube.value ), ( "owner", cubeOwner ) ] })
+                                    z.tokens
+                        }
+                    )
+
+        players =
+            scene.players
+                |> List.map
+                    (\p ->
+                        let
+                            ( _, side ) =
+                                sideOf p
+                        in
+                        { p
+                            | counters =
+                                p.counters
+                                    |> Dict.insert "pips" side.pips
+                                    |> Dict.insert "off" side.off
+                                    |> Dict.insert "bar" side.bar
+                            , flags =
+                                (p.flags |> List.filter (\f -> f /= "to_move" && f /= "owns_cube"))
+                                    ++ (if p.id == turn.player then [ "to_move" ] else [])
+                                    ++ (if turn.position.cube.owner == Just p.id then [ "owns_cube" ] else [])
+                        }
+                    )
+
+        -- Everything that describes the live moment goes: a resignation on
+        -- offer, the pause between games (whose result the bands would
+        -- print beside this turn, in place of its dice) and a winner.
+        data =
+            D.decodeValue (D.dict D.value) scene.data
+                |> Result.withDefault Dict.empty
+                |> Dict.remove "between_games"
+                |> Dict.insert "winner_id" E.null
+                |> Dict.insert "to_move" (E.string turn.player)
+                |> Dict.insert "to_act" E.null
+                |> Dict.insert "dice" (E.list E.int turn.dice)
+                |> Dict.insert "no_moves" (E.bool False)
+                |> Dict.insert "staged" (E.int 0)
+                |> Dict.insert "turn_complete" (E.bool False)
+                |> Dict.insert "cube" cubeData
+                |> Dict.remove "resign_offer"
+                |> E.dict identity identity
+    in
+    { scene
+        | phase = "moving"
+        , players = players
+        , zones = pointZones ++ playerZones ++ [ dice ] ++ cube
+        , data = data
+    }
+
+
+{-| The record sheet a phone opens from MOVES: the same body as the desktop
+column, over the board, closed by its own button or a tap outside it.
+-}
+viewRecordSheet : Ctx -> Html Msg
+viewRecordSheet ctx =
+    div [ class "fixed inset-0 z-40 flex items-end sm:items-center justify-center p-3", Html.Attributes.id "bg-record-sheet" ]
+        [ div [ class "absolute inset-0", style "background" "rgba(35, 36, 58, 0.55)", onClick ToggleRecord ] []
+        , div [ class "bg-record-sheet relative w-full max-w-md flex flex-col min-h-0", style "max-height" "80dvh" ]
+            [ viewRecordBody ctx True ]
+        ]
+
+
+{-| The panel: its title (and, as a sheet, its close button), the match
+history when the match is past its first game, then one game's turns: the
+game on the board, or the finished game picked from the history. The turn
+list is a column that reads bottom-up (`column-reverse` in app.css, so it
+opens scrolled to the newest turn and stays there as turns arrive), which
+is why the lines go into the DOM newest first.
+-}
+viewRecordBody : Ctx -> Bool -> Html Msg
+viewRecordBody ctx asSheet =
+    let
+        gameNumber =
+            Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1
+
+        finished =
+            gamesOf ctx.scene
+
+        isMatch =
+            gameNumber > 1
+
+        list =
+            case ctx.model.browsing of
+                Nothing ->
+                    listOf (recordLines ctx isMatch gameNumber True (recordOf ctx.scene)) "Nothing played yet."
+
+                Just number ->
+                    -- A finished game always has its result line, so a game
+                    -- the archive has is never empty; one it lacks (the
+                    -- answer came back without it) is fetched again on a tap.
+                    case ( ctx.model.archive, archivedGame number ctx.model.archive ) of
+                        ( _, Just entries ) ->
+                            listOf (recordLines ctx isMatch number False entries) ""
+
+                        ( Fetching, Nothing ) ->
+                            listOf [] ("Loading game " ++ String.fromInt number ++ "…")
+
+                        ( NotFetched, Nothing ) ->
+                            listOf [] ("Loading game " ++ String.fromInt number ++ "…")
+
+                        _ ->
+                            listOf [] ("Game " ++ String.fromInt number ++ " would not load. Tap it again.")
+
+        listOf lines empty =
+            if lines == [] then
+                div [ class "bg-record-list" ] [ span [ class "bg-record-empty" ] [ text empty ] ]
+
+            else
+                div [ class "bg-record-list" ] (List.reverse lines)
+    in
+    div [ class "bg-record-body" ]
+        [ div [ class "bg-record-head" ]
+            [ span [ class "pixel text-[8px]" ]
+                [ text
+                    (case ctx.model.browsing of
+                        Just number ->
+                            "GAME " ++ String.fromInt number
+
+                        Nothing ->
+                            "MOVES"
+                    )
+                ]
+            , case ( ctx.model.browsing, ctx.model.viewing ) of
+                ( Just _, Nothing ) ->
+                    button
+                        [ class "pixel text-[8px] underline bg-record-now"
+                        , style "color" "var(--pencil)"
+                        , title "Back to the game on the board"
+                        , onClick BrowseCurrent
+                        ]
+                        [ text ("GAME " ++ String.fromInt gameNumber) ]
+
+                ( _, Just _ ) ->
+                    button
+                        [ classList [ ( "pixel text-[8px] underline bg-live", True ), ( "stale", ctx.model.stale ) ]
+                        , style "color" "var(--pencil)"
+                        , onClick ViewLive
+                        ]
+                        [ text
+                            (if ctx.model.stale then
+                                "LIVE · NEW"
+
+                             else
+                                "LIVE"
+                            )
+                        ]
+
+                ( Nothing, Nothing ) ->
+                    text ""
+            , if asSheet then
+                button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", onClick ToggleRecord ] [ text "CLOSE" ]
+
+              else
+                text ""
+            ]
+        , if isMatch && finished /= [] then
+            div [ class "bg-record-games" ] (List.map (viewGameRow ctx) finished)
+
+          else
+            text ""
+        , list
+        ]
+
+
+{-| One finished game in the match history: which game, who won it and how,
+and the score it left. Tapping it opens that game's moves in the list, for
+a seat: the moves come from `/record`, which opens only on a seat token, so
+a spectator (a scene with no viewer) reads the result lines and nothing
+more.
+-}
+viewGameRow : Ctx -> GameResult -> Html Msg
+viewGameRow ctx g =
+    let
+        seated =
+            ctx.scene.viewer /= Nothing
+    in
+    div
+        ([ classList
+            [ ( "bg-record-game", True )
+            , ( "cursor-pointer", seated )
+            , ( "is-browsing", ctx.model.browsing == Just g.number )
+            ]
+         , attribute "data-game" (String.fromInt g.number)
+         ]
+            ++ (if seated then
+                    [ title ("Game " ++ String.fromInt g.number ++ " · tap to see its moves")
+                    , onClick (BrowseGame g.number)
+                    ]
+
+                else
+                    [ title ("Game " ++ String.fromInt g.number) ]
+               )
+        )
+        [ span [ class "pixel text-[7px]", style "color" "var(--pencil)" ] [ text ("G" ++ String.fromInt g.number) ]
+        , span [ class "font-bold truncate" ] [ text (playerName ctx g.winner) ]
+        , span [ style "color" "var(--pencil)" ] [ text (g.result ++ " · " ++ pointsText g.points) ]
+        , span [ class "font-bold tabular-nums ml-auto" ] [ text (scoreText ctx g.scores) ]
+        ]
+
+
+{-| The lines of one game's list, oldest first: its heading in a match, its
+turns and cube actions, and its result once it has one. `open` is the game
+on the board, which a next game may follow; a finished game picked from the
+history is not.
+-}
+recordLines : Ctx -> Bool -> Int -> Bool -> List Entry -> List (Html Msg)
+recordLines ctx isMatch firstGame open entries =
+    let
+        heading game =
+            div [ class "bg-record-line rl-heading" ] [ span [ class "pixel text-[7px]" ] [ text ("GAME " ++ String.fromInt game) ] ]
+
+        step ( index, entry ) ( game, acc, fresh ) =
+            let
+                withHeading =
+                    if fresh && isMatch then
+                        acc ++ [ heading game ]
+
+                    else
+                        acc
+            in
+            case entry of
+                GameOverEntry g ->
+                    ( game + 1, withHeading ++ [ viewResultLine ctx g ], True )
+
+                _ ->
+                    ( game, withHeading ++ [ viewEntryLine ctx index entry ], False )
+
+        ( nextGame, lines, pending ) =
+            List.foldl step ( firstGame, [], True ) (List.indexedMap Tuple.pair entries)
+    in
+    if pending && open && isMatch && ctx.finished == Nothing then
+        -- a new game has begun and nothing is played in it yet
+        lines ++ [ heading nextGame ]
+
+    else
+        lines
+
+
+viewEntryLine : Ctx -> Int -> Entry -> Html Msg
+viewEntryLine ctx index entry =
+    case entry of
+        TurnEntry t ->
+            div
+                [ classList
+                    [ ( "bg-record-line rl-turn cursor-pointer", True )
+                    , ( "is-viewing", ctx.model.viewing == Just index )
+                    ]
+                , title (playerName ctx t.player ++ " · tap to see the board after this turn")
+                , onClick (ViewTurn index)
+                ]
+                [ div [ class ("swatch " ++ playerColor ctx t.player) ] []
+                , span [ class "dice" ]
+                    [ text (t.dice |> List.map String.fromInt |> String.join "")
+                    , if t.picked then
+                        span [ class "picked pixel text-[6px]", title "Picked, not rolled" ] [ text "PICK" ]
+
+                      else
+                        text ""
+                    ]
+                , span [ class "moves" ]
+                    [ text
+                        (if t.moves == [] then
+                            "(no play)"
+
+                         else
+                            String.join " " t.moves
+                        )
+                    ]
+                ]
+
+        CubeEntry c ->
+            div [ class "bg-record-line rl-cube", title (playerName ctx c.player) ]
+                [ div [ class ("swatch " ++ playerColor ctx c.player) ] []
+                , span [ class "moves" ] [ text c.label ]
+                ]
+
+        GameOverEntry g ->
+            viewResultLine ctx g
+
+
+{-| A game's result between the turns: who won, how, for how much, and the
+score after it. A drop or a resignation is its own line just above, so the
+result only says who won.
+-}
+viewResultLine : Ctx -> GameResult -> Html Msg
+viewResultLine ctx g =
+    let
+        how =
+            case g.result of
+                "gammon" ->
+                    " wins a gammon"
+
+                "backgammon" ->
+                    " wins a backgammon"
+
+                _ ->
+                    " wins"
+    in
+    div [ class "bg-record-line rl-result" ]
+        [ span [] [ text (playerName ctx g.winner ++ how ++ " · " ++ pointsText g.points) ]
+        , span [ class "tabular-nums ml-auto" ] [ text (scoreText ctx g.scores) ]
+        ]
+
+
+pointsText : Int -> String
+pointsText points =
+    if points == 1 then
+        "1 pt"
+
+    else
+        String.fromInt points ++ " pts"
+
+
+{-| The scores in seat order, the way the header reads them.
+-}
+scoreText : Ctx -> List ( String, Int ) -> String
+scoreText ctx scores =
+    ctx.scene.players
+        |> List.map (\p -> scores |> List.filter (\( id, _ ) -> id == p.id) |> List.head |> Maybe.map Tuple.second |> Maybe.withDefault 0)
+        |> List.map String.fromInt
+        |> String.join "–"
+
+
+playerName : Ctx -> String -> String
+playerName ctx id =
+    Protocol.findPlayer id ctx.scene |> Maybe.map .name |> Maybe.withDefault (ctx.nameOf id)
+
+
+playerColor : Ctx -> String -> String
+playerColor ctx id =
+    colorOf (Protocol.findPlayer id ctx.scene)
+
+
+
+-- GAME OVER
+
+
 viewGameOver : Ctx -> List String -> Html Msg
 viewGameOver ctx winners =
     let
@@ -2586,6 +3573,14 @@ viewGameOver ctx winners =
                         "REMATCH"
                     )
                 ]
-            , Html.a [ Html.Attributes.href "/", class "pixel text-[8px] underline", style "color" "var(--pencil)" ] [ text "ALL GAMES" ]
+            , div [ class "flex items-center justify-center gap-4" ]
+                [ case lastTurnIndex ctx of
+                    Just index ->
+                        button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-review-moves", onClick (ViewTurn index) ] [ text "REVIEW MOVES" ]
+
+                    Nothing ->
+                        text ""
+                , Html.a [ Html.Attributes.href "/", class "pixel text-[8px] underline", style "color" "var(--pencil)" ] [ text "ALL GAMES" ]
+                ]
             ]
         ]

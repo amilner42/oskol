@@ -33,6 +33,8 @@ pub opaque type Instance {
     /// Resolve a player's clock running out: forfeit, or the game's own
     /// auto action with the events it produced.
     on_timeout: fn(PlayerId, Int) -> #(Instance, List(Event)),
+    /// The game's public record, if it keeps one (`Game.record`).
+    record: fn() -> Option(json.Json),
   )
 }
 
@@ -182,6 +184,7 @@ fn wrap(
           }
       }
     },
+    record: fn() { definition.record(state) },
   )
 }
 
@@ -216,6 +219,11 @@ pub fn scene(instance: Instance, viewer: Viewer) -> Scene {
 
 pub fn outcome(instance: Instance) -> Outcome {
   instance.outcome()
+}
+
+/// The game's public record, if it keeps one: every seat may read it.
+pub fn record(instance: Instance) -> Option(json.Json) {
+  instance.record()
 }
 
 pub fn finished(instance: Instance) -> Bool {

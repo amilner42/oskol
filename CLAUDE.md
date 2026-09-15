@@ -73,8 +73,15 @@ Game(
   outcome:       fn(state) -> Outcome,
   clocks:        fn(state) -> List(PlayerId),               // who is on the clock right now
   timeout:       fn(state, PlayerId) -> Timeout(action),    // Forfeit, or Act(action) taken for them
+  record:        fn(state) -> Option(Json),                 // the whole public record, or game.no_record
 )
 ```
+
+`record` is what `GET /papi/games/:slug/rooms/:id/record` serves to a seat:
+everything a replay or an analysis needs, too big to ride in every update.
+Backgammon's is every game of the match with every turn (notation, the
+position and cube it left, where the moved checkers `landed`); its scene
+carries only the game on the board plus one result line per finished game.
 
 Formats carry **settings**: each is a list of choices with a default, and
 picking a choice merges its config entries (`game.configure`). That is how
@@ -280,6 +287,8 @@ POST /papi/games/:slug                 {format, name, clock, selections}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
+GET  /papi/games/:slug/rooms/:id/record?t=<seat token>
+                                       {ok, slug, id, record}  (the game's `record`)
 GET  /papi/codes/:code                 {ok, slug}
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
@@ -295,7 +304,11 @@ A game's own `clocks` are preset ids; `clock_presets` carries every preset,
 so the picker can name the ones the game offers. Statuses: 404 `not_found`
 (no such game, no such code, a room that is over), 422 `validation_failed`
 (a name, a mode, a clock or a seat the room refused), 500 `server_error`.
-Every decision behind these lives in `src/oskol/handlers/landing.gleam`.
+Every decision behind these lives in `src/oskol/handlers/landing.gleam`,
+except the record's, in `src/oskol/handlers/record.gleam`: it opens only on
+a seat token (the rooms cap `seated_game`), and a wrong token, a lobby, a
+slug that is not the room's game and a room that is gone all answer the
+same 404, as the game channel refuses without saying which.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist

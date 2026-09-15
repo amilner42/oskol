@@ -214,8 +214,14 @@ defmodule Oskol.ReadyUpPatchTest do
 
       recorded = fixture["fingerprint"] |> String.split("\n") |> Enum.map(&Jason.decode!/1)
 
-      assert Enum.map(seats, &GameKit.player_update(state.instance, &1["id"])["scene"]) ==
-               recorded
+      # These scenes were recorded before the move record joined the scene
+      # data (`record`, `games`): compare everything the old engine showed.
+      without_record = fn scene ->
+        Map.update!(scene, "data", &Map.drop(&1, ["record", "games"]))
+      end
+
+      shown = Enum.map(seats, &GameKit.player_update(state.instance, &1["id"])["scene"])
+      assert Enum.map(shown, without_record) == Enum.map(recorded, without_record)
 
       assert (ReadyUpPatch.run() |> report_for(game_id)).result == :unchanged
     end
