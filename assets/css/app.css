@@ -1316,6 +1316,10 @@ a.q-card:hover, a.q-card:focus-visible {
   .bg-page .bg-record-games { display: none; }
   .bg-page .bg-record-list { --rl-pad: 8px; padding: 4px var(--rl-pad); }
   .bg-page .bg-record-toggle { display: none; }
+  /* The stack is `display: contents` here and paints no outline, so a past
+     turn marks the board itself; 1px offset keeps it inside the 0.25rem
+     side padding the page clips at. */
+  .bg-page.is-viewing .bg-board { outline: 3px dashed var(--bg-accent); outline-offset: 1px; }
   .bg-page .bg-board {
     grid-column: 1;
     grid-row: 1 / -1;
