@@ -84,10 +84,17 @@ defmodule Oskol.Dev.Seeds do
       },
       %{
         code: "000009",
+        format: "match5",
+        what:
+          "match to 5: a game has just been won off the board, which waits for both players to press READY",
+        find: &between_games?/2
+      },
+      %{
+        code: "000010",
         format: "single",
         what:
           "a single game played to the end: finished, so it has a post-game review " <>
-            "(GET /papi/games/backgammon/rooms/000009/reviews; needs ANALYSIS_URL reachable)",
+            "(GET /papi/games/backgammon/rooms/000010/reviews; needs ANALYSIS_URL reachable)",
         find: &finished?/2
       }
     ]
@@ -228,6 +235,11 @@ defmodule Oskol.Dev.Seeds do
   defp can_pick?(u, _me), do: has?(u, "pick")
 
   defp finished?(u, _me), do: u["outcome"]["status"] == "finished"
+
+  defp between_games?(u, _me),
+    do:
+      has?(u, "ready") and data(u)["between_games"]["ready"] == [] and
+        data(u)["between_games"]["kind"] != "dropped"
 
   defp data(u), do: u["scene"]["data"]
 

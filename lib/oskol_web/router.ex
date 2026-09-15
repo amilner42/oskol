@@ -40,6 +40,7 @@ defmodule OskolWeb.Router do
     get "/games/:slug/rooms/:id", LandingController, :room
     post "/games/:slug/rooms/:id", LandingController, :seat
     get "/games/:slug/rooms/:id/reviews", LandingController, :reviews
+    get "/games/:slug/rooms/:id/record", LandingController, :record
   end
 
   # Enable LiveDashboard in development. Declared before the game routes so

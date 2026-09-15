@@ -45,6 +45,8 @@ pub opaque type Instance {
     legal: fn(PlayerId) -> List(Schema),
     scene: fn(Viewer) -> Scene,
     outcome: fn() -> Outcome,
+    /// The game's public record, if it keeps one (`Game.record`).
+    record: fn() -> Option(json.Json),
   )
 }
 
@@ -263,6 +265,7 @@ pub fn erase(running: Running(state, action)) -> Instance {
     },
     scene: fn(viewer) { running.definition.scene(running.state, viewer) },
     outcome: fn() { running_outcome(running) },
+    record: fn() { running.definition.record(running.state) },
   )
 }
 
@@ -331,6 +334,11 @@ pub fn scene(instance: Instance, viewer: Viewer) -> Scene {
 
 pub fn outcome(instance: Instance) -> Outcome {
   instance.outcome()
+}
+
+/// The game's public record, if it keeps one: every seat may read it.
+pub fn record(instance: Instance) -> Option(json.Json) {
+  instance.record()
 }
 
 pub fn finished(instance: Instance) -> Bool {
