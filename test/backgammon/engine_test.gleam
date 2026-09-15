@@ -178,7 +178,7 @@ pub fn random_single_games_terminate_test() {
         seed,
         4000,
         invariant,
-        conformance.Options(exclude: ["resign"]),
+        conformance.Options(exclude: resign_actions),
       )
     assert report.finished
     let assert state.Finished(_) = report.state.phase
@@ -195,7 +195,7 @@ pub fn random_matches_terminate_and_score_test() {
         seed,
         30_000,
         invariant,
-        conformance.Options(exclude: ["resign"]),
+        conformance.Options(exclude: resign_actions),
       )
     assert report.finished
     let assert state.Finished(winner) = report.state.phase
@@ -219,3 +219,7 @@ pub fn replay_is_deterministic_test() {
   assert conformance.fingerprint(backgammon.game(), replayed, seats())
     == conformance.fingerprint(backgammon.game(), report.state, seats())
 }
+
+/// Random play never resigns: an offer needs an answer, and a random one
+/// would end every game early.
+const resign_actions = ["resign", "accept_resign", "decline_resign"]

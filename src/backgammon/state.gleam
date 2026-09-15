@@ -64,8 +64,16 @@ pub type GameState {
     turn_board: Board,
     /// Moves staged this turn, oldest first. Committed by `play`.
     staged: List(Staged),
+    /// A resignation on offer: who offered it and at what stakes. Play is
+    /// frozen (whatever the phase) until the opponent accepts or declines.
+    resign_offer: Option(ResignOffer),
     rng: Rng,
   )
+}
+
+/// An offer to resign at these stakes, waiting on the opponent's answer.
+pub type ResignOffer {
+  ResignOffer(by: Color, stakes: board.WinKind)
 }
 
 /// A move staged but not yet played, with what undo needs.
@@ -77,7 +85,8 @@ pub type Staged {
 pub type EndKind {
   Won(board.WinKind)
   Dropped
-  Resigned
+  /// The loser offered to resign at these stakes and the winner accepted.
+  Resigned(board.WinKind)
 }
 
 /// What happened when a game finished.
@@ -96,7 +105,16 @@ pub fn end_kind_name(kind: EndKind) -> String {
   case kind {
     Won(k) -> board.kind_name(k)
     Dropped -> "dropped"
-    Resigned -> "resigned"
+    Resigned(_) -> "resigned"
+  }
+}
+
+/// The stakes a game ended at: the win kind, or the kind resigned.
+pub fn end_stakes(kind: EndKind) -> board.WinKind {
+  case kind {
+    Won(k) -> k
+    Dropped -> board.Single
+    Resigned(k) -> k
   }
 }
 
@@ -130,6 +148,7 @@ pub fn new(
       turn_dead: False,
       turn_board: board.initial(),
       staged: [],
+      resign_offer: None,
       rng: rng,
     )
   opening_roll(state)
@@ -193,13 +212,15 @@ pub fn score_of(state: GameState, player_id: PlayerId) -> Int {
   dict.get(state.scores, player_id) |> result.unwrap(0)
 }
 
-/// The player who must act now: the mover, or the player answering a double.
+/// The player who must act now: the player answering a resignation offer,
+/// else the mover, or the player answering a double.
 pub fn to_act(state: GameState) -> Option(PlayerId) {
-  case state.phase {
-    Rolling(c) -> Some(player_of(state, c))
-    Moving(c, _) -> Some(player_of(state, c))
-    Doubled(by) -> Some(player_of(state, board.opponent(by)))
-    Finished(_) -> None
+  case state.resign_offer, state.phase {
+    _, Finished(_) -> None
+    Some(ResignOffer(by, _)), _ -> Some(player_of(state, board.opponent(by)))
+    None, Rolling(c) -> Some(player_of(state, c))
+    None, Moving(c, _) -> Some(player_of(state, c))
+    None, Doubled(by) -> Some(player_of(state, board.opponent(by)))
   }
 }
 
@@ -236,11 +257,31 @@ pub fn must_answer_double(state: GameState, player_id: PlayerId) -> Bool {
   }
 }
 
+/// May this player offer to resign? Any time the game is on and no offer
+/// is already waiting on an answer.
 pub fn can_resign(state: GameState, player_id: PlayerId) -> Bool {
-  case state.phase, color_of(state, player_id) {
-    Finished(_), _ -> False
-    _, Ok(_) -> True
-    _, Error(_) -> False
+  case state.phase, state.resign_offer, color_of(state, player_id) {
+    Finished(_), _, _ -> False
+    _, Some(_), _ -> False
+    _, None, Ok(_) -> True
+    _, None, Error(_) -> False
+  }
+}
+
+/// The stakes a player may offer to resign at. Under the Jacoby rule a
+/// centred cube means gammons do not count, so only a single is on offer.
+pub fn resign_stakes(state: GameState) -> List(board.WinKind) {
+  case state.config.jacoby && state.cube_owner == None {
+    True -> [board.Single]
+    False -> [board.Single, board.Gammon, board.Backgammon]
+  }
+}
+
+/// Is this player the one who must answer a resignation offer?
+pub fn must_answer_resign(state: GameState, player_id: PlayerId) -> Bool {
+  case state.resign_offer, color_of(state, player_id) {
+    Some(ResignOffer(by, _)), Ok(mine) -> by != mine
+    _, _ -> False
   }
 }
 
@@ -326,11 +367,20 @@ pub fn can_pick(state: GameState, player_id: PlayerId) -> Bool {
 
 // ---------- Transitions ----------
 
+/// Nothing else moves while a resignation waits on its answer.
+fn no_offer_pending(state: GameState) -> Result(Nil, String) {
+  case state.resign_offer {
+    Some(_) -> Error("A resignation is pending")
+    None -> Ok(Nil)
+  }
+}
+
 pub fn roll(
   state: GameState,
   player_id: PlayerId,
 ) -> Result(#(GameState, List(Int)), String) {
   use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
   case state.phase {
     Rolling(c) if c == color -> {
       let #(a, rng) = die(state.rng)
@@ -355,6 +405,7 @@ pub fn pick(
   b: Int,
 ) -> Result(#(GameState, List(Int)), String) {
   use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
   case state.phase {
     Rolling(c) if c == color ->
       case
@@ -402,6 +453,7 @@ pub fn double(
   player_id: PlayerId,
 ) -> Result(GameState, String) {
   use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
   case state.phase {
     Rolling(c) if c == color ->
       case can_double(state, player_id) {
@@ -430,6 +482,7 @@ pub fn double(
 
 pub fn take(state: GameState, player_id: PlayerId) -> Result(GameState, String) {
   use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
   case state.phase {
     Doubled(by) if by != color ->
       Ok(
@@ -450,6 +503,7 @@ pub fn drop(
   player_id: PlayerId,
 ) -> Result(#(GameState, GameEnd), String) {
   use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
   case state.phase {
     Doubled(by) if by != color -> Ok(finish_game(state, by, Dropped))
     Doubled(_) -> Error("You offered the double")
@@ -457,14 +511,58 @@ pub fn drop(
   }
 }
 
+// ---------- Resigning ----------
+//
+// A resignation is an offer, as at the table: the resigner names the
+// stakes (single, gammon or backgammon) and the opponent accepts or
+// declines. Play stands still meanwhile, whatever the phase; declined, it
+// resumes exactly where it was.
+
 pub fn resign(
+  state: GameState,
+  player_id: PlayerId,
+  stakes: board.WinKind,
+) -> Result(GameState, String) {
+  use color <- result.try(color_of(state, player_id))
+  case state.phase, state.resign_offer {
+    Finished(_), _ -> Error("The match is over")
+    _, Some(_) -> Error("A resignation is pending")
+    _, None ->
+      case list.contains(resign_stakes(state), stakes) {
+        True ->
+          Ok(GameState(..state, resign_offer: Some(ResignOffer(color, stakes))))
+        False -> Error("Gammons do not count until the cube is turned")
+      }
+  }
+}
+
+pub fn accept_resign(
   state: GameState,
   player_id: PlayerId,
 ) -> Result(#(GameState, GameEnd), String) {
   use color <- result.try(color_of(state, player_id))
-  case state.phase {
-    Finished(_) -> Error("The match is over")
-    _ -> Ok(finish_game(state, board.opponent(color), Resigned))
+  case state.resign_offer {
+    Some(ResignOffer(by, stakes)) if by != color ->
+      Ok(finish_game(
+        GameState(..state, resign_offer: None),
+        color,
+        Resigned(stakes),
+      ))
+    Some(_) -> Error("You offered the resignation")
+    None -> Error("No resignation to answer")
+  }
+}
+
+pub fn decline_resign(
+  state: GameState,
+  player_id: PlayerId,
+) -> Result(GameState, String) {
+  use color <- result.try(color_of(state, player_id))
+  case state.resign_offer {
+    Some(ResignOffer(by, _)) if by != color ->
+      Ok(GameState(..state, resign_offer: None))
+    Some(_) -> Error("You offered the resignation")
+    None -> Error("No resignation to answer")
   }
 }
 
@@ -476,6 +574,7 @@ pub fn stage(
   to: board.Loc,
 ) -> Result(#(GameState, Staged), String) {
   use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
   case state.phase {
     Moving(c, dice) if c == color -> {
       let candidates =
@@ -515,6 +614,7 @@ pub fn undo(
   player_id: PlayerId,
 ) -> Result(#(GameState, Staged), String) {
   use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
   case state.phase {
     Moving(c, _) if c == color ->
       case list.reverse(state.staged) {
@@ -551,6 +651,7 @@ pub type Played {
 /// be played has been.
 pub fn play(state: GameState, player_id: PlayerId) -> Result(Played, String) {
   use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
   case state.phase {
     Moving(c, dice) if c == color ->
       case board.legal_moves(state.board, color, dice) {
@@ -605,7 +706,9 @@ fn finish_game(
         False -> board.points_for(k)
       }
     Dropped -> 1
-    Resigned -> 1
+    // The stakes were limited when offered (`resign_stakes`), so Jacoby
+    // has already had its say.
+    Resigned(k) -> board.points_for(k)
   }
   let points = base * state.cube_value
   let winner_id = player_of(state, winner)

@@ -64,6 +64,7 @@ type alias Model =
     , rotation : Int -- how many times the dice were tapped this roll: which unused die is next
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
+    , resigning : Bool -- the resign panel is open: which stakes to offer
     , roll : Roll -- the dice on the board, and whether this client saw them land
     }
 
@@ -117,6 +118,9 @@ type Msg
     | UnpickAt Int
     | CancelPick
     | ConfirmPick
+    | OpenResign
+    | CancelResign
+    | OfferResign String -- the stakes id from the resign schema's choice
     | Ignore
 
 
@@ -135,6 +139,7 @@ init =
     , rotation = 0
     , autoRolled = False
     , picker = Nothing
+    , resigning = False
 
     -- A client starts by being told where the game is, not by watching it
     -- get there: whatever dice the first payload brings are already on the
@@ -143,7 +148,7 @@ init =
     }
 
 
-{-| Clear the interaction state (drag, picker) without forgetting
+{-| Clear the interaction state (drag, pickers) without forgetting
 which roll is on the board: `roll` keys the dice, and forgetting it would
 replay the tumble on every tap.
 -}
@@ -296,6 +301,17 @@ update msg model =
 
                 _ ->
                     ( model, NoOut )
+
+        OpenResign ->
+            ( { model | resigning = True }, NoOut )
+
+        CancelResign ->
+            ( { model | resigning = False }, NoOut )
+
+        OfferResign stakes ->
+            ( reset model
+            , Send (Protocol.encodeAction "resign" [ ( "stakes", E.string stakes ) ])
+            )
 
         Ignore ->
             ( model, NoOut )
@@ -896,7 +912,7 @@ viewHeader ctx =
                 text ""
             ]
         , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
-            button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", onClick (Simple "resign") ] [ text "RESIGN" ]
+            button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-resign-open", onClick OpenResign ] [ text "RESIGN" ]
 
           else
             text ""
@@ -1104,6 +1120,11 @@ viewBoard board =
 
             _ ->
                 text ""
+        , if board.ctx.model.resigning && hasAction "resign" board.ctx.legal then
+            viewResignPanel board.ctx
+
+          else
+            text ""
         ]
 
 
@@ -1494,9 +1515,28 @@ leftButtons ctx =
         [ actionButton ctx "double" "plain"
         , actionButton ctx "take" "sky"
         , actionButton ctx "drop" "plain"
+
+        -- the opponent's answer to a resignation, the stakes in the label
+        , actionButton ctx "accept_resign" "sky"
+        , actionButton ctx "decline_resign" "plain"
         , actionButton ctx "undo" "plain"
         , actionButton ctx "play" "sky"
         ]
+
+
+{-| The resignation on offer, as the scene carries it: who offered, the
+stakes, and what accepting pays.
+-}
+type alias ResignOffer =
+    { from : String, stakes : String, points : Int }
+
+
+resignOffer : Ctx -> Maybe ResignOffer
+resignOffer ctx =
+    Protocol.sceneData
+        (D.map3 ResignOffer (D.field "from" D.string) (D.field "stakes" D.string) (D.field "points" D.int))
+        "resign_offer"
+        ctx.scene
 
 
 viewRightBand : Board -> List (Html Msg)
@@ -1536,6 +1576,9 @@ viewRightBand board =
         anyAction =
             roll /= [] || leftButtons ctx /= []
 
+        offer =
+            resignOffer ctx
+
         -- A dance says its piece beside the dice (`viewRoll`), not here.
         status =
             if ctx.finished /= Nothing || noMoves then
@@ -1543,6 +1586,12 @@ viewRightBand board =
 
             else if anyAction then
                 []
+
+            else if Maybe.map .from offer == Just ctx.playerId then
+                -- my offer stands: the opponent is deciding
+                [ span [ class "pixel text-[8px] sm:text-[9px] px-1", style "color" "var(--pencil)", Html.Attributes.id "bg-resign-pending" ]
+                    [ text ("RESIGNATION OFFERED (" ++ (offer |> Maybe.map (.stakes >> String.toUpper) |> Maybe.withDefault "") ++ ")…") ]
+                ]
 
             else if pendingFrom /= Nothing && not myTurn then
                 [ statusText "WAITING FOR THE TAKE…" ]
@@ -1786,6 +1835,82 @@ viewPicker chosen =
                     ]
                     [ text "X" ]
                 ]
+            ]
+        ]
+
+
+{-| The resign panel, floated over the board's centre like the dice picker:
+one button per stakes the engine offers (the `resign` schema's `stakes`
+choice -- three, or a single alone under Jacoby with a centred cube), each
+naming what it hands the opponent with the cube as it stands, and cancel.
+A resignation is only an offer; the opponent still has to accept it.
+-}
+viewResignPanel : Ctx -> Html Msg
+viewResignPanel ctx =
+    let
+        options =
+            ctx.legal
+                |> List.filter (\s -> s.name == "resign")
+                |> List.concatMap .params
+                |> List.filter (\p -> p.name == "stakes")
+                |> List.concatMap
+                    (\p ->
+                        case p.kind of
+                            Choice choices ->
+                                choices
+
+                            _ ->
+                                []
+                    )
+
+        cube =
+            Protocol.sceneData (D.field "value" D.int) "cube" ctx.scene |> Maybe.withDefault 1
+
+        points id =
+            cube
+                * (case id of
+                    "gammon" ->
+                        2
+
+                    "backgammon" ->
+                        3
+
+                    _ ->
+                        1
+                  )
+
+        pts n =
+            String.fromInt n
+                ++ (if n == 1 then
+                        " PT"
+
+                    else
+                        " PTS"
+                   )
+    in
+    div [ class "absolute inset-x-0 top-1/2 -translate-y-1/2 z-20 flex justify-center pointer-events-none" ]
+        [ div [ class "pix bg-white p-2 sm:p-3 flex flex-col items-center gap-2 pointer-events-auto", Html.Attributes.id "bg-resign-panel" ]
+            [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text "RESIGN? OFFER THE OPPONENT…" ]
+            , div [ class "flex flex-wrap justify-center gap-1.5 sm:gap-2" ]
+                (List.map
+                    (\( id, label ) ->
+                        button
+                            [ class "btn-arcade pixel text-[9px] px-3 py-2 plain flex flex-col items-center gap-1"
+                            , Html.Attributes.id ("bg-resign-" ++ id)
+                            , onClick (OfferResign id)
+                            ]
+                            [ text (String.toUpper label)
+                            , span [ class "text-[7px]", style "color" "var(--pencil)" ] [ text (pts (points id)) ]
+                            ]
+                    )
+                    options
+                )
+            , button
+                [ class "btn-arcade pixel text-[9px] px-3 py-2 plain"
+                , Html.Attributes.id "bg-resign-cancel"
+                , onClick CancelResign
+                ]
+                [ text "KEEP PLAYING" ]
             ]
         ]
 

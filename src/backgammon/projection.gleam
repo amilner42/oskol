@@ -30,7 +30,7 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
       player_zones(state),
       [dice_zone(state, is_mover), cube_zone(state)],
     ]),
-    data: [
+    data: list.append(resign_offer_data(state), [
       #("to_move", json.nullable(state.to_move(state), json.string)),
       #("to_act", json.nullable(state.to_act(state), json.string)),
       #(
@@ -85,8 +85,28 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
         state.Finished(color) -> json.string(state.player_of(state, color))
         _ -> json.null()
       }),
-    ],
+    ]),
   )
+}
+
+/// A resignation on offer: from whom, at what stakes, worth how much if
+/// accepted. Both seats see it; play is frozen until it is answered. The
+/// key is present only while an offer stands, so a scene with none -- every
+/// golden fingerprint, every finished game -- reads exactly as before.
+fn resign_offer_data(state: GameState) -> List(#(String, json.Json)) {
+  case state.resign_offer {
+    Some(state.ResignOffer(by, stakes)) -> [
+      #(
+        "resign_offer",
+        json.object([
+          #("from", json.string(state.player_of(state, by))),
+          #("stakes", json.string(board.kind_name(stakes))),
+          #("points", json.int(board.points_for(stakes) * state.cube_value)),
+        ]),
+      ),
+    ]
+    None -> []
+  }
 }
 
 pub fn phase_name(state: GameState) -> String {
