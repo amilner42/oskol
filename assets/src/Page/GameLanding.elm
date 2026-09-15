@@ -179,7 +179,17 @@ update : Msg -> Model -> ( Model, Cmd Msg, Out )
 update msg model =
     case msg of
         Started ->
-            ( { model | started = True }, Cmd.none, NoOut )
+            case ( model.page, model.loadError ) of
+                -- The game's data failed to come: ask again, and the dialog
+                -- says what went wrong if it fails again.
+                ( Nothing, Just _ ) ->
+                    ( { model | started = True, loadError = Nothing }
+                    , Catalog.fetchGame model.session model.slug GotGame
+                    , NoOut
+                    )
+
+                _ ->
+                    ( { model | started = True }, Cmd.none, NoOut )
 
         ToggledThemes ->
             ( { model | themesOpen = not model.themesOpen }, Cmd.none, NoOut )
@@ -466,7 +476,7 @@ themePicker model =
             , onClick ToggledThemes
             ]
             [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ] []
-            , Html.span [ class "hidden sm:inline" ] [ Html.text label ]
+            , Html.span [ class "bg-ctl-label hidden sm:inline" ] [ Html.text label ]
             ]
         , if model.themesOpen then
             Html.div [ class "bg-theme-list", id "bg-theme-list" ]
@@ -562,32 +572,8 @@ createModal model =
                             )
                         ]
             in
-            Html.div [ id "create-modal", class "fixed inset-0 z-50 flex items-start justify-center px-4 pt-[10vh] sm:pt-[14vh]" ]
-                [ Html.div
-                    [ class "absolute inset-0"
-                    , style "background: rgba(20, 22, 38, 0.55)"
-                    , onClick ClosedCreate
-                    , Html.Attributes.attribute "aria-hidden" "true"
-                    ]
-                    []
-                , Html.div
-                    [ class "q-card relative w-full max-w-sm p-5 sm:p-6"
-                    , Html.Attributes.attribute "role" "dialog"
-                    , Html.Attributes.attribute "aria-modal" "true"
-                    , Html.Attributes.attribute "aria-label" "Create a game"
-                    ]
-                    [ Html.div [ class "flex items-center justify-between mb-4" ]
-                        [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text "CREATE GAME" ]
-                        , Html.button
-                            [ Html.Attributes.type_ "button"
-                            , id "close-create"
-                            , onClick ClosedCreate
-                            , Html.Attributes.attribute "aria-label" "Close"
-                            , class "q-note text-base px-2 py-1"
-                            ]
-                            [ Html.text "✕" ]
-                        ]
-                    , Html.form [ onSubmit Submitted, class "space-y-4" ]
+            createDialog
+                [ Html.form [ onSubmit Submitted, class "space-y-4" ]
                         ((case model.error of
                             Just message ->
                                 [ Html.p [ id "form-error", class "text-sm font-semibold", style "color: var(--red)" ] [ Html.text message ] ]
@@ -635,11 +621,59 @@ createModal model =
                                , Html.p [ class "q-note text-xs text-center" ] [ Html.text "You get a link to send. The game starts when your friend opens it." ]
                                ]
                         )
-                    ]
                 ]
+
+        ( True, Nothing ) ->
+            -- The game's data never came: say so rather than open nothing.
+            -- Pressing CREATE GAME again asks for it again.
+            case model.loadError of
+                Just message ->
+                    createDialog
+                        [ Html.p [ id "form-error", class "text-sm font-semibold", style "color: var(--red)" ]
+                            [ Html.text message ]
+                        ]
+
+                Nothing ->
+                    Html.text ""
 
         _ ->
             Html.text ""
+
+
+{-| The dialog's frame: the dimmed board behind it (a tap on it closes the
+dialog), the card with its heading and close button. The layer scrolls when
+the card is taller than the screen, as on a phone held sideways.
+-}
+createDialog : List (Html Msg) -> Html Msg
+createDialog content =
+    Html.div [ id "create-modal", class "fixed inset-0 z-50 overflow-y-auto flex items-start justify-center px-4 pt-[10vh] sm:pt-[14vh] pb-4" ]
+        [ Html.div
+            [ class "fixed inset-0"
+            , style "background: rgba(20, 22, 38, 0.55)"
+            , onClick ClosedCreate
+            , Html.Attributes.attribute "aria-hidden" "true"
+            ]
+            []
+        , Html.div
+            [ class "q-card relative w-full max-w-sm p-5 sm:p-6"
+            , Html.Attributes.attribute "role" "dialog"
+            , Html.Attributes.attribute "aria-modal" "true"
+            , Html.Attributes.attribute "aria-label" "Create a game"
+            ]
+            (Html.div [ class "flex items-center justify-between mb-4" ]
+                [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text "CREATE GAME" ]
+                , Html.button
+                    [ Html.Attributes.type_ "button"
+                    , id "close-create"
+                    , onClick ClosedCreate
+                    , Html.Attributes.attribute "aria-label" "Close"
+                    , class "q-note text-base px-2 py-1"
+                    ]
+                    [ Html.text "✕" ]
+                ]
+                :: content
+            )
+        ]
 
 
 {-| A clock as the dropdown lists it: its name and, when it has one, what

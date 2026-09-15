@@ -222,6 +222,24 @@ createDialog =
                         [ Query.hasNot [ id "create-modal" ]
                         , Query.has [ id "start-game" ]
                         ]
+        , test "if the game's data never came, it says so instead of opening nothing" <|
+            \_ ->
+                page { guestName = Nothing } "backgammon" Nothing
+                    |> send (GameLanding.GotGame (Err (Api.ApiError { code = "server_error", message = "Something went wrong" })))
+                    |> send GameLanding.Started
+                    |> send (GameLanding.GotGame (Err (Api.ApiError { code = "server_error", message = "Something went wrong" })))
+                    |> home
+                    |> Query.find [ id "create-modal" ]
+                    |> Query.has [ id "form-error", text "Something went wrong" ]
+        , test "and CREATE GAME asks for it again" <|
+            \_ ->
+                page { guestName = Nothing } "backgammon" Nothing
+                    |> send (GameLanding.GotGame (Err (Api.ApiError { code = "server_error", message = "Something went wrong" })))
+                    |> send GameLanding.Started
+                    |> send (GameLanding.GotGame (Api.parseBody Catalog.gamePageDecoder gameJson))
+                    |> home
+                    |> Query.find [ id "create-modal" ]
+                    |> Query.has [ id "create-mode" ]
         , test "it waits for the game's data: opened early it shows nothing yet" <|
             \_ ->
                 page { guestName = Nothing } "backgammon" Nothing
