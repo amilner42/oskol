@@ -348,7 +348,13 @@ pub fn doubles_that_play_nothing_dance_too_test() {
 }
 
 fn resign() {
-  action.simple("resign", "Resign")
+  action.Schema("resign", "Resign", [
+    action.choice("stakes", [
+      #("single", "Single"),
+      #("gammon", "Gammon"),
+      #("backgammon", "Backgammon"),
+    ]),
+  ])
 }
 
 fn engine_roll() {

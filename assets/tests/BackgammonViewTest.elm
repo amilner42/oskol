@@ -463,13 +463,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
+                            ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }, Nothing )
+                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -480,7 +480,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
+                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -539,7 +539,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], roll = settled }, NoOut )
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, roll = settled }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -615,6 +615,113 @@ suite =
                             View.view (ctx "p1" { u | legal = [ schema "move" ] } model)
                                 |> Query.fromHtml
                                 |> Query.hasNot [ id "pick-dice-panel" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             ]
+            )
+        , describe "resigning is an offer of stakes"
+            (let
+                schema name label =
+                    { name = name, label = label, params = [] }
+
+                resignSchema options =
+                    { name = "resign", label = "Resign", params = [ { name = "stakes", kind = Choice options } ] }
+
+                allStakes =
+                    [ ( "single", "Single" ), ( "gammon", "Gammon" ), ( "backgammon", "Backgammon" ) ]
+
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                offerFrom from =
+                    withData "resign_offer" (E.object [ ( "from", E.string from ), ( "stakes", E.string "gammon" ), ( "points", E.int 4 ) ])
+             in
+             [ test "RESIGN opens the panel and a choice sends the stakes" <|
+                \_ ->
+                    let
+                        ( opened, out1 ) =
+                            View.update OpenResign View.init
+
+                        ( sent, out2 ) =
+                            View.update (OfferResign "gammon") opened
+                    in
+                    Expect.all
+                        [ \_ -> Expect.equal True opened.resigning
+                        , \_ -> Expect.equal NoOut out1
+                        , \_ -> Expect.equal False sent.resigning
+                        , \_ -> Expect.equal (Send (Protocol.encodeAction "resign" [ ( "stakes", E.string "gammon" ) ])) out2
+                        ]
+                        ()
+             , test "cancel closes the panel without sending" <|
+                \_ ->
+                    View.update OpenResign View.init
+                        |> Tuple.first
+                        |> View.update CancelResign
+                        |> Expect.equal ( View.init, NoOut )
+             , test "the panel offers exactly the stakes the schema carries" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                model =
+                                    View.update OpenResign View.init |> Tuple.first
+
+                                render legal =
+                                    View.view (ctx "p1" { u | legal = legal } model) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> render [ schema "roll" "Roll dice", resignSchema allStakes ] |> Query.has [ id "bg-resign-panel" ]
+                                , \_ -> render [ schema "roll" "Roll dice", resignSchema allStakes ] |> Query.findAll [ tag "button", attribute (Html.Attributes.id "bg-resign-backgammon") ] |> Query.count (Expect.equal 1)
+                                , \_ -> render [ schema "roll" "Roll dice", resignSchema allStakes ] |> Query.has [ id "bg-resign-cancel" ]
+
+                                -- Jacoby, centred cube: a single is all there is
+                                , \_ -> render [ resignSchema [ ( "single", "Single" ) ] ] |> Query.findAll [ tag "button", attribute (Html.Attributes.id "bg-resign-single") ] |> Query.count (Expect.equal 1)
+                                , \_ -> render [ resignSchema [ ( "single", "Single" ) ] ] |> Query.hasNot [ id "bg-resign-gammon" ]
+
+                                -- and no panel at all once resign stops being legal (an offer is pending)
+                                , \_ -> render [ schema "accept_resign" "Accept gammon" ] |> Query.hasNot [ id "bg-resign-panel" ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the opponent answers from the band, the stakes in the label" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                rendered =
+                                    View.view (ctx "p1" { u | legal = [ schema "accept_resign" "Accept gammon", schema "decline_resign" "Decline" ], scene = offerFrom "p2" u.scene } View.init)
+                                        |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.find [ id "bg-action-accept_resign" ] |> Query.has [ text "ACCEPT GAMMON" ]
+                                , \_ -> rendered |> Query.find [ id "bg-action-decline_resign" ] |> Query.has [ text "DECLINE" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-resign-open" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-resign-pending" ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the resigner sees their offer standing and nothing to press" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                rendered =
+                                    View.view (ctx "p1" { u | legal = [], scene = offerFrom "p1" u.scene } View.init)
+                                        |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.find [ id "bg-resign-pending" ] |> Query.has [ text "RESIGNATION OFFERED (GAMMON)…" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-resign-open" ]
+                                , \_ -> rendered |> Query.hasNot [ id "bg-action-accept_resign" ]
+                                ]
+                                ()
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
@@ -869,7 +976,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model rotation =
-                    { drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, roll = settled }
+                    { drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, resigning = False, roll = settled }
 
                 nextDie rotation u =
                     View.view (ctx "p1" (twoDice u) (model rotation))
@@ -1641,7 +1748,7 @@ perFixture fixture =
                     |> List.head
                     |> Maybe.map
                         (\u ->
-                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, roll = settled })
+                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, resigning = False, roll = settled })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal 0)

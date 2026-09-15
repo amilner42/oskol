@@ -23,7 +23,10 @@ pub type Action {
   Double
   Take
   Drop
-  Resign
+  /// Offer to resign at these stakes; the opponent answers.
+  Resign(stakes: board.WinKind)
+  AcceptResign
+  DeclineResign
 }
 
 pub const dice_zone = "dice"
@@ -77,12 +80,39 @@ pub fn apply(
         ]),
       )
     }
-    Resign -> {
-      use #(next, end) <- result.try(state.resign(state, player_id))
+    Resign(stakes) -> {
+      use next <- result.try(state.resign(state, player_id, stakes))
       Ok(
         #(next, [
-          custom("resigned", [#("player_id", json.string(player_id))]),
+          custom("resign_offered", [
+            #("player_id", json.string(player_id)),
+            #("stakes", json.string(board.kind_name(stakes))),
+            #("points", json.int(board.points_for(stakes) * state.cube_value)),
+          ]),
+        ]),
+      )
+    }
+    AcceptResign -> {
+      use #(next, end) <- result.try(state.accept_resign(state, player_id))
+      Ok(
+        #(next, [
+          custom("resign_accepted", [
+            #("player_id", json.string(player_id)),
+            #(
+              "stakes",
+              json.string(board.kind_name(state.end_stakes(end.kind))),
+            ),
+          ]),
           ..end_events(state, next, end)
+        ]),
+      )
+    }
+    DeclineResign -> {
+      use next <- result.try(state.decline_resign(state, player_id))
+      Ok(
+        #(next, [
+          custom("resign_declined", [#("player_id", json.string(player_id))]),
+          ..turn_started(next)
         ]),
       )
     }
@@ -225,6 +255,7 @@ fn end_events(
     custom("game_won", [
       #("player_id", json.string(end.winner)),
       #("kind", json.string(state.end_kind_name(end.kind))),
+      #("stakes", json.string(board.kind_name(state.end_stakes(end.kind)))),
       #("points", json.int(end.points)),
       #("cube", json.int(end.cube)),
       #(
@@ -263,8 +294,32 @@ fn end_events(
 }
 
 pub fn legal(state: GameState, player_id: String) -> List(Schema) {
+  case state.resign_offer {
+    // A pending resignation freezes the board: only its answer is legal.
+    Some(state.ResignOffer(_, stakes)) ->
+      case state.must_answer_resign(state, player_id) {
+        True -> [
+          action.simple("accept_resign", "Accept " <> board.kind_name(stakes)),
+          action.simple("decline_resign", "Decline"),
+        ]
+        False -> []
+      }
+    None -> legal_in_play(state, player_id)
+  }
+}
+
+fn legal_in_play(state: GameState, player_id: String) -> List(Schema) {
   let resign = case state.can_resign(state, player_id) {
-    True -> [action.simple("resign", "Resign")]
+    True -> [
+      action.Schema("resign", "Resign", [
+        action.choice(
+          "stakes",
+          list.map(state.resign_stakes(state), fn(kind) {
+            #(board.kind_name(kind), stakes_label(kind))
+          }),
+        ),
+      ]),
+    ]
     False -> []
   }
   let main = case
@@ -332,6 +387,24 @@ pub fn legal(state: GameState, player_id: String) -> List(Schema) {
   list.append(main, resign)
 }
 
+fn stakes_label(kind: board.WinKind) -> String {
+  case kind {
+    board.Single -> "Single"
+    board.Gammon -> "Gammon"
+    board.Backgammon -> "Backgammon"
+  }
+}
+
+/// The stakes named in a `resign` action.
+pub fn parse_stakes(text: String) -> Result(board.WinKind, String) {
+  case text {
+    "single" -> Ok(board.Single)
+    "gammon" -> Ok(board.Gammon)
+    "backgammon" -> Ok(board.Backgammon)
+    other -> Error("Unknown stakes: " <> other)
+  }
+}
+
 fn label_for(m: board.Move) -> String {
   board.loc_id(m.from)
   <> " → "
@@ -342,10 +415,8 @@ fn label_for(m: board.Move) -> String {
 }
 
 /// Only the player who must act is on the clock (the responder while a
-/// double is pending).
+/// double is pending). A resignation on offer adds its responder to the
+/// clock without taking the offerer off it (`state.charged`).
 pub fn on_the_clock(state: GameState) -> List(String) {
-  case state.to_act(state) {
-    Some(id) -> [id]
-    None -> []
-  }
+  state.charged(state)
 }

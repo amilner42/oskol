@@ -1,12 +1,17 @@
 //// The doubling cube, match formats, Crawford, Jacoby, resigning.
 
-import backgammon/board.{Bar, Black, Off, Point, White}
+import backgammon/board.{
+  Backgammon, Bar, Black, Gammon, Off, Point, Single, White,
+}
 import backgammon/engine
 import backgammon/game as backgammon
 import backgammon/state
+import gamekit/action
+import gamekit/clock
 import gamekit/conformance
 import gamekit/event
 import gamekit/game.{Seat}
+import gamekit/instance
 import gamekit/rng
 import gamekit/scene
 import gleam/dict
@@ -226,20 +231,270 @@ pub fn jacoby_makes_gammons_single_until_the_cube_is_turned_test() {
   assert state.score_of(after, "p1") == 2
 }
 
-pub fn resigning_gives_the_opponent_the_cube_value_test() {
+// ---------- Resigning ----------
+//
+// A resignation is an offer of stakes the opponent answers. Accepted, it
+// pays stakes x cube through the same finish as a won game; declined, the
+// board is exactly as it was.
+
+fn resign_schema(stakes: List(#(String, String))) {
+  action.Schema("resign", "Resign", [action.choice("stakes", stakes)])
+}
+
+const all_stakes = [
+  #("single", "Single"),
+  #("gammon", "Gammon"),
+  #("backgammon", "Backgammon"),
+]
+
+fn payload_of(events: List(event.Event), kind: String) -> String {
+  let assert Ok(payload) =
+    list.find_map(events, fn(e) {
+      case e {
+        event.Custom(k, payload) if k == kind -> Ok(json.to_string(payload))
+        _ -> Error(Nil)
+      }
+    })
+  payload
+}
+
+pub fn resigning_offers_stakes_and_freezes_the_board_test() {
   let s = white_to_roll(10, "match5")
-  let s = state.GameState(..s, cube_value: 4, cube_owner: Some(Black))
-  let #(s, events) = apply(s, "p2", engine.Resign)
-  assert has_custom(events, "resigned")
-  assert state.score_of(s, "p1") == 4
-  assert s.game_number == 2
-  // Resigning the last points ends the match
-  let s = state.GameState(..s, cube_value: 1)
-  let #(s, events) = apply(s, "p2", engine.Resign)
+  let s = state.GameState(..s, cube_value: 2, cube_owner: Some(Black))
+  assert engine.legal(s, "p2") == [resign_schema(all_stakes)]
+  let #(s, events) = apply(s, "p2", engine.Resign(Gammon))
+  let payload = payload_of(events, "resign_offered")
+  assert string.contains(payload, "\"stakes\":\"gammon\"")
+  assert string.contains(payload, "\"points\":4")
+  assert s.resign_offer == Some(state.ResignOffer(Black, Gammon))
+  // Nothing else changed: same phase, same score, same game
+  let assert state.Rolling(White) = s.phase
+  assert state.score_of(s, "p1") == 0 && s.game_number == 1
+  // The responder is the only one with anything to do, and is on the clock
+  assert names(s, "p1") == ["accept_resign", "decline_resign"]
+  assert names(s, "p2") == []
+  assert engine.on_the_clock(s) == ["p1"]
+  assert state.to_act(s) == Some("p1")
+  assert state.to_move(s) == Some("p1")
+  // Play is frozen for both, and a second offer waits for the first
+  assert engine.apply(s, "p1", engine.Roll) == Error("A resignation is pending")
+  assert engine.apply(s, "p1", engine.Double)
+    == Error("A resignation is pending")
+  assert engine.apply(s, "p2", engine.Resign(Single))
+    == Error("A resignation is pending")
+  assert engine.apply(s, "p1", engine.Resign(Single))
+    == Error("A resignation is pending")
+  // Only the opponent may answer
+  assert engine.apply(s, "p2", engine.AcceptResign)
+    == Error("You offered the resignation")
+  assert engine.apply(s, "p2", engine.DeclineResign)
+    == Error("You offered the resignation")
+  // The offer is in both scenes
+  let sc = backgammon.game().scene(s, scene.Player("p1"))
+  assert json.to_string(json.object(sc.data))
+    |> string.contains(
+      "\"resign_offer\":{\"from\":\"p2\",\"stakes\":\"gammon\",\"points\":4}",
+    )
+  assert json.to_string(json.object(sc.data))
+    |> string.contains("\"to_act\":\"p1\"")
+}
+
+pub fn accepting_a_resignation_pays_stakes_times_cube_test() {
+  list.each(
+    [
+      #(Single, 1, 1),
+      #(Gammon, 1, 2),
+      #(Backgammon, 1, 3),
+      #(Single, 2, 2),
+      #(Gammon, 2, 4),
+      #(Backgammon, 2, 6),
+    ],
+    fn(case_) {
+      let #(stakes, cube, points) = case_
+      let s = white_to_roll(11, "match7")
+      let s = case cube {
+        1 -> s
+        _ -> state.GameState(..s, cube_value: cube, cube_owner: Some(Black))
+      }
+      let #(s, _) = apply(s, "p2", engine.Resign(stakes))
+      let #(s, events) = apply(s, "p1", engine.AcceptResign)
+      assert has_custom(events, "resign_accepted")
+      assert has_custom(events, "game_won")
+      assert has_custom(events, "new_game")
+      let won = payload_of(events, "game_won")
+      assert string.contains(won, "\"kind\":\"resigned\"")
+      assert string.contains(
+        won,
+        "\"stakes\":\"" <> board.kind_name(stakes) <> "\"",
+      )
+      assert string.contains(won, "\"points\":" <> int.to_string(points))
+      assert state.score_of(s, "p1") == points
+      assert state.score_of(s, "p2") == 0
+      assert s.game_number == 2
+      assert s.resign_offer == None
+      assert s.cube_value == 1 && s.cube_owner == None
+    },
+  )
+}
+
+pub fn declining_a_resignation_resumes_the_same_turn_and_dice_test() {
+  // Mid-turn, one move staged: the offer must not disturb any of it.
+  let s = new_game(12, "match5")
+  let s = state.GameState(..s, phase: state.Rolling(White))
+  let #(s, _) = apply(s, "p1", engine.Roll)
+  let assert [m, ..] = state.legal_moves(s, "p1")
+  let #(s, _) = apply(s, "p1", engine.MoveChecker(m.from, m.to))
+  let before = s
+  let #(s, _) = apply(s, "p1", engine.Resign(Single))
+  assert names(s, "p1") == []
+  assert names(s, "p2") == ["accept_resign", "decline_resign"]
+  assert engine.apply(s, "p1", engine.Play) == Error("A resignation is pending")
+  assert engine.apply(s, "p1", engine.Undo) == Error("A resignation is pending")
+  // The responder joins the clock; the mover's keeps running
+  assert engine.on_the_clock(s) == ["p2", "p1"]
+  let #(s, events) = apply(s, "p2", engine.DeclineResign)
+  assert has_custom(events, "resign_declined")
+  assert has_custom(events, "turn_started")
+  assert s == before
+  assert state.dice_left(s) == state.dice_left(before)
+  assert engine.legal(s, "p1") == engine.legal(before, "p1")
+  assert engine.on_the_clock(s) == ["p1"]
+  // And the resigner may offer again
+  let #(s, _) = apply(s, "p1", engine.Resign(Gammon))
+  assert s.resign_offer == Some(state.ResignOffer(White, Gammon))
+}
+
+pub fn a_resignation_may_be_offered_while_a_double_is_pending_test() {
+  let s = white_to_roll(13, "match5")
+  let #(s, _) = apply(s, "p1", engine.Double)
+  // The player weighing the take resigns instead: the doubler answers
+  let #(s, _) = apply(s, "p2", engine.Resign(Single))
+  // The doubler answers the offer, and the taker's clock keeps running
+  assert engine.on_the_clock(s) == ["p1", "p2"]
+  assert engine.apply(s, "p2", engine.Take) == Error("A resignation is pending")
+  let #(declined, _) = apply(s, "p1", engine.DeclineResign)
+  let assert state.Doubled(White) = declined.phase
+  assert names(declined, "p2") == ["take", "drop", "resign"]
+  // Accepted, the cube was never turned: one point, not two
+  let #(accepted, _) = apply(s, "p1", engine.AcceptResign)
+  assert state.score_of(accepted, "p1") == 1
+  assert accepted.game_number == 2
+}
+
+pub fn jacoby_with_a_centred_cube_offers_only_a_single_test() {
+  let s = white_to_roll(14, "unlimited")
+  assert engine.legal(s, "p2") == [resign_schema([#("single", "Single")])]
+  assert engine.apply(s, "p2", engine.Resign(Gammon))
+    == Error("Gammons do not count until the cube is turned")
+  assert engine.apply(s, "p2", engine.Resign(Backgammon))
+    == Error("Gammons do not count until the cube is turned")
+  // Once the cube is turned, gammons count and every stake is on offer
+  let turned = state.GameState(..s, cube_value: 2, cube_owner: Some(White))
+  assert engine.legal(turned, "p2") == [resign_schema(all_stakes)]
+  let #(turned, _) = apply(turned, "p2", engine.Resign(Backgammon))
+  let #(turned, _) = apply(turned, "p1", engine.AcceptResign)
+  assert state.score_of(turned, "p1") == 6
+  // Match play has no Jacoby rule: a centred cube still offers everything
+  assert engine.legal(white_to_roll(14, "match5"), "p2")
+    == [resign_schema(all_stakes)]
+}
+
+pub fn an_accepted_resignation_can_end_the_match_test() {
+  // Match to 5 at 3-0, cube at 2: a resigned single ends it exactly.
+  let s = white_to_roll(15, "match5")
+  let s =
+    state.GameState(
+      ..s,
+      scores: dict.from_list([#("p1", 3), #("p2", 0)]),
+      cube_value: 2,
+      cube_owner: Some(Black),
+    )
+  let #(s, _) = apply(s, "p2", engine.Resign(Single))
+  let #(s, events) = apply(s, "p1", engine.AcceptResign)
   assert has_custom(events, "match_over")
+  assert state.score_of(s, "p1") == 5
   let assert state.Finished(White) = s.phase
   assert backgammon.outcome(s) == game.Finished(["p1"])
-  assert engine.apply(s, "p2", engine.Resign) == Error("The match is over")
+  assert engine.legal(s, "p1") == [] && engine.legal(s, "p2") == []
+  assert engine.apply(s, "p2", engine.Resign(Single))
+    == Error("The match is over")
+  // One short of the target hands the next game to Crawford
+  let s = white_to_roll(15, "match5")
+  let s = state.GameState(..s, scores: dict.from_list([#("p1", 2), #("p2", 0)]))
+  let #(s, _) = apply(s, "p2", engine.Resign(Gammon))
+  let #(s, _) = apply(s, "p1", engine.AcceptResign)
+  assert state.score_of(s, "p1") == 4
+  assert s.crawford && s.game_number == 2
+}
+
+pub fn an_offer_never_stops_the_offerer_clock_test() {
+  // Fischer 60 s + 10 s, with backgammon's 12 s turn delay. The mover is
+  // on the clock from the opening roll; offering to resign must not stop
+  // it, and being declined must not restart it with a fresh delay or an
+  // increment -- otherwise a player about to flag could stall forever.
+  let assert Ok(inst) =
+    instance.start(
+      backgammon.game(),
+      "match5",
+      [],
+      seats(),
+      40,
+      clock.Fischer(60_000, 10_000),
+      0,
+    )
+  let clocks = instance.clocks(inst)
+  let #(mover, other) = case clock.running(clocks, "p1") {
+    True -> #("p1", "p2")
+    False -> #("p2", "p1")
+  }
+  assert clock.running(clocks, other) == False
+  let send = fn(inst, who, text, now) {
+    let assert Ok(raw) = conformance.parse(text)
+    let assert Ok(#(next, _)) = instance.apply(inst, who, raw, now)
+    next
+  }
+  let inst =
+    send(
+      inst,
+      mover,
+      "{\"name\":\"resign\",\"params\":{\"stakes\":\"single\"}}",
+      5000,
+    )
+  let clocks = instance.clocks(inst)
+  assert clock.running(clocks, mover) && clock.running(clocks, other)
+  let inst =
+    send(inst, other, "{\"name\":\"decline_resign\",\"params\":{}}", 6000)
+  let clocks = instance.clocks(inst)
+  assert clock.running(clocks, mover) && !clock.running(clocks, other)
+  // 13 s into the turn: the 12 s delay from the roll is spent and one
+  // second is charged. A re-granted delay would have left it untouched, an
+  // increment would have added ten seconds.
+  assert clock.remaining(clocks, mover, 13_000) == 59_000
+  // The responder was charged for the second they took, inside their own
+  // delay, and banked the increment for having acted.
+  assert clock.remaining(clocks, other, 13_000) == 70_000
+}
+
+pub fn resign_actions_decode_with_and_without_stakes_test() {
+  let decode = fn(text) {
+    let assert Ok(raw) = conformance.parse(text)
+    let assert Ok(incoming) = action.decode_incoming(raw)
+    backgammon.decode_action(incoming)
+  }
+  assert decode("{\"name\":\"resign\",\"params\":{\"stakes\":\"gammon\"}}")
+    == Ok(engine.Resign(Gammon))
+  assert decode(
+      "{\"name\":\"resign\",\"params\":{\"stakes\":[\"backgammon\"]}}",
+    )
+    == Ok(engine.Resign(Backgammon))
+  assert decode("{\"name\":\"resign\",\"params\":{}}")
+    == Ok(engine.Resign(Single))
+  assert decode("{\"name\":\"resign\",\"params\":{\"stakes\":\"double\"}}")
+    == Error("Unknown stakes: double")
+  assert decode("{\"name\":\"accept_resign\",\"params\":{}}")
+    == Ok(engine.AcceptResign)
+  assert decode("{\"name\":\"decline_resign\",\"params\":{}}")
+    == Ok(engine.DeclineResign)
 }
 
 fn bear_off_and_play(

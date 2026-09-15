@@ -137,7 +137,24 @@ pub fn decode_action(incoming: action.Incoming) -> Result(Action, String) {
     "double" -> Ok(engine.Double)
     "take" -> Ok(engine.Take)
     "drop" -> Ok(engine.Drop)
-    "resign" -> Ok(engine.Resign)
+    "resign" -> {
+      // The stakes may arrive as a string or a one-element array, like a
+      // location; a bare resign with no stakes is the humblest one.
+      let raw = case action.string_param(incoming.params, "stakes") {
+        Ok(text) -> Ok(text)
+        Error(_) ->
+          case action.ids_param(incoming.params, "stakes") {
+            Ok([text]) -> Ok(text)
+            Ok(_) -> Error("Choose exactly one stakes")
+            Error(_) -> Ok("single")
+          }
+      }
+      use text <- result.try(raw)
+      use stakes <- result.try(engine.parse_stakes(text))
+      Ok(engine.Resign(stakes))
+    }
+    "accept_resign" -> Ok(engine.AcceptResign)
+    "decline_resign" -> Ok(engine.DeclineResign)
     "move" -> {
       use from <- result.try(loc_param(incoming.params, "from"))
       use to <- result.try(loc_param(incoming.params, "to"))

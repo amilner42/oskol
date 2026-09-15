@@ -178,8 +178,12 @@ fn never_leak(seeds: List(Int)) {
         seed,
         4000,
         nothing_leaks,
-        conformance.Options(exclude: ["resign"]),
+        conformance.Options(exclude: resign_actions),
       )
     assert report.finished
   })
 }
+
+/// Random play never resigns: an offer needs an answer, and a random one
+/// would end every game early.
+const resign_actions = ["resign", "accept_resign", "decline_resign"]
