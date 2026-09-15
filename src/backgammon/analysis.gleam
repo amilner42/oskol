@@ -4,10 +4,17 @@
 //// The engine speaks one board format: 26 ints from the perspective of the
 //// player on roll. Indexes 1..24 are points counted from the mover's side
 //// (their checkers positive, the opponent's negative; they move 24 -> 1
-//// and bear off past 1), 25 is the mover's bar (positive) and 0 the
-//// opponent's bar (negative). Borne-off checkers are not stored. Oskol
-//// numbers points so that White moves 24 -> 1, so for White a point keeps
-//// its number and for Black point p is index 25 - p.
+//// and bear off past 1), 25 is the mover's bar and 0 the opponent's bar.
+//// Borne-off checkers are not stored. Oskol numbers points so that White
+//// moves 24 -> 1, so for White a point keeps its number and for Black
+//// point p is index 25 - p.
+////
+//// Both bars are plain counts, never negative: that is bgsage's own
+//// format (`board[0]` "opponent checkers on bar (>= 0)"), and the boards
+//// the engine generates for a played move say so -- a hit shows up as +1
+//// at index 0. The service's README and doc (2026-09) say index 0 is
+//// negative; they are wrong, and a `played` board signed that way is
+//// never in the engine's legal list, so the whole review 422s.
 ////
 //// The turns come from replaying the room's seed and action log through
 //// the same gamekit calls the rehydrator uses (`gamekit/replay`), split at
@@ -60,8 +67,9 @@ pub type Turn {
     double: Option(Answer),
     /// The roll. None when a passed double ended the turn first.
     dice: Option(#(Int, Int)),
-    /// The board after the move, from the mover's side. None when the roll
-    /// could not be played (or was never played: see `double`).
+    /// The board after the move, from the mover's side; the board the turn
+    /// began on when the roll could play nothing (see `danced`). None when
+    /// there was no roll (see `double`).
     played: Option(List(Int)),
     /// The dice were picked, not rolled (the "Pick dice" twist): whatever
     /// the engine says about luck means nothing for this turn.
@@ -98,7 +106,7 @@ pub fn encode(b: Board, mover: Color) -> List(Int) {
       - board.count(b, opponent, Point(point))
     })
   list.flatten([
-    [-board.on_bar(b, opponent)],
+    [board.on_bar(b, opponent)],
     points,
     [board.on_bar(b, mover)],
   ])
@@ -294,13 +302,12 @@ fn step(acc: Acc, t: replay.Transition(GameState, engine.Action)) -> Acc {
         }
         _ -> acc
       }
-    Some(engine.Play), Some(p) -> {
-      let played = case before.turn_dead {
-        True -> None
-        False -> Some(encode(before.board, p.color))
-      }
-      emit(acc, p, played, t.index)
-    }
+    // The committed board. A roll that played nothing commits the board it
+    // started on, and that is what the engine is sent: it lists a dance as
+    // the one "move" that leaves the board as it was (bgsage's
+    // possible_moves), and 422s a turn with dice and no played board.
+    Some(engine.Play), Some(p) ->
+      emit(acc, p, Some(encode(before.board, p.color)), t.index)
     _, _ -> acc
   }
   let ended =
@@ -406,6 +413,12 @@ fn settle(p: Pending, played: Option(List(Int)), index: Int) -> Option(Turn) {
         log_index: index,
       ))
   }
+}
+
+/// The roll could play nothing. Every real move changes the board, so a
+/// played board equal to the one the turn began on is a dance.
+pub fn danced(turn: Turn) -> Bool {
+  turn.dice != None && turn.played == Some(turn.position.board)
 }
 
 // ---------- The request ----------

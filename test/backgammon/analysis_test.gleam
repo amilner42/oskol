@@ -47,13 +47,14 @@ pub fn the_bar_is_25_for_the_mover_and_0_for_the_opponent_test() {
   let white = analysis.encode(b, White)
   assert list.length(white) == 26
   assert at(white, 25) == 1
-  assert at(white, 0) == -2
+  // Both bars are counts: bgsage's format, whatever the service doc says
+  assert at(white, 0) == 2
   assert at(white, 6) == 14
   // Black's 19-point is White's 19-point seen from White: index 19
   assert at(white, 19) == -13
   let black = analysis.encode(b, Black)
   assert at(black, 25) == 2
-  assert at(black, 0) == -1
+  assert at(black, 0) == 1
   // Black moves 1 -> 24, so their 19-point is their own 6-point
   assert at(black, 6) == 13
   assert at(black, 19) == -14
@@ -474,6 +475,31 @@ pub fn every_played_board_is_legal_in_single_games_test() {
   random_games("single", [], [1, 2, 3, 4], ["resign"])
 }
 
+pub fn a_dance_is_sent_as_the_board_it_began_on_test() {
+  // Random single games dance now and then; each dance goes out with its
+  // dice and the unchanged board, which is how the engine lists one.
+  let dances =
+    list.flat_map([1, 2, 3, 4], fn(seed) {
+      let #(log, _) =
+        drive(
+          "single",
+          [],
+          seed,
+          clock.NoClock,
+          3000,
+          random_except(["resign"]),
+        )
+      let assert Ok(games) = analysis.games(log)
+      list.flat_map(games, fn(g) { list.filter(g.turns, analysis.danced) })
+    })
+  assert dances != []
+  list.each(dances, fn(turn) {
+    let assert Some(dice) = turn.dice
+    assert legal_boards(turn.position.board, dice) == []
+    assert turn.played == Some(turn.position.board)
+  })
+}
+
 pub fn every_played_board_is_legal_in_a_match_to_3_test() {
   random_games("match3", [], [1, 2], ["resign"])
 }
@@ -527,10 +553,7 @@ fn check_alternation(turns: List(analysis.Turn)) {
 fn check_turn(turn: analysis.Turn) {
   let p = turn.position
   assert list.length(p.board) == 26
-  assert at(p.board, 25) >= 0
-  assert at(p.board, 0) <= 0
-  assert int.sum(list.filter(p.board, fn(n) { n > 0 })) <= 15
-  assert int.sum(list.filter(p.board, fn(n) { n < 0 })) >= -15
+  check_board(p.board)
   // The engine refuses a double it thinks illegal: we never send one
   case turn.double {
     Some(_) -> {
@@ -544,22 +567,45 @@ fn check_turn(turn: analysis.Turn) {
       assert option.is_some(turn.double)
       assert played == None
     }
-    Some(dice), None -> {
-      assert legal_boards(p.board, dice) == []
-    }
+    // A roll is always sent with its board: the engine 422s one without
+    Some(_), None -> panic as "dice with no played board"
     Some(dice), Some(played) -> {
-      assert list.length(played) == 26
-      assert list.contains(legal_boards(p.board, dice), played)
+      check_board(played)
+      let legal = legal_boards(p.board, dice)
+      case analysis.danced(turn) {
+        // A dance commits the board it began on, and only a dance does
+        True -> {
+          assert legal == []
+        }
+        False -> {
+          assert list.contains(legal, played)
+        }
+      }
     }
   }
+}
+
+/// 26 ints; both bars counts (never negative); at most 15 checkers a side.
+fn check_board(board: List(Int)) {
+  assert list.length(board) == 26
+  assert at(board, 25) >= 0
+  assert at(board, 0) >= 0
+  let points = board |> list.drop(1) |> list.take(24)
+  let mover = int.sum(list.filter(points, fn(n) { n > 0 })) + at(board, 25)
+  let opponent = -int.sum(list.filter(points, fn(n) { n < 0 })) + at(board, 0)
+  assert mover <= 15
+  assert opponent <= 15
 }
 
 // ---------- An independent move generator on the engine's board ----------
 //
 // Written from the rulebook on the engine's own format, not Oskol's: the
 // mover's checkers are positive and travel 24 -> 1, their bar is 25, the
-// opponent's bar is 0, and a checker bears off past 1. Use as many dice as
-// possible; if only one of two different dice can be used, the larger.
+// opponent's bar is 0 (a count: a hit adds one there), and a checker bears
+// off past 1. Use as many dice as possible; if only one of two different
+// dice can be used, the larger. The hit convention is checked against the
+// real engine's own legal list by hand (see the PR), since the service doc
+// had it backwards.
 
 fn legal_boards(board: List(Int), dice: #(Int, Int)) -> List(List(Int)) {
   let #(a, b) = dice
@@ -647,7 +693,7 @@ fn leave(b: Dict(Int, Int), from: Int) -> Dict(Int, Int) {
 
 fn land(b: Dict(Int, Int), to: Int) -> Dict(Int, Int) {
   case get(b, to) == -1 {
-    True -> b |> dict.insert(to, 1) |> dict.insert(0, get(b, 0) - 1)
+    True -> b |> dict.insert(to, 1) |> dict.insert(0, get(b, 0) + 1)
     False -> dict.insert(b, to, get(b, to) + 1)
   }
 }
@@ -669,6 +715,23 @@ fn get(b: Dict(Int, Int), i: Int) -> Int {
 
 fn at(board: List(Int), i: Int) -> Int {
   get(to_dict(board), i)
+}
+
+pub fn a_hit_lands_on_the_opponents_bar_as_the_engine_writes_it_test() {
+  // Copied from the live engine's /backgammon/moves answer (2026-09-15):
+  // 3-4 from this board, 13/9 6/3*, comes back with +1 at index 0.
+  let before = [
+    0, -1, 0, -1, 0, 0, 5, 0, 3, 0, 0, 0, -4, 5, 0, 0, 0, -4, 0, -5, 0, 0, 0, 0,
+    2, 0,
+  ]
+  let engine_says = [
+    1, -1, 0, 1, 0, 0, 4, 0, 3, 1, 0, 0, -4, 4, 0, 0, 0, -4, 0, -5, 0, 0, 0, 0,
+    2, 0,
+  ]
+  let boards = legal_boards(before, #(3, 4))
+  assert list.contains(boards, engine_says)
+  // The engine listed 18 plays for this roll
+  assert list.length(boards) == 18
 }
 
 pub fn the_generator_agrees_with_the_rules_on_random_boards_test() {
