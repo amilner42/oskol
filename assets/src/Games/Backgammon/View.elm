@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, themes, tumbleFaces, update, view)
+module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, themes, tumbleFaces, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -71,9 +71,22 @@ type alias Model =
     , themesOpen : Bool -- the board-colour list in the header is showing
     , roll : Roll -- the dice on the board, and whether this client saw them land
     , recordOpen : Bool -- the move list is open as a sheet over the board (phones)
-    , viewing : Maybe Int -- a past turn of the record (its index, oldest first) is on the board instead of the live game
+    , viewing : Maybe Int -- a past turn of the game the list shows (its index, oldest first) is on the board instead of the live game
     , stale : Bool -- the game moved on while a past turn was on the board
+    , browsing : Maybe Int -- the list shows this finished game (its number) rather than the one on the board
+    , archive : Archive -- the earlier games of the match, fetched the first time one is opened
     }
+
+
+{-| The earlier games' turns. The scene carries only the game on the board
+(and a result line per finished game), so a finished game's moves are
+asked for when a player opens it, from the room's `/record`.
+-}
+type Archive
+    = NotFetched
+    | Fetching
+    | Fetched (List ( Int, List Entry )) -- each game's number and its entries, oldest first
+    | FetchFailed
 
 
 {-| The dice currently on the board: which roll they belong to, and whether
@@ -131,6 +144,9 @@ type Msg
     | ToggleRecord -- open or close the move list sheet
     | ViewTurn Int -- put this turn of the record on the board, read-only
     | ViewLive -- back to the live game
+    | BrowseGame Int -- the list shows this finished game's moves
+    | BrowseCurrent -- the list goes back to the game on the board
+    | GotRecord (Result () D.Value) -- the room's whole record, as `/record` sent it
     | ToggleThemes
     | PickTheme String
     | Ignore
@@ -143,6 +159,7 @@ type Out
     | WantRematch
     | NeedZones (List String)
     | ChoseTheme String -- this player's board colours: display only, never sent to the room
+    | WantRecord -- fetch the room's whole record (the earlier games); the answer comes back as GotRecord
 
 
 init : Model
@@ -162,6 +179,8 @@ init =
     , recordOpen = False
     , viewing = Nothing
     , stale = False
+    , browsing = Nothing
+    , archive = NotFetched
     }
 
 
@@ -171,7 +190,7 @@ replay the tumble on every tap.
 -}
 reset : Model -> Model
 reset model =
-    { init | roll = model.roll, swaps = model.swaps, recordOpen = model.recordOpen, viewing = model.viewing, stale = model.stale }
+    { init | roll = model.roll, swaps = model.swaps, recordOpen = model.recordOpen, viewing = model.viewing, stale = model.stale, browsing = model.browsing, archive = model.archive }
 
 
 {-| Watch the channel for dice landing. A `dice_rolled` event is this client
@@ -197,8 +216,26 @@ noteEvents events model =
 
         -- A payload with events is the game moving on. A viewer looking at
         -- a past turn is not yanked back; LIVE says there is something new.
+        -- Unless the game they were looking into has just ended: its turns
+        -- leave the scene with it (they are under its result line now), so
+        -- there is nothing left to hold on the board.
+        newGame =
+            List.any
+                (\event ->
+                    case event of
+                        Protocol.Custom "new_game" _ ->
+                            True
+
+                        _ ->
+                            False
+                )
+                events
+
         noted =
-            if model.viewing /= Nothing && events /= [] then
+            if model.viewing /= Nothing && model.browsing == Nothing && newGame then
+                { model | viewing = Nothing, stale = False }
+
+            else if model.viewing /= Nothing && events /= [] then
                 { model | stale = True }
 
             else
@@ -255,7 +292,7 @@ update msg model =
 
         Simple name ->
             -- a turn played or a roll asked for: the next roll starts unrotated
-            ( { init | roll = model.roll, recordOpen = model.recordOpen, viewing = model.viewing, stale = model.stale }, Send (Protocol.encodeAction name []) )
+            ( { init | roll = model.roll, recordOpen = model.recordOpen, viewing = model.viewing, stale = model.stale, browsing = model.browsing, archive = model.archive }, Send (Protocol.encodeAction name []) )
 
         Rematch ->
             ( model, WantRematch )
@@ -357,7 +394,42 @@ update msg model =
             ( { model | viewing = Just index, recordOpen = False, drag = Drag.idle, picker = Nothing, resigning = False }, NoOut )
 
         ViewLive ->
-            ( { model | viewing = Nothing, stale = False }, NoOut )
+            ( { model | viewing = Nothing, stale = False, browsing = Nothing }, NoOut )
+
+        BrowseGame number ->
+            let
+                browsed =
+                    { model | browsing = Just number, viewing = Nothing, stale = False }
+
+                have =
+                    case model.archive of
+                        Fetched games ->
+                            List.any (\( n, _ ) -> n == number) games
+
+                        _ ->
+                            False
+            in
+            if have || model.archive == Fetching then
+                ( browsed, NoOut )
+
+            else
+                -- never fetched, failed, or fetched before this game ended
+                ( { browsed | archive = Fetching }, WantRecord )
+
+        BrowseCurrent ->
+            ( { model | browsing = Nothing, viewing = Nothing, stale = False }, NoOut )
+
+        GotRecord result ->
+            ( { model
+                | archive =
+                    result
+                        |> Result.toMaybe
+                        |> Maybe.andThen (D.decodeValue archiveDecoder >> Result.toMaybe)
+                        |> Maybe.map Fetched
+                        |> Maybe.withDefault FetchFailed
+              }
+            , NoOut
+            )
 
         Ignore ->
             ( model, NoOut )
@@ -2496,14 +2568,15 @@ actionButton ctx name variant =
 
 -- THE RECORD
 --
--- What has been played, read from scene data `record` (oldest first). The
--- engine writes it -- every committed turn in the notation the books use,
--- every cube action, every game result with the running score -- and keeps
--- it in the game state, so a room rebuilt from its log shows the same list.
--- Both players and spectators get the whole thing: nothing in it is secret.
--- This view only lays it out: turns grouped by game with the result line
--- between games, and the finished games as a match history above them once
--- the match is past its first game.
+-- What has been played. The engine writes it -- every committed turn in the
+-- notation the books use, every cube action, every game result with the
+-- running score -- and keeps it in the game state, so a room rebuilt from
+-- its log shows the same list. The scene carries the game on the board
+-- (`record`, oldest first) and one result line per finished game (`games`);
+-- a finished game's own turns come from the room's `/record` when a player
+-- opens it from the match history (`Archive`). Nothing in any of it is
+-- secret. This view only lays it out: one game's turns at a time, its
+-- result at the end, and the finished games as a match history above.
 
 
 type Entry
@@ -2518,10 +2591,11 @@ type alias Turn =
 
 {-| The board a turn left, as the engine counted it: per colour, how many
 checkers on each of the 24 points (point 1 first), on the bar, borne off,
-and the pip count. The client draws it; it never derives it.
+and the pip count; and the cube as it stood. The client draws it; it never
+derives it.
 -}
 type alias Snapshot =
-    { white : Side, black : Side }
+    { white : Side, black : Side, cube : { value : Int, owner : Maybe String } }
 
 
 type alias Side =
@@ -2540,6 +2614,60 @@ recordOf scene =
     Protocol.sceneData (D.list entryDecoder) "record" scene
         |> Maybe.withDefault []
         |> List.filterMap identity
+
+
+{-| The finished games' result lines, oldest first, as the scene carries
+them (`games`).
+-}
+gamesOf : Scene -> List GameResult
+gamesOf scene =
+    Protocol.sceneData (D.list entryDecoder) "games" scene
+        |> Maybe.withDefault []
+        |> List.filterMap
+            (\e ->
+                case e of
+                    Just (GameOverEntry g) ->
+                        Just g
+
+                    _ ->
+                        Nothing
+            )
+
+
+{-| The room's whole record as `/record` sends it: every game with its
+number and entries.
+-}
+archiveDecoder : D.Decoder (List ( Int, List Entry ))
+archiveDecoder =
+    D.field "games"
+        (D.list
+            (D.map2 (\n entries -> ( n, List.filterMap identity entries ))
+                (D.field "number" D.int)
+                (D.field "entries" (D.list entryDecoder))
+            )
+        )
+
+
+{-| The entries the list shows: the game on the board, or the finished game
+being browsed once its record has arrived.
+-}
+shownEntries : Ctx -> List Entry
+shownEntries ctx =
+    case ctx.model.browsing of
+        Nothing ->
+            recordOf ctx.scene
+
+        Just number ->
+            case ctx.model.archive of
+                Fetched games ->
+                    games
+                        |> List.filter (\( n, _ ) -> n == number)
+                        |> List.head
+                        |> Maybe.map Tuple.second
+                        |> Maybe.withDefault []
+
+                _ ->
+                    []
 
 
 entryDecoder : D.Decoder (Maybe Entry)
@@ -2597,7 +2725,15 @@ snapshotDecoder =
                 (D.field "off" D.int)
                 (D.field "pips" D.int)
     in
-    D.map2 Snapshot (D.field "white" side) (D.field "black" side)
+    D.map3 Snapshot
+        (D.field "white" side)
+        (D.field "black" side)
+        (D.field "cube"
+            (D.map2 (\v o -> { value = v, owner = o })
+                (D.field "value" D.int)
+                (D.field "owner" (D.nullable D.string))
+            )
+        )
 
 
 
@@ -2607,8 +2743,8 @@ snapshotDecoder =
 -- board view reads a Scene, so the snapshot is turned into one: the same
 -- zones and tokens the projection would send for that position (checker
 -- ids counted up per colour, the turn's dice on the mover's side, the
--- bar and tray counts), the live cube, and nothing legal. It is only
--- drawing: every count comes from the engine's snapshot.
+-- bar and tray counts, the cube as it stood), and nothing legal. It is
+-- only drawing: every count comes from the engine's snapshot.
 
 
 {-| The turn on the board, if a past one is.
@@ -2617,7 +2753,7 @@ viewedTurn : Ctx -> Maybe ( Int, Turn )
 viewedTurn ctx =
     case ctx.model.viewing of
         Just index ->
-            recordOf ctx.scene
+            shownEntries ctx
                 |> List.drop index
                 |> List.head
                 |> Maybe.andThen
@@ -2634,11 +2770,11 @@ viewedTurn ctx =
             Nothing
 
 
-{-| The index of the last turn in the record, to open the review on.
+{-| The index of the last turn in the list, to open the review on.
 -}
 lastTurnIndex : Ctx -> Maybe Int
 lastTurnIndex ctx =
-    recordOf ctx.scene
+    shownEntries ctx
         |> List.indexedMap Tuple.pair
         |> List.filter
             (\( _, e ) ->
@@ -2757,16 +2893,32 @@ snapshotScene ctx turn =
             , count = List.length turn.dice
             }
 
-        -- the live cube's value and owner stand in for the turn's (the
-        -- snapshot does not carry the cube), but never a double on offer
+        -- the cube as it stood after the turn: its value and owner from the
+        -- snapshot (a turn is never committed with a double on offer); the
+        -- live one only says whether this match has a cube at all
+        cubeOwner =
+            turn.position.cube.owner |> Maybe.map E.string |> Maybe.withDefault E.null
+
         cubeData =
             D.decodeValue (D.field "cube" (D.dict D.value)) scene.data
                 |> Result.withDefault Dict.empty
+                |> Dict.insert "value" (E.int turn.position.cube.value)
+                |> Dict.insert "owner" cubeOwner
                 |> Dict.insert "pending_from" E.null
                 |> E.dict identity identity
 
         cube =
-            scene.zones |> List.filter (\z -> z.id == "cube")
+            scene.zones
+                |> List.filter (\z -> z.id == "cube")
+                |> List.map
+                    (\z ->
+                        { z
+                            | tokens =
+                                List.map
+                                    (\t -> { t | props = E.object [ ( "value", E.int turn.position.cube.value ), ( "owner", cubeOwner ) ] })
+                                    z.tokens
+                        }
+                    )
 
         players =
             scene.players
@@ -2782,7 +2934,10 @@ snapshotScene ctx turn =
                                     |> Dict.insert "pips" side.pips
                                     |> Dict.insert "off" side.off
                                     |> Dict.insert "bar" side.bar
-                            , flags = (p.flags |> List.filter (\f -> f /= "to_move")) ++ (if p.id == turn.player then [ "to_move" ] else [])
+                            , flags =
+                                (p.flags |> List.filter (\f -> f /= "to_move" && f /= "owns_cube"))
+                                    ++ (if p.id == turn.player then [ "to_move" ] else [])
+                                    ++ (if turn.position.cube.owner == Just p.id then [ "owns_cube" ] else [])
                         }
                     )
 
@@ -2820,7 +2975,8 @@ viewRecordSheet ctx =
 
 
 {-| The panel: its title (and, as a sheet, its close button), the match
-history when the match is past its first game, then the turns. The turn
+history when the match is past its first game, then one game's turns: the
+game on the board, or the finished game picked from the history. The turn
 list is a column that reads bottom-up (`column-reverse` in app.css, so it
 opens scrolled to the newest turn and stays there as turns arrive), which
 is why the lines go into the DOM newest first.
@@ -2828,50 +2984,77 @@ is why the lines go into the DOM newest first.
 viewRecordBody : Ctx -> Bool -> Html Msg
 viewRecordBody ctx asSheet =
     let
-        entries =
-            recordOf ctx.scene
-
         gameNumber =
             Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1
 
         finished =
-            entries
-                |> List.filterMap
-                    (\e ->
-                        case e of
-                            GameOverEntry g ->
-                                Just g
-
-                            _ ->
-                                Nothing
-                    )
+            gamesOf ctx.scene
 
         isMatch =
             gameNumber > 1
 
-        lines =
-            recordLines ctx isMatch entries
+        list =
+            case ctx.model.browsing of
+                Nothing ->
+                    listOf (recordLines ctx isMatch gameNumber True (recordOf ctx.scene)) "Nothing played yet."
+
+                Just number ->
+                    case ctx.model.archive of
+                        Fetched _ ->
+                            listOf (recordLines ctx isMatch number False (shownEntries ctx)) ("Nothing was played in game " ++ String.fromInt number ++ ".")
+
+                        FetchFailed ->
+                            listOf [] ("Game " ++ String.fromInt number ++ " would not load. Tap it again.")
+
+                        _ ->
+                            listOf [] ("Loading game " ++ String.fromInt number ++ "…")
+
+        listOf lines empty =
+            if lines == [] then
+                div [ class "bg-record-list" ] [ span [ class "bg-record-empty" ] [ text empty ] ]
+
+            else
+                div [ class "bg-record-list" ] (List.reverse lines)
     in
     div [ class "bg-record-body" ]
         [ div [ class "bg-record-head" ]
-            [ span [ class "pixel text-[8px]" ] [ text "MOVES" ]
-            , if ctx.model.viewing /= Nothing then
-                button
-                    [ classList [ ( "pixel text-[8px] underline bg-live", True ), ( "stale", ctx.model.stale ) ]
-                    , style "color" "var(--pencil)"
-                    , onClick ViewLive
-                    ]
-                    [ text
-                        (if ctx.model.stale then
-                            "LIVE · NEW"
+            [ span [ class "pixel text-[8px]" ]
+                [ text
+                    (case ctx.model.browsing of
+                        Just number ->
+                            "GAME " ++ String.fromInt number
 
-                         else
-                            "LIVE"
-                        )
-                    ]
+                        Nothing ->
+                            "MOVES"
+                    )
+                ]
+            , case ( ctx.model.browsing, ctx.model.viewing ) of
+                ( Just _, Nothing ) ->
+                    button
+                        [ class "pixel text-[8px] underline bg-record-now"
+                        , style "color" "var(--pencil)"
+                        , title "Back to the game on the board"
+                        , onClick BrowseCurrent
+                        ]
+                        [ text ("GAME " ++ String.fromInt gameNumber) ]
 
-              else
-                text ""
+                ( _, Just _ ) ->
+                    button
+                        [ classList [ ( "pixel text-[8px] underline bg-live", True ), ( "stale", ctx.model.stale ) ]
+                        , style "color" "var(--pencil)"
+                        , onClick ViewLive
+                        ]
+                        [ text
+                            (if ctx.model.stale then
+                                "LIVE · NEW"
+
+                             else
+                                "LIVE"
+                            )
+                        ]
+
+                ( Nothing, Nothing ) ->
+                    text ""
             , if asSheet then
                 button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", onClick ToggleRecord ] [ text "CLOSE" ]
 
@@ -2883,20 +3066,21 @@ viewRecordBody ctx asSheet =
 
           else
             text ""
-        , if lines == [] then
-            div [ class "bg-record-list" ] [ span [ class "bg-record-empty" ] [ text "Nothing played yet." ] ]
-
-          else
-            div [ class "bg-record-list" ] (List.reverse lines)
+        , list
         ]
 
 
 {-| One finished game in the match history: which game, who won it and how,
-and the score it left.
+and the score it left. Tapping it opens that game's moves in the list.
 -}
 viewGameRow : Ctx -> GameResult -> Html Msg
 viewGameRow ctx g =
-    div [ class "bg-record-game" ]
+    div
+        [ classList [ ( "bg-record-game cursor-pointer", True ), ( "is-browsing", ctx.model.browsing == Just g.number ) ]
+        , attribute "data-game" (String.fromInt g.number)
+        , title ("Game " ++ String.fromInt g.number ++ " · tap to see its moves")
+        , onClick (BrowseGame g.number)
+        ]
         [ span [ class "pixel text-[7px]", style "color" "var(--pencil)" ] [ text ("G" ++ String.fromInt g.number) ]
         , span [ class "font-bold truncate" ] [ text (playerName ctx g.winner) ]
         , span [ style "color" "var(--pencil)" ] [ text (g.result ++ " · " ++ pointsText g.points) ]
@@ -2904,11 +3088,13 @@ viewGameRow ctx g =
         ]
 
 
-{-| The lines of the turn list, oldest first: a game heading at the start of
-each game of a match, its turns and cube actions, and its result.
+{-| The lines of one game's list, oldest first: its heading in a match, its
+turns and cube actions, and its result once it has one. `open` is the game
+on the board, which a next game may follow; a finished game picked from the
+history is not.
 -}
-recordLines : Ctx -> Bool -> List Entry -> List (Html Msg)
-recordLines ctx isMatch entries =
+recordLines : Ctx -> Bool -> Int -> Bool -> List Entry -> List (Html Msg)
+recordLines ctx isMatch firstGame open entries =
     let
         heading game =
             div [ class "bg-record-line rl-heading" ] [ span [ class "pixel text-[7px]" ] [ text ("GAME " ++ String.fromInt game) ] ]
@@ -2930,9 +3116,9 @@ recordLines ctx isMatch entries =
                     ( game, withHeading ++ [ viewEntryLine ctx index entry ], False )
 
         ( nextGame, lines, pending ) =
-            List.foldl step ( 1, [], True ) (List.indexedMap Tuple.pair entries)
+            List.foldl step ( firstGame, [], True ) (List.indexedMap Tuple.pair entries)
     in
-    if pending && isMatch && ctx.finished == Nothing then
+    if pending && open && isMatch && ctx.finished == Nothing then
         -- a new game has begun and nothing is played in it yet
         lines ++ [ heading nextGame ]
 
