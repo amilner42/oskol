@@ -413,6 +413,37 @@ defmodule OskolWeb.Api.LandingApiTest do
     end
   end
 
+  # ---------- GET /papi/games/:slug/rooms/:id/record ----------
+
+  describe "GET /papi/games/:slug/rooms/:id/record" do
+    test "a seat token reads the game's whole record", %{conn: conn} do
+      %{game_id: game_id, t2: t2} = GameFixtures.started(42, "match5")
+
+      body =
+        conn
+        |> get(~p"/papi/games/backgammon/rooms/#{game_id}/record?t=#{t2}")
+        |> json_response(200)
+
+      assert %{"ok" => true, "slug" => "backgammon", "id" => ^game_id, "record" => record} = body
+
+      assert %{"target" => 5, "players" => [_, _], "games" => [%{"number" => 1, "entries" => []}]} =
+               record
+    end
+
+    test "a wrong token, or none, is not found and says nothing more", %{conn: conn} do
+      %{game_id: game_id} = GameFixtures.started(42, "match5")
+
+      for query <- ["?t=not-a-seat", ""] do
+        body =
+          conn
+          |> get("/papi/games/backgammon/rooms/#{game_id}/record#{query}")
+          |> json_response(404)
+
+        assert body["error"] == %{"code" => "not_found", "message" => "No record for that game"}
+      end
+    end
+  end
+
   # ---------- GET /papi/codes/:code ----------
 
   describe "GET /papi/codes/:code" do

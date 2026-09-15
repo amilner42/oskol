@@ -1,6 +1,7 @@
 //// Backgammon game flow: turns, dice, match play. Rules live in `board`.
 
 import backgammon/board.{type Board, type Color, type Move, Black, White}
+import backgammon/record
 import gamekit/rng.{type Rng}
 import gleam/dict.{type Dict}
 import gleam/int
@@ -73,6 +74,10 @@ pub type GameState {
     /// A resignation on offer: who offered it and at what stakes. Play is
     /// frozen (whatever the phase) until the opponent accepts or declines.
     resign_offer: Option(ResignOffer),
+    /// The match record, newest entry first: every committed turn, cube
+    /// action and game result since the first roll (`record` spells out
+    /// the notation). Staging never touches it; only `play` does.
+    record: List(record.Entry),
     rng: Rng,
   )
 }
@@ -155,6 +160,7 @@ pub fn new(
       turn_board: board.initial(),
       staged: [],
       resign_offer: None,
+      record: [],
       rng: rng,
     )
   opening_roll(state)
@@ -527,7 +533,13 @@ pub fn double(
   case state.phase {
     Rolling(c) if c == color ->
       case can_double(state, player_id) {
-        True -> Ok(GameState(..state, phase: Doubled(color)))
+        True ->
+          Ok(
+            GameState(..state, phase: Doubled(color), record: [
+              record.Double(player_id, state.cube_value * 2),
+              ..state.record
+            ]),
+          )
         False -> {
           let owns = state.cube_owner == None || state.cube_owner == Some(color)
           case
@@ -562,6 +574,7 @@ pub fn take(state: GameState, player_id: PlayerId) -> Result(GameState, String) 
           phase: Rolling(by),
           cube_value: state.cube_value * 2,
           cube_owner: Some(color),
+          record: [record.Take(player_id), ..state.record],
         ),
       )
     Doubled(_) -> Error("You offered the double")
@@ -576,7 +589,12 @@ pub fn drop(
   use color <- result.try(color_of(state, player_id))
   use _ <- result.try(no_offer_pending(state))
   case state.phase {
-    Doubled(by) if by != color -> Ok(finish_game(state, by, Dropped))
+    Doubled(by) if by != color ->
+      Ok(finish_game(
+        GameState(..state, record: [record.Drop(player_id), ..state.record]),
+        by,
+        Dropped,
+      ))
     Doubled(_) -> Error("You offered the double")
     _ -> Error("No double to answer")
   }
@@ -615,8 +633,14 @@ pub fn accept_resign(
   use color <- result.try(color_of(state, player_id))
   case state.resign_offer {
     Some(ResignOffer(by, stakes)) if by != color ->
+      // Only an accepted offer is a line of the record: the resigner's,
+      // then the game line at the stakes offered. A declined one leaves
+      // no trace; the game went on.
       Ok(finish_game(
-        GameState(..state, resign_offer: None),
+        GameState(..state, resign_offer: None, record: [
+          record.Resign(player_of(state, by)),
+          ..state.record
+        ]),
         color,
         Resigned(stakes),
       ))
@@ -730,7 +754,11 @@ pub fn play(state: GameState, player_id: PlayerId) -> Result(Played, String) {
       case board.legal_moves(state.board, color, dice) {
         [] -> {
           let moves = state.staged
-          let state = GameState(..state, turn_board: state.board, staged: [])
+          let state =
+            GameState(..state, turn_board: state.board, staged: [], record: [
+              turn_entry(state, player_id, color, moves),
+              ..state.record
+            ])
           case board.borne_off(state.board, color) == 15 {
             True -> {
               let #(state, game_end) =
@@ -764,6 +792,49 @@ fn remove_one(dice: List(Int), die: Int) -> List(Int) {
   }
 }
 
+/// The record line for a committed turn: the roll, high die first as a
+/// record reads (`31`, never `13`, and the opening roll too, whichever
+/// side threw which die), and the moves in the mover's notation (none for
+/// a dance).
+fn turn_entry(
+  state: GameState,
+  player_id: PlayerId,
+  color: Color,
+  moves: List(Staged),
+) -> record.Entry {
+  record.Turn(
+    player: player_id,
+    dice: list.sort(state.last_roll, fn(a, b) { int.compare(b, a) }),
+    picked: state.last_roll_picked,
+    moves: record.notation(
+      color,
+      list.map(moves, fn(s) {
+        record.Played(s.move.from, s.move.to, s.hit != None)
+      }),
+    ),
+    position: snapshot(state),
+    landed: record.landed(
+      list.map(moves, fn(s) {
+        record.Played(s.move.from, s.move.to, s.hit != None)
+      }),
+    ),
+  )
+}
+
+/// The position as the record keeps it: the board and the cube.
+pub fn snapshot(state: GameState) -> record.Snapshot {
+  record.snapshot(
+    state.board,
+    state.cube_value,
+    option.map(state.cube_owner, player_of(state, _)),
+  )
+}
+
+/// The match record, oldest entry first.
+pub fn record(state: GameState) -> List(record.Entry) {
+  list.reverse(state.record)
+}
+
 /// Score a finished game, then either end the match or pause between games.
 /// The board stays as the game left it -- as both players saw it: a
 /// resignation accepted while the mover had moves staged ends the game on
@@ -774,13 +845,16 @@ fn finish_game(
   winner: Color,
   kind: EndKind,
 ) -> #(GameState, GameEnd) {
+  // Jacoby: gammons only count once the cube has been turned. The game is
+  // then a single game in every sense -- what it scores and what the record
+  // says it was.
+  let kind = case kind {
+    Won(_) if state.config.jacoby && state.cube_owner == None ->
+      Won(board.Single)
+    other -> other
+  }
   let base = case kind {
-    Won(k) ->
-      // Jacoby: gammons only count once the cube has been turned
-      case state.config.jacoby && state.cube_owner == None {
-        True -> 1
-        False -> board.points_for(k)
-      }
+    Won(k) -> board.points_for(k)
     Dropped -> 1
     // The stakes were limited when offered (`resign_stakes`), so Jacoby
     // has already had its say.
@@ -800,7 +874,20 @@ fn finish_game(
       cube: state.cube_value,
       match_over: match_over,
     )
-  let state = GameState(..state, scores: scores)
+  let state =
+    GameState(..state, scores: scores, record: [
+      record.GameOver(
+        number: state.game_number,
+        winner: winner_id,
+        kind: end_kind_name(kind),
+        points: points,
+        cube: state.cube_value,
+        scores: list.map(state.order, fn(id) {
+          #(id, dict.get(scores, id) |> result.unwrap(0))
+        }),
+      ),
+      ..state.record
+    ])
   let state = case match_over {
     True -> GameState(..state, phase: Finished(winner))
     False ->

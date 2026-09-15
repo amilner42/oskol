@@ -11,6 +11,7 @@ import gamekit/scene.{type PlayerId, type Scene, type Viewer}
 import gleam/dict.{type Dict}
 import gleam/json.{type Json}
 import gleam/list
+import gleam/option.{type Option, None}
 import gleam/result
 
 /// Lobby-chosen settings. Kept to integers so it is trivially JSON and every
@@ -100,7 +101,16 @@ pub type Game(state, action) {
     clocks: fn(state) -> List(PlayerId),
     /// What to do when this player's clock runs out on their turn.
     timeout: fn(state, PlayerId) -> Timeout(action),
+    /// The game's whole record as public JSON, for replay and analysis
+    /// (served on request, never in every update): `None` for a game that
+    /// keeps none (`no_record`). It must hold only what every seat may see.
+    record: fn(state) -> Option(Json),
   )
+}
+
+/// For a game that keeps no record beyond its scene.
+pub fn no_record(_state: state) -> Option(Json) {
+  None
 }
 
 /// A format with nothing to tune.
