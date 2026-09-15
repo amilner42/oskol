@@ -21,6 +21,7 @@ module Api.Catalog exposing
     , encodeNewGame
     , fetchGame
     , fetchLibrary
+    , fetchPrefs
     , fetchRoom
     , formatDecoder
     , gameDecoder
@@ -29,7 +30,9 @@ module Api.Catalog exposing
     , libraryDecoder
     , lookupCode
     , offeredClocks
+    , prefsDecoder
     , roomDecoder
+    , savePref
     , settingChoice
     , slugDecoder
     , summarise
@@ -49,6 +52,7 @@ The envelope and CSRF handling live in `Api`.
 -}
 
 import Api exposing (Error)
+import Dict exposing (Dict)
 import Json.Decode as D exposing (Decoder)
 import Json.Encode as E
 import Session exposing (Session)
@@ -219,6 +223,27 @@ claimSeat session slug gameId playerId toMsg =
         (roomPath slug gameId)
         (E.object [ ( "player_id", E.string playerId ) ])
         createdDecoder
+        toMsg
+
+
+{-| This visitor's display preferences (their board's colours). Guest
+identity rides the cookie, so the call needs nothing else; a visitor the
+site has never seen simply has none.
+-}
+fetchPrefs : Session -> (Result Error (Dict String String) -> msg) -> Cmd msg
+fetchPrefs session toMsg =
+    Api.get session "/papi/me/prefs" prefsDecoder toMsg
+
+
+{-| Keep one preference. The server is the whitelist: an unknown key or a
+value that names no theme comes back a 422, and nothing is stored.
+-}
+savePref : Session -> String -> String -> (Result Error (Dict String String) -> msg) -> Cmd msg
+savePref session key value toMsg =
+    Api.post session
+        "/papi/me/prefs"
+        (E.object [ ( "key", E.string key ), ( "value", E.string value ) ])
+        prefsDecoder
         toMsg
 
 
@@ -418,6 +443,11 @@ createdDecoder =
     D.map2 Created
         (D.field "id" D.string)
         (D.field "path" D.string)
+
+
+prefsDecoder : Decoder (Dict String String)
+prefsDecoder =
+    D.oneOf [ D.field "prefs" (D.dict D.string), D.succeed Dict.empty ]
 
 
 slugDecoder : Decoder String

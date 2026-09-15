@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, tumbleFaces, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, themes, tumbleFaces, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -25,8 +25,8 @@ the arrangement itself is entirely CSS.
 Moving is one touch. A tap on a checker of mine that can move (its whole
 point, or the bar) plays it with the next die: the first unused die,
 reading the dice as they sit, that has a legal move from there. A tap on
-the dice hands "next" to the die after, so the other die is one tap away
-too. Destinations still answer a tap of their own: a point where exactly
+the dice swaps them, so the next die is always the left one and the
+other die is one tap away too. Destinations still answer a tap of their own: a point where exactly
 one legal move lands plays it, and a point where an unambiguous pair of
 moves would land two checkers (making a point) stages both. There is no
 selection to make or clear; anything a tap cannot say, a drag can. Legal
@@ -57,15 +57,18 @@ import Html.Keyed as Keyed
 import Json.Decode as D
 import Json.Encode as E
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
+import Svg
+import Svg.Attributes as SvgAttr
 
 
 type alias Model =
     { drag : Drag.State String Msg -- the item a drag carries is my checker colour
     , plans : List ( String, List Move ) -- for the active drag: each destination and the moves that get there
-    , rotation : Int -- how many times the dice were tapped this roll: which unused die is next
+    , swaps : Int -- taps on the dice this roll: odd means the two dice have changed places
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
     , resigning : Bool -- the resign panel is open: which stakes to offer
+    , themesOpen : Bool -- the board-colour list in the header is showing
     , roll : Roll -- the dice on the board, and whether this client saw them land
     , recordOpen : Bool -- the move list is open as a sheet over the board (phones)
     , viewing : Maybe Int -- a past turn of the record (its index, oldest first) is on the board instead of the live game
@@ -109,7 +112,7 @@ type Msg
     = PlayMove String String
     | PlayPair Move Move
     | PlayPath (List Move) -- one checker, several dice, in order
-    | RotateDice -- the next die becomes the one after it
+    | SwapDice -- the two dice change places: the next die is the left one
     | Simple String
     | Rematch
     | DragPressed Press
@@ -128,6 +131,8 @@ type Msg
     | ToggleRecord -- open or close the move list sheet
     | ViewTurn Int -- put this turn of the record on the board, read-only
     | ViewLive -- back to the live game
+    | ToggleThemes
+    | PickTheme String
     | Ignore
 
 
@@ -137,16 +142,18 @@ type Out
     | SendMany (List E.Value)
     | WantRematch
     | NeedZones (List String)
+    | ChoseTheme String -- this player's board colours: display only, never sent to the room
 
 
 init : Model
 init =
     { drag = Drag.idle
     , plans = []
-    , rotation = 0
+    , swaps = 0
     , autoRolled = False
     , picker = Nothing
     , resigning = False
+    , themesOpen = False
 
     -- A client starts by being told where the game is, not by watching it
     -- get there: whatever dice the first payload brings are already on the
@@ -164,7 +171,7 @@ replay the tumble on every tap.
 -}
 reset : Model -> Model
 reset model =
-    { init | roll = model.roll, rotation = model.rotation, recordOpen = model.recordOpen, viewing = model.viewing, stale = model.stale }
+    { init | roll = model.roll, swaps = model.swaps, recordOpen = model.recordOpen, viewing = model.viewing, stale = model.stale }
 
 
 {-| Watch the channel for dice landing. A `dice_rolled` event is this client
@@ -202,7 +209,7 @@ noteEvents events model =
 
     else
         -- a fresh roll: the dice are next in the order they land
-        { noted | roll = { seq = noted.roll.seq + rolls, watched = True }, rotation = 0 }
+        { noted | roll = { seq = noted.roll.seq + rolls, watched = True }, swaps = 0 }
 
 
 {-| Roll for the viewer when there is nothing to ask: at the start of a
@@ -234,8 +241,8 @@ autoRoll legal model =
 update : Msg -> Model -> ( Model, Out )
 update msg model =
     case msg of
-        RotateDice ->
-            ( { model | rotation = model.rotation + 1 }, NoOut )
+        SwapDice ->
+            ( { model | swaps = model.swaps + 1 }, NoOut )
 
         PlayMove from to ->
             ( reset model, Send (encodeMove from to) )
@@ -308,6 +315,14 @@ update msg model =
                 Nothing ->
                     ( model, NoOut )
 
+        ToggleThemes ->
+            ( { model | themesOpen = not model.themesOpen }, NoOut )
+
+        PickTheme name ->
+            -- The board changes under this player and nobody else: the
+            -- theme never enters an action, so nothing is sent to the room.
+            ( { model | themesOpen = False }, ChoseTheme name )
+
         CancelPick ->
             ( { model | picker = Nothing }, NoOut )
 
@@ -322,7 +337,9 @@ update msg model =
                     ( model, NoOut )
 
         OpenResign ->
-            ( { model | resigning = True }, NoOut )
+            -- The offer is made on the live board: a past turn up on the
+            -- slab has nothing legal, so the panel would never show there.
+            ( { model | resigning = True, viewing = Nothing, stale = False }, NoOut )
 
         CancelResign ->
             ( { model | resigning = False }, NoOut )
@@ -337,7 +354,7 @@ update msg model =
         ViewTurn index ->
             -- The sheet closes so the board it hides can be seen; MOVES
             -- reopens it, LIVE on the board comes back to the game.
-            ( { model | viewing = Just index, recordOpen = False, drag = Drag.idle, picker = Nothing }, NoOut )
+            ( { model | viewing = Just index, recordOpen = False, drag = Drag.idle, picker = Nothing, resigning = False }, NoOut )
 
         ViewLive ->
             ( { model | viewing = Nothing, stale = False }, NoOut )
@@ -664,7 +681,43 @@ type alias Ctx =
     , rematchReady : List String
     , finished : Maybe (List String)
     , away : List String -- seated players whose connection is down
+    , theme : String -- the board's colours, this viewer's own (`themes`)
     }
+
+
+{-| The eight boards, in the order the picker lists them: the id the server
+keeps (`oskol/guests/prefs.gleam`) and the name a player reads. The colours
+themselves are in app.css, under the class of the same name, and are what
+paints both the board and this row's swatch.
+-}
+themes : List ( String, String )
+themes =
+    [ ( "walnut", "WALNUT" )
+    , ( "midnight", "MIDNIGHT" )
+    , ( "forest", "FOREST FELT" )
+    , ( "sand", "SAND" )
+    , ( "ivory", "IVORY & EBONY" )
+    , ( "cherry", "CHERRY" )
+    , ( "slate", "SLATE" )
+    , ( "neon", "NEON ARCADE" )
+    ]
+
+
+{-| The board a player who has never picked one gets: the one Oskol shipped
+with. Also the fallback for a name this release does not know.
+-}
+defaultTheme : String
+defaultTheme =
+    "walnut"
+
+
+themeClass : String -> String
+themeClass name =
+    if List.any (\( id, _ ) -> id == name) themes then
+        "bg-theme-" ++ name
+
+    else
+        "bg-theme-" ++ defaultTheme
 
 
 {-| The seat this viewer watches from: their own, or the first player's for
@@ -788,7 +841,7 @@ view live =
     -- height, not by a fixed width: `.bg-page` in app.css derives every
     -- board dimension from `100dvh`, and the page becomes a column as wide
     -- as the board and its rail, so the header spans exactly that.
-    div [ classList [ ( "bg-page paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ) ] ]
+    div [ classList [ ( "bg-page " ++ themeClass live.theme ++ " paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ) ] ]
         [ viewHeader live
         , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid content-center" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
@@ -845,25 +898,33 @@ viewDragGhost d =
 
 
 {-| The dice not yet used this turn, in the order they are next: as they
-sit on the board, rotated once per tap on the dice (`RotateDice`), so
-the first of them is always the next die.
+sit on the board (`diceInOrder`), so the first of them is always the
+next die -- the left one.
 -}
 unusedDiceTokens : Ctx -> List Token
 unusedDiceTokens ctx =
-    let
-        unused =
-            Protocol.zoneTokens "dice" ctx.scene
-                |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
+    diceInOrder ctx.model.swaps (Protocol.zoneTokens "dice" ctx.scene)
+        |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
 
-        by =
-            case List.length unused of
-                0 ->
-                    0
 
-                n ->
-                    modBy n ctx.model.rotation
-    in
-    List.drop by unused ++ List.take by unused
+{-| The dice as they sit on the board, left to right. A two-die roll
+changes places on every tap on the dice (`SwapDice`), so an odd count
+shows them the other way round; a double has nothing to swap and the
+four sit as they were thrown. This one order drives both what the row
+shows and which die a tap on a checker plays.
+-}
+diceInOrder : Int -> List Token -> List Token
+diceInOrder swaps dice =
+    case dice of
+        [ a, b ] ->
+            if modBy 2 swaps == 1 then
+                [ b, a ]
+
+            else
+                dice
+
+        _ ->
+            dice
 
 
 tapContext : Ctx -> List Move -> List String -> TapContext
@@ -949,8 +1010,12 @@ viewHeader ctx =
     in
     div [ class "bg-header w-full max-w-5xl lg:max-w-none flex items-center justify-between gap-2" ]
         [ div [ class "flex items-center gap-2 sm:gap-3 min-w-0" ]
-            [ span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap" ] [ text "BACKGAMMON" ]
-            , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--ink)", style "background" "#fff" ]
+            -- The row must survive its longest labels on the narrowest
+            -- phone ("MATCH TO 7 · G1" beside CRAWFORD at 320px), so the
+            -- badge is the piece that gives way: it clips rather than
+            -- running under the picker on the right.
+            [ span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap shrink-0" ] [ text "BACKGAMMON" ]
+            , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 min-w-0 truncate", style "border" "2px solid var(--ink)", style "background" "#fff" ]
                 [ text
                     (matchLabel
                         ++ (if target > 1 then
@@ -962,12 +1027,12 @@ viewHeader ctx =
                     )
                 ]
             , if crawford then
-                span [ class "pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap", style "border" "2px solid var(--bg-accent)", style "color" "var(--bg-accent)" ] [ text "CRAWFORD" ]
+                span [ class "pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap shrink-0", style "border" "2px solid var(--bg-accent)", style "color" "var(--bg-accent)" ] [ text "CRAWFORD" ]
 
               else
                 text ""
             ]
-        , div [ class "flex items-center gap-3 shrink-0" ]
+        , div [ class "flex items-center gap-2 sm:gap-3 shrink-0" ]
             [ button
                 [ class "bg-record-toggle pixel text-[8px] underline lg:hidden"
                 , style "color" "var(--pencil)"
@@ -975,12 +1040,101 @@ viewHeader ctx =
                 , onClick ToggleRecord
                 ]
                 [ text "MOVES" ]
+            , viewThemePicker ctx
             , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
-                button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-resign-open", onClick OpenResign ] [ text "RESIGN" ]
+                -- A real button, not a link in the margin: the arcade plate at
+                -- header scale, with a flag so it reads before its label does.
+                -- It opens the offer panel (`viewResignPanel`); a resignation
+                -- is stakes the opponent answers, never sent from here.
+                button
+                    [ class "btn-arcade plain compact pixel text-[7px] sm:text-[8px] px-1.5 py-1 sm:px-2 inline-flex items-center gap-1 shrink-0"
+                    , Html.Attributes.id "bg-resign-open"
+                    , title "Offer to resign"
+                    , onClick OpenResign
+                    ]
+                    [ flagIcon, text "RESIGN" ]
 
               else
                 text ""
             ]
+        ]
+
+
+{-| The board picker: the name of the board you are looking at, and the
+eight to choose from. A tap on the name opens the list (and a second tap
+closes it); a tap on a row takes that board. It is display only -- the pick
+goes to this player's own preferences and never onto the channel -- so it
+is here whatever the state of the game, spectators included.
+-}
+viewThemePicker : Ctx -> Html Msg
+viewThemePicker ctx =
+    let
+        current =
+            themes
+                |> List.filter (\( id, _ ) -> id == ctx.theme)
+                |> List.head
+                |> Maybe.withDefault ( defaultTheme, "WALNUT" )
+    in
+    div [ class "bg-themes shrink-0" ]
+        [ button
+            [ class "pixel text-[8px] flex items-center gap-1 px-1 py-0.5"
+            , style "color" "var(--pencil)"
+            , attribute "id" "bg-theme-button"
+            , attribute "aria-expanded"
+                (if ctx.model.themesOpen then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , title "Board colours"
+            , onClick ToggleThemes
+            ]
+            [ span [ class ("bg-theme-chip " ++ themeClass (Tuple.first current)) ] []
+
+            -- On a phone the swatch is the control: the header has no room
+            -- for eleven more characters, and the list names every board.
+            , span [ class "hidden sm:inline" ] [ text (Tuple.second current) ]
+            ]
+        , if ctx.model.themesOpen then
+            div [ class "bg-theme-list", attribute "id" "bg-theme-list" ]
+                (List.map (viewThemeOption ctx.theme) themes)
+
+          else
+            text ""
+        ]
+
+
+viewThemeOption : String -> ( String, String ) -> Html Msg
+viewThemeOption current ( id, label ) =
+    button
+        [ classList [ ( "bg-theme-option pixel text-[8px]", True ), ( "on", id == current ) ]
+        , attribute "data-theme-option" id
+        , onClick (PickTheme id)
+        ]
+        [ span [ class ("bg-theme-chip " ++ themeClass id) ] []
+        , span [] [ text label ]
+        ]
+
+
+{-| A small flag, drawn in one stroke of the current colour: the pole and
+a notched pennant. Decorative; the label carries the meaning.
+-}
+flagIcon : Html Msg
+flagIcon =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 12 12"
+        , SvgAttr.width "10"
+        , SvgAttr.height "10"
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "1.5"
+        , SvgAttr.strokeLinecap "round"
+        , SvgAttr.strokeLinejoin "round"
+        , attribute "aria-hidden" "true"
+        ]
+        [ Svg.path [ SvgAttr.d "M2.5 11V1.5" ] []
+        , Svg.path [ SvgAttr.d "M2.5 2h7l-1.6 2.5L9.5 7h-7" ] []
         ]
 
 
@@ -1761,10 +1915,9 @@ viewRoll board =
             else
                 []
         -- The mover's dice are a control: the next die (the one a tap on
-        -- a checker plays) stands up, and a tap on the dice makes the die
-        -- after it the next one. Only when there is a choice: a double is
-        -- one value, and one die left is no choice. Nobody else's dice do
-        -- anything.
+        -- a checker plays) is the left one, and a tap on the dice swaps
+        -- them. Only when there is a choice: a double is one value, and
+        -- one die left is no choice. Nobody else's dice do anything.
         myMove =
             toMoveId ctx == Just ctx.playerId && ctx.scene.phase == "moving" && ctx.model.viewing == Nothing
 
@@ -1782,10 +1935,10 @@ viewRoll board =
             else
                 Nothing
 
-        rotates =
+        swaps =
             hasChoice
     in
-    viewDice { color = moverColor ctx, next = next, rotates = rotates } ctx.model.roll dice ++ pickedTag ++ danced
+    viewDice { color = moverColor ctx, next = next, swaps = swaps, swapped = ctx.model.swaps } ctx.model.roll dice ++ pickedTag ++ danced
 
 
 {-| The dice of the turn, in the mover's colour. They are keyed by the roll that produced them, so
@@ -1803,18 +1956,56 @@ room until then, so the throw does not give the double away.
 None of them move unless this client watched the roll land (`Roll.watched`):
 dice that arrived in a snapshot are already on the table.
 
-For the mover, `next` names the die a tap on a checker plays, and
-`rotates` makes the row a control that hands "next" to the die after it.
+For the mover, `next` names the die a tap on a checker plays -- always
+the left one -- and `swaps` makes the row a control: a tap swaps the two
+dice. The swap is a change of flex `order` and a short slide, never a
+move in the DOM: the children stay in the order they were thrown (their
+keys never move), because taking a die out of the DOM and putting it back
+would restart its roll animation. Each die gets its slot (`slot-0` is the
+left) and, once the dice have been swapped at all, a slide class whose
+name alternates with the count (`swapped`), so every tap restarts the
+slide and nothing else.
 
 -}
-viewDice : { color : String, next : Maybe String, rotates : Bool } -> Roll -> List Token -> List (Html Msg)
+viewDice : { color : String, next : Maybe String, swaps : Bool, swapped : Int } -> Roll -> List Token -> List (Html Msg)
 viewDice opts roll dice =
+    let
+        ordered =
+            diceInOrder opts.swapped dice
+
+        slotOf token =
+            case dice of
+                [ _, _ ] ->
+                    ordered
+                        |> List.indexedMap Tuple.pair
+                        |> List.filter (\( _, t ) -> t.id == token.id)
+                        |> List.head
+                        |> Maybe.map Tuple.first
+
+                _ ->
+                    Nothing
+
+        slide =
+            case dice of
+                [ _, _ ] ->
+                    if opts.swapped == 0 then
+                        Nothing
+
+                    else if modBy 2 opts.swapped == 1 then
+                        Just "slid-a"
+
+                    else
+                        Just "slid-b"
+
+                _ ->
+                    Nothing
+    in
     [ Keyed.node "div"
-        ([ classList [ ( "dice-row flex items-center", True ), ( "rotates", opts.rotates ) ]
+        ([ classList [ ( "dice-row flex items-center", True ), ( "swaps", opts.swaps ) ]
          , Html.Attributes.id "dice-row"
          ]
-            ++ (if opts.rotates then
-                    [ onClick RotateDice, title "Tap to play the other die next" ]
+            ++ (if opts.swaps then
+                    [ onClick SwapDice, title "Tap to swap the dice: the left one plays next" ]
 
                 else
                     []
@@ -1823,7 +2014,7 @@ viewDice opts roll dice =
         (List.map
             (\token ->
                 ( "roll-" ++ String.fromInt roll.seq ++ "-" ++ token.id
-                , viewDie opts.color (opts.next == Just token.id) roll.watched (dieIndex token) token
+                , viewDie { color = opts.color, next = opts.next == Just token.id, slot = slotOf token, slide = slide } roll.watched (dieIndex token) token
                 )
             )
             dice
@@ -2052,9 +2243,15 @@ when UNDO freed it would re-add the class and re-create the reel, and
 the browser would run the landing all over again. Only `used` changes.
 
 -}
-viewDie : String -> Bool -> Bool -> Int -> Token -> Html Msg
-viewDie color next watched index token =
+viewDie : { color : String, next : Bool, slot : Maybe Int, slide : Maybe String } -> Bool -> Int -> Token -> Html Msg
+viewDie marks watched index token =
     let
+        color =
+            marks.color
+
+        next =
+            marks.next
+
         value =
             Protocol.tokenProp D.int "value" token |> Maybe.withDefault 1
 
@@ -2078,6 +2275,10 @@ viewDie color next watched index token =
             , ( "next", next && not used )
             , ( "rolling", thrown )
             , ( "earned", earned )
+            , ( "slot-0", marks.slot == Just 0 )
+            , ( "slot-1", marks.slot == Just 1 )
+            , ( "slid-a", marks.slide == Just "slid-a" )
+            , ( "slid-b", marks.slide == Just "slid-b" )
             ]
         , attribute "data-die" token.id
         ]
@@ -2441,7 +2642,7 @@ viewingModel index model =
         | drag = Drag.idle
         , plans = []
         , picker = Nothing
-        , rotation = 0
+        , swaps = 0
         , roll = { seq = -1 - index, watched = False }
     }
 

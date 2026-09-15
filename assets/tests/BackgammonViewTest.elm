@@ -46,6 +46,12 @@ suite =
             , test "rematch is reported to the app, not sent as an action" <|
                 \_ ->
                     View.update Rematch View.init |> Tuple.second |> Expect.equal WantRematch
+            , test "picking a board is reported to the app and sends nothing to the room" <|
+                \_ ->
+                    View.update ToggleThemes View.init
+                        |> Tuple.first
+                        |> View.update (PickTheme "midnight")
+                        |> Expect.equal ( View.init, ChoseTheme "midnight" )
             ]
         , describe "destination-first tap resolution"
             (let
@@ -463,13 +469,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
+                            ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }, Nothing )
+                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -480,7 +486,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
+                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -539,7 +545,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }, NoOut )
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -722,6 +728,78 @@ suite =
                                 , \_ -> rendered |> Query.hasNot [ id "bg-action-accept_resign" ]
                                 ]
                                 ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             ]
+            )
+        , describe "the board picker"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                opened =
+                    View.update ToggleThemes View.init |> Tuple.first
+
+                themed name update model =
+                    let
+                        base =
+                            ctx "p1" update model
+                    in
+                    { base | theme = name }
+             in
+             [ test "the page wears the board it was given" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (themed "midnight" u View.init)
+                                |> Query.fromHtml
+                                |> Query.has [ class "bg-page", class "bg-theme-midnight" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a board this release does not know falls back to the default" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (themed "burlwood" u View.init)
+                                |> Query.fromHtml
+                                |> Query.has [ class "bg-theme-walnut" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the list is closed until the control is tapped, then lists all eight" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            Expect.all
+                                [ \_ ->
+                                    View.view (ctx "p1" u View.init)
+                                        |> Query.fromHtml
+                                        |> Query.hasNot [ id "bg-theme-list" ]
+                                , \_ ->
+                                    View.view (ctx "p1" u opened)
+                                        |> Query.fromHtml
+                                        |> Query.has [ id "bg-theme-list" ]
+                                , \_ ->
+                                    View.view (ctx "p1" u opened)
+                                        |> Query.fromHtml
+                                        |> Query.findAll [ class "bg-theme-option" ]
+                                        |> Query.count (Expect.equal 8)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a viewer with nothing legal still gets the picker" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (ctx "p2" { u | legal = [] } View.init)
+                                |> Query.fromHtml
+                                |> Query.has [ id "bg-theme-button" ]
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
@@ -975,30 +1053,37 @@ suite =
                 twoDice u =
                     withDice [ 6, 4 ] u
 
-                model rotation =
-                    { drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
+                model swaps =
+                    { drag = Drag.idle, plans = [], swaps = swaps, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
 
-                nextDie rotation u =
-                    View.view (ctx "p1" (twoDice u) (model rotation))
-                        |> Query.fromHtml
-                        |> Query.find [ class "die", class "next" ]
+                rendered swaps u =
+                    View.view (ctx "p1" (twoDice u) (model swaps)) |> Query.fromHtml
+
+                nextDie swaps u =
+                    rendered swaps u |> Query.find [ class "die", class "next" ]
+
+                dieAt slot swaps u =
+                    rendered swaps u |> Query.find [ class "die", class ("slot-" ++ String.fromInt slot) ]
+
+                isDie id =
+                    Query.has [ attribute (Html.Attributes.attribute "data-die" id) ]
              in
-             [ test "a tap on the dice rotates and touches nothing else" <|
+             [ test "a tap on the dice swaps them and touches nothing else" <|
                 \_ ->
-                    View.update RotateDice (model 0)
+                    View.update SwapDice (model 0)
                         |> Expect.equal ( model 1, NoOut )
              , test "a tap on a checker plays the die that stands up" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
                             let
-                                -- 6 and 4, both playable from 13: unrotated
-                                -- the 6 plays, one rotation later the 4 does
+                                -- 6 and 4, both playable from 13: as thrown
+                                -- the 6 plays, once swapped the 4 does
                                 bothPlay =
                                     { u | legal = [ { name = "play", label = "Play", params = [] }, moveSchema "13" "7" 6, moveSchema "13" "9" 4 ] }
 
-                                tapOn13 rotation =
-                                    View.view (ctx "p1" (twoDice bothPlay) (model rotation))
+                                tapOn13 swaps =
+                                    View.view (ctx "p1" (twoDice bothPlay) (model swaps))
                                         |> Query.fromHtml
                                         |> Query.find [ class "bg-point", class "source", attribute (Html.Attributes.title "Point 13") ]
                                         |> Event.simulate (Event.custom "pointerdown" (pointerEvent 10 10))
@@ -1022,14 +1107,59 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "the next die stands out: the first one, then the one after" <|
+             , test "the next die is the left one: as thrown, then the other once swapped, then back" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
                             Expect.all
-                                [ \_ -> nextDie 0 u |> Query.has [ attribute (Html.Attributes.attribute "data-die" "die:0") ]
-                                , \_ -> nextDie 1 u |> Query.has [ attribute (Html.Attributes.attribute "data-die" "die:1") ]
-                                , \_ -> nextDie 2 u |> Query.has [ attribute (Html.Attributes.attribute "data-die" "die:0") ]
+                                [ \_ -> nextDie 0 u |> isDie "die:0"
+                                , \_ -> dieAt 0 0 u |> isDie "die:0"
+                                , \_ -> dieAt 1 0 u |> isDie "die:1"
+                                , \_ -> nextDie 1 u |> isDie "die:1"
+                                , \_ -> dieAt 0 1 u |> isDie "die:1"
+                                , \_ -> dieAt 1 1 u |> isDie "die:0"
+                                , \_ -> nextDie 2 u |> isDie "die:0"
+                                , \_ -> dieAt 0 2 u |> isDie "die:0"
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a swap never moves a die in the DOM: the children keep their thrown order, only slots change" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                firstChild swaps =
+                                    rendered swaps u |> Query.findAll [ class "die" ] |> Query.index 0
+                            in
+                            Expect.all
+                                [ \_ -> firstChild 0 |> isDie "die:0"
+                                , \_ -> firstChild 1 |> isDie "die:0"
+                                , \_ -> firstChild 2 |> isDie "die:0"
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a swap slides and never re-rolls: the reels are as they were, and the slide class alternates per tap" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                live swaps =
+                                    View.view (ctx "p1" (twoDice u) { watching | swaps = swaps }) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> live 0 |> Query.findAll [ class "rolling" ] |> Query.count (Expect.equal 2)
+                                , \_ -> live 1 |> Query.findAll [ class "rolling" ] |> Query.count (Expect.equal 2)
+                                , \_ -> live 1 |> Query.findAll [ class "die-tumble" ] |> Query.count (Expect.equal 2)
+                                , \_ -> live 0 |> Query.hasNot [ class "slid-a" ]
+                                , \_ -> live 0 |> Query.hasNot [ class "slid-b" ]
+                                , \_ -> live 1 |> Query.findAll [ class "slid-a" ] |> Query.count (Expect.equal 2)
+                                , \_ -> live 1 |> Query.hasNot [ class "slid-b" ]
+                                , \_ -> live 2 |> Query.findAll [ class "slid-b" ] |> Query.count (Expect.equal 2)
+                                , \_ -> live 2 |> Query.hasNot [ class "slid-a" ]
                                 ]
                                 ()
 
@@ -1040,25 +1170,27 @@ suite =
                     case firstUpdate of
                         Just u ->
                             Expect.all
-                                [ \_ -> View.view (ctx "p1" (twoDice u) (model 0)) |> Query.fromHtml |> Query.has [ class "dice-row", class "rotates" ]
-                                , \_ -> View.view (ctx "p2" { u | legal = [] } View.init) |> Query.fromHtml |> Query.hasNot [ class "rotates" ]
+                                [ \_ -> View.view (ctx "p1" (twoDice u) (model 0)) |> Query.fromHtml |> Query.has [ class "dice-row", class "swaps" ]
+                                , \_ -> View.view (ctx "p2" { u | legal = [] } View.init) |> Query.fromHtml |> Query.hasNot [ class "swaps" ]
                                 , \_ -> View.view (ctx "p2" { u | legal = [] } View.init) |> Query.fromHtml |> Query.hasNot [ class "next" ]
                                 ]
                                 ()
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "a double is one value: nothing stands up, nothing rotates" <|
+             , test "a double is one value: nothing stands out, nothing swaps, no slots" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
                             let
-                                rendered =
-                                    View.view (ctx "p1" (withDice [ 3, 3, 3, 3 ] u) (model 0)) |> Query.fromHtml
+                                four =
+                                    View.view (ctx "p1" (withDice [ 3, 3, 3, 3 ] u) (model 1)) |> Query.fromHtml
                             in
                             Expect.all
-                                [ \_ -> rendered |> Query.hasNot [ class "next" ]
-                                , \_ -> rendered |> Query.hasNot [ class "rotates" ]
+                                [ \_ -> four |> Query.hasNot [ class "next" ]
+                                , \_ -> four |> Query.hasNot [ class "swaps" ]
+                                , \_ -> four |> Query.hasNot [ class "slot-0" ]
+                                , \_ -> four |> Query.hasNot [ class "slid-a" ]
                                 ]
                                 ()
 
@@ -1070,14 +1202,14 @@ suite =
                         Just u ->
                             View.view (ctx "p1" (withDice [ 4 ] u) (model 0))
                                 |> Query.fromHtml
-                                |> Query.hasNot [ class "rotates" ]
+                                |> Query.hasNot [ class "swaps" ]
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "a new roll starts unrotated" <|
+             , test "a new roll starts unswapped" <|
                 \_ ->
                     View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] (model 3)
-                        |> .rotation
+                        |> .swaps
                         |> Expect.equal 0
              ]
             )
@@ -1610,12 +1742,13 @@ suite =
                                     View.view (ctx "p2" u2 viewing)
                                         |> Query.fromHtml
                                         |> Query.find [ id "dice-row" ]
-                                        |> Query.hasNot [ class "rotates" ]
+                                        |> Query.hasNot [ class "swaps" ]
                                 , \_ -> View.view (ctx "p2" u2 viewing) |> Query.fromHtml |> Query.findAll [ class "die", class "next" ] |> Query.count (Expect.equal 0)
 
                                 -- nothing on it is a control: no legal origin, no action button, only LIVE
+                                -- (the header's RESIGN is the live game's, outside the slab)
                                 , \_ -> board |> Query.findAll [ class "source" ] |> Query.count (Expect.equal 0)
-                                , \_ -> board |> Query.findAll [ class "btn-arcade" ] |> Query.count (Expect.equal 1)
+                                , \_ -> board |> Query.find [ class "bg-board" ] |> Query.findAll [ class "btn-arcade" ] |> Query.count (Expect.equal 1)
                                 , \_ -> board |> Query.find [ id "bg-live" ] |> Event.simulate Event.click |> Event.expect ViewLive
                                 , \_ -> board |> Query.findAll [ class "bg-record-line", class "is-viewing" ] |> Query.count (Expect.equal 1)
                                 , \_ -> board |> Query.find [ class "is-viewing" ] |> Query.has [ text "6/off(4)" ]
@@ -1669,6 +1802,9 @@ suite =
 
                                 -- a live payload never yanks a viewer back by itself
                                 , \_ -> View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] viewing |> .viewing |> Expect.equal (Just 0)
+
+                                -- the header's RESIGN makes its offer on the live board, where the panel can show
+                                , \_ -> View.update OpenResign moved |> Tuple.first |> (\m -> ( m.viewing, m.stale, m.resigning )) |> Expect.equal ( Nothing, False, True )
                                 ]
                                 ()
 
@@ -1846,6 +1982,7 @@ ctx playerId update model =
     , nameOf = identity
     , rematchReady = []
     , away = []
+    , theme = View.defaultTheme
     , finished =
         case update.outcome of
             Protocol.Finished winners ->
@@ -1935,6 +2072,29 @@ perFixture fixture =
                                         0
                             in
                             render "p1" u |> Query.findAll [ tag "button", text "PLAY" ] |> Query.count (Expect.equal expected)
+                        )
+                    |> allPass
+        , test "RESIGN is an arcade button with a flag, exactly when resigning is legal" <|
+            \_ ->
+                p1Views
+                    |> List.map
+                        (\u ->
+                            let
+                                expected =
+                                    if List.any (\s -> s.name == "resign") u.legal then
+                                        1
+
+                                    else
+                                        0
+
+                                header =
+                                    render "p1" u |> Query.find [ class "bg-header" ]
+                            in
+                            Expect.all
+                                [ \_ -> header |> Query.findAll [ tag "button", class "btn-arcade", text "RESIGN" ] |> Query.count (Expect.equal expected)
+                                , \_ -> header |> Query.findAll [ tag "svg" ] |> Query.count (Expect.equal expected)
+                                ]
+                                ()
                         )
                     |> allPass
         , test "a waiting player is told whose turn it is" <|
@@ -2076,7 +2236,7 @@ perFixture fixture =
                     |> List.head
                     |> Maybe.map
                         (\u ->
-                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False })
+                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal 0)

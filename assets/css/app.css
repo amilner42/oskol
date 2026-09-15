@@ -385,6 +385,30 @@
   src: url("/fonts/press-start-2p-latin.woff2") format("woff2");
 }
 
+/* Self-hosted quiet sans (IBM Plex Sans, OFL). Same reason as the pixel
+   font: no third party on the critical path, stable screenshots. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-latin-600.woff2") format("woff2");
+}
+
 /* ---------- Multicade x notebook design system ----------
    Light and airy like a fresh notebook page, with 8-bit arcade bones:
    pixel headings, hard-shadow borders, marquees, scanlines. */
@@ -508,6 +532,10 @@
   transition: transform 0.08s, box-shadow 0.08s, filter 0.15s;
 }
 .btn-arcade.pen { background: var(--pen); }
+/* Header scale: a thinner plate and a shallower drop, so it sits in a line
+   of text without dominating it. */
+.btn-arcade.compact { border-width: 2px; box-shadow: 0 3px 0 0 var(--ink); }
+.btn-arcade.compact:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 0 var(--ink); }
 .btn-arcade.green { background: var(--marker-green); color: var(--ink); }
 .btn-arcade.yellow { background: var(--highlighter); color: var(--ink); }
 .btn-arcade:hover:not(:disabled) { filter: brightness(1.06); }
@@ -542,6 +570,109 @@
   box-shadow: inset 4px 4px 0 0 var(--paper-2);
 }
 .name-field:focus { outline: none; border-color: var(--pen); box-shadow: 4px 4px 0 0 var(--pen); }
+
+/* ---------- Quiet notebook: the landing pages ----------
+   The paper, the grid and the pixel font stay, demoted: pixel type is for
+   the wordmark and the small section eyebrows only, rules are 1.5px, the
+   offset shadow is 3px, and one quiet sans headline is in charge. These
+   classes are the landing's own — the game tables keep `.pix`, `.tile`,
+   `.btn-arcade` and the rest untouched. */
+.quiet {
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* One headline in charge: everything else is body copy or an eyebrow. */
+.q-title {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.q-note { color: var(--pencil); }
+/* The three steps' numbers: a circle drawn by hand, a little off round and
+   a little off level, the digit in ink. */
+.q-num {
+  display: inline-grid; place-items: center;
+  width: 1.55em; height: 1.55em;
+  border: 1.5px solid var(--pencil);
+  border-radius: 52% 48% 50% 50% / 48% 52% 48% 52%;
+  transform: rotate(-6deg);
+  color: var(--pencil);
+  font-size: 0.78em; font-weight: 500; line-height: 1;
+}
+.q-steps > span:nth-child(2) .q-num { border-radius: 48% 52% 47% 53% / 53% 47% 52% 48%; transform: rotate(4deg); }
+.q-steps > span:nth-child(3) .q-num { border-radius: 50% 50% 53% 47% / 47% 53% 50% 50%; transform: rotate(-7deg); }
+.q-eyebrow {
+  color: var(--pencil);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* A sheet on the paper: one hairline and a small offset shadow. */
+.q-card {
+  background: #fff;
+  border: 1px solid rgba(35, 36, 58, 0.12);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(35, 36, 58, 0.06), 0 8px 24px -12px rgba(35, 36, 58, 0.25);
+}
+a.q-card, button.q-card { transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; }
+a.q-card:hover, a.q-card:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(35, 36, 58, 0.22);
+  box-shadow: 0 2px 4px rgba(35, 36, 58, 0.06), 0 18px 36px -14px rgba(35, 36, 58, 0.35);
+  outline: none;
+}
+/* A game with no engine yet: the same tile, dimmed, and nothing to click. */
+.q-card-soon { box-shadow: none; }
+.q-card-soon .q-art { filter: saturate(0.25); opacity: 0.6; }
+
+/* The art sits on the second paper tone, under a hairline. */
+.q-art {
+  /* the game's own accent, barely there, under its art */
+  background: color-mix(in oklab, var(--accent, var(--pencil)) 9%, #fff);
+  border-bottom: 1px solid rgba(35, 36, 58, 0.08);
+  overflow: hidden;
+}
+.q-card-soon .q-art { background: var(--paper-2); }
+
+/* Option rows: a mode, a setting's choice, a clock. Restrained colour —
+   the selected one is ink, the rest are paper. */
+.q-opt {
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  transition: background 0.12s, color 0.12s;
+}
+.q-opt:hover:not(.q-opt-on) { background: var(--paper-2); }
+.q-opt-on { background: var(--ink); color: #fff; }
+.q-opt-on .q-note { color: rgba(255, 255, 255, 0.72); }
+
+.q-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 3px 3px 0 0 var(--ink);
+  transition: transform 0.08s, box-shadow 0.08s, filter 0.15s;
+}
+.q-btn.yellow { background: var(--highlighter); color: var(--ink); }
+.q-btn.plain { background: #fff; color: var(--ink); }
+.q-btn:hover:not(:disabled) { filter: brightness(1.05); }
+.q-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 var(--ink); }
+.q-btn:disabled { background: #d9d9dd; color: #8a8a94; border-color: #a9a9b2; box-shadow: 3px 3px 0 0 #a9a9b2; cursor: not-allowed; }
+
+.q-field {
+  border: 1.5px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+}
+.q-field:focus { outline: none; border-color: var(--pen); box-shadow: 3px 3px 0 0 var(--pen); }
+
+.q-rule { border-top: 1.5px solid var(--ink); }
 
 /* ---------- Game screens ---------- */
 .game-panel { border: 3px solid var(--ink); background: #fff; }
@@ -581,7 +712,108 @@
   --bg-point-b: #dcc6a8;    /* tan points */
   --bg-accent: #dcaa52;     /* amber: the player to act, a picked checker, an offer */
   --bg-sky: #3fa7d6;        /* the other tables' accent (their bars, below) */
+  /* The two sets of men, and the dice thrown in their colours. Tokens
+     rather than literals because a theme is free to move them: a board of
+     pale wood wants darker men than a board cut from midnight. `-ink` is
+     what a stack's count (and a die's pips) is printed in, so it must read
+     against its own face; `-edge` is the line drawn round both. */
+  --bg-checker-light: #ffffff;
+  --bg-checker-light-ink: var(--ink);
+  --bg-checker-dark: var(--ink);
+  --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
+
+/* The eight boards. A theme is exactly this: the same board in another
+   wood, set by redefining the tokens above on `.bg-page`. Nothing about a
+   theme is known to the engine, the room or the opponent — it is one class
+   on this player's page, kept against their guest row and their browser
+   (`oskol/guests/prefs.gleam`), and each player picks their own.
+
+   Contrast is the whole job, checked at phone size: light men must read on
+   the felt and on both points, dark men likewise, and the accent (the
+   player to act, a picked checker, a cube offer) must read against the
+   frame it is drawn on. `walnut` is the default and is deliberately
+   identical to the tokens above. */
+.bg-theme-walnut {
+  --bg-frame: #5a4636; --bg-slot: #493829; --bg-felt: #efe4d0;
+  --bg-point-a: #8c6a4f; --bg-point-b: #dcc6a8; --bg-accent: #dcaa52;
+}
+/* Night board: a dark slab, slate felt, cold blue accent. */
+.bg-theme-midnight {
+  --bg-frame: #1d2230; --bg-slot: #141823; --bg-felt: #3a4256;
+  --bg-point-a: #2c3547; --bg-point-b: #59657f; --bg-accent: #6fc3ff;
+  --bg-checker-dark: #11131c; --bg-checker-edge: #0d0f16;
+}
+/* Forest felt: a card-room green under dark wood. */
+.bg-theme-forest {
+  --bg-frame: #33372c; --bg-slot: #262a21; --bg-felt: #2f6b4f;
+  --bg-point-a: #1f4d39; --bg-point-b: #8fc7a4; --bg-accent: #f0c766;
+  --bg-checker-dark: #14201a; --bg-checker-edge: #101812;
+}
+/* Sand: a beach board, bleached and hot. */
+.bg-theme-sand {
+  --bg-frame: #b08a5e; --bg-slot: #8f6c44; --bg-felt: #f7eddc;
+  --bg-point-a: #c98f4f; --bg-point-b: #ead7b7; --bg-accent: #1f6f8b;
+  --bg-checker-dark: #4a3122;
+}
+/* Ivory & ebony: a chess-set board, black and cream on grey. */
+.bg-theme-ivory {
+  --bg-frame: #2b2b2b; --bg-slot: #1c1c1c; --bg-felt: #e8e4dc;
+  --bg-point-a: #4b4b4b; --bg-point-b: #c3bdb1; --bg-accent: #d8b06a;
+  --bg-checker-light: #f6f1e4; --bg-checker-dark: #16161a;
+}
+/* Cherry: red wood, warm and loud. */
+.bg-theme-cherry {
+  --bg-frame: #6d2320; --bg-slot: #551a18; --bg-felt: #f3e2d2;
+  --bg-point-a: #a33c32; --bg-point-b: #e3b79c; --bg-accent: #f2c14e;
+  --bg-checker-dark: #2a1412;
+}
+/* Slate: a grey, modern board with a green accent. */
+.bg-theme-slate {
+  --bg-frame: #4a4f57; --bg-slot: #383c43; --bg-felt: #dfe3e8;
+  --bg-point-a: #6d747f; --bg-point-b: #b5bcc6; --bg-accent: #3fbf8f;
+  --bg-checker-dark: #1b1e24;
+}
+/* Neon arcade: the cabinet the rest of the site is drawn from. */
+.bg-theme-neon {
+  --bg-frame: #170f2e; --bg-slot: #0e0920; --bg-felt: #241a45;
+  --bg-point-a: #35236b; --bg-point-b: #7b52d6; --bg-accent: #ff5fd2;
+  --bg-checker-light: #7cf6ff; --bg-checker-light-ink: #06232c;
+  --bg-checker-dark: #1b0f38; --bg-checker-dark-ink: #ff9ee4;
+  --bg-checker-edge: #05030f;
+}
+/* The picker in the header: the board's name, and the list of eight it
+   opens. Each row wears its own theme class, so a swatch is painted by the
+   very tokens the board would use — there is no second copy of the colours
+   anywhere. */
+.bg-themes { position: relative; }
+.bg-theme-list {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
+  background: var(--paper); border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 0 var(--ink);
+  padding: 3px; display: grid; gap: 1px; min-width: 9.5rem;
+  max-height: 60vh; overflow-y: auto;
+}
+.bg-theme-option {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 4px 6px; text-align: left; cursor: pointer;
+  background: transparent; border: 0; color: var(--ink);
+}
+.bg-theme-option:hover { background: var(--highlighter); }
+.bg-theme-option.on { background: var(--ink); color: var(--paper); }
+.bg-theme-chip {
+  flex: none; width: 20px; height: 13px;
+  border: 2px solid var(--ink);
+  background: linear-gradient(
+    to right,
+    var(--bg-frame) 0 25%,
+    var(--bg-felt) 25% 55%,
+    var(--bg-point-a) 55% 78%,
+    var(--bg-accent) 78% 100%
+  );
+}
+
 .bg-page {
   --bg-point-h: 9rem;
   --bg-frame-w: 8px;    /* the frame's side thickness */
@@ -644,20 +876,20 @@
   width: 84%;
   aspect-ratio: 1;
   border-radius: 9999px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--bg-checker-edge);
   display: grid;
   place-items: center;
 }
 .checker.white {
-  background: #fff;
+  background: var(--bg-checker-light);
   box-shadow: inset 0 0 0 3px rgba(35, 36, 58, 0.08), 0 1px 0 0 rgba(40, 24, 12, 0.4);
 }
 .checker.black {
-  background: var(--ink);
+  background: var(--bg-checker-dark);
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28), 0 1px 0 0 rgba(0, 0, 0, 0.45);
 }
-.checker-count { font-size: 10px; font-weight: 800; line-height: 1; color: var(--ink); }
-.checker.black .checker-count { color: #fff; }
+.checker-count { font-size: 10px; font-weight: 800; line-height: 1; color: var(--bg-checker-light-ink); }
+.checker.black .checker-count { color: var(--bg-checker-dark-ink); }
 /* Drag-and-drop (src/Drag.elm). Only drag sources opt out of touch
    scrolling -- the page itself keeps scrolling normally elsewhere. */
 [data-drag-capture] { touch-action: none; cursor: grab; }
@@ -687,7 +919,7 @@
 }
 /* A checker on the bar is the size of one on a point, not of the bar. */
 .bg-bar .checker { width: calc((var(--bg-pw) - 2px) * 0.84); } /* a point has 1px of side padding */
-.bg-bar .checker.black { border-color: #fff; }
+.bg-bar .checker.black { border-color: var(--bg-checker-dark-ink); }
 /* The bear-off trays: one per player, in that player's identity bar,
    three holders of five laid along it the way a real board keeps them,
    turned on their side. The checkers borne off stack edge-on, filling
@@ -719,8 +951,8 @@
   width: var(--stick-w);
   border-radius: 1px;
 }
-.off-stick.white { background: #fff; box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35); }
-.off-stick.black { background: var(--ink); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
+.off-stick.white { background: var(--bg-checker-light); box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35); }
+.off-stick.black { background: var(--bg-checker-dark); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
 .off-count {
   margin-left: 2px;
   padding: 1px 4px; border-radius: 3px;
@@ -734,14 +966,14 @@
   --die-size: 2.5rem;
   display: grid; place-items: center;
   width: var(--die-size); height: var(--die-size);
-  border: 2px solid var(--ink); border-radius: 6px;
-  box-shadow: 3px 3px 0 0 var(--ink); background: #fff;
+  border: 2px solid var(--bg-checker-edge); border-radius: 6px;
+  box-shadow: 3px 3px 0 0 var(--bg-checker-edge); background: var(--bg-checker-light);
 }
 .die.used { opacity: 0.35; box-shadow: none; }
-.die-pip { background: var(--ink); }
+.die-pip { background: var(--bg-checker-light-ink); }
 /* The dice row: its gap is a variable so a die that has not landed yet can
    cancel it (see `die-earned`). For the mover the row is a control -- a
-   tap hands "next" to the die after -- and the next die stands up. */
+   tap swaps the two dice -- and the next die is always the left one. */
 .dice-row { --dice-gap: 0.5rem; gap: var(--dice-gap); }
 @media (min-width: 640px) { .dice-row { --dice-gap: 0.75rem; } }
 /* On a phone the dice follow the points, so a double's four dice fit the
@@ -752,13 +984,21 @@
   .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
   .bg-page .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
 }
-.dice-row.rotates { cursor: pointer; }
-.die.next { transform: translateY(-5px); }
+.dice-row.swaps { cursor: pointer; }
+/* Swapping is flex `order`, never a move in the DOM (that would restart
+   the die's roll animation), and each die slides in from where it was:
+   the left slot from the right, the right slot from the left, by one die
+   and the gap. The two animation names are the same slide; the view
+   alternates them so every tap restarts it. */
+.die.slot-0 { order: 0; --slide-from: calc(100% + var(--dice-gap)); }
+.die.slot-1 { order: 1; --slide-from: calc(-100% - var(--dice-gap)); }
+@keyframes die-slide-a { from { transform: translateX(var(--slide-from)); } to { transform: none; } }
+@keyframes die-slide-b { from { transform: translateX(var(--slide-from)); } to { transform: none; } }
 /* Each player throws their own dice, in their checkers' colour: white with
    dark pips, or dark with white pips and the black checker's inner ring. */
-.die.black { background: var(--ink); box-shadow: 3px 3px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
-.die.black .die-pip { background: #fff; }
-.die.black .die-tumble { background: var(--ink); }
+.die.black { background: var(--bg-checker-dark); box-shadow: 3px 3px 0 0 var(--bg-checker-edge), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
+.die.black .die-pip { background: var(--bg-checker-dark-ink); }
+.die.black .die-tumble { background: var(--bg-checker-dark); }
 .die.black.used { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
 /* Rolling dice: a reel of five faces laid over the settled one, walked by a
    single steps() animation -- the same trick the library's game art uses --
@@ -769,7 +1009,7 @@
 .die { position: relative; overflow: hidden; }
 .die-tumble {
   position: absolute; inset: 0;
-  background: #fff;
+  background: var(--bg-checker-light);
   overflow: hidden;
   pointer-events: none;
   display: none;
@@ -789,6 +1029,12 @@
      They wait out the tumble (`backwards` holds the from-state through the
      delay) and drop in beside the pair that was. */
   .die.earned { animation: die-earned 0.28s ease-out 0.92s backwards; }
+  /* The swap's slide (see `slot-0` above). After the roll rules on
+     purpose: a swapped die is usually one that was thrown, and its
+     finished shake must give way to the slide, not the other way round.
+     The reel is the child's own animation and is untouched. */
+  .die.slid-a { animation: die-slide-a 0.22s ease-out; }
+  .die.slid-b { animation: die-slide-b 0.22s ease-out; }
 }
 @keyframes die-reel { to { transform: translateY(-80%); } }
 /* A die a double earns takes no room until it lands: zero wide, no
@@ -821,7 +1067,7 @@
 /* Picker-scale die faces (the "Pick dice" twist). */
 .die.mini {
   --die-size: 1.75rem;
-  box-shadow: 2px 2px 0 0 var(--ink);
+  box-shadow: 2px 2px 0 0 var(--bg-checker-edge);
   cursor: pointer; padding: 0;
 }
 .die.mini.spent { opacity: 0.35; box-shadow: none; cursor: default; }
@@ -851,7 +1097,8 @@
 .bg-page .player-bar { border: 0; box-shadow: none; background: var(--bg-frame); color: #fff; }
 .bg-page .player-bar.active { background: color-mix(in oklab, var(--bg-accent) 32%, var(--bg-frame)); border: 0; box-shadow: none; }
 .bg-page .swatch { border-color: rgba(255, 255, 255, 0.75); }
-.bg-page .swatch.black { background: var(--ink); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
+.bg-page .swatch.white { background: var(--bg-checker-light); }
+.bg-page .swatch.black { background: var(--bg-checker-dark); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
 .bg-page .bar-turn { color: #fff; }
 .bg-page .bar-pips { color: rgba(255, 255, 255, 0.6); }
 .bg-page .bar-tag.you { background: var(--bg-accent); color: var(--bg-frame); }
@@ -978,9 +1225,14 @@
        height: `.bg-main` and `.bg-stack` become `display: contents` so
        the header and the two identity bars (names, pips, score, clock
        chip and its delay pip) become items of the page grid and sit in a
-       column beside the board, the opponent's at the top and yours at the
-       bottom, the way they read on the board itself. Out of the slab,
-       each bar and the board carry their own corners.
+       column beside the board that mirrors it: the opponent's bar at the
+       top, yours at the bottom, and the header (game, match, resign) in
+       the middle, centred between them by two equal flexible rows. The
+       two bars read towards the board's middle: the opponent's wraps
+       downwards from the top edge, yours wraps upwards from the bottom
+       (`wrap-reverse`), so the same items sit at the same distance from
+       their own edge. Out of the slab, each bar and the board carry
+       their own corners.
      - the dice, the roll animation, the action buttons and the "no legal
        moves" message stay where they always are, in the board's centre
        band, just at landscape scale.
@@ -1012,16 +1264,20 @@
     /* The board first, at whatever width its height earns it; the chrome
        gets the rest of the screen, never the other way round. */
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    /* their bar, air, the header, the same air, my bar */
+    grid-template-rows: auto minmax(0, 1fr) auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0 0.4rem;
     padding: var(--bg-edge) 0.25rem;
   }
   .bg-page .bg-main,
   .bg-page .bg-stack { display: contents; }
-  .bg-page .bg-header { grid-column: 2; grid-row: 1; max-width: 16rem; justify-self: start; }
+  /* The header is centred in its column, between the two bars: its lines
+     (wordmark and match tag, then the resign button) are centred over the
+     bars' width, not flushed to their left edge. */
+  .bg-page .bg-header { grid-column: 2; grid-row: 3; max-width: 16rem; justify-self: start; justify-content: center; text-align: center; }
   .bg-page .bg-header,
-  .bg-page .bg-header > div { flex-wrap: wrap; row-gap: 2px; }
+  .bg-page .bg-header > div { flex-wrap: wrap; row-gap: 3px; justify-content: center; }
   .bg-page .player-bar {
     grid-column: 2;
     max-width: 16rem;
@@ -1032,16 +1288,18 @@
     padding: 4px 7px;
     border-radius: 8px;
   }
-  .bg-page .player-bar:not(.is-me) { grid-row: 2; }
-  .bg-page .player-bar.is-me { grid-row: 4; }
-  /* The record takes the side column's spare row, between the two bars,
-     as tall as what the board's height leaves; the list scrolls inside.
+  .bg-page .player-bar:not(.is-me) { grid-row: 1; align-self: start; }
+  .bg-page .player-bar.is-me { grid-row: 5; align-self: end; flex-wrap: wrap-reverse; }
+  /* The record takes the lower of the two equal air rows, between the
+     header and my bar, as tall as that row; the list scrolls inside. Its
+     box has no height of its own (the list is absolutely placed), so the
+     two air rows stay equal and the header stays centred between the bars.
      The header's MOVES is redundant here (the next block brings it back
      on a screen too short to give the record a row). */
   .bg-page .bg-record {
     display: block;
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 4;
     align-self: stretch;
     justify-self: start;
     width: 100%;
@@ -1090,8 +1348,8 @@
   .bg-page .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
   /* four dice (doubles) and a message have to share one half-band */
   .bg-page .bg-band .dice-row { --dice-gap: 0.3rem; }
-  .bg-page .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--ink); }
-  .bg-page .bg-band .die.black { box-shadow: 2px 2px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
+  .bg-page .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--bg-checker-edge); }
+  .bg-page .bg-band .die.black { box-shadow: 2px 2px 0 0 var(--bg-checker-edge), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
   .bg-page .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   /* the pips shrink with the face, or they run into each other */
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }

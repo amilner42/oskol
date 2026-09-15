@@ -1,7 +1,7 @@
 module Main exposing (main)
 
 {-| SPA shell: routing, page dispatch, and the chrome the landing pages sit
-in (`Ui.Shell` — the OSKOL plate, the JOIN GAME prompt, the footer).
+in (`Ui.Shell` — the OSKOL wordmark, the JOIN GAME prompt, the footer).
 
 Three routes, and they are the server's three routes:
 
@@ -20,6 +20,7 @@ import Api
 import Api.Catalog as Catalog
 import Browser exposing (Document)
 import Browser.Events
+import Dict
 import Browser.Navigation as Nav
 import Html exposing (Html)
 import Html.Attributes
@@ -84,7 +85,7 @@ init flags url key =
     let
         session =
             D.decodeValue Session.decoder flags
-                |> Result.withDefault { csrf = "", guestName = Nothing }
+                |> Result.withDefault { csrf = "", guestName = Nothing, prefs = Dict.empty }
     in
     routeTo url
         { key = key
@@ -145,7 +146,7 @@ routeTo url oldModel =
                 |> landing model
 
         Just (Route.Play slug gameId token) ->
-            Page.Play.init
+            Page.Play.init model.session
                 { origin = model.origin
                 , slug = slug
                 , gameId = gameId
@@ -215,14 +216,23 @@ update msg model =
                 ( newPageModel, cmd, out ) =
                     Page.Play.update pageMsg pageModel
             in
-            ( { model | page = Play newPageModel }
+            ( { model
+                | page = Play newPageModel
+                , session =
+                    case out of
+                        Page.Play.Remember key value ->
+                            Session.withPref key value model.session
+
+                        _ ->
+                            model.session
+              }
             , Cmd.batch
                 [ Cmd.map PlayMsg cmd
                 , case out of
                     Page.Play.Navigate url ->
                         Nav.pushUrl model.key url
 
-                    Page.Play.NoOut ->
+                    _ ->
                         Cmd.none
                 ]
             )
@@ -282,6 +292,9 @@ subscriptions model =
         [ case model.page of
             Play pageModel ->
                 Sub.map PlayMsg (Page.Play.subscriptions pageModel)
+
+            Library pageModel ->
+                Sub.map LibraryMsg (Page.Library.subscriptions pageModel)
 
             _ ->
                 Sub.none
@@ -350,9 +363,10 @@ framed model content =
 
 notFound : Html Msg
 notFound =
-    Html.section [ Html.Attributes.class "mt-8 sm:mt-12 pix p-4 sm:p-8", Html.Attributes.id "not-found" ]
+    Html.section
+        [ Html.Attributes.class "mt-8 sm:mt-12 q-card p-5 sm:p-8", Html.Attributes.id "not-found" ]
         [ Html.p
-            [ Html.Attributes.class "pixel text-[10px] mb-3", Notebook.style "color: var(--red)" ]
+            [ Html.Attributes.class "pixel q-eyebrow text-[9px] mb-3" ]
             [ Html.text "NOT FOUND" ]
         , Html.a
             [ Html.Attributes.href (Route.href Route.library)

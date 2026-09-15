@@ -7,12 +7,13 @@ a mode, the inline errors, and the invite's three states.
 
 import Api
 import Api.Catalog as Catalog
+import Dict
 import Expect
 import Page.GameLanding as GameLanding
 import Session exposing (Session)
 import Test exposing (Test, describe, test)
 import Test.Html.Query as Query
-import Test.Html.Selector exposing (class, id, text)
+import Test.Html.Selector exposing (class, id, tag, text)
 
 
 suite : Test
@@ -98,6 +99,27 @@ createForm =
                         , text "Play heads-up poker online with a friend"
                         , text "From a link."
                         ]
+        , test "the head is the game in pixel type over one quiet headline" <|
+            \_ ->
+                loaded
+                    |> Expect.all
+                        [ Query.find [ id "game-title" ]
+                            >> Query.has [ class "pixel", class "q-eyebrow", text "Poker" ]
+                        , Query.find [ tag "h1" ]
+                            >> Query.has
+                                [ class "q-title"
+                                , text "Play heads-up poker online with a friend"
+                                ]
+                        ]
+        , test "the form is labelled rows: the name, the mode, the settings, the clock" <|
+            \_ ->
+                loaded
+                    |> Query.has
+                        [ text "YOUR NAME"
+                        , text "MODE"
+                        , text "STAKES"
+                        , text "CLOCK"
+                        ]
         , test "has a name field, a mode per format and the game's clocks" <|
             \_ ->
                 loaded
@@ -115,8 +137,8 @@ createForm =
             \_ ->
                 loaded
                     |> Expect.all
-                        [ Query.find [ id "format-cash" ] >> Query.has [ class "tile-mine" ]
-                        , Query.find [ id "format-sng" ] >> Query.hasNot [ class "tile-mine" ]
+                        [ Query.find [ id "format-cash" ] >> Query.has [ class "q-opt-on" ]
+                        , Query.find [ id "format-sng" ] >> Query.hasNot [ class "q-opt-on" ]
                         , Query.has [ id "setting-stake" ]
                         , Query.hasNot [ id "setting-speed" ]
                         ]
@@ -124,7 +146,7 @@ createForm =
             \_ ->
                 loaded
                     |> Query.find [ id "choice-stake-1-2" ]
-                    |> Query.has [ class "tile-mine" ]
+                    |> Query.has [ class "q-opt-on" ]
         , test "the rules, the modes, the clocks and the questions are all on the page" <|
             \_ ->
                 loaded
@@ -158,7 +180,7 @@ picking =
                 in
                 render picked
                     |> Expect.all
-                        [ Query.find [ id "format-sng" ] >> Query.has [ class "tile-mine" ]
+                        [ Query.find [ id "format-sng" ] >> Query.has [ class "q-opt-on" ]
                         , Query.has [ id "setting-speed" ]
                         , Query.hasNot [ id "setting-stake" ]
                         ]
@@ -166,15 +188,15 @@ picking =
             \_ ->
                 render (send (GameLanding.PickedSetting "stake" "2-5") loadedModel)
                     |> Expect.all
-                        [ Query.find [ id "choice-stake-2-5" ] >> Query.has [ class "tile-mine" ]
-                        , Query.find [ id "choice-stake-1-2" ] >> Query.hasNot [ class "tile-mine" ]
+                        [ Query.find [ id "choice-stake-2-5" ] >> Query.has [ class "q-opt-on" ]
+                        , Query.find [ id "choice-stake-1-2" ] >> Query.hasNot [ class "q-opt-on" ]
                         ]
         , test "picking a clock moves the selection off the default" <|
             \_ ->
                 render (send (GameLanding.PickedClock "none") loadedModel)
                     |> Expect.all
-                        [ Query.find [ id "clock-none" ] >> Query.has [ class "tile-mine" ]
-                        , Query.find [ id "clock-poker" ] >> Query.hasNot [ class "tile-mine" ]
+                        [ Query.find [ id "clock-none" ] >> Query.has [ class "q-opt-on" ]
+                        , Query.find [ id "clock-poker" ] >> Query.hasNot [ class "q-opt-on" ]
                         ]
         ]
 
@@ -310,7 +332,7 @@ page { guestName } slug gameId =
 
 session : Maybe String -> Session
 session guestName =
-    { csrf = "token", guestName = guestName }
+    { csrf = "token", guestName = guestName, prefs = Dict.empty }
 
 
 send : GameLanding.Msg -> GameLanding.Model -> GameLanding.Model

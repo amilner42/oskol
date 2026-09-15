@@ -130,13 +130,45 @@ import { Elm } from "../src/Main.elm";
 
 const meta = (name) => document.querySelector(`meta[name='${name}']`)?.getAttribute("content") || null;
 
+// Display preferences (a backgammon board's colours) this browser has
+// stored for itself. The guest's row is the copy that follows them between
+// browsers, but it costs a round trip; this one is here before the first
+// paint, and is all a visitor whose cookie is gone has.
+const PREFS_KEY = "oskol:prefs";
+
+const storedPrefs = (() => {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    // Strings only: the flags decoder expects a flat map of them.
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([k, v]) => typeof k === "string" && typeof v === "string")
+    );
+  } catch (_) {
+    // Private modes, or storage the browser refuses: no preferences, which
+    // is simply the default board.
+    return {};
+  }
+})();
+
 const app = Elm.Main.init({
   flags: {
     csrf: meta("csrf-token") || "",
     // The name this browser last played under, remembered against the
     // silent guest cookie and rendered into the page that served the app.
     guestName: meta("guest-name"),
+    prefs: storedPrefs,
   },
+});
+
+app.ports.storePref?.subscribe(({ key, value }) => {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...storedPrefs, [key]: value }));
+    storedPrefs[key] = value;
+  } catch (_) {
+    // Nothing kept here; the guest's row still has it.
+  }
 });
 
 window.elmApp = app;

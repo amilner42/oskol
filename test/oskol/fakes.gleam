@@ -71,6 +71,35 @@ pub fn with_guests(ctx: Ctx, remembered: Option(String)) -> Ctx {
       mint: fn() { minted_id },
       touch: fn(_) { remembered },
       save_name: fn(_, _) { Nil },
+      prefs: fn(_) { [] },
+      save_pref: fn(_, _, _) { Nil },
+    ),
+  )
+}
+
+/// Guest caps for the preference endpoints: `kept` is what the row holds,
+/// and a write is only allowed to be the pair the test expects — anything
+/// else panics, so a handler that mangles a key or a value fails loudly
+/// instead of writing quietly.
+pub fn with_prefs(
+  ctx: Ctx,
+  kept: List(#(String, String)),
+  expected: #(String, String),
+) -> Ctx {
+  Ctx(
+    ..ctx,
+    guests: guests_caps.GuestsCaps(
+      mint: fn() { minted_id },
+      touch: fn(_) { option.None },
+      save_name: fn(_, _) { Nil },
+      prefs: fn(_) { kept },
+      save_pref: fn(_, key, value) {
+        case #(key, value) == expected {
+          True -> Nil
+          False ->
+            panic as "guests.save_pref got a pair the test did not expect"
+        }
+      },
     ),
   )
 }

@@ -419,3 +419,72 @@ pub fn a_code_nothing_answers_to_is_not_found_test() {
       "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"message\":\"No game with that code\"}}",
     )
 }
+
+// ---------- GET/POST /papi/me/prefs ----------
+
+pub fn a_visitor_with_no_guest_id_has_no_preferences_test() {
+  let body = landing.prefs_json(fakes.ctx(), fakes.no_guest())
+
+  assert body == "{\"ok\":true,\"prefs\":{}}"
+}
+
+pub fn the_board_a_guest_picked_comes_back_test() {
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_prefs([#("backgammon_theme", "midnight")], #("", ""))
+
+  let body = landing.prefs_json(ctx, fakes.guest("g1"))
+
+  assert string.contains(body, "\"backgammon_theme\":\"midnight\"")
+}
+
+pub fn a_preference_written_by_an_older_release_is_dropped_test() {
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_prefs(
+      [#("backgammon_theme", "burlwood"), #("something_else", "x")],
+      #("", ""),
+    )
+
+  let body = landing.prefs_json(ctx, fakes.guest("g1"))
+
+  assert body == "{\"ok\":true,\"prefs\":{}}"
+}
+
+pub fn picking_a_board_keeps_it_test() {
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_prefs([#("backgammon_theme", "forest")], #(
+      "backgammon_theme",
+      "forest",
+    ))
+
+  let assert Ok(body) =
+    landing.save_pref_json(ctx, fakes.guest("g1"), "backgammon_theme", "forest")
+
+  assert string.contains(body, "\"backgammon_theme\":\"forest\"")
+}
+
+pub fn a_board_that_does_not_exist_is_refused_test() {
+  // The stub's `save_pref` panics on any write, so reaching IO here would
+  // fail the test: a rejected value must never be written.
+  let assert Error(err) =
+    landing.save_pref_json(
+      fakes.ctx(),
+      fakes.guest("g1"),
+      "backgammon_theme",
+      "plaid",
+    )
+
+  assert error.status(err) == 422
+  assert error.code(err) == "validation_failed"
+  assert error.message(err) == "That is not one of the board themes"
+}
+
+pub fn a_preference_the_site_does_not_keep_is_refused_test() {
+  let assert Error(err) =
+    landing.save_pref_json(fakes.ctx(), fakes.guest("g1"), "admin", "true")
+
+  assert error.status(err) == 422
+  assert error.message(err) == "Unknown preference"
+}
