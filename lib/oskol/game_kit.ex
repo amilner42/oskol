@@ -108,6 +108,10 @@ defmodule Oskol.GameKit do
     :gamekit@host.spectator_update_json(instance, events, now) |> Jason.decode!()
   end
 
+  @doc "The names of the actions a player may take now (no scene built)."
+  @spec legal_names(instance, player_id) :: [String.t()]
+  def legal_names(instance, player_id), do: :gamekit@host.legal_names(instance, player_id)
+
   @spec finished?(instance) :: boolean()
   def finished?(instance), do: :gamekit@host.finished(instance)
 

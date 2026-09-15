@@ -436,8 +436,9 @@ pub fn a_won_game_ends_the_game_record_with_its_kind_and_score_test() {
   let s = position(11, "match5", gammon, White, [1, 2])
   let s = move(s, "p1", Point(1), Off)
   let s = apply(s, "p1", engine.Play)
-  // The turn that bore off, then the game line; the next game starts clean
-  // on the same record.
+  // Both ready up, and the next game starts clean on the same record: the
+  // turn that bore off, then the game line.
+  let s = both_ready(s)
   let assert [record.GameOver(1, "p1", "gammon", 2, 1, scores), turn, ..] =
     s.record
   assert scores == [#("p1", 2), #("p2", 0)]
@@ -495,6 +496,7 @@ pub fn the_record_reaches_both_players_and_spectators_test() {
   let s = state.GameState(..s, phase: state.Rolling(White), record: [])
   let s = apply(s, "p1", engine.Double)
   let s = apply(s, "p2", engine.Drop)
+  let s = both_ready(s)
   // Game 2 has begun: its record is empty so far, and game 1 is a result
   // line. Its turns are the `/record` endpoint's, not every update's.
   assert s.game_number == 2
@@ -569,6 +571,7 @@ pub fn the_whole_record_is_every_game_in_order_test() {
   let s = state.GameState(..s, phase: state.Rolling(White), record: [])
   let s = apply(s, "p1", engine.Double)
   let s = apply(s, "p2", engine.Drop)
+  let s = both_ready(s)
   let s = play_a_turn(s)
   let assert [turn, ..] = s.record
   let game_one =
@@ -810,6 +813,13 @@ pub fn a_replayed_match_carries_the_same_record_test() {
 
 fn setup(entries) {
   positions.setup(entries)
+}
+
+/// Between the games of a match: both players press READY, and the next
+/// game starts.
+fn both_ready(s: state.GameState) -> state.GameState {
+  let s = apply(s, "p1", engine.Ready)
+  apply(s, "p2", engine.Ready)
 }
 
 /// Play the mover's whole turn with the first legal move each time, and

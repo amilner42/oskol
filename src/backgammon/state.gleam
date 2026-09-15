@@ -20,6 +20,12 @@ pub type Phase {
   /// `to_move` has dice left to play. Moves are staged on the mover's own
   /// view and only committed with `play`; `dice` are the ones still unused.
   Moving(to_move: Color, dice: List(Int))
+  /// A game of a match (or of unlimited play) is over and the next one
+  /// waits on both players: the finished game's final position stays on
+  /// the board, nobody is on the clock, and the next game starts -- its
+  /// opening roll and all -- when the second player says `ready`. `last` is
+  /// how the game ended; `ready` who has said so, in the order they did.
+  BetweenGames(last: GameEnd, ready: List(PlayerId))
   /// The match is over.
   Finished(winner: Color)
 }
@@ -229,11 +235,13 @@ pub fn to_act(state: GameState) -> Option(PlayerId) {
 }
 
 /// The player the phase itself is waiting on, resignation offers aside.
+/// Between games that is nobody: both players are, and neither is charged.
 fn phase_actor(state: GameState) -> Option(PlayerId) {
   case state.phase {
     Rolling(c) -> Some(player_of(state, c))
     Moving(c, _) -> Some(player_of(state, c))
     Doubled(by) -> Some(player_of(state, board.opponent(by)))
+    BetweenGames(_, _) -> None
     Finished(_) -> None
   }
 }
@@ -255,6 +263,7 @@ pub fn to_move(state: GameState) -> Option(PlayerId) {
     Rolling(c) -> Some(player_of(state, c))
     Moving(c, _) -> Some(player_of(state, c))
     Doubled(by) -> Some(player_of(state, by))
+    BetweenGames(_, _) -> None
     Finished(_) -> None
   }
 }
@@ -282,11 +291,13 @@ pub fn must_answer_double(state: GameState, player_id: PlayerId) -> Bool {
   }
 }
 
-/// May this player offer to resign? Any time the game is on and no offer
-/// is already waiting on an answer.
+/// May this player offer to resign? Any time a game is on and no offer
+/// is already waiting on an answer. Between games there is nothing to
+/// resign: the next game has not started.
 pub fn can_resign(state: GameState, player_id: PlayerId) -> Bool {
   case state.phase, state.resign_offer, color_of(state, player_id) {
     Finished(_), _, _ -> False
+    BetweenGames(_, _), _, _ -> False
     _, Some(_), _ -> False
     _, None, Ok(_) -> True
     _, None, Error(_) -> False
@@ -390,7 +401,18 @@ pub fn can_pick(state: GameState, player_id: PlayerId) -> Bool {
   && !list.contains(state.picks_used, player_id)
 }
 
+/// May this player say they are ready for the next game? Between games,
+/// once each.
+pub fn can_ready(state: GameState, player_id: PlayerId) -> Bool {
+  case state.phase, color_of(state, player_id) {
+    BetweenGames(_, ready), Ok(_) -> !list.contains(ready, player_id)
+    _, _ -> False
+  }
+}
+
 // ---------- Transitions ----------
+
+const next_game_not_started = "The next game has not started"
 
 /// Nothing else moves while a resignation waits on its answer.
 fn no_offer_pending(state: GameState) -> Result(Nil, String) {
@@ -416,6 +438,7 @@ pub fn roll(
     Rolling(_) -> Error("Not your turn")
     Doubled(_) -> Error("A double is pending")
     Moving(_, _) -> Error("Dice already rolled")
+    BetweenGames(_, _) -> Error(next_game_not_started)
     Finished(_) -> Error("The match is over")
   }
 }
@@ -450,6 +473,7 @@ pub fn pick(
     Rolling(_) -> Error("Not your turn")
     Doubled(_) -> Error("A double is pending")
     Moving(_, _) -> Error("Dice already rolled")
+    BetweenGames(_, _) -> Error(next_game_not_started)
     Finished(_) -> Error("The match is over")
   }
 }
@@ -469,6 +493,33 @@ fn begin_turn(
   }
   let state = GameState(..state, last_roll: [a, b], last_roll_picked: picked)
   start_moving(state, color, dice)
+}
+
+// ---------- Between games ----------
+
+/// Say you are ready for the next game. The first to say so waits; the
+/// second starts it (`next_game`). True when this started the next game.
+pub fn ready(
+  state: GameState,
+  player_id: PlayerId,
+) -> Result(#(GameState, Bool), String) {
+  use _ <- result.try(color_of(state, player_id))
+  case state.phase {
+    BetweenGames(last, ready) ->
+      case list.contains(ready, player_id) {
+        True -> Error("You are already ready")
+        False -> {
+          let ready = list.append(ready, [player_id])
+          case list.all(state.order, list.contains(ready, _)) {
+            True -> Ok(#(next_game(state), True))
+            False ->
+              Ok(#(GameState(..state, phase: BetweenGames(last, ready)), False))
+          }
+        }
+      }
+    Finished(_) -> Error("The match is over")
+    _ -> Error("The game is still on")
+  }
 }
 
 // ---------- Cube ----------
@@ -507,6 +558,7 @@ pub fn double(
     Rolling(_) -> Error("Not your turn")
     Doubled(_) -> Error("A double is pending")
     Moving(_, _) -> Error("You can only double before rolling")
+    BetweenGames(_, _) -> Error(next_game_not_started)
     Finished(_) -> Error("The match is over")
   }
 }
@@ -563,6 +615,7 @@ pub fn resign(
   use color <- result.try(color_of(state, player_id))
   case state.phase, state.resign_offer {
     Finished(_), _ -> Error("The match is over")
+    BetweenGames(_, _), _ -> Error(next_game_not_started)
     _, Some(_) -> Error("A resignation is pending")
     _, None ->
       case list.contains(resign_stakes(state), stakes) {
@@ -647,6 +700,7 @@ pub fn stage(
     Rolling(c) if c == color -> Error("Roll first")
     Rolling(_) -> Error("Not your turn")
     Doubled(_) -> Error("A double is pending")
+    BetweenGames(_, _) -> Error(next_game_not_started)
     Finished(_) -> Error("The match is over")
   }
 }
@@ -793,8 +847,11 @@ pub fn record(state: GameState) -> List(record.Entry) {
   list.reverse(state.record)
 }
 
-/// Score a finished game, then either end the match or set up the next game
-/// (fresh board, centred cube, Crawford bookkeeping).
+/// Score a finished game, then either end the match or pause between games.
+/// The board stays as the game left it -- as both players saw it: a
+/// resignation accepted while the mover had moves staged ends the game on
+/// the position before them, since staging is private -- until both
+/// players are ready for the next one (`ready`, then `next_game`).
 fn finish_game(
   state: GameState,
   winner: Color,
@@ -821,7 +878,14 @@ fn finish_game(
     dict.upsert(state.scores, winner_id, fn(s) { option.unwrap(s, 0) + points })
   let total = dict.get(scores, winner_id) |> result.unwrap(0)
   let match_over = state.config.target > 0 && total >= state.config.target
-  let cube = state.cube_value
+  let end =
+    GameEnd(
+      winner: winner_id,
+      kind: kind,
+      points: points,
+      cube: state.cube_value,
+      match_over: match_over,
+    )
   let state =
     GameState(..state, scores: scores, record: [
       record.GameOver(
@@ -829,7 +893,7 @@ fn finish_game(
         winner: winner_id,
         kind: end_kind_name(kind),
         points: points,
-        cube: cube,
+        cube: state.cube_value,
         scores: list.map(state.order, fn(id) {
           #(id, dict.get(scores, id) |> result.unwrap(0))
         }),
@@ -838,41 +902,42 @@ fn finish_game(
     ])
   let state = case match_over {
     True -> GameState(..state, phase: Finished(winner))
-    False -> {
-      // Crawford: the first time someone gets within one point, the next
-      // game is played without the cube; after it, doubling resumes.
-      let one_away =
-        state.config.target > 0
-        && list.any(state.order, fn(id) {
-          { dict.get(scores, id) |> result.unwrap(0) }
-          == state.config.target - 1
-        })
-      let crawford_done = state.crawford_done || state.crawford
-      let crawford = !crawford_done && one_away
-      opening_roll(
-        GameState(
-          ..state,
-          board: board.initial(),
-          game_number: state.game_number + 1,
-          last_roll: [],
-          last_roll_picked: False,
-          picks_used: [],
-          cube_value: 1,
-          cube_owner: None,
-          crawford: crawford,
-          crawford_done: crawford_done || crawford,
-        ),
+    False ->
+      GameState(
+        ..state,
+        board: state.turn_board,
+        staged: [],
+        turn_dead: False,
+        phase: BetweenGames(end, []),
       )
-    }
   }
-  #(
-    state,
-    GameEnd(
-      winner: winner_id,
-      kind: kind,
-      points: points,
-      cube: cube,
-      match_over: match_over,
+  #(state, end)
+}
+
+/// Set up the next game of the match and make its opening roll: fresh
+/// board, centred cube, Crawford bookkeeping on the score as it stands.
+fn next_game(state: GameState) -> GameState {
+  // Crawford: the first time someone gets within one point, the next
+  // game is played without the cube; after it, doubling resumes.
+  let one_away =
+    state.config.target > 0
+    && list.any(state.order, fn(id) {
+      score_of(state, id) == state.config.target - 1
+    })
+  let crawford_done = state.crawford_done || state.crawford
+  let crawford = !crawford_done && one_away
+  opening_roll(
+    GameState(
+      ..state,
+      board: board.initial(),
+      game_number: state.game_number + 1,
+      last_roll: [],
+      last_roll_picked: False,
+      picks_used: [],
+      cube_value: 1,
+      cube_owner: None,
+      crawford: crawford,
+      crawford_done: crawford_done || crawford,
     ),
   )
 }

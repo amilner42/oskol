@@ -34,72 +34,76 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
       player_zones(state),
       [dice_zone(state, is_mover), cube_zone(state)],
     ]),
-    data: list.append(resign_offer_data(state), [
-      #("to_move", json.nullable(state.to_move(state), json.string)),
-      #("to_act", json.nullable(state.to_act(state), json.string)),
-      #(
-        "cube",
-        json.object([
-          #("value", json.int(state.cube_value)),
-          #("owner", case state.cube_owner {
-            Some(c) -> json.string(state.player_of(state, c))
-            None -> json.null()
-          }),
-          #("enabled", json.bool(state.config.cube)),
-          #("crawford", json.bool(state.crawford)),
-          #("pending_from", case state.phase {
-            state.Doubled(by) -> json.string(state.player_of(state, by))
-            _ -> json.null()
-          }),
-        ]),
-      ),
-      #("unlimited", json.bool(state.unlimited(state))),
-      #(
-        "staged",
-        json.int(case is_mover {
-          True -> list.length(state.staged)
-          False -> 0
-        }),
-      ),
-      // The roll played nothing: everyone sees the dice and why the turn
-      // is about to pass, until the mover commits it.
-      #("no_moves", json.bool(no_moves)),
-      #(
-        "turn_complete",
-        json.bool(case viewer_id {
-          Some(id) -> state.can_play(state, id)
-          None -> False
-        }),
-      ),
-      #(
-        "dice",
-        json.array(
-          case state.phase, is_mover {
-            // Which dice are used is part of the private staging
-            state.Moving(_, _), False -> state.turn_dice(state)
-            _, _ -> state.dice_left(state)
-          },
-          json.int,
+    data: list.flatten([
+      resign_offer_data(state),
+      between_games_data(state),
+      [
+        #("to_move", json.nullable(state.to_move(state), json.string)),
+        #("to_act", json.nullable(state.to_act(state), json.string)),
+        #(
+          "cube",
+          json.object([
+            #("value", json.int(state.cube_value)),
+            #("owner", case state.cube_owner {
+              Some(c) -> json.string(state.player_of(state, c))
+              None -> json.null()
+            }),
+            #("enabled", json.bool(state.config.cube)),
+            #("crawford", json.bool(state.crawford)),
+            #("pending_from", case state.phase {
+              state.Doubled(by) -> json.string(state.player_of(state, by))
+              _ -> json.null()
+            }),
+          ]),
         ),
-      ),
-      #("last_roll", json.array(state.last_roll, json.int)),
-      #("target", json.int(state.config.target)),
-      #("game_number", json.int(state.game_number)),
-      #("winner_id", case state.phase {
-        state.Finished(color) -> json.string(state.player_of(state, color))
-        _ -> json.null()
-      }),
-      // The record of this game only (a finished match: its last game),
-      // oldest first, and one result line per finished game. Every update
-      // carries them, so they are bounded by a game, not by the match: the
-      // turns of earlier games are served on request (`record_json`, the
-      // room's `/record`). All of it is public: a committed turn is on the
-      // board for everyone.
-      #("record", json.array(current, record.to_json)),
-      #(
-        "games",
-        json.array(record.results(list.reverse(state.record)), record.to_json),
-      ),
+        #("unlimited", json.bool(state.unlimited(state))),
+        #(
+          "staged",
+          json.int(case is_mover {
+            True -> list.length(state.staged)
+            False -> 0
+          }),
+        ),
+        // The roll played nothing: everyone sees the dice and why the turn
+        // is about to pass, until the mover commits it.
+        #("no_moves", json.bool(no_moves)),
+        #(
+          "turn_complete",
+          json.bool(case viewer_id {
+            Some(id) -> state.can_play(state, id)
+            None -> False
+          }),
+        ),
+        #(
+          "dice",
+          json.array(
+            case state.phase, is_mover {
+              // Which dice are used is part of the private staging
+              state.Moving(_, _), False -> state.turn_dice(state)
+              _, _ -> state.dice_left(state)
+            },
+            json.int,
+          ),
+        ),
+        #("last_roll", json.array(state.last_roll, json.int)),
+        #("target", json.int(state.config.target)),
+        #("game_number", json.int(state.game_number)),
+        #("winner_id", case state.phase {
+          state.Finished(color) -> json.string(state.player_of(state, color))
+          _ -> json.null()
+        }),
+        // The record of this game only (a finished match: its last game),
+        // oldest first, and one result line per finished game. Every update
+        // carries them, so they are bounded by a game, not by the match: the
+        // turns of earlier games are served on request (`record_json`, the
+        // room's `/record`). All of it is public: a committed turn is on the
+        // board for everyone.
+        #("record", json.array(current, record.to_json)),
+        #(
+          "games",
+          json.array(record.results(list.reverse(state.record)), record.to_json),
+        ),
+      ],
     ]),
   )
 }
@@ -146,6 +150,29 @@ pub fn record_json(state: GameState) -> json.Json {
   ])
 }
 
+
+/// Between the games of a match: how the game just played ended, and who
+/// has said they are ready for the next one. Everyone sees it, spectators
+/// too. Like `resign_offer`, the key is present only in that phase.
+fn between_games_data(state: GameState) -> List(#(String, json.Json)) {
+  case state.phase {
+    state.BetweenGames(last, ready) -> [
+      #(
+        "between_games",
+        json.object([
+          #("ready", json.array(ready, json.string)),
+          #("winner", json.string(last.winner)),
+          #("kind", json.string(state.end_kind_name(last.kind))),
+          #("stakes", json.string(board.kind_name(state.end_stakes(last.kind)))),
+          #("points", json.int(last.points)),
+          #("cube", json.int(last.cube)),
+        ]),
+      ),
+    ]
+    _ -> []
+  }
+}
+
 /// A resignation on offer: from whom, at what stakes, worth how much if
 /// accepted. Both seats see it; play is frozen until it is answered. The
 /// key is present only while an offer stands, so a scene with none -- every
@@ -175,6 +202,7 @@ pub fn phase_name(state: GameState) -> String {
         True -> "no_moves"
         False -> "moving"
       }
+    state.BetweenGames(_, _) -> "between_games"
     state.Finished(_) -> "game_over"
   }
 }
