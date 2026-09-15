@@ -1142,6 +1142,59 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
+            , test "a double tumbles like two dice: the reels differ at every frame" <|
+                \_ ->
+                    case FixtureLoader.byGame "backgammon" |> List.head |> Maybe.andThen (\f -> Dict.get "p1" f.initial) of
+                        Just u ->
+                            let
+                                rendered =
+                                    View.view (ctx "p1" (withDice [ 5, 5, 5, 5 ] u) watching) |> Query.fromHtml
+
+                                frame dieId i =
+                                    rendered
+                                        |> Query.find [ class "die", attribute (Html.Attributes.attribute "data-die" dieId) ]
+                                        |> Query.findAll [ class "die-frame" ]
+                                        |> Query.index i
+
+                                -- a face is drawn by hiding the pips it does
+                                -- not light: face n leaves 9 - n hidden
+                                hidden dieId i n =
+                                    frame dieId i |> Query.findAll [ class "invisible" ] |> Query.count (Expect.equal (9 - n))
+                            in
+                            Expect.all
+                                [ -- the first frames: die 0 shows a 6, die 1 a 3
+                                  \_ -> hidden "die:0" 0 6
+                                , \_ -> hidden "die:1" 0 3
+
+                                -- and no frame of the two ever agrees
+                                , \_ ->
+                                    List.map2 (\a b -> a /= b) (View.tumbleFaces 0 5) (View.tumbleFaces 1 5)
+                                        |> List.all identity
+                                        |> Expect.equal True
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+            , test "for every value, neither reel shows the landing face and the two never coincide" <|
+                \_ ->
+                    List.range 1 6
+                        |> List.all
+                            (\v ->
+                                let
+                                    a =
+                                        View.tumbleFaces 0 v
+
+                                    b =
+                                        View.tumbleFaces 1 v
+                                in
+                                List.all identity (List.map2 (/=) a b)
+                                    && not (List.member v a)
+                                    && not (List.member v b)
+                                    && (List.sort a == List.sort b)
+                                    && (List.length a == 5)
+                            )
+                        |> Expect.equal True
             , test "the same double reads the same way to a spectator" <|
                 \_ ->
                     case FixtureLoader.byGame "backgammon" |> List.head |> Maybe.andThen (\f -> Dict.get "p1" f.initial) of
