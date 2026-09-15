@@ -313,6 +313,21 @@ update msg model =
                 Backgammon.NeedZones targets ->
                     stay updated (measureDropZones targets)
 
+                Backgammon.WantRecord ->
+                    -- The earlier games' turns are not in every update: the
+                    -- room serves them to a seat that asks, on its token.
+                    case model.seatToken of
+                        Just token ->
+                            stay updated
+                                (Api.get model.session
+                                    (recordUrl model token)
+                                    (D.field "record" D.value)
+                                    (Result.mapError (always ()) >> Backgammon.GotRecord >> BackgammonMsg)
+                                )
+
+                        Nothing ->
+                            update (BackgammonMsg (Backgammon.GotRecord (Err ()))) updated
+
                 Backgammon.ChoseTheme name ->
                     -- Three places keep it: the page (instantly), this
                     -- browser (so the next first paint is right) and the
@@ -541,6 +556,13 @@ connectionStatusFromString status =
 
         _ ->
             Disconnected
+
+
+{-| Where this room's whole record is read, on this seat's token.
+-}
+recordUrl : Model -> String -> String
+recordUrl model token =
+    "/papi/games/" ++ model.gameSlug ++ "/rooms/" ++ model.gameId ++ "/record?t=" ++ percentEncode token
 
 
 {-| A rematch is the same players in the same seats, so the seat token

@@ -408,6 +408,49 @@ defmodule OskolWeb.Api.LandingApiTest do
     end
   end
 
+  # ---------- GET /papi/games/:slug/rooms/:id/record ----------
+
+  describe "GET /papi/games/:slug/rooms/:id/record" do
+    test "a seat token reads the game's whole record", %{conn: conn} do
+      %{game_id: game_id, t2: t2} = GameFixtures.started(42, "match5")
+
+      body =
+        conn
+        |> get(~p"/papi/games/backgammon/rooms/#{game_id}/record?t=#{t2}")
+        |> json_response(200)
+
+      assert %{"ok" => true, "slug" => "backgammon", "id" => ^game_id, "record" => record} = body
+
+      assert %{"target" => 5, "players" => [_, _], "games" => [%{"number" => 1, "entries" => []}]} =
+               record
+    end
+
+    test "a wrong token, or none, is not found and says nothing more", %{conn: conn} do
+      %{game_id: game_id} = GameFixtures.started(42, "match5")
+
+      for query <- ["?t=not-a-seat", ""] do
+        body =
+          conn
+          |> get("/papi/games/backgammon/rooms/#{game_id}/record#{query}")
+          |> json_response(404)
+
+        assert body["error"] == %{"code" => "not_found", "message" => "No record for that game"}
+      end
+    end
+
+    test "a game that keeps no record says so", %{conn: conn} do
+      %{game_id: game_id, t1: t1} = GameFixtures.lobby("cash", slug: "poker", pid1: self())
+      {:ok, _p2, _state} = Game.join_game(game_id, "Bob", nil)
+
+      body =
+        conn
+        |> get(~p"/papi/games/poker/rooms/#{game_id}/record?t=#{t1}")
+        |> json_response(404)
+
+      assert body["error"]["message"] == "This game keeps no record"
+    end
+  end
+
   # ---------- GET /papi/codes/:code ----------
 
   describe "GET /papi/codes/:code" do

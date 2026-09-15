@@ -9,6 +9,7 @@ import gamekit/game.{type Game}
 import gamekit/rng.{type Rng}
 import gleam/dict
 import gleam/list
+import gleam/option.{Some}
 import gleam/result
 
 pub fn game() -> Game(GameState, Action) {
@@ -22,6 +23,7 @@ pub fn game() -> Game(GameState, Action) {
     outcome: outcome,
     clocks: engine.on_the_clock,
     timeout: fn(_, _) { game.Forfeit },
+    record: fn(s) { Some(projection.record_json(s)) },
   )
 }
 
