@@ -24,6 +24,7 @@ pub fn game() -> Game(GameState, Action) {
     outcome: outcome,
     clocks: engine.on_the_clock,
     timeout: engine.timeout,
+    record: game.no_record,
   )
 }
 

@@ -12,7 +12,10 @@ rise, last chip wins).
 matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
 Jacoby rule. A roll that can play nothing is a state, not a skipped turn:
 the dice stand for both players under "no legal moves" until the mover
-passes, and every time control gives each turn its first 12 seconds free. **Go** is the territory game on a 9x9, 13x13 or 19x19 board:
+passes, and every time control gives each turn its first 12 seconds free.
+Between the games of a match (or of unlimited play) the finished game's
+position stays up, nobody is on the clock, and the next game starts when
+both players have pressed READY. **Go** is the territory game on a 9x9, 13x13 or 19x19 board:
 area (Tromp-Taylor) scoring, positional superko, komi 5.5/6.5/7.5, two
 passes end the game; it ships on the generic renderer. Every game can be
 played with an optional time control.
@@ -70,8 +73,15 @@ Game(
   outcome:       fn(state) -> Outcome,
   clocks:        fn(state) -> List(PlayerId),               // who is on the clock right now
   timeout:       fn(state, PlayerId) -> Timeout(action),    // Forfeit, or Act(action) taken for them
+  record:        fn(state) -> Option(Json),                 // the whole public record, or game.no_record
 )
 ```
+
+`record` is what `GET /papi/games/:slug/rooms/:id/record` serves to a seat:
+everything a replay or an analysis needs, too big to ride in every update.
+Backgammon's is every game of the match with every turn (notation, the
+position and cube it left, where the moved checkers `landed`); its scene
+carries only the game on the board plus one result line per finished game.
 
 Formats carry **settings**: each is a list of choices with a default, and
 picking a choice merges its config entries (`game.configure`). That is how
@@ -176,6 +186,7 @@ lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
 lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
+lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 src/oskol/rooms/seat.gleam       what an attach means: the same client back, or a takeover
 lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
@@ -276,6 +287,8 @@ POST /papi/games/:slug                 {format, name, clock, selections}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
+GET  /papi/games/:slug/rooms/:id/record?t=<seat token>
+                                       {ok, slug, id, record}  (the game's `record`)
 GET  /papi/codes/:code                 {ok, slug}
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
@@ -291,7 +304,11 @@ A game's own `clocks` are preset ids; `clock_presets` carries every preset,
 so the picker can name the ones the game offers. Statuses: 404 `not_found`
 (no such game, no such code, a room that is over), 422 `validation_failed`
 (a name, a mode, a clock or a seat the room refused), 500 `server_error`.
-Every decision behind these lives in `src/oskol/handlers/landing.gleam`.
+Every decision behind these lives in `src/oskol/handlers/landing.gleam`,
+except the record's, in `src/oskol/handlers/record.gleam`: it opens only on
+a seat token (the rooms cap `seated_game`), and a wrong token, a lobby, a
+slug that is not the room's game and a room that is gone all answer the
+same 404, as the game channel refuses without saying which.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist
@@ -474,6 +491,15 @@ alias); prod reads `DATABASE_URL` (Fly Managed Postgres via pgbouncer, so
 postgrex runs with `prepare: :unnamed`) and migrates on boot. A room's raw
 `control:` (tests only) does not persist; real rooms use clock preset ids,
 which do.
+
+A rules change that makes old logs stop replaying needs those logs patched,
+because a room is rebuilt from its log under today's rules. The one so far:
+the between-games READY. `Oskol.Game.ReadyUpPatch` inserts the `ready`
+steps old backgammon match logs lack (at the time of the game's end); the
+data migration `PatchReadyUpLogs` ran it
+once at boot, before any room could rehydrate, and `mix
+oskol.patch_ready_up` / `Oskol.Release.patch_ready_up/1` show what it does
+(dry run unless told to write).
 
 Every visitor silently becomes a guest: `OskolWeb.Plugs.GuestId` mints an
 opaque crypto-random id into a year-long HttpOnly cookie (renewed on every

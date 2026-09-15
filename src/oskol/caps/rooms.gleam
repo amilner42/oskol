@@ -1,6 +1,7 @@
 //// Room IO capabilities. Built for real in lib/oskol/gleam/caps/rooms.ex —
 //// that file and this one must agree on constructor tag and field order.
 
+import gamekit/instance.{type Instance}
 import gleam/option.{type Option}
 import oskol/rooms/errors.{type RoomError}
 import oskol/rooms/room.{type Room, type Seat, type Setup, type Table}
@@ -34,6 +35,10 @@ pub type RoomsCaps {
     /// seat's token is rotated first, so a link that leaked earlier cannot
     /// shadow the seat later.
     claim: fn(String, String) -> Result(Seat, RoomError),
+    /// The running game behind a seat: (game_id, seat token). A token that
+    /// opens no seat is `InvalidToken`; a room still in its lobby is
+    /// `GameNotStarted`. Reading it changes nothing and attaches nothing.
+    seated_game: fn(String, String) -> Result(Instance, RoomError),
   )
 }
 
@@ -48,5 +53,6 @@ pub fn stub() -> RoomsCaps {
     configure: fn(_, _) { panic as "stub rooms.configure" },
     join: fn(_, _, _) { panic as "stub rooms.join" },
     claim: fn(_, _) { panic as "stub rooms.claim" },
+    seated_game: fn(_, _) { panic as "stub rooms.seated_game" },
   )
 }

@@ -21,8 +21,9 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
   let no_moves = state.no_moves(state)
   let state =
     state.GameState(..state, board: state.visible_board(state, viewer_id))
-  // The match record, oldest first (the state keeps it newest first).
-  let entries = list.reverse(state.record)
+  // The record of the game on the board, oldest first (the state keeps the
+  // whole match newest first), and the results of the games before it.
+  let current = record.current_game(state.record, state.game_number)
   scene.Scene(
     game: slug,
     phase: phase_name(state),
@@ -33,78 +34,143 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
       player_zones(state),
       [dice_zone(state, is_mover), cube_zone(state)],
     ]),
-    data: list.append(resign_offer_data(state), [
-      #("to_move", json.nullable(state.to_move(state), json.string)),
-      #("to_act", json.nullable(state.to_act(state), json.string)),
-      #(
-        "cube",
-        json.object([
-          #("value", json.int(state.cube_value)),
-          #("owner", case state.cube_owner {
-            Some(c) -> json.string(state.player_of(state, c))
-            None -> json.null()
-          }),
-          #("enabled", json.bool(state.config.cube)),
-          #("crawford", json.bool(state.crawford)),
-          #("pending_from", case state.phase {
-            state.Doubled(by) -> json.string(state.player_of(state, by))
-            _ -> json.null()
-          }),
-        ]),
-      ),
-      #("unlimited", json.bool(state.unlimited(state))),
-      #(
-        "staged",
-        json.int(case is_mover {
-          True -> list.length(state.staged)
-          False -> 0
-        }),
-      ),
-      // The roll played nothing: everyone sees the dice and why the turn
-      // is about to pass, until the mover commits it.
-      #("no_moves", json.bool(no_moves)),
-      #(
-        "turn_complete",
-        json.bool(case viewer_id {
-          Some(id) -> state.can_play(state, id)
-          None -> False
-        }),
-      ),
-      #(
-        "dice",
-        json.array(
-          case state.phase, is_mover {
-            // Which dice are used is part of the private staging
-            state.Moving(_, _), False -> state.turn_dice(state)
-            _, _ -> state.dice_left(state)
-          },
-          json.int,
+    data: list.flatten([
+      resign_offer_data(state),
+      between_games_data(state),
+      [
+        #("to_move", json.nullable(state.to_move(state), json.string)),
+        #("to_act", json.nullable(state.to_act(state), json.string)),
+        #(
+          "cube",
+          json.object([
+            #("value", json.int(state.cube_value)),
+            #("owner", case state.cube_owner {
+              Some(c) -> json.string(state.player_of(state, c))
+              None -> json.null()
+            }),
+            #("enabled", json.bool(state.config.cube)),
+            #("crawford", json.bool(state.crawford)),
+            #("pending_from", case state.phase {
+              state.Doubled(by) -> json.string(state.player_of(state, by))
+              _ -> json.null()
+            }),
+          ]),
         ),
-      ),
-      #("last_roll", json.array(state.last_roll, json.int)),
-      #("target", json.int(state.config.target)),
-      #("game_number", json.int(state.game_number)),
-      #("winner_id", case state.phase {
-        state.Finished(color) -> json.string(state.player_of(state, color))
-        _ -> json.null()
-      }),
-      // The match record, oldest first, and the games it has finished. Both
-      // are public: a committed turn is on the board for everyone.
-      #("record", json.array(entries, record.to_json)),
-      #(
-        "games",
-        json.array(
-          list.filter(entries, fn(e) {
-            case e {
-              record.GameOver(..) -> True
-              _ -> False
-            }
+        #("unlimited", json.bool(state.unlimited(state))),
+        #(
+          "staged",
+          json.int(case is_mover {
+            True -> list.length(state.staged)
+            False -> 0
           }),
-          record.to_json,
         ),
-      ),
+        // The roll played nothing: everyone sees the dice and why the turn
+        // is about to pass, until the mover commits it.
+        #("no_moves", json.bool(no_moves)),
+        #(
+          "turn_complete",
+          json.bool(case viewer_id {
+            Some(id) -> state.can_play(state, id)
+            None -> False
+          }),
+        ),
+        #(
+          "dice",
+          json.array(
+            case state.phase, is_mover {
+              // Which dice are used is part of the private staging
+              state.Moving(_, _), False -> state.turn_dice(state)
+              _, _ -> state.dice_left(state)
+            },
+            json.int,
+          ),
+        ),
+        #("last_roll", json.array(state.last_roll, json.int)),
+        #("target", json.int(state.config.target)),
+        #("game_number", json.int(state.game_number)),
+        #("winner_id", case state.phase {
+          state.Finished(color) -> json.string(state.player_of(state, color))
+          _ -> json.null()
+        }),
+        // The record of this game only (a finished match: its last game),
+        // oldest first, and one result line per finished game. Every update
+        // carries them, so they are bounded by a game, not by the match: the
+        // turns of earlier games are served on request (`record_json`, the
+        // room's `/record`). All of it is public: a committed turn is on the
+        // board for everyone.
+        #("record", json.array(current, record.to_json)),
+        #(
+          "games",
+          json.array(record.results(list.reverse(state.record)), record.to_json),
+        ),
+      ],
     ]),
   )
+}
+
+/// The whole record, for the room's `/record` endpoint (the game contract's
+/// `record`): who played which colour, the match length, and every game,
+/// oldest first, with every entry the scene would have carried while it was
+/// being played -- turns with their positions, cube actions, and the result
+/// line that ends each finished game. The game in progress, if there is
+/// one, is last and has no result yet. Replay and analysis read this.
+pub fn record_json(state: GameState) -> json.Json {
+  let games = record.by_game(list.reverse(state.record))
+  let in_progress = case state.phase {
+    state.Finished(_) -> False
+    _ -> True
+  }
+  let games = case in_progress {
+    True -> games
+    // The match is over: the last group, after the final result, is empty.
+    False -> list.take(games, list.length(games) - 1)
+  }
+  json.object([
+    #(
+      "players",
+      json.array(state.order, fn(id) {
+        json.object([
+          #("id", json.string(id)),
+          #("name", json.string(state.name_of(state, id))),
+          #("color", json.string(board.color_name(color_for(state, id)))),
+        ])
+      }),
+    ),
+    #("target", json.int(state.config.target)),
+    #(
+      "games",
+      json.array(list.index_map(games, fn(g, i) { #(g, i) }), fn(pair) {
+        let #(entries, i) = pair
+        json.object([
+          #("number", json.int(i + 1)),
+          #("entries", json.array(entries, record.to_json)),
+        ])
+      }),
+    ),
+  ])
+}
+
+
+/// Between the games of a match: how the game just played ended, and who
+/// has said they are ready for the next one. Everyone sees it, spectators
+/// too. Like `resign_offer`, the key is present only in that phase.
+fn between_games_data(state: GameState) -> List(#(String, json.Json)) {
+  case state.phase {
+    state.BetweenGames(last, ready) -> [
+      #(
+        "between_games",
+        json.object([
+          #("ready", json.array(ready, json.string)),
+          #("winner", json.string(last.winner)),
+          #("kind", json.string(state.end_kind_name(last.kind))),
+          #("stakes", json.string(board.kind_name(state.end_stakes(last.kind)))),
+          #("points", json.int(last.points)),
+          #("cube", json.int(last.cube)),
+        ]),
+      ),
+    ]
+    _ -> []
+  }
 }
 
 /// A resignation on offer: from whom, at what stakes, worth how much if
@@ -136,6 +202,7 @@ pub fn phase_name(state: GameState) -> String {
         True -> "no_moves"
         False -> "moving"
       }
+    state.BetweenGames(_, _) -> "between_games"
     state.Finished(_) -> "game_over"
   }
 }

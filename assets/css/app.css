@@ -1158,6 +1158,9 @@ a.q-card:hover, a.q-card:focus-visible {
   font-size: 12px;
 }
 .bg-record-game { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; min-width: 0; }
+/* A finished game is a door to its moves; the one open in the list is marked. */
+.bg-record-game:hover { text-decoration: underline; }
+.bg-record-game.is-browsing { background: color-mix(in oklab, var(--bg-accent) 38%, #fff); box-shadow: inset 3px 0 0 0 var(--bg-accent); }
 .bg-record-list {
   --rl-pad: 10px; /* the side padding a highlighted row bleeds into */
   flex: 1;
@@ -1321,6 +1324,10 @@ a.q-card:hover, a.q-card:focus-visible {
   .bg-page #bg-resign-open svg { width: 14px; height: 14px; }
   .bg-page .bg-record-sheet,
   .bg-page .bg-record-sheet .bg-record-body { max-height: 88dvh; }
+  /* The stack is `display: contents` here and paints no outline, so a past
+     turn marks the board itself; 1px offset keeps it inside the 0.25rem
+     side padding the page clips at. */
+  .bg-page.is-viewing .bg-board { outline: 3px dashed var(--bg-accent); outline-offset: 1px; }
   .bg-page .bg-board {
     grid-column: 1;
     grid-row: 1 / -1;

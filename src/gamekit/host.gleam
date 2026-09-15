@@ -206,6 +206,12 @@ pub fn seats(instance: Instance) -> List(Seat) {
   instance.seats(instance)
 }
 
+/// The names of the actions this player may take now, without building a
+/// whole update: for platform tooling that walks a log step by step.
+pub fn legal_names(instance: Instance, player_id: String) -> List(String) {
+  instance.legal(instance, player_id) |> list.map(fn(schema) { schema.name })
+}
+
 /// Text rendering for logs, agents and tests.
 pub fn text(instance: Instance, player_id: String) -> String {
   text.render_with_actions(
