@@ -32,13 +32,48 @@ defmodule Oskol.Dev.Seeds do
   @doc "Every seeded room: its code, what it is, and the format it is played in."
   def scenarios do
     [
-      %{code: "000001", format: "single", what: "a fresh game, P1 has the opening roll", find: &fresh?/2},
-      %{code: "000002", format: "single", what: "P1 has a checker on the bar, dice rolled", find: &on_bar?/2},
-      %{code: "000003", format: "single", what: "P1 is bearing off, dice rolled", find: &bearing_off?/2},
-      %{code: "000004", format: "single", what: "P1 danced: no legal move, turn to pass", find: &danced?/2},
-      %{code: "000005", format: "match5", what: "match to 5: P1 may roll or double", find: &roll_or_double?/2},
-      %{code: "000006", format: "match5", what: "match to 5: P1 must answer a double", find: &answer_double?/2},
-      %{code: "000007", format: "match5", what: "match to 5: P1 owns the cube, dice rolled", find: &owns_cube?/2}
+      %{
+        code: "000001",
+        format: "single",
+        what: "a fresh game, P1 has the opening roll",
+        find: &fresh?/2
+      },
+      %{
+        code: "000002",
+        format: "single",
+        what: "P1 has a checker on the bar, dice rolled",
+        find: &on_bar?/2
+      },
+      %{
+        code: "000003",
+        format: "single",
+        what: "P1 is bearing off, dice rolled",
+        find: &bearing_off?/2
+      },
+      %{
+        code: "000004",
+        format: "single",
+        what: "P1 danced: no legal move, turn to pass",
+        find: &danced?/2
+      },
+      %{
+        code: "000005",
+        format: "match5",
+        what: "match to 5: P1 may roll or double",
+        find: &roll_or_double?/2
+      },
+      %{
+        code: "000006",
+        format: "match5",
+        what: "match to 5: P1 must answer a double",
+        find: &answer_double?/2
+      },
+      %{
+        code: "000007",
+        format: "match5",
+        what: "match to 5: P1 owns the cube, dice rolled",
+        find: &owns_cube?/2
+      }
     ]
   end
 
