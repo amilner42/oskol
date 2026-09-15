@@ -425,6 +425,85 @@ defmodule OskolWeb.Api.LandingApiTest do
     end
   end
 
+  # ---------- /papi/me/prefs ----------
+
+  describe "GET and POST /papi/me/prefs" do
+    test "a visitor who has never picked anything has no preferences", %{conn: conn} do
+      body = conn |> as_guest(new_guest_id()) |> get(~p"/papi/me/prefs") |> json_response(200)
+
+      assert body == %{"ok" => true, "prefs" => %{}}
+    end
+
+    test "a board picked is written to the guest row and read back", %{conn: conn} do
+      guest_id = new_guest_id()
+
+      body =
+        conn
+        |> as_guest(guest_id)
+        |> with_csrf()
+        |> post(~p"/papi/me/prefs", %{"key" => "backgammon_theme", "value" => "midnight"})
+        |> json_response(200)
+
+      assert body == %{"ok" => true, "prefs" => %{"backgammon_theme" => "midnight"}}
+      assert Repo.get(Guests.Guest, guest_id).prefs == %{"backgammon_theme" => "midnight"}
+
+      # And the same cookie reads it back on a later visit.
+      assert %{"prefs" => %{"backgammon_theme" => "midnight"}} =
+               build_conn() |> as_guest(guest_id) |> get(~p"/papi/me/prefs") |> json_response(200)
+    end
+
+    test "picking again replaces it and leaves other keys alone", %{conn: conn} do
+      guest_id = new_guest_id()
+      Guests.save_pref(guest_id, "something_else", "kept")
+
+      conn
+      |> as_guest(guest_id)
+      |> with_csrf()
+      |> post(~p"/papi/me/prefs", %{"key" => "backgammon_theme", "value" => "neon"})
+      |> json_response(200)
+
+      assert Repo.get(Guests.Guest, guest_id).prefs == %{
+               "something_else" => "kept",
+               "backgammon_theme" => "neon"
+             }
+    end
+
+    test "a board that does not exist is refused and nothing is written", %{conn: conn} do
+      guest_id = new_guest_id()
+
+      body =
+        conn
+        |> as_guest(guest_id)
+        |> with_csrf()
+        |> post(~p"/papi/me/prefs", %{"key" => "backgammon_theme", "value" => "plaid"})
+        |> json_response(422)
+
+      assert body["error"]["code"] == "validation_failed"
+      # The row exists (the page that handed out the CSRF token touched it),
+      # but nothing was kept in it.
+      assert Repo.get(Guests.Guest, guest_id).prefs == %{}
+    end
+
+    test "a preference the site does not keep is refused", %{conn: conn} do
+      body =
+        conn
+        |> as_guest(new_guest_id())
+        |> with_csrf()
+        |> post(~p"/papi/me/prefs", %{"key" => "admin", "value" => "true"})
+        |> json_response(422)
+
+      assert body["error"]["message"] == "Unknown preference"
+    end
+
+    test "a write without the CSRF token is refused", %{conn: conn} do
+      assert_raise Plug.CSRFProtection.InvalidCSRFTokenError, fn ->
+        conn
+        |> csrf_checked()
+        |> post(~p"/papi/me/prefs", %{"key" => "backgammon_theme", "value" => "neon"})
+      end
+    end
+  end
+
   # ---------- Guest identity ----------
 
   describe "guest identity" do

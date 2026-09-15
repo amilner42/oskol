@@ -8,6 +8,8 @@ defmodule OskolWeb.Api.LandingController do
       GET  /papi/games/:slug/rooms/:id     what that invite link offers
       POST /papi/games/:slug/rooms/:id     join by name, or take a seat back
       GET  /papi/codes/:code               which game answers to a code
+      GET  /papi/me/prefs                  this visitor's display preferences
+      POST /papi/me/prefs                  keep one of them
 
   Every decision — what a page carries, whether a name will do, what a
   refusal says, what an invite is worth — belongs to the Gleam handlers in
@@ -61,6 +63,25 @@ defmodule OskolWeb.Api.LandingController do
         slug,
         game_id,
         param(params, "name")
+      )
+    )
+  end
+
+  # Display preferences (a board's colours): the visitor's own taste, kept
+  # against the silent guest. Never a room's business, so it hangs off the
+  # caller and not off a game.
+  def prefs(conn, _params) do
+    send_json(conn, {:ok, :oskol@handlers@landing.prefs_json(ctx(), session(conn))})
+  end
+
+  def save_pref(conn, params) do
+    send_json(
+      conn,
+      :oskol@handlers@landing.save_pref_json(
+        ctx(),
+        session(conn),
+        param(params, "key"),
+        param(params, "value")
       )
     )
   end

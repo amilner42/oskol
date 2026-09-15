@@ -46,6 +46,12 @@ suite =
             , test "rematch is reported to the app, not sent as an action" <|
                 \_ ->
                     View.update Rematch View.init |> Tuple.second |> Expect.equal WantRematch
+            , test "picking a board is reported to the app and sends nothing to the room" <|
+                \_ ->
+                    View.update ToggleThemes View.init
+                        |> Tuple.first
+                        |> View.update (PickTheme "midnight")
+                        |> Expect.equal ( View.init, ChoseTheme "midnight" )
             ]
         , describe "destination-first tap resolution"
             (let
@@ -463,13 +469,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
+                            ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }, Nothing )
+                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled }
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -480,7 +486,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
+                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -539,7 +545,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, roll = settled }, NoOut )
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, themesOpen = False, roll = settled }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -722,6 +728,78 @@ suite =
                                 , \_ -> rendered |> Query.hasNot [ id "bg-action-accept_resign" ]
                                 ]
                                 ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             ]
+            )
+        , describe "the board picker"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                opened =
+                    View.update ToggleThemes View.init |> Tuple.first
+
+                themed name update model =
+                    let
+                        base =
+                            ctx "p1" update model
+                    in
+                    { base | theme = name }
+             in
+             [ test "the page wears the board it was given" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (themed "midnight" u View.init)
+                                |> Query.fromHtml
+                                |> Query.has [ class "bg-page", class "bg-theme-midnight" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a board this release does not know falls back to the default" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (themed "burlwood" u View.init)
+                                |> Query.fromHtml
+                                |> Query.has [ class "bg-theme-walnut" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the list is closed until the control is tapped, then lists all eight" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            Expect.all
+                                [ \_ ->
+                                    View.view (ctx "p1" u View.init)
+                                        |> Query.fromHtml
+                                        |> Query.hasNot [ id "bg-theme-list" ]
+                                , \_ ->
+                                    View.view (ctx "p1" u opened)
+                                        |> Query.fromHtml
+                                        |> Query.has [ id "bg-theme-list" ]
+                                , \_ ->
+                                    View.view (ctx "p1" u opened)
+                                        |> Query.fromHtml
+                                        |> Query.findAll [ class "bg-theme-option" ]
+                                        |> Query.count (Expect.equal 8)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a viewer with nothing legal still gets the picker" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            View.view (ctx "p2" { u | legal = [] } View.init)
+                                |> Query.fromHtml
+                                |> Query.has [ id "bg-theme-button" ]
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
@@ -976,7 +1054,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model rotation =
-                    { drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, resigning = False, roll = settled }
+                    { drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled }
 
                 nextDie rotation u =
                     View.view (ctx "p1" (twoDice u) (model rotation))
@@ -1518,6 +1596,7 @@ ctx playerId update model =
     , nameOf = identity
     , rematchReady = []
     , away = []
+    , theme = View.defaultTheme
     , finished =
         case update.outcome of
             Protocol.Finished winners ->
@@ -1748,7 +1827,7 @@ perFixture fixture =
                     |> List.head
                     |> Maybe.map
                         (\u ->
-                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, resigning = False, roll = settled })
+                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal 0)

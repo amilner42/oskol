@@ -10,7 +10,13 @@ import Expect
 import FixtureLoader exposing (Fixture)
 import Page.Play as Play exposing (ConnectionStatus(..), Model, Msg(..))
 import Protocol exposing (GamePayload, ServerMessage(..), Update)
+import Session exposing (Session)
 import Test exposing (Test, describe, test)
+
+
+testSession : Session
+testSession =
+    { csrf = "tok", guestName = Nothing, prefs = Dict.empty }
 
 
 payload : Fixture -> String -> Update -> GamePayload
@@ -27,7 +33,7 @@ payload fixture playerId update =
 
 start : Fixture -> Model
 start fixture =
-    Play.init
+    Play.init testSession
         { origin = "http://localhost:4400"
         , slug = fixture.game
         , gameId = "fixture"
@@ -104,7 +110,7 @@ channelMessages =
         \_ ->
             let
                 model =
-                    Play.init
+                    Play.init testSession
                         { origin = "http://localhost:4400"
                         , slug = "backgammon"
                         , gameId = "g"

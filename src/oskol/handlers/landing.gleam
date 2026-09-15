@@ -8,6 +8,8 @@
 ////                                       disconnected}
 ////   POST /papi/games/:slug/rooms/:id   {ok, id, path, player_id}
 ////   GET  /papi/codes/:code             {ok, slug}
+////   GET  /papi/me/prefs                {ok, prefs}
+////   POST /papi/me/prefs                {key, value} -> {ok, prefs}
 ////
 //// Every decision behind these lives in Gleam — what a page carries, what a
 //// name has to be, what an invite link is worth. The Elixir controller only
@@ -17,6 +19,7 @@ import gamekit/clock
 import gamekit/game.{type Info}
 import gamekit/registry
 import gleam/json.{type Json}
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import oskol/core/ctx.{type Ctx}
@@ -24,6 +27,7 @@ import oskol/core/envelope
 import oskol/core/error.{type ApiError}
 import oskol/core/session.{type Session}
 import oskol/guests/identity
+import oskol/guests/prefs
 import oskol/handlers/rooms
 import oskol/landing/copy.{type Copy}
 import oskol/rooms/errors
@@ -198,6 +202,41 @@ fn seat_taken(slug: String, seated: Seated) -> String {
     #("path", json.string(room.seat_path(slug, seated.game_id, seated.token))),
     #("player_id", json.string(seated.player_id)),
   ])
+}
+
+// ---------- GET/POST /papi/me/prefs ----------
+//
+// The visitor's own display preferences: which board they like to look at.
+// Display only — nothing here reaches a room, a scene or an opponent, and a
+// visitor with no guest cookie simply has none (their browser keeps the
+// pick itself).
+
+pub fn prefs_json(ctx: Ctx, session: Session) -> String {
+  envelope.ok([#("prefs", prefs_object(identity.preferences(ctx, session)))])
+}
+
+/// Write one preference. The whitelist is the point: an unknown key or a
+/// value that names no theme is refused, so the column only ever holds
+/// things this release knows how to honour.
+pub fn save_pref_json(
+  ctx: Ctx,
+  session: Session,
+  key: String,
+  value: String,
+) -> Result(String, ApiError) {
+  case prefs.validate(key, value) {
+    Ok(#(key, value)) -> {
+      identity.remember_preference(ctx, session, key, value)
+      // Answer with what the site now holds for this visitor, so the client
+      // never has to guess whether the write landed.
+      Ok(prefs_json(ctx, session))
+    }
+    Error(message) -> Error(error.validation_failed(message))
+  }
+}
+
+fn prefs_object(kept: prefs.Prefs) -> Json {
+  json.object(list.map(kept, fn(pair) { #(pair.0, json.string(pair.1)) }))
 }
 
 // ---------- GET /papi/codes/:code ----------

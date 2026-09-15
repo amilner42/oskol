@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, tumbleFaces, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, themes, tumbleFaces, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -65,6 +65,7 @@ type alias Model =
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
     , resigning : Bool -- the resign panel is open: which stakes to offer
+    , themesOpen : Bool -- the board-colour list in the header is showing
     , roll : Roll -- the dice on the board, and whether this client saw them land
     }
 
@@ -121,6 +122,8 @@ type Msg
     | OpenResign
     | CancelResign
     | OfferResign String -- the stakes id from the resign schema's choice
+    | ToggleThemes
+    | PickTheme String
     | Ignore
 
 
@@ -130,6 +133,7 @@ type Out
     | SendMany (List E.Value)
     | WantRematch
     | NeedZones (List String)
+    | ChoseTheme String -- this player's board colours: display only, never sent to the room
 
 
 init : Model
@@ -140,6 +144,7 @@ init =
     , autoRolled = False
     , picker = Nothing
     , resigning = False
+    , themesOpen = False
 
     -- A client starts by being told where the game is, not by watching it
     -- get there: whatever dice the first payload brings are already on the
@@ -288,6 +293,14 @@ update msg model =
 
                 Nothing ->
                     ( model, NoOut )
+
+        ToggleThemes ->
+            ( { model | themesOpen = not model.themesOpen }, NoOut )
+
+        PickTheme name ->
+            -- The board changes under this player and nobody else: the
+            -- theme never enters an action, so nothing is sent to the room.
+            ( { model | themesOpen = False }, ChoseTheme name )
 
         CancelPick ->
             ( { model | picker = Nothing }, NoOut )
@@ -635,7 +648,43 @@ type alias Ctx =
     , rematchReady : List String
     , finished : Maybe (List String)
     , away : List String -- seated players whose connection is down
+    , theme : String -- the board's colours, this viewer's own (`themes`)
     }
+
+
+{-| The eight boards, in the order the picker lists them: the id the server
+keeps (`oskol/guests/prefs.gleam`) and the name a player reads. The colours
+themselves are in app.css, under the class of the same name, and are what
+paints both the board and this row's swatch.
+-}
+themes : List ( String, String )
+themes =
+    [ ( "walnut", "WALNUT" )
+    , ( "midnight", "MIDNIGHT" )
+    , ( "forest", "FOREST FELT" )
+    , ( "sand", "SAND" )
+    , ( "ivory", "IVORY & EBONY" )
+    , ( "cherry", "CHERRY" )
+    , ( "slate", "SLATE" )
+    , ( "neon", "NEON ARCADE" )
+    ]
+
+
+{-| The board a player who has never picked one gets: the one Oskol shipped
+with. Also the fallback for a name this release does not know.
+-}
+defaultTheme : String
+defaultTheme =
+    "walnut"
+
+
+themeClass : String -> String
+themeClass name =
+    if List.any (\( id, _ ) -> id == name) themes then
+        "bg-theme-" ++ name
+
+    else
+        "bg-theme-" ++ defaultTheme
 
 
 {-| The seat this viewer watches from: their own, or the first player's for
@@ -743,7 +792,7 @@ view ctx =
     -- height, not by a fixed width: `.bg-page` in app.css derives every
     -- board dimension from `100dvh`, and the page becomes a column as wide
     -- as the board and its rail, so the header spans exactly that.
-    div [ class "bg-page paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2" ]
+    div [ class ("bg-page " ++ themeClass ctx.theme ++ " paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2") ]
         [ viewHeader ctx
         , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid content-center" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
@@ -911,11 +960,71 @@ viewHeader ctx =
               else
                 text ""
             ]
-        , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
-            button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-resign-open", onClick OpenResign ] [ text "RESIGN" ]
+        , div [ class "flex items-center gap-2 sm:gap-3 shrink-0" ]
+            [ viewThemePicker ctx
+            , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
+                button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-resign-open", onClick OpenResign ] [ text "RESIGN" ]
+
+              else
+                text ""
+            ]
+        ]
+
+
+{-| The board picker: the name of the board you are looking at, and the
+eight to choose from. A tap on the name opens the list (and a second tap
+closes it); a tap on a row takes that board. It is display only -- the pick
+goes to this player's own preferences and never onto the channel -- so it
+is here whatever the state of the game, spectators included.
+-}
+viewThemePicker : Ctx -> Html Msg
+viewThemePicker ctx =
+    let
+        current =
+            themes
+                |> List.filter (\( id, _ ) -> id == ctx.theme)
+                |> List.head
+                |> Maybe.withDefault ( defaultTheme, "WALNUT" )
+    in
+    div [ class "bg-themes shrink-0" ]
+        [ button
+            [ class "pixel text-[8px] flex items-center gap-1 px-1 py-0.5"
+            , style "color" "var(--pencil)"
+            , attribute "id" "bg-theme-button"
+            , attribute "aria-expanded"
+                (if ctx.model.themesOpen then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , title "Board colours"
+            , onClick ToggleThemes
+            ]
+            [ span [ class ("bg-theme-chip " ++ themeClass (Tuple.first current)) ] []
+
+            -- On a phone the swatch is the control: the header has no room
+            -- for eleven more characters, and the list names every board.
+            , span [ class "hidden sm:inline" ] [ text (Tuple.second current) ]
+            ]
+        , if ctx.model.themesOpen then
+            div [ class "bg-theme-list", attribute "id" "bg-theme-list" ]
+                (List.map (viewThemeOption ctx.theme) themes)
 
           else
             text ""
+        ]
+
+
+viewThemeOption : String -> ( String, String ) -> Html Msg
+viewThemeOption current ( id, label ) =
+    button
+        [ classList [ ( "bg-theme-option pixel text-[8px]", True ), ( "on", id == current ) ]
+        , attribute "data-theme-option" id
+        , onClick (PickTheme id)
+        ]
+        [ span [ class ("bg-theme-chip " ++ themeClass id) ] []
+        , span [] [ text label ]
         ]
 
 

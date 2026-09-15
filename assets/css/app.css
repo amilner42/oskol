@@ -581,7 +581,108 @@
   --bg-point-b: #dcc6a8;    /* tan points */
   --bg-accent: #dcaa52;     /* amber: the player to act, a picked checker, an offer */
   --bg-sky: #3fa7d6;        /* the other tables' accent (their bars, below) */
+  /* The two sets of men, and the dice thrown in their colours. Tokens
+     rather than literals because a theme is free to move them: a board of
+     pale wood wants darker men than a board cut from midnight. `-ink` is
+     what a stack's count (and a die's pips) is printed in, so it must read
+     against its own face; `-edge` is the line drawn round both. */
+  --bg-checker-light: #ffffff;
+  --bg-checker-light-ink: var(--ink);
+  --bg-checker-dark: var(--ink);
+  --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
+
+/* The eight boards. A theme is exactly this: the same board in another
+   wood, set by redefining the tokens above on `.bg-page`. Nothing about a
+   theme is known to the engine, the room or the opponent — it is one class
+   on this player's page, kept against their guest row and their browser
+   (`oskol/guests/prefs.gleam`), and each player picks their own.
+
+   Contrast is the whole job, checked at phone size: light men must read on
+   the felt and on both points, dark men likewise, and the accent (the
+   player to act, a picked checker, a cube offer) must read against the
+   frame it is drawn on. `walnut` is the default and is deliberately
+   identical to the tokens above. */
+.bg-theme-walnut {
+  --bg-frame: #5a4636; --bg-slot: #493829; --bg-felt: #efe4d0;
+  --bg-point-a: #8c6a4f; --bg-point-b: #dcc6a8; --bg-accent: #dcaa52;
+}
+/* Night board: a dark slab, slate felt, cold blue accent. */
+.bg-theme-midnight {
+  --bg-frame: #1d2230; --bg-slot: #141823; --bg-felt: #3a4256;
+  --bg-point-a: #2c3547; --bg-point-b: #59657f; --bg-accent: #6fc3ff;
+  --bg-checker-dark: #11131c; --bg-checker-edge: #0d0f16;
+}
+/* Forest felt: a card-room green under dark wood. */
+.bg-theme-forest {
+  --bg-frame: #33372c; --bg-slot: #262a21; --bg-felt: #2f6b4f;
+  --bg-point-a: #1f4d39; --bg-point-b: #8fc7a4; --bg-accent: #f0c766;
+  --bg-checker-dark: #14201a; --bg-checker-edge: #101812;
+}
+/* Sand: a beach board, bleached and hot. */
+.bg-theme-sand {
+  --bg-frame: #b08a5e; --bg-slot: #8f6c44; --bg-felt: #f7eddc;
+  --bg-point-a: #c98f4f; --bg-point-b: #ead7b7; --bg-accent: #1f6f8b;
+  --bg-checker-dark: #4a3122;
+}
+/* Ivory & ebony: a chess-set board, black and cream on grey. */
+.bg-theme-ivory {
+  --bg-frame: #2b2b2b; --bg-slot: #1c1c1c; --bg-felt: #e8e4dc;
+  --bg-point-a: #4b4b4b; --bg-point-b: #c3bdb1; --bg-accent: #d8b06a;
+  --bg-checker-light: #f6f1e4; --bg-checker-dark: #16161a;
+}
+/* Cherry: red wood, warm and loud. */
+.bg-theme-cherry {
+  --bg-frame: #6d2320; --bg-slot: #551a18; --bg-felt: #f3e2d2;
+  --bg-point-a: #a33c32; --bg-point-b: #e3b79c; --bg-accent: #f2c14e;
+  --bg-checker-dark: #2a1412;
+}
+/* Slate: a grey, modern board with a green accent. */
+.bg-theme-slate {
+  --bg-frame: #4a4f57; --bg-slot: #383c43; --bg-felt: #dfe3e8;
+  --bg-point-a: #6d747f; --bg-point-b: #b5bcc6; --bg-accent: #3fbf8f;
+  --bg-checker-dark: #1b1e24;
+}
+/* Neon arcade: the cabinet the rest of the site is drawn from. */
+.bg-theme-neon {
+  --bg-frame: #170f2e; --bg-slot: #0e0920; --bg-felt: #241a45;
+  --bg-point-a: #35236b; --bg-point-b: #7b52d6; --bg-accent: #ff5fd2;
+  --bg-checker-light: #7cf6ff; --bg-checker-light-ink: #06232c;
+  --bg-checker-dark: #1b0f38; --bg-checker-dark-ink: #ff9ee4;
+  --bg-checker-edge: #05030f;
+}
+/* The picker in the header: the board's name, and the list of eight it
+   opens. Each row wears its own theme class, so a swatch is painted by the
+   very tokens the board would use — there is no second copy of the colours
+   anywhere. */
+.bg-themes { position: relative; }
+.bg-theme-list {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
+  background: var(--paper); border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 0 var(--ink);
+  padding: 3px; display: grid; gap: 1px; min-width: 9.5rem;
+  max-height: 60vh; overflow-y: auto;
+}
+.bg-theme-option {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 4px 6px; text-align: left; cursor: pointer;
+  background: transparent; border: 0; color: var(--ink);
+}
+.bg-theme-option:hover { background: var(--highlighter); }
+.bg-theme-option.on { background: var(--ink); color: var(--paper); }
+.bg-theme-chip {
+  flex: none; width: 20px; height: 13px;
+  border: 2px solid var(--ink);
+  background: linear-gradient(
+    to right,
+    var(--bg-frame) 0 25%,
+    var(--bg-felt) 25% 55%,
+    var(--bg-point-a) 55% 78%,
+    var(--bg-accent) 78% 100%
+  );
+}
+
 .bg-page {
   --bg-point-h: 9rem;
   --bg-frame-w: 8px;    /* the frame's side thickness */
@@ -644,20 +745,20 @@
   width: 84%;
   aspect-ratio: 1;
   border-radius: 9999px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--bg-checker-edge);
   display: grid;
   place-items: center;
 }
 .checker.white {
-  background: #fff;
+  background: var(--bg-checker-light);
   box-shadow: inset 0 0 0 3px rgba(35, 36, 58, 0.08), 0 1px 0 0 rgba(40, 24, 12, 0.4);
 }
 .checker.black {
-  background: var(--ink);
+  background: var(--bg-checker-dark);
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28), 0 1px 0 0 rgba(0, 0, 0, 0.45);
 }
-.checker-count { font-size: 10px; font-weight: 800; line-height: 1; color: var(--ink); }
-.checker.black .checker-count { color: #fff; }
+.checker-count { font-size: 10px; font-weight: 800; line-height: 1; color: var(--bg-checker-light-ink); }
+.checker.black .checker-count { color: var(--bg-checker-dark-ink); }
 /* Drag-and-drop (src/Drag.elm). Only drag sources opt out of touch
    scrolling -- the page itself keeps scrolling normally elsewhere. */
 [data-drag-capture] { touch-action: none; cursor: grab; }
@@ -687,7 +788,7 @@
 }
 /* A checker on the bar is the size of one on a point, not of the bar. */
 .bg-bar .checker { width: calc((var(--bg-pw) - 2px) * 0.84); } /* a point has 1px of side padding */
-.bg-bar .checker.black { border-color: #fff; }
+.bg-bar .checker.black { border-color: var(--bg-checker-dark-ink); }
 /* The bear-off trays: one per player, in that player's identity bar,
    three holders of five laid along it the way a real board keeps them,
    turned on their side. The checkers borne off stack edge-on, filling
@@ -719,8 +820,8 @@
   width: var(--stick-w);
   border-radius: 1px;
 }
-.off-stick.white { background: #fff; box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35); }
-.off-stick.black { background: var(--ink); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
+.off-stick.white { background: var(--bg-checker-light); box-shadow: 1px 0 0 rgba(0, 0, 0, 0.35); }
+.off-stick.black { background: var(--bg-checker-dark); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
 .off-count {
   margin-left: 2px;
   padding: 1px 4px; border-radius: 3px;
@@ -734,11 +835,11 @@
   --die-size: 2.5rem;
   display: grid; place-items: center;
   width: var(--die-size); height: var(--die-size);
-  border: 2px solid var(--ink); border-radius: 6px;
-  box-shadow: 3px 3px 0 0 var(--ink); background: #fff;
+  border: 2px solid var(--bg-checker-edge); border-radius: 6px;
+  box-shadow: 3px 3px 0 0 var(--bg-checker-edge); background: var(--bg-checker-light);
 }
 .die.used { opacity: 0.35; box-shadow: none; }
-.die-pip { background: var(--ink); }
+.die-pip { background: var(--bg-checker-light-ink); }
 /* The dice row: its gap is a variable so a die that has not landed yet can
    cancel it (see `die-earned`). For the mover the row is a control -- a
    tap hands "next" to the die after -- and the next die stands up. */
@@ -756,9 +857,9 @@
 .die.next { transform: translateY(-5px); }
 /* Each player throws their own dice, in their checkers' colour: white with
    dark pips, or dark with white pips and the black checker's inner ring. */
-.die.black { background: var(--ink); box-shadow: 3px 3px 0 0 var(--ink), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
-.die.black .die-pip { background: #fff; }
-.die.black .die-tumble { background: var(--ink); }
+.die.black { background: var(--bg-checker-dark); box-shadow: 3px 3px 0 0 var(--bg-checker-edge), inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
+.die.black .die-pip { background: var(--bg-checker-dark-ink); }
+.die.black .die-tumble { background: var(--bg-checker-dark); }
 .die.black.used { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.28); }
 /* Rolling dice: a reel of five faces laid over the settled one, walked by a
    single steps() animation -- the same trick the library's game art uses --
@@ -769,7 +870,7 @@
 .die { position: relative; overflow: hidden; }
 .die-tumble {
   position: absolute; inset: 0;
-  background: #fff;
+  background: var(--bg-checker-light);
   overflow: hidden;
   pointer-events: none;
   display: none;
@@ -851,7 +952,8 @@
 .bg-page .player-bar { border: 0; box-shadow: none; background: var(--bg-frame); color: #fff; }
 .bg-page .player-bar.active { background: color-mix(in oklab, var(--bg-accent) 32%, var(--bg-frame)); border: 0; box-shadow: none; }
 .bg-page .swatch { border-color: rgba(255, 255, 255, 0.75); }
-.bg-page .swatch.black { background: var(--ink); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
+.bg-page .swatch.white { background: var(--bg-checker-light); }
+.bg-page .swatch.black { background: var(--bg-checker-dark); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
 .bg-page .bar-turn { color: #fff; }
 .bg-page .bar-pips { color: rgba(255, 255, 255, 0.6); }
 .bg-page .bar-tag.you { background: var(--bg-accent); color: var(--bg-frame); }

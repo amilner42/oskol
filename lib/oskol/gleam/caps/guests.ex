@@ -15,6 +15,10 @@ defmodule Oskol.Gleam.Caps.Guests do
      fn guest_id, name ->
        Guests.save_name(guest_id, name)
        nil
+     end, &Guests.prefs/1,
+     fn guest_id, key, value ->
+       Guests.save_pref(guest_id, key, value)
+       nil
      end}
   end
 

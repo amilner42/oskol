@@ -30,7 +30,10 @@ as the LiveView's lobby did.
 
 -}
 
+import Api
+import Api.Catalog as Catalog
 import Browser.Dom
+import Dict exposing (Dict)
 import Games.Backgammon.View as Backgammon
 import Games.Chess.View as Chess
 import Games.Poker.View as Poker
@@ -43,6 +46,7 @@ import Json.Encode as E
 import Process
 import Protocol exposing (GamePayload, ServerMessage(..))
 import Route
+import Session exposing (Session)
 import Task
 import Time
 import Ui.Notebook as Notebook
@@ -75,6 +79,15 @@ port shareInvite : String -> Cmd msg
 port shareResult : (String -> msg) -> Sub msg
 
 
+{-| Keep a display preference in this browser's own storage, so the board is
+already the right colour on the next first paint -- before (and without)
+the round trip to `/papi/me/prefs`, and for a visitor whose guest cookie is
+gone. The server's copy is still the one that follows a guest between
+browsers.
+-}
+port storePref : { key : String, value : String } -> Cmd msg
+
+
 
 -- MODEL
 
@@ -83,6 +96,14 @@ type ConnectionStatus
     = Disconnected
     | Connecting
     | Connected
+
+
+{-| The preference key the backgammon board's colours are kept under; the
+server keeps the same string (`oskol/guests/prefs.gleam`).
+-}
+backgammonThemeKey : String
+backgammonThemeKey =
+    "backgammon_theme"
 
 
 type alias Model =
@@ -103,17 +124,21 @@ type alias Model =
     , connectionStatus : ConnectionStatus
     , shareLabel : Maybe String
     , error : Maybe String
+    , session : Session -- the CSRF token /papi writes carry
+    , prefs : Dict String String -- this viewer's display preferences (a board's colours)
     }
 
 
 init :
-    { origin : String
-    , slug : String
-    , gameId : String
-    , seatToken : Maybe String
-    }
+    Session
+    ->
+        { origin : String
+        , slug : String
+        , gameId : String
+        , seatToken : Maybe String
+        }
     -> ( Model, Cmd Msg )
-init config =
+init session config =
     ( { origin = config.origin
       , gameId = config.gameId
       , gameSlug = config.slug
@@ -131,10 +156,19 @@ init config =
       , connectionStatus = Connecting
       , shareLabel = Nothing
       , error = Nothing
+      , session = session
+      , prefs = session.prefs
       }
-      -- One tick late, deliberately: a port message sent while the program
-      -- is still being initialised has nobody subscribed to it yet.
-    , Task.perform (\_ -> ChannelRequested) (Process.sleep 0)
+    , Cmd.batch
+        -- One tick late, deliberately: a port message sent while the program
+        -- is still being initialised has nobody subscribed to it yet.
+        [ Task.perform (\_ -> ChannelRequested) (Process.sleep 0)
+
+        -- What this guest picked on any of their browsers. The flags
+        -- already carried what this one stored locally, so the board is
+        -- painted before this answers; this is what follows them about.
+        , Catalog.fetchPrefs session GotPrefs
+        ]
     )
 
 
@@ -194,6 +228,8 @@ type Msg
     | ShareInvite
     | ShareReported String
     | ShareLabelCleared
+    | GotPrefs (Result Api.Error (Dict String String))
+    | PrefSaved (Result Api.Error (Dict String String))
     | NoOp
 
 
@@ -204,6 +240,10 @@ value the test suite can drive without a `Browser.Navigation.Key`.
 type Out
     = NoOut
     | Navigate String
+      -- A display preference this viewer just picked: the shell keeps it
+      -- for the rest of the visit, so leaving the table and coming back
+      -- does not undo it.
+    | Remember String String
 
 
 update : Msg -> Model -> ( Model, Cmd Msg, Out )
@@ -270,6 +310,18 @@ update msg model =
 
                 Backgammon.NeedZones targets ->
                     stay updated (measureDropZones targets)
+
+                Backgammon.ChoseTheme name ->
+                    -- Three places keep it: the page (instantly), this
+                    -- browser (so the next first paint is right) and the
+                    -- guest's row (so their other browsers follow).
+                    ( { updated | prefs = Dict.insert backgammonThemeKey name updated.prefs }
+                    , Cmd.batch
+                        [ storePref { key = backgammonThemeKey, value = name }
+                        , Catalog.savePref model.session backgammonThemeKey name PrefSaved
+                        ]
+                    , Remember backgammonThemeKey name
+                    )
 
         ChessMsg chessMsg ->
             let
@@ -358,6 +410,23 @@ update msg model =
 
         ShareLabelCleared ->
             stay { model | shareLabel = Nothing } Cmd.none
+
+        GotPrefs (Ok prefs) ->
+            -- The row wins over what this browser had stored, except where
+            -- it says nothing: a guest who has never picked keeps whatever
+            -- this browser knows.
+            stay { model | prefs = Dict.union prefs model.prefs } Cmd.none
+
+        GotPrefs (Err _) ->
+            -- A preference is a nicety: a board that stays the colour this
+            -- browser last stored is a perfectly good outcome.
+            stay model Cmd.none
+
+        PrefSaved (Ok prefs) ->
+            stay { model | prefs = Dict.union prefs model.prefs } Cmd.none
+
+        PrefSaved (Err _) ->
+            stay model Cmd.none
 
         NoOp ->
             stay model Cmd.none
@@ -526,6 +595,14 @@ finishedWinners payload =
             Just winners
 
 
+{-| The board this viewer looks at: what they picked, or the default.
+-}
+theme : Model -> String
+theme model =
+    Dict.get backgammonThemeKey model.prefs
+        |> Maybe.withDefault Backgammon.defaultTheme
+
+
 pokerCtx : Model -> Maybe Poker.Ctx
 pokerCtx model =
     case ( model.gameSlug, model.payload ) of
@@ -637,6 +714,7 @@ view model =
                                     , rematchReady = payload.rematchReady
                                     , finished = finished
                                     , away = awayIds payload
+                                    , theme = theme model
                                     }
                                 )
 
