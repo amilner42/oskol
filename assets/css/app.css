@@ -590,6 +590,82 @@
   color: var(--ink);
 }
 .q-note { color: var(--pencil); }
+/* The home page's ways in: the live one lifts on hover; the ones on their
+   way are quieter and do nothing. */
+.home-cta { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.home-cta-main { cursor: pointer; }
+.home-cta-main:hover, .home-cta-main:focus-visible {
+  transform: translateY(-3px); outline: none;
+  box-shadow: 0 2px 4px rgba(35, 36, 58, 0.06), 0 18px 36px -14px rgba(35, 36, 58, 0.35);
+}
+.home-cta-soon { opacity: 0.6; box-shadow: none; }
+/* The home board: the table is the page, edge to edge, the mark set into
+   the left felt. It borrows the table's classes (.bg-page and the rest),
+   so its rules here out-rank the table's desktop and landscape layouts. */
+.bg-page.home-board {
+  --bg-frame-w: 10px; --bg-lip: 6px; --bg-band-h: 4.75rem; --bg-bar-w: 3rem;
+  --home-bars: 100px;
+  --home-ph: calc((100dvh - var(--home-bars) - var(--bg-band-h) - 2 * var(--bg-lip)) / 2);
+  --bg-point-h: var(--home-ph);
+  --bg-pw: calc((100vw - 3rem) / 12.5);
+  display: flex !important; flex-direction: column;
+  height: 100dvh; width: 100%; padding: 0 !important; gap: 0; background: var(--bg-frame);
+}
+.bg-page.home-board .bg-main { display: flex !important; flex: 1; min-height: 0; width: 100% !important; }
+.bg-page.home-board .bg-stack {
+  display: flex !important; flex-direction: column; flex: 1; min-height: 0;
+  width: 100% !important; max-width: none !important; border-radius: 0; box-shadow: none;
+}
+.bg-page.home-board .bg-board {
+  flex: 1; min-height: 0; width: 100% !important; max-width: none !important;
+  border-radius: 0; box-shadow: none; display: flex; flex-direction: column;
+}
+.bg-page.home-board .bg-grid { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) var(--bg-bar-w) minmax(0, 1fr) !important; }
+.bg-page.home-board .bg-half { min-height: 0; }
+.bg-page.home-board .bg-points { flex: 1; min-height: 0; }
+.bg-page.home-board .bg-point { height: 100%; }
+.bg-page.home-board .bg-band { flex: none; height: var(--bg-band-h); min-height: var(--bg-band-h); flex-direction: column; flex-wrap: nowrap; gap: 0.6rem; }
+.bg-page.home-board { --bg-band-h: 7rem; }
+.bg-page.home-board .checker { width: min(84%, calc(var(--home-ph) / 5.6)); }
+.bg-page.home-board .player-bar {
+  grid-column: auto !important; grid-row: auto !important; max-width: none !important;
+  width: 100%; border-radius: 0; flex: none; justify-self: stretch;
+}
+.bg-page.home-board .home-mark { color: #fff; }
+.bg-page.home-board .home-themes > button { color: rgba(255, 255, 255, 0.85); }
+.bg-page.home-board .home-themes .bg-theme-chip { width: 26px; height: 16px; border-color: rgba(255, 255, 255, 0.8); }
+.bg-page.home-board .home-mark svg { height: 1.5em; width: auto; margin: 0; color: #fff !important; }
+.bg-page.home-board .home-mark svg * { stroke: #fff; }
+.home-inlay {
+  /* the board's own light point colour, so the mark reads on every theme */
+  color: var(--bg-point-b);
+  font-size: clamp(14px, 2.2vw, 26px);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  opacity: 0.85;
+}
+.home-inlay svg { height: 2.8em; width: auto; margin: 0; color: inherit !important; }
+.home-inlay svg * { stroke: currentColor; }
+/* On a phone the home board is its right half only, full width and a
+   little shorter: the mark moves into the band above the buttons. */
+.home-inlay-phone { display: none; }
+@media (max-width: 639px) {
+  .home-board .home-left > * { display: none; }
+  .home-board .bg-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .bg-page.home-board { --bg-pw: calc((100vw - 2rem) / 6.6); --bg-band-h: 9.5rem; }
+  .bg-page.home-board .bg-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .home-board .home-inlay-phone { display: flex; margin-bottom: 0.25rem; }
+  .home-board .bg-band { padding-block: 0.75rem; }
+}
+/* The home board's main action is the site's yellow on every board, not
+   the theme's accent (which can sit too close to its own text colour). */
+.bg-page.home-board .btn-arcade.home-create { background: var(--highlighter); color: var(--ink); }
+.home-menu > * { width: 100%; }
+.bg-page.home-board .home-soon { opacity: 0.5; cursor: default; box-shadow: 0 4px 0 0 rgba(35, 36, 58, 0.6); }
+.home-soon-badge {
+  position: absolute; top: -7px; right: -7px;
+  font-size: 7px; line-height: 1; padding: 3px 4px;
+  background: var(--ink); color: #fff; border-radius: 2px;
+}
 /* The three steps' numbers: a circle drawn by hand, a little off round and
    a little off level, the digit in ink. */
 .q-num {

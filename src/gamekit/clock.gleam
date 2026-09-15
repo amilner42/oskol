@@ -38,6 +38,26 @@ pub type Preset {
 pub fn presets() -> List(Preset) {
   [
     Preset("none", "No clock", "Take your time", NoClock),
+    // Backgammon's: a plain time bank each, with the game's own 12 s delay
+    // on every move (`Info.turn_delay_ms`) doing the rest, as live play does.
+    Preset(
+      "bg3",
+      "3 min",
+      "3 min each, 12 s delay every move",
+      Fischer(180_000, 0),
+    ),
+    Preset(
+      "bg5",
+      "5 min",
+      "5 min each, 12 s delay every move",
+      Fischer(300_000, 0),
+    ),
+    Preset(
+      "bg10",
+      "10 min",
+      "10 min each, 12 s delay every move",
+      Fischer(600_000, 0),
+    ),
     Preset("blitz", "Blitz", "3 min + 2 s per move", Fischer(180_000, 2000)),
     Preset("rapid", "Rapid", "10 min + 5 s per move", Fischer(600_000, 5000)),
     Preset(

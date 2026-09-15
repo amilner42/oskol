@@ -6,6 +6,7 @@ port module Page.Play exposing
     , applyPayload
     , framed
     , init
+    , storePref
     , subscriptions
     , title
     , update

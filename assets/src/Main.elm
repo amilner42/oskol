@@ -26,6 +26,7 @@ import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as D
 import Page.GameLanding
+import Page.HomeBoard
 import Page.Library
 import Page.Play
 import Route exposing (Route)
@@ -137,9 +138,10 @@ routeTo url oldModel =
         Nothing ->
             ( { model | page = NotFound }, Cmd.none )
 
+        -- The home page is the backgammon page: Oskol is a backgammon site.
         Just Route.Library ->
-            Page.Library.init model.session
-                |> wrap model Library LibraryMsg
+            Page.GameLanding.init model.session "backgammon" Nothing Nothing
+                |> landing model
 
         Just (Route.GameLanding slug gameId token) ->
             Page.GameLanding.init model.session slug gameId token
@@ -176,6 +178,14 @@ landing model ( pageModel, cmd, out ) =
         Page.GameLanding.Redirect path ->
             ( withPage
             , Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.replaceUrl model.key path ]
+            )
+
+        Page.GameLanding.ChoseTheme name ->
+            ( { withPage | session = Session.withPref "backgammon_theme" name model.session }
+            , Cmd.batch
+                [ Cmd.map GameLandingMsg cmd
+                , Page.Play.storePref { key = "backgammon_theme", value = name }
+                ]
             )
 
         Page.GameLanding.TookSeat seat ->
@@ -339,7 +349,22 @@ view model =
                 framed model [ Html.map LibraryMsg (Page.Library.view pageModel) ]
 
             GameLanding pageModel ->
-                framed model [ Html.map GameLandingMsg (Page.GameLanding.view pageModel) ]
+                if Page.GameLanding.isHome pageModel then
+                    -- The home page is the board, edge to edge: its own chrome.
+                    Shell.bare (shellConfig model)
+                        [ Page.HomeBoard.view
+                            { you = Page.GameLanding.homeName pageModel
+                            , actions = List.map (Html.map GameLandingMsg) (Page.GameLanding.homeActions pageModel)
+                            , join = Shell.joinButton (shellConfig model)
+                            , soon = Page.GameLanding.homeSoon
+                            , theme = Page.GameLanding.homeTheme pageModel
+                            , picker = Html.map GameLandingMsg (Page.GameLanding.themePicker pageModel)
+                            }
+                        , Html.map GameLandingMsg (Page.GameLanding.createModal pageModel)
+                        ]
+
+                else
+                    framed model [ Html.map GameLandingMsg (Page.GameLanding.view pageModel) ]
 
             NotFound ->
                 framed model [ notFound ]
@@ -349,16 +374,19 @@ view model =
 
 framed : Model -> List (Html Msg) -> Html Msg
 framed model content =
-    Shell.view
-        { joinOpen = model.joinOpen
-        , joinCode = model.joinCode
-        , joinError = model.joinError
-        , onOpenJoin = OpenedJoin
-        , onCloseJoin = ClosedJoin
-        , onJoinCodeInput = JoinCodeInput
-        , onJoinSubmit = JoinSubmitted
-        }
-        content
+    Shell.view (shellConfig model) content
+
+
+shellConfig : Model -> Shell.Config Msg
+shellConfig model =
+    { joinOpen = model.joinOpen
+    , joinCode = model.joinCode
+    , joinError = model.joinError
+    , onOpenJoin = OpenedJoin
+    , onCloseJoin = ClosedJoin
+    , onJoinCodeInput = JoinCodeInput
+    , onJoinSubmit = JoinSubmitted
+    }
 
 
 notFound : Html Msg

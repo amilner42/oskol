@@ -1,5 +1,12 @@
 module Page.GameLanding exposing
     ( Model
+    , themePicker
+    , createModal
+    , homeActions
+    , homeSoon
+    , homeTheme
+    , homeName
+    , isHome
     , Msg(..)
     , Out(..)
     , cleanName
@@ -27,11 +34,14 @@ seat waits where it will play, on a live connection rather than a poll.
 -}
 
 import Api
+import Dict
 import Api.Catalog as Catalog exposing (ClockPreset, Format, Game, GamePage, RoomSeat, Setting)
 import GameArt
 import Html exposing (Html)
 import Html.Attributes exposing (class, href, id)
 import Html.Events exposing (onClick, onSubmit)
+import Games.Backgammon.View
+import Page.HomeBoard
 import Route
 import Session exposing (Session)
 import Ui.Notebook as Notebook exposing (style)
@@ -64,6 +74,8 @@ type alias Model =
     , summary : Maybe String
     , disconnected : List RoomSeat
     , busy : Bool
+    , started : Bool -- the home page's START A GAME was pressed: show the settings
+    , themesOpen : Bool -- the home board's colour list is showing
     }
 
 
@@ -78,6 +90,11 @@ type Msg
     | Submitted
     | ReclaimedSeat String
     | Seated (Result Api.Error Catalog.Created)
+    | Started
+    | ClosedCreate
+    | ToggledThemes
+    | PickedTheme String
+    | PrefSaved (Result Api.Error (Dict.Dict String String))
     | NoOp
 
 
@@ -92,6 +109,8 @@ type Out
     | Redirect String
       -- A seat is ours: remember the name it was taken under, then go.
     | TookSeat { name : String, path : String }
+      -- A board colour was picked: keep it in this browser and the session.
+    | ChoseTheme String
 
 
 init : Session -> String -> Maybe String -> Maybe String -> ( Model, Cmd Msg, Out )
@@ -119,6 +138,8 @@ init session slug gameId token =
             , summary = Nothing
             , disconnected = []
             , busy = False
+            , started = False
+            , themesOpen = False
             }
     in
     case ( gameId, token ) of
@@ -169,6 +190,26 @@ title model =
 update : Msg -> Model -> ( Model, Cmd Msg, Out )
 update msg model =
     case msg of
+        Started ->
+            ( { model | started = True }, Cmd.none, NoOut )
+
+        ToggledThemes ->
+            ( { model | themesOpen = not model.themesOpen }, Cmd.none, NoOut )
+
+        PickedTheme name ->
+            -- The board changes at once; the shell keeps it in this browser
+            -- and the session, and the guest's row keeps it for later.
+            ( { model | themesOpen = False, session = Session.withPref themeKey name model.session }
+            , Catalog.savePref model.session themeKey name PrefSaved
+            , ChoseTheme name
+            )
+
+        PrefSaved _ ->
+            ( model, Cmd.none, NoOut )
+
+        ClosedCreate ->
+            ( { model | started = False, error = Nothing }, Cmd.none, NoOut )
+
         GotGame (Ok page) ->
             ( { model
                 | page = Just page
@@ -385,6 +426,317 @@ view model =
 
 gamePage : Model -> GamePage -> List (Html Msg)
 gamePage model page =
+    if model.step == Create then
+        [ startPanel model, createModal model ]
+
+    else
+        formPage model page
+
+
+{-| The home page before anything is chosen: the ways in, as tiles. Playing
+a friend is the live one; the others are on their way and say so.
+-}
+startPanel : Model -> Html Msg
+startPanel model =
+    Page.HomeBoard.view { you = homeName model, actions = homeActions model, join = Html.text "", soon = homeSoon, theme = homeTheme model, picker = themePicker model }
+
+
+{-| The board the home page wears: this player's pick, or the default.
+-}
+homeTheme : Model -> String
+homeTheme model =
+    Session.pref themeKey model.session |> Maybe.withDefault Games.Backgammon.View.defaultTheme
+
+
+themeKey : String
+themeKey =
+    "backgammon_theme"
+
+
+{-| The board picker in the home board's top bar: the swatch of the board
+you are looking at, and the list of all of them.
+-}
+themePicker : Model -> Html Msg
+themePicker model =
+    let
+        current =
+            homeTheme model
+
+        label =
+            Games.Backgammon.View.themes
+                |> List.filter (\( key, _ ) -> key == current)
+                |> List.head
+                |> Maybe.map Tuple.second
+                |> Maybe.withDefault "BOARD"
+    in
+    Html.div [ class "bg-themes home-themes shrink-0" ]
+        [ Html.button
+            [ class "pixel text-[8px] flex items-center gap-1.5 px-1.5 py-1"
+            , id "bg-theme-button"
+            , Html.Attributes.attribute "aria-expanded"
+                (if model.themesOpen then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , Html.Attributes.title "Board colours"
+            , onClick ToggledThemes
+            ]
+            [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ] []
+            , Html.span [ class "hidden sm:inline" ] [ Html.text label ]
+            ]
+        , if model.themesOpen then
+            Html.div [ class "bg-theme-list", id "bg-theme-list" ]
+                (List.map
+                    (\( key, name ) ->
+                        Html.button
+                            [ class
+                                ("bg-theme-option pixel text-[8px]"
+                                    ++ (if key == current then
+                                            " on"
+
+                                        else
+                                            ""
+                                       )
+                                )
+                            , Html.Attributes.attribute "data-theme-option" key
+                            , onClick (PickedTheme key)
+                            ]
+                            [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass key) ] []
+                            , Html.span [] [ Html.text name ]
+                            ]
+                    )
+                    Games.Backgammon.View.themes
+                )
+
+          else
+            Html.text ""
+        ]
+
+
+{-| The home page shows the board, not the form: the backgammon page before
+anything is chosen, once its data has come.
+-}
+isHome : Model -> Bool
+isHome model =
+    -- The board needs none of the page's data (only CREATE GAME's dialog
+    -- does), so it draws at once rather than after a flash of the form page.
+    model.step == Create && model.gameId == Nothing
+
+
+homeName : Model -> String
+homeName model =
+    if String.isEmpty (String.trim model.playerName) then
+        "YOU"
+
+    else
+        model.playerName
+
+
+{-| The ways into the site, in the board's right band: creating a game
+here; joining one is the shell's (the code prompt), so it is passed in.
+-}
+homeActions : Model -> List (Html Msg)
+homeActions _ =
+    [ Html.button
+        [ class "btn-arcade home-create pixel text-[9px] sm:text-[11px] px-3 py-3 sm:px-5 text-center leading-relaxed"
+        , id "start-game"
+        , onClick Started
+        ]
+        [ Html.text "CREATE GAME" ]
+    ]
+
+
+{-| CREATE GAME's dialog over the board: a name, and the few choices as
+dropdowns, each already on its default, so two taps and START is enough.
+-}
+createModal : Model -> Html Msg
+createModal model =
+    case ( model.started, model.page ) of
+        ( True, Just page ) ->
+            let
+                format =
+                    currentFormat model page
+
+                settings =
+                    format |> Maybe.map .settings |> Maybe.withDefault []
+
+                select label selectId onPick selected options =
+                    Html.label [ class "block" ]
+                        [ Html.span [ class "pixel q-eyebrow text-[8px] block mb-1.5" ] [ Html.text label ]
+                        , Html.select
+                            [ id selectId
+                            , class "q-field w-full px-3 py-2.5 text-[15px]"
+                            , Html.Events.onInput onPick
+                            ]
+                            (List.map
+                                (\( value, text ) ->
+                                    Html.option
+                                        [ Html.Attributes.value value, Html.Attributes.selected (value == selected) ]
+                                        [ Html.text text ]
+                                )
+                                options
+                            )
+                        ]
+            in
+            Html.div [ id "create-modal", class "fixed inset-0 z-50 flex items-start justify-center px-4 pt-[10vh] sm:pt-[14vh]" ]
+                [ Html.div
+                    [ class "absolute inset-0"
+                    , style "background: rgba(20, 22, 38, 0.55)"
+                    , onClick ClosedCreate
+                    , Html.Attributes.attribute "aria-hidden" "true"
+                    ]
+                    []
+                , Html.div
+                    [ class "q-card relative w-full max-w-sm p-5 sm:p-6"
+                    , Html.Attributes.attribute "role" "dialog"
+                    , Html.Attributes.attribute "aria-modal" "true"
+                    , Html.Attributes.attribute "aria-label" "Create a game"
+                    ]
+                    [ Html.div [ class "flex items-center justify-between mb-4" ]
+                        [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text "CREATE GAME" ]
+                        , Html.button
+                            [ Html.Attributes.type_ "button"
+                            , id "close-create"
+                            , onClick ClosedCreate
+                            , Html.Attributes.attribute "aria-label" "Close"
+                            , class "q-note text-base px-2 py-1"
+                            ]
+                            [ Html.text "✕" ]
+                        ]
+                    , Html.form [ onSubmit Submitted, class "space-y-4" ]
+                        ((case model.error of
+                            Just message ->
+                                [ Html.p [ id "form-error", class "text-sm font-semibold", style "color: var(--red)" ] [ Html.text message ] ]
+
+                            Nothing ->
+                                []
+                         )
+                            ++ [ Html.label [ class "block" ]
+                                    [ Html.span [ class "pixel q-eyebrow text-[8px] block mb-1.5" ] [ Html.text "YOUR NAME" ]
+                                    , Notebook.nameInput
+                                        { id = "create-name"
+                                        , placeholder = "e.g. Alice"
+                                        , value = model.playerName
+                                        , onInput = NameChanged
+                                        }
+                                    ]
+                               , Html.div [ class "grid grid-cols-2 gap-3" ]
+                                    ([ select "MODE" "create-mode" PickedFormat model.format (List.map (\f -> ( f.id, f.name )) page.formats)
+                                     , select "CLOCK" "create-clock" PickedClock model.clock (Catalog.offeredClocks page.game page.clocks |> List.map (\c -> ( c.id, clockLabel c )))
+                                     ]
+                                        ++ List.map
+                                            (\setting ->
+                                                select
+                                                    (if setting.id == "twist" then
+                                                        "TWIST"
+
+                                                     else
+                                                        String.toUpper setting.name
+                                                    )
+                                                    ("create-setting-" ++ setting.id)
+                                                    (PickedSetting setting.id)
+                                                    (Catalog.settingChoice model.selections setting)
+                                                    (List.map (\c -> ( c.id, c.name )) setting.choices)
+                                            )
+                                            settings
+                                    )
+                               , Html.p [ id "create-summary", class "q-note text-[13px] leading-snug -mt-1" ]
+                                    [ Html.text (createSummary model page) ]
+                               , Html.button
+                                    [ Html.Attributes.type_ "submit"
+                                    , id "create-game"
+                                    , class "btn-arcade sky pixel w-full text-[11px] px-4 py-3.5"
+                                    ]
+                                    [ Html.text "START GAME" ]
+                               , Html.p [ class "q-note text-xs text-center" ] [ Html.text "You get a link to send. The game starts when your friend opens it." ]
+                               ]
+                        )
+                    ]
+                ]
+
+        _ ->
+            Html.text ""
+
+
+{-| A clock as the dropdown lists it: its name and, when it has one, what
+it means in time ("Blitz · 3 min + 2 s per move").
+-}
+clockLabel : ClockPreset -> String
+clockLabel preset =
+    if preset.id == "none" then
+        preset.name
+
+    else
+        preset.name ++ " + 12 s delay"
+
+
+{-| What the dropdowns add up to, in one line under them.
+-}
+createSummary : Model -> GamePage -> String
+createSummary model page =
+    let
+        mode =
+            currentFormat model page
+                |> Maybe.map (\f -> f.name ++ ": " ++ lowerFirst f.description ++ ".")
+                |> Maybe.withDefault ""
+
+        clock =
+            Catalog.offeredClocks page.game page.clocks
+                |> List.filter (\c -> c.id == model.clock)
+                |> List.head
+                |> Maybe.map
+                    (\c ->
+                        if c.id == "none" then
+                            "No clock."
+
+                        else
+                            c.description ++ "."
+                    )
+                |> Maybe.withDefault ""
+    in
+    String.trim (mode ++ " " ++ clock)
+
+
+lowerFirst : String -> String
+lowerFirst text =
+    String.toLower (String.left 1 text) ++ String.dropLeft 1 text
+
+
+{-| The ways in that are on their way.
+-}
+homeSoon : List (Html msg)
+homeSoon =
+    [ soonButton "TACTICS"
+    , soonButton "ANALYSIS"
+    ]
+
+
+{-| A way in that is not open yet: the same button as the live ones,
+dimmed, with SOON in its corner, and nothing to press.
+-}
+soonButton : String -> Html msg
+soonButton label =
+    Html.span [ class "btn-arcade plain home-soon relative pixel text-[9px] sm:text-[11px] px-3 py-3 sm:px-5 text-center leading-relaxed", Html.Attributes.attribute "aria-disabled" "true" ]
+        [ Html.text label
+        , Html.span [ class "home-soon-badge pixel" ] [ Html.text "SOON" ]
+        ]
+
+
+comingTile : String -> String -> Html msg
+comingTile label note =
+    Html.div [ class "q-card home-cta home-cta-soon px-5 py-4 sm:px-6 sm:py-5 flex flex-col justify-between gap-3" ]
+        [ Html.div []
+            [ Html.div [ class "pixel text-[11px] sm:text-xs", style "color: var(--ink)" ] [ Html.text label ]
+            , Html.div [ class "q-note text-sm mt-1" ] [ Html.text note ]
+            ]
+        , Html.span [ class "q-note pixel text-[8px]" ] [ Html.text "SOON" ]
+        ]
+
+
+formPage : Model -> GamePage -> List (Html Msg)
+formPage model page =
     [ hero model page
     , Html.section []
         [ Html.div [ class "q-card p-5 sm:p-7" ]
@@ -417,35 +769,41 @@ gamePage model page =
             )
         ]
     ]
-        ++ (if model.step == Create then
-                about model page
-
-            else
-                []
-           )
 
 
-{-| The head of the page: the game named in pixel type, one quiet headline,
-one line of intro, and the game's own tile beside it.
+
+{-| The head of the page, centred: the pixel title, and on the create page
+the three steps as one line under it. Nothing else belongs up here.
 -}
 hero : Model -> GamePage -> Html Msg
-hero model page =
-    Html.section
-        [ class "pt-6 sm:pt-10 pb-6 sm:pb-9 flex items-center gap-4 sm:gap-10"
-        , id ("game-hero-" ++ model.slug)
-        ]
-        [ Html.div [ class "flex-1 min-w-0" ]
-            [ Html.div [ class "pixel q-eyebrow text-[9px] mb-2.5 uppercase", id "game-title" ]
-                [ Html.text page.game.name ]
-            , Html.h1 [ class "q-title text-[26px] sm:text-5xl" ] [ Html.text page.copy.title ]
-            , Html.p [ class "q-note mt-3 text-[15px] sm:text-lg leading-relaxed" ]
-                [ Html.text page.copy.intro ]
+hero model _ =
+    Html.section [ class "pt-8 sm:pt-12 pb-7 sm:pb-10 text-center", id ("game-hero-" ++ model.slug) ]
+        ([ Html.h1
+            [ class "pixel text-lg sm:text-3xl leading-[1.7] sm:leading-[1.6]", id "game-title" ]
+            [ Html.text "PLAY BACKGAMMON."
+            , Html.br [] []
+            , Html.span [ class "hl px-1" ] [ Html.text "WITH A FRIEND." ]
             ]
-        , Html.div
-            [ class "q-card shrink-0 p-2 sm:p-3 w-[92px] sm:w-[188px]"
-            , style ("--accent: " ++ GameArt.accent model.slug)
-            ]
-            [ GameArt.art { slug = model.slug, class = "w-full", animate = False } ]
+         ]
+            ++ (if model.step == Create && model.started then
+                    [ Html.p [ class "q-steps q-note mt-5 sm:mt-6 text-base sm:text-xl flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-10 gap-y-2" ]
+                        [ stepWord "1" "create game"
+                        , stepWord "2" "share code"
+                        , stepWord "3" "play a friend"
+                        ]
+                    ]
+
+                else
+                    []
+               )
+        )
+
+
+stepWord : String -> String -> Html msg
+stepWord n words =
+    Html.span [ class "inline-flex items-center gap-2 sm:gap-2.5 whitespace-nowrap" ]
+        [ Html.span [ class "q-num", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text n ]
+        , Html.text words
         ]
 
 
@@ -774,27 +1132,6 @@ about model page =
                         )
                     ]
                 ]
-           )
-        ++ (case List.filter (\game -> game.slug /= model.slug) model.otherGames of
-                [] ->
-                    []
-
-                others ->
-                    [ Html.section [ class "mt-8 sm:mt-10", id "other-games" ]
-                        [ Notebook.eyebrow "THE OTHER GAMES"
-                        , Html.div [ class "flex flex-wrap gap-3" ]
-                            (others
-                                |> List.map
-                                    (\game ->
-                                        Html.a
-                                            [ href (Route.href (Route.gameLanding game.slug))
-                                            , class "q-btn plain px-4 py-2.5 text-[15px]"
-                                            ]
-                                            [ Html.text ("Play " ++ game.name ++ " →") ]
-                                    )
-                            )
-                        ]
-                    ]
            )
 
 

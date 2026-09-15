@@ -47,7 +47,10 @@ pub fn info() -> game.Info {
         True,
       ),
     ],
-    clocks: ["none", "blitz", "rapid", "delay", "per_move"],
+    // Minutes plus the 12 s delay below: backgammon's clocks. Rooms made
+    // under the older presets (blitz, rapid, delay, per_move) still carry and
+    // replay them; they are just no longer offered.
+    clocks: ["none", "bg3", "bg5", "bg10"],
     default_clock: "none",
     // Live backgammon runs on a delay, not a bare clock: the first twelve
     // seconds of every turn are free under every control offered here, so
