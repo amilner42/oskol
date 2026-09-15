@@ -1043,7 +1043,7 @@ viewHeader ctx =
                 , attribute "aria-label" "Moves"
                 , onClick ToggleRecord
                 ]
-                [ listIcon, span [ class "hidden sm:inline underline" ] [ text "MOVES" ] ]
+                [ listIcon, span [ class "bg-ctl-label hidden sm:inline underline" ] [ text "MOVES" ] ]
             , viewThemePicker ctx
             , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
                 -- A real button, not a link in the margin: the arcade plate at
@@ -1056,7 +1056,7 @@ viewHeader ctx =
                     , title "Offer to resign"
                     , onClick OpenResign
                     ]
-                    [ flagIcon, text "RESIGN" ]
+                    [ flagIcon, span [ class "bg-ctl-label" ] [ text "RESIGN" ] ]
 
               else
                 text ""
@@ -1098,7 +1098,7 @@ viewThemePicker ctx =
 
             -- On a phone the swatch is the control: the header has no room
             -- for eleven more characters, and the list names every board.
-            , span [ class "hidden sm:inline" ] [ text (Tuple.second current) ]
+            , span [ class "bg-ctl-label hidden sm:inline" ] [ text (Tuple.second current) ]
             ]
         , if ctx.model.themesOpen then
             div [ class "bg-theme-list", attribute "id" "bg-theme-list" ]

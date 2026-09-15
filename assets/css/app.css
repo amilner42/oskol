@@ -1290,32 +1290,30 @@ a.q-card:hover, a.q-card:focus-visible {
   }
   .bg-page .player-bar:not(.is-me) { grid-row: 1; align-self: start; }
   .bg-page .player-bar.is-me { grid-row: 5; align-self: end; flex-wrap: wrap-reverse; }
-  /* The record takes the lower of the two equal air rows, between the
-     header and my bar, as tall as that row; the list scrolls inside. Its
-     box has no height of its own (the list is absolutely placed), so the
-     two air rows stay equal and the header stays centred between the bars.
-     The header's MOVES is redundant here (the next block brings it back
-     on a screen too short to give the record a row). */
-  .bg-page .bg-record {
-    display: block;
-    grid-column: 2;
-    grid-row: 4;
-    align-self: stretch;
-    justify-self: start;
-    width: 100%;
-    max-width: 16rem;
-    min-height: 0;
-    position: relative;
+  /* The record is never inline on a phone held sideways: the side column
+     is the board's chrome and has no height to spare. MOVES opens the
+     same sheet a portrait phone uses. */
+  .bg-page .bg-record { display: none; }
+  .bg-page .bg-record-toggle { display: inline-flex; }
+  /* The header's controls are icons here (the list, the board swatch, the
+     flag), all one size, so the row fits beside the match tag; the words
+     come back on a desktop screen. */
+  .bg-page .bg-ctl-label { display: none; }
+  .bg-page .bg-record-toggle,
+  .bg-page #bg-theme-button,
+  .bg-page #bg-resign-open {
+    display: inline-flex;
+    width: 1.9rem; height: 1.9rem; padding: 0;
+    justify-content: center; align-items: center;
+    background: #fff; color: var(--ink) !important;
+    border: 2px solid var(--ink); border-radius: 0;
+    box-shadow: 2px 2px 0 0 var(--ink);
   }
-  .bg-page .bg-record-inner { position: absolute; inset: 4px 0; }
-  .bg-page .bg-record-body { font-size: 11px; box-shadow: 3px 3px 0 0 var(--ink); }
-  .bg-page .bg-record-head { padding: 4px 8px; }
-  /* The row is a few lines tall: the match history would eat half of it,
-     and the result lines in the list and the score chips in the bars
-     already tell the match. */
-  .bg-page .bg-record-games { display: none; }
-  .bg-page .bg-record-list { --rl-pad: 8px; padding: 4px var(--rl-pad); }
-  .bg-page .bg-record-toggle { display: none; }
+  .bg-page #bg-theme-button .bg-theme-chip { margin: 0; }
+  .bg-page .bg-record-toggle svg,
+  .bg-page #bg-resign-open svg { width: 14px; height: 14px; }
+  .bg-page .bg-record-sheet,
+  .bg-page .bg-record-sheet .bg-record-body { max-height: 88dvh; }
   .bg-page .bg-board {
     grid-column: 1;
     grid-row: 1 / -1;
@@ -1353,13 +1351,6 @@ a.q-card:hover, a.q-card:focus-visible {
   .bg-page .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   /* the pips shrink with the face, or they run into each other */
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
-}
-/* A landscape screen too short for the record to have a usable row beside
-   the board: it goes back behind the header's MOVES, as on a portrait
-   phone. */
-@media (orientation: landscape) and (max-height: 339px) and (max-width: 1023px) {
-  .bg-page .bg-record { display: none; }
-  .bg-page .bg-record-toggle { display: inline-flex; }
 }
 
 /* Backgammon on a desktop screen: the table takes the window. Below `lg`

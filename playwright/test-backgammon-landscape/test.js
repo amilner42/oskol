@@ -106,15 +106,19 @@ async function assertFits(page, phone, who) {
       `${label}: ${selector} is on screen`
     );
   }
-  if (phone.height >= 340) {
-    const record = await page.locator('.bg-record .bg-record-body').first().boundingBox();
-    must(record && record.height >= 60 && record.width >= 120, `${label}: the record has a readable row beside the board`);
-    const bars = await Promise.all(['.player-bar:not(.is-me)', '.player-bar.is-me'].map((s) => box(page, s)));
-    must(
-      record.y >= bars[0].y + bars[0].height - 1 && record.y + record.height <= bars[1].y + 1,
-      `${label}: the record sits between the two identity bars`
-    );
-  }
+  // The record is never inline on a phone held sideways: the header's
+  // moves icon opens it as a sheet over the board, on screen.
+  const inline = await page.locator('.bg-record').first().boundingBox();
+  must(!inline || inline.width === 0, `${label}: the record is not inline beside the board`);
+  await page.click('#bg-record-toggle');
+  const sheet = await box(page, '#bg-record-sheet .bg-record-sheet');
+  must(
+    sheet.height >= 60 && sheet.y >= 0 && sheet.y + sheet.height <= phone.height + 1 && sheet.x + sheet.width <= phone.width + 1,
+    `${label}: MOVES opens the record as a sheet on screen`
+  );
+  await page.click('#bg-record-toggle, #bg-record-sheet button:has-text("CLOSE")').catch(() => {});
+  await page.locator('#bg-record-sheet button:has-text("CLOSE")').click().catch(() => {});
+  await page.waitForSelector('#bg-record-sheet', { state: 'detached', timeout: 3000 }).catch(() => {});
 
   // The parts a player must see are inside the board they are playing on.
   const points = await page.locator('.bg-point').count();
