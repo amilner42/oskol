@@ -1714,9 +1714,11 @@ viewRoll board =
 
 {-| The dice of the turn, in the mover's colour. They are keyed by the roll that produced them, so
 every new roll builds fresh elements and the CSS tumble in `.die.rolling`
-plays once, for about a second, before the pips settle. Staging a move
-patches the same elements (the key has not moved), so marking a die spent
-never restarts the animation.
+plays once, for about a second, before the pips settle. Staging a move,
+or undoing one, patches the same elements (the key has not moved) and
+toggles `used` alone: the roll classes and the reel are a fact about the
+throw, not about the die's spent state, so they never come and go with
+it, and a die freed by UNDO simply lights back up (see `viewDie`).
 
 Two of them tumble, never four: a double is a two-die roll, and the pair
 it earns lands (`.die.earned`) when the tumble is over -- and takes no
@@ -1891,6 +1893,12 @@ And only a roll this client watched land moves at all: `watched` is false
 for dice that came out of a snapshot, and then a die is its face and
 nothing else -- no reel in the DOM, no classes, no throw to replay.
 
+Whether a die is spent does not enter into it. A spent die keeps its
+`rolling` (or `earned`) class and its reel, both long finished and held
+by `forwards`; dropping them while it was used and putting them back
+when UNDO freed it would re-add the class and re-create the reel, and
+the browser would run the landing all over again. Only `used` changes.
+
 -}
 viewDie : String -> Bool -> Bool -> Int -> Token -> Html Msg
 viewDie color next watched index token =
@@ -1902,12 +1910,12 @@ viewDie color next watched index token =
             Protocol.tokenProp D.bool "used" token |> Maybe.withDefault False
 
         -- Of a roll this client watched land, the two dice that were
-        -- thrown; of one it was only told about, none.
+        -- thrown; of one it was only told about, none. Spent or not.
         thrown =
-            watched && index < 2 && not used
+            watched && index < 2
 
         earned =
-            watched && index >= 2 && not used
+            watched && index >= 2
     in
     div
         [ classList

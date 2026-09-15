@@ -1026,16 +1026,15 @@ suite =
                         |> Tuple.first
                         |> .roll
                         |> Expect.equal { seq = 1, watched = True }
-            , test "every unspent die carries a tumbling reel of five other faces" <|
+            , test "every thrown die carries a tumbling reel of five other faces" <|
                 \_ ->
                     case FixtureLoader.byGame "backgammon" |> List.head |> Maybe.andThen (\f -> Dict.get "p1" f.initial) of
                         Just u ->
                             let
                                 -- The dice that were thrown: at most the two
                                 -- of the roll itself (see the doubles tests).
-                                unspent =
+                                thrown =
                                     Protocol.zoneTokens "dice" u.scene
-                                        |> List.filter (\t -> Protocol.tokenProp D.bool "used" t /= Just True)
                                         |> List.length
                                         |> min 2
 
@@ -1043,8 +1042,39 @@ suite =
                                     View.view (ctx "p1" u watching) |> Query.fromHtml
                             in
                             Expect.all
-                                [ \_ -> rendered |> Query.findAll [ class "rolling" ] |> Query.count (Expect.equal unspent)
-                                , \_ -> rendered |> Query.findAll [ class "die-frame" ] |> Query.count (Expect.equal (unspent * 5))
+                                [ \_ -> rendered |> Query.findAll [ class "rolling" ] |> Query.count (Expect.equal thrown)
+                                , \_ -> rendered |> Query.findAll [ class "die-frame" ] |> Query.count (Expect.equal (thrown * 5))
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+            , test "a spent die keeps its roll classes and reel, so UNDO is a class-only change" <|
+                \_ ->
+                    -- The same roll, before a move and with one die staged:
+                    -- the die element is the same keyed node either way, and
+                    -- its animation markup must not differ, or freeing the
+                    -- die again would re-create it and replay the landing.
+                    case FixtureLoader.byGame "backgammon" |> List.head |> Maybe.andThen (\f -> Dict.get "p1" f.initial) of
+                        Just u ->
+                            let
+                                fresh =
+                                    View.view (ctx "p1" (withDice [ 6, 3 ] u) watching) |> Query.fromHtml
+
+                                staged =
+                                    View.view (ctx "p1" (withUsedDie "die:0" (withDice [ 6, 3 ] u)) watching) |> Query.fromHtml
+
+                                spent =
+                                    staged |> Query.find [ class "die", attribute (Html.Attributes.attribute "data-die" "die:0") ]
+                            in
+                            Expect.all
+                                [ \_ -> spent |> Query.has [ class "used" ]
+                                , \_ -> spent |> Query.has [ class "rolling" ]
+                                , \_ -> spent |> Query.findAll [ class "die-tumble" ] |> Query.count (Expect.equal 1)
+                                , \_ -> staged |> Query.findAll [ class "rolling" ] |> Query.count (Expect.equal 2)
+                                , \_ -> fresh |> Query.findAll [ class "rolling" ] |> Query.count (Expect.equal 2)
+                                , \_ -> staged |> Query.findAll [ class "die-frame" ] |> Query.count (Expect.equal 10)
+                                , \_ -> fresh |> Query.findAll [ class "die-frame" ] |> Query.count (Expect.equal 10)
                                 ]
                                 ()
 
@@ -1261,6 +1291,43 @@ withDice faces update =
                 (\zone ->
                     if zone.id == "dice" then
                         { zone | tokens = dice, count = List.length dice }
+
+                    else
+                        zone
+                )
+                update.scene.zones
+
+        scene =
+            update.scene
+    in
+    { update | scene = { scene | zones = zones } }
+
+
+{-| The same roll with one die staged: its `used` prop set, the way the
+projection marks a die a staged move spent.
+-}
+withUsedDie : String -> Protocol.Update -> Protocol.Update
+withUsedDie dieId update =
+    let
+        spend token =
+            if token.id == dieId then
+                { token
+                    | props =
+                        E.object
+                            [ ( "value", E.int (Protocol.tokenProp D.int "value" token |> Maybe.withDefault 1) )
+                            , ( "used", E.bool True )
+                            , ( "picked", E.bool False )
+                            ]
+                }
+
+            else
+                token
+
+        zones =
+            List.map
+                (\zone ->
+                    if zone.id == "dice" then
+                        { zone | tokens = List.map spend zone.tokens }
 
                     else
                         zone
