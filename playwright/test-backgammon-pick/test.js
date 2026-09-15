@@ -30,10 +30,11 @@ async function stageWholeTurn(mover) {
   for (let i = 0; i < 5; i++) {
     const src = mover.locator(source);
     if ((await src.count()) === 0) break;
+    const used = await mover.locator('.die.used').count();
     await src.first().click();
-    const target = mover.locator('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)');
-    try { await target.first().waitFor({ timeout: 3000 }); } catch (_) { break; }
-    await target.first().click();
+    try {
+      await mover.waitForFunction((n) => document.querySelectorAll('.die.used').length > n, used, { timeout: 3000 });
+    } catch (_) { break; }
     await sleep(400);
   }
   // The same button ends an ordinary turn and passes a danced one (where it

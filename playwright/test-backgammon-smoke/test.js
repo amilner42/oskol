@@ -86,27 +86,26 @@ async function main() {
     const clockText = await mover.locator('.font-mono .tabular-nums').allTextContents();
     if (!clockText.some((t) => /^\d+:\d\d$/.test(t))) throw new Error(`clocks not rendered: ${clockText}`);
 
-    // Click a source, expect targets, click one: the dice count of unused dice drops.
+    // One tap on a source plays it with the next die: a die is spent, at once.
     const usedBefore = await mover.locator('.die.used').count();
     await mover.locator(source).first().click();
-    await mover.waitForSelector('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)', { timeout: 5000 });
-    await mover.screenshot({ path: `${SHOTS}/04-targets.png` });
-    await mover.locator('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)').first().click();
-    await sleep(1200);
+    await mover.waitForFunction((n) => document.querySelectorAll('.die.used').length > n, usedBefore, { timeout: 5000 });
+    await sleep(600);
+    await mover.screenshot({ path: `${SHOTS}/04-played.png` });
     const usedAfter = await mover.locator('.die.used').count();
     log(`used dice before: ${usedBefore}, after: ${usedAfter}`);
     if (usedAfter <= usedBefore) throw new Error('the move did not consume a die');
 
     // Finish the turn; the other player then gets ROLL and DOUBLE.
-    // Stage the rest of the turn: select a source, wait for its destinations, click one.
+    // Stage the rest of the turn: one tap per source spends a die.
     for (let i = 0; i < 4; i++) {
       const src = mover.locator(source);
       if ((await src.count()) === 0) break;
+      const used = await mover.locator('.die.used').count();
       await src.first().click();
-      const target = mover.locator('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)');
-      try { await target.first().waitFor({ timeout: 3000 }); } catch (_) { break; }
-      await target.first().click();
-      await mover.waitForFunction(() => !document.querySelector('.bg-point.selected'), null, { timeout: 5000 });
+      try {
+        await mover.waitForFunction((n) => document.querySelectorAll('.die.used').length > n, used, { timeout: 3000 });
+      } catch (_) { break; }
       await sleep(400);
     }
     // Moves are staged privately; the turn ends with PLAY.
