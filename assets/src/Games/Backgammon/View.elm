@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, update, view)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, tumbleFaces, update, view)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -1862,7 +1862,7 @@ viewDie color next watched index token =
                                     div [ class "die-frame" ]
                                         [ div [ class "grid grid-cols-3 grid-rows-3 w-6 h-6" ] (pips face) ]
                                 )
-                                (tumbleFaces value)
+                                (tumbleFaces index value)
                             )
                         ]
                     ]
@@ -1888,12 +1888,28 @@ dieIndex token =
 
 
 {-| The faces a die shows while it tumbles: five of them, none of them the
-one it lands on, in a fixed order per value so the same roll always looks
-the same (and a test can name them).
+one it lands on, in a fixed order per die and value so the same roll
+always looks the same (and a test can name them).
+
+The order depends on which die of the throw this is, never on the value
+alone: two dice that land on the same number are a double, and if both
+walked the same reel the pair would be obvious from the first frame.
+The first die counts up from its face; the second walks the same five
+faces in an order that never coincides with the first at any step, so
+a double tumbles like two dice and only reads as a double when it lands.
+
 -}
-tumbleFaces : Int -> List Int
-tumbleFaces value =
-    List.range 1 5 |> List.map (\i -> modBy 6 (value + i - 1) + 1)
+tumbleFaces : Int -> Int -> List Int
+tumbleFaces index value =
+    let
+        offsets =
+            if index == 0 then
+                [ 1, 2, 3, 4, 5 ]
+
+            else
+                [ 4, 1, 5, 2, 3 ]
+    in
+    List.map (\offset -> modBy 6 (value + offset - 1) + 1) offsets
 
 
 pips : Int -> List (Html Msg)
