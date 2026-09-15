@@ -45,6 +45,13 @@ if config_env() == :prod do
   # step with the code without a separate deploy step.
   config :oskol, :migrate_on_boot, true
 
+  # The analysis engine (the oskol-analysis Fly app): Flycast only, over
+  # Fly's private network, which is IPv6.
+  config :oskol, :analysis,
+    url: System.get_env("ANALYSIS_URL") || "http://oskol-analysis.flycast",
+    inet6: System.get_env("ANALYSIS_IPV6", "true") in ["true", "1"],
+    receive_timeout: 90_000
+
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
   # want to use a different value for prod and you most likely don't want

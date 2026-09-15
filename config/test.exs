@@ -12,6 +12,15 @@ config :oskol, Oskol.Repo,
 # No periodic pruning during tests; `Oskol.Game.Pruner.prune_now/0` runs it.
 config :oskol, :prune_interval_ms, nil
 
+# Rooms finish games by the hundred in tests and there is no engine: the
+# review queue stays off unless a test turns it on, and every engine call
+# goes to a Req.Test stub, never the network.
+config :oskol, Oskol.Reviews.Queue, enabled: false
+
+config :oskol, :analysis,
+  url: "http://analysis.test",
+  req_options: [plug: {Req.Test, Oskol.Reviews}]
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :oskol, OskolWeb.Endpoint,

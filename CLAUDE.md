@@ -147,21 +147,25 @@ calls `GameKit.expire/2`, which applies the game's `timeout`.
 ## File map
 
 ```
-src/gamekit/        framework: rng, scene, event, action, game, clock, instance,
+src/gamekit/        framework: rng, scene, event, action, game, clock, instance
+                    (typed `Running`, and the `Instance` that erases it),
+                    replay (a log folded through the typed steps),
                     registry (add games here), host (Elixir surface),
                     text (agent/test rendering), conformance, fixture
 src/poker/          Poker: card, evaluator (best of seven), state (the rules,
                     returns Happenings), engine (actions, events, legal, timeout),
                     projection (scene), game (contract, formats and settings)
 src/backgammon/     Backgammon: board (rules + move generation), state (turns,
-                    dice, cube, match play), engine, projection, game
+                    dice, cube, match play), engine, projection, game,
+                    analysis (the analysis engine's board, a game's turns)
 src/go/             Go: board (capture, suicide, Tromp-Taylor score), state
                     (turns, passes, positional superko), engine, projection, game
 src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     decisions live in Gleam" below): core (ctx, session,
                     error, envelope), caps (the IO a handler may do),
                     rooms (codes, names, errors, invite), guests/identity,
-                    landing/copy, handlers (rooms, landing)
+                    landing/copy, reviews/report, handlers (rooms, landing,
+                    reviews)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/poker/         evaluator, rules in controlled spots, conformance (chip
@@ -176,6 +180,8 @@ lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
 lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
+lib/oskol/reviews.ex            game_reviews table, the log a review reads, the engine's HTTP
+lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 src/oskol/rooms/seat.gleam       what an attach means: the same client back, or a takeover
 lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
@@ -276,6 +282,8 @@ POST /papi/games/:slug                 {format, name, clock, selections}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
+GET  /papi/games/:slug/rooms/:id/reviews   {ok, players, games: [{game_number,
+                                           status, turns, review}]}
 GET  /papi/codes/:code                 {ok, slug}
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
@@ -301,6 +309,48 @@ reaches a scene, an event or the game channel, and each player's board is
 their own. The client also keeps the pick in `localStorage` (the `storePref`
 port), which is what paints the board before the round trip and all a
 visitor whose guest cookie is gone has.
+
+## Post-game reviews (backgammon)
+
+Every backgammon game is graded by the analysis engine once it is over,
+each game of a match on its own: moves, cube decisions, luck, a PR per
+player. The engine is a separate private Fly app (`oskol-analysis`, repo
+`amilner42/oskol-analysis`, Aveline doc `bg-analysis-service`); nothing in a
+game or a room talks to it.
+
+- `backgammon/analysis` encodes Oskol's board to the engine's 26-int
+  on-roll board and builds one entry per turn (cube relative to the mover,
+  away scores, Crawford, dice, the played board). The turns come from
+  replaying seed + log through `gamekit/replay`, which folds the typed
+  twins of the calls the rehydrator makes, so a review sees exactly what
+  the room saw. A double the engine thinks illegal (a dead cube) is folded
+  away; a turn cut off by a resignation or a clock keeps only an answered
+  double.
+- When a step ends a game (`oskol/handlers/reviews.game_ended`), the room
+  casts `Oskol.Reviews.Queue`; the queue runs `reviews.run` in a task, one
+  room at a time, after the persister has flushed. A game already done or
+  queued is not run again; a failure is stored and retried at most twice
+  (30 s, then 2 min). The queue is in memory: after a restart, the first
+  request for a game still owed a review queues it again. That is also how
+  games finished before reviews existed get theirs: lazily, never by a
+  migration.
+- `game_reviews` holds one row per (game_id, game_number): status
+  (`pending`, `done`, `failed`), attempts, the engine's response verbatim.
+  `GET /papi/games/backgammon/rooms/:id/reviews` reshapes it for a page
+  (`oskol/reviews/report`): per turn the grade, the move played, the best
+  and the top five with equity lost, cube verdicts and luck; per player
+  PR, error, grade and mistake counts and luck. A game with no review yet
+  answers `pending` and is queued; the others are `done`, `failed`,
+  `empty` (no complete turn) and `playing`.
+- Config `:oskol, :analysis`: prod reads `ANALYSIS_URL` (default
+  `http://oskol-analysis.flycast`) and connects over IPv6 (Fly's private
+  network; `ANALYSIS_IPV6=false` turns it off). Dev defaults to
+  `http://localhost:18082`, IPv4. To point dev at the real engine:
+  `fly proxy 18082:80 oskol-analysis.flycast -a oskol-analysis` (stop it
+  after), or run it locally in the oskol-analysis checkout:
+  `.venv/bin/uvicorn app.main:app --port 18082`. Tests never hit the
+  network: the queue is off (`config :oskol, Oskol.Reviews.Queue`) unless
+  a test turns it on, and requests go to a `Req.Test` stub.
 
 ## Adding a game
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`. Give
@@ -330,7 +380,9 @@ mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
 mix oskol.seed        # local backgammon rooms at codes 000001.. parked in positions worth
                       # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated,
-                      # P1 to act; prints each seat's link (lib/oskol/dev/seeds.ex)
+                      # P1 to act; prints each seat's link (lib/oskol/dev/seeds.ex);
+                      # 000009 is a single game played to the end, with a review
+                      # (start the fly proxy first, or the review fails and waits)
 node playwright/test-poker-smoke/test.js        # poker: create, join, fold, next hand, flop
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
@@ -410,6 +462,12 @@ Every game is its seed plus its action log, and the suite leans on that.
   `mix oskol.fixtures replays` and read the diff.
 - Framework units: rng, clocks (including the move bank), action decoding
   and validation, `event.for_viewer`, host/protocol shapes.
+- `test/backgammon/analysis_test.gleam`: the engine board in controlled
+  positions, the cube and match state per turn, scripted logs (doubles,
+  drops, resigns, timeouts, picked dice), and the property that every
+  played board is legal for its dice under an independent generator on the
+  engine's own format; `test/oskol/reviews_handler_test.gleam`: when a
+  review is owed, retries, and the page's shape, on stub caps.
 
 **Fixtures (`mix oskol.fixtures`)** come from `gamekit/fixture`: replays are
 small and committed; payload captures (every update every viewer received

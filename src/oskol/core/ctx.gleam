@@ -16,6 +16,7 @@
 ////   * This record and its field order are shared surface: Elixir's
 ////     CtxBuilder mirrors it.
 
+import oskol/caps/analysis.{type AnalysisCaps}
 import oskol/caps/copy.{type CopyCaps}
 import oskol/caps/guests.{type GuestsCaps}
 import oskol/caps/ids.{type IdsCaps}
@@ -24,6 +25,7 @@ import oskol/caps/rooms.{type RoomsCaps}
 
 pub type Ctx {
   Ctx(
+    analysis: AnalysisCaps,
     copy: CopyCaps,
     guests: GuestsCaps,
     ids: IdsCaps,

@@ -7,6 +7,7 @@ defmodule OskolWeb.Api.LandingController do
       POST /papi/games/:slug                create a room and take the first seat
       GET  /papi/games/:slug/rooms/:id     what that invite link offers
       POST /papi/games/:slug/rooms/:id     join by name, or take a seat back
+      GET  /papi/games/:slug/rooms/:id/reviews  post-game reviews, per game
       GET  /papi/codes/:code               which game answers to a code
       GET  /papi/me/prefs                  this visitor's display preferences
       POST /papi/me/prefs                  keep one of them
@@ -45,6 +46,12 @@ defmodule OskolWeb.Api.LandingController do
 
   def room(conn, %{"id" => game_id}) do
     send_json(conn, {:ok, :oskol@handlers@landing.room_json(ctx(), game_id)})
+  end
+
+  # Post-game reviews of a room's games. A game with none yet is queued by
+  # the handler and answers pending.
+  def reviews(conn, %{"slug" => slug, "id" => game_id}) do
+    send_json(conn, :oskol@handlers@reviews.reviews_json(ctx(), slug, game_id))
   end
 
   # One door for both ways into a seat: a name takes a free one, a player id

@@ -4,6 +4,7 @@
 
 import gleam/dynamic
 import gleam/option.{type Option, Some}
+import oskol/caps/analysis as analysis_caps
 import oskol/caps/copy as copy_caps
 import oskol/caps/guests as guests_caps
 import oskol/caps/ids as ids_caps
@@ -16,6 +17,7 @@ import oskol/rooms/room.{type Room, Room}
 
 pub fn ctx() -> Ctx {
   Ctx(
+    analysis: analysis_caps.stub(),
     copy: copy_caps.stub(),
     guests: guests_caps.stub(),
     ids: ids_caps.stub(),

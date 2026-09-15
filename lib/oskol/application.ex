@@ -26,6 +26,9 @@ defmodule Oskol.Application do
       {Registry, keys: :unique, name: Oskol.GameRegistry},
       # The persister must outlive and precede the rooms that cast to it.
       {Oskol.Game.Persister, []},
+      # Post-game reviews: rooms cast here when a game ends and carry on.
+      {Task.Supervisor, name: Oskol.Reviews.TaskSupervisor},
+      {Oskol.Reviews.Queue, []},
       Oskol.Game.GameSupervisor,
       {Oskol.Game.Pruner, []},
       # Start a worker by calling: Oskol.Worker.start_link(arg)

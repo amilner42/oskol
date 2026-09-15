@@ -81,6 +81,14 @@ defmodule Oskol.Dev.Seeds do
         what:
           "pick-dice twist on: P1 to roll, and may pick the dice (pick 6-6 to watch a double land)",
         find: &can_pick?/2
+      },
+      %{
+        code: "000009",
+        format: "single",
+        what:
+          "a single game played to the end: finished, so it has a post-game review " <>
+            "(GET /papi/games/backgammon/rooms/000009/reviews; needs ANALYSIS_URL reachable)",
+        find: &finished?/2
       }
     ]
   end
@@ -218,6 +226,8 @@ defmodule Oskol.Dev.Seeds do
   defp owns_cube?(u, me), do: data(u)["cube"]["owner"] == me and has?(u, "move")
 
   defp can_pick?(u, _me), do: has?(u, "pick")
+
+  defp finished?(u, _me), do: u["outcome"]["status"] == "finished"
 
   defp data(u), do: u["scene"]["data"]
 

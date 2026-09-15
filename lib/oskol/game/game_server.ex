@@ -394,6 +394,7 @@ defmodule Oskol.Game.GameServer do
 
           persist_entry(state, "expire", nil, nil, now)
           persist_finish(new_state)
+          request_review(new_state, events)
           broadcast(new_state, events)
           {:noreply, new_state, @timeout}
 
@@ -502,6 +503,7 @@ defmodule Oskol.Game.GameServer do
 
             persist_entry(state, "action", player_id, action, now)
             persist_finish(new_state)
+            request_review(new_state, events)
             {:ok, new_state, events}
 
           {:error, reason} ->
@@ -530,6 +532,16 @@ defmodule Oskol.Game.GameServer do
         {:finished, winners} -> Persister.game_finished(state.game_id, winners)
         _ -> :ok
       end
+    end
+  end
+
+  # A game that just ended may be owed a post-game review. Whether it is,
+  # is Gleam's call; the review itself runs in Oskol.Reviews.Queue, never
+  # here and never on the game channel. The queue reads the log only after
+  # the persister has written what was cast above.
+  defp request_review(%GameServerState{} = state, events) do
+    if :oskol@handlers@reviews.game_ended(state.slug, events) do
+      Oskol.Reviews.Queue.enqueue(state.game_id)
     end
   end
 
