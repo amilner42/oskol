@@ -56,8 +56,8 @@ defmodule Oskol.GameTest do
   describe "lookup_slug/1" do
     test "resolves a live room's code to its slug" do
       game_id = unique_game_id()
-      {:ok, _} = Game.start_game(game_id, "poker")
-      assert {:ok, "poker"} = Game.lookup_slug(game_id)
+      {:ok, _} = Game.start_game(game_id, "backgammon")
+      assert {:ok, "backgammon"} = Game.lookup_slug(game_id)
     end
 
     test "a code with no live room is simply not found" do

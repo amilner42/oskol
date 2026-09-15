@@ -14,45 +14,6 @@ defmodule OskolWeb.GameCopy do
         }
 
   @copy %{
-    "poker" => %{
-      title: "Play heads-up poker online with a friend",
-      description:
-        "Heads-up no-limit Texas hold'em for two, free, no accounts. Pick a cash game or a sit-and-go, send a link, and your friend is dealt in.",
-      intro: "No-limit hold'em for two, from a link. Free, no accounts, plays on a phone.",
-      rules: [
-        "Each player gets two cards face down, then five community cards come out in three rounds: the flop, the turn and the river. You make the best five-card hand from any of the seven.",
-        "Heads-up, the player with the dealer button posts the small blind and acts first before the flop, last after it. Betting is no-limit: a bet is at least the big blind, a raise at least the size of the last raise, and you can move all in at any time.",
-        "In a cash game the blinds stay put and your stack carries from hand to hand; with auto top-up you sit down with a full buy-in every hand. In a sit-and-go you both start with 1,500 chips and the blinds rise every few hands until one player is out."
-      ],
-      faq: [
-        {"Is it real money?", "No. Chips are just chips: nothing to buy, nothing to cash out."},
-        {"Do we need accounts?",
-         "No. Type a name, that's it. A game stays open for an hour after the last move, so a dropped connection just means opening the link again."},
-        {"What happens if someone stops playing?",
-         "The clock decides. When it runs out the game checks or folds for you and the hand goes on, so a slow opponent can't stall a sit-and-go forever."},
-        {"Can I see my opponent's cards?",
-         "Only at a showdown. The server never sends a card you're not entitled to see, so there's nothing to peek at."}
-      ]
-    },
-    "chess" => %{
-      title: "Play chess online with a friend",
-      description:
-        "Chess for two, free, no accounts. The full FIDE game with an optional clock: send a link and White moves first.",
-      intro: "The immortal game, from a link. Free, no accounts, plays on a phone.",
-      rules: [
-        "The full FIDE rules: castling, en passant, promotion to a piece of your choice, and a move may never leave your own king in check. Checkmate wins; stalemate is a draw.",
-        "Draws are automatic, no claims needed: threefold repetition of the position, fifty moves by each side without a capture or pawn move, and dead positions such as king against king.",
-        "Play with no clock or pick a time control. If your flag falls you lose, unless your opponent cannot possibly checkmate you, which is a draw."
-      ],
-      faq: [
-        {"Do we need accounts?",
-         "No. Type a name and play. A game stays open for an hour after the last move."},
-        {"Can I offer a draw?",
-         "Not yet. The draws that matter are automatic: repetition, the fifty-move rule and dead positions end the game on their own."},
-        {"Who plays White?", "The player who creates the game. Share the link and Black is in."},
-        {"Can I take a move back?", "No. As over the board: touch move, more or less."}
-      ]
-    },
     "backgammon" => %{
       title: "Play backgammon online with a friend",
       description:
@@ -73,28 +34,6 @@ defmodule OskolWeb.GameCopy do
          "Every game is dealt from a seeded random generator on the server, and the whole game can be replayed from that seed. Nothing is chosen client-side."},
         {"Can we play a match?",
          "Yes: to 3, 5 or 7 points with the Crawford rule, or unlimited play with the Jacoby rule."}
-      ]
-    },
-    "go" => %{
-      title: "Play go online with a friend",
-      description:
-        "Go for two on a 9x9, 13x13 or 19x19 board, free, no accounts. Area scoring with komi; send a link and place the first stone.",
-      intro:
-        "Territory and capture on the classic board, from a link. Free, no accounts, plays on a phone.",
-      rules: [
-        "Black and white take turns placing stones on empty intersections; black moves first. Stones of one color standing together are a group, and a group with no empty point beside it is captured and removed. Captures are taken before your own liberties are counted, so you may capture into a tight spot, but a move that leaves your own group with no liberties is forbidden.",
-        "No move may recreate a whole-board position that has already appeared (positional superko): the simple ko fight and every longer repetition are both covered by the same rule. Passing is always allowed, and two passes in a row end the game.",
-        "Scoring is by area, Tromp-Taylor style: your stones on the board plus the empty points that reach only your color. Empty regions touching both colors count for neither. White adds komi (5.5, 6.5 or 7.5 by choice) for moving second, so there are no ties. You can also resign at any time."
-      ],
-      faq: [
-        {"Which board should we pick?",
-         "9x9 is a quick game and the default; 13x13 is a middle ground; 19x19 is the full game and takes a while."},
-        {"What is komi?",
-         "Compensation added to white's score for going second. Pick 5.5, 6.5 or 7.5 when you set up the game; the half point means a game can never tie."},
-        {"How does the game end?",
-         "Two passes in a row, and the board is counted as it stands: stones plus surrounded empty points, komi to white. Or one player resigns."},
-        {"Do we need accounts?",
-         "No. Type a name and play. A game stays open for an hour after the last move."}
       ]
     }
   }
@@ -117,7 +56,7 @@ defmodule OskolWeb.GameCopy do
     %{
       title: "Two-player games from a link",
       description:
-        "Free two-player games with no accounts: heads-up poker, backgammon and more. Pick a game, share the invite link, and your friend is in within seconds."
+        "Free backgammon for two with no accounts: a single game, a match or unlimited play with the doubling cube. Share the invite link and your friend is in within seconds."
     }
   end
 end

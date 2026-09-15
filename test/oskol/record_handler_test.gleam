@@ -79,9 +79,11 @@ pub fn no_token_never_reaches_the_room_test() {
     == Error(error.NotFound(record.not_found_message))
 }
 
-pub fn a_room_of_another_game_reads_nothing_test() {
-  let ctx = room_with("poker", Ok(started("poker", "cash")))
-  assert record.record_json(ctx, "backgammon", "000007", "good")
+pub fn a_room_asked_for_under_another_game_reads_nothing_test() {
+  // A backgammon room, asked for as a game it is not (poker was one; it is
+  // gone, and its old URLs redirect home): the same not-found as any refusal.
+  let ctx = room_with("backgammon", Ok(started("backgammon", "single")))
+  assert record.record_json(ctx, "poker", "000007", "good")
     == Error(error.NotFound(record.not_found_message))
 }
 
@@ -95,10 +97,4 @@ pub fn a_lobby_has_no_record_yet_test() {
   let ctx = room_with("backgammon", Error(errors.GameNotStarted))
   assert record.record_json(ctx, "backgammon", "000007", "good")
     == Error(error.NotFound(record.not_found_message))
-}
-
-pub fn a_game_that_keeps_no_record_says_so_test() {
-  let ctx = room_with("poker", Ok(started("poker", "cash")))
-  assert record.record_json(ctx, "poker", "000007", "good")
-    == Error(error.NotFound("This game keeps no record"))
 }

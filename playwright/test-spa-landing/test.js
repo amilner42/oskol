@@ -1,8 +1,9 @@
 /**
  * The Elm landing pages, end to end.
  *
- * 1. Screenshots of the library and a game's start page, phone and desktop
- * 2. The library's head reads exactly as it should, every game has a tile,
+ * 1. Screenshots of the library and a game's start page, phone and desktop;
+ *    the removed games' old links redirect to the library
+ * 2. The library's head reads exactly as it should, the one game has a tile,
  *    and nothing scrolls sideways at either width
  * 3. A full create -> play click-through: Alice creates a backgammon game and
  *    lands in the waiting room, Bob opens the invite link and types a name,
@@ -47,7 +48,7 @@ async function shots(browser, viewport, tag, errors) {
     if (sub !== '1 create game 2 share code 3 play a friend')
       throw new Error(`the steps read "${sub}"`);
     const tiles = await page.locator('#game-library a.q-card').count();
-    if (tiles !== 4) throw new Error(`expected 4 game tiles, saw ${tiles}`);
+    if (tiles !== 1) throw new Error(`expected 1 game tile, saw ${tiles}`);
     // Nothing scrolls sideways at either width.
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth
@@ -63,10 +64,12 @@ async function shots(browser, viewport, tag, errors) {
     await page.waitForTimeout(200);
     await page.screenshot({ path: `${SHOTS}/${tag}-02-backgammon.png`, fullPage: true });
 
-    await page.goto(`${BASE}/poker`);
-    await page.waitForSelector('#format-cash');
-    await page.waitForTimeout(200);
-    await page.screenshot({ path: `${SHOTS}/${tag}-03-poker.png`, fullPage: true });
+    // The games that were removed: their old links land on the library.
+    for (const old of ['/poker', '/go?game=123456', '/chess/123456?t=secret']) {
+      await page.goto(`${BASE}${old}`);
+      await page.waitForSelector('#game-library a', { state: 'attached' });
+      if (new URL(page.url()).pathname !== '/') throw new Error(`${old} landed on ${page.url()}`);
+    }
     log(`${tag} screenshots done`);
   } finally {
     await context.close();

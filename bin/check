@@ -80,9 +80,6 @@ if [[ "${1:-}" == "--browser" ]]; then
   # Arranges its own room (a seed that dances, replayed into the dev
   # database) and opens it, so it also covers rehydrating mid-dance.
   PORT=4400 node playwright/test-backgammon-dance/test.js
-  node playwright/test-poker-smoke/test.js
-  node playwright/test-go-smoke/test.js
-  node playwright/test-chess-smoke/test.js
   node playwright/test-guest-prefill/test.js
 fi
 
