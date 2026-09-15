@@ -24,7 +24,19 @@ import gleam/result
 // ---------- The engine's review ----------
 
 pub type Review {
-  Review(turns: List(TurnReview), players: List(Totals))
+  Review(
+    turns: List(TurnReview),
+    players: List(Totals),
+    /// The depth the engine searched at, as it names it ("4ply"): for moves,
+    /// and for the cube. Absent from answers that predate it.
+    levels: Option(Levels),
+    /// How long the engine took, in milliseconds, when it says.
+    timing_ms: Option(Int),
+  )
+}
+
+pub type Levels {
+  Levels(moves: String, cube: String)
 }
 
 pub type TurnReview {
@@ -118,9 +130,33 @@ fn number() -> Decoder(Float) {
 fn review_decoder() -> Decoder(Review) {
   use turns <- decode.field("turns", decode.list(turn_decoder()))
   use players <- decode.field("players", decode.list(totals_decoder()))
+  use levels <- decode.optional_field(
+    "levels",
+    None,
+    decode.one_of(
+      {
+        use moves <- decode.field("moves", decode.string)
+        use cube <- decode.field("cube", decode.string)
+        decode.success(Some(Levels(moves, cube)))
+      },
+      [decode.success(None)],
+    ),
+  )
+  // Whatever shape a later engine gives it, a total that is not a number is
+  // simply not shown.
+  use timing_ms <- decode.optional_field(
+    "timing_ms",
+    None,
+    decode.one_of(number() |> decode.map(fn(ms) { Some(float.round(ms)) }), [
+      decode.at(["total"], number())
+        |> decode.map(fn(ms) { Some(float.round(ms)) }),
+      decode.success(None),
+    ]),
+  )
+  let review = Review(turns, players, levels, timing_ms)
   case list.length(players) {
-    2 -> decode.success(Review(turns, players))
-    _ -> decode.failure(Review(turns, players), "two players")
+    2 -> decode.success(review)
+    _ -> decode.failure(review, "two players")
   }
 }
 
@@ -293,6 +329,16 @@ pub fn to_json(
   }
   Ok(
     json.object([
+      // The search depth the engine used, for moves and for the cube.
+      #("levels", case review.levels {
+        Some(Levels(moves, cube)) ->
+          json.object([
+            #("moves", json.string(moves)),
+            #("cube", json.string(cube)),
+          ])
+        None -> json.null()
+      }),
+      #("timing_ms", json.nullable(review.timing_ms, json.int)),
       #(
         "players",
         json.array(

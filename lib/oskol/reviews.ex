@@ -15,7 +15,8 @@ defmodule Oskol.Reviews do
       `http://oskol-analysis.flycast` (Flycast goes through Fly's proxy, so
       the first request wakes the stopped machine).
     * `:inet6` — connect over IPv6, as Fly's private network needs.
-    * `:receive_timeout` — a long game is ~20 s on a cold machine.
+    * `:receive_timeout` — 20 minutes: a long game at the engine's 4-ply
+      default takes minutes, and a machine scaled to zero starts first.
     * `:req_options` — merged into the request (tests stub with Req.Test).
   """
 
@@ -111,7 +112,7 @@ defmodule Oskol.Reviews do
         url: url <> "/backgammon/review",
         body: body,
         headers: [{"content-type", "application/json"}],
-        receive_timeout: Keyword.get(config, :receive_timeout, 90_000),
+        receive_timeout: Keyword.get(config, :receive_timeout, :timer.minutes(20)),
         connect_options: [
           timeout: 15_000,
           transport_opts: if(Keyword.get(config, :inet6, false), do: [inet6: true], else: [])

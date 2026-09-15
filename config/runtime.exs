@@ -50,7 +50,8 @@ if config_env() == :prod do
   config :oskol, :analysis,
     url: System.get_env("ANALYSIS_URL") || "http://oskol-analysis.flycast",
     inet6: System.get_env("ANALYSIS_IPV6", "true") in ["true", "1"],
-    receive_timeout: 90_000
+    # A long game at 4-ply takes minutes, and the machine may be starting.
+    receive_timeout: :timer.minutes(20)
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

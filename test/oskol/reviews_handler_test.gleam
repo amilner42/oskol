@@ -225,7 +225,9 @@ pub fn a_finished_game_is_reviewed_and_stored_test() {
     == ["1:pending:0:none", "1:done:1:body"]
   let assert [request] = recorded("requests")
   assert string.contains(request, "\"turns\":[{\"player\":")
-  assert string.contains(request, "\"move_level\":\"2ply\"")
+  // The depth is the engine's default (4-ply), never set from here
+  assert !string.contains(request, "_level")
+  assert string.contains(request, "\"top_moves\":5")
 }
 
 pub fn a_failed_call_is_recorded_and_retried_with_backoff_test() {
@@ -314,6 +316,11 @@ pub fn a_done_review_reads_turn_by_turn_test() {
   assert string.contains(body, "\"grade\":\"doubtful\",\"equity_lost\":0.05")
   assert string.contains(body, "\"notation\":\"8/5 6/5\"")
   assert string.contains(body, "\"luck\":0.25")
+  // The depth the engine searched at rides along for the page
+  assert string.contains(
+    body,
+    "\"levels\":{\"moves\":\"2ply\",\"cube\":\"3ply\"},\"timing_ms\":null",
+  )
   // Nothing owed: nothing queued
   assert recorded("enqueued") == []
 }

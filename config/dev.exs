@@ -79,7 +79,7 @@ config :oskol, dev_routes: true
 config :oskol, :analysis,
   url: System.get_env("ANALYSIS_URL") || "http://localhost:18082",
   inet6: false,
-  receive_timeout: 90_000
+  receive_timeout: :timer.minutes(20)
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"

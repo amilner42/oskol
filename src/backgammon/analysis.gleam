@@ -597,13 +597,13 @@ pub fn danced(turn: Turn) -> Bool {
 
 // ---------- The request ----------
 
-/// The body of `POST /backgammon/review` for one game: the standard review
-/// setting (2-ply moves, 3-ply cubes, luck, the top five moves).
+/// The body of `POST /backgammon/review` for one game: luck and the top
+/// five moves. The search depth is the service's own default (4-ply for
+/// moves and the cube, since 2026-09-15), so it is set in one place, the
+/// engine, and the answer says which it used (`levels`).
 pub fn request_json(g: GameTurns) -> Json {
   json.object([
     #("jacoby", json.bool(g.jacoby)),
-    #("move_level", json.string("2ply")),
-    #("cube_level", json.string("3ply")),
     #("top_moves", json.int(5)),
     #("include_luck", json.bool(True)),
     #("turns", json.array(g.turns, turn_json)),
