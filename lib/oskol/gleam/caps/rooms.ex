@@ -71,7 +71,23 @@ defmodule Oskol.Gleam.Caps.Rooms do
          {:error, reason} ->
            {:error, room_error(reason)}
        end
-     end}
+     end, &seated_game/2}
+  end
+
+  # The running game a seat token opens, read and handed back as the opaque
+  # Gleam instance it is. It attaches nothing: a record read is not a
+  # connection. A room that died between the lookup and this call answers
+  # like a seat that is not there.
+  defp seated_game(game_id, token) do
+    state = GameServer.get_state(game_id)
+
+    cond do
+      GameServerState.find_player_id_by_token(state, token) == nil -> {:error, :invalid_token}
+      state.instance == nil -> {:error, :game_not_started}
+      true -> {:ok, state.instance}
+    end
+  catch
+    :exit, _ -> {:error, :invalid_token}
   end
 
   # The table as an invite link finds it. A room that died between the

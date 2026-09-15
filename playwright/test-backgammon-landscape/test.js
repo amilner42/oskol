@@ -94,8 +94,10 @@ async function assertFits(page, phone, who) {
   );
   must(scroll.innerHeight === phone.height, `${label}: the viewport is the phone's (${scroll.innerHeight})`);
 
-  // The chrome sits beside the board, never over it.
-  for (const selector of ['.bg-header', '.player-bar:not(.is-me)', '.player-bar.is-me']) {
+  // The chrome sits beside the board, never over it. The record (the move
+  // list) is part of the side column too, when the screen is tall enough
+  // to give it a row.
+  for (const selector of ['.bg-header', '.player-bar:not(.is-me)', '.player-bar.is-me', '.bg-record']) {
     const chrome = await page.locator(selector).first().boundingBox();
     if (!chrome) continue;
     must(!overlaps(chrome, board), `${label}: ${selector} does not overlap the board`);
@@ -104,6 +106,19 @@ async function assertFits(page, phone, who) {
       `${label}: ${selector} is on screen`
     );
   }
+  // The record is never inline on a phone held sideways: the header's
+  // moves icon opens it as a sheet over the board, on screen.
+  const inline = await page.locator('.bg-record').first().boundingBox();
+  must(!inline || inline.width === 0, `${label}: the record is not inline beside the board`);
+  await page.click('#bg-record-toggle');
+  const sheet = await box(page, '#bg-record-sheet .bg-record-sheet');
+  must(
+    sheet.height >= 60 && sheet.y >= 0 && sheet.y + sheet.height <= phone.height + 1 && sheet.x + sheet.width <= phone.width + 1,
+    `${label}: MOVES opens the record as a sheet on screen`
+  );
+  await page.click('#bg-record-toggle, #bg-record-sheet button:has-text("CLOSE")').catch(() => {});
+  await page.locator('#bg-record-sheet button:has-text("CLOSE")').click().catch(() => {});
+  await page.waitForSelector('#bg-record-sheet', { state: 'detached', timeout: 3000 }).catch(() => {});
 
   // The parts a player must see are inside the board they are playing on.
   const points = await page.locator('.bg-point').count();
