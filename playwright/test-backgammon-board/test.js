@@ -3,13 +3,14 @@
  * auto-roll.
  *
  * 1. Alice (desktop 1280x900) and Bob (phone 390x844) start a single game.
- * 2. At the start both see one full-height bar and the cube fixture on the
- *    left showing 64.
+ * 2. At the start both see one full-height bar with the cube fixture on
+ *    it, in the middle, showing 64.
  * 3. The opening mover plays; the other player then has a real choice:
  *    ROLL on the right half of the board, DOUBLE on the left. They DOUBLE.
  * 4. The responder sees TAKE/DROP on the left half and the cube prominent
- *    at the offered value 2; they TAKE. The cube relocates: bottom of the
- *    rail for the taker, top for the doubler, still showing 2.
+ *    at the offered value 2; they TAKE. The cube relocates: the taker's
+ *    half of the bar on the taker's screen, the top half on the doubler's,
+ *    still showing 2.
  * 5. The doubler's turn now rolls itself -- no ROLL button ever shows --
  *    and play continues.
  * 6. Turns loop until someone is hit, for a checker-on-the-bar screenshot
@@ -115,20 +116,22 @@ async function main() {
     const name = (page) => (page === p1 ? 'desktop' : 'phone');
 
     // The permanent fixtures, from the first frame: one full-height bar,
-    // the cube on its left rail showing 64.
+    // the cube on it showing 64.
     for (const page of [p1, p2]) {
       await page.waitForSelector('.cube', { timeout: 20000 });
       const cubes = await page.locator('.cube').count();
       if (cubes !== 1) throw new Error(`${name(page)}: expected one cube, saw ${cubes}`);
       const cubeText = await page.locator('.cube').textContent();
       if (cubeText.trim() !== '64') throw new Error(`${name(page)}: centred cube should show 64, saw "${cubeText}"`);
-      await assertHalf(page, '.cube', 'left', name(page));
       if ((await page.locator('.bg-bar').count()) !== 1) throw new Error(`${name(page)}: the bar should be one column`);
       const board = await box(page, '.bg-board');
       const bar = await box(page, '.bg-bar');
       if (bar.height < board.height * 0.8) throw new Error(`${name(page)}: bar is not full height (${bar.height} vs board ${board.height})`);
+      const cube = await box(page, '.cube');
+      if (mid(cube).x < bar.x || mid(cube).x > bar.x + bar.width) throw new Error(`${name(page)}: the cube should hang on the bar`);
+      if (Math.abs(mid(cube).y - mid(board).y) > board.height * 0.1) throw new Error(`${name(page)}: a centred cube sits in the middle of the bar`);
     }
-    log('Cube fixture shows 64 on the left; the bar runs full height');
+    log('Cube fixture shows 64 on the bar; the bar runs full height');
 
     // Opening mover plays their turn.
     await Promise.race([
@@ -162,17 +165,17 @@ async function main() {
     await first.click('button:has-text("TAKE")');
     log(`${name(first)}: took the double`);
 
-    // The cube relocates: taker's end on the taker's screen, opponent's end
-    // on the doubler's, at value 2.
+    // The cube relocates: the taker's half of the bar on the taker's
+    // screen, the opponent's half on the doubler's, at value 2.
     await first.waitForFunction(() => !document.querySelector('.cube.pending'), null, { timeout: 10000 });
     for (const [page, place] of [[first, 'bottom'], [second, 'top']]) {
       const board = await box(page, '.bg-board');
       const cube = await box(page, '.cube');
       const t = (await page.locator('.cube').textContent()).trim();
       if (t !== '2') throw new Error(`${name(page)}: turned cube should show 2, saw "${t}"`);
-      const below = mid(cube).y > mid(board).y + board.height * 0.15;
-      const above = mid(cube).y < mid(board).y - board.height * 0.15;
-      if (place === 'bottom' ? !below : !above) throw new Error(`${name(page)}: cube should sit at the ${place} of its rail`);
+      const below = cube.y >= mid(board).y;
+      const above = cube.y + cube.height <= mid(board).y;
+      if (place === 'bottom' ? !below : !above) throw new Error(`${name(page)}: cube should sit in the ${place} half of the bar`);
     }
     await first.screenshot({ path: `${SHOTS}/03-cube-taken.png` });
     log('Cube relocated to its owner at 2');
