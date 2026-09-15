@@ -249,7 +249,7 @@ defmodule Oskol.Game.RoomTest do
   describe "rematch" do
     test "keeps the format and the time control" do
       %{game_id: game_id, p1: p1, p2: p2, state: state} =
-        room("backgammon", "single", clock: "blitz", seed: 8)
+        room("backgammon", "single", clock: "bg3", seed: 8)
 
       assert GameKit.player_update(state.instance, p1)["clock"]["enabled"] == true
 
@@ -259,7 +259,7 @@ defmodule Oskol.Game.RoomTest do
 
       rematch = Game.get_server_state(rematch_id)
       assert rematch.setup.format == "single"
-      assert rematch.setup.clock == "blitz"
+      assert rematch.setup.clock == "bg3"
       # Same players, same seats, same tokens: the link each player holds
       # carries them into the new room.
       original = Game.get_server_state(game_id)
@@ -273,7 +273,7 @@ defmodule Oskol.Game.RoomTest do
       [new_p1 | _] = rematch.seat_order
       update = GameKit.player_update(rematch.instance, new_p1)
       assert update["clock"]["enabled"] == true
-      assert update["clock"]["label"] == "3 min + 2 s, 12 s delay every turn"
+      assert update["clock"]["label"] == "3 min, 12 s delay every turn"
       refute GameKit.finished?(rematch.instance)
     end
   end

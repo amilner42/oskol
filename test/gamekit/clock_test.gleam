@@ -1,4 +1,5 @@
 import gamekit/clock
+import gleam/list
 import gleam/option.{None, Some}
 
 const a = "a"
@@ -82,53 +83,6 @@ pub fn paused_clocks_do_not_tick_test() {
   assert clock.remaining(c, a, 999_999) == 3000
 }
 
-pub fn move_bank_gives_every_action_fresh_time_and_dips_into_the_bank_test() {
-  let c =
-    clock.new(clock.MoveBank(5000, 10_000), [a, b])
-    |> clock.set_running([a], 0, None)
-  // Within the action allowance nothing is charged
-  assert clock.remaining(c, a, 4000) == 10_000
-  assert clock.next_deadline(c, 0) == Some(15_000)
-  // Past it, the bank pays
-  assert clock.remaining(c, a, 8000) == 7000
-  // a acts at 8000 and is still to act (a new hand): fresh action time,
-  // the bank as it was
-  let c = clock.set_running(c, [a], 8000, Some(a))
-  assert clock.remaining(c, a, 12_000) == 7000
-  assert clock.remaining(c, a, 14_000) == 6000
-  // b's turn: b has a full bank, a is settled
-  let c = clock.set_running(c, [b], 14_000, Some(a))
-  assert clock.remaining(c, a, 99_000) == 6000
-  assert clock.remaining(c, b, 18_000) == 10_000
-  assert clock.remaining(c, b, 20_000) == 9000
-}
-
-pub fn move_bank_restarts_the_allowance_when_the_opponent_acts_test() {
-  // a (the button) is on the clock between hands; b deals at 3000. a now
-  // faces a new decision and gets the full action time again.
-  let c =
-    clock.new(clock.MoveBank(5000, 10_000), [a, b])
-    |> clock.set_running([a], 0, None)
-  let c = clock.set_running(c, [a], 3000, Some(b))
-  assert clock.remaining(c, a, 8000) == 10_000
-  assert clock.remaining(c, a, 9000) == 9000
-  assert clock.next_deadline(c, 3000) == Some(15_000)
-}
-
-pub fn move_bank_expires_only_when_action_time_and_bank_are_both_gone_test() {
-  let c =
-    clock.new(clock.MoveBank(5000, 3000), [a, b])
-    |> clock.set_running([a], 0, None)
-  assert clock.expired(c, 7999) == []
-  assert clock.expired(c, 8000) == [a]
-  // An empty bank still leaves the action time for the next action
-  let c = clock.set_running(c, [a], 8000, Some(a))
-  assert clock.remaining(c, a, 8000) == 0
-  assert clock.expired(c, 12_999) == []
-  assert clock.expired(c, 13_000) == [a]
-  assert clock.next_deadline(c, 8000) == Some(5000)
-}
-
 // ---------- a game's turn delay (backgammon's twelve seconds) ----------
 
 const delay = 12_000
@@ -204,20 +158,6 @@ pub fn a_turn_delay_precedes_a_per_move_allowance_test() {
   assert clock.remaining(c, a, 23_000) == 3000
 }
 
-pub fn a_turn_delay_takes_over_a_shorter_move_bank_allowance_test() {
-  let c =
-    clock.new(clock.MoveBank(5000, 10_000), [a, b])
-    |> clock.with_turn_delay(delay)
-    |> clock.set_running([a], 0, None)
-  assert clock.remaining(c, a, 12_000) == 10_000
-  assert clock.remaining(c, a, 14_000) == 8000
-  assert clock.next_deadline(c, 0) == Some(22_000)
-  // Acting again restarts the free time at the longer of the two
-  let c = clock.set_running(c, [a], 14_000, Some(a))
-  assert clock.remaining(c, a, 26_000) == 8000
-  assert clock.remaining(c, a, 27_000) == 7000
-}
-
 pub fn a_negative_turn_delay_is_no_delay_test() {
   let c =
     clock.new(clock.Fischer(10_000, 0), [a, b])
@@ -235,16 +175,29 @@ pub fn the_clock_label_names_the_turn_delay_test() {
     == "No clock"
 }
 
-pub fn poker_presets_exist_test() {
-  let assert Ok(p) = clock.preset("poker")
-  assert clock.control_label(p.control) == "20 s per action + 60 s bank"
-  let assert Ok(_) = clock.preset("poker_fast")
-  let assert Ok(_) = clock.preset("poker_slow")
-}
-
 pub fn presets_start_with_none_test() {
   let assert [first, ..] = clock.presets()
   assert first.id == "none"
   let assert Ok(blitz) = clock.preset("blitz")
   assert clock.control_label(blitz.control) == "3 min + 2 s"
+}
+
+pub fn backgammons_presets_are_a_bank_each_and_the_games_delay_test() {
+  let delay = 12_000
+  let a = "a"
+  let labels =
+    ["bg3", "bg5", "bg10"]
+    |> list.map(fn(id) {
+      let assert Ok(preset) = clock.preset(id)
+      #(
+        preset.name,
+        clock.label(clock.with_turn_delay(clock.new(preset.control, [a]), delay)),
+      )
+    })
+  assert labels
+    == [
+      #("3 min", "3 min, 12 s delay every turn"),
+      #("5 min", "5 min, 12 s delay every turn"),
+      #("10 min", "10 min, 12 s delay every turn"),
+    ]
 }

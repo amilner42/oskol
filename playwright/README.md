@@ -7,7 +7,8 @@ smokes for you.
 
 ```
 playwright/
-├── test-backgammon-smoke/   creates a game, stages a move, undoes, plays, with a clock
+├── lib/flows.js            create a game, join by link or code, open a seat
+├── test-backgammon-smoke/   creates a game, stages a move, plays, with a clock
 ├── review-pages/            screenshots of the library, start pages and lobby (desktop + phone)
 ├── review-games/            screenshots of games in play (desktop + phone)
 └── screenshots/             output of the review scripts
@@ -24,8 +25,11 @@ are for eyeballing; look at `playwright/screenshots/`.
 
 ## Writing a new smoke
 
-Create `playwright/test-<name>/test.js`. Drive the real lobby: open
-`/<slug>`, wait for `[data-phx-main].phx-connected`, fill the name, create
-the game, open the share link in a second page. Then act on the Elm game
+Create `playwright/test-<name>/test.js`. Get into a game through
+`playwright/lib/flows.js` rather than clicking through the pages yourself:
+`createGame(page, {name, mode, clock, twist})` goes to `/`, presses CREATE
+GAME, fills the dialog by id and resolves with `{gameId, url, inviteUrl}`;
+`joinByLink(page, inviteUrl, name)` and `joinByCode(page, code, name)` take
+the second seat; `openSeat(page, url)` reopens one. Then act on the Elm game
 page through its buttons and assert on the DOM, never on internal state.
-Set `BASE_URL` to point at another server.
+Set `BASE_URL` (or `PORT`) to point at another server.

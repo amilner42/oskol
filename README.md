@@ -6,13 +6,12 @@
 
 **Live at:** [oskol.io](https://oskol.io)
 
-Oskol is a small library of two-player games: the classics, easy to play with a friend from a link, each with optional twists that throw the book out. Today: heads-up no-limit hold'em (cash game or sit-and-go) and backgammon with the doubling cube.
+Oskol is a backgammon site, and means to be the best place on the internet to play backgammon: with a friend from a link, no accounts, on a phone or a desktop. The real game with the doubling cube -- single games, matches with the Crawford rule, unlimited play with the Jacoby rule -- plus optional twists that throw the book out.
 
-Games are written in Gleam on top of **gamekit**, a tiny framework where a game is one module implementing a small contract (init, decode action, apply, legal actions, scene, outcome, clocks, timeout). The Elixir/Phoenix host and the Elm client are generic: they speak a fixed protocol of scenes, events and action schemas, so adding a game never touches them. See [CLAUDE.md](CLAUDE.md) for the architecture and how to add a game.
+The game is written in Gleam on top of **gamekit**, a tiny framework where a game is one module implementing a small contract (init, decode action, apply, legal actions, scene, outcome, clocks, timeout). The Elixir/Phoenix host and the Elm client speak a fixed protocol of scenes, events and action schemas and never see a checker. See [CLAUDE.md](CLAUDE.md) for the architecture.
 
-- `/` the game library
-- `/poker` set up a poker game and share the invite link it gives you
-- `/backgammon` the same for backgammon
+- `/` the home page
+- `/backgammon` set up a game and share the invite link it gives you
 
 ## Running locally
 

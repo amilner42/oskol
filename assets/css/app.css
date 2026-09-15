@@ -590,6 +590,82 @@
   color: var(--ink);
 }
 .q-note { color: var(--pencil); }
+/* The home page's ways in: the live one lifts on hover; the ones on their
+   way are quieter and do nothing. */
+.home-cta { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.home-cta-main { cursor: pointer; }
+.home-cta-main:hover, .home-cta-main:focus-visible {
+  transform: translateY(-3px); outline: none;
+  box-shadow: 0 2px 4px rgba(35, 36, 58, 0.06), 0 18px 36px -14px rgba(35, 36, 58, 0.35);
+}
+.home-cta-soon { opacity: 0.6; box-shadow: none; }
+/* The home board: the table is the page, edge to edge, the mark set into
+   the left felt. It borrows the table's classes (.bg-page and the rest),
+   so its rules here out-rank the table's desktop and landscape layouts. */
+.bg-page.home-board {
+  --bg-frame-w: 10px; --bg-lip: 6px; --bg-band-h: 4.75rem; --bg-bar-w: 3rem;
+  --home-bars: 100px;
+  --home-ph: calc((100dvh - var(--home-bars) - var(--bg-band-h) - 2 * var(--bg-lip)) / 2);
+  --bg-point-h: var(--home-ph);
+  --bg-pw: calc((100vw - 3rem) / 12.5);
+  display: flex !important; flex-direction: column;
+  height: 100dvh; width: 100%; padding: 0 !important; gap: 0; background: var(--bg-frame);
+}
+.bg-page.home-board .bg-main { display: flex !important; flex: 1; min-height: 0; width: 100% !important; }
+.bg-page.home-board .bg-stack {
+  display: flex !important; flex-direction: column; flex: 1; min-height: 0;
+  width: 100% !important; max-width: none !important; border-radius: 0; box-shadow: none;
+}
+.bg-page.home-board .bg-board {
+  flex: 1; min-height: 0; width: 100% !important; max-width: none !important;
+  border-radius: 0; box-shadow: none; display: flex; flex-direction: column;
+}
+.bg-page.home-board .bg-grid { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) var(--bg-bar-w) minmax(0, 1fr) !important; }
+.bg-page.home-board .bg-half { min-height: 0; }
+.bg-page.home-board .bg-points { flex: 1; min-height: 0; }
+.bg-page.home-board .bg-point { height: 100%; }
+.bg-page.home-board .bg-band { flex: none; height: var(--bg-band-h); min-height: var(--bg-band-h); flex-direction: column; flex-wrap: nowrap; gap: 0.6rem; }
+.bg-page.home-board { --bg-band-h: 7rem; }
+.bg-page.home-board .checker { width: min(84%, calc(var(--home-ph) / 5.6)); }
+.bg-page.home-board .player-bar {
+  grid-column: auto !important; grid-row: auto !important; max-width: none !important;
+  width: 100%; border-radius: 0; flex: none; justify-self: stretch;
+}
+.bg-page.home-board .home-mark { color: #fff; }
+.bg-page.home-board .home-themes > button { color: rgba(255, 255, 255, 0.85); }
+.bg-page.home-board .home-themes .bg-theme-chip { width: 26px; height: 16px; border-color: rgba(255, 255, 255, 0.8); }
+.bg-page.home-board .home-mark svg { height: 1.5em; width: auto; margin: 0; color: #fff !important; }
+.bg-page.home-board .home-mark svg * { stroke: #fff; }
+.home-inlay {
+  /* the board's own light point colour, so the mark reads on every theme */
+  color: var(--bg-point-b);
+  font-size: clamp(14px, 2.2vw, 26px);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  opacity: 0.85;
+}
+.home-inlay svg { height: 2.8em; width: auto; margin: 0; color: inherit !important; }
+.home-inlay svg * { stroke: currentColor; }
+/* On a phone the home board is its right half only, full width and a
+   little shorter: the mark moves into the band above the buttons. */
+.home-inlay-phone { display: none; }
+@media (max-width: 639px) {
+  .home-board .home-left > * { display: none; }
+  .home-board .bg-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .bg-page.home-board { --bg-pw: calc((100vw - 2rem) / 6.6); --bg-band-h: 9.5rem; }
+  .bg-page.home-board .bg-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .home-board .home-inlay-phone { display: flex; margin-bottom: 0.25rem; }
+  .home-board .bg-band { padding-block: 0.75rem; }
+}
+/* The home board's main action is the site's yellow on every board, not
+   the theme's accent (which can sit too close to its own text colour). */
+.bg-page.home-board .btn-arcade.home-create { background: var(--highlighter); color: var(--ink); }
+.home-menu > * { width: 100%; }
+.bg-page.home-board .home-soon { opacity: 0.5; cursor: default; box-shadow: 0 4px 0 0 rgba(35, 36, 58, 0.6); }
+.home-soon-badge {
+  position: absolute; top: -7px; right: -7px;
+  font-size: 7px; line-height: 1; padding: 3px 4px;
+  background: var(--ink); color: #fff; border-radius: 2px;
+}
 /* The three steps' numbers: a circle drawn by hand, a little off round and
    a little off level, the digit in ink. */
 .q-num {
@@ -675,25 +751,6 @@ a.q-card:hover, a.q-card:focus-visible {
 .q-rule { border-top: 1.5px solid var(--ink); }
 
 /* ---------- Game screens ---------- */
-.game-panel { border: 3px solid var(--ink); background: #fff; }
-.game-strip { background: var(--paper-2); border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink); }
-/* Poker table */
-.pcard { width: 2.75rem; aspect-ratio: 5 / 7; border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: #fff; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; font-weight: 800; line-height: 1; color: var(--ink); }
-.pcard .rank { font-size: 1.05rem; }
-.pcard .suit { font-size: 0.95rem; }
-.pcard.red { color: var(--red); }
-.pcard.lg { width: 4rem; }
-.pcard.lg .rank { font-size: 1.5rem; }
-.pcard.lg .suit { font-size: 1.3rem; }
-.pcard.back { background: repeating-linear-gradient(45deg, var(--pen) 0 3px, #fff 3px 7px); }
-.pcard.slot { background: transparent; border-style: dashed; box-shadow: none; border-color: var(--pencil); opacity: 0.5; }
-.felt { border: 3px solid var(--ink); border-radius: 999px; background: var(--paper-2); box-shadow: 4px 4px 0 0 var(--ink); }
-.chip { border: 2px solid var(--ink); border-radius: 999px; padding: 2px 10px; background: var(--highlighter); font-weight: 700; color: var(--ink); }
-.seat-active { outline: 3px solid var(--pen); outline-offset: 2px; }
-.card-face { border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink); background: #fff; border-radius: 4px; }
-.card-face.selected { box-shadow: 3px 3px 0 0 var(--pen); border-color: var(--pen); }
-.new-card::before, .new-card::after { background-color: var(--highlighter) !important; }
-
 /* Backgammon: the table is one wooden slab. The opponent's identity bar,
    the board's frame and the viewer's bar are the same walnut; two light
    oak fields are recessed into it; the bar runs through the centre with
@@ -1677,70 +1734,3 @@ a.q-card:hover, a.q-card:focus-visible {
   .bg-still .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
   .bg-still .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
 }
-
-/* Chess: a plain 8x8 board in the multicade blues. Pieces are solid glyphs
-   colored per side so both read crisply on light and dark squares. */
-.chess-board {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  grid-auto-rows: 1fr;
-  aspect-ratio: 1;
-  border: 3px solid var(--ink);
-  box-shadow: 6px 6px 0 0 var(--ink);
-  user-select: none;
-  font-size: min(9.5vw, 3.1rem);
-}
-.chess-sq { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.chess-sq.light { background: #dce8f2; }
-.chess-sq.dark { background: #8fb4d2; }
-/* Overlays paint above the square color but below the piece. */
-.chess-sq.last { box-shadow: inset 0 0 0 100vmax rgba(246, 211, 101, 0.5); }
-.chess-sq.selected { box-shadow: inset 0 0 0 100vmax rgba(63, 167, 214, 0.55); }
-.chess-sq.check::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(227, 69, 59, 0.8) 18%, rgba(227, 69, 59, 0.3) 52%, transparent 72%);
-}
-.chess-piece {
-  position: relative;
-  line-height: 1;
-  /* Text presentation only: the emoji font ignores CSS colors. */
-  font-family: "Noto Sans Symbols 2", "Segoe UI Symbol", "DejaVu Sans", "Arial Unicode MS", sans-serif;
-  font-variant-emoji: text;
-}
-.chess-piece.white {
-  color: #fff;
-  -webkit-text-stroke: 1px var(--ink);
-  text-shadow: 0 2px 2px rgba(35, 36, 58, 0.35);
-}
-.chess-piece.black {
-  color: var(--ink);
-  -webkit-text-stroke: 1px var(--ink);
-  text-shadow: 0 2px 2px rgba(35, 36, 58, 0.25);
-}
-.chess-hint {
-  position: absolute;
-  width: 34%;
-  aspect-ratio: 1;
-  border-radius: 9999px;
-  background: rgba(35, 36, 58, 0.3);
-  pointer-events: none;
-}
-.chess-hint.capture {
-  width: 94%;
-  background: transparent;
-  border: 4px solid rgba(35, 36, 58, 0.3);
-}
-.chess-coord {
-  position: absolute;
-  font-size: min(2.2vw, 0.6rem);
-  font-weight: 800;
-  line-height: 1;
-  pointer-events: none;
-}
-.chess-sq.light .chess-coord { color: #8fb4d2; }
-.chess-sq.dark .chess-coord { color: #dce8f2; }
-.chess-coord.file { right: 6%; bottom: 5%; }
-.chess-coord.rank { left: 6%; top: 5%; }
-

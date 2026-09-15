@@ -75,7 +75,7 @@ defmodule Oskol.Game.GameServer do
   clock: preset_id}`, plus `seed:` and `control:` for tests and tooling.
   """
   def configure(game_id, attrs) when is_map(attrs) do
-    GenServer.call(via_tuple(game_id), {:configure, attrs})
+    GenServer.call(via_tuple(game_id), {:configure, attrs, []})
   end
 
   @doc """
@@ -126,13 +126,13 @@ defmodule Oskol.Game.GameServer do
   end
 
   @impl true
-  def handle_call({:configure, attrs}, _from, %GameServerState{} = state) do
+  def handle_call({:configure, attrs, opts}, _from, %GameServerState{} = state) do
     cond do
       GameServerState.started?(state) ->
         {:reply, {:error, :game_already_started}, state, @timeout}
 
       true ->
-        case GameServerState.validate_setup(state, attrs) do
+        case GameServerState.validate_setup(state, attrs, opts) do
           {:ok, setup} ->
             new_state = %GameServerState{state | setup: setup} |> GameServerState.touch()
             Persister.game_configured(state.game_id, setup)
@@ -377,7 +377,7 @@ defmodule Oskol.Game.GameServer do
   end
 
   # Clock-driven turns are not activity: a table both players walked away
-  # from must still go idle, even if the clock keeps dealing hands.
+  # from must still go idle, even if a timeout keeps acting for them.
   def handle_info(:clock_tick, %GameServerState{} = state) do
     state = %GameServerState{state | clock_timer: nil}
 
@@ -558,7 +558,13 @@ defmodule Oskol.Game.GameServer do
   defp spawn_rematch(rematch_id, %GameServerState{} = state) do
     case Oskol.Game.GameSupervisor.start_game(rematch_id, state.slug) do
       {:ok, _pid} ->
-        {:ok, _} = configure(rematch_id, %{state.setup | seed: nil})
+        # The setup was valid when the room was made; a clock retired since
+        # still carries over, as it does on a rebuild.
+        {:ok, _} =
+          GenServer.call(
+            via_tuple(rematch_id),
+            {:configure, %{state.setup | seed: nil}, retired_clocks: true}
+          )
 
         Enum.each(state.seat_order, fn id ->
           conn = state.connections[id]
@@ -623,12 +629,16 @@ defmodule Oskol.Game.GameServer do
   end
 
   defp restore_setup(%GameServerState{} = state, config) do
-    case GameServerState.validate_setup(state, %{
-           format: config["format"],
-           selections: config["selections"] || %{},
-           clock: config["clock"] || "none",
-           seed: config["seed"]
-         }) do
+    case GameServerState.validate_setup(
+           state,
+           %{
+             format: config["format"],
+             selections: config["selections"] || %{},
+             clock: config["clock"] || "none",
+             seed: config["seed"]
+           },
+           retired_clocks: true
+         ) do
       {:ok, setup} -> {:ok, setup}
       {:error, reason} -> {:error, {:bad_config, reason}}
     end

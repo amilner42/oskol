@@ -17,6 +17,7 @@ mix compile
 
 step "mix format (CI checks it; catch it here first)"
 mix format --check-formatted
+gleam format --check src test
 
 step "Gleam unit, rules, property and golden tests"
 bin/test-gleam
@@ -82,9 +83,6 @@ if [[ "${1:-}" == "--browser" ]]; then
   # A finished match played again, with its analysis stubbed in the browser;
   # it arranges its own room (setup.exs) the same way.
   PORT=4400 node playwright/test-backgammon-replay/test.js
-  node playwright/test-poker-smoke/test.js
-  node playwright/test-go-smoke/test.js
-  node playwright/test-chess-smoke/test.js
   node playwright/test-guest-prefill/test.js
 fi
 

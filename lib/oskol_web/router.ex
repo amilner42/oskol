@@ -61,6 +61,15 @@ defmodule OskolWeb.Router do
 
     get "/sitemap.xml", SitemapController, :index
 
+    # Games Oskol no longer hosts (see RemovedGameController): every old
+    # link to one of them, start page, invite or table, goes home.
+    get "/poker", RemovedGameController, :home
+    get "/poker/:id", RemovedGameController, :home
+    get "/go", RemovedGameController, :home
+    get "/go/:id", RemovedGameController, :home
+    get "/chess", RemovedGameController, :home
+    get "/chess/:id", RemovedGameController, :home
+
     # The Elm app serves all three; the first two carry the head a crawler
     # reads, the third is a seat at a table and is noindex.
     #

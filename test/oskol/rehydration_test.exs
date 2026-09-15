@@ -138,7 +138,7 @@ defmodule Oskol.RehydrationTest do
   end
 
   test "rehydration restores the clock and resumes it paused-until-now" do
-    %{game_id: game_id, p1: p1, mover: mover} = started(42, "single", clock: "blitz")
+    %{game_id: game_id, p1: p1, mover: mover} = started(42, "single", clock: "bg3")
     action = legal_move(game_id |> Game.get_server_state() |> Map.get(:instance), mover)
     {:ok, _, _} = Game.player_action(game_id, mover, action)
 
@@ -157,6 +157,45 @@ defmodule Oskol.RehydrationTest do
     # And the clock is running again: the room has a next deadline.
     assert {:ok, ms} = GameKit.next_deadline(state.instance)
     assert ms > 0
+  end
+
+  test "a room made under a clock that is no longer offered still rehydrates with it" do
+    # Blitz was one of backgammon's clocks before the home page offered 3, 5
+    # and 10 minutes. It is still defined, so rooms that picked it replay.
+    %{game_id: game_id, p1: p1, mover: mover} = started(42, "single", clock: "bg3")
+    action = legal_move(game_id |> Game.get_server_state() |> Map.get(:instance), mover)
+    {:ok, _, _} = Game.player_action(game_id, mover, action)
+
+    Persister.flush()
+    kill_room(game_id)
+
+    game = Repo.get!(Persistence.Game, game_id)
+
+    game
+    |> Ecto.Changeset.change(config: Map.put(game.config, "clock", "blitz"))
+    |> Repo.update!()
+
+    assert {:ok, _pid} = Game.lookup_game(game_id)
+    state = Game.get_server_state(game_id)
+    assert state.setup.clock == "blitz"
+    assert state.action_count == 1
+
+    assert GameKit.player_update(state.instance, p1)["clock"]["label"] ==
+             "3 min + 2 s, 12 s delay every turn"
+  end
+
+  test "a creator cannot pick a retired clock; a room that has one keeps it" do
+    %{game_id: game_id} = lobby("single")
+    assert {:error, :unknown_clock} = Game.configure(game_id, %{clock: "blitz"})
+
+    state = Game.get_server_state(game_id)
+    assert {:error, :unknown_clock} = GameServerState.validate_setup(state, %{clock: "blitz"})
+
+    assert {:ok, %{clock: "blitz"}} =
+             GameServerState.validate_setup(state, %{clock: "blitz"}, retired_clocks: true)
+
+    assert {:error, :unknown_clock} =
+             GameServerState.validate_setup(state, %{clock: "hourglass"}, retired_clocks: true)
   end
 
   defp remaining(game_id, viewer) do

@@ -1,5 +1,5 @@
 /**
- * Drives both games into play and captures the in-game screens for visual
+ * Drives backgammon into play and captures the in-game screens for visual
  * review, at desktop and phone widths. Run with the server up:
  *   node playwright/review-games/test.js
  */

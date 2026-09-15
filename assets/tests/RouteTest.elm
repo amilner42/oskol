@@ -18,17 +18,17 @@ suite =
             [ test "the library" <|
                 \_ -> Expect.equal (Just Library) (parse "/")
             , test "a game's start page" <|
-                \_ -> Expect.equal (Just (GameLanding "poker" Nothing Nothing)) (parse "/poker")
+                \_ -> Expect.equal (Just (GameLanding "backgammon" Nothing Nothing)) (parse "/backgammon")
             , test "an invite link carries the room code" <|
                 \_ ->
                     Expect.equal
-                        (Just (GameLanding "poker" (Just "123456") Nothing))
-                        (parse "/poker?game=123456")
+                        (Just (GameLanding "backgammon" (Just "123456") Nothing))
+                        (parse "/backgammon?game=123456")
             , test "an invite link with a seat token carries both" <|
                 \_ ->
                     Expect.equal
-                        (Just (GameLanding "poker" (Just "123456") (Just "secret")))
-                        (parse "/poker?game=123456&t=secret")
+                        (Just (GameLanding "backgammon" (Just "123456") (Just "secret")))
+                        (parse "/backgammon?game=123456&t=secret")
             , test "a running game" <|
                 \_ ->
                     Expect.equal
@@ -36,11 +36,11 @@ suite =
                         (parse "/backgammon/123456?t=secret")
             , test "a running game with no token: the server decides what that is worth" <|
                 \_ ->
-                    Expect.equal (Just (Play "go" "123456" Nothing)) (parse "/go/123456")
+                    Expect.equal (Just (Play "backgammon" "123456" Nothing)) (parse "/backgammon/123456")
             , test "a seat token is percent-decoded" <|
                 \_ ->
-                    parse "/go/123456?t=a%2Fb%2Bc"
-                        |> Expect.equal (Just (Play "go" "123456" (Just "a/b+c")))
+                    parse "/backgammon/123456?t=a%2Fb%2Bc"
+                        |> Expect.equal (Just (Play "backgammon" "123456" (Just "a/b+c")))
             , test "a replay, on a seat's token, opening one game" <|
                 \_ ->
                     Expect.equal
@@ -61,23 +61,25 @@ suite =
             , test "so does the dev dashboard" <|
                 \_ -> Expect.equal Nothing (parse "/dev/dashboard")
             , test "anything deeper than a game is nothing of ours" <|
-                \_ -> Expect.equal Nothing (parse "/poker/123456/extra")
+                \_ -> Expect.equal Nothing (parse "/backgammon/123456/extra")
             ]
         , describe "href"
             [ test "the library" <|
                 \_ -> Expect.equal "/" (Route.href Route.library)
-            , test "a game's start page" <|
-                \_ -> Expect.equal "/poker" (Route.href (Route.gameLanding "poker"))
+            , test "backgammon's start page is the home page" <|
+                \_ -> Expect.equal "/" (Route.href (Route.gameLanding "backgammon"))
+            , test "and the home page parses back as the home, not a second address" <|
+                \_ -> Expect.equal (Just Library) (parse (Route.href (Route.gameLanding "backgammon")))
             , test "an invite link: the room, and nothing identifying" <|
-                \_ -> Expect.equal "/poker?game=123456" (Route.href (Route.invite "poker" "123456"))
+                \_ -> Expect.equal "/backgammon?game=123456" (Route.href (Route.invite "backgammon" "123456"))
             , test "a seat's own link" <|
                 \_ ->
-                    Route.href (Route.play "poker" "123456" (Just "secret"))
-                        |> Expect.equal "/poker/123456?t=secret"
+                    Route.href (Route.play "backgammon" "123456" (Just "secret"))
+                        |> Expect.equal "/backgammon/123456?t=secret"
             , test "a seat token is percent-encoded on the way out" <|
                 \_ ->
-                    Route.href (Route.play "poker" "123456" (Just "a/b+c"))
-                        |> Expect.equal "/poker/123456?t=a%2Fb%2Bc"
+                    Route.href (Route.play "backgammon" "123456" (Just "a/b+c"))
+                        |> Expect.equal "/backgammon/123456?t=a%2Fb%2Bc"
             , test "a replay's link: the seat, then the game" <|
                 \_ ->
                     Route.href (Route.replay "backgammon" "123456" (Just "a/b") (Just 3))
@@ -86,9 +88,8 @@ suite =
         , describe "round trip"
             (List.map roundTrip
                 [ Library
-                , GameLanding "poker" Nothing Nothing
-                , GameLanding "poker" (Just "123456") Nothing
-                , GameLanding "poker" (Just "123456") (Just "a/b+c")
+                , GameLanding "backgammon" (Just "123456") Nothing
+                , GameLanding "backgammon" (Just "123456") (Just "a/b+c")
                 , Play "backgammon" "123456" (Just "secret")
                 , Play "backgammon" "123456" Nothing
                 , Replay "backgammon" "123456" (Just "a/b+c") (Just 2)

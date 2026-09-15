@@ -19,14 +19,15 @@ pub type Prefs =
 /// The backgammon board's colours. Display only.
 pub const backgammon_theme = "backgammon_theme"
 
-/// The eight boards, in the order the picker lists them. `walnut` is what a
-/// player who has never picked gets, and is the board Oskol shipped with.
+/// The eight boards, in the order the picker lists them. `midnight` is what a
+/// player who has never picked gets (and what the home page wears); walnut is
+/// the board Oskol first shipped with.
 pub fn backgammon_themes() -> List(String) {
   ["walnut", "midnight", "forest", "sand", "ivory", "cherry", "slate", "neon"]
 }
 
 pub fn default_backgammon_theme() -> String {
-  "walnut"
+  "midnight"
 }
 
 /// The value stored under `key`, if anything valid is.

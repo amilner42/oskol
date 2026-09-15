@@ -19,7 +19,7 @@ defmodule OskolWeb.SpaControllerTest do
   @guest_cookie "_oskol_guest"
 
   # The head is rendered by HEEx, so anything with an apostrophe in it
-  # (poker's "hold'em") arrives escaped.
+  # arrives escaped.
   defp esc(text), do: text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 
   defp json_ld(html) do
@@ -70,6 +70,18 @@ defmodule OskolWeb.SpaControllerTest do
       end
     end
 
+    test "the home page is the dark board: its frame is painted before the app boots",
+         %{conn: conn} do
+      html = conn |> get(~p"/") |> html_response(200)
+      assert html =~ ~r|<div[^>]*id="elm-app"[^>]*style="background: #1d2230"|s
+      refute html =~ ~r|<div[^>]*id="elm-app"[^>]*class="paper|s
+
+      # An invite is the paper page, as before.
+      invite = build_conn() |> get(~p"/backgammon?game=abc123") |> html_response(200)
+      assert invite =~ ~r|<div[^>]*id="elm-app"[^>]*class="paper min-h-screen-safe"|s
+      refute invite =~ "#1d2230"
+    end
+
     test "the CSRF token is on the page for the Elm client to send back", %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
 
@@ -115,12 +127,29 @@ defmodule OskolWeb.SpaControllerTest do
     end
 
     test "an invite link is the same page and does not compete with it", %{conn: conn} do
-      html = conn |> get(~p"/poker?game=abc123") |> html_response(200)
-      assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/poker")
+      html = conn |> get(~p"/backgammon?game=abc123") |> html_response(200)
+      assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/backgammon")
     end
 
     test "an unknown game is a 404, not a redirect to the library", %{conn: conn} do
       assert_error_sent 404, fn -> get(conn, ~p"/nope") end
+    end
+
+    test "the games Oskol no longer hosts send their old links home", %{conn: conn} do
+      for path <- [
+            "/poker",
+            "/poker?game=123456",
+            "/poker/123456?t=secret",
+            "/go",
+            "/go?game=123456",
+            "/go/123456",
+            "/chess",
+            "/chess?game=123456&t=secret",
+            "/chess/123456?t=secret"
+          ] do
+        conn = get(conn, path)
+        assert redirected_to(conn, 302) == "/", path
+      end
     end
   end
 

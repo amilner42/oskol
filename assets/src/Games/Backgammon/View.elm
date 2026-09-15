@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themes, tumbleFaces, update, view, viewStill)
+module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeClass, themes, tumbleFaces, update, view, viewStill)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -782,7 +782,7 @@ with. Also the fallback for a name this release does not know.
 -}
 defaultTheme : String
 defaultTheme =
-    "walnut"
+    "midnight"
 
 
 themeClass : String -> String
