@@ -189,7 +189,7 @@ assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
 assets/src/Route.elm             the three client routes, mirroring the server's
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
-assets/src/Page/Library.elm      "/" the library: phone tiles, desktop cabinets
+assets/src/Page/Library.elm      "/" the library: one grid of quiet game tiles
 assets/src/Page/GameLanding.elm  "/:slug" create page, and what an invite offers
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
 assets/src/GameArt.elm           per-game accent + pixel-art reel + phone motif
@@ -201,6 +201,8 @@ assets/src/Generic/View.elm      fallback renderer for games without a bespoke U
 assets/src/View/Clock.elm        clock display shared by board games
 assets/css/app.css               the multicade/notebook design system (paper, pixel,
                                  pix, btn-arcade, tile, pcard, felt, bg-board...)
+                                 plus the landing's quiet notebook (quiet, q-card,
+                                 q-title, q-eyebrow, q-opt, q-btn, q-field)
 ```
 
 ## Platform decisions live in Gleam (`src/oskol/`)
@@ -343,7 +345,8 @@ Notes:
   `mix run -e 'Code.eval_file("path")'`.
 - In this environment the Elm package cache is populated by git clone
   (GitHub zipballs are blocked); see `.claude/skills`.
-- The pixel font is self-hosted under `priv/static/fonts`.
+- The pixel font (Press Start 2P) and the landing sans (IBM Plex Sans) are
+  self-hosted under `priv/static/fonts`; nothing loads a font from a CDN.
 - Playwright scripts take the browser from `PW_CHROMIUM` when set (`bin/check`
   falls back to a preinstalled Chromium under `/opt/pw-browsers`); CI runs
   `npx playwright install chromium` instead.
@@ -413,8 +416,9 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   the boot flags, and the `/papi` envelope and decoders (which are lax about
   keys they do not need and strict about the ones they do).
 - `LibraryTest`, `GameLandingTest`: the landing pages on decoded responses —
-  both library grids, the mode and clock pickers, the settings that follow a
-  mode, inline validation, and the invite's three answers.
+  the head's exact words, the library grid, the mode and clock pickers, the
+  settings that follow a mode, inline validation, and the invite's three
+  answers.
 - `GameArtTest`: the sprite decomposition paints back exactly its grid.
 
 **Elixir (`mix test`)**

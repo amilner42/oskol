@@ -350,9 +350,10 @@ framed model content =
 
 notFound : Html Msg
 notFound =
-    Html.section [ Html.Attributes.class "mt-8 sm:mt-12 pix p-4 sm:p-8", Html.Attributes.id "not-found" ]
+    Html.section
+        [ Html.Attributes.class "mt-8 sm:mt-12 q-card p-5 sm:p-8", Html.Attributes.id "not-found" ]
         [ Html.p
-            [ Html.Attributes.class "pixel text-[10px] mb-3", Notebook.style "color: var(--red)" ]
+            [ Html.Attributes.class "pixel q-eyebrow text-[9px] mb-3" ]
             [ Html.text "NOT FOUND" ]
         , Html.a
             [ Html.Attributes.href (Route.href Route.library)

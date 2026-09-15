@@ -1,8 +1,12 @@
 module Ui.Shell exposing (Config, joinCodeInputId, view)
 
 {-| The chrome every landing page sits in: the OSKOL plate, the JOIN GAME
-prompt behind it, and the footer. A direct port of `LandingLive.render/1`,
-`topbar/1` and `join_modal/1` — same elements, same ids, same classes.
+prompt behind it, and the footer.
+
+Quiet notebook: the paper and its grid stay, and the pixel font is kept for
+the wordmark and the eyebrows alone. Everything else here — the button, the
+prompt, the footer — is the page's sans on 1.5px rules and 3px shadows.
+
 -}
 
 import Html exposing (Html)
@@ -30,7 +34,7 @@ joinCodeInputId =
 
 view : Config msg -> List (Html msg) -> Html msg
 view config content =
-    Html.div [ class "paper min-h-screen-safe flex flex-col" ]
+    Html.div [ class "paper quiet min-h-screen-safe flex flex-col" ]
         ([ topbar config ]
             ++ (if config.joinOpen then
                     [ joinModal config ]
@@ -42,10 +46,8 @@ view config content =
                     [ class "flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pb-10 sm:pb-16" ]
                     content
                , Html.footer
-                    [ class "pixel text-[8px] sm:text-[10px] leading-loose text-center pb-6 px-4"
-                    , style "color: var(--pencil)"
-                    ]
-                    [ Html.text "FREE · NO ACCOUNTS · BY THE BOOK — UNTIL YOU FLIP A TWIST" ]
+                    [ class "q-note text-xs sm:text-sm text-center pb-6 px-4" ]
+                    [ Html.text "Free · No accounts · By the book, until you flip a twist" ]
                ]
         )
 
@@ -56,22 +58,23 @@ topbar config =
         [ class "w-full max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5 pb-2 flex items-center justify-between gap-3" ]
         [ Html.a
             [ href (Route.href Route.library)
-            , class "pixel inline-block"
+            , class "inline-block"
             , attribute "aria-label" "Oskol home"
             ]
             [ Html.span
-                [ class "pixel text-xs sm:text-sm tracking-[0.35em] px-3.5 py-2.5 inline-block"
-                , style "background: #fff; color: var(--ink); border: 3px solid var(--ink); box-shadow: 4px 4px 0 0 var(--ink)"
-                ]
+                [ class "q-card pixel text-[10px] sm:text-xs tracking-[0.3em] px-3 py-2.5 inline-block" ]
                 [ Html.text "OSKOL" ]
             ]
-        , Html.button
-            [ type_ "button"
-            , id "open-join"
-            , onClick config.onOpenJoin
-            , class "btn-arcade yellow pixel text-[9px] sm:text-[10px] whitespace-nowrap px-3.5 py-2.5"
+        , Html.div [ class "flex items-center gap-3" ]
+            [ Html.span [ class "hidden sm:inline q-note text-sm" ] [ Html.text "Have a code?" ]
+            , Html.button
+                [ type_ "button"
+                , id "open-join"
+                , onClick config.onOpenJoin
+                , class "q-btn yellow text-sm whitespace-nowrap px-4 py-2.5"
+                ]
+                [ Html.text "JOIN GAME" ]
             ]
-            [ Html.text "JOIN GAME" ]
         ]
 
 
@@ -86,32 +89,29 @@ joinModal config =
         ]
         [ Html.div
             [ class "absolute inset-0"
-            , style "background: rgba(26, 26, 46, 0.5)"
+            , style "background: rgba(35, 36, 58, 0.45)"
             , onClick config.onCloseJoin
             , attribute "aria-hidden" "true"
             ]
             []
         , Html.div
-            [ class "pix relative w-full max-w-sm p-5 sm:p-6"
-            , style "background: var(--paper)"
+            [ class "q-card relative w-full max-w-sm p-5 sm:p-6"
             , attribute "role" "dialog"
             , attribute "aria-modal" "true"
             , attribute "aria-label" "Join a game by code"
             ]
-            [ Html.div [ class "flex items-center justify-between mb-4" ]
-                [ Html.h2 [ class "pixel text-[10px] sm:text-xs", style "color: var(--ink)" ]
-                    [ Html.text "JOIN GAME" ]
+            [ Html.div [ class "flex items-center justify-between mb-3" ]
+                [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text "JOIN GAME" ]
                 , Html.button
                     [ type_ "button"
                     , id "close-join"
                     , onClick config.onCloseJoin
                     , attribute "aria-label" "Close"
-                    , class "pixel text-[10px] px-2 py-1 hover:text-[color:var(--red)]"
-                    , style "color: var(--pencil)"
+                    , class "q-note text-base px-2 py-1 hover:text-[color:var(--red)]"
                     ]
                     [ Html.text "✕" ]
                 ]
-            , Html.p [ class "text-sm mb-3", style "color: var(--pencil)" ]
+            , Html.p [ class "q-note text-sm mb-3" ]
                 [ Html.text "Type the 6-digit code from your friend." ]
             , Html.form [ onSubmit config.onJoinSubmit, class "space-y-3" ]
                 ([ Html.input
@@ -124,8 +124,7 @@ joinModal config =
                     , Html.Attributes.maxlength 6
                     , attribute "autocomplete" "one-time-code"
                     , Html.Attributes.placeholder "000000"
-                    , class "name-field w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.4em]"
-                    , style "color: var(--ink)"
+                    , class "q-field w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.4em]"
                     , attribute "autocorrect" "off"
                     , attribute "spellcheck" "false"
                     , onInput config.onJoinCodeInput
@@ -136,7 +135,7 @@ joinModal config =
                             Just message ->
                                 [ Html.p
                                     [ id "join-error"
-                                    , class "pixel text-[9px] leading-relaxed"
+                                    , class "text-sm font-semibold leading-relaxed"
                                     , style "color: var(--red)"
                                     ]
                                     [ Html.text message ]
@@ -145,7 +144,7 @@ joinModal config =
                             Nothing ->
                                 []
                        )
-                    ++ [ Notebook.submitCta { id = "join-submit", color = "green", label = "JOIN ▶" } ]
+                    ++ [ Notebook.submitCta { id = "join-submit", label = "Join game" } ]
                 )
             ]
         ]

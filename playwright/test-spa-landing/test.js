@@ -2,7 +2,8 @@
  * The Elm landing pages, end to end.
  *
  * 1. Screenshots of the library and a game's start page, phone and desktop
- * 2. The phone library really is the 2x2 tile grid, the desktop one the cabinets
+ * 2. The library's head reads exactly as it should, every game has a tile,
+ *    and nothing scrolls sideways at either width
  * 3. A full create -> play click-through: Alice creates a backgammon game and
  *    lands in the waiting room, Bob opens the invite link and types a name,
  *    and both end up at the board
@@ -38,17 +39,22 @@ async function shots(browser, viewport, tag, errors) {
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${SHOTS}/${tag}-01-library.png`, fullPage: true });
 
-    const tilesShown = await page.locator('#game-tiles').isVisible();
-    const cabinetsShown = await page.locator('#game-library').isVisible();
-    if (tag === 'phone' && !(tilesShown && !cabinetsShown))
-      throw new Error('a phone must get the 2x2 tiles and not the cabinets');
-    if (tag === 'desktop' && !(cabinetsShown && !tilesShown))
-      throw new Error('a desktop must get the cabinets and not the tiles');
-    const tiles = await page.locator('#game-tiles a.game-tile').count();
+    // One grid of tiles at every width; the head says two things and no more.
+    const head = (await page.textContent('h1')).trim();
+    if (head !== 'Play the classics') throw new Error(`the headline reads "${head}"`);
+    const sub = await page.textContent('h1 + p');
+    if (sub.trim() !== 'create game → share code → play')
+      throw new Error(`the subtitle reads "${sub}"`);
+    const tiles = await page.locator('#game-library a.q-card').count();
     if (tiles !== 4) throw new Error(`expected 4 game tiles, saw ${tiles}`);
+    // Nothing scrolls sideways at either width.
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+    );
+    if (overflow > 0) throw new Error(`the library scrolls sideways by ${overflow}px`);
 
     // Client-side navigation to a game page: no page load.
-    await page.click(tag === 'phone' ? '#game-tile-backgammon' : '#game-backgammon');
+    await page.click('#game-backgammon');
     await page.waitForSelector('#create-game');
     await page.waitForSelector('#rules');
     if (new URL(page.url()).pathname !== '/backgammon')

@@ -15,7 +15,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // External fonts are blocked in sandboxes and would stall the load event.
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     const page = await ctx.newPage();
-    // The library renders the cabinets on desktop and the tiles on a phone; one of them is hidden.
+    // One grid of game tiles: two across on a phone, four from sm up.
     await page.goto(`${BASE}/`); await page.waitForSelector('#game-library a', { state: 'attached' }); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-01-library.png` });
     await page.goto(`${BASE}/poker`); await page.waitForSelector('#create-name'); await sleep(1200);
