@@ -1,13 +1,11 @@
-# Oskol - the classics, two players, with optional twists
+# Oskol - backgammon, from a link
 
 ## Project Overview
-Oskol (oskol.io) is a catalog of two-player games you can play with a friend
-from a link: no accounts, phone-friendly, free. Each game is the real thing
-first, and will offer optional twists that throw the book out (a reroll in
-backgammon, two hands in hold'em). **Poker** is heads-up No-Limit Texas
-Hold'em as a cash game (pick the stakes, chips carry over, optional auto
-top-up; leaving mid-hand folds it) or a sit-and-go (1,500 chips, blinds
-rise, last chip wins).
+Oskol (oskol.io) is a backgammon site. The mission: become the best place on
+the internet to play backgammon. You play a friend from a link: no accounts,
+phone-friendly, free. The game is the real thing first, and offers optional
+twists that throw the book out (picking your dice once a game today, a
+reroll later).
 **Backgammon** is the classic race game with the doubling cube: single games,
 matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
 Jacoby rule. A roll that can play nothing is a state, not a skipped turn:
@@ -15,10 +13,14 @@ the dice stand for both players under "no legal moves" until the mover
 passes, and every time control gives each turn its first 12 seconds free.
 Between the games of a match (or of unlimited play) the finished game's
 position stays up, nobody is on the clock, and the next game starts when
-both players have pressed READY. **Go** is the territory game on a 9x9, 13x13 or 19x19 board:
-area (Tromp-Taylor) scoring, positional superko, komi 5.5/6.5/7.5, two
-passes end the game; it ships on the generic renderer. Every game can be
-played with an optional time control.
+both players have pressed READY. Every game can be played with an optional
+time control.
+
+Oskol used to host poker, go and chess too; they were removed in the pivot
+(the repository history keeps them). Their old links (`/poker`, `/go`,
+`/chess`, with or without a room id or `?game=`) redirect to `/`
+(`OskolWeb.RemovedGameController`), and `/papi/games/<slug>` for them is a
+404 like any slug that names no game.
 
 The first player picks everything (mode, settings, clock), shares a link, and
 the game starts the moment the second player types a name. Taking a seat
@@ -31,11 +33,13 @@ waking its websocket up -- from another tab taking the seat over, which is
 the only case the connection that had it is told about
 (`src/oskol/rooms/seat.gleam`).
 
-Games are built on **gamekit**, a small framework with one rule: adding a game
-never touches the server or the client. A game is one Gleam module that
-implements the contract below; everything else is generic.
+The game is built on **gamekit**, a small framework that keeps the rules,
+the room and the client apart: a game is one Gleam module that implements
+the contract below, and the server and the protocol are generic. Backgammon
+is the only game registered, and it is the product; the framework stays
+because the separation is what keeps the rules pure, seeded and testable.
 
-**Tech stack:** Gleam (games + framework), Elixir/Phoenix (platform host),
+**Tech stack:** Gleam (the game + framework), Elixir/Phoenix (platform host),
 Elm (client), Tailwind CSS.
 
 ## Architecture in one picture
@@ -48,15 +52,14 @@ Elm client <──(protocol: scene, legal, outcome, events, clock)── Phoenix
 
 Three layers, two fixed boundaries:
 
-1. **Gleam owns games** (`src/gamekit/`, `src/poker/`, `src/backgammon/`).
+1. **Gleam owns the game** (`src/gamekit/`, `src/backgammon/`).
    Pure, seeded, tested.
 2. **Elixir owns the platform** (`lib/`). Rooms, setup, reconnect, rematch,
-   routes. It never sees a card or a piece: it calls `Oskol.GameKit`, which
+   routes. It never sees a checker or a die: it calls `Oskol.GameKit`, which
    wraps `gamekit/host` and speaks only opaque instances and JSON.
 3. **Elm owns the client** (`assets/src/`). One `Browser.application` owns
    every URL: the library, a game's start page, and the table. It decodes the
-   fixed protocol and renders any game — poker and backgammon have bespoke
-   views, other games get the generic renderer for free — and reads the
+   fixed protocol and renders the backgammon board from it, and reads the
    landing pages' data from a JSON API (`/papi`). Elixir serves the SPA shell
    with the head a crawler needs, and nothing else.
 
@@ -78,8 +81,7 @@ Game(
 
 Formats carry **settings**: each is a list of choices with a default, and
 picking a choice merges its config entries (`game.configure`). That is how
-a cash game gets its stakes, a sit-and-go its speed, and how twists will be
-offered. `Info.clocks` lists the time-control presets a game offers and
+twists are offered (backgammon's "Pick dice"). `Info.clocks` lists the time-control presets a game offers and
 `default_clock` the one preselected.
 
 Rules that keep this honest:
@@ -89,9 +91,8 @@ Rules that keep this honest:
   every state change; the client animates from events, not from diffing.
 - **No presentation in the engine.** No animation flags, no wizard state.
   Multi-step interactions are action schemas with candidates.
-- **Ids are deterministic and opaque.** Checkers are `"w1".."b15"`, poker
-  cards `"h<hand>-<n>"` (position in that hand's shuffled deck). An id never
-  reveals a face. Faces travel as token props.
+- **Ids are deterministic and opaque.** Checkers are `"w1".."b15"`. An id
+  never reveals a face. Faces travel as token props.
 - **Hidden information is the projection's job, and the host's.** `scene`
   decides per viewer: `scene.hidden_zone` sends a count only,
   `scene.hidden(token)` keeps an id but drops face and props. Events are
@@ -107,8 +108,8 @@ Rules that keep this honest:
 - **Games never read the time.** `clocks(state)` names the players who should
   be charged right now. `gamekit/clock` owns the arithmetic, `gamekit/instance`
   applies it with the host's `now`, and when a clock runs out the instance
-  asks `timeout`: backgammon forfeits, poker checks or folds (or deals the
-  next hand) and play goes on. An action that arrives after a clock ran
+  asks `timeout`: backgammon forfeits (a game may instead `Act` for the
+  player and play on). An action that arrives after a clock ran
   out is applied after the timeout if it is still legal, never instead of
   it. Clock-driven turns do not count as room activity: a table nobody is
   at still goes idle after an hour.
@@ -122,29 +123,26 @@ The client only ever decodes these:
   `message`, or `custom(kind, payload)` for bespoke views.
 - **Schemas**: legal actions as `{name, label, params}` where a `select` param
   carries its zone and candidate ids, a `choice` its options, a `number` its
-  bounds (a poker bet or raise is a number param).
+  bounds.
 - **Outcome**: `ongoing` or `finished(winners)`.
 - **Clock**: `enabled`, `label`, per-player `remaining_ms`, `move_ms` (free
   time left on this move) and `running`, `timed_out`.
 
-Actions in: `{"name": "raise", "params": {"amount": 60}}`. Legal actions may
+Actions in: `{"name": "<action>", "params": {...}}`. Legal actions may
 be enumerated (backgammon sends one `move` schema per legal move) or
 described with bounds. Hidden information is resolved by the `scene`
 projection per viewer: in backgammon the mover stages moves (`move`, `undo`)
-that only their own scene shows, and commits them with `play`; in poker your
-hole cards are face up to you and a count to everyone else until a showdown.
+that only their own scene shows, and commits them with `play`.
 
 ### Time controls
-Presets live in `gamekit/clock.presets()`. Fischer, Bronstein and per-move
-suit board games; `MoveBank` (every action gets a fresh allowance and running
-over spends a bank that never refills) is poker's. A game lists which presets
-it offers. A game may also declare a **turn delay** (`Info.turn_delay_ms`,
+Presets live in `gamekit/clock.presets()`: Fischer, Bronstein and per-move.
+A game lists which presets it offers. A game may also declare a **turn delay** (`Info.turn_delay_ms`,
 applied by `instance.start` through `clock.with_turn_delay`): the first N
 milliseconds of every turn are free under every control, and unused delay is
 never banked. It overlaps rather than stacks with a control's own free time
 (the longer of the two wins). Backgammon takes 12 seconds, which is what
-live play does and what the dice animation runs inside; every other game
-leaves it at zero. The Elixir room schedules a tick for the next possible expiry and
+live play does and what the dice animation runs inside; the default is
+zero. The Elixir room schedules a tick for the next possible expiry and
 calls `GameKit.expire/2`, which applies the game's `timeout`.
 
 ## File map
@@ -153,13 +151,8 @@ calls `GameKit.expire/2`, which applies the game's `timeout`.
 src/gamekit/        framework: rng, scene, event, action, game, clock, instance,
                     registry (add games here), host (Elixir surface),
                     text (agent/test rendering), conformance, fixture
-src/poker/          Poker: card, evaluator (best of seven), state (the rules,
-                    returns Happenings), engine (actions, events, legal, timeout),
-                    projection (scene), game (contract, formats and settings)
 src/backgammon/     Backgammon: board (rules + move generation), state (turns,
                     dice, cube, match play), engine, projection, game
-src/go/             Go: board (capture, suicide, Tromp-Taylor score), state
-                    (turns, passes, positional superko), engine, projection, game
 src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     decisions live in Gleam" below): core (ctx, session,
                     error, envelope), caps (the IO a handler may do),
@@ -167,10 +160,7 @@ src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     landing/copy, handlers (rooms, landing)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
-test/poker/         evaluator, rules in controlled spots, conformance (chip
-                    conservation, hidden information, replay)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
-test/go/            board rules, ko/superko/snapback, scoring, oracle, conformance
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: setup, auto-start, actions, clocks, rematch
 lib/oskol/persistence.ex        games + game_actions tables (seed + action log per room)
@@ -186,6 +176,7 @@ lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
                                  plus the title, description, canonical, og
                                  and JSON-LD a crawler reads
 lib/oskol_web/controllers/page_controller.ex   "/:slug/:id" serves the same client
+lib/oskol_web/controllers/removed_game_controller.ex   old /poker, /go, /chess links -> "/"
 lib/oskol/gleam/ctx_builder.ex   builds the Gleam Ctx and Session for a caller
 lib/oskol/gleam/caps/*.ex        the real IO behind src/oskol/caps/*.gleam
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
@@ -199,12 +190,10 @@ assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
 assets/src/GameArt.elm           per-game accent + pixel-art reel + phone motif
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
-assets/src/Games/Poker/View.elm  the poker table on the protocol Scene
 assets/src/Games/Backgammon/View.elm  the backgammon board
-assets/src/Generic/View.elm      fallback renderer for games without a bespoke UI
-assets/src/View/Clock.elm        clock display shared by board games
+assets/src/View/Clock.elm        clock display
 assets/css/app.css               the multicade/notebook design system (paper, pixel,
-                                 pix, btn-arcade, tile, pcard, felt, bg-board...)
+                                 pix, btn-arcade, tile, bg-board...)
                                  plus the landing's quiet notebook (quiet, q-card,
                                  q-title, q-eyebrow, q-opt, q-btn, q-field)
                                  and the eight backgammon boards (.bg-theme-*)
@@ -250,19 +239,20 @@ All three are Elm routes, and all three are server routes: a visitor may
 arrive at any of them cold, and moving between them afterwards is a
 `pushUrl`, not a page load.
 
-- `/` game library
+- `/` the home page (the library, listing backgammon)
 - `/papi/library`, `/papi/games/:slug` (GET and POST) the landing pages as
   JSON for the Elm client. Public like the pages, session-based guest
   identity, CSRF token in `x-csrf-token`. Envelope: `{"ok": true, ...}` or
   `{"ok": false, "error": {"code", "message"}}` (404 not_found,
   422 validation_failed, 500 server_error).
-- `/poker` create a poker game; `/poker?game=<id>` is the invite link
-- `/poker/<id>?t=<token>` a running game — and, until the second player
+- `/backgammon` create a game; `/backgammon?game=<id>` is the invite link
+- `/backgammon/<id>?t=<token>` a running game — and, until the second player
   arrives, the waiting room: a room with no instance yet answers the game
   channel with a lobby payload. `t` is the seat token: a secret minted when a
   player takes a seat, and the only thing that opens it. The bare
-  `/poker/<id>` grants nothing and bounces to the invite link.
-- `/backgammon`, `/backgammon/<id>` the same for backgammon
+  `/backgammon/<id>` grants nothing and bounces to the invite link.
+- `/poker`, `/go`, `/chess` and anything under them: 302 to `/` (the games
+  that were removed).
 
 ## The landing API (`/papi`)
 
@@ -307,6 +297,8 @@ port), which is what paints the board before the round trip and all a
 visitor whose guest cookie is gone has.
 
 ## Adding a game
+Backgammon is the product and the only game registered, but the framework
+still takes another one:
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`. Give
    `Info` its formats (with settings if the creator should tune anything),
    the clock presets it offers, and a `timeout` policy.
@@ -314,10 +306,14 @@ visitor whose guest cookie is gone has.
 3. Add `test/<slug>/conformance_test.gleam` using `gamekit/conformance`
    (random playouts to termination, replay determinism, your invariants),
    then `mix oskol.fixtures` so the golden and Elm suites cover it.
-4. It is now playable at `/<slug>` with the generic renderer, and its
-   settings show up on the create page. Add a bespoke Elm view only if you
-   want one; it must read the protocol Scene, never new wire types
-   (see `assets/src/Games/Poker/View.elm`).
+4. Its settings show up on the create page. It needs an Elm view in
+   `assets/src/Games/<Name>/View.elm`, dispatched by slug in
+   `Page/Play.elm`; the view reads the protocol Scene, never new wire types
+   (see `assets/src/Games/Backgammon/View.elm`). There is no generic
+   renderer any more (it went with go); the repository history has one to
+   start from.
+5. Pick a slug that is not one of the removed games' (`poker`, `go`,
+   `chess`): the router sends those home before any game route sees them.
 
 ## Development commands
 
@@ -335,13 +331,12 @@ mix phx.server        # http://localhost:4400 (4000 belongs to other apps on thi
 mix oskol.seed        # local backgammon rooms at codes 000001.. parked in positions worth
                       # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated,
                       # P1 to act; prints each seat's link (lib/oskol/dev/seeds.ex)
-node playwright/test-poker-smoke/test.js        # poker: create, join, fold, next hand, flop
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
 node playwright/test-backgammon-landscape/test.js  # backgammon on a sideways phone: the board
                                                # fits the screen height exactly, nothing scrolls
-node playwright/test-spa-landing/test.js        # landing pages + a full create -> play click-through
+node playwright/test-spa-landing/test.js        # landing pages, old links redirect, a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
 ```
@@ -388,14 +383,9 @@ Notes:
 Every game is its seed plus its action log, and the suite leans on that.
 
 **Gleam (`bin/test-gleam`)**
-- Rules in controlled positions: `test/poker/rules_test.gleam` spells out
-  stacks, hole cards and the deck to check action order, min-raises, folds
-  and uncalled bets, short all-ins, run-outs, splits, blind levels, top-ups
-  and timeouts; `test/backgammon/rules_test.gleam` and `cube_test.gleam`
+- Rules in controlled positions: `test/backgammon/rules_test.gleam` and `cube_test.gleam`
   build boards to assert dice order, bar entry, bearing off, hits, gammons,
   doubling, Crawford, Jacoby, resigning.
-- `test/poker/evaluator_test.gleam`: every category, the tiebreaks that
-  matter, the best five of seven, the descriptions.
 - `test/backgammon/oracle_test.gleam`: an independent move generator,
   written from the rulebook on raw checker data, checked against
   `board.sequences` on hundreds of random boards (`positions.gleam` builds
@@ -403,16 +393,14 @@ Every game is its seed plus its action log, and the suite leans on that.
 - `test/backgammon/properties_test.gleam`: staged-turn invariants over random
   positions (undo is an exact inverse, a legal first move never strands a
   die, pip accounting, commit) and a no-leak property over random games.
-- Conformance (`test/poker/conformance_test.gleam`,
-  `test/backgammon/engine_test.gleam`): seeded playouts to game over with
-  per-game invariants (poker: chips are conserved, hole cards stay hidden in
-  scenes and events until shown), replay determinism, malformed actions
-  rejected. Random play excludes `resign` (`conformance.Options`).
+- Conformance (`test/backgammon/engine_test.gleam`): seeded playouts to
+  game over with the game's invariants, replay determinism, malformed
+  actions rejected. Random play excludes `resign` (`conformance.Options`).
 - Golden replays (`test/gamekit/golden_test.gleam`): every file in
   `test/fixtures/replays` replays to its recorded fingerprint, and every
   registered format has one. A rules change fails here; when intended, run
   `mix oskol.fixtures replays` and read the diff.
-- Framework units: rng, clocks (including the move bank), action decoding
+- Framework units: rng, clocks (including the turn delay), action decoding
   and validation, `event.for_viewer`, host/protocol shapes.
 
 **Fixtures (`mix oskol.fixtures`)** come from `gamekit/fixture`: replays are
@@ -425,10 +413,9 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   any game (viewer matches seat, spectators have no legal actions, select
   candidates exist in their zone, ids unique per zone, events only name
   tokens the viewer can see).
-- `PokerViewTest`, `BackgammonViewTest`, `GenericViewTest`: views on real
-  scenes, pure update logic, and rendered DOM facts (my cards are faces and
-  the opponent's are backs, buttons follow the legal actions, the slider is
-  bounded by the schema; 30 checkers, sources marked only for legal moves).
+- `BackgammonViewTest`: the view on real scenes, pure update logic, and
+  rendered DOM facts (30 checkers, sources marked only for legal moves,
+  buttons follow the legal actions).
 - `PlayUpdateTest`: fixture payloads replayed through `Page.Play.applyPayload`.
 - `RouteTest`, `SessionTest`, `CatalogTest`: the client's routes round-trip,
   the boot flags, and the `/papi` envelope and decoders (which are lax about
@@ -446,15 +433,16 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   Channel tests cover join replies, spectators, per-player payloads, and
   reconnects; `spa_controller_test.exs` covers what is still the server's on
   the two landing routes — the shell, the head a crawler reads, the 404 for a
-  slug that names no game, and the guest cookie and the name it remembers.
+  slug that names no game, the removed games' redirects, and the guest
+  cookie and the name it remembers.
 
 **Browser (`bin/check --browser`)**: Playwright smokes create real games and
 play them; review scripts take screenshots for eyeballing.
 
 When you add a rule, add a controlled-position test before the playouts:
 the playouts prove nothing crashes, the position tests prove the rule is
-right. When you add a game, its conformance test plus `mix oskol.fixtures`
-give it golden replays and Elm contract coverage for free.
+right. A registered game's conformance test plus `mix oskol.fixtures` give
+it golden replays and Elm contract coverage for free.
 
 ## Known patterns to avoid
 - Don't add per-game code to Elixir or to `Protocol.elm`.
@@ -501,6 +489,5 @@ seats are still opened only by seat tokens. `users` is a deliberately skeletal p
 for the future account-claim path via `guests.user_id`.
 
 ## Future
-- Twists as settings: a reroll in backgammon, two hands play one in hold'em,
-  Chess960 when chess arrives.
+- Twists as settings: a reroll in backgammon, and more after it.
 - Bots derived from `legal` for solo play and balance reports.

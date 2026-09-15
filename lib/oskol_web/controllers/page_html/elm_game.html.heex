@@ -12,33 +12,6 @@
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
-    <style>
-      .new-card {
-        position: relative;
-      }
-
-      .new-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background-color: rgb(234, 179, 8);
-        z-index: 10;
-      }
-
-      .new-card::after {
-        content: '';
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background-color: rgb(234, 179, 8);
-        z-index: 10;
-      }
-    </style>
   </head>
   <body class="h-full paper">
     <%!-- The game id and the seat token are in this page's URL, and that is

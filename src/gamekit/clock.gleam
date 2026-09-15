@@ -24,10 +24,6 @@ pub type Control {
   Bronstein(base_ms: Int, delay_ms: Int)
   /// A fresh allowance for every move; nothing carries over.
   PerMove(ms: Int)
-  /// Poker style: every action gets `move_ms`, and running over dips into
-  /// a bank of `bank_ms` that never refills. What expiry means is the
-  /// game's call (see `Game.timeout`): poker checks or folds and plays on.
-  MoveBank(move_ms: Int, bank_ms: Int)
 }
 
 pub type Preset {
@@ -47,24 +43,6 @@ pub fn presets() -> List(Preset) {
       Bronstein(300_000, 10_000),
     ),
     Preset("per_move", "Per move", "30 s for every move", PerMove(30_000)),
-    Preset(
-      "poker",
-      "Standard",
-      "20 s per action, 60 s time bank",
-      MoveBank(20_000, 60_000),
-    ),
-    Preset(
-      "poker_fast",
-      "Fast",
-      "12 s per action, 30 s time bank",
-      MoveBank(12_000, 30_000),
-    ),
-    Preset(
-      "poker_slow",
-      "Slow",
-      "45 s per action, 2 min time bank",
-      MoveBank(45_000, 120_000),
-    ),
   ]
 }
 
@@ -83,8 +61,6 @@ pub fn control_label(control: Control) -> String {
     Bronstein(base, delay) ->
       minutes(base) <> ", " <> seconds(delay) <> " delay"
     PerMove(ms) -> seconds(ms) <> " per move"
-    MoveBank(move, bank) ->
-      seconds(move) <> " per action + " <> seconds(bank) <> " bank"
   }
 }
 
@@ -138,7 +114,6 @@ pub fn new(control: Control, player_ids: List(PlayerId)) -> Clocks {
     Fischer(base, _) -> base
     Bronstein(base, _) -> base
     PerMove(ms) -> ms
-    MoveBank(_, bank) -> bank
   }
   Clocks(
     control: control,
@@ -221,22 +196,8 @@ pub fn set_running(
           let is_running = clock.running_since != None
           let wants = list.contains(should_run, id)
           case is_running, wants {
-            True, True ->
-              // Under a move bank every applied action puts a new decision
-              // in front of whoever stays on the clock (the actor again, or
-              // the button when the opponent dealt), so the allowance
-              // restarts; other controls keep ticking through a multi-step
-              // turn.
-              case control {
-                MoveBank(_, _) ->
-                  start(
-                    control,
-                    clocks.turn_delay_ms,
-                    stop(control, settle(clock, now), True),
-                    now,
-                  )
-                _ -> clock
-              }
+            // A clock that keeps running ticks on through a multi-step turn.
+            True, True -> clock
             False, False -> clock
             True, False -> stop(control, settle(clock, now), actor == Some(id))
             False, True -> start(control, clocks.turn_delay_ms, clock, now)
@@ -270,7 +231,6 @@ fn start(
 ) -> PlayerClock {
   let free = case control {
     Bronstein(_, delay) -> int.max(delay, turn_delay)
-    MoveBank(move, _) -> int.max(move, turn_delay)
     _ -> turn_delay
   }
   case control {
@@ -377,12 +337,6 @@ pub fn control_to_json(control: Control) -> Json {
       ])
     PerMove(ms) ->
       json.object([#("type", json.string("per_move")), #("ms", json.int(ms))])
-    MoveBank(move, bank) ->
-      json.object([
-        #("type", json.string("move_bank")),
-        #("move_ms", json.int(move)),
-        #("bank_ms", json.int(bank)),
-      ])
   }
 }
 

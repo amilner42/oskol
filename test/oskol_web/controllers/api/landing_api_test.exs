@@ -70,9 +70,7 @@ defmodule OskolWeb.Api.LandingApiTest do
 
       assert %{"ok" => true, "games" => games, "coming_soon" => []} = body
 
-      slugs = Enum.map(games, & &1["slug"])
-      assert "poker" in slugs
-      assert "backgammon" in slugs
+      assert Enum.map(games, & &1["slug"]) == ["backgammon"]
 
       backgammon = Enum.find(games, &(&1["slug"] == "backgammon"))
       assert backgammon["name"] == "Backgammon"
@@ -148,6 +146,13 @@ defmodule OskolWeb.Api.LandingApiTest do
                "error" => %{"code" => "not_found", "message" => "No game with that name"}
              } = body
     end
+
+    test "the games Oskol no longer hosts are not_found too", %{conn: conn} do
+      for slug <- ~w(poker go chess) do
+        body = conn |> get(~p"/papi/games/#{slug}") |> json_response(404)
+        assert body["error"]["code"] == "not_found", slug
+      end
+    end
   end
 
   # ---------- POST /papi/games/:slug ----------
@@ -181,19 +186,19 @@ defmodule OskolWeb.Api.LandingApiTest do
       body =
         conn
         |> with_csrf()
-        |> post(~p"/papi/games/poker", %{
-          "format" => "cash",
+        |> post(~p"/papi/games/backgammon", %{
+          "format" => "match5",
           "name" => "Alice",
-          "clock" => "poker_fast",
-          "selections" => %{"stake" => "5-10", "top_up" => "no"}
+          "clock" => "rapid",
+          "selections" => %{"twist" => "pick_dice"}
         })
         |> json_response(200)
 
       state = Game.get_server_state(body["id"])
-      assert state.setup.format == "cash"
-      assert state.setup.clock == "poker_fast"
-      assert state.setup.selections == %{"stake" => "5-10", "top_up" => "no"}
-      assert GameServerState.summary(state) =~ "Fast clock"
+      assert state.setup.format == "match5"
+      assert state.setup.clock == "rapid"
+      assert state.setup.selections == %{"twist" => "pick_dice"}
+      assert GameServerState.summary(state) =~ "Rapid clock"
     end
 
     test "a clock the game does not offer is refused", %{conn: conn} do
@@ -203,7 +208,7 @@ defmodule OskolWeb.Api.LandingApiTest do
         |> post(~p"/papi/games/backgammon", %{
           "format" => "single",
           "name" => "Alice",
-          "clock" => "poker"
+          "clock" => "sudden_death"
         })
 
       assert json_response(conn, 422)["error"]["message"] == "Unknown time control"
@@ -213,11 +218,11 @@ defmodule OskolWeb.Api.LandingApiTest do
       conn =
         conn
         |> with_csrf()
-        |> post(~p"/papi/games/poker", %{
-          "format" => "cash",
+        |> post(~p"/papi/games/backgammon", %{
+          "format" => "single",
           "name" => "Alice",
-          "clock" => "poker",
-          "selections" => %{"stake" => "enormous"}
+          "clock" => "none",
+          "selections" => %{"twist" => "enormous"}
         })
 
       assert json_response(conn, 422)["error"]["message"] == "Unknown choice"
