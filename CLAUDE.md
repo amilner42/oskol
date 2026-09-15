@@ -193,7 +193,7 @@ assets/src/Page/Library.elm      "/" the library: one grid of quiet game tiles
 assets/src/Page/GameLanding.elm  "/:slug" create page, and what an invite offers
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
 assets/src/GameArt.elm           per-game accent + pixel-art reel + phone motif
-assets/src/Ui/Shell.elm          the OSKOL plate, the code prompt, the footer
+assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Poker/View.elm  the poker table on the protocol Scene
 assets/src/Games/Backgammon/View.elm  the backgammon board

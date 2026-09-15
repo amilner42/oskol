@@ -1,7 +1,7 @@
 module Main exposing (main)
 
 {-| SPA shell: routing, page dispatch, and the chrome the landing pages sit
-in (`Ui.Shell` — the OSKOL plate, the JOIN GAME prompt, the footer).
+in (`Ui.Shell` — the OSKOL wordmark, the JOIN GAME prompt, the footer).
 
 Three routes, and they are the server's three routes:
 

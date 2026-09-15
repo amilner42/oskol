@@ -1,6 +1,6 @@
 module Ui.Shell exposing (Config, joinCodeInputId, view)
 
-{-| The chrome every landing page sits in: the OSKOL plate, the JOIN GAME
+{-| The chrome every landing page sits in: the OSKOL wordmark, the JOIN GAME
 prompt behind it, and the footer.
 
 Quiet notebook: the paper and its grid stay, and the pixel font is kept for
@@ -61,8 +61,12 @@ topbar config =
             , class "inline-block"
             , attribute "aria-label" "Oskol home"
             ]
+            -- Plain pixel type, no plate: the wordmark is the one loud thing
+            -- the page still says, and a box around it makes it a button.
             [ Html.span
-                [ class "q-card pixel text-[10px] sm:text-xs tracking-[0.3em] px-3 py-2.5 inline-block" ]
+                [ class "pixel text-[12px] sm:text-[13px] inline-block"
+                , style "color: var(--ink)"
+                ]
                 [ Html.text "OSKOL" ]
             ]
         , Html.div [ class "flex items-center gap-3" ]
