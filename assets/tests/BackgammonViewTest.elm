@@ -1609,6 +1609,29 @@ perFixture fixture =
                             render "p1" u |> Query.findAll [ tag "button", text "PLAY" ] |> Query.count (Expect.equal expected)
                         )
                     |> allPass
+        , test "RESIGN is an arcade button with a flag, exactly when resigning is legal" <|
+            \_ ->
+                p1Views
+                    |> List.map
+                        (\u ->
+                            let
+                                expected =
+                                    if List.any (\s -> s.name == "resign") u.legal then
+                                        1
+
+                                    else
+                                        0
+
+                                header =
+                                    render "p1" u |> Query.find [ class "bg-header" ]
+                            in
+                            Expect.all
+                                [ \_ -> header |> Query.findAll [ tag "button", class "btn-arcade", text "RESIGN" ] |> Query.count (Expect.equal expected)
+                                , \_ -> header |> Query.findAll [ tag "svg" ] |> Query.count (Expect.equal expected)
+                                ]
+                                ()
+                        )
+                    |> allPass
         , test "a waiting player is told whose turn it is" <|
             \_ ->
                 p2Views
