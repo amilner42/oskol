@@ -865,6 +865,85 @@
 .bg-page .delay-pip { border-color: var(--bg-accent); color: var(--bg-frame); background: var(--bg-accent); }
 /* The game-over card. */
 .bg-card { border-radius: 14px; box-shadow: 0 18px 40px rgba(40, 24, 12, 0.4); }
+
+/* The record: the moves and the match beside the board. One notebook card
+   (white, inked border) holding a title row, the finished games of a match,
+   and the turn list. The list is a `column-reverse` flex column whose lines
+   go into the DOM newest first, so it opens scrolled to the latest turn and
+   stays pinned there as turns arrive -- no script measures anything. Where
+   the card lives is decided by the layouts below: a column as tall as the
+   slab on a desktop, the side column of a phone held sideways, and a sheet
+   over the board (`.bg-record-sheet`) behind the header's MOVES everywhere
+   else. */
+.bg-record-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #fff;
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 0 var(--ink);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.bg-record-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--ink);
+}
+.bg-record-games {
+  flex: none;
+  max-height: 12dvh;
+  overflow-y: auto;
+  padding: 6px 10px;
+  border-bottom: 2px dashed var(--ink);
+  font-size: 12px;
+}
+.bg-record-game { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; min-width: 0; }
+.bg-record-list {
+  --rl-pad: 10px; /* the side padding a highlighted row bleeds into */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column-reverse;
+  padding: 6px var(--rl-pad);
+  font-variant-numeric: tabular-nums;
+  overscroll-behavior: contain;
+}
+.bg-record-list .bg-record-empty { color: var(--pencil); font-style: italic; }
+.bg-record-line { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; flex: none; }
+.bg-record-line .swatch { width: 0.8rem; align-self: center; flex: none; border: 2px solid var(--ink); }
+.bg-record-line .swatch.black { background: var(--ink); }
+.bg-record-line .dice { font-weight: 800; min-width: 1.5rem; flex: none; }
+.bg-record-line .dice .picked { color: var(--bg-accent); margin-left: 3px; vertical-align: middle; }
+.bg-record-line .moves { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.bg-record-line.rl-cube .moves { font-style: italic; }
+.bg-record-line.rl-result { color: var(--pencil); font-weight: 700; margin: 3px 0 2px; }
+/* A turn is a control: tapping it puts the board it left on the slab, and
+   the one on the slab is marked. */
+.bg-record-line.rl-turn:hover { background: color-mix(in oklab, var(--bg-accent) 18%, #fff); }
+.bg-record-line.is-viewing { background: color-mix(in oklab, var(--bg-accent) 38%, #fff); box-shadow: inset 3px 0 0 0 var(--bg-accent); margin: 0 calc(-1 * var(--rl-pad)); padding-left: var(--rl-pad); padding-right: var(--rl-pad); }
+/* The way back to the game, and the sign that it moved on meanwhile. */
+.bg-live.stale { animation: blink 1s steps(2, end) infinite; }
+.btn-arcade.bg-live.stale { background: var(--red); color: #fff; animation: none; }
+/* While a past turn is up the slab is a picture: nothing on it is a
+   control, and it says so. */
+.bg-page.is-viewing .bg-stack { outline: 3px dashed var(--bg-accent); outline-offset: 3px; }
+.bg-record-line.rl-heading { margin-top: 6px; color: var(--pencil); border-bottom: 1px dashed var(--pencil); }
+/* The sheet on a phone: the card fills it and scrolls inside. */
+.bg-record-sheet { max-height: 55dvh; }
+.bg-record-sheet .bg-record-body { height: auto; max-height: 55dvh; }
+/* The sheet's height is indefinite (it is as tall as its content, up to
+   the cap), so a percentage cap on the match history would not resolve:
+   bound it by the viewport instead, or a long unlimited session's games
+   would push the turn list to nothing. */
+.bg-record-sheet .bg-record-games { max-height: 24dvh; }
 /* The bars as every other table draws them. */
 .player-bar { border: 3px solid var(--ink); background: #fff; box-shadow: 4px 4px 0 0 var(--ink); }
 .player-bar.active { border-color: var(--bg-sky); box-shadow: 4px 4px 0 0 var(--bg-sky); background: color-mix(in oklab, var(--bg-sky) 14%, #fff); }
@@ -955,6 +1034,30 @@
   }
   .bg-page .player-bar:not(.is-me) { grid-row: 2; }
   .bg-page .player-bar.is-me { grid-row: 4; }
+  /* The record takes the side column's spare row, between the two bars,
+     as tall as what the board's height leaves; the list scrolls inside.
+     The header's MOVES is redundant here (the next block brings it back
+     on a screen too short to give the record a row). */
+  .bg-page .bg-record {
+    display: block;
+    grid-column: 2;
+    grid-row: 3;
+    align-self: stretch;
+    justify-self: start;
+    width: 100%;
+    max-width: 16rem;
+    min-height: 0;
+    position: relative;
+  }
+  .bg-page .bg-record-inner { position: absolute; inset: 4px 0; }
+  .bg-page .bg-record-body { font-size: 11px; box-shadow: 3px 3px 0 0 var(--ink); }
+  .bg-page .bg-record-head { padding: 4px 8px; }
+  /* The row is a few lines tall: the match history would eat half of it,
+     and the result lines in the list and the score chips in the bars
+     already tell the match. */
+  .bg-page .bg-record-games { display: none; }
+  .bg-page .bg-record-list { --rl-pad: 8px; padding: 4px var(--rl-pad); }
+  .bg-page .bg-record-toggle { display: none; }
   .bg-page .bg-board {
     grid-column: 1;
     grid-row: 1 / -1;
@@ -993,6 +1096,13 @@
   /* the pips shrink with the face, or they run into each other */
   .bg-page .bg-band .die .grid > div > div { width: 4px; height: 4px; }
 }
+/* A landscape screen too short for the record to have a usable row beside
+   the board: it goes back behind the header's MOVES, as on a portrait
+   phone. */
+@media (orientation: landscape) and (max-height: 339px) and (max-width: 1023px) {
+  .bg-page .bg-record { display: none; }
+  .bg-page .bg-record-toggle { display: inline; }
+}
 
 /* Backgammon on a desktop screen: the table takes the window. Below `lg`
    the board is sized by width and capped at a fixed point height; on a
@@ -1016,12 +1126,14 @@
     --bg-frame-w: 14px;
     --bg-lip: 6px;
     --bg-drop: 1.5rem;       /* room under the slab for its shadow */
+    --bg-record-w: 17rem;    /* the record column beside the slab */
+    --bg-record-gap: 1rem;
     /* The width cap is the board's own ratio (a point is 0.21 of its
        height wide; 12 points, the bar and the frame across) against the
-       window less the page's padding. */
+       window less the page's padding and the record column. */
     --bg-point-h: min(
       calc((100dvh - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop)) / 2),
-      calc((100vw - 8rem) / 2.9)
+      calc((100vw - 8rem - var(--bg-record-w) - var(--bg-record-gap)) / 2.9)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
     --bg-half: calc(var(--bg-pw) * 6 + 5 * 0.25rem + 6px); /* six points, their sm:gap-1, the felt's inset */
@@ -1031,7 +1143,20 @@
     grid-template-rows: auto minmax(0, 1fr);
     justify-content: center;
   }
-  .bg-page .bg-main { width: 100%; }
+  /* The slab and, beside it, the record: two columns, centred together.
+     The record takes part of the screen, not the slab's height: its card
+     starts level with the slab's top and grows with its content up to
+     40dvh (about one felt half), scrolling inside from there. Its box has
+     no height of its own, so the row is always the slab's. */
+  .bg-page .bg-main {
+    width: 100%;
+    grid-template-columns: max-content var(--bg-record-w);
+    column-gap: var(--bg-record-gap);
+    justify-content: center;
+  }
+  .bg-page .bg-record { align-self: start; min-height: 0; }
+  .bg-page .bg-record-body { height: auto; max-height: 40dvh; }
+  .bg-page .bg-record-games { max-height: 12dvh; }
   /* The slab is exactly as wide as the board, so the identity bars hug it. */
   .bg-page .bg-stack { width: max-content; max-width: 100%; justify-self: center; }
   .bg-page .bg-board { width: max-content; max-width: 100%; }

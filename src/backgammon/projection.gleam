@@ -2,6 +2,7 @@
 
 import backgammon/board.{type Color, Bar, Off, Point}
 import backgammon/engine
+import backgammon/record
 import backgammon/state.{type GameState}
 import gamekit/scene.{type Scene, type Viewer, type Zone}
 import gleam/int
@@ -20,6 +21,8 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
   let no_moves = state.no_moves(state)
   let state =
     state.GameState(..state, board: state.visible_board(state, viewer_id))
+  // The match record, oldest first (the state keeps it newest first).
+  let entries = list.reverse(state.record)
   scene.Scene(
     game: slug,
     phase: phase_name(state),
@@ -85,6 +88,21 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
         state.Finished(color) -> json.string(state.player_of(state, color))
         _ -> json.null()
       }),
+      // The match record, oldest first, and the games it has finished. Both
+      // are public: a committed turn is on the board for everyone.
+      #("record", json.array(entries, record.to_json)),
+      #(
+        "games",
+        json.array(
+          list.filter(entries, fn(e) {
+            case e {
+              record.GameOver(..) -> True
+              _ -> False
+            }
+          }),
+          record.to_json,
+        ),
+      ),
     ]),
   )
 }

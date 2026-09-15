@@ -463,13 +463,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
+                            ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }, Nothing )
+                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -480,7 +480,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled }
+                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -539,7 +539,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, roll = settled }, NoOut )
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -976,7 +976,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model rotation =
-                    { drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, resigning = False, roll = settled }
+                    { drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False }
 
                 nextDie rotation u =
                     View.view (ctx "p1" (twoDice u) (model rotation))
@@ -1376,6 +1376,334 @@ suite =
                             Expect.fail "no backgammon fixture"
              ]
             )
+        , describe "the record"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                -- a position: per colour the 24 point counts (point 1 first), bar, off, pips
+                side points bar off pips =
+                    E.object [ ( "points", E.list E.int points ), ( "bar", E.int bar ), ( "off", E.int off ), ( "pips", E.int pips ) ]
+
+                at spots =
+                    List.range 1 24 |> List.map (\p -> spots |> List.filter (\( q, _ ) -> q == p) |> List.map Tuple.second |> List.sum)
+
+                opening =
+                    E.object
+                        [ ( "white", side (at [ ( 24, 2 ), ( 13, 5 ), ( 8, 3 ), ( 6, 5 ) ]) 0 0 167 )
+                        , ( "black", side (at [ ( 1, 2 ), ( 12, 5 ), ( 17, 3 ), ( 19, 5 ) ]) 0 0 167 )
+                        ]
+
+                -- white: two on its 24 point, thirteen off; black: three on the bar, twelve on point 1
+                endgame =
+                    E.object
+                        [ ( "white", side (at [ ( 24, 2 ) ]) 0 13 48 )
+                        , ( "black", side (at [ ( 1, 12 ) ]) 3 0 363 )
+                        ]
+
+                turnAt position player dice moves =
+                    E.object
+                        [ ( "kind", E.string "turn" )
+                        , ( "player", E.string player )
+                        , ( "dice", E.list E.int dice )
+                        , ( "picked", E.bool False )
+                        , ( "moves", E.list E.string moves )
+                        , ( "position", position )
+                        ]
+
+                turn =
+                    turnAt opening
+
+                cube kind player extra =
+                    E.object ([ ( "kind", E.string kind ), ( "player", E.string player ) ] ++ extra)
+
+                gameOver number winner result points scores =
+                    E.object
+                        [ ( "kind", E.string "game_over" )
+                        , ( "number", E.int number )
+                        , ( "winner", E.string winner )
+                        , ( "result", E.string result )
+                        , ( "points", E.int points )
+                        , ( "cube", E.int 1 )
+                        , ( "scores", E.object (List.map (Tuple.mapSecond E.int) scores) )
+                        ]
+
+                -- a match to 3 in its second game: game 1 was a gammon after a take
+                match =
+                    E.list identity
+                        [ turn "p1" [ 3, 1 ] [ "8/5*", "6/5" ]
+                        , turn "p2" [ 6, 5 ] []
+                        , cube "double" "p1" [ ( "value", E.int 2 ) ]
+                        , cube "take" "p2" []
+                        , turn "p1" [ 4, 4 ] [ "13/9(2)", "24/20(2)" ]
+                        , gameOver 1 "p1" "gammon" 4 [ ( "p1", 4 ), ( "p2", 0 ) ]
+                        , turn "p2" [ 2, 1 ] [ "bar/23", "6/5" ]
+                        ]
+
+                withRecord record gameNumber u =
+                    { u
+                        | scene =
+                            u.scene
+                                |> withData "record" record
+                                |> withData "game_number" (E.int gameNumber)
+                    }
+
+                render playerId u =
+                    View.view (ctx playerId u View.init) |> Query.fromHtml
+
+                nameOf id u =
+                    Protocol.findPlayer id u.scene |> Maybe.map .name |> Maybe.withDefault id
+             in
+             [ test "every turn, cube action and result of the record is on the page, for the viewer and a spectator" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                u2 =
+                                    withRecord match 2 u
+
+                                shows q =
+                                    Expect.all
+                                        (List.map (\t -> Query.has [ text t ])
+                                            [ "8/5* 6/5", "(no play)", "Doubles to 2", "Takes", "13/9(2) 24/20(2)", "bar/23 6/5" ]
+                                        )
+                                        q
+                            in
+                            Expect.all
+                                [ \_ -> render "p1" u2 |> Query.find [ id "bg-record" ] |> shows
+                                , \_ -> render "spectator" { u2 | scene = asSpectator u2.scene, legal = [] } |> Query.find [ id "bg-record" ] |> shows
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a finished game is a result line between the games and a row of the match history" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                panel =
+                                    render "p1" (withRecord match 2 u) |> Query.find [ id "bg-record" ]
+
+                                winner =
+                                    nameOf "p1" u
+                            in
+                            Expect.all
+                                [ \_ -> panel |> Query.findAll [ class "bg-record-line", class "rl-result" ] |> Query.count (Expect.equal 1)
+                                , \_ -> panel |> Query.find [ class "rl-result" ] |> Query.has [ text (winner ++ " wins a gammon · 4 pts"), text "4–0" ]
+                                , \_ -> panel |> Query.findAll [ class "bg-record-game" ] |> Query.count (Expect.equal 1)
+                                , \_ -> panel |> Query.find [ class "bg-record-game" ] |> Query.has [ text "G1", text winner, text "gammon · 4 pts", text "4–0" ]
+                                , \_ -> panel |> Query.findAll [ class "rl-heading" ] |> Query.count (Expect.equal 2)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "a single game has no headings and no match history" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                panel =
+                                    render "p1" (withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ] ]) 1 u) |> Query.find [ id "bg-record" ]
+                            in
+                            Expect.all
+                                [ \_ -> panel |> Query.findAll [ class "rl-heading" ] |> Query.count (Expect.equal 0)
+                                , \_ -> panel |> Query.findAll [ class "bg-record-games" ] |> Query.count (Expect.equal 0)
+                                , \_ -> panel |> Query.has [ text "8/5 6/5" ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the list goes into the DOM newest first, so the reversed column shows the latest turn at the bottom" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            render "p1" (withRecord match 2 u)
+                                |> Query.find [ id "bg-record" ]
+                                |> Query.find [ class "bg-record-list" ]
+                                |> Query.children [ class "bg-record-line" ]
+                                |> Query.first
+                                |> Query.has [ text "bar/23 6/5" ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "an empty record says so rather than showing nothing" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            render "p1" (withRecord (E.list identity []) 1 u)
+                                |> Query.find [ id "bg-record" ]
+                                |> Query.has [ text "Nothing played yet." ]
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "MOVES opens the sheet over the board and CLOSE shuts it" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                u2 =
+                                    withRecord match 2 u
+
+                                ( opened, _ ) =
+                                    View.update ToggleRecord View.init
+
+                                ( closed, _ ) =
+                                    View.update ToggleRecord opened
+                            in
+                            Expect.all
+                                [ \_ -> render "p1" u2 |> Query.findAll [ id "bg-record-sheet" ] |> Query.count (Expect.equal 0)
+                                , \_ -> render "p1" u2 |> Query.find [ id "bg-record-toggle" ] |> Event.simulate Event.click |> Event.expect ToggleRecord
+                                , \_ -> Expect.equal True opened.recordOpen
+                                , \_ ->
+                                    View.view (ctx "p1" u2 opened)
+                                        |> Query.fromHtml
+                                        |> Query.find [ id "bg-record-sheet" ]
+                                        |> Query.has [ text "8/5* 6/5", text "CLOSE" ]
+                                , \_ -> Expect.equal False closed.recordOpen
+
+                                -- a tap on the board does not shut the sheet by accident
+                                , \_ -> View.update (PlayMove "13" "8") opened |> Tuple.first |> .recordOpen |> Expect.equal True
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "tapping a turn puts the board it left on the slab, drawn from its snapshot" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                -- turn 0 left the opening position, turn 1 the endgame one
+                                u2 =
+                                    withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ], turnAt endgame "p2" [ 6, 6 ] [ "6/off(4)" ] ]) 1 u
+
+                                ( viewing, out ) =
+                                    View.update (ViewTurn 1) View.init
+
+                                board =
+                                    View.view (ctx "p1" u2 viewing) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> Expect.equal NoOut out
+                                , \_ -> Expect.equal (Just 1) viewing.viewing
+
+                                -- two white checkers on the board, thirteen sticks in the tray
+                                , \_ -> board |> Query.findAll [ class "checker", class "white" ] |> Query.count (Expect.equal 2)
+                                , \_ -> board |> Query.findAll [ class "off-stick", class "white" ] |> Query.count (Expect.equal 13)
+
+                                -- black: three on the bar, a stack of twelve on point 1 (five drawn, the top one counting 12)
+                                , \_ -> board |> Query.findAll [ class "checker", class "black" ] |> Query.count (Expect.equal 8)
+                                , \_ -> board |> Query.find [ class "bg-bar" ] |> Query.findAll [ class "checker", class "black" ] |> Query.count (Expect.equal 3)
+                                , \_ -> board |> Query.has [ class "checker-count", text "12" ]
+
+                                -- the turn's dice on the board (a double is four, as live), the pips the engine counted
+                                , \_ -> board |> Query.findAll [ class "die" ] |> Query.count (Expect.equal 4)
+                                , \_ -> board |> Query.has [ text "363 PIPS", text "48 PIPS" ]
+
+                                -- my own past turn's dice are not the live control they would be
+                                , \_ ->
+                                    View.view (ctx "p2" u2 viewing)
+                                        |> Query.fromHtml
+                                        |> Query.find [ id "dice-row" ]
+                                        |> Query.hasNot [ class "rotates" ]
+                                , \_ -> View.view (ctx "p2" u2 viewing) |> Query.fromHtml |> Query.findAll [ class "die", class "next" ] |> Query.count (Expect.equal 0)
+
+                                -- nothing on it is a control: no legal origin, no action button, only LIVE
+                                , \_ -> board |> Query.findAll [ class "source" ] |> Query.count (Expect.equal 0)
+                                , \_ -> board |> Query.findAll [ class "btn-arcade" ] |> Query.count (Expect.equal 1)
+                                , \_ -> board |> Query.find [ id "bg-live" ] |> Event.simulate Event.click |> Event.expect ViewLive
+                                , \_ -> board |> Query.findAll [ class "bg-record-line", class "is-viewing" ] |> Query.count (Expect.equal 1)
+                                , \_ -> board |> Query.find [ class "is-viewing" ] |> Query.has [ text "6/off(4)" ]
+
+                                -- the record's rows are what puts a turn up
+                                , \_ ->
+                                    View.view (ctx "p1" u2 View.init)
+                                        |> Query.fromHtml
+                                        |> Query.find [ id "bg-record" ]
+                                        |> Query.findAll [ class "rl-turn" ]
+                                        |> Query.first
+                                        |> Event.simulate Event.click
+                                        |> Event.expect (ViewTurn 1)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "LIVE comes back to the game, and says when it moved on meanwhile" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                u2 =
+                                    withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ] ]) 1 u
+
+                                viewing =
+                                    View.update (ViewTurn 0) View.init |> Tuple.first
+
+                                moved =
+                                    View.noteEvents [ Protocol.Custom "turn_played" E.null ] viewing
+
+                                quiet =
+                                    View.noteEvents [] viewing
+
+                                ( live, _ ) =
+                                    View.update ViewLive moved
+
+                                checkers m =
+                                    View.view (ctx "p1" u2 m) |> Query.fromHtml |> Query.findAll [ class "checker" ] |> Query.count (Expect.equal 30)
+                            in
+                            Expect.all
+                                [ \_ -> Expect.equal False viewing.stale
+                                , \_ -> Expect.equal True moved.stale
+                                , \_ -> Expect.equal (Just 0) moved.viewing
+                                , \_ -> Expect.equal False quiet.stale
+                                , \_ -> View.view (ctx "p1" u2 moved) |> Query.fromHtml |> Query.find [ id "bg-live" ] |> Query.has [ class "stale", text "LIVE · NEW" ]
+                                , \_ -> Expect.equal ( Nothing, False ) ( live.viewing, live.stale )
+                                , \_ -> checkers live
+                                , \_ -> View.view (ctx "p1" u2 live) |> Query.fromHtml |> Query.findAll [ id "bg-live" ] |> Query.count (Expect.equal 0)
+
+                                -- a live payload never yanks a viewer back by itself
+                                , \_ -> View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] viewing |> .viewing |> Expect.equal (Just 0)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             , test "the game-over card offers the review, which opens on the last turn" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                u2 =
+                                    withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ], cube "resign" "p2" [], gameOver 1 "p1" "resigned" 1 [ ( "p1", 1 ), ( "p2", 0 ) ] ]) 1 u
+
+                                over =
+                                    { u2 | outcome = Protocol.Finished [ "p1" ] }
+
+                                card =
+                                    View.view (ctx "p1" over View.init) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> card |> Query.find [ id "bg-review-moves" ] |> Event.simulate Event.click |> Event.expect (ViewTurn 0)
+
+                                -- while reviewing, the card is out of the way and LIVE brings it back
+                                , \_ ->
+                                    View.view (ctx "p1" over (View.update (ViewTurn 0) View.init |> Tuple.first))
+                                        |> Query.fromHtml
+                                        |> Query.findAll [ text "REMATCH" ]
+                                        |> Query.count (Expect.equal 0)
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+             ]
+            )
         , describe "rendering fixtures" (List.map perFixture (FixtureLoader.byGame "backgammon"))
         ]
 
@@ -1748,7 +2076,7 @@ perFixture fixture =
                     |> List.head
                     |> Maybe.map
                         (\u ->
-                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, resigning = False, roll = settled })
+                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, resigning = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal 0)

@@ -94,14 +94,25 @@ async function assertFits(page, phone, who) {
   );
   must(scroll.innerHeight === phone.height, `${label}: the viewport is the phone's (${scroll.innerHeight})`);
 
-  // The chrome sits beside the board, never over it.
-  for (const selector of ['.bg-header', '.player-bar:not(.is-me)', '.player-bar.is-me']) {
+  // The chrome sits beside the board, never over it. The record (the move
+  // list) is part of the side column too, when the screen is tall enough
+  // to give it a row.
+  for (const selector of ['.bg-header', '.player-bar:not(.is-me)', '.player-bar.is-me', '.bg-record']) {
     const chrome = await page.locator(selector).first().boundingBox();
     if (!chrome) continue;
     must(!overlaps(chrome, board), `${label}: ${selector} does not overlap the board`);
     must(
       chrome.x + chrome.width <= phone.width + 1 && chrome.y + chrome.height <= phone.height + 1,
       `${label}: ${selector} is on screen`
+    );
+  }
+  if (phone.height >= 340) {
+    const record = await page.locator('.bg-record .bg-record-body').first().boundingBox();
+    must(record && record.height >= 60 && record.width >= 120, `${label}: the record has a readable row beside the board`);
+    const bars = await Promise.all(['.player-bar:not(.is-me)', '.player-bar.is-me'].map((s) => box(page, s)));
+    must(
+      record.y >= bars[0].y + bars[0].height - 1 && record.y + record.height <= bars[1].y + 1,
+      `${label}: the record sits between the two identity bars`
     );
   }
 
