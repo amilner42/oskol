@@ -835,6 +835,7 @@ view live =
             , drag = drag
             , hovered = Drag.hover ctx.model.drag
             , tap = tap
+            , landed = lastLanded live
             }
     in
     -- On a desktop screen (`lg` and up) the board is sized by the window's
@@ -1309,6 +1310,7 @@ type alias Board =
     , drag : Maybe (Drag.Active String)
     , hovered : Maybe String
     , tap : TapContext
+    , landed : Dict.Dict Int Int -- point -> how many checkers the last turn landed there
     }
 
 
@@ -1448,7 +1450,7 @@ viewPoint board isTop index point =
          ]
             ++ interaction
         )
-        (viewStack { lifted = liftedAt board id } tokens
+        (viewStackTinted (Dict.get point board.landed |> Maybe.withDefault 0) { lifted = liftedAt board id } tokens
             ++ (if isTarget then
                     [ dropGhost board (dragging && board.hovered == Just id) ]
 
@@ -1557,10 +1559,50 @@ viewStack marks tokens =
         shown
 
 
+{-| A point's stack with its top `n` checkers marked as the ones the last
+turn landed there.
+-}
+viewStackTinted : Int -> Marks -> List Token -> List (Html Msg)
+viewStackTinted n marks tokens =
+    let
+        shown =
+            List.take 5 tokens
+
+        extra =
+            List.length tokens - 5
+
+        lastIndex =
+            List.length shown - 1
+    in
+    List.indexedMap
+        (\i t ->
+            viewCheckerWith (i > lastIndex - n)
+                (if i == lastIndex then
+                    marks
+
+                 else
+                    noMarks
+                )
+                (if i == lastIndex && extra > 0 then
+                    Just (extra + 5)
+
+                 else
+                    Nothing
+                )
+                t
+        )
+        shown
+
+
 {-| A checker; the top one of a tall stack carries the stack's full count.
 -}
 viewChecker : Marks -> Maybe Int -> Token -> Html Msg
-viewChecker marks count token =
+viewChecker =
+    viewCheckerWith False
+
+
+viewCheckerWith : Bool -> Marks -> Maybe Int -> Token -> Html Msg
+viewCheckerWith justMoved marks count token =
     let
         color =
             Protocol.tokenProp D.string "color" token |> Maybe.withDefault "white"
@@ -1571,6 +1613,7 @@ viewChecker marks count token =
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
             , ( "lifted", marks.lifted )
+            , ( "just-moved", justMoved )
             ]
         , title token.id
         ]
@@ -2632,6 +2675,98 @@ viewedTurn ctx =
 
         Nothing ->
             Nothing
+
+
+{-| Where the turn in focus landed checkers: the turn being viewed, or live
+the last turn played. Read as the points where the mover's count grew
+between the position before that turn and the one it left (the engine's
+snapshots), so a checker that only passed through a point is not counted.
+-}
+lastLanded : Ctx -> Dict.Dict Int Int
+lastLanded live =
+    let
+        entries =
+            recordOf live.scene |> List.indexedMap Tuple.pair
+
+        focus =
+            case live.model.viewing of
+                Just index ->
+                    Just index
+
+                Nothing ->
+                    lastTurnIndex live
+
+        -- the position before entry `index`: the previous turn of the
+        -- same game, else the opening position
+        before index =
+            entries
+                |> List.filter (\( i, _ ) -> i < index)
+                |> List.reverse
+                |> List.foldl
+                    (\( _, e ) acc ->
+                        case ( acc, e ) of
+                            ( Searching, TurnEntry t ) ->
+                                Found t.position
+
+                            ( Searching, GameOverEntry _ ) ->
+                                Found opening
+
+                            _ ->
+                                acc
+                    )
+                    Searching
+                |> (\r ->
+                        case r of
+                            Found p ->
+                                p
+
+                            Searching ->
+                                opening
+                   )
+
+        side color snap =
+            if color == "white" then
+                snap.white
+
+            else
+                snap.black
+    in
+    case focus |> Maybe.andThen (\i -> List.drop i entries |> List.head) of
+        Just ( index, TurnEntry turn ) ->
+            let
+                color =
+                    colorOf (Protocol.findPlayer turn.player live.scene)
+
+                prev =
+                    (side color (before index)).points
+
+                now =
+                    (side color turn.position).points
+            in
+            List.map2 (\a b -> b - a) prev now
+                |> List.indexedMap (\i d -> ( i + 1, d ))
+                |> List.filter (\( _, d ) -> d > 0)
+                |> Dict.fromList
+
+        _ ->
+            Dict.empty
+
+
+type Search
+    = Searching
+    | Found Snapshot
+
+
+{-| The opening position, per colour, points 1..24 (White moves 24 to 1). -}
+opening : Snapshot
+opening =
+    let
+        at pairs =
+            List.range 1 24 |> List.map (\p -> pairs |> List.filter (\( q, _ ) -> q == p) |> List.map Tuple.second |> List.sum)
+    in
+    { white = { points = at [ ( 24, 2 ), ( 13, 5 ), ( 8, 3 ), ( 6, 5 ) ], bar = 0, off = 0, pips = 167 }
+    , black = { points = at [ ( 1, 2 ), ( 12, 5 ), ( 17, 3 ), ( 19, 5 ) ], bar = 0, off = 0, pips = 167 }
+    }
 
 
 {-| The index of the last turn in the record, to open the review on.

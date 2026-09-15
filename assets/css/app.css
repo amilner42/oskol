@@ -894,6 +894,13 @@ a.q-card:hover, a.q-card:focus-visible {
    scrolling -- the page itself keeps scrolling normally elsewhere. */
 [data-drag-capture] { touch-action: none; cursor: grab; }
 .checker.lifted { opacity: 0.35; }
+/* The checkers the last turn landed (or the turn being viewed): a thin
+   ring of the accent around the rim, nothing else. */
+.checker.just-moved {
+  /* one colour on every board (the site's yellow, not the theme's accent,
+     which sits too close to some felts), with a thin dark edge outside it */
+  box-shadow: 0 0 0 2.5px #ffd23f, 0 0 0 4px rgba(20, 16, 12, 0.9);
+}
 .bg-drag-ghost {
   position: fixed;
   z-index: 60;
