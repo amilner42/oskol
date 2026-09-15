@@ -41,21 +41,19 @@ async function backgammon(context, tag) {
   const waiter = mover === p1 ? p2 : p1;
   await sleep(600);
   await mover.screenshot({ path: `${OUT}/${tag}-bg-01-to-move.png` });
+  // One tap on a source plays it with the next die.
   await mover.locator(source).first().click();
-  await sleep(300);
-  await mover.screenshot({ path: `${OUT}/${tag}-bg-02-selected.png` });
-  await mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)').first().click();
   await sleep(800);
-  // finish the turn
-  // Stage the rest of the turn: select a source, wait for its destinations, click one.
+  await mover.screenshot({ path: `${OUT}/${tag}-bg-02-played.png` });
+  // Stage the rest of the turn: one tap per source spends a die.
   for (let i = 0; i < 4; i++) {
     const src = mover.locator(source);
     if ((await src.count()) === 0) break;
+    const used = await mover.locator('.die.used').count();
     await src.first().click();
-    const target = mover.locator('.bg-point.target, [title="Borne off"]:has(.ghost)');
-    try { await target.first().waitFor({ timeout: 3000 }); } catch (_) { break; }
-    await target.first().click();
-    await mover.waitForFunction(() => !document.querySelector('.bg-point.selected'), null, { timeout: 5000 });
+    try {
+      await mover.waitForFunction((n) => document.querySelectorAll('.die.used').length > n, used, { timeout: 3000 });
+    } catch (_) { break; }
     await sleep(400);
   }
   await mover.screenshot({ path: `${OUT}/${tag}-bg-02b-staged.png` });

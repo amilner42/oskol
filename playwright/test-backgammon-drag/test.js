@@ -125,20 +125,20 @@ async function playTurnWithDrags(page, { touch, label }) {
   await drag(page, { touch, pickDrop: offTargetSpot });
   await sleep(600);
   if ((await usedDice(page)) !== staged) throw new Error(`${label}: an off-target drop staged a move`);
-  if (await page.locator('.bg-point.selected').count()) throw new Error(`${label}: an off-target drop left a selection`);
+  if (await page.locator('.drop-ghost').count()) throw new Error(`${label}: an off-target drop left its destinations lit`);
   log(`${label}: illegal drag was a no-op`);
 
-  // Tap-to-move still works after dragging; finish the turn on taps.
+  // Tap-to-move still works after dragging; finish the turn on taps: one
+  // tap on a source plays it with the next die.
   let tapped = false;
   for (let i = 0; i < 4; i++) {
     const src = page.locator('.bg-point.source');
     if ((await src.count()) === 0) break;
     const used = await usedDice(page);
     await src.first().click();
-    const target = page.locator('.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)');
-    try { await target.first().waitFor({ timeout: 3000 }); } catch (_) { break; }
-    await target.first().click();
-    await page.waitForFunction((n) => document.querySelectorAll('.die.used').length > n, used, { timeout: 5000 });
+    try {
+      await page.waitForFunction((n) => document.querySelectorAll('.die.used').length > n, used, { timeout: 3000 });
+    } catch (_) { break; }
     tapped = true;
   }
   if (tapped) log(`${label}: tap-to-move still works after dragging`);

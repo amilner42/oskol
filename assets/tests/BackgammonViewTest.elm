@@ -24,31 +24,10 @@ suite : Test
 suite =
     describe "backgammon board"
         [ describe "update"
-            [ test "playing a move sends it and clears the selection" <|
+            [ test "playing a move sends it and leaves the model as it started" <|
                 \_ ->
-                    let
-                        ( m1, out1 ) =
-                            View.update (SelectFrom "13") View.init
-
-                        ( m2, out2 ) =
-                            View.update (PlayMove "13" "8") m1
-                    in
-                    Expect.all
-                        [ \_ -> Expect.equal (Just "13") m1.selectedFrom
-                        , \_ -> Expect.equal NoOut out1
-                        , \_ -> Expect.equal Nothing m2.selectedFrom
-                        , \_ -> Expect.equal (Send (Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "8" ) ])) out2
-                        ]
-                        ()
-            , test "selecting the same source again clears it" <|
-                \_ ->
-                    View.init
-                        |> View.update (SelectFrom "13")
-                        |> Tuple.first
-                        |> View.update (SelectFrom "13")
-                        |> Tuple.first
-                        |> .selectedFrom
-                        |> Expect.equal Nothing
+                    View.update (PlayMove "13" "8") View.init
+                        |> Expect.equal ( View.init, Send (Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "8" ) ]) )
             , test "playing a pair sends both moves in order" <|
                 \_ ->
                     View.update (PlayPair { from = "13", to = "9", die = 4 } { from = "11", to = "9", die = 2 }) View.init
@@ -71,8 +50,7 @@ suite =
         , describe "destination-first tap resolution"
             (let
                 base =
-                    { selected = Nothing
-                    , moves = []
+                    { moves = []
                     , sources = []
                     , mineAt = \_ -> 0
                     , unusedDice = []
@@ -213,7 +191,7 @@ suite =
                         }
                         "off"
                         |> Expect.equal (Just (PlayMove "3" "off"))
-             , test "a point that is also one of my movable origins selects the origin instead" <|
+             , test "a point that is also one of my movable origins plays the origin instead" <|
                 \_ ->
                     View.resolveTap
                         { base
@@ -222,7 +200,7 @@ suite =
                             , unusedDice = [ 5, 3 ]
                         }
                         "8"
-                        |> Expect.equal (Just (SelectFrom "8"))
+                        |> Expect.equal (Just (PlayMove "8" "5"))
              , test "three moves landing on the same point are ambiguous" <|
                 \_ ->
                     View.resolveTap
@@ -232,29 +210,12 @@ suite =
                         }
                         "9"
                         |> Expect.equal Nothing
-             , test "with a selection, a legal destination plays that move" <|
-                \_ ->
-                    View.resolveTap
-                        { base
-                            | selected = Just "13"
-                            , moves = [ { from = "13", to = "8", die = 5 }, { from = "6", to = "8", die = 2 } ]
-                            , sources = [ "13", "6" ]
-                        }
-                        "8"
-                        |> Expect.equal (Just (PlayMove "13" "8"))
-             , test "with a selection and no dice left, tapping the selected point clears it" <|
-                \_ ->
-                    View.resolveTap
-                        { base | selected = Just "13", moves = [ { from = "13", to = "8", die = 5 } ], sources = [ "13" ] }
-                        "13"
-                        |> Expect.equal (Just Clear)
-             , test "tapping the selected checker again plays it with the next die" <|
+             , test "a tap on one of my origins plays it with the next die" <|
                 \_ ->
                     -- dice 5 then 3, both unused: the 5 goes first
                     View.resolveTap
                         { base
-                            | selected = Just "13"
-                            , moves = [ { from = "13", to = "10", die = 3 }, { from = "13", to = "8", die = 5 } ]
+                            | moves = [ { from = "13", to = "10", die = 3 }, { from = "13", to = "8", die = 5 } ]
                             , sources = [ "13" ]
                             , unusedDice = [ 5, 3 ]
                         }
@@ -265,8 +226,7 @@ suite =
                     -- the 5 is spent: the 3 is next
                     View.resolveTap
                         { base
-                            | selected = Just "13"
-                            , moves = [ { from = "13", to = "10", die = 3 } ]
+                            | moves = [ { from = "13", to = "10", die = 3 } ]
                             , sources = [ "13" ]
                             , unusedDice = [ 3 ]
                         }
@@ -277,52 +237,59 @@ suite =
                     -- the 5 is next but only the 3 is legal from 13: the 3 plays
                     View.resolveTap
                         { base
-                            | selected = Just "13"
-                            , moves = [ { from = "13", to = "10", die = 3 } ]
+                            | moves = [ { from = "13", to = "10", die = 3 } ]
                             , sources = [ "13" ]
                             , unusedDice = [ 5, 3 ]
                         }
                         "13"
                         |> Expect.equal (Just (PlayMove "13" "10"))
-             , test "if no die can play that checker, the second tap only clears" <|
+             , test "the dice as rotated decide which die plays" <|
                 \_ ->
+                    -- a tap on the dice put the 3 first
                     View.resolveTap
                         { base
-                            | selected = Just "13"
-                            , moves = [ { from = "8", to = "5", die = 3 } ]
-                            , sources = [ "13", "8" ]
-                            , unusedDice = [ 5, 3 ]
+                            | moves = [ { from = "13", to = "10", die = 3 }, { from = "13", to = "8", die = 5 } ]
+                            , sources = [ "13" ]
+                            , unusedDice = [ 3, 5 ]
                         }
                         "13"
-                        |> Expect.equal (Just Clear)
-             , test "the second tap works from the bar too" <|
+                        |> Expect.equal (Just (PlayMove "13" "10"))
+             , test "an origin no die can play (the schema named no dice) does nothing" <|
                 \_ ->
                     View.resolveTap
                         { base
-                            | selected = Just "bar"
-                            , moves = [ { from = "bar", to = "21", die = 4 }, { from = "bar", to = "23", die = 2 } ]
+                            | moves = [ { from = "13", to = "8", die = 5 } ]
+                            , sources = [ "13" ]
+                            , unusedDice = [ 3 ]
+                        }
+                        "13"
+                        |> Expect.equal Nothing
+             , test "one tap plays from the bar too" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "bar", to = "21", die = 4 }, { from = "bar", to = "23", die = 2 } ]
                             , sources = [ "bar" ]
                             , unusedDice = [ 2, 4 ]
                         }
                         "bar"
                         |> Expect.equal (Just (PlayMove "bar" "23"))
-             , test "with a selection, tapping another origin switches the selection" <|
+             , test "a tap on another origin plays that one, not a move between them" <|
                 \_ ->
                     View.resolveTap
                         { base
-                            | selected = Just "13"
-                            , moves = [ { from = "13", to = "8", die = 5 }, { from = "6", to = "2", die = 4 } ]
+                            | moves = [ { from = "13", to = "8", die = 5 }, { from = "6", to = "2", die = 4 } ]
                             , sources = [ "13", "6" ]
+                            , unusedDice = [ 5, 4 ]
                         }
                         "6"
-                        |> Expect.equal (Just (SelectFrom "6"))
+                        |> Expect.equal (Just (PlayMove "6" "2"))
              ]
             )
         , describe "one checker, several dice"
             (let
                 base =
-                    { selected = Nothing
-                    , moves = []
+                    { moves = []
                     , sources = []
                     , mineAt = \_ -> 0
                     , unusedDice = []
@@ -407,10 +374,10 @@ suite =
                         "24"
                         |> List.map .to
                         |> Expect.equal [ "18" ]
-             , test "a tap on a point several dice away plays the moves in a row" <|
+             , test "a tap on a point several dice away is not a move: only a drag reaches it" <|
                 \_ ->
-                    View.resolveTap { both | selected = Just "13" } "5"
-                        |> Expect.equal (Just (PlayPath [ { from = "13", to = "8", die = 5 }, { from = "8", to = "5", die = 3 } ]))
+                    View.resolveTap both "5"
+                        |> Expect.equal Nothing
              , test "a drop on a point several dice away sends the moves in a row" <|
                 \_ ->
                     let
@@ -446,7 +413,7 @@ suite =
         , describe "dragging a checker"
             (let
                 press =
-                    { origin = "13", color = "white", tap = Just (SelectFrom "13"), targets = [ "8" ], plans = [], x = 100, y = 100 }
+                    { origin = "13", color = "white", tap = Just (PlayMove "13" "8"), targets = [ "8" ], plans = [], x = 100, y = 100 }
 
                 zone =
                     { loc = "8", left = 200, top = 300, width = 50, height = 120 }
@@ -473,12 +440,12 @@ suite =
                         |> step (DragMoved { x = 150, y = 150 })
                         |> step (DragReleased { x = 150, y = 150 })
                         |> Expect.equal ( View.init, NoOut )
-             , test "a release under the threshold resolves the stored tap" <|
+             , test "a release under the threshold resolves the stored tap: the move plays" <|
                 \_ ->
                     View.update (DragPressed press) View.init
                         |> step (DragMoved { x = 104, y = 103 })
                         |> step (DragReleased { x = 104, y = 103 })
-                        |> Expect.equal ( { selectedFrom = Just "13", drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, roll = settled }, NoOut )
+                        |> Expect.equal ( View.init, Send (Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "8" ) ]) )
              , test "pointercancel snaps back without sending" <|
                 \_ ->
                     View.update (DragPressed press) View.init
@@ -496,13 +463,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
+                            ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
-                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }, Nothing )
+                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -513,7 +480,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
+                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], rotation = 0, autoRolled = True, picker = Nothing, roll = settled }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -572,7 +539,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], roll = settled }, NoOut )
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Just [ 3 ], roll = settled }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -902,33 +869,49 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model rotation =
-                    { selectedFrom = Nothing, drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, roll = settled }
-
-                selecting from m =
-                    { m | selectedFrom = Just from }
+                    { drag = Drag.idle, plans = [], rotation = rotation, autoRolled = False, picker = Nothing, roll = settled }
 
                 nextDie rotation u =
                     View.view (ctx "p1" (twoDice u) (model rotation))
                         |> Query.fromHtml
                         |> Query.find [ class "die", class "next" ]
              in
-             [ test "a tap on the dice keeps the selected checker and rotates" <|
+             [ test "a tap on the dice rotates and touches nothing else" <|
                 \_ ->
-                    View.update RotateDice (selecting "13" (model 0))
-                        |> Expect.equal ( selecting "13" (model 1), NoOut )
-             , test "with a checker selected, the die that stands up is the one that will play it" <|
+                    View.update RotateDice (model 0)
+                        |> Expect.equal ( model 1, NoOut )
+             , test "a tap on a checker plays the die that stands up" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
                             let
-                                -- the 6 (leftmost) cannot move 13; the 4 can
-                                onlyFour =
-                                    { u | legal = [ { name = "play", label = "Play", params = [] }, moveSchema "13" "9" 4 ] }
+                                -- 6 and 4, both playable from 13: unrotated
+                                -- the 6 plays, one rotation later the 4 does
+                                bothPlay =
+                                    { u | legal = [ { name = "play", label = "Play", params = [] }, moveSchema "13" "7" 6, moveSchema "13" "9" 4 ] }
+
+                                tapOn13 rotation =
+                                    View.view (ctx "p1" (twoDice bothPlay) (model rotation))
+                                        |> Query.fromHtml
+                                        |> Query.find [ class "bg-point", class "source", attribute (Html.Attributes.title "Point 13") ]
+                                        |> Event.simulate (Event.custom "pointerdown" (pointerEvent 10 10))
+                                        |> Event.toResult
+                                        |> Result.toMaybe
+                                        |> Maybe.andThen
+                                            (\msg ->
+                                                case msg of
+                                                    DragPressed p ->
+                                                        p.tap
+
+                                                    _ ->
+                                                        Nothing
+                                            )
                             in
-                            View.view (ctx "p1" (twoDice onlyFour) (selecting "13" (model 0)))
-                                |> Query.fromHtml
-                                |> Query.find [ class "die", class "next" ]
-                                |> Query.has [ attribute (Html.Attributes.attribute "data-die" "die:1") ]
+                            Expect.all
+                                [ \_ -> tapOn13 0 |> Expect.equal (Just (PlayMove "13" "7"))
+                                , \_ -> tapOn13 1 |> Expect.equal (Just (PlayMove "13" "9"))
+                                ]
+                                ()
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
@@ -1020,9 +1003,9 @@ suite =
             , test "clearing the interaction state does not forget the roll" <|
                 \_ ->
                     View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] View.init
-                        |> View.update (SelectFrom "13")
+                        |> View.update OpenPicker
                         |> Tuple.first
-                        |> View.update Clear
+                        |> View.update (PlayMove "13" "8")
                         |> Tuple.first
                         |> .roll
                         |> Expect.equal { seq = 1, watched = True }
@@ -1405,7 +1388,7 @@ perFixture fixture =
                     |> List.filter (\u -> (Protocol.sceneData (D.nullable D.string) "to_act" u.scene |> Maybe.withDefault Nothing) == Just "p1")
                     |> List.map (\u -> render "p2" u |> Query.has [ text "WAITING FOR P1" ])
                     |> allPass
-        , test "pressing anywhere on a source point primes a drag whose tap is the old click" <|
+        , test "pressing anywhere on a source point primes a drag whose tap plays that point" <|
             \_ ->
                 p1Views
                     |> List.filter (\u -> legalFroms u.legal |> List.any (\f -> f /= "bar"))
@@ -1424,7 +1407,12 @@ perFixture fixture =
                             in
                             case result of
                                 Ok (DragPressed p) ->
-                                    Expect.equal ( from, Just (SelectFrom from) ) ( p.origin, p.tap )
+                                    case p.tap of
+                                        Just (PlayMove origin _) ->
+                                            Expect.equal ( from, from ) ( p.origin, origin )
+
+                                        _ ->
+                                            Expect.fail "a short press on a source should play it"
 
                                 _ ->
                                     Expect.fail "pointerdown on a source point should prime a drag press"
@@ -1527,36 +1515,16 @@ perFixture fixture =
                                 ()
                         )
                     |> Maybe.withDefault Expect.pass
-        , test "after selecting a source, only the next die's landing shows a ghost checker" <|
+        , test "with nothing pressed, no ghost checker shows anywhere" <|
             \_ ->
                 p1Views
-                    |> List.filter (\u -> legalFroms u.legal |> List.any (\f -> f /= "bar"))
                     |> List.head
                     |> Maybe.map
                         (\u ->
-                            let
-                                from =
-                                    legalFroms u.legal |> List.filter (\f -> f /= "bar") |> List.head |> Maybe.withDefault ""
-
-                                -- the first unused die of the roll, as it sits on the board
-                                nextDie =
-                                    Protocol.zoneTokens "dice" u.scene
-                                        |> List.filter (\tok -> Protocol.tokenProp D.bool "used" tok /= Just True)
-                                        |> List.filterMap (Protocol.tokenProp D.int "value")
-                                        |> List.head
-
-                                destinations =
-                                    u.legal
-                                        |> List.filter (\s -> s.name == "move")
-                                        |> List.filter (\s -> List.any (\p -> p.name == "from" && p.kind == Choice [ ( from, from ) ]) s.params)
-                                        |> List.filter (\s -> List.any (\p -> p.name == "die" && Just p.kind == Maybe.map (\d -> Choice [ ( String.fromInt d, String.fromInt d ) ]) nextDie) s.params)
-                                        |> List.length
-                                        |> min 1
-                            in
-                            View.view (ctx "p1" u { selectedFrom = Just from, drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, roll = settled })
+                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], rotation = 0, autoRolled = False, picker = Nothing, roll = settled })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
-                                |> Query.count (Expect.equal destinations)
+                                |> Query.count (Expect.equal 0)
                         )
                     |> Maybe.withDefault Expect.pass
         , test "the game-over panel offers a rematch once the match is decided" <|

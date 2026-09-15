@@ -27,7 +27,6 @@ const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SOURCE = '[data-drag-capture]';
-const TARGET = '.bg-point:has(.drop-ghost), .bg-tray:has(.drop-ghost)';
 
 async function box(page, selector) {
   const b = await page.locator(selector).first().boundingBox();
@@ -45,7 +44,7 @@ async function assertHalf(page, selector, half, label) {
   if ((half === 'left') !== onLeft) throw new Error(`${label}: expected ${selector} on the ${half} half`);
 }
 
-/** Tap-play the rest of a turn: sources -> drop-ghost targets, then PLAY.
+/** Tap-play the rest of a turn: one tap per source spends a die, then PLAY.
  * Clicks ROLL if it is offered (cube owner's turns keep the choice). */
 async function playFullTurn(page, label) {
   const deadline = Date.now() + 30000;
@@ -61,10 +60,10 @@ async function playFullTurn(page, label) {
       continue;
     }
     if (await page.locator(SOURCE).count()) {
+      const used = await page.locator('.die.used').count();
       await page.locator(SOURCE).first().click();
       try {
-        await page.locator(TARGET).first().waitFor({ timeout: 2000 });
-        await page.locator(TARGET).first().click();
+        await page.waitForFunction((n) => document.querySelectorAll('.die.used').length > n, used, { timeout: 2000 });
       } catch (_) {}
       await sleep(400);
       continue;

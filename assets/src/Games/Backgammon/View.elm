@@ -22,12 +22,16 @@ rather than above and below it. The class hooks that landscape needs
 `bg-band`, `bg-bar`, `is-me`) are the only reason this view names them;
 the arrangement itself is entirely CSS.
 
-Moving is destination-first: tapping a point where exactly one legal move
-lands plays it, tapping a point where an unambiguous pair of moves would
-land two checkers (making a point) stages both, and anything ambiguous
-falls back to two taps: a checker's point (or the bar), then a destination.
-Legal moves come from the `move` schemas the server sends, so the board
-never invents legality.
+Moving is one touch. A tap on a checker of mine that can move (its whole
+point, or the bar) plays it with the next die: the first unused die,
+reading the dice as they sit, that has a legal move from there. A tap on
+the dice hands "next" to the die after, so the other die is one tap away
+too. Destinations still answer a tap of their own: a point where exactly
+one legal move lands plays it, and a point where an unambiguous pair of
+moves would land two checkers (making a point) stages both. There is no
+selection to make or clear; anything a tap cannot say, a drag can. Legal
+moves come from the `move` schemas the server sends, so the board never
+invents legality.
 
 Checkers can also be dragged, through the `Drag` state machine: every
 legal origin (the whole point column, or the bar) is a drag source, so
@@ -55,8 +59,7 @@ import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token
 
 
 type alias Model =
-    { selectedFrom : Maybe String
-    , drag : Drag.State String Msg -- the item a drag carries is my checker colour
+    { drag : Drag.State String Msg -- the item a drag carries is my checker colour
     , plans : List ( String, List Move ) -- for the active drag: each destination and the moves that get there
     , rotation : Int -- how many times the dice were tapped this roll: which unused die is next
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
@@ -98,12 +101,10 @@ type alias Press =
 
 
 type Msg
-    = SelectFrom String
-    | PlayMove String String
+    = PlayMove String String
     | PlayPair Move Move
     | PlayPath (List Move) -- one checker, several dice, in order
-    | RotateDice -- the next die becomes the one after it; the selection stays
-    | Clear
+    | RotateDice -- the next die becomes the one after it
     | Simple String
     | Rematch
     | DragPressed Press
@@ -129,8 +130,7 @@ type Out
 
 init : Model
 init =
-    { selectedFrom = Nothing
-    , drag = Drag.idle
+    { drag = Drag.idle
     , plans = []
     , rotation = 0
     , autoRolled = False
@@ -143,7 +143,7 @@ init =
     }
 
 
-{-| Clear the interaction state (selection, drag, picker) without forgetting
+{-| Clear the interaction state (drag, picker) without forgetting
 which roll is on the board: `roll` keys the dice, and forgetting it would
 replay the tumble on every tap.
 -}
@@ -210,16 +210,6 @@ autoRoll legal model =
 update : Msg -> Model -> ( Model, Out )
 update msg model =
     case msg of
-        SelectFrom loc ->
-            if model.selectedFrom == Just loc then
-                ( reset model, NoOut )
-
-            else
-                ( { model | selectedFrom = Just loc }, NoOut )
-
-        Clear ->
-            ( reset model, NoOut )
-
         RotateDice ->
             ( { model | rotation = model.rotation + 1 }, NoOut )
 
@@ -387,8 +377,7 @@ labelOf name legal =
 
 
 type alias TapContext =
-    { selected : Maybe String
-    , moves : List Move
+    { moves : List Move
     , sources : List String
 
     -- my checkers currently at a location ("bar", "off" or a point id)
@@ -407,12 +396,10 @@ type alias TapContext =
 
 {-| Resolve a tap on `dest`.
 
-  - a selection is active: play selected -> dest if legal; tapping the
-    selected checker again plays it with the next die (the first unused
-    one, reading the dice left to right, that can play it), and just
-    clears the selection if none can -- so a double tap is a fast move; a
-    tap on another of my source points switches the selection;
-  - no selection, dest is one of my movable points (or the bar): select it;
+  - dest is one of my movable points (or the bar): play its checker with
+    the next die -- the first unused one, reading the dice left to right,
+    that can play it (`nextDieMove`). An origin is an origin first, even
+    when moves also land on it;
   - exactly one legal move lands on dest, a point I do not hold (or off):
     play it -- unless the dice are doubles and a second identical move
     would land a second checker there, in which case stage the pair (make
@@ -420,9 +407,8 @@ type alias TapContext =
   - exactly two legal moves from different origins land on a dest I do
     not hold (one per die, necessarily): stage both (a quick point). An
     opponent's blot there is fine: the point is made and the blot hit;
-  - a point I already hold is never played by tapping it: select an
-    origin instead;
-  - anything else is ambiguous: no auto-move, select an origin instead.
+  - a point I already hold is never played by tapping it;
+  - anything else is ambiguous: no auto-move. A drag reaches it.
 
 -}
 resolveTap : TapContext -> String -> Maybe Msg
@@ -441,56 +427,30 @@ resolveTap tc dest =
         fresh loc =
             tc.mineAt loc == 0
     in
-    case tc.selected of
-        Just from ->
-            if List.any (\m -> m.from == from && m.to == dest) tc.moves then
-                Just (PlayMove from dest)
+    if isSource then
+        nextDieMove tc dest |> Maybe.map (\m -> PlayMove m.from m.to)
 
-            else if List.any (\p -> p.to == dest) (pathsFrom tc from) then
-                pathsFrom tc from
-                    |> List.filter (\p -> p.to == dest)
-                    |> List.head
-                    |> Maybe.map (\p -> PlayPath p.steps)
+    else
+        case landing of
+            [ m ] ->
+                if dest /= "off" && isDoubles tc.unusedDice && tc.mineAt m.from >= 2 && fresh dest then
+                    Just (PlayPair m m)
 
-            else if dest == from then
-                case nextDieMove tc from of
-                    Just m ->
-                        Just (PlayMove m.from m.to)
+                else if dest == "off" || fresh dest then
+                    Just (PlayMove m.from m.to)
 
-                    Nothing ->
-                        Just Clear
+                else
+                    Nothing
 
-            else if isSource then
-                Just (SelectFrom dest)
+            [ a, b ] ->
+                if a.from /= b.from && dest /= "off" && fresh dest then
+                    Just (PlayPair a b)
 
-            else
+                else
+                    Nothing
+
+            _ ->
                 Nothing
-
-        Nothing ->
-            if isSource then
-                Just (SelectFrom dest)
-
-            else
-                case landing of
-                    [ m ] ->
-                        if dest /= "off" && isDoubles tc.unusedDice && tc.mineAt m.from >= 2 && fresh dest then
-                            Just (PlayPair m m)
-
-                        else if dest == "off" || fresh dest then
-                            Just (PlayMove m.from m.to)
-
-                        else
-                            Nothing
-
-                    [ a, b ] ->
-                        if a.from /= b.from && dest /= "off" && fresh dest then
-                            Just (PlayPair a b)
-
-                        else
-                            Nothing
-
-                    _ ->
-                        Nothing
 
 
 {-| Where one checker at `origin` can go using several dice in a row --
@@ -740,18 +700,14 @@ view ctx =
             tapContext ctx legalMoves sources
 
         -- While a drag is up, everywhere its checker can be dropped shows,
-        -- one die or several. A tapped selection shows only the move a
-        -- second tap would play (the next die), so the board never lights
-        -- up with every option.
+        -- one die or several. Nothing lights up otherwise: a tap plays at
+        -- once, so there is never a pending choice to illustrate.
         targets =
-            case ( drag, ctx.model.selectedFrom ) of
-                ( Just d, _ ) ->
+            case drag of
+                Just d ->
                     reachableFrom tap d.origin
 
-                ( Nothing, Just from ) ->
-                    nextDieMove tap from |> Maybe.map (\m -> [ m.to ]) |> Maybe.withDefault []
-
-                ( Nothing, Nothing ) ->
+                Nothing ->
                     []
 
         themId =
@@ -866,8 +822,7 @@ tapContext ctx legalMoves sources =
                 |> List.filter (\t -> Protocol.tokenProp D.string "color" t /= Just myColor)
                 |> List.length
     in
-    { selected = ctx.model.selectedFrom
-    , moves = legalMoves
+    { moves = legalMoves
     , sources = sources
     , mineAt = mineAt
     , unusedDice = unusedDice
@@ -1187,9 +1142,6 @@ viewPoint board isTop index point =
         isTarget =
             List.member id board.targets
 
-        isSelected =
-            board.ctx.model.selectedFrom == Just id
-
         dragging =
             board.drag /= Nothing
 
@@ -1216,7 +1168,6 @@ viewPoint board isTop index point =
             , ( "top", isTop )
             , ( "bottom flex-col-reverse", not isTop )
             , ( "source", isSource ) -- a legal origin; paints nothing, tests and scripts read it
-            , ( "selected", isSelected )
             ]
          , attribute "style"
             ("--point: "
@@ -1235,7 +1186,7 @@ viewPoint board isTop index point =
          ]
             ++ interaction
         )
-        (viewStack { picked = isSelected, lifted = liftedAt board id } tokens
+        (viewStack { lifted = liftedAt board id } tokens
             ++ (if isTarget then
                     [ dropGhost board (dragging && board.hovered == Just id) ]
 
@@ -1298,18 +1249,18 @@ dragAttrs board origin =
         []
 
 
-{-| What the top checker of a stack carries: raised once tapped as the
-origin of a move, and dimmed in place while its origin is being dragged.
-Which checkers *could* move is deliberately not marked: the board shows
-where a checker goes once it is picked up, never which ones to pick.
+{-| What the top checker of a stack carries: dimmed in place while its
+origin is being dragged. Which checkers *could* move is deliberately not
+marked: the board shows where a checker goes once it is picked up, never
+which ones to pick.
 -}
 type alias Marks =
-    { picked : Bool, lifted : Bool }
+    { lifted : Bool }
 
 
 noMarks : Marks
 noMarks =
-    { picked = False, lifted = False }
+    { lifted = False }
 
 
 viewStack : Marks -> List Token -> List (Html Msg)
@@ -1357,7 +1308,6 @@ viewChecker marks count token =
             [ ( "checker relative shrink-0 transition-transform", True )
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
-            , ( "picked", marks.picked )
             , ( "lifted", marks.lifted )
             ]
         , title token.id
@@ -1393,9 +1343,6 @@ viewBarColumn board themId =
 
         isSource =
             mine && List.member "bar" board.sources
-
-        isSelected =
-            mine && board.ctx.model.selectedFrom == Just "bar"
 
         click =
             if mine then
@@ -1435,12 +1382,7 @@ viewBarColumn board themId =
             [ viewCube board Centred ]
         , div [ class "bg-bar-row mine flex flex-col-reverse items-center justify-between gap-px w-full py-1" ]
             [ div [ class "flex flex-col-reverse items-center gap-px w-full" ]
-                (viewStack
-                    { picked = isSelected
-                    , lifted = mine && liftedAt board "bar"
-                    }
-                    myTokens
-                )
+                (viewStack { lifted = mine && liftedAt board "bar" } myTokens)
             , viewCube board Mine
             ]
         ]
@@ -1674,13 +1616,11 @@ viewRoll board =
 
             else
                 []
-        -- The mover's dice are a control: the next die (the one a second
-        -- tap on a checker plays) stands up, and a tap on the dice makes
-        -- the die after it the next one. With a checker selected, the die
-        -- that stands up is the one that will actually play it: the first
-        -- that can, reading left to right. Only when there is a choice:
-        -- a double is one value, and one die left is no choice. Nobody
-        -- else's dice do anything.
+        -- The mover's dice are a control: the next die (the one a tap on
+        -- a checker plays) stands up, and a tap on the dice makes the die
+        -- after it the next one. Only when there is a choice: a double is
+        -- one value, and one die left is no choice. Nobody else's dice do
+        -- anything.
         myMove =
             toMoveId ctx == Just ctx.playerId && ctx.scene.phase == "moving"
 
@@ -1693,15 +1633,7 @@ viewRoll board =
 
         next =
             if hasChoice then
-                case ctx.model.selectedFrom |> Maybe.andThen (nextDieMove board.tap) of
-                    Just m ->
-                        unused
-                            |> List.filter (\t -> Protocol.tokenProp D.int "value" t == Just m.die)
-                            |> List.head
-                            |> Maybe.map .id
-
-                    Nothing ->
-                        List.head unused |> Maybe.map .id
+                List.head unused |> Maybe.map .id
 
             else
                 Nothing
@@ -1725,7 +1657,7 @@ room until then, so the throw does not give the double away.
 None of them move unless this client watched the roll land (`Roll.watched`):
 dice that arrived in a snapshot are already on the table.
 
-For the mover, `next` names the die a second tap on a checker plays, and
+For the mover, `next` names the die a tap on a checker plays, and
 `rotates` makes the row a control that hands "next" to the die after it.
 
 -}
