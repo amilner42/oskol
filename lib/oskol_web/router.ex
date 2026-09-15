@@ -40,6 +40,7 @@ defmodule OskolWeb.Router do
     get "/games/:slug/rooms/:id", LandingController, :room
     post "/games/:slug/rooms/:id", LandingController, :seat
     get "/games/:slug/rooms/:id/reviews", LandingController, :reviews
+    post "/games/:slug/rooms/:id/reviews/retry", LandingController, :retry_review
     get "/games/:slug/rooms/:id/record", LandingController, :record
   end
 
@@ -69,5 +70,8 @@ defmodule OskolWeb.Router do
     get "/:slug", SpaController, :game
     # A running game, e.g. /backgammon/abc123
     get "/:slug/:id", PageController, :play
+    # A game played again, turn by turn, with its analysis:
+    # /backgammon/abc123/replay (a seat's token, like the table)
+    get "/:slug/:id/replay", PageController, :play
   end
 end

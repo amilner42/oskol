@@ -24,6 +24,7 @@
 import backgammon/board.{type Board, type Color, Black, Point, White}
 import backgammon/engine
 import backgammon/game as backgammon
+import backgammon/record
 import backgammon/state.{type GameState}
 import gamekit/game
 import gamekit/instance
@@ -76,6 +77,16 @@ pub type Turn {
     picked: Bool,
     /// The action-log index of the entry that closed the turn.
     log_index: Int,
+    /// Where the turn sits in its game's record (`record.by_game`, the
+    /// entries the room's `/record` lists for that game): the index of the
+    /// committed `Turn` entry, of the `Double` entry, and of the answer
+    /// (`Take` or `Drop`). Each is None where the turn has no such entry, or
+    /// where the engine is not asked about it (a double it cannot grade).
+    /// A page puts the engine's verdicts on the lines they are about with
+    /// these, never by counting.
+    entry: Option(Int),
+    double_entry: Option(Int),
+    answer_entry: Option(Int),
   )
 }
 
@@ -110,6 +121,86 @@ pub fn encode(b: Board, mover: Color) -> List(Int) {
     points,
     [board.on_bar(b, mover)],
   ])
+}
+
+/// The engine's board read back into Oskol's, the way the record keeps a
+/// position: each colour's checkers on points 1..24, on the bar and borne
+/// off, and its pip count, `#(white, black)`. `mover` is the player the
+/// board is drawn for (the one on roll). The inverse of `encode`, for the
+/// boards the engine sends back (a candidate move's result); Error when the
+/// list is not a board.
+pub fn decode(
+  engine_board: List(Int),
+  mover: Color,
+) -> Result(#(record.Side, record.Side), Nil) {
+  case engine_board {
+    [opponent_bar, ..rest] ->
+      case list.length(rest) == 25 {
+        False -> Error(Nil)
+        True -> {
+          let points = list.take(rest, 24)
+          let mover_bar = list.drop(rest, 24) |> list.first |> result.unwrap(0)
+          // Oskol point p (1..24) holds what engine index `index_of(p)` does.
+          let at = fn(p: Int) {
+            list.drop(points, engine_index(mover, p) - 1)
+            |> list.first
+            |> result.unwrap(0)
+          }
+          let counts = fn(sign: Int) {
+            list.range(1, 24)
+            |> list.map(fn(p) { int.max(0, sign * at(p)) })
+          }
+          let side = fn(color: Color, counts: List(Int), bar: Int) {
+            let on_points = int.sum(counts)
+            record.Side(
+              points: counts,
+              bar: bar,
+              off: 15 - on_points - bar,
+              pips: 25
+                * bar
+                + int.sum(
+                list.index_map(counts, fn(n, i) {
+                  n * board.pip_distance(color, i + 1)
+                }),
+              ),
+            )
+          }
+          let mine = side(mover, counts(1), mover_bar)
+          let theirs = side(board.opponent(mover), counts(-1), opponent_bar)
+          Ok(case mover {
+            White -> #(mine, theirs)
+            Black -> #(theirs, mine)
+          })
+        }
+      }
+    [] -> Error(Nil)
+  }
+}
+
+/// Where the mover's checkers landed going from one engine board to
+/// another: every Oskol point that gained checkers of theirs, once per
+/// checker it gained, low point first -- the record's `landed` for a move
+/// the engine proposes. Checkers borne off land nowhere.
+pub fn landings(from: List(Int), to: List(Int), mover: Color) -> List(Int) {
+  list.range(1, 24)
+  |> list.flat_map(fn(index) {
+    let before = int.max(0, nth(from, index))
+    let after = int.max(0, nth(to, index))
+    list.repeat(oskol_point(mover, index), int.max(0, after - before))
+  })
+  |> list.sort(int.compare)
+}
+
+fn nth(values: List(Int), index: Int) -> Int {
+  list.drop(values, index) |> list.first |> result.unwrap(0)
+}
+
+/// The engine index 1..24 of Oskol point `p` for this mover.
+fn engine_index(mover: Color, p: Int) -> Int {
+  case mover {
+    White -> p
+    Black -> 25 - p
+  }
 }
 
 /// The Oskol point behind engine index 1..24 for this mover.
@@ -173,11 +264,14 @@ pub fn games(log: replay.Log) -> Result(List(GameTurns), String) {
     game.Finished(_) -> True
     game.Ongoing -> False
   }
-  Ok(case acc.over {
-    True -> list.reverse(acc.games)
+  Ok(case acc.over, acc.open {
+    True, _ -> list.reverse(acc.games)
+    // Between the games of a match: the last one is already closed, and
+    // the next has not begun.
+    False, False -> list.reverse(acc.games)
     // Over but not by the rules: a clock ran out. The game in progress
     // ends where it stood.
-    False -> list.reverse(close(acc, finished, acc.last_index).games)
+    False, True -> list.reverse(close(acc, finished, acc.last_index).games)
   })
 }
 
@@ -204,6 +298,8 @@ type Pending {
     offer: Offer,
     dice: Option(#(Int, Int)),
     picked: Bool,
+    double_entry: Option(Int),
+    answer_entry: Option(Int),
   )
 }
 
@@ -216,6 +312,9 @@ type Acc {
     pending: Option(Pending),
     /// The match is over; nothing follows.
     over: Bool,
+    /// A game is under way: begun and not yet closed. False between the
+    /// games of a match, until both players are ready for the next.
+    open: Bool,
     /// The last log index seen.
     last_index: Int,
   )
@@ -229,6 +328,7 @@ fn start(s: GameState) -> Acc {
     turns: [],
     pending: opening(s),
     over: False,
+    open: True,
     last_index: -1,
   )
 }
@@ -252,6 +352,8 @@ fn pending_for(s: GameState, color: Color) -> Pending {
     offer: NoDouble,
     dice: None,
     picked: False,
+    double_entry: None,
+    answer_entry: None,
   )
 }
 
@@ -281,16 +383,37 @@ fn step(acc: Acc, t: replay.Transition(GameState, engine.Action)) -> Acc {
         state.Rolling(color) ->
           Acc(
             ..acc,
-            pending: Some(Pending(..pending_for(before, color), offer: Offered)),
+            pending: Some(
+              Pending(
+                ..pending_for(before, color),
+                offer: Offered,
+                double_entry: Some(next_entry(before)),
+              ),
+            ),
           )
         _ -> acc
       }
     Some(engine.Take), Some(p) ->
-      Acc(..acc, pending: Some(Pending(..p, offer: Answered(Took))))
+      Acc(
+        ..acc,
+        pending: Some(
+          Pending(
+            ..p,
+            offer: Answered(Took),
+            answer_entry: Some(next_entry(before)),
+          ),
+        ),
+      )
     Some(engine.Drop), Some(p) ->
       emit(
         acc,
-        Pending(..p, offer: Answered(Passed), dice: None),
+        Pending(
+          ..p,
+          offer: Answered(Passed),
+          dice: None,
+          answer_entry: Some(next_entry(before)),
+        ),
+        None,
         None,
         t.index,
       )
@@ -307,22 +430,57 @@ fn step(acc: Acc, t: replay.Transition(GameState, engine.Action)) -> Acc {
     // the one "move" that leaves the board as it was (bgsage's
     // possible_moves), and 422s a turn with dice and no played board.
     Some(engine.Play), Some(p) ->
-      emit(acc, p, Some(encode(before.board, p.color)), t.index)
+      emit(
+        acc,
+        p,
+        Some(encode(before.board, p.color)),
+        Some(next_entry(before)),
+        t.index,
+      )
     _, _ -> acc
   }
+  // A game ends the moment it is won: into the pause before the next game
+  // of a match (which waits for both players to be ready), or the end of
+  // the match. The next game begins when its number turns over.
   let ended =
-    after.game_number != before.game_number
+    { between(after) && !between(before) }
     || { is_over(after) && !is_over(before) }
+    || { after.game_number != before.game_number && acc.open }
   let acc = case ended {
     True -> {
       let closed = close(acc, True, t.index)
-      Acc(..closed, number: after.game_number, over: is_over(after))
+      Acc(..closed, over: is_over(after), open: False)
     }
+    False -> acc
+  }
+  let acc = case after.game_number != acc.number {
+    True -> Acc(..acc, number: after.game_number, open: True)
     False -> acc
   }
   case acc.pending, acc.over {
     None, False -> Acc(..acc, pending: opening(after))
     _, _ -> acc
+  }
+}
+
+/// The index the next record entry takes within the game it belongs to:
+/// how many entries that game already has (the record is kept newest first,
+/// and a game's entries follow the previous game's `GameOver`).
+fn next_entry(s: GameState) -> Int {
+  s.record
+  |> list.take_while(fn(e) {
+    case e {
+      record.GameOver(..) -> False
+      _ -> True
+    }
+  })
+  |> list.length
+}
+
+fn between(s: GameState) -> Bool {
+  case s.phase {
+    state.BetweenGames(..) -> True
+    _ -> False
   }
 }
 
@@ -334,8 +492,14 @@ fn is_over(s: GameState) -> Bool {
 }
 
 /// A turn played to its end.
-fn emit(acc: Acc, p: Pending, played: Option(List(Int)), index: Int) -> Acc {
-  let turns = case settle(p, played, index) {
+fn emit(
+  acc: Acc,
+  p: Pending,
+  played: Option(List(Int)),
+  entry: Option(Int),
+  index: Int,
+) -> Acc {
+  let turns = case settle(p, played, entry, index) {
     Some(turn) -> [turn, ..acc.turns]
     None -> acc.turns
   }
@@ -349,7 +513,7 @@ fn emit(acc: Acc, p: Pending, played: Option(List(Int)), index: Int) -> Acc {
 fn close(acc: Acc, finished: Bool, index: Int) -> Acc {
   let cut_off = case finished, acc.pending {
     True, Some(Pending(offer: Answered(_), ..) as p) ->
-      settle(Pending(..p, dice: None), None, index)
+      settle(Pending(..p, dice: None), None, None, index)
     _, _ -> None
   }
   let turns = case cut_off {
@@ -370,7 +534,12 @@ fn close(acc: Acc, finished: Bool, index: Int) -> Acc {
 /// could grade. A double the engine thinks illegal (a dead cube) is folded
 /// away: taken, the turn is played on the doubled cube the taker now owns;
 /// passed, the game simply ended.
-fn settle(p: Pending, played: Option(List(Int)), index: Int) -> Option(Turn) {
+fn settle(
+  p: Pending,
+  played: Option(List(Int)),
+  entry: Option(Int),
+  index: Int,
+) -> Option(Turn) {
   let answer = case p.offer {
     Answered(answer) -> Some(answer)
     _ -> None
@@ -411,6 +580,11 @@ fn settle(p: Pending, played: Option(List(Int)), index: Int) -> Option(Turn) {
         played: played,
         picked: p.picked,
         log_index: index,
+        entry: entry,
+        // A double folded away is no decision of the engine's: nothing of
+        // its verdict to place.
+        double_entry: option.then(answer, fn(_) { p.double_entry }),
+        answer_entry: option.then(answer, fn(_) { p.answer_entry }),
       ))
   }
 }

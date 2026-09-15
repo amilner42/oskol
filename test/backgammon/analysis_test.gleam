@@ -7,6 +7,7 @@ import backgammon/board.{Bar, Black, Off, Point, White}
 import backgammon/engine
 import backgammon/game as backgammon
 import backgammon/positions
+import backgammon/record
 import backgammon/state
 import gamekit/action.{type Schema}
 import gamekit/clock.{type Control}
@@ -318,7 +319,7 @@ pub fn a_passed_double_ends_the_game_with_no_dice_test() {
       11,
       clock.NoClock,
       400,
-      prefer(["double", "drop", "play", "move", "roll"]),
+      prefer(["double", "drop", "ready", "play", "move", "roll"]),
     )
   let assert Ok([g1, g2, ..]) = analysis.games(log)
   assert g1.finished
@@ -331,6 +332,50 @@ pub fn a_passed_double_ends_the_game_with_no_dice_test() {
   let assert [next, ..] = g2.turns
   assert next.position.board == opening
   assert next.position.away1 + next.position.away2 == 9
+}
+
+pub fn a_match_game_is_over_the_moment_it_is_won_test() {
+  // The same drop, and then nobody says READY: the game just played is
+  // over (and so owed its review) though the next has not begun, and no
+  // empty game follows it.
+  let #(log, final) =
+    drive(
+      "match5",
+      [],
+      11,
+      clock.NoClock,
+      400,
+      prefer(["double", "drop", "play", "move", "roll"]),
+    )
+  let assert state.BetweenGames(..) = final.phase
+  let assert Ok([g1]) = analysis.games(log)
+  assert g1.finished
+  assert g1.number == 1
+  let assert [_opening, passed] = g1.turns
+  assert passed.double == Some(Passed)
+  // One READY is not the next game either
+  let #(log, _) =
+    drive(
+      "match5",
+      [],
+      11,
+      clock.NoClock,
+      400,
+      fn(s: state.GameState, choices, chooser) {
+        case s.phase, list.find(choices, fn(c) { { c.1 }.name == "ready" }) {
+          state.BetweenGames(_, []), Ok(ready) -> Some(#(ready, chooser))
+          state.BetweenGames(_, _), _ -> None
+          _, _ ->
+            prefer(["double", "drop", "play", "move", "roll"])(
+              s,
+              choices,
+              chooser,
+            )
+        }
+      },
+    )
+  let assert Ok([g1]) = analysis.games(log)
+  assert g1.finished
 }
 
 pub fn a_resignation_keeps_only_complete_turns_test() {
@@ -524,6 +569,7 @@ pub fn resignations_in_random_play_keep_the_turns_legal_test() {
 }
 
 fn check_games(games: List(analysis.GameTurns), final: state.GameState) {
+  check_entries(games, final)
   // Numbered 1.. without a gap; every game but the last is over
   assert list.map(games, fn(g) { g.number })
     == list.range(1, list.length(games))
@@ -538,6 +584,187 @@ fn check_games(games: List(analysis.GameTurns), final: state.GameState) {
     check_alternation(g.turns)
     list.each(g.turns, check_turn)
   })
+}
+
+/// Every turn names the lines of its game's record it is about, and those
+/// lines say the same thing: the committed turn is the mover's, and the
+/// board it left, read back from the engine's format, is the record's own
+/// snapshot; the double is the mover's and the answer the other player's.
+fn check_entries(games: List(analysis.GameTurns), final: state.GameState) {
+  let by_game = record.by_game(state.record(final))
+  list.each(games, fn(g) {
+    let assert Ok(entries) = by_game |> list.drop(g.number - 1) |> list.first
+    let line = fn(i) {
+      let assert Ok(e) = entries |> list.drop(i) |> list.first
+      e
+    }
+    list.each(g.turns, fn(turn) {
+      let color = case turn.player {
+        0 -> White
+        _ -> Black
+      }
+      case turn.entry, turn.played {
+        Some(i), Some(played) -> {
+          let assert record.Turn(player: p, position: pos, ..) = line(i)
+          assert p == turn.player_id
+          assert analysis.decode(played, color) == Ok(#(pos.white, pos.black))
+        }
+        None, None -> Nil
+        _, _ -> panic as "a played board without its record line"
+      }
+      case turn.double, turn.double_entry, turn.answer_entry {
+        Some(answer), Some(d), Some(a) -> {
+          let assert record.Double(player: doubler, ..) = line(d)
+          assert doubler == turn.player_id
+          case answer, line(a) {
+            Took, record.Take(player: taker) -> {
+              assert taker != turn.player_id
+            }
+            Passed, record.Drop(player: dropper) -> {
+              assert dropper != turn.player_id
+            }
+            _, _ -> panic as "the answer's line is not the answer"
+          }
+        }
+        None, None, None -> Nil
+        _, _, _ -> panic as "a double without its record lines"
+      }
+    })
+  })
+}
+
+pub fn a_turn_names_its_lines_of_the_record_test() {
+  // Doubles and takes from the second turn on: the first turn is the
+  // record's first line, and the next turn's double, take and roll are the
+  // three lines after it.
+  let #(log, final) = drive("match5", [], 11, clock.NoClock, 400, prefer(eager))
+  let assert Ok([g, ..]) = analysis.games(log)
+  let assert [t0, t1, ..] = g.turns
+  assert #(t0.entry, t0.double_entry, t0.answer_entry) == #(Some(0), None, None)
+  assert #(t1.double_entry, t1.answer_entry, t1.entry)
+    == #(Some(1), Some(2), Some(3))
+  // A double the engine cannot grade (the dead one in this game) keeps its
+  // turn's line but names no double
+  let assert [_, _, _, _, t4, ..] = g.turns
+  assert t4.double_entry == None
+  assert option.is_some(t4.entry)
+  check_entries([g], final)
+}
+
+pub fn a_passed_double_names_the_double_and_the_drop_test() {
+  let #(log, final) =
+    drive(
+      "match5",
+      [],
+      11,
+      clock.NoClock,
+      400,
+      prefer(["double", "drop", "ready", "play", "move", "roll"]),
+    )
+  let assert Ok([g1, g2, ..]) = analysis.games(log)
+  let assert [_opening, passed] = g1.turns
+  assert #(passed.entry, passed.double_entry, passed.answer_entry)
+    == #(None, Some(1), Some(2))
+  // The next game's lines count from its own first line
+  let assert [next, ..] = g2.turns
+  assert next.entry == Some(0)
+  check_entries([g1, g2], final)
+}
+
+// ---------- Reading the engine's boards back ----------
+
+pub fn a_board_reads_back_as_the_record_draws_it_test() {
+  positions.each_random(200, fn(_seed, b, _dice) {
+    let snap = record.snapshot(b, 1, None)
+    list.each([White, Black], fn(mover) {
+      assert analysis.decode(analysis.encode(b, mover), mover)
+        == Ok(#(snap.white, snap.black))
+    })
+  })
+  let snap = record.snapshot(board.initial(), 1, None)
+  assert analysis.decode(opening, White) == Ok(#(snap.white, snap.black))
+  assert analysis.decode(opening, Black) == Ok(#(snap.white, snap.black))
+  assert analysis.decode([0, 1, 2], White) == Error(Nil)
+  assert analysis.decode([], White) == Error(Nil)
+}
+
+pub fn landings_are_the_points_that_gained_the_movers_checkers_test() {
+  // 31 from the opening: 8/5 6/5, two checkers on the 5
+  let made_the_5 = [
+    0, -2, 0, 0, 0, 2, 4, 0, 2, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -5, 0, 0, 0, 0,
+    2, 0,
+  ]
+  assert analysis.landings(opening, made_the_5, White) == [5, 5]
+  // The same boards from Black's side: their 5-point is Oskol's 20
+  assert analysis.landings(opening, made_the_5, Black) == [20, 20]
+  // A hit: the blot's point turns from theirs to mine, and they go to the bar
+  let blot = [
+    0, -2, 0, 0, 0, 0, 5, 0, 3, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -4, -1, 0, 0, 0,
+    2, 0,
+  ]
+  let hit = [
+    1, -2, 0, 0, 0, 0, 5, 0, 3, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -4, 1, 0, 0, 0,
+    1, 0,
+  ]
+  assert analysis.landings(blot, hit, White) == [20]
+  // A checker borne off lands nowhere; one that moves within lands once
+  let home = [
+    0,
+    0,
+    2,
+    3,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ]
+  let off = [
+    0,
+    1,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ]
+  assert analysis.landings(home, off, White) == [1]
 }
 
 fn check_alternation(turns: List(analysis.Turn)) {

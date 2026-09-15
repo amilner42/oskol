@@ -75,7 +75,7 @@ defmodule Oskol.Gleam.Caps.Rooms do
   end
 
   # The running game a seat token opens, read and handed back as the opaque
-  # Gleam instance it is. It attaches nothing: a record read is not a
+  # Gleam instance it is, with the player id of that seat. It attaches nothing: a record read is not a
   # connection. A room that died between the lookup and this call answers
   # like a seat that is not there.
   defp seated_game(game_id, token) do
@@ -84,7 +84,7 @@ defmodule Oskol.Gleam.Caps.Rooms do
     cond do
       GameServerState.find_player_id_by_token(state, token) == nil -> {:error, :invalid_token}
       state.instance == nil -> {:error, :game_not_started}
-      true -> {:ok, state.instance}
+      true -> {:ok, {GameServerState.find_player_id_by_token(state, token), state.instance}}
     end
   catch
     :exit, _ -> {:error, :invalid_token}

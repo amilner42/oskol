@@ -137,6 +137,14 @@ pub fn record_json(state: GameState) -> json.Json {
       }),
     ),
     #("target", json.int(state.config.target)),
+    // Whether the match is played with the doubling cube, and the position
+    // every game starts from: a replay draws the board before the first
+    // turn from this, never from a rule of its own.
+    #("cube", json.bool(state.config.cube)),
+    #(
+      "start",
+      record.snapshot_to_json(record.snapshot(board.initial(), 1, None)),
+    ),
     #(
       "games",
       json.array(list.index_map(games, fn(g, i) { #(g, i) }), fn(pair) {

@@ -96,6 +96,14 @@ defmodule Oskol.Dev.Seeds do
           "a single game played to the end: finished, so it has a post-game review " <>
             "(GET /papi/games/backgammon/rooms/000010/reviews; needs ANALYSIS_URL reachable)",
         find: &finished?/2
+      },
+      %{
+        code: "000011",
+        format: "match3",
+        what:
+          "a match to 3 played to the end, several games: open " <>
+            "/backgammon/000011/replay?t=<P1's token> for the replay and its analysis",
+        find: &finished_match?/2
       }
     ]
   end
@@ -235,6 +243,9 @@ defmodule Oskol.Dev.Seeds do
   defp can_pick?(u, _me), do: has?(u, "pick")
 
   defp finished?(u, _me), do: u["outcome"]["status"] == "finished"
+
+  # Over, and more than one game was played: a match worth replaying.
+  defp finished_match?(u, me), do: finished?(u, me) and length(data(u)["games"]) > 1
 
   defp between_games?(u, _me),
     do:

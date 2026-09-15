@@ -545,6 +545,8 @@ pub fn a_finished_match_keeps_its_last_game_in_the_scene_test() {
           ]),
         ),
         #("target", json.int(5)),
+        #("cube", json.bool(True)),
+        #("start", opening_json()),
         #(
           "games",
           json.preprocessed_array([
@@ -586,6 +588,8 @@ pub fn the_whole_record_is_every_game_in_order_test() {
         ]),
       ),
       #("target", json.int(5)),
+      #("cube", json.bool(True)),
+      #("start", opening_json()),
       #(
         "games",
         json.preprocessed_array([
@@ -609,6 +613,11 @@ pub fn the_whole_record_is_every_game_in_order_test() {
   assert json.to_string(projection.record_json(s)) == json.to_string(expected)
   let assert Some(from_contract) = { backgammon.game() }.record(s)
   assert json.to_string(from_contract) == json.to_string(expected)
+}
+
+/// Every game of the record starts from the opening position, centred cube.
+fn opening_json() -> json.Json {
+  record.snapshot_to_json(record.snapshot(board.initial(), 1, None))
 }
 
 pub fn the_wire_shape_is_plain_json_test() {

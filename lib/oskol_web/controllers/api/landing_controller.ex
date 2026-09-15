@@ -8,6 +8,7 @@ defmodule OskolWeb.Api.LandingController do
       GET  /papi/games/:slug/rooms/:id     what that invite link offers
       POST /papi/games/:slug/rooms/:id     join by name, or take a seat back
       GET  /papi/games/:slug/rooms/:id/reviews  post-game reviews, per game
+      POST /papi/games/:slug/rooms/:id/reviews/retry  try a failed review again (a seat)
       GET  /papi/games/:slug/rooms/:id/record?t=   the game's whole record, for a seat
       GET  /papi/codes/:code               which game answers to a code
       GET  /papi/me/prefs                  this visitor's display preferences
@@ -53,6 +54,20 @@ defmodule OskolWeb.Api.LandingController do
   # the handler and answers pending.
   def reviews(conn, %{"slug" => slug, "id" => game_id}) do
     send_json(conn, :oskol@handlers@reviews.reviews_json(ctx(), slug, game_id))
+  end
+
+  # A failed review, queued again at a seat's request.
+  def retry_review(conn, %{"slug" => slug, "id" => game_id} = params) do
+    number =
+      case Map.get(params, "game_number") do
+        n when is_integer(n) -> n
+        _ -> 0
+      end
+
+    send_json(
+      conn,
+      :oskol@handlers@reviews.retry_json(ctx(), slug, game_id, param(params, "t"), number)
+    )
   end
 
   # One door for both ways into a seat: a name takes a free one, a player id

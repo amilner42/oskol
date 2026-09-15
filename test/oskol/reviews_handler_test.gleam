@@ -3,8 +3,11 @@
 //// Games are real (seeded backgammon, replayed from their logs); the
 //// engine, the queue and the table are stubs.
 
+import backgammon/analysis as bg_analysis
+import backgammon/board
 import backgammon/engine as bg_engine
 import backgammon/game as backgammon
+import backgammon/record
 import gamekit/clock
 import gamekit/conformance
 import gamekit/event
@@ -22,10 +25,12 @@ import oskol/caps/analysis.{
   type GameLog, type Stored, AnalysisCaps, Done, Failed, GameLog, LogEntry,
   Pending, Stored,
 } as caps
+import oskol/caps/rooms as rooms_caps
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
 import oskol/fakes
 import oskol/handlers/reviews
+import oskol/rooms/errors
 
 // ---------- A real game, as the database holds it ----------
 
@@ -311,6 +316,143 @@ pub fn a_done_review_reads_turn_by_turn_test() {
   assert string.contains(body, "\"luck\":0.25")
   // Nothing owed: nothing queued
   assert recorded("enqueued") == []
+}
+
+pub fn a_turn_names_its_record_lines_and_its_moves_positions_test() {
+  // An answer whose candidates carry the board each turn really left: the
+  // page gets that board as a position it can draw, the checkers it
+  // landed, and the record lines each verdict is about.
+  let log = finished_log(4)
+  let assert Ok([g]) = reviews.games(log)
+  let ctx =
+    with_analysis(
+      log,
+      [Stored(1, Done, 1, Some(answer_for(g.turns)))],
+      no_engine,
+    )
+  let assert Ok(body) = reviews.reviews_json(ctx, "backgammon", "123456")
+  assert string.contains(
+    body,
+    "\"entry\":0,\"double_entry\":null,\"answer_entry\":null",
+  )
+  let assert [first, ..] = g.turns
+  let assert Some(played) = first.played
+  let assert Ok(#(white, black)) = bg_analysis.decode(played, board.White)
+  assert string.contains(
+    body,
+    "\"position\":"
+      <> json.to_string(
+      json.object([
+        #("white", record.side_to_json(white)),
+        #("black", record.side_to_json(black)),
+      ]),
+    )
+      <> ",\"landed\":"
+      <> json.to_string(json.array(
+      bg_analysis.landings(first.position.board, played, board.White),
+      json.int,
+    )),
+  )
+}
+
+/// An engine answer for these turns whose every candidate is the move that
+/// was played, board and all.
+fn answer_for(turns: List(bg_analysis.Turn)) -> String {
+  let candidate = fn(rank, board) {
+    "{\"rank\":"
+    <> int.to_string(rank)
+    <> ",\"notation\":\"8/5 6/5\",\"board\":"
+    <> board
+    <> ",\"equity\":0.1,\"equity_diff\":0,\"probs\":{\"win\":0.5,\"gammon_win\":0.1,\"backgammon_win\":0,\"gammon_loss\":0.1,\"backgammon_loss\":0}}"
+  }
+  let turn = fn(t: bg_analysis.Turn, i) {
+    let board =
+      json.to_string(json.array(option.unwrap(t.played, []), json.int))
+    "{\"index\":"
+    <> int.to_string(i)
+    <> ",\"cube\":null,\"move\":{\"played\":"
+    <> candidate(1, board)
+    <> ",\"best\":"
+    <> candidate(1, board)
+    <> ",\"top\":["
+    <> candidate(1, board)
+    <> "],\"n_legal\":9,\"forced\":false,\"error\":0,\"grade\":\"best\"},\"luck\":null}"
+  }
+  let totals =
+    "{\"moves\":{\"decisions\":3,\"forced\":1,\"error\":0,\"grades\":{}},\"cube\":{\"decisions\":0,\"error\":0,\"mistakes\":{}},\"luck\":0,\"error\":0,\"pr\":0}"
+  "{\"turns\":["
+  <> string.join(list.index_map(turns, turn), ",")
+  <> "],\"players\":["
+  <> totals
+  <> ","
+  <> totals
+  <> "]}"
+}
+
+// ---------- POST .../reviews/retry ----------
+
+/// Room caps with a seat: the token "good" opens p1's seat at a live
+/// backgammon room.
+fn seated(ctx: Ctx) -> Ctx {
+  let assert Ok(game) =
+    instance.start(
+      backgammon.game(),
+      "single",
+      [],
+      [game.Seat("p1", "Alice"), game.Seat("p2", "Bob")],
+      4,
+      clock.NoClock,
+      0,
+    )
+  let ctx =
+    ctx
+    |> fakes.with_room(Some(fakes.room()), None)
+    |> fakes.with_slug(Some("backgammon"))
+  Ctx(
+    ..ctx,
+    rooms: rooms_caps.RoomsCaps(..ctx.rooms, seated_game: fn(_, token) {
+      case token {
+        "good" -> Ok(#("p1", game))
+        _ -> Error(errors.InvalidToken)
+      }
+    }),
+  )
+}
+
+pub fn a_review_that_gave_up_is_tried_again_for_a_seat_test() {
+  let ctx =
+    with_analysis(finished_log(4), [Stored(1, Failed, 3, None)], no_engine)
+    |> seated
+  let assert Ok(_) = reviews.retry_json(ctx, "backgammon", "123456", "good", 1)
+  // A fresh set of attempts, and the room queued
+  assert recorded("saves") == ["1:pending:0:none"]
+  assert recorded("enqueued") == ["123456"]
+}
+
+pub fn a_retry_leaves_every_other_review_alone_test() {
+  let log = finished_log(4)
+  let n = turn_count(log, 1)
+  let ctx =
+    with_analysis(log, [Stored(1, Done, 1, Some(engine_answer(n)))], no_engine)
+    |> seated
+  let assert Ok(body) =
+    reviews.retry_json(ctx, "backgammon", "123456", "good", 1)
+  assert string.contains(body, "\"status\":\"done\"")
+  // A game the room does not have
+  let assert Ok(_) = reviews.retry_json(ctx, "backgammon", "123456", "good", 7)
+  assert recorded("saves") == []
+  assert recorded("enqueued") == []
+}
+
+pub fn only_a_seat_may_ask_for_a_retry_test() {
+  let ctx =
+    with_analysis(finished_log(4), [Stored(1, Failed, 3, None)], no_engine)
+    |> seated
+  let assert Error(error.NotFound(_)) =
+    reviews.retry_json(ctx, "backgammon", "123456", "stolen", 1)
+  let assert Error(error.NotFound(_)) =
+    reviews.retry_json(ctx, "backgammon", "123456", "", 1)
+  assert recorded("saves") == []
 }
 
 pub fn a_game_with_no_review_yet_is_queued_and_pending_test() {

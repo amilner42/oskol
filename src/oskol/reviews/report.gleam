@@ -10,6 +10,8 @@
 //// response that decodes is one the page can render.
 
 import backgammon/analysis.{type Turn, Passed, Took}
+import backgammon/board
+import backgammon/record
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode.{type Decoder}
 import gleam/float
@@ -71,6 +73,9 @@ pub type Candidate {
     equity: Float,
     equity_diff: Float,
     probs: Probs,
+    /// The board the move leaves, from the mover's side, in the engine's
+    /// format; empty when the engine did not send one.
+    board: List(Int),
   )
 }
 
@@ -202,7 +207,8 @@ fn candidate_decoder() -> Decoder(Candidate) {
   use equity <- decode.field("equity", number())
   use equity_diff <- decode.field("equity_diff", number())
   use probs <- decode.field("probs", probs_decoder())
-  decode.success(Candidate(rank, notation, equity, equity_diff, probs))
+  use board <- decode.optional_field("board", [], decode.list(decode.int))
+  decode.success(Candidate(rank, notation, equity, equity_diff, probs, board))
 }
 
 fn probs_decoder() -> Decoder(Probs) {
@@ -350,9 +356,16 @@ fn turn_json(
 ) -> Json {
   let seat = seat_of(turn.player)
   let other = 1 - turn.player
+  let candidate = fn(c: Candidate, played_rank: Int) {
+    candidate_json(c, played_rank, turn)
+  }
   json.object([
     #("number", json.int(number)),
     #("log_index", json.int(turn.log_index)),
+    // The lines of the game's record this turn's verdicts are about.
+    #("entry", json.nullable(turn.entry, json.int)),
+    #("double_entry", json.nullable(turn.double_entry, json.int)),
+    #("answer_entry", json.nullable(turn.answer_entry, json.int)),
     #("seat", json.int(turn.player)),
     #("player_id", json.string(turn.player_id)),
     #("color", json.string(seat.color)),
@@ -378,14 +391,9 @@ fn turn_json(
           #("equity_lost", json.float(error)),
           #("forced", json.bool(forced)),
           #("n_legal", json.int(n_legal)),
-          #("played", candidate_json(played, played.rank)),
-          #("best", candidate_json(best, played.rank)),
-          #(
-            "top",
-            json.array(top, fn(candidate) {
-              candidate_json(candidate, played.rank)
-            }),
-          ),
+          #("played", candidate(played, played.rank)),
+          #("best", candidate(best, played.rank)),
+          #("top", json.array(top, fn(c) { candidate(c, played.rank) })),
         ])
     }),
     #("cube", case graded.cube {
@@ -419,8 +427,30 @@ fn turn_json(
   ])
 }
 
-fn candidate_json(c: Candidate, played_rank: Int) -> Json {
+fn candidate_json(c: Candidate, played_rank: Int, turn: Turn) -> Json {
+  // The board the move leaves, as the record draws a position, and where
+  // its checkers land: what a page needs to put this move on the board
+  // without reading its notation.
+  let mover = case turn.player {
+    0 -> board.White
+    _ -> board.Black
+  }
+  let #(position, landed) = case analysis.decode(c.board, mover) {
+    Ok(#(white, black)) -> #(
+      json.object([
+        #("white", record.side_to_json(white)),
+        #("black", record.side_to_json(black)),
+      ]),
+      json.array(
+        analysis.landings(turn.position.board, c.board, mover),
+        json.int,
+      ),
+    )
+    Error(_) -> #(json.null(), json.null())
+  }
   json.object([
+    #("position", position),
+    #("landed", landed),
     #("rank", json.int(c.rank)),
     #("notation", json.string(c.notation)),
     #("equity", json.float(c.equity)),

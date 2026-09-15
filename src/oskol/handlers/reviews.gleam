@@ -2,6 +2,8 @@
 ////
 ////   GET /papi/games/:slug/rooms/:id/reviews
 ////     {ok, players, games: [{game_number, status, review}]}
+////   POST /papi/games/:slug/rooms/:id/reviews/retry  {t, game_number}
+////     the same, after a failed game is queued again (a seat only)
 ////
 //// Every game of a room is reviewed on its own once it is over -- each
 //// game of a match, and the last. The room asks for it when a game ends
@@ -28,6 +30,7 @@ import oskol/caps/analysis.{
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
+import oskol/handlers/record
 import oskol/reviews/report
 
 /// The only game with an engine.
@@ -194,7 +197,23 @@ fn entry(
   stored: List(Stored),
   seats: List(report.Seat),
 ) -> Json {
-  let #(status, review) = case g.finished, g.turns, find(stored, g.number) {
+  let #(status, review) = settled(g, stored, seats)
+  json.object([
+    #("game_number", json.int(g.number)),
+    #("status", json.string(status)),
+    #("turns", json.int(list.length(g.turns))),
+    #("review", option.unwrap(review, json.null())),
+  ])
+}
+
+/// What a game's review stands at, as the endpoint names it, and the review
+/// when it has one that renders.
+fn settled(
+  g: analysis.GameTurns,
+  stored: List(Stored),
+  seats: List(report.Seat),
+) -> #(String, Option(Json)) {
+  case g.finished, g.turns, find(stored, g.number) {
     False, _, _ -> #("playing", None)
     True, [], _ -> #("empty", None)
     True, _, Some(Stored(status: Done, response_json: Some(body), ..)) ->
@@ -207,12 +226,44 @@ fn entry(
     -> #("failed", None)
     True, _, _ -> #("pending", None)
   }
-  json.object([
-    #("game_number", json.int(g.number)),
-    #("status", json.string(status)),
-    #("turns", json.int(list.length(g.turns))),
-    #("review", option.unwrap(review, json.null())),
-  ])
+}
+
+// ---------- POST /papi/games/:slug/rooms/:id/reviews/retry ----------
+
+/// A player asks for a game whose review failed to be tried again: the
+/// engine was down, or its answer did not fit the game. The game starts
+/// over with a full set of attempts and the room is queued; any other game
+/// (done, pending, still being played) is left as it is. Only a seat may
+/// ask -- it costs engine time -- so the seat token is checked the way the
+/// record's is. Answers what GET answers, the retried game now `pending`.
+pub fn retry_json(
+  ctx: Ctx,
+  game_slug: String,
+  game_id: String,
+  token: String,
+  number: Int,
+) -> Result(String, ApiError) {
+  use _ <- result.try(record.seat(ctx, game_slug, game_id, token))
+  use log <- result.try(case game_slug == slug, ctx.analysis.log(game_id) {
+    True, Some(log) if log.slug == slug -> Ok(log)
+    _, _ -> Error(error.NotFound(record.not_found_message))
+  })
+  use games <- result.try(
+    games(log) |> result.map_error(fn(reason) { error.Internal(reason) }),
+  )
+  let stored = ctx.analysis.stored(game_id)
+  case list.find(games, fn(g) { g.number == number }) {
+    Ok(g) ->
+      case settled(g, stored, seats(log)) {
+        #("failed", _) -> {
+          ctx.analysis.save(game_id, number, Pending, 0, None, None)
+          ctx.analysis.enqueue(game_id)
+        }
+        _ -> Nil
+      }
+    Error(_) -> Nil
+  }
+  reviews_json(ctx, game_slug, game_id)
 }
 
 // ---------- Shared ----------
