@@ -879,19 +879,21 @@ suite =
                 \_ ->
                     case firstUpdate of
                         Just u ->
-                            View.view (themed "midnight" u View.init)
+                            View.view (themed "forest" u View.init)
                                 |> Query.fromHtml
-                                |> Query.has [ class "bg-page", class "bg-theme-midnight" ]
+                                |> Query.has [ class "bg-page", class "bg-theme-forest" ]
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
+             , test "the default board is midnight, the home page's" <|
+                \_ -> Expect.equal "midnight" View.defaultTheme
              , test "a board this release does not know falls back to the default" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
                             View.view (themed "burlwood" u View.init)
                                 |> Query.fromHtml
-                                |> Query.has [ class "bg-theme-walnut" ]
+                                |> Query.has [ class "bg-theme-midnight" ]
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"

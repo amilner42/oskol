@@ -1,4 +1,4 @@
-module Ui.Shell exposing (Config, joinCodeInputId, view)
+module Ui.Shell exposing (Config, bare, bird, joinButton, joinCodeInputId, view)
 
 {-| The chrome every landing page sits in: the OSKOL wordmark, the JOIN GAME
 prompt behind it, and the footer.
@@ -52,6 +52,34 @@ view config content =
                     [ Html.text "Free · No accounts · By the book, until you flip a twist" ]
                ]
         )
+
+
+{-| A page that is its own chrome (the home board): the content edge to
+edge, and the code prompt when it is open.
+-}
+bare : Config msg -> List (Html msg) -> Html msg
+bare config content =
+    Html.div [ class "paper quiet min-h-screen-safe" ]
+        (content
+            ++ (if config.joinOpen then
+                    [ joinModal config ]
+
+                else
+                    []
+               )
+        )
+
+
+{-| JOIN GAME, for a page that draws its own top bar.
+-}
+joinButton : Config msg -> Html msg
+joinButton config =
+    Html.button
+        [ class "btn-arcade plain pixel text-[9px] sm:text-[11px] px-3 py-3 sm:px-5 text-center leading-relaxed"
+        , id "join-game-board"
+        , onClick config.onOpenJoin
+        ]
+        [ Html.text "JOIN GAME" ]
 
 
 topbar : Config msg -> Html msg

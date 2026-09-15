@@ -78,6 +78,10 @@ href route =
         Library ->
             "/"
 
+        -- the backgammon page is the home page
+        GameLanding "backgammon" Nothing Nothing ->
+            "/"
+
         GameLanding slug game token ->
             "/" ++ slug ++ query [ ( "game", game ), ( "t", token ) ]
 

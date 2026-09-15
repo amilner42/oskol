@@ -191,10 +191,11 @@ assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
 assets/src/Route.elm             the three client routes, mirroring the server's
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
-assets/src/Page/Library.elm      "/" the library: one grid of quiet game tiles
-assets/src/Page/GameLanding.elm  "/:slug" create page, and what an invite offers
+assets/src/Page/GameLanding.elm  "/" the home page (CREATE GAME's dialog, the theme
+                                 picker) and "/:slug?game=" what an invite offers
+assets/src/Page/HomeBoard.elm    the home page's board: the table edge to edge, the
+                                 2x2 menu in its right band
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
-assets/src/GameArt.elm           per-game accent + pixel-art reel + phone motif
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Backgammon/View.elm  the backgammon board
@@ -433,11 +434,10 @@ for the first steps of a playout) are derived, gitignored, and embedded in
 - `RouteTest`, `SessionTest`, `CatalogTest`: the client's routes round-trip,
   the boot flags, and the `/papi` envelope and decoders (which are lax about
   keys they do not need and strict about the ones they do).
-- `LibraryTest`, `GameLandingTest`: the landing pages on decoded responses —
-  the head's exact words, the library grid, the mode and clock pickers, the
-  settings that follow a mode, inline validation, and the invite's three
-  answers.
-- `GameArtTest`: the sprite decomposition paints back exactly its grid.
+- `GameLandingTest`: the home page on decoded responses — the board and its
+  four menu entries, CREATE GAME's dialog (the mode, clock and twist
+  dropdowns, their defaults, the summary, inline validation), the theme
+  picker, and the invite's three answers.
 
 **Elixir (`mix test`)**
 - `test/oskol/room_test.exs`: `Oskol.Bots` (test_support) plays random
@@ -450,7 +450,11 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   cookie and the name it remembers.
 
 **Browser (`bin/check --browser`)**: Playwright smokes create real games and
-play them; review scripts take screenshots for eyeballing.
+play them; review scripts take screenshots for eyeballing. The ways into a
+game live once, in `playwright/lib/flows.js`: `createGame` (`/` -> CREATE
+GAME -> the dialog, by element id), `joinByLink`, `joinByCode` and
+`openSeat`. A smoke uses those rather than clicking through the home page
+itself, so a change to the home page or the invite touches that one file.
 
 When you add a rule, add a controlled-position test before the playouts:
 the playouts prove nothing crashes, the position tests prove the rule is

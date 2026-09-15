@@ -1,4 +1,5 @@
 import gamekit/clock
+import gleam/list
 import gleam/option.{None, Some}
 
 const a = "a"
@@ -179,4 +180,24 @@ pub fn presets_start_with_none_test() {
   assert first.id == "none"
   let assert Ok(blitz) = clock.preset("blitz")
   assert clock.control_label(blitz.control) == "3 min + 2 s"
+}
+
+pub fn backgammons_presets_are_a_bank_each_and_the_games_delay_test() {
+  let delay = 12_000
+  let a = "a"
+  let labels =
+    ["bg3", "bg5", "bg10"]
+    |> list.map(fn(id) {
+      let assert Ok(preset) = clock.preset(id)
+      #(
+        preset.name,
+        clock.label(clock.with_turn_delay(clock.new(preset.control, [a]), delay)),
+      )
+    })
+  assert labels
+    == [
+      #("3 min", "3 min, 12 s delay every turn"),
+      #("5 min", "5 min, 12 s delay every turn"),
+      #("10 min", "10 min, 12 s delay every turn"),
+    ]
 }

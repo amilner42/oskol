@@ -5,8 +5,8 @@ in (`Ui.Shell` — the OSKOL wordmark, the JOIN GAME prompt, the footer).
 
 Three routes, and they are the server's three routes:
 
-    /            Page.Library
-    /:slug       Page.GameLanding
+    /            Page.GameLanding "backgammon" — the home page, the board
+    /:slug       Page.GameLanding — the invite a shared link opens
     /:slug/:id   Page.Play — the game, unchanged
 
 The JOIN GAME prompt lives here rather than in a page because it is chrome:
@@ -26,7 +26,6 @@ import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as D
 import Page.GameLanding
-import Page.Library
 import Page.Play
 import Route exposing (Route)
 import Session exposing (Session)
@@ -61,7 +60,6 @@ type alias Model =
 
 type Page
     = NotFound
-    | Library Page.Library.Model
     | GameLanding Page.GameLanding.Model
     | Play Page.Play.Model
 
@@ -69,7 +67,6 @@ type Page
 type Msg
     = LinkClicked Browser.UrlRequest
     | UrlChanged Url
-    | LibraryMsg Page.Library.Msg
     | GameLandingMsg Page.GameLanding.Msg
     | PlayMsg Page.Play.Msg
     | OpenedJoin
@@ -137,9 +134,10 @@ routeTo url oldModel =
         Nothing ->
             ( { model | page = NotFound }, Cmd.none )
 
+        -- The home page is the backgammon page: Oskol is a backgammon site.
         Just Route.Library ->
-            Page.Library.init model.session
-                |> wrap model Library LibraryMsg
+            Page.GameLanding.init model.session "backgammon" Nothing Nothing
+                |> landing model
 
         Just (Route.GameLanding slug gameId token) ->
             Page.GameLanding.init model.session slug gameId token
@@ -178,6 +176,14 @@ landing model ( pageModel, cmd, out ) =
             , Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.replaceUrl model.key path ]
             )
 
+        Page.GameLanding.ChoseTheme name ->
+            ( { withPage | session = Session.withPref "backgammon_theme" name model.session }
+            , Cmd.batch
+                [ Cmd.map GameLandingMsg cmd
+                , Page.Play.storePref { key = "backgammon_theme", value = name }
+                ]
+            )
+
         Page.GameLanding.TookSeat seat ->
             ( { withPage | session = Session.withGuestName seat.name model.session }
             , Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.pushUrl model.key seat.path ]
@@ -202,10 +208,6 @@ update msg model =
 
         ( UrlChanged url, _ ) ->
             routeTo url model
-
-        ( LibraryMsg pageMsg, Library pageModel ) ->
-            Page.Library.update pageMsg pageModel
-                |> wrap model Library LibraryMsg
 
         ( GameLandingMsg pageMsg, GameLanding pageModel ) ->
             Page.GameLanding.update pageMsg pageModel
@@ -293,9 +295,6 @@ subscriptions model =
             Play pageModel ->
                 Sub.map PlayMsg (Page.Play.subscriptions pageModel)
 
-            Library pageModel ->
-                Sub.map LibraryMsg (Page.Library.subscriptions pageModel)
-
             _ ->
                 Sub.none
         , if model.joinOpen then
@@ -335,11 +334,17 @@ view model =
                 else
                     Html.map PlayMsg (Page.Play.view pageModel)
 
-            Library pageModel ->
-                framed model [ Html.map LibraryMsg (Page.Library.view pageModel) ]
-
             GameLanding pageModel ->
-                framed model [ Html.map GameLandingMsg (Page.GameLanding.view pageModel) ]
+                if Page.GameLanding.isHome pageModel then
+                    -- The home page is the board, edge to edge: its own chrome.
+                    Shell.bare (shellConfig model)
+                        (Page.GameLanding.home
+                            { join = Shell.joinButton (shellConfig model), toMsg = GameLandingMsg }
+                            pageModel
+                        )
+
+                else
+                    framed model [ Html.map GameLandingMsg (Page.GameLanding.view pageModel) ]
 
             NotFound ->
                 framed model [ notFound ]
@@ -349,16 +354,19 @@ view model =
 
 framed : Model -> List (Html Msg) -> Html Msg
 framed model content =
-    Shell.view
-        { joinOpen = model.joinOpen
-        , joinCode = model.joinCode
-        , joinError = model.joinError
-        , onOpenJoin = OpenedJoin
-        , onCloseJoin = ClosedJoin
-        , onJoinCodeInput = JoinCodeInput
-        , onJoinSubmit = JoinSubmitted
-        }
-        content
+    Shell.view (shellConfig model) content
+
+
+shellConfig : Model -> Shell.Config Msg
+shellConfig model =
+    { joinOpen = model.joinOpen
+    , joinCode = model.joinCode
+    , joinError = model.joinError
+    , onOpenJoin = OpenedJoin
+    , onCloseJoin = ClosedJoin
+    , onJoinCodeInput = JoinCodeInput
+    , onJoinSubmit = JoinSubmitted
+    }
 
 
 notFound : Html Msg
@@ -380,9 +388,6 @@ notFound =
 title : Model -> String
 title model =
     case model.page of
-        Library _ ->
-            Page.Library.title
-
         GameLanding pageModel ->
             Page.GameLanding.title pageModel
 

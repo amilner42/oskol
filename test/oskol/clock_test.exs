@@ -9,19 +9,19 @@ defmodule Oskol.Game.ClockTest do
   test "clock presets are offered, a game says which, and none is the default" do
     assert [%{"id" => "none"} | _] = GameKit.clock_presets()
     {:ok, info} = GameKit.game_info("backgammon")
-    assert "blitz" in info["clocks"]
+    assert info["clocks"] == ["none", "bg3", "bg5", "bg10"]
     assert info["default_clock"] == "none"
     %{game_id: game_id} = lobby()
     assert Game.get_server_state(game_id).setup.clock == "none"
   end
 
   test "the creator picks the time control and it applies when the game starts" do
-    %{game_id: game_id, p1: p1} = lobby("single", clock: "blitz")
+    %{game_id: game_id, p1: p1} = lobby("single", clock: "bg3")
     assert {:error, :unknown_clock} = Game.configure(game_id, %{clock: "hourglass"})
     {:ok, _p2, started} = Game.join_game(game_id, "Bob", nil)
 
     assert GameKit.player_update(started.instance, p1)["clock"]["label"] ==
-             "3 min + 2 s, 12 s delay every turn"
+             "3 min, 12 s delay every turn"
   end
 
   test "updates carry the clock and a game with no clock has it disabled" do
@@ -44,7 +44,7 @@ defmodule Oskol.Game.ClockTest do
     waiting = if mover == p1, do: p2, else: p1
     update = GameKit.player_update(state.instance, p1)
     assert update["clock"]["enabled"]
-    assert update["clock"]["label"] == "0 min + 0 s, 12 s delay every turn"
+    assert update["clock"]["label"] == "0 min, 12 s delay every turn"
     running = update["clock"]["players"] |> Enum.filter(& &1["running"]) |> Enum.map(& &1["id"])
     assert running == [mover]
 

@@ -10,6 +10,7 @@ import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/envelope
 import oskol/core/error
 import oskol/fakes
+import oskol/guests/prefs
 import oskol/handlers/landing
 import oskol/rooms/errors
 import oskol/rooms/room.{type Table, Seat, Table}
@@ -60,7 +61,9 @@ pub fn a_game_page_carries_its_copy_its_formats_and_the_clocks_test() {
   assert string.contains(body, "\"default_clock\":")
   // The game's own clocks are preset ids; the presets themselves come with
   // the page, so the picker can name them.
-  assert string.contains(body, "\"clocks\":[\"none\"")
+  // Backgammon offers no clock, or 3, 5 or 10 minutes (each with its 12 s
+  // delay); the older presets stay defined for old rooms but are not offered.
+  assert string.contains(body, "\"clocks\":[\"none\",\"bg3\",\"bg5\",\"bg10\"]")
   assert string.contains(body, "\"clock_presets\":[{\"id\":\"none\"")
   // Formats, with the settings the creator may tune.
   assert string.contains(body, "\"formats\":[{\"id\":\"single\"")
@@ -128,7 +131,7 @@ fn creating(ctx: Ctx, expected: room.Setup) -> Ctx {
 pub fn creating_a_game_answers_with_its_code_and_the_seat_url_test() {
   let ctx =
     reading()
-    |> creating(room.Setup(format: "single", selections: [], clock: "blitz"))
+    |> creating(room.Setup(format: "single", selections: [], clock: "bg3"))
 
   assert landing.create_json(
       ctx,
@@ -136,7 +139,7 @@ pub fn creating_a_game_answers_with_its_code_and_the_seat_url_test() {
       "backgammon",
       "single",
       "Alice",
-      "blitz",
+      "bg3",
       [],
     )
     == Ok(
@@ -151,7 +154,7 @@ pub fn the_creators_settings_reach_the_room_test() {
     |> creating(room.Setup(
       format: "match5",
       selections: selections,
-      clock: "rapid",
+      clock: "bg10",
     ))
 
   let assert Ok(_) =
@@ -161,7 +164,7 @@ pub fn the_creators_settings_reach_the_room_test() {
       "backgammon",
       "match5",
       "Alice",
-      "rapid",
+      "bg10",
       selections,
     )
 }
@@ -419,6 +422,13 @@ pub fn a_code_nothing_answers_to_is_not_found_test() {
 }
 
 // ---------- GET/POST /papi/me/prefs ----------
+
+pub fn a_guest_who_never_picked_gets_the_midnight_board_test() {
+  // The board the home page wears, and one a guest may keep.
+  assert prefs.default_backgammon_theme() == "midnight"
+  assert prefs.validate("backgammon_theme", prefs.default_backgammon_theme())
+    == Ok(#("backgammon_theme", "midnight"))
+}
 
 pub fn a_visitor_with_no_guest_id_has_no_preferences_test() {
   let body = landing.prefs_json(fakes.ctx(), fakes.no_guest())

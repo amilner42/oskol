@@ -107,16 +107,22 @@ defmodule Oskol.Game.GameServerState do
   @doc """
   Merge a creator's choices into the setup, checking them against the game's
   formats, settings and clocks. Keys may be atoms or strings.
+
+  A creator may only pick a clock the game offers today. A room that already
+  has its clock -- one rebuilt from its row, or a rematch carrying its setup
+  over -- passes `retired_clocks: true`, which also accepts a preset the game
+  no longer offers but that is still defined, so a room made before a clock
+  was retired still replays and rematches.
   """
-  @spec validate_setup(t(), map()) ::
+  @spec validate_setup(t(), map(), keyword()) ::
           {:ok, setup()}
           | {:error, :unknown_format | :unknown_clock | :unknown_setting | :unknown_choice}
-  def validate_setup(%__MODULE__{info: info, setup: current}, attrs) do
+  def validate_setup(%__MODULE__{info: info, setup: current}, attrs, opts \\ []) do
     attrs = Map.new(attrs, fn {k, v} -> {to_key(k), v} end)
     merged = Map.merge(current, Map.take(attrs, [:format, :selections, :clock, :seed, :control]))
 
     with {:ok, format} <- fetch_format(info, merged.format),
-         :ok <- check_clock(info, merged.clock),
+         :ok <- check_clock(info, merged.clock, Keyword.get(opts, :retired_clocks, false)),
          {:ok, selections} <- check_selections(format, merged.selections || %{}) do
       {:ok, %{merged | selections: selections}}
     end
@@ -137,8 +143,9 @@ defmodule Oskol.Game.GameServerState do
     end
   end
 
-  defp check_clock(info, id) do
-    offered = Map.get(info, "clocks", GameKit.clock_ids())
+  defp check_clock(info, id, retired_ok) do
+    offered =
+      if retired_ok, do: GameKit.clock_ids(), else: Map.get(info, "clocks", GameKit.clock_ids())
 
     if id in offered and id in GameKit.clock_ids(),
       do: :ok,
