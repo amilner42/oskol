@@ -900,7 +900,7 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "the list is closed until the control is tapped, then lists all eight" <|
+             , test "the list is closed until the control is tapped, then lists every board" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
@@ -917,7 +917,7 @@ suite =
                                     View.view (ctx "p1" u opened)
                                         |> Query.fromHtml
                                         |> Query.findAll [ class "bg-theme-option" ]
-                                        |> Query.count (Expect.equal 8)
+                                        |> Query.count (Expect.equal (List.length View.themes))
                                 ]
                                 ()
 

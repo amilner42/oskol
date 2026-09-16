@@ -632,8 +632,29 @@
   width: 100%; border-radius: 0; flex: none; justify-self: stretch;
 }
 .bg-page.home-board .home-mark { color: #fff; }
-.bg-page.home-board .home-themes > button { color: rgba(255, 255, 255, 0.85); }
-.bg-page.home-board .home-themes .bg-theme-chip { width: 26px; height: 16px; border-color: rgba(255, 255, 255, 0.8); }
+/* On the home page the control sits on the very board it is painted in, so
+   a bare swatch disappears into its own theme. It gets a plate of its own:
+   a translucent pill that reads on a dark board and a light one, with the
+   swatch ringed white inside it. */
+.bg-page.home-board .home-themes > button {
+  color: #fff;
+  background: rgba(12, 16, 24, 0.42);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 4px 10px 4px 5px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.bg-page.home-board .home-themes > button:hover {
+  background: rgba(12, 16, 24, 0.62);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.bg-page.home-board .home-themes > button .bg-theme-chip {
+  width: 26px; height: 16px; border-radius: 5px;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 0 0 3px rgba(0, 0, 0, 0.35);
+}
 .bg-page.home-board .home-mark svg { height: 1.5em; width: auto; margin: 0; color: #fff !important; }
 .bg-page.home-board .home-mark svg * { stroke: #fff; }
 .home-inlay {
@@ -840,35 +861,120 @@ a.q-card:hover, a.q-card:focus-visible {
   --bg-checker-dark: #1b0f38; --bg-checker-dark-ink: #ff9ee4;
   --bg-checker-edge: #05030f;
 }
+/* Ocean: deep water under a pale rail, with a coral accent. */
+.bg-theme-ocean {
+  --bg-frame: #14374a; --bg-slot: #0e2634; --bg-felt: #125a72;
+  --bg-point-a: #0d4257; --bg-point-b: #7fc9d9; --bg-accent: #ff8a5b;
+  --bg-checker-light: #eaf7fb; --bg-checker-dark: #06202c; --bg-checker-edge: #05161f;
+}
+/* Sunset: a dusk board, purple wood over hot sand. */
+.bg-theme-sunset {
+  --bg-frame: #4a2a4d; --bg-slot: #371e3a; --bg-felt: #f6d9b8;
+  --bg-point-a: #b4536a; --bg-point-b: #f2b07a; --bg-accent: #6c4ae0;
+  --bg-checker-light: #fff6ec; --bg-checker-dark: #2e1630;
+}
+/* Espresso: near-black roast, crema felt, a burnt orange accent. */
+.bg-theme-espresso {
+  --bg-frame: #2e211a; --bg-slot: #201611; --bg-felt: #d9c2a5;
+  --bg-point-a: #5b3d2b; --bg-point-b: #bd9b75; --bg-accent: #e07a3c;
+  --bg-checker-light: #f7ecdd; --bg-checker-dark: #16100c;
+}
+/* Sakura: blossom over soft ash, spring on a dark rail. */
+.bg-theme-sakura {
+  --bg-frame: #59404a; --bg-slot: #42303a; --bg-felt: #fbe8ef;
+  --bg-point-a: #d4809f; --bg-point-b: #f4c2d4; --bg-accent: #4fa88b;
+  --bg-checker-light: #fffafc; --bg-checker-dark: #3a2029;
+}
+/* Emerald: a velvet card room, gold on green. */
+.bg-theme-emerald {
+  --bg-frame: #1d3a2e; --bg-slot: #142a21; --bg-felt: #0f5138;
+  --bg-point-a: #0b3a28; --bg-point-b: #64b98f; --bg-accent: #edc35a;
+  --bg-checker-light: #f3f6ee; --bg-checker-dark: #07180f; --bg-checker-edge: #061109;
+}
+/* Copper: hammered metal gone green at the edges. */
+.bg-theme-copper {
+  --bg-frame: #7a4327; --bg-slot: #5c311c; --bg-felt: #e8d9c4;
+  --bg-point-a: #b1653a; --bg-point-b: #3f8f80; --bg-accent: #2b2b30;
+  --bg-checker-light: #fdf4e6; --bg-checker-dark: #26140c;
+}
+/* Arctic: ice and cold light, a board that looks cold to touch. */
+.bg-theme-arctic {
+  --bg-frame: #3f5a6b; --bg-slot: #2f4553; --bg-felt: #e9f4f8;
+  --bg-point-a: #8fb4c6; --bg-point-b: #cfe6ef; --bg-accent: #1f6fd6;
+  --bg-checker-light: #ffffff; --bg-checker-dark: #16242d;
+}
+/* Royal: navy and gold, the board in the good room. */
+.bg-theme-royal {
+  --bg-frame: #1b2450; --bg-slot: #121936; --bg-felt: #22306a;
+  --bg-point-a: #17224f; --bg-point-b: #8e9ad6; --bg-accent: #e8b53f;
+  --bg-checker-light: #f4f1e4; --bg-checker-dark: #0b1130; --bg-checker-edge: #070b20;
+}
 /* The picker in the header: the board's name, and the list of eight it
    opens. Each row wears its own theme class, so a swatch is painted by the
    very tokens the board would use — there is no second copy of the colours
    anywhere. */
 .bg-themes { position: relative; }
 .bg-theme-list {
-  position: absolute; right: 0; top: calc(100% + 4px); z-index: 50;
-  background: var(--paper); border: 2px solid var(--ink);
-  box-shadow: 3px 3px 0 0 var(--ink);
-  padding: 3px; display: grid; gap: 1px; min-width: 9.5rem;
-  max-height: 60vh; overflow-y: auto;
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50;
+  /* A modern floating panel rather than a paper crate: dark glass, one hair
+     line, a soft drop. It has to sit on a light table and on the dark home
+     board, so it brings its own ground instead of borrowing either. */
+  background: rgba(20, 24, 33, 0.9);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+  padding: 10px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+  width: max-content; max-width: min(92vw, 30rem);
+  max-height: 64vh; overflow-y: auto;
 }
+@media (min-width: 640px) { .bg-theme-list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* One board per tile, the picture doing the talking and the name quiet
+   under it. */
 .bg-theme-option {
-  display: flex; align-items: center; gap: 6px;
-  width: 100%; padding: 4px 6px; text-align: left; cursor: pointer;
-  background: transparent; border: 0; color: var(--ink);
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  padding: 0; text-align: left; cursor: pointer;
+  background: transparent; border: 0; color: rgba(255, 255, 255, 0.72);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.01em; text-transform: none;
+  transition: color 120ms ease;
 }
-.bg-theme-option:hover { background: var(--highlighter); }
-.bg-theme-option.on { background: var(--ink); color: var(--paper); }
+.bg-theme-option:hover { color: #fff; }
+.bg-theme-option.on { color: #fff; background: transparent; }
+.bg-theme-name {
+  display: block; padding: 0 2px; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bg-theme-option.on .bg-theme-name::after {
+  content: "\2713"; margin-left: 6px; opacity: 0.9;
+}
 .bg-theme-chip {
-  flex: none; width: 20px; height: 13px;
-  border: 2px solid var(--ink);
-  background: linear-gradient(
-    to right,
-    var(--bg-frame) 0 25%,
-    var(--bg-felt) 25% 55%,
-    var(--bg-point-a) 55% 78%,
-    var(--bg-accent) 78% 100%
-  );
+  flex: none; display: block; width: 100%; aspect-ratio: 3 / 2;
+  border: 0; border-radius: 10px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 140ms cubic-bezier(0.2, 0.7, 0.3, 1), box-shadow 140ms ease;
+}
+.bg-theme-option:hover .bg-theme-chip {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25), 0 10px 20px -6px rgba(0, 0, 0, 0.6);
+}
+.bg-theme-option.on .bg-theme-chip {
+  box-shadow: 0 0 0 2px #fff, 0 8px 18px -6px rgba(0, 0, 0, 0.6);
+}
+.bg-theme-option:focus-visible { outline: none; }
+.bg-theme-option:focus-visible .bg-theme-chip { box-shadow: 0 0 0 2px var(--bg-sky, #3fa7d6); }
+.bg-theme-chip svg { display: block; width: 100%; height: 100%; }
+/* The control's own swatch keeps the page's own idiom: small, square, part
+   of the header row. */
+#bg-theme-button .bg-theme-chip {
+  width: 22px; height: 14px; aspect-ratio: auto; border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bg-theme-chip, .bg-theme-option { transition: none; }
+  .bg-theme-option:hover .bg-theme-chip { transform: none; }
 }
 
 .bg-page {

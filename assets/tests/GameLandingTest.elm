@@ -9,6 +9,7 @@ import Api
 import Api.Catalog as Catalog
 import Dict
 import Expect
+import Games.Backgammon.View
 import Html
 import Html.Attributes
 import Page.GameLanding as GameLanding
@@ -404,12 +405,12 @@ boardPicker =
                     |> Query.find [ id "bg-theme-button" ]
                     |> Event.simulate Event.click
                     |> Event.expect GameLanding.ToggledThemes
-        , test "the list has all eight boards" <|
+        , test "the list has every board there is, no more and no fewer" <|
             \_ ->
                 home (send GameLanding.ToggledThemes loadedModel)
                     |> Query.find [ id "bg-theme-list" ]
                     |> Query.findAll [ class "bg-theme-option" ]
-                    |> Query.count (Expect.equal 8)
+                    |> Query.count (Expect.equal (List.length Games.Backgammon.View.themes))
         , test "an option picks its board" <|
             \_ ->
                 home (send GameLanding.ToggledThemes loadedModel)
