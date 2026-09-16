@@ -18,9 +18,13 @@ Without a room in the URL it is the home page: the board edge to edge
 and a clock, takes a name and gets a link. With `?game=` it is
 the invite that link opens, and what it offers depends on the table (see
 `Api.Catalog.Room`): a free seat, a seat whose player is away, or nothing at
-all. With `?t=` as well it is a seat token, and the only thing to do with
-one is open the seat — that lives at `/:slug/:id`, so the page hands over
-immediately.
+all. A seat whose player is away is offered to whoever asks: a seat is
+held by the browser that took it, and one nobody is holding is free for
+the taking -- friends playing, not security.
+
+This is also where a browser holding no seat at a room ends up: the table
+sends it here when the room will not have it, and here it finds out
+whether there is a seat for it at all.
 
 The waiting room the LiveView showed here moved to the game page: a room
 with no instance yet answers the game channel with a lobby payload, so the
@@ -105,8 +109,8 @@ type Out
     | ChoseTheme String
 
 
-init : Session -> String -> Maybe String -> Maybe String -> ( Model, Cmd Msg, Out )
-init session slug gameId token =
+init : Session -> String -> Maybe String -> ( Model, Cmd Msg, Out )
+init session slug gameId =
     let
         model =
             { session = session
@@ -133,15 +137,8 @@ init session slug gameId token =
             , themesOpen = False
             }
     in
-    case ( gameId, token ) of
-        -- A seat token is a credential, not a page: take it to the seat.
-        ( Just id_, Just seatToken ) ->
-            ( model
-            , Cmd.none
-            , Redirect (Route.href (Route.play slug id_ (Just seatToken)))
-            )
-
-        ( Just id_, Nothing ) ->
+    case gameId of
+        Just id_ ->
             ( model
             , Cmd.batch
                 [ Catalog.fetchGame session slug GotGame
@@ -151,7 +148,7 @@ init session slug gameId token =
             , NoOut
             )
 
-        _ ->
+        Nothing ->
             ( model
             , Cmd.batch
                 [ Catalog.fetchGame session slug GotGame

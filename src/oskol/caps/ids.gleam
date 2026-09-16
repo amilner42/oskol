@@ -2,8 +2,8 @@
 
 pub type IdsCaps {
   IdsCaps(
-    /// A candidate game code: six crypto-random digits (see
-    /// oskol/rooms/code). Nothing guarantees it is free.
+    /// A candidate game code: six crypto-random characters of the code
+    /// alphabet (see oskol/rooms/code). Nothing guarantees it is free.
     game_code: fn() -> String,
   )
 }

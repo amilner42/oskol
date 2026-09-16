@@ -12,7 +12,9 @@
  */
 const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 
-// A seat's URL: /backgammon/<id>?t=<token>
+// A seat's URL: /backgammon/<id>. Nothing in it says who you are -- a seat
+// is held by the browser's guest cookie -- so one browser context is one
+// player, and a second player needs a context of its own.
 const SEAT = /\/backgammon\/([^/?#]+)/;
 
 /**
@@ -55,17 +57,34 @@ async function joinByLink(page, inviteUrl, name = 'Bob') {
   return takeSeat(page, name);
 }
 
-/** JOIN GAME on the home page: six digits, then the same invite. */
+/** JOIN GAME on the home page: six characters, then the same invite. */
 async function joinByCode(page, code, name = 'Bob') {
   await page.goto(`${BASE}/`);
   await page.click('#join-game-board');
   await page.waitForSelector('#join-modal #join-code-input');
-  // The sixth digit submits on its own.
+  // The sixth character submits on its own.
   await page.fill('#join-code-input', code);
   return takeSeat(page, name);
 }
 
-/** A seat's own URL (it carries the seat token): the lobby or the board. */
+/**
+ * A browser holding a seat: a context whose guest cookie is `guestId`, which
+ * is what a seat is held by. Use one per player -- two pages in one context
+ * are one browser, and one browser is one seat.
+ */
+function guestId() {
+  return require('crypto').randomBytes(16).toString('base64url');
+}
+
+async function seatedContext(browser, guestId, options = {}) {
+  const context = await browser.newContext(options);
+  await context.addCookies([
+    { name: '_oskol_guest', value: guestId, url: BASE, httpOnly: true, sameSite: 'Lax' },
+  ]);
+  return context;
+}
+
+/** A seat's own URL (the room's plain URL): the lobby or the board. */
 async function openSeat(page, url) {
   await page.goto(url);
   await page.waitForSelector('#share-link, .bg-board .checker');
@@ -84,4 +103,4 @@ async function takeSeat(page, name) {
   return { gameId: page.url().match(SEAT)[1], url: page.url(), summary };
 }
 
-module.exports = { BASE, openCreateDialog, createGame, joinByLink, joinByCode, openSeat };
+module.exports = { BASE, openCreateDialog, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };

@@ -1,16 +1,18 @@
 //// What it means for a connection to attach to a seat.
 ////
-//// A seat is opened by its token and nothing else, so every attach is the
-//// right player by definition. What is left to decide is what the seat
-//// should make of the connection that was already there -- and the answer
-//// turns on whether it belongs to the same client.
+//// A seat is held by the guest who took it, and only that guest attaches
+//// to it, so every attach is the right player by definition. What is left
+//// to decide is what the seat should make of the connection that was
+//// already there -- and the answer turns on whether it belongs to the same
+//// client.
 ////
 //// A client is one browser tab, for as long as it is open. It comes back
 //// more often than anyone would guess -- moving between the client's own
 //// routes, a duplicate join, a reload, a socket the phone brought back
 //// from sleep -- and every one of those is the same person picking their
 //// game back up, not a second player. Only a genuinely different client
-//// (another tab, another device, a seat reclaimed from the invite link)
+//// (another tab, another device, the same guest on a second phone, a seat
+//// reclaimed from the invite link)
 //// takes a seat over, and only then is there anything to tell the
 //// connection that had it.
 

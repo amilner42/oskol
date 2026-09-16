@@ -23,15 +23,23 @@ Oskol used to host poker, go and chess too; they were removed in the pivot
 404 like any slug that names no game.
 
 The first player picks everything (mode, settings, clock), shares a link, and
-the game starts the moment the second player types a name. Taking a seat
-mints a **seat token**: the player's URL carries it, and it is what
-authenticates every channel join and reconnect. A display name is display
-only and grants nothing. A socket also names its **client** (a per-tab id
-the browser mints; it authenticates nothing): the room compares it with
-itself to tell one tab reconnecting -- a reload, a route change, a phone
-waking its websocket up -- from another tab taking the seat over, which is
-the only case the connection that had it is told about
-(`src/oskol/rooms/seat.gleam`).
+the game starts the moment the second player types a name. **A seat is held
+by the guest cookie that took it** (`OskolWeb.Plugs.GuestId`: opaque,
+HttpOnly, year-long), and no URL anywhere carries a secret: a player's link
+is the plain room URL. A seat whose holder is away can be claimed from the
+invite link by anyone with the room code -- friends playing, not security --
+and it is that browser's from then on. One browser holds one seat at a
+table: a guest already seated there is refused a second. The room code is
+therefore the only thing between a stranger and a live game, so a code is
+six characters of a 32-letter alphabet (about 1.07 billion), not six digits.
+A display name is display only and grants nothing. A socket also names its
+**client** (a per-tab id the browser mints; it authenticates nothing): the
+room compares it with itself to tell one tab reconnecting -- a reload, a
+route change, a phone waking its websocket up -- from another tab taking the
+seat over, which is the only case the connection that had it is told about
+(`src/oskol/rooms/seat.gleam`). Accounts are the plan, and the guest is what
+becomes one (`guests.user_id`), which is why identity has no second
+mechanism beside it.
 
 The game is built on **gamekit**, a small framework that keeps the rules,
 the room and the client apart: a game is one Gleam module that implements
@@ -185,6 +193,7 @@ lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off t
 lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 src/oskol/rooms/seat.gleam       what an attach means: the same client back, or a takeover
+src/oskol/rooms/code.gleam       the shape of a room code, and how a typed one is read
 lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
                                  plus the title, description, canonical, og
                                  and JSON-LD a crawler reads
@@ -264,19 +273,23 @@ arrive at any of them cold, and moving between them afterwards is a
   `{"ok": false, "error": {"code", "message"}}` (404 not_found,
   422 validation_failed, 500 server_error).
 - `/backgammon` create a game; `/backgammon?game=<id>` is the invite link
-- `/backgammon/<id>?t=<token>` a running game — and, until the second player
-  arrives, the waiting room: a room with no instance yet answers the game
-  channel with a lobby payload. `t` is the seat token: a secret minted when a
-  player takes a seat, and the only thing that opens it. The bare
-  `/backgammon/<id>` grants nothing and bounces to the invite link.
-- `/backgammon/<id>/replay?t=<token>&game=<n>` a room's games played again,
+- `/backgammon/<id>` a running game — and, until the second player arrives,
+  the waiting room: a room with no instance yet answers the game channel
+  with a lobby payload. The URL says which room and nothing else; what it
+  opens is the room's answer on the game channel, against the browser's
+  guest cookie. A browser holding no seat there is refused ("unauthorized",
+  never saying why) and the client sends it to the invite link, which is the
+  one page that says whether there is a seat to take. A `?t=` from a link
+  minted before seat tokens were dropped is ignored by every route and every
+  handler.
+- `/backgammon/<id>/replay?game=<n>` a room's games played again,
   a line of the record at a time, with the analysis engine's verdicts. It
   opens for anyone with the link -- a replay is what both players and any
-  spectator already saw -- and is served the SPA shell, `noindex`. `t` is an
-  orientation, not a key: it says which seat the board faces to begin with
-  (without one, the seat that played first) and the page turns the board
-  around anyway. The table offers it from the match history and at game
-  over. Board, steps and verdicts all come from `/record` and `/reviews`.
+  spectator already saw -- and is served the SPA shell, `noindex`. The board
+  faces the reader's own seat when their guest holds one here, else the seat
+  that played first, and the page turns the board around anyway. The table
+  offers it from the match history and at game over. Board, steps and
+  verdicts all come from `/record` and `/reviews`.
 - `/poker`, `/go`, `/chess` and anything under them: 302 to `/` (the games
   that were removed).
 
@@ -296,29 +309,32 @@ POST /papi/games/:slug                 {format, name, clock, selections}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
-GET  /papi/games/:slug/rooms/:id/reviews[?t=<seat token>]  (open; a seat's
-                                       visit is what queues an analysis that is owed)
+GET  /papi/games/:slug/rooms/:id/reviews  (open; a seat's visit -- the guest
+                                       cookie against the seats -- is what queues
+                                       an analysis that is owed)
                                        {ok, players, games: [{game_number,
                                            status, turns, review}]}
                                          review: {levels, timing_ms, players, turns}; a
                                          turn names its record lines (entry,
                                          double_entry, answer_entry) and each
                                          candidate move its position and landings
-POST /papi/games/:slug/rooms/:id/reviews/retry  {t, game_number} -> as GET, a failed
+POST /papi/games/:slug/rooms/:id/reviews/retry  {game_number} -> as GET, a failed
                                          game queued again (a seat only)
-GET  /papi/games/:slug/rooms/:id/record[?t=<seat token>]  (open)
+GET  /papi/games/:slug/rooms/:id/record  (open)
                                        {ok, slug, id, you, seated, record}  (the game's
                                        `record`; `you` is the seat the board faces --
-                                       the token's, else the first -- and `seated` says
-                                       whether that seat is the reader's own)
-GET  /papi/codes/:code                 {ok, slug}
+                                       the reader's own, else the first -- and `seated`
+                                       says whether that seat is theirs)
+GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
+                                       normalised: the one that answered comes back)
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
 ```
 
-`path` is the URL that opens the seat that was just taken (`/:slug/:id?t=`,
-carrying its token): the client goes there, and the seat waits in the lobby
-until its opponent arrives. `state` is `open` (a free seat), `away` (a seat
+`path` is the URL of the seat that was just taken (`/:slug/:id`, carrying
+nothing): the client goes there, and the seat waits in the lobby until its
+opponent arrives. The seat is held by the guest cookie the write came with,
+so the same URL is what anyone would be given for that room. `state` is `open` (a free seat), `away` (a seat
 whose player is gone), `full` (nothing to offer) or `missing` (the room is
 over) — the same four cases the server used to decide for itself.
 
@@ -330,9 +346,9 @@ Every decision behind these lives in `src/oskol/handlers/landing.gleam`,
 except the record's, in `src/oskol/handlers/record.gleam`: it opens on the
 room (the rooms cap `game`), and a lobby, a slug that is not the room's game
 and a room that is gone all answer the same 404, as the game channel refuses
-without saying which. A seat token (the cap `seated_game`) is still what
-picks the seat, what queues an analysis the engine is owed, and what a retry
-takes.
+without saying which. The caller's guest (the cap `seated_game`, which
+answers which seat a guest holds) is what picks the seat the board faces,
+what queues an analysis the engine is owed, and what a retry takes.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist
@@ -420,12 +436,14 @@ cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm  
 mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
 mix oskol.seed        # local backgammon rooms at codes 000001.. parked in positions worth
-                      # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated,
-                      # P1 to act; prints each seat's link (lib/oskol/dev/seeds.ex);
+                      # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated
+                      # but held by nobody, P1 to act; prints each room's invite link, and
+                      # the browser that takes a seat from it holds it (lib/oskol/dev/seeds.ex);
+                      # two players means two browsers (a private window will do);
                       # 000010 is a single game played to the end, with a review
                       # (start the fly proxy first, or the review fails and waits);
                       # 000011 a match to 3 played to the end: its replay is
-                      # /backgammon/000011/replay?t=<P1's token>
+                      # /backgammon/000011/replay
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
@@ -551,8 +569,11 @@ for the first steps of a playout) are derived, gitignored, and embedded in
 play them; review scripts take screenshots for eyeballing. The ways into a
 game live once, in `playwright/lib/flows.js`: `createGame` (`/` -> CREATE
 GAME -> the dialog, by element id), `joinByLink`, `joinByCode` and
-`openSeat`. A smoke uses those rather than clicking through the home page
-itself, so a change to the home page or the invite touches that one file.
+`openSeat`, and `seatedContext` for a browser that already holds a seat. A
+smoke uses those rather than clicking through the home page itself, so a
+change to the home page or the invite touches that one file. Two players
+are two browser contexts: a seat is held by the browser's guest cookie, so
+two pages of one context are one player.
 
 When you add a rule, add a controlled-position test before the playouts:
 the playouts prove nothing crashes, the position tests prove the rule is
@@ -569,18 +590,24 @@ it golden replays and Elm contract coverage for free.
 
 Games survive deploys and machine sleep. Every room writes behind (never
 blocking play) to Postgres via `Oskol.Game.Persister`: a `games` row (code,
-setup, seed, seats with their tokens, status, winners) and one `game_actions`
+setup, seed, seats with the guest holding each, status, winners) and one `game_actions`
 row per state-mutating step — player actions and clock expiries alike, each
 with its millisecond offset from the instance's start. A lookup that finds no
 live process replays seed + log through the same gamekit calls at those
 offsets (timeline shifted to "now", so downtime charges nobody) and the room
-carries on; seat tokens round-trip, so every player's link still works. The
+carries on; the guest holding each seat round-trips, so every player's
+browser still holds its seat. The
 hour-idle shutdown is therefore graceful. Dev/test use local databases
 (`oskol_dev`/`oskol_test`, created by `mix ecto.setup` / the `mix test`
 alias); prod reads `DATABASE_URL` (Fly Managed Postgres via pgbouncer, so
 postgrex runs with `prepare: :unnamed`) and migrates on boot. A room's raw
 `control:` (tests only) does not persist; real rooms use clock preset ids,
 which do.
+
+Seats once carried a secret token in `games.players`; they carry the guest
+id instead, and the data migration `DropSeatTokens` strips the dead key. A
+row that still has one (a room live in another node at the time) rebuilds
+fine: nothing reads it.
 
 A rules change that makes old logs stop replaying needs those logs patched,
 because a room is rebuilt from its log under today's rules. The one so far:
@@ -599,9 +626,15 @@ the last display name they played under (last writer wins); that name
 prefills the create and join forms, and each seat in `games.players` records
 the guest id. The same row carries `prefs` (jsonb): display preferences that
 follow the guest between browsers, written through `/papi/me/prefs` and
-whitelisted in `src/oskol/guests/prefs.gleam`. The id authenticates nothing —
-seats are still opened only by seat tokens. `users` is a deliberately skeletal placeholder (it ships empty)
-for the future account-claim path via `guests.user_id`.
+whitelisted in `src/oskol/guests/prefs.gleam`. The id is also the credential:
+a seat is held by the guest that took it, the game channel attaches on it
+(the socket reads it off the session that the websocket's own upgrade request
+carried, which Phoenix hands over only against the page's `_csrf_token`), and
+losing the cookie loses the seats it was holding — they can be claimed back
+from the invite link, like anyone else's. `users` is a deliberately skeletal
+placeholder (it ships empty) for the account-claim path via `guests.user_id`,
+which is the point of holding a seat by the guest rather than by a token:
+when a guest becomes a user the seats come with them.
 
 ## Future
 - Twists as settings: a reroll in backgammon, and more after it.

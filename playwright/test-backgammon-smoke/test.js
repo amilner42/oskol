@@ -24,9 +24,12 @@ async function main() {
     executablePath: process.env.PW_CHROMIUM || undefined,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   });
+  // A seat is held by the browser's guest cookie, so two players are two
+  // browser contexts: two pages in one context would be one player.
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const context2 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   // External fonts are blocked in sandboxes and would stall the load event.
-  await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  for (const c of [context, context2]) await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   const errors = [];
   const watch = (page, who) => {
     page.on('pageerror', (e) => errors.push(`${who} pageerror: ${e.message}`));
@@ -46,7 +49,7 @@ async function main() {
     await p1.screenshot({ path: `${SHOTS}/01-lobby.png` });
 
     // The opponent opens the link, types a name, and the game starts.
-    const p2 = await context.newPage();
+    const p2 = await context2.newPage();
     watch(p2, 'p2');
     const joined = await joinByLink(p2, game.inviteUrl, 'Bob');
     if (!/Match to 3/.test(joined.summary) || !/3 min/.test(joined.summary)) {

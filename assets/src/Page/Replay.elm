@@ -18,9 +18,8 @@ module Page.Replay exposing
 record at a time, with the analysis engine's verdicts on each.
 
 The page reads two things and decides nothing about backgammon: the room's
-whole record (`/record`, on the seat's token: every game, every line, the
-position after every turn) and the engine's reviews (`/reviews`, on the
-same token: per turn
+whole record (`/record`: every game, every line, the position after every
+turn) and the engine's reviews (`/reviews`: per turn
 the grade of the move played, the best move and the position it leaves,
 the cube verdicts, the luck; per player the PR). Both are drawn as they
 come. The server names which record line each verdict is about.
@@ -55,7 +54,6 @@ import Svg
 import Svg.Attributes as SvgAttr
 import Task
 import Time
-import Url
 
 
 
@@ -85,7 +83,6 @@ type alias Model =
     { session : Session
     , slug : String
     , gameId : String
-    , token : Maybe String
     , wanted : Maybe Int -- the game the link asked for
     , record : Loadable Record
     , reviews : Maybe Reviews
@@ -119,7 +116,7 @@ maxPolls =
 
 init :
     Session
-    -> { slug : String, gameId : String, token : Maybe String, game : Maybe Int }
+    -> { slug : String, gameId : String, game : Maybe Int }
     -> ( Model, Cmd Msg )
 init session config =
     let
@@ -127,7 +124,6 @@ init session config =
             { session = session
             , slug = config.slug
             , gameId = config.gameId
-            , token = config.token
             , wanted = config.game
             , record = Loading
             , reviews = Nothing
@@ -144,23 +140,10 @@ init session config =
     in
     ( model
     , Cmd.batch
-        [ Api.get session (base model ++ "/record" ++ seatQuery model) Replay.recordDecoder GotRecord
+        [ Api.get session (base model ++ "/record") Replay.recordDecoder GotRecord
         , fetchReviews model
         ]
     )
-
-
-{-| A replay asks no one who they are: the seat token, when the link
-carries one, only says which way the board faces to begin with.
--}
-seatQuery : Model -> String
-seatQuery model =
-    case model.token of
-        Just token ->
-            "?t=" ++ Url.percentEncode token
-
-        Nothing ->
-            ""
 
 
 base : Model -> String
@@ -172,7 +155,7 @@ base model =
 -}
 fetchReviews : Model -> Cmd Msg
 fetchReviews model =
-    Api.get model.session (base model ++ "/reviews" ++ seatQuery model) Replay.reviewsDecoder GotReviews
+    Api.get model.session (base model ++ "/reviews") Replay.reviewsDecoder GotReviews
 
 
 title : Model -> String
@@ -318,18 +301,16 @@ update msg model =
                     ( model, Cmd.none )
 
         Retry number ->
-            case model.token of
-                Just token ->
-                    ( { model | retrying = number :: model.retrying }
-                    , Api.post model.session
-                        (base model ++ "/reviews/retry")
-                        (E.object [ ( "t", E.string token ), ( "game_number", E.int number ) ])
-                        Replay.reviewsDecoder
-                        GotReviews
-                    )
-
-                Nothing ->
-                    ( model, Cmd.none )
+            -- Only a player may spend engine time, and the server decides
+            -- that from the guest cookie this request carries; the button
+            -- is only offered to one (`seated`).
+            ( { model | retrying = number :: model.retrying }
+            , Api.post model.session
+                (base model ++ "/reviews/retry")
+                (E.object [ ( "game_number", E.int number ) ])
+                Replay.reviewsDecoder
+                GotReviews
+            )
 
         Follow step ->
             if step == model.step then
@@ -433,9 +414,10 @@ currentReview model =
 
 
 {-| Whether this reader holds one of the room's seats, which the server
-decides from the link's token. Only a player's own visit puts the analysis
-engine to work, so only a player is told an analysis is on its way, and
-only a player may ask for a failed one again.
+decides from the guest cookie the request carried -- never from the link,
+which anyone may have been sent. Only a player's own visit puts the
+analysis engine to work, so only a player is told an analysis is on its
+way, and only a player may ask for a failed one again.
 -}
 seated : Model -> Bool
 seated model =
@@ -564,7 +546,7 @@ viewHead model record =
     in
     div [ class "rp-head" ]
         [ Html.a
-            [ href (Route.href (Route.play model.slug model.gameId model.token))
+            [ href (Route.href (Route.play model.slug model.gameId))
             , class "rp-back pixel text-[8px]"
             , id "rp-back"
             , Html.Attributes.title "Back to the table"
@@ -655,9 +637,9 @@ viewReplay model record game =
                 { players = record.players
                 , viewer = facing model record
                 , you =
-                    -- only a link whose token really opens a seat here is
-                    -- anybody's own: a shared replay belongs to neither
-                    -- player, and the server says which it is
+                    -- only a reader whose own guest holds a seat here is
+                    -- looking at their own game: a shared replay belongs to
+                    -- neither player, and the server says which it is
                     if record.seated then
                         Just record.you
 

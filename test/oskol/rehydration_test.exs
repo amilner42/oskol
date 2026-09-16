@@ -45,8 +45,8 @@ defmodule Oskol.RehydrationTest do
     end
   end
 
-  test "a game in play rehydrates mid-game: same view, same tokens, play continues to a finish" do
-    %{game_id: game_id, p1: p1, p2: p2, t1: t1, t2: t2} = started(42)
+  test "a game in play rehydrates mid-game: same view, same seats, play continues to a finish" do
+    %{game_id: game_id, p1: p1, p2: p2, g1: g1, g2: g2} = started(42)
     assert {:cut_off, 20} = Oskol.Bots.play(game_id, 7, 20)
 
     before = Game.get_server_state(game_id)
@@ -55,14 +55,14 @@ defmodule Oskol.RehydrationTest do
     Persister.flush()
     kill_room(game_id)
 
-    # The lookup any entry point uses (invite link, token URL, JOIN GAME
+    # The lookup any entry point uses (invite link, the room URL, JOIN GAME
     # code, channel join) rehydrates the room.
     assert {:ok, _pid} = Game.lookup_game(game_id)
 
     state = Game.get_server_state(game_id)
     assert state.action_count == 20
-    assert GameServerState.token_for(state, p1) == t1
-    assert GameServerState.token_for(state, p2) == t2
+    assert GameServerState.guest_for(state, p1) == g1
+    assert GameServerState.guest_for(state, p2) == g2
     assert GameServerState.seats(state) == GameServerState.seats(before)
 
     # Replay is exact: the rehydrated instance projects the same scene and
@@ -70,9 +70,9 @@ defmodule Oskol.RehydrationTest do
     assert GameKit.player_update(state.instance, p1) |> Map.take(["scene", "legal"]) ==
              view_before
 
-    # Both players' token URLs still open their seats.
-    assert {:ok, ^p1, _} = Game.attach(game_id, t1, self())
-    assert {:ok, ^p2, _} = Game.attach(game_id, t2, self())
+    # Both players' browsers still hold their seats.
+    assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
+    assert {:ok, ^p2, _} = Game.attach(game_id, g2, self())
 
     # And the game plays on to a finish, persisted as such.
     assert {:finished, more} = Oskol.Bots.play(game_id, 8, 5000)
@@ -83,7 +83,7 @@ defmodule Oskol.RehydrationTest do
   end
 
   test "a waiting room rehydrates: the seat holds, and the game starts when the table fills" do
-    %{game_id: game_id, p1: p1, t1: t1} = lobby("single", seed: 42)
+    %{game_id: game_id, p1: p1, g1: g1} = lobby("single", seed: 42)
 
     Persister.flush()
     kill_room(game_id)
@@ -91,16 +91,16 @@ defmodule Oskol.RehydrationTest do
     assert {:ok, _pid} = Game.lookup_game(game_id)
     state = Game.get_server_state(game_id)
     refute GameServerState.started?(state)
-    assert GameServerState.token_for(state, p1) == t1
+    assert GameServerState.guest_for(state, p1) == g1
     assert state.setup.format == "single"
 
     {:ok, _p2, joined} = Game.join_game(game_id, "Bob", nil)
     assert GameServerState.started?(joined)
-    assert {:ok, ^p1, _} = Game.attach(game_id, t1, self())
+    assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
   end
 
   test "a finished game rehydrates read-only: final position, no further actions" do
-    %{game_id: game_id, p1: p1, t1: t1} = started(42)
+    %{game_id: game_id, p1: p1, g1: g1} = started(42)
     assert {:finished, _} = Oskol.Bots.play(game_id, 7, 5000)
 
     Persister.flush()
@@ -110,10 +110,34 @@ defmodule Oskol.RehydrationTest do
     state = Game.get_server_state(game_id)
     assert GameKit.finished?(state.instance)
 
-    # The token still shows the table (and would offer a rematch)...
-    assert {:ok, ^p1, _} = Game.attach(game_id, t1, self())
+    # The seat still shows the table (and would offer a rematch)...
+    assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
     # ...but the engine refuses further play.
     assert {:error, _} = Game.player_action(game_id, p1, simple("roll"))
+  end
+
+  test "a room written before seat tokens were dropped still rebuilds, held by its guests" do
+    # Live production rooms have rows whose seats carry a token. The key is
+    # dead, and it must cost nothing: the room comes back, the guests that
+    # were recorded on the seats still hold them, and the token opens
+    # nothing (there is nowhere left to offer it).
+    %{game_id: game_id, p1: p1, g1: g1, p2: p2, g2: g2} = started(42)
+    assert {:cut_off, 6} = Oskol.Bots.play(game_id, 7, 6)
+    Persister.flush()
+    kill_room(game_id)
+
+    row = Repo.get(Persistence.Game, game_id)
+
+    Repo.update!(
+      Ecto.Changeset.change(row,
+        players: Enum.map(row.players, &Map.put(&1, "token", "tok-" <> &1["id"]))
+      )
+    )
+
+    assert {:ok, _pid} = Game.lookup_game(game_id)
+    assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
+    assert {:ok, ^p2, _} = Game.attach(game_id, g2, self())
+    assert {:error, :no_seat} = Game.attach(game_id, "tok-" <> p1, self())
   end
 
   test "a code with no live room and no row stays not found" do
@@ -121,7 +145,7 @@ defmodule Oskol.RehydrationTest do
   end
 
   test "deploy simulation: the whole room supervisor restarts and a half-played game carries on" do
-    %{game_id: game_id, p1: p1, t1: t1} = started(42)
+    %{game_id: game_id, p1: p1, g1: g1} = started(42)
     assert {:cut_off, 15} = Oskol.Bots.play(game_id, 9, 15)
     Persister.flush()
 
@@ -133,7 +157,7 @@ defmodule Oskol.RehydrationTest do
 
     assert {:ok, _pid} = Game.lookup_game(game_id)
     assert Game.get_server_state(game_id).action_count == 15
-    assert {:ok, ^p1, _} = Game.attach(game_id, t1, self())
+    assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
     assert {:finished, _} = Oskol.Bots.play(game_id, 10, 5000)
   end
 

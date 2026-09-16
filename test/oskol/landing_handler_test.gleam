@@ -1,6 +1,7 @@
 //// The JSON the Elm client reads. The shapes are asserted here, on the
 //// real registry (games are pure Gleam) and stub capabilities.
 
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import oskol/caps/ids as ids_caps
@@ -121,9 +122,7 @@ fn creating(ctx: Ctx, expected: room.Setup) -> Ctx {
             Error(errors.Other("configured with " <> string.inspect(setup)))
         }
       },
-      join: fn(_, _, _) {
-        Ok(Seat(player_id: "p1", token: "tok", started: False))
-      },
+      join: fn(_, _, _) { Ok(Seat(player_id: "p1", started: False)) },
     ),
   )
 }
@@ -143,7 +142,7 @@ pub fn creating_a_game_answers_with_its_code_and_the_seat_url_test() {
       [],
     )
     == Ok(
-      "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456?t=tok\",\"player_id\":\"p1\"}",
+      "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456\",\"player_id\":\"p1\"}",
     )
 }
 
@@ -319,7 +318,7 @@ fn seating(ctx: Ctx, seat: Result(room.Seat, errors.RoomError)) -> Ctx {
       ..ctx.rooms,
       subscribe: fn(_) { Nil },
       join: fn(_, _, _) { seat },
-      claim: fn(_, _) { seat },
+      claim: fn(_, _, _) { seat },
     ),
   )
 }
@@ -334,7 +333,7 @@ pub fn joining_answers_with_the_url_that_opens_the_seat_test() {
   let ctx =
     reading()
     |> fakes.with_guests(None)
-    |> seating(Ok(Seat(player_id: "p2", token: "tok2", started: True)))
+    |> seating(Ok(Seat(player_id: "p2", started: True)))
 
   assert landing.join_json(
       ctx,
@@ -344,7 +343,7 @@ pub fn joining_answers_with_the_url_that_opens_the_seat_test() {
       "Bob",
     )
     == Ok(
-      "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456?t=tok2\",\"player_id\":\"p2\"}",
+      "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456\",\"player_id\":\"p2\"}",
     )
 }
 
@@ -378,21 +377,69 @@ pub fn a_name_clash_is_refused_test() {
   assert error.message(err) == "That name is already taken"
 }
 
-pub fn reclaiming_a_seat_hands_out_its_new_token_test() {
+pub fn reclaiming_a_seat_hands_out_the_rooms_plain_url_test() {
+  // Nothing secret comes back: the seat is now held by the guest that
+  // claimed it, and the URL is the one anybody would be given.
   let ctx =
     reading()
-    |> seating(Ok(Seat(player_id: "p2", token: "fresh", started: True)))
+    |> seating(Ok(Seat(player_id: "p2", started: True)))
 
-  assert landing.claim_json(ctx, "backgammon", "123456", "p2")
-    == Ok(
-      "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456?t=fresh\",\"player_id\":\"p2\"}",
+  assert landing.claim_json(
+      ctx,
+      fakes.guest("g2"),
+      "backgammon",
+      "123456",
+      "p2",
     )
+    == Ok(
+      "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456\",\"player_id\":\"p2\"}",
+    )
+}
+
+pub fn a_claim_hands_the_seat_to_the_guest_that_asked_test() {
+  // Which guest claimed is what the room is told: that is what holds the
+  // seat afterwards.
+  let ctx =
+    reading()
+    |> fakes.with_room(Some(fakes.room()), Some(a_table()))
+
+  let ctx =
+    Ctx(
+      ..ctx,
+      rooms: rooms_caps.RoomsCaps(
+        ..ctx.rooms,
+        subscribe: fn(_) { Nil },
+        claim: fn(_, player_id, guest_id) {
+          case player_id == "p2" && guest_id == Some("g2") {
+            True -> Ok(Seat(player_id: "p2", started: True))
+            False -> Error(errors.PlayerNotFound)
+          }
+        },
+      ),
+    )
+
+  assert landing.claim_json(
+      ctx,
+      fakes.guest("g2"),
+      "backgammon",
+      "123456",
+      "p2",
+    )
+    == Ok(
+      "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456\",\"player_id\":\"p2\"}",
+    )
+
+  let assert Error(err) =
+    landing.claim_json(ctx, fakes.no_guest(), "backgammon", "123456", "p2")
+
+  assert error.message(err) == "That player is not at this table"
 }
 
 pub fn reclaiming_a_seat_whose_player_came_back_is_refused_test() {
   let ctx = reading() |> seating(Error(errors.SeatConnected))
 
-  let assert Error(err) = landing.claim_json(ctx, "backgammon", "123456", "p2")
+  let assert Error(err) =
+    landing.claim_json(ctx, fakes.guest("g2"), "backgammon", "123456", "p2")
 
   assert error.message(err) == "That player is back at the table"
 }
@@ -406,7 +453,51 @@ pub fn a_code_resolves_to_the_game_it_belongs_to_test() {
     |> fakes.with_slug(Some("backgammon"))
 
   assert landing.code_json(ctx, "123456")
-    == Ok("{\"ok\":true,\"slug\":\"backgammon\"}")
+    == Ok("{\"ok\":true,\"slug\":\"backgammon\",\"code\":\"123456\"}")
+}
+
+pub fn a_code_typed_with_lookalikes_still_finds_its_room_test() {
+  // Read down the phone and typed back in lower case, with an O for a zero
+  // and an l for a one. Nothing answers to what was typed, so the
+  // normalised form is tried, and that is the name that comes back.
+  let ctx =
+    reading()
+    |> rooms_at(["AB10XZ"])
+
+  assert landing.code_json(ctx, "ablOxz")
+    == Ok("{\"ok\":true,\"slug\":\"backgammon\",\"code\":\"AB10XZ\"}")
+}
+
+pub fn a_code_is_looked_up_as_typed_first_test() {
+  // A room's own name is the truth about it: normalising is only the
+  // fallback, so an id that is not code-shaped is never mangled.
+  let ctx = reading() |> rooms_at(["t-9f3c1a"])
+
+  assert landing.code_json(ctx, "t-9f3c1a")
+    == Ok("{\"ok\":true,\"slug\":\"backgammon\",\"code\":\"t-9f3c1a\"}")
+}
+
+/// Caps where exactly these codes name a live backgammon room.
+fn rooms_at(ctx: Ctx, codes: List(String)) -> Ctx {
+  Ctx(
+    ..ctx,
+    rooms: rooms_caps.RoomsCaps(
+      ..ctx.rooms,
+      find: fn(id) {
+        case list.contains(codes, id) {
+          True -> Some(fakes.room())
+          False -> None
+        }
+      },
+      resume: fn(_) { None },
+      slug_of: fn(id) {
+        case list.contains(codes, id) {
+          True -> Some("backgammon")
+          False -> None
+        }
+      },
+    ),
+  )
 }
 
 pub fn a_code_nothing_answers_to_is_not_found_test() {

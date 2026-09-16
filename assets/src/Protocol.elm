@@ -183,7 +183,7 @@ type alias GamePayload =
 
 
 {-| A room that has no game in it yet: who is seated, and what they are
-waiting to play. It is the same channel and the same seat token as a game
+waiting to play. It is the same channel and the same seat as a game
 payload — only the instance is missing.
 -}
 type alias Lobby =

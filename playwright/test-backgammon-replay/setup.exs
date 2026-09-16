@@ -8,10 +8,9 @@
 #
 #   mix run -e 'Code.eval_file("playwright/test-backgammon-replay/setup.exs")'
 #
-# Prints one line of JSON: the game id, the seats and their tokens.
+# Prints one line of JSON: the game id, the seats and the guest holding each.
 
 alias Oskol.Game
-alias Oskol.Game.GameServerState
 alias Oskol.GameKit
 
 seats = [{"p1", "Alice"}, {"p2", "Bob"}]
@@ -70,8 +69,12 @@ end
 game_id = "replay-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
 {:ok, _} = Game.start_game(game_id, "backgammon")
 {:ok, _} = Game.configure(game_id, %{format: "match3", clock: "none", seed: seed})
-{:ok, p1, _} = Game.join_game(game_id, "Alice", nil)
-{:ok, p2, _} = Game.join_game(game_id, "Bob", nil)
+# A seat is held by the guest that took it, so the room is seeded with a
+# guest per seat and the browser is handed that cookie.
+g1 = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+g2 = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+{:ok, p1, _} = Game.join_game(game_id, "Alice", nil, g1)
+{:ok, p2, _} = Game.join_game(game_id, "Bob", nil, g2)
 seat_of = %{"p1" => p1, "p2" => p2}
 
 Enum.each(actions, fn {player_id, action} ->
@@ -91,8 +94,8 @@ IO.puts(
     seed: seed,
     steps: length(actions),
     players: [
-      %{id: p1, name: "Alice", token: GameServerState.token_for(state, p1)},
-      %{id: p2, name: "Bob", token: GameServerState.token_for(state, p2)}
+      %{id: p1, name: "Alice", guest: g1},
+      %{id: p2, name: "Bob", guest: g2}
     ]
   })
 )

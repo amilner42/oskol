@@ -37,24 +37,25 @@ defmodule Oskol.PersistenceTest do
   end
 
   test "a lobby writes a waiting row with the setup and the seated player" do
-    %{game_id: game_id, p1: p1, t1: t1} = lobby("match3", clock: "bg3")
+    %{game_id: game_id, p1: p1, g1: g1} = lobby("match3", clock: "bg3")
 
     row = game_row(game_id)
     assert row.slug == "backgammon"
     assert row.status == "waiting"
     assert row.config["format"] == "match3"
     assert row.config["clock"] == "bg3"
-    assert [%{"id" => ^p1, "name" => "Alice", "token" => ^t1}] = row.players
+    assert [%{"id" => ^p1, "name" => "Alice", "guest_id" => ^g1}] = row.players
+    refute Map.has_key?(hd(row.players), "token")
   end
 
   test "a full game writes playing on start, every action in order, and finished with winners" do
-    %{game_id: game_id, p1: p1, t1: t1} = fixture = started(42)
+    %{game_id: game_id, p1: p1, g1: g1} = fixture = started(42)
 
     row = game_row(game_id)
     assert row.status == "playing"
     assert row.seed == 42
-    assert [%{"id" => ^p1, "token" => ^t1}, %{"id" => p2, "token" => t2}] = row.players
-    assert p2 == fixture.p2 and t2 == fixture.t2
+    assert [%{"id" => ^p1, "guest_id" => ^g1}, %{"id" => p2, "guest_id" => g2}] = row.players
+    assert p2 == fixture.p2 and g2 == fixture.g2
 
     assert {:finished, steps} = Oskol.Bots.play(game_id, 7, 5000)
 
@@ -92,8 +93,8 @@ defmodule Oskol.PersistenceTest do
     assert row.winners == [waiting]
   end
 
-  test "a rematch writes a second game row carrying the seats and tokens over" do
-    %{game_id: game_id, p1: p1, p2: p2, t1: t1, t2: t2} = started(42)
+  test "a rematch writes a second game row carrying the seats and their guests over" do
+    %{game_id: game_id, p1: p1, p2: p2, g1: g1, g2: g2} = started(42)
     assert {:finished, _} = Oskol.Bots.play(game_id, 7, 5000)
 
     assert {:ok, nil} = Game.request_rematch(game_id, p1)
@@ -103,7 +104,7 @@ defmodule Oskol.PersistenceTest do
     assert row.status == "playing"
     assert row.slug == "backgammon"
     assert Enum.map(row.players, & &1["id"]) == [p1, p2]
-    assert Enum.map(row.players, & &1["token"]) == [t1, t2]
+    assert Enum.map(row.players, & &1["guest_id"]) == [g1, g2]
     # A fresh game, not a continuation of the old log.
     assert game_row(game_id).status == "finished"
   end

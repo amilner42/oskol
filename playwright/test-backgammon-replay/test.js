@@ -131,7 +131,8 @@ async function stubAnalysis(context, record, counts) {
       return { game_number: g.number, status: 'done', turns, review: reviewOf(record, g) };
     }),
   });
-  // `/reviews` carries the seat token as a query, `/reviews/retry` does not.
+  // Neither `/reviews` nor `/reviews/retry` carries anything in the URL: who
+  // is asking is the guest cookie the request goes out with.
   await context.route(/\/papi\/games\/backgammon\/rooms\/[^/]+\/reviews(\/retry)?(\?|$)/, async (route) => {
     const retry = route.request().url().includes('/reviews/retry');
     if (retry) {
@@ -212,7 +213,16 @@ async function main() {
   const room = arrangeRoom();
   const alice = room.players[0];
   fs.mkdirSync(SHOTS, { recursive: true });
-  const url = (extra = '') => `${BASE}/backgammon/${room.game_id}/replay?t=${encodeURIComponent(alice.token)}${extra}`;
+  // A replay link carries no credential: it is the room's plain URL. Alice's
+  // own browser is told the record is hers because of her guest cookie, set
+  // on the contexts below.
+  const url = (extra = '') => `${BASE}/backgammon/${room.game_id}/replay${extra.replace(/^&/, '?')}`;
+  const asAlice = async (context) => {
+    await context.addCookies([
+      { name: '_oskol_guest', value: alice.guest, url: BASE, httpOnly: true, sameSite: 'Lax' },
+    ]);
+    return context;
+  };
 
   const browser = await playwright.chromium.launch({
     headless: true,
@@ -229,17 +239,20 @@ async function main() {
 
   try {
     // The record as the page reads it, for the stub to build on.
-    const api = await playwright.request.newContext();
-    const res = await api.get(`${BASE}/papi/games/backgammon/rooms/${room.game_id}/record?t=${encodeURIComponent(alice.token)}`);
+    const api = await playwright.request.newContext({
+      extraHTTPHeaders: { cookie: `_oskol_guest=${alice.guest}` },
+    });
+    const res = await api.get(`${BASE}/papi/games/backgammon/rooms/${room.game_id}/record`);
     const recordBody = await res.json();
-    must(recordBody.ok && recordBody.you === alice.id, 'the record names the seat the token opens');
+    must(recordBody.ok && recordBody.you === alice.id && recordBody.seated,
+      "the record names the reader's own seat, from their guest cookie");
     const record = recordBody.record;
     must(record.games.length > 1 && record.start && record.cube === true, `the record has ${record.games.length} games, a start position and a cube`);
     const last = record.games[record.games.length - 1];
     log(`room ${room.game_id}: ${record.games.length} games, the last ${last.entries.length} lines (analysis ${REAL ? 'REAL' : 'stubbed'})`);
 
     // ---------- 1. desktop ----------
-    const desktop = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const desktop = await asAlice(await browser.newContext({ viewport: { width: 1440, height: 900 } }));
     await desktop.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     const counts = { get: 0, retry: 0 };
     if (!REAL) await stubAnalysis(desktop, record, counts);
@@ -324,7 +337,7 @@ async function main() {
       { name: 'phone-small', width: 320, height: 568 },
       { name: 'landscape', width: 844, height: 390 },
     ]) {
-      const ctx = await browser.newContext({ viewport: { width: phone.width, height: phone.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+      const ctx = await asAlice(await browser.newContext({ viewport: { width: phone.width, height: phone.height }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }));
       await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
       if (!REAL) await stubAnalysis(ctx, record, { get: 5, retry: 0 });
       const p = await ctx.newPage();
@@ -359,16 +372,16 @@ async function main() {
     }
 
     // ---------- 5. the table's door ----------
-    const table = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    const table = await asAlice(await browser.newContext({ viewport: { width: 1280, height: 860 } }));
     await table.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     if (!REAL) await stubAnalysis(table, record, { get: 5, retry: 0 });
     const t = await table.newPage();
     watch(t, 'table');
-    await t.goto(`${BASE}/backgammon/${room.game_id}?t=${encodeURIComponent(alice.token)}`);
+    await t.goto(`${BASE}/backgammon/${room.game_id}`);
     await t.waitForSelector('#bg-replay', { timeout: 20000 });
     await t.click('#bg-replay');
     await t.waitForSelector('.bg-still .bg-board', { timeout: 20000 });
-    must(/\/replay\?t=.*&game=\d+/.test(t.url()), 'REPLAY at game over opens this game\'s replay');
+    must(/\/replay\?game=\d+$/.test(t.url()), 'REPLAY at game over opens this game\'s replay, with no token in the link');
     await table.close();
 
     must(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);

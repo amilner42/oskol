@@ -11,8 +11,8 @@ Three routes, and they are the server's three routes:
     /:slug/:id/replay   Page.Replay — a game played again, with its analysis
 
 The JOIN GAME prompt lives here rather than in a page because it is chrome:
-six digits in, and out comes that room's ordinary invite link, which is the
-same flow a shared link takes. Nothing about the room is revealed beyond
+six characters in, and out comes that room's ordinary invite link, which is
+the same flow a shared link takes. Nothing about the room is revealed beyond
 "a live game answers to this code".
 
 -}
@@ -77,7 +77,7 @@ type Msg
     | ClosedJoin
     | JoinCodeInput String
     | JoinSubmitted
-    | GotJoinSlug (Result Api.Error String)
+    | GotJoinCode (Result Api.Error Catalog.CodeMatch)
     | NoOp
 
 
@@ -140,27 +140,25 @@ routeTo url oldModel =
 
         -- The home page is the backgammon page: Oskol is a backgammon site.
         Just Route.Library ->
-            Page.GameLanding.init model.session "backgammon" Nothing Nothing
+            Page.GameLanding.init model.session "backgammon" Nothing
                 |> landing model
 
-        Just (Route.GameLanding slug gameId token) ->
-            Page.GameLanding.init model.session slug gameId token
+        Just (Route.GameLanding slug gameId) ->
+            Page.GameLanding.init model.session slug gameId
                 |> landing model
 
-        Just (Route.Play slug gameId token) ->
+        Just (Route.Play slug gameId) ->
             Page.Play.init model.session
                 { origin = model.origin
                 , slug = slug
                 , gameId = gameId
-                , seatToken = token
                 }
                 |> wrap model Play PlayMsg
 
-        Just (Route.Replay slug gameId token game) ->
+        Just (Route.Replay slug gameId game) ->
             Page.Replay.init model.session
                 { slug = slug
                 , gameId = gameId
-                , token = token
                 , game = game
                 }
                 |> wrap model Replay ReplayMsg
@@ -269,7 +267,7 @@ update msg model =
                 code =
                     cleanCode raw
             in
-            -- Auto-submit: the moment a sixth digit lands, try the code.
+            -- Auto-submit: the moment a sixth character lands, try the code.
             if String.length code == 6 then
                 tryJoin { model | joinCode = code, joinError = Nothing }
 
@@ -281,28 +279,59 @@ update msg model =
                 tryJoin model
 
             else
-                ( { model | joinError = Just "Enter the 6-digit game code" }, Cmd.none )
+                ( { model | joinError = Just "Enter the 6-character game code" }, Cmd.none )
 
-        ( GotJoinSlug (Ok slug), _ ) ->
+        -- The server says which code it read: what was typed may have had an
+        -- O for a zero, and the room's name is the one it answers to.
+        ( GotJoinCode (Ok match), _ ) ->
             ( { model | joinOpen = False }
-            , Nav.pushUrl model.key (Route.href (Route.invite slug model.joinCode))
+            , Nav.pushUrl model.key (Route.href (Route.invite match.slug match.code))
             )
 
-        ( GotJoinSlug (Err _), _ ) ->
+        ( GotJoinCode (Err _), _ ) ->
             ( { model | joinError = Just "No game with that code" }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
 
 
+{-| What the code field keeps of what was typed: upper case, the four
+characters the alphabet leaves out folded onto the ones they are mistaken
+for (I and L are ones, O is a zero, U is a V), anything else that is not a
+letter or a digit dropped, six at most. The server normalises again, so
+this is only so the visitor sees the code they are really asking for.
+-}
 cleanCode : String -> String
 cleanCode code =
-    code |> String.filter Char.isDigit |> String.left 6
+    code
+        |> String.toUpper
+        |> String.map fold
+        |> String.filter Char.isAlphaNum
+        |> String.left 6
+
+
+fold : Char -> Char
+fold char =
+    case char of
+        'I' ->
+            '1'
+
+        'L' ->
+            '1'
+
+        'O' ->
+            '0'
+
+        'U' ->
+            'V'
+
+        other ->
+            other
 
 
 tryJoin : Model -> ( Model, Cmd Msg )
 tryJoin model =
-    ( model, Catalog.lookupCode model.session model.joinCode GotJoinSlug )
+    ( model, Catalog.lookupCode model.session model.joinCode GotJoinCode )
 
 
 subscriptions : Model -> Sub Msg

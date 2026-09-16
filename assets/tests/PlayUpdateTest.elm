@@ -9,7 +9,7 @@ import Dict
 import Expect
 import FixtureLoader exposing (Fixture)
 import Games.Backgammon.View as Backgammon
-import Page.Play as Play exposing (ConnectionStatus(..), Model, Msg(..))
+import Page.Play as Play exposing (ConnectionStatus(..), Model, Msg(..), Out(..))
 import Protocol exposing (GamePayload, ServerMessage(..), Update)
 import Session exposing (Session)
 import Test exposing (Test, describe, test)
@@ -38,7 +38,6 @@ start fixture =
         { origin = "http://localhost:4400"
         , slug = fixture.game
         , gameId = "fixture"
-        , seatToken = Just "tok"
         }
         |> Tuple.first
 
@@ -56,7 +55,46 @@ first3 ( a, _, _ ) =
 suite : Test
 suite =
     describe "Page.Play.update with fixture payloads"
-        (List.map replay FixtureLoader.all ++ [ channelMessages, tabTitle, prefsRace ])
+        (List.map replay FixtureLoader.all
+            ++ [ channelMessages, tabTitle, prefsRace, refusedAtTheDoor, refusedMidGame ]
+        )
+
+
+{-| A browser the room will not have holds no seat there: the URL says
+nothing about who anyone is, so the answer comes from the channel, and the
+only place that says whether there is a seat to take is the invite link.
+-}
+refusedAtTheDoor : Test
+refusedAtTheDoor =
+    test "a room that refuses an empty table sends the browser to the invite" <|
+        \_ ->
+            Play.init testSession
+                { origin = "http://localhost:4400", slug = "backgammon", gameId = "AB12CD" }
+                |> Tuple.first
+                |> Play.update (ServerMessageReceived (ErrorMessage "unauthorized"))
+                |> (\( model, _, out ) -> ( out, model.error ))
+                |> Expect.equal ( Play.Navigate "/backgammon?game=AB12CD", Nothing )
+
+
+{-| Once the table is up it is the player's own game: a refusal then (their
+seat opened somewhere else) is a message to read, not a trip anywhere.
+-}
+refusedMidGame : Test
+refusedMidGame =
+    test "a refusal at a table already showing is read where it is" <|
+        \_ ->
+            let
+                seated =
+                    Play.init testSession
+                        { origin = "http://localhost:4400", slug = "backgammon", gameId = "AB12CD" }
+                        |> Tuple.first
+                        |> Play.update (ServerMessageReceived (LobbyMessage waitingRoom))
+                        |> first3
+            in
+            seated
+                |> Play.update (ServerMessageReceived (ErrorMessage "unauthorized"))
+                |> (\( model, _, out ) -> ( out, model.error ))
+                |> Expect.equal ( Play.NoOut, Just "unauthorized" )
 
 
 {-| The tab names the opponent once the game is on.
@@ -142,7 +180,6 @@ startAt slug =
         { origin = "http://localhost:4400"
         , slug = slug
         , gameId = "g"
-        , seatToken = Just "tok"
         }
         |> Tuple.first
 
@@ -157,7 +194,6 @@ channelMessages =
                         { origin = "http://localhost:4400"
                         , slug = "backgammon"
                         , gameId = "g"
-                        , seatToken = Just "tok"
                         }
                         |> Tuple.first
 

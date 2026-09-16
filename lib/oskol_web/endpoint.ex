@@ -16,8 +16,12 @@ defmodule OskolWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # The game socket carries the session, because the guest id in it is what
+  # holds a seat. Phoenix only hands it over when the socket's `_csrf_token`
+  # param matches the session's, so a page on another origin cannot open a
+  # socket as this visitor.
   socket "/socket", OskolWeb.UserSocket,
-    websocket: true,
+    websocket: [connect_info: [session: @session_options]],
     longpoll: false
 
   # Serve at "/" the static files from "priv/static" directory.

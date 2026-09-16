@@ -7,7 +7,7 @@
 ////   GET  /papi/games/:slug/rooms/:id   {ok, state, inviter_name, summary,
 ////                                       disconnected}
 ////   POST /papi/games/:slug/rooms/:id   {ok, id, path, player_id}
-////   GET  /papi/codes/:code             {ok, slug}
+////   GET  /papi/codes/:code             {ok, slug, code}
 ////   GET  /papi/me/prefs                {ok, prefs}
 ////   POST /papi/me/prefs                {key, value} -> {ok, prefs}
 ////
@@ -30,6 +30,7 @@ import oskol/guests/identity
 import oskol/guests/prefs
 import oskol/handlers/rooms
 import oskol/landing/copy.{type Copy}
+import oskol/rooms/code as room_code
 import oskol/rooms/errors
 import oskol/rooms/invite
 import oskol/rooms/room.{type Seated, type Table, Setup}
@@ -171,11 +172,12 @@ pub fn join_json(
 
 pub fn claim_json(
   ctx: Ctx,
+  session: Session,
   slug: String,
   game_id: String,
   player_id: String,
 ) -> Result(String, ApiError) {
-  rooms.claim(ctx, game_id, player_id)
+  rooms.claim(ctx, session, game_id, player_id)
   |> seat_result(slug)
 }
 
@@ -194,12 +196,14 @@ fn seat_result(
   }
 }
 
-/// The one answer to every write: the room's code, and the URL that opens
-/// the seat that was just taken.
+/// The one answer to every write: the room's code, and the URL of the seat
+/// that was just taken. It carries nothing secret -- the seat is held by
+/// the guest cookie the write came with -- so it is the same URL anyone
+/// would be given for that room.
 fn seat_taken(slug: String, seated: Seated) -> String {
   envelope.ok([
     #("id", json.string(seated.game_id)),
-    #("path", json.string(room.seat_path(slug, seated.game_id, seated.token))),
+    #("path", json.string(room.seat_path(slug, seated.game_id))),
     #("player_id", json.string(seated.player_id)),
   ])
 }
@@ -241,12 +245,40 @@ fn prefs_object(kept: prefs.Prefs) -> Json {
 
 // ---------- GET /papi/codes/:code ----------
 
-/// The 6-digit code prompt. Says only which game answers to the code —
-/// nothing else about the room.
-pub fn code_json(ctx: Ctx, code: String) -> Result(String, ApiError) {
-  case rooms.lookup_slug(ctx, code) {
-    Some(slug) -> Ok(envelope.ok([#("slug", json.string(slug))]))
+/// The six-character code prompt. A code is looked up as typed first, since
+/// a room's own name is the truth about it; only if nothing answers is it
+/// normalised (upper case, and the lookalikes the alphabet drops folded onto
+/// their twins) and tried again, which is what makes a code read down the
+/// phone findable however it was written down. The code that answered comes
+/// back, because that is the room's real name and the client needs it for
+/// the invite link. Says only which game answers — nothing else about the
+/// room.
+pub fn code_json(ctx: Ctx, typed: String) -> Result(String, ApiError) {
+  let candidates = case room_code.normalise(typed) {
+    same if same == typed -> [typed]
+    normalised -> [typed, normalised]
+  }
+
+  case first_match(ctx, candidates) {
+    Some(#(code, slug)) ->
+      Ok(
+        envelope.ok([
+          #("slug", json.string(slug)),
+          #("code", json.string(code)),
+        ]),
+      )
     None -> Error(error.NotFound("No game with that code"))
+  }
+}
+
+fn first_match(ctx: Ctx, codes: List(String)) -> Option(#(String, String)) {
+  case codes {
+    [] -> None
+    [code, ..rest] ->
+      case rooms.lookup_slug(ctx, code) {
+        Some(slug) -> Some(#(code, slug))
+        None -> first_match(ctx, rest)
+      }
   }
 }
 

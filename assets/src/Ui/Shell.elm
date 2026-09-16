@@ -115,8 +115,10 @@ topbar config =
         ]
 
 
-{-| The 6-digit code prompt behind JOIN GAME. `inputmode` and `pattern` get
-phones the number pad; a sixth digit auto-submits (see `Main.update`).
+{-| The six-character code prompt behind JOIN GAME. Codes are letters and
+digits now, so the field takes both and shows them upper-case; the sixth
+character auto-submits (see `Main.update`, which also folds the lookalikes
+the alphabet leaves out).
 -}
 joinModal : Config msg -> Html msg
 joinModal config =
@@ -149,18 +151,19 @@ joinModal config =
                     [ Html.text "✕" ]
                 ]
             , Html.p [ class "q-note text-sm mb-3" ]
-                [ Html.text "Type the 6-digit code from your friend." ]
+                [ Html.text "Type the 6-character code from your friend." ]
             , Html.form [ onSubmit config.onJoinSubmit, class "space-y-3" ]
                 ([ Html.input
                     [ type_ "text"
                     , id joinCodeInputId
                     , Html.Attributes.name "code"
                     , value config.joinCode
-                    , attribute "inputmode" "numeric"
-                    , attribute "pattern" "[0-9]*"
+                    , attribute "inputmode" "text"
+                    , attribute "pattern" "[0-9A-Za-z]*"
                     , Html.Attributes.maxlength 6
+                    , attribute "autocapitalize" "characters"
                     , attribute "autocomplete" "one-time-code"
-                    , Html.Attributes.placeholder "000000"
+                    , Html.Attributes.placeholder "A1B2C3"
                     , class "q-field w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.4em]"
                     , attribute "autocorrect" "off"
                     , attribute "spellcheck" "false"

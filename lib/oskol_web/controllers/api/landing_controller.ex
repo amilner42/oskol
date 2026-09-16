@@ -7,10 +7,11 @@ defmodule OskolWeb.Api.LandingController do
       POST /papi/games/:slug                create a room and take the first seat
       GET  /papi/games/:slug/rooms/:id     what that invite link offers
       POST /papi/games/:slug/rooms/:id     join by name, or take a seat back
-      GET  /papi/games/:slug/rooms/:id/reviews?t=  post-game reviews, per game (a seat)
+      GET  /papi/games/:slug/rooms/:id/reviews  post-game reviews, per game (open;
+                                               only a seat's visit queues one)
       POST /papi/games/:slug/rooms/:id/reviews/retry  try a failed review again (a seat)
-      GET  /papi/games/:slug/rooms/:id/record[?t=] the game's whole record, for anyone
-                                                  with the room
+      GET  /papi/games/:slug/rooms/:id/record  the game's whole record, for anyone
+                                              with the room
       GET  /papi/codes/:code               which game answers to a code
       GET  /papi/me/prefs                  this visitor's display preferences
       POST /papi/me/prefs                  keep one of them
@@ -53,10 +54,10 @@ defmodule OskolWeb.Api.LandingController do
 
   # Post-game reviews of a room's games. A game with none yet is queued by
   # the handler and answers pending.
-  def reviews(conn, %{"slug" => slug, "id" => game_id} = params) do
+  def reviews(conn, %{"slug" => slug, "id" => game_id}) do
     send_json(
       conn,
-      :oskol@handlers@reviews.reviews_json(ctx(), slug, game_id, param(params, "t"))
+      :oskol@handlers@reviews.reviews_json(ctx(), session(conn), slug, game_id)
     )
   end
 
@@ -70,7 +71,7 @@ defmodule OskolWeb.Api.LandingController do
 
     send_json(
       conn,
-      :oskol@handlers@reviews.retry_json(ctx(), slug, game_id, param(params, "t"), number)
+      :oskol@handlers@reviews.retry_json(ctx(), session(conn), slug, game_id, number)
     )
   end
 
@@ -78,7 +79,10 @@ defmodule OskolWeb.Api.LandingController do
   # takes back one whose player went away.
   def seat(conn, %{"slug" => slug, "id" => game_id, "player_id" => player_id})
       when is_binary(player_id) do
-    send_json(conn, :oskol@handlers@landing.claim_json(ctx(), slug, game_id, player_id))
+    send_json(
+      conn,
+      :oskol@handlers@landing.claim_json(ctx(), session(conn), slug, game_id, player_id)
+    )
   end
 
   def seat(conn, %{"slug" => slug, "id" => game_id} = params) do
@@ -114,12 +118,12 @@ defmodule OskolWeb.Api.LandingController do
   end
 
   # The record opens on the room: it is every committed turn, which both
-  # players already saw. The seat token rides as `t` when the link carries
-  # one, and only says which seat the board faces to begin with.
-  def record(conn, %{"slug" => slug, "id" => game_id} = params) do
+  # players already saw. The caller's guest only decides which seat the
+  # board faces to begin with.
+  def record(conn, %{"slug" => slug, "id" => game_id}) do
     send_json(
       conn,
-      :oskol@handlers@record.record_json(ctx(), slug, game_id, param(params, "t"))
+      :oskol@handlers@record.record_json(ctx(), session(conn), slug, game_id)
     )
   end
 

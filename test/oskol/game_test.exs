@@ -6,15 +6,20 @@ defmodule Oskol.GameTest do
   alias Oskol.Game
 
   describe "game codes" do
-    test "a game code is exactly 6 digits" do
+    # The digits and the twenty-two letters left after I, L, O and U are
+    # dropped: nothing in a code is mistakable for anything else down the
+    # phone, and every six-digit code minted before this is still a code.
+    @code ~r/^[0-9A-HJKMNP-TV-Z]{6}$/
+
+    test "a game code is exactly 6 characters of the code alphabet" do
       for _ <- 1..50 do
-        assert Game.generate_game_id() =~ ~r/^\d{6}$/
+        assert Game.generate_game_id() =~ @code
       end
     end
 
-    test "creating a game mints a 6-digit code and starts a live room" do
+    test "creating a game mints a code and starts a live room" do
       assert {:ok, game_id} = Game.create_game("backgammon")
-      assert game_id =~ ~r/^\d{6}$/
+      assert game_id =~ @code
       assert {:ok, _pid} = Game.lookup_game(game_id)
       assert Game.get_server_state(game_id).slug == "backgammon"
     end

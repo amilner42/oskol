@@ -103,7 +103,9 @@ async function clickThrough(browser, errors) {
     await alice.waitForSelector('#game-code');
     const gameId = (await alice.textContent('#game-code')).trim();
     if (gameId !== game.gameId) throw new Error(`the code reads ${gameId}, the URL says ${game.gameId}`);
-    if (!new URL(alice.url()).searchParams.get('t')) throw new Error('creator has no seat token');
+    const seatPath = new URL(alice.url()).pathname;
+    if (seatPath !== `/backgammon/${game.gameId}`) throw new Error(`creator landed at ${seatPath}`);
+    if (new URL(alice.url()).searchParams.get('t')) throw new Error('a seat URL must carry no token');
     const summary = await alice.textContent('#setup-summary');
     if (!/Match to 3/.test(summary) || !/3 min/.test(summary))
       throw new Error(`waiting room summary reads "${summary}"`);

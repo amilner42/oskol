@@ -52,7 +52,7 @@ record =
             Debug.todo (D.errorToString err)
 
 
-{-| The same record as the server answers a link with no seat token: the
+{-| The same record as the server answers a reader who holds no seat: the
 board still faces a side, but it is nobody's own.
 -}
 shared : Replay.Record
@@ -98,7 +98,7 @@ session =
 -}
 loaded : Maybe Int -> Page.Model
 loaded wanted =
-    Page.init session { slug = "backgammon", gameId = "000011", token = Just "tok", game = wanted }
+    Page.init session { slug = "backgammon", gameId = "000011", game = wanted }
         |> Tuple.first
         |> Page.update (GotRecord (Ok record))
         |> Tuple.first
@@ -379,14 +379,14 @@ analysisArriving =
                     |> Expect.equal ( 1, Proposed 1 )
         , test "the record arriving after the analysis changes nothing about it" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", token = Just "tok", game = Just 3 }
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3 }
                     |> Tuple.first
                     |> run [ GotReviews (Ok done), GotRecord (Ok record) ]
                     |> (\m -> ( m.reviews /= Nothing, m.game ))
                     |> Expect.equal ( True, 3 )
-        , test "with no token the replay still opens, on the first seat" <|
+        , test "a replay with no game named still opens, on the first seat" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", token = Nothing, game = Nothing }
+                Page.init session { slug = "backgammon", gameId = "000011", game = Nothing }
                     |> Tuple.first
                     |> run [ GotRecord (Ok record) ]
                     |> .record
@@ -483,7 +483,7 @@ rendered =
                     (loaded (Just 3))
         , test "a shared link belongs to neither player: nobody is told they are you" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", token = Nothing, game = Just 3 }
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3 }
                     |> Tuple.first
                     |> run [ GotRecord (Ok shared) ]
                     |> Page.view
@@ -507,7 +507,7 @@ rendered =
                     |> Query.has [ Selector.attribute (Html.Attributes.title "Turn the board around (P2 at the bottom)") ]
         , test "a stranger is not told an analysis is running that nobody started" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", token = Nothing, game = Just 3 }
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3 }
                     |> Tuple.first
                     |> run [ GotRecord (Ok shared), GotReviews (Ok (reviews ReplayFixtures.reviewsPending)) ]
                     |> Expect.all

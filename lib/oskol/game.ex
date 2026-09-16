@@ -44,13 +44,15 @@ defmodule Oskol.Game do
     :exit, _ -> :not_found
   end
 
-  @id_space 1_000_000
-
-  @doc "A game code: 6 crypto-random digits."
+  @doc """
+  A game code: six crypto-random characters of the code alphabet. The shape
+  and the size of the space are Gleam's (`src/oskol/rooms/code`); the
+  randomness is ours.
+  """
   def generate_game_id do
     :crypto.strong_rand_bytes(8)
     |> :binary.decode_unsigned()
-    |> rem(@id_space)
+    |> rem(:oskol@rooms@code.space())
     |> :oskol@rooms@code.from_random()
   end
 
@@ -74,9 +76,10 @@ defmodule Oskol.Game do
 
   defdelegate join_game(game_id, player_name, player_pid), to: GameServer
   defdelegate join_game(game_id, player_name, player_pid, guest_id), to: GameServer
-  defdelegate attach(game_id, token, player_pid), to: GameServer
-  defdelegate attach(game_id, token, player_pid, client), to: GameServer
+  defdelegate attach(game_id, guest_id, player_pid), to: GameServer
+  defdelegate attach(game_id, guest_id, player_pid, client), to: GameServer
   defdelegate claim_seat(game_id, player_id, player_pid), to: GameServer
+  defdelegate claim_seat(game_id, player_id, player_pid, guest_id), to: GameServer
   defdelegate get_server_state(game_id), to: GameServer, as: :get_state
   defdelegate configure(game_id, attrs), to: GameServer
   defdelegate request_rematch(game_id, player_id), to: GameServer

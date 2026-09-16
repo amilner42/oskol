@@ -33,6 +33,9 @@ GAME, fills the dialog by id and resolves with `{gameId, url, inviteUrl}`
 (`openCreateDialog(page)` stops at the open dialog, for a smoke that wants
 to look at it);
 `joinByLink(page, inviteUrl, name)` and `joinByCode(page, code, name)` take
-the second seat; `openSeat(page, url)` reopens one. Then act on the Elm game
+the second seat; `openSeat(page, url)` reopens one, and
+`seatedContext(browser, guestId)` makes a browser that already holds one.
+Two players are two browser contexts: a seat is held by the browser's guest
+cookie, so two pages of one context are one player. Then act on the Elm game
 page through its buttons and assert on the DOM, never on internal state.
 Set `BASE_URL` (or `PORT`) to point at another server.

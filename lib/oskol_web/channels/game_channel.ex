@@ -11,27 +11,26 @@ defmodule OskolWeb.GameChannel do
   alias Oskol.GameKit
 
   @impl true
-  def join("game:" <> game_id, %{"token" => token}, socket) when is_binary(token) do
+  def join("game:" <> game_id, _params, socket) do
     # Rehydrate the room first if it only lives in the database (a deploy or
     # an idle shutdown happened since this client's page loaded).
     case Oskol.Game.lookup_game(game_id) do
-      {:ok, _pid} -> join_room(game_id, token, socket)
+      {:ok, _pid} -> join_room(game_id, socket)
       :not_found -> {:error, %{reason: "Game not found"}}
     end
   end
 
-  # No token, no seat, and no view of the table: a visitor has to go through
-  # the invite link, which decides what (if anything) they may join as.
-  def join("game:" <> _game_id, _params, _socket) do
-    {:error, %{reason: "unauthorized"}}
-  end
-
-  defp join_room(game_id, token, socket) do
+  defp join_room(game_id, socket) do
     try do
-      # The seat token is the whole credential. Attaching first also
-      # registers this channel as the seat's live connection, and the join
-      # reply must describe the room after that, or the joining client
-      # would see itself as disconnected.
+      # The guest cookie is the whole credential, and it reached the socket
+      # with the websocket's own request (`OskolWeb.UserSocket`): a browser
+      # holds the seats its guest took, and nothing in a URL opens one. A
+      # visitor who holds no seat here is refused and goes through the
+      # invite link, which decides what (if anything) they may sit at.
+      #
+      # Attaching first also registers this channel as the seat's live
+      # connection, and the join reply must describe the room after that, or
+      # the joining client would see itself as disconnected.
       #
       # Who this connection belongs to: the browser tab, which outlives both
       # the channel and the socket under it -- a rejoin, a reload, a phone
@@ -40,14 +39,15 @@ defmodule OskolWeb.GameChannel do
       # that named no client is its own.
       client = socket.assigns[:client] || socket.transport_pid
 
-      case GameServer.attach(game_id, token, self(), client) do
+      case GameServer.attach(game_id, socket.assigns[:guest_id], self(), client) do
         {:ok, player_id, state} ->
           Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
           socket = socket |> assign(:game_id, game_id) |> assign(:player_id, player_id)
           {:ok, %{payload: payload(state, player_id, [])}, socket}
 
         {:error, reason} ->
-          # Never say which of the two it was, and never leak room state.
+          # Never say whether the room has a seat for them, and never leak
+          # room state: the invite link is the one place that answers that.
           Logger.info("Channel join refused for #{game_id}: #{inspect(reason)}")
           {:error, %{reason: "unauthorized"}}
       end
@@ -132,9 +132,9 @@ defmodule OskolWeb.GameChannel do
   end
 
   def payload(%GameServerState{} = state, player_id, events) do
-    # Only a token-authenticated seat ever reaches this channel, so every
-    # update is that seat's own projection: hidden information stays hidden
-    # by the host's per-viewer filtering.
+    # Only a seat its guest holds ever reaches this channel, so every update
+    # is that seat's own projection: hidden information stays hidden by the
+    # host's per-viewer filtering.
     update = GameKit.player_update(state.instance, player_id, events)
 
     %{

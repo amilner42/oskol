@@ -186,7 +186,8 @@ let gameChannel = null;
 // this client coming back (a reload, a route change, a socket the phone
 // brought back from sleep) from another tab taking the seat over, which is
 // the only case anyone should be told about. It authenticates nothing --
-// the seat token is still the only way in.
+// the guest cookie does that, and the browser sends it with the socket's
+// own request, where no script can reach it.
 const clientId = (() => {
   const key = "oskol:client";
   try {
@@ -204,7 +205,7 @@ const clientId = (() => {
 
 const send = (message) => app.ports.receiveFromChannel?.send(message);
 
-app.ports.joinGameChannel?.subscribe(({ gameId, seatToken }) => {
+app.ports.joinGameChannel?.subscribe(({ gameId }) => {
   if (gameChannel) {
     // Unbind before leaving: leaving is asynchronous, and a channel still
     // on its way out must not keep talking to Elm on behalf of a table this
@@ -217,13 +218,17 @@ app.ports.joinGameChannel?.subscribe(({ gameId, seatToken }) => {
   }
 
   if (!gameSocket) {
-    gameSocket = new Socket("/socket", { params: { client: clientId } });
+    // `_csrf_token` is what lets the server read this page's session off the
+    // websocket's own request, and with it the guest cookie that holds our
+    // seats. Only a same-origin page can have the token, so no other site
+    // can open a socket as this visitor.
+    gameSocket = new Socket("/socket", { params: { client: clientId, _csrf_token: csrfToken } });
     gameSocket.connect();
     gameSocket.onOpen(() => send({ type: "connection_status", status: "connected" }));
     gameSocket.onClose(() => send({ type: "connection_status", status: "disconnected" }));
   }
 
-  const channel = gameSocket.channel(`game:${gameId}`, { token: seatToken });
+  const channel = gameSocket.channel(`game:${gameId}`, {});
   gameChannel = channel;
 
   channel.join()

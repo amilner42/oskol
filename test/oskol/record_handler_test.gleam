@@ -30,7 +30,7 @@ fn started(slug: String, format: String) -> Instance {
   game
 }
 
-/// A live room playing `slug`, whose seat token "good" opens `game`.
+/// A live room playing `slug`, where the guest "g1" holds the seat "p1".
 fn room_with(slug: String, game: Result(Instance, errors.RoomError)) -> Ctx {
   let ctx =
     fakes.ctx()
@@ -40,10 +40,10 @@ fn room_with(slug: String, game: Result(Instance, errors.RoomError)) -> Ctx {
     ..ctx,
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
-      seated_game: fn(_, token) {
-        case token {
-          "good" -> result.map(game, fn(g) { #("p1", g) })
-          _ -> Error(errors.InvalidToken)
+      seated_game: fn(_, guest_id) {
+        case guest_id {
+          "g1" -> result.map(game, fn(g) { #("p1", g) })
+          _ -> Error(errors.NoSeat)
         }
       },
       game: fn(_) { game },
@@ -54,7 +54,8 @@ fn room_with(slug: String, game: Result(Instance, errors.RoomError)) -> Ctx {
 pub fn a_seat_reads_the_whole_record_test() {
   let game = started("backgammon", "match5")
   let ctx = room_with("backgammon", Ok(game))
-  let assert Ok(body) = record.record_json(ctx, "backgammon", "000007", "good")
+  let assert Ok(body) =
+    record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
   let assert Some(expected) = instance.record(game)
   assert body
     == json.to_string(
@@ -72,30 +73,33 @@ pub fn a_seat_reads_the_whole_record_test() {
   assert string.contains(body, "\"games\":[]")
 }
 
-pub fn a_token_that_opens_no_seat_still_reads_the_record_test() {
+pub fn a_guest_at_no_seat_here_still_reads_the_record_test() {
   // A record is every committed turn, which both players and any spectator
-  // already saw: a token only says which way the board faces.
+  // already saw: the reader's guest only says which way the board faces.
   let ctx = room_with("backgammon", Ok(started("backgammon", "single")))
   let assert Ok(body) =
-    record.record_json(ctx, "backgammon", "000007", "stolen")
+    record.record_json(ctx, fakes.guest("stranger"), "backgammon", "000007")
   assert string.contains(body, "\"you\":\"p1\"")
   // ...and that the seat it faces is not the reader's own.
   assert string.contains(body, "\"seated\":false")
 }
 
-pub fn no_token_reads_the_record_from_the_first_seat_test() {
-  // No token at all: the record opens, facing the seat that played first.
+pub fn no_guest_at_all_reads_the_record_from_the_first_seat_test() {
+  // A visitor with no guest cookie: the record opens, facing the seat that
+  // played first, and the room is never asked who they are.
   let ctx = room_with("backgammon", Ok(started("backgammon", "single")))
-  let assert Ok(body) = record.record_json(ctx, "backgammon", "000007", "")
+  let assert Ok(body) =
+    record.record_json(ctx, fakes.no_guest(), "backgammon", "000007")
   assert string.contains(body, "\"you\":\"p1\"")
   assert string.contains(body, "\"seated\":false")
 }
 
-pub fn a_seat_token_says_the_record_is_the_reader_own_test() {
-  // The one thing a token still decides: the board opens on the reader's own
-  // seat, and the page may say so.
+pub fn a_guest_on_a_seat_is_told_the_record_is_their_own_test() {
+  // The one thing the reader's guest still decides: the board opens on
+  // their own seat, and the page may say so.
   let ctx = room_with("backgammon", Ok(started("backgammon", "single")))
-  let assert Ok(body) = record.record_json(ctx, "backgammon", "000007", "good")
+  let assert Ok(body) =
+    record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
   assert string.contains(body, "\"seated\":true")
 }
 
@@ -103,18 +107,35 @@ pub fn a_room_asked_for_under_another_game_reads_nothing_test() {
   // A backgammon room, asked for as a game it is not (poker was one; it is
   // gone, and its old URLs redirect home): the same not-found as any refusal.
   let ctx = room_with("backgammon", Ok(started("backgammon", "single")))
-  assert record.record_json(ctx, "poker", "000007", "good")
+  assert record.record_json(ctx, fakes.guest("g1"), "poker", "000007")
     == Error(error.NotFound(record.not_found_message))
 }
 
 pub fn a_room_that_is_gone_reads_nothing_test() {
   let ctx = fakes.ctx() |> fakes.with_room(None, None)
-  assert record.record_json(ctx, "backgammon", "000007", "good")
+  assert record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
     == Error(error.NotFound(record.not_found_message))
 }
 
 pub fn a_lobby_has_no_record_yet_test() {
   let ctx = room_with("backgammon", Error(errors.GameNotStarted))
-  assert record.record_json(ctx, "backgammon", "000007", "good")
+  assert record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
+    == Error(error.NotFound(record.not_found_message))
+}
+
+// ---------- `record.seat`: the gate on anything that costs ----------
+
+pub fn only_a_guest_on_a_seat_passes_the_seat_gate_test() {
+  let ctx = room_with("backgammon", Ok(started("backgammon", "single")))
+
+  let assert Ok(#(player_id, _)) =
+    record.seat(ctx, fakes.guest("g1"), "backgammon", "000007")
+  assert player_id == "p1"
+
+  // A stranger who walked into the room code, and a visitor with no guest
+  // cookie at all, both get the answer a room that is not there gives.
+  assert record.seat(ctx, fakes.guest("stranger"), "backgammon", "000007")
+    == Error(error.NotFound(record.not_found_message))
+  assert record.seat(ctx, fakes.no_guest(), "backgammon", "000007")
     == Error(error.NotFound(record.not_found_message))
 }
