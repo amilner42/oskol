@@ -6,7 +6,8 @@ defmodule OskolWeb.PageController do
   alias Oskol.GameKit
 
   @doc """
-  Serves the Elm client for a running game.
+  Serves the Elm client for a running game (`/:slug/:id`) and for its
+  replay (`/:slug/:id/replay`): both open on a seat token.
 
   The `t` param is the seat token, and it is the only way in: it is handed
   to the page so the client can authenticate its channel join. Without a

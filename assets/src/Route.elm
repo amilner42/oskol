@@ -6,6 +6,7 @@ module Route exposing
     , invite
     , library
     , play
+    , replay
     )
 
 {-| Client-side routes, mirroring the server's browser routes exactly:
@@ -13,6 +14,8 @@ module Route exposing
     /            the game library
     /:slug       one game's start page (`?game=` an invite, `?t=` a seat token)
     /:slug/:id   a running game (`?t=` the seat token)
+    /:slug/:id/replay   a game played again, turn by turn, with its analysis
+                        (`?t=` the seat token, `?game=` which game of the match)
 
 The query parameters are part of the route because they decide what a page
 shows, exactly as they did in the LiveView's `handle_params`.
@@ -20,7 +23,7 @@ shows, exactly as they did in the LiveView's `handle_params`.
 -}
 
 import Url exposing (Url)
-import Url.Parser as Parser exposing ((</>), (<?>), Parser, map, oneOf, string, top)
+import Url.Parser as Parser exposing ((</>), (<?>), Parser, map, oneOf, s, string, top)
 import Url.Parser.Query as Query
 
 
@@ -30,6 +33,8 @@ type Route
     | GameLanding String (Maybe String) (Maybe String)
       -- slug, game id, ?t= (a seat token)
     | Play String String (Maybe String)
+      -- slug, game id, ?t= (a seat token), ?game= (a game's number)
+    | Replay String String (Maybe String) (Maybe Int)
 
 
 parser : Parser (Route -> a) a
@@ -37,6 +42,7 @@ parser =
     oneOf
         [ map Library top
         , map Play (string </> string <?> Query.string "t")
+        , map Replay (string </> string </> s "replay" <?> Query.string "t" <?> Query.int "game")
         , map GameLanding (string <?> Query.string "game" <?> Query.string "t")
         ]
 
@@ -87,6 +93,16 @@ href route =
 
         Play slug gameId token ->
             "/" ++ slug ++ "/" ++ gameId ++ query [ ( "t", token ) ]
+
+        Replay slug gameId token game ->
+            "/" ++ slug ++ "/" ++ gameId ++ "/replay" ++ query [ ( "t", token ), ( "game", Maybe.map String.fromInt game ) ]
+
+
+{-| A game of a room played again: the seat's token opens it, like the table.
+-}
+replay : String -> String -> Maybe String -> Maybe Int -> Route
+replay slug gameId token game =
+    Replay slug gameId token game
 
 
 query : List ( String, Maybe String ) -> String

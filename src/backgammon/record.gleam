@@ -386,7 +386,7 @@ pub fn snapshot_to_json(snapshot: Snapshot) -> Json {
   ])
 }
 
-fn side_to_json(side: Side) -> Json {
+pub fn side_to_json(side: Side) -> Json {
   json.object([
     #("points", json.array(side.points, json.int)),
     #("bar", json.int(side.bar)),

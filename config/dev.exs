@@ -73,6 +73,14 @@ config :oskol, OskolWeb.Endpoint,
 # Enable dev routes for dashboard and mailbox
 config :oskol, dev_routes: true
 
+# The analysis engine, reached from a laptop through
+#   fly proxy 18082:80 oskol-analysis.flycast -a oskol-analysis
+# or a local `uvicorn app.main:app --port 18082` in the oskol-analysis repo.
+config :oskol, :analysis,
+  url: System.get_env("ANALYSIS_URL") || "http://localhost:18082",
+  inet6: false,
+  receive_timeout: :timer.minutes(20)
+
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
 

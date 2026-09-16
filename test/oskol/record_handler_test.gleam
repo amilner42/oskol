@@ -7,6 +7,7 @@ import gamekit/instance.{type Instance}
 import gamekit/registry
 import gleam/json
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import oskol/caps/rooms as rooms_caps
 import oskol/core/ctx.{type Ctx, Ctx}
@@ -39,7 +40,7 @@ fn room_with(slug: String, game: Result(Instance, errors.RoomError)) -> Ctx {
     ..ctx,
     rooms: rooms_caps.RoomsCaps(..ctx.rooms, seated_game: fn(_, token) {
       case token {
-        "good" -> game
+        "good" -> result.map(game, fn(g) { #("p1", g) })
         _ -> Error(errors.InvalidToken)
       }
     }),
@@ -57,10 +58,13 @@ pub fn a_seat_reads_the_whole_record_test() {
         #("ok", json.bool(True)),
         #("slug", json.string("backgammon")),
         #("id", json.string("000007")),
+        #("you", json.string("p1")),
         #("record", expected),
       ]),
     )
-  assert string.contains(body, "\"games\":[{\"number\":1,")
+  // A game whose first turn is not committed yet has nothing to list
+  assert string.contains(body, "\"target\":5,\"cube\":true,")
+  assert string.contains(body, "\"games\":[]")
 }
 
 pub fn a_token_that_opens_no_seat_reads_nothing_test() {

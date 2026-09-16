@@ -8,6 +8,7 @@ Three routes, and they are the server's three routes:
     /            Page.GameLanding "backgammon" — the home page, the board
     /:slug       Page.GameLanding — the invite a shared link opens
     /:slug/:id   Page.Play — the game, unchanged
+    /:slug/:id/replay   Page.Replay — a game played again, with its analysis
 
 The JOIN GAME prompt lives here rather than in a page because it is chrome:
 six digits in, and out comes that room's ordinary invite link, which is the
@@ -27,6 +28,7 @@ import Html.Attributes
 import Json.Decode as D
 import Page.GameLanding
 import Page.Play
+import Page.Replay
 import Route exposing (Route)
 import Session exposing (Session)
 import Ui.Notebook as Notebook
@@ -62,6 +64,7 @@ type Page
     = NotFound
     | GameLanding Page.GameLanding.Model
     | Play Page.Play.Model
+    | Replay Page.Replay.Model
 
 
 type Msg
@@ -69,6 +72,7 @@ type Msg
     | UrlChanged Url
     | GameLandingMsg Page.GameLanding.Msg
     | PlayMsg Page.Play.Msg
+    | ReplayMsg Page.Replay.Msg
     | OpenedJoin
     | ClosedJoin
     | JoinCodeInput String
@@ -151,6 +155,15 @@ routeTo url oldModel =
                 , seatToken = token
                 }
                 |> wrap model Play PlayMsg
+
+        Just (Route.Replay slug gameId token game) ->
+            Page.Replay.init model.session
+                { slug = slug
+                , gameId = gameId
+                , token = token
+                , game = game
+                }
+                |> wrap model Replay ReplayMsg
 
 
 wrap : Model -> (pageModel -> Page) -> (pageMsg -> Msg) -> ( pageModel, Cmd pageMsg ) -> ( Model, Cmd Msg )
@@ -239,6 +252,10 @@ update msg model =
                 ]
             )
 
+        ( ReplayMsg pageMsg, Replay pageModel ) ->
+            Page.Replay.update pageMsg pageModel
+                |> wrap model Replay ReplayMsg
+
         ( OpenedJoin, _ ) ->
             ( { model | joinOpen = True, joinCode = "", joinError = Nothing }
             , Notebook.focus NoOp Shell.joinCodeInputId
@@ -295,6 +312,9 @@ subscriptions model =
             Play pageModel ->
                 Sub.map PlayMsg (Page.Play.subscriptions pageModel)
 
+            Replay pageModel ->
+                Sub.map ReplayMsg (Page.Replay.subscriptions pageModel)
+
             _ ->
                 Sub.none
         , if model.joinOpen then
@@ -333,6 +353,9 @@ view model =
 
                 else
                     Html.map PlayMsg (Page.Play.view pageModel)
+
+            Replay pageModel ->
+                Html.map ReplayMsg (Page.Replay.view pageModel)
 
             GameLanding pageModel ->
                 if Page.GameLanding.isHome pageModel then
@@ -393,6 +416,9 @@ title model =
 
         Play pageModel ->
             Page.Play.title pageModel
+
+        Replay pageModel ->
+            Page.Replay.title pageModel
 
         NotFound ->
             "Not found"

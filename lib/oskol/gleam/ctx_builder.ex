@@ -24,8 +24,8 @@ defmodule Oskol.Gleam.CtxBuilder do
   alias Oskol.Gleam.Caps
 
   def build(opts \\ []) do
-    {:ctx, Caps.Copy.build(), Caps.Guests.build(), Caps.Ids.build(opts), Caps.Persistence.build(),
-     Caps.Rooms.build(opts)}
+    {:ctx, Caps.Analysis.build(), Caps.Copy.build(), Caps.Guests.build(), Caps.Ids.build(opts),
+     Caps.Persistence.build(), Caps.Rooms.build(opts)}
   end
 
   @doc """

@@ -93,6 +93,8 @@ defmodule Oskol.MixProject do
       {:hackney, "~> 1.25"},
       {:sentry, "~> 11.0"},
       {:jason, "~> 1.2"},
+      # HTTP to the analysis engine (oskol-analysis, over Fly's private network)
+      {:req, "~> 0.5"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},

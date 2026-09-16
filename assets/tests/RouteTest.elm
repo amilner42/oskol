@@ -41,6 +41,21 @@ suite =
                 \_ ->
                     parse "/backgammon/123456?t=a%2Fb%2Bc"
                         |> Expect.equal (Just (Play "backgammon" "123456" (Just "a/b+c")))
+            , test "a replay, on a seat's token, opening one game" <|
+                \_ ->
+                    Expect.equal
+                        (Just (Replay "backgammon" "123456" (Just "secret") (Just 2)))
+                        (parse "/backgammon/123456/replay?t=secret&game=2")
+            , test "a replay with no game named opens wherever the page decides" <|
+                \_ ->
+                    Expect.equal
+                        (Just (Replay "backgammon" "123456" (Just "secret") Nothing))
+                        (parse "/backgammon/123456/replay?t=secret")
+            , test "a game that is not a number is no game" <|
+                \_ ->
+                    Expect.equal
+                        (Just (Replay "backgammon" "123456" Nothing Nothing))
+                        (parse "/backgammon/123456/replay?game=two")
             , test "the sitemap belongs to the server" <|
                 \_ -> Expect.equal Nothing (parse "/sitemap.xml")
             , test "so does the dev dashboard" <|
@@ -65,6 +80,10 @@ suite =
                 \_ ->
                     Route.href (Route.play "backgammon" "123456" (Just "a/b+c"))
                         |> Expect.equal "/backgammon/123456?t=a%2Fb%2Bc"
+            , test "a replay's link: the seat, then the game" <|
+                \_ ->
+                    Route.href (Route.replay "backgammon" "123456" (Just "a/b") (Just 3))
+                        |> Expect.equal "/backgammon/123456/replay?t=a%2Fb&game=3"
             ]
         , describe "round trip"
             (List.map roundTrip
@@ -73,6 +92,8 @@ suite =
                 , GameLanding "backgammon" (Just "123456") (Just "a/b+c")
                 , Play "backgammon" "123456" (Just "secret")
                 , Play "backgammon" "123456" Nothing
+                , Replay "backgammon" "123456" (Just "a/b+c") (Just 2)
+                , Replay "backgammon" "123456" (Just "secret") Nothing
                 ]
             )
         ]

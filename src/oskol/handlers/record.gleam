@@ -12,9 +12,10 @@
 //// the log itself: the room already holds the state, and includes any step
 //// the write-behind has not put on disk yet.
 
-import gamekit/instance
+import gamekit/instance.{type Instance}
 import gleam/json
 import gleam/option.{None, Some}
+import gleam/result
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
@@ -32,6 +33,32 @@ pub fn record_json(
   game_id: String,
   token: String,
 ) -> Result(String, ApiError) {
+  use #(player_id, game) <- result.try(seat(ctx, slug, game_id, token))
+  case instance.record(game) {
+    None -> Error(error.NotFound("This game keeps no record"))
+    Some(record) ->
+      Ok(
+        envelope.ok([
+          #("slug", json.string(slug)),
+          #("id", json.string(game_id)),
+          // The seat the token opens: a replay sits its reader where they
+          // played.
+          #("you", json.string(player_id)),
+          #("record", record),
+        ]),
+      )
+  }
+}
+
+/// The seat a token opens at a room playing `slug`: its player id and the
+/// running game. Anything else is the one `not_found_message`, so a caller
+/// learns nothing about a room it cannot sit at.
+pub fn seat(
+  ctx: Ctx,
+  slug: String,
+  game_id: String,
+  token: String,
+) -> Result(#(String, Instance), ApiError) {
   let not_found = error.NotFound(not_found_message)
   case token, rooms.lookup(ctx, game_id) {
     "", _ -> Error(not_found)
@@ -40,21 +67,8 @@ pub fn record_json(
       case ctx.rooms.slug_of(game_id) == Some(slug) {
         False -> Error(not_found)
         True ->
-          case ctx.rooms.seated_game(game_id, token) {
-            Error(_) -> Error(not_found)
-            Ok(game) ->
-              case instance.record(game) {
-                None -> Error(error.NotFound("This game keeps no record"))
-                Some(record) ->
-                  Ok(
-                    envelope.ok([
-                      #("slug", json.string(slug)),
-                      #("id", json.string(game_id)),
-                      #("record", record),
-                    ]),
-                  )
-              }
-          }
+          ctx.rooms.seated_game(game_id, token)
+          |> result.replace_error(not_found)
       }
   }
 }

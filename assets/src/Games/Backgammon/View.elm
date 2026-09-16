@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, TapContext, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, themeClass, themes, tumbleFaces, update, view)
+module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeClass, themes, tumbleFaces, update, view, viewStill)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -75,6 +75,7 @@ type alias Model =
     , stale : Bool -- the game moved on while a past turn was on the board
     , browsing : Maybe Int -- the list shows this finished game (its number) rather than the one on the board
     , archive : Archive -- the earlier games of the match, fetched the first time one is opened
+    , still : Bool -- a board drawn for the replay (`viewStill`): no live game behind it, so no way back to one
     }
 
 
@@ -181,6 +182,7 @@ init =
     , stale = False
     , browsing = Nothing
     , archive = NotFetched
+    , still = False
     }
 
 
@@ -753,6 +755,7 @@ type alias Ctx =
     , finished : Maybe (List String)
     , away : List String -- seated players whose connection is down
     , theme : String -- the board's colours, this viewer's own (`themes`)
+    , replayHref : Int -> Maybe String -- where a finished game (by number) is replayed, for a seat
     }
 
 
@@ -1881,6 +1884,20 @@ viewLiveButton : Ctx -> List (Html Msg)
 viewLiveButton ctx =
     case ctx.model.viewing of
         Just _ ->
+            if ctx.model.still then
+                []
+
+            else
+                viewLiveButtonShown ctx
+
+        Nothing ->
+            []
+
+
+viewLiveButtonShown : Ctx -> List (Html Msg)
+viewLiveButtonShown ctx =
+    case ctx.model.viewing of
+        Just _ ->
             [ button
                 [ classList [ ( "btn-arcade pixel text-[8px] sm:text-[9px] px-2 py-1.5 sm:px-3 sm:py-2 sky bg-live", True ), ( "stale", ctx.model.stale ) ]
                 , Html.Attributes.id "bg-live"
@@ -2092,6 +2109,12 @@ viewGameResult ctx between =
         [ span [ style "color" "var(--bg-accent)" ] [ text headline ]
         , Html.br [] []
         , span [ style "color" "var(--pencil)" ] [ text (how ++ " · " ++ score) ]
+        , case ctx.replayHref (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) of
+            Just _ ->
+                span [] [ Html.br [] [], replayLink ctx (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) "REPLAY ▸" ]
+
+            Nothing ->
+                text ""
         ]
 
 
@@ -2930,23 +2953,24 @@ entryDecoder =
 
 snapshotDecoder : D.Decoder Snapshot
 snapshotDecoder =
-    let
-        side =
-            D.map4 Side
-                (D.field "points" (D.list D.int))
-                (D.field "bar" D.int)
-                (D.field "off" D.int)
-                (D.field "pips" D.int)
-    in
     D.map3 Snapshot
-        (D.field "white" side)
-        (D.field "black" side)
+        (D.field "white" sideDecoder)
+        (D.field "black" sideDecoder)
         (D.field "cube"
             (D.map2 (\v o -> { value = v, owner = o })
                 (D.field "value" D.int)
                 (D.field "owner" (D.nullable D.string))
             )
         )
+
+
+sideDecoder : D.Decoder Side
+sideDecoder =
+    D.map4 Side
+        (D.field "points" (D.list D.int))
+        (D.field "bar" D.int)
+        (D.field "off" D.int)
+        (D.field "pips" D.int)
 
 
 
@@ -3064,10 +3088,17 @@ viewingModel index model =
 
 snapshotScene : Ctx -> Turn -> Scene
 snapshotScene ctx turn =
-    let
-        scene =
-            ctx.scene
+    stillScene ctx.scene turn
 
+
+{-| A scene for a position: `scene` supplies the players, whether there is
+a cube, and the data that describes the match; the position, the mover
+and their roll come from `turn`. Everything the live moment says (whose
+turn it is to act, a double on offer, a winner) goes.
+-}
+stillScene : Scene -> { a | player : String, dice : List Int, picked : Bool, position : Snapshot } -> Scene
+stillScene scene turn =
+    let
         sideOf player =
             if colorOf (Just player) == "white" then
                 ( "white", turn.position.white )
@@ -3224,6 +3255,144 @@ snapshotScene ctx turn =
     }
 
 
+
+-- A STILL BOARD
+--
+-- The replay's board: the table's own slab (both identity bars, the board,
+-- the trays, the cube on the bar) drawn for one position, with nothing on
+-- it that answers a tap. It is the past-turn view above without a live
+-- game behind it: the scene is built from the record's players and the
+-- position, then drawn by the same functions the table uses.
+
+
+{-| One position as the replay shows it: who sits where (`viewer` at the
+bottom), the match score beside each name, whether the match has a cube,
+the board's colours; then the position, whose roll it was and the dice,
+the checkers that landed, and a double on offer (by whom). `key` tells
+one step's dice from the next, so they never tumble.
+-}
+type alias StillBoard =
+    { players : List { id : String, name : String, color : String }
+    , viewer : String
+    , scores : List ( String, Int )
+    , cube : Bool
+    , theme : String
+    , key : Int
+    , position : Snapshot
+    , mover : Maybe String
+    , dice : List Int
+    , picked : Bool
+    , landed : List Int
+    , offer : Maybe String
+    }
+
+
+viewStill : msg -> StillBoard -> Html msg
+viewStill noop s =
+    let
+        scoreOf id =
+            s.scores |> List.filter (\( p, _ ) -> p == id) |> List.head |> Maybe.map Tuple.second |> Maybe.withDefault 0
+
+        base =
+            { game = "backgammon"
+            , phase = "moving"
+            , viewer = Just s.viewer
+            , players =
+                s.players
+                    |> List.map
+                        (\p ->
+                            { id = p.id
+                            , name = p.name
+                            , counters = Dict.fromList [ ( "score", scoreOf p.id ) ]
+                            , flags = []
+                            , data = E.object [ ( "color", E.string p.color ) ]
+                            }
+                        )
+            , zones =
+                if s.cube then
+                    [ { id = "cube", owner = Nothing, layout = Protocol.Row, tokens = [ { id = "cube", kind = "cube", faceUp = True, position = Nothing, props = E.null } ], count = 1 } ]
+
+                else
+                    []
+            , data = E.object [ ( "cube", E.object [ ( "enabled", E.bool s.cube ), ( "crawford", E.bool False ) ] ) ]
+            }
+
+        drawn =
+            stillScene base { player = Maybe.withDefault "" s.mover, dice = s.dice, picked = s.picked, position = s.position }
+
+        -- a double on offer parks the cube in the middle at twice its value
+        scene =
+            case s.offer of
+                Just from ->
+                    { drawn
+                        | data =
+                            D.decodeValue (D.dict D.value) drawn.data
+                                |> Result.withDefault Dict.empty
+                                |> Dict.update "cube"
+                                    (Maybe.map
+                                        (\cube ->
+                                            D.decodeValue (D.dict D.value) cube
+                                                |> Result.withDefault Dict.empty
+                                                |> Dict.insert "pending_from" (E.string from)
+                                                |> E.dict identity identity
+                                        )
+                                    )
+                                |> E.dict identity identity
+                    }
+
+                Nothing ->
+                    drawn
+
+        ctx =
+            { playerId = s.viewer
+            , scene = scene
+            , legal = []
+            , model = { init | viewing = Just s.key, still = True, roll = { seq = -1 - s.key, watched = False } }
+            , clock = Nothing
+            , receivedAt = 0
+            , now = 0
+            , nameOf = \id -> s.players |> List.filter (\p -> p.id == id) |> List.head |> Maybe.map .name |> Maybe.withDefault id
+            , rematchReady = []
+            , finished = Nothing
+            , away = []
+            , theme = s.theme
+            , replayHref = \_ -> Nothing
+            }
+
+        me =
+            seatOf ctx
+
+        themId =
+            Protocol.opponentOf (seatId ctx) ctx.scene |> Maybe.map .id |> Maybe.withDefault ""
+
+        moverColour =
+            s.mover |> Maybe.andThen (\id -> Protocol.findPlayer id scene) |> colorOf
+
+        board =
+            { ctx = ctx
+            , myColor = colorOf me
+            , sources = []
+            , targets = []
+            , drag = Nothing
+            , hovered = Nothing
+            , tap = tapContext ctx [] []
+            , landed =
+                { color = moverColour
+                , points = List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty s.landed
+                }
+            }
+    in
+    Html.map (\_ -> noop)
+        (div [ class ("bg-still " ++ themeClass s.theme) ]
+            [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
+                [ viewPlayerBar ctx (Protocol.opponentOf (seatId ctx) ctx.scene) False (viewTray board themId False)
+                , viewBoard board
+                , viewPlayerBar ctx me True (viewTray board (seatId ctx) True)
+                ]
+            ]
+        )
+
+
 {-| The record sheet a phone opens from MOVES: the same body as the desktop
 column, over the board, closed by its own button or a tap outside it.
 -}
@@ -3371,7 +3540,29 @@ viewGameRow ctx g =
         , span [ class "font-bold truncate" ] [ text (playerName ctx g.winner) ]
         , span [ style "color" "var(--pencil)" ] [ text (g.result ++ " · " ++ pointsText g.points) ]
         , span [ class "font-bold tabular-nums ml-auto" ] [ text (scoreText ctx g.scores) ]
+        , replayLink ctx g.number "REPLAY"
         ]
+
+
+{-| The door to a finished game's replay page, for a seat (the page opens on
+its token). A link, so it is a page the browser can open in a tab; a tap
+on it opens the replay rather than the row it sits in.
+-}
+replayLink : Ctx -> Int -> String -> Html Msg
+replayLink ctx number label =
+    case ctx.replayHref number of
+        Just href ->
+            Html.a
+                [ Html.Attributes.href href
+                , class "bg-replay-link pixel text-[7px] underline shrink-0"
+                , attribute "data-replay" (String.fromInt number)
+                , title ("Replay game " ++ String.fromInt number ++ ", with the engine's analysis")
+                , Html.Events.stopPropagationOn "click" (D.succeed ( Ignore, True ))
+                ]
+                [ text label ]
+
+        Nothing ->
+            text ""
 
 
 {-| The lines of one game's list, oldest first: its heading in a match, its
@@ -3577,6 +3768,12 @@ viewGameOver ctx winners =
                 [ case lastTurnIndex ctx of
                     Just index ->
                         button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-review-moves", onClick (ViewTurn index) ] [ text "REVIEW MOVES" ]
+
+                    Nothing ->
+                        text ""
+                , case ctx.replayHref (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) of
+                    Just href ->
+                        Html.a [ Html.Attributes.href href, class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-replay" ] [ text "REPLAY" ]
 
                     Nothing ->
                         text ""

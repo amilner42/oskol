@@ -115,16 +115,13 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
 /// line that ends each finished game. The game in progress, if there is
 /// one, is last and has no result yet. Replay and analysis read this.
 pub fn record_json(state: GameState) -> json.Json {
-  let games = record.by_game(list.reverse(state.record))
-  let in_progress = case state.phase {
-    state.Finished(_) -> False
-    _ -> True
-  }
-  let games = case in_progress {
-    True -> games
-    // The match is over: the last group, after the final result, is empty.
-    False -> list.take(games, list.length(games) - 1)
-  }
+  // The last group is what follows the final result line: the game in
+  // progress, or nothing at all -- the match over, or a match waiting
+  // between games for both players to be ready. A game with no line yet is
+  // no game to show.
+  let games =
+    record.by_game(list.reverse(state.record))
+    |> list.filter(fn(entries) { entries != [] })
   json.object([
     #(
       "players",
@@ -137,6 +134,14 @@ pub fn record_json(state: GameState) -> json.Json {
       }),
     ),
     #("target", json.int(state.config.target)),
+    // Whether the match is played with the doubling cube, and the position
+    // every game starts from: a replay draws the board before the first
+    // turn from this, never from a rule of its own.
+    #("cube", json.bool(state.config.cube)),
+    #(
+      "start",
+      record.snapshot_to_json(record.snapshot(board.initial(), 1, None)),
+    ),
     #(
       "games",
       json.array(list.index_map(games, fn(g, i) { #(g, i) }), fn(pair) {

@@ -155,16 +155,20 @@ calls `GameKit.expire/2`, which applies the game's `timeout`.
 ## File map
 
 ```
-src/gamekit/        framework: rng, scene, event, action, game, clock, instance,
+src/gamekit/        framework: rng, scene, event, action, game, clock, instance
+                    (typed `Running`, and the `Instance` that erases it),
+                    replay (a log folded through the typed steps),
                     registry (add games here), host (Elixir surface),
                     text (agent/test rendering), conformance, fixture
 src/backgammon/     Backgammon: board (rules + move generation), state (turns,
-                    dice, cube, match play), engine, projection, game
+                    dice, cube, match play), engine, projection, game,
+                    analysis (the analysis engine's board, a game's turns)
 src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     decisions live in Gleam" below): core (ctx, session,
                     error, envelope), caps (the IO a handler may do),
                     rooms (codes, names, errors, invite), guests/identity,
-                    landing/copy, handlers (rooms, landing)
+                    landing/copy, reviews/report, handlers (rooms, landing,
+                    reviews)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
@@ -176,6 +180,8 @@ lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
 lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
+lib/oskol/reviews.ex            game_reviews table, the log a review reads, the engine's HTTP
+lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room
 lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 src/oskol/rooms/seat.gleam       what an attach means: the same client back, or a takeover
@@ -196,6 +202,10 @@ assets/src/Page/GameLanding.elm  "/" the home page (CREATE GAME's dialog, the th
 assets/src/Page/HomeBoard.elm    the home page's board: the table edge to edge, the
                                  2x2 menu in its right band
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
+assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again, with the
+                                 engine's analysis (polls /reviews while any is pending)
+assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay reads them:
+                                 decoders, the board at each step, verdicts per record line
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Backgammon/View.elm  the backgammon board
@@ -259,6 +269,11 @@ arrive at any of them cold, and moving between them afterwards is a
   channel with a lobby payload. `t` is the seat token: a secret minted when a
   player takes a seat, and the only thing that opens it. The bare
   `/backgammon/<id>` grants nothing and bounces to the invite link.
+- `/backgammon/<id>/replay?t=<token>&game=<n>` a room's games played again,
+  a line of the record at a time, with the analysis engine's verdicts. It
+  opens on a seat's token, like the table (the bare URL bounces to the
+  invite link); the table offers it from the match history and at game
+  over. Board, steps and verdicts all come from `/record` and `/reviews`.
 - `/poker`, `/go`, `/chess` and anything under them: 302 to `/` (the games
   that were removed).
 
@@ -278,8 +293,18 @@ POST /papi/games/:slug                 {format, name, clock, selections}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
+GET  /papi/games/:slug/rooms/:id/reviews?t=<seat token>
+                                       {ok, players, games: [{game_number,
+                                           status, turns, review}]}
+                                         review: {levels, timing_ms, players, turns}; a
+                                         turn names its record lines (entry,
+                                         double_entry, answer_entry) and each
+                                         candidate move its position and landings
+POST /papi/games/:slug/rooms/:id/reviews/retry  {t, game_number} -> as GET, a failed
+                                         game queued again (a seat only)
 GET  /papi/games/:slug/rooms/:id/record?t=<seat token>
-                                       {ok, slug, id, record}  (the game's `record`)
+                                       {ok, slug, id, you, record}  (the game's `record`;
+                                       `you` is the seat the token opens)
 GET  /papi/codes/:code                 {ok, slug}
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
@@ -309,6 +334,48 @@ reaches a scene, an event or the game channel, and each player's board is
 their own. The client also keeps the pick in `localStorage` (the `storePref`
 port), which is what paints the board before the round trip and all a
 visitor whose guest cookie is gone has.
+
+## Post-game reviews (backgammon)
+
+Every backgammon game is graded by the analysis engine once it is over,
+each game of a match on its own: moves, cube decisions, luck, a PR per
+player. The engine is a separate private Fly app (`oskol-analysis`, repo
+`amilner42/oskol-analysis`, Aveline doc `bg-analysis-service`); nothing in a
+game or a room talks to it.
+
+- `backgammon/analysis` encodes Oskol's board to the engine's 26-int
+  on-roll board and builds one entry per turn (cube relative to the mover,
+  away scores, Crawford, dice, the played board). The turns come from
+  replaying seed + log through `gamekit/replay`, which folds the typed
+  twins of the calls the rehydrator makes, so a review sees exactly what
+  the room saw. A double the engine thinks illegal (a dead cube) is folded
+  away; a turn cut off by a resignation or a clock keeps only an answered
+  double.
+- When a step ends a game (`oskol/handlers/reviews.game_ended`), the room
+  casts `Oskol.Reviews.Queue`; the queue runs `reviews.run` in a task, one
+  room at a time, after the persister has flushed. A game already done or
+  queued is not run again; a failure is stored and retried at most twice
+  (30 s, then 2 min). The queue is in memory: after a restart, the first
+  request for a game still owed a review queues it again. That is also how
+  games finished before reviews existed get theirs: lazily, never by a
+  migration.
+- `game_reviews` holds one row per (game_id, game_number): status
+  (`pending`, `done`, `failed`), attempts, the engine's response verbatim.
+  `GET /papi/games/backgammon/rooms/:id/reviews` reshapes it for a page
+  (`oskol/reviews/report`): per turn the grade, the move played, the best
+  and the top five with equity lost, cube verdicts and luck; per player
+  PR, error, grade and mistake counts and luck. A game with no review yet
+  answers `pending` and is queued; the others are `done`, `failed`,
+  `empty` (no complete turn) and `playing`.
+- Config `:oskol, :analysis`: prod reads `ANALYSIS_URL` (default
+  `http://oskol-analysis.flycast`) and connects over IPv6 (Fly's private
+  network; `ANALYSIS_IPV6=false` turns it off). Dev defaults to
+  `http://localhost:18082`, IPv4. To point dev at the real engine:
+  `fly proxy 18082:80 oskol-analysis.flycast -a oskol-analysis` (stop it
+  after), or run it locally in the oskol-analysis checkout:
+  `.venv/bin/uvicorn app.main:app --port 18082`. Tests never hit the
+  network: the queue is off (`config :oskol, Oskol.Reviews.Queue`) unless
+  a test turns it on, and requests go to a `Req.Test` stub.
 
 ## Adding a game
 Backgammon is the product and the only game registered, but the framework
@@ -344,12 +411,20 @@ mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
 mix oskol.seed        # local backgammon rooms at codes 000001.. parked in positions worth
                       # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated,
-                      # P1 to act; prints each seat's link (lib/oskol/dev/seeds.ex)
+                      # P1 to act; prints each seat's link (lib/oskol/dev/seeds.ex);
+                      # 000010 is a single game played to the end, with a review
+                      # (start the fly proxy first, or the review fails and waits);
+                      # 000011 a match to 3 played to the end: its replay is
+                      # /backgammon/000011/replay?t=<P1's token>
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
 node playwright/test-backgammon-landscape/test.js  # backgammon on a sideways phone: the board
                                                # fits the screen height exactly, nothing scrolls
+node playwright/test-backgammon-replay/test.js  # the replay of a finished match (it arranges
+                                               # the room): steps, keys, swipes, analysis
+                                               # pending -> done, retry, phones; the analysis
+                                               # is stubbed unless REPLAY_REAL=1
 node playwright/test-spa-landing/test.js        # landing pages, old links redirect, a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
@@ -416,6 +491,12 @@ Every game is its seed plus its action log, and the suite leans on that.
   `mix oskol.fixtures replays` and read the diff.
 - Framework units: rng, clocks (including the turn delay), action decoding
   and validation, `event.for_viewer`, host/protocol shapes.
+- `test/backgammon/analysis_test.gleam`: the engine board in controlled
+  positions, the cube and match state per turn, scripted logs (doubles,
+  drops, resigns, timeouts, picked dice), and the property that every
+  played board is legal for its dice under an independent generator on the
+  engine's own format; `test/oskol/reviews_handler_test.gleam`: when a
+  review is owed, retries, and the page's shape, on stub caps.
 
 **Fixtures (`mix oskol.fixtures`)** come from `gamekit/fixture`: replays are
 small and committed; payload captures (every update every viewer received
@@ -438,6 +519,10 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   four menu entries, CREATE GAME's dialog (the mode, clock and twist
   dropdowns, their defaults, the summary, inline validation), the theme
   picker, and the invite's three answers.
+- `ReplayTest`: the replay on the real record and analysis of seed 000011
+  (`ReplayFixtures`): decoders, the board at every step, stepping, keys,
+  swipes, game switching, and the analysis filling in without moving the
+  viewer; polling only while something is pending.
 
 **Elixir (`mix test`)**
 - `test/oskol/room_test.exs`: `Oskol.Bots` (test_support) plays random

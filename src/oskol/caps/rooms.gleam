@@ -35,10 +35,11 @@ pub type RoomsCaps {
     /// seat's token is rotated first, so a link that leaked earlier cannot
     /// shadow the seat later.
     claim: fn(String, String) -> Result(Seat, RoomError),
-    /// The running game behind a seat: (game_id, seat token). A token that
-    /// opens no seat is `InvalidToken`; a room still in its lobby is
-    /// `GameNotStarted`. Reading it changes nothing and attaches nothing.
-    seated_game: fn(String, String) -> Result(Instance, RoomError),
+    /// The running game behind a seat, and the player id of that seat:
+    /// (game_id, seat token). A token that opens no seat is `InvalidToken`;
+    /// a room still in its lobby is `GameNotStarted`. Reading it changes
+    /// nothing and attaches nothing.
+    seated_game: fn(String, String) -> Result(#(String, Instance), RoomError),
   )
 }
 

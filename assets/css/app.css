@@ -1158,22 +1158,22 @@ a.q-card:hover, a.q-card:focus-visible {
 /* Identity bars: the top and bottom of the slab. White on ink; the player
    to act carries the sky treatment. Scoped to the backgammon page: the
    generic and chess tables draw their bars on paper. */
-.bg-page .player-bar { border: 0; box-shadow: none; background: var(--bg-frame); color: #fff; }
-.bg-page .player-bar.active { background: color-mix(in oklab, var(--bg-accent) 32%, var(--bg-frame)); border: 0; box-shadow: none; }
-.bg-page .swatch { border-color: rgba(255, 255, 255, 0.75); }
-.bg-page .swatch.white { background: var(--bg-checker-light); }
-.bg-page .swatch.black { background: var(--bg-checker-dark); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
-.bg-page .bar-turn { color: #fff; }
-.bg-page .bar-pips { color: rgba(255, 255, 255, 0.6); }
-.bg-page .bar-tag.you { background: var(--bg-accent); color: var(--bg-frame); }
-.bg-page .bar-tag.outline { border: 2px solid rgba(255, 255, 255, 0.6); }
-.bg-page .bar-tag.pick { border: 2px solid var(--bg-accent); color: var(--bg-accent); }
-.bg-page .bar-tag.away { color: var(--red); }
-.bg-page .score-chip { border: 2px solid rgba(255, 255, 255, 0.55); background: transparent; color: #fff; padding: 2px 6px; }
-.bg-page .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
-.bg-page .clock-chip.running { border-color: var(--bg-accent); color: var(--bg-accent); background: transparent; }
-.bg-page .clock-chip.expired { border-color: var(--red); color: var(--red); }
-.bg-page .delay-pip { border-color: var(--bg-accent); color: var(--bg-frame); background: var(--bg-accent); }
+:is(.bg-page, .bg-still) .player-bar { border: 0; box-shadow: none; background: var(--bg-frame); color: #fff; }
+:is(.bg-page, .bg-still) .player-bar.active { background: color-mix(in oklab, var(--bg-accent) 32%, var(--bg-frame)); border: 0; box-shadow: none; }
+:is(.bg-page, .bg-still) .swatch { border-color: rgba(255, 255, 255, 0.75); }
+:is(.bg-page, .bg-still) .swatch.white { background: var(--bg-checker-light); }
+:is(.bg-page, .bg-still) .swatch.black { background: var(--bg-checker-dark); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
+:is(.bg-page, .bg-still) .bar-turn { color: #fff; }
+:is(.bg-page, .bg-still) .bar-pips { color: rgba(255, 255, 255, 0.6); }
+:is(.bg-page, .bg-still) .bar-tag.you { background: var(--bg-accent); color: var(--bg-frame); }
+:is(.bg-page, .bg-still) .bar-tag.outline { border: 2px solid rgba(255, 255, 255, 0.6); }
+:is(.bg-page, .bg-still) .bar-tag.pick { border: 2px solid var(--bg-accent); color: var(--bg-accent); }
+:is(.bg-page, .bg-still) .bar-tag.away { color: var(--red); }
+:is(.bg-page, .bg-still) .score-chip { border: 2px solid rgba(255, 255, 255, 0.55); background: transparent; color: #fff; padding: 2px 6px; }
+:is(.bg-page, .bg-still) .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
+:is(.bg-page, .bg-still) .clock-chip.running { border-color: var(--bg-accent); color: var(--bg-accent); background: transparent; }
+:is(.bg-page, .bg-still) .clock-chip.expired { border-color: var(--red); color: var(--red); }
+:is(.bg-page, .bg-still) .delay-pip { border-color: var(--bg-accent); color: var(--bg-frame); background: var(--bg-accent); }
 /* The game-over card. */
 .bg-card { border-radius: 14px; box-shadow: 0 18px 40px rgba(40, 24, 12, 0.4); }
 
@@ -1491,4 +1491,253 @@ a.q-card:hover, a.q-card:focus-visible {
   .bg-page .bg-band .die { --die-size: clamp(2.5rem, calc(var(--bg-pw) * 0.7), 3.5rem); }
   .bg-page .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
   .bg-page .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
+}
+
+/* The replay (Page.Replay): a room's games played again, a line of the
+   record at a time, with the analysis engine's verdicts. One screen, no
+   page scroll where it can be helped: the board, the step controls, what
+   this step was and what the engine thinks of it, then the move list (or
+   the players' summary), which scrolls on its own.
+
+     - a phone held upright: everything in one column, the board at the
+       screen's full width and as tall as the height allows;
+     - a phone held sideways: the board takes the screen's height on the
+       left, everything else is a column beside it;
+     - a desktop: the board sized by the window's height, the column of
+       notes beside it.
+
+   The board is the table's own (`.bg-still`, drawn by `viewStill`), so it
+   wears the viewer's board colours; its dimensions follow from one number,
+   the point height, exactly as the table's do. */
+.bg-still {
+  --bg-frame-w: 8px;
+  --bg-lip: 4px;
+  --bg-band-h: 3.5rem;
+  --bg-bar-w: 2.1rem;
+  /* Upright: as tall as the screen can spare once the controls, the note
+     and a few lines of the list have their share, and never taller than
+     the table's own. */
+  --bg-point-h: clamp(5.5rem, calc((100dvh - 30rem) / 2), 9rem);
+  --bg-slab-w: calc(100vw - 1rem);
+  --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - 2 * 6px - 10 * 0.125rem) / 12);
+  max-width: 100%;
+}
+.bg-still .bg-stack { border-radius: 12px; box-shadow: 0 10px 26px rgba(40, 24, 12, 0.32); }
+.bg-still .player-bar { padding: 4px 8px; }
+@media (max-width: 639px) {
+  .bg-still .bg-band .dice-row { --dice-gap: 0.4rem; }
+  .bg-still .bg-band .die { --die-size: clamp(1.4rem, calc(var(--bg-pw) * 1.2), 2.3rem); }
+  .bg-still .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
+  .bg-still .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
+}
+
+.rp-page {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  color: var(--ink);
+}
+.rp-head { display: flex; align-items: center; gap: 8px; min-width: 0; flex: none; }
+.rp-back {
+  flex: none; padding: 5px 7px; background: #fff; color: var(--ink);
+  border: 2px solid var(--ink); box-shadow: 2px 2px 0 0 var(--ink);
+}
+.rp-tag { border: 2px solid var(--ink); background: #fff; padding: 3px 6px; min-width: 0; }
+.rp-message { margin: 3rem auto; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; max-width: 22rem; }
+
+/* The games of the match: a row of chips that scrolls sideways inside
+   itself when a long match outgrows the screen. */
+.rp-games {
+  flex: none; display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain;
+  scrollbar-width: none; padding: 1px 3px 4px 1px;
+}
+.rp-games::-webkit-scrollbar { display: none; }
+.rp-game {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px; font-size: 12px; background: #fff; color: var(--ink);
+  border: 2px solid var(--ink); box-shadow: 2px 2px 0 0 var(--ink); cursor: pointer;
+}
+.rp-game.is-on { background: var(--ink); color: var(--paper); }
+.rp-game-result { white-space: nowrap; }
+.rp-dot { width: 8px; height: 8px; border-radius: 9999px; flex: none; }
+.rp-dot.pending { background: var(--pen); animation: rp-breathe 1.8s ease-in-out infinite; }
+.rp-dot.failed { background: var(--red); }
+@keyframes rp-breathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+
+.rp-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.rp-stage { flex: none; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* A sideways swipe on the board steps; an upright one still scrolls. */
+.rp-board { position: relative; touch-action: pan-y; min-width: 0; }
+/* An engine's move on the board instead of the one played: a dashed edge
+   and a tab saying which. */
+.rp-board.is-proposed .bg-stack { outline: 3px dashed #ffd23f; outline-offset: 2px; }
+.rp-proposed {
+  position: absolute; left: 50%; top: 0; transform: translate(-50%, -55%);
+  max-width: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: #ffd23f; color: var(--ink); border: 2px solid var(--ink); padding: 3px 6px; z-index: 2;
+}
+.rp-controls { flex: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.rp-step { min-width: 3rem; height: 2.5rem; font-size: 10px; padding: 0 0.6rem; }
+.rp-step:disabled { opacity: 0.35; box-shadow: none; }
+.rp-count { min-width: 5.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+/* The narrowest phones: four thumb-sized plates and the counter have to fit
+   inside 320px less the page's padding, so both give a little. */
+@media (max-width: 374px) {
+  .rp-controls { gap: 6px; }
+  .rp-step { min-width: 2.6rem; padding: 0 0.4rem; }
+  .rp-count { min-width: 4.2rem; }
+}
+
+.rp-side { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* What this step was, and the engine's word on it. */
+.rp-note {
+  flex: none; max-height: 42%; overflow-y: auto; overscroll-behavior: contain;
+  background: #fff; border: 3px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink);
+  padding: 6px 10px; font-size: 13px; line-height: 1.35;
+}
+.rp-note .swatch, .rp-list .swatch, .rp-summary .swatch { width: 0.85rem; flex: none; align-self: center; }
+.rp-what { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.rp-dice { font-weight: 800; flex: none; min-width: 1.4rem; }
+.rp-moves { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.rp-verdict { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; margin-top: 5px; }
+.rp-best { min-width: 0; overflow-wrap: anywhere; }
+.rp-lost { color: var(--red); font-weight: 700; }
+.rp-luck { margin-left: auto; color: var(--pencil); font-size: 11px; white-space: nowrap; }
+.rp-cube-line { margin-top: 3px; color: var(--pencil); font-size: 11px; }
+/* The grades: XG's bands, green to red. */
+.rp-grade {
+  font-size: 11px; font-weight: 800; padding: 0 6px; border-radius: 3px;
+  border: 2px solid currentColor; white-space: nowrap;
+}
+.g-best { color: #1f7a45; background: #e4f4e9; }
+.g-ok { color: #2d6f78; background: #e3f1f3; }
+.g-doubtful { color: #8a5d00; background: #fff1c9; }
+.g-bad { color: #b4430d; background: #ffe5d4; }
+.g-very_bad { color: #b3261e; background: #fde1df; }
+/* The engine's top moves: tap one to see it on the board. */
+.rp-top { display: grid; gap: 1px; margin-top: 6px; }
+.rp-cand {
+  display: flex; align-items: baseline; gap: 6px; text-align: left; width: 100%;
+  padding: 3px 6px; background: transparent; border: 2px solid transparent; color: var(--ink); cursor: pointer;
+}
+.rp-cand:hover { background: color-mix(in oklab, #ffd23f 22%, #fff); }
+.rp-cand.is-on { background: color-mix(in oklab, #ffd23f 50%, #fff); border-color: var(--ink); }
+.rp-cand:disabled { cursor: default; opacity: 0.6; }
+.rp-rank { color: var(--pencil); min-width: 1.2rem; }
+.rp-cand-move { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.rp-played { border: 1px solid var(--ink); padding: 1px 3px; }
+.rp-cand-lost { margin-left: auto; font-size: 12px; color: var(--pencil); white-space: nowrap; }
+/* Where the analysis stands: pending (with a calm bar), failed, or quiet. */
+.rp-state { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; color: var(--pencil); }
+.rp-state.is-failed { color: var(--red); }
+.rp-progress { display: block; flex: 1 0 100%; height: 4px; border-radius: 2px; background: color-mix(in oklab, var(--pen) 14%, #fff); overflow: hidden; }
+.rp-progress > span { display: block; width: 35%; height: 100%; border-radius: 2px; background: var(--pen); animation: rp-slide 2.4s ease-in-out infinite; }
+@keyframes rp-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) {
+  .rp-progress > span, .rp-dot.pending { animation: none; }
+}
+
+.rp-tabs { flex: none; display: flex; }
+.rp-tab { flex: 1; padding: 6px; background: #fff; color: var(--ink); border: 2px solid var(--ink); cursor: pointer; }
+.rp-tab + .rp-tab { border-left: 0; }
+.rp-tab.is-on { background: var(--ink); color: var(--paper); }
+.rp-list, .rp-summary {
+  flex: 1; min-height: 7rem; overflow-y: auto; overscroll-behavior: contain;
+  background: #fff; border: 3px solid var(--ink); border-top: 0;
+  padding: 4px 8px; font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums;
+}
+.rp-line { display: flex; align-items: baseline; gap: 6px; padding: 3px 6px; margin: 0 -6px; cursor: pointer; }
+.rp-line:hover { background: color-mix(in oklab, #ffd23f 20%, #fff); }
+.rp-line.is-on { background: color-mix(in oklab, #ffd23f 50%, #fff); box-shadow: inset 3px 0 0 0 var(--ink); }
+.rp-mark { flex: none; font-weight: 800; font-size: 12px; padding: 0 4px; border-radius: 3px; }
+.rp-mark.g-best, .rp-mark.g-ok { background: transparent; }
+/* The summary: each player's PR, errors and luck. */
+.rp-player { padding: 6px 0; border-bottom: 1px dashed var(--pencil); }
+.rp-player-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rp-pr { margin-left: auto; font-weight: 800; font-size: 18px; white-space: nowrap; }
+.rp-counts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 12px; }
+.rp-count-chip { border: 1px solid var(--pencil); border-radius: 3px; padding: 0 5px; color: var(--pencil); }
+.rp-count-chip[class*="g-"] { border-color: currentColor; font-weight: 700; }
+.rp-level { margin-top: 8px; font-size: 12px; font-weight: 700; }
+.rp-explain { margin-top: 8px; font-size: 12px; color: var(--pencil); }
+
+/* A phone held sideways: the board takes the screen's height on the left;
+   the header, the games, the controls and the notes are a column beside
+   it. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  .rp-page {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    gap: 5px 10px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    overflow: hidden;
+  }
+  .rp-main, .rp-stage { display: contents; }
+  .rp-head { grid-column: 2; grid-row: 1; }
+  .rp-games { grid-column: 2; grid-row: 2; }
+  .rp-controls { grid-column: 2; grid-row: 3; justify-content: flex-start; }
+  .rp-side { grid-column: 2; grid-row: 4; }
+  .rp-board { grid-column: 1; grid-row: 1 / -1; align-self: center; }
+  .rp-step { height: 2.2rem; min-width: 2.6rem; }
+  .rp-note { max-height: 45%; }
+  .rp-list, .rp-summary { min-height: 0; }
+  .bg-still {
+    --bg-frame-w: 6px;
+    --bg-lip: 5px;
+    --bg-band-h: 2.8rem;
+    /* the whole height, less the page's padding, the two identity bars,
+       the band and the frame */
+    --bg-point-h: min(
+      calc((100dvh - 12px - 3.9rem - var(--bg-band-h) - 2 * var(--bg-lip)) / 2),
+      calc((100vw - 18rem) / 2.9)
+    );
+    --bg-pw: calc(var(--bg-point-h) * 0.21);
+    --bg-half: calc(var(--bg-pw) * 6 + 5px + 6px);
+    --bg-bar-w: calc(var(--bg-pw) * 1.15);
+  }
+  .bg-still .bg-stack { width: max-content; max-width: 100%; }
+  .bg-still .bg-grid { grid-template-columns: var(--bg-half) auto var(--bg-half); }
+  .bg-still .bg-points { gap: 1px; }
+  .bg-still .bg-band { height: var(--bg-band-h); min-height: var(--bg-band-h); flex-wrap: nowrap; gap: 0.3rem; padding: 0; overflow: hidden; }
+  .bg-still .player-bar { padding: 3px 7px; flex-wrap: nowrap; }
+  .bg-still .player-bar .bar-pips { display: none; }
+  .bg-still .bg-band .dice-row { --dice-gap: 0.3rem; }
+  .bg-still .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--bg-checker-edge); }
+  .bg-still .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
+  .bg-still .bg-band .die .grid > div > div { width: 4px; height: 4px; }
+}
+
+/* A desktop: the board sized by the window's height, the notes beside it
+   in a column as tall as the board. */
+@media (min-width: 1024px) {
+  .rp-page { padding: 14px 24px; gap: 10px; overflow: hidden; }
+  .rp-head, .rp-games { width: 100%; max-width: calc(var(--rp-board-w, 60rem) + 23rem); margin: 0 auto; }
+  .rp-main { flex-direction: row; justify-content: center; align-items: stretch; gap: 16px; }
+  .rp-stage { flex: none; }
+  .rp-side { flex: none; width: 22rem; }
+  .rp-note { max-height: 50%; }
+  .bg-still {
+    --bg-frame-w: 14px;
+    --bg-lip: 6px;
+    --bg-band-h: 4rem;
+    --bg-point-h: min(
+      calc((100dvh - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
+      calc((100vw - 48px - 22rem - 16px - 4rem) / 2.9)
+    );
+    --bg-pw: calc(var(--bg-point-h) * 0.21);
+    --bg-half: calc(var(--bg-pw) * 6 + 5 * 0.25rem + 6px);
+    --bg-bar-w: calc(var(--bg-pw) * 1.15);
+  }
+  .bg-still .bg-stack { width: max-content; max-width: 100%; }
+  .bg-still .bg-grid { grid-template-columns: var(--bg-half) auto var(--bg-half); }
+  .bg-still .player-bar { padding: 8px 14px; }
+  .bg-still .bg-tray { --holder-h: 1.3rem; --stick-w: 4px; }
+  .bg-still .bg-band .die { --die-size: clamp(2.3rem, calc(var(--bg-pw) * 0.7), 3.3rem); }
+  .bg-still .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
+  .bg-still .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
 }
