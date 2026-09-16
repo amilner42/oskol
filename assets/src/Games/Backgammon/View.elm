@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Presence(..), Press, Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, presenceFlashMs, presenceOf, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeClass, themes, tumbleFaces, update, view, viewStill)
+module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Presence(..), Press, Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, presenceFlashMs, presenceOf, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewStill)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -761,19 +761,27 @@ type alias Ctx =
     }
 
 
-{-| The eight boards, in the order the picker lists them: the id the server
+{-| The boards, in the order the picker lists them: the id the server
 keeps (`oskol/guests/prefs.gleam`) and the name a player reads. The colours
 themselves are in app.css, under the class of the same name, and are what
 paints both the board and this row's swatch.
 -}
 themes : List ( String, String )
 themes =
-    [ ( "walnut", "WALNUT" )
-    , ( "midnight", "MIDNIGHT" )
+    [ ( "midnight", "MIDNIGHT" )
+    , ( "walnut", "WALNUT" )
     , ( "forest", "FOREST FELT" )
+    , ( "emerald", "EMERALD" )
+    , ( "ocean", "OCEAN" )
+    , ( "arctic", "ARCTIC" )
+    , ( "royal", "ROYAL" )
+    , ( "sunset", "SUNSET" )
+    , ( "sakura", "SAKURA" )
+    , ( "cherry", "CHERRY" )
+    , ( "copper", "COPPER" )
+    , ( "espresso", "ESPRESSO" )
     , ( "sand", "SAND" )
     , ( "ivory", "IVORY & EBONY" )
-    , ( "cherry", "CHERRY" )
     , ( "slate", "SLATE" )
     , ( "neon", "NEON ARCADE" )
     ]
@@ -1171,7 +1179,7 @@ viewThemePicker ctx =
             , title "Board colours"
             , onClick ToggleThemes
             ]
-            [ span [ class ("bg-theme-chip " ++ themeClass (Tuple.first current)) ] []
+            [ span [ class ("bg-theme-chip " ++ themeClass (Tuple.first current)) ] [ themeBoard ]
 
             -- On a phone the swatch is the control: the header has no room
             -- for eleven more characters, and the list names every board.
@@ -1189,12 +1197,58 @@ viewThemePicker ctx =
 viewThemeOption : String -> ( String, String ) -> Html Msg
 viewThemeOption current ( id, label ) =
     button
-        [ classList [ ( "bg-theme-option pixel text-[8px]", True ), ( "on", id == current ) ]
+        [ classList [ ( "bg-theme-option", True ), ( "on", id == current ) ]
         , attribute "data-theme-option" id
+        , title label
         , onClick (PickTheme id)
         ]
-        [ span [ class ("bg-theme-chip " ++ themeClass id) ] []
-        , span [] [ text label ]
+        [ span [ class ("bg-theme-chip " ++ themeClass id) ] [ themeBoard ]
+        , span [ class "bg-theme-name" ] [ text label ]
+        ]
+
+
+{-| A board in miniature, painted by the very tokens the real one uses: the
+frame, the felt, four points of each colour, a man of each set and the
+accent. It is the swatch, so a player picks a board by looking at a board
+rather than at its name.
+-}
+themeBoard : Html msg
+themeBoard =
+    let
+        point x up =
+            Svg.polygon
+                [ SvgAttr.points
+                    (if up then
+                        String.fromFloat x ++ ",22 " ++ String.fromFloat (x + 4) ++ ",9 " ++ String.fromFloat (x + 8) ++ ",22"
+
+                     else
+                        String.fromFloat x ++ ",2 " ++ String.fromFloat (x + 4) ++ ",15 " ++ String.fromFloat (x + 8) ++ ",2"
+                    )
+                , SvgAttr.fill
+                    (if up then
+                        "var(--bg-point-a)"
+
+                     else
+                        "var(--bg-point-b)"
+                    )
+                ]
+                []
+    in
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 48 24"
+        , SvgAttr.width "100%"
+        , SvgAttr.height "100%"
+        , SvgAttr.preserveAspectRatio "none"
+        , attribute "aria-hidden" "true"
+        ]
+        [ Svg.rect [ SvgAttr.x "0", SvgAttr.y "0", SvgAttr.width "48", SvgAttr.height "24", SvgAttr.fill "var(--bg-frame)" ] []
+        , Svg.rect [ SvgAttr.x "2", SvgAttr.y "2", SvgAttr.width "44", SvgAttr.height "20", SvgAttr.fill "var(--bg-felt)" ] []
+        , Svg.g [] (List.map (\i -> point (3 + toFloat i * 9) True) (List.range 0 4))
+        , Svg.g [] (List.map (\i -> point (7.5 + toFloat i * 9) False) (List.range 0 3))
+        , Svg.rect [ SvgAttr.x "22", SvgAttr.y "2", SvgAttr.width "4", SvgAttr.height "20", SvgAttr.fill "var(--bg-frame)" ] []
+        , Svg.circle [ SvgAttr.cx "9", SvgAttr.cy "18", SvgAttr.r "3.4", SvgAttr.fill "var(--bg-checker-light)", SvgAttr.stroke "var(--bg-checker-edge)", SvgAttr.strokeWidth "0.8" ] []
+        , Svg.circle [ SvgAttr.cx "39", SvgAttr.cy "6", SvgAttr.r "3.4", SvgAttr.fill "var(--bg-checker-dark)", SvgAttr.stroke "var(--bg-checker-edge)", SvgAttr.strokeWidth "0.8" ] []
+        , Svg.circle [ SvgAttr.cx "24", SvgAttr.cy "12", SvgAttr.r "2.6", SvgAttr.fill "var(--bg-accent)" ] []
         ]
 
 

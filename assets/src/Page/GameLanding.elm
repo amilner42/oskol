@@ -472,7 +472,8 @@ themePicker model =
             , Html.Attributes.title "Board colours"
             , onClick ToggledThemes
             ]
-            [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ] []
+            [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ]
+                [ Games.Backgammon.View.themeBoard ]
             , Html.span [ class "bg-ctl-label hidden sm:inline" ] [ Html.text label ]
             ]
         , if model.themesOpen then
@@ -481,7 +482,7 @@ themePicker model =
                     (\( key, name ) ->
                         Html.button
                             [ class
-                                ("bg-theme-option pixel text-[8px]"
+                                ("bg-theme-option"
                                     ++ (if key == current then
                                             " on"
 
@@ -490,10 +491,12 @@ themePicker model =
                                        )
                                 )
                             , Html.Attributes.attribute "data-theme-option" key
+                            , Html.Attributes.title name
                             , onClick (PickedTheme key)
                             ]
-                            [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass key) ] []
-                            , Html.span [] [ Html.text name ]
+                            [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass key) ]
+                                [ Games.Backgammon.View.themeBoard ]
+                            , Html.span [ class "bg-theme-name" ] [ Html.text name ]
                             ]
                     )
                     Games.Backgammon.View.themes

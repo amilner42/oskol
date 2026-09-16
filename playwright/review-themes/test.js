@@ -1,5 +1,5 @@
 /**
- * The eight backgammon boards, shot on a phone.
+ * Every backgammon board, shot on a phone.
  *
  * Starts a real game (Alice on a phone, Bob joining so play begins), then
  * walks the header's board picker: open the list, take a board, shoot it.
@@ -19,7 +19,15 @@ const OUT = process.env.SHOTS_DIR || 'playwright/screenshots/review-themes';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const THEMES = ['walnut', 'midnight', 'forest', 'sand', 'ivory', 'cherry', 'slate', 'neon'];
+// Read off the picker itself rather than kept here, so a board added to
+// `View.themes` is shot without anyone remembering to add it twice.
+async function themesOf(page) {
+  await page.click('#bg-theme-button');
+  await page.waitForSelector('#bg-theme-list');
+  const ids = await page.$$eval('[data-theme-option]', (ns) => ns.map((n) => n.getAttribute('data-theme-option')));
+  await page.click('#bg-theme-button');
+  return ids;
+}
 
 async function themeClass(page) {
   return page.$eval('.bg-page', (el) =>
@@ -61,7 +69,7 @@ async function themeClass(page) {
     // one at the end, whichever one the site ships with.
     const bobsAtFirst = await themeClass(p2);
 
-    for (const theme of THEMES) {
+    for (const theme of await themesOf(p1)) {
       await p1.click('#bg-theme-button');
       await p1.waitForSelector('#bg-theme-list');
       await p1.click(`[data-theme-option="${theme}"]`);
