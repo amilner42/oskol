@@ -40,6 +40,10 @@ pub type RoomsCaps {
     /// a room still in its lobby is `GameNotStarted`. Reading it changes
     /// nothing and attaches nothing.
     seated_game: fn(String, String) -> Result(#(String, Instance), RoomError),
+    /// The running game at a room, for anyone: what every seat and every
+    /// spectator already sees. A room still in its lobby is
+    /// `GameNotStarted`. Reading it changes nothing and attaches nothing.
+    game: fn(String) -> Result(Instance, RoomError),
   )
 }
 
@@ -55,5 +59,6 @@ pub fn stub() -> RoomsCaps {
     join: fn(_, _, _) { panic as "stub rooms.join" },
     claim: fn(_, _) { panic as "stub rooms.claim" },
     seated_game: fn(_, _) { panic as "stub rooms.seated_game" },
+    game: fn(_) { panic as "stub rooms.game" },
   )
 }

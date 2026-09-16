@@ -687,6 +687,7 @@ view model =
                                     , finished = finished
                                     , away = awayIds payload
                                     , theme = theme model
+                                    , you = Just payload.playerId
                                     , replayHref = replayHref model payload
                                     }
                                 )

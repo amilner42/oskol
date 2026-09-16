@@ -150,11 +150,12 @@ fn review_one(
 /// and not yet reviewed is queued and answers `pending`; the client asks
 /// again.
 ///
-/// For the players at that table only, on the seat token their own link
-/// carries: a review is the whole game read back -- every roll, every move
-/// and the board it left -- and asking for one sets the engine working.
-/// Anything else is the record's own `not_found_message`, so a caller
-/// learns nothing about a room it cannot sit at.
+/// Open to anyone who has the room: a review reads back what was already on
+/// the board for both players and any spectator, and a replay does not ask
+/// its reader who they are. Asking for one sets the engine working; trying
+/// a failed one again (`retry_json`) still takes a seat, since that spends
+/// engine time on demand. A room that is not there is the record's own
+/// `not_found_message`.
 ///
 /// Statuses: `done` (with `review`), `pending`, `failed` (the engine was
 /// tried and gave up), `empty` (the game ended before anyone completed a
@@ -165,7 +166,7 @@ pub fn reviews_json(
   game_id: String,
   token: String,
 ) -> Result(String, ApiError) {
-  use _ <- result.try(record.seat(ctx, game_slug, game_id, token))
+  use _ <- result.try(record.room(ctx, game_slug, game_id))
   use log <- result.try(case game_slug == slug, ctx.analysis.log(game_id) {
     True, Some(log) if log.slug == slug -> Ok(log)
     _, _ -> Error(error.NotFound(record.not_found_message))
@@ -176,7 +177,14 @@ pub fn reviews_json(
   let stored = ctx.analysis.stored(game_id)
   let seats = seats(log)
   let entries = list.map(games, fn(g) { entry(g, stored, seats) })
-  case list.any(games, fn(g) { owed(g, stored) }) {
+  // Reading is open to anyone with the room; asking the engine for work is
+  // not. A player's own visit is what starts an analysis that is owed, so a
+  // stranger walking room codes cannot put the engine to work.
+  let seated = case ctx.rooms.seated_game(game_id, token) {
+    Ok(_) -> True
+    Error(_) -> False
+  }
+  case seated && list.any(games, fn(g) { owed(g, stored) }) {
     True -> ctx.analysis.enqueue(game_id)
     False -> Nil
   }

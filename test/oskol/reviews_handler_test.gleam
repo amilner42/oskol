@@ -29,7 +29,6 @@ import oskol/caps/rooms as rooms_caps
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
 import oskol/fakes
-import oskol/handlers/record as record_handler
 import oskol/handlers/reviews
 import oskol/rooms/errors
 
@@ -420,12 +419,16 @@ fn seated(ctx: Ctx) -> Ctx {
     |> fakes.with_slug(Some("backgammon"))
   Ctx(
     ..ctx,
-    rooms: rooms_caps.RoomsCaps(..ctx.rooms, seated_game: fn(_, token) {
-      case token {
-        "good" -> Ok(#("p1", game))
-        _ -> Error(errors.InvalidToken)
-      }
-    }),
+    rooms: rooms_caps.RoomsCaps(
+      ..ctx.rooms,
+      seated_game: fn(_, token) {
+        case token {
+          "good" -> Ok(#("p1", game))
+          _ -> Error(errors.InvalidToken)
+        }
+      },
+      game: fn(_) { Ok(game) },
+    ),
   )
 }
 
@@ -552,17 +555,28 @@ pub fn a_game_being_played_says_playing_test() {
   assert recorded("enqueued") == []
 }
 
-pub fn only_a_seat_reads_a_room_s_reviews_test() {
-  // A review is the whole game read back, and asking for one sets the
-  // engine working: the seat token opens it, as it opens the record.
+pub fn anyone_with_the_room_reads_its_reviews_test() {
+  // A replay does not ask its reader who they are: a review reads back what
+  // was on the board for both players and any spectator. A seat token is an
+  // orientation, not a key -- only a retry, which spends engine time on
+  // demand, still takes one.
   let ctx = with_analysis(finished_log(4), [], no_engine) |> seated
-  let assert Error(error.NotFound(message)) =
-    reviews.reviews_json(ctx, "backgammon", "123456", "stolen")
-  assert message == record_handler.not_found_message
+  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "stolen")
+  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "")
   let assert Error(error.NotFound(_)) =
-    reviews.reviews_json(ctx, "backgammon", "123456", "")
-  // Nothing was queued for a caller with no seat
+    reviews.retry_json(ctx, "backgammon", "123456", "stolen", 1)
+}
+
+pub fn only_a_seat_puts_the_engine_to_work_test() {
+  // Reading is open, but room codes are six digits: a stranger walking them
+  // must not be able to queue an analysis of every game ever played. A game
+  // that is owed one is queued by a player's own visit, not by a passer-by's.
+  let ctx = with_analysis(finished_log(4), [], no_engine) |> seated
+  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "stolen")
+  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "")
   assert recorded("enqueued") == []
+  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "good")
+  assert recorded("enqueued") == ["123456"]
 }
 
 pub fn only_backgammon_rooms_have_reviews_test() {

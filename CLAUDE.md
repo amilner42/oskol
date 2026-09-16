@@ -80,8 +80,8 @@ Game(
 )
 ```
 
-`record` is what `GET /papi/games/:slug/rooms/:id/record` serves to a seat:
-everything a replay or an analysis needs, too big to ride in every update.
+`record` is what `GET /papi/games/:slug/rooms/:id/record` serves to anyone
+with the room: everything a replay or an analysis needs, too big to ride in every update.
 Backgammon's is every game of the match with every turn (notation, the
 position and cube it left, where the moved checkers `landed`); its scene
 carries only the game on the board plus one result line per finished game.
@@ -271,8 +271,11 @@ arrive at any of them cold, and moving between them afterwards is a
   `/backgammon/<id>` grants nothing and bounces to the invite link.
 - `/backgammon/<id>/replay?t=<token>&game=<n>` a room's games played again,
   a line of the record at a time, with the analysis engine's verdicts. It
-  opens on a seat's token, like the table (the bare URL bounces to the
-  invite link); the table offers it from the match history and at game
+  opens for anyone with the link -- a replay is what both players and any
+  spectator already saw -- and is served the SPA shell, `noindex`. `t` is an
+  orientation, not a key: it says which seat the board faces to begin with
+  (without one, the seat that played first) and the page turns the board
+  around anyway. The table offers it from the match history and at game
   over. Board, steps and verdicts all come from `/record` and `/reviews`.
 - `/poker`, `/go`, `/chess` and anything under them: 302 to `/` (the games
   that were removed).
@@ -293,7 +296,8 @@ POST /papi/games/:slug                 {format, name, clock, selections}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
-GET  /papi/games/:slug/rooms/:id/reviews?t=<seat token>
+GET  /papi/games/:slug/rooms/:id/reviews[?t=<seat token>]  (open; a seat's
+                                       visit is what queues an analysis that is owed)
                                        {ok, players, games: [{game_number,
                                            status, turns, review}]}
                                          review: {levels, timing_ms, players, turns}; a
@@ -302,9 +306,11 @@ GET  /papi/games/:slug/rooms/:id/reviews?t=<seat token>
                                          candidate move its position and landings
 POST /papi/games/:slug/rooms/:id/reviews/retry  {t, game_number} -> as GET, a failed
                                          game queued again (a seat only)
-GET  /papi/games/:slug/rooms/:id/record?t=<seat token>
-                                       {ok, slug, id, you, record}  (the game's `record`;
-                                       `you` is the seat the token opens)
+GET  /papi/games/:slug/rooms/:id/record[?t=<seat token>]  (open)
+                                       {ok, slug, id, you, seated, record}  (the game's
+                                       `record`; `you` is the seat the board faces --
+                                       the token's, else the first -- and `seated` says
+                                       whether that seat is the reader's own)
 GET  /papi/codes/:code                 {ok, slug}
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
@@ -321,10 +327,12 @@ so the picker can name the ones the game offers. Statuses: 404 `not_found`
 (no such game, no such code, a room that is over), 422 `validation_failed`
 (a name, a mode, a clock or a seat the room refused), 500 `server_error`.
 Every decision behind these lives in `src/oskol/handlers/landing.gleam`,
-except the record's, in `src/oskol/handlers/record.gleam`: it opens only on
-a seat token (the rooms cap `seated_game`), and a wrong token, a lobby, a
-slug that is not the room's game and a room that is gone all answer the
-same 404, as the game channel refuses without saying which.
+except the record's, in `src/oskol/handlers/record.gleam`: it opens on the
+room (the rooms cap `game`), and a lobby, a slug that is not the room's game
+and a room that is gone all answer the same 404, as the game channel refuses
+without saying which. A seat token (the cap `seated_game`) is still what
+picks the seat, what queues an analysis the engine is owed, and what a retry
+takes.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist
@@ -356,9 +364,10 @@ game or a room talks to it.
   room at a time, after the persister has flushed. A game already done or
   queued is not run again; a failure is stored and retried at most twice
   (30 s, then 2 min). The queue is in memory: after a restart, the first
-  request for a game still owed a review queues it again. That is also how
-  games finished before reviews existed get theirs: lazily, never by a
-  migration.
+  request for a game still owed a review queues it again -- a request from
+  one of its own seats, since reading a review is open to anyone with the
+  room and engine time is not. That is also how games finished before
+  reviews existed get theirs: lazily, never by a migration.
 - `game_reviews` holds one row per (game_id, game_number): status
   (`pending`, `done`, `failed`), attempts, the engine's response verbatim.
   `GET /papi/games/backgammon/rooms/:id/reviews` reshapes it for a page

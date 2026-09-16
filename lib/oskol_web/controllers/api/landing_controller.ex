@@ -9,7 +9,8 @@ defmodule OskolWeb.Api.LandingController do
       POST /papi/games/:slug/rooms/:id     join by name, or take a seat back
       GET  /papi/games/:slug/rooms/:id/reviews?t=  post-game reviews, per game (a seat)
       POST /papi/games/:slug/rooms/:id/reviews/retry  try a failed review again (a seat)
-      GET  /papi/games/:slug/rooms/:id/record?t=   the game's whole record, for a seat
+      GET  /papi/games/:slug/rooms/:id/record[?t=] the game's whole record, for anyone
+                                                  with the room
       GET  /papi/codes/:code               which game answers to a code
       GET  /papi/me/prefs                  this visitor's display preferences
       POST /papi/me/prefs                  keep one of them
@@ -112,8 +113,9 @@ defmodule OskolWeb.Api.LandingController do
     )
   end
 
-  # The seat token rides as `t`, as on the game page's own URL: it is what
-  # opens the record, exactly as it opens the seat.
+  # The record opens on the room: it is every committed turn, which both
+  # players already saw. The seat token rides as `t` when the link carries
+  # one, and only says which seat the board faces to begin with.
   def record(conn, %{"slug" => slug, "id" => game_id} = params) do
     send_json(
       conn,

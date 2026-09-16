@@ -68,18 +68,6 @@ defmodule OskolWeb.PageControllerTest do
       assert conn |> get("/checkers/#{game_id}") |> response(404)
     end
 
-    test "the replay opens on a seat's token too, and on nothing else", %{conn: conn} do
-      %{game_id: game_id, t1: t1} = Oskol.GameFixtures.started()
-      html = conn |> get("/backgammon/#{game_id}/replay?t=#{t1}&game=1") |> html_response(200)
-      assert html =~ ~s(id="elm-app")
-      assert html =~ ~s(<meta name="robots" content="noindex")
-
-      for query <- ["", "?t=", "?t=not-a-token"] do
-        conn = get(build_conn(), "/backgammon/#{game_id}/replay#{query}")
-        assert redirected_to(conn) == "/backgammon?game=#{game_id}"
-      end
-    end
-
     test "a token from another room does not open this one", %{conn: conn} do
       %{game_id: game_id} = Oskol.GameFixtures.started()
       %{t1: other_token} = Oskol.GameFixtures.started()

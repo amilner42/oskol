@@ -1547,6 +1547,14 @@ a.q-card:hover, a.q-card:focus-visible {
   border: 2px solid var(--ink); box-shadow: 2px 2px 0 0 var(--ink);
 }
 .rp-tag { border: 2px solid var(--ink); background: #fff; padding: 3px 6px; min-width: 0; }
+/* Turn the board around: a replay faces the link's seat to begin with, and
+   anyone can swap sides. */
+.rp-flip {
+  flex: none; margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 1.9rem; height: 1.9rem; background: #fff; color: var(--ink);
+  border: 2px solid var(--ink); box-shadow: 2px 2px 0 0 var(--ink); cursor: pointer;
+}
+.rp-flip:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 0 var(--ink); }
 .rp-message { margin: 3rem auto; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; max-width: 22rem; }
 
 /* The games of the match: a row of chips that scrolls sideways inside

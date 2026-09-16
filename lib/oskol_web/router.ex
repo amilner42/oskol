@@ -80,7 +80,9 @@ defmodule OskolWeb.Router do
     # A running game, e.g. /backgammon/abc123
     get "/:slug/:id", PageController, :play
     # A game played again, turn by turn, with its analysis:
-    # /backgammon/abc123/replay (a seat's token, like the table)
-    get "/:slug/:id/replay", PageController, :play
+    # /backgammon/abc123/replay. Open to anyone with the link: a replay is
+    # what both players and any spectator already saw, and its token (when
+    # the link carries one) only says which way the board faces.
+    get "/:slug/:id/replay", SpaController, :replay
   end
 end

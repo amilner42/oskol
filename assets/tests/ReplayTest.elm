@@ -15,6 +15,7 @@ the viewer. The page asks again only while something is pending.
 
 import Dict
 import Expect
+import Html.Attributes
 import Games.Backgammon.Replay as Replay exposing (Annotation(..), Entry(..), MoveReview(..), Status(..))
 import Json.Decode as D
 import Page.Replay as Page exposing (Loadable(..), Msg(..), Showing(..))
@@ -44,6 +45,19 @@ suite =
 record : Replay.Record
 record =
     case D.decodeString Replay.recordDecoder ReplayFixtures.record of
+        Ok r ->
+            r
+
+        Err err ->
+            Debug.todo (D.errorToString err)
+
+
+{-| The same record as the server answers a link with no seat token: the
+board still faces a side, but it is nobody's own.
+-}
+shared : Replay.Record
+shared =
+    case D.decodeString Replay.recordDecoder (String.replace "\"seated\":true" "\"seated\":false" ReplayFixtures.record) of
         Ok r ->
             r
 
@@ -370,14 +384,15 @@ analysisArriving =
                     |> run [ GotReviews (Ok done), GotRecord (Ok record) ]
                     |> (\m -> ( m.reviews /= Nothing, m.game ))
                     |> Expect.equal ( True, 3 )
-        , test "with no token there is nothing to replay" <|
+        , test "with no token the replay still opens, on the first seat" <|
             \_ ->
                 Page.init session { slug = "backgammon", gameId = "000011", token = Nothing, game = Nothing }
                     |> Tuple.first
+                    |> run [ GotRecord (Ok record) ]
                     |> .record
                     |> (\r ->
                             case r of
-                                Unavailable _ ->
+                                Loaded _ ->
                                     True
 
                                 _ ->
@@ -459,6 +474,49 @@ rendered =
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-note" ]
                     |> Query.has [ Selector.text "Bad", Selector.text "24/14" ]
+        , test "a link that carries a seat's token says which side is theirs, whichever way the board faces" <|
+            \_ ->
+                Expect.all
+                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "you" ] |> Query.count (Expect.equal 1)
+                    , \m -> m |> run [ Flipped ] |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "you" ] |> Query.count (Expect.equal 1)
+                    ]
+                    (loaded (Just 3))
+        , test "a shared link belongs to neither player: nobody is told they are you" <|
+            \_ ->
+                Page.init session { slug = "backgammon", gameId = "000011", token = Nothing, game = Just 3 }
+                    |> Tuple.first
+                    |> run [ GotRecord (Ok shared) ]
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.findAll [ Selector.class "you" ]
+                    |> Query.count (Expect.equal 0)
+        , test "the board turns around: the flip control names whose side is at the bottom" <|
+            \_ ->
+                loaded (Just 3)
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.id "rp-flip" ]
+                    |> Query.has [ Selector.attribute (Html.Attributes.title "Turn the board around (P1 at the bottom)") ]
+        , test "flipping puts the other player at the bottom" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ Flipped ]
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.id "rp-flip" ]
+                    |> Query.has [ Selector.attribute (Html.Attributes.title "Turn the board around (P2 at the bottom)") ]
+        , test "a stranger is not told an analysis is running that nobody started" <|
+            \_ ->
+                Page.init session { slug = "backgammon", gameId = "000011", token = Nothing, game = Just 3 }
+                    |> Tuple.first
+                    |> run [ GotRecord (Ok shared), GotReviews (Ok (reviews ReplayFixtures.reviewsPending)) ]
+                    |> Expect.all
+                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-analysis-state" ] |> Query.has [ Selector.text "has not been analysed yet" ]
+
+                        -- and does not sit there asking again for work that
+                        -- was never queued
+                        , \m -> m |> Page.polling |> Expect.equal False
+                        ]
         , test "a failed game offers to try again" <|
             \_ ->
                 loaded (Just 3)
