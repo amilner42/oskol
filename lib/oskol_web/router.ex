@@ -41,6 +41,7 @@ defmodule OskolWeb.Router do
     post "/games/:slug/rooms/:id", LandingController, :seat
     get "/games/:slug/rooms/:id/reviews", LandingController, :reviews
     post "/games/:slug/rooms/:id/reviews/retry", LandingController, :retry_review
+    get "/games/:slug/rooms/:id/reviews/:game_number", LandingController, :review
     get "/games/:slug/rooms/:id/record", LandingController, :record
     get "/games/:slug/rooms/:id/ratings", LandingController, :ratings
   end

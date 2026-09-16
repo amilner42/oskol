@@ -190,7 +190,9 @@ lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
 lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
-lib/oskol/reviews.ex            game_reviews table, the log a review reads, the engine's HTTP
+lib/oskol/reviews.ex            game_reviews + game_records tables, the log a review
+                                reads, the engine's HTTP
+src/oskol/core/raw.gleam        stored JSON back onto the wire without rebuilding it
 lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room
 lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
@@ -312,17 +314,21 @@ POST /papi/games/:slug                 {format, name, clock, selections}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
-GET  /papi/games/:slug/rooms/:id/reviews  (open; a seat's visit -- the guest
-                                       cookie against the seats -- is what queues
-                                       an analysis that is owed)
+GET  /papi/games/:slug/rooms/:id/reviews  (open) the index, and only the index
                                        {ok, players, games: [{game_number,
-                                           status, turns, review}]}
-                                         review: {levels, timing_ms, players, turns}; a
-                                         turn names its record lines (entry,
-                                         double_entry, answer_entry) and each
-                                         candidate move its position and landings
-POST /papi/games/:slug/rooms/:id/reviews/retry  {game_number} -> as GET, a failed
-                                         game queued again (a seat only)
+                                           status, turns}]}  -- a few hundred
+                                       bytes for a whole match
+GET  /papi/games/:slug/rooms/:id/reviews/:game_number  (open) one game
+                                       {ok, game_number, status, turns, review}
+                                         review is null unless status is done;
+                                         when it is, {levels, timing_ms, players,
+                                         turns}; a turn names its record lines
+                                         (entry, double_entry, answer_entry) and
+                                         each candidate move its position and
+                                         landings. A number the room has no game
+                                         for is a 404.
+POST /papi/games/:slug/rooms/:id/reviews/retry  {game_number} -> the index, a
+                                         failed game queued again (a seat only)
 GET  /papi/games/:slug/rooms/:id/record  (open)
                                        {ok, slug, id, you, seated, record}  (the game's
                                        `record`; `you` is the seat the board faces --
@@ -350,12 +356,13 @@ so the picker can name the ones the game offers. Statuses: 404 `not_found`
 (no such game, no such code, a room that is over), 422 `validation_failed`
 (a name, a mode, a clock or a seat the room refused), 500 `server_error`.
 Every decision behind these lives in `src/oskol/handlers/landing.gleam`,
-except the record's, in `src/oskol/handlers/record.gleam`: it opens on the
-room (the rooms cap `game`), and a lobby, a slug that is not the room's game
-and a room that is gone all answer the same 404, as the game channel refuses
-without saying which. The caller's guest (the cap `seated_game`, which
-answers which seat a guest holds) is what picks the seat the board faces,
-what queues an analysis the engine is owed, and what a retry takes.
+except the record's, in `src/oskol/handlers/record.gleam`, and the reviews',
+in `src/oskol/handlers/reviews.gleam`. A lobby, a slug that is not the
+room's game and a room that is gone all answer the same 404, as the game
+channel refuses without saying which. The caller's guest (the cap
+`seated_game`, which answers which seat a guest holds) picks the seat the
+record's board faces, and is what a retry takes. Nothing a reader does
+spends engine time.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist
@@ -386,19 +393,38 @@ game or a room talks to it.
   casts `Oskol.Reviews.Queue`; the queue runs `reviews.run` in a task, one
   room at a time, after the persister has flushed. A game already done or
   queued is not run again; a failure is stored and retried at most twice
-  (30 s, then 2 min). The queue is in memory: after a restart, the first
-  request for a game still owed a review queues it again -- a request from
-  one of its own seats, since reading a review is open to anyone with the
-  room and engine time is not. That is also how games finished before
-  reviews existed get theirs: lazily, never by a migration.
+  (30 s, then 2 min). **Reading never queues anything**: a game ending and
+  an explicit retry from a seat are the only things that spend engine time,
+  because a replay page open on a shared link must not be able to put the
+  engine to work. The queue is in memory, so a game a restart lost is
+  caught up by an operator, not by a reader.
+- **A finished game's answer is written, not rebuilt.** Reading one used to
+  replay the room's whole action log and render every graded turn again --
+  five seconds and most of a megabyte per call -- and that took production
+  down twice on 2026-09-16. The two moments that already do the replay now
+  write what they produced: `game_records` (one row per finished game, its
+  record entries) when a game ends, and `game_reviews.report` (the rendered
+  analysis, exactly what the page reads) when the engine's answer lands.
+  Nothing rewrites a row for a game that is over. A room from before this
+  builds once on its first read and writes its rows: self-healing, no data
+  to migrate.
 - `game_reviews` holds one row per (game_id, game_number): status
-  (`pending`, `done`, `failed`), attempts, the engine's response verbatim.
-  `GET /papi/games/backgammon/rooms/:id/reviews` reshapes it for a page
-  (`oskol/reviews/report`): per turn the grade, the move played, the best
-  and the top five with equity lost, cube verdicts and luck; per player
-  PR, error, grade and mistake counts and luck. A game with no review yet
-  answers `pending` and is queued; the others are `done`, `failed`,
-  `empty` (no complete turn) and `playing`.
+  (`pending`, `done`, `failed`), attempts, the engine's response verbatim,
+  the rendered `report`, and that game's `turns`. `report` is what
+  `oskol/reviews/report.to_json` makes of the response: per turn the grade,
+  the move played, the best and the top five with equity lost, cube
+  verdicts and luck; per player PR, error, grade and mistake counts and
+  luck. The read path never builds it -- `GET .../reviews` is the index
+  alone (game number, status, turn count: a few hundred bytes, from a query
+  that touches neither body), and `GET .../reviews/<n>` sends that one
+  game's stored `report` verbatim. Statuses: `done`, `pending`, `failed`,
+  `empty` (no complete turn).
+- `GET .../record` is assembled the same way: the head (players, match
+  length, opening position) from starting the room's game and asking nobody
+  to play it, plus one `game_records` row per game. It reads the live room
+  instead whenever there is one -- that is free, and it carries the game on
+  the board, which nothing writes down until it ends. So a replay page on a
+  cold room wakes no room and replays no log.
 - A **match PR** is the same rows read the other way round:
   `GET /papi/games/:slug/rooms/:id/ratings` answers one entry per seat —
   the plain mean, to one decimal, of that seat's PR in the games of *this
@@ -490,7 +516,9 @@ Notes:
   mix has touched it. Use `bin/test-gleam`, not bare `gleam test`.
 - Elixir test support lives in `test_support/`, not `test/support/`, because
   gleam compiles any `.ex` it finds under `test/`. `test/oskol_test_files.erl`
-  is the one Erlang file: file access for the golden tests.
+  is the one Erlang file under `test/`: file access for the golden tests.
+  `src/oskol_json_ffi.erl` is the one under `src/`: gleam_json's Json is
+  iodata on Erlang, so stored JSON text is already a Json value.
 - The gleam compile step forwards positional args to deps tasks. `mix test`
   is aliased to compile first and then run with `--no-compile` so
   `mix test path/to/file.exs` works; for scripts use

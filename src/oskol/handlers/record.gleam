@@ -7,18 +7,34 @@
 //// it too. What it holds is the game's to decide (`Game.record`, public to
 //// every seat); who may read it is decided here.
 ////
-//// It reads the live room -- rehydrated from its seed and log first, like
-//// every other lookup, if only the database has it -- rather than replaying
-//// the log itself: the room already holds the state, and includes any step
-//// the write-behind has not put on disk yet.
+//// Every game of a room is written down as it ends, one row per game
+//// (`oskol/handlers/reviews`). For a room nobody is at, that is what this
+//// serves: the head of the record -- who played which colour, the match
+//// length, the opening position -- from starting the room's game and
+//// asking nobody to play it, and every finished game from its row. No log
+//// is replayed and no room is woken up, which is the point: waking one
+//// means replaying its whole log, and a room nobody is at is exactly the
+//// one a replay page asks about.
+////
+//// A room still in memory is read from the room instead: it is free, and
+//// it carries the game on the board, which is not written down anywhere
+//// until it ends. A replay only ever reads the games that finished, so
+//// either answer serves it.
 
+import gamekit/host
 import gamekit/instance.{type Instance}
+import gleam/dict
+import gleam/dynamic/decode
 import gleam/json
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
+import oskol/caps/records.{type Setup}
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
+import oskol/core/raw
 import oskol/core/session.{type Session}
 import oskol/handlers/rooms
 
@@ -28,6 +44,120 @@ import oskol/handlers/rooms
 pub const not_found_message = "No record for that game"
 
 pub fn record_json(
+  ctx: Ctx,
+  session: Session,
+  slug: String,
+  game_id: String,
+) -> Result(String, ApiError) {
+  case stored_json(ctx, session, slug, game_id) {
+    Ok(body) -> Ok(body)
+    Error(Nil) -> live_json(ctx, session, slug, game_id)
+  }
+}
+
+/// The record of a room nobody is at, assembled from its rows. Error(Nil)
+/// when it cannot be: the room is still in memory (reading it there is free
+/// and carries the game on the board too), or nothing was written down for
+/// it yet.
+fn stored_json(
+  ctx: Ctx,
+  session: Session,
+  slug: String,
+  game_id: String,
+) -> Result(String, Nil) {
+  // `find` is the registry, not `rooms.lookup`: looking a room up rebuilds
+  // it from its log, which is the replay this exists to avoid.
+  use _ <- result.try(case ctx.rooms.find(game_id) {
+    None -> Ok(Nil)
+    Some(_) -> Error(Nil)
+  })
+  use setup <- result.try(case ctx.records.setup(game_id) {
+    Some(setup) if setup.slug == slug -> Ok(setup)
+    _ -> Error(Nil)
+  })
+  use head <- result.try(case ctx.records.stored(game_id) {
+    [] -> Error(Nil)
+    rows -> head_fields(setup) |> result.map(fn(head) { #(head, rows) })
+  })
+  let #(fields, rows) = head
+  let #(player_id, seated) = stored_viewer(setup, session)
+  Ok(
+    envelope.ok([
+      #("slug", json.string(slug)),
+      #("id", json.string(game_id)),
+      #("you", json.string(player_id)),
+      #("seated", json.bool(seated)),
+      #(
+        "record",
+        json.object(
+          list.append(fields, [
+            #(
+              "games",
+              json.array(rows, fn(row) {
+                json.object([
+                  #("number", json.int(row.game_number)),
+                  #("entries", raw.json(row.entries_json)),
+                ])
+              }),
+            ),
+          ]),
+        ),
+      ),
+    ]),
+  )
+}
+
+/// Everything a record says about a room other than its games: who played
+/// which colour, the match length, the position it opened from. It is the
+/// same for the first turn and the last, so it comes from the room's game
+/// started and left alone, never from its log.
+fn head_fields(setup: Setup) -> Result(List(#(String, json.Json)), Nil) {
+  use started <- result.try(
+    host.start(
+      setup.slug,
+      setup.format,
+      setup.selections,
+      list.map(setup.seats, fn(s) { #(s.0, s.1) }),
+      setup.seed,
+      host.clock_control(setup.clock),
+      0,
+    )
+    |> result.replace_error(Nil),
+  )
+  use record <- result.try(instance.record(started) |> option.to_result(Nil))
+  use fields <- result.try(
+    json.parse(
+      json.to_string(record),
+      decode.dict(decode.string, decode.dynamic),
+    )
+    |> result.replace_error(Nil),
+  )
+  Ok(
+    fields
+    |> dict.to_list
+    |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
+    |> list.filter(fn(pair) { pair.0 != "games" })
+    |> list.map(fn(pair) { #(pair.0, raw.json(raw.text(pair.1))) }),
+  )
+}
+
+/// Which way the board faces for a room read from its rows: the seat this
+/// guest holds, if any, else the first. The same call `viewer` makes of a
+/// live room, off the seats the room was persisted with.
+fn stored_viewer(setup: Setup, session: Session) -> #(String, Bool) {
+  let held = case session.guest_id {
+    None -> Error(Nil)
+    Some(guest_id) ->
+      list.find(setup.seats, fn(s) { s.2 != "" && s.2 == guest_id })
+  }
+  case held, setup.seats {
+    Ok(seat), _ -> #(seat.0, True)
+    Error(_), [first, ..] -> #(first.0, False)
+    Error(_), [] -> #("", False)
+  }
+}
+
+fn live_json(
   ctx: Ctx,
   session: Session,
   slug: String,

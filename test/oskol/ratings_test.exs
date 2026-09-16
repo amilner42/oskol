@@ -49,25 +49,25 @@ defmodule Oskol.RatingsTest do
     assert %{"games" => 0, "pr" => nil} = seat(none, p2)
 
     # One graded game shows its own PR.
-    :ok = Reviews.save(game_id, 1, "done", 1, answer(8.0, 12.0), nil)
+    :ok = Reviews.save(game_id, 1, "done", 1, answer(8.0, 12.0), nil, nil, 1)
     assert %{"players" => one} = ratings(conn, game_id)
     assert %{"games" => 1, "pr" => 8.0} = seat(one, p1)
     assert %{"games" => 1, "pr" => 12.0} = seat(one, p2)
 
     # A second lands: the plain mean of the two, to one decimal.
-    :ok = Reviews.save(game_id, 2, "done", 1, answer(9.0, 13.0), nil)
+    :ok = Reviews.save(game_id, 2, "done", 1, answer(9.0, 13.0), nil, nil, 1)
     assert %{"players" => two} = ratings(conn, game_id)
     assert %{"games" => 2, "pr" => 8.5} = seat(two, p1)
     assert %{"games" => 2, "pr" => 12.5} = seat(two, p2)
 
     # A game still pending and one the engine gave up on count for nothing.
-    :ok = Reviews.save(game_id, 3, "pending", 0, nil, nil)
-    :ok = Reviews.save(game_id, 4, "failed", 3, nil, "the engine said no")
+    :ok = Reviews.save(game_id, 3, "pending", 0, nil, nil, nil, 1)
+    :ok = Reviews.save(game_id, 4, "failed", 3, nil, "the engine said no", nil, 1)
     assert %{"pending" => true, "players" => still_two} = ratings(conn, game_id)
     assert %{"games" => 2, "pr" => 8.5} = seat(still_two, p1)
 
     # The engine answers the one it was working on: nothing owed again.
-    :ok = Reviews.save(game_id, 3, "done", 1, answer(7.0, 11.0), nil)
+    :ok = Reviews.save(game_id, 3, "done", 1, answer(7.0, 11.0), nil, nil, 1)
     assert %{"pending" => false, "players" => three} = ratings(conn, game_id)
     assert %{"games" => 3, "pr" => 8.0} = seat(three, p1)
   end

@@ -129,6 +129,13 @@ defmodule Oskol.ReviewsTest do
     |> json_response(200)
   end
 
+  defp review(conn, game_id, number) do
+    conn
+    |> as_guest(seat_guest(game_id))
+    |> get("/papi/games/backgammon/rooms/#{game_id}/reviews/#{number}")
+    |> json_response(200)
+  end
+
   test "a finished game is reviewed off the room and the endpoint serves it", %{conn: conn} do
     engine(self())
     game_id = finished_game(5)
@@ -167,10 +174,24 @@ defmodule Oskol.ReviewsTest do
              0
            ]
 
+    # The rendered answer is written down with the engine's own, so the row
+    # a read is served out of is already there.
+    assert row.turns > 0
+    assert is_map(Reviews.report(game_id, 1))
+    assert Reviews.records(game_id) |> Enum.map(& &1.game_number) == [1]
+
     body = reviews(conn, game_id)
     assert body["ok"] == true
     assert [%{"name" => "Alice", "color" => "white"}, %{"name" => "Bob"}] = body["players"]
-    assert [%{"game_number" => 1, "status" => "done", "review" => review}] = body["games"]
+    # The index names the games and nothing else: a few hundred bytes, so a
+    # page can ask for it as often as it likes.
+    assert [%{"game_number" => 1, "status" => "done", "turns" => turns}] = body["games"]
+    assert turns == row.turns
+    refute Map.has_key?(hd(body["games"]), "review")
+    assert byte_size(Jason.encode!(body)) < 400
+
+    one = review(conn, game_id, 1)
+    assert %{"game_number" => 1, "status" => "done", "review" => review} = one
 
     assert [%{"pr" => 4.2, "moves" => %{"grades" => %{"ok" => _, "best" => 0}}}, _] =
              review["players"]
@@ -178,24 +199,82 @@ defmodule Oskol.ReviewsTest do
     assert [%{"number" => 1, "move" => %{"grade" => "best"}, "luck" => 0.1} | _] =
              review["turns"]
 
+    # A game the room does not have is not there
+    assert conn
+           |> get("/papi/games/backgammon/rooms/#{game_id}/reviews/7")
+           |> json_response(404)
+
     # Already done: asking again runs nothing
     Queue.enqueue(game_id)
     Queue.await_idle()
     refute_received {:engine, _}
   end
 
-  test "a game finished before reviews existed is queued by the first request", %{conn: conn} do
-    # Finished with the queue off, as every game in production today was
+  test "reading a game nobody analysed queues nothing, and writes its record down",
+       %{conn: conn} do
+    # Finished with the queue off, as every game finished before the
+    # pipeline existed was. Reading it says pending and puts nobody to
+    # work; catching those games up is the operator's job, not a reader's.
     Application.put_env(:oskol, Queue, enabled: false)
     game_id = finished_game(6)
     Persister.flush()
-    Application.put_env(:oskol, Queue, enabled: true)
     engine(self())
 
-    assert [%{"status" => "pending", "review" => nil}] = reviews(conn, game_id)["games"]
+    assert [%{"status" => "pending", "game_number" => 1}] = reviews(conn, game_id)["games"]
+    assert %{"status" => "pending", "review" => nil} = review(conn, game_id, 1)
+    refute_received {:engine, _}
 
+    # ...but the one read it took to find that out was paid for: the room's
+    # record is written down, so no read after it replays the log.
+    assert Reviews.records(game_id) |> Enum.map(& &1.game_number) == [1]
+
+    # And the queue, asked for the room the way an operator asks, finishes it.
+    Application.put_env(:oskol, Queue, enabled: true)
+    Queue.enqueue(game_id)
     wait_for(fn -> Enum.any?(Reviews.stored(game_id), &(&1.status == "done")) end)
     assert [%{"status" => "done"}] = reviews(conn, game_id)["games"]
+    assert %{"review" => %{"turns" => [_ | _]}} = review(conn, game_id, 1)
+  end
+
+  test "a stored room is read with no replay and no room", %{conn: _conn} do
+    engine(self())
+    game_id = finished_game(5)
+    wait_for(fn -> Enum.filter(Reviews.stored(game_id), &(&1.status == "done")) end)
+    Persister.flush()
+
+    # Stop the room. A read of a settled room must not bring it back: a
+    # rehydration replays the whole action log, which is what took
+    # production down.
+    {:ok, pid} = Oskol.Game.GameSupervisor.find_game(game_id)
+    :ok = DynamicSupervisor.terminate_child(Oskol.Game.GameSupervisor, pid)
+    assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
+
+    # Reads are open, so nothing here needs the room to say who anyone is.
+    index =
+      build_conn()
+      |> get("/papi/games/backgammon/rooms/#{game_id}/reviews")
+      |> json_response(200)
+
+    assert [%{"status" => "done"}] = index["games"]
+    assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
+    assert [_] = Reviews.records(game_id)
+
+    one =
+      build_conn()
+      |> get("/papi/games/backgammon/rooms/#{game_id}/reviews/1")
+      |> json_response(200)
+
+    assert %{"review" => %{"turns" => [_ | _]}} = one
+    assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
+
+    body =
+      build_conn()
+      |> get("/papi/games/backgammon/rooms/#{game_id}/record")
+      |> json_response(200)
+
+    assert [%{"number" => 1, "entries" => [_ | _]}] = body["record"]["games"]
+    assert [%{"name" => "Alice"}, %{"name" => "Bob"}] = body["record"]["players"]
+    assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
   end
 
   test "an engine that fails is recorded and the game stays pending", %{conn: conn} do

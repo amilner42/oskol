@@ -29,8 +29,6 @@ defmodule Oskol.Application do
       # Post-game reviews: rooms cast here when a game ends and carry on.
       {Task.Supervisor, name: Oskol.Reviews.TaskSupervisor},
       {Oskol.Reviews.Queue, []},
-      # The reviews answer, built once per version of a room and kept.
-      {Oskol.Reviews.Payload, []},
       Oskol.Game.GameSupervisor,
       {Oskol.Game.Pruner, []},
       # Start a worker by calling: Oskol.Worker.start_link(arg)

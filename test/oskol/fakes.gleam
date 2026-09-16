@@ -9,6 +9,7 @@ import oskol/caps/copy as copy_caps
 import oskol/caps/guests as guests_caps
 import oskol/caps/ids as ids_caps
 import oskol/caps/persistence as persistence_caps
+import oskol/caps/records as records_caps
 import oskol/caps/rooms as rooms_caps
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/session.{type Session, Session}
@@ -22,6 +23,7 @@ pub fn ctx() -> Ctx {
     guests: guests_caps.stub(),
     ids: ids_caps.stub(),
     persistence: persistence_caps.stub(),
+    records: records_caps.stub(),
     rooms: rooms_caps.stub(),
   )
 }
@@ -126,5 +128,22 @@ pub fn sample_copy() -> prose.Copy {
     intro: "The race game with the doubling cube.",
     rules: ["Fifteen checkers each.", "Bear them all off."],
     faq: [#("Do we need accounts?", "No.")],
+  )
+}
+
+/// Records caps over one room: what started it (None when nothing was ever
+/// written down for it) and the record rows it has. A save is dropped.
+pub fn with_records(
+  ctx: Ctx,
+  setup: Option(records_caps.Setup),
+  rows: List(records_caps.StoredRecord),
+) -> Ctx {
+  Ctx(
+    ..ctx,
+    records: records_caps.RecordsCaps(
+      setup: fn(_) { setup },
+      stored: fn(_) { rows },
+      save: fn(_, _) { Nil },
+    ),
   )
 }

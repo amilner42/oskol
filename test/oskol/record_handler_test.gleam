@@ -9,6 +9,7 @@ import gleam/json
 import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
+import oskol/caps/records as records_caps
 import oskol/caps/rooms as rooms_caps
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
@@ -31,11 +32,13 @@ fn started(slug: String, format: String) -> Instance {
 }
 
 /// A live room playing `slug`, where the guest "g1" holds the seat "p1".
+/// Nothing is written down for it, so every read goes to the room.
 fn room_with(slug: String, game: Result(Instance, errors.RoomError)) -> Ctx {
   let ctx =
     fakes.ctx()
     |> fakes.with_room(Some(fakes.room()), None)
     |> fakes.with_slug(Some(slug))
+    |> fakes.with_records(None, [])
   Ctx(
     ..ctx,
     rooms: rooms_caps.RoomsCaps(
@@ -112,7 +115,8 @@ pub fn a_room_asked_for_under_another_game_reads_nothing_test() {
 }
 
 pub fn a_room_that_is_gone_reads_nothing_test() {
-  let ctx = fakes.ctx() |> fakes.with_room(None, None)
+  let ctx =
+    fakes.ctx() |> fakes.with_room(None, None) |> fakes.with_records(None, [])
   assert record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
     == Error(error.NotFound(record.not_found_message))
 }
@@ -138,4 +142,111 @@ pub fn only_a_guest_on_a_seat_passes_the_seat_gate_test() {
     == Error(error.NotFound(record.not_found_message))
   assert record.seat(ctx, fakes.no_guest(), "backgammon", "000007")
     == Error(error.NotFound(record.not_found_message))
+}
+
+// ---------- A room that is over reads its record out of rows ----------
+
+/// What the persisted `games` row says about a finished backgammon match.
+fn finished_setup() -> records_caps.Setup {
+  records_caps.Setup(
+    slug: "backgammon",
+    format: "match5",
+    selections: [],
+    clock: "none",
+    seed: 7,
+    seats: [#("p1", "Alice", "g1"), #("p2", "Bob", "g2")],
+  )
+}
+
+/// A room nobody is at, whose games are written down. Every room cap but
+/// the registry lookup panics: reading a stored record must never wake a
+/// room up, which is the whole point -- waking one replays its log, and a
+/// room nobody is at is exactly the one a replay page asks about.
+fn stored_room(rows: List(records_caps.StoredRecord)) -> Ctx {
+  fakes.ctx()
+  |> fakes.with_records(Some(finished_setup()), rows)
+  |> fakes.with_room(None, None)
+}
+
+fn one_row() -> List(records_caps.StoredRecord) {
+  [records_caps.StoredRecord(1, "[{\"kind\":\"result\",\"winner\":\"p1\"}]")]
+}
+
+pub fn a_finished_room_reads_its_record_from_rows_test() {
+  let assert Ok(body) =
+    record.record_json(
+      stored_room(one_row()),
+      fakes.guest("g1"),
+      "backgammon",
+      "000007",
+    )
+  // The head is the room's game started and left alone: who played which
+  // colour, the match length, the position it opened from.
+  assert string.contains(body, "\"target\":5")
+  assert string.contains(body, "\"cube\":true")
+  assert string.contains(
+    body,
+    "{\"color\":\"white\",\"id\":\"p1\",\"name\":\"Alice\"}",
+  )
+  // ...and the games are the rows, verbatim.
+  assert string.contains(
+    body,
+    "\"games\":[{\"number\":1,\"entries\":[{\"kind\":\"result\",\"winner\":\"p1\"}]}]",
+  )
+  assert string.contains(body, "\"seated\":true")
+  assert string.contains(body, "\"you\":\"p1\"")
+}
+
+pub fn a_stored_record_faces_the_readers_own_seat_test() {
+  let rows = one_row()
+  let assert Ok(mine) =
+    record.record_json(
+      stored_room(rows),
+      fakes.guest("g2"),
+      "backgammon",
+      "000007",
+    )
+  assert string.contains(mine, "\"you\":\"p2\"")
+  assert string.contains(mine, "\"seated\":true")
+
+  // A stranger, and a visitor with no guest cookie at all: the seat that
+  // played first, and told it is not theirs.
+  let assert Ok(theirs) =
+    record.record_json(
+      stored_room(rows),
+      fakes.guest("nobody"),
+      "backgammon",
+      "000007",
+    )
+  assert string.contains(theirs, "\"you\":\"p1\"")
+  assert string.contains(theirs, "\"seated\":false")
+
+  let assert Ok(anon) =
+    record.record_json(
+      stored_room(rows),
+      fakes.no_guest(),
+      "backgammon",
+      "000007",
+    )
+  assert string.contains(anon, "\"seated\":false")
+}
+
+pub fn a_stored_room_asked_for_under_another_game_reads_nothing_test() {
+  // It falls through to the room, which is not there: the one not-found.
+  let ctx =
+    stored_room(one_row())
+    |> fakes.with_room(None, None)
+  assert record.record_json(ctx, fakes.guest("g1"), "poker", "000007")
+    == Error(error.NotFound(record.not_found_message))
+}
+
+pub fn a_room_still_in_memory_is_read_from_the_room_test() {
+  // Reading a live room is free and carries the game on the board, which
+  // is not written down anywhere until it ends. Rows or no rows.
+  let ctx =
+    room_with("backgammon", Ok(started("backgammon", "single")))
+    |> fakes.with_records(Some(finished_setup()), one_row())
+  let assert Ok(body) =
+    record.record_json(ctx, fakes.guest("g1"), "backgammon", "000007")
+  assert string.contains(body, "\"games\":[]")
 }
