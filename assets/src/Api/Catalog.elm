@@ -8,6 +8,7 @@ module Api.Catalog exposing
     , GamePage
     , Library
     , NewGame
+    , Ratings
     , Room
     , RoomSeat
     , RoomState(..)
@@ -22,6 +23,7 @@ module Api.Catalog exposing
     , fetchGame
     , fetchLibrary
     , fetchPrefs
+    , fetchRatings
     , fetchRoom
     , formatDecoder
     , gameDecoder
@@ -31,6 +33,7 @@ module Api.Catalog exposing
     , lookupCode
     , offeredClocks
     , prefsDecoder
+    , ratingsDecoder
     , roomDecoder
     , savePref
     , settingChoice
@@ -234,6 +237,50 @@ site has never seen simply has none.
 fetchPrefs : Session -> (Result Error (Dict String String) -> msg) -> Cmd msg
 fetchPrefs session toMsg =
     Api.get session "/papi/me/prefs" prefsDecoder toMsg
+
+
+{-| How the two people at a room have played in this match: each seat's
+performance rating over the games of it the analysis engine has graded, by
+player id. A seat the server has no number for is simply not in the
+dictionary, and nor is anyone in a match with nothing graded yet.
+-}
+type alias Ratings =
+    { prs : Dict String Float -- by player id, for the seats that have a number
+    , graded : Int -- games of this match the engine has answered for
+    , pending : Bool -- a grade is on its way (a row opened, or a retry coming)
+    }
+
+
+fetchRatings : Session -> String -> String -> (Result Error Ratings -> msg) -> Cmd msg
+fetchRatings session slug gameId toMsg =
+    Api.get session (roomPath slug gameId ++ "/ratings") ratingsDecoder toMsg
+
+
+ratingsDecoder : Decoder Ratings
+ratingsDecoder =
+    let
+        seats =
+            D.field "players"
+                (D.list
+                    (D.map3 (\id pr games -> ( id, pr, games ))
+                        (D.field "player_id" D.string)
+                        (D.field "pr" (D.nullable D.float))
+                        (D.oneOf [ D.field "games" D.int, D.succeed 0 ])
+                    )
+                )
+    in
+    D.map2
+        (\rows pending ->
+            { prs =
+                rows
+                    |> List.filterMap (\( id, pr, _ ) -> Maybe.map (Tuple.pair id) pr)
+                    |> Dict.fromList
+            , graded = rows |> List.map (\( _, _, games ) -> games) |> List.maximum |> Maybe.withDefault 0
+            , pending = pending
+            }
+        )
+        seats
+        (D.oneOf [ D.field "pending" D.bool, D.succeed False ])
 
 
 {-| Keep one preference. The server is the whitelist: an unknown key or a

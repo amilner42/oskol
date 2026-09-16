@@ -935,6 +935,154 @@ suite =
                             Expect.fail "no backgammon fixture"
              ]
             )
+        , describe "the player bars"
+            (let
+                firstUpdate =
+                    FixtureLoader.byGame "backgammon"
+                        |> List.head
+                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
+
+                on : (View.Ctx -> View.Ctx) -> (Query.Single Msg -> Expect.Expectation) -> Expect.Expectation
+                on build check =
+                    case firstUpdate of
+                        Just u ->
+                            check (View.view (build (ctx "p1" u View.init)) |> Query.fromHtml)
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
+
+                cubeOwnedBy owner c =
+                    { c
+                        | scene =
+                            withData "cube"
+                                (E.object
+                                    [ ( "enabled", E.bool True )
+                                    , ( "value", E.int 2 )
+                                    , ( "owner", E.string owner )
+                                    , ( "pending_from", E.null )
+                                    , ( "crawford", E.bool False )
+                                    ]
+                                )
+                                c.scene
+                    }
+             in
+             [ test "no YOU tag: the reader's own bar is simply the one they sit at" <|
+                \_ -> on identity (Query.hasNot [ text "YOU" ])
+             , test "no CUBE tag: the cube hangs at its owner's end and its title says so" <|
+                \_ ->
+                    on (cubeOwnedBy "p2")
+                        (Expect.all
+                            [ Query.hasNot [ text "CUBE" ]
+                            , Query.has
+                                [ class "cube"
+                                , attribute (Html.Attributes.title "Doubling cube: p2 owns it")
+                                ]
+                            ]
+                        )
+             , test "a centred cube says so too, rather than naming an owner" <|
+                \_ ->
+                    on
+                        (\c ->
+                            { c
+                                | scene =
+                                    withData "cube"
+                                        (E.object
+                                            [ ( "enabled", E.bool True )
+                                            , ( "value", E.int 1 )
+                                            , ( "owner", E.null )
+                                            , ( "pending_from", E.null )
+                                            , ( "crawford", E.bool False )
+                                            ]
+                                        )
+                                        c.scene
+                            }
+                        )
+                        (Query.has
+                            [ class "cube"
+                            , attribute (Html.Attributes.title "Doubling cube: centred, either player may double")
+                            ]
+                        )
+             , test "both players connected: two lit dots, no wording" <|
+                \_ ->
+                    on (\c -> { c | away = Just [] })
+                        (Expect.all
+                            [ \q -> Query.findAll [ classes [ "bar-dot", "on" ] ] q |> Query.count (Expect.equal 2)
+                            , \q -> Query.findAll [ classes [ "bar-dot", "off" ] ] q |> Query.count (Expect.equal 0)
+                            , Query.hasNot [ text "AWAY" ]
+                            ]
+                        )
+             , test "a drop flashes first: most of them come straight back" <|
+                \_ ->
+                    on (\c -> { c | away = Just [ "p2" ], awaySince = \_ -> Just 0, now = 4000 })
+                        (Expect.all
+                            [ \q -> Query.findAll [ classes [ "bar-dot", "on" ] ] q |> Query.count (Expect.equal 1)
+                            , \q -> Query.findAll [ classes [ "bar-dot", "off" ] ] q |> Query.count (Expect.equal 0)
+                            , \q ->
+                                Query.find [ classes [ "bar-dot", "lost" ] ] q
+                                    |> Query.has [ attribute (Html.Attributes.title "Connection lost a moment ago") ]
+                            ]
+                        )
+             , test "an absence that outlasts the flash settles to the pale dot" <|
+                \_ ->
+                    on (\c -> { c | away = Just [ "p2" ], awaySince = \_ -> Just 0, now = View.presenceFlashMs + 1 })
+                        (Expect.all
+                            [ \q -> Query.findAll [ classes [ "bar-dot", "lost" ] ] q |> Query.count (Expect.equal 0)
+                            , \q ->
+                                Query.find [ classes [ "bar-dot", "off" ] ] q
+                                    |> Query.has [ attribute (Html.Attributes.title "Connection lost") ]
+                            ]
+                        )
+             , test "the flash runs from the drop, not from the render" <|
+                \_ ->
+                    -- The same absence, two renders a second apart: what
+                    -- decides is how long ago it was noticed.
+                    Expect.all
+                        [ \_ ->
+                            on (\c -> { c | away = Just [ "p2" ], awaySince = \_ -> Just 10000, now = 11000 })
+                                (Query.has [ classes [ "bar-dot", "lost" ] ])
+                        , \_ ->
+                            on (\c -> { c | away = Just [ "p2" ], awaySince = \_ -> Just 10000, now = 16000 })
+                                (Query.has [ classes [ "bar-dot", "off" ] ])
+                        ]
+                        ()
+             , test "a player who comes back is steady green again" <|
+                \_ ->
+                    -- Still noted as having dropped once, but no longer away.
+                    on (\c -> { c | away = Just [], awaySince = \_ -> Just 0, now = 1000 })
+                        (\q -> Query.findAll [ classes [ "bar-dot", "on" ] ] q |> Query.count (Expect.equal 2))
+             , test "where presence is not a fact at all, no dot is drawn" <|
+                \_ ->
+                    on (\c -> { c | away = Nothing })
+                        (\q -> Query.findAll [ class "bar-dot" ] q |> Query.count (Expect.equal 0))
+             , test "a player with a match PR wears it beside their name" <|
+                \_ ->
+                    on
+                        (\c ->
+                            { c
+                                | prOf =
+                                    \id ->
+                                        if id == "p1" then
+                                            Just 8.4
+
+                                        else
+                                            Nothing
+                            }
+                        )
+                        (Expect.all
+                            [ Query.has [ class "bar-pr", text "Match PR: ", text "8.4" ]
+                            , \q -> Query.findAll [ class "bar-pr" ] q |> Query.count (Expect.equal 1)
+                            ]
+                        )
+             , test "a whole number still reads with its decimal" <|
+                \_ ->
+                    on (\c -> { c | prOf = \_ -> Just 8.0 })
+                        (Query.has [ class "bar-pr", text "8.0" ])
+             , test "no graded game of this match, nobody wearing a PR" <|
+                \_ ->
+                    on (\c -> { c | prOf = \_ -> Nothing })
+                        (\q -> Query.findAll [ class "bar-pr" ] q |> Query.count (Expect.equal 0))
+             ]
+            )
         , describe "a roll that plays nothing"
             (let
                 schema name label =
@@ -2520,7 +2668,6 @@ watching =
 ctx : String -> Protocol.Update -> View.Model -> View.Ctx
 ctx playerId update model =
     { playerId = playerId
-    , you = Just playerId
     , scene = update.scene
     , legal = update.legal
     , model = model
@@ -2529,7 +2676,9 @@ ctx playerId update model =
     , now = 0
     , nameOf = identity
     , rematchReady = []
-    , away = []
+    , away = Just []
+    , awaySince = \_ -> Nothing
+    , prOf = \_ -> Nothing
     , theme = View.defaultTheme
     , replayHref = \n -> Just ("/backgammon/123456/replay?t=tok&game=" ++ String.fromInt n)
     , finished =

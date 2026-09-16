@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Press, Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeClass, themes, tumbleFaces, update, view, viewStill)
+module Games.Backgammon.View exposing (Archive(..), Ctx, Model, Move, Msg(..), Out(..), Path, Presence(..), Press, Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, presenceFlashMs, presenceOf, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeClass, themes, tumbleFaces, update, view, viewStill)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -744,7 +744,6 @@ isDoubles dice =
 
 type alias Ctx =
     { playerId : String
-    , you : Maybe String -- the seat this viewer holds, if they hold one
     , scene : Scene
     , legal : List Schema
     , model : Model
@@ -754,7 +753,9 @@ type alias Ctx =
     , nameOf : String -> String
     , rematchReady : List String
     , finished : Maybe (List String)
-    , away : List String -- seated players whose connection is down
+    , away : Maybe (List String) -- seated players whose connection is down; Nothing where presence is not a fact (a still board)
+    , awaySince : String -> Maybe Int -- client time (ms) an absent player's drop was noticed
+    , prOf : String -> Maybe Float -- a player's PR so far in this match, once a game of it has been graded
     , theme : String -- the board's colours, this viewer's own (`themes`)
     , replayHref : Int -> Maybe String -- where a finished game (by number) is replayed, for a seat
     }
@@ -1240,9 +1241,16 @@ flagIcon =
 -- PLAYER BARS
 --
 -- One identity bar per player, anchored at that player's side of the board:
--- checker swatch, name, YOU, match score, pips, cube badge, that player's
--- bear-off tray and their clock. The bars are the top and bottom of the
--- table's frame; the player to act gets the sky treatment.
+-- checker swatch, name, the dot that says their connection is up, their PR
+-- so far in this match once a game of it is graded, the pick badge, that
+-- player's bear-off tray, pips, match score and clock. The bars are the top
+-- and bottom of the table's frame; the player to act gets the sky
+-- treatment.
+--
+-- No tag says whose seat this is: the reader's own bar is the one at the
+-- bottom, where they are sitting. None says who owns the cube either -- the
+-- cube hangs at its owner's end of the bar on the board, which is where a
+-- backgammon player looks for it (see `viewCube`).
 
 
 viewPlayerBar : Ctx -> Maybe PlayerInfo -> Bool -> Html Msg -> Html Msg
@@ -1268,29 +1276,14 @@ viewPlayerBar ctx player isMe tray =
                 ]
                 [ div [ class ("swatch shrink-0 " ++ color), title (p.name ++ " plays " ++ color) ] []
                 , span [ class "font-bold text-sm sm:text-base truncate" ] [ text p.name ]
-                  -- on whichever bar is the reader's own seat: the replay
-                  -- turns the board over, and the badge goes with the seat
-                , if Just p.id == ctx.you then
-                    span [ class "bar-tag you pixel text-[7px] px-1 py-0.5 shrink-0" ] [ text "YOU" ]
-
-                  else
-                    text ""
-                , if Protocol.hasFlag "owns_cube" p then
-                    span [ class "bar-tag outline pixel text-[7px] px-1 py-0.5 shrink-0", title "Owns the doubling cube" ] [ text "CUBE" ]
-
-                  else
-                    text ""
+                , viewPresenceDot ctx p.id
+                , viewRating ctx p.id
                 , if Protocol.hasFlag "has_pick" p then
                     span
                         [ class "bar-tag pick pixel text-[7px] px-1 py-0.5 shrink-0 bg-has-pick"
                         , title "Still holds the dice pick"
                         ]
                         [ text "PICK" ]
-
-                  else
-                    text ""
-                , if List.member p.id ctx.away then
-                    span [ class "bar-tag away pixel text-[7px] shrink-0", title "Connection lost" ] [ text "AWAY" ]
 
                   else
                     text ""
@@ -1308,6 +1301,138 @@ viewPlayerBar ctx player isMe tray =
 
         Nothing ->
             text ""
+
+
+{-| How present a player is, as their dot shows it.
+-}
+type Presence
+    = Here
+    | JustGone -- dropped a moment ago, and most of those come straight back
+    | Gone
+
+
+{-| How long a fresh absence flashes before the dot settles to gone. Most
+disconnections inside this window are a phone changing network or a tab
+waking up, and they fix themselves; saying "gone" straight away would be
+wrong more often than right.
+-}
+presenceFlashMs : Int
+presenceFlashMs =
+    5000
+
+
+{-| Where this player stands, from the absences the room reported and when
+each was noticed. `now` moves; the moment the drop was noticed does not, so
+the five seconds run from the drop and not from the last render.
+-}
+presenceOf : Ctx -> String -> Maybe Presence
+presenceOf ctx playerId =
+    case ctx.away of
+        Nothing ->
+            Nothing
+
+        Just away ->
+            if not (List.member playerId away) then
+                Just Here
+
+            else
+                case ctx.awaySince playerId of
+                    Just since ->
+                        if ctx.now - since < presenceFlashMs then
+                            Just JustGone
+
+                        else
+                            Just Gone
+
+                    Nothing ->
+                        Just Gone
+
+
+{-| Is this player still on the other end of the line? A small dot beside
+the name: steady green while their connection is up, flashing green for the
+first few seconds of an absence, and a quiet grey once it has lasted.
+Coming back at any point returns it to steady green.
+
+It is drawn only where connections are a fact: a still board in the replay
+knows nothing about anyone's presence (`away` is `Nothing` there), and a
+dot that is always lit would be a lie.
+-}
+viewPresenceDot : Ctx -> String -> Html Msg
+viewPresenceDot ctx playerId =
+    case presenceOf ctx playerId of
+        Nothing ->
+            text ""
+
+        Just presence ->
+            span
+                [ classList
+                    [ ( "bar-dot shrink-0", True )
+                    , ( "on", presence == Here )
+                    , ( "lost", presence == JustGone )
+                    , ( "off", presence == Gone )
+                    ]
+                , title
+                    (case presence of
+                        Here ->
+                            "Connected"
+
+                        JustGone ->
+                            "Connection lost a moment ago"
+
+                        Gone ->
+                            "Connection lost"
+                    )
+                ]
+                []
+
+
+{-| This player's performance rating so far in this match, quietly beside
+the name: the mean of the games of it the analysis engine has graded. The
+server does the averaging and decides when there is one to do; here it is
+either a number to print or nothing at all.
+-}
+viewRating : Ctx -> String -> Html Msg
+viewRating ctx playerId =
+    case ctx.prOf playerId of
+        Nothing ->
+            text ""
+
+        Just pr ->
+            span
+                [ class "bar-pr pixel text-[7px] sm:text-[8px] shrink-0 whitespace-nowrap"
+                , title "Performance rating over the graded games of this match (lower is better)"
+                ]
+                -- A phone's portrait bar has no room for the long form:
+                -- with a clock and a bear-off count on it, "Match PR:" is
+                -- what pushes the name out (a clocked phone drops the PR
+                -- altogether, in app.css). The title says it in full
+                -- everywhere, and a sideways phone has room for both.
+                [ span [ class "hidden sm:inline" ] [ text "Match PR: " ]
+                , span [ class "sm:hidden" ] [ text "PR " ]
+                , text (oneDecimal pr)
+                ]
+
+
+{-| A PR as the books write it: one decimal, always, so "8" reads as "8.0"
+and the two bars line up.
+-}
+oneDecimal : Float -> String
+oneDecimal value =
+    let
+        tenths =
+            round (value * 10)
+
+        sign =
+            if tenths < 0 then
+                "-"
+
+            else
+                ""
+
+        magnitude =
+            abs tenths
+    in
+    sign ++ String.fromInt (magnitude // 10) ++ "." ++ String.fromInt (modBy 10 magnitude)
 
 
 {-| This player's clock, inline in their bar, at every size.
@@ -2756,7 +2881,21 @@ viewCube board slot =
     if enabled && home == slot then
         div
             [ classList [ ( "cube pixel text-[10px]", True ), ( "pending", pending ) ]
-            , title "Doubling cube"
+
+            -- Where it hangs is who owns it, and that is the whole answer:
+            -- no bar tag repeats it. The title says it in words.
+            , title
+                (if pending then
+                    "Doubling cube: a double is on offer"
+
+                 else
+                    case owner of
+                        Just id ->
+                            "Doubling cube: " ++ ctx.nameOf id ++ " owns it"
+
+                        Nothing ->
+                            "Doubling cube: centred, either player may double"
+                )
             ]
             [ text shown ]
 
@@ -3277,7 +3416,6 @@ one step's dice from the next, so they never tumble.
 type alias StillBoard =
     { players : List { id : String, name : String, color : String }
     , viewer : String -- whose side is at the bottom
-    , you : Maybe String -- the seat the reader holds, if the link carries one
     , scores : List ( String, Int )
     , cube : Bool
     , theme : String
@@ -3349,7 +3487,6 @@ viewStill noop s =
 
         ctx =
             { playerId = s.viewer
-            , you = s.you
             , scene = scene
             , legal = []
             , model = { init | viewing = Just s.key, still = True, roll = { seq = -1 - s.key, watched = False } }
@@ -3359,7 +3496,11 @@ viewStill noop s =
             , nameOf = \id -> s.players |> List.filter (\p -> p.id == id) |> List.head |> Maybe.map .name |> Maybe.withDefault id
             , rematchReady = []
             , finished = Nothing
-            , away = []
+
+            -- A replayed position is nobody's connection: no dot is drawn.
+            , away = Nothing
+            , awaySince = \_ -> Nothing
+            , prOf = \_ -> Nothing
             , theme = s.theme
             , replayHref = \_ -> Nothing
             }

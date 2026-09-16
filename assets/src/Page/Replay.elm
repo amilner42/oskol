@@ -636,15 +636,6 @@ viewReplay model record game =
             Board.viewStill NoOp
                 { players = record.players
                 , viewer = facing model record
-                , you =
-                    -- only a reader whose own guest holds a seat here is
-                    -- looking at their own game: a shared replay belongs to
-                    -- neither player, and the server says which it is
-                    if record.seated then
-                        Just record.you
-
-                    else
-                        Nothing
                 , scores = scores
                 , cube = record.cube
                 , theme = theme model

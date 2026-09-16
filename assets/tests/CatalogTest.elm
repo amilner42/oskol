@@ -11,6 +11,7 @@ game does — and strict about what they do. Both halves are asserted here.
 
 import Api
 import Api.Catalog as Catalog
+import Dict
 import Expect
 import Json.Decode as D
 import Json.Encode as E
@@ -27,6 +28,41 @@ suite =
         , room
         , clockOrders
         , summaries
+        , ratings
+        ]
+
+
+
+-- THE MATCH PR
+
+
+ratings : Test
+ratings =
+    describe "GET /papi/games/:slug/rooms/:id/ratings"
+        [ test "the graded count is the most any seat has, so a fresh grade shows up" <|
+            \_ ->
+                D.decodeString Catalog.ratingsDecoder
+                    """{"ok":true,"pending":true,"players":[{"player_id":"p1","games":3,"pr":8.4},{"player_id":"p2","games":3,"pr":11.0}]}"""
+                    |> Result.map .graded
+                    |> Expect.equal (Ok 3)
+        , test "a seat with a number is in the dictionary; one without is not" <|
+            \_ ->
+                D.decodeString Catalog.ratingsDecoder
+                    """{"ok":true,"pending":false,"players":[{"player_id":"p1","games":2,"pr":8.4},{"player_id":"p2","games":0,"pr":null}]}"""
+                    |> Result.map (.prs >> Dict.toList)
+                    |> Expect.equal (Ok [ ( "p1", 8.4 ) ])
+        , test "pending says the engine still owes this room an answer" <|
+            \_ ->
+                D.decodeString Catalog.ratingsDecoder
+                    """{"ok":true,"pending":true,"players":[]}"""
+                    |> Result.map .pending
+                    |> Expect.equal (Ok True)
+        , test "an answer with no pending key is nothing to wait for" <|
+            \_ ->
+                D.decodeString Catalog.ratingsDecoder
+                    """{"ok":true,"players":[{"player_id":"p1","games":1,"pr":9.0}]}"""
+                    |> Result.map (\r -> ( r.pending, r.graded, Dict.toList r.prs ))
+                    |> Expect.equal (Ok ( False, 1, [ ( "p1", 9.0 ) ] ))
         ]
 
 
