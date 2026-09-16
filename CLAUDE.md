@@ -293,7 +293,8 @@ POST /papi/games/:slug                 {format, name, clock, selections}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
-GET  /papi/games/:slug/rooms/:id/reviews   {ok, players, games: [{game_number,
+GET  /papi/games/:slug/rooms/:id/reviews?t=<seat token>
+                                       {ok, players, games: [{game_number,
                                            status, turns, review}]}
                                          review: {levels, timing_ms, players, turns}; a
                                          turn names its record lines (entry,

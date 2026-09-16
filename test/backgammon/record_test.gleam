@@ -13,6 +13,7 @@ import gamekit/game
 import gamekit/rng
 import gamekit/scene
 import gleam/dict
+import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
@@ -564,6 +565,22 @@ pub fn a_finished_match_keeps_its_last_game_in_the_scene_test() {
         ),
       ]),
     )
+}
+
+/// Between the games of a match, the next game has not begun: the record
+/// is the games that were played, with no empty one waiting.
+pub fn the_record_between_games_has_no_empty_game_test() {
+  let s = new_game(17, "match5")
+  let s = state.GameState(..s, phase: state.Rolling(White), record: [])
+  let s = apply(s, "p1", engine.Double)
+  let s = apply(s, "p2", engine.Drop)
+  let assert state.BetweenGames(_, _) = s.phase
+  let assert Ok(games) =
+    json.parse(
+      json.to_string(projection.record_json(s)),
+      decode.at(["games"], decode.list(decode.at(["number"], decode.int))),
+    )
+  assert games == [1]
 }
 
 /// The endpoint's record is every game, each with its entries and ending in

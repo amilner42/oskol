@@ -1584,6 +1584,13 @@ a.q-card:hover, a.q-card:focus-visible {
 .rp-step { min-width: 3rem; height: 2.5rem; font-size: 10px; padding: 0 0.6rem; }
 .rp-step:disabled { opacity: 0.35; box-shadow: none; }
 .rp-count { min-width: 5.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+/* The narrowest phones: four thumb-sized plates and the counter have to fit
+   inside 320px less the page's padding, so both give a little. */
+@media (max-width: 374px) {
+  .rp-controls { gap: 6px; }
+  .rp-step { min-width: 2.6rem; padding: 0 0.4rem; }
+  .rp-count { min-width: 4.2rem; }
+}
 
 .rp-side { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 /* What this step was, and the engine's word on it. */

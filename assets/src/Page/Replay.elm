@@ -19,7 +19,8 @@ record at a time, with the analysis engine's verdicts on each.
 
 The page reads two things and decides nothing about backgammon: the room's
 whole record (`/record`, on the seat's token: every game, every line, the
-position after every turn) and the engine's reviews (`/reviews`: per turn
+position after every turn) and the engine's reviews (`/reviews`, on the
+same token: per turn
 the grade of the move played, the best move and the position it leaves,
 the cube verdicts, the luck; per player the PR). Both are drawn as they
 come. The server names which record line each verdict is about.
@@ -155,9 +156,16 @@ base model =
     "/papi/games/" ++ model.slug ++ "/rooms/" ++ model.gameId
 
 
+{-| The analysis opens on the same seat token the record does.
+-}
 fetchReviews : Model -> Cmd Msg
 fetchReviews model =
-    Api.get model.session (base model ++ "/reviews") Replay.reviewsDecoder GotReviews
+    case model.token of
+        Just token ->
+            Api.get model.session (base model ++ "/reviews?t=" ++ Url.percentEncode token) Replay.reviewsDecoder GotReviews
+
+        Nothing ->
+            Cmd.none
 
 
 title : Model -> String

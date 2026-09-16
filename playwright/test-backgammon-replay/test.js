@@ -131,8 +131,9 @@ async function stubAnalysis(context, record, counts) {
       return { game_number: g.number, status: 'done', turns, review: reviewOf(record, g) };
     }),
   });
-  await context.route(/\/papi\/games\/backgammon\/rooms\/[^/]+\/reviews(\/retry)?$/, async (route) => {
-    const retry = route.request().url().endsWith('/retry');
+  // `/reviews` carries the seat token as a query, `/reviews/retry` does not.
+  await context.route(/\/papi\/games\/backgammon\/rooms\/[^/]+\/reviews(\/retry)?(\?|$)/, async (route) => {
+    const retry = route.request().url().includes('/reviews/retry');
     if (retry) {
       counts.retry += 1;
       retried = true;
@@ -343,6 +344,10 @@ async function main() {
       for (let i = 0; i < 8; i++) await p.click('#rp-next');
       await sleep(400);
       await noSideways(p, phone.name);
+      for (const control of ['#rp-first', '#rp-last']) {
+        const b = await p.locator(control).boundingBox();
+        must(b.x >= 0 && b.x + b.width <= phone.width + 1, `${phone.name}: ${control} is inside the screen`);
+      }
       const board = await boardFits(p, phone.name);
       if (phone.name === 'landscape') {
         const side = await p.locator('.rp-side').boundingBox();

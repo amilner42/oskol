@@ -426,8 +426,11 @@ defmodule OskolWeb.Api.LandingApiTest do
 
       assert %{"ok" => true, "slug" => "backgammon", "id" => ^game_id, "record" => record} = body
 
-      assert %{"target" => 5, "players" => [_, _], "games" => [%{"number" => 1, "entries" => []}]} =
-               record
+      # Nothing has been committed yet, so there is no game to list; the
+      # match's length, its players and the position games start from are
+      # all there.
+      assert %{"target" => 5, "cube" => true, "players" => [_, _], "games" => []} = record
+      assert %{"white" => %{"pips" => 167}} = record["start"]
     end
 
     test "a wrong token, or none, is not found and says nothing more", %{conn: conn} do

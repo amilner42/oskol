@@ -100,6 +100,13 @@ defmodule Oskol.ReviewsTest do
     game_id
   end
 
+  # A seat's token for the room: reviews open on it, as the record does.
+  defp token(game_id) do
+    state = Oskol.Game.get_server_state(game_id)
+    [{player, _name} | _] = Oskol.Game.GameServerState.seats(state)
+    Oskol.GameFixtures.token_for(game_id, player)
+  end
+
   # The room casts the queue as the game ends; wait for the job to land.
   defp wait_for(fun, tries \\ 200) do
     Queue.await_idle()
@@ -115,7 +122,9 @@ defmodule Oskol.ReviewsTest do
   end
 
   defp reviews(conn, game_id) do
-    conn |> get("/papi/games/backgammon/rooms/#{game_id}/reviews") |> json_response(200)
+    conn
+    |> get("/papi/games/backgammon/rooms/#{game_id}/reviews?t=#{token(game_id)}")
+    |> json_response(200)
   end
 
   test "a finished game is reviewed off the room and the endpoint serves it", %{conn: conn} do
@@ -249,7 +258,21 @@ defmodule Oskol.ReviewsTest do
   end
 
   test "only started backgammon rooms have reviews", %{conn: conn} do
-    assert conn |> get("/papi/games/backgammon/rooms/999999/reviews") |> json_response(404)
-    assert conn |> get("/papi/games/poker/rooms/999999/reviews") |> json_response(404)
+    assert conn |> get("/papi/games/backgammon/rooms/999999/reviews?t=x") |> json_response(404)
+    assert conn |> get("/papi/games/poker/rooms/999999/reviews?t=x") |> json_response(404)
+  end
+
+  test "a room's reviews open on a seat's token and on nothing else", %{conn: conn} do
+    engine(self())
+    game_id = finished_game(5)
+    wait_for(fn -> Enum.filter(Reviews.stored(game_id), &(&1.status == "done")) end)
+
+    assert %{"games" => [_ | _]} = reviews(conn, game_id)
+
+    for query <- ["", "?t=", "?t=not-a-token"] do
+      assert build_conn()
+             |> get("/papi/games/backgammon/rooms/#{game_id}/reviews#{query}")
+             |> json_response(404)
+    end
   end
 end

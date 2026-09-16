@@ -1,6 +1,6 @@
 //// Post-game reviews: backgammon games graded by the analysis engine.
 ////
-////   GET /papi/games/:slug/rooms/:id/reviews
+////   GET /papi/games/:slug/rooms/:id/reviews?t=<seat token>
 ////     {ok, players, games: [{game_number, status, review}]}
 ////   POST /papi/games/:slug/rooms/:id/reviews/retry  {t, game_number}
 ////     the same, after a failed game is queued again (a seat only)
@@ -150,6 +150,12 @@ fn review_one(
 /// and not yet reviewed is queued and answers `pending`; the client asks
 /// again.
 ///
+/// For the players at that table only, on the seat token their own link
+/// carries: a review is the whole game read back -- every roll, every move
+/// and the board it left -- and asking for one sets the engine working.
+/// Anything else is the record's own `not_found_message`, so a caller
+/// learns nothing about a room it cannot sit at.
+///
 /// Statuses: `done` (with `review`), `pending`, `failed` (the engine was
 /// tried and gave up), `empty` (the game ended before anyone completed a
 /// turn: nothing to grade) and `playing` (the game is not over yet).
@@ -157,11 +163,12 @@ pub fn reviews_json(
   ctx: Ctx,
   game_slug: String,
   game_id: String,
+  token: String,
 ) -> Result(String, ApiError) {
+  use _ <- result.try(record.seat(ctx, game_slug, game_id, token))
   use log <- result.try(case game_slug == slug, ctx.analysis.log(game_id) {
     True, Some(log) if log.slug == slug -> Ok(log)
-    False, _ -> Error(error.NotFound("That game has no reviews"))
-    _, _ -> Error(error.NotFound("No game with that code"))
+    _, _ -> Error(error.NotFound(record.not_found_message))
   })
   use games <- result.try(
     games(log) |> result.map_error(fn(reason) { error.Internal(reason) }),
@@ -263,7 +270,7 @@ pub fn retry_json(
       }
     Error(_) -> Nil
   }
-  reviews_json(ctx, game_slug, game_id)
+  reviews_json(ctx, game_slug, game_id, token)
 }
 
 // ---------- Shared ----------

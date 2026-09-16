@@ -62,7 +62,9 @@ pub fn a_seat_reads_the_whole_record_test() {
         #("record", expected),
       ]),
     )
-  assert string.contains(body, "\"games\":[{\"number\":1,")
+  // A game whose first turn is not committed yet has nothing to list
+  assert string.contains(body, "\"target\":5,\"cube\":true,")
+  assert string.contains(body, "\"games\":[]")
 }
 
 pub fn a_token_that_opens_no_seat_reads_nothing_test() {

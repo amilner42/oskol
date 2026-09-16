@@ -7,7 +7,7 @@ defmodule OskolWeb.Api.LandingController do
       POST /papi/games/:slug                create a room and take the first seat
       GET  /papi/games/:slug/rooms/:id     what that invite link offers
       POST /papi/games/:slug/rooms/:id     join by name, or take a seat back
-      GET  /papi/games/:slug/rooms/:id/reviews  post-game reviews, per game
+      GET  /papi/games/:slug/rooms/:id/reviews?t=  post-game reviews, per game (a seat)
       POST /papi/games/:slug/rooms/:id/reviews/retry  try a failed review again (a seat)
       GET  /papi/games/:slug/rooms/:id/record?t=   the game's whole record, for a seat
       GET  /papi/codes/:code               which game answers to a code
@@ -52,8 +52,11 @@ defmodule OskolWeb.Api.LandingController do
 
   # Post-game reviews of a room's games. A game with none yet is queued by
   # the handler and answers pending.
-  def reviews(conn, %{"slug" => slug, "id" => game_id}) do
-    send_json(conn, :oskol@handlers@reviews.reviews_json(ctx(), slug, game_id))
+  def reviews(conn, %{"slug" => slug, "id" => game_id} = params) do
+    send_json(
+      conn,
+      :oskol@handlers@reviews.reviews_json(ctx(), slug, game_id, param(params, "t"))
+    )
   end
 
   # A failed review, queued again at a seat's request.
