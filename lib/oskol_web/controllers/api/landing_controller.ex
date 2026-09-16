@@ -55,11 +55,27 @@ defmodule OskolWeb.Api.LandingController do
 
   # Post-game reviews of a room's games. A game with none yet is queued by
   # the handler and answers pending.
+  # Built once per version of the room and kept (`Oskol.Reviews.Payload`):
+  # the answer is a whole match's analysis, and the page asks for it again
+  # while one is still on its way. Reading it never puts the engine to work.
   def reviews(conn, %{"slug" => slug, "id" => game_id}) do
-    send_json(
-      conn,
-      :oskol@handlers@reviews.reviews_json(ctx(), session(conn), slug, game_id)
-    )
+    built =
+      Oskol.Reviews.Payload.fetch(game_id, fn ->
+        :oskol@handlers@reviews.reviews_json(ctx(), session(conn), slug, game_id)
+      end)
+
+    case built do
+      {:error, :busy} ->
+        conn
+        |> put_status(:service_unavailable)
+        |> json(%{
+          ok: false,
+          error: %{code: "busy", message: "The analysis is being put together; try again in a moment."}
+        })
+
+      answer ->
+        send_json(conn, answer)
+    end
   end
 
   # A failed review, queued again at a seat's request.

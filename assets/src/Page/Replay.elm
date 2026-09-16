@@ -87,6 +87,8 @@ type alias Model =
     , record : Loadable Record
     , reviews : Maybe Reviews
     , reviewsError : Bool -- the last ask for the reviews did not get an answer
+    , failures : Int -- asks that came back with nothing
+    , asking : Bool -- an ask is out; a second would only double the work
     , game : Int -- the game being replayed, by number
     , step : Int -- 0 is the start; n is the board after the game's nth line
     , showing : Showing
@@ -98,20 +100,32 @@ type alias Model =
     }
 
 
-{-| How often a page with pending analysis asks again.
+{-| How often a page with pending analysis asks again. The answer is the
+whole match's analysis and costs the server real work to build, so this is
+a slow drum, not a heartbeat.
 -}
 pollEveryMs : Float
 pollEveryMs =
-    3000
+    8000
 
 
 {-| A page left open on an analysis that never lands stops asking after
-this many (twenty minutes, as long as the server waits on the engine); a
-reload starts again.
+this many (about twenty minutes, as long as the server waits on the
+engine); a reload starts again.
 -}
 maxPolls : Int
 maxPolls =
-    400
+    150
+
+
+{-| How many answers may fail before the page stops asking. A failing ask
+is the one case where asking again is actively harmful: the answer is
+expensive to build, so a page that retries a failing server is helping to
+keep it down. It says so and waits for a reload instead.
+-}
+maxFailures : Int
+maxFailures =
+    2
 
 
 init :
@@ -128,6 +142,8 @@ init session config =
             , record = Loading
             , reviews = Nothing
             , reviewsError = False
+            , failures = 0
+            , asking = True
             , game = Maybe.withDefault 1 config.game
             , step = 0
             , showing = Played
@@ -233,13 +249,19 @@ update msg model =
             -- Replaced whole, whatever the viewer is looking at: the game,
             -- the step and the move on the board are the model's, not the
             -- review's, so nothing moves.
-            ( { model | reviews = Just reviews, reviewsError = False, retrying = [] }, follow model.step )
+            ( { model | reviews = Just reviews, reviewsError = False, failures = 0, asking = False, retrying = [] }, follow model.step )
 
         GotReviews (Err _) ->
-            ( { model | reviewsError = True, retrying = [] }, Cmd.none )
+            ( { model | reviewsError = True, failures = model.failures + 1, asking = False, retrying = [] }, Cmd.none )
 
         Poll ->
-            ( { model | polls = model.polls + 1 }, fetchReviews model )
+            -- Never two asks at once: the answer takes the server real work
+            -- to build, and a page that overlaps its own asks multiplies it.
+            if model.asking then
+                ( model, Cmd.none )
+
+            else
+                ( { model | polls = model.polls + 1, asking = True }, fetchReviews model )
 
         PickGame number ->
             if number == model.game then
@@ -429,20 +451,24 @@ seated model =
             False
 
 
-{-| Ask again while some game's analysis is still on its way, or while the
-reviews have not answered yet -- and never past `maxPolls`.
+{-| Ask again only while some game's analysis is genuinely on its way --
+never because an ask failed. Building this answer is expensive, so a page
+that retries a struggling server is part of what is wrong with it: after
+`maxFailures` it stops and says to reload. Never past `maxPolls` either.
 -}
 polling : Model -> Bool
 polling model =
     model.polls
         < maxPolls
-        && (seated model || model.reviewsError)
+        && model.failures
+        < maxFailures
+        && seated model
         && (case model.reviews of
                 Just reviews ->
-                    Replay.wantsPolling reviews || model.reviewsError
+                    Replay.wantsPolling reviews
 
                 Nothing ->
-                    model.reviewsError
+                    False
            )
 
 

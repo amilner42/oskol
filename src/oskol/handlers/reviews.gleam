@@ -164,7 +164,7 @@ fn review_one(
 /// turn: nothing to grade) and `playing` (the game is not over yet).
 pub fn reviews_json(
   ctx: Ctx,
-  session: Session,
+  _session: Session,
   game_slug: String,
   game_id: String,
 ) -> Result(String, ApiError) {
@@ -179,18 +179,10 @@ pub fn reviews_json(
   let stored = ctx.analysis.stored(game_id)
   let seats = seats(log)
   let entries = list.map(games, fn(g) { entry(g, stored, seats) })
-  // Reading is open to anyone with the room; asking the engine for work is
-  // not. A player's own visit is what starts an analysis that is owed, so a
-  // stranger who walked into the room code cannot put the engine to work.
-  // A player is a guest cookie that holds one of this room's seats.
-  let seated = case record.seat(ctx, session, game_slug, game_id) {
-    Ok(_) -> True
-    Error(_) -> False
-  }
-  case seated && list.any(games, fn(g) { owed(g, stored) }) {
-    True -> ctx.analysis.enqueue(game_id)
-    False -> Nil
-  }
+  // Nothing here asks the engine for anything. A game is analysed once, when
+  // it ends (`game_ended` casts to the queue); reading the answer is just
+  // reading, however many people read it and however often. A game still
+  // being analysed says `pending` and the page waits.
   Ok(
     envelope.ok([
       #(
