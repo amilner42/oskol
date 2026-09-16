@@ -29,7 +29,9 @@ HttpOnly, year-long), and no URL anywhere carries a secret: a player's link
 is the plain room URL. A seat whose holder is away can be claimed from the
 invite link by anyone with the room code -- friends playing, not security --
 and it is that browser's from then on. One browser holds one seat at a
-table: a guest already seated there is refused a second. The room code is
+table, whichever door it came in by: a guest already seated there is
+refused a second, on joining and on claiming alike (claiming back the seat
+it already holds is how a closed tab comes back). The room code is
 therefore the only thing between a stranger and a live game, so a code is
 six characters of a 32-letter alphabet (about 1.07 billion), not six digits.
 A display name is display only and grants nothing. A socket also names its

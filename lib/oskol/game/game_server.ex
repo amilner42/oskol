@@ -229,16 +229,28 @@ defmodule Oskol.Game.GameServer do
         _from,
         %GameServerState{} = state
       ) do
-    case state.connections[player_id] do
-      nil ->
+    conn = state.connections[player_id]
+    # The seat, if any, this browser is already sitting at here.
+    held = GameServerState.find_player_id_by_guest(state, guest_id)
+
+    cond do
+      conn == nil ->
         {:reply, {:error, :player_not_found}, state, @timeout}
 
-      %{connected: true} ->
+      conn.connected ->
         # A seat with a live player is locked: only the guest holding it
         # gets in, and they are already here.
         {:reply, {:error, :seat_connected}, state, @timeout}
 
-      conn ->
+      held != nil and held != player_id ->
+        # This browser already sits at another seat in this room. Taking a
+        # second would write its guest onto both, and a guest id names one
+        # seat: it would hold whichever comes first in seat order and be
+        # unable to reach the other. Two seats is two browsers. (Claiming
+        # back the seat it already holds is the reconnect case, and passes.)
+        {:reply, {:error, :already_seated}, state, @timeout}
+
+      true ->
         # The seat changes hands: the claiming browser holds it now, so the
         # guest who held it before cannot walk back in behind their back.
         claimed = %{conn | guest_id: guest_id}

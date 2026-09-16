@@ -207,6 +207,37 @@ defmodule Oskol.Game.RoomTest do
       assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
     end
 
+    test "a browser at one seat cannot claim the other one from the invite" do
+      # The other door into a seat. Alice is playing; Bob's socket drops;
+      # Alice opens the invite link and clicks Bob's seat. If that went
+      # through, her guest would be written onto both seats -- and a guest
+      # id names one seat, so she would hold whichever came first and Bob
+      # would be locked out of the room entirely.
+      %{game_id: game_id, p1: p1, g1: g1, p2: p2, g2: g2} =
+        room("backgammon", "single", pid1: self(), pid2: sleeper())
+
+      state = Game.get_server_state(game_id)
+      send(state.connections[p2].pid, :stop)
+      assert eventually(fn -> not Game.get_server_state(game_id).connections[p2].connected end)
+
+      assert {:error, :already_seated} = Game.claim_seat(game_id, p2, self(), g1)
+      # Both seats are still where they were, and both players still get in.
+      assert Game.get_server_state(game_id).connections[p2].guest_id == g2
+      assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
+      assert {:ok, ^p2, _} = Game.attach(game_id, g2, self())
+    end
+
+    test "claiming back the seat you already hold is a reconnect, not a second seat" do
+      # A player who closed the tab and came back through the invite link:
+      # the seat is already theirs, so the claim is how they get a live
+      # connection again.
+      %{game_id: game_id, p1: p1, g1: g1} = lobby("single")
+
+      assert {:ok, ^p1, state} = Game.claim_seat(game_id, p1, self(), g1)
+      assert state.connections[p1].connected
+      assert state.connections[p1].guest_id == g1
+    end
+
     test "reclaiming an empty seat hands it to the guest that claimed it" do
       # A seat nobody is holding is free to whoever has the room code: that
       # is the friendly-game rule, and the claiming browser holds it after.
