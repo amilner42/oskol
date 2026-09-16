@@ -63,6 +63,7 @@ pub fn a_seat_reads_the_whole_record_test() {
         #("slug", json.string("backgammon")),
         #("id", json.string("000007")),
         #("you", json.string("p1")),
+        #("seated", json.bool(True)),
         #("record", expected),
       ]),
     )
@@ -78,6 +79,8 @@ pub fn a_token_that_opens_no_seat_still_reads_the_record_test() {
   let assert Ok(body) =
     record.record_json(ctx, "backgammon", "000007", "stolen")
   assert string.contains(body, "\"you\":\"p1\"")
+  // ...and that the seat it faces is not the reader's own.
+  assert string.contains(body, "\"seated\":false")
 }
 
 pub fn no_token_reads_the_record_from_the_first_seat_test() {
@@ -85,6 +88,15 @@ pub fn no_token_reads_the_record_from_the_first_seat_test() {
   let ctx = room_with("backgammon", Ok(started("backgammon", "single")))
   let assert Ok(body) = record.record_json(ctx, "backgammon", "000007", "")
   assert string.contains(body, "\"you\":\"p1\"")
+  assert string.contains(body, "\"seated\":false")
+}
+
+pub fn a_seat_token_says_the_record_is_the_reader_own_test() {
+  // The one thing a token still decides: the board opens on the reader's own
+  // seat, and the page may say so.
+  let ctx = room_with("backgammon", Ok(started("backgammon", "single")))
+  let assert Ok(body) = record.record_json(ctx, "backgammon", "000007", "good")
+  assert string.contains(body, "\"seated\":true")
 }
 
 pub fn a_room_asked_for_under_another_game_reads_nothing_test() {

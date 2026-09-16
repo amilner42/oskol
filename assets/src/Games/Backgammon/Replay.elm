@@ -63,7 +63,8 @@ import Json.Decode as D exposing (Decoder)
 
 
 type alias Record =
-    { you : String -- the seat the token opens
+    { you : String -- the seat the board faces to begin with
+    , seated : Bool -- that seat is the reader's own, not just where the board starts
     , players : List Player
     , target : Int -- the match length; 0 for unlimited play, 1 for a single game
     , cube : Bool -- the match is played with the doubling cube
@@ -91,10 +92,11 @@ type Entry
 
 recordDecoder : Decoder Record
 recordDecoder =
-    D.map2 (\you r -> r you)
+    D.map3 (\you seated r -> r you seated)
         (D.field "you" D.string)
+        (D.oneOf [ D.field "seated" D.bool, D.succeed False ])
         (D.field "record"
-            (D.map5 (\players target cube start games you -> Record you players target cube start games)
+            (D.map5 (\players target cube start games you seated -> Record you seated players target cube start games)
                 (D.field "players" (D.list playerDecoder))
                 (D.field "target" D.int)
                 (D.oneOf [ D.field "cube" D.bool, D.succeed True ])

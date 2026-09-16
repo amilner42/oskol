@@ -1717,9 +1717,15 @@ suite =
                 gameTwo =
                     E.list identity [ turn "p2" [ 2, 1 ] [ "bar/23", "6/5" ] ]
 
+                -- the room is playing a match: only a match has a history
+                -- of finished games and per-game headings
+                inMatch u =
+                    { u | scene = u.scene |> withData "target" (E.int 3) }
+
                 inGameTwo u =
                     withRecord gameTwo 2 u
                         |> withGames (E.list identity [ gameOver 1 "p1" "gammon" 4 [ ( "p1", 4 ), ( "p2", 0 ) ] ])
+                        |> inMatch
 
                 -- what the room's /record answers: both games
                 archive =
@@ -2225,7 +2231,7 @@ suite =
                                                 |> withData "to_act" E.null
                                                 |> withData "to_move" E.null
                                     in
-                                    { u | scene = { scene | phase = "between_games" }, legal = [ { name = "ready", label = "Ready", params = [] } ] }
+                                    inMatch { u | scene = { scene | phase = "between_games" }, legal = [ { name = "ready", label = "Ready", params = [] } ] }
 
                                 panel =
                                     render "p1" paused |> Query.find [ id "bg-record" ]

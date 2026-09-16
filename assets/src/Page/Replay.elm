@@ -639,9 +639,14 @@ viewReplay model record game =
                 { players = record.players
                 , viewer = facing model record
                 , you =
-                    -- only a link that carries a seat's token is anybody's
-                    -- own: a shared replay belongs to neither player
-                    model.token |> Maybe.map (\_ -> record.you)
+                    -- only a link whose token really opens a seat here is
+                    -- anybody's own: a shared replay belongs to neither
+                    -- player, and the server says which it is
+                    if record.seated then
+                        Just record.you
+
+                    else
+                        Nothing
                 , scores = scores
                 , cube = record.cube
                 , theme = theme model

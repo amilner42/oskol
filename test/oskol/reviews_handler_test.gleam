@@ -567,6 +567,18 @@ pub fn anyone_with_the_room_reads_its_reviews_test() {
     reviews.retry_json(ctx, "backgammon", "123456", "stolen", 1)
 }
 
+pub fn only_a_seat_puts_the_engine_to_work_test() {
+  // Reading is open, but room codes are six digits: a stranger walking them
+  // must not be able to queue an analysis of every game ever played. A game
+  // that is owed one is queued by a player's own visit, not by a passer-by's.
+  let ctx = with_analysis(finished_log(4), [], no_engine) |> seated
+  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "stolen")
+  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "")
+  assert recorded("enqueued") == []
+  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "good")
+  assert recorded("enqueued") == ["123456"]
+}
+
 pub fn only_backgammon_rooms_have_reviews_test() {
   let ctx = with_analysis(finished_log(4), [], no_engine)
   let assert Error(error.NotFound(_)) =

@@ -1268,7 +1268,9 @@ viewPlayerBar ctx player isMe tray =
                 ]
                 [ div [ class ("swatch shrink-0 " ++ color), title (p.name ++ " plays " ++ color) ] []
                 , span [ class "font-bold text-sm sm:text-base truncate" ] [ text p.name ]
-                , if isMe && Just p.id == ctx.you then
+                  -- on whichever bar is the reader's own seat: the replay
+                  -- turns the board over, and the badge goes with the seat
+                , if Just p.id == ctx.you then
                     span [ class "bar-tag you pixel text-[7px] px-1 py-0.5 shrink-0" ] [ text "YOU" ]
 
                   else
@@ -3424,12 +3426,17 @@ viewRecordBody ctx asSheet =
         finished =
             gamesOf ctx.scene
 
+        -- A single game has no match around it, so it never grows a
+        -- history or per-game headings, not even once it is over.
+        singleGame =
+            Protocol.sceneData D.int "target" ctx.scene == Just 1
+
         -- The history and the per-game headings belong as soon as a game
         -- has been played to its end -- including the one just finished,
         -- while both players are still to say they are ready -- not only
         -- once the next game has begun.
         isMatch =
-            gameNumber > 1 || finished /= []
+            not singleGame && (gameNumber > 1 || finished /= [])
 
         list =
             case ctx.model.browsing of
@@ -3516,7 +3523,7 @@ viewRecordBody ctx asSheet =
 
 {-| One finished game in the match history: which game, who won it and how,
 and the score it left. Tapping it opens that game's moves in the list, for
-a seat: the moves come from `/record`, which opens only on a seat token, so
+a seat: the moves come from `/record`, which opens on the room, so
 a spectator (a scene with no viewer) reads the result lines and nothing
 more.
 -}

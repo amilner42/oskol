@@ -52,6 +52,19 @@ record =
             Debug.todo (D.errorToString err)
 
 
+{-| The same record as the server answers a link with no seat token: the
+board still faces a side, but it is nobody's own.
+-}
+shared : Replay.Record
+shared =
+    case D.decodeString Replay.recordDecoder (String.replace "\"seated\":true" "\"seated\":false" ReplayFixtures.record) of
+        Ok r ->
+            r
+
+        Err err ->
+            Debug.todo (D.errorToString err)
+
+
 reviews : String -> Replay.Reviews
 reviews json =
     case D.decodeString Replay.reviewsDecoder json of
@@ -461,18 +474,18 @@ rendered =
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-note" ]
                     |> Query.has [ Selector.text "Bad", Selector.text "24/14" ]
-        , test "a link that carries a seat's token still says which side is theirs" <|
+        , test "a link that carries a seat's token says which side is theirs, whichever way the board faces" <|
             \_ ->
-                loaded (Just 3)
-                    |> Page.view
-                    |> Query.fromHtml
-                    |> Query.findAll [ Selector.class "you" ]
-                    |> Query.count (Expect.equal 1)
+                Expect.all
+                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "you" ] |> Query.count (Expect.equal 1)
+                    , \m -> m |> run [ Flipped ] |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "you" ] |> Query.count (Expect.equal 1)
+                    ]
+                    (loaded (Just 3))
         , test "a shared link belongs to neither player: nobody is told they are you" <|
             \_ ->
                 Page.init session { slug = "backgammon", gameId = "000011", token = Nothing, game = Just 3 }
                     |> Tuple.first
-                    |> run [ GotRecord (Ok record) ]
+                    |> run [ GotRecord (Ok shared) ]
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.findAll [ Selector.class "you" ]

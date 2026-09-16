@@ -164,7 +164,7 @@ pub fn reviews_json(
   ctx: Ctx,
   game_slug: String,
   game_id: String,
-  _token: String,
+  token: String,
 ) -> Result(String, ApiError) {
   use _ <- result.try(record.room(ctx, game_slug, game_id))
   use log <- result.try(case game_slug == slug, ctx.analysis.log(game_id) {
@@ -177,7 +177,14 @@ pub fn reviews_json(
   let stored = ctx.analysis.stored(game_id)
   let seats = seats(log)
   let entries = list.map(games, fn(g) { entry(g, stored, seats) })
-  case list.any(games, fn(g) { owed(g, stored) }) {
+  // Reading is open to anyone with the room; asking the engine for work is
+  // not. A player's own visit is what starts an analysis that is owed, so a
+  // stranger walking room codes cannot put the engine to work.
+  let seated = case ctx.rooms.seated_game(game_id, token) {
+    Ok(_) -> True
+    Error(_) -> False
+  }
+  case seated && list.any(games, fn(g) { owed(g, stored) }) {
     True -> ctx.analysis.enqueue(game_id)
     False -> Nil
   }
