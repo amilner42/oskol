@@ -1069,14 +1069,14 @@ suite =
                             }
                         )
                         (Expect.all
-                            [ Query.has [ class "bar-pr", text "Match PR: 8.4" ]
+                            [ Query.has [ class "bar-pr", text "Match PR: ", text "8.4" ]
                             , \q -> Query.findAll [ class "bar-pr" ] q |> Query.count (Expect.equal 1)
                             ]
                         )
              , test "a whole number still reads with its decimal" <|
                 \_ ->
                     on (\c -> { c | prOf = \_ -> Just 8.0 })
-                        (Query.has [ class "bar-pr", text "Match PR: 8.0" ])
+                        (Query.has [ class "bar-pr", text "8.0" ])
              , test "no graded game of this match, nobody wearing a PR" <|
                 \_ ->
                     on (\c -> { c | prOf = \_ -> Nothing })

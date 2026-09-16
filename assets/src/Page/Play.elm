@@ -129,7 +129,8 @@ type alias Model =
     , ratings : Dict String Float -- each seat's PR so far in this match, once a game of it is graded
     , awaySince : Dict String Int -- client time (ms) each absent player's drop was noticed
     , awayNew : List String -- players who went missing in the latest payload, awaiting their moment
-    , ratingsPolls : Int -- asks made while a grade is owed; 0 is not waiting for one
+    , ratingsGraded : Int -- games of this match the engine had answered for, as of the last ask
+    , ratingsPolls : Int -- asks made while a grade is on its way; 0 is not waiting for one
     }
 
 
@@ -161,6 +162,7 @@ init session config =
       , ratings = Dict.empty
       , awaySince = Dict.empty
       , awayNew = []
+      , ratingsGraded = 0
       , ratingsPolls = 0
       }
     , Cmd.batch
@@ -411,12 +413,18 @@ update msg model =
             stay
                 { model
                     | ratings = ratings.prs
-
-                    -- The server says whether the engine still owes this
-                    -- room an answer. Nothing owed, nothing to wait for --
-                    -- including on a page opened long after a match.
+                    , ratingsGraded = max model.ratingsGraded ratings.graded
                     , ratingsPolls =
-                        if ratings.pending then
+                        if ratings.graded > model.ratingsGraded then
+                            -- The grade this page was waiting for landed.
+                            0
+
+                        else if ratings.pending || model.ratingsPolls > 0 then
+                            -- Either a grade is on its way, or a game ended
+                            -- here and its review has not even been opened
+                            -- yet: the room queues it as the game ends and
+                            -- the queue takes one room at a time, so "not
+                            -- pending" right now is not "never coming".
                             nextPoll (max 1 model.ratingsPolls)
 
                         else
@@ -535,10 +543,11 @@ applyPayload payload model =
     )
 
 
-{-| How often the page asks again while a grade is owed, and how many
-times it is willing to. The engine takes minutes on a long game at 4-ply,
-and it is answering a room, not this page: five seconds apart for five
-minutes is patient without being rude.
+{-| How often the page asks again while a grade is coming, and how many
+times it is willing to. The engine takes minutes on a long game at 4-ply
+and works one room at a time, so the wait can be long: five seconds apart
+for twenty minutes, the same patience the replay page has. Each ask is one
+row read.
 -}
 pollRatingsEveryMs : Float
 pollRatingsEveryMs =
@@ -547,7 +556,7 @@ pollRatingsEveryMs =
 
 maxRatingsPolls : Int
 maxRatingsPolls =
-    60
+    240
 
 
 {-| The next ask, or a stop once the page has asked enough times. Zero

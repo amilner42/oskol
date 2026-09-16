@@ -1284,11 +1284,16 @@ a.q-card:hover, a.q-card:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .bar-dot.lost { animation: none; opacity: 0.55; }
 }
-/* On the narrowest phones the PR is what gives: a name and a pip count are
-   the game, and a rating that squeezed the names off the bar would be the
-   wrong trade. */
+/* The PR is what gives when the bar runs out of room: a name and a pip
+   count are the game, and a rating that squeezed the names off the bar
+   would be the wrong trade. On the narrowest phones it never fits; on a
+   phone with a clock on the bar it costs the name every character it has
+   (measured: 91px of name becomes 4px), so it goes there too. */
 @media (max-width: 374px) {
   .bg-page .bar-pr { display: none; }
+}
+@media (max-width: 639px) {
+  .bg-page .player-bar:has(.clock-chip) .bar-pr { display: none; }
 }
 
 .player-bar { border: 3px solid var(--ink); background: #fff; box-shadow: 4px 4px 0 0 var(--ink); }

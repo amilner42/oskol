@@ -246,7 +246,8 @@ dictionary, and nor is anyone in a match with nothing graded yet.
 -}
 type alias Ratings =
     { prs : Dict String Float -- by player id, for the seats that have a number
-    , pending : Bool -- the engine still owes this room an answer
+    , graded : Int -- games of this match the engine has answered for
+    , pending : Bool -- a grade is on its way (a row opened, or a retry coming)
     }
 
 
@@ -257,16 +258,28 @@ fetchRatings session slug gameId toMsg =
 
 ratingsDecoder : Decoder Ratings
 ratingsDecoder =
-    D.map2 Ratings
-        (D.field "players"
-            (D.list
-                (D.map2 Tuple.pair
-                    (D.field "player_id" D.string)
-                    (D.field "pr" (D.nullable D.float))
+    let
+        seats =
+            D.field "players"
+                (D.list
+                    (D.map3 (\id pr games -> ( id, pr, games ))
+                        (D.field "player_id" D.string)
+                        (D.field "pr" (D.nullable D.float))
+                        (D.oneOf [ D.field "games" D.int, D.succeed 0 ])
+                    )
                 )
-            )
-            |> D.map (List.filterMap (\( id, pr ) -> Maybe.map (Tuple.pair id) pr) >> Dict.fromList)
+    in
+    D.map2
+        (\rows pending ->
+            { prs =
+                rows
+                    |> List.filterMap (\( id, pr, _ ) -> Maybe.map (Tuple.pair id) pr)
+                    |> Dict.fromList
+            , graded = rows |> List.map (\( _, _, games ) -> games) |> List.maximum |> Maybe.withDefault 0
+            , pending = pending
+            }
         )
+        seats
         (D.oneOf [ D.field "pending" D.bool, D.succeed False ])
 
 

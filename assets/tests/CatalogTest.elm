@@ -39,7 +39,13 @@ suite =
 ratings : Test
 ratings =
     describe "GET /papi/games/:slug/rooms/:id/ratings"
-        [ test "a seat with a number is in the dictionary; one without is not" <|
+        [ test "the graded count is the most any seat has, so a fresh grade shows up" <|
+            \_ ->
+                D.decodeString Catalog.ratingsDecoder
+                    """{"ok":true,"pending":true,"players":[{"player_id":"p1","games":3,"pr":8.4},{"player_id":"p2","games":3,"pr":11.0}]}"""
+                    |> Result.map .graded
+                    |> Expect.equal (Ok 3)
+        , test "a seat with a number is in the dictionary; one without is not" <|
             \_ ->
                 D.decodeString Catalog.ratingsDecoder
                     """{"ok":true,"pending":false,"players":[{"player_id":"p1","games":2,"pr":8.4},{"player_id":"p2","games":0,"pr":null}]}"""
@@ -55,8 +61,8 @@ ratings =
             \_ ->
                 D.decodeString Catalog.ratingsDecoder
                     """{"ok":true,"players":[{"player_id":"p1","games":1,"pr":9.0}]}"""
-                    |> Result.map (\r -> ( r.pending, Dict.toList r.prs ))
-                    |> Expect.equal (Ok ( False, [ ( "p1", 9.0 ) ] ))
+                    |> Result.map (\r -> ( r.pending, r.graded, Dict.toList r.prs ))
+                    |> Expect.equal (Ok ( False, 1, [ ( "p1", 9.0 ) ] ))
         ]
 
 

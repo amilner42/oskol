@@ -18,6 +18,7 @@
 //// is the same one refusal -- a caller learns nothing about a room it did
 //// not ask for.
 
+import gamekit/instance.{type Instance}
 import gleam/float
 import gleam/int
 import gleam/json
@@ -43,10 +44,14 @@ pub fn ratings_json(
   game_slug: String,
   game_id: String,
 ) -> Result(String, ApiError) {
-  use _ <- result.try(room(ctx, game_slug, game_id))
-  let seats = case game_slug == reviews.slug, ctx.analysis.log(game_id) {
-    True, Some(log) if log.slug == reviews.slug -> log.seats
-    _, _ -> []
+  use game <- result.try(room(ctx, game_slug, game_id))
+  // Seat order is the review's player order: the engine numbers its two
+  // players by the seats the game started with. Read from the running game
+  // rather than from the log, so a table polling this every few seconds
+  // costs one row and not a whole action log.
+  let seats = case game_slug == reviews.slug {
+    True -> instance.seats(game)
+    False -> []
   }
   let stored = ctx.analysis.stored(game_id)
   let graded = graded(stored)
@@ -55,7 +60,7 @@ pub fn ratings_json(
       #("pending", json.bool(owed(stored))),
       #(
         "players",
-        json.array(list.index_map(seats, fn(s, i) { #(s.0, i) }), fn(pair) {
+        json.array(list.index_map(seats, fn(s, i) { #(s.id, i) }), fn(pair) {
           let #(player_id, index) = pair
           let prs = list.filter_map(graded, at(_, index))
           json.object([
@@ -127,8 +132,11 @@ pub fn average(prs: List(Float)) -> Option(Float) {
 
 /// The same door the record and the reviews open: a room playing this
 /// game, or the one refusal.
-fn room(ctx: Ctx, game_slug: String, game_id: String) -> Result(Nil, ApiError) {
+fn room(
+  ctx: Ctx,
+  game_slug: String,
+  game_id: String,
+) -> Result(Instance, ApiError) {
   record.room(ctx, game_slug, game_id)
-  |> result.replace(Nil)
   |> result.replace_error(error.NotFound(not_found_message))
 }
