@@ -20,9 +20,15 @@ view (backgammon is the one game there is).
 This is the SPA's third page, and it was the whole app before it: the game
 experience below `view` is unchanged, and so is the channel wiring. What
 changed is the way in. The page used to be handed its game by data
-attributes on a server-rendered div; now it takes the game id and the seat
-token from the route and asks JavaScript to open the channel
-(`joinGameChannel`), which is the one thing Elm cannot do itself.
+attributes on a server-rendered div; now it takes the game id from the
+route and asks JavaScript to open the channel (`joinGameChannel`), which is
+the one thing Elm cannot do itself.
+
+Nothing in the URL says who this browser is. The seat it holds, if it holds
+one, is the room's own answer, given over the channel against the guest
+cookie the websocket carried. A browser the room will not have is sent to
+the invite link, which is the one page that says whether there is a seat
+for it.
 
 A room whose game has not started yet answers with a lobby payload rather
 than a scene, and that is the waiting room: the seat waits where it will
@@ -48,7 +54,6 @@ import Session exposing (Session)
 import Task
 import Time
 import Ui.Notebook as Notebook
-import Url exposing (percentEncode)
 import View.Clock
 
 
@@ -65,7 +70,7 @@ port receiveFromChannel : (E.Value -> msg) -> Sub msg
 {-| Open (or re-open) the game channel for a room. JavaScript owns the
 socket; every message either way still goes through the two ports above.
 -}
-port joinGameChannel : { gameId : String, seatToken : Maybe String } -> Cmd msg
+port joinGameChannel : { gameId : String } -> Cmd msg
 
 
 {-| Hand an invite link to the platform: the native sheet on a phone, the
@@ -109,7 +114,6 @@ type alias Model =
     , gameId : String
     , gameSlug : String
     , playerId : Maybe String
-    , seatToken : Maybe String -- this seat's credential, carried into a rematch
     , payload : Maybe GamePayload -- latest protocol payload from the server
     , lobby : Maybe Protocol.Lobby -- the room before it has a game in it
     , legal : List Protocol.Schema -- legal action schemas for this player
@@ -131,7 +135,6 @@ init :
         { origin : String
         , slug : String
         , gameId : String
-        , seatToken : Maybe String
         }
     -> ( Model, Cmd Msg )
 init session config =
@@ -139,7 +142,6 @@ init session config =
       , gameId = config.gameId
       , gameSlug = config.slug
       , playerId = Nothing
-      , seatToken = config.seatToken
       , payload = Nothing
       , lobby = Nothing
       , legal = []
@@ -240,7 +242,7 @@ update : Msg -> Model -> ( Model, Cmd Msg, Out )
 update msg model =
     case msg of
         ChannelRequested ->
-            stay model (joinGameChannel { gameId = model.gameId, seatToken = model.seatToken })
+            stay model (joinGameChannel { gameId = model.gameId })
 
         ServerMessageReceived message ->
             case message of
@@ -295,20 +297,14 @@ update msg model =
 
                 Backgammon.WantRecord ->
                     -- The earlier games' turns are not in every update: the
-                    -- room serves them to a seat that asks, on its token.
-                    case model.seatToken of
-                        Just token ->
-                            stay updated
-                                (Api.get model.session
-                                    (recordUrl model token)
-                                    (D.field "record" D.value)
-                                    (Result.mapError (always ()) >> Backgammon.GotRecord >> BackgammonMsg)
-                                )
-
-                        Nothing ->
-                            -- a spectator is never offered a game to open;
-                            -- should one ask anyway, it is a failed fetch
-                            update (BackgammonMsg (Backgammon.GotRecord (Err ()))) updated
+                    -- room serves them to anyone who has it, since they
+                    -- were on the board for both players.
+                    stay updated
+                        (Api.get model.session
+                            (recordUrl model)
+                            (D.field "record" D.value)
+                            (Result.mapError (always ()) >> Backgammon.GotRecord >> BackgammonMsg)
+                        )
 
                 Backgammon.ChoseTheme name ->
                     -- Three places keep it: the page (instantly), this
@@ -340,7 +336,20 @@ update msg model =
             ( model, Cmd.none, Navigate (rematchUrl model rematchGameId) )
 
         ChannelError err ->
-            stay { model | error = Just err } Cmd.none
+            -- The room will not have this browser and has told it nothing
+            -- else: it holds no seat here. That is not an error to read at
+            -- an empty table, it is a trip to the invite link, which is the
+            -- one page that says whether there is a seat to take. A refusal
+            -- once the table is up (a rejoin after a takeover) stays where
+            -- it is: the player is looking at their own game.
+            if err == refusedByRoom && model.payload == Nothing && model.lobby == Nothing then
+                ( model
+                , Cmd.none
+                , Navigate (Route.href (Route.invite model.gameSlug model.gameId))
+                )
+
+            else
+                stay { model | error = Just err } Cmd.none
 
         ConnectionStatusChanged status ->
             stay { model | connectionStatus = status } Cmd.none
@@ -492,54 +501,51 @@ connectionStatusFromString status =
             Disconnected
 
 
-{-| Where this room's whole record is read, on this seat's token.
+{-| What the game channel says to a browser that holds no seat at the room
+(`OskolWeb.GameChannel`). It never says which of the reasons it was.
 -}
-recordUrl : Model -> String -> String
-recordUrl model token =
-    "/papi/games/" ++ model.gameSlug ++ "/rooms/" ++ model.gameId ++ "/record?t=" ++ percentEncode token
+refusedByRoom : String
+refusedByRoom =
+    "unauthorized"
 
 
-{-| A rematch is the same players in the same seats, so the seat token
-carries over unchanged: it is the only thing the new room needs.
+{-| Where this room's whole record is read. It opens on the room, like the
+replay: a record is every committed turn, which both players saw.
+-}
+recordUrl : Model -> String
+recordUrl model =
+    "/papi/games/" ++ model.gameSlug ++ "/rooms/" ++ model.gameId ++ "/record"
+
+
+{-| A rematch is the same players in the same seats, and the room carries
+the guest holding each one over, so both browsers walk straight in: the
+new room's plain URL is all either of them needs.
 -}
 rematchUrl : Model -> String -> String
 rematchUrl model rematchGameId =
-    "/"
-        ++ model.gameSlug
-        ++ "/"
-        ++ rematchGameId
-        ++ (case model.seatToken of
-                Just token ->
-                    "?t=" ++ percentEncode token
-
-                Nothing ->
-                    ""
-           )
+    Route.href (Route.play model.gameSlug rematchGameId)
 
 
-{-| The plain invite link for this room: no token, nothing identifying. What
-it offers is the room's decision, not the link's.
+{-| The plain invite link for this room: nothing identifying, and now the
+same URL this page is at. What it offers is the room's decision, not the
+link's.
 -}
 inviteUrl : Model -> String
 inviteUrl model =
     model.origin ++ Route.href (Route.invite model.gameSlug model.gameId)
 
 
-{-| Where a finished game of this room is replayed: the replay opens on the
-seat's own token, so a spectator (no seat in the scene) is offered none.
+{-| Where a finished game of this room is replayed. A spectator (no seat in
+the scene) is offered none, which is a matter of what the table shows, not
+of what the replay will open: it opens for anyone.
 -}
 replayHref : Model -> GamePayload -> Int -> Maybe String
 replayHref model payload number =
-    case model.seatToken of
-        Just token ->
-            if List.any (\p -> p.id == payload.playerId) payload.players then
-                Just (Route.href (Route.replay model.gameSlug model.gameId (Just token) (Just number)))
+    if List.any (\p -> p.id == payload.playerId) payload.players then
+        Just (Route.href (Route.replay model.gameSlug model.gameId (Just number)))
 
-            else
-                Nothing
-
-        Nothing ->
-            Nothing
+    else
+        Nothing
 
 
 nameOf : Model -> String -> String

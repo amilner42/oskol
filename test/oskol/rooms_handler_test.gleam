@@ -151,16 +151,12 @@ pub fn creating_a_game_seats_its_creator_test() {
   let ctx =
     fakes.ctx()
     |> fakes.with_guests(None)
-    |> creating(
-      Ok(Nil),
-      Ok(Seat(player_id: "p1", token: "tok", started: False)),
-    )
+    |> creating(Ok(Nil), Ok(Seat(player_id: "p1", started: False)))
 
   assert rooms.create(ctx, fakes.guest("g1"), backgammon, setup(), " Alice ")
     == Ok(Seated(
       game_id: "123456",
       player_id: "p1",
-      token: "tok",
       name: "Alice",
       started: False,
     ))
@@ -169,13 +165,12 @@ pub fn creating_a_game_seats_its_creator_test() {
 pub fn creating_a_game_with_no_guest_id_still_seats_test() {
   let ctx =
     fakes.ctx()
-    |> creating(Ok(Nil), Ok(Seat(player_id: "p1", token: "tok", started: True)))
+    |> creating(Ok(Nil), Ok(Seat(player_id: "p1", started: True)))
 
   assert rooms.create(ctx, fakes.no_guest(), backgammon, setup(), "Alice")
     == Ok(Seated(
       game_id: "123456",
       player_id: "p1",
-      token: "tok",
       name: "Alice",
       started: True,
     ))
@@ -190,7 +185,7 @@ pub fn creating_a_game_needs_a_name_test() {
 pub fn a_setup_the_game_does_not_offer_is_refused_test() {
   let ctx =
     fakes.ctx()
-    |> creating(Error(errors.UnknownFormat), Ok(Seat("p1", "tok", False)))
+    |> creating(Error(errors.UnknownFormat), Ok(Seat("p1", False)))
 
   assert rooms.create(ctx, fakes.no_guest(), backgammon, setup(), "Alice")
     == Error(rooms.Rejected("Unknown game mode"))
@@ -229,16 +224,10 @@ pub fn joining_a_lobby_takes_the_free_seat_test() {
   let ctx =
     fakes.ctx()
     |> fakes.with_guests(None)
-    |> joining(Ok(Seat(player_id: "p2", token: "tok2", started: True)))
+    |> joining(Ok(Seat(player_id: "p2", started: True)))
 
   assert rooms.join(ctx, fakes.guest("g2"), "123456", "Bob")
-    == Ok(Seated(
-      game_id: "123456",
-      player_id: "p2",
-      token: "tok2",
-      name: "Bob",
-      started: True,
-    ))
+    == Ok(Seated(game_id: "123456", player_id: "p2", name: "Bob", started: True))
 }
 
 pub fn joining_needs_a_name_test() {
@@ -290,7 +279,7 @@ fn reclaiming(ctx: Ctx, claim: Result(room.Seat, errors.RoomError)) -> Ctx {
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
       subscribe: fn(_) { Nil },
-      claim: fn(_, _) { claim },
+      claim: fn(_, _, _) { claim },
     ),
   )
 }
@@ -300,29 +289,23 @@ fn reclaiming(ctx: Ctx, claim: Result(room.Seat, errors.RoomError)) -> Ctx {
 pub fn a_reclaimed_seat_keeps_its_name_test() {
   let ctx =
     fakes.ctx()
-    |> reclaiming(Ok(Seat(player_id: "p2", token: "fresh", started: True)))
+    |> reclaiming(Ok(Seat(player_id: "p2", started: True)))
 
-  assert rooms.claim(ctx, "123456", "p2")
-    == Ok(Seated(
-      game_id: "123456",
-      player_id: "p2",
-      token: "fresh",
-      name: "Bob",
-      started: True,
-    ))
+  assert rooms.claim(ctx, fakes.guest("g2"), "123456", "p2")
+    == Ok(Seated(game_id: "123456", player_id: "p2", name: "Bob", started: True))
 }
 
 pub fn reclaiming_a_seat_in_a_room_that_is_over_test() {
   let ctx = fakes.with_room(fakes.ctx(), None, None)
 
-  assert rooms.claim(ctx, "123456", "p2")
+  assert rooms.claim(ctx, fakes.guest("g2"), "123456", "p2")
     == Error(rooms.Gone(rooms.gone_message))
 }
 
 pub fn reclaiming_a_seat_whose_player_came_back_test() {
   let ctx = fakes.ctx() |> reclaiming(Error(errors.SeatConnected))
 
-  assert rooms.claim(ctx, "123456", "p2")
+  assert rooms.claim(ctx, fakes.guest("g2"), "123456", "p2")
     == Error(rooms.Refused("That player is back at the table"))
 }
 

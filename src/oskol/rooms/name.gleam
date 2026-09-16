@@ -1,6 +1,6 @@
 //// A display name: trimmed, bounded, printable. It goes into every payload,
 //// the invite URL and the page title, and it grants nothing — a name is not
-//// identity, a seat token is.
+//// identity; the guest cookie holding the seat is.
 
 import gleam/int
 import gleam/list

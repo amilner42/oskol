@@ -32,40 +32,46 @@ defmodule Oskol.Game.GameServer do
   end
 
   @doc """
-  Take a free seat. Mints the seat's token; the caller reads it back with
-  `GameServerState.token_for/2`. The display name is display only.
-  `guest_id` is the visitor's guest-cookie id, recorded on the seat purely
-  for bookkeeping: it grants nothing.
+  Take a free seat. `guest_id` is the visitor's guest-cookie id, and it is
+  what holds the seat from here: the channel attaches on it, and nothing in
+  a URL opens it. The display name is display only. A seat taken with no
+  guest id (tooling, a seeded room) is held by nobody, and the first
+  browser to ask for it from the invite link takes it.
+
+  One browser holds at most one seat at a table, because one guest id can
+  only name one of them: a guest already seated here is
+  `{:error, :already_seated}` rather than a second seat it could never
+  reach. Two players are two browsers.
   """
   def join_game(game_id, player_name, player_pid \\ nil, guest_id \\ nil) do
     GenServer.call(via_tuple(game_id), {:join_game, player_name, player_pid, guest_id})
   end
 
   @doc """
-  Attach a connection to the seat a token opens.
+  Attach a connection to the seat a guest holds.
 
   This is the only way to reach a seat with an already-connected player: a
-  second connection bearing the same valid token is the same person, so the
-  latest one wins and the previous socket is dropped. A wrong or stale token
-  is `{:error, :invalid_token}` — it never falls back to any other seat.
+  second connection from the same guest is the same person, so the latest
+  one wins and the previous socket is dropped. A guest who holds no seat
+  here is `{:error, :no_seat}` — it never falls back to any other seat.
 
   `client` identifies the browser behind the connection (the socket's
   transport, which outlives any one channel), and it is what tells a
   reconnect from a takeover: see `src/oskol/rooms/seat.gleam`. Callers with
   nothing better to offer pass the connection itself.
   """
-  def attach(game_id, token, player_pid, client \\ nil) do
-    GenServer.call(via_tuple(game_id), {:attach, token, player_pid, client || player_pid})
+  def attach(game_id, guest_id, player_pid, client \\ nil) do
+    GenServer.call(via_tuple(game_id), {:attach, guest_id, player_pid, client || player_pid})
   end
 
   @doc """
-  Reclaim a seat whose player is away, from the invite link. Rotates that
-  seat's token before attaching, so a link that leaked earlier cannot
-  silently shadow the seat later. Returns `{:ok, player_id, token, state}`.
-  A seat whose player is connected is `{:error, :seat_connected}`.
+  Reclaim a seat whose player is away, from the invite link. The seat passes
+  to `guest_id`, so it is that browser's from here and whoever sat there
+  before no longer holds it. Returns `{:ok, player_id, state}`. A seat whose
+  player is connected is `{:error, :seat_connected}`.
   """
-  def claim_seat(game_id, player_id, player_pid) do
-    GenServer.call(via_tuple(game_id), {:claim_seat, player_id, player_pid})
+  def claim_seat(game_id, player_id, player_pid, guest_id \\ nil) do
+    GenServer.call(via_tuple(game_id), {:claim_seat, player_id, player_pid, guest_id})
   end
 
   def get_state(game_id), do: GenServer.call(via_tuple(game_id), :get_state)
@@ -160,13 +166,15 @@ defmodule Oskol.Game.GameServer do
       GameServerState.started?(state) ->
         {:reply, {:error, :game_already_started}, state, @timeout}
 
+      GameServerState.find_player_id_by_guest(state, guest_id) != nil ->
+        {:reply, {:error, :already_seated}, state, @timeout}
+
       true ->
         monitor_ref = if player_pid, do: Process.monitor(player_pid), else: nil
         player_id = generate_player_id()
 
         connection = %{
           name: player_name,
-          token: GameServerState.new_token(),
           guest_id: guest_id,
           pid: player_pid,
           client: player_pid,
@@ -201,10 +209,10 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  def handle_call({:attach, token, player_pid, client}, _from, %GameServerState{} = state) do
-    case GameServerState.find_player_id_by_token(state, token) do
+  def handle_call({:attach, guest_id, player_pid, client}, _from, %GameServerState{} = state) do
+    case GameServerState.find_player_id_by_guest(state, guest_id) do
       nil ->
-        {:reply, {:error, :invalid_token}, state, @timeout}
+        {:reply, {:error, :no_seat}, state, @timeout}
 
       player_id ->
         new_state = do_attach(state, player_id, player_pid, client)
@@ -216,44 +224,61 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  def handle_call({:claim_seat, player_id, player_pid}, _from, %GameServerState{} = state) do
-    case state.connections[player_id] do
-      nil ->
+  def handle_call(
+        {:claim_seat, player_id, player_pid, guest_id},
+        _from,
+        %GameServerState{} = state
+      ) do
+    conn = state.connections[player_id]
+    # The seat, if any, this browser is already sitting at here.
+    held = GameServerState.find_player_id_by_guest(state, guest_id)
+
+    cond do
+      conn == nil ->
         {:reply, {:error, :player_not_found}, state, @timeout}
 
-      %{connected: true} ->
-        # A seat with a live player is locked: only its token gets in.
+      conn.connected ->
+        # A seat with a live player is locked: only the guest holding it
+        # gets in, and they are already here.
         {:reply, {:error, :seat_connected}, state, @timeout}
 
-      conn ->
-        token = GameServerState.new_token()
-        rotated = %{conn | token: token}
+      held != nil and held != player_id ->
+        # This browser already sits at another seat in this room. Taking a
+        # second would write its guest onto both, and a guest id names one
+        # seat: it would hold whichever comes first in seat order and be
+        # unable to reach the other. Two seats is two browsers. (Claiming
+        # back the seat it already holds is the reconnect case, and passes.)
+        {:reply, {:error, :already_seated}, state, @timeout}
+
+      true ->
+        # The seat changes hands: the claiming browser holds it now, so the
+        # guest who held it before cannot walk back in behind their back.
+        claimed = %{conn | guest_id: guest_id}
 
         state = %GameServerState{
           state
-          | connections: Map.put(state.connections, player_id, rotated)
+          | connections: Map.put(state.connections, player_id, claimed)
         }
 
         new_state = do_attach(state, player_id, player_pid, player_pid)
 
-        # The rotated token must be on disk before it is the only way in.
+        # Who holds the seat must be on disk before it is the only way in.
         Persister.players_updated(new_state.game_id, players_json(new_state))
         broadcast(new_state, [])
-        {:reply, {:ok, player_id, token, new_state}, new_state, @timeout}
+        {:reply, {:ok, player_id, new_state}, new_state, @timeout}
     end
   end
 
   # A rematch is the same players in the same seats: the new room is seeded
-  # with the old ids, names and tokens, so the link each player already
-  # holds carries them into it.
+  # with the old ids, names and guests, so each player's browser holds the
+  # same seat in it.
   def handle_call(
-        {:seed_seat, player_id, name, token, guest_id},
+        {:seed_seat, player_id, name, guest_id},
         _from,
         %GameServerState{} = state
       ) do
     connection = %{
       name: name,
-      token: token,
       guest_id: guest_id,
       pid: nil,
       client: nil,
@@ -446,7 +471,7 @@ defmodule Oskol.Game.GameServer do
   # Point a seat at a new connection. The newest connection is the live one,
   # even when the previous one has not timed out yet (a phone coming back
   # before the old websocket closed, or the same player opening a second tab
-  # with their token): the old monitor is dropped so its exit cannot mark a
+  # in a second tab): the old monitor is dropped so its exit cannot mark a
   # present player as away, and only one connection ever holds the seat.
   #
   # Whether the one being replaced is *told* is the seat rule in
@@ -548,13 +573,13 @@ defmodule Oskol.Game.GameServer do
   defp players_json(%GameServerState{} = state) do
     Enum.map(state.seat_order, fn id ->
       conn = state.connections[id]
-      %{"id" => id, "name" => conn.name, "token" => conn.token, "guest_id" => conn.guest_id}
+      %{"id" => id, "name" => conn.name, "guest_id" => conn.guest_id}
     end)
   end
 
   # A rematch is a new room with the same setup (fresh seed) and the same
-  # players in the same seats: ids, names and seat tokens carry over, so the
-  # link each player is already holding works in the new room.
+  # players in the same seats: ids, names and the guest holding each seat
+  # carry over, so both browsers walk straight into the new room.
   defp spawn_rematch(rematch_id, %GameServerState{} = state) do
     case Oskol.Game.GameSupervisor.start_game(rematch_id, state.slug) do
       {:ok, _pid} ->
@@ -572,7 +597,7 @@ defmodule Oskol.Game.GameServer do
           {:ok, ^id, _} =
             GenServer.call(
               via_tuple(rematch_id),
-              {:seed_seat, id, conn.name, conn.token, conn.guest_id}
+              {:seed_seat, id, conn.name, conn.guest_id}
             )
         end)
 
@@ -609,8 +634,9 @@ defmodule Oskol.Game.GameServer do
   # ---------- Rehydration ----------
 
   # Rebuild the room from its persisted row: setup from config, seats (ids,
-  # names, tokens) verbatim so every player's link still works, and — if the
-  # game had started — the instance replayed from seed + action log.
+  # names, the guest holding each) verbatim so every player's browser still
+  # holds its seat, and — if the game had started — the instance replayed
+  # from seed + action log.
   defp restore_state(%GameServerState{} = state, game, actions) do
     with {:ok, setup} <- restore_setup(state, game.config) do
       {connections, seat_order} = restore_seats(game.players)
@@ -648,8 +674,10 @@ defmodule Oskol.Game.GameServer do
     Enum.reduce(players, {%{}, []}, fn player, {connections, order} ->
       connection = %{
         name: player["name"],
-        token: player["token"],
-        # Rows written before guests existed have no key here: nil is fine.
+        # Rows written before guests existed have no key here: nil is fine,
+        # and that seat is held by nobody until someone claims it from the
+        # invite link. Rows written before seat tokens were dropped still
+        # carry a "token" key; nothing reads it.
         guest_id: player["guest_id"],
         pid: nil,
         client: nil,

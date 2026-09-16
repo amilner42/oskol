@@ -57,8 +57,11 @@ async function main() {
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   });
   // Phone-first: the whole flow runs at phone width.
+  // One browser is one seat (a seat is held by the guest cookie), so the
+  // second player gets a context of their own.
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  const context2 = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  for (const c of [context, context2]) await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   const errors = [];
   const watch = (page, who) => {
     page.on('pageerror', (e) => errors.push(`${who} pageerror: ${e.message}`));
@@ -74,7 +77,7 @@ async function main() {
     const { gameId, inviteUrl } = await createGame(p1, { name: 'Alice', twist: 'pick_dice' });
     log(`Game ${gameId} created with the twist on`);
 
-    const p2 = await context.newPage();
+    const p2 = await context2.newPage();
     watch(p2, 'p2');
     await joinByLink(p2, inviteUrl, 'Bob');
     await p1.waitForURL(`**/backgammon/${gameId}**`);

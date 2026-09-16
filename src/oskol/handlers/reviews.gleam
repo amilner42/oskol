@@ -1,8 +1,8 @@
 //// Post-game reviews: backgammon games graded by the analysis engine.
 ////
-////   GET /papi/games/:slug/rooms/:id/reviews?t=<seat token>
+////   GET /papi/games/:slug/rooms/:id/reviews
 ////     {ok, players, games: [{game_number, status, review}]}
-////   POST /papi/games/:slug/rooms/:id/reviews/retry  {t, game_number}
+////   POST /papi/games/:slug/rooms/:id/reviews/retry  {game_number}
 ////     the same, after a failed game is queued again (a seat only)
 ////
 //// Every game of a room is reviewed on its own once it is over -- each
@@ -30,6 +30,7 @@ import oskol/caps/analysis.{
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
+import oskol/core/session.{type Session}
 import oskol/handlers/record
 import oskol/reviews/report
 
@@ -154,17 +155,18 @@ fn review_one(
 /// the board for both players and any spectator, and a replay does not ask
 /// its reader who they are. Asking for one sets the engine working; trying
 /// a failed one again (`retry_json`) still takes a seat, since that spends
-/// engine time on demand. A room that is not there is the record's own
-/// `not_found_message`.
+/// engine time on demand. Who holds a seat is the guest cookie the request
+/// carries, checked against the guest recorded on each seat. A room that is
+/// not there is the record's own `not_found_message`.
 ///
 /// Statuses: `done` (with `review`), `pending`, `failed` (the engine was
 /// tried and gave up), `empty` (the game ended before anyone completed a
 /// turn: nothing to grade) and `playing` (the game is not over yet).
 pub fn reviews_json(
   ctx: Ctx,
+  session: Session,
   game_slug: String,
   game_id: String,
-  token: String,
 ) -> Result(String, ApiError) {
   use _ <- result.try(record.room(ctx, game_slug, game_id))
   use log <- result.try(case game_slug == slug, ctx.analysis.log(game_id) {
@@ -179,8 +181,9 @@ pub fn reviews_json(
   let entries = list.map(games, fn(g) { entry(g, stored, seats) })
   // Reading is open to anyone with the room; asking the engine for work is
   // not. A player's own visit is what starts an analysis that is owed, so a
-  // stranger walking room codes cannot put the engine to work.
-  let seated = case ctx.rooms.seated_game(game_id, token) {
+  // stranger who walked into the room code cannot put the engine to work.
+  // A player is a guest cookie that holds one of this room's seats.
+  let seated = case record.seat(ctx, session, game_slug, game_id) {
     Ok(_) -> True
     Error(_) -> False
   }
@@ -249,16 +252,17 @@ fn settled(
 /// engine was down, or its answer did not fit the game. The game starts
 /// over with a full set of attempts and the room is queued; any other game
 /// (done, pending, still being played) is left as it is. Only a seat may
-/// ask -- it costs engine time -- so the seat token is checked the way the
-/// record's is. Answers what GET answers, the retried game now `pending`.
+/// ask -- it costs engine time -- so the asking guest has to hold one of
+/// this room's seats. Answers what GET answers, the retried game now
+/// `pending`.
 pub fn retry_json(
   ctx: Ctx,
+  session: Session,
   game_slug: String,
   game_id: String,
-  token: String,
   number: Int,
 ) -> Result(String, ApiError) {
-  use _ <- result.try(record.seat(ctx, game_slug, game_id, token))
+  use _ <- result.try(record.seat(ctx, session, game_slug, game_id))
   use log <- result.try(case game_slug == slug, ctx.analysis.log(game_id) {
     True, Some(log) if log.slug == slug -> Ok(log)
     _, _ -> Error(error.NotFound(record.not_found_message))
@@ -278,7 +282,7 @@ pub fn retry_json(
       }
     Error(_) -> Nil
   }
-  reviews_json(ctx, game_slug, game_id, token)
+  reviews_json(ctx, session, game_slug, game_id)
 }
 
 // ---------- Shared ----------

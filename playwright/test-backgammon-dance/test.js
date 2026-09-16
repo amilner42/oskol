@@ -51,6 +51,14 @@ async function main() {
     executablePath: process.env.PW_CHROMIUM || undefined,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   });
+  // A seat is held by the browser's guest cookie, so each player gets a
+  // context of its own, carrying the cookie the room was seeded with.
+  const seatContext = async (guest) => {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    await c.addCookies([{ name: '_oskol_guest', value: guest, url: BASE, httpOnly: true, sameSite: 'Lax' }]);
+    await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    return c;
+  };
   const context = await browser.newContext({ viewport: { width: 1280, height: 860 } });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   const errors = [];
@@ -64,11 +72,12 @@ async function main() {
   try {
     const seats = {};
     for (const player of room.players) {
-      const page = await context.newPage();
+      const ctx = await seatContext(player.guest);
+      const page = await ctx.newPage();
       watch(page, player.name);
-      await page.goto(`${BASE}/backgammon/${room.game_id}?t=${player.token}`);
+      await page.goto(`${BASE}/backgammon/${room.game_id}`);
       await page.waitForSelector('.bg-board', { timeout: 15000 });
-      seats[player.id] = { page, name: player.name };
+      seats[player.id] = { page, name: player.name, ctx, guest: player.guest };
     }
     log(`room ${room.game_id} rehydrated from its log (${room.steps} actions, seed ${room.seed})`);
 
@@ -138,9 +147,9 @@ async function main() {
 
     // A phone going to sleep and waking up: the socket drops and comes
     // back, which is the same tab, not a new player.
-    await context.setOffline(true);
+    await other.ctx.setOffline(true);
     await sleep(800);
-    await context.setOffline(false);
+    await other.ctx.setOffline(false);
     await other.page.waitForFunction(
       () => !document.body.textContent.includes('RECONNECTING'),
       null,
@@ -156,10 +165,11 @@ async function main() {
       'and it does not throw the dice again either'
     );
 
-    // The seat still knows a real takeover when it sees one: another
-    // browser (its own context, its own socket) on the same link, and the
-    // one that had the seat is the one that hears about it.
-    const otherBrowser = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    // The seat still knows a real takeover when it sees one: the same
+    // player on a second device (its own context and socket, the same guest
+    // cookie -- which is what holds the seat), and the one that had the
+    // seat is the one that hears about it.
+    const otherBrowser = await seatContext(other.guest);
     const secondTab = await otherBrowser.newPage();
     const seatUrl = other.page.url();
     await secondTab.goto(seatUrl);
@@ -174,12 +184,15 @@ async function main() {
     await other.page.screenshot({ path: `${SHOTS}/taken-over.png` });
     await otherBrowser.close();
 
-    // 6: a fresh game on a clock, showing the delay.
+    // 6: a fresh game on a clock, showing the delay. Two players, so two
+    // browsers: one context is one seat.
     const p1 = await context.newPage();
     watch(p1, 'clock-p1');
     const timed = await createGame(p1, { name: 'Ada', clock: 'bg3' });
 
-    const p2 = await context.newPage();
+    const clockContext = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+    await clockContext.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    const p2 = await clockContext.newPage();
     watch(p2, 'clock-p2');
     await joinByLink(p2, timed.inviteUrl, 'Bo');
     await p1.waitForSelector('.bg-board', { timeout: 15000 });

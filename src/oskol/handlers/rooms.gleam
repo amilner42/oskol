@@ -174,11 +174,13 @@ pub fn join(
   }
 }
 
-/// Take a seat back from the invite link. The seat's token is rotated by
-/// the room, so whatever link its previous occupant held is dead and only
-/// the one we are about to hand out opens it.
+/// Take a seat back from the invite link. The seat passes to the claiming
+/// guest, so it is theirs from here: whoever sat there before holds it no
+/// longer. Only a seat whose player is away can be claimed, which is the
+/// room's own rule.
 pub fn claim(
   ctx: Ctx,
+  session: Session,
   game_id: String,
   player_id: String,
 ) -> Result(Seated, JoinError) {
@@ -189,7 +191,7 @@ pub fn claim(
     Some(table) -> {
       ctx.rooms.subscribe(game_id)
 
-      case ctx.rooms.claim(game_id, player_id) {
+      case ctx.rooms.claim(game_id, player_id, session.guest_id) {
         Ok(seat) -> Ok(seated(game_id, seat_name(table, player_id), seat))
         Error(reason) -> Error(Refused(errors.message(reason)))
       }
@@ -210,7 +212,6 @@ fn seated(game_id: String, name: String, seat: room.Seat) -> Seated {
   Seated(
     game_id: game_id,
     player_id: seat.player_id,
-    token: seat.token,
     name: name,
     started: seat.started,
   )

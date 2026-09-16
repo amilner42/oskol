@@ -15,9 +15,15 @@ defmodule OskolWeb.Plugs.GuestId do
     * `HttpOnly` keeps it out of reach of page scripts entirely.
 
   Nothing here needs the id client-side, so it is not mirrored into
-  localStorage. The id is pure identity-by-convenience: it authenticates
-  nothing (seats are opened by seat tokens, as ever) — losing or clearing it
-  only costs the site remembering your name.
+  localStorage — and it must not be: `HttpOnly` is what keeps it out of
+  reach of a page script, and the id is what holds a seat. A browser plays
+  the games its guest sat down at; losing or clearing the cookie loses the
+  name the site remembered and the seats it was holding, which can then be
+  claimed back from the invite link like anyone else's.
+
+  It is also the identity accounts will grow out of: `guests.user_id` is
+  where a guest becomes a user, and a seat held by the guest is a seat that
+  becomes held by the account with no second mechanism beside it.
   """
 
   import Plug.Conn

@@ -14,7 +14,7 @@ defmodule Oskol.Persistence do
   alias Oskol.Repo
 
   defmodule Game do
-    @moduledoc "One room. `players` round-trips seats: ids, names, seat tokens."
+    @moduledoc "One room. `players` round-trips seats: ids, names, and the guest holding each."
     use Ecto.Schema
 
     @primary_key {:id, :string, autogenerate: false}

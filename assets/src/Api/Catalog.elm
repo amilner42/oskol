@@ -34,7 +34,8 @@ module Api.Catalog exposing
     , roomDecoder
     , savePref
     , settingChoice
-    , slugDecoder
+    , CodeMatch
+    , codeDecoder
     , summarise
     )
 
@@ -249,9 +250,9 @@ savePref session key value toMsg =
 
 {-| The 6-digit code prompt: which game answers to this code.
 -}
-lookupCode : Session -> String -> (Result Error String -> msg) -> Cmd msg
+lookupCode : Session -> String -> (Result Error CodeMatch -> msg) -> Cmd msg
 lookupCode session code toMsg =
-    Api.get session ("/papi/codes/" ++ escape code) slugDecoder toMsg
+    Api.get session ("/papi/codes/" ++ escape code) codeDecoder toMsg
 
 
 roomPath : String -> String -> String
@@ -450,9 +451,23 @@ prefsDecoder =
     D.oneOf [ D.field "prefs" (D.dict D.string), D.succeed Dict.empty ]
 
 
-slugDecoder : Decoder String
-slugDecoder =
-    D.field "slug" D.string
+{-| What a code prompt gets back: which game answers to the code, and the
+code itself as the server reads it. The server normalises what was typed
+(upper case, and the characters the alphabet leaves out folded onto the
+ones they are mistaken for), so this -- not what the visitor typed -- is
+the room's name.
+-}
+type alias CodeMatch =
+    { slug : String
+    , code : String
+    }
+
+
+codeDecoder : Decoder CodeMatch
+codeDecoder =
+    D.map2 CodeMatch
+        (D.field "slug" D.string)
+        (D.field "code" D.string)
 
 
 roomDecoder : Decoder Room

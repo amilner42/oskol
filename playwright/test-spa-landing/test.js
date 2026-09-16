@@ -85,6 +85,11 @@ async function shots(browser, viewport, tag, errors) {
 async function clickThrough(browser, errors) {
   const context = await browser.newContext({ viewport: DESKTOP });
   await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  // A seat is held by the browser's guest cookie, so the two players are
+  // two browsers: a second page in Alice's context is Alice, and the room
+  // refuses her a second seat.
+  const bobContext = await browser.newContext({ viewport: DESKTOP });
+  await bobContext.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   try {
     const alice = await context.newPage();
     watch(alice, 'alice', errors);
@@ -103,14 +108,16 @@ async function clickThrough(browser, errors) {
     await alice.waitForSelector('#game-code');
     const gameId = (await alice.textContent('#game-code')).trim();
     if (gameId !== game.gameId) throw new Error(`the code reads ${gameId}, the URL says ${game.gameId}`);
-    if (!new URL(alice.url()).searchParams.get('t')) throw new Error('creator has no seat token');
+    const seatPath = new URL(alice.url()).pathname;
+    if (seatPath !== `/backgammon/${game.gameId}`) throw new Error(`creator landed at ${seatPath}`);
+    if (new URL(alice.url()).searchParams.get('t')) throw new Error('a seat URL must carry no token');
     const summary = await alice.textContent('#setup-summary');
     if (!/Match to 3/.test(summary) || !/3 min/.test(summary))
       throw new Error(`waiting room summary reads "${summary}"`);
     await alice.screenshot({ path: `${SHOTS}/desktop-04-waiting.png`, fullPage: true });
     log(`game ${gameId} created; waiting room shown`);
 
-    const bob = await context.newPage();
+    const bob = await bobContext.newPage();
     watch(bob, 'bob', errors);
     const seat = await joinByLink(bob, game.inviteUrl, 'Bob');
     if (!/Match to 3/.test(seat.summary)) throw new Error(`invite summary reads "${seat.summary}"`);
@@ -124,6 +131,7 @@ async function clickThrough(browser, errors) {
     log('both players at the board: CREATE -> PLAY OK');
   } finally {
     await context.close();
+    await bobContext.close();
   }
 }
 

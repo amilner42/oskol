@@ -185,6 +185,9 @@ defmodule Oskol.ReadyUpPatchTest do
           "seed" => fixture["seed"]
         },
         seed: fixture["seed"],
+        # Rows this old still carry the seat tokens that used to open a
+        # seat. Nothing reads the key any more; rehydration must not trip
+        # over it.
         players: Enum.map(seats, &Map.put(&1, "token", "tok-" <> &1["id"])),
         status: if(fixture["finished"], do: "finished", else: "playing")
       })

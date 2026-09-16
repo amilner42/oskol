@@ -2,7 +2,11 @@ defmodule Oskol.Dev.Seeds do
   @moduledoc """
   Local rooms at fixed codes, each parked in a position worth testing, with
   P1 always the one to act. `mix oskol.seed` writes them; open the printed
-  links.
+  invite link and take the seat you want.
+
+  Both seats are seeded holderless: nobody's guest cookie holds them, so the
+  invite link offers both, and the browser that takes one holds it from
+  then on. Two browsers (or one plus a private window) is two players.
 
   A game is its seed plus its action log, so a position cannot be written
   down directly: each scenario is *found* by random legal play against the
@@ -19,7 +23,7 @@ defmodule Oskol.Dev.Seeds do
   import Ecto.Query
 
   alias Oskol.Game
-  alias Oskol.Game.{GameServerState, GameSupervisor, Persister}
+  alias Oskol.Game.{GameSupervisor, Persister}
   alias Oskol.GameKit
   alias Oskol.Persistence
   alias Oskol.Repo
@@ -102,7 +106,7 @@ defmodule Oskol.Dev.Seeds do
         format: "match3",
         what:
           "a match to 3 played to the end, several games: open " <>
-            "/backgammon/000011/replay?t=<P1's token> for the replay and its analysis",
+            "/backgammon/000011/replay for the replay and its analysis",
         find: &finished_match?/2
       }
     ]
@@ -148,13 +152,13 @@ defmodule Oskol.Dev.Seeds do
       seed: seed,
       steps: length(actions),
       links: %{
-        "P1" => link(code, GameServerState.token_for(state, p1)),
-        "P2" => link(code, GameServerState.token_for(state, p2))
+        # One link for both seats: it is the invite, and it offers whichever
+        # of P1 and P2 is still free to whoever opens it.
+        "invite" => "#{OskolWeb.Endpoint.url()}/#{@slug}?game=#{code}",
+        "table" => "#{OskolWeb.Endpoint.url()}/#{@slug}/#{code}"
       }
     }
   end
-
-  defp link(code, token), do: "#{OskolWeb.Endpoint.url()}/#{@slug}/#{code}?t=#{token}"
 
   # A live room at this code (this VM only) would shadow the reseeded log.
   defp stop_live(code) do

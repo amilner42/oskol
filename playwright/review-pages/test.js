@@ -19,7 +19,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.screenshot({ path: `${OUT}/${name}-01-home.png` });
     await openCreateDialog(page); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-02-create-dialog.png`, fullPage: true });
-    // The lobby: create a backgammon game, which lands on /backgammon/<id>?t=<token>.
+    // The lobby: create a backgammon game, which lands on /backgammon/<id>: a
+    // seat is the guest who took it, so the URL carries no secret.
     await createGame(page, { name: 'Alice', mode: 'match5' }); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-03-backgammon-lobby.png`, fullPage: true });
     // The theme picker, open on the home board.

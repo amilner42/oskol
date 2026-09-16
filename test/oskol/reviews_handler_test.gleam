@@ -298,7 +298,7 @@ pub fn a_done_review_reads_turn_by_turn_test() {
   let ctx =
     with_analysis(log, [Stored(1, Done, 1, Some(engine_answer(n)))], no_engine)
   let assert Ok(body) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
   assert string.starts_with(body, "{\"ok\":true,\"players\":[{\"seat\":0,")
   assert string.contains(body, "\"name\":\"Alice\",\"color\":\"white\"")
   assert string.contains(body, "\"game_number\":1,\"status\":\"done\"")
@@ -339,7 +339,7 @@ pub fn a_turn_names_its_record_lines_and_its_moves_positions_test() {
       no_engine,
     )
   let assert Ok(body) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
   assert string.contains(
     body,
     "\"entry\":0,\"double_entry\":null,\"answer_entry\":null",
@@ -400,7 +400,7 @@ fn answer_for(turns: List(bg_analysis.Turn)) -> String {
 
 // ---------- POST .../reviews/retry ----------
 
-/// Room caps with a seat: the token "good" opens p1's seat at a live
+/// Room caps with a seat: the guest "g1" holds p1's seat at a live
 /// backgammon room.
 fn seated(ctx: Ctx) -> Ctx {
   let assert Ok(game) =
@@ -421,10 +421,10 @@ fn seated(ctx: Ctx) -> Ctx {
     ..ctx,
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
-      seated_game: fn(_, token) {
-        case token {
-          "good" -> Ok(#("p1", game))
-          _ -> Error(errors.InvalidToken)
+      seated_game: fn(_, guest_id) {
+        case guest_id {
+          "g1" -> Ok(#("p1", game))
+          _ -> Error(errors.NoSeat)
         }
       },
       game: fn(_) { Ok(game) },
@@ -436,7 +436,8 @@ pub fn a_review_that_gave_up_is_tried_again_for_a_seat_test() {
   let ctx =
     with_analysis(finished_log(4), [Stored(1, Failed, 3, None)], no_engine)
     |> seated
-  let assert Ok(_) = reviews.retry_json(ctx, "backgammon", "123456", "good", 1)
+  let assert Ok(_) =
+    reviews.retry_json(ctx, fakes.guest("g1"), "backgammon", "123456", 1)
   // A fresh set of attempts, and the room queued
   assert recorded("saves") == ["1:pending:0:none"]
   assert recorded("enqueued") == ["123456"]
@@ -449,10 +450,11 @@ pub fn a_retry_leaves_every_other_review_alone_test() {
     with_analysis(log, [Stored(1, Done, 1, Some(engine_answer(n)))], no_engine)
     |> seated
   let assert Ok(body) =
-    reviews.retry_json(ctx, "backgammon", "123456", "good", 1)
+    reviews.retry_json(ctx, fakes.guest("g1"), "backgammon", "123456", 1)
   assert string.contains(body, "\"status\":\"done\"")
   // A game the room does not have
-  let assert Ok(_) = reviews.retry_json(ctx, "backgammon", "123456", "good", 7)
+  let assert Ok(_) =
+    reviews.retry_json(ctx, fakes.guest("g1"), "backgammon", "123456", 7)
   assert recorded("saves") == []
   assert recorded("enqueued") == []
 }
@@ -462,9 +464,9 @@ pub fn only_a_seat_may_ask_for_a_retry_test() {
     with_analysis(finished_log(4), [Stored(1, Failed, 3, None)], no_engine)
     |> seated
   let assert Error(error.NotFound(_)) =
-    reviews.retry_json(ctx, "backgammon", "123456", "stolen", 1)
+    reviews.retry_json(ctx, fakes.guest("stranger"), "backgammon", "123456", 1)
   let assert Error(error.NotFound(_)) =
-    reviews.retry_json(ctx, "backgammon", "123456", "", 1)
+    reviews.retry_json(ctx, fakes.no_guest(), "backgammon", "123456", 1)
   assert recorded("saves") == []
 }
 
@@ -488,7 +490,12 @@ pub fn the_depth_the_engine_searched_at_is_read_either_way_test() {
         no_engine,
       )
     let assert Ok(body) =
-      reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+      reviews.reviews_json(
+        seated(ctx),
+        fakes.guest("g1"),
+        "backgammon",
+        "123456",
+      )
     string.contains(body, "\"levels\":{\"moves\":\"4ply\",\"cube\":\"4ply\"}")
   }
   assert rendered("{\"move\":\"4ply\",\"cube\":\"4ply\",\"luck\":\"3ply\"}")
@@ -501,7 +508,7 @@ pub fn the_depth_the_engine_searched_at_is_read_either_way_test() {
       no_engine,
     )
   let assert Ok(body) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
   assert string.contains(body, "\"levels\":null")
 }
 
@@ -509,7 +516,7 @@ pub fn a_game_with_no_review_yet_is_queued_and_pending_test() {
   // A game finished before reviews existed: the first request asks
   let ctx = with_analysis(finished_log(4), [], no_engine)
   let assert Ok(body) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
   assert string.contains(body, "\"game_number\":1,\"status\":\"pending\"")
   assert string.contains(body, "\"review\":null")
   assert recorded("enqueued") == ["123456"]
@@ -519,7 +526,7 @@ pub fn a_review_that_gave_up_says_failed_and_is_not_queued_test() {
   let ctx =
     with_analysis(finished_log(4), [Stored(1, Failed, 3, None)], no_engine)
   let assert Ok(body) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
   assert string.contains(body, "\"status\":\"failed\"")
   assert recorded("enqueued") == []
 }
@@ -528,7 +535,7 @@ pub fn a_retry_still_to_come_is_pending_test() {
   let ctx =
     with_analysis(finished_log(4), [Stored(1, Failed, 1, None)], no_engine)
   let assert Ok(body) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
   assert string.contains(body, "\"status\":\"pending\"")
   // Queued again; the queue itself holds a room that waits on a retry
   assert recorded("enqueued") == ["123456"]
@@ -543,51 +550,58 @@ pub fn a_review_for_another_game_is_not_rendered_test() {
       no_engine,
     )
   let assert Ok(body) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
   assert string.contains(body, "\"status\":\"failed\"")
 }
 
 pub fn a_game_being_played_says_playing_test() {
   let ctx = with_analysis(played_log("single", 4, 20), [], no_engine)
   let assert Ok(body) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
   assert string.contains(body, "\"status\":\"playing\"")
   assert recorded("enqueued") == []
 }
 
 pub fn anyone_with_the_room_reads_its_reviews_test() {
   // A replay does not ask its reader who they are: a review reads back what
-  // was on the board for both players and any spectator. A seat token is an
-  // orientation, not a key -- only a retry, which spends engine time on
-  // demand, still takes one.
+  // was on the board for both players and any spectator. Only a retry,
+  // which spends engine time on demand, needs the reader to be holding one
+  // of the room's seats.
   let ctx = with_analysis(finished_log(4), [], no_engine) |> seated
-  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "stolen")
-  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "")
+  let assert Ok(_) =
+    reviews.reviews_json(ctx, fakes.guest("stranger"), "backgammon", "123456")
+  let assert Ok(_) =
+    reviews.reviews_json(ctx, fakes.no_guest(), "backgammon", "123456")
   let assert Error(error.NotFound(_)) =
-    reviews.retry_json(ctx, "backgammon", "123456", "stolen", 1)
+    reviews.retry_json(ctx, fakes.guest("stranger"), "backgammon", "123456", 1)
 }
 
 pub fn only_a_seat_puts_the_engine_to_work_test() {
-  // Reading is open, but room codes are six digits: a stranger walking them
-  // must not be able to queue an analysis of every game ever played. A game
-  // that is owed one is queued by a player's own visit, not by a passer-by's.
+  // Reading is open, and the room code is now the only thing between a
+  // stranger and a room: whoever walks one must not be able to queue an
+  // analysis of every game ever played. A game that is owed one is queued
+  // by a player's own visit -- a guest holding one of its seats -- and
+  // never by a passer-by's.
   let ctx = with_analysis(finished_log(4), [], no_engine) |> seated
-  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "stolen")
-  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "")
+  let assert Ok(_) =
+    reviews.reviews_json(ctx, fakes.guest("stranger"), "backgammon", "123456")
+  let assert Ok(_) =
+    reviews.reviews_json(ctx, fakes.no_guest(), "backgammon", "123456")
   assert recorded("enqueued") == []
-  let assert Ok(_) = reviews.reviews_json(ctx, "backgammon", "123456", "good")
+  let assert Ok(_) =
+    reviews.reviews_json(ctx, fakes.guest("g1"), "backgammon", "123456")
   assert recorded("enqueued") == ["123456"]
 }
 
 pub fn only_backgammon_rooms_have_reviews_test() {
   let ctx = with_analysis(finished_log(4), [], no_engine)
   let assert Error(error.NotFound(_)) =
-    reviews.reviews_json(seated(ctx), "poker", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "poker", "123456")
   let assert Error(error.NotFound(_)) =
-    reviews.reviews_json(seated(ctx), "backgammon", "999999", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "999999")
   // A code that is a poker room, asked for as backgammon
   let poker = GameLog(..finished_log(4), slug: "poker")
   let ctx = with_analysis(poker, [], no_engine)
   let assert Error(error.NotFound(_)) =
-    reviews.reviews_json(seated(ctx), "backgammon", "123456", "good")
+    reviews.reviews_json(seated(ctx), fakes.guest("g1"), "backgammon", "123456")
 }

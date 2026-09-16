@@ -7,16 +7,18 @@
     <meta :if={@guest_name} name="guest-name" content={@guest_name} />
     <title>{String.capitalize(@slug)} · Oskol</title>
     <meta name="robots" content="noindex" />
-    <!-- The seat token lives in this page's URL: never send it out as a referrer. -->
+    <!-- A room code is not a secret, but it is not something to hand to
+         every site a player clicks through to either. -->
     <meta name="referrer" content="no-referrer" />
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
   </head>
   <body class="h-full paper">
-    <%!-- The game id and the seat token are in this page's URL, and that is
-          where the client reads them: Elm routes `/:slug/:id?t=` itself,
-          whether it was served here or navigated here. --%>
+    <%!-- The game id is in this page's URL, and that is where the client
+          reads it: Elm routes `/:slug/:id` itself, whether it was served
+          here or navigated here. Who this browser is never travels in a
+          URL: the guest cookie rides the channel's own connection. --%>
     <div id="elm-app"></div>
   </body>
 </html>

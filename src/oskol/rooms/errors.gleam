@@ -15,7 +15,8 @@ pub type RoomError {
   UnknownChoice
   GameAlreadyStarted
   SeatConnected
-  InvalidToken
+  NoSeat
+  AlreadySeated
   PlayerNotFound
   GameNotStarted
   GameNotFinished
@@ -37,7 +38,8 @@ pub fn message(error: RoomError) -> String {
     UnknownChoice -> "Unknown choice"
     GameAlreadyStarted -> "That game already started"
     SeatConnected -> "That player is back at the table"
-    InvalidToken -> "That link is no longer valid"
+    NoSeat -> "You are not at this table"
+    AlreadySeated -> "You are already at this table"
     PlayerNotFound -> "That player is not at this table"
     // The rest have no sentence of their own: they fall through to the
     // generic "Error: <reason>" the LiveView has always shown.

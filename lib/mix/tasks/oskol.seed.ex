@@ -1,10 +1,12 @@
 defmodule Mix.Tasks.Oskol.Seed do
   @shortdoc "Seed local backgammon rooms at codes 000001.. in positions worth testing"
   @moduledoc """
-  Writes a room per scenario in `Oskol.Dev.Seeds` at a fixed six-digit code
-  (000001, 000002, ...), P1 and P2 seated, P1 always the one to act, and
-  prints each seat's link. Open P1's link to test; P2's in another tab if
-  the scenario needs the other side to answer.
+  Writes a room per scenario in `Oskol.Dev.Seeds` at a fixed six-character
+  code (000001, 000002, ...), P1 and P2 seated, P1 always the one to act,
+  and prints the room's invite link. Nobody's browser holds either seat, so
+  the invite offers both: open it and take P1 to test, and take P2 from
+  another browser (or a private window) if the scenario needs the other
+  side to answer.
 
       mix oskol.seed
 
@@ -22,8 +24,8 @@ defmodule Mix.Tasks.Oskol.Seed do
 
     for row <- Oskol.Dev.Seeds.run() do
       Mix.shell().info("#{row.code}  #{row.what}  (seed #{row.seed}, #{row.steps} steps)")
-      Mix.shell().info("        P1  #{row.links["P1"]}")
-      Mix.shell().info("        P2  #{row.links["P2"]}")
+      Mix.shell().info("        invite  #{row.links["invite"]}")
+      Mix.shell().info("        table   #{row.links["table"]}")
     end
   end
 end

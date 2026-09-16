@@ -6,11 +6,11 @@ defmodule OskolWeb.GameChannelConnectionTest do
 
   alias Oskol.Game
 
-  defp join_room(game_id, token) do
+  defp join_room(game_id, guest_id) do
     {:ok, reply, socket} =
       OskolWeb.UserSocket
-      |> socket("user", %{})
-      |> subscribe_and_join(OskolWeb.GameChannel, "game:#{game_id}", %{"token" => token})
+      |> socket("user", %{guest_id: guest_id})
+      |> subscribe_and_join(OskolWeb.GameChannel, "game:#{game_id}", %{})
 
     {reply, socket}
   end
@@ -34,18 +34,18 @@ defmodule OskolWeb.GameChannelConnectionTest do
   end
 
   test "a channel join connects the seat, closing it disconnects, rejoining reconnects" do
-    %{game_id: game_id, p1: p1, t1: t1} = started()
+    %{game_id: game_id, p1: p1, g1: g1} = started()
     refute connected?(game_id, p1)
 
-    {_, socket} = join_room(game_id, t1)
+    {_, socket} = join_room(game_id, g1)
     assert connected?(game_id, p1)
 
     Process.unlink(socket.channel_pid)
     close(socket)
     assert eventually(fn -> not connected?(game_id, p1) end)
 
-    # The token still opens the seat: a dropped socket does not rotate it.
-    {reply, _socket} = join_room(game_id, t1)
+    # The browser still holds the seat: a dropped socket loses nothing.
+    {reply, _socket} = join_room(game_id, g1)
     assert connected?(game_id, p1)
     assert reply.payload.type == "game"
     assert reply.payload.update["scene"]["viewer"] == p1
@@ -53,7 +53,7 @@ defmodule OskolWeb.GameChannelConnectionTest do
   end
 
   test "a seat sees its own scene in every update, never a viewerless one" do
-    %{game_id: game_id, state: state, mover: mover, mover_token: mt} = started()
+    %{game_id: game_id, state: state, mover: mover, mover_guest: mt} = started()
     {_, _socket} = join_room(game_id, mt)
     {:ok, _, _} = move(game_id, mover, legal_move(state.instance, mover))
 
@@ -64,7 +64,7 @@ defmodule OskolWeb.GameChannelConnectionTest do
   end
 
   test "an update for one player never carries another player's legal actions" do
-    %{game_id: game_id, state: state, mover: mover, waiting: waiting, waiting_token: wt} =
+    %{game_id: game_id, state: state, mover: mover, waiting: waiting, waiting_guest: wt} =
       started()
 
     {_, _socket2} = join_room(game_id, wt)

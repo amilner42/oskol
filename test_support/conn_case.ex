@@ -34,4 +34,13 @@ defmodule OskolWeb.ConnCase do
   setup _tags do
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
+
+  @doc """
+  The same request, made by a particular guest: their cookie, exactly as a
+  browser would send it. A seat is held by a guest id, so this is how a test
+  asks for something as the player sitting at one.
+  """
+  def as_guest(conn, guest_id) do
+    Plug.Test.put_req_cookie(conn, "_oskol_guest", guest_id)
+  end
 end

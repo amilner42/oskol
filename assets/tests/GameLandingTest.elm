@@ -536,7 +536,7 @@ invite state =
 
 page : { guestName : Maybe String } -> String -> Maybe String -> GameLanding.Model
 page { guestName } slug gameId =
-    GameLanding.init (session guestName []) slug gameId Nothing
+    GameLanding.init (session guestName []) slug gameId
         |> (\( model, _, _ ) -> model)
 
 
@@ -544,7 +544,7 @@ page { guestName } slug gameId =
 -}
 pageWith : { guestName : Maybe String, prefs : List ( String, String ) } -> GameLanding.Model
 pageWith { guestName, prefs } =
-    GameLanding.init (session guestName prefs) "backgammon" Nothing Nothing
+    GameLanding.init (session guestName prefs) "backgammon" Nothing
         |> (\( model, _, _ ) -> model)
         |> send (GameLanding.GotGame (Api.parseBody Catalog.gamePageDecoder gameJson))
 

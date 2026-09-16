@@ -29,14 +29,15 @@ pub type RoomsCaps {
     subscribe: fn(String) -> Nil,
     /// Set a room up before it starts.
     configure: fn(String, Setup) -> Result(Nil, RoomError),
-    /// Take a free seat: (game_id, display name, guest id).
+    /// Take a free seat: (game_id, display name, guest id). The guest is
+    /// what holds the seat afterwards.
     join: fn(String, String, Option(String)) -> Result(Seat, RoomError),
-    /// Take back a seat whose player is away: (game_id, player_id). The
-    /// seat's token is rotated first, so a link that leaked earlier cannot
-    /// shadow the seat later.
-    claim: fn(String, String) -> Result(Seat, RoomError),
-    /// The running game behind a seat, and the player id of that seat:
-    /// (game_id, seat token). A token that opens no seat is `InvalidToken`;
+    /// Take back a seat whose player is away: (game_id, player_id, guest
+    /// id). The seat passes to that guest, so whoever held it before no
+    /// longer does. A seat whose player is connected is `SeatConnected`.
+    claim: fn(String, String, Option(String)) -> Result(Seat, RoomError),
+    /// The running game behind the seat a guest holds, and that seat's
+    /// player id: (game_id, guest id). A guest at no seat here is `NoSeat`;
     /// a room still in its lobby is `GameNotStarted`. Reading it changes
     /// nothing and attaches nothing.
     seated_game: fn(String, String) -> Result(#(String, Instance), RoomError),
@@ -57,7 +58,7 @@ pub fn stub() -> RoomsCaps {
     subscribe: fn(_) { panic as "stub rooms.subscribe" },
     configure: fn(_, _) { panic as "stub rooms.configure" },
     join: fn(_, _, _) { panic as "stub rooms.join" },
-    claim: fn(_, _) { panic as "stub rooms.claim" },
+    claim: fn(_, _, _) { panic as "stub rooms.claim" },
     seated_game: fn(_, _) { panic as "stub rooms.seated_game" },
     game: fn(_) { panic as "stub rooms.game" },
   )

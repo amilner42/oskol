@@ -12,14 +12,14 @@ defmodule Oskol.Game.GameServerState do
   @type lobby_status :: :waiting_for_players | :ready_to_start
 
   @typedoc """
-  One seat. `token` is the seat credential: a secret, unguessable string
-  minted when the seat is taken. It is what a channel join or a reconnect
-  authenticates with, and it never leaves the server except to the player
-  who holds that seat. The display name grants nothing.
+  One seat. `guest_id` is who holds it: the opaque id in the visitor's
+  guest cookie, recorded when the seat was taken or claimed. It is what a
+  channel join or a reconnect authenticates with, and nothing in a URL
+  grants it. A seat whose holder is away can be claimed by anyone with the
+  room code, and then it is that guest's. The display name grants nothing.
   """
   @type connection :: %{
           name: String.t(),
-          token: String.t(),
           guest_id: String.t() | nil,
           pid: pid() | nil,
           # The client behind `pid`: the socket's transport, which survives
@@ -212,34 +212,29 @@ defmodule Oskol.Game.GameServerState do
   end
 
   @doc """
-  Mint a seat token: 24 crypto-random bytes, URL-safe, unpadded (32 chars).
+  The seat a guest holds here, or `nil`. Compared in constant time: the
+  guest id is the credential now, so it is never leaked one character at a
+  time by how long a comparison took.
   """
-  @spec new_token() :: String.t()
-  def new_token do
-    :crypto.strong_rand_bytes(24) |> Base.url_encode64(padding: false)
-  end
-
-  @doc """
-  The seat a token opens, or `nil`. Compared in constant time so a caller
-  cannot learn a token one character at a time.
-  """
-  @spec find_player_id_by_token(t(), String.t() | nil) :: player_id() | nil
-  def find_player_id_by_token(%__MODULE__{}, token)
-      when not is_binary(token) or byte_size(token) == 0,
+  @spec find_player_id_by_guest(t(), String.t() | nil) :: player_id() | nil
+  def find_player_id_by_guest(%__MODULE__{}, guest_id)
+      when not is_binary(guest_id) or byte_size(guest_id) == 0,
       do: nil
 
-  def find_player_id_by_token(%__MODULE__{connections: connections}, token) do
-    Enum.find_value(connections, fn {player_id, conn} ->
-      if secure_compare(conn.token, token), do: player_id, else: nil
+  def find_player_id_by_guest(%__MODULE__{} = state, guest_id) do
+    # In seat order, so the answer never depends on map ordering.
+    Enum.find(state.seat_order, fn player_id ->
+      conn = state.connections[player_id]
+      conn != nil and secure_compare(conn.guest_id, guest_id)
     end)
   end
 
-  @doc "The token for a seat, or `nil` if there is no such seat."
-  @spec token_for(t(), player_id()) :: String.t() | nil
-  def token_for(%__MODULE__{connections: connections}, player_id) do
+  @doc "The guest holding a seat, or `nil` if there is no such seat."
+  @spec guest_for(t(), player_id()) :: String.t() | nil
+  def guest_for(%__MODULE__{connections: connections}, player_id) do
     case connections[player_id] do
       nil -> nil
-      conn -> conn.token
+      conn -> conn.guest_id
     end
   end
 

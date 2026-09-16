@@ -1,4 +1,4 @@
-//// GET /papi/games/:slug/rooms/:id/record?t=<seat token>
+//// GET /papi/games/:slug/rooms/:id/record
 ////
 //// A game's whole record, for anyone with the room: every game of the
 //// match with every entry, where the scene carries only the game on the
@@ -19,6 +19,7 @@ import gleam/result
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
+import oskol/core/session.{type Session}
 import oskol/handlers/rooms
 
 /// Nothing to read. The same answer for a room that is not there and a
@@ -28,12 +29,12 @@ pub const not_found_message = "No record for that game"
 
 pub fn record_json(
   ctx: Ctx,
+  session: Session,
   slug: String,
   game_id: String,
-  token: String,
 ) -> Result(String, ApiError) {
   use game <- result.try(room(ctx, slug, game_id))
-  let #(player_id, seated) = viewer(ctx, game, game_id, token)
+  let #(player_id, seated) = viewer(ctx, game, game_id, session)
   case instance.record(game) {
     None -> Error(error.NotFound("This game keeps no record"))
     Some(record) ->
@@ -41,12 +42,12 @@ pub fn record_json(
         envelope.ok([
           #("slug", json.string(slug)),
           #("id", json.string(game_id)),
-          // The seat the board faces to begin with: the one the token
-          // opens, so a replay sits its reader where they played, else the
-          // seat that played first.
+          // The seat the board faces to begin with: the reader's own, so a
+          // replay sits them where they played, else the seat that played
+          // first.
           #("you", json.string(player_id)),
-          // Whether that seat is really the reader's: a link with no token,
-          // or one that opens no seat here, is nobody's own.
+          // Whether that seat is really the reader's: a reader who holds no
+          // seat here is looking at somebody else's game.
           #("seated", json.bool(seated)),
           #("record", record),
         ]),
@@ -77,16 +78,16 @@ pub fn room(
 }
 
 /// Which way the board faces, and whether that seat is the reader's own:
-/// the seat the token opens, if it opens one, else the seat that played
-/// first. A token is an orientation here, never a key -- the reader can
-/// turn the board over anyway.
+/// the seat this guest holds, if they hold one here, else the seat that
+/// played first. It is an orientation, never a key -- the reader can turn
+/// the board over anyway.
 pub fn viewer(
   ctx: Ctx,
   game: Instance,
   game_id: String,
-  token: String,
+  session: Session,
 ) -> #(String, Bool) {
-  case ctx.rooms.seated_game(game_id, token) {
+  case seated_game(ctx, game_id, session) {
     Ok(#(player_id, _)) -> #(player_id, True)
     Error(_) ->
       case instance.seats(game) {
@@ -96,25 +97,40 @@ pub fn viewer(
   }
 }
 
-/// The seat a token opens at a room playing `slug`: its player id and the
-/// running game. Anything else is the one `not_found_message`, so a caller
-/// learns nothing about a room it cannot sit at.
+/// The seat this caller holds at a room playing `slug`: its player id and
+/// the running game. A caller at no seat here -- a stranger with the code,
+/// a visitor with no guest cookie at all -- is the one `not_found_message`,
+/// the same answer a room that is not there gives, so nobody learns
+/// anything about a room they are not sitting at.
 pub fn seat(
   ctx: Ctx,
+  session: Session,
   slug: String,
   game_id: String,
-  token: String,
 ) -> Result(#(String, Instance), ApiError) {
   let not_found = error.NotFound(not_found_message)
-  case token, rooms.lookup(ctx, game_id) {
-    "", _ -> Error(not_found)
-    _, None -> Error(not_found)
-    _, Some(_) ->
+  case rooms.lookup(ctx, game_id) {
+    None -> Error(not_found)
+    Some(_) ->
       case ctx.rooms.slug_of(game_id) == Some(slug) {
         False -> Error(not_found)
         True ->
-          ctx.rooms.seated_game(game_id, token)
+          seated_game(ctx, game_id, session)
           |> result.replace_error(not_found)
       }
+  }
+}
+
+/// The running game behind the seat this session holds, if it holds one.
+/// A session with no guest id holds nothing, and never asks the room.
+fn seated_game(
+  ctx: Ctx,
+  game_id: String,
+  session: Session,
+) -> Result(#(String, Instance), Nil) {
+  case session.guest_id {
+    None -> Error(Nil)
+    Some(guest_id) ->
+      ctx.rooms.seated_game(game_id, guest_id) |> result.replace_error(Nil)
   }
 }

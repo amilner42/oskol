@@ -35,8 +35,6 @@ defmodule OskolWeb.Api.LandingApiTest do
 
   defp new_guest_id, do: :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
 
-  defp as_guest(conn, guest_id), do: put_req_cookie(conn, @cookie, guest_id)
-
   # Phoenix's test conns skip forgery protection; this turns it back on, so
   # the pipeline itself is what is under test.
   defp csrf_checked(conn), do: Plug.Conn.put_private(conn, :plug_skip_csrf_protection, false)
@@ -168,15 +166,18 @@ defmodule OskolWeb.Api.LandingApiTest do
         |> create(%{"format" => "single", "name" => " Alice ", "clock" => "none"})
 
       assert %{"ok" => true, "id" => game_id, "path" => path, "player_id" => player_id} = body
-      assert game_id =~ ~r/^\d{6}$/
+      # Six characters of the code alphabet: the digits and the letters left
+      # after the four lookalikes are dropped.
+      assert game_id =~ ~r/^[0-9A-HJKMNP-TV-Z]{6}$/
 
       # A real room, with the trimmed name in its one taken seat, and a path
-      # that carries the token that opens it.
+      # that is just the room: the seat is held by the guest that took it.
       assert {:ok, _pid} = Game.lookup_game(game_id)
       state = Game.get_server_state(game_id)
       assert state.slug == "backgammon"
       assert [{^player_id, "Alice"}] = GameServerState.seats(state)
-      assert path == "/backgammon/#{game_id}?t=#{GameServerState.token_for(state, player_id)}"
+      assert path == "/backgammon/#{game_id}"
+      assert GameServerState.guest_for(state, player_id) == guest_id
 
       # The seat has no live connection until the browser opens that link.
       assert [%{connected: false, guest_id: ^guest_id}] = Map.values(state.connections)
@@ -351,9 +352,29 @@ defmodule OskolWeb.Api.LandingApiTest do
       refute p2 == p1
 
       state = Game.get_server_state(game_id)
-      assert body["path"] == "/backgammon/#{game_id}?t=#{GameServerState.token_for(state, p2)}"
+      assert body["path"] == "/backgammon/#{game_id}"
       # The table filled up, so the game started.
       assert state.instance != nil
+    end
+
+    test "a browser already at the table cannot take a second seat", %{conn: conn} do
+      # One guest id names one seat: a creator who opens their own invite
+      # link is told so rather than handed a seat they could never reach.
+      guest_id = new_guest_id()
+
+      %{"id" => game_id} =
+        conn
+        |> as_guest(guest_id)
+        |> with_csrf()
+        |> create(%{"format" => "single", "name" => "Alice", "clock" => "none"})
+
+      again =
+        build_conn()
+        |> as_guest(guest_id)
+        |> with_csrf()
+        |> post(~p"/papi/games/backgammon/rooms/#{game_id}", %{"name" => "Alice again"})
+
+      assert json_response(again, 422)["error"]["message"] == "You are already at this table"
     end
 
     test "a name already at the table is refused", %{conn: conn} do
@@ -379,14 +400,15 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert Game.lookup_game("424242") == :not_found
     end
 
-    test "a player id takes a seat back, on a fresh token", %{conn: conn} do
+    test "a player id takes a seat back, and the claiming guest holds it", %{conn: conn} do
       player = idle_player()
       fixture = GameFixtures.started(42, "single", pid1: self(), pid2: player)
       stop_player(fixture.game_id, player)
-      old_token = fixture.t2
+      claimer = GameFixtures.unique_guest_id()
 
       body =
         conn
+        |> as_guest(claimer)
         |> with_csrf()
         |> post(~p"/papi/games/backgammon/rooms/#{fixture.game_id}", %{
           "player_id" => fixture.p2
@@ -394,9 +416,11 @@ defmodule OskolWeb.Api.LandingApiTest do
         |> json_response(200)
 
       assert body["player_id"] == fixture.p2
-      token = GameFixtures.token_for(fixture.game_id, fixture.p2)
-      refute token == old_token
-      assert body["path"] == "/backgammon/#{fixture.game_id}?t=#{token}"
+      # Nothing secret comes back; the seat is this browser's from here, and
+      # the browser that held it before holds it no longer.
+      assert body["path"] == "/backgammon/#{fixture.game_id}"
+      assert GameFixtures.guest_for(fixture.game_id, fixture.p2) == claimer
+      refute GameFixtures.guest_for(fixture.game_id, fixture.p2) == fixture.g2
     end
 
     test "a seat whose player is back at the table is not up for grabs", %{conn: conn} do
@@ -416,13 +440,16 @@ defmodule OskolWeb.Api.LandingApiTest do
   # ---------- GET /papi/games/:slug/rooms/:id/record ----------
 
   describe "GET /papi/games/:slug/rooms/:id/record" do
-    test "a seat token reads the game's whole record", %{conn: conn} do
-      %{game_id: game_id, t2: t2} = GameFixtures.started(42, "match5")
+    test "a seat reads the game's whole record", %{conn: conn} do
+      %{game_id: game_id, g2: g2} = GameFixtures.started(42, "match5")
 
       body =
         conn
-        |> get(~p"/papi/games/backgammon/rooms/#{game_id}/record?t=#{t2}")
+        |> as_guest(g2)
+        |> get(~p"/papi/games/backgammon/rooms/#{game_id}/record")
         |> json_response(200)
+
+      assert body["seated"] == true
 
       assert %{"ok" => true, "slug" => "backgammon", "id" => ^game_id, "record" => record} = body
 
@@ -433,24 +460,33 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert %{"white" => %{"pips" => 167}} = record["start"]
     end
 
-    test "anyone with the room reads the record; a wrong token only picks no seat", %{conn: conn} do
-      %{game_id: game_id, t1: t1} = GameFixtures.started(42, "match5")
+    test "anyone with the room reads the record; only the seat it faces changes",
+         %{conn: conn} do
+      %{game_id: game_id, g1: g1} = GameFixtures.started(42, "match5")
 
       seated =
         conn
-        |> get("/papi/games/backgammon/rooms/#{game_id}/record?t=#{t1}")
+        |> as_guest(g1)
+        |> get("/papi/games/backgammon/rooms/#{game_id}/record")
         |> json_response(200)
 
-      # A replay is what both players already saw, so the link needs no
-      # token; without one the record opens on the first seat, and the
-      # reader turns the board around themselves.
-      for query <- ["?t=not-a-seat", ""] do
+      # A replay is what both players already saw, so it opens for anyone
+      # with the link. A reader holding no seat here gets the same record,
+      # facing the seat that played first, and turns the board around
+      # themselves. An old link's `?t=` is not read at all.
+      for asker <- [
+            &as_guest(&1, GameFixtures.unique_guest_id()),
+            & &1
+          ],
+          query <- ["", "?t=an-old-token"] do
         body =
           conn
+          |> asker.()
           |> get("/papi/games/backgammon/rooms/#{game_id}/record#{query}")
           |> json_response(200)
 
         assert body["record"] == seated["record"]
+        assert body["seated"] == false
         assert body["you"] == hd(seated["record"]["players"])["id"]
       end
     end
@@ -591,10 +627,10 @@ defmodule OskolWeb.Api.LandingApiTest do
 
       assert Repo.get(Guests.Guest, guest_id).name == "Bob"
 
-      # Alice was seated by the fixture (no guest): a seat without a guest is
-      # a null, and Bob's seat carries his id.
+      # Each seat carries the guest holding it: Alice's from the fixture,
+      # Bob's from the cookie this request came with.
       assert [
-               %{"name" => "Alice", "guest_id" => nil},
+               %{"name" => "Alice", "guest_id" => _alice},
                %{"name" => "Bob", "guest_id" => ^guest_id}
              ] =
                game_row(game_id).players

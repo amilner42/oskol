@@ -197,12 +197,21 @@ async function main() {
       if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`${who} console: ${m.text()}`);
     });
   };
-  const phoneContext = async (phone) => {
+  // A seat is held by the browser's guest cookie. Every context here is
+  // made with the cookie of the seat it is meant to be sitting at, which is
+  // how a later screen (portrait, desktop, a squarish tablet) reopens the
+  // same seat rather than arriving as a stranger.
+  const guest = () => require('crypto').randomBytes(16).toString('base64url');
+  const seats = [guest(), guest()];
+  const phoneContext = async (phone, asGuest) => {
     const c = await browser.newContext({
       viewport: { width: phone.width, height: phone.height },
       hasTouch: true,
       isMobile: true,
     });
+    if (asGuest) {
+      await c.addCookies([{ name: '_oskol_guest', value: asGuest, url: BASE, httpOnly: true, sameSite: 'Lax' }]);
+    }
     await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     return c;
   };
@@ -210,7 +219,7 @@ async function main() {
   try {
     // --- a real game, both seats on landscape phones -----------------
     const contexts = [];
-    for (const phone of PHONES) contexts.push(await phoneContext(phone));
+    for (const [i, phone] of PHONES.entries()) contexts.push(await phoneContext(phone, seats[i]));
 
     const p1 = await contexts[0].newPage();
     watch(p1, 'landscape-1');
@@ -262,7 +271,7 @@ async function main() {
     // tablet held sideways): the board may stop short of the height, but
     // it must still fit, whole, with nothing hanging off it.
     const squat = { name: 'squat-landscape', width: 640, height: 480, fills: false };
-    const squatContext = await phoneContext(squat);
+    const squatContext = await phoneContext(squat, seats[0]);
     const sq = await squatContext.newPage();
     watch(sq, 'squat');
     await sq.goto(urls[0]);
@@ -271,7 +280,7 @@ async function main() {
     await squatContext.close();
 
     // --- the same room, portrait and desktop: nothing moved ----------
-    const portrait = await phoneContext({ width: 390, height: 844 });
+    const portrait = await phoneContext({ width: 390, height: 844 }, seats[0]);
     const pp = await portrait.newPage();
     watch(pp, 'portrait');
     await pp.goto(urls[0]);
@@ -282,6 +291,7 @@ async function main() {
     await pp.screenshot({ path: `${SHOTS}/02-portrait-phone.png` });
 
     const desktop = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await desktop.addCookies([{ name: '_oskol_guest', value: seats[1], url: BASE, httpOnly: true, sameSite: 'Lax' }]);
     await desktop.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     const pd = await desktop.newPage();
     watch(pd, 'desktop');
@@ -298,11 +308,11 @@ async function main() {
 
     // --- a danced turn, in landscape ---------------------------------
     const room = arrangeDancedRoom();
-    const danceContext = await phoneContext(PHONES[0]);
     const dancer = room.players.find((p) => p.id === room.dancer);
+    const danceContext = await phoneContext(PHONES[0], dancer.guest);
     const dp = await danceContext.newPage();
     watch(dp, 'dance-landscape');
-    await dp.goto(`${BASE}/backgammon/${room.game_id}?t=${dancer.token}`);
+    await dp.goto(`${BASE}/backgammon/${room.game_id}`);
     await dp.waitForSelector('#bg-no-moves', { timeout: 20000 });
     await sleep(400);
     await assertFits(dp, PHONES[0], 'the dancer');

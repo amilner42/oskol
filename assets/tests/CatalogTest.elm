@@ -39,8 +39,8 @@ envelope =
     describe "the response envelope"
         [ test "ok:true unwraps the payload" <|
             \_ ->
-                Api.parseBody Catalog.slugDecoder """{"ok":true,"slug":"poker"}"""
-                    |> Expect.equal (Ok "poker")
+                Api.parseBody Catalog.codeDecoder """{"ok":true,"slug":"poker","code":"AB12CD"}"""
+                    |> Expect.equal (Ok { slug = "poker", code = "AB12CD" })
         , test "ok:false is an error with its code and message" <|
             \_ ->
                 Api.parseBody Catalog.createdDecoder
@@ -55,13 +55,13 @@ envelope =
                         )
         , test "an error envelope reads the same on a 4xx as on a 200" <|
             \_ ->
-                Api.parseBody Catalog.slugDecoder
+                Api.parseBody Catalog.codeDecoder
                     """{"ok":false,"error":{"code":"not_found","message":"No game with that code"}}"""
                     |> Result.mapError Api.errorCode
                     |> Expect.equal (Err "not_found")
         , test "a body that is not the envelope at all is a decode error, not a crash" <|
             \_ ->
-                case Api.parseBody Catalog.slugDecoder "<!doctype html>" of
+                case Api.parseBody Catalog.codeDecoder "<!doctype html>" of
                     Err (Api.DecodeError _) ->
                         Expect.pass
 

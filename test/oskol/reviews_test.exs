@@ -100,11 +100,12 @@ defmodule Oskol.ReviewsTest do
     game_id
   end
 
-  # A seat's token for the room: reviews open on it, as the record does.
-  defp token(game_id) do
+  # The guest holding one of the room's seats: reading a review is open to
+  # anyone, but only a player's visit queues one.
+  defp seat_guest(game_id) do
     state = Oskol.Game.get_server_state(game_id)
     [{player, _name} | _] = Oskol.Game.GameServerState.seats(state)
-    Oskol.GameFixtures.token_for(game_id, player)
+    Oskol.GameFixtures.guest_for(game_id, player)
   end
 
   # The room casts the queue as the game ends; wait for the job to land.
@@ -123,7 +124,8 @@ defmodule Oskol.ReviewsTest do
 
   defp reviews(conn, game_id) do
     conn
-    |> get("/papi/games/backgammon/rooms/#{game_id}/reviews?t=#{token(game_id)}")
+    |> as_guest(seat_guest(game_id))
+    |> get("/papi/games/backgammon/rooms/#{game_id}/reviews")
     |> json_response(200)
   end
 

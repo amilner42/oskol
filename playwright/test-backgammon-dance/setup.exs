@@ -10,11 +10,11 @@
 #
 #   mix run -e 'Code.eval_file("playwright/test-backgammon-dance/setup.exs")'
 #
-# Prints one line of JSON: the game id, the seats and their tokens, and who
+# Prints one line of JSON: the game id, the seats with the guest holding
+# each, and who
 # is the one dancing.
 
 alias Oskol.Game
-alias Oskol.Game.GameServerState
 alias Oskol.GameKit
 
 seats = [{"p1", "Alice"}, {"p2", "Bob"}]
@@ -85,8 +85,12 @@ end
 game_id = "dance-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
 {:ok, _} = Game.start_game(game_id, "backgammon")
 {:ok, _} = Game.configure(game_id, %{format: "single", clock: "none", seed: seed})
-{:ok, p1, _} = Game.join_game(game_id, "Alice", nil)
-{:ok, p2, state} = Game.join_game(game_id, "Bob", nil)
+# A seat is held by the guest that took it, so the room is seeded with a
+# guest per seat and the browser is handed that cookie.
+g1 = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+g2 = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+{:ok, p1, _} = Game.join_game(game_id, "Alice", nil, g1)
+{:ok, p2, state} = Game.join_game(game_id, "Bob", nil, g2)
 
 # The room's seat ids are not "p1"/"p2": map the search's ids onto them in
 # seat order, which is the order the players joined.
@@ -109,8 +113,8 @@ IO.puts(
     steps: length(actions),
     dancer: seat_of[dancer],
     players: [
-      %{id: p1, name: "Alice", token: GameServerState.token_for(state, p1)},
-      %{id: p2, name: "Bob", token: GameServerState.token_for(state, p2)}
+      %{id: p1, name: "Alice", guest: g1},
+      %{id: p2, name: "Bob", guest: g2}
     ]
   })
 )
