@@ -558,7 +558,9 @@ polling =
                         [ Poll, GotIndex (Ok (index ReplayFixtures.indexPending)) ]
                 in
                 loaded (Just 3)
-                    |> run (GotIndex (Ok (index ReplayFixtures.indexPending)) :: List.concat (List.repeat 200 round))
+                    -- as many rounds as the page allows itself, whatever
+                    -- that number is set to, and then one more
+                    |> run (GotIndex (Ok (index ReplayFixtures.indexPending)) :: List.concat (List.repeat (Page.maxPolls + 1) round))
                     |> Page.polling
                     |> Expect.equal False
         , test "and never two asks at once: one out, the next does nothing" <|

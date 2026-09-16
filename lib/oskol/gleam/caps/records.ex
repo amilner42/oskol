@@ -4,7 +4,8 @@ defmodule Oskol.Gleam.Caps.Records do
   order in lockstep:
 
       RecordsCaps(setup, stored, save)
-      Setup(slug, format, selections, clock, seed, seats)
+      Setup(slug, format, selections, clock, seed, seats, finished, log_length,
+            records_through)
       StoredRecord(game_number, entries_json)
 
   Record entries cross as JSON text: they are written verbatim from what
@@ -30,7 +31,8 @@ defmodule Oskol.Gleam.Caps.Records do
          {:setup, game.slug, config["format"] || "",
           Enum.map(config["selections"] || %{}, fn {k, v} -> {k, v} end),
           config["clock"] || "none", game.seed,
-          Enum.map(game.players, fn p -> {p["id"], p["name"], p["guest_id"] || ""} end)}}
+          Enum.map(game.players, fn p -> {p["id"], p["name"], p["guest_id"] || ""} end),
+          game.status == "finished", Reviews.log_length(game_id), game.records_through || 0}}
     end
   end
 

@@ -155,6 +155,9 @@ fn finished_setup() -> records_caps.Setup {
     clock: "none",
     seed: 7,
     seats: [#("p1", "Alice", "g1"), #("p2", "Bob", "g2")],
+    finished: True,
+    log_length: 0,
+    records_through: 0,
   )
 }
 

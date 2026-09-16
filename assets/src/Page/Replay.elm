@@ -6,6 +6,7 @@ module Page.Replay exposing
     , Tab(..)
     , init
     , keyDecoder
+    , maxPolls
     , pollEveryMs
     , polling
     , subscriptions
@@ -107,12 +108,13 @@ type alias Model =
 
 
 {-| How often a page with pending analysis asks again. What it asks for is
-the index, which is a few hundred bytes, but a page left open should still
-be a slow drum, not a heartbeat.
+the index: a few hundred bytes read from rows, with no replay behind it, so
+this can be a normal cadence rather than the slow drum it had to be while
+every ask rebuilt a whole match.
 -}
 pollEveryMs : Float
 pollEveryMs =
-    8000
+    4000
 
 
 {-| A page left open on an analysis that never lands stops asking after
@@ -121,7 +123,7 @@ engine); a reload starts again.
 -}
 maxPolls : Int
 maxPolls =
-    150
+    300
 
 
 {-| How many answers may fail before the page stops asking. A failing ask

@@ -19,6 +19,16 @@ pub type Setup {
     /// #(player_id, display name, guest id), in seat order. The guest id is
     /// "" for a seat no guest was recorded against.
     seats: List(#(String, String, String)),
+    /// The room is over: every game it will ever have is played. A room
+    /// that is not over yet may still have nothing stored simply because
+    /// nothing has finished, which is not a reason to go and look.
+    finished: Bool,
+    /// How long the action log is now, and how long it was when this
+    /// room's records were last written. Rows made from a shorter log are
+    /// missing whatever was played after it: a match whose rows were
+    /// written when its first game ended has only that game in them.
+    log_length: Int,
+    records_through: Int,
   )
 }
 

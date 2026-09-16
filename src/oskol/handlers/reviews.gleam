@@ -341,7 +341,7 @@ fn read(
   })
   let rows = ctx.records.stored(game_id)
   let summaries = ctx.analysis.summaries(game_id)
-  case stale(rows, summaries) {
+  case stale(setup, rows, summaries) {
     False -> Ok(#(setup, rows, summaries))
     True -> {
       let _ = settle(ctx, game_id)
@@ -352,11 +352,28 @@ fn read(
 
 /// Is anything a read wants missing? Nothing written at all (a room from
 /// before this), or an engine answer that has never been rendered.
-fn stale(rows: List(StoredRecord), summaries: List(Stored)) -> Bool {
-  rows == []
-  || list.any(summaries, fn(row) {
-    row.status == Done && row.answered && !row.rendered
-  })
+///
+/// A room with nothing behind it yet -- still in its first game, no review
+/// of any kind -- has nothing missing: its index is empty because there is
+/// nothing to index, and going to look would replay its whole log on every
+/// read, which is the thing this endpoint exists to stop doing.
+fn stale(
+  setup: records.Setup,
+  rows: List(StoredRecord),
+  summaries: List(Stored),
+) -> Bool {
+  case setup.finished, summaries {
+    False, [] -> False
+    _, _ ->
+      // Rows made from a shorter log than the room has now are missing the
+      // games played since: a match settled when its first game ended has
+      // only that game written down.
+      setup.records_through < setup.log_length
+      || rows == []
+      || list.any(summaries, fn(row) {
+        row.status == Done && row.answered && !row.rendered
+      })
+  }
 }
 
 /// The index: which games this room has, and where each one's analysis

@@ -182,6 +182,13 @@ defmodule Oskol.Reviews do
       conflict_target: [:game_id, :game_number]
     )
 
+    # Which log these rows were made from. A read compares it with the log
+    # the room has now: shorter means games have been played since and the
+    # rows are short of them, equal means there is nothing to go and look
+    # for. Without it a match settled at its first game would keep serving
+    # one game forever.
+    mark_records_through(game_id)
+
     :ok
   end
 
@@ -197,6 +204,21 @@ defmodule Oskol.Reviews do
       _ ->
         nil
     end
+  end
+
+  @doc "Mark a room's records as made from the log it has right now."
+  def mark_records_through(game_id) do
+    from(g in Oskol.Persistence.Game, where: g.id == ^game_id)
+    |> Repo.update_all(set: [records_through: log_length(game_id)])
+
+    :ok
+  end
+
+  @doc "How many steps the room's action log holds."
+  def log_length(game_id) do
+    from(a in "game_actions", where: a.game_id == ^game_id, select: count(a.index))
+    |> Repo.one()
+    |> Kernel.||(0)
   end
 
   # ---------- The log ----------

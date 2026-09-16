@@ -139,6 +139,9 @@ fn setup_of(log: GameLog) -> records_caps.Setup {
         _ -> "g2"
       })
     }),
+    finished: True,
+    log_length: 0,
+    records_through: 0,
   )
 }
 
