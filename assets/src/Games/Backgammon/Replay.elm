@@ -4,12 +4,14 @@ module Games.Backgammon.Replay exposing
     , CubeReview
     , Entry(..)
     , Game
+    , GameAnalysis
     , GameReview
+    , Index
+    , IndexEntry
     , MoveReview(..)
     , Player
     , Record
     , Review
-    , Reviews
     , Status(..)
     , Still
     , Totals
@@ -21,7 +23,10 @@ module Games.Backgammon.Replay exposing
     , formatEquity
     , formatLuck
     , formatPr
+    , analysisDecoder
     , gameReview
+    , indexDecoder
+    , indexEntry
     , gradeLabel
     , levelLabel
     , lastStep
@@ -29,7 +34,6 @@ module Games.Backgammon.Replay exposing
     , moveAt
     , playerNamed
     , recordDecoder
-    , reviewsDecoder
     , stepCount
     , stillAt
     , stillForCandidate
@@ -38,7 +42,14 @@ module Games.Backgammon.Replay exposing
 
 {-| A room's games as the replay page reads them: the whole record (every
 game of the match, every line of each, the position after every turn) and
-the engine's reviews, with the lines each verdict is about.
+the engine's analysis of the game being read, with the lines each verdict
+is about.
+
+The analysis comes in two pieces. The index (`/reviews`) is one line per
+game -- its status and its turn count -- and is what the page polls while
+something is still being worked on. The analysis itself (`/reviews/<n>`)
+is a couple of hundred kilobytes, so it is asked for one game at a time,
+the one the reader is looking at, and kept for the session.
 
 Everything here is reading. The positions are the engine's snapshots; the
 grades, the best moves and the positions they leave, the cube verdicts and
@@ -303,8 +314,29 @@ stillForCandidate still candidate =
 -- THE REVIEWS
 
 
-type alias Reviews =
-    Dict Int GameReview
+{-| The index: one line per game of the match, with no analysis in it. It
+is a few hundred bytes, and it is what the page polls.
+-}
+type alias Index =
+    Dict Int IndexEntry
+
+
+type alias IndexEntry =
+    { status : Status
+    , turns : Int -- how many turns the engine is (or will be) asked about
+    }
+
+
+{-| The answer to `/reviews/<n>`: one game's analysis, the only one the
+reader is looking at. It is the big one (a couple of hundred kilobytes),
+so it is asked for a game at a time and kept for the session.
+-}
+type alias GameAnalysis =
+    { number : Int
+    , status : Status
+    , turns : Int
+    , review : Maybe Review
+    }
 
 
 type Status
@@ -316,9 +348,12 @@ type Status
     | Unknown
 
 
+{-| Where one game stands as the page shows it: its line of the index, and
+the analysis itself if that game's has been fetched.
+-}
 type alias GameReview =
     { status : Status
-    , turns : Int -- how many turns the engine is (or will be) asked about
+    , turns : Int
     , review : Maybe Review
     }
 
@@ -398,25 +433,34 @@ type alias Verdict =
     { seat : Int, grade : String, equityLost : Float, mistake : Maybe String }
 
 
-reviewsDecoder : Decoder Reviews
-reviewsDecoder =
+indexDecoder : Decoder Index
+indexDecoder =
     D.field "games"
         (D.list
             (D.map2 Tuple.pair
                 (D.field "game_number" D.int)
-                gameReviewDecoder
+                indexEntryDecoder
             )
         )
         |> D.map Dict.fromList
 
 
-gameReviewDecoder : Decoder GameReview
-gameReviewDecoder =
-    D.map3 GameReview
+indexEntryDecoder : Decoder IndexEntry
+indexEntryDecoder =
+    D.map2 IndexEntry
         (D.field "status" D.string |> D.map statusOf)
         (D.oneOf [ D.field "turns" D.int, D.succeed 0 ])
-        -- A review that does not read is shown as no review, never as a
-        -- broken page: the replay works without it.
+
+
+{-| One game's analysis. A review that does not read is shown as no review,
+never as a broken page: the replay works without it.
+-}
+analysisDecoder : Decoder GameAnalysis
+analysisDecoder =
+    D.map4 GameAnalysis
+        (D.field "game_number" D.int)
+        (D.field "status" D.string |> D.map statusOf)
+        (D.oneOf [ D.field "turns" D.int, D.succeed 0 ])
         (D.oneOf [ D.field "review" (D.nullable reviewDecoder), D.succeed Nothing ])
 
 
@@ -578,17 +622,26 @@ andMap =
     D.map2 (|>)
 
 
-gameReview : Int -> Reviews -> Maybe GameReview
-gameReview number reviews =
-    Dict.get number reviews
+indexEntry : Int -> Index -> Maybe IndexEntry
+indexEntry number index =
+    Dict.get number index
+
+
+{-| One game as the page shows it: its line of the index, with the analysis
+of that game if it has been fetched.
+-}
+gameReview : Int -> Index -> Dict Int Review -> Maybe GameReview
+gameReview number index held =
+    Dict.get number index
+        |> Maybe.map (\entry -> GameReview entry.status entry.turns (Dict.get number held))
 
 
 {-| Whether the page should ask again: some game's analysis is still being
-worked on.
+worked on. The index is what it asks for, and it costs a rounding error.
 -}
-wantsPolling : Reviews -> Bool
-wantsPolling reviews =
-    reviews |> Dict.values |> List.any (\g -> g.status == Pending)
+wantsPolling : Index -> Bool
+wantsPolling index =
+    index |> Dict.values |> List.any (\g -> g.status == Pending)
 
 
 {-| The engine's depth as a player reads it: "4ply" is "4-ply"; moves and

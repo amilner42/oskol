@@ -3,8 +3,9 @@ module ReplayTest exposing (suite)
 {-| The replay page on real answers: the record and the analysis of seed
 room 000011 (a match to 3, three games), as the server sent them.
 
-What is held here: the decoders read the engine's review as the server
-reshapes it; the board at every step is the record's (a turn's dice and
+What is held here: the decoders read the index and the engine's review as
+the server reshapes them; the analysis of a game is asked for when it is
+the game being read and never twice; the board at every step is the record's (a turn's dice and
 landings, a double's cube on offer); a proposed move is the engine's
 position; stepping, game switching, the keyboard and swipes move where they
 should and never past a game's ends; and the analysis arriving -- pending,
@@ -13,6 +14,7 @@ the viewer. The page asks again only while something is pending.
 
 -}
 
+import Api
 import Dict
 import Expect
 import Html.Attributes
@@ -31,6 +33,7 @@ suite =
         [ decoding
         , boards
         , stepping
+        , fetching
         , analysisArriving
         , polling
         , words
@@ -65,9 +68,9 @@ shared =
             Debug.todo (D.errorToString err)
 
 
-reviews : String -> Replay.Reviews
-reviews json =
-    case D.decodeString Replay.reviewsDecoder json of
+index : String -> Replay.Index
+index json =
+    case D.decodeString Replay.indexDecoder json of
         Ok r ->
             r
 
@@ -75,9 +78,53 @@ reviews json =
             Debug.todo (D.errorToString err)
 
 
-done : Replay.Reviews
-done =
-    reviews ReplayFixtures.reviewsDone
+analysis : String -> Replay.GameAnalysis
+analysis json =
+    case D.decodeString Replay.analysisDecoder json of
+        Ok a ->
+            a
+
+        Err err ->
+            Debug.todo (D.errorToString err)
+
+
+reviewIn : String -> Replay.Review
+reviewIn json =
+    case (analysis json).review of
+        Just r ->
+            r
+
+        Nothing ->
+            Debug.todo "the fixture carries no review"
+
+
+{-| The index with every game analysed.
+-}
+allDone : Replay.Index
+allDone =
+    index ReplayFixtures.index
+
+
+review1 : Replay.Review
+review1 =
+    reviewIn ReplayFixtures.analysisGame1
+
+
+review3 : Replay.Review
+review3 =
+    reviewIn ReplayFixtures.analysisGame3
+
+
+{-| The index, then the analysis of each game: what a reader who has looked
+at all three has in hand.
+-}
+gotEverything : List Msg
+gotEverything =
+    [ GotIndex (Ok allDone)
+    , GotAnalysis 1 (Ok (analysis ReplayFixtures.analysisGame1))
+    , GotAnalysis 2 (Ok (analysis ReplayFixtures.analysisGame2))
+    , GotAnalysis 3 (Ok (analysis ReplayFixtures.analysisGame3))
+    ]
 
 
 game : Int -> Replay.Game
@@ -128,14 +175,26 @@ decoding =
                     , \r -> Expect.equal [ 0, 0, 0, 0, 0, 5, 0, 3, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2 ] r.start.white.points
                     ]
                     record
-        , test "the engine's review: every game's status and the turns it graded" <|
+        , test "the index: every game's status and the turns it graded, and no analysis in it" <|
             \_ ->
                 Expect.equal
-                    [ ( 1, Done ), ( 2, Done ), ( 3, Done ) ]
-                    (done |> Dict.toList |> List.map (\( n, g ) -> ( n, g.status )))
+                    [ ( 1, Done, 2 ), ( 2, Done, 5 ), ( 3, Done, 81 ) ]
+                    (allDone |> Dict.toList |> List.map (\( n, g ) -> ( n, g.status, g.turns )))
+        , test "the index is small: it is what polling asks for" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Expect.lessThan 1000 (String.length ReplayFixtures.index)
+                    , \_ -> Expect.greaterThan 10000 (String.length ReplayFixtures.analysisGame3)
+                    ]
+                    ()
+        , test "one game's analysis: its number, its status and the review itself" <|
+            \_ ->
+                analysis ReplayFixtures.analysisGame3
+                    |> (\a -> ( a.number, a.status, a.review /= Nothing ))
+                    |> Expect.equal ( 3, Done, True )
         , test "a turn's grade, its best move and what the played one lost" <|
             \_ ->
-                case done |> Replay.gameReview 3 |> Maybe.andThen .review |> Maybe.andThen (\r -> Replay.moveAt r 0) of
+                case Replay.moveAt review3 0 of
                     Just ( _, Moved m ) ->
                         Expect.all
                             [ \_ -> Expect.equal "bad" m.grade
@@ -151,7 +210,7 @@ decoding =
                         Expect.fail ("no graded move on game 3's first line: " ++ Debug.toString other)
         , test "a double and its pass are judged on their own lines" <|
             \_ ->
-                case done |> Replay.gameReview 1 |> Maybe.andThen .review of
+                case Just review1 of
                     Just r ->
                         Expect.all
                             [ \_ ->
@@ -175,24 +234,20 @@ decoding =
                         Expect.fail "game 1 has no review"
         , test "each player's PR, errors and luck" <|
             \_ ->
-                case done |> Replay.gameReview 3 |> Maybe.andThen .review of
-                    Just r ->
-                        Expect.equal 2 (List.length (List.filter (\t -> t.pr > 0) r.players))
-
-                    Nothing ->
-                        Expect.fail "no review"
+                Expect.equal 2 (List.length (List.filter (\t -> t.pr > 0) review3.players))
         , test "the depth the engine searched at" <|
             \_ ->
-                done
-                    |> Replay.gameReview 3
-                    |> Maybe.andThen .review
-                    |> Maybe.andThen .levels
-                    |> Expect.equal (Just { moves = "2ply", cube = "3ply" })
+                review3.levels |> Expect.equal (Just { moves = "2ply", cube = "3ply" })
         , test "a review that does not read is no review, not a broken page" <|
             \_ ->
-                D.decodeString Replay.reviewsDecoder """{"ok":true,"games":[{"game_number":1,"status":"done","turns":3,"review":{"nonsense":1}}]}"""
-                    |> Result.map (Dict.get 1 >> Maybe.map (\g -> ( g.status, g.review )))
-                    |> Expect.equal (Ok (Just ( Done, Nothing )))
+                D.decodeString Replay.analysisDecoder """{"ok":true,"game_number":1,"status":"done","turns":3,"review":{"nonsense":1}}"""
+                    |> Result.map (\a -> ( a.status, a.review ))
+                    |> Expect.equal (Ok ( Done, Nothing ))
+        , test "a game with no analysis yet answers its status and a null review" <|
+            \_ ->
+                D.decodeString Replay.analysisDecoder """{"ok":true,"game_number":2,"status":"pending","turns":5,"review":null}"""
+                    |> Result.map (\a -> ( a.status, a.review ))
+                    |> Expect.equal (Ok ( Pending, Nothing ))
         ]
 
 
@@ -242,7 +297,7 @@ boards =
                     |> Expect.equal { value = 2, owner = Just "b" }
         , test "a proposed move is the engine's position, the turn's dice, its landings" <|
             \_ ->
-                case done |> Replay.gameReview 3 |> Maybe.andThen .review |> Maybe.andThen (\r -> Replay.moveAt r 0) of
+                case Replay.moveAt review3 0 of
                     Just ( _, Moved m ) ->
                         let
                             still =
@@ -265,7 +320,7 @@ boards =
                         Expect.fail "no graded move"
         , test "the played candidate's position is the record's own" <|
             \_ ->
-                case done |> Replay.gameReview 3 |> Maybe.andThen .review |> Maybe.andThen (\r -> Replay.moveAt r 0) of
+                case Replay.moveAt review3 0 of
                     Just ( _, Moved m ) ->
                         Replay.stillForCandidate (Replay.stillAt record (game 3) 1) m.played
                             |> Maybe.map (\s -> s.position == (Replay.stillAt record (game 3) 1).position)
@@ -350,6 +405,75 @@ stepping =
 
 
 
+-- WHAT THE PAGE FETCHES
+
+
+fetching : Test
+fetching =
+    describe "the analysis is fetched a game at a time"
+        [ test "the index alone asks for the analysis of the game being read" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ GotIndex (Ok allDone) ]
+                    |> (\m -> ( m.fetching, Dict.keys m.analyses ))
+                    |> Expect.equal ( [ 3 ], [] )
+        , test "and only for that one: the other games are left where they are" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ GotIndex (Ok allDone), GotAnalysis 3 (Ok (analysis ReplayFixtures.analysisGame3)) ]
+                    |> (\m -> ( m.fetching, Dict.keys m.analyses ))
+                    |> Expect.equal ( [], [ 3 ] )
+        , test "switching to another game fetches that one" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run
+                        [ GotIndex (Ok allDone)
+                        , GotAnalysis 3 (Ok (analysis ReplayFixtures.analysisGame3))
+                        , PickGame 1
+                        ]
+                    |> .fetching
+                    |> Expect.equal [ 1 ]
+        , test "a game already in hand is never fetched again" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run
+                        [ GotIndex (Ok allDone)
+                        , GotAnalysis 3 (Ok (analysis ReplayFixtures.analysisGame3))
+                        , PickGame 1
+                        , GotAnalysis 1 (Ok (analysis ReplayFixtures.analysisGame1))
+                        , PickGame 3
+                        ]
+                    |> (\m -> ( m.fetching, Dict.keys m.analyses ))
+                    |> Expect.equal ( [], [ 1, 3 ] )
+        , test "an ask already out is not doubled by the index arriving again" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ GotIndex (Ok allDone), Poll, GotIndex (Ok allDone) ]
+                    |> .fetching
+                    |> Expect.equal [ 3 ]
+        , test "a game that is not done is not asked for" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ GotIndex (Ok (index ReplayFixtures.indexPending)) ]
+                    |> .fetching
+                    |> Expect.equal []
+        , test "an analysis that does not arrive is not asked for again on its own" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ GotIndex (Ok allDone), GotAnalysis 3 (Err Api.NetworkError), GotIndex (Ok allDone) ]
+                    |> (\m -> ( m.fetching, m.analysisErrors ))
+                    |> Expect.equal ( [], [ 3 ] )
+        , test "the index arriving before the record still fetches, once the record names the game" <|
+            \_ ->
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 1 }
+                    |> Tuple.first
+                    |> run [ GotIndex (Ok allDone), GotRecord (Ok record) ]
+                    |> .fetching
+                    |> Expect.equal [ 1 ]
+        ]
+
+
+
 -- THE ANALYSIS ARRIVING
 
 
@@ -360,31 +484,33 @@ analysisArriving =
             \_ ->
                 loaded (Just 3)
                     |> run
-                        [ GotReviews (Ok (reviews ReplayFixtures.reviewsPending))
-                        , Next
-                        , Next
-                        , Next
-                        , GotReviews (Ok done)
-                        ]
-                    |> (\m -> ( ( m.game, m.step, m.showing ), m.reviews |> Maybe.andThen (Replay.gameReview 3) |> Maybe.map .status ))
-                    |> Expect.equal ( ( 3, 3, Played ), Just Done )
-        , test "a new answer for a game already shown keeps a proposed move on the board" <|
+                        ([ GotIndex (Ok (index ReplayFixtures.indexPending))
+                         , Next
+                         , Next
+                         , Next
+                         ]
+                            ++ gotEverything
+                        )
+                    |> (\m -> ( ( m.game, m.step, m.showing ), Dict.member 3 m.analyses ))
+                    |> Expect.equal ( ( 3, 3, Played ), True )
+        , test "a new index for a game already shown keeps a proposed move on the board" <|
             \_ ->
                 loaded (Just 3)
                     |> run
-                        [ GotReviews (Ok done)
-                        , Next
-                        , Show (Proposed 1)
-                        , GotReviews (Ok done)
-                        ]
+                        (gotEverything
+                            ++ [ Next
+                               , Show (Proposed 1)
+                               , GotIndex (Ok allDone)
+                               ]
+                        )
                     |> (\m -> ( m.step, m.showing ))
                     |> Expect.equal ( 1, Proposed 1 )
         , test "the record arriving after the analysis changes nothing about it" <|
             \_ ->
                 Page.init session { slug = "backgammon", gameId = "000011", game = Just 3 }
                     |> Tuple.first
-                    |> run [ GotReviews (Ok done), GotRecord (Ok record) ]
-                    |> (\m -> ( m.reviews /= Nothing, m.game ))
+                    |> run (gotEverything ++ [ GotRecord (Ok record) ])
+                    |> (\m -> ( m.index /= Nothing, m.game ))
                     |> Expect.equal ( True, 3 )
         , test "a replay with no game named still opens, on the first seat" <|
             \_ ->
@@ -414,19 +540,37 @@ polling =
         [ test "not before the first answer" <|
             \_ -> loaded (Just 3) |> Page.polling |> Expect.equal False
         , test "while a game is pending" <|
-            \_ -> loaded (Just 3) |> run [ GotReviews (Ok (reviews ReplayFixtures.reviewsPending)) ] |> Page.polling |> Expect.equal True
+            \_ -> loaded (Just 3) |> run [ GotIndex (Ok (index ReplayFixtures.indexPending)) ] |> Page.polling |> Expect.equal True
         , test "not once everything is done" <|
             \_ ->
                 loaded (Just 3)
-                    |> run [ GotReviews (Ok (reviews ReplayFixtures.reviewsPending)), Poll, GotReviews (Ok done) ]
+                    |> run [ GotIndex (Ok (index ReplayFixtures.indexPending)), Poll, GotIndex (Ok allDone) ]
                     |> Page.polling
                     |> Expect.equal False
         , test "not for a game that failed (it waits for TRY AGAIN)" <|
-            \_ -> loaded (Just 3) |> run [ GotReviews (Ok (reviews ReplayFixtures.reviewsFailed)) ] |> Page.polling |> Expect.equal False
-        , test "and never forever" <|
+            \_ -> loaded (Just 3) |> run [ GotIndex (Ok (index ReplayFixtures.indexFailed)) ] |> Page.polling |> Expect.equal False
+        , test "and never forever: a page left open on an answer that never lands gives up" <|
+            \_ ->
+                let
+                    -- an ask and its answer; an ask with no answer is not
+                    -- followed by another one at all
+                    round =
+                        [ Poll, GotIndex (Ok (index ReplayFixtures.indexPending)) ]
+                in
+                loaded (Just 3)
+                    |> run (GotIndex (Ok (index ReplayFixtures.indexPending)) :: List.concat (List.repeat 200 round))
+                    |> Page.polling
+                    |> Expect.equal False
+        , test "and never two asks at once: one out, the next does nothing" <|
             \_ ->
                 loaded (Just 3)
-                    |> run (GotReviews (Ok (reviews ReplayFixtures.reviewsPending)) :: List.repeat 400 Poll)
+                    |> run (GotIndex (Ok (index ReplayFixtures.indexPending)) :: List.repeat 40 Poll)
+                    |> .polls
+                    |> Expect.equal 1
+        , test "an index that does not arrive is not chased" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ GotIndex (Ok (index ReplayFixtures.indexPending)), Poll, GotIndex (Err Api.NetworkError), Poll, GotIndex (Err Api.NetworkError) ]
                     |> Page.polling
                     |> Expect.equal False
         ]
@@ -463,7 +607,7 @@ rendered =
         [ test "a pending game says it is being analysed, and that it takes a while" <|
             \_ ->
                 loaded (Just 3)
-                    |> run [ GotReviews (Ok (reviews ReplayFixtures.reviewsPending)) ]
+                    |> run [ GotIndex (Ok (index ReplayFixtures.indexPending)) ]
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-analysis-state" ]
@@ -471,7 +615,7 @@ rendered =
         , test "a graded turn shows its grade and the best move with what was lost" <|
             \_ ->
                 loaded (Just 3)
-                    |> run [ GotReviews (Ok done), Next ]
+                    |> run (gotEverything ++ [ Next ])
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-note" ]
@@ -509,7 +653,7 @@ rendered =
             \_ ->
                 Page.init session { slug = "backgammon", gameId = "000011", game = Just 3 }
                     |> Tuple.first
-                    |> run [ GotRecord (Ok shared), GotReviews (Ok (reviews ReplayFixtures.reviewsPending)) ]
+                    |> run [ GotRecord (Ok shared), GotIndex (Ok (index ReplayFixtures.indexPending)) ]
                     |> Expect.all
                         [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-analysis-state" ] |> Query.has [ Selector.text "has not been analysed yet" ]
 
@@ -517,17 +661,25 @@ rendered =
                         -- was never queued
                         , \m -> m |> Page.polling |> Expect.equal False
                         ]
-        , test "a failed game offers to try again" <|
+        , test "a failed game offers to try again, on the index alone" <|
             \_ ->
                 loaded (Just 3)
-                    |> run [ GotReviews (Ok (reviews ReplayFixtures.reviewsFailed)) ]
+                    |> run [ GotIndex (Ok (index ReplayFixtures.indexFailed)) ]
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.has [ Selector.id "rp-retry" ]
+        , test "a game whose analysis is on its way says so and shows no stale verdicts" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ GotIndex (Ok allDone), Next ]
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.id "rp-analysis-state" ]
+                    |> Query.has [ Selector.text "Loading the analysis…" ]
         , test "the summary says how deep the engine looked" <|
             \_ ->
                 loaded (Just 3)
-                    |> run [ GotReviews (Ok done), PickTab Page.SummaryTab ]
+                    |> run (gotEverything ++ [ PickTab Page.SummaryTab ])
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-level" ]

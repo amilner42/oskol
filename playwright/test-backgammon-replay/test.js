@@ -19,10 +19,11 @@
  *    current line of the move list is in view.
  * 5. The table offers REPLAY at game over, and it opens this page.
  *
- * The analysis is stubbed by default: `/reviews` is answered in the browser
- * with a review built from the room's own record (every verdict names a
- * real line of it), pending for the first few asks, then done -- except
- * game 1, which fails until retried. With REPLAY_REAL=1 the real endpoint
+ * The analysis is stubbed by default: `/reviews` (the index: a status and a
+ * turn count per game) and `/reviews/<n>` (one game's analysis) are both
+ * answered in the browser, the analysis built from the room's own record
+ * (every verdict names a real line of it), pending for the first few asks,
+ * then done -- except game 1, which fails until retried. With REPLAY_REAL=1 the real endpoint
  * is used and the script waits for the engine (needs ANALYSIS_URL
  * reachable by the server).
  *
@@ -116,32 +117,47 @@ function reviewOf(record, game) {
   return { levels: { moves: '4ply', cube: '4ply' }, timing_ms: 61000, players: record.players.map(totals), turns };
 }
 
-/** Answer `/reviews` (and its retry) in the browser. */
+/** Answer `/reviews`, `/reviews/<n>` and the retry in the browser.
+ *
+ * The index is the cheap answer the page polls; one game's analysis is
+ * asked for on its own, and only for the game being read.
+ */
 async function stubAnalysis(context, record, counts) {
-  const done = new Set();
   let retried = false;
-  const body = () => ({
+  const statusOf = (g) => {
+    if (g.number === 1 && !retried) return counts.get >= 3 ? 'failed' : 'pending';
+    return counts.get < 3 ? 'pending' : 'done';
+  };
+  const turnsOf = (g) => g.entries.filter((e) => e.kind === 'turn').length;
+  const index = () => ({
     ok: true,
     players: record.players.map((p, i) => ({ seat: i, player_id: p.id, name: p.name, color: p.color })),
-    games: record.games.map((g) => {
-      const turns = g.entries.filter((e) => e.kind === 'turn').length;
-      if (g.number === 1 && !retried) return { game_number: 1, status: counts.get >= 3 ? 'failed' : 'pending', turns, review: null };
-      if (counts.get < 3) return { game_number: g.number, status: 'pending', turns, review: null };
-      done.add(g.number);
-      return { game_number: g.number, status: 'done', turns, review: reviewOf(record, g) };
-    }),
+    games: record.games.map((g) => ({ game_number: g.number, status: statusOf(g), turns: turnsOf(g) })),
   });
-  // Neither `/reviews` nor `/reviews/retry` carries anything in the URL: who
-  // is asking is the guest cookie the request goes out with.
-  await context.route(/\/papi\/games\/backgammon\/rooms\/[^/]+\/reviews(\/retry)?(\?|$)/, async (route) => {
-    const retry = route.request().url().includes('/reviews/retry');
-    if (retry) {
+  const one = (number) => {
+    const g = record.games.find((x) => x.number === number);
+    if (!g) return { ok: false, error: { code: 'not_found', message: 'no such game' } };
+    const status = statusOf(g);
+    return { ok: true, game_number: number, status, turns: turnsOf(g), review: status === 'done' ? reviewOf(record, g) : null };
+  };
+  // Nothing here carries anything in the URL but the game number: who is
+  // asking is the guest cookie the request goes out with.
+  await context.route(/\/papi\/games\/backgammon\/rooms\/[^/]+\/reviews(\/(retry|\d+))?(\?|$)/, async (route) => {
+    const url = route.request().url();
+    const game = url.match(/\/reviews\/(\d+)/);
+    let body;
+    if (url.includes('/reviews/retry')) {
       counts.retry += 1;
       retried = true;
+      body = index();
+    } else if (game) {
+      counts.game += 1;
+      body = one(Number(game[1]));
     } else {
       counts.get += 1;
+      body = index();
     }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body()) });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
 }
 
@@ -254,7 +270,7 @@ async function main() {
     // ---------- 1. desktop ----------
     const desktop = await asAlice(await browser.newContext({ viewport: { width: 1440, height: 900 } }));
     await desktop.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-    const counts = { get: 0, retry: 0 };
+    const counts = { get: 0, retry: 0, game: 0 };
     if (!REAL) await stubAnalysis(desktop, record, counts);
     const page = await desktop.newPage();
     watch(page, 'desktop');
