@@ -1402,9 +1402,11 @@ viewRating ctx playerId =
                 [ class "bar-pr pixel text-[7px] sm:text-[8px] shrink-0 whitespace-nowrap"
                 , title "Performance rating over the graded games of this match (lower is better)"
                 ]
-                -- A phone's bar has no room for the long form: with a clock
-                -- and a bear-off count on it, "Match PR:" is what pushes
-                -- the name out. The title says it in full everywhere.
+                -- A phone's portrait bar has no room for the long form:
+                -- with a clock and a bear-off count on it, "Match PR:" is
+                -- what pushes the name out (a clocked phone drops the PR
+                -- altogether, in app.css). The title says it in full
+                -- everywhere, and a sideways phone has room for both.
                 [ span [ class "hidden sm:inline" ] [ text "Match PR: " ]
                 , span [ class "sm:hidden" ] [ text "PR " ]
                 , text (oneDecimal pr)

@@ -415,19 +415,22 @@ update msg model =
                     | ratings = ratings.prs
                     , ratingsGraded = max model.ratingsGraded ratings.graded
                     , ratingsPolls =
-                        if ratings.graded > model.ratingsGraded then
-                            -- The grade this page was waiting for landed.
-                            0
-
-                        else if ratings.pending || model.ratingsPolls > 0 then
-                            -- Either a grade is on its way, or a game ended
-                            -- here and its review has not even been opened
-                            -- yet: the room queues it as the game ends and
-                            -- the queue takes one room at a time, so "not
-                            -- pending" right now is not "never coming".
+                        if ratings.pending then
+                            -- A grade is on its way, whatever else landed:
+                            -- keep watching. This is also what makes a page
+                            -- opened in the middle of an analysis start.
                             nextPoll (max 1 model.ratingsPolls)
 
+                        else if model.ratingsPolls > 0 && ratings.graded <= model.ratingsGraded then
+                            -- Waiting on a game that ended here whose review
+                            -- has not even been opened yet: the room queues
+                            -- it as the game ends and the queue takes one
+                            -- room at a time, so "nothing pending" right now
+                            -- is not "nothing coming".
+                            nextPoll model.ratingsPolls
+
                         else
+                            -- Nothing owed and nothing outstanding.
                             0
                 }
                 Cmd.none
@@ -486,7 +489,14 @@ applyPayload payload model =
         -- payload nobody has: an opponent who left an hour ago is already
         -- gone, and flashing at them would say the opposite of the truth.
         previousAway =
-            model.payload |> Maybe.map awayIds |> Maybe.withDefault (awayIds payload)
+            if model.connectionStatus /= Connected then
+                -- This client was the one that was away. What the room says
+                -- now is the first it has heard in a while, so none of it is
+                -- news: an opponent listed here may have left long ago.
+                awayIds payload
+
+            else
+                model.payload |> Maybe.map awayIds |> Maybe.withDefault (awayIds payload)
 
         updated =
             { model

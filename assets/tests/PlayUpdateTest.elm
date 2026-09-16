@@ -56,7 +56,7 @@ suite : Test
 suite =
     describe "Page.Play.update with fixture payloads"
         (List.map replay FixtureLoader.all
-            ++ [ channelMessages, tabTitle, prefsRace, refusedAtTheDoor, refusedMidGame ]
+            ++ [ channelMessages, tabTitle, prefsRace, ratingsWatch, refusedAtTheDoor, refusedMidGame ]
         )
 
 
@@ -171,6 +171,59 @@ prefsRace =
                             |> first3
                 in
                 Expect.equal (Dict.get "backgammon_theme" answered.prefs) (Just "neon")
+        ]
+
+
+{-| Waiting for a grade is a small state machine and it has been wrong
+twice: it must not stop while the engine still owes the room an answer,
+and it must not stop on a game whose review has not been opened yet.
+-}
+ratingsWatch : Test
+ratingsWatch =
+    let
+        answer graded pending =
+            { prs = Dict.empty, graded = graded, pending = pending }
+
+        got graded pending model =
+            Play.update (GotRatings (Ok (answer graded pending))) model |> first3
+
+        waiting =
+            -- a page that has asked once and is still owed an answer
+            got 0 True (startAt "backgammon")
+    in
+    describe "watching for a match PR"
+        [ test "a page opened in the middle of an analysis starts watching" <|
+            \_ ->
+                got 2 True (startAt "backgammon")
+                    |> .ratingsPolls
+                    |> Expect.greaterThan 0
+        , test "a page opened long after a match asks once and stops" <|
+            \_ ->
+                got 3 False (startAt "backgammon")
+                    |> .ratingsPolls
+                    |> Expect.equal 0
+        , test "a grade landing does not stop a watch the engine is still owed" <|
+            \_ ->
+                got 3 True waiting
+                    |> .ratingsPolls
+                    |> Expect.greaterThan 0
+        , test "nothing pending yet is not nothing coming: the watch keeps going" <|
+            \_ ->
+                -- the queue has not even opened a row for the game that
+                -- just ended here
+                got 0 False waiting
+                    |> .ratingsPolls
+                    |> Expect.greaterThan 0
+        , test "the grade lands and nothing else is owed: the watch stops" <|
+            \_ ->
+                got 1 False waiting
+                    |> .ratingsPolls
+                    |> Expect.equal 0
+        , test "a page that never asked does not start watching on its own" <|
+            \_ ->
+                got 0 False (startAt "backgammon")
+                    |> .ratingsPolls
+                    |> Expect.equal 0
         ]
 
 
