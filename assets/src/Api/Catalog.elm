@@ -22,6 +22,7 @@ module Api.Catalog exposing
     , fetchGame
     , fetchLibrary
     , fetchPrefs
+    , fetchRatings
     , fetchRoom
     , formatDecoder
     , gameDecoder
@@ -31,6 +32,7 @@ module Api.Catalog exposing
     , lookupCode
     , offeredClocks
     , prefsDecoder
+    , ratingsDecoder
     , roomDecoder
     , savePref
     , settingChoice
@@ -234,6 +236,28 @@ site has never seen simply has none.
 fetchPrefs : Session -> (Result Error (Dict String String) -> msg) -> Cmd msg
 fetchPrefs session toMsg =
     Api.get session "/papi/me/prefs" prefsDecoder toMsg
+
+
+{-| How the two people at a room have played in this match: each seat's
+performance rating over the games of it the analysis engine has graded, by
+player id. A seat the server has no number for is simply not in the
+dictionary, and nor is anyone in a match with nothing graded yet.
+-}
+fetchRatings : Session -> String -> String -> (Result Error (Dict String Float) -> msg) -> Cmd msg
+fetchRatings session slug gameId toMsg =
+    Api.get session (roomPath slug gameId ++ "/ratings") ratingsDecoder toMsg
+
+
+ratingsDecoder : Decoder (Dict String Float)
+ratingsDecoder =
+    D.field "players"
+        (D.list
+            (D.map2 Tuple.pair
+                (D.field "player_id" D.string)
+                (D.field "pr" (D.nullable D.float))
+            )
+        )
+        |> D.map (List.filterMap (\( id, pr ) -> Maybe.map (Tuple.pair id) pr) >> Dict.fromList)
 
 
 {-| Keep one preference. The server is the whitelist: an unknown key or a

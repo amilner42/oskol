@@ -12,6 +12,7 @@ defmodule OskolWeb.Api.LandingController do
       POST /papi/games/:slug/rooms/:id/reviews/retry  try a failed review again (a seat)
       GET  /papi/games/:slug/rooms/:id/record  the game's whole record, for anyone
                                               with the room
+      GET  /papi/games/:slug/rooms/:id/ratings  each seat's PR so far in this match
       GET  /papi/codes/:code               which game answers to a code
       GET  /papi/me/prefs                  this visitor's display preferences
       POST /papi/me/prefs                  keep one of them
@@ -125,6 +126,13 @@ defmodule OskolWeb.Api.LandingController do
       conn,
       :oskol@handlers@record.record_json(ctx(), session(conn), slug, game_id)
     )
+  end
+
+  # What the two people at this room have played like before. No token: a
+  # PR is a fact about a player their opponent is sitting across from
+  # anyway, and it says nothing about the game on the board.
+  def ratings(conn, %{"slug" => slug, "id" => game_id}) do
+    send_json(conn, :oskol@handlers@ratings.ratings_json(ctx(), slug, game_id))
   end
 
   def code(conn, %{"code" => code}) do

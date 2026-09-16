@@ -1,0 +1,84 @@
+defmodule Oskol.RatingsTest do
+  @moduledoc """
+  `/papi/games/:slug/rooms/:id/ratings` end to end: a real room, the
+  engine's answers stored against it, and the match PR the table prints.
+  What is worth printing is decided in Gleam and tested on stubs
+  (test/oskol/ratings_handler_test.gleam).
+  """
+  use OskolWeb.ConnCase, async: false
+
+  import Oskol.GameFixtures
+
+  alias Oskol.Game.Persister
+  alias Oskol.Repo
+  alias Oskol.Reviews
+
+  setup do
+    owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
+
+    on_exit(fn ->
+      Persister.flush()
+      Ecto.Adapters.SQL.Sandbox.stop_owner(owner)
+    end)
+
+    :ok
+  end
+
+  # The engine's answer, cut down to the one field a match PR reads. The
+  # players are positional: seat order.
+  defp answer(first, second) do
+    %{"turns" => [], "players" => [%{"pr" => first}, %{"pr" => second}]}
+  end
+
+  defp ratings(conn, game_id) do
+    conn
+    |> get("/papi/games/backgammon/rooms/#{game_id}/ratings")
+    |> json_response(200)
+  end
+
+  defp seat(players, id), do: Enum.find(players, &(&1["player_id"] == id))
+
+  test "a match averages the games its own engine answers graded", %{conn: conn} do
+    %{game_id: game_id, p1: p1, p2: p2} = started(42, "match5")
+    Persister.flush()
+
+    # Nothing graded yet: both seats are named, neither wears a number.
+    assert %{"ok" => true, "players" => none} = ratings(conn, game_id)
+    assert %{"games" => 0, "pr" => nil} = seat(none, p1)
+    assert %{"games" => 0, "pr" => nil} = seat(none, p2)
+
+    # One graded game shows its own PR.
+    :ok = Reviews.save(game_id, 1, "done", 1, answer(8.0, 12.0), nil)
+    assert %{"players" => one} = ratings(conn, game_id)
+    assert %{"games" => 1, "pr" => 8.0} = seat(one, p1)
+    assert %{"games" => 1, "pr" => 12.0} = seat(one, p2)
+
+    # A second lands: the plain mean of the two, to one decimal.
+    :ok = Reviews.save(game_id, 2, "done", 1, answer(9.0, 13.0), nil)
+    assert %{"players" => two} = ratings(conn, game_id)
+    assert %{"games" => 2, "pr" => 8.5} = seat(two, p1)
+    assert %{"games" => 2, "pr" => 12.5} = seat(two, p2)
+
+    # A game still pending and one the engine gave up on count for nothing.
+    :ok = Reviews.save(game_id, 3, "pending", 0, nil, nil)
+    :ok = Reviews.save(game_id, 4, "failed", 3, nil, "the engine said no")
+    assert %{"players" => still_two} = ratings(conn, game_id)
+    assert %{"games" => 2, "pr" => 8.5} = seat(still_two, p1)
+  end
+
+  test "a room that is not there says so, and says nothing else", %{conn: conn} do
+    assert %{"ok" => false, "error" => %{"code" => "not_found"}} =
+             conn
+             |> get("/papi/games/backgammon/rooms/nobody/ratings")
+             |> json_response(404)
+  end
+
+  test "a room still in its lobby answers the same 404", %{conn: conn} do
+    %{game_id: game_id} = lobby()
+
+    assert %{"ok" => false, "error" => %{"code" => "not_found"}} =
+             conn
+             |> get("/papi/games/backgammon/rooms/#{game_id}/ratings")
+             |> json_response(404)
+  end
+end

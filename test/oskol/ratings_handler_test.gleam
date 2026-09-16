@@ -1,0 +1,190 @@
+//// What the ratings endpoint decides, on stub capabilities: which of a
+//// room's games count toward a player's match PR, what the average is, and
+//// what a room that is not there answers.
+
+import gamekit/clock
+import gamekit/game.{Seat}
+import gamekit/instance.{type Instance}
+import gamekit/registry
+import gleam/json
+import gleam/option.{type Option, None, Some}
+import gleam/result
+import oskol/caps/analysis.{
+  type Stored, AnalysisCaps, Done, Failed, GameLog, Pending, Stored,
+}
+import oskol/caps/rooms as rooms_caps
+import oskol/core/ctx.{type Ctx, Ctx}
+import oskol/core/error
+import oskol/fakes
+import oskol/handlers/ratings
+import oskol/rooms/errors
+
+fn started() -> Instance {
+  let assert Ok(entry) = registry.find("backgammon")
+  let assert Ok(game) =
+    entry.start(
+      "match5",
+      [],
+      [Seat("p1", "Alice"), Seat("p2", "Bob")],
+      7,
+      clock.NoClock,
+      0,
+    )
+  game
+}
+
+/// The engine's answer, cut down to the one field a match PR reads.
+fn answer(first: Float, second: Float) -> String {
+  json.to_string(
+    json.object([
+      #("turns", json.preprocessed_array([])),
+      #(
+        "players",
+        json.preprocessed_array([
+          json.object([#("pr", json.float(first))]),
+          json.object([#("pr", json.float(second))]),
+        ]),
+      ),
+    ]),
+  )
+}
+
+fn done(number: Int, first: Float, second: Float) -> Stored {
+  Stored(
+    game_number: number,
+    status: Done,
+    attempts: 1,
+    response_json: Some(answer(first, second)),
+  )
+}
+
+/// A live backgammon room whose two seats are p1 and p2, with these stored
+/// reviews behind them.
+fn room_with(slug: String, stored: List(Stored)) -> Ctx {
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_room(Some(fakes.room()), None)
+    |> fakes.with_slug(Some(slug))
+  let game = started()
+  Ctx(
+    ..ctx,
+    rooms: rooms_caps.RoomsCaps(..ctx.rooms, game: fn(_) { Ok(game) }),
+    analysis: AnalysisCaps(
+      ..ctx.analysis,
+      log: fn(_) {
+        Some(
+          GameLog(
+            slug: "backgammon",
+            format: "match5",
+            selections: [],
+            clock: "none",
+            seed: 7,
+            seats: [#("p1", "Alice"), #("p2", "Bob")],
+            entries: [],
+          ),
+        )
+      },
+      stored: fn(_) { stored },
+    ),
+  )
+}
+
+fn players(stored: List(Stored)) -> String {
+  let assert Ok(body) =
+    ratings.ratings_json(
+      room_with("backgammon", stored),
+      "backgammon",
+      "000007",
+    )
+  body
+}
+
+fn expected(entries: List(#(String, Int, Option(Float)))) -> String {
+  json.to_string(
+    json.object([
+      #("ok", json.bool(True)),
+      #(
+        "players",
+        json.array(entries, fn(entry) {
+          let #(player_id, games, pr) = entry
+          json.object([
+            #("player_id", json.string(player_id)),
+            #("games", json.int(games)),
+            #("pr", case pr {
+              Some(value) -> json.float(value)
+              None -> json.null()
+            }),
+          ])
+        }),
+      ),
+    ]),
+  )
+}
+
+pub fn one_graded_game_shows_its_own_pr_test() {
+  assert players([done(1, 8.4, 12.1)])
+    == expected([#("p1", 1, Some(8.4)), #("p2", 1, Some(12.1))])
+}
+
+pub fn a_match_averages_the_games_it_has_test() {
+  // The plain mean over the games, to one decimal, per seat.
+  assert players([done(1, 8.0, 12.0), done(2, 9.0, 13.0), done(3, 8.2, 11.0)])
+    == expected([#("p1", 3, Some(8.4)), #("p2", 3, Some(12.0))])
+}
+
+pub fn a_match_with_nothing_graded_shows_no_number_test() {
+  assert players([]) == expected([#("p1", 0, None), #("p2", 0, None)])
+}
+
+pub fn pending_and_failed_games_do_not_count_test() {
+  // The match is three games in; only the one the engine answered counts,
+  // so the number is that game's own PR and the count says so.
+  let stored = [
+    done(1, 6.0, 10.0),
+    Stored(game_number: 2, status: Pending, attempts: 0, response_json: None),
+    Stored(game_number: 3, status: Failed, attempts: 3, response_json: None),
+  ]
+  assert players(stored)
+    == expected([#("p1", 1, Some(6.0)), #("p2", 1, Some(10.0))])
+}
+
+pub fn an_answer_that_names_no_ratings_is_skipped_test() {
+  let nonsense =
+    Stored(
+      game_number: 1,
+      status: Done,
+      attempts: 1,
+      response_json: Some("{\"turns\":[]}"),
+    )
+  assert players([nonsense, done(2, 5.0, 5.0)])
+    == expected([#("p1", 1, Some(5.0)), #("p2", 1, Some(5.0))])
+}
+
+pub fn the_average_is_one_vote_per_game_test() {
+  assert ratings.average([4.0, 5.0, 6.0]) == Some(5.0)
+  assert ratings.average([1.0, 2.0, 2.0, 2.0]) == Some(1.8)
+  assert ratings.average([0.11, 0.11, 0.11]) == Some(0.1)
+  assert ratings.average([]) == None
+}
+
+pub fn a_room_that_is_not_there_says_so_and_nothing_else_test() {
+  // No room, a room still in its lobby, and a slug that is not the room's
+  // game: one answer for all three, so a caller learns nothing about a room
+  // it did not ask for.
+  let gone = fakes.ctx() |> fakes.with_room(None, None)
+  assert ratings.ratings_json(gone, "backgammon", "000007")
+    == Error(error.NotFound(ratings.not_found_message))
+
+  assert ratings.ratings_json(room_with("chess", []), "backgammon", "000007")
+    == Error(error.NotFound(ratings.not_found_message))
+
+  let lobby =
+    Ctx(
+      ..room_with("backgammon", []),
+      rooms: rooms_caps.RoomsCaps(
+        ..room_with("backgammon", []).rooms,
+        game: fn(_) { Error(errors.GameNotStarted) },
+      ),
+    )
+  assert result.is_error(ratings.ratings_json(lobby, "backgammon", "000007"))
+}

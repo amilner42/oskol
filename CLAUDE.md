@@ -178,7 +178,7 @@ src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     error, envelope), caps (the IO a handler may do),
                     rooms (codes, names, errors, invite), guests/identity,
                     landing/copy, reviews/report, handlers (rooms, landing,
-                    reviews)
+                    reviews, record, ratings)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
@@ -219,7 +219,8 @@ assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay rea
                                  decoders, the board at each step, verdicts per record line
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
-assets/src/Games/Backgammon/View.elm  the backgammon board
+assets/src/Games/Backgammon/View.elm  the backgammon board (and the two
+                                 player bars: name, presence dot, match PR)
 assets/src/View/Clock.elm        clock display
 assets/css/app.css               the multicade/notebook design system (paper, pixel,
                                  pix, btn-arcade, tile, bg-board...)
@@ -327,6 +328,10 @@ GET  /papi/games/:slug/rooms/:id/record  (open)
                                        `record`; `you` is the seat the board faces --
                                        the reader's own, else the first -- and `seated`
                                        says whether that seat is theirs)
+GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
+                                       games, pr}]} -- each seat's PR over the
+                                       games of THIS match the engine has
+                                       graded, or null while it has graded none
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 GET  /papi/me/prefs                    {ok, prefs}
@@ -394,6 +399,18 @@ game or a room talks to it.
   PR, error, grade and mistake counts and luck. A game with no review yet
   answers `pending` and is queued; the others are `done`, `failed`,
   `empty` (no complete turn) and `playing`.
+- A **match PR** is the same rows read the other way round:
+  `GET /papi/games/:slug/rooms/:id/ratings` answers one entry per seat —
+  the plain mean, to one decimal, of that seat's PR in the games of *this
+  room* the engine has graded (`src/oskol/handlers/ratings.gleam`, on the
+  `analysis.stored` cap; `report.player_prs` reads just the ratings out of
+  an answer rather than the whole review). A game still pending, failed or
+  unfinished counts for nothing, and a match with none graded shows no
+  number. It is display only, and open like the record; the table prints
+  it beside each name and asks again when a game ends. It is deliberately
+  *this match* and not a career average: a career one needs a join from a
+  seat to a person (`games.players[i].guest_id`), which waits for accounts
+  — `bg-career-pr` in Aveline.
 - Config `:oskol, :analysis`: prod reads `ANALYSIS_URL` (default
   `http://oskol-analysis.flycast`) and connects over IPv6 (Fly's private
   network; `ANALYSIS_IPV6=false` turns it off). Dev defaults to

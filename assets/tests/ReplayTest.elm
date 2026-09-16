@@ -121,6 +121,8 @@ decoding =
                 Expect.all
                     [ \r -> Expect.equal [ 1, 2, 3 ] (List.map .number r.games)
                     , \r -> Expect.equal "0bec7bb403d96f546cf96b17b2dffa9c" r.you
+                    , \r -> Expect.equal True r.seated
+                    , \r -> Expect.equal False shared.seated
                     , \r -> Expect.equal True r.cube
                     , \r -> Expect.equal 3 r.target
                     , \r -> Expect.equal [ 0, 0, 0, 0, 0, 5, 0, 3, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2 ] r.start.white.points
@@ -474,21 +476,19 @@ rendered =
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-note" ]
                     |> Query.has [ Selector.text "Bad", Selector.text "24/14" ]
-        , test "a link that carries a seat's token says which side is theirs, whichever way the board faces" <|
+        , test "no bar tells a reader which seat is theirs: the bars carry a name, a dot and a PR and nothing else" <|
             \_ ->
                 Expect.all
-                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "you" ] |> Query.count (Expect.equal 1)
-                    , \m -> m |> run [ Flipped ] |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "you" ] |> Query.count (Expect.equal 1)
+                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.text "YOU" ]
+                    , \m -> m |> run [ Flipped ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.text "YOU" ]
                     ]
                     (loaded (Just 3))
-        , test "a shared link belongs to neither player: nobody is told they are you" <|
+        , test "a replayed position is nobody's connection, so no bar wears a presence dot" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3 }
-                    |> Tuple.first
-                    |> run [ GotRecord (Ok shared) ]
+                loaded (Just 3)
                     |> Page.view
                     |> Query.fromHtml
-                    |> Query.findAll [ Selector.class "you" ]
+                    |> Query.findAll [ Selector.class "bar-dot" ]
                     |> Query.count (Expect.equal 0)
         , test "the board turns around: the flip control names whose side is at the bottom" <|
             \_ ->

@@ -1165,10 +1165,8 @@ a.q-card:hover, a.q-card:focus-visible {
 :is(.bg-page, .bg-still) .swatch.black { background: var(--bg-checker-dark); border-color: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35); }
 :is(.bg-page, .bg-still) .bar-turn { color: #fff; }
 :is(.bg-page, .bg-still) .bar-pips { color: rgba(255, 255, 255, 0.6); }
-:is(.bg-page, .bg-still) .bar-tag.you { background: var(--bg-accent); color: var(--bg-frame); }
-:is(.bg-page, .bg-still) .bar-tag.outline { border: 2px solid rgba(255, 255, 255, 0.6); }
+:is(.bg-page, .bg-still) .bar-pr { color: rgba(255, 255, 255, 0.6); }
 :is(.bg-page, .bg-still) .bar-tag.pick { border: 2px solid var(--bg-accent); color: var(--bg-accent); }
-:is(.bg-page, .bg-still) .bar-tag.away { color: var(--red); }
 :is(.bg-page, .bg-still) .score-chip { border: 2px solid rgba(255, 255, 255, 0.55); background: transparent; color: #fff; padding: 2px 6px; }
 :is(.bg-page, .bg-still) .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
 :is(.bg-page, .bg-still) .clock-chip.running { border-color: var(--bg-accent); color: var(--bg-accent); background: transparent; }
@@ -1259,6 +1257,40 @@ a.q-card:hover, a.q-card:focus-visible {
    would push the turn list to nothing. */
 .bg-record-sheet .bg-record-games { max-height: 24dvh; }
 /* The bars as every other table draws them. */
+/* The presence dot: beside a name, steady green while that player's socket
+   is up, flashing green for the first seconds of an absence (most of those
+   come straight back), and a pale grey once it has lasted. No wording --
+   the whole point is that it reads at a glance and takes no room on a
+   phone.
+
+   Both colours are fixed and both wear a dark ring: the eight boards run
+   from near-black (#1d2230) to tan (#b08a5e) behind these bars, and a
+   themed colour would sink into some of them -- the mistake the last-move
+   ring made before it became a fixed colour. */
+.bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+  background: #3ecf6d;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.55);
+}
+.bar-dot.lost { animation: bar-dot-flash 0.9s ease-in-out infinite; }
+.bar-dot.off { background: #d7dbe0; }
+@keyframes bar-dot-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar-dot.lost { animation: none; opacity: 0.55; }
+}
+/* On the narrowest phones the PR is what gives: a name and a pip count are
+   the game, and a rating that squeezed the names off the bar would be the
+   wrong trade. */
+@media (max-width: 374px) {
+  .bg-page .bar-pr { display: none; }
+}
+
 .player-bar { border: 3px solid var(--ink); background: #fff; box-shadow: 4px 4px 0 0 var(--ink); }
 .player-bar.active { border-color: var(--bg-sky); box-shadow: 4px 4px 0 0 var(--bg-sky); background: color-mix(in oklab, var(--bg-sky) 14%, #fff); }
 .score-chip { border: 2px solid var(--ink); background: #fff; padding: 2px 6px; }

@@ -126,6 +126,8 @@ type alias Model =
     , session : Session -- the CSRF token /papi writes carry
     , prefs : Dict String String -- this viewer's display preferences (a board's colours)
     , picked : List String -- preference keys this viewer set here, which no answer may undo
+    , ratings : Dict String Float -- each seat's PR so far in this match, once a game of it is graded
+    , awaySince : Dict String Int -- client time (ms) each absent player's drop was noticed
     }
 
 
@@ -154,6 +156,8 @@ init session config =
       , session = session
       , prefs = session.prefs
       , picked = []
+      , ratings = Dict.empty
+      , awaySince = Dict.empty
       }
     , Cmd.batch
         -- One tick late, deliberately: a port message sent while the program
@@ -164,6 +168,11 @@ init session config =
         -- already carried what this one stored locally, so the board is
         -- painted before this answers; this is what follows them about.
         , Catalog.fetchPrefs session GotPrefs
+
+        -- How the two of them are playing this match. Asked for once here
+        -- and again when the game ends, which is when the engine gets
+        -- another game to grade.
+        , Catalog.fetchRatings session config.slug config.gameId GotRatings
         ]
     )
 
@@ -221,6 +230,7 @@ type Msg
     | ShareReported String
     | ShareLabelCleared
     | GotPrefs (Result Api.Error (Dict String String))
+    | GotRatings (Result Api.Error (Dict String Float))
     | PrefSaved (Result Api.Error (Dict String String))
     | NoOp
 
@@ -322,10 +332,20 @@ update msg model =
                     )
 
         ClockSynced posix ->
+            let
+                at =
+                    Time.posixToMillis posix
+            in
             stay
                 { model
-                    | clockReceivedAt = Time.posixToMillis posix
-                    , nowMs = Time.posixToMillis posix
+                    | clockReceivedAt = at
+                    , nowMs = at
+
+                    -- Every payload asks for the time right after it lands,
+                    -- so this is where a fresh absence gets its real
+                    -- moment rather than a clock reading that may be
+                    -- minutes stale.
+                    , awaySince = notedAway at model
                 }
                 Cmd.none
 
@@ -380,6 +400,14 @@ update msg model =
         GotPrefs (Err _) ->
             -- A preference is a nicety: a board that stays the colour this
             -- browser last stored is a perfectly good outcome.
+            stay model Cmd.none
+
+        GotRatings (Ok ratings) ->
+            stay { model | ratings = ratings } Cmd.none
+
+        GotRatings (Err _) ->
+            -- A PR beside a name is a nicety too, and the bars read fine
+            -- without one. Keep whatever was there.
             stay model Cmd.none
 
         PrefSaved (Ok prefs) ->
@@ -446,11 +474,32 @@ applyPayload payload model =
 
                 Nothing ->
                     NoOut
+
+        -- It is over, so the analysis engine has one more game to say
+        -- something about than it did: ask again. Only on the edge, so the
+        -- updates that keep arriving over a finished position ask once
+        -- between them.
+        ratingsCmd =
+            if finished /= Nothing && alreadyFinished model == Nothing then
+                Catalog.fetchRatings model.session model.gameSlug model.gameId GotRatings
+
+            else
+                Cmd.none
+
+        finished =
+            finishedWinners payload
     in
     ( updated
-    , Cmd.batch [ Task.perform ClockSynced Time.now, rollCmd ]
+    , Cmd.batch [ Task.perform ClockSynced Time.now, rollCmd, ratingsCmd ]
     , follow
     )
+
+
+{-| Whether the page already knew this game was over.
+-}
+alreadyFinished : Model -> Maybe (List String)
+alreadyFinished model =
+    model.payload |> Maybe.andThen finishedWinners
 
 
 {-| Measure the drop zones for a backgammon drag: the client rects of the
@@ -486,6 +535,29 @@ measureDropZones targets =
 awayIds : GamePayload -> List String
 awayIds payload =
     payload.players |> List.filter (\p -> not p.connected) |> List.map .id
+
+
+{-| When each absent player's drop was noticed. A player already noted
+keeps the moment they were first missed, so the seconds their dot flashes
+for run from the drop; one who is back is forgotten, so a second drop
+flashes again.
+-}
+notedAway : Int -> Model -> Dict String Int
+notedAway at model =
+    model.payload
+        |> Maybe.map awayIds
+        |> Maybe.withDefault []
+        |> List.map (\id -> ( id, Dict.get id model.awaySince |> Maybe.withDefault at ))
+        |> Dict.fromList
+
+
+{-| Is any absence still inside its flashing window? The clock is not the
+only reason this page needs the time.
+-}
+flashing : Model -> Bool
+flashing model =
+    Dict.values model.awaySince
+        |> List.any (\since -> model.nowMs - since < Backgammon.presenceFlashMs)
 
 
 connectionStatusFromString : String -> ConnectionStatus
@@ -622,7 +694,7 @@ subscriptions model =
     Sub.batch
         [ receiveFromChannel handleChannelMessage
         , shareResult ShareReported
-        , if clockRunning model then
+        , if clockRunning model || flashing model then
             Time.every 200 ClockTick
 
           else
@@ -691,9 +763,10 @@ view model =
                                     , nameOf = nameOf model
                                     , rematchReady = payload.rematchReady
                                     , finished = finished
-                                    , away = awayIds payload
+                                    , away = Just (awayIds payload)
+                                    , awaySince = \id -> Dict.get id model.awaySince
+                                    , prOf = \id -> Dict.get id model.ratings
                                     , theme = theme model
-                                    , you = Just payload.playerId
                                     , replayHref = replayHref model payload
                                     }
                                 )

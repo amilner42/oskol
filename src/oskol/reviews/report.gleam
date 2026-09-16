@@ -122,6 +122,24 @@ pub fn parse(body: String) -> Result(Review, String) {
   |> result.replace_error("The engine's review did not read as a review")
 }
 
+/// Just the performance ratings, in seat order, without reading the turns.
+/// A whole review is large (every turn, with its candidate moves); a match
+/// PR needs two numbers out of it, and asks for only those.
+pub fn player_prs(body: String) -> Result(List(Float), String) {
+  json.parse(
+    body,
+    decode.field(
+      "players",
+      decode.list({
+        use pr <- decode.field("pr", number())
+        decode.success(pr)
+      }),
+      decode.success,
+    ),
+  )
+  |> result.replace_error("The engine's review named no ratings")
+}
+
 /// JSON numbers from Python may be written as 0 or 0.0.
 fn number() -> Decoder(Float) {
   decode.one_of(decode.float, [decode.int |> decode.map(int.to_float)])
