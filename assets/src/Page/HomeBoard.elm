@@ -9,7 +9,7 @@ buttons on it: nothing here is a game, and nothing is sent anywhere.
 
 import Games.Backgammon.View
 import Html exposing (Html, div, span, text)
-import Html.Attributes exposing (attribute, class, style)
+import Html.Attributes exposing (attribute, class, id, style)
 import Ui.Shell
 
 
@@ -22,7 +22,7 @@ view config =
             [ div [ class "bg-stack" ]
                 [ topBar config.picker
                 , board
-                    [ div [ class "home-menu grid grid-cols-2 gap-2.5 sm:gap-3" ] (config.actions ++ [ config.join ] ++ config.soon) ]
+                    [ div [ id "home-menu", class "home-menu grid grid-cols-2 gap-2.5 sm:gap-3" ] (config.actions ++ [ config.join ] ++ config.soon) ]
                 , bar "white" config.you True
                 ]
             ]

@@ -16,16 +16,26 @@ const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 440
 const SEAT = /\/backgammon\/([^/?#]+)/;
 
 /**
+ * `/` (or a game's own page) -> CREATE GAME -> the dialog, filled in by
+ * nobody. For a smoke that wants to look at the dialog itself (what a name
+ * is prefilled with, what the summary reads); a smoke that only wants a
+ * game calls `createGame`.
+ */
+async function openCreateDialog(page, path = '/') {
+  await page.goto(`${BASE}${path}`);
+  await page.click('#start-game');
+  // The dialog waits for the game's data, so wait for the dialog.
+  await page.waitForSelector('#create-modal #create-name');
+}
+
+/**
  * `/` -> CREATE GAME -> the dialog -> START GAME. `mode`, `clock` and
  * `twist` are option values (`match3`, `bg3`, `pick_dice`); anything left
  * out stays on the dialog's default. Resolves once the creator is in the
  * lobby with the link to share.
  */
 async function createGame(page, { name = 'Alice', mode, clock, twist } = {}) {
-  await page.goto(`${BASE}/`);
-  await page.click('#start-game');
-  // The dialog waits for the game's data, so wait for the dialog.
-  await page.waitForSelector('#create-modal #create-name');
+  await openCreateDialog(page);
   await page.fill('#create-name', name);
   if (mode) await page.selectOption('#create-mode', mode);
   if (clock) await page.selectOption('#create-clock', clock);
@@ -74,4 +84,4 @@ async function takeSeat(page, name) {
   return { gameId: page.url().match(SEAT)[1], url: page.url(), summary };
 }
 
-module.exports = { BASE, createGame, joinByLink, joinByCode, openSeat };
+module.exports = { BASE, openCreateDialog, createGame, joinByLink, joinByCode, openSeat };

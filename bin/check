@@ -3,7 +3,8 @@
 #
 #   bin/check            compile, Gleam tests, Elm typecheck + tests, Elixir tests
 #   bin/check --browser  the same, then the Playwright smokes against a
-#                        server this script starts and stops
+#                        server this script starts and stops (on PORT, 4400
+#                        by default -- give it another when 4400 is taken)
 #
 # Elm tests read a generated fixture corpus, so it is regenerated first
 # (the committed golden replays are left alone; the Gleam suite guards them).
@@ -42,7 +43,10 @@ if [[ "${1:-}" == "--browser" ]]; then
   step "assets"
   mix assets.build >/dev/null
 
-  step "server"
+  port="${PORT:-4400}"
+  export PORT="$port"
+
+  step "server on $port"
   log="${TMPDIR:-/tmp}/oskol-check-server.log"
   # A new session so the whole process group can be killed; macOS has no
   # setsid, so fall back to killing the one process there.
@@ -56,10 +60,10 @@ if [[ "${1:-}" == "--browser" ]]; then
     trap 'kill '"$server"' 2>/dev/null || true' EXIT
   fi
   for _ in $(seq 1 90); do
-    curl -sf -o /dev/null http://localhost:4400/ && break
+    curl -sf -o /dev/null "http://localhost:$port/" && break
     sleep 1
   done
-  curl -sf -o /dev/null http://localhost:4400/ || { echo "server did not start; see $log"; exit 1; }
+  curl -sf -o /dev/null "http://localhost:$port/" || { echo "server did not start; see $log"; exit 1; }
 
   step "browser smokes"
   # Playwright's own Chromium download is not always available (sandboxes);
@@ -76,13 +80,13 @@ if [[ "${1:-}" == "--browser" ]]; then
   node playwright/test-backgammon-board/test.js
   # A phone held sideways: the board fits the screen height exactly. It
   # arranges its own danced room too (as the dance smoke does).
-  PORT=4400 node playwright/test-backgammon-landscape/test.js
+  node playwright/test-backgammon-landscape/test.js
   # Arranges its own room (a seed that dances, replayed into the dev
   # database) and opens it, so it also covers rehydrating mid-dance.
-  PORT=4400 node playwright/test-backgammon-dance/test.js
+  node playwright/test-backgammon-dance/test.js
   # A finished match played again, with its analysis stubbed in the browser;
   # it arranges its own room (setup.exs) the same way.
-  PORT=4400 node playwright/test-backgammon-replay/test.js
+  node playwright/test-backgammon-replay/test.js
   node playwright/test-guest-prefill/test.js
 fi
 

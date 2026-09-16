@@ -7,9 +7,10 @@ smokes for you.
 
 ```
 playwright/
-├── lib/flows.js            create a game, join by link or code, open a seat
+├── lib/flows.js            open CREATE GAME's dialog, create a game, join by link
+│                         or code, open a seat
 ├── test-backgammon-smoke/   creates a game, stages a move, plays, with a clock
-├── review-pages/            screenshots of the library, start pages and lobby (desktop + phone)
+├── review-pages/            screenshots of the home board, CREATE GAME and the lobby
 ├── review-games/            screenshots of games in play (desktop + phone)
 └── screenshots/             output of the review scripts
 ```
@@ -28,7 +29,9 @@ are for eyeballing; look at `playwright/screenshots/`.
 Create `playwright/test-<name>/test.js`. Get into a game through
 `playwright/lib/flows.js` rather than clicking through the pages yourself:
 `createGame(page, {name, mode, clock, twist})` goes to `/`, presses CREATE
-GAME, fills the dialog by id and resolves with `{gameId, url, inviteUrl}`;
+GAME, fills the dialog by id and resolves with `{gameId, url, inviteUrl}`
+(`openCreateDialog(page)` stops at the open dialog, for a smoke that wants
+to look at it);
 `joinByLink(page, inviteUrl, name)` and `joinByCode(page, code, name)` take
 the second seat; `openSeat(page, url)` reopens one. Then act on the Elm game
 page through its buttons and assert on the DOM, never on internal state.

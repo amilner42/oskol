@@ -6,15 +6,15 @@
  * Finally it reloads Alice's page and asserts the board she picked came
  * back -- the pick is kept in her browser and against her guest row, and
  * neither the room nor Bob is any the wiser (Bob's board is checked to be
- * still the default).
+ * still the one it started on).
  *
  * Run with the server up:
  *   PORT=4405 node playwright/review-themes/test.js
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { createGame, joinByLink } = require('../lib/flows');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const OUT = process.env.SHOTS_DIR || 'playwright/screenshots/review-themes';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -45,27 +45,21 @@ async function themeClass(page) {
 
   try {
     const p1 = await context.newPage();
-    await p1.goto(`${BASE}/backgammon`);
-    await p1.waitForSelector('#create-name');
-    await p1.fill('input[name="player_name"]', 'Alice');
     // A match, so the header carries its longest label; a single game's
     // "SINGLE GAME" would not prove the row fits.
-    await p1.waitForSelector('#format-match7');
-    await p1.click('#format-match7');
-    await p1.click('#create-game');
-    await p1.waitForSelector('#game-code');
-    const gameId = await p1.textContent('#game-code');
+    const { gameId, inviteUrl } = await createGame(p1, { name: 'Alice', mode: 'match7' });
 
     const p2 = await theirs.newPage();
-    await p2.goto(`${BASE}/backgammon?game=${gameId.trim()}`);
-    await p2.waitForSelector('#join-game');
-    await p2.fill('input[name="player_name"]', 'Bob');
-    await p2.click('#join-game');
+    await joinByLink(p2, inviteUrl, 'Bob');
 
     await p1.waitForSelector('.bg-page', { timeout: 20000 });
     await p2.waitForSelector('.bg-page', { timeout: 20000 });
     await sleep(1500);
-    log(`game ${gameId.trim()} is on`);
+    log(`game ${gameId} is on`);
+
+    // Whatever board a visitor gets by default: Bob's must still be this
+    // one at the end, whichever one the site ships with.
+    const bobsAtFirst = await themeClass(p2);
 
     for (const theme of THEMES) {
       await p1.click('#bg-theme-button');
@@ -89,7 +83,7 @@ async function themeClass(page) {
     await p2.reload();
     await p2.waitForSelector('.bg-page', { timeout: 20000 });
     const bobs = await themeClass(p2);
-    if (bobs !== 'bg-theme-walnut') {
+    if (bobs !== bobsAtFirst) {
       throw new Error(`the opponent's board changed too: ${bobs}`);
     }
 

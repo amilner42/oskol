@@ -3,6 +3,7 @@
  */
 
 const playwright = require('playwright');
+const { BASE } = require('../lib/flows');
 
 async function main() {
   const browser = await playwright.chromium.launch({
@@ -13,7 +14,7 @@ async function main() {
   const page = await browser.newPage();
 
   console.log('Navigating to landing page...');
-  await page.goto('http://localhost:4400');
+  await page.goto(BASE);
   await new Promise(r => setTimeout(r, 2000));
 
   await page.screenshot({
