@@ -505,6 +505,18 @@ rendered =
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-flip" ]
                     |> Query.has [ Selector.attribute (Html.Attributes.title "Turn the board around (P2 at the bottom)") ]
+        , test "a stranger is not told an analysis is running that nobody started" <|
+            \_ ->
+                Page.init session { slug = "backgammon", gameId = "000011", token = Nothing, game = Just 3 }
+                    |> Tuple.first
+                    |> run [ GotRecord (Ok shared), GotReviews (Ok (reviews ReplayFixtures.reviewsPending)) ]
+                    |> Expect.all
+                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-analysis-state" ] |> Query.has [ Selector.text "has not been analysed yet" ]
+
+                        -- and does not sit there asking again for work that
+                        -- was never queued
+                        , \m -> m |> Page.polling |> Expect.equal False
+                        ]
         , test "a failed game offers to try again" <|
             \_ ->
                 loaded (Just 3)

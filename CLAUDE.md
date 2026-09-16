@@ -364,9 +364,10 @@ game or a room talks to it.
   room at a time, after the persister has flushed. A game already done or
   queued is not run again; a failure is stored and retried at most twice
   (30 s, then 2 min). The queue is in memory: after a restart, the first
-  request for a game still owed a review queues it again. That is also how
-  games finished before reviews existed get theirs: lazily, never by a
-  migration.
+  request for a game still owed a review queues it again -- a request from
+  one of its own seats, since reading a review is open to anyone with the
+  room and engine time is not. That is also how games finished before
+  reviews existed get theirs: lazily, never by a migration.
 - `game_reviews` holds one row per (game_id, game_number): status
   (`pending`, `done`, `failed`), attempts, the engine's response verbatim.
   `GET /papi/games/backgammon/rooms/:id/reviews` reshapes it for a page

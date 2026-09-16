@@ -3523,7 +3523,7 @@ viewRecordBody ctx asSheet =
 
 {-| One finished game in the match history: which game, who won it and how,
 and the score it left. Tapping it opens that game's moves in the list, for
-a seat: the moves come from `/record`, which opens on the room, so
+a seat: the moves come from `/record`, so
 a spectator (a scene with no viewer) reads the result lines and nothing
 more.
 -}

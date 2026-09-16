@@ -432,6 +432,21 @@ currentReview model =
     model.reviews |> Maybe.andThen (Replay.gameReview model.game)
 
 
+{-| Whether this reader holds one of the room's seats, which the server
+decides from the link's token. Only a player's own visit puts the analysis
+engine to work, so only a player is told an analysis is on its way, and
+only a player may ask for a failed one again.
+-}
+seated : Model -> Bool
+seated model =
+    case model.record of
+        Loaded record ->
+            record.seated
+
+        _ ->
+            False
+
+
 {-| Ask again while some game's analysis is still on its way, or while the
 reviews have not answered yet -- and never past `maxPolls`.
 -}
@@ -439,6 +454,7 @@ polling : Model -> Bool
 polling model =
     model.polls
         < maxPolls
+        && (seated model || model.reviewsError)
         && (case model.reviews of
                 Just reviews ->
                     Replay.wantsPolling reviews || model.reviewsError
@@ -1122,7 +1138,12 @@ viewAnalysisState model game analysis =
         Just g ->
             case ( g.status, g.review ) of
                 ( Pending, _ ) ->
-                    if model.polls >= maxPolls then
+                    if not (seated model) then
+                        -- Nobody started this one: an analysis is engine
+                        -- time, and only a player's own visit spends it.
+                        line "is-quiet" [ text ("Game " ++ String.fromInt game.number ++ " has not been analysed yet.") ]
+
+                    else if model.polls >= maxPolls then
                         line "is-quiet" [ text "Still being analysed. Reload the page to check again." ]
 
                     else
@@ -1137,7 +1158,7 @@ viewAnalysisState model game analysis =
                         , button
                             [ class "btn-arcade plain compact pixel text-[7px] px-2 py-1"
                             , id "rp-retry"
-                            , disabled (List.member game.number model.retrying || model.token == Nothing)
+                            , disabled (List.member game.number model.retrying || not (seated model))
                             , onClick (Retry game.number)
                             ]
                             [ text
