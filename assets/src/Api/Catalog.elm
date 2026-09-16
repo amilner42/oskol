@@ -8,6 +8,7 @@ module Api.Catalog exposing
     , GamePage
     , Library
     , NewGame
+    , Ratings
     , Room
     , RoomSeat
     , RoomState(..)
@@ -243,21 +244,30 @@ performance rating over the games of it the analysis engine has graded, by
 player id. A seat the server has no number for is simply not in the
 dictionary, and nor is anyone in a match with nothing graded yet.
 -}
-fetchRatings : Session -> String -> String -> (Result Error (Dict String Float) -> msg) -> Cmd msg
+type alias Ratings =
+    { prs : Dict String Float -- by player id, for the seats that have a number
+    , pending : Bool -- the engine still owes this room an answer
+    }
+
+
+fetchRatings : Session -> String -> String -> (Result Error Ratings -> msg) -> Cmd msg
 fetchRatings session slug gameId toMsg =
     Api.get session (roomPath slug gameId ++ "/ratings") ratingsDecoder toMsg
 
 
-ratingsDecoder : Decoder (Dict String Float)
+ratingsDecoder : Decoder Ratings
 ratingsDecoder =
-    D.field "players"
-        (D.list
-            (D.map2 Tuple.pair
-                (D.field "player_id" D.string)
-                (D.field "pr" (D.nullable D.float))
+    D.map2 Ratings
+        (D.field "players"
+            (D.list
+                (D.map2 Tuple.pair
+                    (D.field "player_id" D.string)
+                    (D.field "pr" (D.nullable D.float))
+                )
             )
+            |> D.map (List.filterMap (\( id, pr ) -> Maybe.map (Tuple.pair id) pr) >> Dict.fromList)
         )
-        |> D.map (List.filterMap (\( id, pr ) -> Maybe.map (Tuple.pair id) pr) >> Dict.fromList)
+        (D.oneOf [ D.field "pending" D.bool, D.succeed False ])
 
 
 {-| Keep one preference. The server is the whitelist: an unknown key or a

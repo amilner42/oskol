@@ -128,6 +128,8 @@ type alias Model =
     , picked : List String -- preference keys this viewer set here, which no answer may undo
     , ratings : Dict String Float -- each seat's PR so far in this match, once a game of it is graded
     , awaySince : Dict String Int -- client time (ms) each absent player's drop was noticed
+    , awayNew : List String -- players who went missing in the latest payload, awaiting their moment
+    , ratingsPolls : Int -- asks made while a grade is owed; 0 is not waiting for one
     }
 
 
@@ -158,6 +160,8 @@ init session config =
       , picked = []
       , ratings = Dict.empty
       , awaySince = Dict.empty
+      , awayNew = []
+      , ratingsPolls = 0
       }
     , Cmd.batch
         -- One tick late, deliberately: a port message sent while the program
@@ -230,7 +234,8 @@ type Msg
     | ShareReported String
     | ShareLabelCleared
     | GotPrefs (Result Api.Error (Dict String String))
-    | GotRatings (Result Api.Error (Dict String Float))
+    | GotRatings (Result Api.Error Catalog.Ratings)
+    | PollRatings
     | PrefSaved (Result Api.Error (Dict String String))
     | NoOp
 
@@ -403,12 +408,30 @@ update msg model =
             stay model Cmd.none
 
         GotRatings (Ok ratings) ->
-            stay { model | ratings = ratings } Cmd.none
+            stay
+                { model
+                    | ratings = ratings.prs
+
+                    -- The server says whether the engine still owes this
+                    -- room an answer. Nothing owed, nothing to wait for --
+                    -- including on a page opened long after a match.
+                    , ratingsPolls =
+                        if ratings.pending then
+                            nextPoll (max 1 model.ratingsPolls)
+
+                        else
+                            0
+                }
+                Cmd.none
 
         GotRatings (Err _) ->
-            -- A PR beside a name is a nicety too, and the bars read fine
-            -- without one. Keep whatever was there.
-            stay model Cmd.none
+            -- A PR beside a name is a nicety, and the bars read fine
+            -- without one. Keep whatever was there, and let the asking run
+            -- out rather than hammering a server that is not answering.
+            stay { model | ratingsPolls = nextPoll model.ratingsPolls } Cmd.none
+
+        PollRatings ->
+            stay model (Catalog.fetchRatings model.session model.gameSlug model.gameId GotRatings)
 
         PrefSaved (Ok prefs) ->
             keep (absorb prefs model) model
@@ -451,6 +474,12 @@ applyPayload payload model =
             else
                 ( model.backgammon, Cmd.none )
 
+        -- Who has gone missing since the last update. On the very first
+        -- payload nobody has: an opponent who left an hour ago is already
+        -- gone, and flashing at them would say the opposite of the truth.
+        previousAway =
+            model.payload |> Maybe.map awayIds |> Maybe.withDefault (awayIds payload)
+
         updated =
             { model
                 | payload = Just payload
@@ -459,6 +488,7 @@ applyPayload payload model =
                 , backgammon = backgammon
                 , connectionStatus = Connected
                 , lobby = Nothing
+                , awayNew = awayIds payload |> List.filter (\id -> not (List.member id previousAway))
             }
 
         -- A rematch accepted while this client was away arrives in the
@@ -475,31 +505,71 @@ applyPayload payload model =
                 Nothing ->
                     NoOut
 
-        -- It is over, so the analysis engine has one more game to say
-        -- something about than it did: ask again. Only on the edge, so the
-        -- updates that keep arriving over a finished position ask once
-        -- between them.
-        ratingsCmd =
-            if finished /= Nothing && alreadyFinished model == Nothing then
-                Catalog.fetchRatings model.session model.gameSlug model.gameId GotRatings
+        -- A game of this room is over, so the analysis engine has one more
+        -- to grade than it did. Asking right now is too early -- the room
+        -- queues the review as the game ends and the engine takes a while
+        -- -- so this also starts the asking, which runs until the server
+        -- says nothing is owed (`GotRatings`).
+        gameEnded =
+            matchPoints payload > (model.payload |> Maybe.map matchPoints |> Maybe.withDefault (matchPoints payload))
+
+    in
+    ( { updated
+        | ratingsPolls =
+            if gameEnded then
+                1
 
             else
-                Cmd.none
+                updated.ratingsPolls
+      }
+    , Cmd.batch
+        [ Task.perform ClockSynced Time.now
+        , rollCmd
+        , if gameEnded then
+            Catalog.fetchRatings model.session model.gameSlug model.gameId GotRatings
 
-        finished =
-            finishedWinners payload
-    in
-    ( updated
-    , Cmd.batch [ Task.perform ClockSynced Time.now, rollCmd, ratingsCmd ]
+          else
+            Cmd.none
+        ]
     , follow
     )
 
 
-{-| Whether the page already knew this game was over.
+{-| How often the page asks again while a grade is owed, and how many
+times it is willing to. The engine takes minutes on a long game at 4-ply,
+and it is answering a room, not this page: five seconds apart for five
+minutes is patient without being rude.
 -}
-alreadyFinished : Model -> Maybe (List String)
-alreadyFinished model =
-    model.payload |> Maybe.andThen finishedWinners
+pollRatingsEveryMs : Float
+pollRatingsEveryMs =
+    5000
+
+
+maxRatingsPolls : Int
+maxRatingsPolls =
+    60
+
+
+{-| The next ask, or a stop once the page has asked enough times. Zero
+means it is not waiting for anything.
+-}
+nextPoll : Int -> Int
+nextPoll polls =
+    if polls > 0 && polls < maxRatingsPolls then
+        polls + 1
+
+    else
+        0
+
+
+{-| The points this room has awarded so far, both players' scores added up.
+Every game that ends awards at least one, so this rising is how the page
+notices a game ending -- which the outcome does not say, since a game
+inside a match leaves the match itself ongoing.
+-}
+matchPoints : GamePayload -> Int
+matchPoints payload =
+    payload.update.scene.players |> List.map (Protocol.counter "score") |> List.sum
 
 
 {-| Measure the drop zones for a backgammon drag: the client rects of the
@@ -547,7 +617,23 @@ notedAway at model =
     model.payload
         |> Maybe.map awayIds
         |> Maybe.withDefault []
-        |> List.map (\id -> ( id, Dict.get id model.awaySince |> Maybe.withDefault at ))
+        |> List.filterMap
+            (\id ->
+                case Dict.get id model.awaySince of
+                    Just since ->
+                        Just ( id, since )
+
+                    Nothing ->
+                        -- Not noted yet: a moment only if they went missing
+                        -- in the payload that just arrived. An absence this
+                        -- page found already in progress has no moment, and
+                        -- the dot goes straight to gone.
+                        if List.member id model.awayNew then
+                            Just ( id, at )
+
+                        else
+                            Nothing
+            )
         |> Dict.fromList
 
 
@@ -696,6 +782,11 @@ subscriptions model =
         , shareResult ShareReported
         , if clockRunning model || flashing model then
             Time.every 200 ClockTick
+
+          else
+            Sub.none
+        , if model.ratingsPolls > 0 then
+            Time.every pollRatingsEveryMs (\_ -> PollRatings)
 
           else
             Sub.none

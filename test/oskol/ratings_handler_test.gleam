@@ -100,9 +100,17 @@ fn players(stored: List(Stored)) -> String {
 }
 
 fn expected(entries: List(#(String, Int, Option(Float)))) -> String {
+  expecting(False, entries)
+}
+
+fn expecting(
+  pending: Bool,
+  entries: List(#(String, Int, Option(Float))),
+) -> String {
   json.to_string(
     json.object([
       #("ok", json.bool(True)),
+      #("pending", json.bool(pending)),
       #(
         "players",
         json.array(entries, fn(entry) {
@@ -145,7 +153,22 @@ pub fn pending_and_failed_games_do_not_count_test() {
     Stored(game_number: 3, status: Failed, attempts: 3, response_json: None),
   ]
   assert players(stored)
-    == expected([#("p1", 1, Some(6.0)), #("p2", 1, Some(10.0))])
+    == expecting(True, [#("p1", 1, Some(6.0)), #("p2", 1, Some(10.0))])
+}
+
+pub fn a_failure_that_will_be_tried_again_is_still_owed_test() {
+  // The page is told to ask again while a retry is coming, and told to
+  // stop once the engine has given up.
+  let retryable = [
+    Stored(game_number: 1, status: Failed, attempts: 1, response_json: None),
+  ]
+  assert players(retryable)
+    == expecting(True, [#("p1", 0, None), #("p2", 0, None)])
+
+  let given_up = [
+    Stored(game_number: 1, status: Failed, attempts: 3, response_json: None),
+  ]
+  assert players(given_up) == expected([#("p1", 0, None), #("p2", 0, None)])
 }
 
 pub fn an_answer_that_names_no_ratings_is_skipped_test() {

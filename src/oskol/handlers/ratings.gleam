@@ -24,7 +24,7 @@ import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import oskol/caps/analysis.{type Stored, Done, Stored}
+import oskol/caps/analysis.{type Stored, Done, Failed, Pending, Stored}
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
@@ -35,7 +35,9 @@ import oskol/reviews/report
 pub const not_found_message = "No ratings for that game"
 
 /// One entry per seat, in seat order: the player id, how many games of this
-/// match have been graded, and the PR to print (null while none have).
+/// match have been graded, and the PR to print (null while none have). Plus
+/// `pending`, which says the engine still owes this room an answer, so a
+/// table watching the number knows to ask again rather than poll forever.
 pub fn ratings_json(
   ctx: Ctx,
   game_slug: String,
@@ -46,9 +48,11 @@ pub fn ratings_json(
     True, Some(log) if log.slug == reviews.slug -> log.seats
     _, _ -> []
   }
-  let graded = graded(ctx.analysis.stored(game_id))
+  let stored = ctx.analysis.stored(game_id)
+  let graded = graded(stored)
   Ok(
     envelope.ok([
+      #("pending", json.bool(owed(stored))),
       #(
         "players",
         json.array(list.index_map(seats, fn(s, i) { #(s.0, i) }), fn(pair) {
@@ -77,6 +81,21 @@ fn graded(stored: List(Stored)) -> List(List(Float)) {
       Stored(status: Done, response_json: Some(body), ..) ->
         report.player_prs(body)
       _ -> Error("not graded")
+    }
+  })
+}
+
+/// Is a grade still on its way? A row the queue has opened but the engine
+/// has not answered, or one that failed and will be tried again. Cheap on
+/// purpose: a table asks this every few seconds while it waits, and it must
+/// not replay a log to find out.
+fn owed(stored: List(Stored)) -> Bool {
+  list.any(stored, fn(s) {
+    case s {
+      Stored(status: Pending, ..) -> True
+      Stored(status: Failed, attempts: attempts, ..) ->
+        attempts < reviews.max_attempts
+      _ -> False
     }
   })
 }

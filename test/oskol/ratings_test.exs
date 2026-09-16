@@ -42,8 +42,9 @@ defmodule Oskol.RatingsTest do
     %{game_id: game_id, p1: p1, p2: p2} = started(42, "match5")
     Persister.flush()
 
-    # Nothing graded yet: both seats are named, neither wears a number.
-    assert %{"ok" => true, "players" => none} = ratings(conn, game_id)
+    # Nothing graded yet: both seats are named, neither wears a number, and
+    # nothing is owed, so a watching table is told to stop asking.
+    assert %{"ok" => true, "pending" => false, "players" => none} = ratings(conn, game_id)
     assert %{"games" => 0, "pr" => nil} = seat(none, p1)
     assert %{"games" => 0, "pr" => nil} = seat(none, p2)
 
@@ -62,8 +63,13 @@ defmodule Oskol.RatingsTest do
     # A game still pending and one the engine gave up on count for nothing.
     :ok = Reviews.save(game_id, 3, "pending", 0, nil, nil)
     :ok = Reviews.save(game_id, 4, "failed", 3, nil, "the engine said no")
-    assert %{"players" => still_two} = ratings(conn, game_id)
+    assert %{"pending" => true, "players" => still_two} = ratings(conn, game_id)
     assert %{"games" => 2, "pr" => 8.5} = seat(still_two, p1)
+
+    # The engine answers the one it was working on: nothing owed again.
+    :ok = Reviews.save(game_id, 3, "done", 1, answer(7.0, 11.0), nil)
+    assert %{"pending" => false, "players" => three} = ratings(conn, game_id)
+    assert %{"games" => 3, "pr" => 8.0} = seat(three, p1)
   end
 
   test "a room that is not there says so, and says nothing else", %{conn: conn} do
