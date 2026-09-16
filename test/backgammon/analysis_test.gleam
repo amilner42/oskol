@@ -22,6 +22,7 @@ import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
+import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 
@@ -669,6 +670,128 @@ pub fn a_passed_double_names_the_double_and_the_drop_test() {
   let assert [next, ..] = g2.turns
   assert next.entry == Some(0)
   check_entries([g1, g2], final)
+}
+
+/// A whole match to 7, as the engine is told it: every turn carries what
+/// each player still needs from the score as it then stood, the Crawford
+/// game is the one that follows someone reaching 6, and nobody may double
+/// in it. The expected scores are read off the record's own result lines,
+/// not off the encoder.
+pub fn a_match_tells_the_engine_the_score_and_crawford_test() {
+  // Everyone doubles at the first chance and drops it: a point a game, so
+  // the match runs its full length quickly.
+  let #(log, final) =
+    drive(
+      "match7",
+      [],
+      11,
+      clock.NoClock,
+      2000,
+      prefer(["double", "drop", "ready", "play", "move", "roll"]),
+    )
+  let assert Ok(games) = analysis.games(log)
+  // The running score after each finished game, oldest first.
+  let results =
+    record.results(state.record(final))
+    |> list.filter_map(fn(e) {
+      case e {
+        record.GameOver(scores: scores, ..) -> Ok(scores)
+        _ -> Error(Nil)
+      }
+    })
+  assert list.length(results) >= 7
+  let score_of = fn(scores: List(#(String, Int)), id: String) {
+    list.key_find(scores, id) |> result.unwrap(0)
+  }
+  let crawford_games =
+    list.filter_map(games, fn(g) {
+      // What the score was when this game began
+      let before = case list.drop(results, g.number - 2) {
+        [scores, ..] if g.number > 1 -> scores
+        _ -> [#("p1", 0), #("p2", 0)]
+      }
+      let one_away =
+        list.any(["p1", "p2"], fn(id) { score_of(before, id) == 6 })
+      // Every turn of the game says the same thing, from its mover's side
+      list.each(g.turns, fn(turn) {
+        let other = case turn.player_id {
+          "p1" -> "p2"
+          _ -> "p1"
+        }
+        assert #(turn.position.away1, turn.position.away2)
+          == #(
+            7 - score_of(before, turn.player_id),
+            7 - score_of(before, other),
+          )
+        assert turn.position.crawford
+          == { one_away && !crawford_done(games, g) }
+      })
+      case g.turns {
+        [turn, ..] if turn.position.crawford -> Ok(g.number)
+        _ -> Error(Nil)
+      }
+    })
+  // Exactly one Crawford game, and no cube in it
+  let assert [crawford] = crawford_games
+  let assert Ok(g) = list.find(games, fn(g) { g.number == crawford })
+  list.each(g.turns, fn(turn) {
+    assert !analysis.engine_can_double(turn.position)
+    assert turn.double == None
+  })
+}
+
+/// Crawford is played once: a game after one that was already Crawford is
+/// not another (the rule is "the game after the first time someone gets
+/// within one point").
+fn crawford_done(games: List(analysis.GameTurns), g: analysis.GameTurns) -> Bool {
+  games
+  |> list.take(g.number - 1)
+  |> list.any(fn(earlier) {
+    case earlier.turns {
+      [turn, ..] -> turn.position.crawford
+      [] -> False
+    }
+  })
+}
+
+pub fn unlimited_play_is_a_money_game_with_jacoby_test() {
+  let #(log, _) =
+    drive(
+      "unlimited",
+      [],
+      11,
+      clock.NoClock,
+      1500,
+      prefer(["double", "take", "play", "move", "roll"]),
+    )
+  let assert Ok(games) = analysis.games(log)
+  assert games != []
+  list.each(games, fn(g) {
+    // Gammons only count once the cube is turned: the engine is told so
+    assert g.jacoby
+    assert string.contains(
+      json.to_string(analysis.request_json(g)),
+      "\"jacoby\":true",
+    )
+    list.each(g.turns, fn(turn) {
+      assert #(turn.position.away1, turn.position.away2) == #(0, 0)
+      assert turn.position.crawford == False
+    })
+  })
+  // A single game is neither: one point each, and no Jacoby to apply
+  let #(single, _) =
+    drive(
+      "single",
+      [],
+      11,
+      clock.NoClock,
+      400,
+      prefer(["play", "move", "roll"]),
+    )
+  let assert Ok([g, ..]) = analysis.games(single)
+  assert !g.jacoby
+  let assert [turn, ..] = g.turns
+  assert #(turn.position.away1, turn.position.away2) == #(1, 1)
 }
 
 // ---------- Reading the engine's boards back ----------
