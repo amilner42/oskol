@@ -409,6 +409,7 @@ still takes another one:
 
 ```bash
 bin/check             # everything below, in order; add --browser for the Playwright smokes
+                      # (PORT picks the port it serves them on; 4400 by default)
 mix deps.get          # Elixir + Gleam deps
 mix compile           # compiles Gleam (via mix_gleam) and Elixir
 bin/test-gleam        # Gleam unit, rules, oracle, property, hidden-info and golden tests
@@ -434,12 +435,15 @@ node playwright/test-backgammon-replay/test.js  # the replay of a finished match
                                                # the room): steps, keys, swipes, analysis
                                                # pending -> done, retry, phones; the analysis
                                                # is stubbed unless REPLAY_REAL=1
-node playwright/test-spa-landing/test.js        # landing pages, old links redirect, a full create -> play click-through
-node playwright/review-pages/test.js            # screenshots of library, start pages, lobby (desktop + phone)
+node playwright/test-spa-landing/test.js        # the home board and CREATE GAME's dialog, old
+                                               # links redirect, a full create -> play click-through
+node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
+                                               # the lobby and the theme picker (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`.
+CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`,
+smokes included (one job, one server, in `bin/check`'s order).
 
 Notes:
 - mix and the gleam CLI share `build/`. `mix compile` removes the

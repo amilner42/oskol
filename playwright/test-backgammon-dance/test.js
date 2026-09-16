@@ -17,9 +17,9 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { BASE, createGame, joinByLink } = require('../lib/flows');
 const { execFileSync } = require('child_process');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4455}`;
 const SHOTS = process.env.DANCE_SHOTS || 'playwright/screenshots/test-backgammon-dance';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -177,20 +177,11 @@ async function main() {
     // 6: a fresh game on a clock, showing the delay.
     const p1 = await context.newPage();
     watch(p1, 'clock-p1');
-    await p1.goto(`${BASE}/backgammon`);
-    await p1.waitForSelector('#create-name');
-    await p1.fill('input[name="player_name"]', 'Ada');
-    await p1.click('#clock-blitz');
-    await p1.click('#create-game');
-    await p1.waitForSelector('#share-link');
-    const timedId = new URL(p1.url()).pathname.split('/')[2];
+    const timed = await createGame(p1, { name: 'Ada', clock: 'bg3' });
 
     const p2 = await context.newPage();
     watch(p2, 'clock-p2');
-    await p2.goto(`${BASE}/backgammon?game=${timedId}`);
-    await p2.waitForSelector('#join-game');
-    await p2.fill('input[name="player_name"]', 'Bo');
-    await p2.click('#join-game');
+    await joinByLink(p2, timed.inviteUrl, 'Bo');
     await p1.waitForSelector('.bg-board', { timeout: 15000 });
     await p2.waitForSelector('.bg-board', { timeout: 15000 });
 

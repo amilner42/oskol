@@ -1,10 +1,11 @@
 /**
  * The Elm landing pages, end to end.
  *
- * 1. Screenshots of the library and a game's start page, phone and desktop;
- *    the removed games' old links redirect to the library
- * 2. The library's head reads exactly as it should, the one game has a tile,
- *    and nothing scrolls sideways at either width
+ * 1. Screenshots of the home board and CREATE GAME's dialog, phone and
+ *    desktop; the removed games' old links redirect home
+ * 2. The home page is one board with the four ways in on it, nothing
+ *    scrolls sideways at either width, and the dialog opens over it
+ *    without leaving the page
  * 3. A full create -> play click-through: Alice creates a backgammon game and
  *    lands in the waiting room, Bob opens the invite link and types a name,
  *    and both end up at the board
@@ -13,8 +14,8 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { BASE, openCreateDialog, createGame, joinByLink } = require('../lib/flows');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = 'playwright/screenshots/test-spa-landing';
 const PHONE = { width: 390, height: 844 };
 const DESKTOP = { width: 1280, height: 900 };
@@ -35,39 +36,44 @@ async function shots(browser, viewport, tag, errors) {
     watch(page, tag, errors);
 
     await page.goto(`${BASE}/`);
-    await page.waitForSelector('#game-library a', { state: 'attached' });
-    // The art reel is a CSS animation; let it settle on a frame.
+    await page.waitForSelector('#home-menu #start-game');
+    // The board's checkers animate in; let them settle on a frame.
     await page.waitForTimeout(400);
-    await page.screenshot({ path: `${SHOTS}/${tag}-01-library.png`, fullPage: true });
+    await page.screenshot({ path: `${SHOTS}/${tag}-01-home.png`, fullPage: true });
 
-    // One grid of tiles at every width; the head says two things and no more.
-    const head = (await page.textContent('h1')).replace(/\s+/g, ' ').trim();
-    if (!head.includes('PLAY THE CLASSICS.') || !head.includes('WITH A TWIST.'))
-      throw new Error(`the headline reads "${head}"`);
-    const sub = (await page.textContent('h1 + p')).replace(/\s+/g, ' ').replace(/(\d)/g, ' $1 ').replace(/\s+/g, ' ').trim();
-    if (sub !== '1 create game 2 share code 3 play a friend')
-      throw new Error(`the steps read "${sub}"`);
-    const tiles = await page.locator('#game-library a.q-card').count();
-    if (tiles !== 1) throw new Error(`expected 1 game tile, saw ${tiles}`);
+    // The home page is the board with the four ways in laid on it.
+    const checkers = await page.locator('.home-board .checker').count();
+    if (checkers !== 30) throw new Error(`the home board shows ${checkers} checkers, not 30`);
+    const menu = (await page.textContent('#home-menu')).replace(/\s+/g, ' ').trim();
+    for (const entry of ['CREATE GAME', 'JOIN GAME', 'TACTICS', 'ANALYSIS']) {
+      if (!menu.includes(entry)) throw new Error(`the menu reads "${menu}", with no ${entry}`);
+    }
     // Nothing scrolls sideways at either width.
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth
     );
-    if (overflow > 0) throw new Error(`the library scrolls sideways by ${overflow}px`);
+    if (overflow > 0) throw new Error(`the home page scrolls sideways by ${overflow}px`);
 
-    // Client-side navigation to a game page: no page load.
-    await page.click('#game-backgammon');
-    await page.waitForSelector('#create-game');
-    await page.waitForSelector('#rules');
-    if (new URL(page.url()).pathname !== '/backgammon')
-      throw new Error(`expected /backgammon, saw ${page.url()}`);
+    // CREATE GAME opens its dialog over the board: no page load, and the
+    // board is still behind it.
+    await page.click('#start-game');
+    await page.waitForSelector('#create-modal #create-name');
+    await page.waitForSelector('#create-mode');
+    await page.waitForSelector('#create-clock');
+    if (new URL(page.url()).pathname !== '/') throw new Error(`the dialog navigated to ${page.url()}`);
     await page.waitForTimeout(200);
-    await page.screenshot({ path: `${SHOTS}/${tag}-02-backgammon.png`, fullPage: true });
+    await page.screenshot({ path: `${SHOTS}/${tag}-02-create.png`, fullPage: true });
+    await page.click('#close-create');
+    await page.waitForSelector('#create-modal', { state: 'detached' });
 
-    // The games that were removed: their old links land on the library.
+    // A game's own page is the same home board (it is the one game).
+    await page.goto(`${BASE}/backgammon`);
+    await page.waitForSelector('#home-menu #start-game');
+
+    // The games that were removed: their old links land home.
     for (const old of ['/poker', '/go?game=123456', '/chess/123456?t=secret']) {
       await page.goto(`${BASE}${old}`);
-      await page.waitForSelector('#game-library a', { state: 'attached' });
+      await page.waitForSelector('#home-menu #start-game');
       if (new URL(page.url()).pathname !== '/') throw new Error(`${old} landed on ${page.url()}`);
     }
     log(`${tag} screenshots done`);
@@ -82,41 +88,32 @@ async function clickThrough(browser, errors) {
   try {
     const alice = await context.newPage();
     watch(alice, 'alice', errors);
-    await alice.goto(`${BASE}/backgammon`);
-    await alice.waitForSelector('#create-name');
 
     // Validation is inline and does not leave the page.
+    await openCreateDialog(alice);
     await alice.click('#create-game');
     await alice.waitForSelector('#form-error');
+    if (new URL(alice.url()).pathname !== '/') throw new Error(`the empty name navigated to ${alice.url()}`);
     log('empty name rejected inline');
+    await alice.click('#close-create');
 
-    await alice.fill('input[name="player_name"]', 'Alice');
-    await alice.click('#format-match3');
-    await alice.click('#clock-blitz');
-    await alice.click('#create-game');
+    const game = await createGame(alice, { name: 'Alice', mode: 'match3', clock: 'bg3' });
 
     // The waiting room: her seat, the invite link and the code.
     await alice.waitForSelector('#game-code');
-    await alice.waitForSelector('#share-link');
     const gameId = (await alice.textContent('#game-code')).trim();
-    const path = new URL(alice.url()).pathname;
-    if (path !== `/backgammon/${gameId}`) throw new Error(`creator landed at ${path}`);
+    if (gameId !== game.gameId) throw new Error(`the code reads ${gameId}, the URL says ${game.gameId}`);
     if (!new URL(alice.url()).searchParams.get('t')) throw new Error('creator has no seat token');
     const summary = await alice.textContent('#setup-summary');
-    if (!/Match to 3/.test(summary) || !/Blitz clock/.test(summary))
+    if (!/Match to 3/.test(summary) || !/3 min/.test(summary))
       throw new Error(`waiting room summary reads "${summary}"`);
     await alice.screenshot({ path: `${SHOTS}/desktop-04-waiting.png`, fullPage: true });
     log(`game ${gameId} created; waiting room shown`);
 
     const bob = await context.newPage();
     watch(bob, 'bob', errors);
-    await bob.goto(`${BASE}/backgammon?game=${gameId}`);
-    await bob.waitForSelector('#join-game');
-    const challenge = await bob.textContent('#setup-summary');
-    if (!/Match to 3/.test(challenge)) throw new Error(`invite summary reads "${challenge}"`);
-    await bob.screenshot({ path: `${SHOTS}/desktop-05-invite.png`, fullPage: true });
-    await bob.fill('input[name="player_name"]', 'Bob');
-    await bob.click('#join-game');
+    const seat = await joinByLink(bob, game.inviteUrl, 'Bob');
+    if (!/Match to 3/.test(seat.summary)) throw new Error(`invite summary reads "${seat.summary}"`);
 
     await alice.waitForSelector('.checker', { timeout: 20000 });
     await bob.waitForSelector('.checker', { timeout: 20000 });

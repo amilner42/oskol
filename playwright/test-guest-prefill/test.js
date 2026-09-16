@@ -2,16 +2,16 @@
  * Guest identity smoke: the site silently remembers a visitor's name.
  *
  * 1. Create a backgammon game as "Alice"
- * 2. Navigate back to the create page in the same browser context:
- *    the name field is prefilled "Alice" (guest cookie -> saved name)
+ * 2. Open CREATE GAME again in the same browser context: the name field
+ *    is prefilled "Alice" (guest cookie -> saved name)
  * 3. A fresh context (a different visitor) gets an empty field
  *
  * Run with the server up:  node playwright/test-guest-prefill/test.js
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { openCreateDialog, createGame } = require('../lib/flows');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = 'playwright/screenshots/test-guest-prefill';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 
@@ -28,19 +28,16 @@ async function run(browser, errors) {
   try {
     const page = await context.newPage();
     watch(page, 'guest');
-    await page.goto(`${BASE}/backgammon`);
-    await page.waitForSelector('#create-name');
-    if ((await page.inputValue('input[name="player_name"]')) !== '')
+    await openCreateDialog(page);
+    if ((await page.inputValue('#create-name')) !== '')
       throw new Error('a brand-new guest must start with an empty name field');
-    await page.fill('input[name="player_name"]', 'Alice');
-    await page.click('#create-game');
-    await page.waitForSelector('#share-link');
+    await page.click('#close-create');
+    await createGame(page, { name: 'Alice' });
     log('game created as Alice');
 
-    // Same browser, back to the create page: the site remembers.
-    await page.goto(`${BASE}/backgammon`);
-    await page.waitForSelector('#create-name');
-    const prefilled = await page.inputValue('input[name="player_name"]');
+    // Same browser, CREATE GAME again: the site remembers.
+    await openCreateDialog(page);
+    const prefilled = await page.inputValue('#create-name');
     if (prefilled !== 'Alice') throw new Error(`expected prefill "Alice", saw "${prefilled}"`);
     await page.screenshot({ path: `${SHOTS}/01-prefilled.png` });
     log('create page prefills Alice');
@@ -51,9 +48,8 @@ async function run(browser, errors) {
     try {
       const other = await fresh.newPage();
       watch(other, 'fresh');
-      await other.goto(`${BASE}/backgammon`);
-      await other.waitForSelector('#create-name');
-      const empty = await other.inputValue('input[name="player_name"]');
+      await openCreateDialog(other);
+      const empty = await other.inputValue('#create-name');
       if (empty !== '') throw new Error(`a fresh visitor saw a prefilled name: "${empty}"`);
       await other.screenshot({ path: `${SHOTS}/02-fresh-empty.png` });
     } finally {

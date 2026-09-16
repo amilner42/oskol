@@ -1,7 +1,7 @@
 /**
  * The "Pick dice" twist, at phone width.
  *
- * 1. /backgammon -> create a single game with the twist ON, second player joins
+ * 1. CREATE GAME -> a single game with the twist ON; the second player joins by link
  * 2. The opening mover plays their turn; the other player then faces a real
  *    choice (ROLL or PICK DICE), so nothing auto-rolls
  * 3. Open the picker (screenshot), cancel, reopen, pick 6-6, confirm
@@ -14,8 +14,8 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { createGame, joinByLink } = require('../lib/flows');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = process.env.PICK_SHOTS || 'playwright/screenshots/test-backgammon-pick';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -70,23 +70,13 @@ async function main() {
   try {
     const p1 = await context.newPage();
     watch(p1, 'p1');
-    await p1.goto(`${BASE}/backgammon`);
-    await p1.waitForSelector('#create-name');
-    await p1.fill('input[name="player_name"]', 'Alice');
-    // Single game, twist ON.
-    await p1.click('#choice-twist-pick_dice');
-    await p1.waitForSelector('#choice-twist-pick_dice.tile-mine');
-    await p1.click('#create-game');
-    await p1.waitForSelector('#share-link');
-    const gameId = new URL(p1.url()).pathname.split('/')[2];
+    // Single game (the default mode), twist ON.
+    const { gameId, inviteUrl } = await createGame(p1, { name: 'Alice', twist: 'pick_dice' });
     log(`Game ${gameId} created with the twist on`);
 
     const p2 = await context.newPage();
     watch(p2, 'p2');
-    await p2.goto(`${BASE}/backgammon?game=${gameId}`);
-    await p2.waitForSelector('#join-game');
-    await p2.fill('input[name="player_name"]', 'Bob');
-    await p2.click('#join-game');
+    await joinByLink(p2, inviteUrl, 'Bob');
     await p1.waitForURL(`**/backgammon/${gameId}**`);
     await p2.waitForURL(`**/backgammon/${gameId}**`);
     log('Both players on the game page');

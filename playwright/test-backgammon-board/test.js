@@ -20,8 +20,8 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { createGame, joinByLink } = require('../lib/flows');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-board';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -94,22 +94,14 @@ async function main() {
   try {
     const p1 = await desktop.newPage();
     watch(p1, 'desktop');
-    await p1.goto(`${BASE}/backgammon`);
-    await p1.waitForSelector('#create-name');
-    await p1.fill('input[name="player_name"]', 'Alice');
-    await p1.click('#format-match3'); // the cube plays in match formats
-    await p1.click('#create-game');
-    await p1.waitForSelector('#share-link');
-    const gameId = new URL(p1.url()).pathname.split('/')[2];
+    // A match format: the cube plays there.
+    const { gameId, inviteUrl } = await createGame(p1, { name: 'Alice', mode: 'match3' });
     log(`Game ${gameId} created`);
 
     const p2 = await phone.newPage();
     watch(p2, 'phone');
-    await p2.goto(`${BASE}/backgammon?game=${gameId}`);
-    await p2.waitForSelector('#join-game');
-    await p2.waitForSelector('text=Match to 3');
-    await p2.fill('input[name="player_name"]', 'Bob');
-    await p2.click('#join-game');
+    const seat = await joinByLink(p2, inviteUrl, 'Bob');
+    if (!/Match to 3/.test(seat.summary)) throw new Error(`the invite reads "${seat.summary}"`);
     await p1.waitForURL(`**/backgammon/${gameId}**`);
     await p2.waitForURL(`**/backgammon/${gameId}**`);
     const name = (page) => (page === p1 ? 'desktop' : 'phone');

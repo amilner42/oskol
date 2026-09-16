@@ -26,9 +26,9 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { BASE, createGame, joinByLink } = require('../lib/flows');
 const { execFileSync } = require('child_process');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-landscape';
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -214,21 +214,12 @@ async function main() {
 
     const p1 = await contexts[0].newPage();
     watch(p1, 'landscape-1');
-    await p1.goto(`${BASE}/backgammon`);
-    await p1.waitForSelector('#create-name');
-    await p1.fill('input[name="player_name"]', 'Ada');
-    await p1.click('#format-match3'); // a format with the cube on the rail
-    await p1.click('#clock-blitz'); // and a clock, so the delay pip shows up
-    await p1.click('#create-game');
-    await p1.waitForSelector('#share-link');
-    const gameId = new URL(p1.url()).pathname.split('/')[2];
+    // A format with the cube on the rail, and a clock so the delay pip shows.
+    const { gameId, inviteUrl } = await createGame(p1, { name: 'Ada', mode: 'match3', clock: 'bg3' });
 
     const p2 = await contexts[1].newPage();
     watch(p2, 'landscape-2');
-    await p2.goto(`${BASE}/backgammon?game=${gameId}`);
-    await p2.waitForSelector('#join-game');
-    await p2.fill('input[name="player_name"]', 'Bo');
-    await p2.click('#join-game');
+    await joinByLink(p2, inviteUrl, 'Bo');
     await p1.waitForURL(`**/backgammon/${gameId}**`);
     await p2.waitForURL(`**/backgammon/${gameId}**`);
     const urls = [p1.url(), p2.url()];

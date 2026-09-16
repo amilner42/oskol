@@ -5,36 +5,25 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
+const { createGame, joinByLink } = require('../lib/flows');
 
-const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const OUT = process.argv[2] || 'playwright/screenshots/review-games';
 fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 
-async function lobby(context, slug, format, clock) {
+async function lobby(context, slug, mode, clock) {
   const p1 = await context.newPage();
-  await p1.goto(`${BASE}/${slug}`);
-  await p1.waitForSelector('[data-phx-main].phx-connected');
-  await p1.fill('input[name="player_name"]', 'Alice');
-  await p1.click(`#format-${format}`);
-  if (clock) await p1.click(`#clock-${clock}`);
-  await p1.click('#create-game');
-  await p1.waitForSelector('#share-link');
-  const gameId = new URL(p1.url()).searchParams.get('game');
+  const { gameId, inviteUrl } = await createGame(p1, { name: 'Alice', mode, clock });
   const p2 = await context.newPage();
-  await p2.goto(`${BASE}/${slug}?game=${gameId}`);
-  await p2.waitForSelector('[data-phx-main].phx-connected');
-  await sleep(400);
-  await p2.fill('input[name="player_name"]', 'Bob');
-  await p2.click('#join-game');
+  await joinByLink(p2, inviteUrl, 'Bob');
   await p1.waitForURL(`**/${slug}/${gameId}**`);
   await p2.waitForURL(`**/${slug}/${gameId}**`);
   return { p1, p2, gameId };
 }
 
 async function backgammon(context, tag) {
-  const { p1, p2 } = await lobby(context, 'backgammon', 'match5', 'rapid');
+  const { p1, p2 } = await lobby(context, 'backgammon', 'match5', 'bg5');
   const source = '.bg-point.source';
   await Promise.race([p1.waitForSelector(source, { timeout: 20000 }), p2.waitForSelector(source, { timeout: 20000 })]);
   const mover = (await p1.locator(source).count()) > 0 ? p1 : p2;
@@ -66,9 +55,9 @@ async function backgammon(context, tag) {
   await sleep(300);
   await mover.screenshot({ path: `${OUT}/${tag}-bg-04-double-offered.png` });
   await mover.click('button:has-text("TAKE")');
-  await waiter.waitForSelector('button:has-text("ROLL")', { timeout: 10000 });
-  await waiter.click('button:has-text("ROLL")');
-  await sleep(800);
+  // The doubler's turn rolls itself once the cube is settled: no button.
+  await waiter.waitForSelector('.die', { timeout: 15000 });
+  await sleep(1200);
   await waiter.screenshot({ path: `${OUT}/${tag}-bg-05-after-take-rolled.png` });
   log(`${tag}: backgammon captured`);
   await p1.close(); await p2.close();
