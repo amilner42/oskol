@@ -744,6 +744,7 @@ isDoubles dice =
 
 type alias Ctx =
     { playerId : String
+    , you : Maybe String -- the seat this viewer holds, if they hold one
     , scene : Scene
     , legal : List Schema
     , model : Model
@@ -1267,7 +1268,7 @@ viewPlayerBar ctx player isMe tray =
                 ]
                 [ div [ class ("swatch shrink-0 " ++ color), title (p.name ++ " plays " ++ color) ] []
                 , span [ class "font-bold text-sm sm:text-base truncate" ] [ text p.name ]
-                , if isMe && p.id == ctx.playerId then
+                , if isMe && Just p.id == ctx.you then
                     span [ class "bar-tag you pixel text-[7px] px-1 py-0.5 shrink-0" ] [ text "YOU" ]
 
                   else
@@ -2111,7 +2112,7 @@ viewGameResult ctx between =
         , span [ style "color" "var(--pencil)" ] [ text (how ++ " · " ++ score) ]
         , case ctx.replayHref (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) of
             Just _ ->
-                span [] [ Html.br [] [], replayLink ctx (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) "REPLAY ▸" ]
+                span [] [ Html.br [] [], replayLink ctx (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) "REPLAY" ]
 
             Nothing ->
                 text ""
@@ -3273,7 +3274,8 @@ one step's dice from the next, so they never tumble.
 -}
 type alias StillBoard =
     { players : List { id : String, name : String, color : String }
-    , viewer : String
+    , viewer : String -- whose side is at the bottom
+    , you : Maybe String -- the seat the reader holds, if the link carries one
     , scores : List ( String, Int )
     , cube : Bool
     , theme : String
@@ -3345,6 +3347,7 @@ viewStill noop s =
 
         ctx =
             { playerId = s.viewer
+            , you = s.you
             , scene = scene
             , legal = []
             , model = { init | viewing = Just s.key, still = True, roll = { seq = -1 - s.key, watched = False } }
@@ -3421,8 +3424,12 @@ viewRecordBody ctx asSheet =
         finished =
             gamesOf ctx.scene
 
+        -- The history and the per-game headings belong as soon as a game
+        -- has been played to its end -- including the one just finished,
+        -- while both players are still to say they are ready -- not only
+        -- once the next game has begun.
         isMatch =
-            gameNumber > 1
+            gameNumber > 1 || finished /= []
 
         list =
             case ctx.model.browsing of
@@ -3595,8 +3602,9 @@ recordLines ctx isMatch firstGame open entries =
         ( nextGame, lines, pending ) =
             List.foldl step ( firstGame, [], True ) (List.indexedMap Tuple.pair entries)
     in
-    if pending && open && isMatch && ctx.finished == Nothing then
-        -- a new game has begun and nothing is played in it yet
+    if pending && open && isMatch && ctx.finished == Nothing && betweenGames ctx == Nothing then
+        -- a new game has begun and nothing is played in it yet (between
+        -- games it has not begun: there is nothing to head)
         lines ++ [ heading nextGame ]
 
     else

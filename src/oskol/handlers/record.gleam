@@ -33,7 +33,8 @@ pub fn record_json(
   game_id: String,
   token: String,
 ) -> Result(String, ApiError) {
-  use #(player_id, game) <- result.try(seat(ctx, slug, game_id, token))
+  use game <- result.try(room(ctx, slug, game_id))
+  let player_id = viewer(ctx, game, game_id, token)
   case instance.record(game) {
     None -> Error(error.NotFound("This game keeps no record"))
     Some(record) ->
@@ -47,6 +48,47 @@ pub fn record_json(
           #("record", record),
         ]),
       )
+  }
+}
+
+/// The running game at a room playing `slug`, for anyone: a record is every
+/// committed turn, which was on the board for both players and any
+/// spectator, so a replay asks no one who they are. A room that is not
+/// there, or a slug that is not its game, is the one `not_found_message`.
+pub fn room(
+  ctx: Ctx,
+  slug: String,
+  game_id: String,
+) -> Result(Instance, ApiError) {
+  let not_found = error.NotFound(not_found_message)
+  case rooms.lookup(ctx, game_id) {
+    None -> Error(not_found)
+    Some(_) ->
+      case ctx.rooms.slug_of(game_id) == Some(slug) {
+        False -> Error(not_found)
+        True ->
+          ctx.rooms.game(game_id)
+          |> result.replace_error(not_found)
+      }
+  }
+}
+
+/// Which way the board faces: the seat the token opens, if it opens one,
+/// else the seat that played first. A token is an orientation here, never
+/// a key -- the reader can turn the board over anyway.
+pub fn viewer(
+  ctx: Ctx,
+  game: Instance,
+  game_id: String,
+  token: String,
+) -> String {
+  case ctx.rooms.seated_game(game_id, token) {
+    Ok(#(player_id, _)) -> player_id
+    Error(_) ->
+      case instance.seats(game) {
+        [first, ..] -> first.id
+        [] -> ""
+      }
   }
 }
 

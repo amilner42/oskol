@@ -71,7 +71,17 @@ defmodule Oskol.Gleam.Caps.Rooms do
          {:error, reason} ->
            {:error, room_error(reason)}
        end
-     end, &seated_game/2}
+     end, &seated_game/2, &game/1}
+  end
+
+  # The running game at a room, for anyone: a record and a replay are what
+  # both players and any spectator already saw. It attaches nothing.
+  defp game(game_id) do
+    state = GameServer.get_state(game_id)
+
+    if state.instance == nil, do: {:error, :game_not_started}, else: {:ok, state.instance}
+  catch
+    :exit, _ -> {:error, :game_not_started}
   end
 
   # The running game a seat token opens, read and handed back as the opaque

@@ -433,17 +433,35 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert %{"white" => %{"pips" => 167}} = record["start"]
     end
 
-    test "a wrong token, or none, is not found and says nothing more", %{conn: conn} do
-      %{game_id: game_id} = GameFixtures.started(42, "match5")
+    test "anyone with the room reads the record; a wrong token only picks no seat", %{conn: conn} do
+      %{game_id: game_id, t1: t1} = GameFixtures.started(42, "match5")
 
+      seated =
+        conn
+        |> get("/papi/games/backgammon/rooms/#{game_id}/record?t=#{t1}")
+        |> json_response(200)
+
+      # A replay is what both players already saw, so the link needs no
+      # token; without one the record opens on the first seat, and the
+      # reader turns the board around themselves.
       for query <- ["?t=not-a-seat", ""] do
         body =
           conn
           |> get("/papi/games/backgammon/rooms/#{game_id}/record#{query}")
-          |> json_response(404)
+          |> json_response(200)
 
-        assert body["error"] == %{"code" => "not_found", "message" => "No record for that game"}
+        assert body["record"] == seated["record"]
+        assert body["you"] == hd(seated["record"]["players"])["id"]
       end
+    end
+
+    test "a room that does not exist is not found and says nothing more", %{conn: conn} do
+      body =
+        conn
+        |> get("/papi/games/backgammon/rooms/999999/record")
+        |> json_response(404)
+
+      assert body["error"] == %{"code" => "not_found", "message" => "No record for that game"}
     end
   end
 

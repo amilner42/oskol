@@ -11,6 +11,7 @@
     <%!-- The name this browser last played under, against the silent guest
           cookie: the create and join forms prefill it on the first paint. --%>
     <meta :if={assigns[:guest_name]} name="guest-name" content={@guest_name} />
+    <meta :if={assigns[:no_index]} name="robots" content="noindex" />
     <.live_title suffix=" · Oskol">{head_title(assigns)}</.live_title>
     <meta
       name="description"

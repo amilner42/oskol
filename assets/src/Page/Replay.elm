@@ -51,6 +51,8 @@ import Json.Encode as E
 import Process
 import Route
 import Session exposing (Session)
+import Svg
+import Svg.Attributes as SvgAttr
 import Task
 import Time
 import Url
@@ -95,6 +97,7 @@ type alias Model =
     , touch : Maybe ( Float, Float ) -- where a touch on the board began
     , polls : Int -- asks made while something was pending
     , retrying : List Int -- games whose retry is on its way
+    , flipped : Bool -- the board is turned around: the other player is at the bottom
     }
 
 
@@ -136,19 +139,28 @@ init session config =
             , touch = Nothing
             , polls = 0
             , retrying = []
+            , flipped = False
             }
     in
-    case config.token of
+    ( model
+    , Cmd.batch
+        [ Api.get session (base model ++ "/record" ++ seatQuery model) Replay.recordDecoder GotRecord
+        , fetchReviews model
+        ]
+    )
+
+
+{-| A replay asks no one who they are: the seat token, when the link
+carries one, only says which way the board faces to begin with.
+-}
+seatQuery : Model -> String
+seatQuery model =
+    case model.token of
         Just token ->
-            ( model
-            , Cmd.batch
-                [ Api.get session (base model ++ "/record?t=" ++ Url.percentEncode token) Replay.recordDecoder GotRecord
-                , fetchReviews model
-                ]
-            )
+            "?t=" ++ Url.percentEncode token
 
         Nothing ->
-            ( { model | record = Unavailable "A replay opens from a player's own link to the game." }, Cmd.none )
+            ""
 
 
 base : Model -> String
@@ -156,16 +168,11 @@ base model =
     "/papi/games/" ++ model.slug ++ "/rooms/" ++ model.gameId
 
 
-{-| The analysis opens on the same seat token the record does.
+{-| The analysis opens to anyone the record does.
 -}
 fetchReviews : Model -> Cmd Msg
 fetchReviews model =
-    case model.token of
-        Just token ->
-            Api.get model.session (base model ++ "/reviews?t=" ++ Url.percentEncode token) Replay.reviewsDecoder GotReviews
-
-        Nothing ->
-            Cmd.none
+    Api.get model.session (base model ++ "/reviews" ++ seatQuery model) Replay.reviewsDecoder GotReviews
 
 
 title : Model -> String
@@ -198,12 +205,16 @@ type Msg
     | TouchEnded ( Float, Float )
     | Retry Int
     | Follow Int -- keep this step's line in view, if it is still the current one
+    | Flipped -- turn the board around
     | NoOp
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        Flipped ->
+            ( { model | flipped = not model.flipped }, Cmd.none )
+
         GotRecord (Ok record) ->
             let
                 -- the game the link named, else the last one that was
@@ -506,6 +517,22 @@ view model =
         )
 
 
+{-| Whose side is at the bottom of the board: the seat the link carries (or
+the first seat when it carries none), turned around by the flip control.
+-}
+facing : Model -> Record -> String
+facing model record =
+    if model.flipped then
+        record.players
+            |> List.map .id
+            |> List.filter (\id -> id /= record.you)
+            |> List.head
+            |> Maybe.withDefault record.you
+
+    else
+        record.you
+
+
 viewHead : Model -> Maybe Record -> Html Msg
 viewHead model record =
     let
@@ -535,7 +562,44 @@ viewHead model record =
 
             Nothing ->
                 text ""
+        , case record of
+            Just r ->
+                button
+                    [ class "rp-flip pixel text-[8px]"
+                    , id "rp-flip"
+                    , onClick Flipped
+                    , Html.Attributes.title ("Turn the board around (" ++ (nameOf r (facing model r) |> String.toUpper) ++ " at the bottom)")
+                    ]
+                    [ flipIcon ]
+
+            Nothing ->
+                text ""
         ]
+
+
+{-| Two arrows around the board's middle: the sides swap.
+-}
+flipIcon : Html msg
+flipIcon =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 16 16"
+        , SvgAttr.width "13"
+        , SvgAttr.height "13"
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "1.6"
+        , SvgAttr.strokeLinecap "round"
+        , SvgAttr.strokeLinejoin "round"
+        , Html.Attributes.attribute "aria-hidden" "true"
+        ]
+        [ Svg.path [ SvgAttr.d "M4 6h8l-2.5-3" ] []
+        , Svg.path [ SvgAttr.d "M12 10H4l2.5 3" ] []
+        ]
+
+
+nameOf : Record -> String -> String
+nameOf record id =
+    record.players |> List.filter (\p -> p.id == id) |> List.head |> Maybe.map .name |> Maybe.withDefault ""
 
 
 viewReplay : Model -> Record -> Game -> List (Html Msg)
@@ -573,7 +637,11 @@ viewReplay model record game =
         board =
             Board.viewStill NoOp
                 { players = record.players
-                , viewer = record.you
+                , viewer = facing model record
+                , you =
+                    -- only a link that carries a seat's token is anybody's
+                    -- own: a shared replay belongs to neither player
+                    model.token |> Maybe.map (\_ -> record.you)
                 , scores = scores
                 , cube = record.cube
                 , theme = theme model

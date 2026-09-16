@@ -54,6 +54,30 @@ defmodule OskolWeb.SpaController do
     end
   end
 
+  @doc """
+  A room's replay (`/:slug/:id/replay`). It needs no seat: the Elm client
+  reads the record and the analysis from `/papi`, which are open to anyone
+  with the room, and turns the board to whichever seat the link's token
+  names, if it names one.
+  """
+  def replay(conn, %{"slug" => slug}) do
+    case GameKit.game_info(slug) do
+      {:ok, info} ->
+        copy = GameCopy.for_game(info)
+
+        conn
+        |> assign(:page_title, "Replay · " <> copy.title)
+        |> assign(:meta_description, copy.description)
+        # A room is nobody else's business to index; the page is still open
+        # to anyone who has the link.
+        |> assign(:no_index, true)
+        |> render_spa()
+
+      :error ->
+        raise OskolWeb.NotFoundError
+    end
+  end
+
   defp render_spa(conn) do
     guest_id = get_session(conn, :guest_id)
     guest_name = if guest_id, do: Oskol.Guests.touch(guest_id)

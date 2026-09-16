@@ -262,17 +262,20 @@ defmodule Oskol.ReviewsTest do
     assert conn |> get("/papi/games/poker/rooms/999999/reviews?t=x") |> json_response(404)
   end
 
-  test "a room's reviews open on a seat's token and on nothing else", %{conn: conn} do
+  test "a room's reviews open to anyone with the room, token or not", %{conn: conn} do
     engine(self())
     game_id = finished_game(5)
     wait_for(fn -> Enum.filter(Reviews.stored(game_id), &(&1.status == "done")) end)
 
-    assert %{"games" => [_ | _]} = reviews(conn, game_id)
+    seated = reviews(conn, game_id)
+    assert %{"games" => [_ | _]} = seated
 
+    # The analysis of a finished game is nobody's secret: a shared replay
+    # link reads it with no token, or with one that opens no seat.
     for query <- ["", "?t=", "?t=not-a-token"] do
       assert build_conn()
              |> get("/papi/games/backgammon/rooms/#{game_id}/reviews#{query}")
-             |> json_response(404)
+             |> json_response(200) == seated
     end
   end
 end

@@ -787,7 +787,7 @@ suite =
                                 , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "GAMMON · 0-0" ]
 
                                 -- the game just played can be replayed from here
-                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.find [ class "bg-replay-link" ] |> Query.has [ text "REPLAY ▸" ]
+                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.find [ class "bg-replay-link" ] |> Query.has [ text "REPLAY" ]
                                 , \_ -> rendered |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "READY" ]
                                 , \_ -> rendered |> Query.hasNot [ id "bg-ready-status" ]
 
@@ -2198,6 +2198,50 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
+             , test "between games the finished game is already in the history, with no heading for the game to come" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                result =
+                                    gameOver 1 "p1" "gammon" 4 [ ( "p1", 4 ), ( "p2", 0 ) ]
+
+                                paused =
+                                    let
+                                        scene =
+                                            (withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ], result ]) 1 u
+                                                |> withGames (E.list identity [ result ])
+                                            ).scene
+                                                |> withData "between_games"
+                                                    (E.object
+                                                        [ ( "ready", E.list E.string [] )
+                                                        , ( "winner", E.string "p1" )
+                                                        , ( "kind", E.string "gammon" )
+                                                        , ( "stakes", E.string "gammon" )
+                                                        , ( "points", E.int 4 )
+                                                        , ( "cube", E.int 1 )
+                                                        ]
+                                                    )
+                                                |> withData "to_act" E.null
+                                                |> withData "to_move" E.null
+                                    in
+                                    { u | scene = { scene | phase = "between_games" }, legal = [ { name = "ready", label = "Ready", params = [] } ] }
+
+                                panel =
+                                    render "p1" paused |> Query.find [ id "bg-record" ]
+                            in
+                            Expect.all
+                                [ -- the game just played is a row of the match history already
+                                  \_ -> panel |> Query.findAll [ class "bg-record-game" ] |> Query.count (Expect.equal 1)
+                                , \_ -> panel |> Query.find [ class "bg-record-game" ] |> Query.has [ text "G1" ]
+
+                                -- and the game that has not begun heads nothing
+                                , \_ -> panel |> Query.hasNot [ text "GAME 2" ]
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
              , test "a past turn put up between games shows its dice, not the live result" <|
                 \_ ->
                     case firstUpdate of
@@ -2470,6 +2514,7 @@ watching =
 ctx : String -> Protocol.Update -> View.Model -> View.Ctx
 ctx playerId update model =
     { playerId = playerId
+    , you = Just playerId
     , scene = update.scene
     , legal = update.legal
     , model = model

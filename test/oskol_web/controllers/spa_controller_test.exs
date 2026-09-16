@@ -135,6 +135,18 @@ defmodule OskolWeb.SpaControllerTest do
       assert_error_sent 404, fn -> get(conn, ~p"/nope") end
     end
 
+    test "a replay is the Elm shell for anyone with the link, seat or not", %{conn: conn} do
+      html = conn |> get(~p"/backgammon/123456/replay") |> html_response(200)
+      assert html =~ ~s(id="elm-app")
+      assert html =~ ~s(>Replay · )
+      # A room is nobody's business to index, but anyone with the link reads it.
+      assert html =~ ~s(<meta name="robots" content="noindex")
+    end
+
+    test "a replay of a game Oskol does not host is a 404", %{conn: conn} do
+      assert_error_sent 404, fn -> get(conn, "/nope/123456/replay") end
+    end
+
     test "the games Oskol no longer hosts send their old links home", %{conn: conn} do
       for path <- [
             "/poker",
