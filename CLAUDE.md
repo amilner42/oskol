@@ -226,7 +226,7 @@ assets/css/app.css               the multicade/notebook design system (paper, pi
                                  pix, btn-arcade, tile, bg-board...)
                                  plus the landing's quiet notebook (quiet, q-card,
                                  q-title, q-eyebrow, q-opt, q-btn, q-field)
-                                 and the eight backgammon boards (.bg-theme-*)
+                                 and the sixteen backgammon boards (.bg-theme-*)
 src/oskol/guests/prefs.gleam     the display preferences a guest may keep, and
                                  the values each one allows
 ```

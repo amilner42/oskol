@@ -651,7 +651,7 @@
   background: rgba(12, 16, 24, 0.62);
   border-color: rgba(255, 255, 255, 0.6);
 }
-.bg-page.home-board .home-themes > button .bg-theme-chip {
+.bg-page.home-board #bg-theme-button .bg-theme-chip {
   width: 26px; height: 16px; border-radius: 5px;
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 0 0 3px rgba(0, 0, 0, 0.35);
 }
@@ -802,7 +802,7 @@ a.q-card:hover, a.q-card:focus-visible {
   --bg-checker-edge: var(--ink);
 }
 
-/* The eight boards. A theme is exactly this: the same board in another
+/* The sixteen boards. A theme is exactly this: the same board in another
    wood, set by redefining the tokens above on `.bg-page`. Nothing about a
    theme is known to the engine, the room or the opponent — it is one class
    on this player's page, kept against their guest row and their browser
@@ -811,47 +811,68 @@ a.q-card:hover, a.q-card:focus-visible {
    Contrast is the whole job, checked at phone size: light men must read on
    the felt and on both points, dark men likewise, and the accent (the
    player to act, a picked checker, a cube offer) must read against the
-   frame it is drawn on. `walnut` is the default and is deliberately
-   identical to the tokens above. */
+   frame it is drawn on. `walnut` is deliberately identical to the tokens
+   above; `midnight` is what a player who has never picked one gets.
+
+   Every board sets the whole checker set, even where it only repeats the
+   default. A theme class also paints the picker's swatch, which is drawn
+   inside the page of whatever board the player is on: a token a theme
+   leaves out would be inherited from that board, and a tile would show men
+   its own board never shows. */
 .bg-theme-walnut {
   --bg-frame: #5a4636; --bg-slot: #493829; --bg-felt: #efe4d0;
   --bg-point-a: #8c6a4f; --bg-point-b: #dcc6a8; --bg-accent: #dcaa52;
+  --bg-checker-light: #ffffff; --bg-checker-light-ink: var(--ink);
+  --bg-checker-dark: var(--ink); --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
 /* Night board: a dark slab, slate felt, cold blue accent. */
 .bg-theme-midnight {
   --bg-frame: #1d2230; --bg-slot: #141823; --bg-felt: #3a4256;
   --bg-point-a: #2c3547; --bg-point-b: #59657f; --bg-accent: #6fc3ff;
   --bg-checker-dark: #11131c; --bg-checker-edge: #0d0f16;
+  --bg-checker-light: #ffffff; --bg-checker-light-ink: var(--ink);
+  --bg-checker-dark-ink: #ffffff;
 }
 /* Forest felt: a card-room green under dark wood. */
 .bg-theme-forest {
   --bg-frame: #33372c; --bg-slot: #262a21; --bg-felt: #2f6b4f;
   --bg-point-a: #1f4d39; --bg-point-b: #8fc7a4; --bg-accent: #f0c766;
   --bg-checker-dark: #14201a; --bg-checker-edge: #101812;
+  --bg-checker-light: #ffffff; --bg-checker-light-ink: var(--ink);
+  --bg-checker-dark-ink: #ffffff;
 }
 /* Sand: a beach board, bleached and hot. */
 .bg-theme-sand {
   --bg-frame: #b08a5e; --bg-slot: #8f6c44; --bg-felt: #f7eddc;
   --bg-point-a: #c98f4f; --bg-point-b: #ead7b7; --bg-accent: #1f6f8b;
   --bg-checker-dark: #4a3122;
+  --bg-checker-light: #ffffff; --bg-checker-light-ink: var(--ink);
+  --bg-checker-dark-ink: #ffffff; --bg-checker-edge: var(--ink);
 }
 /* Ivory & ebony: a chess-set board, black and cream on grey. */
 .bg-theme-ivory {
   --bg-frame: #2b2b2b; --bg-slot: #1c1c1c; --bg-felt: #e8e4dc;
   --bg-point-a: #4b4b4b; --bg-point-b: #c3bdb1; --bg-accent: #d8b06a;
   --bg-checker-light: #f6f1e4; --bg-checker-dark: #16161a;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
 /* Cherry: red wood, warm and loud. */
 .bg-theme-cherry {
   --bg-frame: #6d2320; --bg-slot: #551a18; --bg-felt: #f3e2d2;
   --bg-point-a: #a33c32; --bg-point-b: #e3b79c; --bg-accent: #f2c14e;
   --bg-checker-dark: #2a1412;
+  --bg-checker-light: #ffffff; --bg-checker-light-ink: var(--ink);
+  --bg-checker-dark-ink: #ffffff; --bg-checker-edge: var(--ink);
 }
 /* Slate: a grey, modern board with a green accent. */
 .bg-theme-slate {
   --bg-frame: #4a4f57; --bg-slot: #383c43; --bg-felt: #dfe3e8;
   --bg-point-a: #6d747f; --bg-point-b: #b5bcc6; --bg-accent: #3fbf8f;
   --bg-checker-dark: #1b1e24;
+  --bg-checker-light: #ffffff; --bg-checker-light-ink: var(--ink);
+  --bg-checker-dark-ink: #ffffff; --bg-checker-edge: var(--ink);
 }
 /* Neon arcade: the cabinet the rest of the site is drawn from. */
 .bg-theme-neon {
@@ -866,48 +887,61 @@ a.q-card:hover, a.q-card:focus-visible {
   --bg-frame: #14374a; --bg-slot: #0e2634; --bg-felt: #125a72;
   --bg-point-a: #0d4257; --bg-point-b: #7fc9d9; --bg-accent: #ff8a5b;
   --bg-checker-light: #eaf7fb; --bg-checker-dark: #06202c; --bg-checker-edge: #05161f;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
 }
 /* Sunset: a dusk board, purple wood over hot sand. */
 .bg-theme-sunset {
   --bg-frame: #4a2a4d; --bg-slot: #371e3a; --bg-felt: #f6d9b8;
   --bg-point-a: #b4536a; --bg-point-b: #f2b07a; --bg-accent: #6c4ae0;
   --bg-checker-light: #fff6ec; --bg-checker-dark: #2e1630;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
 /* Espresso: near-black roast, crema felt, a burnt orange accent. */
 .bg-theme-espresso {
   --bg-frame: #2e211a; --bg-slot: #201611; --bg-felt: #d9c2a5;
   --bg-point-a: #5b3d2b; --bg-point-b: #bd9b75; --bg-accent: #e07a3c;
   --bg-checker-light: #f7ecdd; --bg-checker-dark: #16100c;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
 /* Sakura: blossom over soft ash, spring on a dark rail. */
 .bg-theme-sakura {
   --bg-frame: #59404a; --bg-slot: #42303a; --bg-felt: #fbe8ef;
   --bg-point-a: #d4809f; --bg-point-b: #f4c2d4; --bg-accent: #4fa88b;
   --bg-checker-light: #fffafc; --bg-checker-dark: #3a2029;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
 /* Emerald: a velvet card room, gold on green. */
 .bg-theme-emerald {
   --bg-frame: #1d3a2e; --bg-slot: #142a21; --bg-felt: #0f5138;
   --bg-point-a: #0b3a28; --bg-point-b: #64b98f; --bg-accent: #edc35a;
   --bg-checker-light: #f3f6ee; --bg-checker-dark: #07180f; --bg-checker-edge: #061109;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
 }
 /* Copper: hammered metal gone green at the edges. */
 .bg-theme-copper {
   --bg-frame: #7a4327; --bg-slot: #5c311c; --bg-felt: #e8d9c4;
   --bg-point-a: #b1653a; --bg-point-b: #3f8f80; --bg-accent: #2b2b30;
   --bg-checker-light: #fdf4e6; --bg-checker-dark: #26140c;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
 /* Arctic: ice and cold light, a board that looks cold to touch. */
 .bg-theme-arctic {
-  --bg-frame: #3f5a6b; --bg-slot: #2f4553; --bg-felt: #e9f4f8;
-  --bg-point-a: #8fb4c6; --bg-point-b: #cfe6ef; --bg-accent: #1f6fd6;
+  --bg-frame: #33505f; --bg-slot: #243b47; --bg-felt: #e9f4f8;
+  --bg-point-a: #4a7f9e; --bg-point-b: #cfe6ef; --bg-accent: #76e4ff;
   --bg-checker-light: #ffffff; --bg-checker-dark: #16242d;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
+  --bg-checker-edge: var(--ink);
 }
 /* Royal: navy and gold, the board in the good room. */
 .bg-theme-royal {
   --bg-frame: #1b2450; --bg-slot: #121936; --bg-felt: #22306a;
   --bg-point-a: #17224f; --bg-point-b: #8e9ad6; --bg-accent: #e8b53f;
   --bg-checker-light: #f4f1e4; --bg-checker-dark: #0b1130; --bg-checker-edge: #070b20;
+  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
 }
 /* The picker in the header: the board's name, and the list of eight it
    opens. Each row wears its own theme class, so a swatch is painted by the
@@ -927,7 +961,10 @@ a.q-card:hover, a.q-card:focus-visible {
   box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
   padding: 10px;
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
-  width: max-content; max-width: min(92vw, 30rem);
+  /* A fixed share of the screen rather than max-content: the tiles size
+     themselves from the panel, so a narrow phone can never be handed a
+     panel wider than it is. */
+  width: min(88vw, 30rem);
   max-height: 64vh; overflow-y: auto;
 }
 @media (min-width: 640px) { .bg-theme-list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
@@ -975,6 +1012,30 @@ a.q-card:hover, a.q-card:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .bg-theme-chip, .bg-theme-option { transition: none; }
   .bg-theme-option:hover .bg-theme-chip { transform: none; }
+}
+/* A phone has no room to hang a panel off a control that is not at the
+   screen's edge: anchored to the control, the panel runs off the other
+   side. There it leaves the flow and spans the screen instead, under the
+   header both pages put at the top. */
+@media (max-width: 480px) {
+  .bg-theme-list {
+    position: fixed; top: 3.1rem; left: 8px; right: 8px; bottom: auto;
+    width: auto; max-width: none;
+    max-height: calc(100dvh - 3.9rem);
+  }
+}
+/* On a sideways phone the header sits in the middle of the page and the
+   table clips its own overflow, so a panel hung under the control loses its
+   last row with no way to scroll to it. There it leaves the flow and takes
+   the screen's height instead. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  .bg-theme-list {
+    /* Sideways, the header runs across the middle of the screen, so a panel
+       over the right-hand half would bury the control that opened it. It
+       takes the left instead, and the screen's full height. */
+    position: fixed; top: 6px; bottom: 6px; left: 6px; right: auto;
+    width: min(58vw, 24rem); max-width: none; max-height: none;
+  }
 }
 
 .bg-page {
@@ -1369,7 +1430,7 @@ a.q-card:hover, a.q-card:focus-visible {
    the whole point is that it reads at a glance and takes no room on a
    phone.
 
-   Both colours are fixed and both wear a dark ring: the eight boards run
+   Both colours are fixed and both wear a dark ring: the boards run
    from near-black (#1d2230) to tan (#b08a5e) behind these bars, and a
    themed colour would sink into some of them -- the mistake the last-move
    ring made before it became a fixed colour. */

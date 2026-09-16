@@ -761,7 +761,7 @@ type alias Ctx =
     }
 
 
-{-| The eight boards, in the order the picker lists them: the id the server
+{-| The boards, in the order the picker lists them: the id the server
 keeps (`oskol/guests/prefs.gleam`) and the name a player reads. The colours
 themselves are in app.css, under the class of the same name, and are what
 paints both the board and this row's swatch.
