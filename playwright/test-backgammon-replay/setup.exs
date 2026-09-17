@@ -10,6 +10,11 @@
 #
 # Prints one line of JSON: the game id, the seats and the guest holding each.
 
+# The last line of this script's output is its result, read by the smoke
+# that ran it. Ecto logs every query at debug on the same stream, and a
+# write that lands after the result would be mistaken for it.
+Logger.configure(level: :warning)
+
 alias Oskol.Game
 alias Oskol.GameKit
 
