@@ -103,4 +103,23 @@ async function takeSeat(page, name) {
   return { gameId: page.url().match(SEAT)[1], url: page.url(), summary };
 }
 
-module.exports = { BASE, openCreateDialog, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };
+
+/**
+ * The result line of a setup script: the last line that is a JSON object.
+ *
+ * These scripts print their answer on stdout, and anything else on that
+ * stream -- a query Ecto logged, a warning -- would be read as the answer
+ * if we simply took the last line. They have all been quietened, but a
+ * reader that says what it wants is better than one that hopes.
+ */
+function resultLine(out) {
+  const line = out
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('{') && l.endsWith('}'))
+    .pop();
+  if (!line) throw new Error(`no result line in setup output:\n${out.slice(-2000)}`);
+  return line;
+}
+
+module.exports = { resultLine, BASE, openCreateDialog, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };

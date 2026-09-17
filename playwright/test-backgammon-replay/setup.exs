@@ -10,15 +10,25 @@
 #
 # Prints one line of JSON: the game id, the seats and the guest holding each.
 
+# The last line of this script's output is its result, read by the smoke
+# that ran it. Ecto logs every query at debug on the same stream, and a
+# write that lands after the result would be mistaken for it.
+Logger.configure(level: :warning)
+
 alias Oskol.Game
 alias Oskol.GameKit
 
 seats = [{"p1", "Alice"}, {"p2", "Bob"}]
 
 value = fn
-  %{"type" => "choice", "options" => options} -> Enum.random(options)["id"]
-  %{"type" => "number", "min" => min, "max" => max} -> Enum.random(min..max)
-  %{"type" => "select", "candidates" => candidates, "min" => min} -> Enum.take_random(candidates, min)
+  %{"type" => "choice", "options" => options} ->
+    Enum.random(options)["id"]
+
+  %{"type" => "number", "min" => min, "max" => max} ->
+    Enum.random(min..max)
+
+  %{"type" => "select", "candidates" => candidates, "min" => min} ->
+    Enum.take_random(candidates, min)
 end
 
 action_for = fn schema ->
@@ -84,9 +94,9 @@ end)
 state = Game.get_server_state(game_id)
 true = GameKit.finished?(state.instance)
 
-# Let the write-behind catch up before this node goes away.
-Oskol.Game.Persister.flush()
-Process.sleep(1000)
+# Wait for the write-behind to land before this node goes away: the browser
+# reaches a server that rebuilds the room from the log.
+:ok = Oskol.Game.Persister.flush()
 
 IO.puts(
   Jason.encode!(%{

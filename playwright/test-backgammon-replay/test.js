@@ -32,6 +32,7 @@
 const playwright = require('playwright');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
+const { resultLine } = require('../lib/flows');
 
 const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-replay';
@@ -52,7 +53,7 @@ function arrangeRoom() {
     ['run', '-e', 'Code.eval_file("playwright/test-backgammon-replay/setup.exs")'],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }
   );
-  return JSON.parse(out.trim().split('\n').pop());
+  return JSON.parse(resultLine(out));
 }
 
 // ---------- the stubbed analysis ----------

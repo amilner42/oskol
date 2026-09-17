@@ -17,7 +17,7 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
-const { BASE, createGame, joinByLink } = require('../lib/flows');
+const { BASE, createGame, joinByLink, resultLine } = require('../lib/flows');
 const { execFileSync } = require('child_process');
 
 const SHOTS = process.env.DANCE_SHOTS || 'playwright/screenshots/test-backgammon-dance';
@@ -38,7 +38,7 @@ function arrangeRoom() {
     ['run', '-e', 'Code.eval_file("playwright/test-backgammon-dance/setup.exs")'],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }
   );
-  const last = out.trim().split('\n').pop();
+  const last = resultLine(out);
   return JSON.parse(last);
 }
 

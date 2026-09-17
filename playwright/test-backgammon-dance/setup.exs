@@ -14,6 +14,11 @@
 # each, and who
 # is the one dancing.
 
+# The last line of this script's output is its result, read by the smoke
+# that ran it. Ecto logs every query at debug on the same stream, and a
+# write that lands after the result would be mistaken for it.
+Logger.configure(level: :warning)
+
 alias Oskol.Game
 alias Oskol.GameKit
 
@@ -22,9 +27,14 @@ seats = [{"p1", "Alice"}, {"p2", "Bob"}]
 # A complete action for a legal schema (the same thing Oskol.Bots does, which
 # lives in test support and is not compiled here).
 value = fn
-  %{"type" => "choice", "options" => options} -> Enum.random(options)["id"]
-  %{"type" => "number", "min" => min, "max" => max} -> Enum.random(min..max)
-  %{"type" => "select", "candidates" => candidates, "min" => min} -> Enum.take_random(candidates, min)
+  %{"type" => "choice", "options" => options} ->
+    Enum.random(options)["id"]
+
+  %{"type" => "number", "min" => min, "max" => max} ->
+    Enum.random(min..max)
+
+  %{"type" => "select", "candidates" => candidates, "min" => min} ->
+    Enum.take_random(candidates, min)
 end
 
 action_for = fn schema ->
@@ -103,8 +113,11 @@ end)
 state = Game.get_server_state(game_id)
 true = GameKit.player_update(state.instance, seat_of[dancer])["scene"]["data"]["no_moves"]
 
-# Let the write-behind catch up before this node goes away.
-Process.sleep(1500)
+# Wait for the write-behind to land, rather than hoping. This node is
+# about to exit and the browser will reach a server that rebuilds the room
+# from the log: an action still in the persister's mailbox is an action the
+# room comes back without, and the dance never appears.
+:ok = Oskol.Game.Persister.flush()
 
 IO.puts(
   Jason.encode!(%{
