@@ -8,7 +8,9 @@ module Api.Catalog exposing
     , GamePage
     , Library
     , MyGame
+    , MyGameTime
     , NewGame
+    , Running(..)
     , Ratings
     , Room
     , RoomSeat
@@ -183,8 +185,9 @@ type alias Room =
 {-| A game this browser can pick back up: an unfinished room its guest
 holds a seat in, as the row tells it. `opponent` is Nothing while nobody
 has joined; `clock` names the control or is Nothing for none; `yourMove`
-is the game's own word on whose turn it is; `idleS` is seconds since the
-room was last touched.
+is the game's own word on whose turn it is; `time` is the two clocks as of
+the room's last step (Nothing under no clock); `idleS` is seconds since
+the room was last touched.
 -}
 type alias MyGame =
     { slug : String
@@ -195,8 +198,27 @@ type alias MyGame =
     , format : String
     , clock : Maybe String
     , yourMove : Bool
+    , time : Maybe MyGameTime
     , idleS : Int
     }
+
+
+{-| The two clocks as the row last saw them: what each side has left,
+whose is running, and the free time still on the running move (the delay
+that is spent before the bank is).
+-}
+type alias MyGameTime =
+    { mineMs : Int
+    , theirsMs : Int
+    , running : Running
+    , freeMs : Int
+    }
+
+
+type Running
+    = Mine
+    | Theirs
+    | Nobody
 
 
 
@@ -572,7 +594,39 @@ myGameDecoder =
         (optionalString "format" "")
         (D.oneOf [ D.field "clock" (D.nullable D.string), D.succeed Nothing ])
         (D.oneOf [ D.field "your_move" D.bool, D.succeed False ])
-        |> D.andThen (\partial -> D.map partial (D.oneOf [ D.field "idle_s" D.int, D.succeed 0 ]))
+        |> D.andThen
+            (\partial ->
+                D.map2 partial
+                    (D.oneOf [ D.field "time" (D.nullable timeDecoder), D.succeed Nothing ])
+                    (D.oneOf [ D.field "idle_s" D.int, D.succeed 0 ])
+            )
+
+
+timeDecoder : Decoder MyGameTime
+timeDecoder =
+    D.map4 MyGameTime
+        (D.field "mine_ms" D.int)
+        (D.field "theirs_ms" D.int)
+        (D.oneOf
+            [ D.field "running"
+                (D.nullable D.string
+                    |> D.map
+                        (\who ->
+                            case who of
+                                Just "mine" ->
+                                    Mine
+
+                                Just "theirs" ->
+                                    Theirs
+
+                                _ ->
+                                    Nobody
+                        )
+                )
+            , D.succeed Nobody
+            ]
+        )
+        (D.oneOf [ D.field "free_ms" D.int, D.succeed 0 ])
 
 
 roomStateDecoder : Decoder RoomState

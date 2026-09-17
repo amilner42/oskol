@@ -47,8 +47,10 @@ pub opaque type Instance {
     outcome: fn() -> Outcome,
     /// The game's public record, if it keeps one (`Game.record`).
     record: fn() -> Option(json.Json),
-    /// Whose turn it is, by the game's own account (`Game.clocks`, with or
-    /// without a clock set): nobody once it is over or a clock ran out.
+    /// Whose turn it is: the players the game charges (`Game.clocks`, with
+    /// or without a clock set), or, when it charges nobody but is still
+    /// going, whoever has something to do (a READY between the games of a
+    /// match). Nobody once it is over or a clock ran out.
     to_act: fn() -> List(PlayerId),
   )
 }
@@ -270,9 +272,13 @@ pub fn erase(running: Running(state, action)) -> Instance {
     outcome: fn() { running_outcome(running) },
     record: fn() { running.definition.record(running.state) },
     to_act: fn() {
-      case running.clocks.timed_out {
-        Some(_) -> []
-        None -> running_for(running.definition, running.state)
+      case
+        running.clocks.timed_out,
+        running_for(running.definition, running.state)
+      {
+        Some(_), _ -> []
+        None, [] -> waiting_on(running)
+        None, charged -> charged
       }
     },
   )
@@ -286,6 +292,21 @@ fn require(
   case condition {
     True -> next()
     False -> Error(message)
+  }
+}
+
+/// The seats with something to do while the game charges nobody: between
+/// the games of a match, the player who has not pressed READY. Nobody once
+/// the game is over.
+fn waiting_on(running: Running(state, action)) -> List(PlayerId) {
+  case running.definition.outcome(running.state) {
+    game.Finished(_) -> []
+    game.Ongoing ->
+      running.seats
+      |> list.filter(fn(seat) {
+        running.definition.legal(running.state, seat.id) != []
+      })
+      |> list.map(fn(seat) { seat.id })
   }
 }
 

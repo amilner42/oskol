@@ -548,6 +548,10 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert game["clock"] == "5 min"
       # Whose move it is comes from the snapshot the room wrote.
       assert game["your_move"] == (mover == alice_seat)
+      # The clocks as the row last saw them: 5 min each, the mover's running
+      # with the 12 s delay still ahead of it.
+      assert %{"mine_ms" => 300_000, "theirs_ms" => 300_000, "free_ms" => 12_000} = game["time"]
+      assert game["time"]["running"] == if(mover == alice_seat, do: "mine", else: "theirs")
       assert is_integer(game["idle_s"])
       # And asking woke nothing.
       assert :error = GameSupervisor.find_game(game_id)

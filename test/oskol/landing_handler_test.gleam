@@ -60,6 +60,7 @@ fn open_room() -> room.ActiveRoom {
     clock: "bg5",
     seats: [#("p1", "Alice", "g1"), #("p2", "Bob", "g2")],
     to_act: ["p1"],
+    clocks: [#("p1", 171_000, 0, True), #("p2", 300_000, 0, False)],
     idle_s: 90,
   )
 }
@@ -77,6 +78,11 @@ pub fn my_games_lists_the_rooms_this_guest_holds_a_seat_in_test() {
   assert string.contains(body, "\"format\":\"Match to 5\"")
   assert string.contains(body, "\"clock\":\"5 min\"")
   assert string.contains(body, "\"your_move\":true")
+  // The clocks from the visitor's side: theirs is running.
+  assert string.contains(
+    body,
+    "\"time\":{\"mine_ms\":171000,\"theirs_ms\":300000,\"running\":\"mine\",\"free_ms\":0}",
+  )
   assert string.contains(body, "\"idle_s\":90")
 }
 
@@ -86,6 +92,10 @@ pub fn my_games_says_whose_move_from_the_guests_own_seat_test() {
 
   assert string.contains(body, "\"opponent\":\"Alice\"")
   assert string.contains(body, "\"your_move\":false")
+  assert string.contains(
+    body,
+    "\"time\":{\"mine_ms\":300000,\"theirs_ms\":171000,\"running\":\"theirs\"",
+  )
 }
 
 pub fn a_lobby_has_no_opponent_no_clock_and_nobody_to_act_test() {
@@ -96,6 +106,7 @@ pub fn a_lobby_has_no_opponent_no_clock_and_nobody_to_act_test() {
       clock: "none",
       seats: [#("p1", "Alice", "g1")],
       to_act: [],
+      clocks: [],
     )
   let ctx = reading() |> fakes.with_active_rooms([lobby])
   let body = landing.my_games_json(ctx, fakes.guest("g1"))
@@ -104,6 +115,7 @@ pub fn a_lobby_has_no_opponent_no_clock_and_nobody_to_act_test() {
   assert string.contains(body, "\"opponent\":null")
   assert string.contains(body, "\"clock\":null")
   assert string.contains(body, "\"your_move\":false")
+  assert string.contains(body, "\"time\":null")
 }
 
 pub fn a_visitor_with_no_guest_holds_no_seat_anywhere_test() {
@@ -173,7 +185,10 @@ fn creating(ctx: Ctx, expected: room.Setup) -> Ctx {
   Ctx(
     ..ctx,
     ids: ids_caps.IdsCaps(game_code: fn() { "123456" }),
-    persistence: persistence_caps.PersistenceCaps(..ctx.persistence, game_exists: fn(_) { False }),
+    persistence: persistence_caps.PersistenceCaps(
+      ..ctx.persistence,
+      game_exists: fn(_) { False },
+    ),
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
       spawn: fn(_, _) { Ok(Nil) },

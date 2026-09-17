@@ -19,6 +19,7 @@
 import gamekit/clock
 import gamekit/game.{type Info}
 import gamekit/registry
+import gleam/int
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -310,7 +311,10 @@ pub fn my_games_json(ctx: Ctx, session: Session) -> String {
 /// One resumable game as the home page lists it: where it is (`path`),
 /// who it is against (`opponent`, null while nobody has joined), what is
 /// being played (the format's and the clock's names), whether the visitor
-/// is the one to act, and how long since it was touched.
+/// is the one to act, the two clocks as of the room's last step (`time`:
+/// the visitor's and the opponent's ms, whose is running, the free time
+/// left on the move; null under no clock), and how long since it was
+/// touched.
 fn active_room_json(room: ActiveRoom, session: Session) -> Json {
   let info = registry.find(room.slug) |> result.map(fn(e) { e.info })
   let mine =
@@ -343,8 +347,28 @@ fn active_room_json(room: ActiveRoom, session: Session) -> Json {
     #("format", json.string(format)),
     #("clock", nullable(clock)),
     #("your_move", json.bool(my_id != "" && list.contains(room.to_act, my_id))),
+    #("time", time_json(room.clocks, my_id)),
     #("idle_s", json.int(room.idle_s)),
   ])
+}
+
+fn time_json(clocks: List(#(String, Int, Int, Bool)), my_id: String) -> Json {
+  let mine = list.find(clocks, fn(c) { c.0 == my_id })
+  let theirs = list.find(clocks, fn(c) { c.0 != my_id })
+  case mine, theirs {
+    Ok(mine), Ok(theirs) ->
+      json.object([
+        #("mine_ms", json.int(mine.1)),
+        #("theirs_ms", json.int(theirs.1)),
+        #("running", case mine.3, theirs.3 {
+          True, _ -> json.string("mine")
+          _, True -> json.string("theirs")
+          _, _ -> json.null()
+        }),
+        #("free_ms", json.int(int.max(mine.2, theirs.2))),
+      ])
+    _, _ -> json.null()
+  }
 }
 
 fn guest_name(ctx: Ctx, session: Session) -> Json {

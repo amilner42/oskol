@@ -454,13 +454,13 @@ myGames =
             \_ ->
                 Api.parseBody Catalog.myGamesDecoder
                     """{"ok":true,"games":[
-                      {"slug":"backgammon","id":"123456","path":"/backgammon/123456","status":"playing","opponent":"Bob","format":"Match to 5","clock":"5 min","your_move":true,"idle_s":90},
-                      {"slug":"backgammon","id":"9H302Z","path":"/backgammon/9H302Z","status":"waiting","opponent":null,"format":"Single game","clock":null,"your_move":false,"idle_s":0}
+                      {"slug":"backgammon","id":"123456","path":"/backgammon/123456","status":"playing","opponent":"Bob","format":"Match to 5","clock":"5 min","your_move":true,"time":{"mine_ms":171000,"theirs_ms":300000,"running":"theirs","free_ms":0},"idle_s":90},
+                      {"slug":"backgammon","id":"9H302Z","path":"/backgammon/9H302Z","status":"waiting","opponent":null,"format":"Single game","clock":null,"your_move":false,"time":null,"idle_s":0}
                     ]}"""
                     |> Expect.equal
                         (Ok
-                            [ { slug = "backgammon", id = "123456", path = "/backgammon/123456", status = "playing", opponent = Just "Bob", format = "Match to 5", clock = Just "5 min", yourMove = True, idleS = 90 }
-                            , { slug = "backgammon", id = "9H302Z", path = "/backgammon/9H302Z", status = "waiting", opponent = Nothing, format = "Single game", clock = Nothing, yourMove = False, idleS = 0 }
+                            [ { slug = "backgammon", id = "123456", path = "/backgammon/123456", status = "playing", opponent = Just "Bob", format = "Match to 5", clock = Just "5 min", yourMove = True, time = Just { mineMs = 171000, theirsMs = 300000, running = Catalog.Theirs, freeMs = 0 }, idleS = 90 }
+                            , { slug = "backgammon", id = "9H302Z", path = "/backgammon/9H302Z", status = "waiting", opponent = Nothing, format = "Single game", clock = Nothing, yourMove = False, time = Nothing, idleS = 0 }
                             ]
                         )
         , test "an empty list is nothing to resume" <|

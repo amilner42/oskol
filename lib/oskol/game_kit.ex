@@ -132,7 +132,8 @@ defmodule Oskol.GameKit do
   clock is running, the outcome, each player's public counters. What the
   persister writes beside every step.
   """
-  def summary(instance), do: :gamekit@host.summary_json(instance) |> Jason.decode!()
+  def summary(instance, now \\ now()),
+    do: :gamekit@host.summary_json(instance, now) |> Jason.decode!()
 
   @spec slug(instance) :: String.t()
   def slug(instance), do: :gamekit@host.slug(instance)

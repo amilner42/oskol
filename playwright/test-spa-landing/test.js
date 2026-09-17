@@ -139,9 +139,11 @@ async function clickThrough(browser, errors) {
     await alice.waitForSelector('#resume-modal');
     const row = alice.locator(`#resume-${gameId}`);
     const rowText = (await row.textContent()).replace(/\s+/g, ' ').trim();
-    if (!/vs Bob/.test(rowText) || !/Match to 3/.test(rowText) || !/3 min/.test(rowText))
+    // With a clock, the row shows the two times (as of the room's last
+    // step, the running one counting down) rather than the preset's name.
+    if (!/vs Bob/.test(rowText) || !/Match to 3/.test(rowText) || !/\d+:\d\d \/ \d+:\d\d/.test(rowText))
       throw new Error(`the resume row reads "${rowText}"`);
-    if (!/(YOUR|THEIR) MOVE/.test(rowText)) throw new Error(`the resume row says nothing about whose move: "${rowText}"`);
+    if (!/(Your|Their) move/.test(rowText)) throw new Error(`the resume row says nothing about whose move: "${rowText}"`);
     await alice.screenshot({ path: `${SHOTS}/desktop-07-resume.png`, fullPage: true });
 
     // A tap on the backdrop closes it; the bar keeps the way back.

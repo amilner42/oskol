@@ -92,7 +92,9 @@ defmodule Oskol.RehydrationTest do
     assert row.state == GameKit.summary(Game.get_server_state(game_id).instance)
     assert row.state["to_act"] == [mover]
     assert row.state["outcome"] == %{"status" => "ongoing"}
-    assert Enum.map(row.state["players"], & &1["id"]) |> Enum.sort() == Enum.sort([mover, waiting])
+
+    assert Enum.map(row.state["players"], & &1["id"]) |> Enum.sort() ==
+             Enum.sort([mover, waiting])
 
     # After every step the row says what the instance does.
     Enum.each(1..6, fn _ ->

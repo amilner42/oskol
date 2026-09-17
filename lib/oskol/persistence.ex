@@ -93,9 +93,15 @@ defmodule Oskol.Persistence do
     )
   end
 
-  @doc "The snapshot a room writes when it comes back from the log: an old row heals on its first wake."
+  @doc """
+  The snapshot a room writes when it comes back from the log, so an old row
+  heals on its first wake. Not activity: `updated_at` stays where the last
+  step left it, so a wake neither jumps a room up the list nor keeps it from
+  the pruner.
+  """
   def mirror_state(game_id, state) do
-    update_game(game_id, state: state)
+    from(g in Game, where: g.id == ^game_id) |> Repo.update_all(set: [state: state])
+    :ok
   end
 
   def mark_finished(game_id, winners) do

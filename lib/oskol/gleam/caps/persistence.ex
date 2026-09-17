@@ -26,10 +26,20 @@ defmodule Oskol.Gleam.Caps.Persistence do
       {:active_room, game.slug, game.id, game.status, config["format"] || "",
        config["clock"] || "none",
        Enum.map(game.players, fn p -> {p["id"], p["name"] || "", p["guest_id"] || ""} end),
-       Enum.filter(state["to_act"] || [], &is_binary/1),
+       Enum.filter(state["to_act"] || [], &is_binary/1), clocks(state["clocks"]),
        max(DateTime.diff(now, game.updated_at, :second), 0)}
     end)
   rescue
     _ -> []
   end
+
+  # Each seat's clock as the snapshot wrote it; nothing under no clock, or
+  # for a row from before the snapshot carried clocks.
+  defp clocks(list) when is_list(list) do
+    for %{"id" => id, "remaining_ms" => left, "move_ms" => free, "running" => running} <- list,
+        is_binary(id) and is_integer(left) and is_integer(free) and is_boolean(running),
+        do: {id, left, free, running}
+  end
+
+  defp clocks(_), do: []
 end

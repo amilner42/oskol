@@ -39,12 +39,16 @@ import Dict
 import Api.Catalog as Catalog exposing (ClockPreset, Format, GamePage, MyGame, RoomSeat)
 import Html exposing (Html)
 import Json.Decode as D
+import Task
+import Time
 import Html.Attributes exposing (class, href, id)
 import Html.Events exposing (onClick, onSubmit)
 import Games.Backgammon.View
 import Page.HomeBoard
 import Route
 import Session exposing (Session)
+import Svg
+import Svg.Attributes as SvgA
 import Ui.Notebook as Notebook exposing (style)
 
 
@@ -78,6 +82,8 @@ type alias Model =
     , themesOpen : Bool -- the home board's colour list is showing
     , myGames : List MyGame -- the unfinished games this browser holds a seat in
     , resumeOpen : Bool -- the list of them is showing over the board
+    , fetchedAt : Int -- when the list came, ms since the epoch: the clocks count from here
+    , now : Int -- the clock the list's running times are read against
     }
 
 
@@ -96,6 +102,8 @@ type Msg
     | ToggledThemes
     | PickedTheme String
     | GotMyGames (Result Api.Error (List MyGame))
+    | ListArrived Time.Posix
+    | Tick Time.Posix
     | OpenedResume
     | ClosedResume
     | PrefSaved (Result Api.Error (Dict.Dict String String))
@@ -145,6 +153,8 @@ init session slug gameId =
             , themesOpen = False
             , myGames = []
             , resumeOpen = False
+            , fetchedAt = 0
+            , now = 0
             }
     in
     case gameId of
@@ -204,12 +214,23 @@ update msg model =
 
         -- The games waiting for this browser: the list opens over the
         -- board when there are any, once, and the bar keeps offering it.
+        -- Not over CREATE GAME's dialog if the player already opened that:
+        -- the bar's button is there for later.
         GotMyGames (Ok games) ->
-            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) }, Cmd.none, NoOut )
+            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) && not model.started }
+            , Task.perform ListArrived Time.now
+            , NoOut
+            )
 
         -- The home page draws the same without it.
         GotMyGames (Err _) ->
             ( model, Cmd.none, NoOut )
+
+        ListArrived posix ->
+            ( { model | fetchedAt = Time.posixToMillis posix, now = Time.posixToMillis posix }, Cmd.none, NoOut )
+
+        Tick posix ->
+            ( { model | now = Time.posixToMillis posix }, Cmd.none, NoOut )
 
         OpenedResume ->
             ( { model | resumeOpen = True }, Cmd.none, NoOut )
@@ -458,25 +479,43 @@ home { join, toMsg } model =
     ]
 
 
-{-| Escape closes the list of games, as a tap beside it does.
+{-| Escape closes the list of games, as a tap beside it does; and while
+it is open with a clock running in it, the seconds tick.
 -}
 subscriptions : Model -> Sub Msg
 subscriptions model =
     if model.resumeOpen then
-        Browser.Events.onKeyDown
-            (D.field "key" D.string
-                |> D.andThen
-                    (\key ->
-                        if key == "Escape" then
-                            D.succeed ClosedResume
+        Sub.batch
+            [ Browser.Events.onKeyDown
+                (D.field "key" D.string
+                    |> D.andThen
+                        (\key ->
+                            if key == "Escape" then
+                                D.succeed ClosedResume
 
-                        else
-                            D.fail "ignored key"
-                    )
-            )
+                            else
+                                D.fail "ignored key"
+                        )
+                )
+            , if List.any clockRunning model.myGames then
+                Time.every 1000 Tick
+
+              else
+                Sub.none
+            ]
 
     else
         Sub.none
+
+
+clockRunning : MyGame -> Bool
+clockRunning game =
+    case game.time of
+        Just time ->
+            time.running /= Catalog.Nobody
+
+        Nothing ->
+            False
 
 
 {-| The board the home page wears: this player's pick, or the default.
@@ -711,19 +750,19 @@ dialog config content =
             ]
             []
         , Html.div
-            [ class "q-card relative w-full max-w-sm p-5 sm:p-6"
+            [ class "q-card sheet relative w-full max-w-sm p-5 sm:p-6"
             , Html.Attributes.attribute "role" "dialog"
             , Html.Attributes.attribute "aria-modal" "true"
             , Html.Attributes.attribute "aria-label" config.label
             ]
-            (Html.div [ class "flex items-center justify-between mb-4" ]
+            (Html.div [ class "flex items-center justify-between mb-5" ]
                 [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text config.heading ]
                 , Html.button
                     [ Html.Attributes.type_ "button"
                     , id config.closeId
                     , onClick config.onClose
                     , Html.Attributes.attribute "aria-label" "Close"
-                    , class "q-note text-base px-2 py-1"
+                    , class "dialog-close w-8 h-8 rounded-full inline-flex items-center justify-center text-sm"
                     ]
                     [ Html.text "✕" ]
                 ]
@@ -775,7 +814,7 @@ resumeModal : Model -> Html Msg
 resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
         dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
-            [ Html.ul [ id "resume-list", class "space-y-2" ] (List.map resumeRow model.myGames)
+            [ Html.ul [ id "resume-list", class "space-y-2" ] (List.map (resumeRow model) model.myGames)
             , guestNote
             ]
 
@@ -783,65 +822,184 @@ resumeModal model =
         Html.text ""
 
 
-resumeRow : MyGame -> Html Msg
-resumeRow game =
+{-| One game: who it is against (their initial on a disc), what and how
+long ago underneath, and on the right whose move it is with the clocks
+under that when there are any. The whole row is the link.
+-}
+resumeRow : Model -> MyGame -> Html Msg
+resumeRow model game =
     let
-        ( against, badge ) =
+        opponent =
             case ( game.status, game.opponent ) of
                 ( "waiting", _ ) ->
-                    ( "Waiting for a player", ( "LOBBY", "quiet" ) )
+                    Nothing
 
-                ( _, Just name ) ->
-                    ( "vs " ++ name
-                    , if game.yourMove then
-                        ( "YOUR MOVE", "yours" )
+                ( _, name ) ->
+                    name
 
-                      else
-                        ( "THEIR MOVE", "quiet" )
-                    )
+        ( against, initial ) =
+            case opponent of
+                Just name ->
+                    ( "vs " ++ name, String.left 1 (String.toUpper name) )
 
-                ( _, Nothing ) ->
-                    ( "Waiting for a player", ( "LOBBY", "quiet" ) )
+                Nothing ->
+                    ( "Waiting for a player", "·" )
+
+        ( status, tone ) =
+            case opponent of
+                Nothing ->
+                    ( "Lobby", "lobby" )
+
+                Just _ ->
+                    if game.yourMove then
+                        ( "Your move", "yours" )
+
+                    else
+                        ( "Their move", "theirs" )
 
         detail =
-            [ Just game.format, game.clock, Just (ago game.idleS) ]
-                |> List.filterMap identity
-                |> String.join " · "
+            game.format ++ " · " ++ ago game.idleS
     in
     Html.li []
         [ Html.a
             [ href game.path
             , id ("resume-" ++ game.id)
-            , class "resume-row flex items-center gap-3 px-3 py-2.5"
+            , class ("resume-row flex items-center gap-3 px-3.5 py-3 " ++ tone)
             ]
-            [ Html.div [ class "min-w-0 flex-1" ]
-                [ Html.div [ class "font-semibold text-[15px] truncate", style "color: var(--ink)" ] [ Html.text against ]
-                , Html.div [ class "q-note text-[12px] truncate" ] [ Html.text detail ]
+            [ Html.span [ class "resume-avatar shrink-0 w-10 h-10 rounded-full inline-flex items-center justify-center text-[15px] font-semibold" ] [ Html.text initial ]
+            , Html.span [ class "min-w-0 flex-1" ]
+                [ Html.span [ class "block font-semibold text-[15px] leading-tight truncate", style "color: var(--ink)" ] [ Html.text against ]
+                , Html.span [ class "block q-note text-[12px] leading-tight truncate mt-1" ] [ Html.text detail ]
                 ]
-            , Html.span [ class ("resume-badge pixel text-[7px] whitespace-nowrap px-1.5 py-1 " ++ Tuple.second badge) ] [ Html.text (Tuple.first badge) ]
+            , Html.span [ class "shrink-0 flex flex-col items-end gap-1" ]
+                (Html.span [ class ("resume-pill text-[11px] font-semibold leading-none px-2 py-1 rounded-full " ++ tone) ] [ Html.text status ]
+                    :: (clockLine model game |> Maybe.map List.singleton |> Maybe.withDefault [])
+                )
+            , Html.span [ class "resume-chevron shrink-0 text-lg leading-none", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text "›" ]
             ]
         ]
 
 
-{-| Under the list: what holds these games (this browser's guest), and
-the way out of that, an account. Accounts are on their way, so the call
-to action wears the site's SOON badge and does nothing yet; when they
-land it becomes the sign-up step, prefilled from here.
+{-| Under the list, its own panel: one line on what holds these games,
+the three things an account is for, and the button. This is where someone
+who has just felt the game signs up, so it has room. Accounts are on their
+way (accounts-email-codes): the button says so quietly and does nothing
+yet; when they land it becomes the sign-up step.
 -}
 guestNote : Html Msg
 guestNote =
-    Html.div [ id "guest-note", class "mt-4 pt-4 flex items-center gap-3", style "border-top: 1px solid rgba(35, 36, 58, 0.12)" ]
-        [ Html.p [ class "q-note text-[12px] leading-snug flex-1 min-w-0" ]
-            [ Html.text "You're a guest on this device: these games live in this browser only." ]
+    Html.div [ id "guest-note", class "pitch mt-5 rounded-2xl px-5 pt-5 pb-4" ]
+        [ Html.p [ class "q-note text-[13px] text-center" ]
+            [ Html.text "You are logged in as a guest on this device." ]
+        , Html.ul [ class "grid grid-cols-3 gap-2 my-5" ]
+            [ valueProp historyIcon "Game history"
+            , valueProp practiceIcon "Practice your mistakes"
+            , valueProp trendIcon "Track your PR"
+            ]
         , Html.span
             [ id "signup-cta"
-            , class "btn-arcade compact plain home-soon relative pixel text-[8px] px-3 py-2 whitespace-nowrap"
+            , class "signup w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold"
             , Html.Attributes.attribute "aria-disabled" "true"
             ]
-            [ Html.text "SIGN UP"
-            , Html.span [ class "home-soon-badge pixel" ] [ Html.text "SOON" ]
+            [ Html.text "Sign up"
+            , Html.span [ class "signup-soon text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" ] [ Html.text "soon" ]
             ]
         ]
+
+
+{-| One thing an account is for: an icon on a disc, a few words beneath.
+-}
+valueProp : Html Msg -> String -> Html Msg
+valueProp icon label =
+    Html.li [ class "flex flex-col items-center text-center gap-2" ]
+        [ Html.span [ class "value-icon inline-flex items-center justify-center w-11 h-11 rounded-full" ] [ icon ]
+        , Html.span [ class "text-[12px] font-semibold leading-tight", style "color: var(--ink)" ] [ Html.text label ]
+        ]
+
+
+{-| Line icons, drawn once: a clock, a lit bulb, a line going up. Stroked
+in the current colour so the disc decides the ink.
+-}
+lineIcon : String -> Html Msg
+lineIcon path =
+    Svg.svg
+        [ SvgA.viewBox "0 0 24 24", SvgA.fill "none", SvgA.stroke "currentColor", SvgA.strokeWidth "1.6", SvgA.strokeLinecap "round", SvgA.strokeLinejoin "round", SvgA.class "w-5 h-5", Html.Attributes.attribute "aria-hidden" "true" ]
+        [ Svg.path [ SvgA.d path ] [] ]
+
+
+historyIcon : Html Msg
+historyIcon =
+    lineIcon "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+
+
+practiceIcon : Html Msg
+practiceIcon =
+    lineIcon "M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
+
+
+trendIcon : Html Msg
+trendIcon =
+    lineIcon "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941"
+
+
+{-| The two clocks, the running one counting down: "2:31 · 1:58" is mine
+then theirs. The row holds the times as of the room's last step; the
+running side is charged for the seconds since, less the free time that
+was still on the move, so what shows is what the table would. When the
+running one is mine it breathes, to say so. Under no clock, nothing.
+-}
+clockLine : Model -> MyGame -> Maybe (Html Msg)
+clockLine model game =
+    case game.time of
+        Nothing ->
+            Nothing
+
+        Just time ->
+            let
+                elapsed =
+                    game.idleS * 1000 + max 0 (model.now - model.fetchedAt)
+
+                charged =
+                    max 0 (elapsed - time.freeMs)
+
+                left ms running =
+                    if running then
+                        max 0 (ms - charged)
+
+                    else
+                        ms
+
+                mine =
+                    mmss (left time.mineMs (time.running == Catalog.Mine))
+
+                theirs =
+                    mmss (left time.theirsMs (time.running == Catalog.Theirs))
+            in
+            Just
+                (Html.span [ class "resume-clock text-[12px] leading-none tabular-nums whitespace-nowrap" ]
+                    [ Html.span
+                        [ class
+                            (if time.running == Catalog.Mine then
+                                "clock-live"
+
+                             else
+                                "clock-mine"
+                            )
+                        ]
+                        [ Html.text mine ]
+                    , Html.span [ class "clock-sep" ] [ Html.text " / " ]
+                    , Html.span [ class "clock-theirs" ] [ Html.text theirs ]
+                    ]
+                )
+
+
+mmss : Int -> String
+mmss ms =
+    let
+        total =
+            (ms + 999) // 1000
+    in
+    String.fromInt (total // 60) ++ ":" ++ String.padLeft 2 '0' (String.fromInt (modBy 60 total))
 
 
 {-| How long ago, in the coarsest unit that is still honest.

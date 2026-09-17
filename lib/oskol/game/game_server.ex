@@ -464,7 +464,7 @@ defmodule Oskol.Game.GameServer do
         seed,
         setup,
         players_json(new_state),
-        GameKit.summary(instance)
+        GameKit.summary(instance, now)
       )
 
       {:ok, new_state}
@@ -555,7 +555,7 @@ defmodule Oskol.Game.GameServer do
       player_id,
       payload,
       now - (state.clock_base || now),
-      GameKit.summary(instance)
+      GameKit.summary(instance, now)
     )
   end
 
@@ -735,7 +735,8 @@ defmodule Oskol.Game.GameServer do
         |> schedule_clock_tick()
 
       # A row from before the snapshot existed says nothing about where the
-      # game stands; the room that just replayed it knows, so write it.
+      # game stands; the room that just replayed it knows, so write it. Not
+      # activity: the row's updated_at stays where the last step left it.
       Persister.state_mirrored(state.game_id, GameKit.summary(instance))
       {:ok, new_state}
     end
