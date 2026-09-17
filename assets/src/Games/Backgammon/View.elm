@@ -3490,9 +3490,10 @@ replayLink ctx number label =
             text ""
 
 
-{-| The match panel: the score, then one row per game played, and the game
-on the board last. Opens over the board (the header's MATCH) and closes on
-its ✕, its backdrop or a row's link.
+{-| The match panel: a column per player headed by their name, their
+points so far and their match PR; under it one line per game, newest
+first, the game on the board at the top. Opens over the board (the row's
+MATCH) and closes on its ✕ or its backdrop.
 -}
 viewMatchSheet : Ctx -> Html Msg
 viewMatchSheet ctx =
@@ -3506,11 +3507,6 @@ viewMatchSheet ctx =
         finished =
             gamesOf ctx.scene
 
-        score =
-            ctx.scene.players
-                |> List.map (\p -> String.fromInt (Protocol.counter "score" p))
-                |> String.join "–"
-
         heading =
             if target <= 0 then
                 "UNLIMITED"
@@ -3518,8 +3514,21 @@ viewMatchSheet ctx =
             else
                 "MATCH TO " ++ String.fromInt target
 
-        names =
-            ctx.scene.players |> List.map .name |> String.join " · "
+        column player =
+            div [ class "bg-match-col" ]
+                [ span [ class "bg-match-col-name truncate" ] [ text player.name ]
+                , span [ class "bg-match-col-score pixel tabular-nums" ] [ text (String.fromInt (Protocol.counter "score" player)) ]
+                , span [ class "bg-match-col-pr tabular-nums" ]
+                    [ text
+                        (case ctx.prOf player.id of
+                            Just pr ->
+                                "PR " ++ oneDecimal pr
+
+                            Nothing ->
+                                "PR …"
+                        )
+                    ]
+                ]
 
         inPlay =
             if betweenGames ctx /= Nothing || ctx.finished /= Nothing then
@@ -3536,11 +3545,7 @@ viewMatchSheet ctx =
         [ div [ class "absolute inset-0", style "background" "rgba(35, 36, 58, 0.55)", onClick ToggleMatch ] []
         , div [ class "bg-match relative w-full max-w-md flex flex-col min-h-0" ]
             [ div [ class "bg-match-head" ]
-                [ div [ class "flex flex-col gap-0.5 min-w-0" ]
-                    [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text heading ]
-                    , span [ class "font-bold text-base truncate" ] [ text names ]
-                    ]
-                , span [ class "bg-match-score pixel text-sm tabular-nums" ] [ text score ]
+                [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text heading ]
                 , button
                     [ class "bg-match-close"
                     , Html.Attributes.id "bg-match-close"
@@ -3549,20 +3554,21 @@ viewMatchSheet ctx =
                     ]
                     [ text "✕" ]
                 ]
+            , div [ class "bg-match-cols" ]
+                (span [ class "bg-match-n" ] [] :: List.map column ctx.scene.players ++ [ span [ class "bg-match-analysis-gap" ] [] ])
             , if finished == [] && inPlay == [] then
                 div [ class "bg-match-list" ] [ span [ class "bg-match-empty" ] [ text "Nothing played yet." ] ]
 
               else
-                div [ class "bg-match-list" ] (List.map (viewMatchRow ctx) finished ++ inPlay)
+                div [ class "bg-match-list" ] (inPlay ++ List.map (viewMatchRow ctx) (List.reverse finished))
             ]
         ]
 
 
-{-| One finished game on one line: a cell per player in seat order, each
-the name and the player's PR for the game (the better one in the
-highlighter), the winner's cell inked with the points (how they came is
-the chip's tooltip). At the right the score the game left and the door to
-its analysis.
+{-| One finished game on one line, under the players' columns: a cell per
+player, the winner's inked with the points (how they came is the chip's
+tooltip), and in each the player's PR for the game, the better one in the
+highlighter. At the right the door to its analysis.
 -}
 viewMatchRow : Ctx -> GameResult -> Html Msg
 viewMatchRow ctx g =
@@ -3596,8 +3602,7 @@ viewMatchRow ctx g =
                     player.id == g.winner
             in
             div [ classList [ ( "bg-match-cell", True ), ( "win", won ), ( "best", best == Just player.id && List.length prs > 1 ) ] ]
-                [ span [ class "bg-match-name truncate" ] [ text player.name ]
-                , if won then
+                [ if won then
                     span [ class "bg-match-points pixel", title how ] [ text ("+" ++ String.fromInt g.points) ]
 
                   else
@@ -3617,7 +3622,6 @@ viewMatchRow ctx g =
     div [ class "bg-match-row", attribute "data-game" (String.fromInt g.number) ]
         [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt g.number) ]
         , div [ class "bg-match-cells" ] (List.map cell ctx.scene.players)
-        , span [ class "bg-match-after font-bold tabular-nums" ] [ text (scoreText ctx g.scores) ]
         , analysisLink ctx g.number
         ]
 

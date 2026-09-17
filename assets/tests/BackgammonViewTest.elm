@@ -2235,11 +2235,16 @@ suite =
 
                                 -- one row per game played, then the game on the board
                                 , \_ -> sheet |> Query.findAll [ class "bg-match-row" ] |> Query.count (Expect.equal 3)
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text (winner "p1"), text "+4", text "4–0", text "…", text "Analysis" ]
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.find [ class "bg-match-cell", class "win" ] |> Query.has [ text (winner "p1"), attribute (Html.Attributes.title "gammon") ]
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.has [ text (winner "p2"), text "+1", text "4–1" ]
-                                , \_ -> sheet |> Query.find [ class "bg-match-row", class "is-live" ] |> Query.has [ text "G3", text "In play" ]
-                                , \_ -> sheet |> Query.has [ class "bg-match-score" ]
+                                -- the players head their columns, with their points so far and their match PR
+                                , \_ -> sheet |> Query.findAll [ class "bg-match-col" ] |> Query.count (Expect.equal 2)
+                                , \_ -> sheet |> Query.findAll [ class "bg-match-col" ] |> Query.first |> Query.has [ text (winner "p1"), text "PR …" ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text "+4", text "…", text "Analysis" ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.findAll [ class "bg-match-cell" ] |> Query.first |> Query.has [ class "win", text "+4", attribute (Html.Attributes.title "gammon") ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.findAll [ class "bg-match-cell" ] |> Query.index 1 |> Query.has [ class "win", text "+1" ]
+
+                                -- newest first: the game on the board, then G2, then G1
+                                , \_ -> sheet |> Query.find [ class "bg-match-list" ] |> Query.children [] |> Query.first |> Query.has [ class "is-live", text "G3", text "In play" ]
+                                , \_ -> sheet |> Query.find [ class "bg-match-list" ] |> Query.children [] |> Query.index 1 |> Query.has [ attribute (Html.Attributes.attribute "data-game" "2") ]
 
                                 -- the PRs, once the engine has graded a game
                                 , \_ ->
