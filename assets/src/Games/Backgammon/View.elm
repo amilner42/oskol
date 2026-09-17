@@ -3554,8 +3554,11 @@ viewMatchSheet ctx =
                     ]
                     [ text "✕" ]
                 ]
-            , div [ class "bg-match-cols" ]
-                (span [ class "bg-match-n" ] [] :: List.map column ctx.scene.players ++ [ span [ class "bg-match-analysis-gap" ] [] ])
+            , div [ class "bg-match-cols bg-match-row" ]
+                [ span [ class "bg-match-n" ] []
+                , div [ class "bg-match-cells" ] (List.map column ctx.scene.players)
+                , span [ class "bg-match-analysis-gap" ] []
+                ]
             , if finished == [] && inPlay == [] then
                 div [ class "bg-match-list" ] [ span [ class "bg-match-empty" ] [ text "Nothing played yet." ] ]
 

@@ -1442,15 +1442,18 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-close:active { transform: translate(2px, 2px); box-shadow: none; }
 .bg-match-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 12px 10px; font-size: 13px; }
 .bg-match-empty { color: var(--pencil); font-style: italic; display: block; padding: 8px 0; }
-/* The players' columns: name, points so far, match PR. */
-.bg-match-cols { display: flex; align-items: stretch; gap: 10px; padding: 10px 12px 8px; border-bottom: 2px solid var(--ink); }
-.bg-match-cols > .bg-match-n { flex: none; width: 1.6rem; }
-.bg-match-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 0 7px; }
-.bg-match-col-name { font-weight: 700; font-size: 13px; min-width: 0; }
+/* The players' columns: name, points so far, match PR, centred in the
+   same cells the games use below, so the two line up. */
+.bg-match-cols { padding: 10px 12px 8px !important; border-bottom: 2px solid var(--ink) !important; }
+.bg-match-col { min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1px; }
+.bg-match-col-name { font-weight: 700; font-size: 13px; min-width: 0; max-width: 100%; }
 .bg-match-col-score { font-size: 16px; line-height: 1.1; }
 .bg-match-col-pr { font-size: 11px; color: var(--pencil); }
-.bg-match-analysis-gap { flex: none; width: 1.6rem; }
-@media (min-width: 640px) { .bg-match-analysis-gap { width: 5.4rem; } }
+/* The analysis door is a fixed width so the columns above line up with
+   the cells below: the magnifier alone on a phone, the word beside it
+   from tablet width up. */
+.bg-match-analysis, .bg-match-analysis-gap { flex: none; width: 1.6rem; justify-content: center; }
+@media (min-width: 640px) { .bg-match-analysis, .bg-match-analysis-gap { width: 5.6rem; justify-content: flex-start; } }
 /* The games, newest first: a cell per player on each line, the winner's
    inked with the points, each ending in the player's PR for the game,
    the better one of the two in the highlighter. */
@@ -1472,7 +1475,7 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-pr { margin-left: auto; flex: none; font-size: 11.5px; padding: 0 4px; border-radius: 3px; color: var(--pencil); }
 .bg-match-cell.win .bg-match-pr { color: rgba(255, 255, 255, 0.72); }
 .bg-match-cell.best .bg-match-pr { background: var(--highlighter); color: var(--ink); font-weight: 700; }
-.bg-match-analysis { flex: none; color: var(--ink); text-decoration: none; padding: 4px; border-radius: 6px; }
+.bg-match-analysis { color: var(--ink); text-decoration: none; padding: 4px 0; border-radius: 6px; }
 .bg-match-analysis:hover { background: var(--paper-2); }
 
 /* The row under the slab: MATCH, the four arrows with RESIGN between them.
