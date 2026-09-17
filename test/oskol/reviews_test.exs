@@ -36,6 +36,15 @@ defmodule Oskol.ReviewsTest do
 
   # An engine that grades every turn it is sent as a doubtful move, and
   # counts the requests it gets.
+  # Everything the stub has reported so far, thrown away.
+  defp drain_engine_calls do
+    receive do
+      {:engine, _} -> drain_engine_calls()
+    after
+      0 -> :ok
+    end
+  end
+
   defp engine(test_pid) do
     Req.Test.stub(Reviews, fn conn ->
       {:ok, body, conn} = Plug.Conn.read_body(conn, length: 10_000_000)
@@ -284,6 +293,52 @@ defmodule Oskol.ReviewsTest do
 
   # Waits out the retry backoffs on purpose: seconds of sleeping, not work.
   @tag :slow
+  test "a job lost to a restart is picked up by the sweep at boot", %{conn: conn} do
+    # The queue lives in memory: a machine that restarts between a game
+    # ending and its job running forgets the job. Nothing else would ever
+    # pick it up, because a read never queues engine work. What survives is
+    # the note the room wrote before it asked.
+    Application.put_env(:oskol, Queue, enabled: false)
+    game_id = finished_game(7)
+    Persister.flush()
+    Oskol.Reviews.mark_analysis_owed(game_id)
+    Application.put_env(:oskol, Queue, enabled: true)
+    engine(self())
+
+    assert [%{"status" => "pending"}] = reviews(conn, game_id)["games"]
+    assert [^game_id] = Oskol.Reviews.rooms_owed_analysis()
+
+    assert Queue.sweep_owed() == 1
+    wait_for(fn -> Enum.any?(Reviews.stored(game_id), &(&1.status == "done")) end)
+    assert [%{"status" => "done"}] = reviews(conn, game_id)["games"]
+
+    # And the note is gone, so the next boot does not look again.
+    Queue.await_idle()
+    assert Oskol.Reviews.rooms_owed_analysis() == []
+  end
+
+  test "the sweep never analyses a game twice", %{conn: conn} do
+    engine(self())
+    game_id = finished_game(8)
+    wait_for(fn -> Enum.any?(Reviews.stored(game_id), &(&1.status == "done")) end)
+    assert [%{"status" => "done"}] = reviews(conn, game_id)["games"]
+
+    # The engine calls from that first, legitimate analysis are still in
+    # this process's mailbox; clear them so what follows is only what the
+    # sweep caused.
+    drain_engine_calls()
+
+    # A stale note -- the room was marked, the work happened anyway -- must
+    # not buy a second analysis for a game that already has one.
+    Oskol.Reviews.mark_analysis_owed(game_id)
+    assert Queue.sweep_owed() == 1
+    Queue.await_idle()
+
+    refute_received {:engine, _}
+    assert [%{"status" => "done"}] = reviews(conn, game_id)["games"]
+    assert length(Reviews.stored(game_id)) == 1
+  end
+
   test "an engine that fails is recorded and the game stays pending", %{conn: conn} do
     Req.Test.stub(Reviews, fn conn ->
       conn |> Plug.Conn.put_status(422) |> Req.Test.json(%{"detail" => "turns[3]: bad"})

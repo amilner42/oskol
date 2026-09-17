@@ -25,6 +25,9 @@ defmodule Oskol.Persistence do
       # How far the stored per-game records go, as a position in the action
       # log. Rows made from a shorter log are missing the games played since.
       field(:records_through, :integer)
+      # This room has a game that ended and may still owe an analysis. Set
+      # when the game ends, cleared when the queue finds nothing owed.
+      field(:analysis_owed, :boolean, default: false)
       field(:players, {:array, :map}, default: [])
       field(:status, :string, default: "waiting")
       field(:winners, {:array, :string}, default: [])

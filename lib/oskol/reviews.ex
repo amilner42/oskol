@@ -206,6 +206,37 @@ defmodule Oskol.Reviews do
     end
   end
 
+  @doc """
+  Note that this room has a game that ended and may owe an analysis.
+
+  Written before the queue is asked, so a restart between the two cannot
+  lose the fact. `sweep_owed/0` is what picks it up again.
+  """
+  def mark_analysis_owed(game_id) do
+    from(g in Oskol.Persistence.Game, where: g.id == ^game_id)
+    |> Repo.update_all(set: [analysis_owed: true])
+
+    :ok
+  end
+
+  @doc "This room owes nothing: the queue ran and found every game settled."
+  def clear_analysis_owed(game_id) do
+    from(g in Oskol.Persistence.Game, where: g.id == ^game_id)
+    |> Repo.update_all(set: [analysis_owed: false])
+
+    :ok
+  end
+
+  @doc "Rooms still marked as owing an analysis, oldest first."
+  def rooms_owed_analysis do
+    from(g in Oskol.Persistence.Game,
+      where: g.analysis_owed == true,
+      order_by: [asc: g.updated_at],
+      select: g.id
+    )
+    |> Repo.all()
+  end
+
   @doc "Mark a room's records as made from the log it has right now."
   def mark_records_through(game_id) do
     from(g in Oskol.Persistence.Game, where: g.id == ^game_id)

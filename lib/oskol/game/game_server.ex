@@ -566,6 +566,11 @@ defmodule Oskol.Game.GameServer do
   # the persister has written what was cast above.
   defp request_review(%GameServerState{} = state, events) do
     if :oskol@handlers@reviews.game_ended(state.slug, events) do
+      # Written down first, asked for second. The queue lives in memory, so
+      # a restart between the two would lose the job and -- since a read
+      # never queues engine work -- nothing would ever pick it up. The note
+      # survives; `Oskol.Reviews.Queue` sweeps it on boot.
+      Oskol.Game.Persister.analysis_owed(state.game_id)
       Oskol.Reviews.Queue.enqueue(state.game_id)
     end
   end

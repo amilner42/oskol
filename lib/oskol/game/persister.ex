@@ -48,6 +48,16 @@ defmodule Oskol.Game.Persister do
     )
   end
 
+  @doc """
+  A game of this room ended, so an analysis may be owed. Written here
+  rather than from the room so it lands in order behind the actions the
+  analysis will read, and so a test without a sandbox owner skips it like
+  every other write.
+  """
+  def analysis_owed(game_id) do
+    GenServer.cast(__MODULE__, {:write, :analysis_owed, {game_id}})
+  end
+
   def game_finished(game_id, winners) do
     GenServer.cast(__MODULE__, {:write, :game_finished, {game_id, winners}})
   end
@@ -99,6 +109,9 @@ defmodule Oskol.Game.Persister do
         "GAME PERSISTENCE FAILED (#{op} #{inspect(elem(args, 0))}): #{inspect({kind, reason})}"
       )
   end
+
+  defp do_write(:analysis_owed, {game_id}),
+    do: Oskol.Reviews.mark_analysis_owed(game_id)
 
   defp do_write(:game_created, {game_id, slug, config}),
     do: Persistence.insert_game(game_id, slug, config)
