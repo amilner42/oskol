@@ -39,6 +39,7 @@ pub const not_found_message = "No ratings for that game"
 /// match have been graded, and the PR to print (null while none have). Plus
 /// `pending`, which says the engine still owes this room an answer, so a
 /// table watching the number knows to ask again rather than poll forever.
+/// And `games`: each graded game's PRs by seat, for the match panel.
 pub fn ratings_json(
   ctx: Ctx,
   game_slug: String,
@@ -73,6 +74,30 @@ pub fn ratings_json(
           ])
         }),
       ),
+      #(
+        "games",
+        json.array(graded_by_game(stored), fn(game) {
+          let #(number, prs) = game
+          json.object([
+            #("game_number", json.int(number)),
+            #(
+              "players",
+              json.array(
+                list.index_map(seats, fn(s, i) { #(s.id, at(prs, i)) }),
+                fn(pair) {
+                  json.object([
+                    #("player_id", json.string(pair.0)),
+                    #("pr", case pair.1 {
+                      Ok(pr) -> json.float(pr)
+                      Error(_) -> json.null()
+                    }),
+                  ])
+                },
+              ),
+            ),
+          ])
+        }),
+      ),
     ]),
   )
 }
@@ -81,13 +106,20 @@ pub fn ratings_json(
 /// players' ratings in seat order. A stored answer that does not read as a
 /// review is skipped, exactly as the reviews page skips it.
 fn graded(stored: List(Stored)) -> List(List(Float)) {
-  list.filter_map(stored, fn(s) {
+  graded_by_game(stored) |> list.map(fn(g) { g.1 })
+}
+
+/// The same, with each game's number, in game order.
+fn graded_by_game(stored: List(Stored)) -> List(#(Int, List(Float))) {
+  stored
+  |> list.filter_map(fn(s) {
     case s {
-      Stored(status: Done, response_json: Some(body), ..) ->
-        report.player_prs(body)
+      Stored(status: Done, response_json: Some(body), game_number: n, ..) ->
+        report.player_prs(body) |> result.map(fn(prs) { #(n, prs) })
       _ -> Error("not graded")
     }
   })
+  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
 }
 
 /// Is a grade still on its way? A row the queue has opened but the engine

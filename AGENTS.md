@@ -678,9 +678,12 @@ GET  /papi/games/:slug/rooms/:id/record  (open)
                                        the reader's own, else the first -- and `seated`
                                        says whether that seat is theirs)
 GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
-                                       games, pr}]} -- each seat's PR over the
-                                       games of THIS match the engine has
-                                       graded, or null while it has graded none
+                                       games, pr}], games: [{game_number,
+                                       players: [{player_id, pr}]}]} -- each
+                                       seat's PR over the games of THIS match
+                                       the engine has graded (null while it has
+                                       graded none), and each graded game's
+                                       PRs by seat, for the table's match panel
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 GET  /papi/me/prefs                    {ok, prefs}

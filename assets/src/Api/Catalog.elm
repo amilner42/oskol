@@ -301,6 +301,7 @@ type alias Ratings =
     { prs : Dict String Float -- by player id, for the seats that have a number
     , graded : Int -- games of this match the engine has answered for
     , pending : Bool -- a grade is on its way (a row opened, or a retry coming)
+    , games : Dict Int (List ( String, Float )) -- each graded game's PRs by game number, in seat order
     }
 
 
@@ -322,18 +323,29 @@ ratingsDecoder =
                     )
                 )
     in
-    D.map2
-        (\rows pending ->
+    D.map3
+        (\rows pending games ->
             { prs =
                 rows
                     |> List.filterMap (\( id, pr, _ ) -> Maybe.map (Tuple.pair id) pr)
                     |> Dict.fromList
-            , graded = rows |> List.map (\( _, _, games ) -> games) |> List.maximum |> Maybe.withDefault 0
+            , graded = rows |> List.map (\( _, _, games_ ) -> games_) |> List.maximum |> Maybe.withDefault 0
             , pending = pending
+            , games = Dict.fromList games
             }
         )
         seats
         (D.oneOf [ D.field "pending" D.bool, D.succeed False ])
+        (optionalList "games"
+            (D.map2 Tuple.pair
+                (D.field "game_number" D.int)
+                (D.field "players"
+                    (D.list (D.map2 Tuple.pair (D.field "player_id" D.string) (D.field "pr" (D.nullable D.float)))
+                        |> D.map (List.filterMap (\( id, pr ) -> Maybe.map (Tuple.pair id) pr))
+                    )
+                )
+            )
+        )
 
 
 {-| Keep one preference. The server is the whitelist: an unknown key or a

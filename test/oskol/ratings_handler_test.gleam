@@ -9,6 +9,7 @@ import gamekit/registry
 import gleam/json
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 import oskol/caps/analysis.{
   type Stored, AnalysisCaps, Done, Failed, GameLog, Pending, Stored,
 }
@@ -105,7 +106,7 @@ fn room_with(slug: String, stored: List(Stored)) -> Ctx {
   )
 }
 
-fn players(stored: List(Stored)) -> String {
+fn body(stored: List(Stored)) -> String {
   let assert Ok(body) =
     ratings.ratings_json(
       room_with("backgammon", stored),
@@ -113,6 +114,24 @@ fn players(stored: List(Stored)) -> String {
       "000007",
     )
   body
+}
+
+/// The answer without its per-game list (`games`, the last key), which the
+/// match-PR tests do not read.
+fn players(stored: List(Stored)) -> String {
+  // A seat's own `"games":1` count is a number; the list is the one
+  // followed by `[`.
+  let assert Ok(#(head, _)) = string.split_once(body(stored), ",\"games\":[")
+  head <> "}"
+}
+
+pub fn each_graded_game_lists_its_prs_by_seat_in_game_order_test() {
+  let answer =
+    body([done(3, 6.0, 9.5), done(1, 8.4, 12.1), owed(2, Pending, 1)])
+  assert string.ends_with(
+    answer,
+    ",\"games\":[{\"game_number\":1,\"players\":[{\"player_id\":\"p1\",\"pr\":8.4},{\"player_id\":\"p2\",\"pr\":12.1}]},{\"game_number\":3,\"players\":[{\"player_id\":\"p1\",\"pr\":6.0},{\"player_id\":\"p2\",\"pr\":9.5}]}]}",
+  )
 }
 
 fn expected(entries: List(#(String, Int, Option(Float)))) -> String {

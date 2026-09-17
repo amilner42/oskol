@@ -182,7 +182,7 @@ ratingsWatch : Test
 ratingsWatch =
     let
         answer graded pending =
-            { prs = Dict.empty, graded = graded, pending = pending }
+            { prs = Dict.empty, graded = graded, pending = pending, games = Dict.empty }
 
         got graded pending model =
             Play.update (GotRatings (Ok (answer graded pending))) model |> first3
