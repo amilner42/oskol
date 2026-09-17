@@ -469,13 +469,18 @@ still takes another one:
 ## Development commands
 
 ```bash
-bin/check             # everything below, in order; add --browser for the Playwright smokes
+bin/check             # what you run while you work (~2 min): compile, Gleam,
+                      # Elm, Elixir, without the handful tagged `slow`
+bin/check --all       # the same with the slow tests (~3.5 min). What CI runs.
+bin/check --browser   # --all, then the Playwright smokes
                       # (PORT picks the port it serves them on; 4400 by default)
 mix deps.get          # Elixir + Gleam deps
 mix compile           # compiles Gleam (via mix_gleam) and Elixir
-bin/test-gleam        # Gleam unit, rules, oracle, property, hidden-info and golden tests
+bin/test-gleam        # Gleam unit, rules, oracle, property, hidden-info and golden
+                      # tests, run one worker per core (test/oskol_runner.erl)
 mix oskol.fixtures    # regenerate fixtures: `replays` (committed) and/or `payloads` (derived)
-mix test              # Elixir room, bots, channel, LiveView tests
+mix test              # Elixir room, bots, channel, controller tests, minus the
+                      # `slow` ones; mix test --include slow runs everything
 cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # Elm typecheck
 cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm  # Elm tests (needs `mix oskol.fixtures payloads`)
 mix assets.build      # Elm (via esbuild plugin) + Tailwind
