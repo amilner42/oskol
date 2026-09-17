@@ -60,6 +60,21 @@ pub fn ratings_json(
     envelope.ok([
       #("pending", json.bool(owed(stored))),
       #(
+        "players",
+        json.array(list.index_map(seats, fn(s, i) { #(s.id, i) }), fn(pair) {
+          let #(player_id, index) = pair
+          let prs = list.filter_map(graded, at(_, index))
+          json.object([
+            #("player_id", json.string(player_id)),
+            #("games", json.int(list.length(prs))),
+            #("pr", case average(prs) {
+              Some(pr) -> json.float(pr)
+              None -> json.null()
+            }),
+          ])
+        }),
+      ),
+      #(
         "games",
         json.array(graded_by_game(stored), fn(game) {
           let #(number, prs) = game
@@ -80,21 +95,6 @@ pub fn ratings_json(
                 },
               ),
             ),
-          ])
-        }),
-      ),
-      #(
-        "players",
-        json.array(list.index_map(seats, fn(s, i) { #(s.id, i) }), fn(pair) {
-          let #(player_id, index) = pair
-          let prs = list.filter_map(graded, at(_, index))
-          json.object([
-            #("player_id", json.string(player_id)),
-            #("games", json.int(list.length(prs))),
-            #("pr", case average(prs) {
-              Some(pr) -> json.float(pr)
-              None -> json.null()
-            }),
           ])
         }),
       ),

@@ -469,13 +469,13 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }
+                            ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }, Nothing )
+                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
@@ -486,7 +486,7 @@ suite =
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }
+                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -545,7 +545,7 @@ suite =
                     View.update OpenPicker View.init
                         |> step (PickFace 3)
                         |> step ConfirmPick
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }, NoOut )
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }, NoOut )
              , test "a third face is ignored" <|
                 \_ ->
                     View.update OpenPicker View.init
@@ -1332,7 +1332,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model swaps =
-                    { drag = Drag.idle, plans = [], swaps = swaps, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False }
+                    { drag = Drag.idle, plans = [], swaps = swaps, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
 
                 rendered swaps u =
                     View.view (ctx "p1" (twoDice u) (model swaps)) |> Query.fromHtml
@@ -1935,144 +1935,7 @@ suite =
                 nameOf id u =
                     Protocol.findPlayer id u.scene |> Maybe.map .name |> Maybe.withDefault id
              in
-             [ test "every turn and cube action of the game on the board is on the page, for the viewer and a spectator" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            let
-                                u2 =
-                                    withRecord gameOneLive 1 u
-
-                                shows q =
-                                    Expect.all
-                                        (List.map (\t -> Query.has [ text t ])
-                                            [ "8/5* 6/5", "(no play)", "Doubles to 2", "Takes", "13/9(2) 24/20(2)" ]
-                                        )
-                                        q
-                            in
-                            Expect.all
-                                [ \_ -> render "p1" u2 |> Query.find [ id "bg-record" ] |> shows
-                                , \_ -> render "spectator" { u2 | scene = asSpectator u2.scene, legal = [] } |> Query.find [ id "bg-record" ] |> shows
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "a finished game is a row of the match history; its moves are not in the scene" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            let
-                                panel =
-                                    render "p1" (inGameTwo u) |> Query.find [ id "bg-record" ]
-
-                                winner =
-                                    nameOf "p1" u
-                            in
-                            Expect.all
-                                [ \_ -> panel |> Query.findAll [ class "bg-record-game" ] |> Query.count (Expect.equal 1)
-                                , \_ -> panel |> Query.find [ class "bg-record-game" ] |> Query.has [ text "G1", text winner, text "gammon · 4 pts", text "4–0" ]
-                                , \_ -> panel |> Query.find [ class "bg-record-game" ] |> Event.simulate Event.click |> Event.expect (BrowseGame 1)
-
-                                -- the list is game 2: its heading and its one turn, no result line
-                                , \_ -> panel |> Query.findAll [ class "rl-heading" ] |> Query.count (Expect.equal 1)
-                                , \_ -> panel |> Query.find [ class "rl-heading" ] |> Query.has [ text "GAME 2" ]
-                                , \_ -> panel |> Query.findAll [ class "rl-result" ] |> Query.count (Expect.equal 0)
-                                , \_ -> panel |> Query.hasNot [ text "8/5* 6/5" ]
-                                , \_ -> panel |> Query.has [ text "bar/23 6/5" ]
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "opening a finished game fetches the record once and lists that game, result and all" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            let
-                                u2 =
-                                    inGameTwo u
-
-                                ( asking, out ) =
-                                    View.update (BrowseGame 1) View.init
-
-                                ( loaded, _ ) =
-                                    View.update (GotRecord (Ok archive)) asking
-
-                                ( failed, _ ) =
-                                    View.update (GotRecord (Err ())) asking
-
-                                panelOf m =
-                                    View.view (ctx "p1" u2 m) |> Query.fromHtml |> Query.find [ id "bg-record" ]
-
-                                winner =
-                                    nameOf "p1" u
-                            in
-                            Expect.all
-                                [ \_ -> Expect.equal WantRecord out
-                                , \_ -> Expect.equal ( Just 1, View.Fetching ) ( asking.browsing, asking.archive )
-                                , \_ -> panelOf asking |> Query.has [ text "Loading game 1…" ]
-
-                                -- the answer lists game 1: its turns, its cube, its result line
-                                , \_ -> panelOf loaded |> Query.find [ class "bg-record-list" ] |> Query.has [ text "8/5* 6/5", text "Doubles to 2", text "Takes", text "13/9(2) 24/20(2)" ]
-                                , \_ -> panelOf loaded |> Query.find [ class "rl-result" ] |> Query.has [ text (winner ++ " wins a gammon · 4 pts"), text "4–0" ]
-                                , \_ -> panelOf loaded |> Query.find [ class "bg-record-list" ] |> Query.hasNot [ text "bar/23 6/5" ]
-                                , \_ -> panelOf loaded |> Query.find [ class "bg-record-head" ] |> Query.has [ text "GAME 1" ]
-                                , \_ -> panelOf loaded |> Query.findAll [ class "bg-record-game", class "is-browsing" ] |> Query.count (Expect.equal 1)
-
-                                -- no second fetch for a game it has; the way back is the game on the board
-                                , \_ -> View.update (BrowseGame 1) loaded |> Tuple.second |> Expect.equal NoOut
-                                , \_ -> panelOf loaded |> Query.find [ class "bg-record-now" ] |> Event.simulate Event.click |> Event.expect BrowseCurrent
-                                , \_ -> View.update BrowseCurrent loaded |> Tuple.first |> .browsing |> Expect.equal Nothing
-
-                                -- a turn of the finished game goes on the board like any other
-                                , \_ ->
-                                    View.update (ViewTurn 0) loaded
-                                        |> Tuple.first
-                                        |> (\m -> View.view (ctx "p1" u2 m))
-                                        |> Query.fromHtml
-                                        |> Query.find [ class "is-viewing", class "rl-turn" ]
-                                        |> Query.has [ text "8/5* 6/5" ]
-
-                                -- a failed fetch says so, and a second tap asks again
-                                , \_ -> panelOf failed |> Query.has [ text "Game 1 would not load. Tap it again." ]
-                                , \_ -> View.update (BrowseGame 1) failed |> Tuple.second |> Expect.equal WantRecord
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "a single game has no headings and no match history" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            let
-                                panel =
-                                    render "p1" (withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ] ]) 1 u) |> Query.find [ id "bg-record" ]
-                            in
-                            Expect.all
-                                [ \_ -> panel |> Query.findAll [ class "rl-heading" ] |> Query.count (Expect.equal 0)
-                                , \_ -> panel |> Query.findAll [ class "bg-record-games" ] |> Query.count (Expect.equal 0)
-                                , \_ -> panel |> Query.has [ text "8/5 6/5" ]
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "the list goes into the DOM newest first, so the reversed column shows the latest turn at the bottom" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            render "p1" (withRecord gameOneLive 1 u)
-                                |> Query.find [ id "bg-record" ]
-                                |> Query.find [ class "bg-record-list" ]
-                                |> Query.children [ class "bg-record-line" ]
-                                |> Query.first
-                                |> Query.has [ text "13/9(2) 24/20(2)" ]
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "a past turn shows the cube as it stood, not as it stands" <|
+             [ test "a past turn shows the cube as it stood, not as it stands" <|
                 \_ ->
                     -- a match fixture, so the cube is in play; live it is centred on 64
                     case FixtureLoader.byGame "backgammon" |> List.filterMap (\f -> Dict.get "p1" f.initial) |> List.filter cubeEnabled |> List.head of
@@ -2098,49 +1961,7 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon match fixture"
-             , test "an empty record says so rather than showing nothing" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            render "p1" (withRecord (E.list identity []) 1 u)
-                                |> Query.find [ id "bg-record" ]
-                                |> Query.has [ text "Nothing played yet." ]
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "MOVES opens the sheet over the board and CLOSE shuts it" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            let
-                                u2 =
-                                    withRecord gameOneLive 1 u
-
-                                ( opened, _ ) =
-                                    View.update ToggleRecord View.init
-
-                                ( closed, _ ) =
-                                    View.update ToggleRecord opened
-                            in
-                            Expect.all
-                                [ \_ -> render "p1" u2 |> Query.findAll [ id "bg-record-sheet" ] |> Query.count (Expect.equal 0)
-                                , \_ -> render "p1" u2 |> Query.find [ id "bg-record-toggle" ] |> Event.simulate Event.click |> Event.expect ToggleRecord
-                                , \_ -> Expect.equal True opened.recordOpen
-                                , \_ ->
-                                    View.view (ctx "p1" u2 opened)
-                                        |> Query.fromHtml
-                                        |> Query.find [ id "bg-record-sheet" ]
-                                        |> Query.has [ text "8/5* 6/5", text "CLOSE" ]
-                                , \_ -> Expect.equal False closed.recordOpen
-
-                                -- a tap on the board does not shut the sheet by accident
-                                , \_ -> View.update (PlayMove "13" "8") opened |> Tuple.first |> .recordOpen |> Expect.equal True
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "tapping a turn puts the board it left on the slab, drawn from its snapshot" <|
+             , test "stepping back puts the board a turn left on the slab, drawn from its snapshot" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
@@ -2180,21 +2001,16 @@ suite =
                                         |> Query.hasNot [ class "swaps" ]
                                 , \_ -> View.view (ctx "p2" u2 viewing) |> Query.fromHtml |> Query.findAll [ class "die", class "next" ] |> Query.count (Expect.equal 0)
 
-                                -- nothing on it is a control: no legal origin, no action button, only LIVE
-                                -- (the header's RESIGN is the live game's, outside the slab)
+                                -- nothing on it is a control: no legal origin, no action button
                                 , \_ -> board |> Query.findAll [ class "source" ] |> Query.count (Expect.equal 0)
-                                , \_ -> board |> Query.find [ class "bg-board" ] |> Query.findAll [ class "btn-arcade" ] |> Query.count (Expect.equal 1)
-                                , \_ -> board |> Query.find [ id "bg-live" ] |> Event.simulate Event.click |> Event.expect ViewLive
-                                , \_ -> board |> Query.findAll [ class "bg-record-line", class "is-viewing" ] |> Query.count (Expect.equal 1)
-                                , \_ -> board |> Query.find [ class "is-viewing" ] |> Query.has [ text "6/off(4)" ]
+                                , \_ -> board |> Query.find [ class "bg-board" ] |> Query.findAll [ class "btn-arcade" ] |> Query.count (Expect.equal 0)
+                                , \_ -> board |> Query.find [ id "bg-scrub-live" ] |> Event.simulate Event.click |> Event.expect ViewLive
 
-                                -- the record's rows are what puts a turn up
+                                -- the arrows under the board are what puts a turn up
                                 , \_ ->
                                     View.view (ctx "p1" u2 View.init)
                                         |> Query.fromHtml
-                                        |> Query.find [ id "bg-record" ]
-                                        |> Query.findAll [ class "rl-turn" ]
-                                        |> Query.first
+                                        |> Query.find [ id "bg-scrub-back" ]
                                         |> Event.simulate Event.click
                                         |> Event.expect (ViewTurn 1)
                                 ]
@@ -2202,7 +2018,7 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "LIVE comes back to the game, and says when it moved on meanwhile" <|
+             , test "the live arrow comes back to the game, and blinks when it moved on meanwhile" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
@@ -2230,10 +2046,10 @@ suite =
                                 , \_ -> Expect.equal True moved.stale
                                 , \_ -> Expect.equal (Just 0) moved.viewing
                                 , \_ -> Expect.equal False quiet.stale
-                                , \_ -> View.view (ctx "p1" u2 moved) |> Query.fromHtml |> Query.find [ id "bg-live" ] |> Query.has [ class "stale", text "LIVE · NEW" ]
+                                , \_ -> View.view (ctx "p1" u2 moved) |> Query.fromHtml |> Query.find [ id "bg-scrub" ] |> Query.has [ class "stale" ]
                                 , \_ -> Expect.equal ( Nothing, False ) ( live.viewing, live.stale )
                                 , \_ -> checkers live
-                                , \_ -> View.view (ctx "p1" u2 live) |> Query.fromHtml |> Query.findAll [ id "bg-live" ] |> Query.count (Expect.equal 0)
+                                , \_ -> View.view (ctx "p1" u2 live) |> Query.fromHtml |> Query.find [ id "bg-scrub-live" ] |> Query.has [ attribute (Html.Attributes.disabled True) ]
 
                                 -- a live payload never yanks a viewer back by itself
                                 , \_ -> View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] viewing |> .viewing |> Expect.equal (Just 0)
@@ -2241,7 +2057,7 @@ suite =
                                 -- unless the game it was in has ended: its turns left the scene with it
                                 , \_ -> View.noteEvents [ Protocol.Custom "new_game" E.null ] viewing |> (\m -> ( m.viewing, m.stale )) |> Expect.equal ( Nothing, False )
 
-                                -- the header's RESIGN makes its offer on the live board, where the panel can show
+                                -- the flag makes its offer on the live board, where the panel can show
                                 , \_ -> View.update OpenResign moved |> Tuple.first |> (\m -> ( m.viewing, m.stale, m.resigning )) |> Expect.equal ( Nothing, False, True )
                                 ]
                                 ()
@@ -2285,7 +2101,7 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "live, the ring is the game on the board's last turn, even while the list shows an earlier game" <|
+             , test "live, the ring is the game on the board's last turn, not an earlier game's" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
@@ -2300,24 +2116,13 @@ suite =
                                             withRecord (E.list identity [ landedTurn "p1" [ b ] ]) 2 u
                                                 |> withGames (E.list identity [ gameOver 1 "p1" "single" 1 [ ( "p1", 1 ), ( "p2", 0 ) ] ])
 
-                                        browsing =
-                                            View.update (BrowseGame 1) View.init
-                                                |> Tuple.first
-                                                |> View.update (GotRecord (Ok (archiveOf [ ( 1, one ) ])))
-                                                |> Tuple.first
-
                                         board m =
                                             View.view (ctx "p1" live m) |> Query.fromHtml
                                     in
                                     Expect.all
-                                        [ \_ -> Expect.equal ( Just 1, Nothing ) ( browsing.browsing, browsing.viewing )
-                                        , \_ -> board View.init |> ringedAt b |> Query.count (Expect.equal 1)
+                                        [ \_ -> board View.init |> ringedAt b |> Query.count (Expect.equal 1)
                                         , \_ -> board View.init |> ringedAt a |> Query.count (Expect.equal 0)
-                                        , \_ -> board browsing |> ringedAt b |> Query.count (Expect.equal 1)
-                                        , \_ -> board browsing |> ringedAt a |> Query.count (Expect.equal 0)
-
-                                        -- a turn of the browsed game put up on the board rings its own landing
-                                        , \_ -> board (View.update (ViewTurn 0) browsing |> Tuple.first) |> ringedAt a |> Query.count (Expect.equal 1)
+                                        , \_ -> List.length one |> Expect.equal 2
                                         ]
                                         ()
 
@@ -2352,50 +2157,6 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "between games the finished game is already in the history, with no heading for the game to come" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            let
-                                result =
-                                    gameOver 1 "p1" "gammon" 4 [ ( "p1", 4 ), ( "p2", 0 ) ]
-
-                                paused =
-                                    let
-                                        scene =
-                                            (withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ], result ]) 1 u
-                                                |> withGames (E.list identity [ result ])
-                                            ).scene
-                                                |> withData "between_games"
-                                                    (E.object
-                                                        [ ( "ready", E.list E.string [] )
-                                                        , ( "winner", E.string "p1" )
-                                                        , ( "kind", E.string "gammon" )
-                                                        , ( "stakes", E.string "gammon" )
-                                                        , ( "points", E.int 4 )
-                                                        , ( "cube", E.int 1 )
-                                                        ]
-                                                    )
-                                                |> withData "to_act" E.null
-                                                |> withData "to_move" E.null
-                                    in
-                                    inMatch { u | scene = { scene | phase = "between_games" }, legal = [ { name = "ready", label = "Ready", params = [] } ] }
-
-                                panel =
-                                    render "p1" paused |> Query.find [ id "bg-record" ]
-                            in
-                            Expect.all
-                                [ -- the game just played is a row of the match history already
-                                  \_ -> panel |> Query.findAll [ class "bg-record-game" ] |> Query.count (Expect.equal 1)
-                                , \_ -> panel |> Query.find [ class "bg-record-game" ] |> Query.has [ text "G1" ]
-
-                                -- and the game that has not begun heads nothing
-                                , \_ -> panel |> Query.hasNot [ text "GAME 2" ]
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
              , test "a past turn put up between games shows its dice, not the live result" <|
                 \_ ->
                     case firstUpdate of
@@ -2423,8 +2184,11 @@ suite =
                                 viewing =
                                     View.update (ViewTurn 0) View.init |> Tuple.first
 
+                                page m =
+                                    View.view (ctx "p1" paused m) |> Query.fromHtml
+
                                 board m =
-                                    View.view (ctx "p1" paused m) |> Query.fromHtml |> Query.find [ class "bg-board" ]
+                                    page m |> Query.find [ class "bg-board" ]
                             in
                             Expect.all
                                 [ -- live: the result, and no dice
@@ -2434,100 +2198,105 @@ suite =
                                 , \_ -> board viewing |> Query.findAll [ class "die" ] |> Query.count (Expect.equal 2)
                                 , \_ -> board viewing |> Query.hasNot [ text "YOU WIN" ]
                                 , \_ -> board viewing |> Query.findAll [ id "bg-game-result" ] |> Query.count (Expect.equal 0)
-                                , \_ -> board viewing |> Query.find [ id "bg-live" ] |> Event.simulate Event.click |> Event.expect ViewLive
+                                , \_ -> page viewing |> Query.find [ id "bg-scrub-live" ] |> Event.simulate Event.click |> Event.expect ViewLive
                                 ]
                                 ()
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "only finished games are kept from /record: one fetched while it was being played is fetched again" <|
+             , test "MATCH opens the panel of games so far and its ✕ shuts it; a single game has no MATCH" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
                             let
-                                resultOne =
+                                one =
                                     gameOver 1 "p1" "gammon" 4 [ ( "p1", 4 ), ( "p2", 0 ) ]
 
-                                gameTwoPlayed =
-                                    [ turn "p2" [ 2, 1 ] [ "bar/23", "6/5" ], turn "p1" [ 6, 5 ] [ "24/13" ] ]
+                                two =
+                                    gameOver 2 "p2" "dropped" 1 [ ( "p1", 4 ), ( "p2", 1 ) ]
 
-                                resultTwo =
-                                    gameOver 2 "p2" "single" 1 [ ( "p1", 4 ), ( "p2", 1 ) ]
+                                u3 =
+                                    inMatch (withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ] ]) 3 u |> withGames (E.list identity [ one, two ]))
 
-                                -- fetched in game 2: game 1, and game 2 so far (one turn, no result)
-                                early =
-                                    archiveOf [ ( 1, gameOne ), ( 2, List.take 1 gameTwoPlayed ) ]
+                                ( opened, out ) =
+                                    View.update ToggleMatch View.init
 
-                                -- fetched between games 2 and 3: the next game is an empty group
-                                between =
-                                    archiveOf [ ( 1, gameOne ), ( 2, gameTwoPlayed ++ [ resultTwo ] ), ( 3, [] ) ]
+                                sheet =
+                                    View.view (ctx "p1" u3 opened) |> Query.fromHtml |> Query.find [ id "bg-match-sheet" ]
 
-                                kept m =
-                                    case m.archive of
-                                        View.Fetched games ->
-                                            List.map Tuple.first games
-
-                                        _ ->
-                                            []
-
-                                ( inGameTwoModel, _ ) =
-                                    View.update (BrowseGame 1) View.init
-                                        |> Tuple.first
-                                        |> View.update (GotRecord (Ok early))
-
-                                -- game 2 ends and game 3 is on the board; G2 is a row now
-                                inGameThree =
-                                    withRecord (E.list identity []) 3 u
-                                        |> withGames (E.list identity [ resultOne, resultTwo ])
-
-                                ( asking, out ) =
-                                    View.update (BrowseGame 2) inGameTwoModel
-
-                                ( loaded, _ ) =
-                                    View.update (GotRecord (Ok between)) asking
-
-                                panelOf m =
-                                    View.view (ctx "p1" inGameThree m) |> Query.fromHtml |> Query.find [ id "bg-record" ]
+                                winner n =
+                                    nameOf n u3
                             in
                             Expect.all
-                                [ \_ -> kept inGameTwoModel |> Expect.equal [ 1 ]
-                                , \_ -> Expect.equal WantRecord out
-                                , \_ -> panelOf asking |> Query.has [ text "Loading game 2…" ]
-                                , \_ -> kept loaded |> Expect.equal [ 1, 2 ]
+                                [ \_ -> Expect.equal NoOut out
+                                , \_ -> render "p1" u3 |> Query.findAll [ id "bg-match-sheet" ] |> Query.count (Expect.equal 0)
+                                , \_ -> render "p1" u3 |> Query.find [ id "bg-match-toggle" ] |> Event.simulate Event.click |> Event.expect ToggleMatch
+                                , \_ -> sheet |> Query.find [ id "bg-match-close" ] |> Event.simulate Event.click |> Event.expect ToggleMatch
 
-                                -- game 2 in full: its last turn and its result
-                                , \_ -> panelOf loaded |> Query.find [ class "bg-record-list" ] |> Query.has [ text "24/13" ]
-                                , \_ -> panelOf loaded |> Query.findAll [ class "rl-result" ] |> Query.count (Expect.equal 1)
+                                -- one row per game played, then the game on the board
+                                , \_ -> sheet |> Query.findAll [ class "bg-match-row" ] |> Query.count (Expect.equal 3)
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text (winner "p1"), text "gammon", text "4 pts", text "4–0", text "PR pending", text "REPLAY" ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.has [ text (winner "p2"), text "dropped", text "1 pt", text "4–1" ]
+                                , \_ -> sheet |> Query.find [ class "bg-match-row", class "is-live" ] |> Query.has [ text "G3", text "In play" ]
+                                , \_ -> sheet |> Query.has [ class "bg-match-score" ]
 
-                                -- an answer that lacks the game asked for says so, and a tap asks again
+                                -- the PRs, once the engine has graded a game
                                 , \_ ->
-                                    View.update (BrowseGame 2) (View.update (GotRecord (Ok early)) asking |> Tuple.first)
-                                        |> Tuple.second
-                                        |> Expect.equal WantRecord
-                                , \_ ->
-                                    panelOf (View.update (GotRecord (Ok early)) asking |> Tuple.first)
-                                        |> Query.has [ text "Game 2 would not load. Tap it again." ]
+                                    View.view (let c = ctx "p1" u3 opened in { c | gamePrs = \n -> if n == 1 then [ ( "p1", 7.4 ), ( "p2", 12.1 ) ] else [] })
+                                        |> Query.fromHtml
+                                        |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ]
+                                        |> Query.has [ text (winner "p1" ++ " 7.4"), text (winner "p2" ++ " 12.1") ]
+
+                                -- a single game: no match, no button, and the ✕ has nothing to close
+                                , \_ -> render "p1" u |> Query.findAll [ id "bg-match-toggle" ] |> Query.count (Expect.equal 0)
+                                , \_ -> View.view (ctx "p1" u opened) |> Query.fromHtml |> Query.find [ id "bg-match-sheet" ] |> Query.has [ text "In play" ]
                                 ]
                                 ()
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "a spectator reads the match history but cannot open a game: /record is for seats" <|
+             , test "the arrows under the board step through the game: first and back before, forward and live after, greyed at the ends" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
                             let
                                 u2 =
-                                    inGameTwo u
+                                    withRecord (E.list identity [ turn "p1" [ 3, 1 ] [ "8/5", "6/5" ], cube "take" "p2" [], turnAt endgame "p2" [ 6, 6 ] [ "6/off(4)" ] ]) 1 u
 
-                                row viewer scene =
-                                    render viewer { u2 | scene = scene } |> Query.find [ id "bg-record" ] |> Query.find [ class "bg-record-game" ]
+                                row m =
+                                    View.view (ctx "p1" u2 m) |> Query.fromHtml |> Query.find [ id "bg-scrub" ]
+
+                                atTwo =
+                                    View.update (ViewTurn 2) View.init |> Tuple.first
+
+                                atZero =
+                                    View.update (ViewTurn 0) View.init |> Tuple.first
+
+                                disabled =
+                                    attribute (Html.Attributes.disabled True)
                             in
                             Expect.all
-                                [ \_ -> row "spectator" (asSpectator u2.scene) |> Query.has [ text "G1", text "gammon · 4 pts" ]
-                                , \_ -> row "spectator" (asSpectator u2.scene) |> Event.simulate Event.click |> Event.toResult |> Expect.err
-                                , \_ -> row "spectator" (asSpectator u2.scene) |> Query.hasNot [ class "cursor-pointer" ]
-                                , \_ -> row "p1" u2.scene |> Event.simulate Event.click |> Event.expect (BrowseGame 1)
+                                [ -- live: the two ways back light, the two ways forward do not
+                                  \_ -> row View.init |> Query.find [ id "bg-scrub-back" ] |> Event.simulate Event.click |> Event.expect (ViewTurn 2)
+                                , \_ -> row View.init |> Query.find [ id "bg-scrub-first" ] |> Event.simulate Event.click |> Event.expect (ViewTurn 0)
+                                , \_ -> row View.init |> Query.find [ id "bg-scrub-forward" ] |> Query.has [ disabled ]
+                                , \_ -> row View.init |> Query.find [ id "bg-scrub-live" ] |> Query.has [ disabled ]
+
+                                -- on the last turn: back skips the cube action to the turn before; forward is live
+                                , \_ -> row atTwo |> Query.find [ id "bg-scrub-back" ] |> Event.simulate Event.click |> Event.expect (ViewTurn 0)
+                                , \_ -> row atTwo |> Query.find [ id "bg-scrub-forward" ] |> Event.simulate Event.click |> Event.expect ViewLive
+                                , \_ -> row atTwo |> Query.find [ id "bg-scrub-live" ] |> Event.simulate Event.click |> Event.expect ViewLive
+
+                                -- on the first turn: nothing before it
+                                , \_ -> row atZero |> Query.find [ id "bg-scrub-first" ] |> Query.has [ disabled ]
+                                , \_ -> row atZero |> Query.find [ id "bg-scrub-back" ] |> Query.has [ disabled ]
+                                , \_ -> row atZero |> Query.find [ id "bg-scrub-forward" ] |> Event.simulate Event.click |> Event.expect (ViewTurn 2)
+
+                                -- a game with no turn yet: the row is there, every arrow grey
+                                , \_ -> render "p1" (withRecord (E.list identity []) 1 u) |> Query.find [ id "bg-scrub" ] |> Query.findAll [ tag "button", disabled ] |> Query.count (Expect.equal 4)
+
+                                -- the band says nothing about it: no LIVE button
+                                , \_ -> View.view (ctx "p1" u2 atTwo) |> Query.fromHtml |> Query.findAll [ id "bg-live" ] |> Query.count (Expect.equal 0)
                                 ]
                                 ()
 
@@ -2773,7 +2542,7 @@ perFixture fixture =
                             render "p1" u |> Query.findAll [ tag "button", text "PLAY" ] |> Query.count (Expect.equal expected)
                         )
                     |> allPass
-        , test "RESIGN is an arcade button with a flag, exactly when resigning is legal" <|
+        , test "the flag under the board is there exactly when resigning is legal" <|
             \_ ->
                 p1Views
                     |> List.map
@@ -2786,12 +2555,12 @@ perFixture fixture =
                                     else
                                         0
 
-                                header =
-                                    render "p1" u |> Query.find [ class "bg-header" ]
+                                row =
+                                    render "p1" u |> Query.find [ id "bg-actions" ]
                             in
                             Expect.all
-                                [ \_ -> header |> Query.findAll [ tag "button", class "btn-arcade", text "RESIGN" ] |> Query.count (Expect.equal expected)
-                                , \_ -> header |> Query.findAll [ id "bg-resign-open" ] |> Query.keep (tag "svg") |> Query.count (Expect.equal expected)
+                                [ \_ -> row |> Query.findAll [ tag "button", id "bg-resign-open" ] |> Query.count (Expect.equal expected)
+                                , \_ -> row |> Query.findAll [ id "bg-resign-open" ] |> Query.keep (tag "svg") |> Query.count (Expect.equal expected)
                                 ]
                                 ()
                         )
@@ -2935,7 +2704,7 @@ perFixture fixture =
                     |> List.head
                     |> Maybe.map
                         (\u ->
-                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, recordOpen = False, viewing = Nothing, stale = False, browsing = Nothing, archive = View.NotFetched, still = False })
+                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal 0)
