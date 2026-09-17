@@ -112,6 +112,15 @@ defmodule Oskol.GameKit do
   @spec legal_names(instance, player_id) :: [String.t()]
   def legal_names(instance, player_id), do: :gamekit@host.legal_names(instance, player_id)
 
+  @doc """
+  What this player may do now, as the update's `legal` list and nothing
+  else. A whole update renders the scene, the events and the clock as well,
+  which is wasted on a bot that only wants to pick a move.
+  """
+  def legal(instance, player_id) do
+    :gamekit@host.legal_json(instance, player_id) |> Jason.decode!()
+  end
+
   @spec finished?(instance) :: boolean()
   def finished?(instance), do: :gamekit@host.finished(instance)
 

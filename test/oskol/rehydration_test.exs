@@ -99,6 +99,8 @@ defmodule Oskol.RehydrationTest do
     assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
   end
 
+  # Plays a whole game before it can rehydrate one.
+  @tag :slow
   test "a finished game rehydrates read-only: final position, no further actions" do
     %{game_id: game_id, p1: p1, g1: g1} = started(42)
     assert {:finished, _} = Oskol.Bots.play(game_id, 7, 5000)

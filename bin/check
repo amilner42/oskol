@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 # Every suite, in order, one command. Stops at the first failure.
 #
-#   bin/check            compile, Gleam tests, Elm typecheck + tests, Elixir tests
-#   bin/check --browser  the same, then the Playwright smokes against a
-#                        server this script starts and stops (on PORT, 4400
-#                        by default -- give it another when 4400 is taken)
+#   bin/check            compile, Gleam tests, Elm typecheck + tests, Elixir
+#                        tests -- without the handful tagged `slow` (whole
+#                        matches played out, clocks that must run out in real
+#                        time), which is about four minutes of the five
+#   bin/check --all      the same, with the slow tests. What CI runs.
+#   bin/check --browser  --all, then the Playwright smokes against a server
+#                        this script starts and stops (on PORT, 4400 by
+#                        default -- give it another when 4400 is taken)
+#
+# The default is what you run while you work; --all is what you run before
+# you push, and CI runs everything regardless.
 #
 # Elm tests read a generated fixture corpus, so it is regenerated first
 # (the committed golden replays are left alone; the Gleam suite guards them).
@@ -34,7 +41,11 @@ step "Elm tests"
 
 step "Elixir tests"
 # The mix test alias also creates/migrates the test database.
-mix test
+if [[ "${1:-}" == "--all" || "${1:-}" == "--browser" ]]; then
+  mix test --include slow
+else
+  mix test
+fi
 
 if [[ "${1:-}" == "--browser" ]]; then
   step "dev database"

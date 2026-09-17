@@ -31,6 +31,9 @@ defmodule Oskol.Game.ClockTest do
     assert Enum.map(update["clock"]["players"], & &1["running"]) == [false, false]
   end
 
+  # A forfeit has to be waited for in real time: backgammon gives every turn
+  # its first 12 seconds free, and the clock behind that is what runs out.
+  @tag :slow
   test "a player who runs out of time forfeits and everyone is told" do
     # 150 ms of bank behind backgammon's 12 s turn delay: the forfeit lands
     # just over 12 s after the opening roll.

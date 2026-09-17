@@ -72,6 +72,7 @@ defmodule Oskol.PersistenceTest do
     assert length(row.winners) == 1 and hd(row.winners) in [p1, p2]
   end
 
+  @tag :slow
   test "a clock forfeit writes an expire entry and finishes the game" do
     # 150 ms of bank behind backgammon's 12 s turn delay: the forfeit lands
     # just over 12 s after the opening roll.

@@ -277,6 +277,8 @@ defmodule Oskol.ReviewsTest do
     assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
   end
 
+  # Waits out the retry backoffs on purpose: seconds of sleeping, not work.
+  @tag :slow
   test "an engine that fails is recorded and the game stays pending", %{conn: conn} do
     Req.Test.stub(Reviews, fn conn ->
       conn |> Plug.Conn.put_status(422) |> Req.Test.json(%{"detail" => "turns[3]: bad"})
