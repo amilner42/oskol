@@ -2234,18 +2234,28 @@ suite =
                                 , \_ -> sheet |> Query.find [ id "bg-match-close" ] |> Event.simulate Event.click |> Event.expect ToggleMatch
 
                                 -- one row per game played, then the game on the board
-                                , \_ -> sheet |> Query.findAll [ class "bg-match-row" ] |> Query.count (Expect.equal 3)
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text (winner "p1"), text "gammon", text "4 pts", text "4–0", text "PR pending", text "REPLAY" ]
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.has [ text (winner "p2"), text "dropped", text "1 pt", text "4–1" ]
-                                , \_ -> sheet |> Query.find [ class "bg-match-row", class "is-live" ] |> Query.has [ text "G3", text "In play" ]
-                                , \_ -> sheet |> Query.has [ class "bg-match-score" ]
+                                , \_ -> sheet |> Query.find [ class "bg-match-list" ] |> Query.findAll [ class "bg-match-row" ] |> Query.count (Expect.equal 3)
+                                -- the players head their columns, with their points so far and their match PR
+                                , \_ -> sheet |> Query.findAll [ class "bg-match-col" ] |> Query.count (Expect.equal 2)
+                                , \_ -> sheet |> Query.findAll [ class "bg-match-col" ] |> Query.first |> Query.has [ text (winner "p1"), text "PR …" ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text "+4", text "…", attribute (Html.Attributes.attribute "aria-label" "Analysis") ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.findAll [ class "bg-match-cell" ] |> Query.first |> Query.has [ class "win", text "+4", attribute (Html.Attributes.title "gammon") ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.findAll [ class "bg-match-cell" ] |> Query.index 1 |> Query.has [ class "win", text "+1" ]
+
+                                -- newest first: the game on the board, then G2, then G1
+                                , \_ -> sheet |> Query.find [ class "bg-match-list" ] |> Query.children [] |> Query.first |> Query.has [ class "is-live", text "G3", text "In play" ]
+                                , \_ -> sheet |> Query.find [ class "bg-match-list" ] |> Query.children [] |> Query.index 1 |> Query.has [ attribute (Html.Attributes.attribute "data-game" "2") ]
 
                                 -- the PRs, once the engine has graded a game
                                 , \_ ->
                                     View.view (let c = ctx "p1" u3 opened in { c | gamePrs = \n -> if n == 1 then [ ( "p1", 7.4 ), ( "p2", 12.1 ) ] else [] })
                                         |> Query.fromHtml
                                         |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ]
-                                        |> Query.has [ text (winner "p1" ++ " 7.4"), text (winner "p2" ++ " 12.1") ]
+                                        |> Expect.all
+                                            [ Query.has [ text "7.4", text "12.1" ]
+                                            , Query.find [ class "bg-match-cell", class "best" ] >> Query.has [ text "7.4", class "hero-trophy" ]
+                                            , Query.findAll [ class "hero-trophy" ] >> Query.count (Expect.equal 1)
+                                            ]
 
                                 -- a single game: no match, no button, and the ✕ has nothing to close
                                 , \_ -> render "p1" u |> Query.findAll [ id "bg-match-toggle" ] |> Query.count (Expect.equal 0)

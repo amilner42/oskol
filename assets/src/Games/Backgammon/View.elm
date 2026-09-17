@@ -3490,9 +3490,10 @@ replayLink ctx number label =
             text ""
 
 
-{-| The match panel: the score, then one row per game played, and the game
-on the board last. Opens over the board (the header's MATCH) and closes on
-its ✕, its backdrop or a row's link.
+{-| The match panel: a column per player headed by their name, their
+points so far and their match PR; under it one line per game, newest
+first, the game on the board at the top. Opens over the board (the row's
+MATCH) and closes on its ✕ or its backdrop.
 -}
 viewMatchSheet : Ctx -> Html Msg
 viewMatchSheet ctx =
@@ -3506,11 +3507,6 @@ viewMatchSheet ctx =
         finished =
             gamesOf ctx.scene
 
-        score =
-            ctx.scene.players
-                |> List.map (\p -> String.fromInt (Protocol.counter "score" p))
-                |> String.join "–"
-
         heading =
             if target <= 0 then
                 "UNLIMITED"
@@ -3518,8 +3514,36 @@ viewMatchSheet ctx =
             else
                 "MATCH TO " ++ String.fromInt target
 
-        names =
-            ctx.scene.players |> List.map .name |> String.join " · "
+        matchPrs =
+            ctx.scene.players |> List.filterMap (\p -> ctx.prOf p.id |> Maybe.map (Tuple.pair p.id))
+
+        bestMatchPr =
+            matchPrs |> List.sortBy Tuple.second |> List.head |> Maybe.map Tuple.first
+
+        column player =
+            let
+                score =
+                    Protocol.counter "score" player
+            in
+            div [ class "bg-match-col" ]
+                [ span [ class "bg-match-col-name truncate" ] [ text player.name ]
+                , span [ class "bg-match-col-score pixel tabular-nums" ] [ text (String.fromInt score) ]
+                , span [ class "bg-match-col-pr tabular-nums inline-flex items-center gap-1" ]
+                    [ if bestMatchPr == Just player.id && List.length matchPrs > 1 then
+                        span [ class "hero-trophy w-3.5 h-3.5", title "The better match PR", attribute "aria-label" "best" ] []
+
+                      else
+                        text ""
+                    , text
+                        (case ctx.prOf player.id of
+                            Just pr ->
+                                "PR " ++ oneDecimal pr
+
+                            Nothing ->
+                                "PR …"
+                        )
+                    ]
+                ]
 
         inPlay =
             if betweenGames ctx /= Nothing || ctx.finished /= Nothing then
@@ -3528,10 +3552,8 @@ viewMatchSheet ctx =
             else
                 [ div [ class "bg-match-row is-live", attribute "data-game" (String.fromInt gameNumber) ]
                     [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt gameNumber) ]
-                    , span [ class "bg-match-main" ]
-                        [ span [ class "font-bold" ] [ text "In play" ]
-                        , span [ class "bg-match-sub" ] [ text "The game on the board." ]
-                        ]
+                    , span [ class "bg-match-live font-bold flex-1 text-center" ] [ text "In play" ]
+                    , span [ class "bg-match-analysis-gap" ] []
                     ]
                 ]
     in
@@ -3539,11 +3561,7 @@ viewMatchSheet ctx =
         [ div [ class "absolute inset-0", style "background" "rgba(35, 36, 58, 0.55)", onClick ToggleMatch ] []
         , div [ class "bg-match relative w-full max-w-md flex flex-col min-h-0" ]
             [ div [ class "bg-match-head" ]
-                [ div [ class "flex flex-col gap-0.5 min-w-0" ]
-                    [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text heading ]
-                    , span [ class "font-bold text-base truncate" ] [ text names ]
-                    ]
-                , span [ class "bg-match-score pixel text-sm tabular-nums" ] [ text score ]
+                [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text heading ]
                 , button
                     [ class "bg-match-close"
                     , Html.Attributes.id "bg-match-close"
@@ -3552,18 +3570,24 @@ viewMatchSheet ctx =
                     ]
                     [ text "✕" ]
                 ]
+            , div [ class "bg-match-cols bg-match-row" ]
+                [ span [ class "bg-match-n" ] []
+                , div [ class "bg-match-cells" ] (List.map column ctx.scene.players)
+                , span [ class "bg-match-analysis-gap" ] []
+                ]
             , if finished == [] && inPlay == [] then
                 div [ class "bg-match-list" ] [ span [ class "bg-match-empty" ] [ text "Nothing played yet." ] ]
 
               else
-                div [ class "bg-match-list" ] (List.map (viewMatchRow ctx) finished ++ inPlay)
+                div [ class "bg-match-list" ] (inPlay ++ List.map (viewMatchRow ctx) (List.reverse finished))
             ]
         ]
 
 
-{-| One finished game: which, who won it and how, the points; under that
-each player's PR for it (once the engine has graded it) and the door to
-its replay; at the right the score it left.
+{-| One finished game on one line, under the players' columns: a cell per
+player, the winner's carrying the points in green (how they came is the
+chip's tooltip), and in each the player's PR for the game, the better one
+with a trophy beside it. At the right the door to its analysis.
 -}
 viewMatchRow : Ctx -> GameResult -> Html Msg
 viewMatchRow ctx g =
@@ -3585,29 +3609,71 @@ viewMatchRow ctx g =
         prs =
             ctx.gamePrs g.number
 
-        prLine =
-            if prs == [] then
-                "PR pending"
+        prOf id =
+            prs |> List.filter (\( p, _ ) -> p == id) |> List.head |> Maybe.map Tuple.second
 
-            else
-                prs
-                    |> List.map (\( id, pr ) -> playerName ctx id ++ " " ++ oneDecimal pr)
-                    |> String.join " · "
+        best =
+            prs |> List.sortBy Tuple.second |> List.head |> Maybe.map Tuple.first
+
+        cell player =
+            let
+                won =
+                    player.id == g.winner
+
+                played_best =
+                    best == Just player.id && List.length prs > 1
+            in
+            div [ classList [ ( "bg-match-cell", True ), ( "win", won ), ( "best", played_best ) ] ]
+                [ if won then
+                    span [ class "bg-match-points pixel", title how ] [ text ("+" ++ String.fromInt g.points) ]
+
+                  else
+                    text ""
+                , span [ class "bg-match-pr tabular-nums inline-flex items-center gap-1" ]
+                    [ if played_best then
+                        -- the better PR of the game: a trophy, in the same grey
+                        span [ class "hero-trophy w-3.5 h-3.5", title "The better PR this game", attribute "aria-label" "best" ] []
+
+                      else
+                        text ""
+                    , text
+                        (case prOf player.id of
+                            Just value ->
+                                oneDecimal value
+
+                            Nothing ->
+                                "…"
+                        )
+                    ]
+                ]
     in
     div [ class "bg-match-row", attribute "data-game" (String.fromInt g.number) ]
         [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt g.number) ]
-        , span [ class "bg-match-main" ]
-            [ span [ class "truncate" ]
-                [ span [ class "font-bold" ] [ text (playerName ctx g.winner) ]
-                , span [ style "color" "var(--pencil)" ] [ text (" · " ++ how ++ " · " ++ pointsText g.points) ]
-                ]
-            , span [ class "bg-match-sub" ]
-                [ span [] [ text prLine ]
-                , replayLink ctx g.number "REPLAY"
-                ]
-            ]
-        , span [ class "bg-match-after font-bold tabular-nums" ] [ text (scoreText ctx g.scores) ]
+        , div [ class "bg-match-cells" ] (List.map cell ctx.scene.players)
+        , analysisLink ctx g.number
         ]
+
+
+{-| The door to a finished game's analysis: the replay page, with the
+engine's verdicts on every turn. A link, so it opens in a tab; a
+magnifier, as wide as the game number on the other side.
+-}
+analysisLink : Ctx -> Int -> Html Msg
+analysisLink ctx number =
+    case ctx.replayHref number of
+        Just href ->
+            Html.a
+                [ Html.Attributes.href href
+                , class "bg-replay-link bg-match-analysis inline-flex items-center gap-1 shrink-0"
+                , attribute "data-replay" (String.fromInt number)
+                , title ("Game " ++ String.fromInt number ++ ": the analysis")
+                , attribute "aria-label" "Analysis"
+                , Html.Events.stopPropagationOn "click" (D.succeed ( Ignore, True ))
+                ]
+                [ span [ class "hero-magnifying-glass w-4 h-4", attribute "aria-hidden" "true" ] [] ]
+
+        Nothing ->
+            text ""
 
 
 {-| The four arrows that look back through the game on the board: to its
