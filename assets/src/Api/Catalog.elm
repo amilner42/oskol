@@ -339,7 +339,11 @@ ratingsDecoder =
         (optionalList "games"
             (D.map2 Tuple.pair
                 (D.field "game_number" D.int)
-                (D.field "players" (D.list (D.map2 Tuple.pair (D.field "player_id" D.string) (D.field "pr" D.float))))
+                (D.field "players"
+                    (D.list (D.map2 Tuple.pair (D.field "player_id" D.string) (D.field "pr" (D.nullable D.float)))
+                        |> D.map (List.filterMap (\( id, pr ) -> Maybe.map (Tuple.pair id) pr))
+                    )
+                )
             )
         )
 

@@ -806,8 +806,18 @@ moverColor ctx =
 
 
 view : Ctx -> Html Msg
-view live =
+view arrived =
     let
+        -- A past turn that the record no longer has (a reconnect into a
+        -- new game while one was up) is nothing to show: the board is
+        -- live, and says so, rather than read-only with no way out.
+        live =
+            if arrived.model.viewing /= Nothing && viewedTurn arrived == Nothing then
+                { arrived | model = (\m -> { m | viewing = Nothing, stale = False }) arrived.model }
+
+            else
+                arrived
+
         -- A past turn on the board: the slab is drawn from that turn's
         -- snapshot with nothing legal, so no tap, drag or button lands on it;
         -- the header and the record still read the live game.
