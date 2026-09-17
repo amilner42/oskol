@@ -148,14 +148,14 @@ async function clickThrough(browser, errors) {
     await alice.mouse.click(8, 8);
     await alice.waitForSelector('#resume-modal', { state: 'detached' });
     const note = (await alice.textContent('#resume-games')).trim();
-    if (note !== '1 GAME ON') throw new Error(`the bar reads "${note}"`);
+    if (note !== 'REJOIN 1 GAME') throw new Error(`the bar reads "${note}"`);
     await alice.click('#resume-games');
     await alice.waitForSelector('#resume-modal');
     await alice.click(`#resume-${gameId}`);
     await alice.waitForSelector('.checker', { timeout: 20000 });
     if (new URL(alice.url()).pathname !== `/backgammon/${gameId}`)
       throw new Error(`resuming landed at ${alice.url()}`);
-    log('home -> YOUR GAMES -> back at the table: RESUME OK');
+    log('home -> LIVE GAMES -> back at the table: RESUME OK');
 
     // The same list on a phone, upright and sideways: it must fit without
     // the page scrolling sideways, and the bar's button must stay in the
@@ -181,7 +181,7 @@ async function clickThrough(browser, errors) {
       const plate = await small.locator('#resume-games').boundingBox();
       const bar = await small.locator('.player-bar.is-me').boundingBox();
       if (!plate || !bar || plate.y < bar.y || plate.y + plate.height > bar.y + bar.height + 1)
-        throw new Error(`${tag}: the GAMES ON plate is not inside the bar`);
+        throw new Error(`${tag}: the REJOIN plate is not inside the bar`);
       await small.screenshot({ path: `${SHOTS}/${tag}-08-home-with-games.png` });
       await small.close();
     }

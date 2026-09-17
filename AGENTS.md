@@ -720,7 +720,7 @@ entry names the opponent (null in a lobby), the format and clock by name,
 whether it is the caller's turn (`your_move`, from the row's `state`) and
 seconds since the room was touched. The client (`Page/GameLanding.elm`)
 shows them in a dialog over the home board when the list arrives with
-anything in it, and keeps a "N GAMES ON" button at the right end of the
+anything in it, and keeps a "REJOIN N GAMES" button at the right end of the
 player's own bar for as long as there are any. The three-day pruner bounds
 the list.
 

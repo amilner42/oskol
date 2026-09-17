@@ -509,16 +509,16 @@ resume =
             \_ ->
                 home withGames
                     |> Expect.all
-                        [ Query.has [ id "resume-modal" ]
+                        [ Query.has [ id "resume-modal", text "LIVE GAMES", text "Tap one to rejoin." ]
                         , Query.find [ id "resume-list" ] >> Query.children [] >> Query.count (Expect.equal 2)
                         , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "vs Bob", text "Match to 5", text "5 min", text "2 min ago", text "YOUR MOVE" ]
                         , Query.find [ id "resume-9H302Z" ] >> Query.has [ text "Waiting for a player", text "LOBBY" ]
                         ]
-        , test "the bar's button says how many are waiting" <|
+        , test "the bar's button says how many are waiting, and what to do" <|
             \_ ->
                 home withGames
                     |> Query.find [ id "resume-games" ]
-                    |> Query.has [ text "2 GAMES ON" ]
+                    |> Query.has [ text "REJOIN 2 GAMES" ]
         , test "closing it leaves the board and the bar's button" <|
             \_ ->
                 home (send GameLanding.ClosedResume withGames)
@@ -558,11 +558,11 @@ resume =
             \_ ->
                 home (send (GameLanding.GotMyGames (Err Api.NetworkError)) loadedModel)
                     |> Query.hasNot [ id "resume-modal" ]
-        , test "one game is 1 GAME ON, and their move is quiet" <|
+        , test "one game is REJOIN 1 GAME, and their move is quiet" <|
             \_ ->
                 home (send (GameLanding.GotMyGames (Ok [ { playing | yourMove = False } ])) loadedModel)
                     |> Expect.all
-                        [ Query.find [ id "resume-games" ] >> Query.has [ text "1 GAME ON" ]
+                        [ Query.find [ id "resume-games" ] >> Query.has [ text "REJOIN 1 GAME" ]
                         , Query.find [ id "resume-123456" ] >> Query.has [ text "THEIR MOVE" ]
                         ]
         , test "the menu is still its four entries: the button lives in the bar, not the band" <|

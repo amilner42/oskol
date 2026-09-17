@@ -737,7 +737,8 @@ dialog config content =
 
 
 {-| The right end of the player's own bar: the games waiting for them, as
-a button that opens the list, or the pip count a game would show there.
+a button that opens the list ("REJOIN 2 GAMES"), or the pip count a game
+would show there.
 -}
 gamesNote : Model -> Html Msg
 gamesNote model =
@@ -753,12 +754,13 @@ gamesNote model =
                 , onClick OpenedResume
                 ]
                 [ Html.text
-                    (String.fromInt n
+                    ("REJOIN "
+                        ++ String.fromInt n
                         ++ (if n == 1 then
-                                " GAME ON"
+                                " GAME"
 
                             else
-                                " GAMES ON"
+                                " GAMES"
                            )
                     )
                 ]
@@ -772,9 +774,9 @@ brings it back.
 resumeModal : Model -> Html Msg
 resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
-        dialog { id = "resume-modal", closeId = "close-resume", label = "Your games", heading = "YOUR GAMES", onClose = ClosedResume }
-            [ Html.ul [ id "resume-list", class "space-y-2" ] (List.map resumeRow model.myGames)
-            , Html.p [ class "q-note text-xs text-center mt-4" ] [ Html.text "Games this browser is sitting at. Tap one to go back to the table." ]
+        dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
+            [ Html.p [ class "text-[14px] leading-snug mb-3", style "color: var(--ink)" ] [ Html.text "You're sitting at these tables. Tap one to rejoin." ]
+            , Html.ul [ id "resume-list", class "space-y-2" ] (List.map resumeRow model.myGames)
             ]
 
     else
