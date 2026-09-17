@@ -647,7 +647,10 @@
 /* The chevron turns over while the list is open. */
 .bg-page.home-board .home-themes > button .home-palette { transition: transform 0.18s ease; }
 .bg-page.home-board .home-themes > button[aria-expanded="true"] .home-palette { transform: rotate(180deg); }
-@media (prefers-reduced-motion: reduce) { .bg-page.home-board .home-themes > button .home-palette { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .bg-page.home-board .home-themes > button, .bg-page.home-board .home-themes > button .home-palette { transition: none; }
+  .bg-page.home-board .home-themes > button:hover { transform: none; }
+}
 /* On a phone the list takes the whole screen under the top bar: the bar's
    height is pinned so the list hangs exactly beneath it, with no strip of
    board showing between the two, and it runs edge to edge to the bottom. */
@@ -748,7 +751,6 @@
 .pitch { border-top: 1px solid rgba(35, 36, 58, 0.12); }
 .pitch-line { color: var(--ink); text-wrap: balance; letter-spacing: -0.01em; }
 .pitch-chip { color: var(--ink); background: #fff; border: 1.5px solid var(--ink); }
-.pitch-chip.free { background: var(--highlighter); border-color: var(--highlighter); }
 .signup { background: var(--ink); color: #fff; cursor: default; }
 .signup-soon { background: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 0.85); }
 .resume-badge.yours { background: var(--highlighter); color: var(--ink); }
