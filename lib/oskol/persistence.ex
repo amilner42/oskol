@@ -28,6 +28,7 @@ defmodule Oskol.Persistence do
       # This room has a game that ended and may still owe an analysis. Set
       # when the game ends, cleared when the queue finds nothing owed.
       field(:analysis_owed, :boolean, default: false)
+      field(:analysis_owed_at, :utc_datetime_usec)
       field(:players, {:array, :map}, default: [])
       field(:status, :string, default: "waiting")
       field(:winners, {:array, :string}, default: [])

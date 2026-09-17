@@ -17,6 +17,10 @@ defmodule Oskol.Repo.Migrations.MarkAnalysesOwed do
   def change do
     alter table(:games) do
       add(:analysis_owed, :boolean, default: false, null: false)
+      # When the note was last made. A job clears only a note it has seen:
+      # a game that ends while the job is running makes a newer one, and
+      # wiping that would lose exactly the work this exists to keep.
+      add(:analysis_owed_at, :utc_datetime_usec)
     end
 
     create(

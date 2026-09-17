@@ -84,7 +84,12 @@ defmodule Oskol.Gleam.Caps.Analysis do
     if json = unopt(option), do: Jason.decode!(json)
   end
 
+  # A note before the ask, always. The queue lives in memory, so anything
+  # that asks it for work -- today a player's retry of a failed analysis --
+  # must leave something behind that a restart cannot forget. Writing it
+  # here rather than at each call site means a new caller cannot omit it.
   defp enqueue(game_id) do
+    Reviews.mark_analysis_owed(game_id)
     Oskol.Reviews.Queue.enqueue(game_id)
     nil
   end

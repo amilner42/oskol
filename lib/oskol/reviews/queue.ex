@@ -58,14 +58,18 @@ defmodule Oskol.Reviews.Queue do
     # write-behind persister; let them land before reading the log.
     Oskol.Game.Persister.flush()
 
+    # The note as it stands before any of this is read. A game that ends
+    # while the engine is working makes a newer note, and that one must
+    # outlive this job: this job read the log before that game existed.
+    seen = Oskol.Reviews.analysis_owed_at(game_id)
+
     case :oskol@handlers@reviews.run(Oskol.Gleam.CtxBuilder.build(), game_id) do
       {:some, ms} ->
+        # A retry keeps the note: the work is not done until it is done.
         {:retry, ms}
 
       :none ->
-        # Nothing left owed, so the note this room was carrying goes. A
-        # retry keeps it: the work is not done until it is done.
-        Oskol.Reviews.clear_analysis_owed(game_id)
+        Oskol.Reviews.clear_analysis_owed(game_id, seen)
         :ok
     end
   end

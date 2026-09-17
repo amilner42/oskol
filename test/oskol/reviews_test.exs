@@ -291,8 +291,6 @@ defmodule Oskol.ReviewsTest do
     assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
   end
 
-  # Waits out the retry backoffs on purpose: seconds of sleeping, not work.
-  @tag :slow
   test "a job lost to a restart is picked up by the sweep at boot", %{conn: conn} do
     # The queue lives in memory: a machine that restarts between a game
     # ending and its job running forgets the job. Nothing else would ever
@@ -314,6 +312,28 @@ defmodule Oskol.ReviewsTest do
 
     # And the note is gone, so the next boot does not look again.
     Queue.await_idle()
+    assert Oskol.Reviews.rooms_owed_analysis() == []
+  end
+
+  test "a game that ends while a job is running keeps its note", %{conn: _conn} do
+    # The job read the log before that game existed, so it cannot have
+    # analysed it. Clearing the note on the way out would lose it, and
+    # nothing else would ever look: a read does not queue engine work.
+    engine(self())
+    game_id = finished_game(9)
+    wait_for(fn -> Enum.any?(Reviews.stored(game_id), &(&1.status == "done")) end)
+    Queue.await_idle()
+    assert Oskol.Reviews.rooms_owed_analysis() == []
+
+    # What a job that started before this note would try to clear.
+    before = DateTime.add(DateTime.utc_now(), -60, :second)
+    Oskol.Reviews.mark_analysis_owed(game_id)
+    Oskol.Reviews.clear_analysis_owed(game_id, before)
+
+    assert [^game_id] = Oskol.Reviews.rooms_owed_analysis()
+
+    # A job that has seen this note may clear it.
+    Oskol.Reviews.clear_analysis_owed(game_id, Oskol.Reviews.analysis_owed_at(game_id))
     assert Oskol.Reviews.rooms_owed_analysis() == []
   end
 
@@ -339,6 +359,8 @@ defmodule Oskol.ReviewsTest do
     assert length(Reviews.stored(game_id)) == 1
   end
 
+  # Waits out the retry backoffs on purpose: seconds of sleeping, not work.
+  @tag :slow
   test "an engine that fails is recorded and the game stays pending", %{conn: conn} do
     Req.Test.stub(Reviews, fn conn ->
       conn |> Plug.Conn.put_status(422) |> Req.Test.json(%{"detail" => "turns[3]: bad"})
