@@ -47,8 +47,6 @@ import Games.Backgammon.View
 import Page.HomeBoard
 import Route
 import Session exposing (Session)
-import Svg
-import Svg.Attributes as SvgA
 import Ui.Notebook as Notebook exposing (style)
 
 
@@ -214,10 +212,10 @@ update msg model =
 
         -- The games waiting for this browser: the list opens over the
         -- board when there are any, once, and the bar keeps offering it.
-        -- Not over CREATE GAME's dialog if the player already opened that:
-        -- the bar's button is there for later.
+        -- Not over something the player already opened (CREATE GAME's
+        -- dialog, the board picker): the bar's button is there for later.
         GotMyGames (Ok games) ->
-            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) && not model.started }
+            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) && not model.started && not model.themesOpen }
             , Task.perform ListArrived Time.now
             , NoOut
             )
@@ -538,17 +536,10 @@ themePicker model =
     let
         current =
             homeTheme model
-
-        label =
-            Games.Backgammon.View.themes
-                |> List.filter (\( key, _ ) -> key == current)
-                |> List.head
-                |> Maybe.map Tuple.second
-                |> Maybe.withDefault "BOARD"
     in
     Html.div [ class "bg-themes home-themes shrink-0" ]
         [ Html.button
-            [ class "pixel text-[8px] flex items-center gap-1.5 px-1.5 py-1"
+            [ class "flex items-center gap-2 px-1.5 py-1"
             , id "bg-theme-button"
             , Html.Attributes.attribute "aria-expanded"
                 (if model.themesOpen then
@@ -562,7 +553,7 @@ themePicker model =
             ]
             [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ]
                 [ Games.Backgammon.View.themeBoard ]
-            , Html.span [ class "bg-ctl-label hidden sm:inline" ] [ Html.text label ]
+            , icon "hero-chevron-down" "home-palette w-3.5 h-3.5"
             ]
         , if model.themesOpen then
             Html.div [ class "bg-theme-list", id "bg-theme-list" ]
@@ -902,72 +893,32 @@ guestNote =
             , Html.span [ class "signup-soon text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" ] [ Html.text "soon" ]
             ]
         , Html.ul [ class "flex flex-wrap justify-center gap-2" ]
-            [ chip deviceIcon "Every device" False
-            , chip analysisIcon "4-ply analysis" False
-            , chip flagIcon "Openings" False
-            , chip practiceIcon "Mistake practice" False
-            , chip trendIcon "PR over time" False
-            , chip lockIcon "Secure account" False
+            [ chip "hero-device-phone-mobile" "Every device"
+            , chip "hero-magnifying-glass" "4-ply analysis"
+            , chip "hero-flag" "Openings"
+            , chip "hero-light-bulb" "Mistake practice"
+            , chip "hero-arrow-trending-up" "PR over time"
+            , chip "hero-lock-closed" "Secure account"
             ]
         ]
 
 
-{-| One thing an account is for, as a chip: an icon and a few words.
+{-| One thing an account is for, as a chip: a Heroicon and a few words.
 -}
-chip : Html Msg -> String -> Bool -> Html Msg
-chip icon label free =
-    Html.li
-        [ class
-            ("pitch-chip inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5 text-[12.5px] font-semibold"
-                ++ (if free then
-                        " free"
-
-                    else
-                        ""
-                   )
-            )
-        ]
-        [ icon, Html.text label ]
+chip : String -> String -> Html Msg
+chip iconName label =
+    Html.li [ class "pitch-chip inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5 text-[12.5px] font-semibold" ]
+        [ icon iconName "w-4 h-4", Html.text label ]
 
 
-{-| Line icons, drawn once, stroked in the current colour so the chip
-decides the ink.
+{-| A Heroicon, by the class the Tailwind plugin makes for it
+(`hero-<name>`), the same way the HEEx `<.icon>` component draws one. It is
+a mask in the current colour, so the surface decides the ink.
 -}
-lineIcon : String -> Html Msg
-lineIcon path =
-    Svg.svg
-        [ SvgA.viewBox "0 0 24 24", SvgA.fill "none", SvgA.stroke "currentColor", SvgA.strokeWidth "1.8", SvgA.strokeLinecap "round", SvgA.strokeLinejoin "round", SvgA.class "w-4 h-4 shrink-0", Html.Attributes.attribute "aria-hidden" "true" ]
-        [ Svg.path [ SvgA.d path ] [] ]
+icon : String -> String -> Html Msg
+icon name size =
+    Html.span [ class (name ++ " " ++ size ++ " shrink-0"), Html.Attributes.attribute "aria-hidden" "true" ] []
 
-
-analysisIcon : Html Msg
-analysisIcon =
-    lineIcon "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-
-
-lockIcon : Html Msg
-lockIcon =
-    lineIcon "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
-
-
-flagIcon : Html Msg
-flagIcon =
-    lineIcon "M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.732a48.524 48.524 0 0 1-.005-10.499l-3.11.732a9 9 0 0 1-6.085-.711l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5"
-
-
-deviceIcon : Html Msg
-deviceIcon =
-    lineIcon "M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"
-
-
-practiceIcon : Html Msg
-practiceIcon =
-    lineIcon "M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
-
-
-trendIcon : Html Msg
-trendIcon =
-    lineIcon "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941"
 
 
 {-| The two clocks, the running one counting down: mine then theirs. The
