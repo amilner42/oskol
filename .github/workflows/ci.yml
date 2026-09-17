@@ -8,6 +8,13 @@ on:
     branches: [main]
   pull_request:
 
+# A push to a branch supersedes the run before it: the old one is
+# cancelled rather than finishing behind the new one. A push to main is
+# never cancelled, so every merge gets its verdict.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: compile, Gleam, Elm, Elixir
@@ -74,10 +81,12 @@ jobs:
       - name: Formatting
         run: mix format --check-formatted && gleam format --check src test
 
+  # Runs alongside the suites, not after them: the two are independent,
+  # and CI is green when both are. A red answer comes in the time of the
+  # slower job, not the sum.
   browser:
     name: Playwright smokes
     runs-on: ubuntu-latest
-    needs: test
     services:
       postgres:
         image: postgres:17

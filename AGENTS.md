@@ -877,10 +877,12 @@ node playwright/review-pages/test.js            # screenshots of the home board,
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`,
-smokes included (one job, one server, in `bin/check`'s order). It runs on
-pull requests and on pushes to main, which is once per commit rather than
-the twice it used to be.
+CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`:
+two jobs side by side, the suites (compile, Gleam, Elm, Elixir, formatting)
+and the Playwright smokes (one server, in `bin/check`'s order), green when
+both are. It runs on pull requests and on pushes to main, once per commit;
+a newer push to a branch cancels the run it supersedes, a push to main is
+never cancelled.
 
 **Speed is a feature of the suite.** A check nobody runs is worse than a slow
 one, so keep it under about two minutes: the Gleam tests run one worker per
