@@ -509,7 +509,9 @@ resume =
             \_ ->
                 home withGames
                     |> Expect.all
-                        [ Query.has [ id "resume-modal", text "LIVE GAMES", text "Tap one to rejoin." ]
+                        [ Query.has [ id "resume-modal", text "LIVE GAMES" ]
+                        , Query.find [ id "guest-note" ] >> Query.has [ text "guest on this device" ]
+                        , Query.find [ id "signup-cta" ] >> Query.has [ text "SIGN UP", text "SOON", disabled ]
                         , Query.find [ id "resume-list" ] >> Query.children [] >> Query.count (Expect.equal 2)
                         , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "vs Bob", text "Match to 5", text "5 min", text "2 min ago", text "YOUR MOVE" ]
                         , Query.find [ id "resume-9H302Z" ] >> Query.has [ text "Waiting for a player", text "LOBBY" ]

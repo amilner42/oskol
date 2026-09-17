@@ -775,8 +775,8 @@ resumeModal : Model -> Html Msg
 resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
         dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
-            [ Html.p [ class "text-[14px] leading-snug mb-3", style "color: var(--ink)" ] [ Html.text "You're sitting at these tables. Tap one to rejoin." ]
-            , Html.ul [ id "resume-list", class "space-y-2" ] (List.map resumeRow model.myGames)
+            [ Html.ul [ id "resume-list", class "space-y-2" ] (List.map resumeRow model.myGames)
+            , guestNote
             ]
 
     else
@@ -819,6 +819,27 @@ resumeRow game =
                 , Html.div [ class "q-note text-[12px] truncate" ] [ Html.text detail ]
                 ]
             , Html.span [ class ("resume-badge pixel text-[7px] whitespace-nowrap px-1.5 py-1 " ++ Tuple.second badge) ] [ Html.text (Tuple.first badge) ]
+            ]
+        ]
+
+
+{-| Under the list: what holds these games (this browser's guest), and
+the way out of that, an account. Accounts are on their way, so the call
+to action wears the site's SOON badge and does nothing yet; when they
+land it becomes the sign-up step, prefilled from here.
+-}
+guestNote : Html Msg
+guestNote =
+    Html.div [ id "guest-note", class "mt-4 pt-4 flex items-center gap-3", style "border-top: 1px solid rgba(35, 36, 58, 0.12)" ]
+        [ Html.p [ class "q-note text-[12px] leading-snug flex-1 min-w-0" ]
+            [ Html.text "You're a guest on this device: these games live in this browser only." ]
+        , Html.span
+            [ id "signup-cta"
+            , class "btn-arcade compact plain home-soon relative pixel text-[8px] px-3 py-2 whitespace-nowrap"
+            , Html.Attributes.attribute "aria-disabled" "true"
+            ]
+            [ Html.text "SIGN UP"
+            , Html.span [ class "home-soon-badge pixel" ] [ Html.text "SOON" ]
             ]
         ]
 
