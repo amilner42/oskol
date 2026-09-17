@@ -701,20 +701,21 @@
    a link that lifts. The one that is on you carries a thin ink edge. */
 .resume-row {
   border-radius: 16px;
-  background: var(--paper-2);
-  border: 1.5px solid transparent;
-  color: var(--ink);
-  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s, border-color 0.14s;
-}
-.resume-row.yours { background: #fff; border-color: rgba(35, 36, 58, 0.14); }
-.resume-row:hover, .resume-row:focus-visible {
   background: #fff;
+  border: 1.5px solid rgba(35, 36, 58, 0.12);
+  color: var(--ink);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s;
+}
+.resume-row:hover, .resume-row:focus-visible {
   border-color: var(--ink);
   transform: translateY(-1px);
   box-shadow: 0 10px 20px -14px rgba(35, 36, 58, 0.5);
   outline: none;
 }
 .resume-avatar { background: var(--ink); color: #fff; }
+/* A game waiting on the other player recedes by its marks going quiet,
+   never by its surface changing: the pitch is the one tinted panel. */
+.resume-row.theirs .resume-avatar { background: rgba(35, 36, 58, 0.38); }
 .resume-row.lobby .resume-avatar { background: transparent; color: var(--pencil); border: 1.5px dashed rgba(35, 36, 58, 0.35); }
 .resume-chevron { color: var(--pencil); opacity: 0.6; transition: transform 0.14s ease, opacity 0.14s; }
 .resume-row:hover .resume-chevron { transform: translateX(2px); opacity: 1; }
