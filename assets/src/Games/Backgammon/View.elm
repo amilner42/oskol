@@ -3514,15 +3514,6 @@ viewMatchSheet ctx =
             else
                 "MATCH TO " ++ String.fromInt target
 
-        scores =
-            ctx.scene.players |> List.map (\p -> Protocol.counter "score" p)
-
-        leading =
-            List.maximum scores |> Maybe.withDefault 0
-
-        trailing =
-            List.minimum scores |> Maybe.withDefault 0
-
         matchPrs =
             ctx.scene.players |> List.filterMap (\p -> ctx.prOf p.id |> Maybe.map (Tuple.pair p.id))
 
@@ -3533,29 +3524,10 @@ viewMatchSheet ctx =
             let
                 score =
                     Protocol.counter "score" player
-
-                -- ahead is green, behind is red; level is neither
-                standing =
-                    if leading == trailing then
-                        ""
-
-                    else if score == leading then
-                        " ahead"
-
-                    else
-                        " behind"
             in
             div [ class "bg-match-col" ]
                 [ span [ class "bg-match-col-name truncate" ] [ text player.name ]
-                , span [ class ("bg-match-col-score pixel tabular-nums inline-flex items-center gap-1.5" ++ standing) ]
-                    [ if standing == " ahead" then
-                        -- the lead: a star, in the same grey as the trophy
-                        span [ class "hero-star w-4 h-4 bg-match-lead", title "Ahead", attribute "aria-label" "ahead" ] []
-
-                      else
-                        text ""
-                    , text (String.fromInt score)
-                    ]
+                , span [ class "bg-match-col-score pixel tabular-nums" ] [ text (String.fromInt score) ]
                 , span [ class "bg-match-col-pr tabular-nums inline-flex items-center gap-1" ]
                     [ if bestMatchPr == Just player.id && List.length matchPrs > 1 then
                         span [ class "hero-trophy w-3.5 h-3.5", title "The better match PR", attribute "aria-label" "best" ] []
