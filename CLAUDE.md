@@ -511,7 +511,18 @@ node playwright/review-games/test.js            # screenshots of games in play (
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`,
-smokes included (one job, one server, in `bin/check`'s order).
+smokes included (one job, one server, in `bin/check`'s order). It runs on
+pull requests and on pushes to main, which is once per commit rather than
+the twice it used to be.
+
+**Speed is a feature of the suite.** A check nobody runs is worse than a slow
+one, so keep it under about two minutes: the Gleam tests run one worker per
+core (`test/oskol_runner.erl`, replacing gleeunit's one-at-a-time list),
+tooling that walks a game asks the host for `legal` rather than rendering a
+whole update per step, and the few tests whose cost is waiting -- whole
+matches played at random, clocks that must run out, retry backoffs -- are
+tagged `@tag :slow` and left to CI. When a new test takes seconds, ask
+whether it is waiting or working: waiting is tagged, working is parallel.
 
 Notes:
 - mix and the gleam CLI share `build/`. `mix compile` removes the
