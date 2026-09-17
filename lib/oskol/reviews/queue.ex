@@ -15,8 +15,11 @@ defmodule Oskol.Reviews.Queue do
   job reports a failure worth retrying, the room comes back after the
   backoff Gleam names; Gleam also decides that it is retried at most twice.
 
-  The queue lives in memory. A restart forgets it, which is fine: every
-  game still owed a review is queued again by the first request for it.
+  The queue lives in memory. A restart forgets what was in it, which is why
+  a room is marked in the database as owing an analysis before the queue is
+  asked (`Oskol.Game.Persister.analysis_owed/1`), and why `sweep_owed/0`
+  runs at boot to queue whatever is still marked. Reading an analysis never
+  queues one: that is what took production down on 2026-09-16.
 
   `enabled` (config `:oskol, Oskol.Reviews.Queue`) is off in tests, where
   rooms finish games by the hundred and there is no engine; a test that
@@ -55,9 +58,42 @@ defmodule Oskol.Reviews.Queue do
     # write-behind persister; let them land before reading the log.
     Oskol.Game.Persister.flush()
 
+    # The note as it stands before any of this is read. A game that ends
+    # while the engine is working makes a newer note, and that one must
+    # outlive this job: this job read the log before that game existed.
+    seen = Oskol.Reviews.analysis_owed_at(game_id)
+
     case :oskol@handlers@reviews.run(Oskol.Gleam.CtxBuilder.build(), game_id) do
-      {:some, ms} -> {:retry, ms}
-      :none -> :ok
+      {:some, ms} ->
+        # A retry keeps the note: the work is not done until it is done.
+        {:retry, ms}
+
+      :none ->
+        Oskol.Reviews.clear_analysis_owed(game_id, seen)
+        :ok
+    end
+  end
+
+  @doc """
+  Queue every room still marked as owing an analysis.
+
+  A game is analysed once, when it ends, and the queue that does it lives
+  in memory: a restart between the game ending and the job running loses
+  the job. Since a read never queues engine work, nothing else would pick
+  it up. This runs at boot, so the most a restart costs is a delay.
+
+  Nothing here can analyse a game twice. The mark only says "look"; the
+  job itself skips any game already graded, and a room already queued or
+  running is not queued again.
+  """
+  def sweep_owed do
+    if enabled?() do
+      owed = Oskol.Reviews.rooms_owed_analysis()
+      if owed != [], do: Logger.info("analysis sweep: #{length(owed)} room(s) owed")
+      Enum.each(owed, &enqueue/1)
+      length(owed)
+    else
+      0
     end
   end
 
@@ -65,7 +101,15 @@ defmodule Oskol.Reviews.Queue do
 
   @impl true
   def init(_opts) do
-    {:ok, fresh(0)}
+    # After the supervisor is up, not during it: the sweep reads the
+    # database, and nothing else should wait on that to start.
+    {:ok, fresh(0), {:continue, :sweep}}
+  end
+
+  @impl true
+  def handle_continue(:sweep, state) do
+    sweep_owed()
+    {:noreply, state}
   end
 
   # `generation` tells a retry timer set before a reset from one set after.

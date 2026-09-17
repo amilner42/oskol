@@ -206,6 +206,63 @@ defmodule Oskol.Reviews do
     end
   end
 
+  @doc """
+  Note that this room has a game that ended and may owe an analysis.
+
+  Written before the queue is asked, so a restart between the two cannot
+  lose the fact. `sweep_owed/0` is what picks it up again.
+  """
+  def mark_analysis_owed(game_id) do
+    from(g in Oskol.Persistence.Game, where: g.id == ^game_id)
+    |> Repo.update_all(set: [analysis_owed: true, analysis_owed_at: DateTime.utc_now()])
+
+    :ok
+  end
+
+  @doc "When this room's note was last made, or nil if it owes nothing."
+  def analysis_owed_at(game_id) do
+    from(g in Oskol.Persistence.Game,
+      where: g.id == ^game_id and g.analysis_owed == true,
+      select: g.analysis_owed_at
+    )
+    |> Repo.one()
+  end
+
+  @doc """
+  This room owes nothing, as far as the job that just finished could see.
+
+  Only a note no newer than `seen` is cleared. A game that ends while a job
+  is running makes a fresh note, and that one has to survive: the running
+  job read the log before that game existed and cannot have analysed it.
+  """
+  def clear_analysis_owed(game_id, seen) do
+    query =
+      case seen do
+        nil ->
+          from(g in Oskol.Persistence.Game, where: g.id == ^game_id)
+
+        %DateTime{} ->
+          from(g in Oskol.Persistence.Game,
+            where:
+              g.id == ^game_id and
+                (is_nil(g.analysis_owed_at) or g.analysis_owed_at <= ^seen)
+          )
+      end
+
+    {_, _} = Repo.update_all(query, set: [analysis_owed: false])
+    :ok
+  end
+
+  @doc "Rooms still marked as owing an analysis, oldest first."
+  def rooms_owed_analysis do
+    from(g in Oskol.Persistence.Game,
+      where: g.analysis_owed == true,
+      order_by: [asc: g.updated_at],
+      select: g.id
+    )
+    |> Repo.all()
+  end
+
   @doc "Mark a room's records as made from the log it has right now."
   def mark_records_through(game_id) do
     from(g in Oskol.Persistence.Game, where: g.id == ^game_id)
