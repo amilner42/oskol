@@ -1380,7 +1380,8 @@ a.q-card:hover, a.q-card:focus-visible {
 /* The cube hangs on the bar: white, so it reads there, and sized by the
    bar -- as big as its column allows. */
 .cube {
-  --cube-size: clamp(1.6rem, calc(var(--bg-bar-w) * 0.92), 4.5rem);
+  /* Never the bar's full width: a little of the bar shows on either side. */
+  --cube-size: clamp(1.4rem, calc(var(--bg-bar-w) * 0.8), 4.5rem);
   display: grid; place-items: center;
   width: var(--cube-size); height: var(--cube-size);
   font-size: clamp(9px, calc(var(--cube-size) * 0.3), 20px);

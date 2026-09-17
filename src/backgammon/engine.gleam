@@ -354,10 +354,7 @@ fn legal_in_play(state: GameState, player_id: String) -> List(Schema) {
     True, _ -> {
       let double = case state.can_double(state, player_id) {
         True -> [
-          action.simple(
-            "double",
-            "Double to " <> int.to_string(state.cube_value * 2),
-          ),
+          action.simple("double", "Double"),
         ]
         False -> []
       }
@@ -370,7 +367,7 @@ fn legal_in_play(state: GameState, player_id: String) -> List(Schema) {
         ]
         False -> []
       }
-      list.flatten([[action.simple("roll", "Roll dice")], double, pick])
+      list.flatten([[action.simple("roll", "Roll")], double, pick])
     }
     _, True -> [
       action.simple(

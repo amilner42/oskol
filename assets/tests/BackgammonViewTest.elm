@@ -679,9 +679,9 @@ suite =
                                     View.view (ctx "p1" { u | legal = legal } model) |> Query.fromHtml
                             in
                             Expect.all
-                                [ \_ -> render [ schema "roll" "Roll dice", resignSchema allStakes ] |> Query.has [ id "bg-resign-panel" ]
-                                , \_ -> render [ schema "roll" "Roll dice", resignSchema allStakes ] |> Query.findAll [ tag "button", attribute (Html.Attributes.id "bg-resign-backgammon") ] |> Query.count (Expect.equal 1)
-                                , \_ -> render [ schema "roll" "Roll dice", resignSchema allStakes ] |> Query.has [ id "bg-resign-cancel" ]
+                                [ \_ -> render [ schema "roll" "Roll", resignSchema allStakes ] |> Query.has [ id "bg-resign-panel" ]
+                                , \_ -> render [ schema "roll" "Roll", resignSchema allStakes ] |> Query.findAll [ tag "button", attribute (Html.Attributes.id "bg-resign-backgammon") ] |> Query.count (Expect.equal 1)
+                                , \_ -> render [ schema "roll" "Roll", resignSchema allStakes ] |> Query.has [ id "bg-resign-cancel" ]
 
                                 -- Jacoby, centred cube: a single is all there is
                                 , \_ -> render [ resignSchema [ ( "single", "Single" ) ] ] |> Query.findAll [ tag "button", attribute (Html.Attributes.id "bg-resign-single") ] |> Query.count (Expect.equal 1)
