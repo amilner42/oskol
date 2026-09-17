@@ -3528,10 +3528,7 @@ viewMatchSheet ctx =
             else
                 [ div [ class "bg-match-row is-live", attribute "data-game" (String.fromInt gameNumber) ]
                     [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt gameNumber) ]
-                    , span [ class "bg-match-main" ]
-                        [ span [ class "font-bold" ] [ text "In play" ]
-                        , span [ class "bg-match-sub" ] [ text "The game on the board." ]
-                        ]
+                    , span [ class "bg-match-live font-bold" ] [ text "In play" ]
                     ]
                 ]
     in
@@ -3561,9 +3558,11 @@ viewMatchSheet ctx =
         ]
 
 
-{-| One finished game: which, who won it and how, the points; under that
-each player's PR for it (once the engine has graded it) and the door to
-its replay; at the right the score it left.
+{-| One finished game as a small scoreboard: a cell per player, in seat
+order. The winner's cell is inked and carries the points and how they
+were won; under each name the player's PR for the game once graded, the
+better one in the highlighter. At the right the score the game left, and
+the door to its replay.
 -}
 viewMatchRow : Ctx -> GameResult -> Html Msg
 viewMatchRow ctx g =
@@ -3585,28 +3584,55 @@ viewMatchRow ctx g =
         prs =
             ctx.gamePrs g.number
 
-        prLine =
-            if prs == [] then
-                "PR pending"
+        prOf id =
+            prs |> List.filter (\( p, _ ) -> p == id) |> List.head |> Maybe.map Tuple.second
 
-            else
-                prs
-                    |> List.map (\( id, pr ) -> playerName ctx id ++ " " ++ oneDecimal pr)
-                    |> String.join " · "
+        best =
+            prs |> List.sortBy Tuple.second |> List.head |> Maybe.map Tuple.first
+
+        cell player =
+            let
+                won =
+                    player.id == g.winner
+
+                pr =
+                    prOf player.id
+            in
+            div [ classList [ ( "bg-match-cell", True ), ( "win", won ), ( "best", best == Just player.id && List.length prs > 1 ) ] ]
+                [ div [ class "bg-match-who" ]
+                    [ span [ class "bg-match-name truncate" ] [ text player.name ]
+                    , if won then
+                        span [ class "bg-match-points pixel" ] [ text ("+" ++ String.fromInt g.points) ]
+
+                      else
+                        text ""
+                    ]
+                , div [ class "bg-match-under" ]
+                    [ if won then
+                        span [ class "bg-match-how" ] [ text how ]
+
+                      else
+                        text ""
+                    , span [ class "bg-match-pr tabular-nums" ]
+                        [ text
+                            (case pr of
+                                Just value ->
+                                    "PR " ++ oneDecimal value
+
+                                Nothing ->
+                                    "PR …"
+                            )
+                        ]
+                    ]
+                ]
     in
     div [ class "bg-match-row", attribute "data-game" (String.fromInt g.number) ]
         [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt g.number) ]
-        , span [ class "bg-match-main" ]
-            [ span [ class "truncate" ]
-                [ span [ class "font-bold" ] [ text (playerName ctx g.winner) ]
-                , span [ style "color" "var(--pencil)" ] [ text (" · " ++ how ++ " · " ++ pointsText g.points) ]
-                ]
-            , span [ class "bg-match-sub" ]
-                [ span [] [ text prLine ]
-                , replayLink ctx g.number "REPLAY"
-                ]
+        , div [ class "bg-match-cells" ] (List.map cell ctx.scene.players)
+        , div [ class "bg-match-side" ]
+            [ span [ class "bg-match-after font-bold tabular-nums" ] [ text (scoreText ctx g.scores) ]
+            , replayLink ctx g.number "REPLAY"
             ]
-        , span [ class "bg-match-after font-bold tabular-nums" ] [ text (scoreText ctx g.scores) ]
         ]
 
 

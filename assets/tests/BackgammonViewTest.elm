@@ -2235,8 +2235,9 @@ suite =
 
                                 -- one row per game played, then the game on the board
                                 , \_ -> sheet |> Query.findAll [ class "bg-match-row" ] |> Query.count (Expect.equal 3)
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text (winner "p1"), text "gammon", text "4 pts", text "4–0", text "PR pending", text "REPLAY" ]
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.has [ text (winner "p2"), text "dropped", text "1 pt", text "4–1" ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text (winner "p1"), text "gammon", text "+4", text "4–0", text "PR …", text "REPLAY" ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.find [ class "bg-match-cell", class "win" ] |> Query.has [ text (winner "p1") ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.has [ text (winner "p2"), text "dropped", text "+1", text "4–1" ]
                                 , \_ -> sheet |> Query.find [ class "bg-match-row", class "is-live" ] |> Query.has [ text "G3", text "In play" ]
                                 , \_ -> sheet |> Query.has [ class "bg-match-score" ]
 
@@ -2245,7 +2246,10 @@ suite =
                                     View.view (let c = ctx "p1" u3 opened in { c | gamePrs = \n -> if n == 1 then [ ( "p1", 7.4 ), ( "p2", 12.1 ) ] else [] })
                                         |> Query.fromHtml
                                         |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ]
-                                        |> Query.has [ text (winner "p1" ++ " 7.4"), text (winner "p2" ++ " 12.1") ]
+                                        |> Expect.all
+                                            [ Query.has [ text "PR 7.4", text "PR 12.1" ]
+                                            , Query.find [ class "bg-match-cell", class "best" ] >> Query.has [ text "PR 7.4" ]
+                                            ]
 
                                 -- a single game: no match, no button, and the ✕ has nothing to close
                                 , \_ -> render "p1" u |> Query.findAll [ id "bg-match-toggle" ] |> Query.count (Expect.equal 0)

@@ -1444,15 +1444,29 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-empty { color: var(--pencil); font-style: italic; display: block; padding: 8px 0; }
 .bg-match-row {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 0; border-bottom: 1px dashed rgba(35, 36, 58, 0.25); min-width: 0;
+  padding: 9px 0; border-bottom: 1px dashed rgba(35, 36, 58, 0.25); min-width: 0;
 }
 .bg-match-row:last-child { border-bottom: 0; }
 .bg-match-row.is-live { color: var(--pencil); }
-.bg-match-n { flex: none; width: 2rem; color: var(--pencil); }
-.bg-match-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.bg-match-main > span { display: block; min-width: 0; }
-.bg-match-main > .bg-match-sub { display: flex; align-items: baseline; gap: 10px; font-size: 11.5px; color: var(--pencil); }
-.bg-match-after { flex: none; font-size: 14px; }
+.bg-match-n { flex: none; width: 1.6rem; color: var(--pencil); }
+/* The two players' cells: the winner's is inked, the loser's is a quiet
+   outline; the better PR of the game wears the highlighter. */
+.bg-match-cells { flex: 1; min-width: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.bg-match-cell {
+  min-width: 0; padding: 6px 9px; border-radius: 8px;
+  border: 1.5px solid rgba(35, 36, 58, 0.18); background: #fff; color: var(--ink);
+}
+.bg-match-cell.win { background: var(--ink); color: #fff; border-color: var(--ink); }
+.bg-match-who { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; }
+.bg-match-name { font-weight: 700; font-size: 13px; min-width: 0; }
+.bg-match-points { font-size: 9px; flex: none; }
+.bg-match-under { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-top: 3px; font-size: 11px; color: var(--pencil); }
+.bg-match-cell.win .bg-match-under { color: rgba(255, 255, 255, 0.72); }
+.bg-match-how { text-transform: lowercase; }
+.bg-match-pr { margin-left: auto; padding: 0 4px; border-radius: 3px; }
+.bg-match-cell.best .bg-match-pr { background: var(--highlighter); color: var(--ink); font-weight: 700; }
+.bg-match-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.bg-match-after { font-size: 14px; }
 
 /* The row under the slab: MATCH, the four arrows with RESIGN between them.
    Each arrow is its own small plate, white when it can be pressed and
