@@ -47,6 +47,9 @@ pub opaque type Instance {
     outcome: fn() -> Outcome,
     /// The game's public record, if it keeps one (`Game.record`).
     record: fn() -> Option(json.Json),
+    /// Whose turn it is, by the game's own account (`Game.clocks`, with or
+    /// without a clock set): nobody once it is over or a clock ran out.
+    to_act: fn() -> List(PlayerId),
   )
 }
 
@@ -266,6 +269,12 @@ pub fn erase(running: Running(state, action)) -> Instance {
     scene: fn(viewer) { running.definition.scene(running.state, viewer) },
     outcome: fn() { running_outcome(running) },
     record: fn() { running.definition.record(running.state) },
+    to_act: fn() {
+      case running.clocks.timed_out {
+        Some(_) -> []
+        None -> running_for(running.definition, running.state)
+      }
+    },
   )
 }
 
@@ -313,6 +322,10 @@ pub fn seats(instance: Instance) -> List(Seat) {
 
 pub fn clocks(instance: Instance) -> Clocks {
   instance.clocks
+}
+
+pub fn to_act(instance: Instance) -> List(PlayerId) {
+  instance.to_act()
 }
 
 pub fn apply(

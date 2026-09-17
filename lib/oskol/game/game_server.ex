@@ -417,7 +417,7 @@ defmodule Oskol.Game.GameServer do
             %GameServerState{state | instance: instance, action_count: state.action_count + 1}
             |> schedule_clock_tick()
 
-          persist_entry(state, "expire", nil, nil, now)
+          persist_entry(state, "expire", nil, nil, now, instance)
           persist_finish(new_state)
           request_review(new_state, events)
           broadcast(new_state, events)
@@ -459,7 +459,14 @@ defmodule Oskol.Game.GameServer do
         |> GameServerState.touch()
         |> schedule_clock_tick()
 
-      Persister.game_started(state.game_id, seed, setup, players_json(new_state))
+      Persister.game_started(
+        state.game_id,
+        seed,
+        setup,
+        players_json(new_state),
+        GameKit.summary(instance)
+      )
+
       {:ok, new_state}
     else
       true -> {:error, :game_already_started}
@@ -526,7 +533,7 @@ defmodule Oskol.Game.GameServer do
               |> GameServerState.touch()
               |> schedule_clock_tick()
 
-            persist_entry(state, "action", player_id, action, now)
+            persist_entry(state, "action", player_id, action, now, instance)
             persist_finish(new_state)
             request_review(new_state, events)
             {:ok, new_state, events}
@@ -539,15 +546,16 @@ defmodule Oskol.Game.GameServer do
 
   # Append one log entry at the room's current index, with its offset from
   # the instance's start `now` (that offset is what makes clock deductions
-  # and timeouts replayable).
-  defp persist_entry(%GameServerState{} = state, kind, player_id, payload, now) do
+  # and timeouts replayable), and where the game stands after it.
+  defp persist_entry(%GameServerState{} = state, kind, player_id, payload, now, instance) do
     Persister.action_applied(
       state.game_id,
       state.action_count,
       kind,
       player_id,
       payload,
-      now - (state.clock_base || now)
+      now - (state.clock_base || now),
+      GameKit.summary(instance)
     )
   end
 
@@ -726,6 +734,9 @@ defmodule Oskol.Game.GameServer do
         }
         |> schedule_clock_tick()
 
+      # A row from before the snapshot existed says nothing about where the
+      # game stands; the room that just replayed it knows, so write it.
+      Persister.state_mirrored(state.game_id, GameKit.summary(instance))
       {:ok, new_state}
     end
   end

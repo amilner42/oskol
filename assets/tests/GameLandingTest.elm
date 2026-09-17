@@ -31,6 +31,7 @@ suite =
         , submitting
         , boardPicker
         , invites
+        , resume
         ]
 
 
@@ -495,6 +496,117 @@ loadedModel : GameLanding.Model
 loadedModel =
     page { guestName = Just "Alice" } "backgammon" Nothing
         |> send (GameLanding.GotGame (Api.parseBody Catalog.gamePageDecoder gameJson))
+
+
+
+-- YOUR GAMES
+
+
+resume : Test
+resume =
+    describe "the games you can resume"
+        [ test "arriving with games open, the list is over the board, one row each, a link to the seat" <|
+            \_ ->
+                home withGames
+                    |> Expect.all
+                        [ Query.has [ id "resume-modal" ]
+                        , Query.find [ id "resume-list" ] >> Query.children [] >> Query.count (Expect.equal 2)
+                        , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "vs Bob", text "Match to 5", text "5 min", text "2 min ago", text "YOUR MOVE" ]
+                        , Query.find [ id "resume-9H302Z" ] >> Query.has [ text "Waiting for a player", text "LOBBY" ]
+                        ]
+        , test "the bar's button says how many are waiting" <|
+            \_ ->
+                home withGames
+                    |> Query.find [ id "resume-games" ]
+                    |> Query.has [ text "2 GAMES ON" ]
+        , test "closing it leaves the board and the bar's button" <|
+            \_ ->
+                home (send GameLanding.ClosedResume withGames)
+                    |> Expect.all
+                        [ Query.hasNot [ id "resume-modal" ]
+                        , Query.has [ id "start-game" ]
+                        , Query.has [ id "resume-games" ]
+                        ]
+        , test "the ✕ closes it" <|
+            \_ ->
+                home withGames
+                    |> Query.find [ id "close-resume" ]
+                    |> Event.simulate Event.click
+                    |> Event.expect GameLanding.ClosedResume
+        , test "and the bar's button opens it again" <|
+            \_ ->
+                home (send GameLanding.ClosedResume withGames)
+                    |> Query.find [ id "resume-games" ]
+                    |> Event.simulate Event.click
+                    |> Event.expect GameLanding.OpenedResume
+        , test "Escape is listened for only while it is open" <|
+            \_ ->
+                Expect.all
+                    [ \m -> Expect.notEqual Sub.none (GameLanding.subscriptions m)
+                    , \m -> Expect.equal Sub.none (GameLanding.subscriptions (send GameLanding.ClosedResume m))
+                    ]
+                    withGames
+        , test "a visitor with nothing to resume sees neither the list nor the button, and the bar shows pips" <|
+            \_ ->
+                home (send (GameLanding.GotMyGames (Ok [])) loadedModel)
+                    |> Expect.all
+                        [ Query.hasNot [ id "resume-modal" ]
+                        , Query.hasNot [ id "resume-games" ]
+                        , Query.has [ class "bar-pips" ]
+                        ]
+        , test "the list failing to come changes nothing" <|
+            \_ ->
+                home (send (GameLanding.GotMyGames (Err Api.NetworkError)) loadedModel)
+                    |> Query.hasNot [ id "resume-modal" ]
+        , test "one game is 1 GAME ON, and their move is quiet" <|
+            \_ ->
+                home (send (GameLanding.GotMyGames (Ok [ { playing | yourMove = False } ])) loadedModel)
+                    |> Expect.all
+                        [ Query.find [ id "resume-games" ] >> Query.has [ text "1 GAME ON" ]
+                        , Query.find [ id "resume-123456" ] >> Query.has [ text "THEIR MOVE" ]
+                        ]
+        , test "the menu is still its four entries: the button lives in the bar, not the band" <|
+            \_ ->
+                home withGames
+                    |> Query.find [ class "home-menu" ]
+                    |> Query.children []
+                    |> Query.count (Expect.equal 4)
+        ]
+
+
+playing : Catalog.MyGame
+playing =
+    { slug = "backgammon"
+    , id = "123456"
+    , path = "/backgammon/123456"
+    , status = "playing"
+    , opponent = Just "Bob"
+    , format = "Match to 5"
+    , clock = Just "5 min"
+    , yourMove = True
+    , idleS = 150
+    }
+
+
+lobby : Catalog.MyGame
+lobby =
+    { slug = "backgammon"
+    , id = "9H302Z"
+    , path = "/backgammon/9H302Z"
+    , status = "waiting"
+    , opponent = Nothing
+    , format = "Single game"
+    , clock = Nothing
+    , yourMove = False
+    , idleS = 30
+    }
+
+
+{-| The home page after the games this browser holds a seat in arrived.
+-}
+withGames : GameLanding.Model
+withGames =
+    send (GameLanding.GotMyGames (Ok [ playing, lobby ])) loadedModel
 
 
 {-| The home page with CREATE GAME pressed.

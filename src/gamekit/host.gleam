@@ -194,6 +194,40 @@ pub fn outcome(instance: Instance) -> Outcome {
   instance.outcome(instance)
 }
 
+/// A small public snapshot of where the game stands, for the platform to
+/// write down beside the row after every step: whose turn it is, whose
+/// clock is running, whether it is over, and each player's public counters
+/// and flags (the spectator's projection, which carries nothing hidden by
+/// construction). No board, no tokens: enough to list and watch active
+/// games from the database without waking a room, not enough to replay
+/// one. Game-agnostic: a game that wants more in it adds counters to its
+/// scene.
+///
+/// `to_act` is the game's own answer to whose turn it is: the players it
+/// says should be charged right now (`Game.clocks`), whether or not a
+/// clock is set. Not "who has a legal action": in backgammon the waiting
+/// player may always resign, and that is not their turn.
+pub fn summary_json(instance: Instance) -> String {
+  let seats = instance.seats(instance)
+  let clocks = instance.clocks(instance)
+  let viewed = instance.scene(instance, scene.Spectator)
+
+  json.object([
+    #("to_act", json.array(instance.to_act(instance), json.string)),
+    #(
+      "on_clock",
+      json.array(
+        list.filter(seats, fn(seat) { clock.running(clocks, seat.id) }),
+        fn(seat) { json.string(seat.id) },
+      ),
+    ),
+    #("outcome", game.outcome_to_json(instance.outcome(instance))),
+    #("phase", json.string(viewed.phase)),
+    #("players", json.array(viewed.players, scene.player_to_json)),
+  ])
+  |> json.to_string
+}
+
 pub fn finished(instance: Instance) -> Bool {
   instance.finished(instance)
 }

@@ -30,7 +30,7 @@ fn minting(
   Ctx(
     ..ctx,
     ids: ids_caps.IdsCaps(game_code: fn() { code }),
-    persistence: persistence_caps.PersistenceCaps(game_exists: fn(_) { taken }),
+    persistence: persistence_caps.PersistenceCaps(..ctx.persistence, game_exists: fn(_) { taken }),
     rooms: rooms_caps.RoomsCaps(..ctx.rooms, spawn: fn(_, _) { spawn }),
   )
 }

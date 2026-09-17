@@ -121,3 +121,51 @@ defmodule Oskol.PersistenceTest do
     assert {:ok, ^free} = Game.create_game("backgammon", generate)
   end
 end
+
+defmodule Oskol.Persistence.SeatedRoomsTest do
+  # Which rooms a guest holds a seat in, from the rows alone.
+  use ExUnit.Case, async: false
+
+  import Oskol.GameFixtures
+
+  alias Oskol.Game
+  alias Oskol.Game.Persister
+  alias Oskol.Persistence
+  alias Oskol.Repo
+
+  setup do
+    owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
+
+    on_exit(fn ->
+      Persister.flush()
+      Ecto.Adapters.SQL.Sandbox.stop_owner(owner)
+    end)
+
+    :ok
+  end
+
+  test "lists the unfinished rooms a guest holds a seat in, newest first, and nobody else's" do
+    # Alice's lobby, then a game she started with Bob.
+    %{game_id: lobby_id, g1: alice} = lobby("single")
+    %{game_id: playing_id, p2: bob_seat, g2: bob} = started(42)
+    # Alice takes the second seat of a third room too, after the others.
+    %{game_id: third_id} = lobby("match3")
+    {:ok, _, _} = Game.join_game(third_id, "Ann", nil, alice)
+    Persister.flush()
+
+    ids = Persistence.seated_rooms(alice) |> Enum.map(& &1.id)
+    assert third_id in ids and lobby_id in ids
+    refute playing_id in ids
+    # Newest activity first: the third room was touched last.
+    assert List.first(ids) == third_id
+
+    assert Persistence.seated_rooms(bob) |> Enum.map(& &1.id) == [playing_id]
+    assert Persistence.seated_rooms("nobody-at-all") == []
+    assert Persistence.seated_rooms(nil) == []
+    assert Persistence.seated_rooms("") == []
+
+    # A finished game is not something to resume.
+    Persistence.mark_finished(playing_id, [bob_seat])
+    assert Persistence.seated_rooms(bob) == []
+  end
+end

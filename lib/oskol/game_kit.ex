@@ -127,6 +127,13 @@ defmodule Oskol.GameKit do
   @spec outcome(instance) :: :ongoing | {:finished, [player_id]}
   def outcome(instance), do: :gamekit@host.outcome(instance)
 
+  @doc """
+  Where the game stands, as a plain map the row can hold: who may act, whose
+  clock is running, the outcome, each player's public counters. What the
+  persister writes beside every step.
+  """
+  def summary(instance), do: :gamekit@host.summary_json(instance) |> Jason.decode!()
+
   @spec slug(instance) :: String.t()
   def slug(instance), do: :gamekit@host.slug(instance)
 

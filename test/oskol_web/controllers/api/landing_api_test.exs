@@ -518,6 +518,43 @@ defmodule OskolWeb.Api.LandingApiTest do
     end
   end
 
+  # ---------- /papi/me/games ----------
+
+  describe "GET /papi/me/games" do
+    test "a visitor with no seat anywhere has nothing to resume", %{conn: conn} do
+      body = conn |> as_guest(new_guest_id()) |> get(~p"/papi/me/games") |> json_response(200)
+      assert body == %{"ok" => true, "games" => []}
+    end
+
+    test "lists the games this browser's guest can pick back up, from the rows", %{conn: conn} do
+      %{game_id: game_id, p1: alice_seat, p2: bob_seat, g1: alice, mover: mover} =
+        GameFixtures.started(42, "match5", clock: "bg5")
+
+      Persister.flush()
+      # Nothing here needs the room: a cold row answers the same.
+      {:ok, pid} = GameSupervisor.find_game(game_id)
+      ref = Process.monitor(pid)
+      :ok = DynamicSupervisor.terminate_child(GameSupervisor, pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1000
+
+      body = conn |> as_guest(alice) |> get(~p"/papi/me/games") |> json_response(200)
+
+      assert %{"ok" => true, "games" => [game]} = body
+      assert game["id"] == game_id
+      assert game["path"] == "/backgammon/#{game_id}"
+      assert game["status"] == "playing"
+      assert game["opponent"] == "Bob"
+      assert game["format"] == "Match to 5"
+      assert game["clock"] == "5 min"
+      # Whose move it is comes from the snapshot the room wrote.
+      assert game["your_move"] == (mover == alice_seat)
+      assert is_integer(game["idle_s"])
+      # And asking woke nothing.
+      assert :error = GameSupervisor.find_game(game_id)
+      _ = bob_seat
+    end
+  end
+
   # ---------- /papi/me/prefs ----------
 
   describe "GET and POST /papi/me/prefs" do

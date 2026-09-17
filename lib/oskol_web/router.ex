@@ -35,6 +35,7 @@ defmodule OskolWeb.Router do
     get "/codes/:code", LandingController, :code
     get "/me/prefs", LandingController, :prefs
     post "/me/prefs", LandingController, :save_pref
+    get "/me/games", LandingController, :my_games
     get "/games/:slug", LandingController, :show
     post "/games/:slug", LandingController, :create
     get "/games/:slug/rooms/:id", LandingController, :room

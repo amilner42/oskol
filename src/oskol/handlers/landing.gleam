@@ -10,6 +10,7 @@
 ////   GET  /papi/codes/:code             {ok, slug, code}
 ////   GET  /papi/me/prefs                {ok, prefs}
 ////   POST /papi/me/prefs                {key, value} -> {ok, prefs}
+////   GET  /papi/me/games                {ok, games}
 ////
 //// Every decision behind these lives in Gleam — what a page carries, what a
 //// name has to be, what an invite link is worth. The Elixir controller only
@@ -33,7 +34,7 @@ import oskol/landing/copy.{type Copy}
 import oskol/rooms/code as room_code
 import oskol/rooms/errors
 import oskol/rooms/invite
-import oskol/rooms/room.{type Seated, type Table, Setup}
+import oskol/rooms/room.{type ActiveRoom, type Seated, type Table, Setup}
 
 /// Games with no engine yet. They are a poster on the library and nothing
 /// else: no route, no sitemap entry. Empty today: every catalog game has an
@@ -288,6 +289,62 @@ fn find_info(slug: String) -> Result(Info, ApiError) {
   registry.find(slug)
   |> result.map(fn(entry) { entry.info })
   |> result.replace_error(error.NotFound("No game with that name"))
+}
+
+// ---------- GET /papi/me/games ----------
+
+/// The games this visitor can pick back up: every unfinished room their
+/// guest holds a seat in, newest activity first. A visitor with no guest
+/// holds no seat anywhere, so their list is empty. Read from the rows: a
+/// home visit wakes no room.
+pub fn my_games_json(ctx: Ctx, session: Session) -> String {
+  let rooms = case session.guest_id {
+    Some(id) -> ctx.persistence.seated_rooms(id)
+    None -> []
+  }
+  envelope.ok([
+    #("games", json.array(rooms, fn(r) { active_room_json(r, session) })),
+  ])
+}
+
+/// One resumable game as the home page lists it: where it is (`path`),
+/// who it is against (`opponent`, null while nobody has joined), what is
+/// being played (the format's and the clock's names), whether the visitor
+/// is the one to act, and how long since it was touched.
+fn active_room_json(room: ActiveRoom, session: Session) -> Json {
+  let info = registry.find(room.slug) |> result.map(fn(e) { e.info })
+  let mine =
+    list.find(room.seats, fn(seat) { Some(seat.2) == session.guest_id })
+  let my_id = case mine {
+    Ok(seat) -> seat.0
+    Error(_) -> ""
+  }
+  let opponent =
+    list.find(room.seats, fn(seat) { seat.0 != my_id })
+    |> result.map(fn(seat) { seat.1 })
+    |> option.from_result
+  let format = case info {
+    Ok(info) ->
+      list.find(info.formats, fn(f) { f.id == room.format })
+      |> result.map(fn(f) { f.name })
+      |> result.unwrap(room.format)
+    Error(_) -> room.format
+  }
+  let clock = case clock.preset(room.clock) {
+    Ok(p) if p.control != clock.NoClock -> Some(p.name)
+    _ -> None
+  }
+  json.object([
+    #("slug", json.string(room.slug)),
+    #("id", json.string(room.game_id)),
+    #("path", json.string(room.seat_path(room.slug, room.game_id))),
+    #("status", json.string(room.status)),
+    #("opponent", nullable(opponent)),
+    #("format", json.string(format)),
+    #("clock", nullable(clock)),
+    #("your_move", json.bool(my_id != "" && list.contains(room.to_act, my_id))),
+    #("idle_s", json.int(room.idle_s)),
+  ])
 }
 
 fn guest_name(ctx: Ctx, session: Session) -> Json {

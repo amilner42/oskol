@@ -14,7 +14,7 @@ import oskol/fakes
 import oskol/guests/prefs
 import oskol/handlers/landing
 import oskol/rooms/errors
-import oskol/rooms/room.{type Table, Seat, Table}
+import oskol/rooms/room.{type Table, ActiveRoom, Seat, Table}
 
 fn reading() -> Ctx {
   fakes.ctx()
@@ -47,6 +47,69 @@ pub fn a_visitor_we_do_not_know_has_no_name_test() {
   let body = landing.library_json(reading(), fakes.no_guest())
 
   assert string.contains(body, "\"guest_name\":null")
+}
+
+// ---------- GET /papi/me/games ----------
+
+fn open_room() -> room.ActiveRoom {
+  ActiveRoom(
+    slug: "backgammon",
+    game_id: "123456",
+    status: "playing",
+    format: "match5",
+    clock: "bg5",
+    seats: [#("p1", "Alice", "g1"), #("p2", "Bob", "g2")],
+    to_act: ["p1"],
+    idle_s: 90,
+  )
+}
+
+pub fn my_games_lists_the_rooms_this_guest_holds_a_seat_in_test() {
+  let ctx = reading() |> fakes.with_active_rooms([open_room()])
+  let body = landing.my_games_json(ctx, fakes.guest("g1"))
+
+  assert string.starts_with(body, "{\"ok\":true,\"games\":[{")
+  assert string.contains(body, "\"id\":\"123456\"")
+  assert string.contains(body, "\"path\":\"/backgammon/123456\"")
+  assert string.contains(body, "\"status\":\"playing\"")
+  // The other seat is the opponent; the format and the clock by name.
+  assert string.contains(body, "\"opponent\":\"Bob\"")
+  assert string.contains(body, "\"format\":\"Match to 5\"")
+  assert string.contains(body, "\"clock\":\"5 min\"")
+  assert string.contains(body, "\"your_move\":true")
+  assert string.contains(body, "\"idle_s\":90")
+}
+
+pub fn my_games_says_whose_move_from_the_guests_own_seat_test() {
+  let ctx = reading() |> fakes.with_active_rooms([open_room()])
+  let body = landing.my_games_json(ctx, fakes.guest("g2"))
+
+  assert string.contains(body, "\"opponent\":\"Alice\"")
+  assert string.contains(body, "\"your_move\":false")
+}
+
+pub fn a_lobby_has_no_opponent_no_clock_and_nobody_to_act_test() {
+  let lobby =
+    ActiveRoom(
+      ..open_room(),
+      status: "waiting",
+      clock: "none",
+      seats: [#("p1", "Alice", "g1")],
+      to_act: [],
+    )
+  let ctx = reading() |> fakes.with_active_rooms([lobby])
+  let body = landing.my_games_json(ctx, fakes.guest("g1"))
+
+  assert string.contains(body, "\"status\":\"waiting\"")
+  assert string.contains(body, "\"opponent\":null")
+  assert string.contains(body, "\"clock\":null")
+  assert string.contains(body, "\"your_move\":false")
+}
+
+pub fn a_visitor_with_no_guest_holds_no_seat_anywhere_test() {
+  // The stub persistence would panic if asked: nobody asks.
+  assert landing.my_games_json(reading(), fakes.no_guest())
+    == "{\"ok\":true,\"games\":[]}"
 }
 
 // ---------- GET /papi/games/:slug ----------
@@ -110,7 +173,7 @@ fn creating(ctx: Ctx, expected: room.Setup) -> Ctx {
   Ctx(
     ..ctx,
     ids: ids_caps.IdsCaps(game_code: fn() { "123456" }),
-    persistence: persistence_caps.PersistenceCaps(game_exists: fn(_) { False }),
+    persistence: persistence_caps.PersistenceCaps(..ctx.persistence, game_exists: fn(_) { False }),
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
       spawn: fn(_, _) { Ok(Nil) },

@@ -30,6 +30,12 @@ defmodule Oskol.Persistence do
       field(:analysis_owed, :boolean, default: false)
       field(:analysis_owed_at, :utc_datetime_usec)
       field(:players, {:array, :map}, default: [])
+      # Where the game stands, as of its last step: `gamekit/host.summary_json`
+      # (to_act, on_clock, outcome, phase, players' public counters). Written
+      # with every step so active games can be listed and watched from here
+      # without waking a room. Null for a row from before it existed, until
+      # its room next wakes.
+      field(:state, :map)
       field(:status, :string, default: "waiting")
       field(:winners, {:array, :string}, default: [])
 
@@ -77,15 +83,26 @@ defmodule Oskol.Persistence do
     update_game(game_id, players: players)
   end
 
-  def mark_started(game_id, seed, config, players) do
-    update_game(game_id, seed: seed, config: config, players: players, status: "playing")
+  def mark_started(game_id, seed, config, players, state) do
+    update_game(game_id,
+      seed: seed,
+      config: config,
+      players: players,
+      status: "playing",
+      state: state
+    )
+  end
+
+  @doc "The snapshot a room writes when it comes back from the log: an old row heals on its first wake."
+  def mirror_state(game_id, state) do
+    update_game(game_id, state: state)
   end
 
   def mark_finished(game_id, winners) do
     update_game(game_id, status: "finished", winners: winners)
   end
 
-  def append_action(game_id, index, kind, player_id, payload, at_ms) do
+  def append_action(game_id, index, kind, player_id, payload, at_ms, state) do
     Repo.insert!(
       %GameAction{
         game_id: game_id,
@@ -99,8 +116,9 @@ defmodule Oskol.Persistence do
     )
 
     # Keep the game row's updated_at fresh so an active game never looks
-    # prunable, and so rehydration recency is visible.
-    update_game(game_id, [])
+    # prunable, and so rehydration recency is visible; and write down where
+    # the game now stands, in the same statement.
+    update_game(game_id, state: state)
   end
 
   defp update_game(game_id, sets) do
@@ -125,6 +143,26 @@ defmodule Oskol.Persistence do
         {:ok, game, actions}
     end
   end
+
+  @doc """
+  The unfinished rooms this guest holds a seat in, most recently touched
+  first: what a returning browser can pick back up. A waiting room counts
+  (its lobby is where it resumes to); a finished game is the replay's, not
+  this list's. Rows only: no room is woken by asking.
+  """
+  def seated_rooms(guest_id) when is_binary(guest_id) and byte_size(guest_id) > 0 do
+    # Postgrex encodes a jsonb parameter itself: hand it the term, not text.
+    holder = [%{"guest_id" => guest_id}]
+
+    from(g in Game,
+      where: g.status in ["waiting", "playing"],
+      where: fragment("to_jsonb(?) @> ?::jsonb", g.players, ^holder),
+      order_by: [desc: g.updated_at]
+    )
+    |> Repo.all()
+  end
+
+  def seated_rooms(_), do: []
 
   @doc "Whether a game row already claims this code (live room or not)."
   def game_exists?(game_id) do

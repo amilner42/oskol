@@ -197,3 +197,47 @@ pub fn clocks_follow_the_game_and_forfeit_on_timeout_test() {
     "\"timed_out\":\"" <> me <> "\"",
   )
 }
+
+/// The snapshot the platform writes beside every step: it is the mover's
+/// turn (the waiting player may resign, and that is not their turn), nobody
+/// is on a clock without one, and the players carry their public counters.
+pub fn summary_json_is_the_public_state_test() {
+  let assert Ok(inst) =
+    host.start("backgammon", "single", [], seats(), 42, clock.NoClock, 0)
+  let #(me, them) = mover(inst)
+  let assert Ok(summary) =
+    json.parse(host.summary_json(inst), decode.dict(decode.string, decode.dynamic))
+  assert list.sort(dict.keys(summary), string.compare)
+    == ["on_clock", "outcome", "phase", "players", "to_act"]
+  let assert Ok(to_act) = dict.get(summary, "to_act")
+  assert decode.run(to_act, decode.list(decode.string)) == Ok([me])
+  assert instance.legal(inst, them) != []
+  let assert Ok(on_clock) = dict.get(summary, "on_clock")
+  assert decode.run(on_clock, decode.list(decode.string)) == Ok([])
+  let text = host.summary_json(inst)
+  assert string.contains(text, "\"outcome\":{\"status\":\"ongoing\"}")
+  assert string.contains(text, "\"counters\":{")
+  assert string.contains(text, "\"score\":0")
+  // Nothing hidden and nothing heavy: no zones, no tokens.
+  assert !string.contains(text, "\"zones\"")
+  assert !string.contains(text, "\"tokens\"")
+}
+
+/// With a clock, the mover's clock runs and `on_clock` says so.
+pub fn summary_json_names_the_running_clock_test() {
+  let assert Ok(inst) =
+    host.start(
+      "backgammon",
+      "single",
+      [],
+      seats(),
+      42,
+      clock.Fischer(180_000, 0),
+      0,
+    )
+  let #(me, _) = mover(inst)
+  let assert Ok(summary) =
+    json.parse(host.summary_json(inst), decode.dict(decode.string, decode.dynamic))
+  let assert Ok(on_clock) = dict.get(summary, "on_clock")
+  assert decode.run(on_clock, decode.list(decode.string)) == Ok([me])
+}

@@ -7,6 +7,7 @@ module Api.Catalog exposing
     , Game
     , GamePage
     , Library
+    , MyGame
     , NewGame
     , Ratings
     , Room
@@ -22,6 +23,7 @@ module Api.Catalog exposing
     , encodeNewGame
     , fetchGame
     , fetchLibrary
+    , fetchMyGames
     , fetchPrefs
     , fetchRatings
     , fetchRoom
@@ -31,6 +33,7 @@ module Api.Catalog exposing
     , joinRoom
     , libraryDecoder
     , lookupCode
+    , myGamesDecoder
     , offeredClocks
     , prefsDecoder
     , ratingsDecoder
@@ -177,6 +180,25 @@ type alias Room =
     }
 
 
+{-| A game this browser can pick back up: an unfinished room its guest
+holds a seat in, as the row tells it. `opponent` is Nothing while nobody
+has joined; `clock` names the control or is Nothing for none; `yourMove`
+is the game's own word on whose turn it is; `idleS` is seconds since the
+room was last touched.
+-}
+type alias MyGame =
+    { slug : String
+    , id : String
+    , path : String
+    , status : String
+    , opponent : Maybe String
+    , format : String
+    , clock : Maybe String
+    , yourMove : Bool
+    , idleS : Int
+    }
+
+
 
 -- REQUESTS
 
@@ -184,6 +206,14 @@ type alias Room =
 fetchLibrary : Session -> (Result Error Library -> msg) -> Cmd msg
 fetchLibrary session toMsg =
     Api.get session "/papi/library" libraryDecoder toMsg
+
+
+{-| The games this browser can resume. The guest cookie rides along; a
+visitor with no seat anywhere gets an empty list.
+-}
+fetchMyGames : Session -> (Result Error (List MyGame) -> msg) -> Cmd msg
+fetchMyGames session toMsg =
+    Api.get session "/papi/me/games" myGamesDecoder toMsg
 
 
 fetchGame : Session -> String -> (Result Error GamePage -> msg) -> Cmd msg
@@ -524,6 +554,25 @@ roomDecoder =
         (D.oneOf [ D.field "inviter_name" (D.nullable D.string), D.succeed Nothing ])
         (D.oneOf [ D.field "summary" (D.nullable D.string), D.succeed Nothing ])
         (optionalList "disconnected" roomSeatDecoder)
+
+
+myGamesDecoder : Decoder (List MyGame)
+myGamesDecoder =
+    optionalList "games" myGameDecoder
+
+
+myGameDecoder : Decoder MyGame
+myGameDecoder =
+    D.map8 (\slug id_ path status opponent format clock yourMove -> MyGame slug id_ path status opponent format clock yourMove)
+        (D.field "slug" D.string)
+        (D.field "id" D.string)
+        (D.field "path" D.string)
+        (optionalString "status" "playing")
+        (D.oneOf [ D.field "opponent" (D.nullable D.string), D.succeed Nothing ])
+        (optionalString "format" "")
+        (D.oneOf [ D.field "clock" (D.nullable D.string), D.succeed Nothing ])
+        (D.oneOf [ D.field "your_move" D.bool, D.succeed False ])
+        |> D.andThen (\partial -> D.map partial (D.oneOf [ D.field "idle_s" D.int, D.succeed 0 ]))
 
 
 roomStateDecoder : Decoder RoomState

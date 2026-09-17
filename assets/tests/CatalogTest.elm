@@ -28,6 +28,7 @@ suite =
         , room
         , clockOrders
         , summaries
+        , myGames
         , ratings
         ]
 
@@ -440,3 +441,30 @@ presets =
     [ { id = "none", name = "No clock", description = "Take your time" }
     , { id = "poker", name = "Standard", description = "20 s per action" }
     ]
+
+
+
+-- YOUR GAMES
+
+
+myGames : Test
+myGames =
+    describe "GET /papi/me/games"
+        [ test "decodes each game with what the list draws, and nulls where nothing is there" <|
+            \_ ->
+                Api.parseBody Catalog.myGamesDecoder
+                    """{"ok":true,"games":[
+                      {"slug":"backgammon","id":"123456","path":"/backgammon/123456","status":"playing","opponent":"Bob","format":"Match to 5","clock":"5 min","your_move":true,"idle_s":90},
+                      {"slug":"backgammon","id":"9H302Z","path":"/backgammon/9H302Z","status":"waiting","opponent":null,"format":"Single game","clock":null,"your_move":false,"idle_s":0}
+                    ]}"""
+                    |> Expect.equal
+                        (Ok
+                            [ { slug = "backgammon", id = "123456", path = "/backgammon/123456", status = "playing", opponent = Just "Bob", format = "Match to 5", clock = Just "5 min", yourMove = True, idleS = 90 }
+                            , { slug = "backgammon", id = "9H302Z", path = "/backgammon/9H302Z", status = "waiting", opponent = Nothing, format = "Single game", clock = Nothing, yourMove = False, idleS = 0 }
+                            ]
+                        )
+        , test "an empty list is nothing to resume" <|
+            \_ ->
+                Api.parseBody Catalog.myGamesDecoder """{"ok":true,"games":[]}"""
+                    |> Expect.equal (Ok [])
+        ]

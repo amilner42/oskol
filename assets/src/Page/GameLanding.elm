@@ -6,6 +6,7 @@ module Page.GameLanding exposing
     , home
     , init
     , isHome
+    , subscriptions
     , title
     , update
     , view
@@ -33,9 +34,11 @@ seat waits where it will play, on a live connection rather than a poll.
 -}
 
 import Api
+import Browser.Events
 import Dict
-import Api.Catalog as Catalog exposing (ClockPreset, Format, GamePage, RoomSeat)
+import Api.Catalog as Catalog exposing (ClockPreset, Format, GamePage, MyGame, RoomSeat)
 import Html exposing (Html)
+import Json.Decode as D
 import Html.Attributes exposing (class, href, id)
 import Html.Events exposing (onClick, onSubmit)
 import Games.Backgammon.View
@@ -73,6 +76,8 @@ type alias Model =
     , busy : Bool
     , started : Bool -- the home page's START A GAME was pressed: show the settings
     , themesOpen : Bool -- the home board's colour list is showing
+    , myGames : List MyGame -- the unfinished games this browser holds a seat in
+    , resumeOpen : Bool -- the list of them is showing over the board
     }
 
 
@@ -90,6 +95,9 @@ type Msg
     | ClosedCreate
     | ToggledThemes
     | PickedTheme String
+    | GotMyGames (Result Api.Error (List MyGame))
+    | OpenedResume
+    | ClosedResume
     | PrefSaved (Result Api.Error (Dict.Dict String String))
     | NoOp
 
@@ -135,6 +143,8 @@ init session slug gameId =
             , busy = False
             , started = False
             , themesOpen = False
+            , myGames = []
+            , resumeOpen = False
             }
     in
     case gameId of
@@ -152,6 +162,7 @@ init session slug gameId =
             ( model
             , Cmd.batch
                 [ Catalog.fetchGame session slug GotGame
+                , Catalog.fetchMyGames session GotMyGames
                 , Notebook.focus NoOp "create-name"
                 ]
             , NoOut
@@ -190,6 +201,21 @@ update msg model =
 
         ToggledThemes ->
             ( { model | themesOpen = not model.themesOpen }, Cmd.none, NoOut )
+
+        -- The games waiting for this browser: the list opens over the
+        -- board when there are any, once, and the bar keeps offering it.
+        GotMyGames (Ok games) ->
+            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) }, Cmd.none, NoOut )
+
+        -- The home page draws the same without it.
+        GotMyGames (Err _) ->
+            ( model, Cmd.none, NoOut )
+
+        OpenedResume ->
+            ( { model | resumeOpen = True }, Cmd.none, NoOut )
+
+        ClosedResume ->
+            ( { model | resumeOpen = False }, Cmd.none, NoOut )
 
         PickedTheme name ->
             -- The board changes at once; the shell keeps it in this browser
@@ -425,9 +451,32 @@ home { join, toMsg } model =
         , soon = homeSoon
         , theme = homeTheme model
         , picker = Html.map toMsg (themePicker model)
+        , note = Html.map toMsg (gamesNote model)
         }
     , Html.map toMsg (createModal model)
+    , Html.map toMsg (resumeModal model)
     ]
+
+
+{-| Escape closes the list of games, as a tap beside it does.
+-}
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    if model.resumeOpen then
+        Browser.Events.onKeyDown
+            (D.field "key" D.string
+                |> D.andThen
+                    (\key ->
+                        if key == "Escape" then
+                            D.succeed ClosedResume
+
+                        else
+                            D.fail "ignored key"
+                    )
+            )
+
+    else
+        Sub.none
 
 
 {-| The board the home page wears: this player's pick, or the default.
@@ -640,17 +689,24 @@ createModal model =
             Html.text ""
 
 
-{-| The dialog's frame: the dimmed board behind it (a tap on it closes the
-dialog), the card with its heading and close button. The layer scrolls when
-the card is taller than the screen, as on a phone held sideways.
+{-| CREATE GAME's frame, on the shared dialog.
 -}
 createDialog : List (Html Msg) -> Html Msg
 createDialog content =
-    Html.div [ id "create-modal", class "fixed inset-0 z-50 overflow-y-auto flex items-start justify-center px-4 pt-[10vh] sm:pt-[14vh] pb-4" ]
+    dialog { id = "create-modal", closeId = "close-create", label = "Create a game", heading = "CREATE GAME", onClose = ClosedCreate } content
+
+
+{-| A dialog's frame: the dimmed board behind it (a tap on it closes the
+dialog), the card with its heading and close button. The layer scrolls when
+the card is taller than the screen, as on a phone held sideways.
+-}
+dialog : { id : String, closeId : String, label : String, heading : String, onClose : Msg } -> List (Html Msg) -> Html Msg
+dialog config content =
+    Html.div [ id config.id, class "fixed inset-0 z-50 overflow-y-auto flex items-start justify-center px-4 pt-[10vh] sm:pt-[14vh] pb-4" ]
         [ Html.div
             [ class "fixed inset-0"
             , style "background: rgba(20, 22, 38, 0.55)"
-            , onClick ClosedCreate
+            , onClick config.onClose
             , Html.Attributes.attribute "aria-hidden" "true"
             ]
             []
@@ -658,14 +714,14 @@ createDialog content =
             [ class "q-card relative w-full max-w-sm p-5 sm:p-6"
             , Html.Attributes.attribute "role" "dialog"
             , Html.Attributes.attribute "aria-modal" "true"
-            , Html.Attributes.attribute "aria-label" "Create a game"
+            , Html.Attributes.attribute "aria-label" config.label
             ]
             (Html.div [ class "flex items-center justify-between mb-4" ]
-                [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text "CREATE GAME" ]
+                [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text config.heading ]
                 , Html.button
                     [ Html.Attributes.type_ "button"
-                    , id "close-create"
-                    , onClick ClosedCreate
+                    , id config.closeId
+                    , onClick config.onClose
                     , Html.Attributes.attribute "aria-label" "Close"
                     , class "q-note text-base px-2 py-1"
                     ]
@@ -674,6 +730,112 @@ createDialog content =
                 :: content
             )
         ]
+
+
+
+-- YOUR GAMES
+
+
+{-| The right end of the player's own bar: the games waiting for them, as
+a button that opens the list, or the pip count a game would show there.
+-}
+gamesNote : Model -> Html Msg
+gamesNote model =
+    case List.length model.myGames of
+        0 ->
+            Page.HomeBoard.pips
+
+        n ->
+            Html.button
+                [ Html.Attributes.type_ "button"
+                , id "resume-games"
+                , class "home-games pixel text-[7px] sm:text-[8px] whitespace-nowrap px-2 py-1"
+                , onClick OpenedResume
+                ]
+                [ Html.text
+                    (String.fromInt n
+                        ++ (if n == 1 then
+                                " GAME ON"
+
+                            else
+                                " GAMES ON"
+                           )
+                    )
+                ]
+
+
+{-| The games this browser can pick back up, over the board: one row each,
+a link to the seat. Opens on its own when the list arrives with anything
+in it; a tap beside it, its ✕ or Escape closes it, and the bar's button
+brings it back.
+-}
+resumeModal : Model -> Html Msg
+resumeModal model =
+    if model.resumeOpen && not (List.isEmpty model.myGames) then
+        dialog { id = "resume-modal", closeId = "close-resume", label = "Your games", heading = "YOUR GAMES", onClose = ClosedResume }
+            [ Html.ul [ id "resume-list", class "space-y-2" ] (List.map resumeRow model.myGames)
+            , Html.p [ class "q-note text-xs text-center mt-4" ] [ Html.text "Games this browser is sitting at. Tap one to go back to the table." ]
+            ]
+
+    else
+        Html.text ""
+
+
+resumeRow : MyGame -> Html Msg
+resumeRow game =
+    let
+        ( against, badge ) =
+            case ( game.status, game.opponent ) of
+                ( "waiting", _ ) ->
+                    ( "Waiting for a player", ( "LOBBY", "quiet" ) )
+
+                ( _, Just name ) ->
+                    ( "vs " ++ name
+                    , if game.yourMove then
+                        ( "YOUR MOVE", "yours" )
+
+                      else
+                        ( "THEIR MOVE", "quiet" )
+                    )
+
+                ( _, Nothing ) ->
+                    ( "Waiting for a player", ( "LOBBY", "quiet" ) )
+
+        detail =
+            [ Just game.format, game.clock, Just (ago game.idleS) ]
+                |> List.filterMap identity
+                |> String.join " · "
+    in
+    Html.li []
+        [ Html.a
+            [ href game.path
+            , id ("resume-" ++ game.id)
+            , class "resume-row flex items-center gap-3 px-3 py-2.5"
+            ]
+            [ Html.div [ class "min-w-0 flex-1" ]
+                [ Html.div [ class "font-semibold text-[15px] truncate", style "color: var(--ink)" ] [ Html.text against ]
+                , Html.div [ class "q-note text-[12px] truncate" ] [ Html.text detail ]
+                ]
+            , Html.span [ class ("resume-badge pixel text-[7px] whitespace-nowrap px-1.5 py-1 " ++ Tuple.second badge) ] [ Html.text (Tuple.first badge) ]
+            ]
+        ]
+
+
+{-| How long ago, in the coarsest unit that is still honest.
+-}
+ago : Int -> String
+ago seconds =
+    if seconds < 60 then
+        "just now"
+
+    else if seconds < 3600 then
+        String.fromInt (seconds // 60) ++ " min ago"
+
+    else if seconds < 86400 then
+        String.fromInt (seconds // 3600) ++ " h ago"
+
+    else
+        String.fromInt (seconds // 86400) ++ " d ago"
 
 
 {-| A clock as the dropdown lists it: its name and, when it has one, what
