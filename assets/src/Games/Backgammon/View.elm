@@ -3558,11 +3558,11 @@ viewMatchSheet ctx =
         ]
 
 
-{-| One finished game as a small scoreboard: a cell per player, in seat
-order. The winner's cell is inked and carries the points and how they
-were won; under each name the player's PR for the game once graded, the
-better one in the highlighter. At the right the score the game left, and
-the door to its replay.
+{-| One finished game on one line: a cell per player in seat order, each
+the name and the player's PR for the game (the better one in the
+highlighter), the winner's cell inked with the points (how they came is
+the chip's tooltip). At the right the score the game left and the door to
+its analysis.
 -}
 viewMatchRow : Ctx -> GameResult -> Html Msg
 viewMatchRow ctx g =
@@ -3594,46 +3594,56 @@ viewMatchRow ctx g =
             let
                 won =
                     player.id == g.winner
-
-                pr =
-                    prOf player.id
             in
             div [ classList [ ( "bg-match-cell", True ), ( "win", won ), ( "best", best == Just player.id && List.length prs > 1 ) ] ]
-                [ div [ class "bg-match-who" ]
-                    [ span [ class "bg-match-name truncate" ] [ text player.name ]
-                    , if won then
-                        span [ class "bg-match-points pixel" ] [ text ("+" ++ String.fromInt g.points) ]
+                [ span [ class "bg-match-name truncate" ] [ text player.name ]
+                , if won then
+                    span [ class "bg-match-points pixel", title how ] [ text ("+" ++ String.fromInt g.points) ]
 
-                      else
-                        text ""
-                    ]
-                , div [ class "bg-match-under" ]
-                    [ if won then
-                        span [ class "bg-match-how" ] [ text how ]
+                  else
+                    text ""
+                , span [ class "bg-match-pr tabular-nums" ]
+                    [ text
+                        (case prOf player.id of
+                            Just value ->
+                                oneDecimal value
 
-                      else
-                        text ""
-                    , span [ class "bg-match-pr tabular-nums" ]
-                        [ text
-                            (case pr of
-                                Just value ->
-                                    "PR " ++ oneDecimal value
-
-                                Nothing ->
-                                    "PR …"
-                            )
-                        ]
+                            Nothing ->
+                                "…"
+                        )
                     ]
                 ]
     in
     div [ class "bg-match-row", attribute "data-game" (String.fromInt g.number) ]
         [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt g.number) ]
         , div [ class "bg-match-cells" ] (List.map cell ctx.scene.players)
-        , div [ class "bg-match-side" ]
-            [ span [ class "bg-match-after font-bold tabular-nums" ] [ text (scoreText ctx g.scores) ]
-            , replayLink ctx g.number "REPLAY"
-            ]
+        , span [ class "bg-match-after font-bold tabular-nums" ] [ text (scoreText ctx g.scores) ]
+        , analysisLink ctx g.number
         ]
+
+
+{-| The door to a finished game's analysis: the replay page, with the
+engine's verdicts on every turn. A link, so it opens in a tab; a
+magnifier and, where there is room, the word.
+-}
+analysisLink : Ctx -> Int -> Html Msg
+analysisLink ctx number =
+    case ctx.replayHref number of
+        Just href ->
+            Html.a
+                [ Html.Attributes.href href
+                , class "bg-replay-link bg-match-analysis inline-flex items-center gap-1 shrink-0"
+                , attribute "data-replay" (String.fromInt number)
+                , title ("Game " ++ String.fromInt number ++ ": the analysis")
+                , attribute "aria-label" "Analysis"
+                , Html.Events.stopPropagationOn "click" (D.succeed ( Ignore, True ))
+                ]
+                [ span [ class "hero-magnifying-glass w-4 h-4", attribute "aria-hidden" "true" ] []
+                , span [ class "hidden sm:inline text-[11px] font-semibold" ] [ text "Analysis" ]
+                ]
+
+        Nothing ->
+            text ""
 
 
 {-| The four arrows that look back through the game on the board: to its

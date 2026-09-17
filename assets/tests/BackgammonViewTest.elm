@@ -2235,9 +2235,9 @@ suite =
 
                                 -- one row per game played, then the game on the board
                                 , \_ -> sheet |> Query.findAll [ class "bg-match-row" ] |> Query.count (Expect.equal 3)
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text (winner "p1"), text "gammon", text "+4", text "4–0", text "PR …", text "REPLAY" ]
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.find [ class "bg-match-cell", class "win" ] |> Query.has [ text (winner "p1") ]
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.has [ text (winner "p2"), text "dropped", text "+1", text "4–1" ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text (winner "p1"), text "+4", text "4–0", text "…", text "Analysis" ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.find [ class "bg-match-cell", class "win" ] |> Query.has [ text (winner "p1"), attribute (Html.Attributes.title "gammon") ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.has [ text (winner "p2"), text "+1", text "4–1" ]
                                 , \_ -> sheet |> Query.find [ class "bg-match-row", class "is-live" ] |> Query.has [ text "G3", text "In play" ]
                                 , \_ -> sheet |> Query.has [ class "bg-match-score" ]
 
@@ -2247,8 +2247,8 @@ suite =
                                         |> Query.fromHtml
                                         |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ]
                                         |> Expect.all
-                                            [ Query.has [ text "PR 7.4", text "PR 12.1" ]
-                                            , Query.find [ class "bg-match-cell", class "best" ] >> Query.has [ text "PR 7.4" ]
+                                            [ Query.has [ text "7.4", text "12.1" ]
+                                            , Query.find [ class "bg-match-cell", class "best" ] >> Query.has [ text "7.4" ]
                                             ]
 
                                 -- a single game: no match, no button, and the ✕ has nothing to close
