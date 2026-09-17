@@ -16,9 +16,14 @@ alias Oskol.GameKit
 seats = [{"p1", "Alice"}, {"p2", "Bob"}]
 
 value = fn
-  %{"type" => "choice", "options" => options} -> Enum.random(options)["id"]
-  %{"type" => "number", "min" => min, "max" => max} -> Enum.random(min..max)
-  %{"type" => "select", "candidates" => candidates, "min" => min} -> Enum.take_random(candidates, min)
+  %{"type" => "choice", "options" => options} ->
+    Enum.random(options)["id"]
+
+  %{"type" => "number", "min" => min, "max" => max} ->
+    Enum.random(min..max)
+
+  %{"type" => "select", "candidates" => candidates, "min" => min} ->
+    Enum.take_random(candidates, min)
 end
 
 action_for = fn schema ->
@@ -84,9 +89,9 @@ end)
 state = Game.get_server_state(game_id)
 true = GameKit.finished?(state.instance)
 
-# Let the write-behind catch up before this node goes away.
-Oskol.Game.Persister.flush()
-Process.sleep(1000)
+# Wait for the write-behind to land before this node goes away: the browser
+# reaches a server that rebuilds the room from the log.
+:ok = Oskol.Game.Persister.flush()
 
 IO.puts(
   Jason.encode!(%{
