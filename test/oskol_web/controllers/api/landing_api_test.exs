@@ -552,6 +552,7 @@ defmodule OskolWeb.Api.LandingApiTest do
       # with the 12 s delay still ahead of it.
       assert %{"mine_ms" => 300_000, "theirs_ms" => 300_000, "free_ms" => 12_000} = game["time"]
       assert game["time"]["running"] == if(mover == alice_seat, do: "mine", else: "theirs")
+      assert is_integer(game["time"]["age_s"])
       assert is_integer(game["idle_s"])
       # And asking woke nothing.
       assert :error = GameSupervisor.find_game(game_id)

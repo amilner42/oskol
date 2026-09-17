@@ -61,6 +61,7 @@ fn open_room() -> room.ActiveRoom {
     seats: [#("p1", "Alice", "g1"), #("p2", "Bob", "g2")],
     to_act: ["p1"],
     clocks: [#("p1", 171_000, 0, True), #("p2", 300_000, 0, False)],
+    clock_s: 4,
     idle_s: 90,
   )
 }
@@ -81,7 +82,7 @@ pub fn my_games_lists_the_rooms_this_guest_holds_a_seat_in_test() {
   // The clocks from the visitor's side: theirs is running.
   assert string.contains(
     body,
-    "\"time\":{\"mine_ms\":171000,\"theirs_ms\":300000,\"running\":\"mine\",\"free_ms\":0}",
+    "\"time\":{\"mine_ms\":171000,\"theirs_ms\":300000,\"running\":\"mine\",\"free_ms\":0,\"age_s\":4}",
   )
   assert string.contains(body, "\"idle_s\":90")
 }
@@ -107,6 +108,7 @@ pub fn a_lobby_has_no_opponent_no_clock_and_nobody_to_act_test() {
       seats: [#("p1", "Alice", "g1")],
       to_act: [],
       clocks: [],
+      clock_s: 0,
     )
   let ctx = reading() |> fakes.with_active_rooms([lobby])
   let body = landing.my_games_json(ctx, fakes.guest("g1"))

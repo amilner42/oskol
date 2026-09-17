@@ -203,15 +203,16 @@ type alias MyGame =
     }
 
 
-{-| The two clocks as the row last saw them: what each side has left,
-whose is running, and the free time still on the running move (the delay
-that is spent before the bank is).
+{-| The two clocks as the row last read them: what each side has left,
+whose is running, the free time still on the running move (the delay that
+is spent before the bank is), and how many seconds ago that reading was.
 -}
 type alias MyGameTime =
     { mineMs : Int
     , theirsMs : Int
     , running : Running
     , freeMs : Int
+    , ageS : Int
     }
 
 
@@ -604,7 +605,7 @@ myGameDecoder =
 
 timeDecoder : Decoder MyGameTime
 timeDecoder =
-    D.map4 MyGameTime
+    D.map5 MyGameTime
         (D.field "mine_ms" D.int)
         (D.field "theirs_ms" D.int)
         (D.oneOf
@@ -627,6 +628,7 @@ timeDecoder =
             ]
         )
         (D.oneOf [ D.field "free_ms" D.int, D.succeed 0 ])
+        (D.oneOf [ D.field "age_s" D.int, D.succeed 0 ])
 
 
 roomStateDecoder : Decoder RoomState

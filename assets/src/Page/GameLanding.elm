@@ -890,31 +890,33 @@ guestNote : Html Msg
 guestNote =
     Html.div [ id "guest-note", class "pitch mt-6 pt-5 flex flex-col gap-4" ]
         [ Html.p [ class "q-note text-[13px] text-center" ]
-            [ Html.text "You are logged in as a guest on this device." ]
+            [ Html.text "Welcome to the best place to play backgammon on the internet." ]
         , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
-            [ Html.text "Keep every game you play, "
-            , Html.em [ class "pitch-mark not-italic" ] [ Html.text "on every device." ]
+            [ Html.text "Get wayyy more, "
+            , Html.em [ class "pitch-mark not-italic" ] [ Html.text "for free." ]
             ]
         , Html.span
             [ id "signup-cta"
             , class "signup w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold"
             , Html.Attributes.attribute "aria-disabled" "true"
             ]
-            [ Html.text "Sign up for free"
+            [ Html.text "Sign up"
             , Html.span [ class "signup-soon text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" ] [ Html.text "soon" ]
             ]
         , Html.ul [ class "flex flex-wrap justify-center gap-2" ]
-            [ chip analysisIcon "4-ply analysis" False
+            [ chip deviceIcon "Every device" False
+            , chip analysisIcon "4-ply analysis" False
+            , chip flagIcon "Openings" False
             , chip practiceIcon "Mistake practice" False
             , chip trendIcon "PR over time" False
             , chip lockIcon "Secure account" False
-            , chip sparkleIcon "Totally free" True
             ]
+        , Html.p [ class "q-note text-[12px] text-center" ]
+            [ Html.text "You are playing as a guest on this device." ]
         ]
 
 
-{-| One thing an account is for, as a chip: an icon and a few words. The
-free one wears the highlighter.
+{-| One thing an account is for, as a chip: an icon and a few words.
 -}
 chip : Html Msg -> String -> Bool -> Html Msg
 chip icon label free =
@@ -952,9 +954,14 @@ lockIcon =
     lineIcon "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
 
 
-sparkleIcon : Html Msg
-sparkleIcon =
-    lineIcon "M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z"
+flagIcon : Html Msg
+flagIcon =
+    lineIcon "M3 3v1.5M3 21v-6m0 0 2.77-.693a9 9 0 0 1 6.208.682l.108.054a9 9 0 0 0 6.086.71l3.114-.732a48.524 48.524 0 0 1-.005-10.499l-3.11.732a9 9 0 0 1-6.085-.711l-.108-.054a9 9 0 0 0-6.208-.682L3 4.5M3 15V4.5"
+
+
+deviceIcon : Html Msg
+deviceIcon =
+    lineIcon "M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"
 
 
 practiceIcon : Html Msg
@@ -967,11 +974,12 @@ trendIcon =
     lineIcon "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941"
 
 
-{-| The two clocks, the running one counting down: "2:31 · 1:58" is mine
-then theirs. The row holds the times as of the room's last step; the
-running side is charged for the seconds since, less the free time that
-was still on the move, so what shows is what the table would. When the
-running one is mine it breathes, to say so. Under no clock, nothing.
+{-| The two clocks, the running one counting down: mine then theirs. The
+row holds the times as the room last read them and how long ago that was;
+the running side is charged for that plus the seconds since the list
+came, less the free time that was still on the move, so what shows is
+what the table would. When the running one is mine it breathes, to say
+so. Under no clock, nothing.
 -}
 clockLine : Model -> MyGame -> Maybe (Html Msg)
 clockLine model game =
@@ -982,7 +990,7 @@ clockLine model game =
         Just time ->
             let
                 elapsed =
-                    game.idleS * 1000 + max 0 (model.now - model.fetchedAt)
+                    time.ageS * 1000 + max 0 (model.now - model.fetchedAt)
 
                 charged =
                     max 0 (elapsed - time.freeMs)

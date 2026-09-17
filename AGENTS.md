@@ -687,9 +687,11 @@ GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
 GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
                                          opponent, format, clock, your_move,
-                                         idle_s}]} -- the unfinished rooms the
-                                       caller's guest holds a seat in, newest
-                                       activity first, from the rows alone
+                                         time: {mine_ms, theirs_ms, running,
+                                         free_ms, age_s} | null, idle_s}]}
+                                       -- the unfinished rooms the caller's
+                                       guest holds a seat in, newest activity
+                                       first, from the rows alone
 ```
 
 `path` is the URL of the seat that was just taken (`/:slug/:id`, carrying
@@ -717,7 +719,9 @@ or `playing` whose seats include the caller's guest, read from `games` with
 no room woken (`Persistence.seated_rooms`, the cap
 `persistence.seated_rooms`, the handler `landing.my_games_json`). Each
 entry names the opponent (null in a lobby), the format and clock by name,
-whether it is the caller's turn (`your_move`, from the row's `state`) and
+whether it is the caller's turn (`your_move`, from the row's `state`), the
+two clocks as the snapshot last read them with how long ago that was
+(`time`, so the client can charge the running one and count it down), and
 seconds since the room was touched. The client (`Page/GameLanding.elm`)
 shows them in a dialog over the home board when the list arrives with
 anything in it, and keeps a "REJOIN N GAMES" button at the right end of the
@@ -1028,8 +1032,11 @@ hour-idle shutdown is therefore graceful.
 account, `Game.clocks` with or without a clock set: the mover, never
 "anyone with a legal action", since a waiting backgammon player may always
 resign), `on_clock` (whose clock is actually running), `outcome`, `phase`
-and the spectator scene's per-player counters and flags (score, pips,
-to_move...). It is game-agnostic and carries nothing hidden. It is what
+the spectator scene's per-player counters and flags (score, pips,
+to_move...), each seat's `clocks` as of that step, and `at`, the wall-clock
+moment the clocks were read (added Elixir-side), which is what a reader
+charges a running clock from: the row's `updated_at` moves for a seat
+claim and not for a wake. It is game-agnostic and carries nothing hidden. It is what
 lets active games be listed and watched from the database without waking
 a room; a row from before it existed is null until its room next
 rehydrates, which writes it. It is a snapshot, not a source: the log is

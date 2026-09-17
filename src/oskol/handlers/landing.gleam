@@ -311,10 +311,11 @@ pub fn my_games_json(ctx: Ctx, session: Session) -> String {
 /// One resumable game as the home page lists it: where it is (`path`),
 /// who it is against (`opponent`, null while nobody has joined), what is
 /// being played (the format's and the clock's names), whether the visitor
-/// is the one to act, the two clocks as of the room's last step (`time`:
+/// is the one to act, the two clocks as the room last read them (`time`:
 /// the visitor's and the opponent's ms, whose is running, the free time
-/// left on the move; null under no clock), and how long since it was
-/// touched.
+/// left on the move, and `age_s`, how long ago that was, so the running
+/// one can be charged for it; null under no clock), and how long since the
+/// room was touched.
 fn active_room_json(room: ActiveRoom, session: Session) -> Json {
   let info = registry.find(room.slug) |> result.map(fn(e) { e.info })
   let mine =
@@ -347,12 +348,16 @@ fn active_room_json(room: ActiveRoom, session: Session) -> Json {
     #("format", json.string(format)),
     #("clock", nullable(clock)),
     #("your_move", json.bool(my_id != "" && list.contains(room.to_act, my_id))),
-    #("time", time_json(room.clocks, my_id)),
+    #("time", time_json(room.clocks, room.clock_s, my_id)),
     #("idle_s", json.int(room.idle_s)),
   ])
 }
 
-fn time_json(clocks: List(#(String, Int, Int, Bool)), my_id: String) -> Json {
+fn time_json(
+  clocks: List(#(String, Int, Int, Bool)),
+  age_s: Int,
+  my_id: String,
+) -> Json {
   let mine = list.find(clocks, fn(c) { c.0 == my_id })
   let theirs = list.find(clocks, fn(c) { c.0 != my_id })
   case mine, theirs {
@@ -366,6 +371,7 @@ fn time_json(clocks: List(#(String, Int, Int, Bool)), my_id: String) -> Json {
           _, _ -> json.null()
         }),
         #("free_ms", json.int(int.max(mine.2, theirs.2))),
+        #("age_s", json.int(age_s)),
       ])
     _, _ -> json.null()
   }

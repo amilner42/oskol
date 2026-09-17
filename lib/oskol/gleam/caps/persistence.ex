@@ -27,11 +27,20 @@ defmodule Oskol.Gleam.Caps.Persistence do
        config["clock"] || "none",
        Enum.map(game.players, fn p -> {p["id"], p["name"] || "", p["guest_id"] || ""} end),
        Enum.filter(state["to_act"] || [], &is_binary/1), clocks(state["clocks"]),
+       clock_age_s(state["at"], game.updated_at, now),
        max(DateTime.diff(now, game.updated_at, :second), 0)}
     end)
   rescue
     _ -> []
   end
+
+  # How long ago the snapshot read its clocks: its own stamp, or, for a row
+  # from before it carried one, the row's.
+  # A stamp in the future (a clock skew between nodes) charges nothing.
+  defp clock_age_s(at_ms, _updated_at, _now) when is_integer(at_ms),
+    do: max(div(System.os_time(:millisecond) - at_ms, 1000), 0)
+
+  defp clock_age_s(_, updated_at, now), do: max(DateTime.diff(now, updated_at, :second), 0)
 
   # Each seat's clock as the snapshot wrote it; nothing under no clock, or
   # for a row from before the snapshot carried clocks.

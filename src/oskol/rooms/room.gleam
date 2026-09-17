@@ -59,7 +59,9 @@ pub fn seat_path(slug: String, game_id: String) -> String {
 /// snapshot the room wrote with its last step (empty for a lobby, or for a
 /// row from before the snapshot existed); `clocks` each seat's time as of
 /// that step, #(player_id, remaining_ms, move_ms, running), empty under no
-/// clock; `idle_s` seconds since the room was last touched.
+/// clock, and `clock_s` seconds since those clocks were read (from the
+/// snapshot's own stamp, so a claimed seat or a wake does not skew it);
+/// `idle_s` seconds since the room was last touched.
 pub type ActiveRoom {
   ActiveRoom(
     slug: String,
@@ -70,6 +72,7 @@ pub type ActiveRoom {
     seats: List(#(String, String, String)),
     to_act: List(String),
     clocks: List(#(String, Int, Int, Bool)),
+    clock_s: Int,
     idle_s: Int,
   )
 }

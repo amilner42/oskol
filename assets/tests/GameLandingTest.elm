@@ -511,7 +511,7 @@ resume =
                 home withGames
                     |> Expect.all
                         [ Query.has [ id "resume-modal", text "LIVE GAMES" ]
-                        , Query.find [ id "signup-cta" ] >> Query.has [ text "Sign up for free", text "soon", disabled ]
+                        , Query.find [ id "signup-cta" ] >> Query.has [ text "Sign up", text "soon", disabled ]
                         , Query.find [ id "resume-list" ] >> Query.children [] >> Query.count (Expect.equal 2)
                         , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "vs Bob", text "Match to 5", text "2 min ago", text "Your move" ]
                         , Query.find [ id "resume-9H302Z" ] >> Query.has [ text "Waiting for a player", text "Lobby" ]
@@ -569,7 +569,7 @@ resume =
                         ]
         , test "the clocks show as of the row, the running side charged for the time since" <|
             \_ ->
-                -- 171 s left, running, 150 s idle: 21 s show; the other side is whole.
+                -- 171 s left, running, read 150 s ago: 21 s show; the other side is whole.
                 home withGames
                     |> Query.find [ id "resume-123456" ]
                     |> Query.has [ text "0:21", text "3:00" ]
@@ -579,7 +579,7 @@ resume =
                     [ \m -> home m |> Query.find [ id "resume-123456" ] |> Query.find [ class "clock-live" ] |> Query.has [ text "0:21" ]
                     , \m ->
                         m
-                            |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 171000, theirsMs = 180000, running = Catalog.Theirs, freeMs = 0 } } ]))
+                            |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 171000, theirsMs = 180000, running = Catalog.Theirs, freeMs = 0, ageS = 150 } } ]))
                             |> home
                             |> Query.hasNot [ class "clock-live" ]
                     ]
@@ -595,7 +595,7 @@ resume =
         , test "the free time on the move is spent before the bank is" <|
             \_ ->
                 loadedModel
-                    |> send (GameLanding.GotMyGames (Ok [ { playing | idleS = 5, time = Just { mineMs = 180000, theirsMs = 180000, running = Catalog.Mine, freeMs = 12000 } } ]))
+                    |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 180000, theirsMs = 180000, running = Catalog.Mine, freeMs = 12000, ageS = 5 } } ]))
                     |> home
                     |> Query.find [ id "resume-123456" ]
                     |> Query.findAll [ class "clock-mine", class "clock-live" ]
@@ -603,7 +603,7 @@ resume =
         , test "the free time on the move is spent before the bank is (the running side shows the whole bank)" <|
             \_ ->
                 loadedModel
-                    |> send (GameLanding.GotMyGames (Ok [ { playing | idleS = 5, time = Just { mineMs = 180000, theirsMs = 180000, running = Catalog.Mine, freeMs = 12000 } } ]))
+                    |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 180000, theirsMs = 180000, running = Catalog.Mine, freeMs = 12000, ageS = 5 } } ]))
                     |> home
                     |> Query.find [ id "resume-123456" ]
                     |> Query.find [ class "clock-live" ]
@@ -622,7 +622,7 @@ resume =
             \_ ->
                 home withGames
                     |> Query.find [ id "guest-note" ]
-                    |> Query.has [ text "logged in as a guest on this device", text "Keep every game you play, ", text "on every device.", text "4-ply analysis", text "Mistake practice", text "PR over time", text "Secure account", text "Totally free", id "signup-cta" ]
+                    |> Query.has [ text "best place to play backgammon", text "Get wayyy more, ", text "for free.", text "Every device", text "4-ply analysis", text "Openings", text "Mistake practice", text "PR over time", text "Secure account", text "playing as a guest on this device", id "signup-cta" ]
         , test "the menu is still its four entries: the button lives in the bar, not the band" <|
             \_ ->
                 home withGames
@@ -642,7 +642,7 @@ playing =
     , format = "Match to 5"
     , clock = Just "5 min"
     , yourMove = True
-    , time = Just { mineMs = 171000, theirsMs = 180000, running = Catalog.Mine, freeMs = 0 }
+    , time = Just { mineMs = 171000, theirsMs = 180000, running = Catalog.Mine, freeMs = 0, ageS = 150 }
     , idleS = 150
     }
 

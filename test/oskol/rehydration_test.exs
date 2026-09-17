@@ -89,7 +89,8 @@ defmodule Oskol.RehydrationTest do
     # their public counters.
     Persister.flush()
     row = Repo.get(Persistence.Game, game_id)
-    assert row.state == GameKit.summary(Game.get_server_state(game_id).instance)
+    assert same_snapshot?(row.state, GameKit.summary(Game.get_server_state(game_id).instance))
+    assert is_integer(row.state["at"])
     assert row.state["to_act"] == [mover]
     assert row.state["outcome"] == %{"status" => "ongoing"}
 
@@ -101,7 +102,7 @@ defmodule Oskol.RehydrationTest do
       assert {:cut_off, 1} = Oskol.Bots.play(game_id, 7, 1)
       Persister.flush()
       row = Repo.get(Persistence.Game, game_id)
-      assert row.state == GameKit.summary(Game.get_server_state(game_id).instance)
+      assert same_snapshot?(row.state, GameKit.summary(Game.get_server_state(game_id).instance))
     end)
 
     # A row from before the snapshot existed heals on the room's first wake.
@@ -110,8 +111,11 @@ defmodule Oskol.RehydrationTest do
     assert {:ok, _pid} = Game.lookup_game(game_id)
     Persister.flush()
     row = Repo.get(Persistence.Game, game_id)
-    assert row.state == GameKit.summary(Game.get_server_state(game_id).instance)
+    assert same_snapshot?(row.state, GameKit.summary(Game.get_server_state(game_id).instance))
   end
+
+  # The snapshot less its stamp: the clocks were read at different moments.
+  defp same_snapshot?(a, b), do: Map.delete(a, "at") == Map.delete(b, "at")
 
   test "a waiting room rehydrates: the seat holds, and the game starts when the table fills" do
     %{game_id: game_id, p1: p1, g1: g1} = lobby("single", seed: 42)
