@@ -36,9 +36,12 @@ defmodule Oskol.Bots do
         {:cut_off, steps}
 
       true ->
+        # `legal` rather than a whole update: a playout is hundreds of steps
+        # and this runs twice a step, so rendering the scene, the events and
+        # the clock each time was most of the cost of playing a game.
         choices =
           for player_id <- state.seat_order,
-              schema <- GameKit.player_update(state.instance, player_id)["legal"],
+              schema <- GameKit.legal(state.instance, player_id),
               schema["name"] not in exclude,
               do: {player_id, schema}
 

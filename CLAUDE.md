@@ -469,13 +469,18 @@ still takes another one:
 ## Development commands
 
 ```bash
-bin/check             # everything below, in order; add --browser for the Playwright smokes
+bin/check             # what you run while you work (~2 min): compile, Gleam,
+                      # Elm, Elixir, without the handful tagged `slow`
+bin/check --all       # the same with the slow tests (~3.5 min). What CI runs.
+bin/check --browser   # --all, then the Playwright smokes
                       # (PORT picks the port it serves them on; 4400 by default)
 mix deps.get          # Elixir + Gleam deps
 mix compile           # compiles Gleam (via mix_gleam) and Elixir
-bin/test-gleam        # Gleam unit, rules, oracle, property, hidden-info and golden tests
+bin/test-gleam        # Gleam unit, rules, oracle, property, hidden-info and golden
+                      # tests, run one worker per core (test/oskol_runner.erl)
 mix oskol.fixtures    # regenerate fixtures: `replays` (committed) and/or `payloads` (derived)
-mix test              # Elixir room, bots, channel, LiveView tests
+mix test              # Elixir room, bots, channel, controller tests, minus the
+                      # `slow` ones; mix test --include slow runs everything
 cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # Elm typecheck
 cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm  # Elm tests (needs `mix oskol.fixtures payloads`)
 mix assets.build      # Elm (via esbuild plugin) + Tailwind
@@ -506,7 +511,18 @@ node playwright/review-games/test.js            # screenshots of games in play (
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`,
-smokes included (one job, one server, in `bin/check`'s order).
+smokes included (one job, one server, in `bin/check`'s order). It runs on
+pull requests and on pushes to main, which is once per commit rather than
+the twice it used to be.
+
+**Speed is a feature of the suite.** A check nobody runs is worse than a slow
+one, so keep it under about two minutes: the Gleam tests run one worker per
+core (`test/oskol_runner.erl`, replacing gleeunit's one-at-a-time list),
+tooling that walks a game asks the host for `legal` rather than rendering a
+whole update per step, and the few tests whose cost is waiting -- whole
+matches played at random, clocks that must run out, retry backoffs -- are
+tagged `@tag :slow` and left to CI. When a new test takes seconds, ask
+whether it is waiting or working: waiting is tagged, working is parallel.
 
 Notes:
 - mix and the gleam CLI share `build/`. `mix compile` removes the

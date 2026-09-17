@@ -166,6 +166,10 @@ defmodule Oskol.ReadyUpPatchTest do
   # existed, with the scene each seat saw at their end. Patched and
   # rehydrated, the room shows each seat exactly that scene.
   for name <- ~w(backgammon-match3-1 backgammon-match7-1 backgammon-unlimited-1) do
+    # Replays three whole recorded matches through the patch and the
+    # rehydrator: minutes of real work for a one-off migration that has
+    # already run in production.
+    @tag :slow
     test "a log the old engine wrote (#{name}) patches to the very position it recorded" do
       fixture =
         Path.join([File.cwd!(), "test/fixtures/pre_ready_logs", unquote(name) <> ".json"])

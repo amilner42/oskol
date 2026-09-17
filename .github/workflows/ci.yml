@@ -1,7 +1,11 @@
 name: ci
 
+# A pull request used to run everything twice: once for the push to its
+# branch and once for the pull request itself, two full runs of the same
+# commit competing for runners. The branch push is the one that goes.
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -64,7 +68,9 @@ jobs:
       - name: Elm tests
         run: cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm
       - name: Elixir tests
-        run: mix test
+        # Including the slow ones a laptop skips: whole matches played out
+        # at random, and clocks that have to run out in real time.
+        run: mix test --include slow
       - name: Formatting
         run: mix format --check-formatted && gleam format --check src test
 

@@ -206,6 +206,17 @@ pub fn seats(instance: Instance) -> List(Seat) {
   instance.seats(instance)
 }
 
+/// The actions this player may take now and nothing else: the same shapes
+/// an update carries under "legal", without the scene, the events and the
+/// clock beside them. For tooling that walks a game step by step -- the
+/// bots the suite plays whole matches with -- where building two whole
+/// updates a step was most of the cost of a playout.
+pub fn legal_json(instance: Instance, player_id: String) -> String {
+  instance.legal(instance, player_id)
+  |> json.array(action.to_json)
+  |> json.to_string
+}
+
 /// The names of the actions this player may take now, without building a
 /// whole update: for platform tooling that walks a log step by step.
 pub fn legal_names(instance: Instance, player_id: String) -> List(String) {
