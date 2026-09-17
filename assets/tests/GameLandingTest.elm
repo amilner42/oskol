@@ -608,6 +608,17 @@ resume =
                     |> Query.find [ id "resume-123456" ]
                     |> Query.find [ class "clock-live" ]
                     |> Query.has [ text "3:00" ]
+        , test "nor over the board picker" <|
+            \_ ->
+                loadedModel
+                    |> send GameLanding.ToggledThemes
+                    |> send (GameLanding.GotMyGames (Ok [ playing ]))
+                    |> home
+                    |> Expect.all
+                        [ Query.hasNot [ id "resume-modal" ]
+                        , Query.has [ id "bg-theme-list" ]
+                        , Query.has [ id "resume-games" ]
+                        ]
         , test "the list does not open over CREATE GAME's dialog" <|
             \_ ->
                 opened

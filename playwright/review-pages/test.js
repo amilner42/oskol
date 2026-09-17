@@ -1,6 +1,6 @@
 /**
- * Captures the home board, CREATE GAME's dialog and a lobby at desktop and
- * phone widths for visual review. Run with the server up:
+ * Captures the home board, CREATE GAME's dialog, a lobby, the LIVE GAMES
+ * dialog and the theme picker at desktop and phone widths for visual review. Run with the server up:
  *   node playwright/review-pages/test.js
  */
 const playwright = require('playwright');
@@ -23,10 +23,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // seat is the guest who took it, so the URL carries no secret.
     await createGame(page, { name: 'Alice', mode: 'match5' }); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-03-backgammon-lobby.png`, fullPage: true });
+    // Home again, now holding a seat: the LIVE GAMES dialog opens over the
+    // board. Shoot it, then close it to get at the picker.
+    await page.goto(`${BASE}/`); await page.waitForSelector('#resume-modal'); await sleep(600);
+    await page.screenshot({ path: `${OUT}/${name}-04-live-games.png` });
+    await page.click('#close-resume'); await page.waitForSelector('#resume-modal', { state: 'detached' });
     // The theme picker, open on the home board.
-    await page.goto(`${BASE}/`); await page.waitForSelector('#bg-theme-button');
     await page.click('#bg-theme-button'); await page.waitForSelector('#bg-theme-list'); await sleep(600);
-    await page.screenshot({ path: `${OUT}/${name}-04-theme-picker.png` });
+    await page.screenshot({ path: `${OUT}/${name}-05-theme-picker.png` });
     await ctx.close();
   }
   await browser.close();

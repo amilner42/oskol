@@ -212,10 +212,10 @@ update msg model =
 
         -- The games waiting for this browser: the list opens over the
         -- board when there are any, once, and the bar keeps offering it.
-        -- Not over CREATE GAME's dialog if the player already opened that:
-        -- the bar's button is there for later.
+        -- Not over something the player already opened (CREATE GAME's
+        -- dialog, the board picker): the bar's button is there for later.
         GotMyGames (Ok games) ->
-            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) && not model.started }
+            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) && not model.started && not model.themesOpen }
             , Task.perform ListArrived Time.now
             , NoOut
             )
@@ -551,9 +551,9 @@ themePicker model =
             , Html.Attributes.title "Board colours"
             , onClick ToggledThemes
             ]
-            [ icon "hero-swatch" "home-palette w-[19px] h-[19px]"
-            , Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ]
+            [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ]
                 [ Games.Backgammon.View.themeBoard ]
+            , icon "hero-chevron-down" "home-palette w-3.5 h-3.5"
             ]
         , if model.themesOpen then
             Html.div [ class "bg-theme-list", id "bg-theme-list" ]

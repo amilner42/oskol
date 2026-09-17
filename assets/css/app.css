@@ -644,6 +644,10 @@
 }
 .bg-page.home-board .home-themes > button:hover { color: #fff; transform: translateY(-1px); }
 .bg-page.home-board .home-themes > button:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
+/* The chevron turns over while the list is open. */
+.bg-page.home-board .home-themes > button .home-palette { transition: transform 0.18s ease; }
+.bg-page.home-board .home-themes > button[aria-expanded="true"] .home-palette { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .bg-page.home-board .home-themes > button .home-palette { transition: none; } }
 .bg-page.home-board #bg-theme-button .bg-theme-chip {
   width: 26px; height: 16px; border-radius: 5px;
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 0 0 3px rgba(0, 0, 0, 0.35);
