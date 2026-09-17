@@ -1,4 +1,4 @@
-module Page.HomeBoard exposing (view)
+module Page.HomeBoard exposing (pips, view)
 
 {-| The home page is a backgammon table: the real board in its opening
 position, drawn with the table's own classes, with the Oskol mark inlaid in
@@ -13,9 +13,11 @@ import Html.Attributes exposing (attribute, class, id, style)
 import Ui.Shell
 
 
-{-| `actions` go in the right half's band beside the dice.
+{-| `actions` go in the right half's band beside the dice; `note` is the
+right end of the player's own bar at the foot, where a game shows the pip
+count (the games waiting for them, when there are any).
 -}
-view : { actions : List (Html msg), join : Html msg, soon : List (Html msg), you : String, theme : String, picker : Html msg } -> Html msg
+view : { actions : List (Html msg), join : Html msg, soon : List (Html msg), you : String, theme : String, picker : Html msg, note : Html msg } -> Html msg
 view config =
     div [ class ("bg-page home-board " ++ Games.Backgammon.View.themeClass config.theme) ]
         [ div [ class "bg-main" ]
@@ -23,7 +25,7 @@ view config =
                 [ topBar config.picker
                 , board
                     [ div [ id "home-menu", class "home-menu grid grid-cols-2 gap-2.5 sm:gap-3" ] (config.actions ++ [ config.join ] ++ config.soon) ]
-                , bar "white" config.you True
+                , bar "white" config.you True config.note
                 ]
             ]
         ]
@@ -42,8 +44,8 @@ topBar picker =
         ]
 
 
-bar : String -> String -> Bool -> Html msg
-bar color name isMe =
+bar : String -> String -> Bool -> Html msg -> Html msg
+bar color name isMe note =
     div
         [ class
             ("player-bar flex items-center gap-1.5 sm:gap-2 px-2 py-1.5 sm:px-3 sm:py-2"
@@ -58,8 +60,16 @@ bar color name isMe =
         [ div [ class ("swatch shrink-0 " ++ color) ] []
         , span [ class "font-bold text-sm sm:text-base truncate" ] [ text name ]
         , div [ class "flex-1" ] []
-        , span [ class "bar-pips pixel text-[7px] sm:text-[8px] whitespace-nowrap" ] [ text "167 PIPS" ]
+        , note
         ]
+
+
+{-| What the bar says when there is nothing waiting: the pip count a game
+would show.
+-}
+pips : Html msg
+pips =
+    span [ class "bar-pips pixel text-[7px] sm:text-[8px] whitespace-nowrap" ] [ text "167 PIPS" ]
 
 
 board : List (Html msg) -> Html msg

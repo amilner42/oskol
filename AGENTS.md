@@ -685,6 +685,13 @@ GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, els
                                        normalised: the one that answered comes back)
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
+GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
+                                         opponent, format, clock, your_move,
+                                         time: {mine_ms, theirs_ms, running,
+                                         free_ms, age_s} | null, idle_s}]}
+                                       -- the unfinished rooms the caller's
+                                       guest holds a seat in, newest activity
+                                       first, from the rows alone
 ```
 
 `path` is the URL of the seat that was just taken (`/:slug/:id`, carrying
@@ -706,6 +713,20 @@ channel refuses without saying which. The caller's guest (the cap
 `seated_game`, which answers which seat a guest holds) picks the seat the
 record's board faces, and is what a retry takes. Nothing a reader does
 spends engine time.
+
+`/papi/me/games` is what the home page opens with: every room in `waiting`
+or `playing` whose seats include the caller's guest, read from `games` with
+no room woken (`Persistence.seated_rooms`, the cap
+`persistence.seated_rooms`, the handler `landing.my_games_json`). Each
+entry names the opponent (null in a lobby), the format and clock by name,
+whether it is the caller's turn (`your_move`, from the row's `state`), the
+two clocks as the snapshot last read them with how long ago that was
+(`time`, so the client can charge the running one and count it down), and
+seconds since the room was touched. The client (`Page/GameLanding.elm`)
+shows them in a dialog over the home board when the list arrives with
+anything in it, and keeps a "REJOIN N GAMES" button at the right end of the
+player's own bar for as long as there are any. The three-day pruner bounds
+the list.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist
@@ -996,14 +1017,32 @@ it golden replays and Elm contract coverage for free.
 
 Games survive deploys and machine sleep. Every room writes behind (never
 blocking play) to Postgres via `Oskol.Game.Persister`: a `games` row (code,
-setup, seed, seats with the guest holding each, status, winners) and one `game_actions`
+setup, seed, seats with the guest holding each, status, winners, and
+`state`: where the game stands as of its last step) and one `game_actions`
 row per state-mutating step — player actions and clock expiries alike, each
 with its millisecond offset from the instance's start. A lookup that finds no
 live process replays seed + log through the same gamekit calls at those
 offsets (timeline shifted to "now", so downtime charges nobody) and the room
 carries on; the guest holding each seat round-trips, so every player's
 browser still holds its seat. The
-hour-idle shutdown is therefore graceful. Dev/test use local databases
+hour-idle shutdown is therefore graceful.
+
+**`games.state` mirrors the game.** With every step the room also writes
+`gamekit/host.summary_json`: `to_act` (whose turn it is by the game's own
+account, `Game.clocks` with or without a clock set: the mover, never
+"anyone with a legal action", since a waiting backgammon player may always
+resign), `on_clock` (whose clock is actually running), `outcome`, `phase`
+the spectator scene's per-player counters and flags (score, pips,
+to_move...), each seat's `clocks` as of that step, and `at`, the wall-clock
+moment the clocks were read (added Elixir-side), which is what a reader
+charges a running clock from: the row's `updated_at` moves for a seat
+claim and not for a wake. It is game-agnostic and carries nothing hidden. It is what
+lets active games be listed and watched from the database without waking
+a room; a row from before it existed is null until its room next
+rehydrates, which writes it. It is a snapshot, not a source: the log is
+still what a room is rebuilt from.
+
+Dev/test use local databases
 (`oskol_dev`/`oskol_test`, created by `mix ecto.setup` / the `mix test`
 alias); prod reads `DATABASE_URL` (Fly Managed Postgres via pgbouncer, so
 postgrex runs with `prepare: :unnamed`) and migrates on boot. A room's raw

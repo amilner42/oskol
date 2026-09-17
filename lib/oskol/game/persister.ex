@@ -34,18 +34,28 @@ defmodule Oskol.Game.Persister do
     GenServer.cast(__MODULE__, {:write, :players_updated, {game_id, players}})
   end
 
-  def game_started(game_id, seed, setup, players) do
+  def game_started(game_id, seed, setup, players, state) do
     GenServer.cast(
       __MODULE__,
-      {:write, :game_started, {game_id, seed, config_json(setup), players}}
+      {:write, :game_started, {game_id, seed, config_json(setup), players, state}}
     )
   end
 
-  def action_applied(game_id, index, kind, player_id, payload, at_ms) do
+  # `state` is where the game stands after this step (GameKit.summary/1),
+  # written beside the log entry so the row always says what the log does.
+  def action_applied(game_id, index, kind, player_id, payload, at_ms, state) do
     GenServer.cast(
       __MODULE__,
-      {:write, :action_applied, {game_id, index, kind, player_id, payload, at_ms}}
+      {:write, :action_applied, {game_id, index, kind, player_id, payload, at_ms, state}}
     )
+  end
+
+  @doc """
+  A room rebuilt from its log writes where it stands, so a row from before
+  the snapshot existed is right after one wake.
+  """
+  def state_mirrored(game_id, state) do
+    GenServer.cast(__MODULE__, {:write, :state_mirrored, {game_id, state}})
   end
 
   @doc """
@@ -122,11 +132,14 @@ defmodule Oskol.Game.Persister do
   defp do_write(:players_updated, {game_id, players}),
     do: Persistence.update_players(game_id, players)
 
-  defp do_write(:game_started, {game_id, seed, config, players}),
-    do: Persistence.mark_started(game_id, seed, config, players)
+  defp do_write(:game_started, {game_id, seed, config, players, state}),
+    do: Persistence.mark_started(game_id, seed, config, players, state)
 
-  defp do_write(:action_applied, {game_id, index, kind, player_id, payload, at_ms}),
-    do: Persistence.append_action(game_id, index, kind, player_id, payload, at_ms)
+  defp do_write(:action_applied, {game_id, index, kind, player_id, payload, at_ms, state}),
+    do: Persistence.append_action(game_id, index, kind, player_id, payload, at_ms, state)
+
+  defp do_write(:state_mirrored, {game_id, state}),
+    do: Persistence.mirror_state(game_id, state)
 
   defp do_write(:game_finished, {game_id, winners}),
     do: Persistence.mark_finished(game_id, winners)

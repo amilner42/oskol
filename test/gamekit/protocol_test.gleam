@@ -197,3 +197,152 @@ pub fn clocks_follow_the_game_and_forfeit_on_timeout_test() {
     "\"timed_out\":\"" <> me <> "\"",
   )
 }
+
+/// The snapshot the platform writes beside every step: it is the mover's
+/// turn (the waiting player may resign, and that is not their turn), nobody
+/// is on a clock without one, and the players carry their public counters.
+pub fn summary_json_is_the_public_state_test() {
+  let assert Ok(inst) =
+    host.start("backgammon", "single", [], seats(), 42, clock.NoClock, 0)
+  let #(me, them) = mover(inst)
+  let assert Ok(summary) =
+    json.parse(
+      host.summary_json(inst, 0),
+      decode.dict(decode.string, decode.dynamic),
+    )
+  assert list.sort(dict.keys(summary), string.compare)
+    == ["clocks", "on_clock", "outcome", "phase", "players", "to_act"]
+  let assert Ok(to_act) = dict.get(summary, "to_act")
+  assert decode.run(to_act, decode.list(decode.string)) == Ok([me])
+  assert instance.legal(inst, them) != []
+  let assert Ok(on_clock) = dict.get(summary, "on_clock")
+  assert decode.run(on_clock, decode.list(decode.string)) == Ok([])
+  let text = host.summary_json(inst, 0)
+  // No clock: no times to report.
+  assert string.contains(text, "\"clocks\":null")
+  assert string.contains(text, "\"outcome\":{\"status\":\"ongoing\"}")
+  assert string.contains(text, "\"counters\":{")
+  assert string.contains(text, "\"score\":0")
+  // Nothing hidden and nothing heavy: no zones, no tokens.
+  assert !string.contains(text, "\"zones\"")
+  assert !string.contains(text, "\"tokens\"")
+}
+
+/// With a clock, the mover's clock runs and `on_clock` says so.
+pub fn summary_json_names_the_running_clock_test() {
+  let assert Ok(inst) =
+    host.start(
+      "backgammon",
+      "single",
+      [],
+      seats(),
+      42,
+      clock.Fischer(180_000, 0),
+      0,
+    )
+  let #(me, _) = mover(inst)
+  let assert Ok(summary) =
+    json.parse(
+      host.summary_json(inst, 0),
+      decode.dict(decode.string, decode.dynamic),
+    )
+  let assert Ok(on_clock) = dict.get(summary, "on_clock")
+  assert decode.run(on_clock, decode.list(decode.string)) == Ok([me])
+  // Each seat's time as of `now`: the whole bank, the mover's free 12 s
+  // still untouched at 0, and only the mover running. Five seconds in,
+  // the delay has absorbed it and the bank is whole.
+  let at_zero = host.summary_json(inst, 0)
+  assert string.contains(
+    at_zero,
+    "{\"id\":\""
+      <> me
+      <> "\",\"remaining_ms\":180000,\"move_ms\":12000,\"running\":true}",
+  )
+  let later = host.summary_json(inst, 5000)
+  assert string.contains(
+    later,
+    "{\"id\":\""
+      <> me
+      <> "\",\"remaining_ms\":180000,\"move_ms\":7000,\"running\":true}",
+  )
+  assert string.contains(later, "\"move_ms\":0,\"running\":false}")
+}
+
+/// Between the games of a match the game charges nobody, but it waits on
+/// whoever has not pressed READY: that is whose turn the summary says it
+/// is, so the home page can say "come back, it's on you" in exactly the
+/// state a match sits in longest.
+pub fn summary_names_who_owes_a_ready_between_games_test() {
+  let assert Ok(inst) =
+    host.start("backgammon", "match3", [], seats(), 3, clock.NoClock, 0)
+  let between = play_until_between_games(inst, 600)
+  assert string.contains(
+    host.summary_json(between, 0),
+    "\"phase\":\"between_games\"",
+  )
+  // Nobody is charged, and both still have to say they are ready.
+  assert instance.to_act(between) == ["p1", "p2"]
+  let assert Ok(#(after_one, _)) =
+    host.apply(between, "p1", simple_json("ready"), 0)
+  assert instance.to_act(after_one) == ["p2"]
+}
+
+fn simple_json(name: String) -> Dynamic {
+  json.object([#("name", json.string(name)), #("params", json.object([]))])
+  |> json.to_string
+  |> json.parse(decode.dynamic)
+  |> result_or_panic
+}
+
+fn result_or_panic(r: Result(a, b)) -> a {
+  case r {
+    Ok(v) -> v
+    Error(_) -> panic as "bad json"
+  }
+}
+
+/// Play the first legal action that is not a resign, a double or a READY,
+/// for whichever seat has one, until the match is between games.
+fn play_until_between_games(inst: Instance, left: Int) -> Instance {
+  case
+    left,
+    string.contains(host.summary_json(inst, 0), "\"phase\":\"between_games\"")
+  {
+    _, True -> inst
+    0, _ -> panic as "never reached the end of a game"
+    _, False -> {
+      let pick =
+        ["p1", "p2"]
+        |> list.flat_map(fn(id) {
+          instance.legal(inst, id)
+          |> list.filter(fn(s) {
+            !list.contains(["resign", "double", "ready", "undo"], s.name)
+          })
+          |> list.map(fn(s) { #(id, s) })
+        })
+      let assert [#(id, schema), ..] = pick
+      let raw = schema_json(inst, id, schema)
+      let assert Ok(#(next, _)) = host.apply(inst, id, raw, 0)
+      play_until_between_games(next, left - 1)
+    }
+  }
+}
+
+/// A schema as raw JSON: the first candidate of every param.
+fn schema_json(_inst: Instance, _id: String, schema: action.Schema) -> Dynamic {
+  let params =
+    list.map(schema.params, fn(p) {
+      case p.kind {
+        action.Choice([#(id, _), ..]) -> #(p.name, json.string(id))
+        action.Select(_, [id, ..], _, _) -> #(p.name, json.string(id))
+        _ -> #(p.name, json.null())
+      }
+    })
+  json.object([
+    #("name", json.string(schema.name)),
+    #("params", json.object(params)),
+  ])
+  |> json.to_string
+  |> json.parse(decode.dynamic)
+  |> result_or_panic
+}

@@ -183,6 +183,12 @@ pub fn running(clocks: Clocks, id: PlayerId) -> Bool {
   get(clocks, id).running_since != None
 }
 
+/// Free time still on the current move as of `now` (the delay, or a
+/// per-move allowance), before the bank is charged.
+pub fn move_left(clocks: Clocks, id: PlayerId, now: Int) -> Int {
+  settle(get(clocks, id), now).delay_left_ms
+}
+
 /// Charge elapsed time to a running clock, leaving it running.
 fn settle(clock: PlayerClock, now: Int) -> PlayerClock {
   case clock.running_since {

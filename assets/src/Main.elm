@@ -344,6 +344,9 @@ subscriptions model =
             Replay pageModel ->
                 Sub.map ReplayMsg (Page.Replay.subscriptions pageModel)
 
+            GameLanding pageModel ->
+                Sub.map GameLandingMsg (Page.GameLanding.subscriptions pageModel)
+
             _ ->
                 Sub.none
         , if model.joinOpen then

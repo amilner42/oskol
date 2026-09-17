@@ -18,6 +18,7 @@ import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, tag, text)
+import Time
 import Ui.Shell as Shell
 
 
@@ -31,6 +32,7 @@ suite =
         , submitting
         , boardPicker
         , invites
+        , resume
         ]
 
 
@@ -495,6 +497,176 @@ loadedModel : GameLanding.Model
 loadedModel =
     page { guestName = Just "Alice" } "backgammon" Nothing
         |> send (GameLanding.GotGame (Api.parseBody Catalog.gamePageDecoder gameJson))
+
+
+
+-- YOUR GAMES
+
+
+resume : Test
+resume =
+    describe "the games you can resume"
+        [ test "arriving with games open, the list is over the board, one row each, a link to the seat" <|
+            \_ ->
+                home withGames
+                    |> Expect.all
+                        [ Query.has [ id "resume-modal", text "LIVE GAMES" ]
+                        , Query.find [ id "signup-cta" ] >> Query.has [ text "Sign up", text "soon", disabled ]
+                        , Query.find [ id "resume-list" ] >> Query.children [] >> Query.count (Expect.equal 2)
+                        , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "vs Bob", text "Match to 5", text "2 min ago", text "Your move" ]
+                        , Query.find [ id "resume-9H302Z" ] >> Query.has [ text "Waiting for a player", text "Lobby" ]
+                        ]
+        , test "the bar's button says how many are waiting, and what to do" <|
+            \_ ->
+                home withGames
+                    |> Query.find [ id "resume-games" ]
+                    |> Query.has [ text "REJOIN 2 GAMES" ]
+        , test "closing it leaves the board and the bar's button" <|
+            \_ ->
+                home (send GameLanding.ClosedResume withGames)
+                    |> Expect.all
+                        [ Query.hasNot [ id "resume-modal" ]
+                        , Query.has [ id "start-game" ]
+                        , Query.has [ id "resume-games" ]
+                        ]
+        , test "the ✕ closes it" <|
+            \_ ->
+                home withGames
+                    |> Query.find [ id "close-resume" ]
+                    |> Event.simulate Event.click
+                    |> Event.expect GameLanding.ClosedResume
+        , test "and the bar's button opens it again" <|
+            \_ ->
+                home (send GameLanding.ClosedResume withGames)
+                    |> Query.find [ id "resume-games" ]
+                    |> Event.simulate Event.click
+                    |> Event.expect GameLanding.OpenedResume
+        , test "Escape is listened for only while it is open" <|
+            \_ ->
+                Expect.all
+                    [ \m -> Expect.notEqual Sub.none (GameLanding.subscriptions m)
+                    , \m -> Expect.equal Sub.none (GameLanding.subscriptions (send GameLanding.ClosedResume m))
+                    ]
+                    withGames
+        , test "a visitor with nothing to resume sees neither the list nor the button, and the bar shows pips" <|
+            \_ ->
+                home (send (GameLanding.GotMyGames (Ok [])) loadedModel)
+                    |> Expect.all
+                        [ Query.hasNot [ id "resume-modal" ]
+                        , Query.hasNot [ id "resume-games" ]
+                        , Query.has [ class "bar-pips" ]
+                        ]
+        , test "the list failing to come changes nothing" <|
+            \_ ->
+                home (send (GameLanding.GotMyGames (Err Api.NetworkError)) loadedModel)
+                    |> Query.hasNot [ id "resume-modal" ]
+        , test "one game is REJOIN 1 GAME, and their move is quiet" <|
+            \_ ->
+                home (send (GameLanding.GotMyGames (Ok [ { playing | yourMove = False } ])) loadedModel)
+                    |> Expect.all
+                        [ Query.find [ id "resume-games" ] >> Query.has [ text "REJOIN 1 GAME" ]
+                        , Query.find [ id "resume-123456" ] >> Query.has [ text "Their move" ]
+                        ]
+        , test "the clocks show as of the row, the running side charged for the time since" <|
+            \_ ->
+                -- 171 s left, running, read 150 s ago: 21 s show; the other side is whole.
+                home withGames
+                    |> Query.find [ id "resume-123456" ]
+                    |> Query.has [ text "0:21", text "3:00" ]
+        , test "my running clock breathes; theirs does not" <|
+            \_ ->
+                Expect.all
+                    [ \m -> home m |> Query.find [ id "resume-123456" ] |> Query.find [ class "clock-live" ] |> Query.has [ text "0:21" ]
+                    , \m ->
+                        m
+                            |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 171000, theirsMs = 180000, running = Catalog.Theirs, freeMs = 0, ageS = 150 } } ]))
+                            |> home
+                            |> Query.hasNot [ class "clock-live" ]
+                    ]
+                    withGames
+        , test "and the seconds tick while the list is open" <|
+            \_ ->
+                withGames
+                    |> send (GameLanding.ListArrived (Time.millisToPosix 1000000))
+                    |> send (GameLanding.Tick (Time.millisToPosix 1010000))
+                    |> home
+                    |> Query.find [ id "resume-123456" ]
+                    |> Query.has [ text "0:11", text "3:00" ]
+        , test "the free time on the move is spent before the bank is" <|
+            \_ ->
+                loadedModel
+                    |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 180000, theirsMs = 180000, running = Catalog.Mine, freeMs = 12000, ageS = 5 } } ]))
+                    |> home
+                    |> Query.find [ id "resume-123456" ]
+                    |> Query.findAll [ class "clock-mine", class "clock-live" ]
+                    |> Query.count (Expect.equal 0)
+        , test "the free time on the move is spent before the bank is (the running side shows the whole bank)" <|
+            \_ ->
+                loadedModel
+                    |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 180000, theirsMs = 180000, running = Catalog.Mine, freeMs = 12000, ageS = 5 } } ]))
+                    |> home
+                    |> Query.find [ id "resume-123456" ]
+                    |> Query.find [ class "clock-live" ]
+                    |> Query.has [ text "3:00" ]
+        , test "the list does not open over CREATE GAME's dialog" <|
+            \_ ->
+                opened
+                    |> send (GameLanding.GotMyGames (Ok [ playing ]))
+                    |> home
+                    |> Expect.all
+                        [ Query.hasNot [ id "resume-modal" ]
+                        , Query.has [ id "create-modal" ]
+                        , Query.has [ id "resume-games" ]
+                        ]
+        , test "the pitch under the list names what an account is for, with SIGN UP on its way" <|
+            \_ ->
+                home withGames
+                    |> Query.find [ id "guest-note" ]
+                    |> Query.has [ text "logged in as a guest on this device", text "Is it time to get good yet?", text "Every device", text "4-ply analysis", text "Openings", text "Mistake practice", text "PR over time", text "Secure account", id "signup-cta" ]
+        , test "the menu is still its four entries: the button lives in the bar, not the band" <|
+            \_ ->
+                home withGames
+                    |> Query.find [ class "home-menu" ]
+                    |> Query.children []
+                    |> Query.count (Expect.equal 4)
+        ]
+
+
+playing : Catalog.MyGame
+playing =
+    { slug = "backgammon"
+    , id = "123456"
+    , path = "/backgammon/123456"
+    , status = "playing"
+    , opponent = Just "Bob"
+    , format = "Match to 5"
+    , clock = Just "5 min"
+    , yourMove = True
+    , time = Just { mineMs = 171000, theirsMs = 180000, running = Catalog.Mine, freeMs = 0, ageS = 150 }
+    , idleS = 150
+    }
+
+
+lobby : Catalog.MyGame
+lobby =
+    { slug = "backgammon"
+    , id = "9H302Z"
+    , path = "/backgammon/9H302Z"
+    , status = "waiting"
+    , opponent = Nothing
+    , format = "Single game"
+    , clock = Nothing
+    , yourMove = False
+    , time = Nothing
+    , idleS = 30
+    }
+
+
+{-| The home page after the games this browser holds a seat in arrived.
+-}
+withGames : GameLanding.Model
+withGames =
+    send (GameLanding.GotMyGames (Ok [ playing, lobby ])) loadedModel
 
 
 {-| The home page with CREATE GAME pressed.

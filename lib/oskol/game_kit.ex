@@ -127,6 +127,20 @@ defmodule Oskol.GameKit do
   @spec outcome(instance) :: :ongoing | {:finished, [player_id]}
   def outcome(instance), do: :gamekit@host.outcome(instance)
 
+  @doc """
+  Where the game stands, as a plain map the row can hold: who may act, whose
+  clock is running, the outcome, each player's public counters, and the
+  clocks as of `now`. What the persister writes beside every step. `at` is
+  the wall-clock moment the clocks were read, so a reader can charge a
+  running one for the time since: the row's own `updated_at` moves for
+  other reasons (a seat claimed) and not for a wake.
+  """
+  def summary(instance, now \\ now()) do
+    :gamekit@host.summary_json(instance, now)
+    |> Jason.decode!()
+    |> Map.put("at", System.system_time(:millisecond))
+  end
+
   @spec slug(instance) :: String.t()
   def slug(instance), do: :gamekit@host.slug(instance)
 

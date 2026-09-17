@@ -681,6 +681,70 @@
    the theme's accent (which can sit too close to its own text colour). */
 .bg-page.home-board .btn-arcade.home-create { background: var(--highlighter); color: var(--ink); }
 .home-menu > * { width: 100%; }
+/* The games waiting for this browser, at the right end of the player's own
+   bar: a small plate in the site's yellow, where a game shows pips. */
+.home-games {
+  background: var(--highlighter);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: 0 2px 0 0 var(--ink);
+  transition: transform 0.08s, box-shadow 0.08s, filter 0.15s;
+}
+.home-games:hover { filter: brightness(1.06); }
+.home-games:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--ink); }
+/* The dialogs' sheet: a rounder card, a softer lift, a round close disc. */
+.q-card.sheet { border-radius: 22px; box-shadow: 0 1px 2px rgba(35, 36, 58, 0.06), 0 24px 48px -20px rgba(35, 36, 58, 0.45); }
+.dialog-close { color: var(--pencil); background: var(--paper-2); transition: background 0.12s, color 0.12s; }
+.dialog-close:hover { background: var(--ink); color: #fff; }
+
+/* One game in the LIVE GAMES list: a soft surface, no rule, the whole row
+   a link that lifts. The one that is on you carries a thin ink edge. */
+.resume-row {
+  border-radius: 16px;
+  background: #fff;
+  border: 1.5px solid rgba(35, 36, 58, 0.12);
+  color: var(--ink);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s;
+}
+.resume-row:hover, .resume-row:focus-visible {
+  border-color: var(--ink);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px -14px rgba(35, 36, 58, 0.5);
+  outline: none;
+}
+.resume-avatar { background: var(--ink); color: #fff; }
+/* A game waiting on the other player recedes by its marks going quiet,
+   never by its surface changing: the pitch is the one tinted panel. */
+.resume-row.theirs .resume-avatar { background: rgba(35, 36, 58, 0.38); }
+.resume-row.lobby .resume-avatar { background: transparent; color: var(--pencil); border: 1.5px dashed rgba(35, 36, 58, 0.35); }
+.resume-chevron { color: var(--pencil); opacity: 0.6; transition: transform 0.14s ease, opacity 0.14s; }
+.resume-row:hover .resume-chevron { transform: translateX(2px); opacity: 1; }
+.resume-pill.yours { background: var(--highlighter); color: var(--ink); }
+.resume-pill.theirs { background: rgba(35, 36, 58, 0.07); color: var(--pencil); }
+.resume-pill.lobby { background: transparent; color: var(--pencil); border: 1px dashed rgba(35, 36, 58, 0.3); }
+.resume-clock { color: var(--pencil); font-variant-numeric: tabular-nums; }
+.resume-clock .clock-mine { color: var(--ink); font-weight: 600; }
+/* Your own clock, running: it breathes, slowly, to say the time going is
+   yours. Still for anyone who asked for less motion. */
+.clock-live { color: var(--ink); font-weight: 700; animation: clock-breathe 1.8s ease-in-out infinite; }
+@keyframes clock-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@media (prefers-reduced-motion: reduce) { .clock-live { animation: none; } }
+
+/* The pitch under the list, on the sheet itself: one line that sells it
+   (plain ink, no highlight), the things an account is for
+   as chips, and the button in ink. Sign-up is on its way, so the button
+   says so in a quiet pill and does nothing yet; it is the shape it will be. */
+.pitch { border-top: 1px solid rgba(35, 36, 58, 0.12); }
+.pitch-line { color: var(--ink); text-wrap: balance; letter-spacing: -0.01em; }
+.pitch-chip { color: var(--ink); background: #fff; border: 1.5px solid var(--ink); }
+.pitch-chip.free { background: var(--highlighter); border-color: var(--highlighter); }
+.signup { background: var(--ink); color: #fff; cursor: default; }
+.signup-soon { background: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 0.85); }
+.resume-badge.yours { background: var(--highlighter); color: var(--ink); }
+.resume-badge.quiet { background: var(--paper-2); color: var(--pencil); }
 .bg-page.home-board .home-soon { opacity: 0.5; cursor: default; box-shadow: 0 4px 0 0 rgba(35, 36, 58, 0.6); }
 .home-soon-badge {
   position: absolute; top: -7px; right: -7px;

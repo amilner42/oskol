@@ -9,6 +9,9 @@
  * 3. A full create -> play click-through: Alice creates a backgammon game and
  *    lands in the waiting room, Bob opens the invite link and types a name,
  *    and both end up at the board
+ * 4. Coming home with a game open: the list of games to resume is over the
+ *    board, closes in one tap, stays a tap away in the bar, and takes Alice
+ *    back to the table
  *
  * Run with the server up:  node playwright/test-spa-landing/test.js
  */
@@ -129,6 +132,76 @@ async function clickThrough(browser, errors) {
     if (new URL(bob.url()).pathname !== `/backgammon/${gameId}`)
       throw new Error(`joiner landed at ${bob.url()}`);
     log('both players at the board: CREATE -> PLAY OK');
+
+    // Alice goes home. Her browser holds a seat in an unfinished game, so
+    // the home page opens on the list of games she can resume.
+    await alice.goto(`${BASE}/`);
+    await alice.waitForSelector('#resume-modal');
+    const row = alice.locator(`#resume-${gameId}`);
+    const rowText = (await row.textContent()).replace(/\s+/g, ' ').trim();
+    // With a clock, the row shows the two times (as of the room's last
+    // step, the running one counting down) rather than the preset's name.
+    if (!/vs Bob/.test(rowText) || !/Match to 3/.test(rowText) || !/\d+:\d\d \/ \d+:\d\d/.test(rowText))
+      throw new Error(`the resume row reads "${rowText}"`);
+    if (!/(Your|Their) move/.test(rowText)) throw new Error(`the resume row says nothing about whose move: "${rowText}"`);
+    await alice.screenshot({ path: `${SHOTS}/desktop-07-resume.png`, fullPage: true });
+
+    // A tap on the backdrop closes it; the bar keeps the way back.
+    await alice.mouse.click(8, 8);
+    await alice.waitForSelector('#resume-modal', { state: 'detached' });
+    const note = (await alice.textContent('#resume-games')).trim();
+    if (note !== 'REJOIN 1 GAME') throw new Error(`the bar reads "${note}"`);
+    await alice.click('#resume-games');
+    await alice.waitForSelector('#resume-modal');
+    await alice.click(`#resume-${gameId}`);
+    await alice.waitForSelector('.checker', { timeout: 20000 });
+    if (new URL(alice.url()).pathname !== `/backgammon/${gameId}`)
+      throw new Error(`resuming landed at ${alice.url()}`);
+    log('home -> LIVE GAMES -> back at the table: RESUME OK');
+
+    // The same list on a phone, upright and sideways: it must fit without
+    // the page scrolling sideways, and the bar's button must stay in the
+    // bar. Same context, so the same guest holds the seat.
+    for (const [tag, viewport] of [
+      ['phone-390', { width: 390, height: 844 }],
+      ['phone-320', { width: 320, height: 568 }],
+      ['landscape-844', { width: 844, height: 390 }],
+    ]) {
+      const small = await context.newPage();
+      watch(small, tag, errors);
+      await small.setViewportSize(viewport);
+      await small.goto(`${BASE}/`);
+      await small.waitForSelector('#resume-modal');
+      await small.waitForTimeout(300);
+      await small.screenshot({ path: `${SHOTS}/${tag}-07-resume.png` });
+      const wide = await small.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      );
+      if (wide > 0) throw new Error(`${tag}: the resume list makes the page ${wide}px too wide`);
+      await small.mouse.click(4, 4);
+      await small.waitForSelector('#resume-modal', { state: 'detached' });
+      const plate = await small.locator('#resume-games').boundingBox();
+      const bar = await small.locator('.player-bar.is-me').boundingBox();
+      if (!plate || !bar || plate.y < bar.y || plate.y + plate.height > bar.y + bar.height + 1)
+        throw new Error(`${tag}: the REJOIN plate is not inside the bar`);
+      await small.screenshot({ path: `${SHOTS}/${tag}-08-home-with-games.png` });
+      await small.close();
+    }
+    log('resume list fits on a phone, upright and sideways');
+
+    // Bob, with his game open too, but told through a fresh visitor's eyes:
+    // a browser holding no seat sees no list and no button.
+    const nobody = await bobContext.browser().newContext({ viewport: DESKTOP });
+    try {
+      const stranger = await nobody.newPage();
+      await stranger.goto(`${BASE}/`);
+      await stranger.waitForSelector('#home-menu #start-game');
+      await stranger.waitForTimeout(600);
+      if (await stranger.locator('#resume-modal').count()) throw new Error('a stranger was offered games to resume');
+      if (await stranger.locator('#resume-games').count()) throw new Error('a stranger has a GAMES ON button');
+    } finally {
+      await nobody.close();
+    }
   } finally {
     await context.close();
     await bobContext.close();

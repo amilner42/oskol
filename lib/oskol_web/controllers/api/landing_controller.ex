@@ -120,6 +120,12 @@ defmodule OskolWeb.Api.LandingController do
     )
   end
 
+  # The games this browser can pick back up: the unfinished rooms its guest
+  # holds a seat in, read from their rows. Nothing here wakes a room.
+  def my_games(conn, _params) do
+    send_json(conn, {:ok, :oskol@handlers@landing.my_games_json(ctx(), session(conn))})
+  end
+
   # The record opens on the room: it is every committed turn, which both
   # players already saw. The caller's guest only decides which seat the
   # board faces to begin with.

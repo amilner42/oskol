@@ -51,3 +51,28 @@ pub type Table {
 pub fn seat_path(slug: String, game_id: String) -> String {
   "/" <> slug <> "/" <> game_id
 }
+
+/// An unfinished room a guest holds a seat in, as its row tells it: enough
+/// to list it and send the player back, read without waking the room.
+/// `seats` are #(player_id, name, guest id) in seat order ("" for a seat
+/// held by nobody); `to_act` the seats that may act right now, from the
+/// snapshot the room wrote with its last step (empty for a lobby, or for a
+/// row from before the snapshot existed); `clocks` each seat's time as of
+/// that step, #(player_id, remaining_ms, move_ms, running), empty under no
+/// clock, and `clock_s` seconds since those clocks were read (from the
+/// snapshot's own stamp, so a claimed seat or a wake does not skew it);
+/// `idle_s` seconds since the room was last touched.
+pub type ActiveRoom {
+  ActiveRoom(
+    slug: String,
+    game_id: String,
+    status: String,
+    format: String,
+    clock: String,
+    seats: List(#(String, String, String)),
+    to_act: List(String),
+    clocks: List(#(String, Int, Int, Bool)),
+    clock_s: Int,
+    idle_s: Int,
+  )
+}

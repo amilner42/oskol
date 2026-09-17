@@ -55,6 +55,17 @@ pub fn with_slug(ctx: Ctx, slug: Option(String)) -> Ctx {
   Ctx(..ctx, rooms: rooms_caps.RoomsCaps(..ctx.rooms, slug_of: fn(_) { slug }))
 }
 
+/// Persistence caps that answer which rooms a guest holds a seat in.
+pub fn with_active_rooms(ctx: Ctx, rooms: List(room.ActiveRoom)) -> Ctx {
+  Ctx(
+    ..ctx,
+    persistence: persistence_caps.PersistenceCaps(
+      ..ctx.persistence,
+      seated_rooms: fn(_) { rooms },
+    ),
+  )
+}
+
 pub fn guest(id: String) -> Session {
   Session(guest_id: Some(id))
 }
