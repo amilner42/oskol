@@ -622,7 +622,7 @@ resume =
             \_ ->
                 home withGames
                     |> Query.find [ id "guest-note" ]
-                    |> Query.has [ text "logged in as a guest on this device", text "Game history", text "Practice your mistakes", text "Track your PR", id "signup-cta" ]
+                    |> Query.has [ text "logged in as a guest on this device", text "Keep every game you play, ", text "on every device.", text "4-ply analysis", text "Mistake practice", text "PR over time", text "Secure account", text "Totally free", id "signup-cta" ]
         , test "the menu is still its four entries: the button lives in the bar, not the band" <|
             \_ ->
                 home withGames

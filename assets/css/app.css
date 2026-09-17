@@ -733,12 +733,15 @@
 }
 @media (prefers-reduced-motion: reduce) { .clock-live { animation: none; } }
 
-/* The pitch under the list: its own panel on the second paper tone, the
-   three things an account is for as discs in a row, and the button in ink.
-   Sign-up is on its way, so the button says so in a quiet pill and does
-   nothing yet; it is the same shape it will be. */
-.pitch { background: var(--paper-2); }
-.value-icon { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(35, 36, 58, 0.08); }
+/* The pitch under the list, on the sheet itself: one line that sells it
+   (the second half under the highlighter), the things an account is for
+   as chips, and the button in ink. Sign-up is on its way, so the button
+   says so in a quiet pill and does nothing yet; it is the shape it will be. */
+.pitch { border-top: 1px solid rgba(35, 36, 58, 0.12); }
+.pitch-line { color: var(--ink); text-wrap: balance; letter-spacing: -0.01em; }
+.pitch-mark { background: linear-gradient(transparent 58%, var(--highlighter) 58%); padding: 0 2px; }
+.pitch-chip { color: var(--ink); background: #fff; border: 1.5px solid var(--ink); }
+.pitch-chip.free { background: var(--highlighter); border-color: var(--highlighter); }
 .signup { background: var(--ink); color: #fff; cursor: default; }
 .signup-soon { background: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 0.85); }
 .resume-badge.yours { background: var(--highlighter); color: var(--ink); }

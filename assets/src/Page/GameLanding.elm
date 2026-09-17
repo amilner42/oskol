@@ -888,13 +888,12 @@ yet; when they land it becomes the sign-up step.
 -}
 guestNote : Html Msg
 guestNote =
-    Html.div [ id "guest-note", class "pitch mt-5 rounded-2xl px-5 pt-5 pb-4" ]
+    Html.div [ id "guest-note", class "pitch mt-6 pt-5 flex flex-col gap-4" ]
         [ Html.p [ class "q-note text-[13px] text-center" ]
             [ Html.text "You are logged in as a guest on this device." ]
-        , Html.ul [ class "grid grid-cols-3 gap-2 my-5" ]
-            [ valueProp historyIcon "Game history"
-            , valueProp practiceIcon "Practice your mistakes"
-            , valueProp trendIcon "Track your PR"
+        , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
+            [ Html.text "Keep every game you play, "
+            , Html.em [ class "pitch-mark not-italic" ] [ Html.text "on every device." ]
             ]
         , Html.span
             [ id "signup-cta"
@@ -904,32 +903,58 @@ guestNote =
             [ Html.text "Sign up for free"
             , Html.span [ class "signup-soon text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" ] [ Html.text "soon" ]
             ]
+        , Html.ul [ class "flex flex-wrap justify-center gap-2" ]
+            [ chip analysisIcon "4-ply analysis" False
+            , chip practiceIcon "Mistake practice" False
+            , chip trendIcon "PR over time" False
+            , chip lockIcon "Secure account" False
+            , chip sparkleIcon "Totally free" True
+            ]
         ]
 
 
-{-| One thing an account is for: an icon on a disc, a few words beneath.
+{-| One thing an account is for, as a chip: an icon and a few words. The
+free one wears the highlighter.
 -}
-valueProp : Html Msg -> String -> Html Msg
-valueProp icon label =
-    Html.li [ class "flex flex-col items-center text-center gap-2" ]
-        [ Html.span [ class "value-icon inline-flex items-center justify-center w-11 h-11 rounded-full" ] [ icon ]
-        , Html.span [ class "text-[12px] font-semibold leading-tight", style "color: var(--ink)" ] [ Html.text label ]
+chip : Html Msg -> String -> Bool -> Html Msg
+chip icon label free =
+    Html.li
+        [ class
+            ("pitch-chip inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5 text-[12.5px] font-semibold"
+                ++ (if free then
+                        " free"
+
+                    else
+                        ""
+                   )
+            )
         ]
+        [ icon, Html.text label ]
 
 
-{-| Line icons, drawn once: a clock, a lit bulb, a line going up. Stroked
-in the current colour so the disc decides the ink.
+{-| Line icons, drawn once, stroked in the current colour so the chip
+decides the ink.
 -}
 lineIcon : String -> Html Msg
 lineIcon path =
     Svg.svg
-        [ SvgA.viewBox "0 0 24 24", SvgA.fill "none", SvgA.stroke "currentColor", SvgA.strokeWidth "1.6", SvgA.strokeLinecap "round", SvgA.strokeLinejoin "round", SvgA.class "w-5 h-5", Html.Attributes.attribute "aria-hidden" "true" ]
+        [ SvgA.viewBox "0 0 24 24", SvgA.fill "none", SvgA.stroke "currentColor", SvgA.strokeWidth "1.8", SvgA.strokeLinecap "round", SvgA.strokeLinejoin "round", SvgA.class "w-4 h-4 shrink-0", Html.Attributes.attribute "aria-hidden" "true" ]
         [ Svg.path [ SvgA.d path ] [] ]
 
 
-historyIcon : Html Msg
-historyIcon =
-    lineIcon "M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+analysisIcon : Html Msg
+analysisIcon =
+    lineIcon "m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+
+
+lockIcon : Html Msg
+lockIcon =
+    lineIcon "M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+
+
+sparkleIcon : Html Msg
+sparkleIcon =
+    lineIcon "M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z"
 
 
 practiceIcon : Html Msg
