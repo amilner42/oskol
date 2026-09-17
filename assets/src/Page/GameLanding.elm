@@ -901,7 +901,7 @@ guestNote =
             , class "signup w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold"
             , Html.Attributes.attribute "aria-disabled" "true"
             ]
-            [ Html.text "Sign up"
+            [ Html.text "Sign up for free"
             , Html.span [ class "signup-soon text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" ] [ Html.text "soon" ]
             ]
         ]
