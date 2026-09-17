@@ -1999,8 +1999,7 @@ viewTray board ownerId isMine =
 
 viewLeftBand : Board -> List (Html Msg)
 viewLeftBand board =
-    viewLiveButton board.ctx
-        ++ (case betweenGames board.ctx of
+    (case betweenGames board.ctx of
                 Just between ->
                     [ viewGameResult board.ctx between ]
 
@@ -2013,48 +2012,6 @@ viewLeftBand board =
                                 viewRoll board
                            )
            )
-
-
-{-| The way back from a past turn: in the board's own band, where the
-actions would be, so it is never off screen. It says when the game has
-moved on meanwhile.
--}
-viewLiveButton : Ctx -> List (Html Msg)
-viewLiveButton ctx =
-    case ctx.model.viewing of
-        Just _ ->
-            if ctx.model.still then
-                []
-
-            else
-                viewLiveButtonShown ctx
-
-        Nothing ->
-            []
-
-
-viewLiveButtonShown : Ctx -> List (Html Msg)
-viewLiveButtonShown ctx =
-    case ctx.model.viewing of
-        Just _ ->
-            [ button
-                [ classList [ ( "btn-arcade pixel text-[8px] sm:text-[9px] px-2 py-1.5 sm:px-3 sm:py-2 sky bg-live", True ), ( "stale", ctx.model.stale ) ]
-                , Html.Attributes.id "bg-live"
-                , onClick ViewLive
-                , title "Back to the live game"
-                ]
-                [ text
-                    (if ctx.model.stale then
-                        "LIVE · NEW"
-
-                     else
-                        "LIVE"
-                    )
-                ]
-            ]
-
-        Nothing ->
-            []
 
 
 leftButtons : Ctx -> List (Html Msg)
