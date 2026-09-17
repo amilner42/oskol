@@ -890,10 +890,11 @@ guestNote : Html Msg
 guestNote =
     Html.div [ id "guest-note", class "pitch mt-6 pt-5 flex flex-col gap-4" ]
         [ Html.p [ class "q-note text-[13px] text-center" ]
-            [ Html.text "Welcome to the best place to play backgammon on the internet." ]
-        , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
-            [ Html.text "Get wayyy more, "
-            , Html.em [ class "pitch-mark not-italic" ] [ Html.text "for free." ]
+            [ Html.text "You are logged in as a guest on this device." ]
+        , Html.p [ class "pitch-line text-[19px] font-bold leading-tight text-center" ]
+            [ Html.text "Welcome to the "
+            , Html.em [ class "pitch-mark not-italic" ] [ Html.text "best place" ]
+            , Html.text " to play backgammon on the internet."
             ]
         , Html.span
             [ id "signup-cta"
@@ -911,8 +912,6 @@ guestNote =
             , chip trendIcon "PR over time" False
             , chip lockIcon "Secure account" False
             ]
-        , Html.p [ class "q-note text-[12px] text-center" ]
-            [ Html.text "You are playing as a guest on this device." ]
         ]
 
 
