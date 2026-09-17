@@ -892,7 +892,7 @@ guestNote =
         [ Html.p [ class "q-note text-[13px] text-center" ]
             [ Html.text "You are logged in as a guest on this device." ]
         , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
-            [ Html.text "The best place to gammon." ]
+            [ Html.text "Is it time to get good yet?" ]
         , Html.span
             [ id "signup-cta"
             , class "signup w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold"
