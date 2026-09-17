@@ -1453,28 +1453,24 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-main > .bg-match-sub { display: flex; align-items: baseline; gap: 10px; font-size: 11.5px; color: var(--pencil); }
 .bg-match-after { flex: none; font-size: 14px; }
 
-/* The scrub: four arrows that look back through the game on the board.
-   One plate, the glyphs inside it; a past turn up turns it amber, and
-   a game that moved on meanwhile blinks the way back. */
-.bg-scrub {
-  border: 2px solid var(--ink); background: #fff; box-shadow: 2px 2px 0 0 var(--ink);
-}
+/* The row under the slab: MATCH, the four arrows with RESIGN between them.
+   Each arrow is its own small plate; a past turn up turns the arrows
+   amber, and a game that moved on meanwhile blinks the way back. */
+.bg-actions { padding-top: 0.6rem; flex: none; }
 .bg-scrub-btn {
-  width: 1.9rem; height: 1.6rem; display: inline-flex; align-items: center; justify-content: center;
-  color: var(--ink); background: transparent; border: 0; border-right: 2px solid var(--ink);
+  width: 2rem; height: 1.8rem; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--ink); background: #fff; border: 2px solid var(--ink); box-shadow: 2px 2px 0 0 var(--ink);
+  transition: transform 0.08s, box-shadow 0.08s;
 }
-.bg-scrub-btn:last-child { border-right: 0; }
-.bg-scrub-btn:disabled { color: rgba(35, 36, 58, 0.28); }
+.bg-scrub-btn:disabled { color: rgba(35, 36, 58, 0.28); border-color: rgba(35, 36, 58, 0.35); box-shadow: 2px 2px 0 0 rgba(35, 36, 58, 0.35); }
 .bg-scrub-btn:not(:disabled):hover { background: var(--paper-2); }
-.bg-scrub.is-back { background: color-mix(in oklab, var(--bg-accent) 38%, #fff); }
+.bg-scrub-btn:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
+.bg-scrub.is-back .bg-scrub-btn:not(:disabled) { background: color-mix(in oklab, var(--bg-accent) 38%, #fff); }
 .bg-scrub.stale #bg-scrub-live { animation: blink 1s steps(2, end) infinite; color: var(--red); }
-/* Below a desktop the header wraps and the scrub takes a line of its own,
-   centred: a portrait phone has the height to spare (its board is bound
-   by width), and sideways the header already stacks in its column. */
-@media (max-width: 1023px) {
-  .bg-page .bg-header { flex-wrap: wrap; row-gap: 6px; }
-  .bg-page .bg-scrub { order: 3; margin: 0 auto; }
-}
+/* The picker's chevron turns over while the list is open. */
+.bg-theme-chevron { transition: transform 0.18s ease; }
+#bg-theme-button[aria-expanded="true"] .bg-theme-chevron { transform: rotate(180deg); }
+.bg-mark { color: var(--ink); }
 /* The bars as every other table draws them. */
 /* The presence dot: beside a name, steady green while that player's socket
    is up, flashing green for the first seconds of an absence (most of those
@@ -1617,9 +1613,7 @@ a.q-card:hover, a.q-card:focus-visible {
      flag), all one size, so the row fits beside the match tag; the words
      come back on a desktop screen. */
   .bg-page .bg-ctl-label { display: none; }
-  .bg-page .bg-match-toggle,
-  .bg-page #bg-theme-button,
-  .bg-page #bg-resign-open {
+  .bg-page #bg-theme-button {
     display: inline-flex;
     width: 1.9rem; height: 1.9rem; padding: 0;
     justify-content: center; align-items: center;
@@ -1628,10 +1622,11 @@ a.q-card:hover, a.q-card:focus-visible {
     box-shadow: 2px 2px 0 0 var(--ink);
   }
   .bg-page #bg-theme-button .bg-theme-chip { margin: 0; }
-  .bg-page .bg-match-toggle svg,
-  .bg-page #bg-resign-open svg { width: 14px; height: 14px; }
   .bg-page .bg-match { max-height: 88dvh; }
-  .bg-page .bg-scrub { order: 3; margin: 0; }
+  /* Sideways there is no room under the board: the row sits in the chrome
+     column, in the air between the header and my bar, and wraps. */
+  .bg-page .bg-actions { grid-column: 2; grid-row: 4; align-self: start; justify-self: start; width: 100%; max-width: 16rem; padding-top: 0.4rem; flex-wrap: wrap; gap: 0.4rem; }
+  .bg-page .bg-scrub { gap: 0.3rem; }
   /* The stack is `display: contents` here and paints no outline, so a past
      turn marks the board itself; 1px offset keeps it inside the 0.25rem
      side padding the page clips at. */
@@ -1697,11 +1692,12 @@ a.q-card:hover, a.q-card:focus-visible {
     --bg-frame-w: 14px;
     --bg-lip: 6px;
     --bg-drop: 1.5rem;       /* room under the slab for its shadow */
+    --bg-scrub-h: 2.6rem;    /* the arrows under the board */
     /* The width cap is the board's own ratio (a point is 0.21 of its
        height wide; 12 points, the bar and the frame across) against the
        window less the page's padding. */
     --bg-point-h: min(
-      calc((100dvh - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop)) / 2),
+      calc((100dvh - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop) - var(--bg-scrub-h)) / 2),
       calc((100vw - 8rem) / 2.9)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);

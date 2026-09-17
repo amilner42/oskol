@@ -59,6 +59,7 @@ import Json.Encode as E
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
 import Svg
 import Svg.Attributes as SvgAttr
+import Ui.Shell
 
 
 type alias Model =
@@ -881,6 +882,10 @@ view live =
                 , viewBoard board
                 , viewPlayerBar ctx me True (viewTray board (seatId ctx) True)
                 ]
+
+            -- Under the slab, not on it: the match panel's door, the arrows
+            -- that look back through the game, and the way to resign.
+            , viewActions live
             ]
         , if live.model.matchOpen then
             viewMatchSheet live
@@ -1036,11 +1041,11 @@ viewHeader ctx =
     in
     div [ class "bg-header w-full max-w-5xl lg:max-w-none flex items-center justify-between gap-2" ]
         [ div [ class "flex items-center gap-2 sm:gap-3 min-w-0" ]
-            -- The row must survive its longest labels on the narrowest
-            -- phone ("MATCH TO 7 · G1" beside CRAWFORD at 320px), so the
-            -- badge is the piece that gives way: it clips rather than
-            -- running under the picker on the right.
-            [ span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap shrink-0" ] [ text "BACKGAMMON" ]
+            -- The mark, then the match: the badge is the piece that gives
+            -- way on the narrowest phone, clipping rather than running
+            -- under the picker.
+            [ Html.a [ Html.Attributes.href "/", class "bg-mark inline-flex items-center gap-1.5 shrink-0", attribute "aria-label" "Oskol home" ]
+                [ Ui.Shell.bird, span [ class "pixel text-[11px] sm:text-[13px] relative top-[1px]" ] [ text "OSKOL" ] ]
             , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 min-w-0 truncate", style "border" "2px solid var(--ink)", style "background" "#fff" ]
                 [ text
                     (matchLabel
@@ -1058,40 +1063,49 @@ viewHeader ctx =
               else
                 text ""
             ]
-        , viewScrub ctx
-        , div [ class "flex items-center gap-2 sm:gap-3 shrink-0" ]
-            [ -- The match panel: the games so far. A single game has no
-              -- match around it and no panel.
-              if target /= 1 then
-                button
-                    [ class "bg-match-toggle pixel text-[8px] inline-flex items-center gap-1 px-1 py-0.5"
-                    , style "color" "var(--pencil)"
-                    , Html.Attributes.id "bg-match-toggle"
-                    , title "The match so far"
-                    , attribute "aria-label" "Match"
-                    , onClick ToggleMatch
-                    ]
-                    [ listIcon, span [ class "bg-ctl-label hidden sm:inline underline" ] [ text "MATCH" ] ]
+        , viewThemePicker ctx
+        ]
 
-              else
-                text ""
-            , viewThemePicker ctx
-            , if hasAction "resign" ctx.legal && ctx.finished == Nothing then
-                -- A real button, not a link in the margin: the arcade plate at
-                -- header scale, with a flag so it reads before its label does.
+
+{-| The row under the slab: MATCH (the games so far), the four arrows that
+look back through the game on the board with RESIGN between them, so the
+one thing that ends a game sits in the middle of the things that only
+look at it. A single game has no match and no MATCH.
+-}
+viewActions : Ctx -> Html Msg
+viewActions ctx =
+    let
+        target =
+            Protocol.sceneData D.int "target" ctx.scene |> Maybe.withDefault 0
+
+        resign =
+            if hasAction "resign" ctx.legal && ctx.finished == Nothing then
                 -- It opens the offer panel (`viewResignPanel`); a resignation
                 -- is stakes the opponent answers, never sent from here.
                 button
-                    [ class "btn-arcade plain compact pixel text-[7px] sm:text-[8px] px-1.5 py-1 sm:px-2 inline-flex items-center gap-1 shrink-0"
+                    [ class "btn-arcade plain compact pixel text-[8px] px-2.5 py-1.5 inline-flex items-center gap-1 shrink-0"
                     , Html.Attributes.id "bg-resign-open"
                     , title "Offer to resign"
                     , onClick OpenResign
                     ]
-                    [ flagIcon, span [ class "bg-ctl-label" ] [ text "RESIGN" ] ]
+                    [ flagIcon, span [] [ text "RESIGN" ] ]
 
-              else
+            else
                 text ""
-            ]
+    in
+    div [ class "bg-actions w-full max-w-5xl lg:max-w-none flex items-center justify-center gap-3 sm:gap-4", Html.Attributes.id "bg-actions" ]
+        [ if target /= 1 then
+            button
+                [ class "bg-match-toggle btn-arcade plain compact pixel text-[8px] px-2.5 py-1.5 inline-flex items-center gap-1 shrink-0"
+                , Html.Attributes.id "bg-match-toggle"
+                , title "The match so far"
+                , onClick ToggleMatch
+                ]
+                [ listIcon, span [] [ text "MATCH" ] ]
+
+          else
+            text ""
+        , viewScrub ctx resign
         ]
 
 
@@ -1126,10 +1140,7 @@ viewThemePicker ctx =
             , onClick ToggleThemes
             ]
             [ span [ class ("bg-theme-chip " ++ themeClass (Tuple.first current)) ] [ themeBoard ]
-
-            -- On a phone the swatch is the control: the header has no room
-            -- for eleven more characters, and the list names every board.
-            , span [ class "bg-ctl-label hidden sm:inline" ] [ text (Tuple.second current) ]
+            , span [ class "bg-theme-chevron hero-chevron-down w-3.5 h-3.5", attribute "aria-hidden" "true" ] []
             ]
         , if ctx.model.themesOpen then
             div [ class "bg-theme-list", attribute "id" "bg-theme-list" ]
@@ -3633,8 +3644,8 @@ sent anywhere; a past turn is a picture (`viewedTurn`). Always there, so
 the control is learned before it is needed; greyed while there is nothing
 to step to.
 -}
-viewScrub : Ctx -> Html Msg
-viewScrub ctx =
+viewScrub : Ctx -> Html Msg -> Html Msg
+viewScrub ctx middle =
     let
         turns =
             recordOf ctx.scene
@@ -3706,9 +3717,10 @@ viewScrub ctx =
         text ""
 
     else
-        div [ classList [ ( "bg-scrub inline-flex items-center", True ), ( "is-back", current /= Nothing ), ( "stale", ctx.model.stale ) ], Html.Attributes.id "bg-scrub" ]
+        div [ classList [ ( "bg-scrub inline-flex items-center gap-3 sm:gap-4", True ), ( "is-back", current /= Nothing ), ( "stale", ctx.model.stale ) ], Html.Attributes.id "bg-scrub" ]
             [ arrow "bg-scrub-first" "First turn" "hero-chevron-double-left" (first |> Maybe.andThen (\i -> if Just i == current then Nothing else Just (ViewTurn i)))
             , arrow "bg-scrub-back" "Back a turn" "hero-chevron-left" (prev |> Maybe.map ViewTurn)
+            , middle
             , arrow "bg-scrub-forward" "Forward a turn" "hero-chevron-right" (case next of
                                                                                 Just i ->
                                                                                     Just (ViewTurn i)
