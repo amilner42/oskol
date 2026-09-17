@@ -114,14 +114,33 @@ defmodule Oskol.Dev.Seeds do
 
   @doc "Write every scenario; returns the rows printed, one per room."
   def run do
-    codes = Enum.map(scenarios(), & &1.code)
+    codes = Enum.map(scenarios(), & &1.code) ++ Oskol.Dev.RoomImport.codes()
     Enum.each(codes, &stop_live/1)
     Persister.flush()
     Repo.delete_all(from(g in Persistence.Game, where: g.id in ^codes))
 
     rows = Enum.map(scenarios(), &seed/1)
     Persister.flush()
-    rows
+    rows ++ Enum.map(Oskol.Dev.RoomImport.codes(), &imported/1)
+  end
+
+  # A room somebody really played, from priv/dev/rooms: its rows go in as
+  # they were, graded games and all (Oskol.Dev.RoomImport).
+  defp imported(code) do
+    :ok = Oskol.Dev.RoomImport.import!(code)
+    {:ok, game, actions} = Persistence.fetch(code)
+    names = game.players |> Enum.map(& &1["name"]) |> Enum.join(" vs ")
+
+    %{
+      code: code,
+      what: "a real match from production (#{names}), every game graded: open MATCH at the table",
+      seed: game.seed,
+      steps: length(actions),
+      links: %{
+        "invite" => "#{OskolWeb.Endpoint.url()}/#{@slug}?game=#{code}",
+        "table" => "#{OskolWeb.Endpoint.url()}/#{@slug}/#{code}"
+      }
+    }
   end
 
   # ---------- one scenario ----------

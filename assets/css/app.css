@@ -1460,10 +1460,10 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-who { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; }
 .bg-match-name { font-weight: 700; font-size: 13px; min-width: 0; }
 .bg-match-points { font-size: 9px; flex: none; }
-.bg-match-under { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-top: 3px; font-size: 11px; color: var(--pencil); }
+.bg-match-under { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; margin-top: 3px; font-size: 10.5px; color: var(--pencil); }
 .bg-match-cell.win .bg-match-under { color: rgba(255, 255, 255, 0.72); }
 .bg-match-how { text-transform: lowercase; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bg-match-pr { margin-left: auto; padding: 0 4px; border-radius: 3px; flex: none; white-space: nowrap; }
+.bg-match-pr { margin-left: auto; padding: 0 3px; border-radius: 3px; flex: none; white-space: nowrap; }
 .bg-match-cell.best .bg-match-pr { background: var(--highlighter); color: var(--ink); font-weight: 700; }
 .bg-match-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
 .bg-match-after { font-size: 14px; }
