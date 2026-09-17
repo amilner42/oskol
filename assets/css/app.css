@@ -1454,8 +1454,9 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-after { flex: none; font-size: 14px; }
 
 /* The row under the slab: MATCH, the four arrows with RESIGN between them.
-   Each arrow is its own small plate; a past turn up turns the arrows
-   amber, and a game that moved on meanwhile blinks the way back. */
+   Each arrow is its own small plate, white when it can be pressed and
+   greyed when it cannot; a game that moved on while a past turn was up
+   blinks the way back. */
 .bg-actions { padding-top: 0.6rem; flex: none; }
 .bg-scrub-btn {
   width: 2rem; height: 1.8rem; display: inline-flex; align-items: center; justify-content: center;
@@ -1465,7 +1466,6 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-scrub-btn:disabled { color: rgba(35, 36, 58, 0.28); border-color: rgba(35, 36, 58, 0.35); box-shadow: 2px 2px 0 0 rgba(35, 36, 58, 0.35); }
 .bg-scrub-btn:not(:disabled):hover { background: var(--paper-2); }
 .bg-scrub-btn:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
-.bg-scrub.is-back .bg-scrub-btn:not(:disabled) { background: color-mix(in oklab, var(--bg-accent) 38%, #fff); }
 .bg-scrub.stale #bg-scrub-live { animation: blink 1s steps(2, end) infinite; color: var(--red); }
 /* The picker's chevron turns over while the list is open. */
 .bg-theme-chevron { transition: transform 0.18s ease; }
