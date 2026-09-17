@@ -246,8 +246,13 @@ defmodule Oskol.ReviewsTest do
     # rehydration replays the whole action log, which is what took
     # production down.
     {:ok, pid} = Oskol.Game.GameSupervisor.find_game(game_id)
+    ref = Process.monitor(pid)
     :ok = DynamicSupervisor.terminate_child(Oskol.Game.GameSupervisor, pid)
-    assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
+    # The room is off the registry a moment after it dies, not the instant
+    # terminate_child returns: asserting straight away failed one run in
+    # three.
+    assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1_000
+    wait_for(fn -> Oskol.Game.GameSupervisor.find_game(game_id) == :error end)
 
     # Reads are open, so nothing here needs the room to say who anyone is.
     index =
