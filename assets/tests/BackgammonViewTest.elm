@@ -2681,6 +2681,7 @@ ctx playerId update model =
     , prOf = \_ -> Nothing
     , theme = View.defaultTheme
     , replayHref = \n -> Just ("/backgammon/123456/replay?t=tok&game=" ++ String.fromInt n)
+    , gamePrs = \_ -> []
     , finished =
         case update.outcome of
             Protocol.Finished winners ->

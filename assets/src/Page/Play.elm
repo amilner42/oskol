@@ -127,6 +127,7 @@ type alias Model =
     , prefs : Dict String String -- this viewer's display preferences (a board's colours)
     , picked : List String -- preference keys this viewer set here, which no answer may undo
     , ratings : Dict String Float -- each seat's PR so far in this match, once a game of it is graded
+    , gamePrs : Dict Int (List ( String, Float )) -- each graded game's PRs, by game number, in seat order
     , awaySince : Dict String Int -- client time (ms) each absent player's drop was noticed
     , awayNew : List String -- players who went missing in the latest payload, awaiting their moment
     , ratingsGraded : Int -- games of this match the engine had answered for, as of the last ask
@@ -160,6 +161,7 @@ init session config =
       , prefs = session.prefs
       , picked = []
       , ratings = Dict.empty
+      , gamePrs = Dict.empty
       , awaySince = Dict.empty
       , awayNew = []
       , ratingsGraded = 0
@@ -312,17 +314,6 @@ update msg model =
                 Backgammon.NeedZones targets ->
                     stay updated (measureDropZones targets)
 
-                Backgammon.WantRecord ->
-                    -- The earlier games' turns are not in every update: the
-                    -- room serves them to anyone who has it, since they
-                    -- were on the board for both players.
-                    stay updated
-                        (Api.get model.session
-                            (recordUrl model)
-                            (D.field "record" D.value)
-                            (Result.mapError (always ()) >> Backgammon.GotRecord >> BackgammonMsg)
-                        )
-
                 Backgammon.ChoseTheme name ->
                     -- Three places keep it: the page (instantly), this
                     -- browser (so the next first paint is right) and the
@@ -413,6 +404,7 @@ update msg model =
             stay
                 { model
                     | ratings = ratings.prs
+                    , gamePrs = ratings.games
                     , ratingsGraded = max model.ratingsGraded ratings.graded
                     , ratingsPolls =
                         if ratings.pending then
@@ -686,14 +678,6 @@ refusedByRoom =
     "unauthorized"
 
 
-{-| Where this room's whole record is read. It opens on the room, like the
-replay: a record is every committed turn, which both players saw.
--}
-recordUrl : Model -> String
-recordUrl model =
-    "/papi/games/" ++ model.gameSlug ++ "/rooms/" ++ model.gameId ++ "/record"
-
-
 {-| A rematch is the same players in the same seats, and the room carries
 the guest holding each one over, so both browsers walk straight in: the
 new room's plain URL is all either of them needs.
@@ -878,6 +862,7 @@ view model =
                                     , prOf = \id -> Dict.get id model.ratings
                                     , theme = theme model
                                     , replayHref = replayHref model payload
+                                    , gamePrs = \n -> Dict.get n model.gamePrs |> Maybe.withDefault []
                                     }
                                 )
 
