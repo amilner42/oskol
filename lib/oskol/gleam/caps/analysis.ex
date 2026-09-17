@@ -3,11 +3,16 @@ defmodule Oskol.Gleam.Caps.Analysis do
   Real IO for src/oskol/caps/analysis.gleam. Keep constructor tags and field
   order in lockstep:
 
-      AnalysisCaps(log, stored, save, enqueue, review)
+      AnalysisCaps(log, stored, summaries, report, save, enqueue, review)
       GameLog(slug, format, selections, clock, seed, seats, entries)
       LogEntry(kind, player_id, payload_json, at_ms)
-      Stored(game_number, status, attempts, response_json)
+      Stored(game_number, status, attempts, response_json, answered, rendered, turns)
+      Save(status, attempts, response_json, error, report_json, turns)
       Status: :pending | :done | :failed
+
+  `response` and `report` are hundreds of kilobytes each. `summaries`
+  selects neither and `report/2` selects one of them for one game, so the
+  only query that carries a body is the one whose answer is the body.
   """
 
   import Oskol.Gleam.Interop
@@ -15,7 +20,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
   alias Oskol.Reviews
 
   def build do
-    {:analysis_caps, &log/1, &stored/1, &save/6, &enqueue/1, &review/1}
+    {:analysis_caps, &log/1, &stored/1, &summaries/1, &report/2, &save/3, &enqueue/1, &review/1}
   end
 
   defp log(game_id) do
@@ -39,18 +44,44 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
   defp stored(game_id) do
     Enum.map(Reviews.stored(game_id), fn r ->
-      {:stored, r.game_number, status(r.status), r.attempts, opt(r.response, &Jason.encode!/1)}
+      {:stored, r.game_number, status(r.status), r.attempts, opt(r.response, &Jason.encode!/1),
+       r.response != nil, r.rendered, r.turns || 0}
     end)
+  end
+
+  defp summaries(game_id) do
+    Enum.map(Reviews.summaries(game_id), fn r ->
+      {:stored, r.game_number, status(r.status), r.attempts, :none, r.answered, r.rendered,
+       r.turns || 0}
+    end)
+  end
+
+  defp report(game_id, number) do
+    opt(Reviews.report(game_id, number), &Jason.encode!/1)
   end
 
   defp status("pending"), do: :pending
   defp status("done"), do: :done
   defp status("failed"), do: :failed
 
-  defp save(game_id, number, status, attempts, response, error) do
-    response = if json = unopt(response), do: Jason.decode!(json)
-    :ok = Reviews.save(game_id, number, Atom.to_string(status), attempts, response, unopt(error))
+  defp save(game_id, number, {:save, status, attempts, response, error, report, turns}) do
+    :ok =
+      Reviews.save(
+        game_id,
+        number,
+        Atom.to_string(status),
+        attempts,
+        decode(response),
+        unopt(error),
+        decode(report),
+        turns
+      )
+
     nil
+  end
+
+  defp decode(option) do
+    if json = unopt(option), do: Jason.decode!(json)
   end
 
   defp enqueue(game_id) do

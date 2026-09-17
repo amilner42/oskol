@@ -6,6 +6,7 @@ module Page.Replay exposing
     , Tab(..)
     , init
     , keyDecoder
+    , maxPolls
     , pollEveryMs
     , polling
     , subscriptions
@@ -17,17 +18,20 @@ module Page.Replay exposing
 {-| `/:slug/:id/replay` — a room's games played again, one line of the
 record at a time, with the analysis engine's verdicts on each.
 
-The page reads two things and decides nothing about backgammon: the room's
+The page reads and decides nothing about backgammon. It asks for the room's
 whole record (`/record`: every game, every line, the position after every
-turn) and the engine's reviews (`/reviews`: per turn
-the grade of the move played, the best move and the position it leaves,
-the cube verdicts, the luck; per player the PR). Both are drawn as they
-come. The server names which record line each verdict is about.
+turn), for the index of the analysis (`/reviews`: per game a status and a
+turn count, a few hundred bytes) and then for the analysis of the one game
+being read (`/reviews/<n>`: per turn the grade of the move played, the best
+move and the position it leaves, the cube verdicts, the luck; per player
+the PR). Switching to another game fetches that game's analysis if it is
+not already in hand, and nothing is fetched twice. All of it is drawn as it
+comes. The server names which record line each verdict is about.
 
 The replay is usable the moment the record arrives. Analysis takes a while
 (a few minutes a game at 4-ply), so a game still being analysed says so, the
-page asks again every few seconds while anything is pending, and the
-grades fill in where the viewer is -- the game, the step and the move on
+page asks the index again every few seconds while anything is pending, and
+the grades fill in where the viewer is -- the game, the step and the move on
 the board stay put. A game whose analysis failed offers to try again.
 
 Stepping: the buttons under the board, the arrow keys (Home and End for
@@ -40,7 +44,7 @@ import Api
 import Browser.Dom
 import Browser.Events
 import Dict
-import Games.Backgammon.Replay as Replay exposing (Annotation(..), Candidate, Entry(..), Game, GameReview, MoveReview(..), Record, Reviews, Status(..), TurnReview)
+import Games.Backgammon.Replay as Replay exposing (Annotation(..), Candidate, Entry(..), Game, GameAnalysis, GameReview, Index, MoveReview(..), Record, Review, Status(..), TurnReview)
 import Games.Backgammon.View as Board
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, style)
@@ -85,8 +89,13 @@ type alias Model =
     , gameId : String
     , wanted : Maybe Int -- the game the link asked for
     , record : Loadable Record
-    , reviews : Maybe Reviews
-    , reviewsError : Bool -- the last ask for the reviews did not get an answer
+    , index : Maybe Index -- what the server says of each game's analysis
+    , analyses : Dict.Dict Int Review -- the games whose analysis has been fetched
+    , fetching : List Int -- games whose analysis is on its way
+    , analysisErrors : List Int -- games whose analysis did not arrive
+    , reviewsError : Bool -- the last ask for the index did not get an answer
+    , failures : Int -- asks that came back with nothing
+    , asking : Bool -- an ask for the index is out; a second would only double the work
     , game : Int -- the game being replayed, by number
     , step : Int -- 0 is the start; n is the board after the game's nth line
     , showing : Showing
@@ -98,20 +107,33 @@ type alias Model =
     }
 
 
-{-| How often a page with pending analysis asks again.
+{-| How often a page with pending analysis asks again. What it asks for is
+the index: a few hundred bytes read from rows, with no replay behind it, so
+this can be a normal cadence rather than the slow drum it had to be while
+every ask rebuilt a whole match.
 -}
 pollEveryMs : Float
 pollEveryMs =
-    3000
+    4000
 
 
 {-| A page left open on an analysis that never lands stops asking after
-this many (twenty minutes, as long as the server waits on the engine); a
-reload starts again.
+this many (about twenty minutes, as long as the server waits on the
+engine); a reload starts again.
 -}
 maxPolls : Int
 maxPolls =
-    400
+    300
+
+
+{-| How many answers may fail before the page stops asking. A failing ask
+is the one case where asking again is actively harmful: the answer is
+expensive to build, so a page that retries a failing server is helping to
+keep it down. It says so and waits for a reload instead.
+-}
+maxFailures : Int
+maxFailures =
+    2
 
 
 init :
@@ -126,8 +148,13 @@ init session config =
             , gameId = config.gameId
             , wanted = config.game
             , record = Loading
-            , reviews = Nothing
+            , index = Nothing
+            , analyses = Dict.empty
+            , fetching = []
+            , analysisErrors = []
             , reviewsError = False
+            , failures = 0
+            , asking = True
             , game = Maybe.withDefault 1 config.game
             , step = 0
             , showing = Played
@@ -141,7 +168,7 @@ init session config =
     ( model
     , Cmd.batch
         [ Api.get session (base model ++ "/record") Replay.recordDecoder GotRecord
-        , fetchReviews model
+        , fetchIndex model
         ]
     )
 
@@ -152,10 +179,51 @@ base model =
 
 
 {-| The analysis opens to anyone the record does.
+
+The index is the cheap half: a line per game, and what polling watches.
 -}
-fetchReviews : Model -> Cmd Msg
-fetchReviews model =
-    Api.get model.session (base model ++ "/reviews") Replay.reviewsDecoder GotReviews
+fetchIndex : Model -> Cmd Msg
+fetchIndex model =
+    Api.get model.session (base model ++ "/reviews") Replay.indexDecoder GotIndex
+
+
+{-| One game's analysis: the big answer, asked for only when it is the game
+being read and is not already in hand.
+-}
+fetchAnalysis : Model -> Int -> Cmd Msg
+fetchAnalysis model number =
+    Api.get model.session
+        (base model ++ "/reviews/" ++ String.fromInt number)
+        Replay.analysisDecoder
+        (GotAnalysis number)
+
+
+{-| Ask for the analysis of the game being read, if the index says there is
+one, it is not already held, and nothing is already asking for it. A game
+fetched once is kept for the session: a finished game's analysis never
+changes.
+-}
+wantAnalysis : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+wantAnalysis ( model, cmd ) =
+    let
+        number =
+            model.game
+
+        status =
+            model.index |> Maybe.andThen (Replay.indexEntry number) |> Maybe.map .status
+    in
+    if
+        (status == Just Done)
+            && not (Dict.member number model.analyses)
+            && not (List.member number model.fetching)
+            && not (List.member number model.analysisErrors)
+    then
+        ( { model | fetching = number :: model.fetching }
+        , Cmd.batch [ cmd, fetchAnalysis model number ]
+        )
+
+    else
+        ( model, cmd )
 
 
 title : Model -> String
@@ -174,7 +242,8 @@ title model =
 
 type Msg
     = GotRecord (Result Api.Error Record)
-    | GotReviews (Result Api.Error Reviews)
+    | GotIndex (Result Api.Error Index)
+    | GotAnalysis Int (Result Api.Error GameAnalysis)
     | Poll
     | PickGame Int
     | GoTo Int
@@ -218,35 +287,71 @@ update msg model =
                                 Nothing ->
                                     record.games |> List.reverse |> List.head
             in
-            ( { model
-                | record = Loaded record
-                , game = chosen |> Maybe.map .number |> Maybe.withDefault 1
-                , step = 0
-              }
-            , Cmd.none
-            )
+            wantAnalysis
+                ( { model
+                    | record = Loaded record
+                    , game = chosen |> Maybe.map .number |> Maybe.withDefault 1
+                    , step = 0
+                  }
+                , Cmd.none
+                )
 
         GotRecord (Err err) ->
             ( { model | record = Unavailable (Api.errorMessage err) }, Cmd.none )
 
-        GotReviews (Ok reviews) ->
+        GotIndex (Ok index) ->
             -- Replaced whole, whatever the viewer is looking at: the game,
             -- the step and the move on the board are the model's, not the
-            -- review's, so nothing moves.
-            ( { model | reviews = Just reviews, reviewsError = False, retrying = [] }, follow model.step )
+            -- index's, so nothing moves.
+            wantAnalysis
+                ( { model | index = Just index, reviewsError = False, failures = 0, asking = False, retrying = [] }
+                , follow model.step
+                )
 
-        GotReviews (Err _) ->
-            ( { model | reviewsError = True, retrying = [] }, Cmd.none )
+        GotIndex (Err _) ->
+            ( { model | reviewsError = True, failures = model.failures + 1, asking = False, retrying = [] }, Cmd.none )
+
+        GotAnalysis number (Ok analysis) ->
+            -- Kept for the session: the game is over, so its analysis will
+            -- not change. Nothing about where the viewer is moves.
+            ( { model
+                | analyses =
+                    case analysis.review of
+                        Just review ->
+                            Dict.insert number review model.analyses
+
+                        Nothing ->
+                            model.analyses
+                , fetching = List.filter (\n -> n /= number) model.fetching
+              }
+            , follow model.step
+            )
+
+        GotAnalysis number (Err _) ->
+            -- Not asked for again on its own: this answer is the expensive
+            -- one, and a page that retries it is part of what is wrong.
+            ( { model
+                | fetching = List.filter (\n -> n /= number) model.fetching
+                , analysisErrors = number :: model.analysisErrors
+              }
+            , Cmd.none
+            )
 
         Poll ->
-            ( { model | polls = model.polls + 1 }, fetchReviews model )
+            -- Never two asks at once: the answer takes the server real work
+            -- to build, and a page that overlaps its own asks multiplies it.
+            if model.asking then
+                ( model, Cmd.none )
+
+            else
+                ( { model | polls = model.polls + 1, asking = True }, fetchIndex model )
 
         PickGame number ->
             if number == model.game then
                 ( model, Cmd.none )
 
             else
-                ( { model | game = number, step = 0, showing = Played }, follow 0 )
+                wantAnalysis ( { model | game = number, step = 0, showing = Played }, follow 0 )
 
         GoTo step ->
             goTo step model
@@ -304,12 +409,15 @@ update msg model =
             -- Only a player may spend engine time, and the server decides
             -- that from the guest cookie this request carries; the button
             -- is only offered to one (`seated`).
-            ( { model | retrying = number :: model.retrying }
+            ( { model
+                | retrying = number :: model.retrying
+                , analysisErrors = List.filter (\n -> n /= number) model.analysisErrors
+              }
             , Api.post model.session
                 (base model ++ "/reviews/retry")
                 (E.object [ ( "game_number", E.int number ) ])
-                Replay.reviewsDecoder
-                GotReviews
+                Replay.indexDecoder
+                GotIndex
             )
 
         Follow step ->
@@ -410,7 +518,7 @@ currentGame model =
 
 currentReview : Model -> Maybe GameReview
 currentReview model =
-    model.reviews |> Maybe.andThen (Replay.gameReview model.game)
+    model.index |> Maybe.andThen (\index -> Replay.gameReview model.game index model.analyses)
 
 
 {-| Whether this reader holds one of the room's seats, which the server
@@ -429,20 +537,24 @@ seated model =
             False
 
 
-{-| Ask again while some game's analysis is still on its way, or while the
-reviews have not answered yet -- and never past `maxPolls`.
+{-| Ask again only while some game's analysis is genuinely on its way --
+never because an ask failed. Building this answer is expensive, so a page
+that retries a struggling server is part of what is wrong with it: after
+`maxFailures` it stops and says to reload. Never past `maxPolls` either.
 -}
 polling : Model -> Bool
 polling model =
     model.polls
         < maxPolls
-        && (seated model || model.reviewsError)
-        && (case model.reviews of
-                Just reviews ->
-                    Replay.wantsPolling reviews || model.reviewsError
+        && model.failures
+        < maxFailures
+        && seated model
+        && (case model.index of
+                Just index ->
+                    Replay.wantsPolling index
 
                 Nothing ->
-                    model.reviewsError
+                    False
            )
 
 
@@ -749,7 +861,7 @@ viewPicker model record =
                     (\g ->
                         let
                             status =
-                                model.reviews |> Maybe.andThen (Replay.gameReview g.number) |> Maybe.map .status
+                                model.index |> Maybe.andThen (Replay.indexEntry g.number) |> Maybe.map .status
 
                             label =
                                 case resultOf g of
@@ -1102,7 +1214,7 @@ viewAnalysisState model game analysis =
             if model.reviewsError then
                 line "is-quiet" [ text "The analysis is out of reach right now; trying again." ]
 
-            else if model.reviews == Nothing then
+            else if model.index == Nothing then
                 line "is-quiet" [ text "Loading the analysis…" ]
 
             else
@@ -1149,6 +1261,13 @@ viewAnalysisState model game analysis =
 
                 ( Playing, _ ) ->
                     line "is-quiet" [ text "This game is still being played; it is analysed when it ends." ]
+
+                ( Done, Nothing ) ->
+                    if List.member game.number model.analysisErrors then
+                        line "is-quiet" [ text "The analysis is out of reach right now; reload the page to try again." ]
+
+                    else
+                        line "is-quiet" [ text "Loading the analysis…" ]
 
                 _ ->
                     text ""

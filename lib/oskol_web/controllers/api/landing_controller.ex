@@ -7,8 +7,8 @@ defmodule OskolWeb.Api.LandingController do
       POST /papi/games/:slug                create a room and take the first seat
       GET  /papi/games/:slug/rooms/:id     what that invite link offers
       POST /papi/games/:slug/rooms/:id     join by name, or take a seat back
-      GET  /papi/games/:slug/rooms/:id/reviews  post-game reviews, per game (open;
-                                               only a seat's visit queues one)
+      GET  /papi/games/:slug/rooms/:id/reviews  the index of a room's reviews (open)
+      GET  /papi/games/:slug/rooms/:id/reviews/:game_number  one game's analysis (open)
       POST /papi/games/:slug/rooms/:id/reviews/retry  try a failed review again (a seat)
       GET  /papi/games/:slug/rooms/:id/record  the game's whole record, for anyone
                                               with the room
@@ -53,22 +53,24 @@ defmodule OskolWeb.Api.LandingController do
     send_json(conn, {:ok, :oskol@handlers@landing.room_json(ctx(), game_id)})
   end
 
-  # Post-game reviews of a room's games. A game with none yet is queued by
-  # the handler and answers pending.
+  # The index of a room's post-game reviews: which games it has and where
+  # each one's analysis stands. A few hundred bytes, read out of rows.
   def reviews(conn, %{"slug" => slug, "id" => game_id}) do
+    send_json(conn, :oskol@handlers@reviews.reviews_json(ctx(), session(conn), slug, game_id))
+  end
+
+  # One game's analysis: the stored answer, verbatim. Reading it never puts
+  # the engine to work.
+  def review(conn, %{"slug" => slug, "id" => game_id, "game_number" => number}) do
     send_json(
       conn,
-      :oskol@handlers@reviews.reviews_json(ctx(), session(conn), slug, game_id)
+      :oskol@handlers@reviews.review_json(ctx(), session(conn), slug, game_id, to_int(number))
     )
   end
 
   # A failed review, queued again at a seat's request.
   def retry_review(conn, %{"slug" => slug, "id" => game_id} = params) do
-    number =
-      case Map.get(params, "game_number") do
-        n when is_integer(n) -> n
-        _ -> 0
-      end
+    number = to_int(Map.get(params, "game_number"))
 
     send_json(
       conn,
@@ -145,6 +147,19 @@ defmodule OskolWeb.Api.LandingController do
   defp ctx, do: CtxBuilder.build()
 
   defp session(conn), do: CtxBuilder.session(conn)
+
+  # A game number, from the path or the body. Anything that is not one is
+  # zero, which names no game; the handler decides what that means.
+  defp to_int(n) when is_integer(n), do: n
+
+  defp to_int(n) when is_binary(n) do
+    case Integer.parse(n) do
+      {value, ""} -> value
+      _ -> 0
+    end
+  end
+
+  defp to_int(_), do: 0
 
   # A missing or non-string field is an empty one; the handler decides what
   # that means.

@@ -254,17 +254,28 @@ pub fn engine_can_double(p: Position) -> Bool {
 
 /// Every game of a room, in order, replayed from its log.
 pub fn games(log: replay.Log) -> Result(List(GameTurns), String) {
+  games_with_record(log) |> result.map(fn(both) { both.0 })
+}
+
+/// Every game of a room and the record the room ended up holding, from one
+/// replay. The record is what `GET /record` serves; splitting it into the
+/// rows a finished game is stored as costs nothing here, because the replay
+/// that produced it has already been paid for.
+pub fn games_with_record(
+  log: replay.Log,
+) -> Result(#(List(GameTurns), Option(Json)), String) {
   use #(acc, running) <- result.try(replay.fold(
     backgammon.game(),
     log,
     start,
     step,
   ))
+  let record = instance.record(instance.erase(running))
   let finished = case instance.running_outcome(running) {
     game.Finished(_) -> True
     game.Ongoing -> False
   }
-  Ok(case acc.over, acc.open {
+  let games = case acc.over, acc.open {
     True, _ -> list.reverse(acc.games)
     // Between the games of a match: the last one is already closed, and
     // the next has not begun.
@@ -272,7 +283,8 @@ pub fn games(log: replay.Log) -> Result(List(GameTurns), String) {
     // Over but not by the rules: a clock ran out. The game in progress
     // ends where it stood.
     False, True -> list.reverse(close(acc, finished, acc.last_index).games)
-  })
+  }
+  Ok(#(games, record))
 }
 
 /// One game of a room by number.

@@ -55,6 +55,22 @@ fn done(number: Int, first: Float, second: Float) -> Stored {
     status: Done,
     attempts: 1,
     response_json: Some(answer(first, second)),
+    answered: True,
+    rendered: False,
+    turns: 1,
+  )
+}
+
+/// A game the engine has not answered for: nothing to read a rating out of.
+fn owed(number: Int, status: analysis.Status, attempts: Int) -> Stored {
+  Stored(
+    game_number: number,
+    status: status,
+    attempts: attempts,
+    response_json: None,
+    answered: False,
+    rendered: False,
+    turns: 1,
   )
 }
 
@@ -149,8 +165,8 @@ pub fn pending_and_failed_games_do_not_count_test() {
   // so the number is that game's own PR and the count says so.
   let stored = [
     done(1, 6.0, 10.0),
-    Stored(game_number: 2, status: Pending, attempts: 0, response_json: None),
-    Stored(game_number: 3, status: Failed, attempts: 3, response_json: None),
+    owed(2, Pending, 0),
+    owed(3, Failed, 3),
   ]
   assert players(stored)
     == expecting(True, [#("p1", 1, Some(6.0)), #("p2", 1, Some(10.0))])
@@ -159,15 +175,11 @@ pub fn pending_and_failed_games_do_not_count_test() {
 pub fn a_failure_that_will_be_tried_again_is_still_owed_test() {
   // The page is told to ask again while a retry is coming, and told to
   // stop once the engine has given up.
-  let retryable = [
-    Stored(game_number: 1, status: Failed, attempts: 1, response_json: None),
-  ]
+  let retryable = [owed(1, Failed, 1)]
   assert players(retryable)
     == expecting(True, [#("p1", 0, None), #("p2", 0, None)])
 
-  let given_up = [
-    Stored(game_number: 1, status: Failed, attempts: 3, response_json: None),
-  ]
+  let given_up = [owed(1, Failed, 3)]
   assert players(given_up) == expected([#("p1", 0, None), #("p2", 0, None)])
 }
 
@@ -178,6 +190,9 @@ pub fn an_answer_that_names_no_ratings_is_skipped_test() {
       status: Done,
       attempts: 1,
       response_json: Some("{\"turns\":[]}"),
+      answered: True,
+      rendered: False,
+      turns: 1,
     )
   assert players([nonsense, done(2, 5.0, 5.0)])
     == expected([#("p1", 1, Some(5.0)), #("p2", 1, Some(5.0))])
