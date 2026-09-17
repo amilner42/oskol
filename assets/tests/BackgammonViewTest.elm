@@ -2253,7 +2253,8 @@ suite =
                                         |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ]
                                         |> Expect.all
                                             [ Query.has [ text "7.4", text "12.1" ]
-                                            , Query.find [ class "bg-match-cell", class "best" ] >> Query.has [ text "7.4" ]
+                                            , Query.find [ class "bg-match-cell", class "best" ] >> Query.has [ text "7.4", class "hero-trophy" ]
+                                            , Query.findAll [ class "hero-trophy" ] >> Query.count (Expect.equal 1)
                                             ]
 
                                 -- a single game: no match, no button, and the ✕ has nothing to close

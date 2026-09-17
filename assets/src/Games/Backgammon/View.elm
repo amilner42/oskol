@@ -3537,7 +3537,8 @@ viewMatchSheet ctx =
             else
                 [ div [ class "bg-match-row is-live", attribute "data-game" (String.fromInt gameNumber) ]
                     [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt gameNumber) ]
-                    , span [ class "bg-match-live font-bold" ] [ text "In play" ]
+                    , span [ class "bg-match-live font-bold flex-1 text-center" ] [ text "In play" ]
+                    , span [ class "bg-match-analysis-gap" ] []
                     ]
                 ]
     in
@@ -3569,9 +3570,9 @@ viewMatchSheet ctx =
 
 
 {-| One finished game on one line, under the players' columns: a cell per
-player, the winner's inked with the points (how they came is the chip's
-tooltip), and in each the player's PR for the game, the better one in the
-highlighter. At the right the door to its analysis.
+player, the winner's carrying the points in green (how they came is the
+chip's tooltip), and in each the player's PR for the game, the better one
+with a trophy beside it. At the right the door to its analysis.
 -}
 viewMatchRow : Ctx -> GameResult -> Html Msg
 viewMatchRow ctx g =
@@ -3603,15 +3604,24 @@ viewMatchRow ctx g =
             let
                 won =
                     player.id == g.winner
+
+                played_best =
+                    best == Just player.id && List.length prs > 1
             in
-            div [ classList [ ( "bg-match-cell", True ), ( "win", won ), ( "best", best == Just player.id && List.length prs > 1 ) ] ]
+            div [ classList [ ( "bg-match-cell", True ), ( "win", won ), ( "best", played_best ) ] ]
                 [ if won then
                     span [ class "bg-match-points pixel", title how ] [ text ("+" ++ String.fromInt g.points) ]
 
                   else
                     text ""
-                , span [ class "bg-match-pr tabular-nums" ]
-                    [ text
+                , span [ class "bg-match-pr tabular-nums inline-flex items-center gap-1" ]
+                    [ if played_best then
+                        -- the better PR of the game: a trophy, in the same grey
+                        span [ class "hero-trophy w-3.5 h-3.5", title "The better PR this game", attribute "aria-label" "best" ] []
+
+                      else
+                        text ""
+                    , text
                         (case prOf player.id of
                             Just value ->
                                 oneDecimal value
