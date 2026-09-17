@@ -3631,7 +3631,7 @@ viewMatchRow ctx g =
 
 {-| The door to a finished game's analysis: the replay page, with the
 engine's verdicts on every turn. A link, so it opens in a tab; a
-magnifier and, where there is room, the word.
+magnifier, as wide as the game number on the other side.
 -}
 analysisLink : Ctx -> Int -> Html Msg
 analysisLink ctx number =
@@ -3645,9 +3645,7 @@ analysisLink ctx number =
                 , attribute "aria-label" "Analysis"
                 , Html.Events.stopPropagationOn "click" (D.succeed ( Ignore, True ))
                 ]
-                [ span [ class "hero-magnifying-glass w-4 h-4", attribute "aria-hidden" "true" ] []
-                , span [ class "hidden sm:inline text-[11px] font-semibold" ] [ text "Analysis" ]
-                ]
+                [ span [ class "hero-magnifying-glass w-4 h-4", attribute "aria-hidden" "true" ] [] ]
 
         Nothing ->
             text ""

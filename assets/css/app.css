@@ -1449,11 +1449,9 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-col-name { font-weight: 700; font-size: 13px; min-width: 0; max-width: 100%; }
 .bg-match-col-score { font-size: 16px; line-height: 1.1; }
 .bg-match-col-pr { font-size: 11px; color: var(--pencil); }
-/* The analysis door is a fixed width so the columns above line up with
-   the cells below: the magnifier alone on a phone, the word beside it
-   from tablet width up. */
+/* The analysis door is as wide as the game number on the other side, so
+   the cells sit centred between the two and the columns above line up. */
 .bg-match-analysis, .bg-match-analysis-gap { flex: none; width: 1.6rem; justify-content: center; }
-@media (min-width: 640px) { .bg-match-analysis, .bg-match-analysis-gap { width: 5.6rem; justify-content: flex-start; } }
 /* The games, newest first: a cell per player on each line, the winner's
    inked with the points, each ending in the player's PR for the game,
    the better one of the two in the highlighter. */
