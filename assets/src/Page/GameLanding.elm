@@ -551,9 +551,9 @@ themePicker model =
             , Html.Attributes.title "Board colours"
             , onClick ToggledThemes
             ]
-            [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ]
+            [ icon "hero-swatch" "home-palette w-[19px] h-[19px]"
+            , Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ]
                 [ Games.Backgammon.View.themeBoard ]
-            , icon "hero-swatch" "home-palette w-[19px] h-[19px]"
             ]
         , if model.themesOpen then
             Html.div [ class "bg-theme-list", id "bg-theme-list" ]
