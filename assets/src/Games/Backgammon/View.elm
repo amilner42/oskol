@@ -3514,12 +3514,47 @@ viewMatchSheet ctx =
             else
                 "MATCH TO " ++ String.fromInt target
 
+        scores =
+            ctx.scene.players |> List.map (\p -> Protocol.counter "score" p)
+
+        leading =
+            List.maximum scores |> Maybe.withDefault 0
+
+        trailing =
+            List.minimum scores |> Maybe.withDefault 0
+
+        matchPrs =
+            ctx.scene.players |> List.filterMap (\p -> ctx.prOf p.id |> Maybe.map (Tuple.pair p.id))
+
+        bestMatchPr =
+            matchPrs |> List.sortBy Tuple.second |> List.head |> Maybe.map Tuple.first
+
         column player =
+            let
+                score =
+                    Protocol.counter "score" player
+
+                -- ahead is green, behind is red; level is neither
+                standing =
+                    if leading == trailing then
+                        ""
+
+                    else if score == leading then
+                        " ahead"
+
+                    else
+                        " behind"
+            in
             div [ class "bg-match-col" ]
                 [ span [ class "bg-match-col-name truncate" ] [ text player.name ]
-                , span [ class "bg-match-col-score pixel tabular-nums" ] [ text (String.fromInt (Protocol.counter "score" player)) ]
-                , span [ class "bg-match-col-pr tabular-nums" ]
-                    [ text
+                , span [ class ("bg-match-col-score pixel tabular-nums" ++ standing) ] [ text (String.fromInt score) ]
+                , span [ class "bg-match-col-pr tabular-nums inline-flex items-center gap-1" ]
+                    [ if bestMatchPr == Just player.id && List.length matchPrs > 1 then
+                        span [ class "hero-trophy w-3.5 h-3.5", title "The better match PR", attribute "aria-label" "best" ] []
+
+                      else
+                        text ""
+                    , text
                         (case ctx.prOf player.id of
                             Just pr ->
                                 "PR " ++ oneDecimal pr
