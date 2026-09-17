@@ -3629,8 +3629,9 @@ viewMatchRow ctx g =
 
 {-| The four arrows that look back through the game on the board: to its
 first turn, one back, one forward, and to the live position. Nothing is
-sent anywhere; a past turn is a picture (`viewedTurn`). They show only
-once there is a turn to look back at.
+sent anywhere; a past turn is a picture (`viewedTurn`). Always there, so
+the control is learned before it is needed; greyed while there is nothing
+to step to.
 -}
 viewScrub : Ctx -> Html Msg
 viewScrub ctx =
@@ -3701,7 +3702,7 @@ viewScrub ctx =
             else
                 Just ViewLive
     in
-    if turns == [] || ctx.model.still then
+    if ctx.model.still then
         text ""
 
     else
