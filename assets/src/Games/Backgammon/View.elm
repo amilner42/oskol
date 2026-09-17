@@ -1067,10 +1067,10 @@ viewHeader ctx =
         ]
 
 
-{-| The row under the slab: MATCH (the games so far), the four arrows that
-look back through the game on the board with RESIGN between them, so the
-one thing that ends a game sits in the middle of the things that only
-look at it. A single game has no match and no MATCH.
+{-| The row under the slab: the arrows that look back through the game on
+the board on the outsides, and between them the match (the games so far)
+and the flag (resign), icons only, all one size. A single game has no
+match and no match button; the flag is there while resigning is on.
 -}
 viewActions : Ctx -> Html Msg
 viewActions ctx =
@@ -1078,35 +1078,40 @@ viewActions ctx =
         target =
             Protocol.sceneData D.int "target" ctx.scene |> Maybe.withDefault 0
 
+        match =
+            if target /= 1 then
+                [ button
+                    [ class "bg-scrub-btn bg-match-toggle"
+                    , Html.Attributes.id "bg-match-toggle"
+                    , title "The match so far"
+                    , attribute "aria-label" "Match"
+                    , onClick ToggleMatch
+                    ]
+                    [ listIcon ]
+                ]
+
+            else
+                []
+
         resign =
             if hasAction "resign" ctx.legal && ctx.finished == Nothing then
                 -- It opens the offer panel (`viewResignPanel`); a resignation
                 -- is stakes the opponent answers, never sent from here.
-                button
-                    [ class "btn-arcade plain compact pixel text-[8px] px-2.5 py-1.5 inline-flex items-center gap-1 shrink-0"
+                [ button
+                    [ class "bg-scrub-btn"
                     , Html.Attributes.id "bg-resign-open"
                     , title "Offer to resign"
+                    , attribute "aria-label" "Resign"
                     , onClick OpenResign
                     ]
-                    [ flagIcon, span [] [ text "RESIGN" ] ]
+                    [ flagIcon ]
+                ]
 
             else
-                text ""
+                []
     in
-    div [ class "bg-actions w-full max-w-5xl lg:max-w-none flex items-center justify-center gap-3 sm:gap-4", Html.Attributes.id "bg-actions" ]
-        [ if target /= 1 then
-            button
-                [ class "bg-match-toggle btn-arcade plain compact pixel text-[8px] px-2.5 py-1.5 inline-flex items-center gap-1 shrink-0"
-                , Html.Attributes.id "bg-match-toggle"
-                , title "The match so far"
-                , onClick ToggleMatch
-                ]
-                [ listIcon, span [] [ text "MATCH" ] ]
-
-          else
-            text ""
-        , viewScrub ctx resign
-        ]
+    div [ class "bg-actions w-full max-w-5xl lg:max-w-none flex items-center justify-center", Html.Attributes.id "bg-actions" ]
+        [ viewScrub ctx (match ++ resign) ]
 
 
 {-| The board picker: the name of the board you are looking at, and the
@@ -3601,7 +3606,7 @@ sent anywhere; a past turn is a picture (`viewedTurn`). Always there, so
 the control is learned before it is needed; greyed while there is nothing
 to step to.
 -}
-viewScrub : Ctx -> Html Msg -> Html Msg
+viewScrub : Ctx -> List (Html Msg) -> Html Msg
 viewScrub ctx middle =
     let
         turns =
@@ -3675,18 +3680,20 @@ viewScrub ctx middle =
 
     else
         div [ classList [ ( "bg-scrub inline-flex items-center gap-3 sm:gap-4", True ), ( "is-back", current /= Nothing ), ( "stale", ctx.model.stale ) ], Html.Attributes.id "bg-scrub" ]
-            [ arrow "bg-scrub-first" "First turn" "hero-chevron-double-left" (first |> Maybe.andThen (\i -> if Just i == current then Nothing else Just (ViewTurn i)))
-            , arrow "bg-scrub-back" "Back a turn" "hero-chevron-left" (prev |> Maybe.map ViewTurn)
-            , middle
-            , arrow "bg-scrub-forward" "Forward a turn" "hero-chevron-right" (case next of
+            ([ arrow "bg-scrub-first" "First turn" "hero-chevron-double-left" (first |> Maybe.andThen (\i -> if Just i == current then Nothing else Just (ViewTurn i)))
+             , arrow "bg-scrub-back" "Back a turn" "hero-chevron-left" (prev |> Maybe.map ViewTurn)
+             ]
+                ++ middle
+                ++ [ arrow "bg-scrub-forward" "Forward a turn" "hero-chevron-right" (case next of
                                                                                 Just i ->
                                                                                     Just (ViewTurn i)
 
                                                                                 Nothing ->
                                                                                     toLive
                                                                              )
-            , arrow "bg-scrub-live" "Back to the live game" "hero-chevron-double-right" toLive
-            ]
+                   , arrow "bg-scrub-live" "Back to the live game" "hero-chevron-double-right" toLive
+                   ]
+            )
 
 
 pointsText : Int -> String
