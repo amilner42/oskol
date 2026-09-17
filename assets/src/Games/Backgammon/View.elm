@@ -3591,7 +3591,7 @@ viewMatchRow ctx g =
 
             else
                 prs
-                    |> List.map (\( id, pr ) -> playerName ctx id ++ " " ++ String.fromFloat pr)
+                    |> List.map (\( id, pr ) -> playerName ctx id ++ " " ++ oneDecimal pr)
                     |> String.join " · "
     in
     div [ class "bg-match-row", attribute "data-game" (String.fromInt g.number) ]

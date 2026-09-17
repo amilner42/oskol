@@ -358,7 +358,7 @@ fn resign() {
 }
 
 fn engine_roll() {
-  action.simple("roll", "Roll dice")
+  action.simple("roll", "Roll")
 }
 
 pub fn hitting_puts_the_opponent_on_the_bar_and_they_must_enter_test() {

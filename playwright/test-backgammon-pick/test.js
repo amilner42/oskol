@@ -200,7 +200,7 @@ async function main() {
     await opener.waitForSelector('#pick-dice-open', { timeout: 10000 });
     log('Opponent still offered PICK DICE');
     // They roll instead; back on the picker's side the button is gone for good.
-    await opener.click('button:has-text("ROLL DICE")');
+    await opener.click('button:has-text("ROLL")');
     await stageWholeTurn(opener);
     await picker.waitForFunction(
       () => /rolling|moving/.test(document.body.textContent) || document.querySelector('.die'),
