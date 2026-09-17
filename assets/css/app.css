@@ -1447,10 +1447,10 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-cols { padding: 10px 12px 8px !important; border-bottom: 2px solid var(--ink) !important; }
 .bg-match-col { min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 2px 0; }
 .bg-match-col-name { font-weight: 700; font-size: 13px; min-width: 0; max-width: 100%; }
-/* The points so far: the leader's in ink, the other's in pencil, both in
-   ink when level. */
+/* The points so far, both in ink; a small arrow in the trophy's grey marks
+   the lead. */
 .bg-match-col-score { font-size: 16px; line-height: 1.1; }
-.bg-match-col-score.behind { color: var(--pencil); }
+.bg-match-lead { color: var(--pencil); }
 .bg-match-col-pr { font-size: 11px; color: var(--pencil); }
 /* The analysis door is as wide as the game number on the other side, so
    the cells sit centred between the two and the columns above line up. */
