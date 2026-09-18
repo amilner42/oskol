@@ -559,10 +559,14 @@ assets/src/Page/HomeBoard.elm    the home page's board: the table edge to edge, 
                                  2x2 menu in its right band
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
 assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again, with the
-                                 engine's analysis (polls /reviews while any is pending)
+                                 engine's analysis (polls /reviews while any is pending):
+                                 the mistakes list jumps to a step, the band offers the
+                                 best move, the dice take the move back
 assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay reads them:
                                  decoders, the board at each step, verdicts per record line
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
+assets/src/Ui/Scrub.elm          one row of plates (arrows outside, buttons between) under
+                                 the table's board and the replay's, the same on both
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Backgammon/View.elm  the backgammon board (and the two
                                  player bars: name, presence dot, match PR)

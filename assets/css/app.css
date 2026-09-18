@@ -631,7 +631,7 @@
   grid-column: auto !important; grid-row: auto !important; max-width: none !important;
   width: 100%; border-radius: 0; flex: none; justify-self: stretch;
 }
-.bg-page.home-board .home-mark { color: #fff; }
+.bg-page.home-board .home-mark .oskol-mark { color: #fff; }
 /* On the home page the picker is a quiet control in the top bar: the
    board swatch (ringed white, so it reads on its own theme) and a brush
    beside it, no plate and no name. */
@@ -666,7 +666,7 @@
   width: 26px; height: 16px; border-radius: 5px;
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 0 0 3px rgba(0, 0, 0, 0.35);
 }
-.bg-page.home-board .home-mark svg { height: 1.5em; width: auto; margin: 0; color: #fff !important; }
+.bg-page.home-board .home-mark svg { color: #fff !important; }
 .bg-page.home-board .home-mark svg * { stroke: #fff; }
 .home-inlay {
   /* the board's own light point colour, so the mark reads on every theme */
@@ -1474,7 +1474,16 @@ a.q-card:hover, a.q-card:focus-visible {
 .bg-match-pr { margin-left: auto; flex: none; font-size: 11.5px; padding: 0 4px; border-radius: 3px; color: var(--pencil); }
 .bg-match-cell.best .bg-match-pr { font-weight: 700; }
 .bg-match-analysis { color: var(--ink); text-decoration: none; padding: 4px 0; border-radius: 6px; }
-.bg-match-analysis:hover { background: var(--paper-2); }
+/* The game you are at: a dot where the other rows carry their icon. */
+.bg-match-here { width: 8px; height: 8px; border-radius: 9999px; background: var(--ink); display: inline-block; animation: here-breathe 2.4s ease-in-out infinite; }
+@keyframes here-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) { .bg-match-here { animation: none; } }
+/* A whole row is the door to a game's analysis on the table. */
+a.bg-match-door { text-decoration: none; color: inherit; cursor: pointer; }
+a.bg-match-door:hover { background: var(--paper-2); }
 
 /* The row under the slab: MATCH, the four arrows with RESIGN between them.
    Each arrow is its own small plate, white when it can be pressed and
@@ -1494,7 +1503,10 @@ a.q-card:hover, a.q-card:focus-visible {
 /* The picker's chevron turns over while the list is open. */
 .bg-theme-chevron { transition: transform 0.18s ease; }
 #bg-theme-button[aria-expanded="true"] .bg-theme-chevron { transform: rotate(180deg); }
-.bg-mark { color: var(--ink); }
+/* The mark, everywhere: the bird at 1.5em beside the word, the same on
+   every page; a page sets the colour. */
+.oskol-mark { color: var(--ink); text-decoration: none; }
+.oskol-mark svg { height: 1.5em; width: auto; margin: 0; }
 /* The bars as every other table draws them. */
 /* The presence dot: beside a name, steady green while that player's socket
    is up, flashing green for the first seconds of an absence (most of those
@@ -1803,39 +1815,32 @@ a.q-card:hover, a.q-card:focus-visible {
   color: var(--ink);
 }
 .rp-head { display: flex; align-items: center; gap: 8px; min-width: 0; flex: none; }
-.rp-back {
-  flex: none; padding: 5px 7px; background: #fff; color: var(--ink);
-  border: 2px solid var(--ink); box-shadow: 2px 2px 0 0 var(--ink);
-}
 .rp-tag { border: 2px solid var(--ink); background: #fff; padding: 3px 6px; min-width: 0; }
-/* Turn the board around: a replay faces the link's seat to begin with, and
-   anyone can swap sides. */
-.rp-flip {
-  flex: none; margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
-  width: 1.9rem; height: 1.9rem; background: #fff; color: var(--ink);
-  border: 2px solid var(--ink); box-shadow: 2px 2px 0 0 var(--ink); cursor: pointer;
+/* The board picker at the header's right end, as on the table. */
+.rp-themes { margin-left: auto; }
+.rp-themes > button { color: var(--pencil); }
+/* A row of the match panel is a door here: a button, full width, that
+   puts the game on the board; the one on the board is marked. */
+.rp-match-row { width: 100%; background: transparent; border-top: 0; border-left: 0; border-right: 0; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.rp-match-row:hover { background: var(--paper-2); }
+a.rp-match-row { display: flex; text-decoration: none; color: var(--pencil); }
+a.rp-match-row:hover { color: var(--ink); }
+.rp-match-row.is-on { font-weight: inherit; }
+/* What cost a player: one line per mistake, worst first, a door to the
+   step. */
+.rp-mistakes { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 10px; }
+.rp-mistakes-none { color: var(--pencil); font-style: italic; margin: 6px 0 10px; }
+.rp-mistake {
+  display: flex; align-items: baseline; gap: 7px; width: 100%;
+  padding: 4px 6px; border: 0; border-radius: 6px; background: var(--paper-2); color: var(--ink);
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
 }
-.rp-flip:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 0 var(--ink); }
+.rp-mistake:hover { background: color-mix(in oklab, #ffd23f 25%, #fff); }
+.rp-mistake.is-on { background: color-mix(in oklab, #ffd23f 50%, #fff); box-shadow: inset 3px 0 0 0 var(--ink); }
+.rp-mistake-turn { color: var(--pencil); flex: none; }
+.rp-mistake-what { flex: 1; min-width: 0; }
+.rp-mistake .rp-lost { margin-left: auto; flex: none; }
 .rp-message { margin: 3rem auto; display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; max-width: 22rem; }
-
-/* The games of the match: a row of chips that scrolls sideways inside
-   itself when a long match outgrows the screen. */
-.rp-games {
-  flex: none; display: flex; gap: 6px; overflow-x: auto; overscroll-behavior-x: contain;
-  scrollbar-width: none; padding: 1px 3px 4px 1px;
-}
-.rp-games::-webkit-scrollbar { display: none; }
-.rp-game {
-  flex: none; display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 8px; font-size: 12px; background: #fff; color: var(--ink);
-  border: 2px solid var(--ink); box-shadow: 2px 2px 0 0 var(--ink); cursor: pointer;
-}
-.rp-game.is-on { background: var(--ink); color: var(--paper); }
-.rp-game-result { white-space: nowrap; }
-.rp-dot { width: 8px; height: 8px; border-radius: 9999px; flex: none; }
-.rp-dot.pending { background: var(--pen); animation: rp-breathe 1.8s ease-in-out infinite; }
-.rp-dot.failed { background: var(--red); }
-@keyframes rp-breathe { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
 
 .rp-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
 .rp-stage { flex: none; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -1843,28 +1848,50 @@ a.q-card:hover, a.q-card:focus-visible {
 .rp-board { position: relative; touch-action: pan-y; min-width: 0; }
 /* An engine's move on the board instead of the one played: a dashed edge
    and a tab saying which. */
-.rp-board.is-proposed .bg-stack { outline: 3px dashed #ffd23f; outline-offset: 2px; }
+/* The engine's move up: the board glows the highlighter's yellow. */
+.rp-board.is-proposed .bg-stack { outline: 3px solid #ffd23f; outline-offset: 2px; box-shadow: 0 0 0 6px rgba(255, 210, 63, 0.35), 0 0 34px 6px rgba(255, 210, 63, 0.55), 0 10px 26px rgba(40, 24, 12, 0.32); }
+/* The played move's grade, on the board itself: the edge and a glow in
+   the grade's colour, and a tab naming it. OK moves stay quiet. */
+.rp-board.is-graded.g-best .bg-stack { outline: 3px solid #1f7a45; outline-offset: 2px; box-shadow: 0 0 0 6px rgba(31, 122, 69, 0.22), 0 0 30px 6px rgba(31, 122, 69, 0.35), 0 10px 26px rgba(40, 24, 12, 0.32); }
+.rp-board.is-graded.g-doubtful .bg-stack { outline: 3px solid #d9a100; outline-offset: 2px; box-shadow: 0 0 0 6px rgba(217, 161, 0, 0.22), 0 0 30px 6px rgba(217, 161, 0, 0.35), 0 10px 26px rgba(40, 24, 12, 0.32); }
+.rp-board.is-graded.g-bad .bg-stack { outline: 3px solid #e06a2b; outline-offset: 2px; box-shadow: 0 0 0 6px rgba(224, 106, 43, 0.22), 0 0 30px 6px rgba(224, 106, 43, 0.38), 0 10px 26px rgba(40, 24, 12, 0.32); }
+.rp-board.is-graded.g-very_bad .bg-stack { outline: 3px solid var(--red); outline-offset: 2px; box-shadow: 0 0 0 6px rgba(227, 69, 59, 0.24), 0 0 30px 6px rgba(227, 69, 59, 0.42), 0 10px 26px rgba(40, 24, 12, 0.32); }
+.rp-proposed.rp-graded { border-color: currentColor; }
+.rp-proposed.rp-graded.g-ok { display: none; }
+/* The door between the move played and the best, in the band opposite the dice. */
+/* The wrapper is what is positioned: the button inside keeps its own
+   press transform and stays put. It is also a fixed width, so the two
+   labels take turns in the same place. */
+.rp-best-toggle-wrap { position: absolute; top: 50%; z-index: 2; width: 10.5rem; display: flex; justify-content: center; }
+.rp-best-toggle-wrap.is-left { left: 25%; transform: translate(-50%, -50%); }
+.rp-best-toggle-wrap.is-right { left: 75%; transform: translate(-50%, -50%); }
+.rp-best-toggle { white-space: nowrap; }
+/* Over the dice: an unseen button the size of the band's half, and the
+   dice dimmed while the move they made is on the board. */
+.rp-dice-toggle { position: absolute; top: 50%; width: 40%; height: 4rem; transform: translate(-50%, -50%); z-index: 2; background: transparent; border: 0; cursor: pointer; }
+.rp-dice-toggle.is-left { left: 25%; }
+.rp-dice-toggle.is-right { left: 75%; }
+.rp-board.dice-played .bg-still .die { opacity: 0.45; transition: opacity 0.15s; }
 .rp-proposed {
   position: absolute; left: 50%; top: 0; transform: translate(-50%, -55%);
   max-width: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   background: #ffd23f; color: var(--ink); border: 2px solid var(--ink); padding: 3px 6px; z-index: 2;
 }
-.rp-controls { flex: none; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.rp-step { min-width: 3rem; height: 2.5rem; font-size: 10px; padding: 0 0.6rem; }
-.rp-step:disabled { opacity: 0.35; box-shadow: none; }
-.rp-count { min-width: 5.5rem; text-align: center; font-variant-numeric: tabular-nums; }
-/* The narrowest phones: four thumb-sized plates and the counter have to fit
-   inside 320px less the page's padding, so both give a little. */
-@media (max-width: 374px) {
-  .rp-controls { gap: 6px; }
-  .rp-step { min-width: 2.6rem; padding: 0 0.4rem; }
-  .rp-count { min-width: 4.2rem; }
-}
+/* The row under the board, as the table draws it: the arrows outside,
+   the match and the flip inside, one plate each. */
+/* The row sits a little off the board, as it does on the table. */
+.rp-controls-wrap { padding-top: 0.6rem; }
+.rp-controls { flex: none; }
+/* The plates' icons, wherever a row is drawn: the table's size. */
+.bg-scrub-btn .hero-flag, .bg-scrub-btn .hero-bars-3, .bg-scrub-btn .hero-arrows-up-down { width: 15px; height: 15px; }
 
 .rp-side { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* At the start the note is the game's name alone, centred both ways. */
+.rp-note:has(> .rp-what-start:only-child) { display: flex; align-items: center; justify-content: center; }
+.rp-what-start { justify-content: center; }
 /* What this step was, and the engine's word on it. */
 .rp-note {
-  flex: none; max-height: 42%; overflow-y: auto; overscroll-behavior: contain;
+  flex: none; min-height: 7.5rem; max-height: 42%; overflow-y: auto; overscroll-behavior: contain;
   background: #fff; border: 3px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink);
   padding: 6px 10px; font-size: 13px; line-height: 1.35;
 }
@@ -1910,14 +1937,18 @@ a.q-card:hover, a.q-card:focus-visible {
   .rp-progress > span, .rp-dot.pending { animation: none; }
 }
 
-.rp-tabs { flex: none; display: flex; }
-.rp-tab { flex: 1; padding: 6px; background: #fff; color: var(--ink); border: 2px solid var(--ink); cursor: pointer; }
-.rp-tab + .rp-tab { border-left: 0; }
+/* The tabs and what they show are one box, drawn as the note above it. */
+.rp-panel {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  background: #fff; border: 3px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink);
+}
+.rp-tabs { flex: none; display: flex; border-bottom: 2px solid var(--ink); }
+.rp-tab { flex: 1; padding: 7px 6px; background: #fff; color: var(--ink); border: 0; cursor: pointer; }
+.rp-tab + .rp-tab { border-left: 2px solid var(--ink); }
 .rp-tab.is-on { background: var(--ink); color: var(--paper); }
 .rp-list, .rp-summary {
   flex: 1; min-height: 7rem; overflow-y: auto; overscroll-behavior: contain;
-  background: #fff; border: 3px solid var(--ink); border-top: 0;
-  padding: 4px 8px; font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums;
+  padding: 6px 10px; font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums;
 }
 .rp-line { display: flex; align-items: baseline; gap: 6px; padding: 3px 6px; margin: 0 -6px; cursor: pointer; }
 .rp-line:hover { background: color-mix(in oklab, #ffd23f 20%, #fff); }
@@ -1941,18 +1972,16 @@ a.q-card:hover, a.q-card:focus-visible {
   .rp-page {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
     gap: 5px 10px;
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     overflow: hidden;
   }
   .rp-main, .rp-stage { display: contents; }
   .rp-head { grid-column: 2; grid-row: 1; }
-  .rp-games { grid-column: 2; grid-row: 2; }
-  .rp-controls { grid-column: 2; grid-row: 3; justify-content: flex-start; }
-  .rp-side { grid-column: 2; grid-row: 4; }
+  .rp-controls-wrap { grid-column: 2; grid-row: 2; align-items: flex-start; }
+  .rp-side { grid-column: 2; grid-row: 3; }
   .rp-board { grid-column: 1; grid-row: 1 / -1; align-self: center; }
-  .rp-step { height: 2.2rem; min-width: 2.6rem; }
   .rp-note { max-height: 45%; }
   .rp-list, .rp-summary { min-height: 0; }
   .bg-still {
@@ -1984,12 +2013,25 @@ a.q-card:hover, a.q-card:focus-visible {
 /* A desktop: the board sized by the window's height, the notes beside it
    in a column as tall as the board. */
 @media (min-width: 1024px) {
-  .rp-page { padding: 14px 24px; gap: 10px; overflow: hidden; }
-  .rp-head, .rp-games { width: 100%; max-width: calc(var(--rp-board-w, 60rem) + 23rem); margin: 0 auto; }
-  .rp-main { flex-direction: row; justify-content: center; align-items: stretch; gap: 16px; }
-  .rp-stage { flex: none; }
-  .rp-side { flex: none; width: 22rem; }
-  .rp-note { max-height: 50%; }
+  /* The page is a centred column exactly as wide as the board and its
+     side panel, as the table's is as wide as its slab, so the header spans
+     the content and no more. */
+  .rp-page {
+    padding: 14px 24px; gap: 10px; overflow: hidden;
+    display: grid; grid-template-columns: minmax(0, max-content); grid-template-rows: auto auto;
+    align-content: start; justify-content: center;
+  }
+  .rp-head { width: 100%; }
+  /* The board and the side panel share the first row, so the panel is
+     exactly the board's height; the arrows sit under the board alone. */
+  .rp-main { display: grid; grid-template-columns: max-content 22rem; grid-template-rows: auto auto; column-gap: 16px; row-gap: 0; justify-content: center; align-items: stretch; }
+  .rp-stage { display: contents; }
+  .rp-board { grid-column: 1; grid-row: 1; }
+  .rp-controls-wrap { grid-column: 1; grid-row: 2; }
+  .rp-side { grid-column: 2; grid-row: 1; width: 22rem; min-height: 0; }
+  /* The note is the height of a graded turn (the title, the verdict, the
+     five candidates) from the start, so stepping into one moves nothing. */
+  .rp-note { flex: none; height: 13.5rem; max-height: none; }
   .bg-still {
     --bg-frame-w: 14px;
     --bg-lip: 6px;

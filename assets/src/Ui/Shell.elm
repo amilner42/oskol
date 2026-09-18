@@ -1,4 +1,4 @@
-module Ui.Shell exposing (Config, bare, bird, joinButton, joinCodeInputId, view)
+module Ui.Shell exposing (Config, bare, bird, mark, joinButton, joinCodeInputId, view)
 
 {-| The chrome every landing page sits in: the OSKOL wordmark, the JOIN GAME
 prompt behind it, and the footer.
@@ -188,6 +188,16 @@ joinModal config =
                 )
             ]
         ]
+
+
+{-| The mark: the bird and the word, the same size and the same distance
+apart on every page, a link home. Its colour is the page's (`.oskol-mark`
+in app.css; the home board paints it white).
+-}
+mark : Html msg
+mark =
+    Html.a [ href "/", class "oskol-mark inline-flex items-center gap-1.5 shrink-0", attribute "aria-label" "Oskol home" ]
+        [ bird, Html.span [ class "pixel text-[13px] sm:text-[16px] relative top-[2px]" ] [ Html.text "OSKOL" ] ]
 
 
 {-| The oskol itself: a small bird in profile, one line, before the

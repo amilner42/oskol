@@ -180,17 +180,28 @@ async function boardFits(page, what) {
 /** The step counter, once it has settled on `expected` (the board renders
  * on the next frame after a step), or whatever it says after two seconds. */
 async function count(page, expected) {
+  // The page prints no counter; the row carries the step and the last step
+  // as data attributes, read here as the old label read ("START", "4 / 82").
+  const read = () => {
+    const w = document.querySelector('.rp-controls-wrap');
+    const step = Number(w.dataset.step), last = Number(w.dataset.last);
+    return step === 0 ? 'START' : `${step} / ${last}`;
+  };
   if (expected !== undefined) {
-    await page
-      .waitForFunction((want) => document.getElementById('rp-count').textContent.trim() === want, expected, { timeout: 2000 })
-      .catch(() => {});
+    await page.waitForFunction((want) => {
+      const w = document.querySelector('.rp-controls-wrap');
+      const step = Number(w.dataset.step), last = Number(w.dataset.last);
+      return (step === 0 ? 'START' : `${step} / ${last}`) === want;
+    }, expected, { timeout: 2000 }).catch(() => {});
   } else {
     await sleep(100);
   }
-  return (await page.textContent('#rp-count')).trim();
+  return page.evaluate(read);
 }
 
 async function currentLineVisible(page, what) {
+  // The page opens on ANALYSIS; the list this checks is a tab away.
+  if (!(await page.locator('#rp-list').count())) await page.click('.rp-tab:has-text("MOVES")');
   // the list scrolls to the line a frame after the step renders
   const inView = await page
     .waitForFunction(() => {
@@ -278,7 +289,12 @@ async function main() {
     await page.goto(url());
     await page.waitForSelector('.bg-still .bg-board', { timeout: 20000 });
     must((await count(page)) === 'START', 'the replay opens at the start of a game');
-    must(await page.locator(`.rp-game[data-game="${last.number}"].is-on`).count() === 1, `it opens the match's last game (${last.number})`);
+    // The match panel (under the board, between the arrows) marks the game on the board.
+    await page.click('#rp-match');
+    await page.waitForSelector('#bg-match-sheet');
+    must(await page.locator(`.rp-match-row[data-game="${last.number}"].is-on`).count() === 1, `it opens the match's last game (${last.number})`);
+    await page.click('#bg-match-close');
+    await page.waitForSelector('#bg-match-sheet', { state: 'detached' });
     if (!REAL) {
       await page.waitForSelector('#rp-analysis-state.is-pending', { timeout: 5000 });
       must(/Analysing game \d+ at 4-ply… this can take a few minutes/.test(await page.textContent('#rp-analysis-state')), 'a pending analysis says so, and that it takes a while');
@@ -298,6 +314,9 @@ async function main() {
     // The analysis lands while the viewer is on step 4.
     await page.waitForSelector('#rp-note .rp-grade', { timeout: REAL ? 180000 : 15000 });
     must((await count(page, `4 / ${last.entries.length}`)) === `4 / ${last.entries.length}`, 'the grades fill in without moving the viewer');
+    // The page opens on ANALYSIS; the move list is a tab away.
+    await page.click('.rp-tab:has-text("MOVES")');
+    await page.waitForSelector('.rp-line');
     must(await page.locator('.rp-line .rp-mark').count() > 0, 'the move list carries the grades');
 
     // Find a turn that was not the engine's best, and put its best on the board.
@@ -332,7 +351,8 @@ async function main() {
 
     // ---------- 2. a failed game, tried again ----------
     if (!REAL) {
-      await page.click('.rp-game[data-game="1"]');
+      await page.click('#rp-match');
+      await page.click('.rp-match-row[data-game="1"]');
       await page.waitForSelector('#rp-analysis-state.is-failed');
       must(await page.locator('#rp-retry').count() === 1, 'a failed analysis offers to try again');
       await page.screenshot({ path: `${SHOTS}/05-desktop-failed.png` });
