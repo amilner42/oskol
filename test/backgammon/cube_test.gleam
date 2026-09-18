@@ -96,14 +96,11 @@ fn has_custom(events: List(event.Event), kind: String) -> Bool {
 
 pub fn formats_configure_target_cube_and_jacoby_test() {
   let single = new_game(1, "single")
-  assert single.config
-    == state.Config(target: 1, cube: False, jacoby: False, pick_dice: False)
+  assert single.config == state.Config(target: 1, cube: False, jacoby: False)
   let match3 = new_game(1, "match3")
-  assert match3.config
-    == state.Config(target: 3, cube: True, jacoby: False, pick_dice: False)
+  assert match3.config == state.Config(target: 3, cube: True, jacoby: False)
   let unlimited = new_game(1, "unlimited")
-  assert unlimited.config
-    == state.Config(target: 0, cube: True, jacoby: True, pick_dice: False)
+  assert unlimited.config == state.Config(target: 0, cube: True, jacoby: True)
   assert state.unlimited(unlimited)
   assert list.map(backgammon.info().formats, fn(f) { f.id })
     == ["single", "match3", "match5", "match7", "unlimited"]
@@ -447,7 +444,6 @@ pub fn an_offer_never_stops_the_offerer_clock_test() {
     instance.start(
       backgammon.game(),
       "match5",
-      [],
       seats(),
       40,
       clock.Fischer(60_000, 10_000),

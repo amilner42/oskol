@@ -79,14 +79,6 @@ defmodule Oskol.Dev.Seeds do
         find: &owns_cube?/2
       },
       %{
-        code: "000008",
-        format: "single",
-        selections: %{"twist" => "pick_dice"},
-        what:
-          "pick-dice twist on: P1 to roll, and may pick the dice (pick 6-6 to watch a double land)",
-        find: &can_pick?/2
-      },
-      %{
         code: "000009",
         format: "match5",
         what:
@@ -145,14 +137,12 @@ defmodule Oskol.Dev.Seeds do
 
   # ---------- one scenario ----------
 
-  defp seed(%{code: code, format: format, what: what, find: find} = scenario) do
-    selections = Map.get(scenario, :selections, %{})
-    {seed, actions} = search(format, selections, find)
+  defp seed(%{code: code, format: format, what: what, find: find}) do
+    {seed, actions} = search(format, find)
 
     {:ok, _} = Game.start_game(code, @slug)
 
-    {:ok, _} =
-      Game.configure(code, %{format: format, clock: "none", seed: seed, selections: selections})
+    {:ok, _} = Game.configure(code, %{format: format, clock: "none", seed: seed})
 
     {:ok, p1, _} = Game.join_game(code, "P1", nil)
     {:ok, p2, _} = Game.join_game(code, "P2", nil)
@@ -191,18 +181,17 @@ defmodule Oskol.Dev.Seeds do
 
   # Random legal play from each seed in turn, never resigning, until P1's
   # update satisfies `find`; the seed and the actions that got there.
-  defp search(format, selections, find) do
+  defp search(format, find) do
     Enum.find_value(1..@max_seeds, fn seed ->
-      case play(format, selections, seed, find) do
+      case play(format, seed, find) do
         {:found, actions} -> {seed, actions}
         :none -> nil
       end
     end) || raise "no position found in #{@max_seeds} seeds"
   end
 
-  defp play(format, selections, seed, find) do
-    {:ok, instance} =
-      GameKit.start(@slug, format, @seats, seed, :no_clock, 0, Map.to_list(selections))
+  defp play(format, seed, find) do
+    {:ok, instance} = GameKit.start(@slug, format, @seats, seed, :no_clock, 0)
 
     :rand.seed(:exsss, {seed, seed * 7 + 1, seed * 13 + 2})
 
@@ -262,8 +251,6 @@ defmodule Oskol.Dev.Seeds do
   defp answer_double?(u, _me), do: has?(u, "take")
 
   defp owns_cube?(u, me), do: data(u)["cube"]["owner"] == me and has?(u, "move")
-
-  defp can_pick?(u, _me), do: has?(u, "pick")
 
   defp finished?(u, _me), do: u["outcome"]["status"] == "finished"
 

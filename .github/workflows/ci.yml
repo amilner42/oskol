@@ -144,7 +144,6 @@ jobs:
       # across runners is dev-fast-loop's.
       - run: node playwright/test-spa-landing/test.js
       - run: node playwright/test-backgammon-smoke/test.js
-      - run: node playwright/test-backgammon-pick/test.js
       - run: node playwright/test-backgammon-drag/test.js
       - run: node playwright/test-backgammon-board/test.js
       - run: node playwright/test-backgammon-landscape/test.js

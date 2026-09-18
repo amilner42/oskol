@@ -68,7 +68,6 @@ pub type Entry {
   Turn(
     player: PlayerId,
     dice: List(Int),
-    picked: Bool,
     moves: List(String),
     position: Snapshot,
     /// The points (1..24, as the board numbers them) where the checkers
@@ -251,8 +250,8 @@ pub fn dice_text(dice: List(Int)) -> String {
 /// The entry as one line of text: `"31: 8/5 6/5"`, `"Doubles to 2"`.
 pub fn text(entry: Entry) -> String {
   case entry {
-    Turn(_, dice, _, [], _, _) -> dice_text(dice) <> ": (no play)"
-    Turn(_, dice, _, moves, _, _) ->
+    Turn(_, dice, [], _, _) -> dice_text(dice) <> ": (no play)"
+    Turn(_, dice, moves, _, _) ->
       dice_text(dice) <> ": " <> string.join(moves, " ")
     Double(_, value) -> "Doubles to " <> int.to_string(value)
     Take(_) -> "Takes"
@@ -272,7 +271,7 @@ fn points_text(points: Int) -> String {
 
 pub fn player(entry: Entry) -> Option(PlayerId) {
   case entry {
-    Turn(p, _, _, _, _, _) -> Some(p)
+    Turn(p, _, _, _, _) -> Some(p)
     Double(p, _) -> Some(p)
     Take(p) -> Some(p)
     Drop(p) -> Some(p)
@@ -325,12 +324,11 @@ pub fn results(entries: List(Entry)) -> List(Entry) {
 /// read; nothing here is hidden from anyone.
 pub fn to_json(entry: Entry) -> Json {
   case entry {
-    Turn(player, dice, picked, moves, position, landed) ->
+    Turn(player, dice, moves, position, landed) ->
       json.object([
         #("kind", json.string("turn")),
         #("player", json.string(player)),
         #("dice", json.array(dice, json.int)),
-        #("picked", json.bool(picked)),
         #("moves", json.array(moves, json.string)),
         #("landed", json.array(landed, json.int)),
         #("position", snapshot_to_json(position)),

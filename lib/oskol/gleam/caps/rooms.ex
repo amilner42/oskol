@@ -41,8 +41,8 @@ defmodule Oskol.Gleam.Caps.Rooms do
        Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
        nil
      end,
-     fn game_id, {:setup, format, selections, clock} ->
-       attrs = %{format: format, selections: Map.new(selections), clock: clock}
+     fn game_id, {:setup, format, clock} ->
+       attrs = %{format: format, clock: clock}
 
        case Game.configure(game_id, attrs) do
          {:ok, _state} -> {:ok, nil}

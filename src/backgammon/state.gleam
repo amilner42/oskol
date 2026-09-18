@@ -32,10 +32,9 @@ pub type Phase {
 
 /// `target` 0 means unlimited play: games keep coming and the score just
 /// accumulates. `jacoby` makes gammons count only once the cube was turned,
-/// the usual convention for unlimited (money) play. `pick_dice` is the
-/// twist: once per game, a player may pick both dice instead of rolling.
+/// the usual convention for unlimited (money) play.
 pub type Config {
-  Config(target: Int, cube: Bool, jacoby: Bool, pick_dice: Bool)
+  Config(target: Int, cube: Bool, jacoby: Bool)
 }
 
 pub const cube_limit = 64
@@ -52,10 +51,6 @@ pub type GameState {
     game_number: Int,
     /// The last dice rolled, for display.
     last_roll: List(Int),
-    /// The last roll was picked, not rolled (the "Pick dice" twist).
-    last_roll_picked: Bool,
-    /// Players who have used their pick this game (resets each game).
-    picks_used: List(PlayerId),
     /// Doubling cube: value and owner (None while centred).
     cube_value: Int,
     cube_owner: Option(Color),
@@ -150,8 +145,6 @@ pub fn new(
       scores: dict.from_list(list.map(order, fn(id) { #(id, 0) })),
       game_number: 1,
       last_roll: [],
-      last_roll_picked: False,
-      picks_used: [],
       cube_value: 1,
       cube_owner: None,
       crawford: False,
@@ -393,14 +386,6 @@ pub fn can_roll(state: GameState, player_id: PlayerId) -> Bool {
   }
 }
 
-/// May this player pick their dice instead of rolling? Exactly when a roll
-/// is legal, the twist is on, and their pick is unused this game.
-pub fn can_pick(state: GameState, player_id: PlayerId) -> Bool {
-  can_roll(state, player_id)
-  && state.config.pick_dice
-  && !list.contains(state.picks_used, player_id)
-}
-
 /// May this player say they are ready for the next game? Between games,
 /// once each.
 pub fn can_ready(state: GameState, player_id: PlayerId) -> Bool {
@@ -433,7 +418,7 @@ pub fn roll(
       let #(a, rng) = die(state.rng)
       let #(b, rng) = die(rng)
       let state = GameState(..state, rng: rng)
-      Ok(#(begin_turn(state, color, a, b, False), [a, b]))
+      Ok(#(begin_turn(state, color, a, b), [a, b]))
     }
     Rolling(_) -> Error("Not your turn")
     Doubled(_) -> Error("A double is pending")
@@ -443,55 +428,13 @@ pub fn roll(
   }
 }
 
-/// The "Pick dice" twist: take the turn with chosen dice instead of rolling.
-/// Consumes the player's one pick per game and no randomness at all; from
-/// here the turn is exactly a rolled one (same forced-move logic).
-pub fn pick(
-  state: GameState,
-  player_id: PlayerId,
-  a: Int,
-  b: Int,
-) -> Result(#(GameState, List(Int)), String) {
-  use color <- result.try(color_of(state, player_id))
-  use _ <- result.try(no_offer_pending(state))
-  case state.phase {
-    Rolling(c) if c == color ->
-      case
-        state.config.pick_dice,
-        list.contains(state.picks_used, player_id),
-        a >= 1 && a <= 6 && b >= 1 && b <= 6
-      {
-        False, _, _ -> Error("Dice picking is not enabled")
-        _, True, _ -> Error("You have already used your pick this game")
-        _, _, False -> Error("Die values must be 1 to 6")
-        True, False, True -> {
-          let state =
-            GameState(..state, picks_used: [player_id, ..state.picks_used])
-          Ok(#(begin_turn(state, color, a, b, True), [a, b]))
-        }
-      }
-    Rolling(_) -> Error("Not your turn")
-    Doubled(_) -> Error("A double is pending")
-    Moving(_, _) -> Error("Dice already rolled")
-    BetweenGames(_, _) -> Error(next_game_not_started)
-    Finished(_) -> Error("The match is over")
-  }
-}
-
-/// Start the turn with these dice, rolled or picked: the one path both
-/// take, so a picked turn shares the roll's forced-move logic exactly.
-fn begin_turn(
-  state: GameState,
-  color: Color,
-  a: Int,
-  b: Int,
-  picked: Bool,
-) -> GameState {
+/// Start the turn with these dice: the one path every turn takes.
+fn begin_turn(state: GameState, color: Color, a: Int, b: Int) -> GameState {
   let dice = case a == b {
     True -> [a, a, a, a]
     False -> [a, b]
   }
-  let state = GameState(..state, last_roll: [a, b], last_roll_picked: picked)
+  let state = GameState(..state, last_roll: [a, b])
   start_moving(state, color, dice)
 }
 
@@ -805,7 +748,6 @@ fn turn_entry(
   record.Turn(
     player: player_id,
     dice: list.sort(state.last_roll, fn(a, b) { int.compare(b, a) }),
-    picked: state.last_roll_picked,
     moves: record.notation(
       color,
       list.map(moves, fn(s) {
@@ -920,8 +862,6 @@ fn next_game(state: GameState) -> GameState {
       board: board.initial(),
       game_number: state.game_number + 1,
       last_roll: [],
-      last_roll_picked: False,
-      picks_used: [],
       cube_value: 1,
       cube_owner: None,
       crawford: crawford,

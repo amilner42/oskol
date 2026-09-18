@@ -31,17 +31,16 @@ async function openCreateDialog(page, path = '/') {
 }
 
 /**
- * `/` -> CREATE GAME -> the dialog -> START GAME. `mode`, `clock` and
- * `twist` are option values (`match3`, `bg3`, `pick_dice`); anything left
- * out stays on the dialog's default. Resolves once the creator is in the
- * lobby with the link to share.
+ * `/` -> CREATE GAME -> the dialog -> START GAME. `mode` and `clock` are
+ * option values (`match3`, `bg3`); anything left out stays on the dialog's
+ * default. Resolves once the creator is in the lobby with the link to
+ * share.
  */
-async function createGame(page, { name = 'Alice', mode, clock, twist } = {}) {
+async function createGame(page, { name = 'Alice', mode, clock } = {}) {
   await openCreateDialog(page);
   await page.fill('#create-name', name);
   if (mode) await page.selectOption('#create-mode', mode);
   if (clock) await page.selectOption('#create-clock', clock);
-  if (twist) await page.selectOption('#create-setting-twist', twist);
   await page.click('#create-game');
   await page.waitForURL(SEAT);
   await page.waitForSelector('#share-link');

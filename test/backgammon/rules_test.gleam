@@ -81,6 +81,22 @@ fn position(
   )
 }
 
+/// Roll for White from this position until the dice land as wanted: the
+/// seed is hunted, so the roll goes through the engine's own path (the
+/// dance decided when the dice landed) with the position left exact.
+fn rolled_as(s: state.GameState, want: List(Int)) -> state.GameState {
+  hunt_roll(s, want, 1)
+}
+
+fn hunt_roll(s: state.GameState, want: List(Int), seed: Int) -> state.GameState {
+  let #(next, _) =
+    apply(state.GameState(..s, rng: rng.seed(seed)), "p1", engine.Roll)
+  case next.last_roll == want {
+    True -> next
+    False -> hunt_roll(s, want, seed + 1)
+  }
+}
+
 fn apply(
   s: state.GameState,
   id: String,
@@ -332,15 +348,8 @@ pub fn doubles_that_play_nothing_dance_too_test() {
       #(Black, Point(1), 3),
     ])
   let s = new_game(2, "single")
-  // Pick the double, so the position is exact rather than seed-hunted.
-  let s =
-    state.GameState(
-      ..s,
-      board: b,
-      phase: state.Rolling(White),
-      config: state.Config(..s.config, pick_dice: True),
-    )
-  let #(s, _) = apply(s, "p1", engine.Pick(1, 1))
+  let s = state.GameState(..s, board: b, phase: state.Rolling(White))
+  let s = rolled_as(s, [1, 1])
   assert state.no_moves(s)
   assert state.turn_dice(s) == [1, 1, 1, 1]
   assert state.dice_left(s) == [1, 1, 1, 1]

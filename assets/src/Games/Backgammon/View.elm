@@ -68,7 +68,6 @@ type alias Model =
     , plans : List ( String, List Move ) -- for the active drag: each destination and the moves that get there
     , swaps : Int -- taps on the dice this roll: odd means the two dice have changed places
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
-    , picker : Maybe (List Int) -- the pick-dice panel is open, with 0-2 values chosen
     , resigning : Bool -- the resign panel is open: which stakes to offer
     , themesOpen : Bool -- the board-colour list in the header is showing
     , roll : Roll -- the dice on the board, and whether this client saw them land
@@ -123,11 +122,6 @@ type Msg
     | DragReleased { x : Float, y : Float }
     | DragCancelled
     | GotDropZones (List Drag.Zone)
-    | OpenPicker
-    | PickFace Int
-    | UnpickAt Int
-    | CancelPick
-    | ConfirmPick
     | OpenResign
     | CancelResign
     | OfferResign String -- the stakes id from the resign schema's choice
@@ -154,7 +148,6 @@ init =
     , plans = []
     , swaps = 0
     , autoRolled = False
-    , picker = Nothing
     , resigning = False
     , themesOpen = False
 
@@ -169,7 +162,7 @@ init =
     }
 
 
-{-| Clear the interaction state (drag, pickers) without forgetting
+{-| Clear the interaction state (drag, panels) without forgetting
 which roll is on the board: `roll` keys the dice, and forgetting it would
 replay the tumble on every tap.
 -}
@@ -235,9 +228,9 @@ noteEvents events model =
 
 
 {-| Roll for the viewer when there is nothing to ask: at the start of a
-turn whose legal actions offer `roll` alone -- no `double` (Crawford, the
-opponent owns the cube) and no `pick` (the twist is off, or the pick is
-spent) -- the choice is no choice, so the client sends the roll itself.
+turn whose legal actions offer `roll` alone -- no `double` (Crawford, or
+the opponent owns the cube) -- the choice is no choice, so the client
+sends the roll itself.
 Main calls this once per arriving payload. The guard is an edge:
 `autoRolled` arms when the qualifying state first appears and clears
 only when rolling stops being the pending action, so one turn rolls once
@@ -246,7 +239,7 @@ failed send cannot loop because nothing retries until the state changes.
 -}
 autoRoll : List Schema -> Model -> ( Model, Maybe E.Value )
 autoRoll legal model =
-    if hasAction "roll" legal && not (hasAction "double" legal) && not (hasAction "pick" legal) then
+    if hasAction "roll" legal && not (hasAction "double" legal) then
         if model.autoRolled then
             ( model, Nothing )
 
@@ -314,29 +307,6 @@ update msg model =
         GotDropZones zones ->
             ( { model | drag = Drag.setZones zones model.drag }, NoOut )
 
-        OpenPicker ->
-            ( { model | picker = Just [] }, NoOut )
-
-        PickFace value ->
-            case model.picker of
-                Just chosen ->
-                    if List.length chosen < 2 then
-                        ( { model | picker = Just (chosen ++ [ value ]) }, NoOut )
-
-                    else
-                        ( model, NoOut )
-
-                Nothing ->
-                    ( model, NoOut )
-
-        UnpickAt index ->
-            case model.picker of
-                Just chosen ->
-                    ( { model | picker = Just (List.take index chosen ++ List.drop (index + 1) chosen) }, NoOut )
-
-                Nothing ->
-                    ( model, NoOut )
-
         ToggleThemes ->
             ( { model | themesOpen = not model.themesOpen }, NoOut )
 
@@ -344,19 +314,6 @@ update msg model =
             -- The board changes under this player and nobody else: the
             -- theme never enters an action, so nothing is sent to the room.
             ( { model | themesOpen = False }, ChoseTheme name )
-
-        CancelPick ->
-            ( { model | picker = Nothing }, NoOut )
-
-        ConfirmPick ->
-            case model.picker of
-                Just [ a, b ] ->
-                    ( reset model
-                    , Send (Protocol.encodeAction "pick" [ ( "die1", E.int a ), ( "die2", E.int b ) ])
-                    )
-
-                _ ->
-                    ( model, NoOut )
 
         OpenResign ->
             -- The offer is made on the live board: a past turn up on the
@@ -375,7 +332,7 @@ update msg model =
 
         ViewTurn index ->
             -- A past turn on the board: nothing else may be up over it.
-            ( { model | viewing = Just index, matchOpen = False, drag = Drag.idle, picker = Nothing, resigning = False }, NoOut )
+            ( { model | viewing = Just index, matchOpen = False, drag = Drag.idle, resigning = False }, NoOut )
 
         ViewLive ->
             ( { model | viewing = Nothing, stale = False }, NoOut )
@@ -1252,15 +1209,6 @@ viewPlayerBar ctx player isMe tray =
                 , span [ class "font-bold text-sm sm:text-base truncate" ] [ text p.name ]
                 , viewPresenceDot ctx p.id
                 , viewRating ctx p.id
-                , if Protocol.hasFlag "has_pick" p then
-                    span
-                        [ class "bar-tag pick pixel text-[7px] px-1 py-0.5 shrink-0 bg-has-pick"
-                        , title "Still holds the dice pick"
-                        ]
-                        [ text "PICK" ]
-
-                  else
-                    text ""
                 , span
                     [ classList [ ( "bar-turn pixel text-[8px] shrink-0", True ), ( "blink", active ), ( "invisible", not active ) ] ]
                     [ text "▶" ]
@@ -1533,12 +1481,6 @@ viewBoard board =
             , viewBarColumn board themId
             , viewHalf board topRight (viewRightBand board) bottomRight
             ]
-        , case ( board.ctx.model.picker, hasAction "pick" board.ctx.legal ) of
-            ( Just chosen, True ) ->
-                viewPicker chosen
-
-            _ ->
-                text ""
         , if board.ctx.model.resigning && hasAction "resign" board.ctx.legal then
             viewResignPanel board.ctx
 
@@ -2038,15 +1980,11 @@ viewRightBandInPlay board =
         statusText s =
             span [ class "pixel text-[8px] sm:text-[9px] px-1", style "color" "var(--pencil)" ] [ text s ]
 
-        -- ROLL appears only when it is a real choice -- against DOUBLE or
-        -- PICK DICE; with roll the sole option the client already rolled
-        -- by itself.
+        -- ROLL appears only when it is a real choice -- against DOUBLE;
+        -- with roll the sole option the client already rolled by itself.
         roll =
-            if hasAction "double" ctx.legal || hasAction "pick" ctx.legal then
-                List.filterMap identity
-                    [ actionButton ctx "roll" "sky"
-                    , pickButton ctx
-                    ]
+            if hasAction "double" ctx.legal then
+                List.filterMap identity [ actionButton ctx "roll" "sky" ]
 
             else
                 []
@@ -2229,8 +2167,8 @@ viewReadyUp ctx between =
                         [ status "NEXT GAME SOON" ]
 
 
-{-| The roll on the board: the mover's dice in the mover's colour, the tag
-the pick twist earns, and the word when the roll played nothing.
+{-| The roll on the board: the mover's dice in the mover's colour, and the
+word when the roll played nothing.
 
 Dice are on the board only while a roll is live: the moving phase, and a
 dance (`no_moves`), where the dice that played nothing stand until the
@@ -2248,21 +2186,6 @@ viewRoll board =
         dice =
             if List.member ctx.scene.phase [ "moving", "no_moves" ] then
                 Protocol.zoneTokens "dice" ctx.scene
-
-            else
-                []
-
-        pickedTag =
-            if List.any (\t -> Protocol.tokenProp D.bool "picked" t == Just True) dice then
-                [ span
-                    [ class "pixel text-[7px] px-1 py-0.5"
-                    , style "background" "var(--bg-accent)"
-                    , style "color" "#fff"
-                    , title "These dice were picked, not rolled"
-                    , Html.Attributes.id "dice-picked-tag"
-                    ]
-                    [ text "PICKED" ]
-                ]
 
             else
                 []
@@ -2306,7 +2229,7 @@ viewRoll board =
         swaps =
             hasChoice
     in
-    viewDice { color = moverColor ctx, next = next, swaps = swaps, swapped = ctx.model.swaps } ctx.model.roll dice ++ pickedTag ++ danced
+    viewDice { color = moverColor ctx, next = next, swaps = swaps, swapped = ctx.model.swaps } ctx.model.roll dice ++ danced
 
 
 {-| The dice of the turn, in the mover's colour. They are keyed by the roll that produced them, so
@@ -2415,85 +2338,7 @@ viewNoMoves myTurn moverName =
         ]
 
 
-{-| The twist's button: opens the dice picker. Legal exactly when `pick`
-is -- once per game, gone for good after use.
--}
-pickButton : Ctx -> Maybe (Html Msg)
-pickButton ctx =
-    if hasAction "pick" ctx.legal then
-        Just
-            (button
-                [ class "btn-arcade pixel text-[9px] px-2 py-3 sm:px-4 text-center leading-relaxed plain"
-                , Html.Attributes.id "pick-dice-open"
-                , onClick OpenPicker
-                ]
-                [ text "PICK DICE" ]
-            )
-
-    else
-        Nothing
-
-
-{-| The pick-dice panel, floated over the board's centre so opening it
-never reflows the one-screen layout: six faces to tap (twice for
-doubles), the two chosen dice (tap one to take it back), confirm and
-cancel.
--}
-viewPicker : List Int -> Html Msg
-viewPicker chosen =
-    let
-        slot index =
-            case List.drop index chosen |> List.head of
-                Just value ->
-                    button
-                        [ class "die mini"
-                        , title "Tap to take this die back"
-                        , onClick (UnpickAt index)
-                        ]
-                        [ miniFace value ]
-
-                Nothing ->
-                    div [ class "die mini empty" ] []
-    in
-    div [ class "absolute inset-x-0 top-1/2 -translate-y-1/2 z-20 flex justify-center pointer-events-none" ]
-        [ div [ class "pix bg-white p-2 sm:p-3 flex flex-col items-center gap-2 pointer-events-auto", Html.Attributes.id "pick-dice-panel" ]
-            [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text "PICK YOUR DICE" ]
-            , div [ class "flex gap-1 sm:gap-1.5" ]
-                (List.range 1 6
-                    |> List.map
-                        (\value ->
-                            button
-                                [ class "die mini"
-                                , classList [ ( "spent", List.length chosen >= 2 ) ]
-                                , Html.Attributes.id ("pick-face-" ++ String.fromInt value)
-                                , disabled (List.length chosen >= 2)
-                                , onClick (PickFace value)
-                                ]
-                                [ miniFace value ]
-                        )
-                )
-            , div [ class "flex items-center gap-1.5 sm:gap-2" ]
-                [ slot 0
-                , slot 1
-                , button
-                    [ class "btn-arcade pixel text-[9px] px-3 py-2 sky"
-                    , Html.Attributes.id "pick-confirm"
-                    , disabled (List.length chosen /= 2)
-                    , onClick ConfirmPick
-                    ]
-                    [ text "PICK" ]
-                , button
-                    [ class "btn-arcade pixel text-[9px] px-3 py-2 plain"
-                    , Html.Attributes.id "pick-cancel"
-                    , onClick CancelPick
-                    ]
-                    [ text "X" ]
-                ]
-            ]
-        ]
-
-
-{-| The resign panel, floated over the board's centre like the dice picker:
+{-| The resign panel, floated over the board's centre:
 one button per stakes the engine offers (the `resign` schema's `stakes`
 choice -- three, or a single alone under Jacoby with a centred cube), each
 naming what it hands the opponent with the cube as it stands, and cancel.
@@ -2567,25 +2412,6 @@ viewResignPanel ctx =
                 [ text "KEEP PLAYING" ]
             ]
         ]
-
-
-{-| A die face at picker scale.
--}
-miniFace : Int -> Html Msg
-miniFace value =
-    div [ class "grid grid-cols-3 grid-rows-3 w-4 h-4" ]
-        (List.range 0 8
-            |> List.map
-                (\i ->
-                    div [ class "flex items-center justify-center" ]
-                        [ div
-                            [ classList [ ( "w-1 h-1 rounded-full", True ), ( "invisible", not (List.member i (pipsOn value)) ) ]
-                            , style "background" "var(--ink)"
-                            ]
-                            []
-                        ]
-                )
-        )
 
 
 {-| A die in the mover's colour (`white` or `black`, the checkers'
@@ -2874,7 +2700,7 @@ type Entry
 
 
 type alias Turn =
-    { player : String, dice : List Int, picked : Bool, moves : List String, position : Snapshot, landed : List Int }
+    { player : String, dice : List Int, moves : List String, position : Snapshot, landed : List Int }
 
 
 {-| The board a turn left, as the engine counted it: per colour, how many
@@ -2933,10 +2759,9 @@ entryDecoder =
             (\kind ->
                 case kind of
                     "turn" ->
-                        D.map6 (\p d k m pos l -> Just (TurnEntry (Turn p d k m pos l)))
+                        D.map5 (\p d m pos l -> Just (TurnEntry (Turn p d m pos l)))
                             (D.field "player" D.string)
                             (D.field "dice" (D.list D.int))
-                            (D.field "picked" D.bool)
                             (D.field "moves" (D.list D.string))
                             (D.field "position" snapshotDecoder)
                             -- where each checker that moved ended up; absent
@@ -3091,15 +2916,14 @@ lastTurnIn entries =
 
 
 {-| The model the board is drawn with while a past turn is up: no drag,
-no picker, no selection, and dice keyed to the turn (a negative sequence
-no live roll can have) that never tumble.
+no selection, and dice keyed to the turn (a negative sequence no live
+roll can have) that never tumble.
 -}
 viewingModel : Int -> Model -> Model
 viewingModel index model =
     { model
         | drag = Drag.idle
         , plans = []
-        , picker = Nothing
         , swaps = 0
         , roll = { seq = -1 - index, watched = False }
     }
@@ -3115,7 +2939,7 @@ a cube, and the data that describes the match; the position, the mover
 and their roll come from `turn`. Everything the live moment says (whose
 turn it is to act, a double on offer, a winner) goes.
 -}
-stillScene : Scene -> { a | player : String, dice : List Int, picked : Bool, position : Snapshot } -> Scene
+stillScene : Scene -> { a | player : String, dice : List Int, position : Snapshot } -> Scene
 stillScene scene turn =
     let
         sideOf player =
@@ -3194,7 +3018,7 @@ stillScene scene turn =
                             , kind = "die"
                             , faceUp = True
                             , position = Nothing
-                            , props = E.object [ ( "value", E.int v ), ( "used", E.bool False ), ( "picked", E.bool turn.picked ) ]
+                            , props = E.object [ ( "value", E.int v ), ( "used", E.bool False ) ]
                             }
                         )
             , count = List.length turn.dice
@@ -3300,7 +3124,6 @@ type alias StillBoard =
     , position : Snapshot
     , mover : Maybe String
     , dice : List Int
-    , picked : Bool
     , landed : List Int
     , offer : Maybe String
     }
@@ -3337,7 +3160,7 @@ viewStill noop s =
             }
 
         drawn =
-            stillScene base { player = Maybe.withDefault "" s.mover, dice = s.dice, picked = s.picked, position = s.position }
+            stillScene base { player = Maybe.withDefault "" s.mover, dice = s.dice, position = s.position }
 
         -- a double on offer parks the cube in the middle at twice its value
         scene =

@@ -192,7 +192,6 @@ pub fn the_position_is_the_board_the_turn_began_on_test() {
 /// legal schemas by name preference; `chooser` fills in params.
 fn drive(
   format: String,
-  selections: List(#(String, String)),
   seed: Int,
   control: Control,
   max_steps: Int,
@@ -201,19 +200,10 @@ fn drive(
 ) -> #(replay.Log, state.GameState) {
   let seats = positions.seats()
   let assert Ok(running) =
-    instance.begin(
-      backgammon.game(),
-      format,
-      selections,
-      seats,
-      seed,
-      control,
-      0,
-    )
+    instance.begin(backgammon.game(), format, seats, seed, control, 0)
   let log =
     replay.Log(
       format_id: format,
-      selections: selections,
       seats: seats,
       seed: seed,
       control: control,
@@ -276,7 +266,7 @@ const eager = ["double", "take", "play", "move", "roll"]
 
 pub fn the_opening_turn_is_the_first_mover_on_the_opening_roll_test() {
   let #(log, _) =
-    drive("match5", [], 11, clock.NoClock, 400, prefer(["play", "move"]))
+    drive("match5", 11, clock.NoClock, 400, prefer(["play", "move"]))
   let assert Ok([first, ..]) = analysis.games(log)
   assert first.number == 1
   let assert [turn, ..] = first.turns
@@ -287,14 +277,13 @@ pub fn the_opening_turn_is_the_first_mover_on_the_opening_roll_test() {
   let assert Some(#(a, b)) = turn.dice
   assert a != b
   assert option.is_some(turn.played)
-  assert turn.picked == False
 }
 
 pub fn doubles_and_takes_carry_the_cube_from_the_movers_side_test() {
   // Everyone doubles at every chance and takes every double, in a match
   // to 5: 1 -> 2 -> 4 are live cubes, and the double to 16 on an 8-cube
   // is dead (the doubler needed 5), so the engine never sees it offered.
-  let #(log, _) = drive("match5", [], 11, clock.NoClock, 400, prefer(eager))
+  let #(log, _) = drive("match5", 11, clock.NoClock, 400, prefer(eager))
   let assert Ok([g, ..]) = analysis.games(log)
   let assert [t0, t1, t2, t3, t4, ..] = g.turns
   assert t0.double == None
@@ -316,7 +305,6 @@ pub fn a_passed_double_ends_the_game_with_no_dice_test() {
   let #(log, _) =
     drive(
       "match5",
-      [],
       11,
       clock.NoClock,
       400,
@@ -342,7 +330,6 @@ pub fn a_match_game_is_over_the_moment_it_is_won_test() {
   let #(log, final) =
     drive(
       "match5",
-      [],
       11,
       clock.NoClock,
       400,
@@ -358,7 +345,6 @@ pub fn a_match_game_is_over_the_moment_it_is_won_test() {
   let #(log, _) =
     drive(
       "match5",
-      [],
       11,
       clock.NoClock,
       400,
@@ -383,14 +369,7 @@ pub fn a_resignation_keeps_only_complete_turns_test() {
   // The opening mover resigns with the dice still unplayed: that turn was
   // never played, so there is nothing of it to grade.
   let #(log, _) =
-    drive(
-      "single",
-      [],
-      11,
-      clock.NoClock,
-      10,
-      prefer(["resign", "accept_resign"]),
-    )
+    drive("single", 11, clock.NoClock, 10, prefer(["resign", "accept_resign"]))
   let assert Ok([g]) = analysis.games(log)
   assert g.finished
   assert g.turns == []
@@ -398,7 +377,7 @@ pub fn a_resignation_keeps_only_complete_turns_test() {
 
 pub fn a_game_still_being_played_is_listed_unfinished_test() {
   let #(log, _) =
-    drive("single", [], 11, clock.NoClock, 12, prefer(["play", "move", "roll"]))
+    drive("single", 11, clock.NoClock, 12, prefer(["play", "move", "roll"]))
   let assert Ok([g]) = analysis.games(log)
   assert !g.finished
   assert g.turns != []
@@ -410,7 +389,7 @@ pub fn a_clock_that_ran_out_ends_the_game_where_it_stood_test() {
   // is dropped, exactly as the room applied it.
   let control = clock.Fischer(60_000, 0)
   let #(log, _) =
-    drive("single", [], 11, control, 400, fn(s, choices, chooser) {
+    drive("single", 11, control, 400, fn(s, choices, chooser) {
       case s.phase {
         state.Moving(_, _) -> prefer(["play", "move"])(s, choices, chooser)
         _ -> None
@@ -454,29 +433,9 @@ fn to_act(log: replay.Log) -> Option(String) {
   state.to_act(instance.running_state(running))
 }
 
-pub fn picked_dice_are_marked_test() {
-  let #(log, _) =
-    drive(
-      "single",
-      [#("twist", "pick_dice")],
-      11,
-      clock.NoClock,
-      400,
-      prefer(["pick", "play", "move", "roll"]),
-    )
-  let assert Ok([g, ..]) = analysis.games(log)
-  let assert [opening_turn, second, third, fourth, ..] = g.turns
-  // The opening roll is rolled; each player's first turn after it is
-  // picked, and after that the pick is spent.
-  assert !opening_turn.picked
-  assert second.picked
-  assert third.picked
-  assert !fourth.picked
-}
-
 pub fn a_log_the_game_rejects_fails_the_replay_test() {
   let #(log, _) =
-    drive("single", [], 11, clock.NoClock, 3, prefer(["play", "move"]))
+    drive("single", 11, clock.NoClock, 3, prefer(["play", "move"]))
   let bogus = raw("{\"name\":\"take\",\"params\":{}}")
   let log =
     replay.Log(
@@ -487,7 +446,7 @@ pub fn a_log_the_game_rejects_fails_the_replay_test() {
 }
 
 pub fn the_request_is_the_engines_shape_test() {
-  let #(log, _) = drive("match5", [], 11, clock.NoClock, 400, prefer(eager))
+  let #(log, _) = drive("match5", 11, clock.NoClock, 400, prefer(eager))
   let assert Ok([g, ..]) = analysis.games(log)
   let text = json.to_string(analysis.request_json(g))
   assert string.starts_with(text, "{\"jacoby\":false,")
@@ -501,24 +460,17 @@ pub fn the_request_is_the_engines_shape_test() {
 
 // ---------- The property: every played board is legal for its dice ----------
 
-fn random_games(format: String, selections, seeds: List(Int), excluded) {
+fn random_games(format: String, seeds: List(Int), excluded) {
   list.each(seeds, fn(seed) {
     let #(log, final) =
-      drive(
-        format,
-        selections,
-        seed,
-        clock.NoClock,
-        3000,
-        random_except(excluded),
-      )
+      drive(format, seed, clock.NoClock, 3000, random_except(excluded))
     let assert Ok(games) = analysis.games(log)
     check_games(games, final)
   })
 }
 
 pub fn every_played_board_is_legal_in_single_games_test() {
-  random_games("single", [], [1, 2, 3, 4], ["resign"])
+  random_games("single", [1, 2, 3, 4], ["resign"])
 }
 
 pub fn a_dance_is_sent_as_the_board_it_began_on_test() {
@@ -527,14 +479,7 @@ pub fn a_dance_is_sent_as_the_board_it_began_on_test() {
   let dances =
     list.flat_map([1, 2, 3, 4], fn(seed) {
       let #(log, _) =
-        drive(
-          "single",
-          [],
-          seed,
-          clock.NoClock,
-          3000,
-          random_except(["resign"]),
-        )
+        drive("single", seed, clock.NoClock, 3000, random_except(["resign"]))
       let assert Ok(games) = analysis.games(log)
       list.flat_map(games, fn(g) { list.filter(g.turns, analysis.danced) })
     })
@@ -547,26 +492,22 @@ pub fn a_dance_is_sent_as_the_board_it_began_on_test() {
 }
 
 pub fn every_played_board_is_legal_in_a_match_to_3_test() {
-  random_games("match3", [], [1, 2], ["resign"])
+  random_games("match3", [1, 2], ["resign"])
 }
 
 pub fn every_played_board_is_legal_in_a_match_to_5_test() {
-  random_games("match5", [], [3], ["resign"])
+  random_games("match5", [3], ["resign"])
 }
 
 pub fn every_played_board_is_legal_in_unlimited_play_test() {
   // 3000 steps of unlimited play is several games, each its own list
-  random_games("unlimited", [], [1], ["resign"])
-}
-
-pub fn every_played_board_is_legal_with_picked_dice_test() {
-  random_games("single", [#("twist", "pick_dice")], [5, 6, 7], ["resign"])
+  random_games("unlimited", [1], ["resign"])
 }
 
 pub fn resignations_in_random_play_keep_the_turns_legal_test() {
   // Resigning is legal at every step, so these games end early, often in
   // the middle of a turn
-  random_games("match5", [], list.range(1, 20), [])
+  random_games("match5", list.range(1, 20), [])
 }
 
 fn check_games(games: List(analysis.GameTurns), final: state.GameState) {
@@ -638,7 +579,7 @@ pub fn a_turn_names_its_lines_of_the_record_test() {
   // Doubles and takes from the second turn on: the first turn is the
   // record's first line, and the next turn's double, take and roll are the
   // three lines after it.
-  let #(log, final) = drive("match5", [], 11, clock.NoClock, 400, prefer(eager))
+  let #(log, final) = drive("match5", 11, clock.NoClock, 400, prefer(eager))
   let assert Ok([g, ..]) = analysis.games(log)
   let assert [t0, t1, ..] = g.turns
   assert #(t0.entry, t0.double_entry, t0.answer_entry) == #(Some(0), None, None)
@@ -656,7 +597,6 @@ pub fn a_passed_double_names_the_double_and_the_drop_test() {
   let #(log, final) =
     drive(
       "match5",
-      [],
       11,
       clock.NoClock,
       400,
@@ -683,7 +623,6 @@ pub fn a_match_tells_the_engine_the_score_and_crawford_test() {
   let #(log, final) =
     drive(
       "match7",
-      [],
       11,
       clock.NoClock,
       2000,
@@ -758,7 +697,6 @@ pub fn unlimited_play_is_a_money_game_with_jacoby_test() {
   let #(log, _) =
     drive(
       "unlimited",
-      [],
       11,
       clock.NoClock,
       1500,
@@ -780,14 +718,7 @@ pub fn unlimited_play_is_a_money_game_with_jacoby_test() {
   })
   // A single game is neither: one point each, and no Jacoby to apply
   let #(single, _) =
-    drive(
-      "single",
-      [],
-      11,
-      clock.NoClock,
-      400,
-      prefer(["play", "move", "roll"]),
-    )
+    drive("single", 11, clock.NoClock, 400, prefer(["play", "move", "roll"]))
   let assert Ok([g, ..]) = analysis.games(single)
   assert !g.jacoby
   let assert [turn, ..] = g.turns

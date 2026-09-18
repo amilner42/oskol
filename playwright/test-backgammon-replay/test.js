@@ -85,7 +85,7 @@ function reviewOf(record, game) {
       };
       turns.push({
         number: turns.length + 1, log_index: 0, entry: i, double_entry: null, answer_entry: null,
-        seat: seat(e.player), player_id: e.player, color: color(e.player), dice: e.dice, picked: false, double: null,
+        seat: seat(e.player), player_id: e.player, color: color(e.player), dice: e.dice, double: null,
         move: e.moves.length === 0 ? { danced: true } : {
           danced: false, grade, equity_lost: lost, forced: false, n_legal: 9,
           played, best, top: grade === 'best' ? [best] : [best, played],
@@ -99,7 +99,7 @@ function reviewOf(record, game) {
       turns.push({
         number: turns.length + 1, log_index: 0, entry: null, double_entry: i,
         answer_entry: answer && (answer.kind === 'take' || passed) ? i + 1 : null,
-        seat: seat(e.player), player_id: e.player, color: color(e.player), dice: null, picked: false,
+        seat: seat(e.player), player_id: e.player, color: color(e.player), dice: null,
         double: passed ? 'pass' : 'take', move: null, luck: null,
         cube: {
           action: 'double', response: passed ? 'pass' : 'take', optimal: 'No Double',

@@ -125,7 +125,6 @@ fn head_fields(setup: Setup) -> Result(List(#(String, json.Json)), Nil) {
     host.start(
       setup.slug,
       setup.format,
-      setup.selections,
       list.map(setup.seats, fn(s) { #(s.0, s.1) }),
       setup.seed,
       host.clock_control(setup.clock),

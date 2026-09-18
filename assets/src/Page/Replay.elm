@@ -1041,7 +1041,6 @@ viewReplay model record game =
                 , position = shown.position
                 , mover = shown.mover
                 , dice = shown.dice
-                , picked = shown.picked
                 , landed = shown.landed
                 , offer = shown.offer |> Maybe.map .from
                 }

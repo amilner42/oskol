@@ -149,10 +149,9 @@ entryDecoder =
             (\kind ->
                 case kind of
                     "turn" ->
-                        D.map6 (\p d k m pos l -> Just (TurnEntry (View.Turn p d k m pos l)))
+                        D.map5 (\p d m pos l -> Just (TurnEntry (View.Turn p d m pos l)))
                             player
                             (D.field "dice" (D.list D.int))
-                            (D.field "picked" D.bool)
                             (D.field "moves" (D.list D.string))
                             (D.field "position" View.snapshotDecoder)
                             (D.oneOf [ D.field "landed" (D.list D.int), D.succeed [] ])
@@ -235,7 +234,6 @@ type alias Still =
     { position : Snapshot
     , mover : Maybe String
     , dice : List Int
-    , picked : Bool
     , landed : List Int
     , offer : Maybe { from : String, value : Int }
     }
@@ -264,14 +262,14 @@ stillAt record game step =
                 |> Maybe.withDefault record.start
 
         plain =
-            { position = position, mover = Nothing, dice = [], picked = False, landed = [], offer = Nothing }
+            { position = position, mover = Nothing, dice = [], landed = [], offer = Nothing }
 
         cube =
             position.cube
     in
     case entryAt game step of
         Just (TurnEntry t) ->
-            { plain | mover = Just t.player, dice = t.dice, picked = t.picked, landed = t.landed }
+            { plain | mover = Just t.player, dice = t.dice, landed = t.landed }
 
         Just (DoubleEntry d) ->
             { plain | offer = Just { from = d.player, value = d.value } }

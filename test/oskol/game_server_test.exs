@@ -22,20 +22,17 @@ defmodule Oskol.Game.GameServerTest do
       assert {:error, :unknown_format} = Game.configure(game_id, %{format: "marathon"})
       assert {:error, :unknown_clock} = Game.configure(game_id, %{clock: "hourglass"})
 
-      assert {:error, :unknown_setting} =
-               Game.configure(game_id, %{selections: %{"stake" => "x"}})
-
       assert {:ok, state} = Game.configure(game_id, %{"format" => "match3", "clock" => "bg5"})
       assert state.setup.format == "match3"
       assert state.setup.clock == "bg5"
       assert Oskol.Game.GameServerState.summary(state) == "Match to 3 · 5 min clock"
 
-      # The twist flows through configure and earns a summary slot only when on
+      # Every stored config row still carries a `selections` key; the setup
+      # has no slot for it any more and must not trip over it.
       assert {:ok, state} =
-               Game.configure(game_id, %{selections: %{"twist" => "pick_dice"}})
+               Game.configure(game_id, %{"selections" => %{"twist" => "pick_dice"}})
 
-      assert Oskol.Game.GameServerState.summary(state) ==
-               "Match to 3 · Pick your dice, once a game · 5 min clock"
+      assert Oskol.Game.GameServerState.summary(state) == "Match to 3 · 5 min clock"
     end
 
     test "the game starts the moment the table is full" do

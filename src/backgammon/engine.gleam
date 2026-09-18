@@ -12,8 +12,6 @@ import gleam/result
 
 pub type Action {
   Roll
-  /// The "Pick dice" twist: take the turn with chosen dice, once per game.
-  Pick(a: Int, b: Int)
   /// Stage a move on your own board.
   MoveChecker(from: Loc, to: Loc)
   /// Take back the last staged move.
@@ -129,11 +127,7 @@ pub fn apply(
     }
     Roll -> {
       use #(next, dice) <- result.try(state.roll(state, player_id))
-      Ok(#(next, dice_events(next, player_id, dice, False)))
-    }
-    Pick(a, b) -> {
-      use #(next, dice) <- result.try(state.pick(state, player_id, a, b))
-      Ok(#(next, dice_events(next, player_id, dice, True)))
+      Ok(#(next, dice_events(next, player_id, dice)))
     }
     MoveChecker(from, to) -> {
       use #(next, _staged) <- result.try(state.stage(state, player_id, from, to))
@@ -230,21 +224,18 @@ pub fn apply(
   }
 }
 
-/// Events for a turn's dice, rolled or picked: everyone sees which, so a
-/// picked roll is fully transparent to the opponent. A roll that can play
+/// Events for a turn's dice: everyone sees the roll. A roll that can play
 /// nothing announces itself here and the turn stays put: the mover still
 /// owns it until they commit the empty turn with `play`.
 fn dice_events(
   next: GameState,
   player_id: String,
   dice: List(Int),
-  picked: Bool,
 ) -> List(Event) {
   let rolled =
     custom("dice_rolled", [
       #("player_id", json.string(player_id)),
       #("dice", json.array(dice, json.int)),
-      #("picked", json.bool(picked)),
     ])
   case state.no_moves(next) {
     True -> [
@@ -358,16 +349,7 @@ fn legal_in_play(state: GameState, player_id: String) -> List(Schema) {
         ]
         False -> []
       }
-      let pick = case state.can_pick(state, player_id) {
-        True -> [
-          action.Schema("pick", "Pick dice", [
-            action.number("die1", 1, 6),
-            action.number("die2", 1, 6),
-          ]),
-        ]
-        False -> []
-      }
-      list.flatten([[action.simple("roll", "Roll")], double, pick])
+      list.flatten([[action.simple("roll", "Roll")], double])
     }
     _, True -> [
       action.simple(

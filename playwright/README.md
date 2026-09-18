@@ -28,7 +28,7 @@ are for eyeballing; look at `playwright/screenshots/`.
 
 Create `playwright/test-<name>/test.js`. Get into a game through
 `playwright/lib/flows.js` rather than clicking through the pages yourself:
-`createGame(page, {name, mode, clock, twist})` goes to `/`, presses CREATE
+`createGame(page, {name, mode, clock})` goes to `/`, presses CREATE
 GAME, fills the dialog by id and resolves with `{gameId, url, inviteUrl}`
 (`openCreateDialog(page)` stops at the open dialog, for a smoke that wants
 to look at it);

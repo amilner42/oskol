@@ -182,7 +182,6 @@ pub fn nothing_but_ready_is_legal_between_games_test() {
   let not_started = Error("The next game has not started")
   list.each(["p1", "p2"], fn(id) {
     assert engine.apply(s, id, engine.Roll) == not_started
-    assert engine.apply(s, id, engine.Pick(6, 6)) == not_started
     assert engine.apply(s, id, engine.Double) == not_started
     assert engine.apply(s, id, engine.MoveChecker(Point(6), Point(5)))
       == not_started
@@ -236,7 +235,7 @@ pub fn both_ready_start_the_next_game_test() {
     assert s.last_roll == [a, b] || s.last_roll == [b, a]
     assert s.board == board.initial() && s.turn_board == board.initial()
     assert s.cube_value == 1 && s.cube_owner == None
-    assert s.staged == [] && s.picks_used == []
+    assert s.staged == []
   })
 }
 
@@ -392,7 +391,6 @@ pub fn nobody_is_on_the_clock_between_games_test() {
     instance.start(
       backgammon.game(),
       "match5",
-      [],
       seats(),
       40,
       clock.Fischer(60_000, 5000),

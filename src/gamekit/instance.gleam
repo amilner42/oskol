@@ -16,7 +16,6 @@ import gamekit/event.{type Event}
 import gamekit/game.{type Game, type Outcome, type Seat}
 import gamekit/rng
 import gamekit/scene.{type PlayerId, type Scene, type Viewer}
-import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/json
 import gleam/list
@@ -57,12 +56,11 @@ pub opaque type Instance {
 
 // ---------- Typed ----------
 
-/// Start a game from a format id, the creator's setting selections, the
-/// seated players, a seed, a time control and the current time.
+/// Start a game from a format id, the seated players, a seed, a time
+/// control and the current time.
 pub fn begin(
   definition: Game(state, action),
   format_id: String,
-  selections: List(#(String, String)),
   seats: List(Seat),
   seed: Int,
   control: Control,
@@ -72,7 +70,7 @@ pub fn begin(
     game.find_format(definition.info, format_id)
     |> result.replace_error("Unknown format: " <> format_id),
   )
-  use config <- result.try(game.configure(format, dict.from_list(selections)))
+  let config = game.default_config(format)
   let seat_count = list.length(seats)
   use <- require(
     seat_count >= definition.info.min_players
@@ -323,13 +321,12 @@ fn running_for(definition: Game(state, action), state: state) -> List(PlayerId) 
 pub fn start(
   definition: Game(state, action),
   format_id: String,
-  selections: List(#(String, String)),
   seats: List(Seat),
   seed: Int,
   control: Control,
   now: Int,
 ) -> Result(Instance, String) {
-  begin(definition, format_id, selections, seats, seed, control, now)
+  begin(definition, format_id, seats, seed, control, now)
   |> result.map(erase)
 }
 

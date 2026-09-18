@@ -554,7 +554,6 @@ fn replayed(
   use entries <- result.try(list.try_map(log.entries, entry_of))
   analysis.games_with_record(replay.Log(
     format_id: log.format,
-    selections: log.selections,
     seats: list.map(log.seats, fn(s) { Seat(id: s.0, name: s.1) }),
     seed: log.seed,
     control: host.clock_control(log.clock),

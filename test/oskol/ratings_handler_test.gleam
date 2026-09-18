@@ -25,7 +25,6 @@ fn started() -> Instance {
   let assert Ok(game) =
     entry.start(
       "match5",
-      [],
       [Seat("p1", "Alice"), Seat("p2", "Bob")],
       7,
       clock.NoClock,
@@ -93,7 +92,6 @@ fn room_with(slug: String, stored: List(Stored)) -> Ctx {
           GameLog(
             slug: "backgammon",
             format: "match5",
-            selections: [],
             clock: "none",
             seed: 7,
             seats: [#("p1", "Alice"), #("p2", "Bob")],

@@ -1,6 +1,5 @@
 module Api.Catalog exposing
-    ( Choice
-    , ClockPreset
+    ( ClockPreset
     , Copy
     , Created
     , Format
@@ -15,7 +14,6 @@ module Api.Catalog exposing
     , Room
     , RoomSeat
     , RoomState(..)
-    , Setting
     , claimSeat
     , clockPresetDecoder
     , clocksInGameOrder
@@ -41,7 +39,6 @@ module Api.Catalog exposing
     , ratingsDecoder
     , roomDecoder
     , savePref
-    , settingChoice
     , CodeMatch
     , codeDecoder
     , summarise
@@ -72,25 +69,10 @@ import Url
 -- TYPES
 
 
-type alias Choice =
-    { id : String
-    , name : String
-    }
-
-
-type alias Setting =
-    { id : String
-    , name : String
-    , default : String
-    , choices : List Choice
-    }
-
-
 type alias Format =
     { id : String
     , name : String
     , description : String
-    , settings : List Setting
     }
 
 
@@ -138,14 +120,12 @@ type alias GamePage =
     }
 
 
-{-| What the creator picked. `format` and `name` are the contract; the
-settings a format offers and the clock go with them, because a room cannot
-be configured without them.
+{-| What the creator picked: the mode, their name and the clock — all a
+room is configured with.
 -}
 type alias NewGame =
     { format : String
     , name : String
-    , selections : List ( String, String )
     , clock : String
     }
 
@@ -387,9 +367,6 @@ encodeNewGame newGame =
         [ ( "format", E.string newGame.format )
         , ( "name", E.string newGame.name )
         , ( "clock", E.string newGame.clock )
-        , ( "selections"
-          , E.object (List.map (Tuple.mapSecond E.string) newGame.selections)
-          )
         ]
 
 
@@ -442,27 +419,10 @@ gameDecoder =
 
 formatDecoder : Decoder Format
 formatDecoder =
-    D.map4 Format
+    D.map3 Format
         (D.field "id" D.string)
         (optionalString "name" "")
         (optionalString "description" "")
-        (optionalList "settings" settingDecoder)
-
-
-settingDecoder : Decoder Setting
-settingDecoder =
-    D.map4 Setting
-        (D.field "id" D.string)
-        (optionalString "name" "")
-        (optionalString "default" "")
-        (optionalList "choices" choiceDecoder)
-
-
-choiceDecoder : Decoder Choice
-choiceDecoder =
-    D.map2 Choice
-        (D.field "id" D.string)
-        (optionalString "name" "")
 
 
 clockPresetDecoder : Decoder ClockPreset
@@ -692,42 +652,12 @@ optionalList field decoder =
 -- QUERIES
 
 
-{-| The choice a setting is showing: what the creator picked, or its default.
+{-| One line describing a setup: mode and clock — the same sentence
+`GameServerState.summary/1` builds for the server's own pages.
 -}
-settingChoice : List ( String, String ) -> Setting -> String
-settingChoice selections setting =
-    selections
-        |> List.filter (\( id, _ ) -> id == setting.id)
-        |> List.head
-        |> Maybe.map Tuple.second
-        |> Maybe.withDefault setting.default
-
-
-{-| One line describing a setup: format, chosen settings, clock — the same
-sentence `GameServerState.summary/1` builds for the server's own pages. A
-setting left "off" (a twist not taken) says nothing worth a slot.
--}
-summarise : Format -> List ( String, String ) -> List ClockPreset -> String -> String
-summarise format selections presets clockId =
+summarise : Format -> List ClockPreset -> String -> String
+summarise format presets clockId =
     let
-        choices =
-            format.settings
-                |> List.filterMap
-                    (\setting ->
-                        let
-                            chosen =
-                                settingChoice selections setting
-                        in
-                        if chosen == "off" then
-                            Nothing
-
-                        else
-                            setting.choices
-                                |> List.filter (\c -> c.id == chosen)
-                                |> List.head
-                                |> Maybe.map .name
-                    )
-
         clock =
             if clockId == "none" then
                 []
@@ -739,4 +669,4 @@ summarise format selections presets clockId =
                     |> Maybe.map (\p -> [ p.name ++ " clock" ])
                     |> Maybe.withDefault []
     in
-    String.join " · " ((format.name :: choices) ++ clock)
+    String.join " · " (format.name :: clock)

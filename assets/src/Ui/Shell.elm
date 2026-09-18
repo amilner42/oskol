@@ -49,7 +49,7 @@ view config content =
                     content
                , Html.footer
                     [ class "q-note text-xs sm:text-sm text-center pb-6 px-4" ]
-                    [ Html.text "Free · No accounts · By the book, until you flip a twist" ]
+                    [ Html.text "Free · No accounts · Play a friend from a link, then learn from the game" ]
                ]
         )
 

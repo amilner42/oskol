@@ -156,7 +156,7 @@ createDialog =
                         , Query.find [ id "create-modal" ]
                             >> Query.has [ attribute (Html.Attributes.attribute "role" "dialog"), text "CREATE GAME" ]
                         ]
-        , test "it holds the name, the mode, the clock, the twist and START GAME" <|
+        , test "it holds the name, the mode, the clock and START GAME" <|
             \_ ->
                 home opened
                     |> Query.find [ id "create-modal" ]
@@ -164,7 +164,6 @@ createDialog =
                         [ Query.has [ id "create-name", text "YOUR NAME" ]
                         , Query.has [ id "create-mode", text "MODE" ]
                         , Query.has [ id "create-clock", text "CLOCK" ]
-                        , Query.has [ id "create-setting-twist", text "TWIST" ]
                         , Query.has [ id "create-summary" ]
                         , Query.find [ id "create-game" ] >> Query.has [ text "START GAME" ]
                         , Query.has [ id "close-create" ]
@@ -197,16 +196,6 @@ createDialog =
                 home opened
                     |> Query.find [ id "create-clock" ]
                     |> Query.hasNot [ text "Blitz" ]
-        , test "the twist dropdown starts on its default" <|
-            \_ ->
-                home opened
-                    |> Query.find [ id "create-setting-twist" ]
-                    |> Query.findAll [ tag "option" ]
-                    |> Expect.all
-                        [ Query.count (Expect.equal 2)
-                        , Query.index 0 >> Query.has [ text "Off", selected True ]
-                        , Query.index 1 >> Query.has [ text "Pick your dice, once a game", selected False ]
-                        ]
         , test "the summary says what the dropdowns add up to" <|
             \_ ->
                 home opened
@@ -271,13 +260,6 @@ picking =
                         , Query.find [ id "create-summary" ]
                             >> Query.has [ text "Match to 5: cube and Crawford rule. No clock." ]
                         ]
-        , test "picking a mode drops the last mode's settings" <|
-            \_ ->
-                opened
-                    |> send (GameLanding.PickedSetting "twist" "pick_dice")
-                    |> send (GameLanding.PickedFormat "match3")
-                    |> .selections
-                    |> Expect.equal []
         , test "the clock dropdown sends the clock picked" <|
             \_ ->
                 home opened
@@ -294,18 +276,11 @@ picking =
                         , Query.find [ id "create-summary" ]
                             >> Query.has [ text "Single game: one game, no cube. 3 min each, 12 s delay every move." ]
                         ]
-        , test "the twist dropdown sends the choice picked" <|
+        , test "the dialog offers a mode and a clock, and nothing else" <|
             \_ ->
                 home opened
-                    |> Query.find [ id "create-setting-twist" ]
-                    |> Event.simulate (Event.input "pick_dice")
-                    |> Event.expect (GameLanding.PickedSetting "twist" "pick_dice")
-        , test "a twist picked is selected" <|
-            \_ ->
-                home (send (GameLanding.PickedSetting "twist" "pick_dice") opened)
-                    |> Query.find [ id "create-setting-twist" ]
-                    |> Query.find [ value "pick_dice" ]
-                    |> Query.has [ selected True ]
+                    |> Query.findAll [ tag "select" ]
+                    |> Query.count (Expect.equal 2)
         ]
 
 
@@ -795,11 +770,11 @@ gameJson =
      "game":{"slug":"backgammon","name":"Backgammon","description":"The classic race game.",
              "default_clock":"none","clocks":["none","bg3","bg5","bg10"],"formats":[]},
      "formats":[
-       {"id":"single","name":"Single game","description":"One game, no cube","settings":[TWIST]},
-       {"id":"match3","name":"Match to 3","description":"Cube and Crawford rule","settings":[TWIST]},
-       {"id":"match5","name":"Match to 5","description":"Cube and Crawford rule","settings":[TWIST]},
-       {"id":"match7","name":"Match to 7","description":"Cube and Crawford rule","settings":[TWIST]},
-       {"id":"unlimited","name":"Unlimited","description":"Keep playing, cube and Jacoby rule","settings":[TWIST]}],
+       {"id":"single","name":"Single game","description":"One game, no cube"},
+       {"id":"match3","name":"Match to 3","description":"Cube and Crawford rule"},
+       {"id":"match5","name":"Match to 5","description":"Cube and Crawford rule"},
+       {"id":"match7","name":"Match to 7","description":"Cube and Crawford rule"},
+       {"id":"unlimited","name":"Unlimited","description":"Keep playing, cube and Jacoby rule"}],
      "clock_presets":[
        {"id":"none","name":"No clock","description":"Take your time"},
        {"id":"bg3","name":"3 min","description":"3 min each, 12 s delay every move"},
@@ -811,6 +786,3 @@ gameJson =
              "rules":["Race your fifteen checkers home."],
              "faq":[]}}
     """
-        |> String.replace "TWIST"
-            """{"id":"twist","name":"Pick dice","default":"off",
-                "choices":[{"id":"off","name":"Off"},{"id":"pick_dice","name":"Pick your dice, once a game"}]}"""

@@ -31,12 +31,11 @@ defmodule Oskol.Game.GameServerState do
         }
 
   @typedoc """
-  What the creator picked: a format, its setting choices, a clock preset,
-  and (for tests and tooling) an explicit seed or raw clock control.
+  What the creator picked: a format, a clock preset, and (for tests and
+  tooling) an explicit seed or raw clock control.
   """
   @type setup :: %{
           format: String.t(),
-          selections: %{String.t() => String.t()},
           clock: String.t(),
           seed: integer() | nil,
           control: term() | nil
@@ -69,7 +68,7 @@ defmodule Oskol.Game.GameServerState do
             seat_order: [],
             lobby_status: :waiting_for_players,
             last_activity: 0,
-            setup: %{format: nil, selections: %{}, clock: "none", seed: nil, control: nil},
+            setup: %{format: nil, clock: "none", seed: nil, control: nil},
             clock_timer: nil,
             rematch_ready: MapSet.new(),
             rematch_game_id: nil,
@@ -92,12 +91,11 @@ defmodule Oskol.Game.GameServerState do
     }
   end
 
-  @doc "The game's first format with every setting at its default and the default clock."
+  @doc "The game's first format and the default clock."
   @spec default_setup(map()) :: setup()
   def default_setup(info) do
     %{
       format: info["formats"] |> List.first() |> Map.get("id"),
-      selections: %{},
       clock: Map.get(info, "default_clock", "none"),
       seed: nil,
       control: nil
@@ -106,7 +104,9 @@ defmodule Oskol.Game.GameServerState do
 
   @doc """
   Merge a creator's choices into the setup, checking them against the game's
-  formats, settings and clocks. Keys may be atoms or strings.
+  formats and clocks. Keys may be atoms or strings. Keys the setup has no
+  slot for -- `selections`, which every stored config row still carries --
+  are ignored, so an old row rebuilds.
 
   A creator may only pick a clock the game offers today. A room that already
   has its clock -- one rebuilt from its row, or a rematch carrying its setup
@@ -115,22 +115,19 @@ defmodule Oskol.Game.GameServerState do
   was retired still replays and rematches.
   """
   @spec validate_setup(t(), map(), keyword()) ::
-          {:ok, setup()}
-          | {:error, :unknown_format | :unknown_clock | :unknown_setting | :unknown_choice}
+          {:ok, setup()} | {:error, :unknown_format | :unknown_clock}
   def validate_setup(%__MODULE__{info: info, setup: current}, attrs, opts \\ []) do
     attrs = Map.new(attrs, fn {k, v} -> {to_key(k), v} end)
-    merged = Map.merge(current, Map.take(attrs, [:format, :selections, :clock, :seed, :control]))
+    merged = Map.merge(current, Map.take(attrs, [:format, :clock, :seed, :control]))
 
-    with {:ok, format} <- fetch_format(info, merged.format),
-         :ok <- check_clock(info, merged.clock, Keyword.get(opts, :retired_clocks, false)),
-         {:ok, selections} <- check_selections(format, merged.selections || %{}) do
-      {:ok, %{merged | selections: selections}}
+    with {:ok, _format} <- fetch_format(info, merged.format),
+         :ok <- check_clock(info, merged.clock, Keyword.get(opts, :retired_clocks, false)) do
+      {:ok, merged}
     end
   end
 
   defp to_key(k) when is_atom(k), do: k
   defp to_key("format"), do: :format
-  defp to_key("selections"), do: :selections
   defp to_key("clock"), do: :clock
   defp to_key("seed"), do: :seed
   defp to_key("control"), do: :control
@@ -152,42 +149,15 @@ defmodule Oskol.Game.GameServerState do
       else: {:error, :unknown_clock}
   end
 
-  defp check_selections(format, selections) do
-    settings = format["settings"] || []
-
-    Enum.reduce_while(selections, {:ok, %{}}, fn {setting_id, choice_id}, {:ok, acc} ->
-      setting_id = to_string(setting_id)
-      choice_id = to_string(choice_id)
-
-      case Enum.find(settings, &(&1["id"] == setting_id)) do
-        nil ->
-          {:halt, {:error, :unknown_setting}}
-
-        setting ->
-          if Enum.any?(setting["choices"], &(&1["id"] == choice_id)),
-            do: {:cont, {:ok, Map.put(acc, setting_id, choice_id)}},
-            else: {:halt, {:error, :unknown_choice}}
-      end
-    end)
-  end
-
   @doc "The format map the room is set up with."
   def format(%__MODULE__{info: info, setup: setup}) do
     Enum.find(info["formats"], &(&1["id"] == setup.format))
   end
 
-  @doc "One line describing the setup: format, chosen settings, clock."
+  @doc "One line describing the setup: format and clock."
   @spec summary(t()) :: String.t()
   def summary(%__MODULE__{setup: setup} = state) do
-    format = format(state) || %{"name" => setup.format, "settings" => []}
-
-    # A setting left "off" (a twist not taken) says nothing worth a slot.
-    choices =
-      for setting <- format["settings"] || [],
-          chosen = Map.get(setup.selections, setting["id"], setting["default"]),
-          chosen != "off",
-          choice = Enum.find(setting["choices"], &(&1["id"] == chosen)),
-          do: choice["name"]
+    format = format(state) || %{"name" => setup.format}
 
     clock =
       case Enum.find(GameKit.clock_presets(), &(&1["id"] == setup.clock)) do
@@ -196,7 +166,7 @@ defmodule Oskol.Game.GameServerState do
         nil -> []
       end
 
-    Enum.join([format["name"] | choices] ++ clock, " · ")
+    Enum.join([format["name"]] ++ clock, " · ")
   end
 
   def started?(%__MODULE__{instance: instance}), do: instance != nil

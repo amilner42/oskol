@@ -13,9 +13,8 @@ import gleam/list
 pub type Entry {
   Entry(
     info: Info,
-    /// Start: format id, setting selections, seats, seed, clock, now.
-    start: fn(String, List(#(String, String)), List(Seat), Int, Control, Int) ->
-      Result(Instance, String),
+    /// Start: format id, seats, seed, clock, now.
+    start: fn(String, List(Seat), Int, Control, Int) -> Result(Instance, String),
     /// A seeded random playout rendered as a JSON fixture (see gamekit/fixture).
     fixture: fn(String, List(Seat), Int, Int) -> Result(String, String),
     /// A compact replay of a seeded random playout (see gamekit/fixture).
@@ -27,16 +26,8 @@ pub type Entry {
 pub fn entry(definition: game.Game(state, action)) -> Entry {
   Entry(
     info: definition.info,
-    start: fn(format_id, selections, seats, seed, control, now) {
-      instance.start(
-        definition,
-        format_id,
-        selections,
-        seats,
-        seed,
-        control,
-        now,
-      )
+    start: fn(format_id, seats, seed, control, now) {
+      instance.start(definition, format_id, seats, seed, control, now)
     },
     fixture: fn(format_id, seats, seed, max_steps) {
       fixture.playout_json(definition, format_id, seats, seed, max_steps)

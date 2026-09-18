@@ -104,12 +104,11 @@ pub fn create_json(
   format: String,
   name: String,
   clock_id: String,
-  selections: List(#(String, String)),
 ) -> Result(String, ApiError) {
   use info <- result.try(find_info(slug))
 
   let setup =
-    Setup(format: format, selections: selections, clock: case clock_id {
+    Setup(format: format, clock: case clock_id {
       "" -> info.default_clock
       chosen -> chosen
     })

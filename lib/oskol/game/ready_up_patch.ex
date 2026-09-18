@@ -221,8 +221,7 @@ defmodule Oskol.Game.ReadyUpPatch do
       seats,
       game.seed,
       GameKit.clock_control(config["clock"] || "none"),
-      0,
-      Map.to_list(config["selections"] || %{})
+      0
     )
   end
 

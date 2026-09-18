@@ -346,9 +346,9 @@ And **never** do this:
 ## Project Overview
 Oskol (oskol.io) is a backgammon site. The mission: become the best place on
 the internet to play backgammon. You play a friend from a link: no accounts,
-phone-friendly, free. The game is the real thing first, and offers optional
-twists that throw the book out (picking your dice once a game today, a
-reroll later).
+phone-friendly, free. The game is the real thing, by the book, and every
+game is graded by the analysis engine once it is over: play a friend from
+a link, then learn from the game.
 **Backgammon** is the classic race game with the doubling cube: single games,
 matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
 Jacoby rule. A roll that can play nothing is a state, not a skipped turn:
@@ -365,7 +365,7 @@ Oskol used to host poker, go and chess too; they were removed in the pivot
 (`OskolWeb.RemovedGameController`), and `/papi/games/<slug>` for them is a
 404 like any slug that names no game.
 
-The first player picks everything (mode, settings, clock), shares a link, and
+The first player picks everything (mode, clock), shares a link, and
 the game starts the moment the second player types a name. **A seat is held
 by the guest cookie that took it** (`OskolWeb.Plugs.GuestId`: opaque,
 HttpOnly, year-long), and no URL anywhere carries a secret: a player's link
@@ -420,7 +420,7 @@ Three layers, two fixed boundaries:
 
 ```gleam
 Game(
-  info:          Info,                                      // slug, name, formats (+settings), clocks, default clock
+  info:          Info,                                      // slug, name, formats, clocks, default clock
   init:          fn(Config, List(Seat), Rng) -> Result(state, String),
   decode_action: fn(action.Incoming) -> Result(action, String),
   apply:         fn(state, PlayerId, action) -> Result(#(state, List(Event)), String),
@@ -439,10 +439,10 @@ Backgammon's is every game of the match with every turn (notation, the
 position and cube it left, where the moved checkers `landed`); its scene
 carries only the game on the board plus one result line per finished game.
 
-Formats carry **settings**: each is a list of choices with a default, and
-picking a choice merges its config entries (`game.configure`). That is how
-twists are offered (backgammon's "Pick dice"). `Info.clocks` lists the time-control presets a game offers and
-`default_clock` the one preselected.
+A format is a name and a config the game reads (`game.config_get`): all
+the creator tunes is the format and the clock. `Info.clocks` lists the
+time-control presets a game offers and `default_clock` the one
+preselected.
 
 Rules that keep this honest:
 - **All randomness goes through `gamekit/rng`** stored in the state. Never
@@ -662,7 +662,7 @@ the page's CSRF token in `x-csrf-token`.
 ```
 GET  /papi/library                     {ok, games, coming_soon, guest_name}
 GET  /papi/games/:slug                 {ok, game, formats, clock_presets, copy, guest_name}
-POST /papi/games/:slug                 {format, name, clock, selections}
+POST /papi/games/:slug                 {format, name, clock}
                                          -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
@@ -836,13 +836,12 @@ game or a room talks to it.
 Backgammon is the product and the only game registered, but the framework
 still takes another one:
 1. Create `src/<slug>/game.gleam` implementing `gamekit/game.Game`. Give
-   `Info` its formats (with settings if the creator should tune anything),
-   the clock presets it offers, and a `timeout` policy.
+   `Info` its formats, the clock presets it offers, and a `timeout` policy.
 2. Register it in `src/gamekit/registry.gleam` (`all()`).
 3. Add `test/<slug>/conformance_test.gleam` using `gamekit/conformance`
    (random playouts to termination, replay determinism, your invariants),
    then `mix oskol.fixtures` so the golden and Elm suites cover it.
-4. Its settings show up on the create page. It needs an Elm view in
+4. Its formats show up on the create page. It needs an Elm view in
    `assets/src/Games/<Name>/View.elm`, dispatched by slug in
    `Page/Play.elm`; the view reads the protocol Scene, never new wire types
    (see `assets/src/Games/Backgammon/View.elm`). There is no generic
@@ -997,9 +996,9 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   the boot flags, and the `/papi` envelope and decoders (which are lax about
   keys they do not need and strict about the ones they do).
 - `GameLandingTest`: the home page on decoded responses — the board and its
-  four menu entries, CREATE GAME's dialog (the mode, clock and twist
-  dropdowns, their defaults, the summary, inline validation), the theme
-  picker, and the invite's three answers.
+  four menu entries, CREATE GAME's dialog (the mode and clock dropdowns,
+  their defaults, the summary, inline validation), the theme picker, and
+  the invite's three answers.
 - `ReplayTest`: the replay on the real record and analysis of seed 000011
   (`ReplayFixtures`): decoders, the board at every step, stepping, keys,
   swipes, game switching, and the analysis filling in without moving the
@@ -1105,5 +1104,4 @@ which is the point of holding a seat by the guest rather than by a token:
 when a guest becomes a user the seats come with them.
 
 ## Future
-- Twists as settings: a reroll in backgammon, and more after it.
 - Bots derived from `legal` for solo play and balance reports.

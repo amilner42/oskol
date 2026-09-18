@@ -45,12 +45,11 @@ fn finished_log(seed: Int) -> GameLog {
 fn played_log(format: String, seed: Int, steps: Int) -> GameLog {
   let seats = [game.Seat("p1", "Alice"), game.Seat("p2", "Bob")]
   let assert Ok(running) =
-    instance.begin(backgammon.game(), format, [], seats, seed, clock.NoClock, 0)
+    instance.begin(backgammon.game(), format, seats, seed, clock.NoClock, 0)
   let entries = play(running, rng.seed(seed), steps, [])
   GameLog(
     slug: "backgammon",
     format: format,
-    selections: [],
     clock: "none",
     seed: seed,
     seats: [#("p1", "Alice"), #("p2", "Bob")],
@@ -130,7 +129,6 @@ fn setup_of(log: GameLog) -> records_caps.Setup {
   records_caps.Setup(
     slug: log.slug,
     format: log.format,
-    selections: log.selections,
     clock: log.clock,
     seed: log.seed,
     seats: list.index_map(log.seats, fn(seat, index) {
@@ -786,7 +784,6 @@ fn seated(ctx: Ctx) -> Ctx {
     instance.start(
       backgammon.game(),
       "single",
-      [],
       [game.Seat("p1", "Alice"), game.Seat("p2", "Bob")],
       4,
       clock.NoClock,
