@@ -22,7 +22,6 @@ pub type GameLog {
   GameLog(
     slug: String,
     format: String,
-    selections: List(#(String, String)),
     /// The clock preset id.
     clock: String,
     seed: Int,

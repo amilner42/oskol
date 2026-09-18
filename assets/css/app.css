@@ -1369,14 +1369,6 @@ a.q-card:hover, a.q-card:focus-visible {
   line-height: 1.4;
 }
 .held { opacity: 0.55; }
-/* Picker-scale die faces (the "Pick dice" twist). */
-.die.mini {
-  --die-size: 1.75rem;
-  box-shadow: 2px 2px 0 0 var(--bg-checker-edge);
-  cursor: pointer; padding: 0;
-}
-.die.mini.spent { opacity: 0.35; box-shadow: none; cursor: default; }
-.die.mini.empty { background: transparent; border-style: dashed; box-shadow: none; cursor: default; }
 /* The cube hangs on the bar: white, so it reads there, and sized by the
    bar -- as big as its column allows. */
 .cube {
@@ -1408,7 +1400,6 @@ a.q-card:hover, a.q-card:focus-visible {
 :is(.bg-page, .bg-still) .bar-turn { color: #fff; }
 :is(.bg-page, .bg-still) .bar-pips { color: rgba(255, 255, 255, 0.6); }
 :is(.bg-page, .bg-still) .bar-pr { color: rgba(255, 255, 255, 0.6); }
-:is(.bg-page, .bg-still) .bar-tag.pick { border: 2px solid var(--bg-accent); color: var(--bg-accent); }
 :is(.bg-page, .bg-still) .score-chip { border: 2px solid rgba(255, 255, 255, 0.55); background: transparent; color: #fff; padding: 2px 6px; }
 :is(.bg-page, .bg-still) .clock-chip { border: 2px solid rgba(255, 255, 255, 0.45); color: rgba(255, 255, 255, 0.85); background: transparent; padding: 1px 6px; }
 :is(.bg-page, .bg-still) .clock-chip.running { border-color: var(--bg-accent); color: var(--bg-accent); background: transparent; }

@@ -73,12 +73,10 @@ pub fn clock_control(preset_id: String) -> Control {
 
 // ---------- Lifecycle ----------
 
-/// Start a game. `selections` are `#(setting_id, choice_id)` pairs the
-/// creator picked for the format; `seats` are `#(player_id, display_name)`.
+/// Start a game. `seats` are `#(player_id, display_name)` pairs.
 pub fn start(
   slug: String,
   format_id: String,
-  selections: List(#(String, String)),
   seats: List(#(String, String)),
   seed: Int,
   control: Control,
@@ -86,7 +84,7 @@ pub fn start(
 ) -> Result(Instance, String) {
   use entry <- result.try(find(slug))
   let seats = list.map(seats, fn(s) { game.Seat(id: s.0, name: s.1) })
-  entry.start(format_id, selections, seats, seed, control, now)
+  entry.start(format_id, seats, seed, control, now)
 }
 
 /// Apply a raw action (an Elixir map decoded from the client JSON).

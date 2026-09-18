@@ -167,21 +167,19 @@ libraryJson =
 gamePage : Test
 gamePage =
     describe "GET /papi/games/:slug"
-        [ test "decodes the game, its formats and their settings" <|
+        [ test "decodes the game and its formats" <|
             \_ ->
                 decodeGame gameJson
                     |> Result.map
                         (\page ->
                             ( List.map .id page.formats
-                            , page.formats
-                                |> List.concatMap .settings
-                                |> List.map (\s -> ( s.id, s.default, List.map .id s.choices ))
+                            , List.map .name page.formats
                             )
                         )
                     |> Expect.equal
                         (Ok
                             ( [ "cash", "sng" ]
-                            , [ ( "stake", "1-2", [ "1-2", "2-5" ] ) ]
+                            , [ "Cash game", "Sit & go" ]
                             )
                         )
         , test "decodes the copy the page is built around" <|
@@ -270,17 +268,16 @@ gameJson =
 created : Test
 created =
     describe "POST /papi/games/:slug"
-        [ test "sends the format and the name, and the settings and clock they need" <|
+        [ test "sends the format, the name and the clock" <|
             \_ ->
                 Catalog.encodeNewGame
                     { format = "cash"
                     , name = "Alice"
-                    , selections = [ ( "stake", "2-5" ) ]
                     , clock = "poker"
                     }
                     |> E.encode 0
                     |> Expect.equal
-                        """{"format":"cash","name":"Alice","clock":"poker","selections":{"stake":"2-5"}}"""
+                        """{"format":"cash","name":"Alice","clock":"poker"}"""
         , test "decodes the room and the URL that opens the seat" <|
             \_ ->
                 Api.parseBody Catalog.createdDecoder
@@ -379,61 +376,25 @@ clockOrders =
 summaries : Test
 summaries =
     describe "the one line describing a setup"
-        [ test "format, the chosen settings, then the clock" <|
+        [ test "the mode, then the clock" <|
             \_ ->
-                Catalog.summarise cash [ ( "stake", "2-5" ) ] presets "poker"
-                    |> Expect.equal "Cash game · 2 / 5 · Standard clock"
-        , test "a setting nobody touched shows its default" <|
+                Catalog.summarise cash presets "poker"
+                    |> Expect.equal "Cash game · Standard clock"
+        , test "no clock is the mode alone" <|
             \_ ->
-                Catalog.summarise cash [] presets "none"
-                    |> Expect.equal "Cash game · 1 / 2"
-        , test "a twist left off says nothing worth a slot" <|
-            \_ ->
-                Catalog.summarise single [] presets "none"
+                Catalog.summarise single presets "none"
                     |> Expect.equal "Single game"
-        , test "a twist taken does" <|
-            \_ ->
-                Catalog.summarise single [ ( "twist", "pick_dice" ) ] presets "none"
-                    |> Expect.equal "Single game · Pick your dice"
-        , test "the chosen choice of a setting reads back, default otherwise" <|
-            \_ ->
-                ( Catalog.settingChoice [ ( "stake", "2-5" ) ] stake
-                , Catalog.settingChoice [ ( "other", "x" ) ] stake
-                )
-                    |> Expect.equal ( "2-5", "1-2" )
         ]
-
-
-stake : Catalog.Setting
-stake =
-    { id = "stake"
-    , name = "Stakes"
-    , default = "1-2"
-    , choices = [ { id = "1-2", name = "1 / 2" }, { id = "2-5", name = "2 / 5" } ]
-    }
 
 
 cash : Catalog.Format
 cash =
-    { id = "cash", name = "Cash game", description = "Fixed blinds", settings = [ stake ] }
+    { id = "cash", name = "Cash game", description = "Fixed blinds" }
 
 
 single : Catalog.Format
 single =
-    { id = "single"
-    , name = "Single game"
-    , description = "One game, no cube"
-    , settings =
-        [ { id = "twist"
-          , name = "Pick dice"
-          , default = "off"
-          , choices =
-                [ { id = "off", name = "Off" }
-                , { id = "pick_dice", name = "Pick your dice" }
-                ]
-          }
-        ]
-    }
+    { id = "single", name = "Single game", description = "One game, no cube" }
 
 
 presets : List Catalog.ClockPreset

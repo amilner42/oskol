@@ -81,7 +81,6 @@ defmodule Oskol.Game.Persister do
   def config_json(setup) do
     %{
       "format" => setup.format,
-      "selections" => setup.selections,
       "clock" => setup.clock,
       "seed" => setup.seed
     }

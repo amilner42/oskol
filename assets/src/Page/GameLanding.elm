@@ -68,7 +68,6 @@ type alias Model =
     , loadError : Maybe String
     , step : Step
     , format : String
-    , selections : List ( String, String )
     , clock : String
     , playerName : String
     , error : Maybe String
@@ -89,7 +88,6 @@ type Msg
     = GotGame (Result Api.Error GamePage)
     | GotRoom (Result Api.Error Catalog.Room)
     | PickedFormat String
-    | PickedSetting String String
     | PickedClock String
     | NameChanged String
     | Submitted
@@ -139,7 +137,6 @@ init session slug gameId =
                 else
                     PlayerName
             , format = ""
-            , selections = []
             , clock = "none"
             , playerName = Maybe.withDefault "" session.guestName
             , error = Nothing
@@ -279,20 +276,7 @@ update msg model =
             ( { model | step = PlayerName }, Cmd.none, NoOut )
 
         PickedFormat formatId ->
-            -- A format brings its own settings: last format's choices mean
-            -- nothing here.
-            ( { model | format = formatId, selections = [], error = Nothing }, Cmd.none, NoOut )
-
-        PickedSetting settingId choiceId ->
-            ( { model
-                | selections =
-                    ( settingId, choiceId )
-                        :: List.filter (\( id_, _ ) -> id_ /= settingId) model.selections
-                , error = Nothing
-              }
-            , Cmd.none
-            , NoOut
-            )
+            ( { model | format = formatId, error = Nothing }, Cmd.none, NoOut )
 
         PickedClock clockId ->
             ( { model | clock = clockId, error = Nothing }, Cmd.none, NoOut )
@@ -341,7 +325,6 @@ submit model =
                         model.slug
                         { format = model.format
                         , name = name
-                        , selections = model.selections
                         , clock = model.clock
                         }
                         Seated
@@ -627,12 +610,6 @@ createModal model =
     case ( model.started, model.page ) of
         ( True, Just page ) ->
             let
-                format =
-                    currentFormat model page
-
-                settings =
-                    format |> Maybe.map .settings |> Maybe.withDefault []
-
                 select label selectId onPick selected options =
                     Html.label [ class "block" ]
                         [ Html.span [ class "pixel q-eyebrow text-[8px] block mb-1.5" ] [ Html.text label ]
@@ -670,25 +647,9 @@ createModal model =
                                         }
                                     ]
                                , Html.div [ class "grid grid-cols-2 gap-3" ]
-                                    ([ select "MODE" "create-mode" PickedFormat model.format (List.map (\f -> ( f.id, f.name )) page.formats)
-                                     , select "CLOCK" "create-clock" PickedClock model.clock (Catalog.offeredClocks page.game page.clocks |> List.map (\c -> ( c.id, clockLabel c )))
-                                     ]
-                                        ++ List.map
-                                            (\setting ->
-                                                select
-                                                    (if setting.id == "twist" then
-                                                        "TWIST"
-
-                                                     else
-                                                        String.toUpper setting.name
-                                                    )
-                                                    ("create-setting-" ++ setting.id)
-                                                    (PickedSetting setting.id)
-                                                    (Catalog.settingChoice model.selections setting)
-                                                    (List.map (\c -> ( c.id, c.name )) setting.choices)
-                                            )
-                                            settings
-                                    )
+                                    [ select "MODE" "create-mode" PickedFormat model.format (List.map (\f -> ( f.id, f.name )) page.formats)
+                                    , select "CLOCK" "create-clock" PickedClock model.clock (Catalog.offeredClocks page.game page.clocks |> List.map (\c -> ( c.id, clockLabel c )))
+                                    ]
                                , Html.p [ id "create-summary", class "q-note text-[13px] leading-snug -mt-1" ]
                                     [ Html.text (createSummary model page) ]
                                , Html.button

@@ -26,7 +26,6 @@ pub type Entry {
 pub type Log {
   Log(
     format_id: String,
-    selections: List(#(String, String)),
     seats: List(Seat),
     seed: Int,
     control: Control,
@@ -63,7 +62,6 @@ pub fn fold(
   use started <- result.try(instance.begin(
     definition,
     log.format_id,
-    log.selections,
     log.seats,
     log.seed,
     log.control,

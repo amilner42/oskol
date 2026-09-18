@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
   order in lockstep:
 
       AnalysisCaps(log, stored, summaries, report, save, enqueue, review)
-      GameLog(slug, format, selections, clock, seed, seats, entries)
+      GameLog(slug, format, clock, seed, seats, entries)
       LogEntry(kind, player_id, payload_json, at_ms)
       Stored(game_number, status, attempts, response_json, answered, rendered, turns)
       Save(status, attempts, response_json, error, report_json, turns)
@@ -32,9 +32,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
         config = game.config || %{}
 
         {:some,
-         {:game_log, game.slug, config["format"] || "",
-          Enum.map(config["selections"] || %{}, fn {k, v} -> {k, v} end),
-          config["clock"] || "none", game.seed,
+         {:game_log, game.slug, config["format"] || "", config["clock"] || "none", game.seed,
           Enum.map(game.players, fn p -> {p["id"], p["name"]} end),
           Enum.map(actions, fn a ->
             {:log_entry, a.kind, opt(a.player_id), Jason.encode!(a.payload), a.at_ms}

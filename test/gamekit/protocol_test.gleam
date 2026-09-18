@@ -63,7 +63,7 @@ pub fn registry_lists_the_games_test() {
 
 pub fn host_starts_and_updates_test() {
   let assert Ok(inst) =
-    host.start("backgammon", "single", [], seats(), 42, clock.NoClock, 0)
+    host.start("backgammon", "single", seats(), 42, clock.NoClock, 0)
   assert host.slug(inst) == "backgammon"
   assert host.finished(inst) == False
   let payload = host.player_update_json(inst, "p1", [], 0)
@@ -77,25 +77,17 @@ pub fn host_starts_and_updates_test() {
 }
 
 pub fn host_rejects_bad_starts_test() {
-  assert host.start("nope", "single", [], seats(), 1, clock.NoClock, 0)
+  assert host.start("nope", "single", seats(), 1, clock.NoClock, 0)
     == Error("Unknown game: nope")
-  assert host.start("backgammon", "epic", [], seats(), 1, clock.NoClock, 0)
+  assert host.start("backgammon", "epic", seats(), 1, clock.NoClock, 0)
     == Error("Unknown format: epic")
   let assert Error(_) =
-    host.start(
-      "backgammon",
-      "single",
-      [],
-      [#("p1", "Solo")],
-      1,
-      clock.NoClock,
-      0,
-    )
+    host.start("backgammon", "single", [#("p1", "Solo")], 1, clock.NoClock, 0)
 }
 
 pub fn apply_through_host_uses_legal_schema_test() {
   let assert Ok(inst) =
-    host.start("backgammon", "single", [], seats(), 7, clock.NoClock, 0)
+    host.start("backgammon", "single", seats(), 7, clock.NoClock, 0)
   let #(me, them) = mover(inst)
   // The waiting player can only resign
   assert list.map(instance.legal(inst, them), fn(s) { s.name }) == ["resign"]
@@ -110,7 +102,7 @@ pub fn apply_through_host_uses_legal_schema_test() {
 
 pub fn scene_has_expected_zones_test() {
   let assert Ok(inst) =
-    host.start("backgammon", "single", [], seats(), 3, clock.NoClock, 0)
+    host.start("backgammon", "single", seats(), 3, clock.NoClock, 0)
   let s = instance.scene(inst, scene.Player("p1"))
   assert s.game == "backgammon"
   assert s.phase == "moving"
@@ -130,7 +122,7 @@ pub fn scene_has_expected_zones_test() {
 
 pub fn text_render_is_readable_test() {
   let assert Ok(inst) =
-    host.start("backgammon", "single", [], seats(), 3, clock.NoClock, 0)
+    host.start("backgammon", "single", seats(), 3, clock.NoClock, 0)
   let #(me, _) = mover(inst)
   let rendered = host.text(inst, me)
   assert string.contains(rendered, "== backgammon | phase: moving ==")
@@ -154,15 +146,7 @@ pub fn event_json_shapes_test() {
 
 pub fn clocks_follow_the_game_and_forfeit_on_timeout_test() {
   let assert Ok(inst) =
-    host.start(
-      "backgammon",
-      "single",
-      [],
-      seats(),
-      5,
-      clock.Fischer(10_000, 0),
-      0,
-    )
+    host.start("backgammon", "single", seats(), 5, clock.Fischer(10_000, 0), 0)
   let #(me, them) = mover(inst)
   // Only the player to move is charged
   assert clock.running(instance.clocks(inst), me)
@@ -203,7 +187,7 @@ pub fn clocks_follow_the_game_and_forfeit_on_timeout_test() {
 /// is on a clock without one, and the players carry their public counters.
 pub fn summary_json_is_the_public_state_test() {
   let assert Ok(inst) =
-    host.start("backgammon", "single", [], seats(), 42, clock.NoClock, 0)
+    host.start("backgammon", "single", seats(), 42, clock.NoClock, 0)
   let #(me, them) = mover(inst)
   let assert Ok(summary) =
     json.parse(
@@ -234,7 +218,6 @@ pub fn summary_json_names_the_running_clock_test() {
     host.start(
       "backgammon",
       "single",
-      [],
       seats(),
       42,
       clock.Fischer(180_000, 0),
@@ -274,7 +257,7 @@ pub fn summary_json_names_the_running_clock_test() {
 /// state a match sits in longest.
 pub fn summary_names_who_owes_a_ready_between_games_test() {
   let assert Ok(inst) =
-    host.start("backgammon", "match3", [], seats(), 3, clock.NoClock, 0)
+    host.start("backgammon", "match3", seats(), 3, clock.NoClock, 0)
   let between = play_until_between_games(inst, 600)
   assert string.contains(
     host.summary_json(between, 0),

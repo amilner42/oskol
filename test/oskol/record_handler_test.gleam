@@ -22,7 +22,6 @@ fn started(slug: String, format: String) -> Instance {
   let assert Ok(game) =
     entry.start(
       format,
-      [],
       [Seat("p1", "Alice"), Seat("p2", "Bob")],
       7,
       clock.NoClock,
@@ -151,7 +150,6 @@ fn finished_setup() -> records_caps.Setup {
   records_caps.Setup(
     slug: "backgammon",
     format: "match5",
-    selections: [],
     clock: "none",
     seed: 7,
     seats: [#("p1", "Alice", "g1"), #("p2", "Bob", "g2")],

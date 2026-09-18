@@ -117,7 +117,7 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert [%{"id" => "none", "name" => _, "description" => _} | _] = body["clock_presets"]
       assert Enum.all?(game["clocks"], fn id -> id in Oskol.GameKit.clock_ids() end)
 
-      assert [%{"id" => _, "name" => _, "description" => _, "settings" => _} | _] = formats
+      assert [%{"id" => _, "name" => _, "description" => _} | _] = formats
       assert Enum.map(formats, & &1["id"]) == Oskol.GameKit.format_ids("backgammon")
 
       assert copy["title"] =~ "backgammon"
@@ -183,22 +183,20 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert [%{connected: false, guest_id: ^guest_id}] = Map.values(state.connections)
     end
 
-    test "the creator's mode, settings and clock configure the room", %{conn: conn} do
+    test "the creator's mode and clock configure the room", %{conn: conn} do
       body =
         conn
         |> with_csrf()
         |> post(~p"/papi/games/backgammon", %{
           "format" => "match5",
           "name" => "Alice",
-          "clock" => "bg10",
-          "selections" => %{"twist" => "pick_dice"}
+          "clock" => "bg10"
         })
         |> json_response(200)
 
       state = Game.get_server_state(body["id"])
       assert state.setup.format == "match5"
       assert state.setup.clock == "bg10"
-      assert state.setup.selections == %{"twist" => "pick_dice"}
       assert GameServerState.summary(state) =~ "10 min clock"
     end
 
@@ -215,18 +213,21 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert json_response(conn, 422)["error"]["message"] == "Unknown time control"
     end
 
-    test "a setting choice the mode does not offer is refused", %{conn: conn} do
-      conn =
+    test "a stray selections key from an older client is ignored", %{conn: conn} do
+      body =
         conn
         |> with_csrf()
         |> post(~p"/papi/games/backgammon", %{
           "format" => "single",
           "name" => "Alice",
           "clock" => "none",
-          "selections" => %{"twist" => "enormous"}
+          "selections" => %{"twist" => "pick_dice"}
         })
+        |> json_response(200)
 
-      assert json_response(conn, 422)["error"]["message"] == "Unknown choice"
+      state = Game.get_server_state(body["id"])
+      assert state.setup.format == "single"
+      refute Map.has_key?(state.setup, :selections)
     end
 
     test "no clock asked for means the game's default", %{conn: conn} do

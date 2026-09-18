@@ -4,7 +4,7 @@ defmodule Oskol.Game.GameServer do
   connections, the creator's setup, and an opaque game instance that it
   drives through `Oskol.GameKit`.
 
-  The creator sets the room up (format, settings, clock) and shares a link;
+  The creator sets the room up (format, clock) and shares a link;
   the game starts the moment the table is full.
   """
   # Rooms hold their whole state in memory; the database holds the durable
@@ -77,7 +77,7 @@ defmodule Oskol.Game.GameServer do
   def get_state(game_id), do: GenServer.call(via_tuple(game_id), :get_state)
 
   @doc """
-  Set the room up before it starts: `%{format: id, selections: %{setting => choice},
+  Set the room up before it starts: `%{format: id,
   clock: preset_id}`, plus `seed:` and `control:` for tests and tooling.
   """
   def configure(game_id, attrs) when is_map(attrs) do
@@ -451,8 +451,7 @@ defmodule Oskol.Game.GameServer do
              GameServerState.seats(state),
              seed,
              control,
-             now,
-             Map.to_list(setup.selections)
+             now
            ) do
       new_state =
         %GameServerState{state | instance: instance, seed: seed, clock_base: now, action_count: 0}
@@ -672,7 +671,6 @@ defmodule Oskol.Game.GameServer do
            state,
            %{
              format: config["format"],
-             selections: config["selections"] || %{},
              clock: config["clock"] || "none",
              seed: config["seed"]
            },
@@ -720,8 +718,7 @@ defmodule Oskol.Game.GameServer do
              GameServerState.seats(state),
              game.seed,
              control,
-             base,
-             Map.to_list(setup.selections)
+             base
            ),
          {:ok, instance} <- replay_actions(instance, actions, base) do
       new_state =

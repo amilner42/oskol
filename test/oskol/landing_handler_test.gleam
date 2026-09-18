@@ -143,9 +143,8 @@ pub fn a_game_page_carries_its_copy_its_formats_and_the_clocks_test() {
   // delay); the older presets stay defined for old rooms but are not offered.
   assert string.contains(body, "\"clocks\":[\"none\",\"bg3\",\"bg5\",\"bg10\"]")
   assert string.contains(body, "\"clock_presets\":[{\"id\":\"none\"")
-  // Formats, with the settings the creator may tune.
+  // Formats: a mode is all the creator tunes besides the clock.
   assert string.contains(body, "\"formats\":[{\"id\":\"single\"")
-  assert string.contains(body, "\"settings\":[")
   // Copy, in one object of its own.
   assert string.contains(
     body,
@@ -210,7 +209,7 @@ fn creating(ctx: Ctx, expected: room.Setup) -> Ctx {
 pub fn creating_a_game_answers_with_its_code_and_the_seat_url_test() {
   let ctx =
     reading()
-    |> creating(room.Setup(format: "single", selections: [], clock: "bg3"))
+    |> creating(room.Setup(format: "single", clock: "bg3"))
 
   assert landing.create_json(
       ctx,
@@ -219,22 +218,16 @@ pub fn creating_a_game_answers_with_its_code_and_the_seat_url_test() {
       "single",
       "Alice",
       "bg3",
-      [],
     )
     == Ok(
       "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456\",\"player_id\":\"p1\"}",
     )
 }
 
-pub fn the_creators_settings_reach_the_room_test() {
-  let selections = [#("twist", "pick_dice")]
+pub fn the_creators_mode_and_clock_reach_the_room_test() {
   let ctx =
     reading()
-    |> creating(room.Setup(
-      format: "match5",
-      selections: selections,
-      clock: "bg10",
-    ))
+    |> creating(room.Setup(format: "match5", clock: "bg10"))
 
   let assert Ok(_) =
     landing.create_json(
@@ -244,7 +237,6 @@ pub fn the_creators_settings_reach_the_room_test() {
       "match5",
       "Alice",
       "bg10",
-      selections,
     )
 }
 
@@ -252,7 +244,7 @@ pub fn no_clock_asked_for_means_the_games_default_test() {
   // Backgammon's default preset, straight from its own Info.
   let ctx =
     reading()
-    |> creating(room.Setup(format: "single", selections: [], clock: "none"))
+    |> creating(room.Setup(format: "single", clock: "none"))
 
   let assert Ok(_) =
     landing.create_json(
@@ -262,14 +254,13 @@ pub fn no_clock_asked_for_means_the_games_default_test() {
       "single",
       "Alice",
       "",
-      [],
     )
 }
 
 pub fn creating_a_game_needs_a_name_test() {
   let ctx =
     reading()
-    |> creating(room.Setup(format: "single", selections: [], clock: "none"))
+    |> creating(room.Setup(format: "single", clock: "none"))
 
   let assert Error(err) =
     landing.create_json(
@@ -279,7 +270,6 @@ pub fn creating_a_game_needs_a_name_test() {
       "single",
       " ",
       "none",
-      [],
     )
 
   assert envelope.error(err)
@@ -290,7 +280,7 @@ pub fn creating_a_game_needs_a_name_test() {
 }
 
 pub fn creating_a_game_in_a_mode_it_has_not_got_is_refused_test() {
-  let ctx = reading() |> creating(room.Setup("single", [], "none"))
+  let ctx = reading() |> creating(room.Setup("single", "none"))
   let ctx =
     Ctx(
       ..ctx,
@@ -307,7 +297,6 @@ pub fn creating_a_game_in_a_mode_it_has_not_got_is_refused_test() {
       "nope",
       "Alice",
       "none",
-      [],
     )
 
   assert error.code(err) == "validation_failed"
@@ -323,7 +312,6 @@ pub fn creating_a_game_of_a_game_that_does_not_exist_is_not_found_test() {
       "x",
       "Alice",
       "none",
-      [],
     )
 
   assert error.status(err) == 404

@@ -12,7 +12,6 @@ pub type Setup {
   Setup(
     slug: String,
     format: String,
-    selections: List(#(String, String)),
     /// The clock preset id.
     clock: String,
     seed: Int,

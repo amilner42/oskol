@@ -72,9 +72,6 @@ pub type Turn {
     /// began on when the roll could play nothing (see `danced`). None when
     /// there was no roll (see `double`).
     played: Option(List(Int)),
-    /// The dice were picked, not rolled (the "Pick dice" twist): whatever
-    /// the engine says about luck means nothing for this turn.
-    picked: Bool,
     /// The action-log index of the entry that closed the turn.
     log_index: Int,
     /// Where the turn sits in its game's record (`record.by_game`, the
@@ -309,7 +306,6 @@ type Pending {
     position: Position,
     offer: Offer,
     dice: Option(#(Int, Int)),
-    picked: Bool,
     double_entry: Option(Int),
     answer_entry: Option(Int),
   )
@@ -363,7 +359,6 @@ fn pending_for(s: GameState, color: Color) -> Pending {
     position: position(s, color),
     offer: NoDouble,
     dice: None,
-    picked: False,
     double_entry: None,
     answer_entry: None,
   )
@@ -374,7 +369,7 @@ fn with_dice(p: Pending, s: GameState) -> Pending {
     [a, b] -> Some(#(a, b))
     _ -> None
   }
-  Pending(..p, dice: dice, picked: s.last_roll_picked)
+  Pending(..p, dice: dice)
 }
 
 fn seat_index(s: GameState, player_id: String) -> Int {
@@ -429,7 +424,7 @@ fn step(acc: Acc, t: replay.Transition(GameState, engine.Action)) -> Acc {
         None,
         t.index,
       )
-    Some(engine.Roll), pending | Some(engine.Pick(_, _)), pending ->
+    Some(engine.Roll), pending ->
       case before.phase {
         state.Rolling(color) -> {
           let p = option.unwrap(pending, pending_for(before, color))
@@ -590,7 +585,6 @@ fn settle(
         double: answer,
         dice: p.dice,
         played: played,
-        picked: p.picked,
         log_index: index,
         entry: entry,
         // A double folded away is no decision of the engine's: nothing of

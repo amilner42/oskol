@@ -469,24 +469,20 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                            ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }, Nothing )
+                    View.autoRoll [ schema "roll" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
                         |> Expect.equal ( View.init, Nothing )
-             , test "keeps the choice when pick is also legal" <|
-                \_ ->
-                    View.autoRoll [ schema "roll", schema "pick" ] View.init
-                        |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                    View.autoRoll [ schema "move" ] { drag = Drag.idle, plans = [], swaps = 0, autoRolled = True, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -515,115 +511,6 @@ suite =
                         |> step [ schema "roll" ]
                         |> Tuple.second
                         |> Expect.equal 2
-             ]
-            )
-        , describe "pick dice twist"
-            (let
-                schema name =
-                    { name = name, label = name, params = [] }
-
-                step msg =
-                    Tuple.first >> View.update msg
-
-                firstUpdate =
-                    FixtureLoader.byGame "backgammon"
-                        |> List.head
-                        |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
-             in
-             [ test "the picker collects two values and confirm sends the pick" <|
-                \_ ->
-                    View.update OpenPicker View.init
-                        |> step (PickFace 6)
-                        |> step (PickFace 6)
-                        |> step ConfirmPick
-                        |> Expect.equal
-                            ( View.init
-                            , Send (Protocol.encodeAction "pick" [ ( "die1", E.int 6 ), ( "die2", E.int 6 ) ])
-                            )
-             , test "confirm before both dice are chosen sends nothing" <|
-                \_ ->
-                    View.update OpenPicker View.init
-                        |> step (PickFace 3)
-                        |> step ConfirmPick
-                        |> Expect.equal ( { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Just [ 3 ], resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }, NoOut )
-             , test "a third face is ignored" <|
-                \_ ->
-                    View.update OpenPicker View.init
-                        |> step (PickFace 3)
-                        |> step (PickFace 4)
-                        |> step (PickFace 5)
-                        |> Tuple.first
-                        |> .picker
-                        |> Expect.equal (Just [ 3, 4 ])
-             , test "tapping a chosen die takes it back" <|
-                \_ ->
-                    View.update OpenPicker View.init
-                        |> step (PickFace 3)
-                        |> step (PickFace 4)
-                        |> step (UnpickAt 0)
-                        |> Tuple.first
-                        |> .picker
-                        |> Expect.equal (Just [ 4 ])
-             , test "cancel closes the picker without sending" <|
-                \_ ->
-                    View.update OpenPicker View.init
-                        |> step (PickFace 3)
-                        |> step CancelPick
-                        |> Expect.equal ( View.init, NoOut )
-             , test "PICK DICE renders exactly when pick is legal" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            Expect.all
-                                [ \_ ->
-                                    View.view (ctx "p1" { u | legal = [ schema "roll", schema "pick" ] } View.init)
-                                        |> Query.fromHtml
-                                        |> Query.has [ id "pick-dice-open" ]
-                                , \_ ->
-                                    View.view (ctx "p1" { u | legal = [ schema "roll", schema "double" ] } View.init)
-                                        |> Query.fromHtml
-                                        |> Query.hasNot [ id "pick-dice-open" ]
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "an open picker shows six faces, confirm and cancel" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            let
-                                model =
-                                    View.update OpenPicker View.init |> Tuple.first
-
-                                rendered =
-                                    View.view (ctx "p1" { u | legal = [ schema "roll", schema "pick" ] } model)
-                                        |> Query.fromHtml
-                            in
-                            Expect.all
-                                [ \_ -> rendered |> Query.has [ id "pick-dice-panel" ]
-                                , \_ -> rendered |> Query.findAll [ tag "button", attribute (Html.Attributes.id "pick-face-6") ] |> Query.count (Expect.equal 1)
-                                , \_ -> rendered |> Query.has [ id "pick-confirm" ]
-                                , \_ -> rendered |> Query.has [ id "pick-cancel" ]
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "a stale open picker hides once pick stops being legal" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            let
-                                model =
-                                    View.update OpenPicker View.init |> Tuple.first
-                            in
-                            View.view (ctx "p1" { u | legal = [ schema "move" ] } model)
-                                |> Query.fromHtml
-                                |> Query.hasNot [ id "pick-dice-panel" ]
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
              ]
             )
         , describe "resigning is an offer of stakes"
@@ -1332,7 +1219,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model swaps =
-                    { drag = Drag.idle, plans = [], swaps = swaps, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                    { drag = Drag.idle, plans = [], swaps = swaps, autoRolled = False, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
 
                 rendered swaps u =
                     View.view (ctx "p1" (twoDice u) (model swaps)) |> Query.fromHtml
@@ -1520,8 +1407,6 @@ suite =
             , test "clearing the interaction state does not forget the roll" <|
                 \_ ->
                     View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] View.init
-                        |> View.update OpenPicker
-                        |> Tuple.first
                         |> View.update (PlayMove "13" "8")
                         |> Tuple.first
                         |> .roll
@@ -1824,7 +1709,6 @@ suite =
                         [ ( "kind", E.string "turn" )
                         , ( "player", E.string player )
                         , ( "dice", E.list E.int dice )
-                        , ( "picked", E.bool False )
                         , ( "moves", E.list E.string moves )
                         , ( "landed", E.list E.int [] )
                         , ( "position", position )
@@ -1906,7 +1790,6 @@ suite =
                         [ ( "kind", E.string "turn" )
                         , ( "player", E.string player )
                         , ( "dice", E.list E.int [ 3, 1 ] )
-                        , ( "picked", E.bool False )
                         , ( "moves", E.list E.string [ "8/5", "6/5" ] )
                         , ( "landed", E.list E.int points )
                         , ( "position", opening )
@@ -2360,7 +2243,6 @@ withDice faces update =
                 E.object
                     [ ( "value", E.int value )
                     , ( "used", E.bool False )
-                    , ( "picked", E.bool False )
                     ]
             }
 
@@ -2397,7 +2279,6 @@ withUsedDie dieId update =
                         E.object
                             [ ( "value", E.int (Protocol.tokenProp D.int "value" token |> Maybe.withDefault 1) )
                             , ( "used", E.bool True )
-                            , ( "picked", E.bool False )
                             ]
                 }
 
@@ -2714,7 +2595,7 @@ perFixture fixture =
                     |> List.head
                     |> Maybe.map
                         (\u ->
-                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, picker = Nothing, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False })
+                            View.view (ctx "p1" u { drag = Drag.idle, plans = [], swaps = 0, autoRolled = False, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False })
                                 |> Query.fromHtml
                                 |> Query.findAll [ class "drop-ghost" ]
                                 |> Query.count (Expect.equal 0)

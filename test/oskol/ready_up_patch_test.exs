@@ -222,13 +222,23 @@ defmodule Oskol.ReadyUpPatchTest do
       recorded = fixture["fingerprint"] |> String.split("\n") |> Enum.map(&Jason.decode!/1)
 
       # These scenes were recorded before the move record joined the scene
-      # data (`record`, `games`): compare everything the old engine showed.
-      without_record = fn scene ->
-        Map.update!(scene, "data", &Map.drop(&1, ["record", "games"]))
+      # data (`record`, `games`), and while every die still said whether it
+      # was picked (the twist, since removed): compare everything the
+      # engine shows today.
+      comparable = fn scene ->
+        scene
+        |> Map.update!("data", &Map.drop(&1, ["record", "games"]))
+        |> Map.update!("zones", fn zones ->
+          Enum.map(zones, fn zone ->
+            Map.update!(zone, "tokens", fn tokens ->
+              Enum.map(tokens, &Map.update!(&1, "props", fn p -> Map.drop(p, ["picked"]) end))
+            end)
+          end)
+        end)
       end
 
       shown = Enum.map(seats, &GameKit.player_update(state.instance, &1["id"])["scene"])
-      assert Enum.map(shown, without_record) == Enum.map(recorded, without_record)
+      assert Enum.map(shown, comparable) == Enum.map(recorded, comparable)
 
       assert (ReadyUpPatch.run() |> report_for(game_id)).result == :unchanged
     end

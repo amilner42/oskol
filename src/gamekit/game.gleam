@@ -12,35 +12,15 @@ import gleam/dict.{type Dict}
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None}
-import gleam/result
 
-/// Lobby-chosen settings. Kept to integers so it is trivially JSON and every
-/// game can read what it needs with a default.
+/// A format's configuration. Kept to integers so it is trivially JSON and
+/// every game can read what it needs with a default.
 pub type Config =
   Dict(String, Int)
 
-/// One value a setting can take. Picking it merges `config` into the
-/// format's config.
-pub type Choice {
-  Choice(id: String, name: String, config: Config)
-}
-
-/// A setting the game's creator picks within a format: a stake, a speed, a
-/// twist. Every setting has a default so a format always starts.
-pub type Setting {
-  Setting(id: String, name: String, choices: List(Choice), default: String)
-}
-
-/// A named preset of settings offered in the lobby, with the settings the
-/// creator may still tune.
+/// A named preset offered in the lobby.
 pub type Format {
-  Format(
-    id: String,
-    name: String,
-    description: String,
-    config: Config,
-    settings: List(Setting),
-  )
+  Format(id: String, name: String, description: String, config: Config)
 }
 
 pub type Info {
@@ -113,20 +93,13 @@ pub fn no_record(_state: state) -> Option(Json) {
   None
 }
 
-/// A format with nothing to tune.
 pub fn format(
   id: String,
   name: String,
   description: String,
   config: Config,
 ) -> Format {
-  Format(
-    id: id,
-    name: name,
-    description: description,
-    config: config,
-    settings: [],
-  )
+  Format(id: id, name: name, description: description, config: config)
 }
 
 pub fn config_get(config: Config, key: String, default: Int) -> Int {
@@ -140,28 +113,9 @@ pub fn find_format(info: Info, format_id: String) -> Result(Format, Nil) {
   list.find(info.formats, fn(f) { f.id == format_id })
 }
 
-/// The config for a format with the creator's selections (setting id to
-/// choice id) applied over the defaults. Unknown choices are an error;
-/// unknown settings are ignored.
-pub fn configure(
-  format: Format,
-  selections: Dict(String, String),
-) -> Result(Config, String) {
-  list.try_fold(format.settings, format.config, fn(config, setting) {
-    let chosen = case dict.get(selections, setting.id) {
-      Ok(id) -> id
-      Error(_) -> setting.default
-    }
-    case list.find(setting.choices, fn(c) { c.id == chosen }) {
-      Ok(choice) -> Ok(dict.merge(config, choice.config))
-      Error(_) -> Error("Unknown " <> setting.name <> ": " <> chosen)
-    }
-  })
-}
-
-/// The config a format starts with when nothing is tuned.
+/// The config a format starts with.
 pub fn default_config(format: Format) -> Config {
-  configure(format, dict.new()) |> result.unwrap(format.config)
+  format.config
 }
 
 pub fn info_to_json(info: Info) -> Json {
@@ -185,25 +139,6 @@ pub fn format_to_json(format: Format) -> Json {
     #("name", json.string(format.name)),
     #("description", json.string(format.description)),
     #("config", json.dict(format.config, fn(k) { k }, json.int)),
-    #(
-      "settings",
-      json.array(format.settings, fn(s) {
-        json.object([
-          #("id", json.string(s.id)),
-          #("name", json.string(s.name)),
-          #("default", json.string(s.default)),
-          #(
-            "choices",
-            json.array(s.choices, fn(c) {
-              json.object([
-                #("id", json.string(c.id)),
-                #("name", json.string(c.name)),
-              ])
-            }),
-          ),
-        ])
-      }),
-    ),
   ])
 }
 

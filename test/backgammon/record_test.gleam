@@ -82,7 +82,7 @@ pub fn a_hit_is_starred_test() {
   let s = move(s, "p1", Point(6), Point(5))
   let s = apply(s, "p1", engine.Play)
   assert last_turn(s)
-    == record.Turn("p1", [3, 1], False, ["8/5*", "6/5"], state.snapshot(s), [
+    == record.Turn("p1", [3, 1], ["8/5*", "6/5"], state.snapshot(s), [
       5,
       5,
     ])
@@ -102,7 +102,7 @@ pub fn entering_from_the_bar_reads_bar_slash_point_test() {
   let s = move(s, "p1", Point(13), Point(8))
   let s = apply(s, "p1", engine.Play)
   assert last_turn(s)
-    == record.Turn("p1", [5, 3], False, ["bar/22", "13/8"], state.snapshot(s), [
+    == record.Turn("p1", [5, 3], ["bar/22", "13/8"], state.snapshot(s), [
       8,
       22,
     ])
@@ -116,7 +116,7 @@ pub fn bearing_off_reads_point_slash_off_test() {
   let s = move(s, "p1", Point(6), Point(2))
   let s = apply(s, "p1", engine.Play)
   assert last_turn(s)
-    == record.Turn("p1", [6, 4], False, ["6/off", "6/2"], state.snapshot(s), [2])
+    == record.Turn("p1", [6, 4], ["6/off", "6/2"], state.snapshot(s), [2])
 }
 
 pub fn a_double_groups_identical_moves_test() {
@@ -137,14 +137,12 @@ pub fn a_double_groups_identical_moves_test() {
   // Grouped by move, in the order each was first made, however the four
   // were interleaved.
   assert last_turn(s)
-    == record.Turn(
-      "p1",
-      [3, 3],
-      False,
-      ["8/5(2)", "6/3(2)"],
-      state.snapshot(s),
-      [3, 3, 5, 5],
-    )
+    == record.Turn("p1", [3, 3], ["8/5(2)", "6/3(2)"], state.snapshot(s), [
+      3,
+      3,
+      5,
+      5,
+    ])
   assert record.text(last_turn(s)) == "33: 8/5(2) 6/3(2)"
 }
 
@@ -165,7 +163,7 @@ pub fn a_hit_by_a_grouped_move_keeps_its_star_test() {
   // The step from 5 continues the checker that got there last: two made
   // the point (the first of them hit), one went on to 2.
   assert last_turn(s)
-    == record.Turn("p1", [3, 3], False, ["8/5*(2)", "8/2"], state.snapshot(s), [
+    == record.Turn("p1", [3, 3], ["8/5*(2)", "8/2"], state.snapshot(s), [
       2,
       5,
       5,
@@ -185,7 +183,7 @@ pub fn black_reads_the_board_from_its_own_side_test() {
   let s = move(s, "p2", Point(19), Point(21))
   let s = apply(s, "p2", engine.Play)
   assert last_turn(s)
-    == record.Turn("p2", [4, 2], False, ["24/20", "6/4"], state.snapshot(s), [
+    == record.Turn("p2", [4, 2], ["24/20", "6/4"], state.snapshot(s), [
       5,
       21,
     ])
@@ -210,7 +208,7 @@ pub fn one_checker_running_both_dice_is_one_move_test() {
   let s = move(s, "p1", Point(18), Point(13))
   let s = apply(s, "p1", engine.Play)
   assert last_turn(s)
-    == record.Turn("p1", [6, 5], False, ["24/13"], state.snapshot(s), [13])
+    == record.Turn("p1", [6, 5], ["24/13"], state.snapshot(s), [13])
   assert record.text(last_turn(s)) == "65: 24/13"
 }
 
@@ -239,7 +237,7 @@ pub fn chaining_does_not_depend_on_which_checker_id_moved_test() {
   assert list.contains(board.checkers_at(s.board, White, Point(13)), waiting)
   let s = apply(s, "p1", engine.Play)
   assert last_turn(s)
-    == record.Turn("p1", [6, 5], False, ["24/13"], state.snapshot(s), [13])
+    == record.Turn("p1", [6, 5], ["24/13"], state.snapshot(s), [13])
 }
 
 /// A double that runs both back checkers all the way is `24/12(2)`.
@@ -258,7 +256,7 @@ pub fn a_double_running_both_back_checkers_is_grouped_whole_test() {
   let s = move(s, "p1", Point(18), Point(12))
   let s = apply(s, "p1", engine.Play)
   assert last_turn(s)
-    == record.Turn("p1", [6, 6], False, ["24/12(2)"], state.snapshot(s), [
+    == record.Turn("p1", [6, 6], ["24/12(2)"], state.snapshot(s), [
       12,
       12,
     ])
@@ -280,7 +278,7 @@ pub fn a_hit_on_the_way_is_written_where_it_happened_test() {
   let s = move(s, "p1", Point(18), Point(13))
   let s = apply(s, "p1", engine.Play)
   assert last_turn(s)
-    == record.Turn("p1", [6, 5], False, ["24/18*/13"], state.snapshot(s), [13])
+    == record.Turn("p1", [6, 5], ["24/18*/13"], state.snapshot(s), [13])
   assert s.board |> board.on_bar(Black) == 1
 }
 
@@ -298,15 +296,14 @@ pub fn entering_and_running_on_is_one_move_test() {
   let s = move(s, "p1", Point(22), Point(16))
   let s = apply(s, "p1", engine.Play)
   assert last_turn(s)
-    == record.Turn("p1", [6, 3], False, ["bar/16"], state.snapshot(s), [16])
+    == record.Turn("p1", [6, 3], ["bar/16"], state.snapshot(s), [16])
   let home =
     setup([#(White, Point(6), 1), #(White, Off, 14), #(Black, Point(19), 15)])
   let s = position(23, "single", home, White, [2, 4])
   let s = move(s, "p1", Point(6), Point(4))
   let s = move(s, "p1", Point(4), Off)
   let s = apply(s, "p1", engine.Play)
-  let assert [_, record.Turn("p1", [4, 2], False, moves, _, landed), ..] =
-    s.record
+  let assert [_, record.Turn("p1", [4, 2], moves, _, landed), ..] = s.record
   assert moves == ["6/off"]
   // Borne off: nothing on the board to mark.
   assert landed == []
@@ -326,7 +323,7 @@ pub fn the_high_die_is_written_first_even_on_the_opening_roll_test() {
     })
   let assert [low, high] = s.last_roll
   let s = play_a_turn(s)
-  let assert [record.Turn("p2", dice, _, _, _, _)] = s.record
+  let assert [record.Turn("p2", dice, _, _, _)] = s.record
   assert dice == [high, low]
 }
 
@@ -349,7 +346,7 @@ pub fn a_snapshot_keeps_the_cube_as_it_stood_test() {
   let s = move(s, "p1", Point(8), Point(5))
   let s = move(s, "p1", Point(6), Point(5))
   let s = apply(s, "p1", engine.Play)
-  let assert record.Turn(_, _, _, _, position, _) = last_turn(s)
+  let assert record.Turn(_, _, _, position, _) = last_turn(s)
   assert position.cube == 2
   assert position.cube_owner == Some("p2")
   // A centred cube has no owner.
@@ -372,26 +369,8 @@ pub fn a_dance_records_the_roll_and_no_play_test() {
   let s = position(7, "single", b, White, [6, 5])
   assert state.no_moves(s)
   let s = apply(s, "p1", engine.Play)
-  assert last_turn(s)
-    == record.Turn("p1", [6, 5], False, [], state.snapshot(s), [])
+  assert last_turn(s) == record.Turn("p1", [6, 5], [], state.snapshot(s), [])
   assert record.text(last_turn(s)) == "65: (no play)"
-}
-
-pub fn a_picked_roll_is_marked_test() {
-  let s = new_game(8, "single")
-  let s =
-    state.GameState(
-      ..s,
-      phase: state.Rolling(White),
-      config: state.Config(..s.config, pick_dice: True),
-      record: [],
-    )
-  let s = apply(s, "p1", engine.Pick(6, 5))
-  let s = move(s, "p1", Point(24), Point(18))
-  let s = move(s, "p1", Point(18), Point(13))
-  let s = apply(s, "p1", engine.Play)
-  assert last_turn(s)
-    == record.Turn("p1", [6, 5], True, ["24/13"], state.snapshot(s), [13])
 }
 
 pub fn staging_and_undo_never_touch_the_record_test() {
@@ -443,7 +422,7 @@ pub fn a_won_game_ends_the_game_record_with_its_kind_and_score_test() {
   let assert [record.GameOver(1, "p1", "gammon", 2, 1, scores), turn, ..] =
     s.record
   assert scores == [#("p1", 2), #("p2", 0)]
-  let assert record.Turn("p1", [2, 1], False, ["1/off"], position, []) = turn
+  let assert record.Turn("p1", [2, 1], ["1/off"], position, []) = turn
   // The snapshot is the board the turn left, before the next game reset it.
   assert position.white.off == 15 && position.black.off == 0
   assert s.game_number == 2
@@ -641,10 +620,10 @@ pub fn the_wire_shape_is_plain_json_test() {
   let opening = record.snapshot(board.initial(), 1, None)
   assert json.to_string(
       record.to_json(
-        record.Turn("p1", [3, 1], False, ["8/5*", "6/5"], opening, [5, 5]),
+        record.Turn("p1", [3, 1], ["8/5*", "6/5"], opening, [5, 5]),
       ),
     )
-    == "{\"kind\":\"turn\",\"player\":\"p1\",\"dice\":[3,1],\"picked\":false,\"moves\":[\"8/5*\",\"6/5\"],\"landed\":[5,5],\"position\":"
+    == "{\"kind\":\"turn\",\"player\":\"p1\",\"dice\":[3,1],\"moves\":[\"8/5*\",\"6/5\"],\"landed\":[5,5],\"position\":"
     <> json.to_string(record.snapshot_to_json(opening))
     <> "}"
   assert json.to_string(record.snapshot_to_json(opening))
@@ -755,7 +734,7 @@ pub fn a_turn_records_the_board_it_left_test() {
     [] -> s
   }
   let s = apply(s, mover, engine.Play)
-  let assert [record.Turn(_, _, _, _, position, _), ..] = s.record
+  let assert [record.Turn(_, _, _, position, _), ..] = s.record
   assert position == state.snapshot(s)
   assert position != record.snapshot(board.initial(), 1, None)
   // Every checker is somewhere in the snapshot.
@@ -829,7 +808,7 @@ pub fn a_replayed_match_carries_the_same_record_test() {
   // Every turn's dice are the two that were rolled.
   list.each(report.state.record, fn(e) {
     case e {
-      record.Turn(_, dice, _, _, _, _) -> {
+      record.Turn(_, dice, _, _, _) -> {
         assert list.length(dice) == 2
       }
       _ -> Nil

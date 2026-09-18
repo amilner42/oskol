@@ -457,7 +457,6 @@ fn turn_json(
       Some(#(a, b)) -> json.array([a, b], json.int)
       None -> json.null()
     }),
-    #("picked", json.bool(turn.picked)),
     #("double", case turn.double {
       Some(Took) -> json.string("take")
       Some(Passed) -> json.string("pass")
@@ -516,11 +515,9 @@ fn turn_json(
             ])
         }
     }),
-    #("luck", case graded.luck, turn.picked {
-      // Picked dice are chosen, not rolled: there is no luck to speak of.
-      _, True -> json.null()
-      Some(luck), False -> json.float(luck)
-      None, False -> json.null()
+    #("luck", case graded.luck {
+      Some(luck) -> json.float(luck)
+      None -> json.null()
     }),
   ])
 }

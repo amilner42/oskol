@@ -16,7 +16,7 @@ pub type Room {
 /// setup map's decidable half; `seed` and `control` are tooling-only and
 /// stay on the Elixir side.
 pub type Setup {
-  Setup(format: String, selections: List(#(String, String)), clock: String)
+  Setup(format: String, clock: String)
 }
 
 /// A seat just taken: its player id, and whether taking it filled the table

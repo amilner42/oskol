@@ -43,8 +43,7 @@ defmodule OskolWeb.Api.LandingController do
         slug,
         param(params, "format"),
         param(params, "name"),
-        param(params, "clock"),
-        selections(params)
+        param(params, "clock")
       )
     )
   end
@@ -173,20 +172,6 @@ defmodule OskolWeb.Api.LandingController do
     case Map.get(params, key) do
       value when is_binary(value) -> value
       _ -> ""
-    end
-  end
-
-  # The creator's setting choices, as the #(setting_id, choice_id) pairs the
-  # handler takes. Anything that is not a string pair is not a choice.
-  defp selections(params) do
-    case Map.get(params, "selections") do
-      %{} = selections ->
-        for {setting, choice} <- selections,
-            is_binary(setting) and is_binary(choice),
-            do: {setting, choice}
-
-      _ ->
-        []
     end
   end
 

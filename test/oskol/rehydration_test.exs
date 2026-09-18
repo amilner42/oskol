@@ -177,6 +177,31 @@ defmodule Oskol.RehydrationTest do
     assert {:error, :no_seat} = Game.attach(game_id, "tok-" <> p1, self())
   end
 
+  test "a room whose stored config carries a selections key still rebuilds" do
+    # Every config row written before the twists went carries
+    # `"selections" => %{}` (and prod's oldest carry a choice in it). The
+    # setup has no slot for the key any more; restoring one must ignore it
+    # rather than refuse the room.
+    %{game_id: game_id, p1: p1, g1: g1} = started(42)
+    assert {:cut_off, 6} = Oskol.Bots.play(game_id, 7, 6)
+    Persister.flush()
+    kill_room(game_id)
+
+    row = Repo.get(Persistence.Game, game_id)
+
+    Repo.update!(
+      Ecto.Changeset.change(row,
+        config: Map.put(row.config, "selections", %{"twist" => "pick_dice"})
+      )
+    )
+
+    assert {:ok, _pid} = Game.lookup_game(game_id)
+    state = Game.get_server_state(game_id)
+    assert state.action_count == 6
+    refute Map.has_key?(state.setup, :selections)
+    assert {:ok, ^p1, _} = Game.attach(game_id, g1, self())
+  end
+
   test "a code with no live room and no row stays not found" do
     assert Game.lookup_game(unique_game_id("ghost")) == :not_found
   end

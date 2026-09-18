@@ -16,7 +16,7 @@ import oskol/rooms/room.{Seat, Seated, Setup}
 const backgammon = "backgammon"
 
 fn setup() -> room.Setup {
-  Setup(format: "single", selections: [], clock: "none")
+  Setup(format: "single", clock: "none")
 }
 
 // ---------- Codes ----------
