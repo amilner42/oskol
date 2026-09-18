@@ -46,6 +46,8 @@ import Browser.Events
 import Dict
 import Games.Backgammon.Replay as Replay exposing (Annotation(..), Candidate, Entry(..), Game, GameAnalysis, GameReview, Index, MoveReview(..), Record, Review, Status(..), TurnReview)
 import Games.Backgammon.View as Board
+import Api.Catalog as Catalog
+import Page.Play exposing (storePref)
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, style)
 import Html.Events exposing (on, onClick)
@@ -58,6 +60,8 @@ import Svg
 import Svg.Attributes as SvgAttr
 import Task
 import Time
+import Ui.Scrub
+import Ui.Shell
 
 
 
@@ -76,6 +80,7 @@ one the engine proposes (by its rank among the top moves).
 type Showing
     = Played
     | Proposed Int
+    | Before -- the roll on the position it was thrown into, the move not yet made
 
 
 type Tab
@@ -104,6 +109,10 @@ type alias Model =
     , polls : Int -- asks made while something was pending
     , retrying : List Int -- games whose retry is on its way
     , flipped : Bool -- the board is turned around: the other player is at the bottom
+    , matchOpen : Bool -- the match panel (the games, to pick one) is open over the board
+    , themesOpen : Bool -- the board picker's list is showing
+    , gamePrs : Dict.Dict Int (List ( String, Float )) -- each graded game's PRs by seat, from /ratings
+    , matchPrs : Dict.Dict String Float -- each seat's PR over the match so far
     }
 
 
@@ -158,17 +167,22 @@ init session config =
             , game = Maybe.withDefault 1 config.game
             , step = 0
             , showing = Played
-            , tab = MovesTab
+            , tab = SummaryTab
             , touch = Nothing
             , polls = 0
             , retrying = []
             , flipped = False
+            , matchOpen = False
+            , themesOpen = False
+            , gamePrs = Dict.empty
+            , matchPrs = Dict.empty
             }
     in
     ( model
     , Cmd.batch
         [ Api.get session (base model ++ "/record") Replay.recordDecoder GotRecord
         , fetchIndex model
+        , Catalog.fetchRatings session config.slug config.gameId GotRatings
         ]
     )
 
@@ -258,6 +272,10 @@ type Msg
     | Retry Int
     | Follow Int -- keep this step's line in view, if it is still the current one
     | Flipped -- turn the board around
+    | ToggleMatch -- open or close the match panel
+    | ToggleThemes -- open or close the board picker
+    | PickTheme String -- this reader's board colours: display only
+    | GotRatings (Result Api.Error Catalog.Ratings)
     | NoOp
 
 
@@ -266,6 +284,28 @@ update msg model =
     case msg of
         Flipped ->
             ( { model | flipped = not model.flipped }, Cmd.none )
+
+        ToggleMatch ->
+            ( { model | matchOpen = not model.matchOpen }, Cmd.none )
+
+        ToggleThemes ->
+            ( { model | themesOpen = not model.themesOpen }, Cmd.none )
+
+        -- The board changes at once; this browser keeps it, and the guest's
+        -- row keeps it for their other browsers.
+        PickTheme name ->
+            ( { model | themesOpen = False, session = Session.withPref "backgammon_theme" name model.session }
+            , Cmd.batch
+                [ storePref { key = "backgammon_theme", value = name }
+                , Catalog.savePref model.session "backgammon_theme" name (always NoOp)
+                ]
+            )
+
+        GotRatings (Ok ratings) ->
+            ( { model | gamePrs = ratings.games, matchPrs = ratings.prs }, Cmd.none )
+
+        GotRatings (Err _) ->
+            ( model, Cmd.none )
 
         GotRecord (Ok record) ->
             let
@@ -351,7 +391,7 @@ update msg model =
                 ( model, Cmd.none )
 
             else
-                wantAnalysis ( { model | game = number, step = 0, showing = Played }, follow 0 )
+                wantAnalysis ( { model | matchOpen = False, game = number, step = 0, showing = Played }, follow 0 )
 
         GoTo step ->
             goTo step model
@@ -657,14 +697,7 @@ viewHead model record =
                 "MATCH TO " ++ String.fromInt r.target
     in
     div [ class "rp-head" ]
-        [ Html.a
-            [ href (Route.href (Route.play model.slug model.gameId))
-            , class "rp-back pixel text-[8px]"
-            , id "rp-back"
-            , Html.Attributes.title "Back to the table"
-            ]
-            [ text "◀ TABLE" ]
-        , span [ class "pixel text-[9px] sm:text-xs whitespace-nowrap" ] [ text "REPLAY" ]
+        [ Ui.Shell.mark
         , case record of
             Just r ->
                 span [ class "rp-tag pixel text-[7px] sm:text-[8px] truncate" ]
@@ -672,38 +705,55 @@ viewHead model record =
 
             Nothing ->
                 text ""
-        , case record of
-            Just r ->
-                button
-                    [ class "rp-flip pixel text-[8px]"
-                    , id "rp-flip"
-                    , onClick Flipped
-                    , Html.Attributes.title ("Turn the board around (" ++ (nameOf r (facing model r) |> String.toUpper) ++ " at the bottom)")
-                    ]
-                    [ flipIcon ]
-
-            Nothing ->
-                text ""
+        , viewThemePicker model
         ]
 
 
-{-| Two arrows around the board's middle: the sides swap.
+{-| The board picker, as the table and the home page draw it: the chip of
+the board you are looking at and a chevron that turns; the list beneath.
 -}
-flipIcon : Html msg
-flipIcon =
-    Svg.svg
-        [ SvgAttr.viewBox "0 0 16 16"
-        , SvgAttr.width "13"
-        , SvgAttr.height "13"
-        , SvgAttr.fill "none"
-        , SvgAttr.stroke "currentColor"
-        , SvgAttr.strokeWidth "1.6"
-        , SvgAttr.strokeLinecap "round"
-        , SvgAttr.strokeLinejoin "round"
-        , Html.Attributes.attribute "aria-hidden" "true"
-        ]
-        [ Svg.path [ SvgAttr.d "M4 6h8l-2.5-3" ] []
-        , Svg.path [ SvgAttr.d "M12 10H4l2.5 3" ] []
+viewThemePicker : Model -> Html Msg
+viewThemePicker model =
+    let
+        current =
+            theme model
+    in
+    div [ class "bg-themes rp-themes shrink-0" ]
+        [ button
+            [ class "flex items-center gap-1 px-1 py-0.5"
+            , id "bg-theme-button"
+            , attribute "aria-expanded"
+                (if model.themesOpen then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , Html.Attributes.title "Board colours"
+            , onClick ToggleThemes
+            ]
+            [ span [ class ("bg-theme-chip " ++ Board.themeClass current) ] [ Board.themeBoard ]
+            , span [ class "bg-theme-chevron hero-chevron-down w-3.5 h-3.5", attribute "aria-hidden" "true" ] []
+            ]
+        , if model.themesOpen then
+            div [ class "bg-theme-list", id "bg-theme-list" ]
+                (List.map
+                    (\( key, name ) ->
+                        button
+                            [ classList [ ( "bg-theme-option", True ), ( "on", key == current ) ]
+                            , attribute "data-theme-option" key
+                            , Html.Attributes.title name
+                            , onClick (PickTheme key)
+                            ]
+                            [ span [ class ("bg-theme-chip " ++ Board.themeClass key) ] [ Board.themeBoard ]
+                            , span [ class "bg-theme-name" ] [ text name ]
+                            ]
+                    )
+                    Board.themes
+                )
+
+          else
+            text ""
         ]
 
 
@@ -739,7 +789,38 @@ viewReplay model record game =
                     Nothing
 
         shown =
-            proposed |> Maybe.andThen (Replay.stillForCandidate still) |> Maybe.withDefault still
+            case ( model.showing, Replay.entryAt game model.step ) of
+                ( Before, Just (TurnEntry _) ) ->
+                    -- the board the roll was thrown into: last step's position, this
+                    -- turn's dice and mover, nothing landed yet
+                    let
+                        previous =
+                            Replay.stillAt record game (model.step - 1)
+                    in
+                    { still | position = previous.position, landed = [] }
+
+                _ ->
+                    proposed |> Maybe.andThen (Replay.stillForCandidate still) |> Maybe.withDefault still
+
+        -- The played move's grade, while it is the one on the board: the
+        -- board wears its colour and a tab names it, so stepping through a
+        -- game says at a glance which moves were good and which cost.
+        playedGrade =
+            case ( model.showing, review, Replay.entryAt game model.step ) of
+                ( Played, Just r, Just (TurnEntry _) ) ->
+                    Replay.moveAt r (model.step - 1)
+                        |> Maybe.andThen
+                            (\( _, move ) ->
+                                case move of
+                                    Moved m ->
+                                        Just m.grade
+
+                                    Danced ->
+                                        Nothing
+                            )
+
+                _ ->
+                    Nothing
 
         scores =
             scoresBefore record game
@@ -761,11 +842,21 @@ viewReplay model record game =
                 }
     in
     [ viewHead model (Just record)
-    , viewPicker model record
+    , if model.matchOpen then
+        viewMatchSheet model record
+
+      else
+        text ""
     , div [ class "rp-main" ]
         [ div [ class "rp-stage" ]
             [ div
-                [ classList [ ( "rp-board", True ), ( "is-proposed", proposed /= Nothing ) ]
+                [ classList
+                    [ ( "rp-board", True )
+                    , ( "is-proposed", proposed /= Nothing )
+                    , ( "is-graded", playedGrade /= Nothing )
+                    , ( "dice-played", model.showing /= Before && Replay.entryAt game model.step /= Nothing )
+                    , ( "g-" ++ Maybe.withDefault "" playedGrade, playedGrade /= Nothing )
+                    ]
                 , id "rp-board"
                 , on "touchstart" (touchAt TouchStarted)
                 , on "touchend" (touchAt TouchEnded)
@@ -773,28 +864,182 @@ viewReplay model record game =
                 [ board
                 , case proposed of
                     Just c ->
-                        span [ class "rp-proposed pixel text-[7px]" ] [ text ("ENGINE'S #" ++ String.fromInt c.rank ++ " · " ++ c.notation) ]
+                        span [ class "rp-proposed pixel text-[7px] inline-flex items-center gap-1.5" ]
+                            [ span [ class "hero-trophy w-3.5 h-3.5", attribute "aria-hidden" "true" ] []
+                            , text
+                                (if c.rank == 1 then
+                                    "BEST MOVE"
+
+                                 else
+                                    "ENGINE'S #" ++ String.fromInt c.rank
+                                )
+                            ]
 
                     Nothing ->
-                        text ""
+                        case playedGrade of
+                            Just grade ->
+                                span [ class ("rp-proposed rp-graded pixel text-[7px] g-" ++ grade), attribute "data-grade" grade ]
+                                    [ text (String.toUpper (Replay.gradeLabel grade) ++ " " ++ gradeMark grade) ]
+
+                            Nothing ->
+                                text ""
+                , viewBestMoveToggle model record game still
+                , viewDiceToggle model record game still
                 ]
-            , viewControls model game
+            , viewControls model record game
             ]
         , div [ class "rp-side" ]
             [ viewNote model record game
-            , div [ class "rp-tabs" ]
-                [ tabButton model MovesTab "MOVES"
-                , tabButton model SummaryTab "ANALYSIS"
-                ]
-            , case model.tab of
-                MovesTab ->
-                    viewMoves model record game
+            , div [ class "rp-panel" ]
+                [ div [ class "rp-tabs" ]
+                    [ tabButton model SummaryTab "ANALYSIS"
+                    , tabButton model MovesTab "MOVES"
+                    ]
+                , case model.tab of
+                    MovesTab ->
+                        viewMoves model record game
 
-                SummaryTab ->
-                    viewSummary model record game
+                    SummaryTab ->
+                        viewSummary model record game
+                ]
             ]
         ]
     ]
+
+
+{-| In the band, on the half opposite the dice: the door between the
+move played and the engine's best. "SHOW BEST MOVE" while the played move
+is up and it was not the best; "SEE MOVE PLAYED" while the best is up;
+nothing when the two are one, since the board's green edge already says
+so. For either player: a review is a walk through the game.
+-}
+viewBestMoveToggle : Model -> Record -> Game -> { a | mover : Maybe String } -> Html Msg
+viewBestMoveToggle model record game still =
+    let
+        move =
+            currentReview model
+                |> Maybe.andThen .review
+                |> Maybe.andThen
+                    (\r ->
+                        if model.step > 0 then
+                            Replay.moveAt r (model.step - 1) |> Maybe.map Tuple.second
+
+                        else
+                            Nothing
+                    )
+
+        -- the dice sit on the mover's side; this goes on the other
+        side =
+            if still.mover == Just (facing model record) then
+                "is-left"
+
+            else
+                "is-right"
+    in
+    case ( Replay.entryAt game model.step, move ) of
+        ( Just (TurnEntry _), Just (Moved m) ) ->
+            let
+                bestIsPlayed =
+                    m.played.rank == m.best.rank
+
+                showBest =
+                    button [ class "rp-best-toggle btn-arcade sky pixel text-[8px] px-3 py-2", id "rp-best-toggle", onClick (Show (Proposed m.best.rank)) ] [ text "SHOW BEST MOVE" ]
+
+                seePlayed =
+                    button [ class "rp-best-toggle btn-arcade plain pixel text-[8px] px-3 py-2", id "rp-best-toggle", onClick (Show Played) ] [ text "SEE MOVE PLAYED" ]
+            in
+            case model.showing of
+                -- the move taken back: the best move is the door; the dice
+                -- bring the played one back
+                Before ->
+                    if bestIsPlayed then
+                        text ""
+
+                    else
+                        div [ class ("rp-best-toggle-wrap " ++ side) ] [ showBest ]
+
+                -- a best move needs no door: the board's green edge says it
+                Played ->
+                    if bestIsPlayed then
+                        text ""
+
+                    else
+                        div [ class ("rp-best-toggle-wrap " ++ side) ] [ showBest ]
+
+                Proposed _ ->
+                    div [ class ("rp-best-toggle-wrap " ++ side) ] [ seePlayed ]
+
+        _ ->
+            text ""
+
+
+{-| Over the dice: a tap rewinds the move, so the roll sits on the board
+it was thrown into and you can think it through; a second tap plays it
+again. The dice are dimmed while the move is on the board.
+-}
+viewDiceToggle : Model -> Record -> Game -> { a | mover : Maybe String } -> Html Msg
+viewDiceToggle model record game still =
+    let
+        -- the dice sit on the mover's side
+        side =
+            if still.mover == Just (facing model record) then
+                "is-right"
+
+            else
+                "is-left"
+    in
+    case Replay.entryAt game model.step of
+        Just (TurnEntry _) ->
+            button
+                [ class ("rp-dice-toggle " ++ side)
+                , id "rp-dice-toggle"
+                , attribute "aria-label"
+                    (if model.showing == Before then
+                        "Show the move played"
+
+                     else
+                        "Take the move back: see the roll on the board it was thrown into"
+                    )
+                , Html.Attributes.title
+                    (if model.showing == Before then
+                        "Show the move played"
+
+                     else
+                        "See the roll before the move"
+                    )
+                , onClick
+                    (if model.showing == Before then
+                        Show Played
+
+                     else
+                        Show Before
+                    )
+                ]
+                []
+
+        _ ->
+            text ""
+
+
+{-| The annotators' mark for a grade: a tick, nothing, ?!, ?, ??.
+-}
+gradeMark : String -> String
+gradeMark grade =
+    case grade of
+        "best" ->
+            "✓"
+
+        "doubtful" ->
+            "?!"
+
+        "bad" ->
+            "?"
+
+        "very_bad" ->
+            "??"
+
+        _ ->
+            ""
 
 
 touchAt : (( Float, Float ) -> Msg) -> D.Decoder Msg
@@ -849,84 +1094,220 @@ scoreText record scores =
 -- THE GAME PICKER
 
 
-viewPicker : Model -> Record -> Html Msg
-viewPicker model record =
-    if List.length record.games <= 1 then
-        text ""
+{-| The match panel, as the table draws it: a column per player with their
+points and match PR (a trophy by the better one), then the games newest
+first, a green +N for the winner and a trophy by the better PR of each
+game. Here a row is a door: it puts that game on the board.
+-}
+viewMatchSheet : Model -> Record -> Html Msg
+viewMatchSheet model record =
+    let
+        heading =
+            if record.target <= 0 then
+                "UNLIMITED"
 
-    else
-        div [ class "rp-games", id "rp-games" ]
-            (record.games
-                |> List.map
-                    (\g ->
-                        let
-                            status =
-                                model.index |> Maybe.andThen (Replay.indexEntry g.number) |> Maybe.map .status
+            else
+                "MATCH TO " ++ String.fromInt record.target
 
-                            label =
-                                case resultOf g of
-                                    Just r ->
-                                        Replay.playerNamed record r.winner ++ " +" ++ String.fromInt r.points ++ " · " ++ scoreText record r.scores
+        results =
+            record.games |> List.filterMap resultOf
 
-                                    Nothing ->
-                                        "in play"
-                        in
-                        button
-                            [ classList [ ( "rp-game", True ), ( "is-on", g.number == model.game ) ]
-                            , attribute "data-game" (String.fromInt g.number)
-                            , onClick (PickGame g.number)
-                            ]
-                            [ span [ class "pixel text-[7px]" ] [ text "G", span [ class "hidden sm:inline" ] [ text "AME " ], text (String.fromInt g.number) ]
-                            , span [ class "rp-game-result" ] [ text label ]
-                            , case status of
-                                Just Pending ->
-                                    span [ class "rp-dot pending", Html.Attributes.title "Being analysed" ] []
+        finalScores =
+            results |> List.reverse |> List.head |> Maybe.map .scores |> Maybe.withDefault []
 
-                                Just Failed ->
-                                    span [ class "rp-dot failed", Html.Attributes.title "Analysis failed" ] []
+        scoreOf id =
+            finalScores |> List.filter (\( p, _ ) -> p == id) |> List.head |> Maybe.map Tuple.second |> Maybe.withDefault 0
 
-                                _ ->
+        bestMatchPr =
+            Dict.toList model.matchPrs |> List.sortBy Tuple.second |> List.head |> Maybe.map Tuple.first
+
+        column player =
+            div [ class "bg-match-col" ]
+                [ span [ class "bg-match-col-name truncate" ] [ text player.name ]
+                , span [ class "bg-match-col-score pixel tabular-nums" ] [ text (String.fromInt (scoreOf player.id)) ]
+                , span [ class "bg-match-col-pr tabular-nums inline-flex items-center gap-1" ]
+                    [ if bestMatchPr == Just player.id && Dict.size model.matchPrs > 1 then
+                        span [ class "hero-trophy w-3.5 h-3.5", Html.Attributes.title "The better match PR" ] []
+
+                      else
+                        text ""
+                    , text
+                        (case Dict.get player.id model.matchPrs of
+                            Just pr ->
+                                "PR " ++ Replay.formatPr pr
+
+                            Nothing ->
+                                "PR …"
+                        )
+                    ]
+                ]
+
+        -- The game in play, if the match is still going: the record's last
+        -- game while it has no result, else the one about to begin. A door
+        -- to the table, where it is.
+        matchOver =
+            record.target > 0 && List.any (\( _, points ) -> points >= record.target) finalScores
+
+        lastGame =
+            record.games |> List.reverse |> List.head
+
+        liveNumber =
+            case lastGame of
+                Just g ->
+                    if resultOf g == Nothing then
+                        Just g.number
+
+                    else if matchOver then
+                        Nothing
+
+                    else
+                        Just (g.number + 1)
+
+                Nothing ->
+                    Just 1
+
+        liveRow =
+            case liveNumber of
+                Just n ->
+                    [ Html.a
+                        [ class "bg-match-row rp-match-row is-live"
+                        , id "rp-match-live"
+                        , href (Route.href (Route.play model.slug model.gameId))
+                        , Html.Attributes.title "The game in play, at the table"
+                        ]
+                        [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt n) ]
+                        , span [ class "bg-match-live font-bold flex-1 text-center" ] [ text "In play" ]
+                        , span [ class "bg-match-analysis inline-flex items-center", attribute "aria-hidden" "true" ] [ span [ class "hero-play w-4 h-4" ] [] ]
+                        ]
+                    ]
+
+                Nothing ->
+                    []
+
+        row g =
+            let
+                prs =
+                    Dict.get g.number model.gamePrs |> Maybe.withDefault []
+
+                best =
+                    prs |> List.sortBy Tuple.second |> List.head |> Maybe.map Tuple.first
+
+                result =
+                    resultOf g
+
+                cell player =
+                    let
+                        won =
+                            Maybe.map .winner result == Just player.id
+
+                        played_best =
+                            best == Just player.id && List.length prs > 1
+                    in
+                    div [ classList [ ( "bg-match-cell", True ), ( "win", won ), ( "best", played_best ) ] ]
+                        [ case result of
+                            Just r ->
+                                if won then
+                                    span [ class "bg-match-points pixel", Html.Attributes.title r.result ] [ text ("+" ++ String.fromInt r.points) ]
+
+                                else
                                     text ""
+
+                            Nothing ->
+                                text ""
+                        , span [ class "bg-match-pr tabular-nums inline-flex items-center gap-1" ]
+                            [ if played_best then
+                                span [ class "hero-trophy w-3.5 h-3.5", Html.Attributes.title "The better PR this game" ] []
+
+                              else
+                                text ""
+                            , text
+                                (prs
+                                    |> List.filter (\( id_, _ ) -> id_ == player.id)
+                                    |> List.head
+                                    |> Maybe.map (Tuple.second >> Replay.formatPr)
+                                    |> Maybe.withDefault "…"
+                                )
                             ]
-                    )
-            )
+                        ]
+            in
+            button
+                [ classList [ ( "bg-match-row rp-match-row", True ), ( "is-on", g.number == model.game ), ( "is-live", result == Nothing ) ]
+                , attribute "data-game" (String.fromInt g.number)
+                , onClick (PickGame g.number)
+                ]
+                [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt g.number) ]
+                , if result == Nothing then
+                    span [ class "bg-match-live font-bold flex-1 text-center" ] [ text "In play" ]
+
+                  else
+                    div [ class "bg-match-cells" ] (List.map cell record.players)
+                , span [ class "bg-match-analysis inline-flex items-center justify-center", attribute "aria-hidden" "true" ]
+                    [ if g.number == model.game then
+                        -- the game on the board
+                        span [ class "bg-match-here" ] []
+
+                      else
+                        span [ class "hero-magnifying-glass w-4 h-4" ] []
+                    ]
+                ]
+    in
+    div [ class "fixed inset-0 z-40 flex items-end sm:items-center justify-center p-3", id "bg-match-sheet" ]
+        [ div [ class "absolute inset-0", style "background" "rgba(35, 36, 58, 0.55)", onClick ToggleMatch ] []
+        , div [ class "bg-match relative w-full max-w-md flex flex-col min-h-0" ]
+            [ div [ class "bg-match-head" ]
+                [ span [ class "pixel text-[8px]", style "color" "var(--pencil)" ] [ text heading ]
+                , button [ class "bg-match-close", id "bg-match-close", attribute "aria-label" "Close", onClick ToggleMatch ] [ text "✕" ]
+                ]
+            , div [ class "bg-match-cols bg-match-row" ]
+                [ span [ class "bg-match-n" ] []
+                , div [ class "bg-match-cells" ] (List.map column record.players)
+                , span [ class "bg-match-analysis-gap" ] []
+                ]
+            , div [ class "bg-match-list" ] (liveRow ++ (record.games |> List.filter (\g -> resultOf g /= Nothing) |> List.reverse |> List.map row))
+            ]
+        ]
 
 
 
 -- THE CONTROLS
 
 
-viewControls : Model -> Game -> Html Msg
-viewControls model game =
+viewControls : Model -> Record -> Game -> Html Msg
+viewControls model record game =
     let
         last =
             Replay.lastStep game
 
-        control label name msg off =
-            button
-                [ class "rp-step btn-arcade plain pixel"
-                , id ("rp-" ++ name)
-                , Html.Attributes.title name
-                , attribute "aria-label" name
-                , disabled off
-                , onClick msg
-                ]
-                [ text label ]
-    in
-    div [ class "rp-controls" ]
-        [ control "|◀" "first" First (model.step == 0)
-        , control "◀" "prev" Prev (model.step == 0)
-        , span [ class "rp-count pixel text-[8px]", id "rp-count" ]
-            [ text
-                (if model.step == 0 then
-                    "START"
+        unless off msg =
+            if off then
+                Nothing
 
-                 else
-                    String.fromInt model.step ++ " / " ++ String.fromInt last
-                )
-            ]
-        , control "▶" "next" Next (model.step >= last)
-        , control "▶|" "last" Last (model.step >= last)
+            else
+                Just msg
+    in
+    -- The step and the last step ride on the row for the smokes to read;
+    -- the page itself says nothing about them.
+    div [ class "rp-controls-wrap flex flex-col items-center gap-1", attribute "data-step" (String.fromInt model.step), attribute "data-last" (String.fromInt last) ]
+        [ Ui.Scrub.row { id = "rp-controls", stale = False }
+            { first = ( "rp-first", unless (model.step == 0) First )
+            , back = ( "rp-prev", unless (model.step == 0) Prev )
+            , forward = ( "rp-next", unless (model.step >= last) Next )
+            , last = ( "rp-last", unless (model.step >= last) Last )
+            }
+            ((if List.length record.games > 1 then
+                [ Ui.Scrub.plate { id = "rp-match", label = "The match: pick a game", icon = "hero-bars-3", onPress = Just ToggleMatch } ]
+
+              else
+                []
+             )
+                ++ [ Ui.Scrub.plate
+                        { id = "rp-flip"
+                        , label = "Turn the board around (" ++ (nameOf record (facing model record) |> String.toUpper) ++ " at the bottom)"
+                        , icon = "hero-arrows-up-down"
+                        , onPress = Just Flipped
+                        }
+                   ]
+            )
         ]
 
 
@@ -963,8 +1344,10 @@ viewNote model record game =
 
         what =
             case Replay.entryAt game model.step of
+                -- The start: the game's name alone, large, in the middle of
+                -- the note's box.
                 Nothing ->
-                    div [ class "rp-what" ] [ span [ class "font-bold" ] [ text ("Game " ++ String.fromInt game.number ++ ": the opening position") ] ]
+                    div [ class "rp-what rp-what-start" ] [ span [ class "pixel text-base sm:text-lg" ] [ text ("GAME " ++ String.fromInt game.number) ] ]
 
                 Just (TurnEntry t) ->
                     div [ class "rp-what" ]
@@ -994,12 +1377,11 @@ viewNote model record game =
                 Just (ResignEntry p) ->
                     div [ class "rp-what" ] [ swatch p, span [ class "font-bold" ] [ text (name p ++ " resigns") ] ]
 
+                -- The end: who won and by how much, large and centred like
+                -- the start, the score it leaves beneath.
                 Just (ResultEntry r) ->
-                    div [ class "rp-what" ]
-                        [ swatch r.winner
-                        , span [ class "font-bold" ] [ text (name r.winner ++ resultWords r.result ++ " · " ++ pointsText r.points) ]
-                        , span [ class "ml-auto tabular-nums font-bold" ] [ text (scoreText record r.scores) ]
-                        ]
+                    div [ class "rp-what rp-what-start" ]
+                        [ span [ class "pixel text-base sm:text-lg" ] [ text (String.toUpper (name r.winner) ++ " WINS +" ++ String.fromInt r.points) ] ]
     in
     div [ class "rp-note", id "rp-note" ]
         (what
@@ -1140,8 +1522,18 @@ played move is marked. The first is the engine's best.
 -}
 viewCandidates : Model -> { a | top : List Candidate, played : Candidate } -> Html Msg
 viewCandidates model m =
+    let
+        -- Five lines: the engine's top five, or, when the move played was
+        -- not among them, its top four and then the move played.
+        shown =
+            if List.length m.top > 5 then
+                List.take 4 m.top ++ List.filter .played (List.drop 4 m.top)
+
+            else
+                m.top
+    in
     div [ class "rp-top" ]
-        (m.top
+        (shown
             |> List.map
                 (\c ->
                     let
@@ -1152,6 +1544,9 @@ viewCandidates model m =
 
                                 Played ->
                                     c.played
+
+                                Before ->
+                                    False
                     in
                     button
                         [ classList [ ( "rp-cand", True ), ( "is-on", on_ ), ( "is-played", c.played ) ]
@@ -1452,6 +1847,7 @@ viewSummary model record game =
                                             ++ Replay.formatLuck t.luck
                                         )
                                     ]
+                                , viewMistakes model review t
                                 ]
                         )
                 )
@@ -1463,14 +1859,108 @@ viewSummary model record game =
                                 text ""
                        , div [ class "rp-explain" ]
                             [ text "PR (Performance Rating) is the equity a player gave up per decision they had to make, times 500: lower is better, and 0 is perfect play. Luck is what the dice gave, in the same units." ]
-                       , viewAnalysisState model game analysis
                        ]
 
+            -- where the analysis stands is the note's to say, above the tabs
             Nothing ->
-                [ viewAnalysisState model game analysis
-                , div [ class "rp-explain" ] [ text "Each player's PR, errors and luck appear here once the game is analysed." ]
-                ]
+                [ div [ class "rp-explain" ] [ text "Each player's PR, errors and luck appear here once the game is analysed." ] ]
         )
+
+
+{-| What cost this player: every doubtful, bad and very bad move and every
+cube error, worst first, each a door that puts the step on the board.
+-}
+viewMistakes : Model -> Review -> Replay.Totals -> Html Msg
+viewMistakes model review totals =
+    let
+        graded grade =
+            List.member grade [ "doubtful", "bad", "very_bad" ]
+
+        dice t =
+            case t.dice of
+                Just ( a, b ) ->
+                    String.fromInt a ++ String.fromInt b
+
+                Nothing ->
+                    ""
+
+        moveRows =
+            review.turns
+                |> List.filterMap
+                    (\t ->
+                        case ( t.player == totals.playerId, t.move, t.entry ) of
+                            ( True, Just (Moved m), Just entry ) ->
+                                if graded m.grade then
+                                    Just { step = entry + 1, turn = t.number, what = dice t ++ ": " ++ m.played.notation, grade = m.grade, lost = m.equityLost }
+
+                                else
+                                    Nothing
+
+                            _ ->
+                                Nothing
+                    )
+
+        cubeRows =
+            review.turns
+                |> List.concatMap
+                    (\t ->
+                        case t.cube of
+                            Just c ->
+                                List.filterMap identity
+                                    [ if c.doubler.seat == totals.seat && c.doubler.mistake /= Nothing && graded c.doubler.grade then
+                                        -- a double has its own line; a missed double is
+                                        -- marked on the move that was played instead
+                                        (case t.doubleEntry of
+                                            Just e ->
+                                                Just e
+
+                                            Nothing ->
+                                                t.entry
+                                        )
+                                            |> Maybe.map (\e -> { step = e + 1, turn = t.number, what = Replay.mistakeLabel (Maybe.withDefault "" c.doubler.mistake), grade = c.doubler.grade, lost = c.doubler.equityLost })
+
+                                      else
+                                        Nothing
+                                    , case c.taker of
+                                        Just taker ->
+                                            if taker.seat == totals.seat && taker.mistake /= Nothing && graded taker.grade then
+                                                t.answerEntry
+                                                    |> Maybe.map (\e -> { step = e + 1, turn = t.number, what = Replay.mistakeLabel (Maybe.withDefault "" taker.mistake), grade = taker.grade, lost = taker.equityLost })
+
+                                            else
+                                                Nothing
+
+                                        Nothing ->
+                                            Nothing
+                                    ]
+
+                            Nothing ->
+                                []
+                    )
+
+        rows =
+            (moveRows ++ cubeRows) |> List.sortBy (\r -> negate r.lost)
+    in
+    if rows == [] then
+        div [ class "rp-mistakes-none" ] [ text "No mistakes worth a mark." ]
+
+    else
+        div [ class "rp-mistakes", attribute "data-player" totals.playerId ]
+            (rows
+                |> List.map
+                    (\r ->
+                        button
+                            [ classList [ ( "rp-mistake", True ), ( "is-on", model.step == r.step ) ]
+                            , attribute "data-step" (String.fromInt r.step)
+                            , onClick (GoTo r.step)
+                            ]
+                            [ listTag r.grade
+                            , span [ class "rp-mistake-turn pixel text-[7px]" ] [ text ("T" ++ String.fromInt r.turn) ]
+                            , span [ class "rp-mistake-what truncate" ] [ text r.what ]
+                            , span [ class "rp-lost tabular-nums" ] [ text ("−" ++ Replay.formatEquity r.lost) ]
+                            ]
+                    )
+            )
 
 
 countChip : String -> String -> Int -> Html msg

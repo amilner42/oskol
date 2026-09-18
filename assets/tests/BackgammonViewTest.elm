@@ -2238,7 +2238,7 @@ suite =
                                 -- the players head their columns, with their points so far and their match PR
                                 , \_ -> sheet |> Query.findAll [ class "bg-match-col" ] |> Query.count (Expect.equal 2)
                                 , \_ -> sheet |> Query.findAll [ class "bg-match-col" ] |> Query.first |> Query.has [ text (winner "p1"), text "PR …" ]
-                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text "+4", text "…", attribute (Html.Attributes.attribute "aria-label" "Analysis") ]
+                                , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.has [ text "G1", text "+4", text "…", class "hero-magnifying-glass", attribute (Html.Attributes.attribute "data-replay" "1") ]
                                 , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "1") ] |> Query.findAll [ class "bg-match-cell" ] |> Query.first |> Query.has [ class "win", text "+4", attribute (Html.Attributes.title "gammon") ]
                                 , \_ -> sheet |> Query.find [ attribute (Html.Attributes.attribute "data-game" "2") ] |> Query.findAll [ class "bg-match-cell" ] |> Query.index 1 |> Query.has [ class "win", text "+1" ]
 
@@ -2570,7 +2570,7 @@ perFixture fixture =
                             in
                             Expect.all
                                 [ \_ -> row |> Query.findAll [ tag "button", id "bg-resign-open" ] |> Query.count (Expect.equal expected)
-                                , \_ -> row |> Query.findAll [ id "bg-resign-open" ] |> Query.keep (tag "svg") |> Query.count (Expect.equal expected)
+                                , \_ -> row |> Query.findAll [ id "bg-resign-open" ] |> Query.keep (class "hero-flag") |> Query.count (Expect.equal expected)
                                 ]
                                 ()
                         )

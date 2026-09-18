@@ -59,6 +59,7 @@ import Json.Encode as E
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
 import Svg
 import Svg.Attributes as SvgAttr
+import Ui.Scrub
 import Ui.Shell
 
 
@@ -1054,8 +1055,7 @@ viewHeader ctx =
             -- The mark, then the match: the badge is the piece that gives
             -- way on the narrowest phone, clipping rather than running
             -- under the picker.
-            [ Html.a [ Html.Attributes.href "/", class "bg-mark inline-flex items-center gap-1.5 shrink-0", attribute "aria-label" "Oskol home" ]
-                [ Ui.Shell.bird, span [ class "pixel text-[11px] sm:text-[13px] relative top-[1px]" ] [ text "OSKOL" ] ]
+            [ Ui.Shell.mark
             , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 min-w-0 truncate", style "border" "2px solid var(--ink)", style "background" "#fff" ]
                 [ text
                     (matchLabel
@@ -1090,15 +1090,7 @@ viewActions ctx =
 
         match =
             if target /= 1 then
-                [ button
-                    [ class "bg-scrub-btn bg-match-toggle"
-                    , Html.Attributes.id "bg-match-toggle"
-                    , title "The match so far"
-                    , attribute "aria-label" "Match"
-                    , onClick ToggleMatch
-                    ]
-                    [ listIcon ]
-                ]
+                [ Ui.Scrub.plate { id = "bg-match-toggle", label = "The match so far", icon = "hero-bars-3", onPress = Just ToggleMatch } ]
 
             else
                 []
@@ -1107,15 +1099,7 @@ viewActions ctx =
             if hasAction "resign" ctx.legal && ctx.finished == Nothing then
                 -- It opens the offer panel (`viewResignPanel`); a resignation
                 -- is stakes the opponent answers, never sent from here.
-                [ button
-                    [ class "bg-scrub-btn"
-                    , Html.Attributes.id "bg-resign-open"
-                    , title "Offer to resign"
-                    , attribute "aria-label" "Resign"
-                    , onClick OpenResign
-                    ]
-                    [ flagIcon ]
-                ]
+                [ Ui.Scrub.plate { id = "bg-resign-open", label = "Offer to resign", icon = "hero-flag", onPress = Just OpenResign } ]
 
             else
                 []
@@ -1224,43 +1208,7 @@ themeBoard =
         ]
 
 
-{-| The move list's control: four ruled lines, the first short like a
-heading.
--}
-listIcon : Html Msg
-listIcon =
-    Svg.svg
-        [ SvgAttr.viewBox "0 0 12 12"
-        , SvgAttr.width "12"
-        , SvgAttr.height "12"
-        , SvgAttr.fill "none"
-        , SvgAttr.stroke "currentColor"
-        , SvgAttr.strokeWidth "1.5"
-        , SvgAttr.strokeLinecap "round"
-        , attribute "aria-hidden" "true"
-        ]
-        [ Svg.path [ SvgAttr.d "M1.5 2h5M1.5 5h9M1.5 8h9M1.5 11h9" ] [] ]
 
-
-{-| A small flag, drawn in one stroke of the current colour: the pole and
-a notched pennant. Decorative; the label carries the meaning.
--}
-flagIcon : Html Msg
-flagIcon =
-    Svg.svg
-        [ SvgAttr.viewBox "0 0 12 12"
-        , SvgAttr.width "10"
-        , SvgAttr.height "10"
-        , SvgAttr.fill "none"
-        , SvgAttr.stroke "currentColor"
-        , SvgAttr.strokeWidth "1.5"
-        , SvgAttr.strokeLinecap "round"
-        , SvgAttr.strokeLinejoin "round"
-        , attribute "aria-hidden" "true"
-        ]
-        [ Svg.path [ SvgAttr.d "M2.5 11V1.5" ] []
-        , Svg.path [ SvgAttr.d "M2.5 2h7l-1.6 2.5L9.5 7h-7" ] []
-        ]
 
 
 
@@ -3553,7 +3501,9 @@ viewMatchSheet ctx =
                 [ div [ class "bg-match-row is-live", attribute "data-game" (String.fromInt gameNumber) ]
                     [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt gameNumber) ]
                     , span [ class "bg-match-live font-bold flex-1 text-center" ] [ text "In play" ]
-                    , span [ class "bg-match-analysis-gap" ] []
+
+                    -- this is the game on the board: the dot says so
+                    , span [ class "bg-match-analysis inline-flex items-center justify-center", attribute "aria-hidden" "true" ] [ span [ class "bg-match-here" ] [] ]
                     ]
                 ]
     in
@@ -3647,33 +3597,26 @@ viewMatchRow ctx g =
                     ]
                 ]
     in
-    div [ class "bg-match-row", attribute "data-game" (String.fromInt g.number) ]
-        [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt g.number) ]
-        , div [ class "bg-match-cells" ] (List.map cell ctx.scene.players)
-        , analysisLink ctx g.number
-        ]
-
-
-{-| The door to a finished game's analysis: the replay page, with the
-engine's verdicts on every turn. A link, so it opens in a tab; a
-magnifier, as wide as the game number on the other side.
--}
-analysisLink : Ctx -> Int -> Html Msg
-analysisLink ctx number =
-    case ctx.replayHref number of
+    case ctx.replayHref g.number of
         Just href ->
             Html.a
                 [ Html.Attributes.href href
-                , class "bg-replay-link bg-match-analysis inline-flex items-center gap-1 shrink-0"
-                , attribute "data-replay" (String.fromInt number)
-                , title ("Game " ++ String.fromInt number ++ ": the analysis")
-                , attribute "aria-label" "Analysis"
-                , Html.Events.stopPropagationOn "click" (D.succeed ( Ignore, True ))
+                , class "bg-match-row bg-match-door"
+                , attribute "data-game" (String.fromInt g.number)
+                , attribute "data-replay" (String.fromInt g.number)
+                , title ("Game " ++ String.fromInt g.number ++ ": the analysis")
                 ]
-                [ span [ class "hero-magnifying-glass w-4 h-4", attribute "aria-hidden" "true" ] [] ]
+                [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt g.number) ]
+                , div [ class "bg-match-cells" ] (List.map cell ctx.scene.players)
+                , span [ class "bg-match-analysis inline-flex items-center", attribute "aria-hidden" "true" ] [ span [ class "hero-magnifying-glass w-4 h-4" ] [] ]
+                ]
 
         Nothing ->
-            text ""
+            div [ class "bg-match-row", attribute "data-game" (String.fromInt g.number) ]
+                [ span [ class "bg-match-n pixel text-[7px]" ] [ text ("G" ++ String.fromInt g.number) ]
+                , div [ class "bg-match-cells" ] (List.map cell ctx.scene.players)
+                , span [ class "bg-match-analysis-gap" ] []
+                ]
 
 
 {-| The four arrows that look back through the game on the board: to its
@@ -3717,33 +3660,6 @@ viewScrub ctx middle =
                 Nothing ->
                     []
 
-        first =
-            List.head turns
-
-        prev =
-            List.reverse before |> List.head
-
-        next =
-            List.head after
-
-        arrow id_ label iconName msg =
-            button
-                ([ class "bg-scrub-btn"
-                 , Html.Attributes.id id_
-                 , title label
-                 , attribute "aria-label" label
-                 , disabled (msg == Nothing)
-                 ]
-                    ++ (case msg of
-                            Just m ->
-                                [ onClick m ]
-
-                            Nothing ->
-                                []
-                       )
-                )
-                [ span [ class (iconName ++ " w-4 h-4"), attribute "aria-hidden" "true" ] [] ]
-
         toLive =
             if current == Nothing then
                 Nothing
@@ -3755,21 +3671,21 @@ viewScrub ctx middle =
         text ""
 
     else
-        div [ classList [ ( "bg-scrub inline-flex items-center gap-3 sm:gap-4", True ), ( "is-back", current /= Nothing ), ( "stale", ctx.model.stale ) ], Html.Attributes.id "bg-scrub" ]
-            ([ arrow "bg-scrub-first" "First turn" "hero-chevron-double-left" (first |> Maybe.andThen (\i -> if Just i == current then Nothing else Just (ViewTurn i)))
-             , arrow "bg-scrub-back" "Back a turn" "hero-chevron-left" (prev |> Maybe.map ViewTurn)
-             ]
-                ++ middle
-                ++ [ arrow "bg-scrub-forward" "Forward a turn" "hero-chevron-right" (case next of
-                                                                                Just i ->
-                                                                                    Just (ViewTurn i)
+        Ui.Scrub.row { id = "bg-scrub", stale = ctx.model.stale }
+            { first = ( "bg-scrub-first", List.head turns |> Maybe.andThen (\i -> if Just i == current then Nothing else Just (ViewTurn i)) )
+            , back = ( "bg-scrub-back", List.reverse before |> List.head |> Maybe.map ViewTurn )
+            , forward =
+                ( "bg-scrub-forward"
+                , case List.head after of
+                    Just i ->
+                        Just (ViewTurn i)
 
-                                                                                Nothing ->
-                                                                                    toLive
-                                                                             )
-                   , arrow "bg-scrub-live" "Back to the live game" "hero-chevron-double-right" toLive
-                   ]
-            )
+                    Nothing ->
+                        toLive
+                )
+            , last = ( "bg-scrub-live", toLive )
+            }
+            middle
 
 
 pointsText : Int -> String

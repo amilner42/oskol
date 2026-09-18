@@ -689,16 +689,17 @@ rendered =
         , test "the move list marks the current line" <|
             \_ ->
                 loaded (Just 3)
-                    |> run [ Next, Next ]
+                    |> run [ PickTab Page.MovesTab, Next, Next ]
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.find [ Selector.class "rp-line", Selector.class "is-on" ]
                     |> Query.has [ Selector.id "rp-line-2" ]
-        , test "every game of the match can be picked" <|
+        , test "every game of the match can be picked, from the match panel" <|
             \_ ->
                 loaded (Just 3)
+                    |> run [ ToggleMatch ]
                     |> Page.view
                     |> Query.fromHtml
-                    |> Query.findAll [ Selector.class "rp-game" ]
+                    |> Query.findAll [ Selector.class "rp-match-row" ]
                     |> Query.count (Expect.equal 3)
         ]

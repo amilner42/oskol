@@ -36,9 +36,7 @@ view config =
 topBar : Html msg -> Html msg
 topBar picker =
     div [ class "player-bar home-top flex items-center gap-2 px-3 py-2 sm:px-4" ]
-        [ div [ class "home-mark inline-flex items-center gap-1.5" ]
-            -- the pixel face sits high against the bird: drop it a touch
-            [ Ui.Shell.bird, span [ class "pixel text-[13px] sm:text-[16px] relative top-[2px]" ] [ text "OSKOL" ] ]
+        [ div [ class "home-mark" ] [ Ui.Shell.mark ]
         , div [ class "flex-1" ] []
         , picker
         ]
