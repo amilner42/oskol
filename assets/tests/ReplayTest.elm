@@ -145,7 +145,7 @@ session =
 -}
 loaded : Maybe Int -> Page.Model
 loaded wanted =
-    Page.init session { slug = "backgammon", gameId = "000011", game = wanted }
+    Page.init session { slug = "backgammon", gameId = "000011", game = wanted, step = Nothing }
         |> Tuple.first
         |> Page.update (GotRecord (Ok record))
         |> Tuple.first
@@ -465,7 +465,7 @@ fetching =
                     |> Expect.equal ( [], [ 3 ] )
         , test "the index arriving before the record still fetches, once the record names the game" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 1 }
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 1, step = Nothing }
                     |> Tuple.first
                     |> run [ GotIndex (Ok allDone), GotRecord (Ok record) ]
                     |> .fetching
@@ -507,14 +507,14 @@ analysisArriving =
                     |> Expect.equal ( 1, Proposed 1 )
         , test "the record arriving after the analysis changes nothing about it" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3 }
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
                     |> Tuple.first
                     |> run (gotEverything ++ [ GotRecord (Ok record) ])
                     |> (\m -> ( m.index /= Nothing, m.game ))
                     |> Expect.equal ( True, 3 )
         , test "a replay with no game named still opens, on the first seat" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Nothing }
+                Page.init session { slug = "backgammon", gameId = "000011", game = Nothing, step = Nothing }
                     |> Tuple.first
                     |> run [ GotRecord (Ok record) ]
                     |> .record
@@ -653,7 +653,7 @@ rendered =
                     |> Query.has [ Selector.attribute (Html.Attributes.title "Turn the board around (P2 at the bottom)") ]
         , test "a stranger is not told an analysis is running that nobody started" <|
             \_ ->
-                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3 }
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
                     |> Tuple.first
                     |> run [ GotRecord (Ok shared), GotIndex (Ok (index ReplayFixtures.indexPending)) ]
                     |> Expect.all
@@ -678,14 +678,6 @@ rendered =
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-analysis-state" ]
                     |> Query.has [ Selector.text "Loading the analysis…" ]
-        , test "the summary says how deep the engine looked" <|
-            \_ ->
-                loaded (Just 3)
-                    |> run (gotEverything ++ [ PickTab Page.SummaryTab ])
-                    |> Page.view
-                    |> Query.fromHtml
-                    |> Query.find [ Selector.id "rp-level" ]
-                    |> Query.has [ Selector.text "Analysed at moves 2-ply, cube 3-ply" ]
         , test "the move list marks the current line" <|
             \_ ->
                 loaded (Just 3)

@@ -561,7 +561,9 @@ assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
 assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again, with the
                                  engine's analysis (polls /reviews while any is pending):
                                  the mistakes list jumps to a step, the band offers the
-                                 best move, the dice take the move back
+                                 best move, the dice take the move back; a turn's note has
+                                 MOVE and CUBE tabs, each a sentence in words (built from
+                                 the chances) over the numbers in columns
 assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay reads them:
                                  decoders, the board at each step, verdicts per record line
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
@@ -634,14 +636,17 @@ arrive at any of them cold, and moving between them afterwards is a
   one page that says whether there is a seat to take. A `?t=` from a link
   minted before seat tokens were dropped is ignored by every route and every
   handler.
-- `/backgammon/<id>/replay?game=<n>` a room's games played again,
+- `/backgammon/<id>/replay?game=<n>&step=<s>` a room's games played again,
   a line of the record at a time, with the analysis engine's verdicts. It
   opens for anyone with the link -- a replay is what both players and any
   spectator already saw -- and is served the SPA shell, `noindex`. The board
   faces the reader's own seat when their guest holds one here, else the seat
   that played first, and the page turns the board around anyway. The table
   offers it from the match history and at game over. Board, steps and
-  verdicts all come from `/record` and `/reviews`.
+  verdicts all come from `/record` and `/reviews`. The page keeps `step`
+  current in the address bar (replaced, not pushed, so back still leaves
+  the page), which is what makes a reload land on the same line and a
+  link carry a move to a friend; `step` is omitted at the start of a game.
 - `/poker`, `/go`, `/chess` and anything under them: 302 to `/` (the games
   that were removed).
 
@@ -778,14 +783,23 @@ game or a room talks to it.
   analysis, exactly what the page reads) when the engine's answer lands.
   Nothing rewrites a row for a game that is over. A room from before this
   builds once on its first read and writes its rows: self-healing, no data
-  to migrate.
+  to migrate. When the report's shape has to change for rows already
+  written (once so far: the cube chances, `RerenderCubeReports`), a
+  migration nulls `report` on the done rows and the same first-read path
+  renders each afresh from the stored `response`, with no engine time.
 - `game_reviews` holds one row per (game_id, game_number): status
   (`pending`, `done`, `failed`), attempts, the engine's response verbatim,
   the rendered `report`, and that game's `turns`. `report` is what
   `oskol/reviews/report.to_json` makes of the response: per turn the grade,
-  the move played, the best and the top five with equity lost, cube
-  verdicts and luck; per player PR, error, grade and mistake counts and
-  luck. The read path never builds it -- `GET .../reviews` is the index
+  the move played, the best and the top five with equity lost and each
+  candidate's chances (win, gammon and backgammon, both ways), the cube
+  verdict with its three equities and the chances it was judged on, and
+  luck; per player PR, error, grade and mistake counts and luck. The
+  engine grades the cube only where the mover could have doubled (not
+  the Crawford game, not the other side's cube), but it grades "no
+  double" on the opening roll too; the report drops that one, and guards
+  the rest the same way, so a page never shows a verdict on a double
+  that could not have been offered. The read path never builds it -- `GET .../reviews` is the index
   alone (game number, status, turn count: a few hundred bytes, from a query
   that touches neither body), and `GET .../reviews/<n>` sends that one
   game's stored `report` verbatim. Statuses: `done`, `pending`, `failed`,

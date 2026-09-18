@@ -47,22 +47,27 @@ suite =
             , test "a replay, opening one game" <|
                 \_ ->
                     Expect.equal
-                        (Just (Replay "backgammon" "AB12CD" (Just 2)))
+                        (Just (Replay "backgammon" "AB12CD" (Just 2) Nothing))
                         (parse "/backgammon/AB12CD/replay?game=2")
+            , test "a replay, opening one game on one line" <|
+                \_ ->
+                    Expect.equal
+                        (Just (Replay "backgammon" "AB12CD" (Just 2) (Just 17)))
+                        (parse "/backgammon/AB12CD/replay?game=2&step=17")
             , test "a replay with no game named opens wherever the page decides" <|
                 \_ ->
                     Expect.equal
-                        (Just (Replay "backgammon" "AB12CD" Nothing))
+                        (Just (Replay "backgammon" "AB12CD" Nothing Nothing))
                         (parse "/backgammon/AB12CD/replay")
             , test "an old replay link still opens its game" <|
                 \_ ->
                     Expect.equal
-                        (Just (Replay "backgammon" "AB12CD" (Just 2)))
+                        (Just (Replay "backgammon" "AB12CD" (Just 2) Nothing))
                         (parse "/backgammon/AB12CD/replay?t=an-old-token&game=2")
             , test "a game that is not a number is no game" <|
                 \_ ->
                     Expect.equal
-                        (Just (Replay "backgammon" "AB12CD" Nothing))
+                        (Just (Replay "backgammon" "AB12CD" Nothing Nothing))
                         (parse "/backgammon/AB12CD/replay?game=two")
             , test "the sitemap belongs to the server" <|
                 \_ -> Expect.equal Nothing (parse "/sitemap.xml")
@@ -102,8 +107,9 @@ suite =
                 [ Library
                 , GameLanding "backgammon" (Just "AB12CD")
                 , Play "backgammon" "AB12CD"
-                , Replay "backgammon" "AB12CD" (Just 2)
-                , Replay "backgammon" "AB12CD" Nothing
+                , Replay "backgammon" "AB12CD" (Just 2) Nothing
+                , Replay "backgammon" "AB12CD" (Just 2) (Just 17)
+                , Replay "backgammon" "AB12CD" Nothing Nothing
                 ]
             )
         ]

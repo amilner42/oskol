@@ -22,6 +22,9 @@ module Games.Backgammon.Replay exposing
     , findGame
     , formatEquity
     , formatLuck
+    , formatPercent
+    , fixed1
+    , Probs
     , formatPr
     , analysisDecoder
     , gameReview
@@ -414,6 +417,20 @@ type alias Candidate =
     , played : Bool
     , position : Maybe { white : Side, black : Side }
     , landed : List Int
+    , probs : Maybe Probs
+    }
+
+
+{-| The engine's chances for a position, from the mover's side: how often
+they win at all, and how often a win or a loss is a gammon or a
+backgammon. Fractions, not percentages.
+-}
+type alias Probs =
+    { win : Float
+    , gammonWin : Float
+    , backgammonWin : Float
+    , gammonLoss : Float
+    , backgammonLoss : Float
     }
 
 
@@ -424,6 +441,7 @@ type alias CubeReview =
     , noDouble : Float
     , doubleTake : Float
     , doublePass : Float
+    , probs : Maybe Probs -- the chances before the roll, when the report kept them
     , doubler : Verdict
     , taker : Maybe Verdict
     }
@@ -588,6 +606,22 @@ candidateDecoder =
         |> andMap (D.oneOf [ D.field "played" D.bool, D.succeed False ])
         |> andMap (D.oneOf [ D.field "position" (D.nullable sides), D.succeed Nothing ])
         |> andMap (D.oneOf [ D.field "landed" (D.nullable (D.list D.int)) |> D.map (Maybe.withDefault []), D.succeed [] ])
+        |> andMap optionalProbs
+
+
+optionalProbs : Decoder (Maybe Probs)
+optionalProbs =
+    D.oneOf [ D.field "probs" (D.nullable probsDecoder), D.succeed Nothing ]
+
+
+probsDecoder : Decoder Probs
+probsDecoder =
+    D.map5 Probs
+        (D.field "win" D.float)
+        (D.field "gammon_win" D.float)
+        (D.field "backgammon_win" D.float)
+        (D.field "gammon_loss" D.float)
+        (D.field "backgammon_loss" D.float)
 
 
 cubeDecoder : Decoder CubeReview
@@ -599,6 +633,7 @@ cubeDecoder =
         |> andMap (D.at [ "equities", "no_double" ] D.float)
         |> andMap (D.at [ "equities", "double_take" ] D.float)
         |> andMap (D.at [ "equities", "double_pass" ] D.float)
+        |> andMap optionalProbs
         |> field "doubler" verdictDecoder
         |> andMap (D.oneOf [ D.field "taker" (D.nullable verdictDecoder), D.succeed Nothing ])
 
@@ -689,11 +724,13 @@ annotationsAt review index =
 
                       else
                         Nothing
-                    , if t.entry == Just index && t.doubleEntry == Nothing then
+                    , -- a roll the cube could have preceded: the engine's word on
+                      -- leaving it, right or wrong, so a player who wondered can look
+                      if t.entry == Just index && t.doubleEntry == Nothing then
                         t.cube
                             |> Maybe.andThen
                                 (\c ->
-                                    if c.action == "no_double" && c.doubler.mistake /= Nothing then
+                                    if c.action == "no_double" then
                                         Just (NoDoubleNote t c)
 
                                     else
@@ -790,6 +827,20 @@ formatLuck x =
 
     else
         fixed 3 x
+
+
+{-| A number to one decimal, as the chance columns print it.
+-}
+fixed1 : Float -> String
+fixed1 =
+    fixed 1
+
+
+{-| A chance as a percentage to one decimal: `52.6%`.
+-}
+formatPercent : Float -> String
+formatPercent x =
+    fixed 1 (x * 100) ++ "%"
 
 
 {-| A number to a fixed count of decimals, rounded half away from zero.

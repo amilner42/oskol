@@ -2,6 +2,7 @@ module Route exposing
     ( Route(..)
     , fromUrl
     , gameLanding
+    , replayAt
     , href
     , invite
     , library
@@ -15,7 +16,9 @@ module Route exposing
     /:slug       one game's start page (`?game=` an invite)
     /:slug/:id   a running game
     /:slug/:id/replay   a game played again, turn by turn, with its analysis
-                        (`?game=` which game of the match)
+                        (`?game=` which game of the match, `?step=` the line
+                        of its record on the board: the page keeps it current,
+                        so a reload and a shared link land on the same move)
 
 No route carries a credential. Who a visitor is rides on their guest cookie,
 which the browser sends on its own; a URL only ever says which room, and
@@ -38,8 +41,8 @@ type Route
     | GameLanding String (Maybe String)
       -- slug, game id
     | Play String String
-      -- slug, game id, ?game= (a game's number)
-    | Replay String String (Maybe Int)
+      -- slug, game id, ?game= (a game's number), ?step= (a line of its record)
+    | Replay String String (Maybe Int) (Maybe Int)
 
 
 parser : Parser (Route -> a) a
@@ -47,7 +50,7 @@ parser =
     oneOf
         [ map Library top
         , map Play (string </> string)
-        , map Replay (string </> string </> s "replay" <?> Query.int "game")
+        , map Replay (string </> string </> s "replay" <?> Query.int "game" <?> Query.int "step")
         , map GameLanding (string <?> Query.string "game")
         ]
 
@@ -99,8 +102,8 @@ href route =
         Play slug gameId ->
             "/" ++ slug ++ "/" ++ gameId
 
-        Replay slug gameId game ->
-            "/" ++ slug ++ "/" ++ gameId ++ "/replay" ++ query [ ( "game", Maybe.map String.fromInt game ) ]
+        Replay slug gameId game step ->
+            "/" ++ slug ++ "/" ++ gameId ++ "/replay" ++ query [ ( "game", Maybe.map String.fromInt game ), ( "step", Maybe.map String.fromInt step ) ]
 
 
 {-| A game of a room played again. It opens for anyone with the link: a
@@ -108,7 +111,23 @@ replay is what both players and any spectator already saw.
 -}
 replay : String -> String -> Maybe Int -> Route
 replay slug gameId game =
-    Replay slug gameId game
+    Replay slug gameId game Nothing
+
+
+{-| A replay open on one line of one game: what the page writes as the
+reader steps, and what a shared link carries.
+-}
+replayAt : String -> String -> Int -> Int -> Route
+replayAt slug gameId game step =
+    Replay slug
+        gameId
+        (Just game)
+        (if step > 0 then
+            Just step
+
+         else
+            Nothing
+        )
 
 
 query : List ( String, Maybe String ) -> String

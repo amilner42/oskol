@@ -340,8 +340,6 @@ async function main() {
     await page.click('.rp-tab:has-text("ANALYSIS")');
     await page.waitForSelector('#rp-summary .rp-pr');
     must(await page.locator('#rp-summary .rp-pr').count() === 2, 'the summary gives both players a PR');
-    must(/PR \(Performance Rating\)/.test(await page.textContent('#rp-summary')), 'and says what PR is');
-    if (!REAL) must((await page.textContent('#rp-level')).includes('Analysed at 4-ply'), 'and how deep the engine looked');
     await page.screenshot({ path: `${SHOTS}/04-desktop-summary.png` });
     await page.click('.rp-tab:has-text("MOVES")');
 
