@@ -155,13 +155,24 @@ routeTo url oldModel =
                 }
                 |> wrap model Play PlayMsg
 
-        Just (Route.Replay slug gameId game) ->
-            Page.Replay.init model.session
-                { slug = slug
-                , gameId = gameId
-                , game = game
-                }
-                |> wrap model Replay ReplayMsg
+        Just (Route.Replay slug gameId game step) ->
+            case model.page of
+                -- The same room's replay: the address bar moved (back,
+                -- forward, the page's own writing), not the reader.
+                Replay pageModel ->
+                    if pageModel.slug == slug && pageModel.gameId == gameId then
+                        Page.Replay.locate game step pageModel
+                            |> wrap model Replay ReplayMsg
+
+                    else
+                        Page.Replay.init model.session
+                            { slug = slug, gameId = gameId, game = game, step = step }
+                            |> wrap model Replay ReplayMsg
+
+                _ ->
+                    Page.Replay.init model.session
+                        { slug = slug, gameId = gameId, game = game, step = step }
+                        |> wrap model Replay ReplayMsg
 
 
 wrap : Model -> (pageModel -> Page) -> (pageMsg -> Msg) -> ( pageModel, Cmd pageMsg ) -> ( Model, Cmd Msg )
@@ -251,8 +262,22 @@ update msg model =
             )
 
         ( ReplayMsg pageMsg, Replay pageModel ) ->
-            Page.Replay.update pageMsg pageModel
-                |> wrap model Replay ReplayMsg
+            let
+                ( newPageModel, cmd ) =
+                    Page.Replay.update pageMsg pageModel
+
+                -- The address bar follows the game and the line on the
+                -- board, once the record is in (before it the page has
+                -- not chosen a game yet), so a reload and a shared link
+                -- land on the same move.
+                address =
+                    if Page.Replay.url newPageModel /= Page.Replay.url pageModel && Page.Replay.settled newPageModel then
+                        Nav.replaceUrl model.key (Page.Replay.url newPageModel)
+
+                    else
+                        Cmd.none
+            in
+            ( { model | page = Replay newPageModel }, Cmd.batch [ Cmd.map ReplayMsg cmd, address ] )
 
         ( OpenedJoin, _ ) ->
             ( { model | joinOpen = True, joinCode = "", joinError = Nothing }

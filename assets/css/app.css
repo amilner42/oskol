@@ -1900,10 +1900,8 @@ a.rp-match-row:hover { color: var(--ink); }
 .rp-dice { font-weight: 800; flex: none; min-width: 1.4rem; }
 .rp-moves { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .rp-verdict { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; margin-top: 5px; }
-.rp-best { min-width: 0; overflow-wrap: anywhere; }
 .rp-lost { color: var(--red); font-weight: 700; }
 .rp-luck { margin-left: auto; color: var(--pencil); font-size: 11px; white-space: nowrap; }
-.rp-cube-line { margin-top: 3px; color: var(--pencil); font-size: 11px; }
 /* The grades: XG's bands, green to red. */
 .rp-grade {
   font-size: 11px; font-weight: 800; padding: 0 6px; border-radius: 3px;
@@ -1914,19 +1912,72 @@ a.rp-match-row:hover { color: var(--ink); }
 .g-doubtful { color: #8a5d00; background: #fff1c9; }
 .g-bad { color: #b4430d; background: #ffe5d4; }
 .g-very_bad { color: #b3261e; background: #fde1df; }
-/* The engine's top moves: tap one to see it on the board. */
+/* The engine's top moves, in columns: the move, its equity (or what it
+   loses against the best), then how often it wins, wins a gammon, loses a
+   gammon. Tap one to see it on the board. */
 .rp-top { display: grid; gap: 1px; margin-top: 6px; }
+.rp-top-head, .rp-cand {
+  display: grid; align-items: baseline; column-gap: 6px; width: 100%;
+  grid-template-columns: 1rem minmax(0, 1fr) 2.7rem repeat(3, 2.5rem);
+}
+.rp-top-head {
+  padding: 0 8px 2px 8px; color: var(--pencil); font-size: 9px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  border-bottom: 1px solid color-mix(in oklab, var(--ink) 25%, transparent);
+}
+.rp-top-head .rp-col, .rp-top-head .rp-col-eq { text-align: right; white-space: nowrap; font-size: 8px; color: var(--pencil); }
+.rp-col { text-align: right; font-size: 12px; color: var(--ink); white-space: nowrap; }
 .rp-cand {
-  display: flex; align-items: baseline; gap: 6px; text-align: left; width: 100%;
-  padding: 3px 6px; background: transparent; border: 2px solid transparent; color: var(--ink); cursor: pointer;
+  text-align: left;
+  padding: 4px 6px; background: transparent; border: 2px solid transparent; color: var(--ink); cursor: pointer;
 }
 .rp-cand:hover { background: color-mix(in oklab, #ffd23f 22%, #fff); }
 .rp-cand.is-on { background: color-mix(in oklab, #ffd23f 50%, #fff); border-color: var(--ink); }
 .rp-cand:disabled { cursor: default; opacity: 0.6; }
+/* A turn's two sides, the move and the cube, as the panel below has its
+   two tabs. */
+.rp-note-tabs { display: flex; margin: -6px -10px 6px; border-bottom: 2px solid var(--ink); }
+.rp-note-tab { flex: 1; padding: 7px 6px; background: #fff; color: var(--ink); border: 0; cursor: pointer; }
+.rp-note-tab + .rp-note-tab { border-left: 2px solid var(--ink); }
+.rp-note-tab.is-on { background: var(--ink); color: var(--paper); }
+.rp-no-cube { color: var(--pencil); }
+.rp-words { margin-top: 4px; font-size: 13px; line-height: 1.4; color: var(--ink); }
+/* The cube: the three equities as labelled cells, the engine's pick in
+   ink, and the chances it was judged on beneath. */
+.rp-cube { margin-top: 5px; }
+.rp-cube-eqs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.rp-cube-eq {
+  display: flex; flex-direction: column; gap: 1px; padding: 3px 6px;
+  border: 1.5px solid color-mix(in oklab, var(--ink) 25%, transparent); color: var(--pencil);
+}
+.rp-cube-eq.is-pick { border-color: var(--ink); color: var(--ink); background: #e4f4e9; }
+.rp-cube-label { font-size: 9px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The cube's chances share the move table's columns, without rank and
+   equity; the three equity squares sit at the bottom of the note. */
+.rp-cube-top .rp-top-head, .rp-cube-top .rp-cand { grid-template-columns: minmax(0, 1fr) repeat(3, 2.5rem); }
+.rp-cube-row { cursor: default; }
+.rp-cube-row:hover { background: transparent; }
+.rp-note { display: flex; flex-direction: column; }
+.rp-verdict-block { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.rp-cube { margin-top: auto; padding-top: 6px; }
+.rp-cube-value { font-size: 13px; font-weight: 700; }
 .rp-rank { color: var(--pencil); min-width: 1.2rem; }
-.rp-cand-move { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
-.rp-played { border: 1px solid var(--ink); padding: 1px 3px; }
-.rp-cand-lost { margin-left: auto; font-size: 12px; color: var(--pencil); white-space: nowrap; }
+.rp-cand-move { font-weight: 700; min-width: 0; white-space: nowrap; overflow: hidden; }
+.rp-cand-move.is-long { font-size: 11.5px; letter-spacing: -0.01em; }
+.rp-cand-move.is-longer { font-size: 10px; letter-spacing: -0.02em; }
+/* The move played is the underlined one. */
+.rp-cand.is-played .rp-cand-move { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.rp-cand-lost { text-align: right; font-size: 12px; color: var(--pencil); white-space: nowrap; }
+.rp-cand.is-on .rp-cand-lost { color: var(--ink); }
+/* A narrow phone: tighter columns and smaller notation, so a move still
+   has one whole line; past that, an ellipsis rather than a silent cut. */
+.rp-cand-move { text-overflow: ellipsis; }
+@media (max-width: 359px) {
+  .rp-top-head, .rp-cand { grid-template-columns: 1rem minmax(0, 1fr) 2.6rem repeat(3, 2.2rem); column-gap: 4px; }
+  .rp-cube-top .rp-top-head, .rp-cube-top .rp-cand { grid-template-columns: minmax(0, 1fr) repeat(3, 2.2rem); }
+  .rp-cand-move { font-size: 11px; }
+  .rp-cand-move.is-long { font-size: 10px; }
+  .rp-cand-move.is-longer { font-size: 9px; }
+}
 /* Where the analysis stands: pending (with a calm bar), failed, or quiet. */
 .rp-state { margin-top: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12px; color: var(--pencil); }
 .rp-state.is-failed { color: var(--red); }
@@ -1962,7 +2013,6 @@ a.rp-match-row:hover { color: var(--ink); }
 .rp-counts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 12px; }
 .rp-count-chip { border: 1px solid var(--pencil); border-radius: 3px; padding: 0 5px; color: var(--pencil); }
 .rp-count-chip[class*="g-"] { border-color: currentColor; font-weight: 700; }
-.rp-level { margin-top: 8px; font-size: 12px; font-weight: 700; }
 .rp-explain { margin-top: 8px; font-size: 12px; color: var(--pencil); }
 
 /* A phone held sideways: the board takes the screen's height on the left;
@@ -2031,7 +2081,7 @@ a.rp-match-row:hover { color: var(--ink); }
   .rp-side { grid-column: 2; grid-row: 1; width: 22rem; min-height: 0; }
   /* The note is the height of a graded turn (the title, the verdict, the
      five candidates) from the start, so stepping into one moves nothing. */
-  .rp-note { flex: none; height: 13.5rem; max-height: none; }
+  .rp-note { flex: none; height: 19rem; max-height: none; }
   .bg-still {
     --bg-frame-w: 14px;
     --bg-lip: 6px;

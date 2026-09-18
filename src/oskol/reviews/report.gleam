@@ -56,6 +56,9 @@ pub type CubeReview {
     no_double: Float,
     double_take: Float,
     double_pass: Float,
+    /// The chances the cube was judged on, before the roll; None for an
+    /// answer written before the report kept them.
+    probs: Option(Probs),
     doubler: Verdict,
     taker: Option(Verdict),
   )
@@ -220,6 +223,11 @@ fn cube_decoder() -> Decoder(CubeReview) {
   use nd <- decode.subfield(["analysis", "equity_nd"], number())
   use dt <- decode.subfield(["analysis", "equity_dt"], number())
   use dp <- decode.subfield(["analysis", "equity_dp"], number())
+  use probs <- decode.then(decode.optionally_at(
+    ["analysis", "probs"],
+    None,
+    decode.optional(probs_decoder()),
+  ))
   use doubler <- decode.field("doubler", verdict_decoder())
   use taker <- decode.optional_field(
     "taker",
@@ -233,6 +241,7 @@ fn cube_decoder() -> Decoder(CubeReview) {
     no_double: nd,
     double_take: dt,
     double_pass: dp,
+    probs: probs,
     doubler: doubler,
     taker: taker,
   ))
@@ -471,27 +480,41 @@ fn turn_json(
           #("top", json.array(top, fn(c) { candidate(c, played.rank) })),
         ])
     }),
+    // The engine grades "no double" on every turn, the opening roll and a
+    // cube the mover did not hold included. A verdict on a double that
+    // could not have been offered is nothing a page should show.
     #("cube", case graded.cube {
       None -> json.null()
       Some(cube) ->
-        json.object([
-          #("action", json.string(cube.action)),
-          #("response", nullable_string(cube.response)),
-          #("optimal", json.string(cube.optimal)),
-          #(
-            "equities",
+        case
+          cube.action == "no_double"
+          && { number == 1 || !analysis.engine_can_double(turn.position) }
+        {
+          True -> json.null()
+          False ->
             json.object([
-              #("no_double", json.float(cube.no_double)),
-              #("double_take", json.float(cube.double_take)),
-              #("double_pass", json.float(cube.double_pass)),
-            ]),
-          ),
-          #("doubler", verdict_json(cube.doubler, turn.player)),
-          #("taker", case cube.taker {
-            Some(verdict) -> verdict_json(verdict, other)
-            None -> json.null()
-          }),
-        ])
+              #("action", json.string(cube.action)),
+              #("response", nullable_string(cube.response)),
+              #("optimal", json.string(cube.optimal)),
+              #(
+                "equities",
+                json.object([
+                  #("no_double", json.float(cube.no_double)),
+                  #("double_take", json.float(cube.double_take)),
+                  #("double_pass", json.float(cube.double_pass)),
+                ]),
+              ),
+              #("probs", case cube.probs {
+                Some(probs) -> probs_json(probs)
+                None -> json.null()
+              }),
+              #("doubler", verdict_json(cube.doubler, turn.player)),
+              #("taker", case cube.taker {
+                Some(verdict) -> verdict_json(verdict, other)
+                None -> json.null()
+              }),
+            ])
+        }
     }),
     #("luck", case graded.luck, turn.picked {
       // Picked dice are chosen, not rolled: there is no luck to speak of.
@@ -532,16 +555,17 @@ fn candidate_json(c: Candidate, played_rank: Int, turn: Turn) -> Json {
     // The engine's diff is best-relative and negative for worse plays
     #("equity_lost", json.float(float.max(0.0, float.negate(c.equity_diff)))),
     #("played", json.bool(c.rank == played_rank)),
-    #(
-      "probs",
-      json.object([
-        #("win", json.float(c.probs.win)),
-        #("gammon_win", json.float(c.probs.gammon_win)),
-        #("backgammon_win", json.float(c.probs.backgammon_win)),
-        #("gammon_loss", json.float(c.probs.gammon_loss)),
-        #("backgammon_loss", json.float(c.probs.backgammon_loss)),
-      ]),
-    ),
+    #("probs", probs_json(c.probs)),
+  ])
+}
+
+fn probs_json(p: Probs) -> Json {
+  json.object([
+    #("win", json.float(p.win)),
+    #("gammon_win", json.float(p.gammon_win)),
+    #("backgammon_win", json.float(p.backgammon_win)),
+    #("gammon_loss", json.float(p.gammon_loss)),
+    #("backgammon_loss", json.float(p.backgammon_loss)),
   ])
 }
 

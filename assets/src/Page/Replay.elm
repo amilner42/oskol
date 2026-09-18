@@ -13,6 +13,9 @@ module Page.Replay exposing
     , title
     , update
     , view
+    , locate
+    , settled
+    , url
     )
 
 {-| `/:slug/:id/replay` — a room's games played again, one line of the
@@ -83,6 +86,14 @@ type Showing
     | Before -- the roll on the position it was thrown into, the move not yet made
 
 
+{-| The two sides of a turn's verdict: the move played, and the cube that
+could have been turned before the roll.
+-}
+type NoteTab
+    = MoveTab
+    | CubeTab
+
+
 type Tab
     = MovesTab
     | SummaryTab
@@ -93,6 +104,7 @@ type alias Model =
     , slug : String
     , gameId : String
     , wanted : Maybe Int -- the game the link asked for
+    , wantedStep : Maybe Int -- and the line of it
     , record : Loadable Record
     , index : Maybe Index -- what the server says of each game's analysis
     , analyses : Dict.Dict Int Review -- the games whose analysis has been fetched
@@ -104,6 +116,7 @@ type alias Model =
     , game : Int -- the game being replayed, by number
     , step : Int -- 0 is the start; n is the board after the game's nth line
     , showing : Showing
+    , noteTab : Maybe NoteTab -- which side of the turn's verdict is open; Nothing until the step decides
     , tab : Tab
     , touch : Maybe ( Float, Float ) -- where a touch on the board began
     , polls : Int -- asks made while something was pending
@@ -147,7 +160,7 @@ maxFailures =
 
 init :
     Session
-    -> { slug : String, gameId : String, game : Maybe Int }
+    -> { slug : String, gameId : String, game : Maybe Int, step : Maybe Int }
     -> ( Model, Cmd Msg )
 init session config =
     let
@@ -156,6 +169,7 @@ init session config =
             , slug = config.slug
             , gameId = config.gameId
             , wanted = config.game
+            , wantedStep = config.step
             , record = Loading
             , index = Nothing
             , analyses = Dict.empty
@@ -167,6 +181,7 @@ init session config =
             , game = Maybe.withDefault 1 config.game
             , step = 0
             , showing = Played
+            , noteTab = Nothing
             , tab = SummaryTab
             , touch = Nothing
             , polls = 0
@@ -261,6 +276,7 @@ type Msg
     | Poll
     | PickGame Int
     | GoTo Int
+    | PickNote NoteTab
     | First
     | Prev
     | Next
@@ -327,13 +343,27 @@ update msg model =
                                 Nothing ->
                                     record.games |> List.reverse |> List.head
             in
+            let
+                -- The line the link asked for, if it named one this game has.
+                step =
+                    case ( model.wantedStep, chosen ) of
+                        ( Just wanted, Just g ) ->
+                            clamp 0 (Replay.lastStep g) wanted
+
+                        _ ->
+                            0
+            in
             wantAnalysis
-                ( { model
-                    | record = Loaded record
-                    , game = chosen |> Maybe.map .number |> Maybe.withDefault 1
-                    , step = 0
-                  }
-                , Cmd.none
+                ( arrive step
+                    { model
+                        | record = Loaded record
+                        , game = chosen |> Maybe.map .number |> Maybe.withDefault 1
+                    }
+                , if step > 0 then
+                    follow step
+
+                  else
+                    Cmd.none
                 )
 
         GotRecord (Err err) ->
@@ -353,17 +383,26 @@ update msg model =
 
         GotAnalysis number (Ok analysis) ->
             -- Kept for the session: the game is over, so its analysis will
-            -- not change. Nothing about where the viewer is moves.
-            ( { model
-                | analyses =
-                    case analysis.review of
-                        Just review ->
-                            Dict.insert number review model.analyses
+            -- not change. Nothing about where the viewer is moves, except
+            -- that a step waiting on it now learns which side to open on.
+            let
+                stored =
+                    { model
+                        | analyses =
+                            case analysis.review of
+                                Just review ->
+                                    Dict.insert number review model.analyses
 
-                        Nothing ->
-                            model.analyses
-                , fetching = List.filter (\n -> n /= number) model.fetching
-              }
+                                Nothing ->
+                                    model.analyses
+                        , fetching = List.filter (\n -> n /= number) model.fetching
+                    }
+            in
+            ( if number == model.game && model.noteTab == Nothing && model.showing == Played then
+                arrive model.step stored
+
+              else
+                stored
             , follow model.step
             )
 
@@ -391,10 +430,26 @@ update msg model =
                 ( model, Cmd.none )
 
             else
-                wantAnalysis ( { model | matchOpen = False, game = number, step = 0, showing = Played }, follow 0 )
+                wantAnalysis ( { model | matchOpen = False, game = number, step = 0, showing = Played, noteTab = Nothing }, follow 0 )
 
         GoTo step ->
             goTo step model
+
+        -- The cube tab is about the position before the roll, so the dice
+        -- come off the board with it; the move tab puts the move back.
+        PickNote tab ->
+            ( { model
+                | noteTab = Just tab
+                , showing =
+                    case tab of
+                        CubeTab ->
+                            Before
+
+                        MoveTab ->
+                            Played
+              }
+            , Cmd.none
+            )
 
         First ->
             goTo 0 model
@@ -497,7 +552,157 @@ goTo step model =
         ( model, Cmd.none )
 
     else
-        ( { model | step = clamped, showing = Played }, follow clamped )
+        ( arrive clamped model, follow clamped )
+
+
+{-| Land on a step: the move on the board, and the note open on the move,
+unless the cube was this turn's mistake, in which case the note opens on
+the cube and the board shows the position it was about.
+-}
+arrive : Int -> Model -> Model
+arrive step model =
+    let
+        placed =
+            { model | step = step, showing = Played, noteTab = Nothing }
+
+        tab =
+            defaultNoteTab placed
+    in
+    case tab of
+        Just CubeTab ->
+            { placed | noteTab = tab, showing = Before }
+
+        _ ->
+            { placed | noteTab = tab }
+
+
+{-| The engine's verdicts on one line of the current game. A game played
+without the cube has no cube to have turned, whatever the engine graded,
+so its cube verdicts are dropped here, once, for every reader.
+-}
+notesAt : Model -> Int -> List Annotation
+notesAt model index =
+    let
+        withCube =
+            case model.record of
+                Loaded record ->
+                    record.cube
+
+                _ ->
+                    True
+    in
+    currentReview model
+        |> Maybe.andThen .review
+        |> Maybe.map (\r -> Replay.annotationsAt r index)
+        |> Maybe.withDefault []
+        |> List.filter
+            (\n ->
+                case n of
+                    NoDoubleNote _ _ ->
+                        withCube
+
+                    _ ->
+                        True
+            )
+
+
+{-| Which side a turn's note should open on: the cube when it cost more
+than the move, else the move. Nothing before the analysis is in.
+-}
+defaultNoteTab : Model -> Maybe NoteTab
+defaultNoteTab model =
+    let
+        notes =
+            notesAt model (model.step - 1)
+
+        cost pick =
+            notes |> List.filterMap pick |> List.head |> Maybe.withDefault 0
+
+        cubeCost =
+            cost
+                (\n ->
+                    case n of
+                        NoDoubleNote _ c ->
+                            Just c.doubler.equityLost
+
+                        _ ->
+                            Nothing
+                )
+
+        moveCost =
+            cost
+                (\n ->
+                    case n of
+                        MoveNote _ (Moved m) ->
+                            Just m.equityLost
+
+                        _ ->
+                            Nothing
+                )
+    in
+    if model.step > 0 && notes /= [] then
+        if cubeCost > 0 && cubeCost > moveCost then
+            Just CubeTab
+
+        else
+            Just MoveTab
+
+    else
+        Nothing
+
+
+{-| Whether the record is in, so the game on the page is the page's choice
+and not the default it opens with.
+-}
+settled : Model -> Bool
+settled model =
+    case model.record of
+        Loaded _ ->
+            True
+
+        _ ->
+            False
+
+
+{-| Where the page is, as a link: the game and the line on the board. Main
+keeps the address bar on it, so a reload and a shared link land here.
+-}
+url : Model -> String
+url model =
+    Route.href (Route.replayAt model.slug model.gameId model.game model.step)
+
+
+{-| The address bar moved on its own (back, forward, a link typed) to a
+game and a line of this same room: go there without starting over. A game
+the record does not have is left alone.
+-}
+locate : Maybe Int -> Maybe Int -> Model -> ( Model, Cmd Msg )
+locate game step model =
+    let
+        number =
+            Maybe.withDefault model.game game
+
+        ( switched, cmd ) =
+            if number == model.game then
+                ( model, Cmd.none )
+
+            else
+                case model.record of
+                    Loaded record ->
+                        case Replay.findGame number record of
+                            Just _ ->
+                                wantAnalysis ( { model | matchOpen = False, game = number, step = 0, showing = Played, noteTab = Nothing }, Cmd.none )
+
+                            Nothing ->
+                                ( model, Cmd.none )
+
+                    _ ->
+                        ( model, Cmd.none )
+
+        ( placed, cmd2 ) =
+            goTo (Maybe.withDefault 0 step) switched
+    in
+    ( placed, Cmd.batch [ cmd, cmd2 ] )
 
 
 {-| Keep the current line of the move list in view, once the steps have
@@ -1331,16 +1536,11 @@ viewNote model record game =
             analysis |> Maybe.andThen .review
 
         notes =
-            case ( review, model.step ) of
-                ( Just r, step ) ->
-                    if step > 0 then
-                        Replay.annotationsAt r (step - 1)
+            if model.step > 0 then
+                notesAt model (model.step - 1)
 
-                    else
-                        []
-
-                _ ->
-                    []
+            else
+                []
 
         what =
             case Replay.entryAt game model.step of
@@ -1349,21 +1549,10 @@ viewNote model record game =
                 Nothing ->
                     div [ class "rp-what rp-what-start" ] [ span [ class "pixel text-base sm:text-lg" ] [ text ("GAME " ++ String.fromInt game.number) ] ]
 
-                Just (TurnEntry t) ->
-                    div [ class "rp-what" ]
-                        [ swatch t.player
-                        , span [ class "font-bold truncate" ] [ text (name t.player) ]
-                        , span [ class "rp-dice" ] [ text (t.dice |> List.map String.fromInt |> String.join "") ]
-                        , span [ class "rp-moves" ]
-                            [ text
-                                (if t.moves == [] then
-                                    "(no play)"
-
-                                 else
-                                    String.join " " t.moves
-                                )
-                            ]
-                        ]
+                -- A turn: the tabs are the top of the note, and the board
+                -- says whose roll and what was played; nothing to repeat.
+                Just (TurnEntry _) ->
+                    text ""
 
                 Just (DoubleEntry d) ->
                     div [ class "rp-what" ] [ swatch d.player, span [ class "font-bold" ] [ text (name d.player ++ " doubles to " ++ String.fromInt d.value) ] ]
@@ -1385,13 +1574,130 @@ viewNote model record game =
     in
     div [ class "rp-note", id "rp-note" ]
         (what
-            :: List.map (viewAnnotation model) notes
+            :: viewNotes model record game notes
             ++ [ viewAnalysisState model game analysis ]
         )
 
 
-viewAnnotation : Model -> Annotation -> Html Msg
-viewAnnotation model note =
+{-| A step's verdicts. One is simply shown; two (the cube that could have
+been turned, and the move played) are tabs, open on the one that was a
+mistake, else on the move.
+-}
+viewNotes : Model -> Record -> Game -> List Annotation -> List (Html Msg)
+viewNotes model record game notes =
+    case ( Replay.entryAt game model.step, notes ) of
+        ( _, [] ) ->
+            []
+
+        -- A turn: the move on the left, the cube on the right, always both,
+        -- as the panel below has its two tabs.
+        ( Just (TurnEntry t), _ ) ->
+            let
+                open =
+                    model.noteTab |> Maybe.withDefault MoveTab
+
+                moveNote =
+                    notes
+                        |> List.filter
+                            (\n ->
+                                case n of
+                                    MoveNote _ _ ->
+                                        True
+
+                                    _ ->
+                                        False
+                            )
+                        |> List.head
+
+                cubeNote =
+                    notes
+                        |> List.filter
+                            (\n ->
+                                case n of
+                                    NoDoubleNote _ _ ->
+                                        True
+
+                                    _ ->
+                                        False
+                            )
+                        |> List.head
+
+                tab which label =
+                    button
+                        [ classList [ ( "rp-note-tab pixel text-[8px]", True ), ( "is-on", which == open ) ]
+                        , id
+                            (case which of
+                                MoveTab ->
+                                    "rp-note-move"
+
+                                CubeTab ->
+                                    "rp-note-cube"
+                            )
+                        , onClick (PickNote which)
+                        ]
+                        [ text label ]
+            in
+            [ div [ class "rp-note-tabs", id "rp-note-tabs" ]
+                [ tab MoveTab "MOVE", tab CubeTab "CUBE" ]
+            , case open of
+                MoveTab ->
+                    moveNote |> Maybe.map (viewAnnotation model record) |> Maybe.withDefault (text "")
+
+                CubeTab ->
+                    case cubeNote of
+                        Just n ->
+                            viewAnnotation model record n
+
+                        Nothing ->
+                            div [ class "rp-words rp-no-cube" ] [ text (noCubeReason model record game t.player) ]
+            ]
+
+        -- A double, a take, a pass: the one verdict it is.
+        ( _, one :: _ ) ->
+            [ viewAnnotation model record one ]
+
+
+{-| Why there was no double to consider before this roll.
+-}
+noCubeReason : Model -> Record -> Game -> String -> String
+noCubeReason model record game mover =
+    let
+        before =
+            Replay.stillAt record game (model.step - 1)
+
+        opp =
+            record.players
+                |> List.filter (\p -> p.id /= mover)
+                |> List.head
+                |> Maybe.map .name
+                |> Maybe.withDefault "The other side"
+    in
+    if not record.cube then
+        "This game is played without the cube."
+
+    else if model.step == 1 then
+        "Nobody can double before the opening roll: the dice decide who moves first."
+
+    else if before.position.cube.owner /= Nothing && before.position.cube.owner /= Just mover then
+        opp ++ " holds the cube at " ++ String.fromInt before.position.cube.value ++ ": only they can turn it."
+
+    else
+        "No double could be offered here."
+
+
+viewAnnotation : Model -> Record -> Annotation -> Html Msg
+viewAnnotation model record note =
+    let
+        name =
+            Replay.playerNamed record
+
+        other id_ =
+            record.players
+                |> List.filter (\p -> p.id /= id_)
+                |> List.head
+                |> Maybe.map .name
+                |> Maybe.withDefault "the other side"
+    in
     case note of
         MoveNote turn move ->
             case move of
@@ -1409,13 +1715,14 @@ viewAnnotation model note =
                                 span [ style "color" "var(--pencil)" ] [ text "The engine's choice" ]
 
                               else
-                                span [ class "rp-best" ]
-                                    [ text "Best "
-                                    , span [ class "font-bold" ] [ text m.best.notation ]
-                                    , span [ class "rp-lost tabular-nums" ] [ text (" −" ++ Replay.formatEquity m.equityLost) ]
-                                    ]
+                                lost m.equityLost
                             , luckOf turn
                             ]
+                        , if m.forced then
+                            text ""
+
+                          else
+                            moveInWords (name turn.player) m
                         , if m.forced || List.length m.top <= 1 then
                             text ""
 
@@ -1423,10 +1730,10 @@ viewAnnotation model note =
                             viewCandidates model m
                         ]
 
-        DoubleNote _ cube ->
+        DoubleNote turn cube ->
             div [ class "rp-verdict-block" ]
                 [ div [ class "rp-verdict" ]
-                    [ gradeTag cube.doubler.grade
+                    [ verdictTag cube.doubler
                     , span []
                         [ text
                             (case cube.doubler.mistake of
@@ -1434,18 +1741,20 @@ viewAnnotation model note =
                                     Replay.mistakeLabel mistake
 
                                 Nothing ->
-                                    "Right to double"
+                                    "Double"
                             )
                         ]
                     , lost cube.doubler.equityLost
                     ]
+                , inWords (doubleInWords (name turn.player) (other turn.player) cube)
+                , cubeChances (name turn.player) cube
                 , cubeLine cube
                 ]
 
-        AnswerNote _ cube verdict ->
+        AnswerNote turn cube verdict ->
             div [ class "rp-verdict-block" ]
                 [ div [ class "rp-verdict" ]
-                    [ gradeTag verdict.grade
+                    [ verdictTag verdict
                     , span []
                         [ text
                             (case ( verdict.mistake, cube.response ) of
@@ -1453,26 +1762,376 @@ viewAnnotation model note =
                                     Replay.mistakeLabel mistake
 
                                 ( Nothing, Just "pass" ) ->
-                                    "Right to pass"
+                                    "Pass"
 
                                 ( Nothing, _ ) ->
-                                    "Right to take"
+                                    "Take"
                             )
                         ]
                     , lost verdict.equityLost
                     ]
+                , inWords (answerInWords (other turn.player) cube verdict)
+                , cubeChances (name turn.player) cube
                 , cubeLine cube
                 ]
 
-        NoDoubleNote _ cube ->
+        NoDoubleNote turn cube ->
             div [ class "rp-verdict-block" ]
                 [ div [ class "rp-verdict" ]
-                    [ gradeTag cube.doubler.grade
-                    , span [] [ text ("Cube: " ++ (cube.doubler.mistake |> Maybe.map Replay.mistakeLabel |> Maybe.withDefault "no double")) ]
+                    [ verdictTag cube.doubler
+                    , span []
+                        [ text
+                            (case cube.doubler.mistake of
+                                Just mistake ->
+                                    Replay.mistakeLabel mistake
+
+                                Nothing ->
+                                    "No double"
+                            )
+                        ]
                     , lost cube.doubler.equityLost
                     ]
+                , inWords (noDoubleInWords (name turn.player) (other turn.player) cube)
+                , cubeChances (name turn.player) cube
                 , cubeLine cube
                 ]
+
+
+{-| A cube decision's tag. The engine grades a right decision "ok"; on
+the page it is Best, as a right move is.
+-}
+verdictTag : Replay.Verdict -> Html msg
+verdictTag verdict =
+    case verdict.mistake of
+        Nothing ->
+            gradeTag "best"
+
+        Just _ ->
+            gradeTag verdict.grade
+
+
+inWords : String -> Html msg
+inWords sentence =
+    if sentence == "" then
+        text ""
+
+    else
+        div [ class "rp-words" ] [ text sentence ]
+
+
+{-| How the doubler stands, from their winning chances alone.
+-}
+standing : String -> Float -> String
+standing who win =
+    if win < 0.45 then
+        who ++ " is losing here"
+
+    else if win < 0.55 then
+        "The game is close here"
+
+    else if win < 0.72 then
+        who ++ " is winning here"
+
+    else
+        who ++ " is well ahead here"
+
+
+{-| The verdict on what was done with the cube, in the shape the move's
+sentence has: "correctly did not double", "doubled, a bad mistake".
+-}
+cubeVerdict : String -> String -> Replay.Verdict -> String
+cubeVerdict who did verdict =
+    case verdict.mistake of
+        Nothing ->
+            who ++ " correctly " ++ did ++ "."
+
+        Just _ ->
+            let
+                size =
+                    case verdict.grade of
+                        "doubtful" ->
+                            "a dubious"
+
+                        "bad" ->
+                            "a bad"
+
+                        "very_bad" ->
+                            "a very bad"
+
+                        _ ->
+                            "a small"
+            in
+            who ++ " " ++ did ++ ", " ++ size ++ " mistake."
+
+
+{-| Too good to double: the engine says "no double" for that too, but
+its equities give it away, since playing on is worth more than the point
+a pass would hand over.
+-}
+tooGood : Replay.CubeReview -> Bool
+tooGood cube =
+    String.contains "no" (String.toLower cube.optimal) && cube.noDouble >= cube.doublePass
+
+
+{-| A double the engine agrees with. Ahead, that is the chances; behind,
+it is the match score (a trailer who must win this game anyway, or a
+score where the cube is worth more turned), and the sentence says so
+rather than calling a 35% double "winning".
+-}
+properDouble : String -> Float -> String
+properDouble who win =
+    if win >= 0.55 then
+        standing who win ++ " by enough to double."
+
+    else
+        "At this score the cube is worth turning for " ++ who ++ " even at " ++ Replay.formatPercent win ++ " to win."
+
+
+{-| The engine's word on a double that was offered: the verdict, then why.
+-}
+doubleInWords : String -> String -> Replay.CubeReview -> String
+doubleInWords who opp cube =
+    let
+        pick =
+            String.toLower cube.optimal
+
+        win =
+            cube.probs |> Maybe.map .win |> Maybe.withDefault 0.5
+
+        why =
+            if tooGood cube then
+                who ++ " is winning here by too much: " ++ opp ++ " can pass for a single point, when playing on for the gammon is worth more."
+
+            else if String.contains "no" pick then
+                if win < 0.5 then
+                    who ++ " is losing here: doubling hands " ++ opp ++ " a cube they are glad to take."
+
+                else
+                    standing who win ++ ", but not by enough to make the cube worth turning: " ++ opp ++ " has an easy take, and waiting keeps the chance to double later."
+
+            else if String.contains "pass" pick then
+                standing who win ++ " by enough that " ++ opp ++ " should pass."
+
+            else
+                properDouble who win
+    in
+    cubeVerdict who "doubled" cube.doubler ++ " " ++ why
+
+
+{-| The engine's word on a cube that stayed where it was: the verdict,
+then why.
+-}
+noDoubleInWords : String -> String -> Replay.CubeReview -> String
+noDoubleInWords who opp cube =
+    let
+        pick =
+            String.toLower cube.optimal
+
+        win =
+            cube.probs |> Maybe.map .win |> Maybe.withDefault 0.5
+
+        why =
+            if tooGood cube then
+                who ++ " is winning here by too much to double: better to play on for the gammon than to let " ++ opp ++ " pass for a point."
+
+            else if String.contains "pass" pick then
+                standing who win ++ " by enough that " ++ opp ++ " should pass: doubling would have taken the point."
+
+            else if String.contains "no" pick then
+                if win < 0.5 then
+                    who ++ " is losing here, and the cube stays where it is."
+
+                else if win < 0.55 then
+                    "The game is close here: not a double yet."
+
+                else
+                    standing who win ++ ", but not by enough to double yet: " ++ opp ++ " would have an easy take, and the cube is worth more held."
+
+            else
+                properDouble who win
+    in
+    cubeVerdict who "did not double" cube.doubler ++ " " ++ why
+
+
+{-| The engine's word on the answer to a double, from the taker's side:
+the verdict, then why.
+-}
+answerInWords : String -> Replay.CubeReview -> Replay.Verdict -> String
+answerInWords taker cube verdict =
+    let
+        shouldPass =
+            String.contains "pass" (String.toLower cube.optimal) || tooGood cube
+
+        did =
+            if cube.response == Just "pass" then
+                "passed"
+
+            else
+                "took"
+
+        -- the taker's own chances: the doubler's, the other way round
+        win =
+            cube.probs |> Maybe.map (\p -> 1 - p.win) |> Maybe.withDefault 0.5
+
+        why =
+            if shouldPass then
+                taker ++ " is losing here by too much to take: a pass gives up one point rather than risking two or more."
+
+            else if win >= 0.5 then
+                taker ++ " is the favourite here, double or not: an easy take."
+
+            else
+                taker ++ " is behind here but has enough to play on for double the stake."
+    in
+    cubeVerdict taker did verdict ++ " " ++ why
+
+
+{-| The chances a cube decision was judged on, in the move table's
+columns: the doubler's wins, their gammons, the gammons against them.
+-}
+cubeChances : String -> Replay.CubeReview -> Html msg
+cubeChances who cube =
+    case cube.probs of
+        Just p ->
+            div [ class "rp-top rp-cube-top" ]
+                [ div [ class "rp-top-head" ]
+                    [ span [] []
+                    , span [ class "rp-col", Html.Attributes.title "How often the doubler wins" ] [ text "win" ]
+                    , span [ class "rp-col", Html.Attributes.title "How often they win a gammon" ] [ text "gam+" ]
+                    , span [ class "rp-col", Html.Attributes.title "How often they get gammoned" ] [ text "gam−" ]
+                    ]
+                , div [ class "rp-cand rp-cube-row" ]
+                    ([ span [ class "rp-cand-move" ] [ text who ] ] ++ chanceCells (Just p))
+                ]
+
+        Nothing ->
+            text ""
+
+
+{-| What a move did, in two sentences: what was played, by its grade, and
+what the best move gives instead, on the three things a move changes: how
+often you win, how often you win a gammon, how often you get gammoned.
+The best move's gains come first, then what it gives up.
+-}
+moveInWords : String -> { a | grade : String, played : Candidate, best : Candidate } -> Html msg
+moveInWords who m =
+    case ( m.played.probs, m.best.probs ) of
+        ( Just played, Just best ) ->
+            let
+                -- best less played, in points of a percent
+                wins =
+                    (best.win - played.win) * 100
+
+                gammons =
+                    (best.gammonWin - played.gammonWin) * 100
+
+                gammoned =
+                    (best.gammonLoss - played.gammonLoss) * 100
+
+                amount d =
+                    Replay.fixed1 (abs d) ++ "%"
+
+                matters d =
+                    abs d >= 0.5
+
+                gains =
+                    List.filterMap identity
+                        [ if wins > 0 && matters wins then
+                            Just (amount wins ++ " more wins")
+
+                          else
+                            Nothing
+                        , if gammons > 0 && matters gammons then
+                            Just (amount gammons ++ " more gammons")
+
+                          else
+                            Nothing
+                        , if gammoned < 0 && matters gammoned then
+                            Just (amount gammoned ++ " fewer gammons against")
+
+                          else
+                            Nothing
+                        ]
+
+                costs =
+                    List.filterMap identity
+                        [ if wins < 0 && matters wins then
+                            Just (amount wins ++ " fewer wins")
+
+                          else
+                            Nothing
+                        , if gammons < 0 && matters gammons then
+                            Just (amount gammons ++ " fewer gammons")
+
+                          else
+                            Nothing
+                        , if gammoned > 0 && matters gammoned then
+                            Just (amount gammoned ++ " more gammons against")
+
+                          else
+                            Nothing
+                        ]
+
+                played_ =
+                    case m.grade of
+                        "best" ->
+                            who ++ " played the best move."
+
+                        "ok" ->
+                            who ++ " played a fine move."
+
+                        "doubtful" ->
+                            who ++ " played a dubious move."
+
+                        "bad" ->
+                            who ++ " played a bad move."
+
+                        "very_bad" ->
+                            who ++ " played a very bad move."
+
+                        _ ->
+                            who ++ " played a move the engine would not."
+
+                best_ =
+                    if m.grade == "best" then
+                        ""
+
+                    else if m.grade == "ok" then
+                        " The best move here is a shade better."
+
+                    else
+                        case ( gains, costs ) of
+                            ( [], [] ) ->
+                                " The best move here is better by the engine's count, though the chances differ by less than half a point."
+
+                            ( _, [] ) ->
+                                " The best move here results in " ++ spoken gains ++ "."
+
+                            ( [], _ ) ->
+                                " The best move here gives up " ++ spoken costs ++ ", but comes out ahead once every roll is counted."
+
+                            _ ->
+                                " The best move here results in " ++ spoken gains ++ ", at the cost of " ++ spoken costs ++ "."
+            in
+            div [ class "rp-words" ] [ text (played_ ++ best_) ]
+
+        _ ->
+            text ""
+
+
+{-| "a", "a and b", "a, b and c".
+-}
+spoken : List String -> String
+spoken parts =
+    case List.reverse parts of
+        [] ->
+            ""
+
+        [ one ] ->
+            one
+
+        last :: rest ->
+            String.join ", " (List.reverse rest) ++ " and " ++ last
 
 
 lost : Float -> Html msg
@@ -1484,13 +2143,27 @@ lost equity =
         text ""
 
 
-{-| The engine's call on the cube and the three equities behind it.
+{-| The engine's call on the cube: the three equities as labelled cells,
+the one it picks in ink.
 -}
 cubeLine : Replay.CubeReview -> Html msg
 cubeLine cube =
-    div [ class "rp-cube-line tabular-nums" ]
-        [ text ("Engine: " ++ cube.optimal ++ " · ")
-        , text ("ND " ++ signed cube.noDouble ++ " · D/T " ++ signed cube.doubleTake ++ " · D/P " ++ signed cube.doublePass)
+    let
+        pick =
+            String.toLower cube.optimal
+
+        cell label value key =
+            div [ classList [ ( "rp-cube-eq", True ), ( "is-pick", String.contains key pick ) ] ]
+                [ span [ class "rp-cube-label" ] [ text label ]
+                , span [ class "rp-cube-value tabular-nums" ] [ text (signed value) ]
+                ]
+    in
+    div [ class "rp-cube" ]
+        [ div [ class "rp-cube-eqs" ]
+            [ cell "No double" cube.noDouble "no double"
+            , cell "Double, take" cube.doubleTake "take"
+            , cell "Double, pass" cube.doublePass "pass"
+            ]
         ]
 
 
@@ -1533,8 +2206,16 @@ viewCandidates model m =
                 m.top
     in
     div [ class "rp-top" ]
-        (shown
-            |> List.map
+        (div [ class "rp-top-head" ]
+            [ span [] []
+            , span [] [ text "move" ]
+            , span [ class "rp-col-eq" ] [ text "eq" ]
+            , span [ class "rp-col", Html.Attributes.title "How often this move wins" ] [ text "win" ]
+            , span [ class "rp-col", Html.Attributes.title "How often it wins a gammon" ] [ text "gam+" ]
+            , span [ class "rp-col", Html.Attributes.title "How often it gets gammoned" ] [ text "gam−" ]
+            ]
+            :: (shown
+                    |> List.map
                 (\c ->
                     let
                         on_ =
@@ -1563,21 +2244,34 @@ viewCandidates model m =
                                 Show (Proposed c.rank)
                             )
                         , Html.Attributes.title
-                            (if c.played then
+                            ((if c.played then
                                 "The move played"
 
-                             else
+                              else
                                 "Show this move on the board"
+                             )
+                                ++ (case c.probs of
+                                        Just p ->
+                                            " · backgammons " ++ Replay.formatPercent p.backgammonWin ++ " for, " ++ Replay.formatPercent p.backgammonLoss ++ " against"
+
+                                        Nothing ->
+                                            ""
+                                   )
                             )
                         ]
-                        [ span [ class "rp-rank tabular-nums" ] [ text (String.fromInt c.rank ++ ".") ]
-                        , span [ class "rp-cand-move" ] [ text c.notation ]
-                        , if c.played then
-                            span [ class "rp-played pixel text-[6px]" ] [ text "PLAYED" ]
+                        ([ span [ class "rp-rank tabular-nums" ] [ text (String.fromInt c.rank ++ ".") ]
+                         , span
+                            [ classList
+                                [ ( "rp-cand-move", True )
 
-                          else
-                            text ""
-                        , span [ class "rp-cand-lost tabular-nums" ]
+                                -- a long notation (doubles, hits) steps the
+                                -- type down rather than taking a second line
+                                , ( "is-long", String.length c.notation > 10 )
+                                , ( "is-longer", String.length c.notation > 15 )
+                                ]
+                            ]
+                            [ text c.notation ]
+                         , span [ class "rp-cand-lost rp-col-eq tabular-nums" ]
                             [ text
                                 (if c.equityLost > 0 then
                                     "−" ++ Replay.formatEquity c.equityLost
@@ -1586,9 +2280,32 @@ viewCandidates model m =
                                     signed c.equity
                                 )
                             ]
-                        ]
+                         ]
+                            ++ chanceCells c.probs
+                        )
                 )
+           )
         )
+
+
+{-| A candidate's chances as three cells: wins, gammons won, gammons
+lost. Empty cells when the report has none.
+-}
+chanceCells : Maybe Replay.Probs -> List (Html msg)
+chanceCells probs =
+    let
+        cell extra x =
+            span [ class ("rp-col tabular-nums" ++ extra) ] [ text (Replay.fixed1 (x * 100)) ]
+    in
+    case probs of
+        Just p ->
+            [ cell "" p.win
+            , cell "" p.gammonWin
+            , cell "" p.gammonLoss
+            ]
+
+        Nothing ->
+            List.repeat 3 (span [ class "rp-col" ] [])
 
 
 gradeTag : String -> Html msg
@@ -1710,9 +2427,7 @@ viewMoves model record game =
                         |> Maybe.withDefault (text "")
 
                 cubeTag =
-                    review
-                        |> Maybe.map (\r -> Replay.annotationsAt r index)
-                        |> Maybe.withDefault []
+                    notesAt model index
                         |> List.filterMap
                             (\a ->
                                 case a of
@@ -1723,7 +2438,7 @@ viewMoves model record game =
                                         v.mistake |> Maybe.map (\_ -> listTag v.grade)
 
                                     NoDoubleNote _ c ->
-                                        Just (listTag c.doubler.grade)
+                                        c.doubler.mistake |> Maybe.map (\_ -> listTag c.doubler.grade)
 
                                     MoveNote _ _ ->
                                         Nothing
@@ -1851,15 +2566,6 @@ viewSummary model record game =
                                 ]
                         )
                 )
-                    ++ [ case review.levels of
-                            Just levels ->
-                                div [ class "rp-level", id "rp-level" ] [ text ("Analysed at " ++ Replay.levelLabel levels) ]
-
-                            Nothing ->
-                                text ""
-                       , div [ class "rp-explain" ]
-                            [ text "PR (Performance Rating) is the equity a player gave up per decision they had to make, times 500: lower is better, and 0 is perfect play. Luck is what the dice gave, in the same units." ]
-                       ]
 
             -- where the analysis stands is the note's to say, above the tabs
             Nothing ->
@@ -1873,6 +2579,14 @@ cube error, worst first, each a door that puts the step on the board.
 viewMistakes : Model -> Review -> Replay.Totals -> Html Msg
 viewMistakes model review totals =
     let
+        withCube =
+            case model.record of
+                Loaded record ->
+                    record.cube
+
+                _ ->
+                    True
+
         graded grade =
             List.member grade [ "doubtful", "bad", "very_bad" ]
 
@@ -1901,7 +2615,12 @@ viewMistakes model review totals =
                     )
 
         cubeRows =
-            review.turns
+            (if withCube then
+                review.turns
+
+             else
+                []
+            )
                 |> List.concatMap
                     (\t ->
                         case t.cube of
