@@ -973,7 +973,7 @@ Every game is its seed plus its action log, and the suite leans on that.
   and validation, `event.for_viewer`, host/protocol shapes.
 - `test/backgammon/analysis_test.gleam`: the engine board in controlled
   positions, the cube and match state per turn, scripted logs (doubles,
-  drops, resigns, timeouts, picked dice), and the property that every
+  drops, resigns, timeouts), and the property that every
   played board is legal for its dice under an independent generator on the
   engine's own format; `test/oskol/reviews_handler_test.gleam`: when a
   review is owed, retries, and the page's shape, on stub caps.
