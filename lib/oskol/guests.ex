@@ -6,8 +6,8 @@ defmodule Oskol.Guests do
   display name they last played under, prefilled into the create and join
   forms. No signup, nothing visible.
 
-  `users` is a deliberate skeleton (it ships empty): `guests.user_id` is the
-  future claim path for a guest who eventually creates an account.
+  `guests.user_id` is where this browser becomes an account: `Oskol.Auth`
+  owns `users` and writes that column on sign-in, and clears it on logout.
 
   Guest bookkeeping must never break a page: every write here rescues and
   degrades to "the site just doesn't remember you", the same posture as
@@ -21,15 +21,6 @@ defmodule Oskol.Guests do
 
   alias Oskol.Repo
 
-  defmodule User do
-    @moduledoc "Placeholder for future accounts. Ships empty."
-    use Ecto.Schema
-
-    schema "users" do
-      timestamps(updated_at: false, type: :utc_datetime_usec)
-    end
-  end
-
   defmodule Guest do
     @moduledoc "One visitor: opaque id, last display name, last visit."
     use Ecto.Schema
@@ -42,7 +33,8 @@ defmodule Oskol.Guests do
       # decided in Gleam (src/oskol/guests/prefs.gleam).
       field(:prefs, :map, default: %{})
       field(:last_seen_at, :utc_datetime_usec)
-      belongs_to(:user, Oskol.Guests.User)
+      # The account signed in on this browser, if any (Oskol.Auth).
+      belongs_to(:user, Oskol.Auth.User, type: :binary_id)
 
       timestamps(updated_at: false, type: :utc_datetime_usec)
     end
@@ -69,6 +61,47 @@ defmodule Oskol.Guests do
   end
 
   def touch(_), do: nil
+
+  @doc """
+  Move this browser's guest row to a fresh id, carrying everything on it:
+  the name it last played under, its preferences, the account it is signed
+  into, when it was last seen.
+
+  Signing in mints a new id precisely so the old one is worth nothing
+  afterwards, so the old row goes. A browser with no row yet simply gets
+  one under the new id. Called inside `Oskol.Auth.adopt_seats/3`'s
+  transaction, which moves its seats in the same breath — never on its own.
+  """
+  def move(old_id, new_id) when is_binary(old_id) and is_binary(new_id) and old_id != new_id do
+    now = DateTime.utc_now()
+    old = Repo.get(Guest, old_id)
+
+    name = old && old.name
+    prefs = (old && old.prefs) || %{}
+
+    # The fresh row may already exist: a sign-in whose write was still
+    # queued when it answered binds the account to the fresh id first. The
+    # name and the board preferences still come across; the account on it
+    # is left as it is.
+    {:ok, _} =
+      Repo.insert(
+        %Guest{
+          id: new_id,
+          name: name,
+          prefs: prefs,
+          user_id: old && old.user_id,
+          last_seen_at: now
+        },
+        on_conflict: [set: [name: name, prefs: prefs, last_seen_at: now]],
+        conflict_target: :id
+      )
+
+    if old, do: Repo.delete!(old)
+
+    :ok
+  end
+
+  def move(_, _), do: :ok
 
   @doc "Remember the name this guest played under. Last writer wins."
   def save_name(guest_id, name) when is_binary(guest_id) and is_binary(name) do

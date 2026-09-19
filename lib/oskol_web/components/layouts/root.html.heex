@@ -11,13 +11,17 @@
     <%!-- The name this browser last played under, against the silent guest
           cookie: the create and join forms prefill it on the first paint. --%>
     <meta :if={assigns[:guest_name]} name="guest-name" content={@guest_name} />
+    <%!-- What a mailed sign-in link's page boots with: the address it is for
+          and where to go after, or that it has expired. Read once, by
+          Page.Login; nothing here is a credential. --%>
+    <meta :if={assigns[:login]} name="login" content={@login} />
     <meta :if={assigns[:no_index]} name="robots" content="noindex" />
     <.live_title suffix=" · Oskol">{head_title(assigns)}</.live_title>
     <meta
       name="description"
       content={
         assigns[:meta_description] ||
-          "Free two-player games with no accounts. Pick a game, share the invite link, and your friend is in within seconds."
+          "Free two-player games, no account needed. Pick a game, share the invite link, and your friend is in within seconds."
       }
     />
     <%= if assigns[:canonical] do %>

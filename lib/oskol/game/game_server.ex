@@ -18,6 +18,7 @@ defmodule Oskol.Game.GameServer do
   alias Oskol.Game.GameServerState
   alias Oskol.Game.Persister
   alias Oskol.GameKit
+  alias Oskol.Gleam.Interop
 
   @timeout :timer.hours(1)
 
@@ -38,21 +39,30 @@ defmodule Oskol.Game.GameServer do
   guest id (tooling, a seeded room) is held by nobody, and the first
   browser to ask for it from the invite link takes it.
 
+  `user_id` is the account signed in on that browser, if any: a seat taken
+  while signed in is that account's from the start, and no room code ever
+  opens it again.
+
   One browser holds at most one seat at a table, because one guest id can
   only name one of them: a guest already seated here is
   `{:error, :already_seated}` rather than a second seat it could never
-  reach. Two players are two browsers.
+  reach. An account is the same, whatever browser it asks from: one seat
+  per table. Two players are two browsers.
   """
-  def join_game(game_id, player_name, player_pid \\ nil, guest_id \\ nil) do
-    GenServer.call(via_tuple(game_id), {:join_game, player_name, player_pid, guest_id})
+  def join_game(game_id, player_name, player_pid \\ nil, guest_id \\ nil, user_id \\ nil) do
+    GenServer.call(via_tuple(game_id), {:join_game, player_name, player_pid, guest_id, user_id})
   end
 
   @doc """
   Attach a connection to the seat a guest holds.
 
+  Which seat, if any, is the holder rule (`src/oskol/rooms/seat.gleam`): an
+  owned seat answers to its account, from any browser signed into it and
+  from nothing else; an unowned one answers to the guest that took it.
+
   This is the only way to reach a seat with an already-connected player: a
-  second connection from the same guest is the same person, so the latest
-  one wins and the previous socket is dropped. A guest who holds no seat
+  second connection from the same holder is the same person, so the latest
+  one wins and the previous socket is dropped. A caller who holds no seat
   here is `{:error, :no_seat}` — it never falls back to any other seat.
 
   `client` identifies the browser behind the connection (the socket's
@@ -60,18 +70,23 @@ defmodule Oskol.Game.GameServer do
   reconnect from a takeover: see `src/oskol/rooms/seat.gleam`. Callers with
   nothing better to offer pass the connection itself.
   """
-  def attach(game_id, guest_id, player_pid, client \\ nil) do
-    GenServer.call(via_tuple(game_id), {:attach, guest_id, player_pid, client || player_pid})
+  def attach(game_id, guest_id, player_pid, client \\ nil, user_id \\ nil) do
+    GenServer.call(
+      via_tuple(game_id),
+      {:attach, GameServerState.session(guest_id, user_id), player_pid, client || player_pid}
+    )
   end
 
   @doc """
   Reclaim a seat whose player is away, from the invite link. The seat passes
-  to `guest_id`, so it is that browser's from here and whoever sat there
-  before no longer holds it. Returns `{:ok, player_id, state}`. A seat whose
-  player is connected is `{:error, :seat_connected}`.
+  to `guest_id` (and to `user_id`, when the claiming browser is signed in),
+  so it is that browser's from here and whoever sat there before no longer
+  holds it. Returns `{:ok, player_id, state}`. A seat whose player is
+  connected is `{:error, :seat_connected}`; a seat an account owns is
+  `{:error, :seat_owned}`, whoever asks — ownership is not a code away.
   """
-  def claim_seat(game_id, player_id, player_pid, guest_id \\ nil) do
-    GenServer.call(via_tuple(game_id), {:claim_seat, player_id, player_pid, guest_id})
+  def claim_seat(game_id, player_id, player_pid, guest_id \\ nil, user_id \\ nil) do
+    GenServer.call(via_tuple(game_id), {:claim_seat, player_id, player_pid, guest_id, user_id})
   end
 
   def get_state(game_id), do: GenServer.call(via_tuple(game_id), :get_state)
@@ -100,6 +115,27 @@ defmodule Oskol.Game.GameServer do
   @doc "Synchronous variant used by tests and tooling."
   def player_action(game_id, player_id, action) when is_map(action) do
     GenServer.call(via_tuple(game_id), {:player_action, player_id, action})
+  end
+
+  @doc """
+  A browser signed in: every seat here it held as a guest, and that no
+  account owns yet, is that account's now and moves to the browser's fresh
+  guest id with it.
+
+  The same change as the row's (`Oskol.Auth.stamp_seats/3`, the same
+  Gleam rule `seat.stamp`), in the live room's memory, so the two agree
+  without the room writing anything back. It is idempotent. Returns how
+  many seats it made the account's. At a table where
+  this account already owns a seat the other one is not stamped (one
+  person, one seat per table), but it still moves to the fresh guest id, so
+  the browser keeps it as a guest seat.
+  """
+  def stamp(game_id, old_guest_id, new_guest_id, user_id) do
+    GenServer.call(via_tuple(game_id), {:stamp, old_guest_id, new_guest_id, user_id})
+  catch
+    # The room stopped before or during this call. Its next rehydrate reads
+    # the stamped row.
+    :exit, _ -> 0
   end
 
   def request_rematch(game_id, player_id) do
@@ -152,10 +188,12 @@ defmodule Oskol.Game.GameServer do
   end
 
   def handle_call(
-        {:join_game, player_name, player_pid, guest_id},
+        {:join_game, player_name, player_pid, guest_id, user_id},
         _from,
         %GameServerState{} = state
       ) do
+    session = GameServerState.session(guest_id, user_id)
+
     cond do
       GameServerState.full?(state) ->
         {:reply, {:error, :game_full}, state, @timeout}
@@ -166,7 +204,7 @@ defmodule Oskol.Game.GameServer do
       GameServerState.started?(state) ->
         {:reply, {:error, :game_already_started}, state, @timeout}
 
-      GameServerState.find_player_id_by_guest(state, guest_id) != nil ->
+      GameServerState.find_player_id_for(state, session) != nil ->
         {:reply, {:error, :already_seated}, state, @timeout}
 
       true ->
@@ -176,6 +214,7 @@ defmodule Oskol.Game.GameServer do
         connection = %{
           name: player_name,
           guest_id: guest_id,
+          user_id: user_id,
           pid: player_pid,
           client: player_pid,
           connected: player_pid != nil,
@@ -209,8 +248,8 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
-  def handle_call({:attach, guest_id, player_pid, client}, _from, %GameServerState{} = state) do
-    case GameServerState.find_player_id_by_guest(state, guest_id) do
+  def handle_call({:attach, session, player_pid, client}, _from, %GameServerState{} = state) do
+    case GameServerState.find_player_id_for(state, session) do
       nil ->
         {:reply, {:error, :no_seat}, state, @timeout}
 
@@ -225,17 +264,24 @@ defmodule Oskol.Game.GameServer do
   end
 
   def handle_call(
-        {:claim_seat, player_id, player_pid, guest_id},
+        {:claim_seat, player_id, player_pid, guest_id, user_id},
         _from,
         %GameServerState{} = state
       ) do
     conn = state.connections[player_id]
-    # The seat, if any, this browser is already sitting at here.
-    held = GameServerState.find_player_id_by_guest(state, guest_id)
+    session = GameServerState.session(guest_id, user_id)
+    # The seat, if any, this caller is already sitting at here.
+    held = GameServerState.find_player_id_for(state, session)
 
     cond do
       conn == nil ->
         {:reply, {:error, :player_not_found}, state, @timeout}
+
+      not :oskol@rooms@seat.claimable(GameServerState.seat_record(player_id, conn)) ->
+        # An owned seat is its account's for good. That account reaches it by
+        # attaching, from any browser it is signed in on; no claim and no
+        # room code hands it to anybody else.
+        {:reply, {:error, :seat_owned}, state, @timeout}
 
       conn.connected ->
         # A seat with a live player is locked: only the guest holding it
@@ -253,7 +299,8 @@ defmodule Oskol.Game.GameServer do
       true ->
         # The seat changes hands: the claiming browser holds it now, so the
         # guest who held it before cannot walk back in behind their back.
-        claimed = %{conn | guest_id: guest_id}
+        # A signed-in browser takes it as its account's, for good.
+        claimed = %{conn | guest_id: guest_id, user_id: user_id}
 
         state = %GameServerState{
           state
@@ -273,13 +320,14 @@ defmodule Oskol.Game.GameServer do
   # with the old ids, names and guests, so each player's browser holds the
   # same seat in it.
   def handle_call(
-        {:seed_seat, player_id, name, guest_id},
+        {:seed_seat, player_id, name, guest_id, user_id},
         _from,
         %GameServerState{} = state
       ) do
     connection = %{
       name: name,
       guest_id: guest_id,
+      user_id: user_id,
       pid: nil,
       client: nil,
       connected: false,
@@ -354,6 +402,18 @@ defmodule Oskol.Game.GameServer do
           {:reply, {:ok, nil}, new_state, @timeout}
         end
     end
+  end
+
+  # A sign-in, reaching the room after the row was written. Only seats this
+  # guest holds and nobody owns, and only when the account has no seat here
+  # already.
+  def handle_call(
+        {:stamp, old_guest_id, new_guest_id, user_id},
+        _from,
+        %GameServerState{} = state
+      ) do
+    {stamped, count} = stamp_seats(state, old_guest_id, new_guest_id, user_id)
+    {:reply, count, stamped, @timeout}
   end
 
   def handle_call(:get_state, _from, %GameServerState{} = state) do
@@ -585,13 +645,51 @@ defmodule Oskol.Game.GameServer do
   defp players_json(%GameServerState{} = state) do
     Enum.map(state.seat_order, fn id ->
       conn = state.connections[id]
-      %{"id" => id, "name" => conn.name, "guest_id" => conn.guest_id}
+
+      %{
+        "id" => id,
+        "name" => conn.name,
+        "guest_id" => conn.guest_id,
+        "user_id" => conn.user_id
+      }
     end)
   end
 
+  # Hand this guest's unowned seats to the account it just signed into, and
+  # move them to its fresh guest id. Memory only: the row was written first,
+  # and writing it again from here could only race what the row already
+  # says.
+  #
+  # At a table where the account already owns a seat the other seat is not
+  # stamped, the same rule the write follows (one person, one seat per
+  # table), but it still moves to the fresh guest id with the browser.
+  defp stamp_seats(%GameServerState{} = state, old_guest_id, new_guest_id, user_id)
+       when is_binary(old_guest_id) and is_binary(new_guest_id) and is_binary(user_id) do
+    # The rule is Gleam's (`seat.stamp`), the same one the row followed.
+    {seats, count} =
+      :oskol@rooms@seat.stamp(
+        GameServerState.seat_records(state),
+        old_guest_id,
+        new_guest_id,
+        user_id
+      )
+
+    connections =
+      Enum.reduce(seats, state.connections, fn {:seat, id, guest, user}, connections ->
+        Map.update!(connections, id, fn conn ->
+          %{conn | guest_id: Interop.unopt(guest), user_id: Interop.unopt(user)}
+        end)
+      end)
+
+    {%GameServerState{state | connections: connections}, count}
+  end
+
+  defp stamp_seats(%GameServerState{} = state, _old, _new, _user), do: {state, 0}
+
   # A rematch is a new room with the same setup (fresh seed) and the same
-  # players in the same seats: ids, names and the guest holding each seat
-  # carry over, so both browsers walk straight into the new room.
+  # players in the same seats: ids, names, the guest holding each seat and
+  # the account owning it carry over, so both browsers walk straight into
+  # the new room and an owned seat is still owned there.
   defp spawn_rematch(rematch_id, %GameServerState{} = state) do
     case Oskol.Game.GameSupervisor.start_game(rematch_id, state.slug) do
       {:ok, _pid} ->
@@ -609,7 +707,7 @@ defmodule Oskol.Game.GameServer do
           {:ok, ^id, _} =
             GenServer.call(
               via_tuple(rematch_id),
-              {:seed_seat, id, conn.name, conn.guest_id}
+              {:seed_seat, id, conn.name, conn.guest_id, conn.user_id}
             )
         end)
 
@@ -659,11 +757,46 @@ defmodule Oskol.Game.GameServer do
         |> GameServerState.touch()
 
       if game.seed == nil or game.status == "waiting" do
-        {:ok, state}
+        {:ok, refresh_holders(state)}
       else
-        replay(state, game, actions)
+        case replay(state, game, actions) do
+          {:ok, replayed} -> {:ok, refresh_holders(replayed)}
+          other -> other
+        end
       end
     end
+  end
+
+  # Who holds each seat, read once more before the room goes live.
+  #
+  # A replay takes time, and a sign-in landing in the middle of it writes
+  # the seats' holders (`Oskol.Auth.stamp_seats/3`) against a row we had
+  # already read. Reading `players` again — one small query, no log — is
+  # what keeps the room from coming up believing the seat still belongs to
+  # the guest it did five seconds ago. Names, ids and seat order are the
+  # replay's; only the holder is taken from the row.
+  defp refresh_holders(%GameServerState{} = state) do
+    holders =
+      for player <- Oskol.Persistence.players(state.game_id),
+          is_map(player),
+          id = player["id"],
+          is_binary(id),
+          into: %{},
+          do: {id, {player["guest_id"], player["user_id"]}}
+
+    connections =
+      Map.new(state.connections, fn {id, conn} ->
+        case holders[id] do
+          {guest_id, user_id} -> {id, %{conn | guest_id: guest_id, user_id: user_id}}
+          nil -> {id, conn}
+        end
+      end)
+
+    %GameServerState{state | connections: connections}
+  rescue
+    # The row is the same one we just rebuilt from; if reading it again
+    # fails, what we have is still right for every room but a stamped one.
+    _ -> state
   end
 
   defp restore_setup(%GameServerState{} = state, config) do
@@ -690,6 +823,9 @@ defmodule Oskol.Game.GameServer do
         # invite link. Rows written before seat tokens were dropped still
         # carry a "token" key; nothing reads it.
         guest_id: player["guest_id"],
+        # The account that owns this seat, if one does. A row written before
+        # accounts has no key here, and that seat is simply unowned.
+        user_id: player["user_id"],
         pid: nil,
         client: nil,
         connected: false,

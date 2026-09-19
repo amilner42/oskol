@@ -18,28 +18,40 @@ defmodule Oskol.Application do
     # state always matches the schema its code expects.
     if Application.get_env(:oskol, :migrate_on_boot, false), do: Oskol.Release.migrate()
 
-    children = [
-      OskolWeb.Telemetry,
-      Oskol.Repo,
-      {DNSCluster, query: Application.get_env(:oskol, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: Oskol.PubSub},
-      {Registry, keys: :unique, name: Oskol.GameRegistry},
-      # The persister must outlive and precede the rooms that cast to it.
-      {Oskol.Game.Persister, []},
-      # Post-game reviews: rooms cast here when a game ends and carry on.
-      {Task.Supervisor, name: Oskol.Reviews.TaskSupervisor},
-      {Oskol.Reviews.Queue, []},
-      Oskol.Game.GameSupervisor,
-      # Start a worker by calling: Oskol.Worker.start_link(arg)
-      # {Oskol.Worker, arg},
-      # Start to serve requests, typically the last entry
-      OskolWeb.Endpoint
-    ]
+    children =
+      [
+        OskolWeb.Telemetry,
+        Oskol.Repo,
+        {DNSCluster, query: Application.get_env(:oskol, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: Oskol.PubSub},
+        {Registry, keys: :unique, name: Oskol.GameRegistry},
+        # The sign-in rate counters (ETS, per node).
+        {Oskol.Auth.Limiter, []},
+        # The persister must outlive and precede the rooms that cast to it.
+        {Oskol.Game.Persister, []},
+        # Post-game reviews: rooms cast here when a game ends and carry on.
+        {Task.Supervisor, name: Oskol.Reviews.TaskSupervisor},
+        {Oskol.Reviews.Queue, []},
+        Oskol.Game.GameSupervisor,
+        # Start a worker by calling: Oskol.Worker.start_link(arg)
+        # {Oskol.Worker, arg},
+        # Start to serve requests, typically the last entry
+        OskolWeb.Endpoint
+      ] ++ dev_children()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Oskol.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # Development only: the last sign-in mail this node sent, so
+  # GET /dev/last-login can hand its link to a browser test. The route that
+  # reads it is declared under the same flag.
+  defp dev_children do
+    if Application.get_env(:oskol, :dev_routes, false),
+      do: [{Oskol.Mail.LastLogin, []}],
+      else: []
   end
 
   # Tell Phoenix to update the endpoint configuration

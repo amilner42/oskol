@@ -70,8 +70,13 @@ config :oskol, OskolWeb.Endpoint,
     ]
   ]
 
-# Enable dev routes for dashboard and mailbox
+# Enable dev routes for the dashboard, the mailbox and the last sign-in
 config :oskol, dev_routes: true
+
+# The sign-in mail lands in the local mailbox:
+# http://localhost:4400/dev/mailbox shows exactly what would have been sent,
+# link and code included. GET /dev/last-login answers the same as JSON.
+config :oskol, Oskol.Mailer, adapter: Swoosh.Adapters.Local
 
 # The analysis engine, reached from a laptop through
 #   fly proxy 18082:80 oskol-analysis.flycast -a oskol-analysis

@@ -139,13 +139,18 @@ type alias Created =
 
 
 {-| What a plain invite link is worth, decided by the room and not by the
-visitor: a free seat, a seat whose player is away, or nothing at all.
+visitor: a free seat, a seat whose player is away, a seat that belongs to
+an account (nobody else opens that one, ever), or nothing at all.
 -}
 type RoomState
     = Open
     | Away
+    | Owned
     | Full
     | Missing
+      -- The caller already holds a seat here (its guest, or the account that
+      -- owns it): no door, the table at this path.
+    | Seated String
 
 
 type alias RoomSeat =
@@ -504,7 +509,7 @@ faqDecoder =
 copyFor : Game -> Copy
 copyFor game =
     { title = "Play " ++ game.name ++ " online with a friend"
-    , description = game.name ++ " for two, free, no accounts. Send a link and play."
+    , description = game.name ++ " for two, free, no account needed. Send a link and play."
     , intro = game.description
     , rules = [ game.description ]
     , faq = []
@@ -545,7 +550,16 @@ codeDecoder =
 roomDecoder : Decoder Room
 roomDecoder =
     D.map4 Room
-        (D.oneOf [ D.field "state" roomStateDecoder, D.succeed Open ])
+        (D.oneOf [ D.field "state" D.string, D.succeed "" ]
+            |> D.andThen
+                (\state ->
+                    if state == "seated" then
+                        D.field "path" D.string |> D.map Seated
+
+                    else
+                        D.succeed (roomStateOf state)
+                )
+        )
         (D.oneOf [ D.field "inviter_name" (D.nullable D.string), D.succeed Nothing ])
         (D.oneOf [ D.field "summary" (D.nullable D.string), D.succeed Nothing ])
         (optionalList "disconnected" roomSeatDecoder)
@@ -603,24 +617,23 @@ timeDecoder =
         (D.oneOf [ D.field "age_s" D.int, D.succeed 0 ])
 
 
-roomStateDecoder : Decoder RoomState
-roomStateDecoder =
-    D.string
-        |> D.map
-            (\state ->
-                case state of
-                    "full" ->
-                        Full
+roomStateOf : String -> RoomState
+roomStateOf state =
+    case state of
+        "full" ->
+            Full
 
-                    "away" ->
-                        Away
+        "away" ->
+            Away
 
-                    "missing" ->
-                        Missing
+        "owned" ->
+            Owned
 
-                    _ ->
-                        Open
-            )
+        "missing" ->
+            Missing
+
+        _ ->
+            Open
 
 
 roomSeatDecoder : Decoder RoomSeat

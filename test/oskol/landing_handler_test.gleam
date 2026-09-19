@@ -1,9 +1,14 @@
 //// The JSON the Elm client reads. The shapes are asserted here, on the
 //// real registry (games are pure Gleam) and stub capabilities.
 
+import gamekit/clock
+import gamekit/game as gk_game
+import gamekit/instance.{type Instance}
+import gamekit/registry
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import oskol/caps/auth as auth_caps
 import oskol/caps/ids as ids_caps
 import oskol/caps/persistence as persistence_caps
 import oskol/caps/rooms as rooms_caps
@@ -58,7 +63,7 @@ fn open_room() -> room.ActiveRoom {
     status: "playing",
     format: "match5",
     clock: "bg5",
-    seats: [#("p1", "Alice", "g1"), #("p2", "Bob", "g2")],
+    seats: [#("p1", "Alice", "g1", ""), #("p2", "Bob", "g2", "")],
     to_act: ["p1"],
     clocks: [#("p1", 171_000, 0, True), #("p2", 300_000, 0, False)],
     clock_s: 4,
@@ -105,7 +110,7 @@ pub fn a_lobby_has_no_opponent_no_clock_and_nobody_to_act_test() {
       ..open_room(),
       status: "waiting",
       clock: "none",
-      seats: [#("p1", "Alice", "g1")],
+      seats: [#("p1", "Alice", "g1", "")],
       to_act: [],
       clocks: [],
       clock_s: 0,
@@ -124,6 +129,42 @@ pub fn a_visitor_with_no_guest_holds_no_seat_anywhere_test() {
   // The stub persistence would panic if asked: nobody asks.
   assert landing.my_games_json(reading(), fakes.no_guest())
     == "{\"ok\":true,\"games\":[]}"
+}
+
+pub fn my_games_finds_an_owned_seat_from_a_browser_that_never_played_it_test() {
+  let owned =
+    ActiveRoom(..open_room(), seats: [
+      #("p1", "Alice", "g1", "u1"),
+      #("p2", "Bob", "g2", ""),
+    ])
+  let ctx = reading() |> fakes.with_active_rooms([owned])
+
+  // A second device: another guest, the same account. The seat is the
+  // account's, so it is this caller's, and the page knows whose move it is.
+  let body = landing.my_games_json(ctx, fakes.signed_in("g9", "u1"))
+
+  assert string.contains(body, "\"opponent\":\"Bob\"")
+  assert string.contains(body, "\"your_move\":true")
+}
+
+pub fn my_games_does_not_hand_an_owned_seat_to_the_guest_that_played_it_test() {
+  let owned =
+    ActiveRoom(..open_room(), seats: [
+      #("p1", "Alice", "g1", "u1"),
+      #("p2", "Bob", "g2", ""),
+    ])
+  let ctx = reading() |> fakes.with_active_rooms([owned])
+
+  // g1 played that seat and then signed in, which stamped it (and would
+  // have rotated the guest). A browser still presenting g1 -- logged out,
+  // or the next person on that laptop -- holds nothing there, so the game
+  // is not offered to it at all.
+  let body = landing.my_games_json(ctx, fakes.guest("g1"))
+  assert body == "{\"ok\":true,\"games\":[]}"
+
+  // The account sees it, from any browser.
+  let mine = landing.my_games_json(ctx, fakes.signed_in("a-new-phone", "u1"))
+  assert string.contains(mine, "\"opponent\":\"Bob\"")
 }
 
 // ---------- GET /papi/games/:slug ----------
@@ -152,7 +193,7 @@ pub fn a_game_page_carries_its_copy_its_formats_and_the_clocks_test() {
   )
   assert string.contains(
     body,
-    "\"description\":\"Backgammon for two, free, no accounts.\"",
+    "\"description\":\"Backgammon for two, free, no account needed.\"",
   )
   assert string.contains(
     body,
@@ -201,7 +242,7 @@ fn creating(ctx: Ctx, expected: room.Setup) -> Ctx {
             Error(errors.Other("configured with " <> string.inspect(setup)))
         }
       },
-      join: fn(_, _, _) { Ok(Seat(player_id: "p1", started: False)) },
+      join: fn(_, _, _, _) { Ok(Seat(player_id: "p1", started: False)) },
     ),
   )
 }
@@ -335,7 +376,7 @@ pub fn an_invite_to_a_free_seat_is_open_test() {
       ),
     )
 
-  assert landing.room_json(ctx, "123456")
+  assert landing.room_json(ctx, fakes.no_guest(), "backgammon", "123456")
     == "{\"ok\":true,\"state\":\"open\",\"inviter_name\":\"Alice\",\"summary\":\"Match to 3 · Blitz clock\",\"disconnected\":[]}"
 }
 
@@ -351,7 +392,7 @@ pub fn an_invite_to_a_full_table_offers_nothing_test() {
       ),
     )
 
-  assert landing.room_json(ctx, "123456")
+  assert landing.room_json(ctx, fakes.no_guest(), "backgammon", "123456")
     == "{\"ok\":true,\"state\":\"full\",\"inviter_name\":null,\"summary\":\"Single game\",\"disconnected\":[]}"
 }
 
@@ -360,19 +401,85 @@ pub fn an_invite_to_a_table_someone_left_offers_their_seat_test() {
     reading()
     |> table(
       Table(full: True, inviter: None, summary: "Single game", disconnected: [
-        #("p2", "Bob"),
+        #("p2", "Bob", False),
       ]),
     )
 
-  assert landing.room_json(ctx, "123456")
+  assert landing.room_json(ctx, fakes.no_guest(), "backgammon", "123456")
     == "{\"ok\":true,\"state\":\"away\",\"inviter_name\":null,\"summary\":\"Single game\",\"disconnected\":[{\"id\":\"p2\",\"name\":\"Bob\"}]}"
+}
+
+pub fn an_invite_to_a_seat_the_caller_already_holds_sends_it_to_the_table_test() {
+  // The account's seat is away (its tab closed), and the account arrives
+  // from JOIN GAME on another device. The seat is its own: no door, the
+  // table.
+  let ctx =
+    reading()
+    |> table(
+      Table(full: True, inviter: None, summary: "Single game", disconnected: [
+        #("p1", "Alice", True),
+      ]),
+    )
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        rooms: rooms_caps.RoomsCaps(..ctx.rooms, seated_game: fn(id, _, user) {
+          assert id == "123456"
+          case user {
+            Some("u1") -> Ok(#("p1", a_running_game()))
+            _ -> Error(errors.NoSeat)
+          }
+        }),
+      )
+    }
+
+  assert landing.room_json(
+      ctx,
+      fakes.signed_in("a-new-phone", "u1"),
+      "backgammon",
+      "123456",
+    )
+    == "{\"ok\":true,\"state\":\"seated\",\"path\":\"/backgammon/123456\"}"
+
+  // Anyone else still gets the invite's own answer.
+  assert landing.room_json(ctx, fakes.guest("stranger"), "backgammon", "123456")
+    == "{\"ok\":true,\"state\":\"owned\",\"inviter_name\":null,\"summary\":\"Single game\",\"disconnected\":[]}"
 }
 
 pub fn an_invite_to_a_room_that_is_over_is_missing_test() {
   let ctx = reading() |> fakes.with_room(None, None)
 
-  assert landing.room_json(ctx, "123456")
+  assert landing.room_json(ctx, fakes.no_guest(), "backgammon", "123456")
     == "{\"ok\":true,\"state\":\"missing\",\"inviter_name\":null,\"summary\":null,\"disconnected\":[]}"
+}
+
+pub fn an_invite_to_a_table_whose_away_seat_is_owned_offers_nothing_test() {
+  let ctx =
+    reading()
+    |> table(
+      Table(full: True, inviter: None, summary: "Single game", disconnected: [
+        #("p2", "Bob", True),
+      ]),
+    )
+
+  // The seat is an account's: the state says so, and the seat is not even
+  // named, so nothing on the page can be typed at it.
+  assert landing.room_json(ctx, fakes.no_guest(), "backgammon", "123456")
+    == "{\"ok\":true,\"state\":\"owned\",\"inviter_name\":null,\"summary\":\"Single game\",\"disconnected\":[]}"
+}
+
+pub fn an_invite_offers_only_the_away_seats_no_account_owns_test() {
+  let ctx =
+    reading()
+    |> table(
+      Table(full: True, inviter: None, summary: "Single game", disconnected: [
+        #("p1", "Alice", True),
+        #("p2", "Bob", False),
+      ]),
+    )
+
+  assert landing.room_json(ctx, fakes.no_guest(), "backgammon", "123456")
+    == "{\"ok\":true,\"state\":\"away\",\"inviter_name\":null,\"summary\":\"Single game\",\"disconnected\":[{\"id\":\"p2\",\"name\":\"Bob\"}]}"
 }
 
 // ---------- POST /papi/games/:slug/rooms/:id ----------
@@ -385,15 +492,15 @@ fn seating(ctx: Ctx, seat: Result(room.Seat, errors.RoomError)) -> Ctx {
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
       subscribe: fn(_) { Nil },
-      join: fn(_, _, _) { seat },
-      claim: fn(_, _, _) { seat },
+      join: fn(_, _, _, _) { seat },
+      claim: fn(_, _, _, _) { seat },
     ),
   )
 }
 
 fn a_table() -> Table {
   Table(full: True, inviter: None, summary: "Single game", disconnected: [
-    #("p2", "Bob"),
+    #("p2", "Bob", False),
   ])
 }
 
@@ -434,6 +541,45 @@ pub fn joining_a_table_that_filled_up_says_so_test() {
 
   assert error.code(err) == "validation_failed"
   assert error.message(err) == "That game is full"
+}
+
+pub fn a_signed_in_player_whose_username_is_taken_at_the_table_is_numbered_test() {
+  // A guest at the table typed "Sam"; the account "Sam" has no name field
+  // to change, so it sits down as "Sam1".
+  let ctx =
+    reading()
+    |> fakes.with_guests(None)
+    |> seating(Ok(Seat(player_id: "p2", started: True)))
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: auth_caps.AuthCaps(..ctx.auth, user: fn(_) {
+          Some(auth_caps.User(
+            id: "u1",
+            email: "sam@example.com",
+            name: Some("Sam"),
+          ))
+        }),
+        rooms: rooms_caps.RoomsCaps(..ctx.rooms, join: fn(_, name, _, _) {
+          case name {
+            "Sam" -> Error(errors.NameTaken)
+            _ -> {
+              assert name == "Sam1"
+              Ok(Seat(player_id: "p2", started: True))
+            }
+          }
+        }),
+      )
+    }
+
+  let assert Ok(_) =
+    landing.join_json(
+      ctx,
+      fakes.signed_in("g2", "u1"),
+      "backgammon",
+      "123456",
+      "",
+    )
 }
 
 pub fn a_name_clash_is_refused_test() {
@@ -477,7 +623,7 @@ pub fn a_claim_hands_the_seat_to_the_guest_that_asked_test() {
       rooms: rooms_caps.RoomsCaps(
         ..ctx.rooms,
         subscribe: fn(_) { Nil },
-        claim: fn(_, player_id, guest_id) {
+        claim: fn(_, player_id, guest_id, _) {
           case player_id == "p2" && guest_id == Some("g2") {
             True -> Ok(Seat(player_id: "p2", started: True))
             False -> Error(errors.PlayerNotFound)
@@ -654,4 +800,19 @@ pub fn a_preference_the_site_does_not_keep_is_refused_test() {
 
   assert error.status(err) == 422
   assert error.message(err) == "Unknown preference"
+}
+
+/// A backgammon game started and left alone: all `seated_game` needs to
+/// answer with. The invite never reads it.
+fn a_running_game() -> Instance {
+  let assert Ok(entry) = registry.find("backgammon")
+  let assert Ok(game) =
+    entry.start(
+      "single",
+      [gk_game.Seat("p1", "Alice"), gk_game.Seat("p2", "Bob")],
+      7,
+      clock.NoClock,
+      0,
+    )
+  game
 }

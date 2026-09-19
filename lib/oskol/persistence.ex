@@ -11,6 +11,7 @@ defmodule Oskol.Persistence do
   """
 
   import Ecto.Query
+  alias Oskol.Gleam.Interop
   alias Oskol.Repo
 
   defmodule Game do
@@ -80,18 +81,36 @@ defmodule Oskol.Persistence do
   end
 
   def update_players(game_id, players) do
-    update_game(game_id, players: players)
+    update_game(game_id, players: keep_owners(game_id, players))
   end
 
   def mark_started(game_id, seed, config, players, state) do
     update_game(game_id,
       seed: seed,
       config: config,
-      players: players,
+      players: keep_owners(game_id, players),
       status: "playing",
       state: state
     )
   end
+
+  # A room writes its seat list from memory. If a sign-in stamped a seat on
+  # disk that the room has not heard of yet, the room's list says unowned
+  # and the row says owned; the row wins (`seat.keep_owners`, in Gleam):
+  # an owner never comes off a seat. One read, and only on the rare writes
+  # that carry the whole seat list (a join, a claim, a start).
+  defp keep_owners(game_id, players) when is_list(players) do
+    case players(game_id) do
+      [] ->
+        players
+
+      stored ->
+        :oskol@rooms@seat.keep_owners(to_seats(players), to_seats(stored))
+        |> apply_seats(players)
+    end
+  end
+
+  defp keep_owners(_game_id, players), do: players
 
   @doc """
   The snapshot a room writes when it comes back from the log, so an old row
@@ -149,24 +168,144 @@ defmodule Oskol.Persistence do
   end
 
   @doc """
-  The unfinished rooms this guest holds a seat in, most recently touched
+  The unfinished rooms this caller holds a seat in, most recently touched
   first: what a returning browser can pick back up. A waiting room counts
   (its lobby is where it resumes to); a finished game is the replay's, not
   this list's. Rows only: no room is woken by asking.
-  """
-  def seated_rooms(guest_id) when is_binary(guest_id) and byte_size(guest_id) > 0 do
-    # Postgrex encodes a jsonb parameter itself: hand it the term, not text.
-    holder = [%{"guest_id" => guest_id}]
 
-    from(g in Game,
-      where: g.status in ["waiting", "playing"],
-      where: fragment("to_jsonb(?) @> ?::jsonb", g.players, ^holder),
-      order_by: [desc: g.updated_at]
-    )
-    |> Repo.all()
+  A seat matches on the guest that took it *or* on the account that owns
+  it, so an account's games follow it to any browser it signs in on. Which
+  of the matched seats is really the caller's is the holder rule, in Gleam
+  (`src/oskol/rooms/seat.gleam`); this is the coarse read behind it.
+  """
+  def seated_rooms(guest_id, user_id \\ nil) do
+    # Postgrex encodes a jsonb parameter itself: hand it the term, not text.
+    case seat_match(guest_id, user_id) do
+      nil ->
+        []
+
+      held ->
+        from(g in Game,
+          where: g.status in ["waiting", "playing"],
+          where: ^held,
+          order_by: [desc: g.updated_at]
+        )
+        |> Repo.all()
+    end
   end
 
-  def seated_rooms(_), do: []
+  # "a seat this guest took, or a seat this account owns", as whichever of
+  # the two the caller actually has.
+  defp seat_match(guest_id, user_id) do
+    guest = holds("guest_id", guest_id)
+    user = holds("user_id", user_id)
+
+    cond do
+      guest && user -> dynamic([g], ^guest or ^user)
+      guest -> guest
+      user -> user
+      true -> nil
+    end
+  end
+
+  defp holds(key, value) when is_binary(value) and byte_size(value) > 0 do
+    entry = [%{key => value}]
+    dynamic([g], fragment("to_jsonb(?) @> ?::jsonb", g.players, ^entry))
+  end
+
+  defp holds(_key, _value), do: nil
+
+  @doc "A room's seats as the row holds them, without waking it or reading its log."
+  def players(game_id) when is_binary(game_id) do
+    from(g in Game, where: g.id == ^game_id, select: g.players)
+    |> Repo.one()
+    |> Kernel.||([])
+  end
+
+  @doc """
+  Hand every seat this guest holds to an account, and move the guest's
+  seats to its fresh id. One statement per room, all statuses (a finished
+  game is part of what an account keeps), inside one transaction with the
+  guest row's own move.
+
+  A seat is stamped only when it is this guest's, that guest is a real one
+  (a row from before guests, or a seat tooling took, has none and can never
+  be stamped), and no account owns it yet. At a table where this account
+  already owns a seat, the other seat is not stamped (one person, one seat
+  per table, however many devices) but its `guest_id` still moves to the
+  new one, so the browser keeps playing it as a guest seat. A stamped seat
+  keeps nothing of the old guest either: its `guest_id` is the new one,
+  and ownership is the account.
+
+  Returns `{seats_stamped, game_ids}`; the ids are the rooms that changed,
+  so a live one can be told (`Oskol.Game.GameServer.stamp/4`).
+  """
+  def stamp_seats(old_guest_id, new_guest_id, user_id)
+      when is_binary(old_guest_id) and byte_size(old_guest_id) > 0 and
+             is_binary(new_guest_id) and byte_size(new_guest_id) > 0 and
+             is_binary(user_id) and byte_size(user_id) > 0 do
+    mine = [%{"guest_id" => old_guest_id}]
+
+    rows =
+      from(g in Game,
+        where: fragment("to_jsonb(?) @> ?::jsonb", g.players, ^mine),
+        select: {g.id, g.players}
+      )
+      |> Repo.all()
+
+    Enum.reduce(rows, {0, []}, fn {game_id, players}, {count, ids} ->
+      # The rule is Gleam's (`seat.stamp`), the same one a live room's
+      # memory follows.
+      {seats, stamped} =
+        :oskol@rooms@seat.stamp(to_seats(players), old_guest_id, new_guest_id, user_id)
+
+      moved = apply_seats(seats, players)
+
+      if moved == players do
+        {count, ids}
+      else
+        from(g in Game, where: g.id == ^game_id)
+        |> Repo.update_all(set: [players: moved])
+
+        {count + stamped, [game_id | ids]}
+      end
+    end)
+  end
+
+  def stamp_seats(_, _, _), do: {0, []}
+
+  # A row's seat list as the Gleam seat rules read it: `Seat(player_id,
+  # guest_id, user_id)`, an empty or missing id being no id at all.
+  defp to_seats(players) do
+    for player <- players, is_map(player), is_binary(player["id"]) do
+      {:seat, player["id"], Interop.opt(blank_to_nil(player["guest_id"])),
+       Interop.opt(blank_to_nil(player["user_id"]))}
+    end
+  end
+
+  # Those seats written back onto the row's entries, by player id; every
+  # other key of an entry (the name) is left as it was.
+  defp apply_seats(seats, players) do
+    by_id = Map.new(seats, fn {:seat, id, guest, user} -> {id, {guest, user}} end)
+
+    Enum.map(players, fn
+      %{"id" => id} = player when is_map_key(by_id, id) ->
+        {guest, user} = by_id[id]
+
+        player
+        |> put_id("guest_id", Interop.unopt(guest))
+        |> put_id("user_id", Interop.unopt(user))
+
+      player ->
+        player
+    end)
+  end
+
+  defp put_id(player, _key, nil), do: player
+  defp put_id(player, key, id), do: Map.put(player, key, id)
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(value), do: value
 
   @doc "Whether a game row already claims this code (live room or not)."
   def game_exists?(game_id) do

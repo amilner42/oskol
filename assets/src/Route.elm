@@ -2,6 +2,7 @@ module Route exposing
     ( Route(..)
     , fromUrl
     , gameLanding
+    , login
     , replayAt
     , href
     , invite
@@ -14,6 +15,7 @@ module Route exposing
 
     /            the game library
     /:slug       one game's start page (`?game=` an invite)
+    /login/:token  the page a mailed sign-in link opens
     /:slug/:id   a running game
     /:slug/:id/replay   a game played again, turn by turn, with its analysis
                         (`?game=` which game of the match, `?step=` the line
@@ -37,6 +39,8 @@ import Url.Parser.Query as Query
 
 type Route
     = Library
+      -- the token a mailed sign-in link carried
+    | Login String
       -- slug, ?game= (a room code)
     | GameLanding String (Maybe String)
       -- slug, game id
@@ -49,6 +53,9 @@ parser : Parser (Route -> a) a
 parser =
     oneOf
         [ map Library top
+        -- Before Play: "login" is a reserved word, not a game slug, exactly
+        -- as the server's router has it.
+        , map Login (s "login" </> string)
         , map Play (string </> string)
         , map Replay (string </> string </> s "replay" <?> Query.int "game" <?> Query.int "step")
         , map GameLanding (string <?> Query.string "game")
@@ -67,6 +74,13 @@ fromUrl url =
 library : Route
 library =
     Library
+
+
+{-| The page a mailed sign-in link opens.
+-}
+login : String -> Route
+login token =
+    Login token
 
 
 gameLanding : String -> Route
@@ -91,6 +105,9 @@ href route =
     case route of
         Library ->
             "/"
+
+        Login token ->
+            "/login/" ++ token
 
         -- the backgammon page is the home page
         GameLanding "backgammon" Nothing ->

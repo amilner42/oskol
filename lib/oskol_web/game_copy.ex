@@ -17,9 +17,9 @@ defmodule OskolWeb.GameCopy do
     "backgammon" => %{
       title: "Play backgammon online with a friend",
       description:
-        "Backgammon for two with the doubling cube, free, no accounts. A single game, a match to 3, 5 or 7, or unlimited play; send a link and roll.",
+        "Backgammon for two with the doubling cube, free, no account needed. A single game, a match to 3, 5 or 7, or unlimited play; send a link and roll.",
       intro:
-        "The race game with the doubling cube, from a link. Free, no accounts, plays on a phone.",
+        "The race game with the doubling cube, from a link. Free, no account needed, plays on a phone.",
       rules: [
         "Each player has fifteen checkers racing around the board in opposite directions. Roll two dice and move checkers by the numbers shown; doubles move four times. A single checker on a point is a blot and can be hit and sent to the bar, from where it must re-enter before anything else moves.",
         "Once all your checkers are in your home board you bear them off. The first player to bear off all fifteen wins; a gammon (the loser has borne off nothing) counts double and a backgammon (the loser still has a checker on the bar or in the winner's home board) triple.",
@@ -44,7 +44,7 @@ defmodule OskolWeb.GameCopy do
     Map.get(@copy, info["slug"]) ||
       %{
         title: "Play #{info["name"]} online with a friend",
-        description: "#{info["name"]} for two, free, no accounts. Send a link and play.",
+        description: "#{info["name"]} for two, free, no account needed. Send a link and play.",
         intro: info["description"],
         rules: [info["description"]],
         faq: []
@@ -56,7 +56,7 @@ defmodule OskolWeb.GameCopy do
     %{
       title: "Two-player games from a link",
       description:
-        "Free backgammon for two with no accounts: a single game, a match or unlimited play with the doubling cube. Share the invite link and your friend is in within seconds."
+        "Free backgammon for two, no account needed: a single game, a match or unlimited play with the doubling cube. Share the invite link and your friend is in within seconds."
     }
   end
 end

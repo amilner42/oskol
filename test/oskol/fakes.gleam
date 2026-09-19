@@ -5,6 +5,7 @@
 import gleam/dynamic
 import gleam/option.{type Option, Some}
 import oskol/caps/analysis as analysis_caps
+import oskol/caps/auth as auth_caps
 import oskol/caps/copy as copy_caps
 import oskol/caps/guests as guests_caps
 import oskol/caps/ids as ids_caps
@@ -19,6 +20,7 @@ import oskol/rooms/room.{type Room, Room}
 pub fn ctx() -> Ctx {
   Ctx(
     analysis: analysis_caps.stub(),
+    auth: auth_caps.stub(),
     copy: copy_caps.stub(),
     guests: guests_caps.stub(),
     ids: ids_caps.stub(),
@@ -61,13 +63,18 @@ pub fn with_active_rooms(ctx: Ctx, rooms: List(room.ActiveRoom)) -> Ctx {
     ..ctx,
     persistence: persistence_caps.PersistenceCaps(
       ..ctx.persistence,
-      seated_rooms: fn(_) { rooms },
+      seated_rooms: fn(_, _) { rooms },
     ),
   )
 }
 
 pub fn guest(id: String) -> Session {
-  Session(guest_id: Some(id))
+  Session(guest_id: Some(id), user_id: option.None)
+}
+
+/// A browser signed in: its guest cookie, and the account on it.
+pub fn signed_in(id: String, user_id: String) -> Session {
+  Session(guest_id: Some(id), user_id: Some(user_id))
 }
 
 pub fn no_guest() -> Session {
@@ -135,7 +142,7 @@ pub fn with_copy(ctx: Ctx, words: prose.Copy) -> Ctx {
 pub fn sample_copy() -> prose.Copy {
   prose.Copy(
     title: "Play backgammon online with a friend",
-    description: "Backgammon for two, free, no accounts.",
+    description: "Backgammon for two, free, no account needed.",
     intro: "The race game with the doubling cube.",
     rules: ["Fifteen checkers each.", "Bear them all off."],
     faq: [#("Do we need accounts?", "No.")],
@@ -157,4 +164,10 @@ pub fn with_records(
       save: fn(_, _) { Nil },
     ),
   )
+}
+
+/// A browser signed into an account: the same guest, plus the user its row
+/// points at.
+pub fn signed_in_guest(id: String, user_id: String) -> Session {
+  Session(guest_id: Some(id), user_id: Some(user_id))
 }

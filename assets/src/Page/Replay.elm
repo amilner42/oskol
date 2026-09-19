@@ -1043,6 +1043,7 @@ viewReplay model record game =
                 , dice = shown.dice
                 , landed = shown.landed
                 , offer = shown.offer |> Maybe.map .from
+                , accounts = Just record.accounts
                 }
     in
     [ viewHead model (Just record)

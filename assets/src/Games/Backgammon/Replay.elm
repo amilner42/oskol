@@ -84,6 +84,7 @@ type alias Record =
     , cube : Bool -- the match is played with the doubling cube
     , start : Snapshot -- the position every game starts from
     , games : List Game
+    , accounts : List String -- the seats an account owns (the badge beside a name)
     }
 
 
@@ -106,11 +107,12 @@ type Entry
 
 recordDecoder : Decoder Record
 recordDecoder =
-    D.map3 (\you seated r -> r you seated)
+    D.map4 (\you seated accounts r -> r you seated accounts)
         (D.field "you" D.string)
         (D.oneOf [ D.field "seated" D.bool, D.succeed False ])
+        (D.oneOf [ D.field "accounts" (D.list D.string), D.succeed [] ])
         (D.field "record"
-            (D.map5 (\players target cube start games you seated -> Record you seated players target cube start games)
+            (D.map5 (\players target cube start games you seated accounts -> Record you seated players target cube start games accounts)
                 (D.field "players" (D.list playerDecoder))
                 (D.field "target" D.int)
                 (D.oneOf [ D.field "cube" D.bool, D.succeed True ])

@@ -158,6 +158,9 @@ const app = Elm.Main.init({
     // The name this browser last played under, remembered against the
     // silent guest cookie and rendered into the page that served the app.
     guestName: meta("guest-name"),
+    // The sign-in a mailed link opened, as the server read it (JSON text, or
+    // null on every other page). Decoded by Page.Login.
+    login: meta("login"),
     prefs: storedPrefs,
   },
 });

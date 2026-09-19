@@ -14,6 +14,10 @@ config :oskol, Oskol.Repo,
 # goes to a Req.Test stub, never the network.
 config :oskol, Oskol.Reviews.Queue, enabled: false
 
+# The sign-in mail never leaves the process in tests:
+# Swoosh.TestAssertions' assert_email_sent is how a test reads it.
+config :oskol, Oskol.Mailer, adapter: Swoosh.Adapters.Test
+
 config :oskol, :analysis,
   url: "http://analysis.test",
   req_options: [plug: {Req.Test, Oskol.Reviews}]

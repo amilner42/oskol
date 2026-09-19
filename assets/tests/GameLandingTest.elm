@@ -33,7 +33,96 @@ suite =
         , boardPicker
         , invites
         , resume
+        , accounts
         ]
+
+
+
+-- SIGNING IN
+
+
+accounts : Test
+accounts =
+    describe "signing in"
+        [ test "the button says Sign up, and presses" <|
+            \_ ->
+                home withGames
+                    |> Query.find [ id "signup-cta" ]
+                    |> Expect.all
+                        [ Query.has [ text "Sign up" ]
+                        , Event.simulate Event.click >> Event.expect GameLanding.OpenedSignIn
+                        ]
+        , test "pressed, the sign-in opens in the panel, under the same promise" <|
+            \_ ->
+                withGames
+                    |> send GameLanding.OpenedSignIn
+                    |> home
+                    |> Query.find [ id "guest-note" ]
+                    |> Expect.all
+                        [ Query.has [ id "signin-email", text "Want to get better for free?", text "PR over time" ]
+                        , Query.hasNot [ id "signup-cta" ]
+                        ]
+        , test "signed in, the list is just their games: no pitch at all" <|
+            \_ ->
+                home (signedInAs "her@example.com" withGames)
+                    |> Expect.all
+                        [ Query.has [ id "resume-list" ]
+                        , Query.hasNot [ id "guest-note" ]
+                        ]
+        , test "signed in, the bar is the account, with LOG OUT behind it" <|
+            \_ ->
+                signedInAs "her@example.com" withGames
+                    |> Expect.all
+                        [ home >> Query.find [ class "is-me" ] >> Query.has [ text "arie1", attribute (Html.Attributes.attribute "data-identity" "account") ]
+                        -- the username, never the email: the bar is on screen for anyone
+                        , home >> Query.hasNot [ text "her@example.com" ]
+                        , home >> Query.find [ id "account-button" ] >> Event.simulate Event.click >> Event.expect GameLanding.ToggledAccount
+                        , home >> Query.hasNot [ id "logout" ]
+                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "logout" ] >> Query.has [ text "LOG OUT" ]
+                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "logout" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedLogOut
+                        ]
+        , test "a guest's bar is their name, with the guest mark, and SIGN IN behind it" <|
+            \_ ->
+                withGames
+                    |> Expect.all
+                        [ home >> Query.find [ class "is-me" ] >> Query.has [ text "Alice", attribute (Html.Attributes.attribute "data-identity" "guest") ]
+                        , home >> Query.hasNot [ id "signin-menu" ]
+                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "signin-menu" ] >> Query.has [ text "SIGN IN" ]
+                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "signin-menu" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedSignInMenu
+                        , send GameLanding.PressedSignInMenu >> home >> Query.find [ id "signin-modal" ] >> Query.has [ id "signin-email" ]
+                        -- the games list arriving after that sign-in must not open
+                        -- LIVE GAMES underneath it (one win, not two)
+                        , send GameLanding.PressedSignInMenu
+                            >> send (GameLanding.GotMyGames (Ok [ playing ]))
+                            >> home
+                            >> Query.hasNot [ id "resume-modal" ]
+                        ]
+        , test "an invite whose seat belongs to an account says so, offers nothing to claim, and offers the sign-in" <|
+            \_ ->
+                inviteWith Catalog.Owned
+                    |> Expect.all
+                        [ Query.find [ id "seat-owned" ] >> Query.has [ text "This seat belongs to an account.", text "Sign in as that player to play it here.", id "signin-email" ]
+                        , Query.hasNot [ id "join-name" ]
+                        , Query.findAll [ tag "button", attribute (Html.Attributes.attribute "id" "reclaim-p1") ] >> Query.count (Expect.equal 0)
+                        ]
+        ]
+
+
+signedInAs : String -> GameLanding.Model -> GameLanding.Model
+signedInAs email model =
+    let
+        s =
+            model.session
+    in
+    GameLanding.withSession { s | user = Just { email = email, name = Just "arie1" } } model
+
+
+inviteWith : Catalog.RoomState -> Query.Single GameLanding.Msg
+inviteWith state =
+    page { guestName = Nothing } "backgammon" (Just "123456")
+        |> send (GameLanding.GotGame (Api.parseBody Catalog.gamePageDecoder gameJson))
+        |> send (GameLanding.GotRoom (Ok { state = state, inviterName = Just "Alice", summary = Nothing, disconnected = [] }))
+        |> render
 
 
 
@@ -486,7 +575,7 @@ resume =
                 home withGames
                     |> Expect.all
                         [ Query.has [ id "resume-modal", text "LIVE GAMES" ]
-                        , Query.find [ id "signup-cta" ] >> Query.has [ text "Sign up", text "soon", disabled ]
+                        , Query.find [ id "signup-cta" ] >> Query.has [ text "Sign up" ]
                         , Query.find [ id "resume-list" ] >> Query.children [] >> Query.count (Expect.equal 2)
                         , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "vs Bob", text "Match to 5", text "2 min ago", text "Your move" ]
                         , Query.find [ id "resume-9H302Z" ] >> Query.has [ text "Waiting for a player", text "Lobby" ]
@@ -604,11 +693,11 @@ resume =
                         , Query.has [ id "create-modal" ]
                         , Query.has [ id "resume-games" ]
                         ]
-        , test "the pitch under the list names what an account is for, with SIGN UP on its way" <|
+        , test "the pitch under the list names what an account is for, and the games it would keep" <|
             \_ ->
                 home withGames
                     |> Query.find [ id "guest-note" ]
-                    |> Query.has [ text "logged in as a guest on this device", text "Is it time to get good yet?", text "Every device", text "4-ply analysis", text "Openings", text "Mistake practice", text "PR over time", text "Secure account", id "signup-cta" ]
+                    |> Query.has [ text "logged in as a guest on this device", text "Want to get better for free?", text "Every device", text "4-ply analysis", text "Openings", text "Mistake practice", text "PR over time", text "Secure account", id "signup-cta" ]
         , test "the menu is still its four entries: the button lives in the bar, not the band" <|
             \_ ->
                 home withGames
@@ -710,7 +799,7 @@ pageWith { guestName, prefs } =
 
 session : Maybe String -> List ( String, String ) -> Session
 session guestName prefs =
-    { csrf = "token", guestName = guestName, prefs = Dict.fromList prefs }
+    { csrf = "token", guestName = guestName, prefs = Dict.fromList prefs, user = Nothing }
 
 
 send : GameLanding.Msg -> GameLanding.Model -> GameLanding.Model

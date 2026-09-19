@@ -23,6 +23,11 @@ defmodule Mix.Tasks.Oskol.Seed do
     Mix.Task.run("app.start")
 
     for row <- Oskol.Dev.Seeds.run() do
+      case Map.get(row, :heading) do
+        nil -> :ok
+        heading -> Mix.shell().info("\n#{heading}")
+      end
+
       Mix.shell().info("#{row.code}  #{row.what}  (seed #{row.seed}, #{row.steps} steps)")
       Mix.shell().info("        invite  #{row.links["invite"]}")
       Mix.shell().info("        table   #{row.links["table"]}")

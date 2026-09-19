@@ -18,6 +18,7 @@ import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, classes, id, tag, text)
+import Ui.SignIn
 
 
 suite : Test
@@ -1973,6 +1974,25 @@ suite =
                                         |> Query.fromHtml
                                         |> Query.hasNot [ id "bg-replay" ]
 
+                                -- no offer to save anything unless the page makes one
+                                , \_ -> card |> Query.hasNot [ id "save-offer" ]
+
+                                -- a guest's offer names what they have, and opens the sign-in
+                                , \_ ->
+                                    View.view (let c = ctx "p1" over View.init in { c | save = View.SaveOffered })
+                                        |> Query.fromHtml
+                                        |> Query.find [ id "save-offer" ]
+                                        |> Expect.all
+                                            [ Query.has [ text "Save this game and your PR" ]
+                                            , Event.simulate Event.click >> Event.expect OpenedSave
+                                            ]
+
+                                -- open, the card carries the sign-in itself
+                                , \_ ->
+                                    View.view (let c = ctx "p1" over View.init in { c | save = View.Saving (Tuple.first (Ui.SignIn.init { next = "/", email = "" })) })
+                                        |> Query.fromHtml
+                                        |> Query.has [ id "signin-email" ]
+
                                 -- while reviewing, the card is out of the way and LIVE brings it back
                                 , \_ ->
                                     View.view (ctx "p1" over (View.update (ViewTurn 0) View.init |> Tuple.first))
@@ -2342,6 +2362,8 @@ ctx playerId update model =
     , theme = View.defaultTheme
     , replayHref = \n -> Just ("/backgammon/123456/replay?t=tok&game=" ++ String.fromInt n)
     , gamePrs = \_ -> []
+    , save = View.NoSave
+    , accounts = Just [ "p1" ]
     , finished =
         case update.outcome of
             Protocol.Finished winners ->
