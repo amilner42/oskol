@@ -29,9 +29,10 @@
 ////   * **`next` is a local path or nothing.** Never a URL, so a sign-in
 ////     cannot be aimed at somewhere else.
 ////
-//// Nothing here stamps a seat: in this first cut signing in binds the
-//// browser to the account and says `saved: 0`. Taking ownership of the
-//// seats a browser has played is the next piece of work.
+//// Signing in also hands this browser's games to the account and rotates
+//// its guest id, both in one write (`sign_in`): `saved` is how many seats
+//// the account gained, and the fresh guest rides back to Elixir in
+//// `SignedIn.guest_id` to be written into the cookie.
 
 import gleam/json
 import gleam/list
@@ -145,20 +146,38 @@ fn expired_flags() -> String {
 
 // ---------- POST /papi/auth/link ----------
 
-/// Spend the token the mailed link carried and sign this browser in. The
-/// first element of the answer is for Elixir alone: True means a session
-/// was just established, which is the moment to renew the session cookie.
-pub fn link_json(
-  ctx: Ctx,
-  session: Session,
-  token: String,
-) -> #(Bool, Result(String, ApiError)) {
+/// What a sign-in leaves for Elixir to do, beside sending the body.
+/// `renew` means a session was just established, which is the moment to
+/// renew the session cookie; `guest_id`, when it is there, is the fresh
+/// guest this browser now carries, to be written into the cookie and the
+/// session (see `sign_in`).
+pub type SignedIn {
+  SignedIn(
+    renew: Bool,
+    guest_id: Option(String),
+    /// The guest whose sockets to drop once the response (and the cookie
+    /// it carries) is on its way: every socket the browser opened before
+    /// the sign-in speaks for that guest and no account, and dropped, each
+    /// reconnects on the new cookie as the account. Not dropped here: a
+    /// reconnect that raced the response would come back on the old
+    /// cookie and be refused at its own table.
+    drop_sockets: Option(String),
+    body: Result(String, ApiError),
+  )
+}
+
+fn refused(error: ApiError) -> SignedIn {
+  SignedIn(renew: False, guest_id: None, drop_sockets: None, body: Error(error))
+}
+
+/// Spend the token the mailed link carried and sign this browser in.
+pub fn link_json(ctx: Ctx, session: Session, token: String) -> SignedIn {
   case ctx.auth.enabled() {
-    False -> #(False, Error(dead()))
+    False -> refused(dead())
     True ->
       case ctx.auth.consume_token(token) {
         Some(pending) -> sign_in(ctx, session, pending)
-        None -> #(False, Error(dead()))
+        None -> refused(dead())
       }
   }
 }
@@ -173,26 +192,24 @@ pub fn code_json(
   session: Session,
   email: String,
   code: String,
-) -> #(Bool, Result(String, ApiError)) {
+) -> SignedIn {
   let address = normalise_email(email)
   let digits = only_digits(code)
 
   case
     ctx.auth.enabled() && address_like(address) && string.length(digits) == 6
   {
-    False -> #(False, Error(dead()))
+    False -> refused(dead())
     True ->
       case
         ctx.auth.check_code(address, digits, session.guest_id, code_attempts)
       {
         CodeOk(pending) -> sign_in(ctx, session, pending)
-        CodeWrong -> #(
-          False,
-          Error(error.validation_failed(
+        CodeWrong ->
+          refused(error.validation_failed(
             "That code is not right. Check the mail, or ask for a new one.",
-          )),
-        )
-        CodeDead -> #(False, Error(dead()))
+          ))
+        CodeDead -> refused(dead())
       }
   }
 }
@@ -240,32 +257,55 @@ pub fn me_json(ctx: Ctx, session: Session) -> String {
 // ---------- Shared ----------
 
 /// The account for this address, this browser bound to it, and how many of
-/// its games came with it (`saved`, always none yet: taking ownership of
-/// the seats a browser has played is the next piece of work).
-fn sign_in(
-  ctx: Ctx,
-  session: Session,
-  pending: Pending,
-) -> #(Bool, Result(String, ApiError)) {
+/// the games it has played came with it (`saved`).
+///
+/// Two things happen in the one write (`auth.stamp_seats`), because they
+/// are the same fact seen twice:
+///
+///   * **the stamp.** Every unowned seat this guest holds becomes the
+///     account's, in finished rooms as well as live ones. A seat somebody
+///     else's account already owns is never taken, so a shared laptop hands
+///     each person only what nobody has claimed.
+///   * **the rotation.** The browser leaves with a fresh guest id, carrying
+///     its name, its preferences and its seats. The cookie is the
+///     credential, and the id it arrived with may have been learned by
+///     somebody (a shared machine, a devtools pane, the browser it was
+///     minted in): after a sign-in that id opens nothing.
+fn sign_in(ctx: Ctx, session: Session, pending: Pending) -> SignedIn {
   case session.guest_id {
     // Every request through the browser pipeline carries a guest, so this
     // is a browser that refused the cookie: there is nothing to sign in.
-    None -> #(
-      False,
-      Error(error.validation_failed(
+    None ->
+      refused(error.validation_failed(
         "Signing in needs a browser that keeps cookies.",
-      )),
-    )
+      ))
 
     Some(guest_id) -> {
       let user = ctx.auth.find_or_create_user(pending.email)
-      ctx.auth.bind_guest(guest_id, user.id)
+      let fresh = ctx.guests.mint()
+      let #(saved, signed_in_as) = case
+        ctx.auth.stamp_seats(guest_id, fresh, user.id)
+      {
+        Ok(saved) -> #(saved, fresh)
+        // The write did not land, so nothing moved: the browser keeps the
+        // id it has and is signed in on that. Its games come with the next
+        // sign-in; the sign-in itself does not fail over them.
+        Error(Nil) -> #(0, guest_id)
+      }
+      ctx.auth.bind_guest(signed_in_as, user.id)
 
-      #(
-        True,
-        Ok(
+      SignedIn(
+        renew: True,
+        guest_id: case signed_in_as == guest_id {
+          True -> None
+          False -> Some(signed_in_as)
+        },
+        // The tab at a table keeps its seat (it reconnects as the account),
+        // and a later logout reaches every tab.
+        drop_sockets: Some(guest_id),
+        body: Ok(
           envelope.ok([
-            #("saved", json.int(0)),
+            #("saved", json.int(saved)),
             #("next", json.string(where_next(pending.next))),
             #(
               "user",

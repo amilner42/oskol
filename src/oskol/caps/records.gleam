@@ -15,9 +15,10 @@ pub type Setup {
     /// The clock preset id.
     clock: String,
     seed: Int,
-    /// #(player_id, display name, guest id), in seat order. The guest id is
-    /// "" for a seat no guest was recorded against.
-    seats: List(#(String, String, String)),
+    /// #(player_id, display name, guest id, account id), in seat order.
+    /// The guest id is "" for a seat no guest was recorded against, the
+    /// account id "" for a seat no account owns.
+    seats: List(#(String, String, String, String)),
     /// The room is over: every game it will ever have is played. A room
     /// that is not over yet may still have nothing stored simply because
     /// nothing has finished, which is not a reason to go and look.

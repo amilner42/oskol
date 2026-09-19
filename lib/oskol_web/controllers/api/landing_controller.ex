@@ -48,8 +48,11 @@ defmodule OskolWeb.Api.LandingController do
     )
   end
 
-  def room(conn, %{"id" => game_id}) do
-    send_json(conn, {:ok, :oskol@handlers@landing.room_json(ctx(), game_id)})
+  def room(conn, %{"slug" => slug, "id" => game_id}) do
+    send_json(
+      conn,
+      {:ok, :oskol@handlers@landing.room_json(ctx(), session(conn), slug, game_id)}
+    )
   end
 
   # The index of a room's post-game reviews: which games it has and where

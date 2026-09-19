@@ -24,6 +24,25 @@ defmodule OskolWeb.Plugs.GuestIdTest do
     assert get_session(conn, :guest_id) == id
   end
 
+  test "a JSON request never writes the cookie back, so it cannot undo a sign-in", %{conn: conn} do
+    # A sign-in hands the browser a fresh id. A /papi request that left
+    # before it, carrying the old one, answers after it: if it set the
+    # cookie it would put the old id back and sign the browser out.
+    id = get(conn, ~p"/").resp_cookies[@cookie].value
+
+    conn = build_conn() |> put_req_cookie(@cookie, id) |> get(~p"/papi/me")
+
+    assert json_response(conn, 200)["ok"]
+    refute Map.has_key?(conn.resp_cookies, @cookie)
+  end
+
+  test "a JSON request with no cookie still gets one", %{conn: conn} do
+    conn = get(conn, ~p"/papi/me")
+
+    assert %{value: id} = conn.resp_cookies[@cookie]
+    assert get_session(conn, :guest_id) == id
+  end
+
   test "a mangled cookie is replaced, never trusted", %{conn: conn} do
     conn = conn |> put_req_cookie(@cookie, "not!a!valid!guest!id") |> get(~p"/")
 

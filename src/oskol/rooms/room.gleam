@@ -34,13 +34,15 @@ pub type Seated {
 
 /// The table as an invite link finds it: whether it is full, who is sitting
 /// at it right now, the one line describing what is being played, and the
-/// seats whose player is away (#(player_id, name), in seat order).
+/// seats whose player is away (#(player_id, name, owned), in seat order,
+/// where `owned` says the seat belongs to an account and is therefore not
+/// anyone's to claim).
 pub type Table {
   Table(
     full: Bool,
     inviter: Option(String),
     summary: String,
-    disconnected: List(#(String, String)),
+    disconnected: List(#(String, String, Bool)),
   )
 }
 
@@ -54,8 +56,8 @@ pub fn seat_path(slug: String, game_id: String) -> String {
 
 /// An unfinished room a guest holds a seat in, as its row tells it: enough
 /// to list it and send the player back, read without waking the room.
-/// `seats` are #(player_id, name, guest id) in seat order ("" for a seat
-/// held by nobody); `to_act` the seats that may act right now, from the
+/// `seats` are #(player_id, name, guest id, user id) in seat order ("" for a
+/// seat no guest took, or one no account owns); `to_act` the seats that may act right now, from the
 /// snapshot the room wrote with its last step (empty for a lobby, or for a
 /// row from before the snapshot existed); `clocks` each seat's time as of
 /// that step, #(player_id, remaining_ms, move_ms, running), empty under no
@@ -69,7 +71,7 @@ pub type ActiveRoom {
     status: String,
     format: String,
     clock: String,
-    seats: List(#(String, String, String)),
+    seats: List(#(String, String, String, String)),
     to_act: List(String),
     clocks: List(#(String, Int, Int, Bool)),
     clock_s: Int,

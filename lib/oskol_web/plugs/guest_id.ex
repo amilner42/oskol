@@ -37,21 +37,45 @@ defmodule OskolWeb.Plugs.GuestId do
   # over plain http anywhere but development (http on localhost).
   @secure Mix.env() == :prod
 
-  def init(opts), do: opts
+  # `renew: true` (page loads) re-sets the cookie on every response, which
+  # is what keeps a returning visitor's year rolling. The JSON pipeline
+  # passes `renew: false`: it writes the cookie only when it mints one, and
+  # the session only when the id in it is wrong. That is what makes a
+  # sign-in stick: the sign-in's response hands the browser a fresh id, and
+  # a /papi request that was already in flight with the old one must not
+  # answer afterwards and write the old id back over it.
+  def init(opts), do: Keyword.get(opts, :renew, true)
 
-  def call(conn, _opts) do
+  def call(conn, renew?) do
     conn = fetch_cookies(conn)
+    presented = conn.req_cookies[@cookie]
 
     # Which id this request carries — the cookie's, or a fresh one when it is
     # not one we minted — is decided in Gleam (oskol/guests/identity).
     id =
       :oskol@guests@identity.for_request(
         CtxBuilder.build(),
-        Interop.opt(conn.req_cookies[@cookie])
+        Interop.opt(presented)
       )
 
+    cond do
+      renew? or id != presented -> put_guest(conn, id)
+      get_session(conn, :guest_id) != id -> put_session(conn, :guest_id, id)
+      true -> conn
+    end
+  end
+
+  @doc """
+  Write this guest id into the cookie and the session, with the settings
+  every visit uses.
+
+  Signing in mints a fresh id and moves the browser's row and seats to it
+  (`Oskol.Auth.adopt_seats/3`), so the response that says "you're in" is
+  also the response that hands the browser its new cookie — one door for
+  both, so the flags never drift apart.
+  """
+  def put_guest(conn, id) when is_binary(id) do
     conn
-    # Set on every response: a returning visit renews the year.
     |> put_resp_cookie(@cookie, id,
       max_age: @one_year,
       http_only: true,

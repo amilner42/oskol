@@ -42,10 +42,12 @@ fn room_with(slug: String, game: Result(Instance, errors.RoomError)) -> Ctx {
     ..ctx,
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
-      seated_game: fn(_, guest_id) {
-        case guest_id {
-          "g1" -> result.map(game, fn(g) { #("p1", g) })
-          _ -> Error(errors.NoSeat)
+      seated_game: fn(_, guest_id, user_id) {
+        case guest_id, user_id {
+          // The seat is g1's, and the account u1 owns it: either reaches it.
+          Some("g1"), _ | _, Some("u1") ->
+            result.map(game, fn(g) { #("p1", g) })
+          _, _ -> Error(errors.NoSeat)
         }
       },
       game: fn(_) { game },
@@ -152,7 +154,7 @@ fn finished_setup() -> records_caps.Setup {
     format: "match5",
     clock: "none",
     seed: 7,
-    seats: [#("p1", "Alice", "g1"), #("p2", "Bob", "g2")],
+    seats: [#("p1", "Alice", "g1", ""), #("p2", "Bob", "g2", "")],
     finished: True,
     log_length: 0,
     records_through: 0,
@@ -230,6 +232,37 @@ pub fn a_stored_record_faces_the_readers_own_seat_test() {
       "000007",
     )
   assert string.contains(anon, "\"seated\":false")
+}
+
+pub fn a_stored_record_faces_an_owned_seat_to_its_account_only_test() {
+  // p2 was played by guest g2 and then its player signed in: the seat is
+  // owned by u2 now, and the guest on it is history.
+  let owned =
+    records_caps.Setup(..finished_setup(), seats: [
+      #("p1", "Alice", "g1", ""),
+      #("p2", "Bob", "g2", "u2"),
+    ])
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_records(Some(owned), one_row())
+    |> fakes.with_room(None, None)
+
+  // The account, from a browser that never played it: its own seat.
+  let assert Ok(mine) =
+    record.record_json(
+      ctx,
+      fakes.signed_in("a-new-phone", "u2"),
+      "backgammon",
+      "000007",
+    )
+  assert string.contains(mine, "\"you\":\"p2\"")
+  assert string.contains(mine, "\"seated\":true")
+
+  // The browser that played it, logged out (or the next person on that
+  // laptop): not its seat any more.
+  let assert Ok(old) =
+    record.record_json(ctx, fakes.guest("g2"), "backgammon", "000007")
+  assert string.contains(old, "\"seated\":false")
 }
 
 pub fn a_stored_room_asked_for_under_another_game_reads_nothing_test() {

@@ -36,6 +36,7 @@ import oskol/rooms/code as room_code
 import oskol/rooms/errors
 import oskol/rooms/invite
 import oskol/rooms/room.{type ActiveRoom, type Seated, type Table, Setup}
+import oskol/rooms/seat
 
 /// Games with no engine yet. They are a poster on the library and nothing
 /// else: no route, no sitemap entry. Empty today: every catalog game has an
@@ -125,13 +126,49 @@ pub fn create_json(
 
 /// What the invite link for this room is worth. A read, so it never claims
 /// anything: a visitor is never shown a join form the table has no room for.
-pub fn room_json(ctx: Ctx, game_id: String) -> String {
+pub fn room_json(
+  ctx: Ctx,
+  session: Session,
+  slug: String,
+  game_id: String,
+) -> String {
   let #(step, table) = rooms.offer(ctx, game_id)
 
+  // A caller who already holds a seat here (by the holder rule: its guest,
+  // or the account that owns it) is sent to the table, not shown a door.
+  // Without this the owner of an away seat, arriving from JOIN GAME or a
+  // refused reconnect, would be told the seat belongs to an account.
+  case step, held_here(ctx, session, game_id) {
+    invite.Reclaim(_), Some(_) | invite.Owned, Some(_) | invite.Full, Some(_) ->
+      envelope.ok([
+        #("state", json.string("seated")),
+        #("path", json.string(room.seat_path(slug, game_id))),
+      ])
+    _, _ -> room_offer_json(step, table)
+  }
+}
+
+/// The seat this caller holds in a running room, if any. A lobby answers
+/// nothing: there is nobody away in a room that has not started.
+fn held_here(ctx: Ctx, session: Session, game_id: String) -> Option(String) {
+  case session.guest_id, session.user_id {
+    None, None -> None
+    guest, user ->
+      case ctx.rooms.seated_game(game_id, guest, user) {
+        Ok(#(player_id, _)) -> Some(player_id)
+        Error(_) -> None
+      }
+  }
+}
+
+fn room_offer_json(step: invite.InviteStep, table: Option(Table)) -> String {
+  // Only seats a visitor may actually take are named. An owned seat is
+  // never listed, so nothing on the page can be typed at it.
   let #(inviter, disconnected) = case step {
     invite.Open(inviter, disconnected) -> #(inviter, disconnected)
     invite.Reclaim(disconnected) -> #(None, disconnected)
     invite.Full -> #(None, [])
+    invite.Owned -> #(None, [])
     invite.NoRoom -> #(None, [])
   }
 
@@ -141,10 +178,10 @@ pub fn room_json(ctx: Ctx, game_id: String) -> String {
     #("summary", nullable(summary(table))),
     #(
       "disconnected",
-      json.array(disconnected, fn(seat) {
+      json.array(disconnected, fn(away) {
         json.object([
-          #("id", json.string(seat.0)),
-          #("name", json.string(seat.1)),
+          #("id", json.string(away.0)),
+          #("name", json.string(away.1)),
         ])
       }),
     ),
@@ -298,12 +335,24 @@ fn find_info(slug: String) -> Result(Info, ApiError) {
 /// holds no seat anywhere, so their list is empty. Read from the rows: a
 /// home visit wakes no room.
 pub fn my_games_json(ctx: Ctx, session: Session) -> String {
-  let rooms = case session.guest_id {
-    Some(id) -> ctx.persistence.seated_rooms(id)
-    None -> []
+  // By guest or by account: a signed-in browser sees the games its account
+  // holds wherever they were played, and `active_room_json` asks the holder
+  // rule which seat in each is theirs.
+  let rooms = case session.guest_id, session.user_id {
+    None, None -> []
+    _, _ -> ctx.persistence.seated_rooms(session.guest_id, session.user_id)
   }
+  // A room is listed only where the holder rule says a seat is really the
+  // caller's. The query finds rooms by guest id or account, and a guest id
+  // stays on a seat after an account owns it (history): a browser that
+  // logged out, or the next person on that laptop, must not be offered
+  // games it can no longer open.
+  let held =
+    list.filter(rooms, fn(room) {
+      seat.held_by(list.map(room.seats, as_seat), session) != None
+    })
   envelope.ok([
-    #("games", json.array(rooms, fn(r) { active_room_json(r, session) })),
+    #("games", json.array(held, fn(r) { active_room_json(r, session) })),
   ])
 }
 
@@ -317,15 +366,14 @@ pub fn my_games_json(ctx: Ctx, session: Session) -> String {
 /// room was touched.
 fn active_room_json(room: ActiveRoom, session: Session) -> Json {
   let info = registry.find(room.slug) |> result.map(fn(e) { e.info })
-  let mine =
-    list.find(room.seats, fn(seat) { Some(seat.2) == session.guest_id })
-  let my_id = case mine {
-    Ok(seat) -> seat.0
-    Error(_) -> ""
-  }
+  // Which seat here is the caller's is the one holder rule, the same one
+  // the room attaches on (`rooms/seat.holder`).
+  let my_id =
+    seat.held_by(list.map(room.seats, as_seat), session)
+    |> option.unwrap("")
   let opponent =
-    list.find(room.seats, fn(seat) { seat.0 != my_id })
-    |> result.map(fn(seat) { seat.1 })
+    list.find(room.seats, fn(entry) { entry.0 != my_id })
+    |> result.map(fn(entry) { entry.1 })
     |> option.from_result
   let format = case info {
     Ok(info) ->
@@ -350,6 +398,23 @@ fn active_room_json(room: ActiveRoom, session: Session) -> Json {
     #("time", time_json(room.clocks, room.clock_s, my_id)),
     #("idle_s", json.int(room.idle_s)),
   ])
+}
+
+/// A seat as the holder rule reads it: the row's empty strings are "no
+/// guest" and "no account".
+fn as_seat(entry: #(String, String, String, String)) -> seat.Seat {
+  seat.Seat(
+    player_id: entry.0,
+    guest_id: some_unless_empty(entry.2),
+    user_id: some_unless_empty(entry.3),
+  )
+}
+
+fn some_unless_empty(value: String) -> Option(String) {
+  case value {
+    "" -> None
+    value -> Some(value)
+  }
 }
 
 fn time_json(

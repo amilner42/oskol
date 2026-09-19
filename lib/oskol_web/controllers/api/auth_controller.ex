@@ -66,12 +66,41 @@ defmodule OskolWeb.Api.AuthController do
     json_resp(conn, 200, :oskol@handlers@auth.me_json(ctx(), session(conn)))
   end
 
-  # A sign-in that took hands back `true`, which is the moment to renew the
-  # session: a session id someone else planted is no longer the signed-in one.
-  defp sign_in(conn, {signed_in, result}) do
+  # A sign-in that took hands back `renew: true`, which is the moment to
+  # renew the session (a session id someone else planted is no longer the
+  # signed-in one) and, with it, the fresh guest id the handler minted: the
+  # browser's row and its seats have already moved to it, so the cookie must
+  # move too, in this very response.
+  defp sign_in(conn, {:signed_in, renew, guest_id, drop_sockets, result}) do
+    conn =
+      conn
+      |> then(fn conn -> if renew, do: configure_session(conn, renew: true), else: conn end)
+      |> then(fn conn ->
+        case guest_id do
+          {:some, id} -> OskolWeb.Plugs.GuestId.put_guest(conn, id)
+          :none -> conn
+        end
+      end)
+      |> send_json(result)
+
+    # Only now, with the response (and its cookie) sent, and a moment for
+    # the browser to take the cookie in: a socket dropped earlier could
+    # reconnect on the old cookie before the new one arrived.
+    case drop_sockets do
+      {:some, old_guest_id} -> drop_sockets_later(old_guest_id)
+      :none -> :ok
+    end
+
     conn
-    |> then(fn conn -> if signed_in, do: configure_session(conn, renew: true), else: conn end)
-    |> send_json(result)
+  end
+
+  @socket_drop_delay_ms 500
+
+  defp drop_sockets_later(guest_id) do
+    Task.start(fn ->
+      Process.sleep(@socket_drop_delay_ms)
+      OskolWeb.Endpoint.broadcast("guest:" <> guest_id, "disconnect", %{})
+    end)
   end
 
   defp ctx, do: CtxBuilder.build()

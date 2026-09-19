@@ -18,8 +18,10 @@ defmodule OskolWeb.UserSocket do
 
   `user_id` is the account signed in on that browser, read off its guest row
   once here as `Oskol.Gleam.CtxBuilder` reads it once per request. It is not
-  a second credential — the guest is still what holds a seat — and nothing
-  reads it yet; a seat that carries its owner is the next piece of work.
+  a second mechanism beside the guest: it is the same one grown up. Which of
+  the two opens a seat is the holder rule (`src/oskol/rooms/seat.gleam`) — an
+  owned seat answers to its account alone, an unowned one to the guest that
+  took it — and the channel hands both to the room when it attaches.
 
   `client` names the browser tab behind this socket (the client mints it and
   keeps it for the life of the tab). It authenticates nothing, and it is

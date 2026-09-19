@@ -385,10 +385,18 @@ seat over, which is the only case the connection that had it is told about
 (`src/oskol/rooms/seat.gleam`). **Accounts** are a guest grown up: sign in
 by email (a mailed link, and the same sign-in as a six-digit code) and
 `guests.user_id` names the account on that browser, which is why identity
-has no second mechanism beside the guest. The backend is in
-(`/papi/auth/*`, `src/oskol/handlers/auth.gleam`) and dark behind
-`:oskol, :auth_enabled`; seats do not carry an owner yet, so a guest plays
-exactly as before.
+has no second mechanism beside the guest. **A seat an account holds is
+that account's**: `seat.holder` is the one rule every door asks — an owned
+seat (`games.players[i].user_id`) answers to its account, from any browser
+signed into it and from no other, the guest on it ignored; an unowned seat
+answers to the guest that took it, exactly as before. An owned seat is
+therefore not claimable: the invite link says `owned` and offers nothing.
+Signing in **stamps** every unowned seat this browser holds onto the
+account and **rotates** its guest id in the same write, so the id it
+arrived with opens nothing afterwards. The backend is in (`/papi/auth/*`,
+`src/oskol/handlers/auth.gleam`) and dark behind `:oskol, :auth_enabled`;
+with it off nobody is ever bound, so every seat is unowned and a guest
+plays exactly as before.
 
 The game is built on **gamekit**, a small framework that keeps the rules,
 the room and the client apart: a game is one Gleam module that implements
@@ -546,7 +554,9 @@ src/oskol/core/raw.gleam        stored JSON back onto the wire without rebuildin
 lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room
 lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
-src/oskol/rooms/seat.gleam       what an attach means: the same client back, or a takeover
+src/oskol/rooms/seat.gleam       who holds a seat (the guest, or the account that
+                                 owns it), whether it may be claimed, and what an
+                                 attach means: the same client back, or a takeover
 src/oskol/rooms/code.gleam       the shape of a room code, and how a typed one is read
 lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
                                  plus the title, description, canonical, og
@@ -613,7 +623,9 @@ Phoenix (router, plugs, controllers, GenServers)       [Elixir, thin]
   `src/oskol/caps/<d>.gleam` has an Elixir twin at
   `lib/oskol/gleam/caps/<d>.ex`; they must agree on constructor tag and
   field order (a Gleam record is a tagged tuple).
-- `Session` is the caller: a guest id, or nothing. It authenticates nothing.
+- `Session` is the caller: a guest id (or nothing), and the account signed
+  in on that browser (or nothing). The guest id is the cookie; the account
+  is read off the guest row once per request.
 - Caps are fine-grained and speak the domain types in `src/oskol/*` — never
   Ecto structs or raw maps. A room process crosses as the opaque
   `rooms/room.Room`.
@@ -740,9 +752,13 @@ GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
 `path` is the URL of the seat that was just taken (`/:slug/:id`, carrying
 nothing): the client goes there, and the seat waits in the lobby until its
 opponent arrives. The seat is held by the guest cookie the write came with,
-so the same URL is what anyone would be given for that room. `state` is `open` (a free seat), `away` (a seat
-whose player is gone), `full` (nothing to offer) or `missing` (the room is
-over) — the same four cases the server used to decide for itself.
+so the same URL is what anyone would be given for that room. `state` is
+`open` (a free seat), `away` (a seat whose player is gone and that anyone
+with the code may take back), `owned` (the only seats free belong to
+accounts: nothing on offer), `full` (both players are there) or `missing`
+(the room is over). `disconnected` names only the seats a visitor may
+actually take, so an owned seat is never listed and nothing on the page can
+be typed at it.
 
 A game's own `clocks` are preset ids; `clock_presets` carries every preset,
 so the picker can name the ones the game offers. Statuses: 404 `not_found`
@@ -758,9 +774,13 @@ record's board faces, and is what a retry takes. Nothing a reader does
 spends engine time.
 
 `/papi/me/games` is what the home page opens with: every room in `waiting`
-or `playing` whose seats include the caller's guest, read from `games` with
-no room woken (`Persistence.seated_rooms`, the cap
-`persistence.seated_rooms`, the handler `landing.my_games_json`). Each
+or `playing` where the caller holds a seat by the holder rule — the guest
+that took an unowned seat, or the account that owns one, so an account's
+games follow it to any browser it signs in on and a browser that logged
+out is offered none of them — read from `games` with no room woken
+(`Persistence.seated_rooms`, the cap `persistence.seated_rooms`, the
+handler `landing.my_games_json`, which asks `seat.held_by` of each room
+and drops the rooms where the answer is nobody). Each
 entry names the opponent (null in a lobby), the format and clock by name,
 whether it is the caller's turn (`your_move`, from the row's `state`), the
 two clocks as the snapshot last read them with how long ago that was
@@ -775,8 +795,10 @@ are kept, finished or not), so nothing bounds the list yet.
 GET never signs anyone in. A token and its code are sha256 at rest, never
 logged, single use, good for 15 minutes; a failed sign-in of any kind
 answers one generic sentence. `saved` is how many of this browser's games
-came with the account (0 for now: seats take their owner in the next piece
-of work). `next` is validated in Gleam — a local path, or `/`. Rate limits
+came with the account: signing in stamps every unowned seat its guest holds
+and rotates that guest id, both in one ordered write, and the response
+carries the fresh guest cookie. `next` is validated in Gleam — a local
+path, or `/`. Rate limits
 are ETS counters behind the `count` cap, per node: 10 starts per browser
 per hour, 30 per address. `:oskol, :auth_enabled` (prod: `AUTH_ENABLED`,
 default off) is the switch: off, a start sends nothing and a link reads as
@@ -1151,11 +1173,13 @@ the guest id. The same row carries `prefs` (jsonb): display preferences that
 follow the guest between browsers, written through `/papi/me/prefs` and
 whitelisted in `src/oskol/guests/prefs.gleam`. A guest who signs in gets
 `guests.user_id` (indexed, read once per request by `CtxBuilder` into
-`Session(guest_id, user_id)`, and once per socket connect, where it is an
-assign nothing reads yet); logging out
+`Session(guest_id, user_id)`, and once per socket connect, where the
+channel hands it to the room with the guest); logging out
 nilifies it and drops that browser's sockets (`UserSocket.id/1` is
-`"guest:<guest id>"`). The id is also the credential:
-a seat is held by the guest that took it, the game channel attaches on it
+`"guest:<guest id>"`), so a tab at a table the account owns is disconnected
+and refused when it tries to come back. The id is also the credential:
+a seat is held by the guest that took it (or by the account that owns it),
+the game channel attaches on it
 (the socket reads it off the session that the websocket's own upgrade request
 carried, which Phoenix hands over only against the page's `_csrf_token`), and
 losing the cookie loses the seats it was holding — they can be claimed back
@@ -1165,10 +1189,45 @@ from the invite link, like anyone else's.
 `last_login_at`) and `login_tokens` (a sign-in in flight: `email`,
 `token_hash`, `code_hash`, the `guest_id` that asked, `next`, `expires_at`,
 `consumed_at`, `attempts`), both `Oskol.Auth`. An account is an email
-address and nothing else — no password, so nothing to reset or leak. There
-was nothing to backfill: every seat starts unowned, and taking ownership of
-the seats a browser has played is the next piece of work, which is the
-point of holding a seat by the guest rather than by a token.
+address and nothing else — no password, so nothing to reset or leak.
+
+**A seat can be owned.** Each entry in `games.players` is `{id, name,
+guest_id, user_id}`, and `user_id` is the account it belongs to (absent on
+a row written before accounts: that seat is simply unowned). Who may open
+it is one rule, in Gleam — `src/oskol/rooms/seat.gleam`'s `holder`: an
+owned seat answers to its account and ignores the guest on it, an unowned
+one answers to its guest. Every door asks it (`GameServerState.find_player_id_for/2`,
+which the channel's attach, a claim, the record's viewer and `/papi/me/games`
+all go through), and `claimable` is false for an owned seat, so no room code
+opens one. The owner rides through the room's memory, `players_json`,
+`restore_seats` and `seed_seat`, so a rehydrate and a rematch both keep it.
+
+**The stamp.** Signing in hands the account every seat its browser's guest
+holds that nobody owns (`Oskol.Auth.adopt_seats/3`, run through
+`Oskol.Game.Persister.stamp_seats/3` so it lands *behind* everything the
+rooms have queued and cannot race a room rewriting its seats). In the same
+transaction the browser's guest row and those seats move to a **fresh guest
+id**, which the sign-in response sets as the cookie: the id the browser
+arrived with opens nothing afterwards. Rooms that are live are then told
+(`GameServer.stamp/4`) so memory agrees with the rows, and a rehydrate
+re-reads `players` once after replay in case a stamp landed mid-replay. The
+rule itself is one Gleam function (`seat.stamp`) that the row and a room's
+memory both call. **An owner never comes off a seat**: every seat-list
+write a room makes (a join, a claim, a start) goes through `seat.keep_owners`
+against the row, so a room writing from memory that has not heard of a
+sign-in yet cannot undo it. The sign-in also drops every socket the browser
+opened under its old id (`guest:<old>`), so each tab reconnects on the new
+cookie as the account; and if the stamp's transaction rolls back, nothing
+moved, so the browser keeps its id and is signed in on that. The guest
+cookie is re-set on every page load (the rolling year) but a `/papi`
+response writes it only when minting one, so a JSON request that was in
+flight during a sign-in cannot answer afterwards and put the old id back. A
+seat another account owns is never taken, a seat with no guest (tooling, a
+pre-guest row) can never be stamped, and at a table where the account
+already owns a seat the browser's other seat is not stamped (one person,
+one seat per table, however many devices) but still moves to the fresh
+guest id, so that browser keeps playing it as a guest seat. There is
+nothing to backfill: every seat starts unowned.
 
 ## Future
 - Bots derived from `legal` for solo play and balance reports.

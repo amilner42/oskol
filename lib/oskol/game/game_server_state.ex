@@ -12,15 +12,21 @@ defmodule Oskol.Game.GameServerState do
   @type lobby_status :: :waiting_for_players | :ready_to_start
 
   @typedoc """
-  One seat. `guest_id` is who holds it: the opaque id in the visitor's
-  guest cookie, recorded when the seat was taken or claimed. It is what a
-  channel join or a reconnect authenticates with, and nothing in a URL
-  grants it. A seat whose holder is away can be claimed by anyone with the
-  room code, and then it is that guest's. The display name grants nothing.
+  One seat. `guest_id` is the browser that took it: the opaque id in the
+  visitor's guest cookie, recorded when the seat was taken or claimed.
+  `user_id` is the account that owns it, if one does -- either because the
+  browser was signed in when it sat down, or because it signed in later and
+  the seat was stamped (`Oskol.Auth.stamp_seats/3`).
+
+  Which of the two a connection is checked against is not decided here: it
+  is `src/oskol/rooms/seat.gleam`'s `holder`, and an owned seat ignores the
+  guest entirely. An owned seat is also nobody's to claim. The display name
+  grants nothing.
   """
   @type connection :: %{
           name: String.t(),
           guest_id: String.t() | nil,
+          user_id: String.t() | nil,
           pid: pid() | nil,
           # The client behind `pid`: the socket's transport, which survives
           # the channel rejoining. It is what tells a reconnect from a
@@ -182,22 +188,62 @@ defmodule Oskol.Game.GameServerState do
   end
 
   @doc """
-  The seat a guest holds here, or `nil`. Compared in constant time: the
-  guest id is the credential now, so it is never leaked one character at a
-  time by how long a comparison took.
-  """
-  @spec find_player_id_by_guest(t(), String.t() | nil) :: player_id() | nil
-  def find_player_id_by_guest(%__MODULE__{}, guest_id)
-      when not is_binary(guest_id) or byte_size(guest_id) == 0,
-      do: nil
+  The seat this caller holds here, or `nil`.
 
-  def find_player_id_by_guest(%__MODULE__{} = state, guest_id) do
-    # In seat order, so the answer never depends on map ordering.
-    Enum.find(state.seat_order, fn player_id ->
-      conn = state.connections[player_id]
-      conn != nil and secure_compare(conn.guest_id, guest_id)
-    end)
+  The rule is `src/oskol/rooms/seat.gleam`'s `holder`, asked in seat order:
+  an owned seat answers only to its account, an unowned one only to the
+  guest that took it. Elixir never compares an id itself, and the Gleam
+  comparison does not stop at the first character that differs.
+
+  `session` is the Gleam `Session` tuple the caller carries
+  (`Oskol.Gleam.CtxBuilder.session/1`), or one built by `session/2`.
+  """
+  @spec find_player_id_for(t(), tuple()) :: player_id() | nil
+  def find_player_id_for(%__MODULE__{} = state, session) do
+    case :oskol@rooms@seat.held_by(seat_records(state), session) do
+      {:some, player_id} -> player_id
+      :none -> nil
+    end
   end
+
+  @doc "The seat a guest holds here, or `nil`: the holder rule for a browser with no account."
+  @spec find_player_id_by_guest(t(), String.t() | nil) :: player_id() | nil
+  def find_player_id_by_guest(%__MODULE__{} = state, guest_id) do
+    find_player_id_for(state, session(guest_id, nil))
+  end
+
+  @doc "A Gleam `Session` for a caller known only as a guest id and an account id."
+  @spec session(String.t() | nil, String.t() | nil) :: tuple()
+  def session(guest_id, user_id) do
+    {:session, Oskol.Gleam.Interop.opt(blank_to_nil(guest_id)),
+     Oskol.Gleam.Interop.opt(blank_to_nil(user_id))}
+  end
+
+  @doc "Every seat as the Gleam holder rule reads it, in seat order."
+  @spec seat_records(t()) :: [tuple()]
+  def seat_records(%__MODULE__{} = state) do
+    for player_id <- state.seat_order, conn = state.connections[player_id], conn != nil do
+      seat_record(player_id, conn)
+    end
+  end
+
+  @doc "One seat as the Gleam `rooms/seat.Seat` record."
+  def seat_record(player_id, conn) do
+    {:seat, player_id, Oskol.Gleam.Interop.opt(blank_to_nil(conn.guest_id)),
+     Oskol.Gleam.Interop.opt(blank_to_nil(Map.get(conn, :user_id)))}
+  end
+
+  @doc "Whether an account owns this seat: it is then nobody else's, ever."
+  @spec owned?(t(), player_id()) :: boolean()
+  def owned?(%__MODULE__{} = state, player_id) do
+    case state.connections[player_id] do
+      nil -> false
+      conn -> :oskol@rooms@seat.owned(seat_record(player_id, conn))
+    end
+  end
+
+  defp blank_to_nil(value) when is_binary(value) and byte_size(value) > 0, do: value
+  defp blank_to_nil(_), do: nil
 
   @doc "The guest holding a seat, or `nil` if there is no such seat."
   @spec guest_for(t(), player_id()) :: String.t() | nil
@@ -208,20 +254,18 @@ defmodule Oskol.Game.GameServerState do
     end
   end
 
-  @doc "Seats whose player is currently away, as `{id, name}` in seat order."
-  @spec disconnected_seats(t()) :: [{player_id(), String.t()}]
+  @doc """
+  Seats whose player is currently away, as `{id, name, owned?}` in seat
+  order. `owned?` is what the invite link needs: an owned seat is named to
+  nobody and offered to nobody.
+  """
+  @spec disconnected_seats(t()) :: [{player_id(), String.t(), boolean()}]
   def disconnected_seats(%__MODULE__{} = state) do
     for id <- state.seat_order,
         conn = state.connections[id],
         conn != nil and not conn.connected,
-        do: {id, conn.name}
+        do: {id, conn.name, :oskol@rooms@seat.owned(seat_record(id, conn))}
   end
-
-  defp secure_compare(a, b) when is_binary(a) and is_binary(b) do
-    Plug.Crypto.secure_compare(a, b)
-  end
-
-  defp secure_compare(_, _), do: false
 
   @doc "Players in seat order as `{id, name}` pairs."
   def seats(%__MODULE__{} = state) do
