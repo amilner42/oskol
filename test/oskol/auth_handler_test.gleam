@@ -1,0 +1,417 @@
+//// Signing in, decided on stub capabilities: what goes in the mail, what a
+//// link's page says, what a code is worth, and every refusal.
+////
+//// Every cap panics until a test arranges it, so a branch that reaches IO it
+//// was not supposed to reach fails loudly. That is how "this answers ok and
+//// sends nothing" is tested: `send_mail` is left panicking.
+
+import gleam/option.{type Option, None, Some}
+import gleam/string
+import oskol/caps/auth.{
+  AuthCaps, CodeDead, CodeOk, CodeWrong, Issued, Pending, User,
+}
+import oskol/core/ctx.{type Ctx, Ctx}
+import oskol/core/error
+import oskol/fakes
+import oskol/handlers/auth as handler
+
+/// Auth caps with nothing arranged but the switch: every other call panics.
+fn switched(on: Bool) -> Ctx {
+  let ctx = fakes.ctx()
+  Ctx(..ctx, auth: AuthCaps(..ctx.auth, enabled: fn() { on }))
+}
+
+/// Counting that never says "too many".
+fn under_limit(ctx: Ctx) -> Ctx {
+  Ctx(..ctx, auth: AuthCaps(..ctx.auth, count: fn(_, _) { 1 }))
+}
+
+/// A sign-in that records what it was asked to put in the mail, by panicking
+/// with the details unless they are the ones expected.
+fn mailing(ctx: Ctx, expected: #(String, String, String)) -> Ctx {
+  Ctx(
+    ..ctx,
+    auth: AuthCaps(
+      ..ctx.auth,
+      issue_token: fn(email, _guest, next, ttl) {
+        assert email == expected.0
+        assert ttl == handler.ttl_s
+        // The path is validated before it is stored.
+        assert next == handler.local_path("/backgammon/abc123")
+        Issued(token: expected.1, code: expected.2)
+      },
+      send_mail: fn(email, token, code) {
+        assert #(email, token, code) == expected
+        Nil
+      },
+    ),
+  )
+}
+
+// ---------- POST /papi/auth/start ----------
+
+pub fn a_sign_in_puts_the_token_and_the_code_in_the_mail_test() {
+  let ctx =
+    switched(True)
+    |> under_limit
+    |> mailing(#("her@example.com", "tok-32-bytes", "482913"))
+
+  let assert Ok(body) =
+    handler.start_json(
+      ctx,
+      fakes.guest("g1"),
+      "  Her@Example.com ",
+      "/backgammon/abc123",
+    )
+
+  // Nothing about the address, and nothing about the mail.
+  assert body == "{\"ok\":true}"
+}
+
+pub fn an_address_over_its_limit_is_answered_and_not_mailed_test() {
+  // send_mail and issue_token are left panicking: reaching them fails.
+  let ctx =
+    switched(True)
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: AuthCaps(..ctx.auth, count: fn(key, window) {
+          assert window == handler.start_window_s
+          case string.starts_with(key, "start:guest:") {
+            True -> handler.starts_per_guest + 1
+            False -> 1
+          }
+        }),
+      )
+    }
+
+  let assert Ok(body) =
+    handler.start_json(ctx, fakes.guest("g1"), "a@b.com", "")
+  assert body == "{\"ok\":true}"
+}
+
+pub fn a_buried_mailbox_is_answered_and_not_mailed_test() {
+  let ctx =
+    switched(True)
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: AuthCaps(..ctx.auth, count: fn(key, _) {
+          case string.starts_with(key, "start:email:") {
+            True -> handler.starts_per_address + 1
+            False -> 1
+          }
+        }),
+      )
+    }
+
+  let assert Ok(body) =
+    handler.start_json(ctx, fakes.guest("g1"), "a@b.com", "")
+  assert body == "{\"ok\":true}"
+}
+
+pub fn signing_in_switched_off_sends_nothing_test() {
+  let assert Ok(body) =
+    handler.start_json(switched(False), fakes.guest("g1"), "a@b.com", "")
+  assert body == "{\"ok\":true}"
+}
+
+pub fn something_that_is_not_an_address_is_refused_before_anything_happens_test() {
+  // Not even the switch is read: the shape is wrong, and saying so leaks
+  // nothing about who has an account.
+  let cases = ["", "nobody", "no@domain", "two@at@signs.com", "sp ace@b.com"]
+
+  let refused =
+    list_all(cases, fn(typed) {
+      case handler.start_json(fakes.ctx(), fakes.guest("g1"), typed, "") {
+        Error(err) -> error.status(err) == 422
+        Ok(_) -> False
+      }
+    })
+
+  assert refused
+}
+
+// ---------- GET /login/<token> ----------
+
+fn verifying(ctx: Ctx, found: Option(auth.Pending)) -> Ctx {
+  Ctx(..ctx, auth: AuthCaps(..ctx.auth, verify_token: fn(_) { found }))
+}
+
+pub fn a_live_link_offers_the_address_it_is_for_test() {
+  let ctx =
+    switched(True)
+    |> verifying(
+      Some(Pending(
+        email: "her@example.com",
+        guest_id: Some("g1"),
+        next: Some("/backgammon/abc123"),
+      )),
+    )
+
+  let flags = handler.link_flags(ctx, "tok")
+
+  assert string.contains(flags, "\"state\":\"confirm\"")
+  assert string.contains(flags, "\"email\":\"her@example.com\"")
+  assert string.contains(flags, "\"next\":\"/backgammon/abc123\"")
+}
+
+pub fn a_dead_link_says_only_that_test() {
+  let ctx = switched(True) |> verifying(None)
+
+  assert handler.link_flags(ctx, "tok") == "{\"state\":\"expired\"}"
+}
+
+pub fn a_link_is_dead_while_signing_in_is_switched_off_test() {
+  // verify_token is left panicking: the switch is read first.
+  assert handler.link_flags(switched(False), "tok") == "{\"state\":\"expired\"}"
+}
+
+pub fn a_link_that_is_opened_is_never_spent_test() {
+  // consume_token is left panicking. A GET that consumed anything would
+  // reach it, and this test would die instead of answering "expired".
+  let ctx = switched(True) |> verifying(None)
+
+  assert handler.link_flags(ctx, "tok") == "{\"state\":\"expired\"}"
+}
+
+// ---------- POST /papi/auth/link ----------
+
+fn binding(ctx: Ctx, expect: #(String, String)) -> Ctx {
+  Ctx(
+    ..ctx,
+    auth: AuthCaps(
+      ..ctx.auth,
+      find_or_create_user: fn(email) {
+        User(id: expect.1, email: email, name: None)
+      },
+      bind_guest: fn(guest_id, user_id) {
+        assert #(guest_id, user_id) == expect
+        Nil
+      },
+    ),
+  )
+}
+
+pub fn the_button_on_the_page_spends_the_token_and_signs_the_browser_in_test() {
+  let ctx =
+    switched(True)
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: AuthCaps(..ctx.auth, consume_token: fn(token) {
+          assert token == "tok"
+          Some(Pending(
+            email: "her@example.com",
+            guest_id: Some("g1"),
+            next: Some("/backgammon/abc123"),
+          ))
+        }),
+      )
+    }
+    |> binding(#("g1", "user-uuid"))
+
+  let #(signed_in, result) = handler.link_json(ctx, fakes.guest("g1"), "tok")
+  let assert Ok(body) = result
+
+  // True is Elixir's cue to renew the session cookie.
+  assert signed_in
+  // No seat is stamped yet: that is the next piece of work.
+  assert string.contains(body, "\"saved\":0")
+  assert string.contains(body, "\"next\":\"/backgammon/abc123\"")
+  assert string.contains(body, "\"email\":\"her@example.com\"")
+}
+
+pub fn a_token_already_spent_signs_nobody_in_test() {
+  let ctx =
+    switched(True)
+    |> fn(ctx) {
+      Ctx(..ctx, auth: AuthCaps(..ctx.auth, consume_token: fn(_) { None }))
+    }
+
+  let #(signed_in, result) = handler.link_json(ctx, fakes.guest("g1"), "tok")
+
+  assert !signed_in
+  assert refusal_is_generic(result)
+}
+
+pub fn a_link_signs_nobody_in_while_the_flow_is_off_test() {
+  let #(signed_in, result) =
+    handler.link_json(switched(False), fakes.guest("g1"), "tok")
+
+  assert !signed_in
+  assert refusal_is_generic(result)
+}
+
+// ---------- POST /papi/auth/code ----------
+
+fn checking(ctx: Ctx, verdict: auth.CodeCheck) -> Ctx {
+  Ctx(
+    ..ctx,
+    auth: AuthCaps(..ctx.auth, check_code: fn(email, code, guest, attempts) {
+      assert email == "her@example.com"
+      assert code == "482913"
+      // The row is found by the browser that asked: a code is not a
+      // password anyone may type anywhere.
+      assert guest == Some("g1")
+      assert attempts == handler.code_attempts
+      verdict
+    }),
+  )
+}
+
+pub fn the_code_from_the_mail_signs_in_the_browser_that_asked_test() {
+  let ctx =
+    switched(True)
+    |> checking(
+      CodeOk(Pending(email: "her@example.com", guest_id: Some("g1"), next: None)),
+    )
+    |> binding(#("g1", "user-uuid"))
+
+  let #(signed_in, result) =
+    handler.code_json(ctx, fakes.guest("g1"), "Her@Example.com", "482 913")
+  let assert Ok(body) = result
+
+  assert signed_in
+  assert string.contains(body, "\"saved\":0")
+  // Nowhere in particular to go back to.
+  assert string.contains(body, "\"next\":\"/\"")
+}
+
+pub fn a_wrong_code_says_so_test() {
+  let ctx = switched(True) |> checking(CodeWrong)
+
+  let #(signed_in, result) =
+    handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "482913")
+
+  assert !signed_in
+  let assert Error(err) = result
+  assert error.status(err) == 422
+  assert string.contains(error.message(err), "not right")
+}
+
+pub fn a_code_out_of_tries_reads_like_an_expired_one_test() {
+  let ctx = switched(True) |> checking(CodeDead)
+
+  let #(_, result) =
+    handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "482913")
+
+  assert refusal_is_generic(result)
+}
+
+pub fn something_that_is_not_six_digits_is_never_looked_up_test() {
+  // check_code is left panicking: a short code never reaches the row.
+  let ctx = switched(True)
+
+  let #(_, result) =
+    handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "4821")
+
+  assert refusal_is_generic(result)
+}
+
+// ---------- POST /papi/auth/logout ----------
+
+pub fn logging_out_unbinds_this_browser_and_drops_its_sockets_test() {
+  let ctx =
+    fakes.ctx()
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: AuthCaps(
+          ..ctx.auth,
+          unbind_guest: fn(id) {
+            assert id == "g1"
+            Nil
+          },
+          disconnect: fn(id) {
+            assert id == "g1"
+            Nil
+          },
+        ),
+      )
+    }
+
+  assert handler.logout_json(ctx, fakes.signed_in_guest("g1", "user-uuid"))
+    == "{\"ok\":true}"
+}
+
+pub fn logging_out_with_no_browser_to_log_out_does_nothing_test() {
+  // unbind_guest and disconnect are left panicking.
+  assert handler.logout_json(fakes.ctx(), fakes.no_guest()) == "{\"ok\":true}"
+}
+
+// ---------- GET /papi/me ----------
+
+pub fn me_names_the_account_this_browser_is_signed_into_test() {
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_guests(Some("Renée"))
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: AuthCaps(..ctx.auth, user: fn(id) {
+          assert id == "user-uuid"
+          Some(User(id: id, email: "her@example.com", name: None))
+        }),
+      )
+    }
+
+  let body = handler.me_json(ctx, fakes.signed_in_guest("g1", "user-uuid"))
+
+  assert string.contains(body, "\"guest_name\":\"Renée\"")
+  assert string.contains(body, "\"email\":\"her@example.com\"")
+  assert string.contains(body, "\"name\":null")
+}
+
+pub fn me_says_no_account_for_a_guest_test() {
+  // The user cap is left panicking: a guest's row is never looked up.
+  let ctx = fakes.ctx() |> fakes.with_guests(None)
+  let body = handler.me_json(ctx, fakes.guest("g1"))
+
+  assert string.contains(body, "\"user\":null")
+}
+
+// ---------- `next` ----------
+
+pub fn a_sign_in_can_only_be_aimed_at_this_site_test() {
+  // Kept: a local path, and nothing else.
+  assert handler.local_path("/backgammon/abc123") == Some("/backgammon/abc123")
+  assert handler.where_next(Some("/backgammon/abc123")) == "/backgammon/abc123"
+
+  // Dropped: another origin, a protocol-relative path, a scheme, a bare
+  // path, a backslash, and home (which is where nothing means).
+  let dropped = [
+    "//evil.example.com", "https://evil.example.com/", "backgammon/abc",
+    "/back\\slash", "/with space", "javascript:alert(1)", "/",
+    // A browser deletes tabs and newlines before it resolves a link, so
+    // each of these would resolve as "//evil.example.com": another origin.
+    "/\t/evil.example.com", "/\n/evil.example.com", "/\r/evil.example.com",
+  ]
+
+  assert list_all(dropped, fn(path) { handler.local_path(path) == None })
+  assert handler.where_next(Some("//evil.example.com")) == "/"
+  assert handler.where_next(None) == "/"
+}
+
+// ---------- Shared ----------
+
+/// Every failed sign-in says the same thing, whatever went wrong.
+fn refusal_is_generic(result: Result(String, error.ApiError)) -> Bool {
+  case result {
+    Error(err) ->
+      error.status(err) == 422
+      && string.contains(error.message(err), "has expired")
+    Ok(_) -> False
+  }
+}
+
+fn list_all(items: List(a), predicate: fn(a) -> Bool) -> Bool {
+  case items {
+    [] -> True
+    [first, ..rest] ->
+      case predicate(first) {
+        True -> list_all(rest, predicate)
+        False -> False
+      }
+  }
+}

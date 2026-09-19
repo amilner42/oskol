@@ -24,22 +24,32 @@ defmodule Oskol.Gleam.CtxBuilder do
   alias Oskol.Gleam.Caps
 
   def build(opts \\ []) do
-    {:ctx, Caps.Analysis.build(), Caps.Copy.build(), Caps.Guests.build(), Caps.Ids.build(opts),
-     Caps.Persistence.build(), Caps.Records.build(), Caps.Rooms.build(opts)}
+    {:ctx, Caps.Analysis.build(), Caps.Auth.build(), Caps.Copy.build(), Caps.Guests.build(),
+     Caps.Ids.build(opts), Caps.Persistence.build(), Caps.Records.build(), Caps.Rooms.build(opts)}
   end
 
   @doc """
-  The session a caller carries: the guest id the GuestId plug put there,
-  from a conn or from a LiveView mount's session map.
+  The session a caller carries: the guest id the GuestId plug put there
+  (from a conn or from a LiveView mount's session map), and the account that
+  guest is signed in as, if any.
   """
   def session(%Plug.Conn{} = conn) do
-    {:session, opt(Plug.Conn.get_session(conn, :guest_id))}
+    build_session(Plug.Conn.get_session(conn, :guest_id))
   end
 
   def session(%{} = session) do
-    {:session, opt(session["guest_id"])}
+    build_session(session["guest_id"])
   end
 
-  @doc "A session with no guest id."
-  def anonymous_session, do: {:session, :none}
+  @doc "A session with no guest id and no account."
+  def anonymous_session, do: {:session, :none, :none}
+
+  # The account signed in on this browser is `guests.user_id`: one indexed
+  # read per request, and the reason identity has no second mechanism beside
+  # the guest cookie.
+  defp build_session(nil), do: {:session, :none, :none}
+
+  defp build_session(guest_id) do
+    {:session, opt(guest_id), opt(Oskol.Auth.user_id_of_guest(guest_id))}
+  end
 end

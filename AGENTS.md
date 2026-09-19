@@ -382,9 +382,13 @@ A display name is display only and grants nothing. A socket also names its
 room compares it with itself to tell one tab reconnecting -- a reload, a
 route change, a phone waking its websocket up -- from another tab taking the
 seat over, which is the only case the connection that had it is told about
-(`src/oskol/rooms/seat.gleam`). Accounts are the plan, and the guest is what
-becomes one (`guests.user_id`), which is why identity has no second
-mechanism beside it.
+(`src/oskol/rooms/seat.gleam`). **Accounts** are a guest grown up: sign in
+by email (a mailed link, and the same sign-in as a six-digit code) and
+`guests.user_id` names the account on that browser, which is why identity
+has no second mechanism beside the guest. The backend is in
+(`/papi/auth/*`, `src/oskol/handlers/auth.gleam`) and dark behind
+`:oskol, :auth_enabled`; seats do not carry an owner yet, so a guest plays
+exactly as before.
 
 The game is built on **gamekit**, a small framework that keeps the rules,
 the room and the client apart: a game is one Gleam module that implements
@@ -521,14 +525,18 @@ src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     error, envelope), caps (the IO a handler may do),
                     rooms (codes, names, errors, invite), guests/identity,
                     landing/copy, reviews/report, handlers (rooms, landing,
-                    reviews, record, ratings)
+                    reviews, record, ratings, auth)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: setup, auto-start, actions, clocks, rematch
 lib/oskol/persistence.ex        games + game_actions tables (seed + action log per room)
-lib/oskol/guests.ex             silent guest identity: guests table (name + prefs) + placeholder users
+lib/oskol/guests.ex             silent guest identity: guests table (name + prefs)
+lib/oskol/auth.ex               accounts: users + login_tokens, the rows a sign-in spends
+lib/oskol/auth/limiter.ex       the sign-in rate counters (ETS, per node)
+lib/oskol/mail.ex               the one mail Oskol sends: the sign-in link and code
+lib/oskol/mailer.ex             Swoosh: Postmark in prod, /dev/mailbox in dev
 lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every visit
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
@@ -579,6 +587,11 @@ assets/css/app.css               the multicade/notebook design system (paper, pi
                                  and the sixteen backgammon boards (.bg-theme-*)
 src/oskol/guests/prefs.gleam     the display preferences a guest may keep, and
                                  the values each one allows
+src/oskol/handlers/auth.gleam    signing in: the mail, the link, the code, the
+                                 refusals, the rate verdict, where `next` may point
+lib/oskol_web/controllers/login_controller.ex  GET /login/:token: reads the token,
+                                 spends nothing, serves the shell with its flags
+assets/src/Page/Login.elm        that page: confirm, signed in, expired
 ```
 
 ## Platform decisions live in Gleam (`src/oskol/`)
@@ -646,6 +659,14 @@ arrive at any of them cold, and moving between them afterwards is a
   current in the address bar (replaced, not pushed, so back still leaves
   the page), which is what makes a reload land on the same line and a
   link carry a move to a friend; `step` is omitted at the start of a game.
+- `/login/<token>` the page a mailed sign-in link opens. It **reads** the
+  token and writes nothing: the page says "Sign in as you@example.com" with
+  one button, and that button POSTs `/papi/auth/link`, which is the only
+  thing that spends it. So a mail scanner prefetching the link cannot burn
+  it and no other site can sign a visitor in. A dead token renders
+  "expired". Served the SPA shell, `noindex`; the flags ride in a `login`
+  meta tag. A bare `/login` names no game: 404. `login` and `dev` are
+  reserved slugs (declared before the game routes).
 - `/poker`, `/go`, `/chess` and anything under them: 302 to `/` (the games
   that were removed).
 
@@ -694,6 +715,17 @@ GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
                                        PRs by seat, for the table's match panel
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
+POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no
+                                       enumeration; over a rate limit or with the
+                                       flow switched off it sends nothing and says
+                                       the same. Mails a link and a six-digit code)
+POST /papi/auth/link                   {token} -> {ok, saved, next, user}
+POST /papi/auth/code                   {email, code} -> {ok, saved, next, user}
+                                       (the code redeems only from the browser that
+                                       asked; 5 tries, then dead)
+POST /papi/auth/logout                 {ok}  (nilifies guests.user_id and drops
+                                       this browser's sockets)
+GET  /papi/me                          {ok, guest_name, user: {email, name} | null}
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
 GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
@@ -738,6 +770,17 @@ shows them in a dialog over the home board when the list arrives with
 anything in it, and keeps a "REJOIN N GAMES" button at the right end of the
 player's own bar for as long as there are any. Nothing prunes games (they
 are kept, finished or not), so nothing bounds the list yet.
+
+`/papi/auth/*` is signing in, and every one of them is a POST on purpose: a
+GET never signs anyone in. A token and its code are sha256 at rest, never
+logged, single use, good for 15 minutes; a failed sign-in of any kind
+answers one generic sentence. `saved` is how many of this browser's games
+came with the account (0 for now: seats take their owner in the next piece
+of work). `next` is validated in Gleam — a local path, or `/`. Rate limits
+are ETS counters behind the `count` cap, per node: 10 starts per browser
+per hour, 30 per address. `:oskol, :auth_enabled` (prod: `AUTH_ENABLED`,
+default off) is the switch: off, a start sends nothing and a link reads as
+expired. Decisions: `src/oskol/handlers/auth.gleam`.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist
@@ -830,6 +873,20 @@ game or a room talks to it.
   `.venv/bin/uvicorn app.main:app --port 18082`. Tests never hit the
   network: the queue is off (`config :oskol, Oskol.Reviews.Queue`) unless
   a test turns it on, and requests go to a `Req.Test` stub.
+
+## Mail
+
+One mailer (`Oskol.Mailer`, Swoosh over Req) and one mail
+(`Oskol.Mail.send_login/3`: the sign-in link, the same sign-in as a
+six-digit code, "Both work for 15 minutes"). Prod: `Swoosh.Adapters.Postmark`
+on `POSTMARK_TOKEN`, From `POSTMARK_FROM` (default `hello@oskol.io`, sender
+name Oskol) on the `POSTMARK_STREAM` message stream (default `outbound`).
+Dev: `Swoosh.Adapters.Local` — **read what would have been sent at
+`/dev/mailbox`** and click the link out of it; the link and code are logged
+too, and `GET /dev/last-login` answers `{link, code, email}` for a browser
+test. Both dev routes exist only under `:dev_routes`. Tests:
+`Swoosh.Adapters.Test`, read with `assert_receive {:email, mail}`; nothing
+ever leaves the process.
 
 ## Adding a game
 Backgammon is the product and the only game registered, but the framework
@@ -1092,15 +1149,26 @@ the last display name they played under (last writer wins); that name
 prefills the create and join forms, and each seat in `games.players` records
 the guest id. The same row carries `prefs` (jsonb): display preferences that
 follow the guest between browsers, written through `/papi/me/prefs` and
-whitelisted in `src/oskol/guests/prefs.gleam`. The id is also the credential:
+whitelisted in `src/oskol/guests/prefs.gleam`. A guest who signs in gets
+`guests.user_id` (indexed, read once per request by `CtxBuilder` into
+`Session(guest_id, user_id)`, and once per socket connect, where it is an
+assign nothing reads yet); logging out
+nilifies it and drops that browser's sockets (`UserSocket.id/1` is
+`"guest:<guest id>"`). The id is also the credential:
 a seat is held by the guest that took it, the game channel attaches on it
 (the socket reads it off the session that the websocket's own upgrade request
 carried, which Phoenix hands over only against the page's `_csrf_token`), and
 losing the cookie loses the seats it was holding — they can be claimed back
-from the invite link, like anyone else's. `users` is a deliberately skeletal
-placeholder (it ships empty) for the account-claim path via `guests.user_id`,
-which is the point of holding a seat by the guest rather than by a token:
-when a guest becomes a user the seats come with them.
+from the invite link, like anyone else's.
+
+**Accounts** are `users` (uuid id, `email` citext unique, `name`,
+`last_login_at`) and `login_tokens` (a sign-in in flight: `email`,
+`token_hash`, `code_hash`, the `guest_id` that asked, `next`, `expires_at`,
+`consumed_at`, `attempts`), both `Oskol.Auth`. An account is an email
+address and nothing else — no password, so nothing to reset or leak. There
+was nothing to backfill: every seat starts unowned, and taking ownership of
+the seats a browser has played is the next piece of work, which is the
+point of holding a seat by the guest rather than by a token.
 
 ## Future
 - Bots derived from `legal` for solo play and balance reports.

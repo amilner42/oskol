@@ -7,6 +7,7 @@ Three routes, and they are the server's three routes:
 
     /            Page.GameLanding "backgammon" — the home page, the board
     /:slug       Page.GameLanding — the invite a shared link opens
+    /login/:token  Page.Login — what a mailed sign-in link opens
     /:slug/:id   Page.Play — the game, unchanged
     /:slug/:id/replay   Page.Replay — a game played again, with its analysis
 
@@ -27,6 +28,7 @@ import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as D
 import Page.GameLanding
+import Page.Login
 import Page.Play
 import Page.Replay
 import Route exposing (Route)
@@ -54,6 +56,9 @@ type alias Model =
     , session : Session
     , route : Maybe Route
     , page : Page
+    -- What the page a mailed sign-in link opened carried (JSON text), on
+    -- that page alone. The server read the token; it wrote nothing.
+    , loginFlags : Maybe String
     , joinOpen : Bool
     , joinCode : String
     , joinError : Maybe String
@@ -62,6 +67,7 @@ type alias Model =
 
 type Page
     = NotFound
+    | Login Page.Login.Model
     | GameLanding Page.GameLanding.Model
     | Play Page.Play.Model
     | Replay Page.Replay.Model
@@ -71,6 +77,7 @@ type Msg
     = LinkClicked Browser.UrlRequest
     | UrlChanged Url
     | GameLandingMsg Page.GameLanding.Msg
+    | LoginMsg Page.Login.Msg
     | PlayMsg Page.Play.Msg
     | ReplayMsg Page.Replay.Msg
     | OpenedJoin
@@ -94,6 +101,9 @@ init flags url key =
         , session = session
         , route = Nothing
         , page = NotFound
+        , loginFlags =
+            D.decodeValue (D.field "login" (D.nullable D.string)) flags
+                |> Result.withDefault Nothing
         , joinOpen = False
         , joinCode = ""
         , joinError = Nothing
@@ -142,6 +152,10 @@ routeTo url oldModel =
         Just Route.Library ->
             Page.GameLanding.init model.session "backgammon" Nothing
                 |> landing model
+
+        Just (Route.Login token) ->
+            Page.Login.init model.session { token = token, flags = model.loginFlags }
+                |> wrap model Login LoginMsg
 
         Just (Route.GameLanding slug gameId) ->
             Page.GameLanding.init model.session slug gameId
@@ -234,6 +248,13 @@ update msg model =
         ( GameLandingMsg pageMsg, GameLanding pageModel ) ->
             Page.GameLanding.update pageMsg pageModel
                 |> landing model
+
+        ( LoginMsg pageMsg, Login pageModel ) ->
+            let
+                ( newPageModel, cmd ) =
+                    Page.Login.update pageMsg pageModel
+            in
+            ( { model | page = Login newPageModel }, Cmd.map LoginMsg cmd )
 
         ( PlayMsg pageMsg, Play pageModel ) ->
             let
@@ -414,6 +435,9 @@ view model =
             Replay pageModel ->
                 Html.map ReplayMsg (Page.Replay.view pageModel)
 
+            Login pageModel ->
+                framed model [ Html.map LoginMsg (Page.Login.view pageModel) ]
+
             GameLanding pageModel ->
                 if Page.GameLanding.isHome pageModel then
                     -- The home page is the board, edge to edge: its own chrome.
@@ -476,6 +500,9 @@ title model =
 
         Replay pageModel ->
             Page.Replay.title pageModel
+
+        Login pageModel ->
+            Page.Login.title pageModel
 
         NotFound ->
             "Not found"
