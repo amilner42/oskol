@@ -30,7 +30,6 @@ defmodule Oskol.Application do
       {Task.Supervisor, name: Oskol.Reviews.TaskSupervisor},
       {Oskol.Reviews.Queue, []},
       Oskol.Game.GameSupervisor,
-      {Oskol.Game.Pruner, []},
       # Start a worker by calling: Oskol.Worker.start_link(arg)
       # {Oskol.Worker, arg},
       # Start to serve requests, typically the last entry

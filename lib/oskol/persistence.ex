@@ -7,7 +7,7 @@ defmodule Oskol.Persistence do
 
   Everything here is plain synchronous Repo work; the room never calls it
   directly. Writes go through `Oskol.Game.Persister` (async, ordered), reads
-  through the rehydrator and the pruner.
+  through the rehydrator.
   """
 
   import Ecto.Query
@@ -96,8 +96,7 @@ defmodule Oskol.Persistence do
   @doc """
   The snapshot a room writes when it comes back from the log, so an old row
   heals on its first wake. Not activity: `updated_at` stays where the last
-  step left it, so a wake neither jumps a room up the list nor keeps it from
-  the pruner.
+  step left it, so a wake does not jump a room up the list.
   """
   def mirror_state(game_id, state) do
     from(g in Game, where: g.id == ^game_id) |> Repo.update_all(set: [state: state])
@@ -121,9 +120,8 @@ defmodule Oskol.Persistence do
       on_conflict: :nothing
     )
 
-    # Keep the game row's updated_at fresh so an active game never looks
-    # prunable, and so rehydration recency is visible; and write down where
-    # the game now stands, in the same statement.
+    # Keep the game row's updated_at fresh so rehydration recency is visible;
+    # and write down where the game now stands, in the same statement.
     update_game(game_id, state: state)
   end
 
@@ -173,21 +171,5 @@ defmodule Oskol.Persistence do
   @doc "Whether a game row already claims this code (live room or not)."
   def game_exists?(game_id) do
     Repo.exists?(from(g in Game, where: g.id == ^game_id))
-  end
-
-  # ---------- Retention ----------
-
-  @doc """
-  Delete unfinished games untouched for `days` days, and their actions
-  (the FK cascades). Finished games are kept. Returns the number deleted.
-  """
-  def prune_unfinished(days) do
-    cutoff = DateTime.add(DateTime.utc_now(), -days * 86_400, :second)
-
-    {count, _} =
-      from(g in Game, where: g.status in ["waiting", "playing"] and g.updated_at < ^cutoff)
-      |> Repo.delete_all()
-
-    count
   end
 end
