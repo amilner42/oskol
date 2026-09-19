@@ -98,6 +98,9 @@ if [[ "${1:-}" == "--browser" ]]; then
   # it arranges its own room (setup.exs) the same way.
   node playwright/test-backgammon-replay/test.js
   node playwright/test-guest-prefill/test.js
+  # Signing in by email, the mail read from /dev/last-login: the code, the
+  # link, an owned seat nobody can claim, logging out.
+  node playwright/test-accounts/test.js
 fi
 
 step "all green"

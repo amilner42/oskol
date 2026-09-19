@@ -16,9 +16,9 @@ defmodule Oskol.Gleam.Caps.Auth do
   alias Oskol.Mail
 
   def build do
-    {:auth_caps, &enabled?/0, &Limiter.count/2, &issue_token/4, &send_mail/3, &verify_token/1,
+    {:auth_caps, &Limiter.count/2, &issue_token/4, &send_mail/3, &verify_token/1,
      &consume_token/1, &check_code/4, &find_or_create_user/1, &user/1, &stamp_seats/3,
-     &Auth.bind_guest/2, &Auth.unbind_guest/1, &disconnect/1}
+     &Auth.bind_guest/2, &Auth.unbind_guest/1, &disconnect/1, &claim_name/2}
   end
 
   @doc """
@@ -61,12 +61,6 @@ defmodule Oskol.Gleam.Caps.Auth do
     end
   end
 
-  @doc """
-  Whether signing in is switched on (`:oskol, :auth_enabled`). Off, the flow
-  is a polite no-op everywhere: the backend can ship before the pages do.
-  """
-  def enabled?, do: Application.get_env(:oskol, :auth_enabled, false) == true
-
   defp issue_token(email, guest_id, next, ttl_s) do
     {token, code} = Auth.issue(email, unopt(guest_id), unopt(next), ttl_s)
     {:issued, token, code}
@@ -95,6 +89,13 @@ defmodule Oskol.Gleam.Caps.Auth do
 
   # A browser's own sockets, by the id OskolWeb.UserSocket gives them
   # ("guest:<guest id>"): logging out must not leave a tab playing a seat.
+  defp claim_name(user_id, name) do
+    case Auth.claim_name(user_id, name) do
+      :ok -> {:ok, nil}
+      :taken -> {:error, nil}
+    end
+  end
+
   defp disconnect(guest_id) do
     OskolWeb.Endpoint.broadcast("guest:" <> guest_id, "disconnect", %{})
     nil

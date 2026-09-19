@@ -1,6 +1,7 @@
 module Page.Login exposing
     ( Model
     , Msg
+    , Out(..)
     , State(..)
     , flagsDecoder
     , init
@@ -9,6 +10,7 @@ module Page.Login exposing
     , title
     , update
     , view
+    , withSession
     )
 
 {-| `/login/<token>` — the page a mailed sign-in link opens.
@@ -20,18 +22,19 @@ flags; it has written nothing. So there are three things to render:
     POSTs the token to `/papi/auth/link`, which is the only thing that
     consumes it. That is the whole reason this page exists: a GET must not
     sign anyone in, or a mail scanner would spend the link before the player
-    saw it.
-  - **done** — signed in, with how many games came along and a way back to
-    where the player was.
+    saw it. Under it, for the mail read on a phone while the game is on a
+    laptop: the code in the same mail signs the laptop in instead.
+  - **the win** — "You're in.", how many games came along, CONTINUE back to
+    where the player was. The same win the sign-in everywhere else ends on
+    (`Ui.SignIn.win`).
   - **expired** — the link is past its fifteen minutes, or has been used.
-    Ask for a new one.
-
-Plain for now: the card, the button and the sentences. The offer that sends
-people here, and the polish, come with the rest of the flow.
+    The sign-in itself is right there, with the address filled in when the
+    page knows it: one press sends a fresh mail.
 
 -}
 
 import Api
+import Api.Auth as Auth
 import Html exposing (Html)
 import Html.Attributes as Attr exposing (class, id)
 import Html.Events exposing (onClick)
@@ -39,6 +42,8 @@ import Json.Decode as D exposing (Decoder)
 import Json.Encode as E
 import Session exposing (Session)
 import Ui.Notebook as Notebook
+import Ui.SignIn as SignIn
+import Ui.Username as Username
 
 
 
@@ -48,14 +53,14 @@ import Ui.Notebook as Notebook
 type State
     = -- a live token, for this address, waiting for the button
       Confirm String
-      -- signed in: how many of this browser's games came with it
-    | Done Int
-      -- nothing to spend: expired, already used, or never a token at all
-    | Expired
       -- the POST is in flight
     | Signing String
-      -- the POST came back with something to say
-    | Failed String String
+      -- signed in: how many of this browser's games came with it, and
+      -- whether it was this page's link (rather than a code typed here)
+    | Done { saved : Int, viaLink : Bool }
+      -- nothing to spend: expired, already used, or never a token at all;
+      -- the address, when the page knows it
+    | Expired String
 
 
 type alias Model =
@@ -63,12 +68,24 @@ type alias Model =
     , token : String
     , state : State
     , next : String
+    , signIn : SignIn.Model -- the fresh mail an expired link offers
+    , error : Maybe String -- the press did not go through, and spent nothing
+    , username : Maybe Username.Model -- on the win, for an account this sign-in made
     }
 
 
 type Msg
     = PressedSignIn
-    | GotSignIn (Result Api.Error Int)
+    | GotSignIn (Result Api.Error Auth.SignedIn)
+    | SignInMsg SignIn.Msg
+    | UsernameMsg Username.Msg
+
+
+{-| A sign-in just went through: the shell re-reads who this browser is.
+-}
+type Out
+    = NoOut
+    | SignedIn (Maybe Session.User)
 
 
 {-| What the shell page carried: the state the server read off the token.
@@ -98,14 +115,46 @@ init session config =
                         ( Confirm flags.email, flags.next )
 
                     else
-                        ( Expired, flags.next )
+                        ( Expired flags.email, flags.next )
 
                 Nothing ->
-                    ( Expired, "/" )
+                    ( Expired "", "/" )
     in
-    ( { session = session, token = config.token, state = state, next = where_ }
+    ( { session = session
+      , token = config.token
+      , state = state
+      , next = where_
+      , signIn = freshSignIn where_ state
+      , error = Nothing
+      , username = Nothing
+      }
     , Cmd.none
     )
+
+
+freshSignIn : String -> State -> SignIn.Model
+freshSignIn where_ state =
+    let
+        email =
+            case state of
+                Expired address ->
+                    address
+
+                Confirm address ->
+                    address
+
+                Signing address ->
+                    address
+
+                Done _ ->
+                    ""
+    in
+    Tuple.first (SignIn.init { next = where_, email = email })
+
+
+withSession : Session -> Model -> Model
+withSession session model =
+    { model | session = session }
 
 
 {-| Where this browser was when it asked to sign in: a local path, always.
@@ -137,42 +186,102 @@ title _ =
 -- UPDATE
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> ( Model, Cmd Msg, Out )
 update msg model =
     case msg of
         PressedSignIn ->
             case model.state of
                 Confirm email ->
                     ( { model | state = Signing email }
-                    , Api.post model.session
-                        "/papi/auth/link"
-                        (E.object [ ( "token", E.string model.token ) ])
-                        savedDecoder
-                        GotSignIn
+                    , Auth.withLink model.session model.token GotSignIn
+                    , NoOut
                     )
 
                 _ ->
-                    ( model, Cmd.none )
+                    ( model, Cmd.none, NoOut )
 
-        GotSignIn (Ok saved) ->
-            ( { model | state = Done saved }, Cmd.none )
+        GotSignIn (Ok result) ->
+            ( { model
+                | state = Done { saved = result.saved, viaLink = True }
+                , next = result.next
+                , username = Username.init result
+              }
+            , Cmd.none
+            , SignedIn result.user
+            )
 
+        -- Anything but the server's refusal (a lost connection, a 500) has
+        -- spent nothing: say so, and the button is there to press again.
         GotSignIn (Err error) ->
+            if Api.errorCode error /= "validation_failed" then
+                case model.state of
+                    Signing address ->
+                        ( { model | state = Confirm address, error = Just (Api.errorMessage error) }, Cmd.none, NoOut )
+
+                    _ ->
+                        ( model, Cmd.none, NoOut )
+
+            else
+                expire model
+
+        SignInMsg signInMsg ->
             let
-                email =
-                    case model.state of
-                        Signing address ->
-                            address
+                ( signIn, cmd, out ) =
+                    SignIn.update model.session signInMsg model.signIn
 
-                        _ ->
-                            ""
+                updated =
+                    { model | signIn = signIn }
             in
-            ( { model | state = Failed email (Api.errorMessage error) }, Cmd.none )
+            case out of
+                SignIn.SignedIn result ->
+                    ( { updated
+                        | state = Done { saved = result.saved, viaLink = False }
+                        , next = result.next
+                        , username = Username.init result
+                      }
+                    , Cmd.map SignInMsg cmd
+                    , SignedIn result.user
+                    )
+
+                _ ->
+                    ( updated, Cmd.map SignInMsg cmd, NoOut )
+
+        UsernameMsg sub ->
+            case model.username of
+                Just username ->
+                    let
+                        ( named, cmd, renamed ) =
+                            Username.update model.session sub username
+                    in
+                    ( { model | username = Just named }
+                    , Cmd.map UsernameMsg cmd
+                    , case renamed of
+                        Just user ->
+                            SignedIn (Just user)
+
+                        Nothing ->
+                            NoOut
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none, NoOut )
 
 
-savedDecoder : Decoder Int
-savedDecoder =
-    D.oneOf [ D.field "saved" D.int, D.succeed 0 ]
+{-| Spent since the page was served (another tab, the other device's code),
+or past its time: the fresh mail is the way on.
+-}
+expire : Model -> ( Model, Cmd Msg, Out )
+expire model =
+    let
+        expired =
+            case model.state of
+                Signing address ->
+                    Expired address
+
+                _ ->
+                    Expired ""
+    in
+    ( { model | state = expired, error = Nothing, signIn = freshSignIn model.next expired }, Cmd.none, NoOut )
 
 
 
@@ -182,74 +291,80 @@ savedDecoder =
 view : Model -> Html Msg
 view model =
     Html.section
-        [ class "mt-8 sm:mt-12 q-card p-5 sm:p-8", id "login" ]
-        (Notebook.eyebrow "SIGN IN" :: body model)
+        [ class "mt-8 sm:mt-12 mx-auto max-w-md q-card sheet p-6 sm:p-8", id "login" ]
+        (body model)
 
 
 body : Model -> List (Html Msg)
 body model =
     case model.state of
         Confirm email ->
-            [ line ("Sign in as " ++ email ++ ".")
-            , button "login-confirm" "SIGN IN" False
-            ]
+            confirm email False model.error
 
         Signing email ->
-            [ line ("Signing in as " ++ email ++ "…")
-            , button "login-confirm" "SIGNING IN…" True
+            confirm email True Nothing
+
+        Done done ->
+            [ SignIn.win
+                { saved = done.saved
+                , note =
+                    if done.saved == 0 && done.viaLink then
+                        Just "If you were playing on another device, sign in there to bring those games too."
+
+                    else
+                        Nothing
+                , username = model.username |> Maybe.map (Username.view >> Html.map UsernameMsg)
+                }
+                (Html.a
+                    [ Attr.href model.next
+                    , id "login-continue"
+                    , class "q-btn w-full px-6 py-3 text-[15px]"
+                    ]
+                    [ Html.text "CONTINUE" ]
+                )
             ]
 
-        Done saved ->
-            [ line ("You're in." ++ savedLine saved)
-            , link model.next "CONTINUE"
-            ]
-
-        Failed _ message ->
-            [ line message
-            , link "/" "BACK TO OSKOL"
-            ]
-
-        Expired ->
-            [ line "That sign-in link has expired. Ask for a new one."
-            , link "/" "BACK TO OSKOL"
+        Expired _ ->
+            [ Notebook.eyebrow "SIGN IN"
+            , line "That link has expired. We'll send a fresh one."
+            , Html.map SignInMsg (SignIn.view model.signIn)
             ]
 
 
-savedLine : Int -> String
-savedLine saved =
-    case saved of
-        0 ->
-            ""
+confirm : String -> Bool -> Maybe String -> List (Html Msg)
+confirm email busy error =
+    [ Notebook.eyebrow "SIGN IN"
+    , Html.p [ class "text-[20px] sm:text-[22px] font-bold leading-snug mb-5", Notebook.style "color: var(--ink)" ]
+        [ Html.text "Sign in as "
+        , Html.span [ class "break-all" ] [ Html.text email ]
+        ]
+    , Html.button
+        [ Attr.type_ "button"
+        , id "login-confirm"
+        , Attr.disabled busy
+        , class "q-btn w-full px-6 py-3.5 text-[15px]"
+        , onClick PressedSignIn
+        ]
+        [ Html.text
+            (if busy then
+                "SIGNING IN…"
 
-        1 ->
-            " 1 game saved to your account."
+             else
+                "SIGN IN"
+            )
+        ]
+    , case error of
+        Just message ->
+            Html.p [ id "login-error", class "text-[13px] font-semibold text-center mt-3", Notebook.style "color: var(--red)" ]
+                [ Html.text message ]
 
-        n ->
-            " " ++ String.fromInt n ++ " games saved to your account."
+        Nothing ->
+            Html.text ""
+    , Html.p [ class "q-note text-[12.5px] leading-snug text-center mt-4" ]
+        [ Html.text "Opened this on another device? Enter the code from the mail there instead." ]
+    ]
 
 
 line : String -> Html msg
 line text =
-    Html.p [ class "text-base mb-5", Notebook.style "color: var(--pen)" ] [ Html.text text ]
-
-
-button : String -> String -> Bool -> Html Msg
-button nodeId label busy =
-    Html.button
-        [ Attr.type_ "button"
-        , id nodeId
-        , Attr.disabled busy
-        , class "q-btn w-full sm:w-auto sm:min-w-[12rem] px-7 py-3.5 text-base"
-        , onClick PressedSignIn
-        ]
-        [ Html.text label ]
-
-
-link : String -> String -> Html msg
-link href label =
-    Html.a
-        [ Attr.href href
-        , id "login-continue"
-        , class "q-btn inline-block w-full sm:w-auto sm:min-w-[12rem] px-7 py-3.5 text-base text-center"
-        ]
-        [ Html.text label ]
+    Html.p [ class "text-base mb-4", Notebook.style "color: var(--ink)" ] [ Html.text text ]

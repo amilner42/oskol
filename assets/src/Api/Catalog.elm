@@ -509,7 +509,7 @@ faqDecoder =
 copyFor : Game -> Copy
 copyFor game =
     { title = "Play " ++ game.name ++ " online with a friend"
-    , description = game.name ++ " for two, free, no accounts. Send a link and play."
+    , description = game.name ++ " for two, free, no account needed. Send a link and play."
     , intro = game.description
     , rules = [ game.description ]
     , faq = []

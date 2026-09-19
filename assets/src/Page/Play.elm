@@ -11,6 +11,7 @@ port module Page.Play exposing
     , title
     , update
     , view
+    , withSession
     )
 
 {-| `/:slug/:id` — the one client for every game. It decodes the gamekit
@@ -54,6 +55,7 @@ import Session exposing (Session)
 import Task
 import Time
 import Ui.Notebook as Notebook
+import Ui.SignIn as SignIn
 import View.Clock
 
 
@@ -132,6 +134,7 @@ type alias Model =
     , awayNew : List String -- players who went missing in the latest payload, awaiting their moment
     , ratingsGraded : Int -- games of this match the engine had answered for, as of the last ask
     , ratingsPolls : Int -- asks made while a grade is on its way; 0 is not waiting for one
+    , signIn : Maybe SignIn.Model -- the game-over card's sign-in, once opened
     }
 
 
@@ -166,6 +169,7 @@ init session config =
       , awayNew = []
       , ratingsGraded = 0
       , ratingsPolls = 0
+      , signIn = Nothing
       }
     , Cmd.batch
         -- One tick late, deliberately: a port message sent while the program
@@ -212,6 +216,35 @@ title model =
             game
 
 
+{-| What the shell learnt about this browser (`/papi/me`).
+-}
+withSession : Session -> Model -> Model
+withSession session model =
+    { model | session = session }
+
+
+{-| The game-over card's offer, to a guest in a seat: the game they just
+played and the PR it is about to earn them are theirs to keep. Open, it is
+the sign-in itself, until they CONTINUE from the win. Nothing for a
+spectator or a signed-in player.
+-}
+saveOffer : Model -> GamePayload -> Backgammon.Save
+saveOffer model payload =
+    case model.signIn of
+        Just signIn ->
+            Backgammon.Saving signIn
+
+        Nothing ->
+            if
+                (model.session.user == Nothing)
+                    && List.any (\p -> p.id == payload.playerId) payload.players
+            then
+                Backgammon.SaveOffered
+
+            else
+                Backgammon.NoSave
+
+
 {-| True while this page is the lobby (or on its way to it): those states
 belong inside the site's chrome, the table does not.
 -}
@@ -241,6 +274,7 @@ type Msg
     | GotRatings (Result Api.Error Catalog.Ratings)
     | PollRatings
     | PrefSaved (Result Api.Error (Dict String String))
+    | SignInMsg SignIn.Msg
     | NoOp
 
 
@@ -255,6 +289,8 @@ type Out
       -- for the rest of the visit, so leaving the table and coming back
       -- does not undo it.
     | Remember String String
+      -- This browser just signed in (at game over): the shell re-reads who it is.
+    | SignedIn (Maybe Session.User)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg, Out )
@@ -313,6 +349,16 @@ update msg model =
 
                 Backgammon.NeedZones targets ->
                     stay updated (measureDropZones targets)
+
+                Backgammon.OpenSave ->
+                    let
+                        ( signIn, cmd ) =
+                            SignIn.init { next = Route.href (Route.play model.gameSlug model.gameId), email = "" }
+                    in
+                    stay { updated | signIn = Just signIn } (Cmd.map SignInMsg cmd)
+
+                Backgammon.ForSave signInMsg ->
+                    update (SignInMsg signInMsg) updated
 
                 Backgammon.ChoseTheme name ->
                     -- Three places keep it: the page (instantly), this
@@ -441,6 +487,29 @@ update msg model =
 
         PrefSaved (Err _) ->
             stay model Cmd.none
+
+        SignInMsg signInMsg ->
+            case model.signIn of
+                Just signIn ->
+                    let
+                        ( next, cmd, out ) =
+                            SignIn.update model.session signInMsg signIn
+                    in
+                    case out of
+                        SignIn.NoOut ->
+                            stay { model | signIn = Just next } (Cmd.map SignInMsg cmd)
+
+                        -- The seat is the account's now; the table goes on
+                        -- exactly as it was.
+                        SignIn.SignedIn result ->
+                            ( { model | signIn = Just next }, Cmd.map SignInMsg cmd, SignedIn result.user )
+
+                        -- CONTINUE: back to the card as it was, minus the offer.
+                        SignIn.Continue _ ->
+                            stay { model | signIn = Nothing } Cmd.none
+
+                Nothing ->
+                    stay model Cmd.none
 
         NoOp ->
             stay model Cmd.none
@@ -863,6 +932,8 @@ view model =
                                     , theme = theme model
                                     , replayHref = replayHref model payload
                                     , gamePrs = \n -> Dict.get n model.gamePrs |> Maybe.withDefault []
+                                    , save = saveOffer model payload
+                                    , accounts = Just (payload.players |> List.filter .account |> List.map .id)
                                     }
                                 )
 

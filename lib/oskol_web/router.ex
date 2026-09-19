@@ -38,6 +38,7 @@ defmodule OskolWeb.Router do
     post "/auth/code", AuthController, :code
     post "/auth/logout", AuthController, :logout
     get "/me", AuthController, :me
+    post "/me/name", AuthController, :rename
 
     get "/library", LandingController, :library
     get "/codes/:code", LandingController, :code

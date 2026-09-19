@@ -97,6 +97,7 @@ fn stored_json(
       #("id", json.string(game_id)),
       #("you", json.string(player_id)),
       #("seated", json.bool(seated)),
+      #("accounts", accounts_json(Some(setup))),
       #(
         "record",
         json.object(
@@ -115,6 +116,22 @@ fn stored_json(
       ),
     ]),
   )
+}
+
+/// The seats an account owns, by player id: what puts the badge beside a
+/// name on the replay. Which account is never said.
+fn accounts_json(setup: Option(Setup)) -> json.Json {
+  let owned = case setup {
+    Some(setup) ->
+      list.filter_map(setup.seats, fn(s) {
+        case s.3 {
+          "" -> Error(Nil)
+          _ -> Ok(s.0)
+        }
+      })
+    None -> []
+  }
+  json.array(owned, json.string)
 }
 
 /// Everything a record says about a room other than its games: who played
@@ -199,6 +216,7 @@ fn live_json(
           // Whether that seat is really the reader's: a reader who holds no
           // seat here is looking at somebody else's game.
           #("seated", json.bool(seated)),
+          #("accounts", accounts_json(ctx.records.setup(game_id))),
           #("record", record),
         ]),
       )

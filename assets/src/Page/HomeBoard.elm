@@ -17,7 +17,7 @@ import Ui.Shell
 right end of the player's own bar at the foot, where a game shows the pip
 count (the games waiting for them, when there are any).
 -}
-view : { actions : List (Html msg), join : Html msg, soon : List (Html msg), you : String, theme : String, picker : Html msg, note : Html msg } -> Html msg
+view : { actions : List (Html msg), join : Html msg, soon : List (Html msg), you : Html msg, theme : String, picker : Html msg, note : Html msg } -> Html msg
 view config =
     div [ class ("bg-page home-board " ++ Games.Backgammon.View.themeClass config.theme) ]
         [ div [ class "bg-main" ]
@@ -42,7 +42,7 @@ topBar picker =
         ]
 
 
-bar : String -> String -> Bool -> Html msg -> Html msg
+bar : String -> Html msg -> Bool -> Html msg -> Html msg
 bar color name isMe note =
     div
         [ class
@@ -56,7 +56,7 @@ bar color name isMe note =
             )
         ]
         [ div [ class ("swatch shrink-0 " ++ color) ] []
-        , span [ class "font-bold text-sm sm:text-base truncate" ] [ text name ]
+        , name
         , div [ class "flex-1" ] []
         , note
         ]

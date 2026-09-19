@@ -62,11 +62,6 @@ if config_env() == :prod do
   config :oskol, :mail_from, System.get_env("POSTMARK_FROM") || "hello@oskol.io"
   config :oskol, :postmark_stream, System.get_env("POSTMARK_STREAM") || "outbound"
 
-  # Accounts are dark until the pages that offer them ship: with this off,
-  # asking for a sign-in answers ok and sends nothing, and a mailed link
-  # reads as expired. AUTH_ENABLED=true turns the flow on.
-  config :oskol, :auth_enabled, System.get_env("AUTH_ENABLED") in ["true", "1"]
-
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
   # want to use a different value for prod and you most likely don't want

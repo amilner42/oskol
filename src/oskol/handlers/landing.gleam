@@ -30,6 +30,7 @@ import oskol/core/error.{type ApiError}
 import oskol/core/session.{type Session}
 import oskol/guests/identity
 import oskol/guests/prefs
+import oskol/guests/username
 import oskol/handlers/rooms
 import oskol/landing/copy.{type Copy}
 import oskol/rooms/code as room_code
@@ -114,7 +115,7 @@ pub fn create_json(
       chosen -> chosen
     })
 
-  case rooms.create(ctx, session, slug, setup, name) {
+  case rooms.create(ctx, session, slug, setup, seat_name(ctx, session, name)) {
     Ok(seated) -> Ok(seat_taken(slug, seated))
     Error(rooms.Rejected(message)) -> Error(error.validation_failed(message))
     Error(rooms.Unavailable(reason)) ->
@@ -204,8 +205,54 @@ pub fn join_json(
   game_id: String,
   name: String,
 ) -> Result(String, ApiError) {
-  rooms.join(ctx, session, game_id, name)
+  let name = seat_name(ctx, session, name)
+  case session.user_id {
+    // A guest who typed a name the table already has picks another.
+    None -> rooms.join(ctx, session, game_id, name)
+    // A signed-in player has no name field to change, so a table that
+    // already has their username (a guest who typed it) seats them under
+    // the next numbered one rather than turning them away.
+    Some(_) -> join_as(ctx, session, game_id, username.candidates(Some(name)))
+  }
   |> seat_result(slug)
+}
+
+fn join_as(
+  ctx: Ctx,
+  session: Session,
+  game_id: String,
+  names: List(String),
+) -> Result(room.Seated, rooms.JoinError) {
+  case names {
+    [] -> Error(rooms.Refused(errors.message(errors.NameTaken)))
+    [name, ..rest] ->
+      case rooms.join(ctx, session, game_id, name) {
+        Error(rooms.Refused(sentence)) ->
+          case sentence == errors.message(errors.NameTaken) {
+            True -> join_as(ctx, session, game_id, list.take(rest, 3))
+            False -> Error(rooms.Refused(sentence))
+          }
+        other -> other
+      }
+  }
+}
+
+/// The name a seat is taken under. A signed-in browser plays as its
+/// account's username (the page does not ask it for a name); a guest plays
+/// under the name it typed.
+fn seat_name(ctx: Ctx, session: Session, typed: String) -> String {
+  case session.user_id {
+    Some(user_id) ->
+      case ctx.auth.user(user_id) {
+        Some(user) ->
+          case user.name {
+            Some(name) -> name
+            None -> typed
+          }
+        None -> typed
+      }
+    None -> typed
+  }
 }
 
 pub fn claim_json(

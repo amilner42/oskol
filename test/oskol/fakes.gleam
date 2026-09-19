@@ -142,7 +142,7 @@ pub fn with_copy(ctx: Ctx, words: prose.Copy) -> Ctx {
 pub fn sample_copy() -> prose.Copy {
   prose.Copy(
     title: "Play backgammon online with a friend",
-    description: "Backgammon for two, free, no accounts.",
+    description: "Backgammon for two, free, no account needed.",
     intro: "The race game with the doubling cube.",
     rules: ["Fifteen checkers each.", "Bear them all off."],
     faq: [#("Do we need accounts?", "No.")],

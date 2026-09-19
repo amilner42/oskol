@@ -34,16 +34,19 @@
 //// the account gained, and the fresh guest rides back to Elixir in
 //// `SignedIn.guest_id` to be written into the cookie.
 
-import gleam/json
+import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-import oskol/caps/auth.{type Pending, CodeDead, CodeOk, CodeWrong}
+import oskol/caps/auth.{
+  type Pending, type User, CodeDead, CodeOk, CodeWrong, User,
+}
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
 import oskol/core/session.{type Session}
 import oskol/guests/identity
+import oskol/guests/username
 
 /// How long a sign-in is good for. Long enough to go and find the mail,
 /// short enough that a link left in an inbox is not a key.
@@ -83,13 +86,13 @@ pub fn start_json(
     "That doesn't look like an email address",
   )
 
-  case ctx.auth.enabled() && within_limits(ctx, session, address) {
+  case within_limits(ctx, session, address) {
     True -> {
       let issued =
         ctx.auth.issue_token(address, session.guest_id, local_path(next), ttl_s)
       ctx.auth.send_mail(address, issued.token, issued.code)
     }
-    // Switched off, or asked too often: the same silence either way.
+    // Asked too often: the same answer, and silence.
     False -> Nil
   }
 
@@ -124,24 +127,16 @@ fn within_limits(ctx: Ctx, session: Session, address: String) -> Bool {
 /// A visitor who lands here with a live token is one button away from being
 /// signed in, and that button is a POST.
 pub fn link_flags(ctx: Ctx, token: String) -> String {
-  case ctx.auth.enabled() {
-    False -> expired_flags()
-    True ->
-      case ctx.auth.verify_token(token) {
-        Some(pending) ->
-          json.object([
-            #("state", json.string("confirm")),
-            #("email", json.string(pending.email)),
-            #("next", json.string(where_next(pending.next))),
-          ])
-          |> json.to_string
-        None -> expired_flags()
-      }
+  case ctx.auth.verify_token(token) {
+    Some(pending) ->
+      json.object([
+        #("state", json.string("confirm")),
+        #("email", json.string(pending.email)),
+        #("next", json.string(where_next(pending.next))),
+      ])
+      |> json.to_string
+    None -> json.object([#("state", json.string("expired"))]) |> json.to_string
   }
-}
-
-fn expired_flags() -> String {
-  json.object([#("state", json.string("expired"))]) |> json.to_string
 }
 
 // ---------- POST /papi/auth/link ----------
@@ -172,13 +167,9 @@ fn refused(error: ApiError) -> SignedIn {
 
 /// Spend the token the mailed link carried and sign this browser in.
 pub fn link_json(ctx: Ctx, session: Session, token: String) -> SignedIn {
-  case ctx.auth.enabled() {
-    False -> refused(dead())
-    True ->
-      case ctx.auth.consume_token(token) {
-        Some(pending) -> sign_in(ctx, session, pending)
-        None -> refused(dead())
-      }
+  case ctx.auth.consume_token(token) {
+    Some(pending) -> sign_in(ctx, session, pending)
+    None -> refused(dead())
   }
 }
 
@@ -196,9 +187,7 @@ pub fn code_json(
   let address = normalise_email(email)
   let digits = only_digits(code)
 
-  case
-    ctx.auth.enabled() && address_like(address) && string.length(digits) == 6
-  {
+  case address_like(address) && string.length(digits) == 6 {
     False -> refused(dead())
     True ->
       case
@@ -282,6 +271,9 @@ fn sign_in(ctx: Ctx, session: Session, pending: Pending) -> SignedIn {
 
     Some(guest_id) -> {
       let user = ctx.auth.find_or_create_user(pending.email)
+      // Read before the stamp: the stamp moves this browser's guest row
+      // (and the name on it) to a fresh id.
+      let remembered = identity.remembered_name(ctx, session)
       let fresh = ctx.guests.mint()
       let #(saved, signed_in_as) = case
         ctx.auth.stamp_seats(guest_id, fresh, user.id)
@@ -293,6 +285,12 @@ fn sign_in(ctx: Ctx, session: Session, pending: Pending) -> SignedIn {
         Error(Nil) -> #(0, guest_id)
       }
       ctx.auth.bind_guest(signed_in_as, user.id)
+      // A new account gets its username now, so nothing ever has to show
+      // its email: the name it played under, or that with a number.
+      let #(user, is_new) = case user.name {
+        Some(_) -> #(user, False)
+        None -> #(named(ctx, user, remembered), True)
+      }
 
       SignedIn(
         renew: True,
@@ -307,17 +305,64 @@ fn sign_in(ctx: Ctx, session: Session, pending: Pending) -> SignedIn {
           envelope.ok([
             #("saved", json.int(saved)),
             #("next", json.string(where_next(pending.next))),
-            #(
-              "user",
-              json.object([
-                #("email", json.string(user.email)),
-                #("name", nullable(user.name)),
-              ]),
-            ),
+            #("user", user_json(user)),
+            // True when this sign-in made the account: the page says which
+            // username it was given, and offers to change it.
+            #("new", json.bool(is_new)),
           ]),
         ),
       )
     }
+  }
+}
+
+/// The account as the client sees it. Its email is here because it is
+/// the account's own browser asking; nothing puts it on screen for others.
+fn user_json(user: User) -> Json {
+  json.object([
+    #("email", json.string(user.email)),
+    #("name", nullable(user.name)),
+  ])
+}
+
+/// A new account's username: the first of `username.candidates` no other
+/// account has. The last candidate carries a piece of the account's id,
+/// so in practice a new account is always named.
+fn named(ctx: Ctx, user: User, remembered: Option(String)) -> User {
+  let taken =
+    list.find(username.candidates_for(remembered, user.id), fn(candidate) {
+      ctx.auth.claim_name(user.id, candidate) == Ok(Nil)
+    })
+  case taken {
+    Ok(name) -> User(..user, name: Some(name))
+    Error(Nil) -> user
+  }
+}
+
+// ---------- POST /papi/me/name ----------
+
+/// A signed-in browser renames its account. The same rules as a display
+/// name, and unique regardless of case.
+pub fn name_json(
+  ctx: Ctx,
+  session: Session,
+  typed: String,
+) -> Result(String, ApiError) {
+  case session.user_id {
+    None -> Error(error.validation_failed("Sign in first."))
+    Some(user_id) ->
+      case username.clean(typed) {
+        Error(sentence) -> Error(error.validation_failed(sentence))
+        Ok(name) ->
+          case ctx.auth.claim_name(user_id, name) {
+            Error(Nil) -> Error(error.validation_failed("That name is taken."))
+            Ok(Nil) ->
+              case ctx.auth.user(user_id) {
+                Some(user) -> Ok(envelope.ok([#("user", user_json(user))]))
+                None -> Error(error.validation_failed("Sign in first."))
+              }
+          }
+      }
   }
 }
 
