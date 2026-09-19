@@ -725,8 +725,8 @@ defmodule OskolWeb.Api.LandingApiTest do
       assert [%{"guest_id" => ^guest_id}] = game_row(game_id).players
     end
 
-    test "the users table exists, ships empty, and guests.user_id is nullable" do
-      assert Repo.all(Guests.User) == []
+    test "a guest is nobody's account until they sign in" do
+      assert Repo.all(Oskol.Auth.User) == []
 
       guest_id = new_guest_id()
       :ok = Guests.save_name(guest_id, "Nadia")

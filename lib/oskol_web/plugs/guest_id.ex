@@ -33,6 +33,9 @@ defmodule OskolWeb.Plugs.GuestId do
 
   @cookie "_oskol_guest"
   @one_year 60 * 60 * 24 * 365
+  # The cookie is the credential that holds a seat, so it does not travel
+  # over plain http anywhere but development (http on localhost).
+  @secure Mix.env() == :prod
 
   def init(opts), do: opts
 
@@ -49,7 +52,12 @@ defmodule OskolWeb.Plugs.GuestId do
 
     conn
     # Set on every response: a returning visit renews the year.
-    |> put_resp_cookie(@cookie, id, max_age: @one_year, http_only: true, same_site: "Lax")
+    |> put_resp_cookie(@cookie, id,
+      max_age: @one_year,
+      http_only: true,
+      same_site: "Lax",
+      secure: @secure
+    )
     |> put_session(:guest_id, id)
   end
 end

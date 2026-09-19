@@ -22,6 +22,16 @@ config :oskol, OskolWeb.Endpoint,
   pubsub_server: Oskol.PubSub,
   live_view: [signing_salt: "rNcvke8W"]
 
+# Mail. One mailer, one mail (the sign-in link and code): Postmark in
+# production, the local mailbox in development, nothing at all under test.
+# Swoosh's HTTP goes through Req, which is already here for the analysis
+# engine, so no second HTTP client comes along.
+config :swoosh, api_client: Swoosh.ApiClient.Req
+
+config :oskol, Oskol.Mailer, adapter: Swoosh.Adapters.Local
+
+config :oskol, :mail_from, "hello@oskol.io"
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
