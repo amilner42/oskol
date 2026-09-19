@@ -6,8 +6,8 @@ defmodule Oskol.Guests do
   display name they last played under, prefilled into the create and join
   forms. No signup, nothing visible.
 
-  `users` is a deliberate skeleton (it ships empty): `guests.user_id` is the
-  future claim path for a guest who eventually creates an account.
+  `guests.user_id` is where this browser becomes an account: `Oskol.Auth`
+  owns `users` and writes that column on sign-in, and clears it on logout.
 
   Guest bookkeeping must never break a page: every write here rescues and
   degrades to "the site just doesn't remember you", the same posture as
@@ -21,15 +21,6 @@ defmodule Oskol.Guests do
 
   alias Oskol.Repo
 
-  defmodule User do
-    @moduledoc "Placeholder for future accounts. Ships empty."
-    use Ecto.Schema
-
-    schema "users" do
-      timestamps(updated_at: false, type: :utc_datetime_usec)
-    end
-  end
-
   defmodule Guest do
     @moduledoc "One visitor: opaque id, last display name, last visit."
     use Ecto.Schema
@@ -42,7 +33,8 @@ defmodule Oskol.Guests do
       # decided in Gleam (src/oskol/guests/prefs.gleam).
       field(:prefs, :map, default: %{})
       field(:last_seen_at, :utc_datetime_usec)
-      belongs_to(:user, Oskol.Guests.User)
+      # The account signed in on this browser, if any (Oskol.Auth).
+      belongs_to(:user, Oskol.Auth.User, type: :binary_id)
 
       timestamps(updated_at: false, type: :utc_datetime_usec)
     end
