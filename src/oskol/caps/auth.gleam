@@ -73,6 +73,24 @@ pub type AuthCaps {
     /// One account, by id. `None` for an id nothing answers to (a row
     /// deleted under a live session).
     user: fn(String) -> Option(User),
+    /// Sign-in's one write, and the only thing that hands seats to an
+    /// account: `stamp_seats(old_guest, new_guest, user_id)`.
+    ///
+    /// In one ordered write (behind everything the rooms have queued, so it
+    /// cannot race a room rewriting its seats):
+    ///
+    ///   * every seat that guest holds, in a room of any status, that no
+    ///     account owns yet, becomes this account's -- except in a room
+    ///     where the account already has a seat (one person, one seat per
+    ///     table, however many devices they signed in on);
+    ///   * this browser's guest row and those seats move to `new_guest`, so
+    ///     the id anyone may have learned before the sign-in is worth
+    ///     nothing afterwards.
+    ///
+    /// Answers how many seats the account gained, or `Error(Nil)` when the
+    /// write did not land (nothing moved: the browser keeps its id). Rooms
+    /// that are live are told, so memory and disk agree.
+    stamp_seats: fn(String, String, String) -> Result(Int, Nil),
     /// This browser is signed in as that account (`guests.user_id`).
     bind_guest: fn(String, String) -> Nil,
     /// This browser is a guest again.
@@ -94,6 +112,7 @@ pub fn stub() -> AuthCaps {
     check_code: fn(_, _, _, _) { panic as "stub auth.check_code" },
     find_or_create_user: fn(_) { panic as "stub auth.find_or_create_user" },
     user: fn(_) { panic as "stub auth.user" },
+    stamp_seats: fn(_, _, _) { panic as "stub auth.stamp_seats" },
     bind_guest: fn(_, _) { panic as "stub auth.bind_guest" },
     unbind_guest: fn(_) { panic as "stub auth.unbind_guest" },
     disconnect: fn(_) { panic as "stub auth.disconnect" },

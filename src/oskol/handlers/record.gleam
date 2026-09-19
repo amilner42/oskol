@@ -27,7 +27,7 @@ import gleam/dict
 import gleam/dynamic/decode
 import gleam/json
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import oskol/caps/records.{type Setup}
@@ -37,6 +37,7 @@ import oskol/core/error.{type ApiError}
 import oskol/core/raw
 import oskol/core/session.{type Session}
 import oskol/handlers/rooms
+import oskol/rooms/seat
 
 /// Nothing to read. The same answer for a room that is not there and a
 /// slug that is not its game, so a caller learns nothing about a room that
@@ -150,18 +151,29 @@ fn head_fields(setup: Setup) -> Result(List(#(String, json.Json)), Nil) {
 }
 
 /// Which way the board faces for a room read from its rows: the seat this
-/// guest holds, if any, else the first. The same call `viewer` makes of a
-/// live room, off the seats the room was persisted with.
+/// caller holds, if any, else the first. Held means the one holder rule
+/// (`rooms/seat.holder`), the same as a live room: an owned seat is its
+/// account's from any browser, and nobody else's whatever guest is on it.
 fn stored_viewer(setup: Setup, session: Session) -> #(String, Bool) {
-  let held = case session.guest_id {
-    None -> Error(Nil)
-    Some(guest_id) ->
-      list.find(setup.seats, fn(s) { s.2 != "" && s.2 == guest_id })
+  let seats =
+    list.map(setup.seats, fn(s) {
+      seat.Seat(
+        player_id: s.0,
+        guest_id: some_unless_empty(s.2),
+        user_id: some_unless_empty(s.3),
+      )
+    })
+  case seat.held_by(seats, session), setup.seats {
+    Some(player_id), _ -> #(player_id, True)
+    None, [first, ..] -> #(first.0, False)
+    None, [] -> #("", False)
   }
-  case held, setup.seats {
-    Ok(seat), _ -> #(seat.0, True)
-    Error(_), [first, ..] -> #(first.0, False)
-    Error(_), [] -> #("", False)
+}
+
+fn some_unless_empty(value: String) -> Option(String) {
+  case value {
+    "" -> None
+    _ -> Some(value)
   }
 }
 
@@ -259,16 +271,18 @@ pub fn seat(
   }
 }
 
-/// The running game behind the seat this session holds, if it holds one.
-/// A session with no guest id holds nothing, and never asks the room.
+/// The running game behind the seat this session holds, if it holds one --
+/// by guest, or by the account that owns the seat. A session with neither
+/// holds nothing, and never asks the room.
 fn seated_game(
   ctx: Ctx,
   game_id: String,
   session: Session,
 ) -> Result(#(String, Instance), Nil) {
-  case session.guest_id {
-    None -> Error(Nil)
-    Some(guest_id) ->
-      ctx.rooms.seated_game(game_id, guest_id) |> result.replace_error(Nil)
+  case session.guest_id, session.user_id {
+    None, None -> Error(Nil)
+    _, _ ->
+      ctx.rooms.seated_game(game_id, session.guest_id, session.user_id)
+      |> result.replace_error(Nil)
   }
 }

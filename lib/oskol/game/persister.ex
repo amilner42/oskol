@@ -72,6 +72,32 @@ defmodule Oskol.Game.Persister do
     GenServer.cast(__MODULE__, {:write, :game_finished, {game_id, winners}})
   end
 
+  @doc """
+  A browser signed in: hand its seats to the account and move them to its
+  fresh guest id (`Oskol.Auth.adopt_seats/3`, one transaction with the
+  guest row).
+
+  The one write here that is a `call`, and the one a room did not ask for.
+  It is a call because the answer — how many seats the account gained, and
+  which rooms changed — is what the page says and what tells the live rooms;
+  and it goes through the persister rather than straight to the database so
+  that it lands *behind* everything the rooms have already queued. A direct
+  UPDATE would race a room rewriting `players` for a seat claim, and the
+  loser of that race silently unowns a seat.
+  """
+  def stamp_seats(old_guest_id, new_guest_id, user_id) do
+    GenServer.call(
+      __MODULE__,
+      {:stamp_seats, old_guest_id, new_guest_id, user_id},
+      :timer.seconds(60)
+    )
+  catch
+    # Still queued behind the rooms' writes, so it will most likely land:
+    # the caller treats the browser as moved (the other choice, keeping the
+    # old id, would strand every seat on an id the write then hands away).
+    :exit, {:timeout, _} -> :pending
+  end
+
   @doc "Wait until every write cast before this call has been handled."
   def flush do
     GenServer.call(__MODULE__, :flush, :timer.seconds(30))
@@ -98,6 +124,21 @@ defmodule Oskol.Game.Persister do
   end
 
   @impl true
+  def handle_call({:stamp_seats, old_guest_id, new_guest_id, user_id}, _from, state) do
+    # A failed sign-in write must not take the persister down with it: its
+    # mailbox is every room's queued write-behind.
+    reply =
+      try do
+        Oskol.Auth.adopt_seats(old_guest_id, new_guest_id, user_id)
+      rescue
+        e ->
+          Logger.error("SIGN-IN STAMP FAILED: #{Exception.message(e)}")
+          :error
+      end
+
+    {:reply, reply, state}
+  end
+
   def handle_call(:flush, _from, state), do: {:reply, :ok, state}
 
   defp write(op, args) do

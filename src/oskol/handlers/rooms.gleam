@@ -128,7 +128,9 @@ pub fn create(
           case ctx.rooms.configure(game_id, setup) {
             Error(reason) -> Error(Rejected(errors.message(reason)))
             Ok(Nil) ->
-              case ctx.rooms.join(game_id, name, session.guest_id) {
+              case
+                ctx.rooms.join(game_id, name, session.guest_id, session.user_id)
+              {
                 Error(reason) -> Error(Rejected(errors.message(reason)))
                 Ok(seat) -> {
                   identity.remember(ctx, session, name)
@@ -156,7 +158,9 @@ pub fn join(
         Some(_) -> {
           ctx.rooms.subscribe(game_id)
 
-          case ctx.rooms.join(game_id, name, session.guest_id) {
+          case
+            ctx.rooms.join(game_id, name, session.guest_id, session.user_id)
+          {
             Ok(seat) -> {
               identity.remember(ctx, session, name)
               Ok(seated(game_id, name, seat))
@@ -191,7 +195,9 @@ pub fn claim(
     Some(table) -> {
       ctx.rooms.subscribe(game_id)
 
-      case ctx.rooms.claim(game_id, player_id, session.guest_id) {
+      case
+        ctx.rooms.claim(game_id, player_id, session.guest_id, session.user_id)
+      {
         Ok(seat) -> Ok(seated(game_id, seat_name(table, player_id), seat))
         Error(reason) -> Error(Refused(errors.message(reason)))
       }
@@ -202,8 +208,8 @@ pub fn claim(
 /// A reclaimed seat keeps the name it was taken under; the room knows it,
 /// and it is not ours to change.
 fn seat_name(table: Table, player_id: String) -> String {
-  case list.key_find(table.disconnected, player_id) {
-    Ok(name) -> name
+  case list.find(table.disconnected, fn(seat) { seat.0 == player_id }) {
+    Ok(seat) -> seat.1
     Error(_) -> ""
   }
 }

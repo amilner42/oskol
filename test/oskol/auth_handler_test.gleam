@@ -10,6 +10,7 @@ import gleam/string
 import oskol/caps/auth.{
   AuthCaps, CodeDead, CodeOk, CodeWrong, Issued, Pending, User,
 }
+import oskol/caps/guests as guests_caps
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
 import oskol/fakes
@@ -177,16 +178,31 @@ pub fn a_link_that_is_opened_is_never_spent_test() {
 
 // ---------- POST /papi/auth/link ----------
 
-fn binding(ctx: Ctx, expect: #(String, String)) -> Ctx {
+/// Caps for a sign-in that works: the account is made, the browser's seats
+/// are stamped onto it, its guest is rotated to the freshly minted id, and
+/// the new guest is the one bound to the account. `expect` is the guest the
+/// browser arrived with and the account id it leaves with; `saved` is how
+/// many seats the stamp took.
+fn binding(ctx: Ctx, expect: #(String, String), saved: Int) -> Ctx {
   Ctx(
     ..ctx,
+    guests: guests_caps.GuestsCaps(..ctx.guests, mint: fn() { fakes.minted_id }),
     auth: AuthCaps(
       ..ctx.auth,
       find_or_create_user: fn(email) {
         User(id: expect.1, email: email, name: None)
       },
+      stamp_seats: fn(old_guest, new_guest, user_id) {
+        // The seats move from the guest that played them to the fresh id,
+        // and to the account.
+        assert old_guest == expect.0
+        assert new_guest == fakes.minted_id
+        assert user_id == expect.1
+        Ok(saved)
+      },
+      // The account is bound to the *new* guest: the old id is finished.
       bind_guest: fn(guest_id, user_id) {
-        assert #(guest_id, user_id) == expect
+        assert #(guest_id, user_id) == #(fakes.minted_id, expect.1)
         Nil
       },
     ),
@@ -209,17 +225,67 @@ pub fn the_button_on_the_page_spends_the_token_and_signs_the_browser_in_test() {
         }),
       )
     }
-    |> binding(#("g1", "user-uuid"))
+    |> binding(#("g1", "user-uuid"), 3)
 
-  let #(signed_in, result) = handler.link_json(ctx, fakes.guest("g1"), "tok")
-  let assert Ok(body) = result
+  let signed_in = handler.link_json(ctx, fakes.guest("g1"), "tok")
+  let assert Ok(body) = signed_in.body
 
   // True is Elixir's cue to renew the session cookie.
-  assert signed_in
-  // No seat is stamped yet: that is the next piece of work.
-  assert string.contains(body, "\"saved\":0")
+  assert signed_in.renew
+  // And this is the cookie it writes: the browser leaves with a fresh
+  // guest id, because the one it arrived with may have been learned.
+  assert signed_in.guest_id == Some(fakes.minted_id)
+  // Every socket it opened under the old id is dropped once the response is
+  // sent, so each comes back on the new cookie as the account.
+  assert signed_in.drop_sockets == Some("g1")
+  // The games this browser played came with it.
+  assert string.contains(body, "\"saved\":3")
   assert string.contains(body, "\"next\":\"/backgammon/abc123\"")
   assert string.contains(body, "\"email\":\"her@example.com\"")
+}
+
+pub fn a_stamp_that_did_not_land_signs_in_on_the_id_the_browser_has_test() {
+  let ctx =
+    switched(True)
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        guests: guests_caps.GuestsCaps(..ctx.guests, mint: fn() {
+          fakes.minted_id
+        }),
+        auth: AuthCaps(
+          ..ctx.auth,
+          consume_token: fn(_) {
+            Some(Pending(
+              email: "her@example.com",
+              guest_id: Some("g1"),
+              next: None,
+            ))
+          },
+          find_or_create_user: fn(email) {
+            User(id: "user-uuid", email: email, name: None)
+          },
+          // The one write failed and rolled back: no seat moved.
+          stamp_seats: fn(_, _, _) { Error(Nil) },
+          // So the account goes on the id the browser already has...
+          bind_guest: fn(guest_id, user_id) {
+            assert #(guest_id, user_id) == #("g1", "user-uuid")
+            Nil
+          },
+        ),
+      )
+    }
+
+  let signed_in = handler.link_json(ctx, fakes.guest("g1"), "tok")
+  let assert Ok(body) = signed_in.body
+
+  // ...and no new cookie is written: rotating to an id nothing moved to
+  // would strand the browser's games on the old one.
+  assert signed_in.guest_id == None
+  assert signed_in.renew
+  assert string.contains(body, "\"saved\":0")
+  // Its old sockets still come back, now as the account.
+  assert signed_in.drop_sockets == Some("g1")
 }
 
 pub fn a_token_already_spent_signs_nobody_in_test() {
@@ -229,18 +295,19 @@ pub fn a_token_already_spent_signs_nobody_in_test() {
       Ctx(..ctx, auth: AuthCaps(..ctx.auth, consume_token: fn(_) { None }))
     }
 
-  let #(signed_in, result) = handler.link_json(ctx, fakes.guest("g1"), "tok")
+  let signed_in = handler.link_json(ctx, fakes.guest("g1"), "tok")
 
-  assert !signed_in
-  assert refusal_is_generic(result)
+  assert !signed_in.renew
+  // Nothing was stamped and no cookie is rewritten.
+  assert signed_in.guest_id == None
+  assert refusal_is_generic(signed_in.body)
 }
 
 pub fn a_link_signs_nobody_in_while_the_flow_is_off_test() {
-  let #(signed_in, result) =
-    handler.link_json(switched(False), fakes.guest("g1"), "tok")
+  let signed_in = handler.link_json(switched(False), fakes.guest("g1"), "tok")
 
-  assert !signed_in
-  assert refusal_is_generic(result)
+  assert !signed_in.renew
+  assert refusal_is_generic(signed_in.body)
 }
 
 // ---------- POST /papi/auth/code ----------
@@ -266,14 +333,15 @@ pub fn the_code_from_the_mail_signs_in_the_browser_that_asked_test() {
     |> checking(
       CodeOk(Pending(email: "her@example.com", guest_id: Some("g1"), next: None)),
     )
-    |> binding(#("g1", "user-uuid"))
+    |> binding(#("g1", "user-uuid"), 1)
 
-  let #(signed_in, result) =
+  let signed_in =
     handler.code_json(ctx, fakes.guest("g1"), "Her@Example.com", "482 913")
-  let assert Ok(body) = result
+  let assert Ok(body) = signed_in.body
 
-  assert signed_in
-  assert string.contains(body, "\"saved\":0")
+  assert signed_in.renew
+  assert signed_in.guest_id == Some(fakes.minted_id)
+  assert string.contains(body, "\"saved\":1")
   // Nowhere in particular to go back to.
   assert string.contains(body, "\"next\":\"/\"")
 }
@@ -281,11 +349,11 @@ pub fn the_code_from_the_mail_signs_in_the_browser_that_asked_test() {
 pub fn a_wrong_code_says_so_test() {
   let ctx = switched(True) |> checking(CodeWrong)
 
-  let #(signed_in, result) =
+  let signed_in =
     handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "482913")
 
-  assert !signed_in
-  let assert Error(err) = result
+  assert !signed_in.renew
+  let assert Error(err) = signed_in.body
   assert error.status(err) == 422
   assert string.contains(error.message(err), "not right")
 }
@@ -293,20 +361,20 @@ pub fn a_wrong_code_says_so_test() {
 pub fn a_code_out_of_tries_reads_like_an_expired_one_test() {
   let ctx = switched(True) |> checking(CodeDead)
 
-  let #(_, result) =
+  let signed_in =
     handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "482913")
 
-  assert refusal_is_generic(result)
+  assert refusal_is_generic(signed_in.body)
 }
 
 pub fn something_that_is_not_six_digits_is_never_looked_up_test() {
   // check_code is left panicking: a short code never reaches the row.
   let ctx = switched(True)
 
-  let #(_, result) =
+  let signed_in =
     handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "4821")
 
-  assert refusal_is_generic(result)
+  assert refusal_is_generic(signed_in.body)
 }
 
 // ---------- POST /papi/auth/logout ----------

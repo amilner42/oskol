@@ -63,13 +63,18 @@ pub fn with_active_rooms(ctx: Ctx, rooms: List(room.ActiveRoom)) -> Ctx {
     ..ctx,
     persistence: persistence_caps.PersistenceCaps(
       ..ctx.persistence,
-      seated_rooms: fn(_) { rooms },
+      seated_rooms: fn(_, _) { rooms },
     ),
   )
 }
 
 pub fn guest(id: String) -> Session {
   Session(guest_id: Some(id), user_id: option.None)
+}
+
+/// A browser signed in: its guest cookie, and the account on it.
+pub fn signed_in(id: String, user_id: String) -> Session {
+  Session(guest_id: Some(id), user_id: Some(user_id))
 }
 
 pub fn no_guest() -> Session {

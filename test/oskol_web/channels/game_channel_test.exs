@@ -139,6 +139,27 @@ defmodule OskolWeb.GameChannelTest do
     assert {:error, %{reason: "unauthorized"}} = try_join(game_id, %{guest_id: "Alice"})
   end
 
+  test "an owned seat answers to its account, from any browser and no other" do
+    # The seat was taken while signed in, so it is the account's. The
+    # socket carries both ids and the room asks the holder rule.
+    %{game_id: game_id} = lobby()
+    user_id = Ecto.UUID.generate()
+    {:ok, p2, _} = Game.join_game(game_id, "Bob", nil, "his-laptop", user_id)
+
+    {:ok, reply, _} =
+      try_join(game_id, %{guest_id: "a-phone-we-have-never-seen", user_id: user_id})
+
+    assert reply.payload.player_id == p2
+
+    # The browser that took it, logged out (the socket carries its guest and
+    # no account), is refused at its own table: the seat is the account's.
+    assert {:error, %{reason: "unauthorized"}} = try_join(game_id, %{guest_id: "his-laptop"})
+
+    # And so is somebody else's account on that same browser.
+    assert {:error, %{reason: "unauthorized"}} =
+             try_join(game_id, %{guest_id: "his-laptop", user_id: Ecto.UUID.generate()})
+  end
+
   test "a guest who held a seat stops getting in once it is claimed away" do
     # The away player's browser: a friend took the seat back from the invite
     # link, so it is theirs now and the old browser is a stranger to it.

@@ -203,6 +203,42 @@ defmodule Oskol.Auth do
     :ok
   end
 
+  @doc """
+  What a sign-in does to this browser's games, in one transaction:
+
+    * **the stamp.** Every seat the old guest holds that no account owns
+      yet becomes `user_id`'s, in rooms of every status — a finished game
+      is part of what an account keeps. At a table where this account
+      already owns a seat the other is not stamped (one person, one seat
+      per table), but it still follows the browser to its fresh guest id.
+    * **the rotation.** The guest row moves to `new_guest_id` (name,
+      preferences, account, last seen), and those seats' `guest_id` moves
+      with it. The cookie is the credential, and the id this browser
+      arrived with may have been learned by somebody; after a sign-in it
+      opens nothing.
+
+  Returns `{:ok, {seats_stamped, game_ids}}`, or `:error` when the
+  transaction rolled back (nothing moved). It is called through
+  `Oskol.Game.Persister.stamp_seats/3`, never directly, so it lands behind
+  everything the rooms have queued; the caller then tells the live rooms
+  (`Oskol.Game.GameServer.stamp/4`) so memory agrees with the rows.
+  """
+  def adopt_seats(old_guest_id, new_guest_id, user_id)
+      when is_binary(old_guest_id) and is_binary(new_guest_id) and is_binary(user_id) do
+    Repo.transaction(fn ->
+      Oskol.Guests.move(old_guest_id, new_guest_id)
+      Oskol.Persistence.stamp_seats(old_guest_id, new_guest_id, user_id)
+    end)
+    |> case do
+      {:ok, result} -> {:ok, result}
+      # Rolled back: nothing moved. The sign-in keeps the browser's id and
+      # signs it in on that; the next sign-in stamps what this one did not.
+      {:error, _} -> :error
+    end
+  end
+
+  def adopt_seats(_, _, _), do: {:ok, {0, []}}
+
   @doc "This browser is a guest again. The seats it stamped stay the account's."
   def unbind_guest(guest_id) when is_binary(guest_id) do
     from(g in Oskol.Guests.Guest, where: g.id == ^guest_id)

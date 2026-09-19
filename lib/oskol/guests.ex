@@ -62,6 +62,47 @@ defmodule Oskol.Guests do
 
   def touch(_), do: nil
 
+  @doc """
+  Move this browser's guest row to a fresh id, carrying everything on it:
+  the name it last played under, its preferences, the account it is signed
+  into, when it was last seen.
+
+  Signing in mints a new id precisely so the old one is worth nothing
+  afterwards, so the old row goes. A browser with no row yet simply gets
+  one under the new id. Called inside `Oskol.Auth.adopt_seats/3`'s
+  transaction, which moves its seats in the same breath — never on its own.
+  """
+  def move(old_id, new_id) when is_binary(old_id) and is_binary(new_id) and old_id != new_id do
+    now = DateTime.utc_now()
+    old = Repo.get(Guest, old_id)
+
+    name = old && old.name
+    prefs = (old && old.prefs) || %{}
+
+    # The fresh row may already exist: a sign-in whose write was still
+    # queued when it answered binds the account to the fresh id first. The
+    # name and the board preferences still come across; the account on it
+    # is left as it is.
+    {:ok, _} =
+      Repo.insert(
+        %Guest{
+          id: new_id,
+          name: name,
+          prefs: prefs,
+          user_id: old && old.user_id,
+          last_seen_at: now
+        },
+        on_conflict: [set: [name: name, prefs: prefs, last_seen_at: now]],
+        conflict_target: :id
+      )
+
+    if old, do: Repo.delete!(old)
+
+    :ok
+  end
+
+  def move(_, _), do: :ok
+
   @doc "Remember the name this guest played under. Last writer wins."
   def save_name(guest_id, name) when is_binary(guest_id) and is_binary(name) do
     now = DateTime.utc_now()

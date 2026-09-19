@@ -22,9 +22,13 @@ defmodule OskolWeb.GameChannel do
 
   defp join_room(game_id, socket) do
     try do
-      # The guest cookie is the whole credential, and it reached the socket
-      # with the websocket's own request (`OskolWeb.UserSocket`): a browser
-      # holds the seats its guest took, and nothing in a URL opens one. A
+      # The guest cookie is the credential, and it reached the socket with
+      # the websocket's own request (`OskolWeb.UserSocket`), along with the
+      # account signed in on that browser. Which seat the pair opens is the
+      # holder rule (`src/oskol/rooms/seat.gleam`): an owned seat answers to
+      # its account and to nothing else, so a browser that logged out is
+      # refused at a table it was playing a moment ago; an unowned seat
+      # answers to the guest that took it. Nothing in a URL opens either. A
       # visitor who holds no seat here is refused and goes through the
       # invite link, which decides what (if anything) they may sit at.
       #
@@ -39,7 +43,13 @@ defmodule OskolWeb.GameChannel do
       # that named no client is its own.
       client = socket.assigns[:client] || socket.transport_pid
 
-      case GameServer.attach(game_id, socket.assigns[:guest_id], self(), client) do
+      case GameServer.attach(
+             game_id,
+             socket.assigns[:guest_id],
+             self(),
+             client,
+             socket.assigns[:user_id]
+           ) do
         {:ok, player_id, state} ->
           Phoenix.PubSub.subscribe(Oskol.PubSub, "game:#{game_id}")
           socket = socket |> assign(:game_id, game_id) |> assign(:player_id, player_id)

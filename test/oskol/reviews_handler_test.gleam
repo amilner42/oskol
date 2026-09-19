@@ -132,10 +132,15 @@ fn setup_of(log: GameLog) -> records_caps.Setup {
     clock: log.clock,
     seed: log.seed,
     seats: list.index_map(log.seats, fn(seat, index) {
-      #(seat.0, seat.1, case index {
-        0 -> "g1"
-        _ -> "g2"
-      })
+      #(
+        seat.0,
+        seat.1,
+        case index {
+          0 -> "g1"
+          _ -> "g2"
+        },
+        "",
+      )
     }),
     finished: True,
     log_length: 0,
@@ -797,10 +802,10 @@ fn seated(ctx: Ctx) -> Ctx {
     ..ctx,
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
-      seated_game: fn(_, guest_id) {
-        case guest_id {
-          "g1" -> Ok(#("p1", game))
-          _ -> Error(errors.NoSeat)
+      seated_game: fn(_, guest_id, user_id) {
+        case guest_id, user_id {
+          Some("g1"), _ | _, Some("u1") -> Ok(#("p1", game))
+          _, _ -> Error(errors.NoSeat)
         }
       },
       game: fn(_) { Ok(game) },

@@ -22,7 +22,7 @@ defmodule OskolWeb.Router do
   pipeline :papi do
     plug :accepts, ["json"]
     plug :fetch_session
-    plug OskolWeb.Plugs.GuestId
+    plug OskolWeb.Plugs.GuestId, renew: false
     plug :protect_from_forgery
   end
 

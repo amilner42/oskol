@@ -179,6 +179,25 @@ defmodule OskolWeb.Api.AuthApiTest do
   # ---------- POST /papi/auth/link ----------
 
   describe "POST /papi/auth/link" do
+    test "drops every socket the browser opened before it, so they come back as the account",
+         %{conn: conn} do
+      guest = new_guest_id()
+      signed_in = conn |> as_guest(guest) |> with_csrf()
+      %{token: token} = start_sign_in(signed_in, "her@example.com")
+
+      # A socket's id is "guest:<id>" (UserSocket.id/1); dropping those is
+      # a broadcast of "disconnect" on that topic.
+      OskolWeb.Endpoint.subscribe("guest:" <> guest)
+      post(signed_in, ~p"/papi/auth/link", %{"token" => token})
+
+      # After the response, not during it: a socket dropped before the new
+      # cookie arrived would reconnect on the old one.
+      refute_received %Phoenix.Socket.Broadcast{event: "disconnect"}
+
+      assert_receive %Phoenix.Socket.Broadcast{topic: "guest:" <> ^guest, event: "disconnect"},
+                     2_000
+    end
+
     test "signs in the browser that posted, once, and renews its session", %{conn: conn} do
       guest = new_guest_id()
       signed_in = conn |> as_guest(guest) |> with_csrf()
@@ -197,9 +216,14 @@ defmodule OskolWeb.Api.AuthApiTest do
       assert %{"ok" => true, "saved" => 0, "next" => "/", "user" => user} = body
       assert user["email"] == "her@example.com"
 
-      # The browser's own guest row is the account's now.
+      # The browser is handed a fresh guest id with the account on it, and
+      # the id it arrived with is worth nothing any more: a guest id learned
+      # before the sign-in (a shared laptop, dev tools) opens nothing after.
       account = Repo.one(Auth.User)
-      assert Auth.user_id_of_guest(guest) == account.id
+      rotated = rotated_guest(conn)
+      assert rotated != guest
+      assert Auth.user_id_of_guest(rotated) == account.id
+      assert Auth.user_id_of_guest(guest) == nil
 
       # And the token is spent: opening the mail twice signs in once.
       assert %{"ok" => false} =
@@ -229,13 +253,11 @@ defmodule OskolWeb.Api.AuthApiTest do
       laptop = conn |> as_guest(guest) |> with_csrf()
       %{code: code} = start_sign_in(laptop, "her@example.com")
 
-      body =
-        laptop
-        |> post(~p"/papi/auth/code", %{"email" => "her@example.com", "code" => code})
-        |> json_response(200)
+      conn = post(laptop, ~p"/papi/auth/code", %{"email" => "her@example.com", "code" => code})
 
-      assert %{"ok" => true, "saved" => 0} = body
-      assert Auth.user_id_of_guest(guest) == Repo.one(Auth.User).id
+      assert %{"ok" => true, "saved" => 0} = json_response(conn, 200)
+      assert Auth.user_id_of_guest(rotated_guest(conn)) == Repo.one(Auth.User).id
+      assert Auth.user_id_of_guest(guest) == nil
     end
 
     test "the same code from another browser is worth nothing", %{conn: conn} do
@@ -313,9 +335,15 @@ defmodule OskolWeb.Api.AuthApiTest do
     test "names the account this browser is signed into", %{conn: conn} do
       signed_in = conn |> as_guest(new_guest_id()) |> with_csrf()
       %{token: token} = start_sign_in(signed_in, "her@example.com")
-      post(signed_in, ~p"/papi/auth/link", %{"token" => token})
+      linked = post(signed_in, ~p"/papi/auth/link", %{"token" => token})
 
-      body = signed_in |> get(~p"/papi/me") |> json_response(200)
+      # The next request carries the cookie the sign-in handed back, as a
+      # browser's would.
+      body =
+        build_conn()
+        |> as_guest(rotated_guest(linked))
+        |> get(~p"/papi/me")
+        |> json_response(200)
 
       assert %{"ok" => true, "user" => %{"email" => "her@example.com", "name" => nil}} = body
     end
@@ -403,6 +431,12 @@ defmodule OskolWeb.Api.AuthApiTest do
       assert elem(built, 0) == elem(declared, 0)
       assert tuple_size(built) == tuple_size(declared)
     end
+  end
+
+  # The guest id the sign-in rotated this browser to: the cookie it set.
+  defp rotated_guest(conn) do
+    %{value: id} = conn.resp_cookies["_oskol_guest"]
+    id
   end
 
   defp session_cookie(conn) do
