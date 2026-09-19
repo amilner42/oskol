@@ -21,8 +21,8 @@ defmodule Oskol.Gleam.Caps.Rooms do
   # (`GameFull` -> `:game_full`), so they pass straight through.
   @known ~w(game_full name_taken invalid_name unknown_format unknown_clock
             unknown_setting unknown_choice game_already_started seat_connected
-            no_seat already_seated player_not_found game_not_started game_not_finished
-            not_enough_players unknown_game no_free_id)a
+            seat_owned no_seat already_seated player_not_found game_not_started
+            game_not_finished not_enough_players unknown_game no_free_id)a
 
   def build(opts \\ []) do
     player_pid = Keyword.get(opts, :player_pid)
@@ -49,8 +49,8 @@ defmodule Oskol.Gleam.Caps.Rooms do
          {:error, reason} -> {:error, room_error(reason)}
        end
      end,
-     fn game_id, name, guest_id ->
-       case Game.join_game(game_id, name, player_pid, unopt(guest_id)) do
+     fn game_id, name, guest_id, user_id ->
+       case Game.join_game(game_id, name, player_pid, unopt(guest_id), unopt(user_id)) do
          {:ok, player_id, state} ->
            {:ok, {:seat, player_id, state.instance != nil}}
 
@@ -58,19 +58,26 @@ defmodule Oskol.Gleam.Caps.Rooms do
            {:error, room_error(reason)}
        end
      end,
-     fn game_id, player_id, guest_id ->
+     fn game_id, player_id, guest_id, user_id ->
        # Claiming attaches, and attaching needs a process to watch. A
        # stateless caller watches itself: the seat is live for the length of
        # the request and away again after it, until the browser this call
-       # answers opens the room. The seat is that browser's guest from here.
-       case Game.claim_seat(game_id, player_id, player_pid || self(), unopt(guest_id)) do
+       # answers opens the room. The seat is that browser's guest from here,
+       # and its account's if it has one.
+       case Game.claim_seat(
+              game_id,
+              player_id,
+              player_pid || self(),
+              unopt(guest_id),
+              unopt(user_id)
+            ) do
          {:ok, ^player_id, state} ->
            {:ok, {:seat, player_id, state.instance != nil}}
 
          {:error, reason} ->
            {:error, room_error(reason)}
        end
-     end, &seated_game/2, &game/1}
+     end, &seated_game/3, &game/1}
   end
 
   # The running game at a room, for anyone: a record and a replay are what
@@ -83,14 +90,17 @@ defmodule Oskol.Gleam.Caps.Rooms do
     :exit, _ -> {:error, :game_not_started}
   end
 
-  # The running game behind the seat a guest holds, read and handed back as
-  # the opaque Gleam instance it is, with the player id of that seat. It
-  # attaches nothing: a record read is not a connection. A room that died
-  # between the lookup and this call answers like a seat that is not there.
-  defp seated_game(game_id, guest_id) do
+  # The running game behind the seat this caller holds, read and handed back
+  # as the opaque Gleam instance it is, with the player id of that seat. The
+  # holder rule decides which seat, so an account finds its own from any
+  # browser it is signed in on. It attaches nothing: a record read is not a
+  # connection. A room that died between the lookup and this call answers
+  # like a seat that is not there.
+  defp seated_game(game_id, guest_id, user_id) do
     state = GameServer.get_state(game_id)
+    session = GameServerState.session(unopt(guest_id), unopt(user_id))
 
-    case GameServerState.find_player_id_by_guest(state, guest_id) do
+    case GameServerState.find_player_id_for(state, session) do
       nil -> {:error, :no_seat}
       _player_id when state.instance == nil -> {:error, :game_not_started}
       player_id -> {:ok, {player_id, state.instance}}

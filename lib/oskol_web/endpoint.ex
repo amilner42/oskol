@@ -5,11 +5,15 @@ defmodule OskolWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
+  # `secure` everywhere but development: the session carries the guest id
+  # that holds a seat, and now the account signed in on this browser, so it
+  # has no business travelling over plain http. Dev is http on localhost.
   @session_options [
     store: :cookie,
     key: "_oskol_key",
     signing_salt: "Zrc1o9Hy",
-    same_site: "Lax"
+    same_site: "Lax",
+    secure: Mix.env() == :prod
   ]
 
   socket "/live", Phoenix.LiveView.Socket,

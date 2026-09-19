@@ -145,7 +145,7 @@ fn creating(
       ..ctx.rooms,
       subscribe: fn(_) { Nil },
       configure: fn(_, _) { configure },
-      join: fn(_, _, _) { join },
+      join: fn(_, _, _, _) { join },
     ),
   )
 }
@@ -218,7 +218,7 @@ fn joining(ctx: Ctx, join: Result(room.Seat, errors.RoomError)) -> Ctx {
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
       subscribe: fn(_) { Nil },
-      join: fn(_, _, _) { join },
+      join: fn(_, _, _, _) { join },
     ),
   )
 }
@@ -270,7 +270,7 @@ pub fn a_game_that_already_started_is_re_routed_test() {
 
 fn a_table() -> room.Table {
   room.Table(full: True, inviter: None, summary: "Single game", disconnected: [
-    #("p2", "Bob"),
+    #("p2", "Bob", False),
   ])
 }
 
@@ -282,7 +282,7 @@ fn reclaiming(ctx: Ctx, claim: Result(room.Seat, errors.RoomError)) -> Ctx {
     rooms: rooms_caps.RoomsCaps(
       ..ctx.rooms,
       subscribe: fn(_) { Nil },
-      claim: fn(_, _, _) { claim },
+      claim: fn(_, _, _, _) { claim },
     ),
   )
 }
@@ -318,7 +318,7 @@ pub fn an_invite_reads_the_table_behind_the_code_test() {
   let ctx = fakes.with_room(fakes.ctx(), Some(fakes.room()), Some(a_table()))
 
   assert rooms.offer(ctx, "123456")
-    == #(invite.Reclaim([#("p2", "Bob")]), Some(a_table()))
+    == #(invite.Reclaim([#("p2", "Bob", False)]), Some(a_table()))
 }
 
 // A code with no room never asks a room anything: the table capability

@@ -15,6 +15,8 @@ pub type RoomError {
   UnknownChoice
   GameAlreadyStarted
   SeatConnected
+  /// The seat belongs to an account: no code opens it, and nobody claims it.
+  SeatOwned
   NoSeat
   AlreadySeated
   PlayerNotFound
@@ -38,6 +40,7 @@ pub fn message(error: RoomError) -> String {
     UnknownChoice -> "Unknown choice"
     GameAlreadyStarted -> "That game already started"
     SeatConnected -> "That player is back at the table"
+    SeatOwned -> "That seat belongs to an account. Only they can open it."
     NoSeat -> "You are not at this table"
     AlreadySeated -> "You are already at this table"
     PlayerNotFound -> "That player is not at this table"

@@ -1,8 +1,10 @@
 defmodule Oskol.Gleam.Caps.Persistence do
   @moduledoc "Real IO for src/oskol/caps/persistence.gleam. Keep field order in lockstep."
 
+  import Oskol.Gleam.Interop
+
   def build do
-    {:persistence_caps, &game_exists?/1, &seated_rooms/1}
+    {:persistence_caps, &game_exists?/1, &seated_rooms/2}
   end
 
   # A database hiccup must not block creating games: the id space plus the
@@ -13,20 +15,22 @@ defmodule Oskol.Gleam.Caps.Persistence do
     _ -> false
   end
 
-  # The rows a guest holds a seat in, as `oskol/rooms/room.ActiveRoom`
-  # records. A hiccup is an empty list: the home page still draws.
-  defp seated_rooms(guest_id) do
+  # The rows this caller holds a seat in — by the guest that took it or the
+  # account that owns it — as `oskol/rooms/room.ActiveRoom` records. A
+  # hiccup is an empty list: the home page still draws.
+  defp seated_rooms(guest_id, user_id) do
     now = DateTime.utc_now()
 
-    Oskol.Persistence.seated_rooms(guest_id)
+    Oskol.Persistence.seated_rooms(unopt(guest_id), unopt(user_id))
     |> Enum.map(fn game ->
       config = game.config || %{}
       state = game.state || %{}
 
       {:active_room, game.slug, game.id, game.status, config["format"] || "",
        config["clock"] || "none",
-       Enum.map(game.players, fn p -> {p["id"], p["name"] || "", p["guest_id"] || ""} end),
-       Enum.filter(state["to_act"] || [], &is_binary/1), clocks(state["clocks"]),
+       Enum.map(game.players, fn p ->
+         {p["id"], p["name"] || "", p["guest_id"] || "", p["user_id"] || ""}
+       end), Enum.filter(state["to_act"] || [], &is_binary/1), clocks(state["clocks"]),
        clock_age_s(state["at"], game.updated_at, now),
        max(DateTime.diff(now, game.updated_at, :second), 0)}
     end)

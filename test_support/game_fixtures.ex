@@ -28,8 +28,11 @@ defmodule Oskol.GameFixtures do
         control: Keyword.get(opts, :control)
       })
 
-    g1 = unique_guest_id()
-    {:ok, p1, _state} = Game.join_game(game_id, "Alice", Keyword.get(opts, :pid1), g1)
+    # `guest:` seats the lobby under a guest the test already has (the one
+    # in a browser's cookie, say); otherwise a fresh one.
+    g1 = Keyword.get(opts, :guest) || unique_guest_id()
+    user_id = Keyword.get(opts, :user)
+    {:ok, p1, _state} = Game.join_game(game_id, "Alice", Keyword.get(opts, :pid1), g1, user_id)
     %{game_id: game_id, p1: p1, g1: g1}
   end
 

@@ -57,6 +57,7 @@ type Step
     = Create
     | PlayerName
     | TableFull
+    | SeatOwned
     | Reconnect
 
 
@@ -267,7 +268,13 @@ update msg model =
             ( { model | loadError = Just (Api.errorMessage err) }, Cmd.none, NoOut )
 
         GotRoom (Ok room) ->
-            ( applyRoom room model, Cmd.none, NoOut )
+            case room.state of
+                -- A seat this browser already holds: straight to the table.
+                Catalog.Seated path ->
+                    ( model, Cmd.none, Redirect path )
+
+                _ ->
+                    ( applyRoom room model, Cmd.none, NoOut )
 
         GotRoom (Err _) ->
             -- A room that cannot be read is a room to join by name, exactly
@@ -355,11 +362,18 @@ applyRoom room model =
         Catalog.Away ->
             { model | step = Reconnect, disconnected = room.disconnected }
 
+        Catalog.Owned ->
+            { model | step = SeatOwned, disconnected = [] }
+
         Catalog.Full ->
             { model | step = TableFull, disconnected = [] }
 
         Catalog.Missing ->
             { model | step = PlayerName, disconnected = [] }
+
+        -- Handled before it gets here (it is a redirect, not a step).
+        Catalog.Seated _ ->
+            model
 
 
 {-| A display name: trimmed, bounded, printable. It goes into every payload,
@@ -1053,6 +1067,9 @@ formPage model =
                         TableFull ->
                             [ tableFull (Maybe.withDefault "" model.gameId) ]
 
+                        SeatOwned ->
+                            [ seatOwned (Maybe.withDefault "" model.gameId) ]
+
                         Reconnect ->
                             [ reconnect model ]
                    )
@@ -1149,6 +1166,26 @@ tableFull gameId =
             , style "color: var(--pen)"
             ]
             [ Html.text "Start your own →" ]
+        , gameCode gameId
+        ]
+
+
+{-| The only seat free at this table belongs to an account. There is
+nothing to offer: its owner opens it by signing in, and a room code never
+will.
+-}
+seatOwned : String -> Html Msg
+seatOwned gameId =
+    Html.div [ class "space-y-3", id "seat-owned" ]
+        [ Notebook.eyebrow "SEAT TAKEN"
+        , Html.p [ class "text-base", style "color: var(--ink)" ]
+            [ Html.text "This seat belongs to an account. Sign in on that account to pick the game back up." ]
+        , Html.a
+            [ href (Route.href Route.library)
+            , class "inline-block font-semibold"
+            , style "color: var(--pen)"
+            ]
+            [ Html.text "Start your own \u{2192}" ]
         , gameCode gameId
         ]
 

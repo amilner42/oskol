@@ -22,7 +22,7 @@ defmodule OskolWeb.Router do
   pipeline :papi do
     plug :accepts, ["json"]
     plug :fetch_session
-    plug OskolWeb.Plugs.GuestId
+    plug OskolWeb.Plugs.GuestId, renew: false
     plug :protect_from_forgery
   end
 
@@ -30,6 +30,14 @@ defmodule OskolWeb.Router do
   # `/:slug/:id`.
   scope "/papi", OskolWeb.Api do
     pipe_through :papi
+
+    # Signing in. Every one of these is a POST on purpose: a sign-in is
+    # never something a GET does (see OskolWeb.LoginController).
+    post "/auth/start", AuthController, :start
+    post "/auth/link", AuthController, :link
+    post "/auth/code", AuthController, :code
+    post "/auth/logout", AuthController, :logout
+    get "/me", AuthController, :me
 
     get "/library", LandingController, :library
     get "/codes/:code", LandingController, :code
@@ -56,6 +64,12 @@ defmodule OskolWeb.Router do
       pipe_through :browser
 
       live_dashboard "/dashboard", metrics: OskolWeb.Telemetry
+
+      # What the app would have mailed, to read by eye...
+      forward "/mailbox", Plug.Swoosh.MailboxPreview
+
+      # ...and the same sign-in as JSON, for a browser test to click through.
+      get "/last-login", OskolWeb.DevController, :last_login
     end
   end
 
@@ -63,6 +77,12 @@ defmodule OskolWeb.Router do
     pipe_through :browser
 
     get "/sitemap.xml", SitemapController, :index
+
+    # The page a mailed sign-in link opens. Declared before "/:slug/:id" so
+    # "login" is a reserved word and not a game slug; it reads the token and
+    # writes nothing (POST /papi/auth/link is what signs anyone in). A bare
+    # "/login" names no game, so it is a 404 like any other unknown slug.
+    get "/login/:token", LoginController, :show
 
     # Games Oskol no longer hosts (see RemovedGameController): every old
     # link to one of them, start page, invite or table, goes home.

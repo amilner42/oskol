@@ -95,6 +95,8 @@ defmodule Oskol.MixProject do
       {:jason, "~> 1.2"},
       # HTTP to the analysis engine (oskol-analysis, over Fly's private network)
       {:req, "~> 0.5"},
+      # Mail (the sign-in link and code): Postmark in prod, a local mailbox in dev
+      {:swoosh, "~> 1.17"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},

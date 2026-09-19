@@ -29,8 +29,9 @@ defmodule Oskol.Gleam.Caps.Records do
 
         {:some,
          {:setup, game.slug, config["format"] || "", config["clock"] || "none", game.seed,
-          Enum.map(game.players, fn p -> {p["id"], p["name"], p["guest_id"] || ""} end),
-          game.status == "finished", Reviews.log_length(game_id), game.records_through || 0}}
+          Enum.map(game.players, fn p ->
+            {p["id"], p["name"], p["guest_id"] || "", p["user_id"] || ""}
+          end), game.status == "finished", Reviews.log_length(game_id), game.records_through || 0}}
     end
   end
 
