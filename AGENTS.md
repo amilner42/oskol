@@ -532,7 +532,6 @@ lib/oskol/guests.ex             silent guest identity: guests table (name + pref
 lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every visit
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
-lib/oskol/game/pruner.ex        deletes unfinished games idle > 3 days; finished ones stay
 lib/oskol/reviews.ex            game_reviews + game_records tables, the log a review
                                 reads, the engine's HTTP
 src/oskol/core/raw.gleam        stored JSON back onto the wire without rebuilding it
@@ -737,8 +736,8 @@ two clocks as the snapshot last read them with how long ago that was
 seconds since the room was touched. The client (`Page/GameLanding.elm`)
 shows them in a dialog over the home board when the list arrives with
 anything in it, and keeps a "REJOIN N GAMES" button at the right end of the
-player's own bar for as long as there are any. The three-day pruner bounds
-the list.
+player's own bar for as long as there are any. Nothing prunes games (they
+are kept, finished or not), so nothing bounds the list yet.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist

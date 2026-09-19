@@ -9,9 +9,6 @@ config :oskol, Oskol.Repo,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 
-# No periodic pruning during tests; `Oskol.Game.Pruner.prune_now/0` runs it.
-config :oskol, :prune_interval_ms, nil
-
 # Rooms finish games by the hundred in tests and there is no engine: the
 # review queue stays off unless a test turns it on, and every engine call
 # goes to a Req.Test stub, never the network.

@@ -6,7 +6,7 @@ defmodule Oskol.RehydrationTest do
   import Oskol.GameFixtures
 
   alias Oskol.Game
-  alias Oskol.Game.{GameServerState, GameSupervisor, Persister, Pruner}
+  alias Oskol.Game.{GameServerState, GameSupervisor, Persister}
   alias Oskol.GameKit
   alias Oskol.Persistence
   alias Oskol.Repo
@@ -290,33 +290,6 @@ defmodule Oskol.RehydrationTest do
     GameKit.player_update(state.instance, viewer)["clock"]["players"]
     |> Enum.map(& &1["remaining_ms"])
     |> Enum.sum()
-  end
-
-  test "pruning deletes idle unfinished games and their actions, keeps finished ones" do
-    old = DateTime.add(DateTime.utc_now(), -4 * 86_400, :second)
-    stale = insert_game("stale", "playing", old)
-    Repo.insert!(%Persistence.GameAction{game_id: stale, index: 0, kind: "action", at_ms: 0})
-    done = insert_game("done", "finished", old)
-    fresh = insert_game("fresh", "playing", DateTime.utc_now())
-
-    assert Pruner.prune_now() == 1
-
-    assert Repo.get(Persistence.Game, stale) == nil
-    assert Repo.get_by(Persistence.GameAction, game_id: stale) == nil
-    assert Repo.get(Persistence.Game, done)
-    assert Repo.get(Persistence.Game, fresh)
-  end
-
-  defp insert_game(prefix, status, updated_at) do
-    id = unique_game_id(prefix)
-    Repo.insert!(%Persistence.Game{id: id, slug: "backgammon", status: status})
-
-    import Ecto.Query
-
-    from(g in Persistence.Game, where: g.id == ^id)
-    |> Repo.update_all(set: [updated_at: updated_at])
-
-    id
   end
 
   defp wait_until(fun, attempts \\ 50) do
