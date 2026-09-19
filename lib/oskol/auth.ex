@@ -180,6 +180,24 @@ defmodule Oskol.Auth do
     user
   end
 
+  @doc """
+  Give this account that username. `:taken` when another account has it
+  (regardless of case: the column is citext with a unique index, so two
+  sign-ins racing for one name cannot both win).
+  """
+  def claim_name(user_id, name) when is_binary(user_id) and is_binary(name) do
+    from(u in User, where: u.id == ^user_id)
+    |> Repo.update_all(set: [name: name])
+
+    :ok
+  rescue
+    e in Postgrex.Error ->
+      case e.postgres do
+        %{code: :unique_violation} -> :taken
+        _ -> reraise e, __STACKTRACE__
+      end
+  end
+
   @doc "One account, by id. `nil` for an id nothing answers to."
   def user(id) when is_binary(id) do
     case Ecto.UUID.cast(id) do

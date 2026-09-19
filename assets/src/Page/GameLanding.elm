@@ -10,6 +10,7 @@ module Page.GameLanding exposing
     , title
     , update
     , view
+    , withSession
     )
 
 {-| `/` (and `/:slug`) — the game's start page.
@@ -34,6 +35,7 @@ seat waits where it will play, on a live connection rather than a poll.
 -}
 
 import Api
+import Api.Auth as Auth
 import Browser.Events
 import Dict
 import Api.Catalog as Catalog exposing (ClockPreset, Format, GamePage, MyGame, RoomSeat)
@@ -47,7 +49,9 @@ import Games.Backgammon.View
 import Page.HomeBoard
 import Route
 import Session exposing (Session)
+import Ui.Identity as Identity
 import Ui.Notebook as Notebook exposing (style)
+import Ui.SignIn as SignIn
 
 
 {-| Which of the game page's forms is showing, mirroring the LiveView's
@@ -80,8 +84,11 @@ type alias Model =
     , themesOpen : Bool -- the home board's colour list is showing
     , myGames : List MyGame -- the unfinished games this browser holds a seat in
     , resumeOpen : Bool -- the list of them is showing over the board
+    , signInOpen : Bool -- the sign-in the guest's bar menu opens, in a dialog of its own
     , fetchedAt : Int -- when the list came, ms since the epoch: the clocks count from here
     , now : Int -- the clock the list's running times are read against
+    , signIn : Maybe SignIn.Model -- signing in, open in LIVE GAMES or under an owned seat
+    , accountOpen : Bool -- the account's menu on the player's own bar is showing
     }
 
 
@@ -103,7 +110,14 @@ type Msg
     | Tick Time.Posix
     | OpenedResume
     | ClosedResume
+    | PressedSignInMenu
+    | ClosedSignIn
     | PrefSaved (Result Api.Error (Dict.Dict String String))
+    | OpenedSignIn
+    | SignInMsg SignIn.Msg
+    | ToggledAccount
+    | PressedLogOut
+    | LoggedOut (Result Api.Error ())
     | NoOp
 
 
@@ -120,6 +134,12 @@ type Out
     | TookSeat { name : String, path : String }
       -- A board colour was picked: keep it in this browser and the session.
     | ChoseTheme String
+      -- This browser just signed in: the shell re-reads who it is.
+    | SignedIn Auth.SignedIn
+      -- This browser just logged out: the same.
+    | SignedOut
+      -- Go on to a page of the site (after a sign-in, where it was asked from).
+    | Go String
 
 
 init : Session -> String -> Maybe String -> ( Model, Cmd Msg, Out )
@@ -149,8 +169,11 @@ init session slug gameId =
             , themesOpen = False
             , myGames = []
             , resumeOpen = False
+            , signInOpen = False
             , fetchedAt = 0
             , now = 0
+            , signIn = Nothing
+            , accountOpen = False
             }
     in
     case gameId of
@@ -186,12 +209,94 @@ title model =
 
 
 
+{-| What the shell learnt about this browser (`/papi/me`): signed in or
+not.
+-}
+withSession : Session -> Model -> Model
+withSession session model =
+    { model | session = session }
+
+
+
 -- UPDATE
 
 
 update : Msg -> Model -> ( Model, Cmd Msg, Out )
 update msg model =
     case msg of
+        OpenedSignIn ->
+            if model.session.user == Nothing then
+                let
+                    ( signIn, cmd ) =
+                        SignIn.init { next = signInNext model, email = "" }
+                in
+                ( { model | signIn = Just signIn }, Cmd.map SignInMsg cmd, NoOut )
+
+            else
+                ( model, Cmd.none, NoOut )
+
+        SignInMsg signInMsg ->
+            case model.signIn of
+                Just signIn ->
+                    let
+                        ( next, cmd, out ) =
+                            SignIn.update model.session signInMsg signIn
+
+                        updated =
+                            { model | signIn = Just next }
+                    in
+                    case out of
+                        SignIn.NoOut ->
+                            ( updated, Cmd.map SignInMsg cmd, NoOut )
+
+                        -- Signed in: this browser's games are the account's
+                        -- now, and the account's games from anywhere else
+                        -- are this browser's. Ask again.
+                        SignIn.SignedIn signedIn ->
+                            ( updated
+                            , Cmd.batch [ Cmd.map SignInMsg cmd, Catalog.fetchMyGames model.session GotMyGames ]
+                            , SignedIn signedIn
+                            )
+
+                        SignIn.Continue path ->
+                            case model.step of
+                                -- Under an owned seat: on to the table.
+                                SeatOwned ->
+                                    ( { updated | signIn = Nothing }, Cmd.none, Go path )
+
+                                -- In LIVE GAMES, or the bar's own dialog: back
+                                -- to the page, which is theirs now.
+                                _ ->
+                                    ( { updated | signIn = Nothing, signInOpen = False }, Cmd.none, NoOut )
+
+                Nothing ->
+                    ( model, Cmd.none, NoOut )
+
+        ToggledAccount ->
+            ( { model | accountOpen = not model.accountOpen }, Cmd.none, NoOut )
+
+        -- The guest's bar menu: the same sign-in, in a dialog of its own.
+        PressedSignInMenu ->
+            let
+                ( opened, cmd, out ) =
+                    update OpenedSignIn { model | accountOpen = False, resumeOpen = False, signInOpen = True }
+            in
+            ( opened, cmd, out )
+
+        ClosedSignIn ->
+            ( { model | signInOpen = False, signIn = Nothing }, Cmd.none, NoOut )
+
+        PressedLogOut ->
+            ( { model | accountOpen = False }, Auth.logout model.session LoggedOut, NoOut )
+
+        -- The page stays: the bar goes back to the guest's name, and the
+        -- list to the games this browser holds as a guest.
+        LoggedOut _ ->
+            ( { model | myGames = [], resumeOpen = False, signIn = Nothing }
+            , Catalog.fetchMyGames model.session GotMyGames
+            , SignedOut
+            )
+
         Started ->
             case ( model.page, model.loadError ) of
                 -- The game's data failed to come: ask again, and the dialog
@@ -213,7 +318,10 @@ update msg model =
         -- Not over something the player already opened (CREATE GAME's
         -- dialog, the board picker): the bar's button is there for later.
         GotMyGames (Ok games) ->
-            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) && not model.started && not model.themesOpen }
+            -- Not while the bar's sign-in dialog is up: the list that
+            -- arrives after that sign-in would open LIVE GAMES underneath,
+            -- with the same sign-in (and its win) inside it a second time.
+            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) && not model.started && not model.themesOpen && not model.signInOpen }
             , Task.perform ListArrived Time.now
             , NoOut
             )
@@ -318,9 +426,24 @@ update msg model =
             ( model, Cmd.none, NoOut )
 
 
+{-| The account's username, when this browser is signed in: it plays under
+that, and is not asked for a name.
+-}
+username : Model -> Maybe String
+username model =
+    model.session.user |> Maybe.andThen .name
+
+
 submit : Model -> ( Model, Cmd Msg, Out )
 submit model =
-    case cleanName model.playerName of
+    case
+        case username model of
+            Just name ->
+                Ok name
+
+            Nothing ->
+                cleanName model.playerName
+    of
         Err message ->
             ( { model | error = Just message }, Cmd.none, NoOut )
 
@@ -362,8 +485,16 @@ applyRoom room model =
         Catalog.Away ->
             { model | step = Reconnect, disconnected = room.disconnected }
 
+        -- Nothing to claim: its account opens it, so the page offers the
+        -- one thing that helps, signing in as that player, and sends them
+        -- on to the table after.
         Catalog.Owned ->
-            { model | step = SeatOwned, disconnected = [] }
+            { model
+                | step = SeatOwned
+                , disconnected = []
+                , signIn =
+                    Just (Tuple.first (SignIn.init { next = signInNext { model | step = SeatOwned }, email = "" }))
+            }
 
         Catalog.Full ->
             { model | step = TableFull, disconnected = [] }
@@ -374,6 +505,19 @@ applyRoom room model =
         -- Handled before it gets here (it is a redirect, not a step).
         Catalog.Seated _ ->
             model
+
+
+{-| Where a sign-in started here comes back to: the table, from under a
+seat that belongs to an account; home, from anywhere else on this page.
+-}
+signInNext : Model -> String
+signInNext model =
+    case ( model.step, model.gameId ) of
+        ( SeatOwned, Just gameId ) ->
+            Route.href (Route.play model.slug gameId)
+
+        _ ->
+            Route.href Route.library
 
 
 {-| A display name: trimmed, bounded, printable. It goes into every payload,
@@ -461,7 +605,7 @@ top bar, and CREATE GAME's dialog over it when it is open.
 home : { join : Html msg, toMsg : Msg -> msg } -> Model -> List (Html msg)
 home { join, toMsg } model =
     [ Page.HomeBoard.view
-        { you = homeName model
+        { you = Html.map toMsg (homeYou model)
         , actions = List.map (Html.map toMsg) (homeActions model)
         , join = join
         , soon = homeSoon
@@ -471,6 +615,7 @@ home { join, toMsg } model =
         }
     , Html.map toMsg (createModal model)
     , Html.map toMsg (resumeModal model)
+    , Html.map toMsg (signInModal model)
     ]
 
 
@@ -602,6 +747,90 @@ homeName model =
         model.playerName
 
 
+{-| Who the player's own bar says this is: the name they last played under,
+or, signed in, the account, which is a button with one thing in its menu.
+-}
+homeYou : Model -> Html Msg
+homeYou model =
+    case model.session.user of
+        Just user ->
+            Html.div [ class "relative min-w-0" ]
+                [ Html.button
+                    [ Html.Attributes.type_ "button"
+                    , id "account-button"
+                    , class "home-account flex items-center gap-1 min-w-0 px-1.5 py-0.5 -mx-1.5"
+                    , Html.Attributes.attribute "aria-expanded"
+                        (if model.accountOpen then
+                            "true"
+
+                         else
+                            "false"
+                        )
+                    , Html.Attributes.attribute "aria-haspopup" "menu"
+                    , onClick ToggledAccount
+                    ]
+                    [ identityIcon True
+                    , Html.span [ class "font-bold text-sm sm:text-base truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ]
+                    , icon "hero-chevron-up" "w-3.5 h-3.5 opacity-70"
+                    ]
+                , if model.accountOpen then
+                    Html.div [ id "account-menu", class "home-account-menu", Html.Attributes.attribute "role" "menu" ]
+                        [ Html.button
+                            [ Html.Attributes.type_ "button"
+                            , id "logout"
+                            , Html.Attributes.attribute "role" "menuitem"
+                            , class "pixel text-[9px] px-3 py-2.5"
+                            , onClick PressedLogOut
+                            ]
+                            [ Html.text "LOG OUT" ]
+                        ]
+
+                  else
+                    Html.text ""
+                ]
+
+        Nothing ->
+            Html.div [ class "relative min-w-0" ]
+                [ Html.button
+                    [ Html.Attributes.type_ "button"
+                    , id "account-button"
+                    , class "home-account flex items-center gap-1 min-w-0 px-1.5 py-0.5 -mx-1.5"
+                    , Html.Attributes.attribute "aria-expanded"
+                        (if model.accountOpen then
+                            "true"
+
+                         else
+                            "false"
+                        )
+                    , Html.Attributes.attribute "aria-haspopup" "menu"
+                    , onClick ToggledAccount
+                    ]
+                    [ identityIcon False
+                    , Html.span [ class "font-bold text-sm sm:text-base truncate" ] [ Html.text (homeName model) ]
+                    , icon "hero-chevron-up" "w-3.5 h-3.5 opacity-70"
+                    ]
+                , if model.accountOpen then
+                    Html.div [ id "account-menu", class "home-account-menu", Html.Attributes.attribute "role" "menu" ]
+                        [ Html.button
+                            [ Html.Attributes.type_ "button"
+                            , id "signin-menu"
+                            , Html.Attributes.attribute "role" "menuitem"
+                            , class "pixel text-[9px] px-3 py-2.5"
+                            , onClick PressedSignInMenu
+                            ]
+                            [ Html.text "SIGN IN" ]
+                        ]
+
+                  else
+                    Html.text ""
+                ]
+
+
+identityIcon : Bool -> Html Msg
+identityIcon =
+    Identity.badge
+
+
 {-| The ways into the site, in the board's right band: creating a game
 here; joining one is the shell's (the code prompt), so it is passed in.
 -}
@@ -651,15 +880,20 @@ createModal model =
                             Nothing ->
                                 []
                          )
-                            ++ [ Html.label [ class "block" ]
-                                    [ Html.span [ class "pixel q-eyebrow text-[8px] block mb-1.5" ] [ Html.text "YOUR NAME" ]
-                                    , Notebook.nameInput
-                                        { id = "create-name"
-                                        , placeholder = "e.g. Alice"
-                                        , value = model.playerName
-                                        , onInput = NameChanged
-                                        }
-                                    ]
+                            ++ [ case username model of
+                                    Just name ->
+                                        playingAs "create-as" name
+
+                                    Nothing ->
+                                        Html.label [ class "block" ]
+                                            [ Html.span [ class "pixel q-eyebrow text-[8px] block mb-1.5" ] [ Html.text "YOUR NAME" ]
+                                            , Notebook.nameInput
+                                                { id = "create-name"
+                                                , placeholder = "e.g. Alice"
+                                                , value = model.playerName
+                                                , onInput = NameChanged
+                                                }
+                                            ]
                                , Html.div [ class "grid grid-cols-2 gap-3" ]
                                     [ select "MODE" "create-mode" PickedFormat model.format (List.map (\f -> ( f.id, f.name )) page.formats)
                                     , select "CLOCK" "create-clock" PickedClock model.clock (Catalog.offeredClocks page.game page.clocks |> List.map (\c -> ( c.id, clockLabel c )))
@@ -771,6 +1005,23 @@ gamesNote model =
                 ]
 
 
+{-| The sign-in the guest's bar menu opens: one line on what it is for, and
+the same component every other entry uses.
+-}
+signInModal : Model -> Html Msg
+signInModal model =
+    case ( model.signInOpen, model.signIn ) of
+        ( True, Just signIn ) ->
+            dialog { id = "signin-modal", closeId = "close-signin", label = "Sign in", heading = "SIGN IN", onClose = ClosedSignIn }
+                [ Html.p [ class "q-note text-[14px] text-center mb-4" ]
+                    [ Html.text "Your games and your PR, on every device." ]
+                , Html.map SignInMsg (SignIn.view signIn)
+                ]
+
+        _ ->
+            Html.text ""
+
+
 {-| The games this browser can pick back up, over the board: one row each,
 a link to the seat. Opens on its own when the list arrives with anything
 in it; a tap beside it, its ✕ or Escape closes it, and the bar's button
@@ -781,7 +1032,7 @@ resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
         dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
             [ Html.ul [ id "resume-list", class "space-y-2" ] (List.map (resumeRow model) model.myGames)
-            , guestNote
+            , guestNote model
             ]
 
     else
@@ -848,25 +1099,50 @@ resumeRow model game =
 
 {-| Under the list, its own panel: one line on what holds these games,
 the three things an account is for, and the button. This is where someone
-who has just felt the game signs up, so it has room. Accounts are on their
-way (accounts-email-codes): the button says so quietly and does nothing
-yet; when they land it becomes the sign-up step.
+who has just felt the game signs up, so it has room. The button names the
+games they would keep, and opens the sign-in right here (`Ui.SignIn`).
 -}
-guestNote : Html Msg
-guestNote =
+guestNote : Model -> Html Msg
+guestNote model =
+    case ( model.session.user, model.signIn ) of
+        -- Signed in: these are just their games. Nothing to say.
+        ( Just _, Nothing ) ->
+            Html.text ""
+
+        -- Signing in: the flow where the button was, under the same
+        -- promise; signed in this moment, the win on its own.
+        ( _, Just signIn ) ->
+            case signIn.state of
+                SignIn.Won _ ->
+                    Html.div [ id "guest-note", class "pitch mt-6 pt-5" ]
+                        [ Html.map SignInMsg (SignIn.view signIn) ]
+
+                _ ->
+                    pitch model (Html.map SignInMsg (SignIn.view signIn))
+
+        ( Nothing, Nothing ) ->
+            pitch model
+                (Html.button
+                    [ Html.Attributes.type_ "button"
+                    , id "signup-cta"
+                    , class "signup w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold"
+                    , onClick OpenedSignIn
+                    ]
+                    [ Html.text "Sign up" ]
+                )
+
+
+{-| The panel under the list: one line on what holds these games, the line
+that sells it, the button, and the six things an account is for.
+-}
+pitch : Model -> Html Msg -> Html Msg
+pitch _ button =
     Html.div [ id "guest-note", class "pitch mt-6 pt-5 flex flex-col gap-4" ]
         [ Html.p [ class "q-note text-[13px] text-center" ]
             [ Html.text "You are logged in as a guest on this device." ]
         , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
-            [ Html.text "Is it time to get good yet?" ]
-        , Html.span
-            [ id "signup-cta"
-            , class "signup w-full flex items-center justify-center gap-2 rounded-xl py-3.5 text-[15px] font-semibold"
-            , Html.Attributes.attribute "aria-disabled" "true"
-            ]
-            [ Html.text "Sign up"
-            , Html.span [ class "signup-soon text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" ] [ Html.text "soon" ]
-            ]
+            [ Html.text "Want to get better for free?" ]
+        , button
         , Html.ul [ class "flex flex-wrap justify-center gap-2" ]
             [ chip "hero-device-phone-mobile" "Every device"
             , chip "hero-magnifying-glass" "4-ply analysis"
@@ -1068,7 +1344,7 @@ formPage model =
                             [ tableFull (Maybe.withDefault "" model.gameId) ]
 
                         SeatOwned ->
-                            [ seatOwned (Maybe.withDefault "" model.gameId) ]
+                            [ seatOwned model ]
 
                         Reconnect ->
                             [ reconnect model ]
@@ -1135,20 +1411,42 @@ joinForm model =
                 Nothing ->
                     []
            )
-        ++ [ Notebook.eyebrow "PLAYER 2 · YOUR NAME"
+        ++ [ Notebook.eyebrow
+                (if username model == Nothing then
+                    "PLAYER 2 · YOUR NAME"
+
+                 else
+                    "PLAYER 2"
+                )
            , Html.form
                 [ onSubmit Submitted, class "grid gap-3 sm:grid-cols-[1fr_auto] items-center" ]
-                [ Notebook.nameInput
-                    { id = "join-name"
-                    , placeholder = "e.g. Bob"
-                    , value = model.playerName
-                    , onInput = NameChanged
-                    }
+                [ case username model of
+                    Just name ->
+                        playingAs "join-as" name
+
+                    Nothing ->
+                        Notebook.nameInput
+                            { id = "join-name"
+                            , placeholder = "e.g. Bob"
+                            , value = model.playerName
+                            , onInput = NameChanged
+                            }
                 , Notebook.submitCta { id = "join-game", label = "Join game" }
                 , Html.p [ class "sm:col-span-2 q-note text-sm" ]
                     [ Html.text "The game starts as soon as you join." ]
                 ]
            ]
+
+
+{-| Where a name field would be, for a signed-in browser: the name it will
+play under, which is its account's.
+-}
+playingAs : String -> String -> Html Msg
+playingAs elementId name =
+    Html.p [ id elementId, class "text-[15px] leading-snug", style "color: var(--ink)" ]
+        [ Html.span [ class "q-note" ] [ Html.text "Playing as " ]
+        , Html.span [ class "font-bold" ] [ Html.text name ]
+        ]
 
 
 {-| Both players are at the table and neither has gone anywhere. There is
@@ -1174,19 +1472,34 @@ tableFull gameId =
 nothing to offer: its owner opens it by signing in, and a room code never
 will.
 -}
-seatOwned : String -> Html Msg
-seatOwned gameId =
+seatOwned : Model -> Html Msg
+seatOwned model =
     Html.div [ class "space-y-3", id "seat-owned" ]
         [ Notebook.eyebrow "SEAT TAKEN"
-        , Html.p [ class "text-base", style "color: var(--ink)" ]
-            [ Html.text "This seat belongs to an account. Sign in on that account to pick the game back up." ]
+        , Html.p [ class "q-title text-xl sm:text-2xl", style "color: var(--ink)" ]
+            [ Html.text "This seat belongs to an account." ]
+        , case model.signIn of
+            Just signIn ->
+                Html.div [ class "space-y-4" ]
+                    [ case signIn.state of
+                        SignIn.Won _ ->
+                            Html.text ""
+
+                        _ ->
+                            Html.p [ class "text-base", style "color: var(--ink)" ]
+                                [ Html.text "Sign in as that player to play it here." ]
+                    , Html.div [ class "max-w-sm" ] [ Html.map SignInMsg (SignIn.view signIn) ]
+                    ]
+
+            Nothing ->
+                Html.text ""
         , Html.a
             [ href (Route.href Route.library)
-            , class "inline-block font-semibold"
+            , class "inline-block font-semibold pt-1"
             , style "color: var(--pen)"
             ]
             [ Html.text "Start your own \u{2192}" ]
-        , gameCode gameId
+        , gameCode (Maybe.withDefault "" model.gameId)
         ]
 
 

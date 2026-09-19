@@ -44,9 +44,6 @@ pub type CodeCheck {
 
 pub type AuthCaps {
   AuthCaps(
-    /// Whether signing in is switched on at all (`:oskol, :auth_enabled`).
-    /// Off, the whole flow is a polite no-op: PR A deploys dark.
-    enabled: fn() -> Bool,
     /// Bump a rate bucket and answer how many it holds inside the window,
     /// this one included. The key and the window are the handler's.
     count: fn(String, Int) -> Int,
@@ -98,12 +95,14 @@ pub type AuthCaps {
     /// Drop this browser's live sockets, so a tab at a table does not go on
     /// playing a seat the browser no longer holds.
     disconnect: fn(String) -> Nil,
+    /// Give this account that username, if no other account has it
+    /// (regardless of case). `Error(Nil)` when it is taken.
+    claim_name: fn(String, String) -> Result(Nil, Nil),
   )
 }
 
 pub fn stub() -> AuthCaps {
   AuthCaps(
-    enabled: fn() { panic as "stub auth.enabled" },
     count: fn(_, _) { panic as "stub auth.count" },
     issue_token: fn(_, _, _, _) { panic as "stub auth.issue_token" },
     send_mail: fn(_, _, _) { panic as "stub auth.send_mail" },
@@ -116,5 +115,6 @@ pub fn stub() -> AuthCaps {
     bind_guest: fn(_, _) { panic as "stub auth.bind_guest" },
     unbind_guest: fn(_) { panic as "stub auth.unbind_guest" },
     disconnect: fn(_) { panic as "stub auth.disconnect" },
+    claim_name: fn(_, _) { panic as "stub auth.claim_name" },
   )
 }

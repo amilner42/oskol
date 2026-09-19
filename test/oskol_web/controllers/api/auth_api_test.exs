@@ -345,7 +345,10 @@ defmodule OskolWeb.Api.AuthApiTest do
         |> get(~p"/papi/me")
         |> json_response(200)
 
-      assert %{"ok" => true, "user" => %{"email" => "her@example.com", "name" => nil}} = body
+      # A new account is named at its first sign-in (this browser typed no
+      # name, so it is a numbered player).
+      assert %{"ok" => true, "user" => %{"email" => "her@example.com", "name" => "player" <> _}} =
+               body
     end
 
     test "a guest has no account", %{conn: conn} do

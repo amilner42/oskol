@@ -751,8 +751,50 @@
 .pitch { border-top: 1px solid rgba(35, 36, 58, 0.12); }
 .pitch-line { color: var(--ink); text-wrap: balance; letter-spacing: -0.01em; }
 .pitch-chip { color: var(--ink); background: #fff; border: 1.5px solid var(--ink); }
-.signup { background: var(--ink); color: #fff; cursor: default; }
-.signup-soon { background: rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 0.85); }
+.signup { background: var(--ink); color: #fff; cursor: pointer; box-shadow: 0 3px 0 0 rgba(35, 36, 58, 0.35); transition: transform 0.08s, box-shadow 0.08s, filter 0.15s; }
+.signup:hover { filter: brightness(1.12); }
+.signup:active { transform: translateY(2px); box-shadow: 0 1px 0 0 rgba(35, 36, 58, 0.35); }
+
+/* Signing in (Ui.SignIn): the field, the six digits spaced like the
+   mail prints them, the quiet links, and the win. */
+.signin-field { border-radius: 12px; }
+.signin .q-btn, #login .q-btn { border-radius: 12px; }
+.signin-code { border-radius: 12px; font-size: 24px; font-weight: 700; letter-spacing: 0.4em; padding-left: calc(1rem + 0.4em); }
+.signin-code::placeholder { color: rgba(35, 36, 58, 0.18); }
+.signin-link { color: var(--pencil); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(35, 36, 58, 0.3); transition: color 0.12s; }
+.signin-link:hover { color: var(--ink); }
+.signin-offer {
+  color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 4px;
+  text-decoration-color: var(--highlighter); text-decoration-thickness: 3px;
+}
+.signin-offer:hover { text-decoration-color: var(--ink); }
+.signin-win-title { color: var(--ink); letter-spacing: -0.02em; }
+.signin-tick {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: 9999px;
+  background: var(--highlighter); color: var(--ink);
+  border: 2px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink);
+  font-size: 22px; font-weight: 700;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .signin-win { animation: signin-in 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+  .signin-win .signin-tick { animation: signin-tick 0.5s 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.4) both; }
+  .signin-sent { animation: signin-fade 0.25s ease-out both; }
+}
+@keyframes signin-in { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+@keyframes signin-tick { from { opacity: 0; transform: scale(0.4) rotate(-20deg); } to { opacity: 1; transform: none; } }
+@keyframes signin-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* The account on the home board's own bar, and its one-line menu. */
+.home-account { color: inherit; border-radius: 8px; transition: background 0.12s; }
+.home-account:hover, .home-account[aria-expanded="true"] { background: rgba(255, 255, 255, 0.14); }
+.home-account-menu {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 30;
+  background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 12px;
+  box-shadow: 3px 3px 0 0 var(--ink); padding: 4px; min-width: 9rem;
+}
+.home-account-menu button { display: block; width: 100%; text-align: left; border-radius: 8px; }
+.home-account-menu button:hover { background: var(--paper-2); }
 .resume-badge.yours { background: var(--highlighter); color: var(--ink); }
 .resume-badge.quiet { background: var(--paper-2); color: var(--pencil); }
 .bg-page.home-board .home-soon { opacity: 0.5; cursor: default; box-shadow: 0 4px 0 0 rgba(35, 36, 58, 0.6); }
@@ -2093,3 +2135,9 @@ a.rp-match-row:hover { color: var(--ink); }
   .bg-still .bg-band .die .grid { width: calc(var(--die-size) * 0.6); height: calc(var(--die-size) * 0.6); }
   .bg-still .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
 }
+
+/* Left of the name in the home bar: a guest (an outline, quiet) or an
+   account (the filled check badge, in the site's green). */
+.identity-icon { display: inline-flex; flex: none; line-height: 0; }
+.identity-icon.is-guest { opacity: 0.6; }
+.identity-icon.is-account { color: #3fb96f; }

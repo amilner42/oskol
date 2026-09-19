@@ -153,6 +153,8 @@ jobs:
       # stubbed in the browser, so no engine is needed.
       - run: node playwright/test-backgammon-replay/test.js
       - run: node playwright/test-guest-prefill/test.js
+      # Signing in by email; the mail is read from /dev/last-login.
+      - run: node playwright/test-accounts/test.js
       - name: Server log
         if: failure()
         run: cat server.log

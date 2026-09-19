@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Presence(..), Press, Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, presenceFlashMs, presenceOf, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewStill)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Presence(..), Press, Save(..), Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, presenceFlashMs, presenceOf, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewStill)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -56,11 +56,13 @@ import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Json.Decode as D
 import Json.Encode as E
+import Ui.Identity as Identity
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
 import Svg
 import Svg.Attributes as SvgAttr
 import Ui.Scrub
 import Ui.Shell
+import Ui.SignIn
 
 
 type alias Model =
@@ -130,6 +132,8 @@ type Msg
     | ViewLive -- back to the live game
     | ToggleThemes
     | PickTheme String
+    | OpenedSave -- the game-over card's "Save this game and your PR"
+    | SaveMsg Ui.SignIn.Msg
     | Ignore
 
 
@@ -140,6 +144,8 @@ type Out
     | WantRematch
     | NeedZones (List String)
     | ChoseTheme String -- this player's board colours: display only, never sent to the room
+    | OpenSave -- open the sign-in on the game-over card
+    | ForSave Ui.SignIn.Msg -- the sign-in on the game-over card, for the page to run
 
 
 init : Model
@@ -253,9 +259,25 @@ autoRoll legal model =
         ( model, Nothing )
 
 
+{-| What the game-over card offers a guest: nothing (signed in, or a
+spectator), the one line that opens the sign-in, or the sign-in itself,
+which the page runs.
+-}
+type Save
+    = NoSave
+    | SaveOffered
+    | Saving Ui.SignIn.Model
+
+
 update : Msg -> Model -> ( Model, Out )
 update msg model =
     case msg of
+        OpenedSave ->
+            ( model, OpenSave )
+
+        SaveMsg saveMsg ->
+            ( model, ForSave saveMsg )
+
         SwapDice ->
             ( { model | swaps = model.swaps + 1 }, NoOut )
 
@@ -664,6 +686,8 @@ type alias Ctx =
     , theme : String -- the board's colours, this viewer's own (`themes`)
     , replayHref : Int -> Maybe String -- where a finished game (by number) is replayed, for a seat
     , gamePrs : Int -> List ( String, Float ) -- each player's PR in a finished game (by number), once graded; [] until then
+    , save : Save -- the sign-in the game-over card offers a guest
+    , accounts : Maybe (List String) -- the seats an account owns; Nothing where that is not known (no badge at all)
     }
 
 
@@ -1206,6 +1230,12 @@ viewPlayerBar ctx player isMe tray =
                     ]
                 ]
                 [ div [ class ("swatch shrink-0 " ++ color), title (p.name ++ " plays " ++ color) ] []
+                , case ctx.accounts of
+                    Just owned ->
+                        Identity.badge (List.member p.id owned)
+
+                    Nothing ->
+                        text ""
                 , span [ class "font-bold text-sm sm:text-base truncate" ] [ text p.name ]
                 , viewPresenceDot ctx p.id
                 , viewRating ctx p.id
@@ -3126,6 +3156,7 @@ type alias StillBoard =
     , dice : List Int
     , landed : List Int
     , offer : Maybe String
+    , accounts : Maybe (List String) -- the seats an account owns, for the badge beside each name
     }
 
 
@@ -3204,6 +3235,8 @@ viewStill noop s =
             , theme = s.theme
             , replayHref = \_ -> Nothing
             , gamePrs = \_ -> []
+            , save = NoSave
+            , accounts = s.accounts
             }
 
         me =
@@ -3564,7 +3597,10 @@ viewGameOver ctx winners =
                 |> List.map (\p -> p.name ++ " " ++ String.fromInt (Protocol.counter "score" p))
                 |> String.join " · "
     in
-    div [ class "fixed inset-0 z-50 flex items-center justify-center p-4", style "background" "rgba(35, 36, 58, 0.55)" ]
+    -- The layer scrolls when the card is taller than the screen (a phone on
+    -- its side, the sign-in open in it); short cards stay centred.
+    div [ class "fixed inset-0 z-50 overflow-y-auto", style "background" "rgba(35, 36, 58, 0.55)" ]
+      [ div [ class "min-h-full flex items-center justify-center p-4" ]
         [ div [ class "bg-card bg-white p-6 sm:p-8 max-w-md w-full text-center flex flex-col gap-4" ]
             [ span [ class "pixel text-[10px]", style "color" "var(--bg-accent)" ] [ text "GAME OVER" ]
             , span [ class "pixel text-base sm:text-lg leading-relaxed" ]
@@ -3577,6 +3613,24 @@ viewGameOver ctx winners =
                     )
                 ]
             , span [ class "pixel text-[9px]", style "color" "var(--pencil)" ] [ text scoreline ]
+            , case ctx.save of
+                NoSave ->
+                    text ""
+
+                -- What the player already has, named: this game, and the
+                -- PR the engine is about to give them for it.
+                SaveOffered ->
+                    button
+                        [ Html.Attributes.type_ "button"
+                        , Html.Attributes.id "save-offer"
+                        , class "signin-offer text-[15px] self-center"
+                        , onClick OpenedSave
+                        ]
+                        [ text "Save this game and your PR" ]
+
+                Saving signIn ->
+                    div [ class "text-left border-t pt-4", style "border-color" "rgba(35, 36, 58, 0.12)" ]
+                        [ Html.map SaveMsg (Ui.SignIn.view signIn) ]
             , span [ class "text-sm", style "color" "var(--pencil)" ]
                 [ text
                     (case ( meReady, theyReady ) of
@@ -3623,3 +3677,4 @@ viewGameOver ctx winners =
                 ]
             ]
         ]
+      ]

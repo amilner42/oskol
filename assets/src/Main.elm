@@ -19,10 +19,10 @@ the same flow a shared link takes. Nothing about the room is revealed beyond
 -}
 
 import Api
+import Api.Auth as Auth
 import Api.Catalog as Catalog
 import Browser exposing (Document)
 import Browser.Events
-import Dict
 import Browser.Navigation as Nav
 import Html exposing (Html)
 import Html.Attributes
@@ -85,6 +85,7 @@ type Msg
     | JoinCodeInput String
     | JoinSubmitted
     | GotJoinCode (Result Api.Error Catalog.CodeMatch)
+    | GotMe (Result Api.Error Session.Me)
     | NoOp
 
 
@@ -93,21 +94,61 @@ init flags url key =
     let
         session =
             D.decodeValue Session.decoder flags
-                |> Result.withDefault { csrf = "", guestName = Nothing, prefs = Dict.empty }
+                |> Result.withDefault Session.empty
+
+        ( model, cmd ) =
+            routeTo url
+                { key = key
+                , origin = origin url
+                , session = session
+                , route = Nothing
+                , page = NotFound
+                , loginFlags =
+                    D.decodeValue (D.field "login" (D.nullable D.string)) flags
+                        |> Result.withDefault Nothing
+                , joinOpen = False
+                , joinCode = ""
+                , joinError = Nothing
+                }
     in
-    routeTo url
-        { key = key
-        , origin = origin url
-        , session = session
-        , route = Nothing
-        , page = NotFound
-        , loginFlags =
-            D.decodeValue (D.field "login" (D.nullable D.string)) flags
-                |> Result.withDefault Nothing
-        , joinOpen = False
-        , joinCode = ""
-        , joinError = Nothing
-        }
+    -- Who this browser is beyond its guest cookie: the account on it, if
+    -- any. Until this answers it is a guest.
+    ( model, Cmd.batch [ cmd, Auth.fetchMe session GotMe ] )
+
+
+{-| The session changed (signed in, logged out, `/papi/me` answered): the
+shell keeps it, and so does the page on screen.
+-}
+withSession : Session -> Model -> Model
+withSession session model =
+    { model
+        | session = session
+        , page =
+            case model.page of
+                GameLanding pageModel ->
+                    GameLanding (Page.GameLanding.withSession session pageModel)
+
+                Play pageModel ->
+                    Play (Page.Play.withSession session pageModel)
+
+                Login pageModel ->
+                    Login (Page.Login.withSession session pageModel)
+
+                other ->
+                    other
+    }
+
+
+{-| A sign-in just went through: take the account at its word now, and ask
+`/papi/me` for the rest.
+-}
+signedIn : Maybe Session.User -> Model -> ( Model, Cmd Msg )
+signedIn user model =
+    let
+        session =
+            Session.withUser user model.session
+    in
+    ( withSession session model, Auth.fetchMe session GotMe )
 
 
 {-| Scheme, host and port of the page we were served from: what an invite
@@ -225,6 +266,17 @@ landing model ( pageModel, cmd, out ) =
             , Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.pushUrl model.key seat.path ]
             )
 
+        Page.GameLanding.SignedIn result ->
+            signedIn result.user withPage
+                |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map GameLandingMsg cmd, more ])
+
+        Page.GameLanding.SignedOut ->
+            signedIn Nothing withPage
+                |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map GameLandingMsg cmd, more ])
+
+        Page.GameLanding.Go path ->
+            ( withPage, Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.pushUrl model.key path ] )
+
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
@@ -251,36 +303,58 @@ update msg model =
 
         ( LoginMsg pageMsg, Login pageModel ) ->
             let
-                ( newPageModel, cmd ) =
+                ( newPageModel, cmd, out ) =
                     Page.Login.update pageMsg pageModel
+
+                withPage =
+                    { model | page = Login newPageModel }
             in
-            ( { model | page = Login newPageModel }, Cmd.map LoginMsg cmd )
+            case out of
+                Page.Login.SignedIn user ->
+                    signedIn user withPage
+                        |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map LoginMsg cmd, more ])
+
+                Page.Login.NoOut ->
+                    ( withPage, Cmd.map LoginMsg cmd )
+
+        ( GotMe (Ok me), _ ) ->
+            ( withSession (Session.withMe me model.session) model, Cmd.none )
+
+        -- Nothing known beyond the cookie: a guest, signing in off.
+        ( GotMe (Err _), _ ) ->
+            ( model, Cmd.none )
 
         ( PlayMsg pageMsg, Play pageModel ) ->
             let
                 ( newPageModel, cmd, out ) =
                     Page.Play.update pageMsg pageModel
             in
-            ( { model
-                | page = Play newPageModel
-                , session =
-                    case out of
-                        Page.Play.Remember key value ->
-                            Session.withPref key value model.session
+            case out of
+                Page.Play.SignedIn user ->
+                    signedIn user { model | page = Play newPageModel }
+                        |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map PlayMsg cmd, more ])
 
-                        _ ->
-                            model.session
-              }
-            , Cmd.batch
-                [ Cmd.map PlayMsg cmd
-                , case out of
-                    Page.Play.Navigate url ->
-                        Nav.pushUrl model.key url
+                _ ->
+                    ( { model
+                        | page = Play newPageModel
+                        , session =
+                            case out of
+                                Page.Play.Remember key value ->
+                                    Session.withPref key value model.session
 
-                    _ ->
-                        Cmd.none
-                ]
-            )
+                                _ ->
+                                    model.session
+                      }
+                    , Cmd.batch
+                        [ Cmd.map PlayMsg cmd
+                        , case out of
+                            Page.Play.Navigate url ->
+                                Nav.pushUrl model.key url
+
+                            _ ->
+                                Cmd.none
+                        ]
+                    )
 
         ( ReplayMsg pageMsg, Replay pageModel ) ->
             let

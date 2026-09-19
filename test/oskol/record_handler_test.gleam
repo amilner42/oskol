@@ -69,6 +69,7 @@ pub fn a_seat_reads_the_whole_record_test() {
         #("id", json.string("000007")),
         #("you", json.string("p1")),
         #("seated", json.bool(True)),
+        #("accounts", json.array([], json.string)),
         #("record", expected),
       ]),
     )

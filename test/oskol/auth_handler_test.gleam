@@ -16,12 +16,6 @@ import oskol/core/error
 import oskol/fakes
 import oskol/handlers/auth as handler
 
-/// Auth caps with nothing arranged but the switch: every other call panics.
-fn switched(on: Bool) -> Ctx {
-  let ctx = fakes.ctx()
-  Ctx(..ctx, auth: AuthCaps(..ctx.auth, enabled: fn() { on }))
-}
-
 /// Counting that never says "too many".
 fn under_limit(ctx: Ctx) -> Ctx {
   Ctx(..ctx, auth: AuthCaps(..ctx.auth, count: fn(_, _) { 1 }))
@@ -53,7 +47,7 @@ fn mailing(ctx: Ctx, expected: #(String, String, String)) -> Ctx {
 
 pub fn a_sign_in_puts_the_token_and_the_code_in_the_mail_test() {
   let ctx =
-    switched(True)
+    fakes.ctx()
     |> under_limit
     |> mailing(#("her@example.com", "tok-32-bytes", "482913"))
 
@@ -72,7 +66,7 @@ pub fn a_sign_in_puts_the_token_and_the_code_in_the_mail_test() {
 pub fn an_address_over_its_limit_is_answered_and_not_mailed_test() {
   // send_mail and issue_token are left panicking: reaching them fails.
   let ctx =
-    switched(True)
+    fakes.ctx()
     |> fn(ctx) {
       Ctx(
         ..ctx,
@@ -93,7 +87,7 @@ pub fn an_address_over_its_limit_is_answered_and_not_mailed_test() {
 
 pub fn a_buried_mailbox_is_answered_and_not_mailed_test() {
   let ctx =
-    switched(True)
+    fakes.ctx()
     |> fn(ctx) {
       Ctx(
         ..ctx,
@@ -108,12 +102,6 @@ pub fn a_buried_mailbox_is_answered_and_not_mailed_test() {
 
   let assert Ok(body) =
     handler.start_json(ctx, fakes.guest("g1"), "a@b.com", "")
-  assert body == "{\"ok\":true}"
-}
-
-pub fn signing_in_switched_off_sends_nothing_test() {
-  let assert Ok(body) =
-    handler.start_json(switched(False), fakes.guest("g1"), "a@b.com", "")
   assert body == "{\"ok\":true}"
 }
 
@@ -141,7 +129,7 @@ fn verifying(ctx: Ctx, found: Option(auth.Pending)) -> Ctx {
 
 pub fn a_live_link_offers_the_address_it_is_for_test() {
   let ctx =
-    switched(True)
+    fakes.ctx()
     |> verifying(
       Some(Pending(
         email: "her@example.com",
@@ -158,20 +146,15 @@ pub fn a_live_link_offers_the_address_it_is_for_test() {
 }
 
 pub fn a_dead_link_says_only_that_test() {
-  let ctx = switched(True) |> verifying(None)
+  let ctx = fakes.ctx() |> verifying(None)
 
   assert handler.link_flags(ctx, "tok") == "{\"state\":\"expired\"}"
-}
-
-pub fn a_link_is_dead_while_signing_in_is_switched_off_test() {
-  // verify_token is left panicking: the switch is read first.
-  assert handler.link_flags(switched(False), "tok") == "{\"state\":\"expired\"}"
 }
 
 pub fn a_link_that_is_opened_is_never_spent_test() {
   // consume_token is left panicking. A GET that consumed anything would
   // reach it, and this test would die instead of answering "expired".
-  let ctx = switched(True) |> verifying(None)
+  let ctx = fakes.ctx() |> verifying(None)
 
   assert handler.link_flags(ctx, "tok") == "{\"state\":\"expired\"}"
 }
@@ -186,11 +169,24 @@ pub fn a_link_that_is_opened_is_never_spent_test() {
 fn binding(ctx: Ctx, expect: #(String, String), saved: Int) -> Ctx {
   Ctx(
     ..ctx,
-    guests: guests_caps.GuestsCaps(..ctx.guests, mint: fn() { fakes.minted_id }),
+    guests: guests_caps.GuestsCaps(
+      ..ctx.guests,
+      mint: fn() { fakes.minted_id },
+      // The name this browser last played under, read before the stamp.
+      touch: fn(_) { Some("Alice") },
+    ),
     auth: AuthCaps(
       ..ctx.auth,
       find_or_create_user: fn(email) {
         User(id: expect.1, email: email, name: None)
+      },
+      // "Alice" is somebody else's already; the account gets "Alice1".
+      claim_name: fn(user_id, name) {
+        assert user_id == expect.1
+        case name {
+          "Alice" -> Error(Nil)
+          _ -> Ok(Nil)
+        }
       },
       stamp_seats: fn(old_guest, new_guest, user_id) {
         // The seats move from the guest that played them to the fresh id,
@@ -211,7 +207,7 @@ fn binding(ctx: Ctx, expect: #(String, String), saved: Int) -> Ctx {
 
 pub fn the_button_on_the_page_spends_the_token_and_signs_the_browser_in_test() {
   let ctx =
-    switched(True)
+    fakes.ctx()
     |> fn(ctx) {
       Ctx(
         ..ctx,
@@ -240,19 +236,25 @@ pub fn the_button_on_the_page_spends_the_token_and_signs_the_browser_in_test() {
   assert signed_in.drop_sockets == Some("g1")
   // The games this browser played came with it.
   assert string.contains(body, "\"saved\":3")
+  // A new account is named after the name the browser played under, with a
+  // number when that one is taken, and the page is told it is new.
+  assert string.contains(body, "\"name\":\"Alice1\"")
+  assert string.contains(body, "\"new\":true")
   assert string.contains(body, "\"next\":\"/backgammon/abc123\"")
   assert string.contains(body, "\"email\":\"her@example.com\"")
 }
 
 pub fn a_stamp_that_did_not_land_signs_in_on_the_id_the_browser_has_test() {
   let ctx =
-    switched(True)
+    fakes.ctx()
     |> fn(ctx) {
       Ctx(
         ..ctx,
-        guests: guests_caps.GuestsCaps(..ctx.guests, mint: fn() {
-          fakes.minted_id
-        }),
+        guests: guests_caps.GuestsCaps(
+          ..ctx.guests,
+          mint: fn() { fakes.minted_id },
+          touch: fn(_) { None },
+        ),
         auth: AuthCaps(
           ..ctx.auth,
           consume_token: fn(_) {
@@ -267,6 +269,7 @@ pub fn a_stamp_that_did_not_land_signs_in_on_the_id_the_browser_has_test() {
           },
           // The one write failed and rolled back: no seat moved.
           stamp_seats: fn(_, _, _) { Error(Nil) },
+          claim_name: fn(_, _) { Ok(Nil) },
           // So the account goes on the id the browser already has...
           bind_guest: fn(guest_id, user_id) {
             assert #(guest_id, user_id) == #("g1", "user-uuid")
@@ -290,7 +293,7 @@ pub fn a_stamp_that_did_not_land_signs_in_on_the_id_the_browser_has_test() {
 
 pub fn a_token_already_spent_signs_nobody_in_test() {
   let ctx =
-    switched(True)
+    fakes.ctx()
     |> fn(ctx) {
       Ctx(..ctx, auth: AuthCaps(..ctx.auth, consume_token: fn(_) { None }))
     }
@@ -300,13 +303,6 @@ pub fn a_token_already_spent_signs_nobody_in_test() {
   assert !signed_in.renew
   // Nothing was stamped and no cookie is rewritten.
   assert signed_in.guest_id == None
-  assert refusal_is_generic(signed_in.body)
-}
-
-pub fn a_link_signs_nobody_in_while_the_flow_is_off_test() {
-  let signed_in = handler.link_json(switched(False), fakes.guest("g1"), "tok")
-
-  assert !signed_in.renew
   assert refusal_is_generic(signed_in.body)
 }
 
@@ -329,7 +325,7 @@ fn checking(ctx: Ctx, verdict: auth.CodeCheck) -> Ctx {
 
 pub fn the_code_from_the_mail_signs_in_the_browser_that_asked_test() {
   let ctx =
-    switched(True)
+    fakes.ctx()
     |> checking(
       CodeOk(Pending(email: "her@example.com", guest_id: Some("g1"), next: None)),
     )
@@ -347,7 +343,7 @@ pub fn the_code_from_the_mail_signs_in_the_browser_that_asked_test() {
 }
 
 pub fn a_wrong_code_says_so_test() {
-  let ctx = switched(True) |> checking(CodeWrong)
+  let ctx = fakes.ctx() |> checking(CodeWrong)
 
   let signed_in =
     handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "482913")
@@ -359,7 +355,7 @@ pub fn a_wrong_code_says_so_test() {
 }
 
 pub fn a_code_out_of_tries_reads_like_an_expired_one_test() {
-  let ctx = switched(True) |> checking(CodeDead)
+  let ctx = fakes.ctx() |> checking(CodeDead)
 
   let signed_in =
     handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "482913")
@@ -369,7 +365,7 @@ pub fn a_code_out_of_tries_reads_like_an_expired_one_test() {
 
 pub fn something_that_is_not_six_digits_is_never_looked_up_test() {
   // check_code is left panicking: a short code never reaches the row.
-  let ctx = switched(True)
+  let ctx = fakes.ctx()
 
   let signed_in =
     handler.code_json(ctx, fakes.guest("g1"), "her@example.com", "4821")

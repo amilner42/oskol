@@ -168,6 +168,7 @@ type alias Connection =
     { id : String
     , name : String
     , connected : Bool
+    , account : Bool -- an account owns the seat (a yes or no; never which)
     }
 
 
@@ -344,10 +345,11 @@ payloadDecoder =
 
 connectionDecoder : Decoder Connection
 connectionDecoder =
-    D.map3 Connection
+    D.map4 Connection
         (D.field "id" D.string)
         (D.field "name" D.string)
         (D.field "connected" D.bool)
+        (D.oneOf [ D.field "account" D.bool, D.succeed False ])
 
 
 updateDecoder : Decoder Update

@@ -138,7 +138,7 @@ game number =
 
 
 session =
-    { csrf = "", guestName = Nothing, prefs = Dict.empty }
+    { csrf = "", guestName = Nothing, prefs = Dict.empty, user = Nothing }
 
 
 {-| The page with the record in, on game `wanted`.

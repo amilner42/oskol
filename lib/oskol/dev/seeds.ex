@@ -33,6 +33,10 @@ defmodule Oskol.Dev.Seeds do
   @max_steps 3000
   @max_seeds 3000
 
+  # The account the walkthrough room's P1 belongs to: sign in as it (the
+  # mail is at /dev/mailbox) and the seat opens, from any browser.
+  @walkthrough_email "ari@oskol.test"
+
   @doc "Every seeded room: its code, what it is, and the format it is played in."
   def scenarios do
     [
@@ -100,6 +104,16 @@ defmodule Oskol.Dev.Seeds do
           "a match to 3 played to the end, several games: open " <>
             "/backgammon/000011/replay for the replay and its analysis",
         find: &finished_match?/2
+      },
+      %{
+        code: "000013",
+        format: "single",
+        heading: "Accounts walkthrough",
+        owner: @walkthrough_email,
+        what:
+          "P1 belongs to the account #{@walkthrough_email} (nobody can claim it from the " <>
+            "invite), P2 is free; sign in as #{@walkthrough_email} from /dev/mailbox to play P1",
+        find: &fresh?/2
       }
     ]
   end
@@ -137,14 +151,22 @@ defmodule Oskol.Dev.Seeds do
 
   # ---------- one scenario ----------
 
-  defp seed(%{code: code, format: format, what: what, find: find}) do
+  defp seed(%{code: code, format: format, what: what, find: find} = scenario) do
     {seed, actions} = search(format, find)
 
     {:ok, _} = Game.start_game(code, @slug)
 
     {:ok, _} = Game.configure(code, %{format: format, clock: "none", seed: seed})
 
-    {:ok, p1, _} = Game.join_game(code, "P1", nil)
+    # An owned P1 is the account's from the start: no guest on it, so only
+    # a browser signed into that account opens it.
+    owner =
+      case scenario do
+        %{owner: email} -> Oskol.Auth.find_or_create_user(email).id
+        _ -> nil
+      end
+
+    {:ok, p1, _} = Game.join_game(code, "P1", nil, nil, owner)
     {:ok, p2, _} = Game.join_game(code, "P2", nil)
     seat_of = %{"p1" => p1, "p2" => p2}
 
@@ -157,6 +179,7 @@ defmodule Oskol.Dev.Seeds do
 
     %{
       code: code,
+      heading: Map.get(scenario, :heading),
       what: what,
       seed: seed,
       steps: length(actions),

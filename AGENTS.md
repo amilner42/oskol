@@ -345,8 +345,8 @@ And **never** do this:
 
 ## Project Overview
 Oskol (oskol.io) is a backgammon site. The mission: become the best place on
-the internet to play backgammon. You play a friend from a link: no accounts,
-phone-friendly, free. The game is the real thing, by the book, and every
+the internet to play backgammon. You play a friend from a link: no account
+needed, phone-friendly, free. The game is the real thing, by the book, and every
 game is graded by the analysis engine once it is over: play a friend from
 a link, then learn from the game.
 **Backgammon** is the classic race game with the doubling cube: single games,
@@ -393,10 +393,9 @@ answers to the guest that took it, exactly as before. An owned seat is
 therefore not claimable: the invite link says `owned` and offers nothing.
 Signing in **stamps** every unowned seat this browser holds onto the
 account and **rotates** its guest id in the same write, so the id it
-arrived with opens nothing afterwards. The backend is in (`/papi/auth/*`,
-`src/oskol/handlers/auth.gleam`) and dark behind `:oskol, :auth_enabled`;
-with it off nobody is ever bound, so every seat is unowned and a guest
-plays exactly as before.
+arrived with opens nothing afterwards. A browser that never signs in is
+never bound: its seats stay unowned and it plays exactly as a guest always
+has.
 
 The game is built on **gamekit**, a small framework that keeps the rules,
 the room and the client apart: a game is one Gleam module that implements
@@ -601,7 +600,14 @@ src/oskol/handlers/auth.gleam    signing in: the mail, the link, the code, the
                                  refusals, the rate verdict, where `next` may point
 lib/oskol_web/controllers/login_controller.ex  GET /login/:token: reads the token,
                                  spends nothing, serves the shell with its flags
-assets/src/Page/Login.elm        that page: confirm, signed in, expired
+assets/src/Page/Login.elm        that page: confirm, the win, expired (a fresh mail)
+assets/src/Ui/Username.elm       a new account's username on the win, and changing it
+assets/src/Ui/Identity.elm       the guest / account badge beside every name
+src/oskol/guests/username.gleam  which usernames a new account tries, in order
+assets/src/Ui/SignIn.elm         signing in, the one component every entry embeds:
+                                 email -> "Check your email" + six digits -> the win
+assets/src/Api/Auth.elm          /papi/auth/* and /papi/me for the client
+playwright/test-accounts/test.js the whole sign-in flow in three browsers
 ```
 
 ## Platform decisions live in Gleam (`src/oskol/`)
@@ -675,9 +681,14 @@ arrive at any of them cold, and moving between them afterwards is a
   token and writes nothing: the page says "Sign in as you@example.com" with
   one button, and that button POSTs `/papi/auth/link`, which is the only
   thing that spends it. So a mail scanner prefetching the link cannot burn
-  it and no other site can sign a visitor in. A dead token renders
-  "expired". Served the SPA shell, `noindex`; the flags ride in a `login`
-  meta tag. A bare `/login` names no game: 404. `login` and `dev` are
+  it and no other site can sign a visitor in. Under the button: "Opened
+  this on another device? Enter the code from the mail there instead."
+  Pressed, the page is the win every sign-in ends on ("You're in.", how
+  many games came along, CONTINUE to where it was asked from), plus a line
+  for a link that brought nothing, pointing at the other device. A dead
+  token renders "That link has expired. We'll send a fresh one." over the
+  sign-in (`Ui.SignIn`). Served the SPA shell, `noindex`; the flags
+  (`state`, `email`, `next`) ride in a `login` meta tag. A bare `/login` names no game: 404. `login` and `dev` are
   reserved slugs (declared before the game routes).
 - `/poker`, `/go`, `/chess` and anything under them: 302 to `/` (the games
   that were removed).
@@ -714,7 +725,7 @@ GET  /papi/games/:slug/rooms/:id/reviews/:game_number  (open) one game
 POST /papi/games/:slug/rooms/:id/reviews/retry  {game_number} -> the index, a
                                          failed game queued again (a seat only)
 GET  /papi/games/:slug/rooms/:id/record  (open)
-                                       {ok, slug, id, you, seated, record}  (the game's
+                                       {ok, slug, id, you, seated, accounts, record}  (the game's
                                        `record`; `you` is the seat the board faces --
                                        the reader's own, else the first -- and `seated`
                                        says whether that seat is theirs)
@@ -728,16 +739,19 @@ GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no
-                                       enumeration; over a rate limit or with the
-                                       flow switched off it sends nothing and says
-                                       the same. Mails a link and a six-digit code)
-POST /papi/auth/link                   {token} -> {ok, saved, next, user}
-POST /papi/auth/code                   {email, code} -> {ok, saved, next, user}
+                                       enumeration; over a rate limit it sends
+                                       nothing and says the same. Mails a link and
+                                       a six-digit code)
+POST /papi/auth/link                   {token} -> {ok, saved, next, user, new}
+POST /papi/auth/code                   {email, code} -> {ok, saved, next, user, new}
                                        (the code redeems only from the browser that
                                        asked; 5 tries, then dead)
 POST /papi/auth/logout                 {ok}  (nilifies guests.user_id and drops
                                        this browser's sockets)
 GET  /papi/me                          {ok, guest_name, user: {email, name} | null}
+POST /papi/me/name                     {name} -> {ok, user}  (a signed-in browser
+                                       renames its account; 422 "That name is
+                                       taken." when another account has it)
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
 GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
@@ -755,7 +769,9 @@ opponent arrives. The seat is held by the guest cookie the write came with,
 so the same URL is what anyone would be given for that room. `state` is
 `open` (a free seat), `away` (a seat whose player is gone and that anyone
 with the code may take back), `owned` (the only seats free belong to
-accounts: nothing on offer), `full` (both players are there) or `missing`
+accounts: nothing on offer), `seated` (with `path`: the caller already
+holds a seat there, by its guest or its account, and the client goes
+straight to the table), `full` (both players are there) or `missing`
 (the room is over). `disconnected` names only the seats a visitor may
 actually take, so an owned seat is never listed and nothing on the page can
 be typed at it.
@@ -800,9 +816,9 @@ and rotates that guest id, both in one ordered write, and the response
 carries the fresh guest cookie. `next` is validated in Gleam — a local
 path, or `/`. Rate limits
 are ETS counters behind the `count` cap, per node: 10 starts per browser
-per hour, 30 per address. `:oskol, :auth_enabled` (prod: `AUTH_ENABLED`,
-default off) is the switch: off, a start sends nothing and a link reads as
-expired. Decisions: `src/oskol/handlers/auth.gleam`.
+per hour, 30 per address. There is no switch: signing in is always on,
+and prod sends real mail through Postmark. Decisions:
+`src/oskol/handlers/auth.gleam`.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist
@@ -955,7 +971,13 @@ mix oskol.seed        # local backgammon rooms at codes 000001.. parked in posit
                       # 000010 is a single game played to the end, with a review
                       # (start the fly proxy first, or the review fails and waits);
                       # 000011 a match to 3 played to the end: its replay is
-                      # /backgammon/000011/replay
+                      # /backgammon/000011/replay; 000013 is the accounts
+                      # walkthrough: P1 belongs to ari@oskol.test (sign in as
+                      # it from /dev/mailbox to play P1), P2 is free
+node playwright/test-accounts/test.js           # signing in: the code from LIVE GAMES, the
+                                               # link (asks first), an owned seat nobody
+                                               # can claim, log out; mail read from
+                                               # /dev/last-login; phone screenshots
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
@@ -1185,8 +1207,32 @@ carried, which Phoenix hands over only against the page's `_csrf_token`), and
 losing the cookie loses the seats it was holding — they can be claimed back
 from the invite link, like anyone else's.
 
-**Accounts** are `users` (uuid id, `email` citext unique, `name`,
-`last_login_at`) and `login_tokens` (a sign-in in flight: `email`,
+**Signing in is the win after the value, never a gate.** It is offered
+where a player already has something to keep — under LIVE GAMES on the
+home board ("Save these 3 games"), on the table's game-over card ("Save
+this game and your PR"), under an invite whose seat belongs to an account
+— always the one component, `Ui.SignIn`, in the same words, and never
+more than a line until pressed; a guest who ignores it loses nothing and
+plays exactly as before. Signed in, the home bar shows the account with
+LOG OUT behind it.
+
+**An account shows up by its username, never its email.** `users.name`
+is citext and unique (`UniqueUsernames`). A new account is named at its
+first sign-in (`handlers/auth.named`, on the rule `guests/username.candidates`):
+the name the browser last played under as a guest, else that with a number
+(`arie1`, `arie2`...), else `player1`, `player2`...; the win says "You'll
+show up as arie1 · Change" (`Ui.Username`, `POST /papi/me/name`). A
+signed-in browser is never asked for a name: CREATE GAME and the invite's
+join form show "Playing as arie1", and the server seats it under the
+username whatever it is sent (`landing.seat_name`). Wherever a name is shown
+(the home bar, both player bars at the table, the replay) a badge says
+guest or account (`Ui.Identity`): the channel's seat list carries
+`account: true|false` per seat and the record carries `accounts` (player
+ids), a yes or no only, never which account. A guest's home bar has the
+same caret as an account's, with SIGN IN behind it.
+
+**Accounts** are `users` (uuid id, `email` citext unique, `name` citext
+unique, `last_login_at`) and `login_tokens` (a sign-in in flight: `email`,
 `token_hash`, `code_hash`, the `guest_id` that asked, `next`, `expires_at`,
 `consumed_at`, `attempts`), both `Oskol.Auth`. An account is an email
 address and nothing else — no password, so nothing to reset or leak.

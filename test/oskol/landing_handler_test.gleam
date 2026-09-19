@@ -8,6 +8,7 @@ import gamekit/registry
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import oskol/caps/auth as auth_caps
 import oskol/caps/ids as ids_caps
 import oskol/caps/persistence as persistence_caps
 import oskol/caps/rooms as rooms_caps
@@ -192,7 +193,7 @@ pub fn a_game_page_carries_its_copy_its_formats_and_the_clocks_test() {
   )
   assert string.contains(
     body,
-    "\"description\":\"Backgammon for two, free, no accounts.\"",
+    "\"description\":\"Backgammon for two, free, no account needed.\"",
   )
   assert string.contains(
     body,
@@ -540,6 +541,45 @@ pub fn joining_a_table_that_filled_up_says_so_test() {
 
   assert error.code(err) == "validation_failed"
   assert error.message(err) == "That game is full"
+}
+
+pub fn a_signed_in_player_whose_username_is_taken_at_the_table_is_numbered_test() {
+  // A guest at the table typed "Sam"; the account "Sam" has no name field
+  // to change, so it sits down as "Sam1".
+  let ctx =
+    reading()
+    |> fakes.with_guests(None)
+    |> seating(Ok(Seat(player_id: "p2", started: True)))
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: auth_caps.AuthCaps(..ctx.auth, user: fn(_) {
+          Some(auth_caps.User(
+            id: "u1",
+            email: "sam@example.com",
+            name: Some("Sam"),
+          ))
+        }),
+        rooms: rooms_caps.RoomsCaps(..ctx.rooms, join: fn(_, name, _, _) {
+          case name {
+            "Sam" -> Error(errors.NameTaken)
+            _ -> {
+              assert name == "Sam1"
+              Ok(Seat(player_id: "p2", started: True))
+            }
+          }
+        }),
+      )
+    }
+
+  let assert Ok(_) =
+    landing.join_json(
+      ctx,
+      fakes.signed_in("g2", "u1"),
+      "backgammon",
+      "123456",
+      "",
+    )
 }
 
 pub fn a_name_clash_is_refused_test() {

@@ -162,7 +162,9 @@ defmodule OskolWeb.GameChannel do
   defp connections_json(%GameServerState{} = state) do
     Enum.map(state.seat_order, fn id ->
       conn = state.connections[id]
-      %{id: id, name: conn.name, connected: conn.connected}
+      # `account`: whether an account owns the seat, for the badge beside
+      # the name. A yes or no only: an account id never leaves the server.
+      %{id: id, name: conn.name, connected: conn.connected, account: conn.user_id != nil}
     end)
   end
 end

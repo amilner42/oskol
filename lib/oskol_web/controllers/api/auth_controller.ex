@@ -66,6 +66,10 @@ defmodule OskolWeb.Api.AuthController do
     json_resp(conn, 200, :oskol@handlers@auth.me_json(ctx(), session(conn)))
   end
 
+  def rename(conn, params) do
+    send_json(conn, :oskol@handlers@auth.name_json(ctx(), session(conn), param(params, "name")))
+  end
+
   # A sign-in that took hands back `renew: true`, which is the moment to
   # renew the session (a session id someone else planted is no longer the
   # signed-in one) and, with it, the fresh guest id the handler minted: the
