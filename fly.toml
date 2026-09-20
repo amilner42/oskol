@@ -10,9 +10,10 @@ kill_signal = 'SIGTERM'
 [build]
 
 [deploy]
-  # There is one local room owner. Stop it before its replacement starts so
-  # boot-time migrations and in-memory rooms can never overlap across builds.
-  strategy = 'immediate'
+  # Oskol has one local room owner. A rolling update takes that machine down
+  # before replacing it, so no owners overlap while Fly still verifies the boot.
+  strategy = 'rolling'
+  max_unavailable = 1
 
 [env]
   PHX_HOST = 'oskol.io'

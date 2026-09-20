@@ -92,7 +92,7 @@ defmodule Oskol.DeployTest do
              )
 
     assert File.read!(calls_file) ==
-             "machines\ndeploy deploy --remote-only --strategy immediate --app oskol\nmachines\n"
+             "machines\ndeploy deploy --remote-only --ha=false --strategy rolling --app oskol\nmachines\n"
   end
 
   test "refuses a deploy that would leave two machines", %{
@@ -118,10 +118,38 @@ defmodule Oskol.DeployTest do
       )
 
     assert status == 1
-    assert output =~ "requires exactly one Fly machine (found 2)"
+    assert output =~ "deploy completed, but oskol now reports 2 Fly machines"
 
     assert File.read!(calls_file) ==
-             "machines\ndeploy deploy --remote-only --strategy immediate --app oskol\nmachines\n"
+             "machines\ndeploy deploy --remote-only --ha=false --strategy rolling --app oskol\nmachines\n"
+  end
+
+  test "refuses caller flags that could weaken the one-machine invariant", %{
+    fake_fly: fake_fly,
+    machines_file: machines_file,
+    after_machines_file: after_machines_file,
+    deployed_file: deployed_file,
+    calls_file: calls_file
+  } do
+    File.write!(machines_file, "only-machine\n")
+
+    for override <- ["--ha=true", "--strategy=rolling", "--app=another-app", "-aanother-app"] do
+      {output, status} =
+        System.cmd(@deploy, [override],
+          env: [
+            {"FLY_BIN", fake_fly},
+            {"FLY_MACHINES_FILE", machines_file},
+            {"FLY_MACHINES_AFTER_FILE", after_machines_file},
+            {"FLY_DEPLOYED_FILE", deployed_file},
+            {"FLY_CALLS_FILE", calls_file}
+          ],
+          stderr_to_stdout: true
+        )
+
+      assert status == 1
+      assert output =~ "refusing deploy override #{override}"
+      refute File.exists?(calls_file)
+    end
   end
 
   test "the release keeps administration but cannot discover peer nodes" do
@@ -132,6 +160,8 @@ defmodule Oskol.DeployTest do
     assert File.read!(Path.expand("../../rel/env.sh.eex", __DIR__)) =~ "RELEASE_DISTRIBUTION"
 
     assert File.read!(Path.expand("../../fly.toml", __DIR__)) =~
-             "[deploy]\n  # There is one local room owner. Stop it before its replacement starts so\n  # boot-time migrations and in-memory rooms can never overlap across builds.\n  strategy = 'immediate'"
+             "strategy = 'rolling'"
+
+    assert File.read!(Path.expand("../../fly.toml", __DIR__)) =~ "max_unavailable = 1"
   end
 end
