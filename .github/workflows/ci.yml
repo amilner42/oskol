@@ -78,7 +78,7 @@ jobs:
       - name: Production release excludes test-only Gleam
         run: bin/check-prod-release
       - name: Shipped Hex dependency audit
-        run: MIX_ENV=prod mix oskol.hex_audit
+        run: bin/check-hex-advisories
       - name: Gleam unit, rules, property and golden tests
         run: bin/test-gleam
       - name: Fixture payloads for elm-test

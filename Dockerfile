@@ -54,7 +54,6 @@ ENV MIX_ENV="prod"
 
 # install mix dependencies
 COPY mix.exs mix.lock ./
-COPY project project
 COPY gleam.toml ./
 # mix.exs loads the custom production Gleam compiler before any Mix task runs.
 COPY project project

@@ -1,5 +1,4 @@
 Code.require_file("project/compile/oskol_gleam.exs", __DIR__)
-Code.require_file("project/oskol_hex_audit_task.ex", __DIR__)
 
 defmodule Oskol.MixProject do
   use Mix.Project
@@ -133,7 +132,7 @@ defmodule Oskol.MixProject do
         "format",
         "test",
         "cmd npm run audit:production",
-        "cmd env MIX_ENV=prod mix oskol.hex_audit"
+        "cmd bin/check-hex-advisories"
       ]
     ]
   end

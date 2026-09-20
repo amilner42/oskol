@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+# `mix run` evaluates runtime.exs even with --no-start. These values only let
+# configuration load; the application and database are never started.
+DATABASE_URL="${DATABASE_URL:-ecto://oskol:oskol@localhost/oskol_hex_audit}"
+SECRET_KEY_BASE="${SECRET_KEY_BASE:-0000000000000000000000000000000000000000000000000000000000000000}"
+export DATABASE_URL SECRET_KEY_BASE
+
+MIX_ENV=prod mix run --no-start scripts/hex_audit.exs
