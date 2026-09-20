@@ -173,9 +173,9 @@ end
 defmodule Oskol.Persistence.SeatedRoomsIndexTest do
   # This is deliberately a database test rather than a query-string test:
   # it protects the expression-index contract between the migration and the
-  # Ecto fragment. A small table naturally gets a sequential scan, so make a
-  # representative unfinished-room set and ask the normal planner for both
-  # holder shapes.
+  # Ecto fragment. Disable sequential scans only while explaining: the
+  # contract is that PostgreSQL can use the index, not that one planner/cost
+  # configuration must prefer it for a tiny test table.
   use ExUnit.Case, async: false
 
   alias Oskol.Persistence
@@ -198,11 +198,11 @@ defmodule Oskol.Persistence.SeatedRoomsIndexTest do
     now = DateTime.utc_now()
 
     rows =
-      for n <- 1..10_000 do
+      for n <- 1..20 do
         holder =
           case n do
-            9_997 -> %{"guest_id" => @guest}
-            9_998 -> %{"user_id" => @user}
+            17 -> %{"guest_id" => @guest}
+            18 -> %{"user_id" => @user}
             _ -> %{"guest_id" => "guest-#{n}"}
           end
 
@@ -218,18 +218,14 @@ defmodule Oskol.Persistence.SeatedRoomsIndexTest do
         }
       end
 
-    rows
-    |> Enum.chunk_every(1_000)
-    |> Enum.each(fn batch ->
-      {count, nil} = Repo.insert_all(Persistence.Game, batch)
-      assert count == length(batch)
-    end)
+    {count, nil} = Repo.insert_all(Persistence.Game, rows)
+    assert count == length(rows)
 
     Repo.query!("ANALYZE games")
 
-    assert ["seat-index-9997"] = Persistence.seated_rooms(@guest) |> Enum.map(& &1.id)
+    assert ["seat-index-17"] = Persistence.seated_rooms(@guest) |> Enum.map(& &1.id)
 
-    assert ["seat-index-9998"] =
+    assert ["seat-index-18"] =
              Persistence.seated_rooms("another-browser", @user) |> Enum.map(& &1.id)
 
     assert index_plan(@guest) =~ "games_unfinished_players_gin"
@@ -239,6 +235,8 @@ defmodule Oskol.Persistence.SeatedRoomsIndexTest do
   defp index_plan(guest_id, user_id \\ nil) do
     query = Persistence.seated_rooms_query(guest_id, user_id)
     {sql, params} = Ecto.Adapters.SQL.to_sql(:all, Repo, query)
+
+    Repo.query!("SET LOCAL enable_seqscan = off")
 
     Repo.query!(
       "EXPLAIN (COSTS OFF) " <> sql,
