@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Build the same production release locally and in CI that Docker packages,
+# then prove test-only Gleam code and dependencies did not enter the artifact.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+MIX_ENV=prod mix clean
+MIX_ENV=prod mix release --overwrite
+
+release="_build/prod/rel/oskol"
+test_modules=()
+
+# A second compile must discard output for a source that was renamed or
+# deleted. Seed both generated-output locations with a file that cannot be
+# regenerated, then let the normal release path replace them.
+stale="stale_source_set_probe.erl"
+stage_artefacts="_build/prod/gleam_package/build/dev/erlang/oskol/_gleam_artefacts"
+app_artefacts="_build/prod/lib/oskol/_gleam_artefacts"
+touch "$stage_artefacts/$stale" "$app_artefacts/$stale"
+MIX_ENV=prod mix release --overwrite
+
+if [[ -e "$stage_artefacts/$stale" || -e "$app_artefacts/$stale" ]]; then
+  echo "deleted Gleam output lingered across a production rebuild" >&2
+  exit 1
+fi
+
+while IFS= read -r source; do
+  module="${source#test/}"
+  module="${module%.gleam}"
+  module="${module//\//@}"
+  test_modules+=("$module")
+done < <(find test -type f -name '*.gleam' -print | sort)
+
+for module in "${test_modules[@]}"; do
+  beam="${module}.beam"
+  leaked="$(find "$release" -type f -name "$beam" -print -quit)"
+
+  if [[ -n "$leaked" ]]; then
+    echo "test-only Gleam module entered the production release: $leaked" >&2
+    exit 1
+  fi
+done
+
+gleeunit="$(find "$release/lib" -maxdepth 1 -type d -name 'gleeunit-*' -print -quit)"
+
+if [[ -n "$gleeunit" ]]; then
+  echo "test-only gleeunit dependency entered the production release: $gleeunit" >&2
+  exit 1
+fi
+
+# Load a project module through the assembled release and execute functions
+# from gleam_stdlib. Assembly alone would not catch a missing runtime package.
+normalised="$(
+  env \
+    DATABASE_URL='ecto://release:release@localhost/oskol_release_check' \
+    SECRET_KEY_BASE='release-check-only-release-check-only-release-check-only-release-check-only' \
+    PHX_HOST='release-check.invalid' \
+    "$release/bin/oskol" eval 'IO.puts(:oskol@rooms@code.normalise("oil"))'
+)"
+
+if [[ "$normalised" != "011" ]]; then
+  echo "production release could not execute packaged Gleam code: $normalised" >&2
+  exit 1
+fi
+
+echo "production release contains src/ Gleam only and loads its runtime"
