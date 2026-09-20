@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+# The only supported production deploy path. Rooms and their persister are
+# local processes, so a second Fly machine would create a second owner.
+set -eu
+
+app="${FLY_APP_NAME:-oskol}"
+fly="${FLY_BIN:-fly}"
+
+machine_count() {
+  machines="$("$fly" machines list --app "$app" --quiet)" || {
+    echo "could not list Fly machines for $app" >&2
+    return 1
+  }
+
+  printf '%s\n' "$machines" | awk 'NF { count += 1 } END { print count + 0 }'
+}
+
+require_one_machine() {
+  count="$(machine_count)" || exit 1
+
+  if [ "$count" -ne 1 ]; then
+    echo "refusing to deploy $app: Oskol requires exactly one Fly machine (found $count)" >&2
+    exit 1
+  fi
+}
+
+require_one_machine
+"$fly" deploy --remote-only --strategy immediate --app "$app" "$@"
+require_one_machine

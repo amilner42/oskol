@@ -9,6 +9,11 @@ kill_signal = 'SIGTERM'
 
 [build]
 
+[deploy]
+  # There is one local room owner. Stop it before its replacement starts so
+  # boot-time migrations and in-memory rooms can never overlap across builds.
+  strategy = 'immediate'
+
 [env]
   PHX_HOST = 'oskol.io'
   PORT = '8080'
