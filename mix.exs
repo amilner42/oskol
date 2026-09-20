@@ -1,19 +1,4 @@
-# `gleam build` and `gleam test` write an escript named gleam@@compile.erl
-# into each package's artefact directory. It is not an Erlang module, and the
-# Erlang compiler would choke on it, so this tiny compiler step removes it
-# before the erlang compiler runs.
-defmodule Mix.Tasks.Compile.GleamClean do
-  use Mix.Task.Compiler
-
-  @impl true
-  def run(_args) do
-    "build/*/erlang/*/_gleam_artefacts/gleam@@compile.erl"
-    |> Path.wildcard()
-    |> Enum.each(&File.rm/1)
-
-    {:noop, []}
-  end
-end
+Code.require_file("project/compile/oskol_gleam.exs", __DIR__)
 
 defmodule Oskol.MixProject do
   use Mix.Project
@@ -24,20 +9,15 @@ defmodule Oskol.MixProject do
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
-      erlc_paths: [
-        "build/dev/erlang/oskol/_gleam_artefacts",
-        "build/dev/erlang/gleam_stdlib/_gleam_artefacts",
-        "build/dev/erlang/gleam_json/_gleam_artefacts",
-        "build/dev/erlang/gleeunit/_gleam_artefacts"
-      ],
-      erlc_include_path: "build/dev/erlang/oskol/include",
+      erlc_paths: gleam_erlc_paths(Mix.env()),
+      erlc_include_path: gleam_include_path(Mix.env()),
       erlc_options: [{:d, :GLEAM}],
       prune_code_paths: false,
       start_permanent: Mix.env() == :prod,
-      archives: [mix_gleam: "~> 0.6"],
+      archives: [mix_gleam: "== 0.6.2"],
       aliases: aliases(),
       deps: deps(),
-      compilers: [:gleam, :gleam_clean, :phoenix_live_view | Mix.compilers()],
+      compilers: [:oskol_gleam, :phoenix_live_view | Mix.compilers()],
       listeners: [Phoenix.CodeReloader]
     ]
   end
@@ -63,6 +43,25 @@ defmodule Oskol.MixProject do
   # try to build it as part of the Gleam package.
   defp elixirc_paths(:test), do: ["lib", "test_support"]
   defp elixirc_paths(_), do: ["lib"]
+
+  defp gleam_erlc_paths(:prod) do
+    ["_build/prod/gleam_package/build/dev/erlang/oskol/_gleam_artefacts"]
+  end
+
+  defp gleam_erlc_paths(_env) do
+    [
+      "build/dev/erlang/oskol/_gleam_artefacts",
+      "build/dev/erlang/gleam_stdlib/_gleam_artefacts",
+      "build/dev/erlang/gleam_json/_gleam_artefacts",
+      "build/dev/erlang/gleeunit/_gleam_artefacts"
+    ]
+  end
+
+  defp gleam_include_path(:prod) do
+    "_build/prod/gleam_package/build/dev/erlang/oskol/include"
+  end
+
+  defp gleam_include_path(_env), do: "build/dev/erlang/oskol/include"
 
   # Specifies your project dependencies.
   #

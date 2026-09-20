@@ -75,6 +75,8 @@ jobs:
         run: mix local.hex --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
       - run: mix deps.get
       - run: mix compile
+      - name: Production release excludes test-only Gleam
+        run: bin/check-prod-release
       - name: Gleam unit, rules, property and golden tests
         run: bin/test-gleam
       - name: Fixture payloads for elm-test

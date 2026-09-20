@@ -54,6 +54,8 @@ ENV MIX_ENV="prod"
 # install mix dependencies
 COPY mix.exs mix.lock ./
 COPY gleam.toml ./
+# mix.exs loads the custom production Gleam compiler before any Mix task runs.
+COPY project project
 RUN mix deps.get --only $MIX_ENV
 RUN mkdir config
 
@@ -73,8 +75,11 @@ COPY priv priv
 
 COPY lib lib
 
-# Copy Gleam source code
+# Copy both Gleam source roots so the image build cannot hide an accidental
+# test compile. The production compiler stages src/ only, just as it does for
+# a local MIX_ENV=prod release.
 COPY src src
+COPY test test
 
 # Compile the release (including Gleam)
 RUN mix compile
