@@ -27,6 +27,8 @@
 # Common development/test artifacts
 /cover/
 /doc/
+/node_modules/
+/playwright/
 /test/
 /tmp/
 .elixir_ls
