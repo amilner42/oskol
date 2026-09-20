@@ -723,7 +723,7 @@ suite =
                                     render "p2" [ ready ] (between [ "p1" ] u)
                             in
                             Expect.all
-                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "P1 WINS +2" ]
+                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "ALICE WINS +2" ]
                                 , \_ -> rendered |> Query.has [ id "bg-action-ready" ]
                                 , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text (opponent ++ " IS READY") ]
                                 ]
@@ -742,8 +742,8 @@ suite =
                             in
                             Expect.all
                                 [ \_ -> rendered |> Query.hasNot [ id "bg-action-ready" ]
-                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text "P2 IS READY" ]
-                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "P1 WINS +2" ]
+                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text "BOB IS READY" ]
+                                , \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "ALICE WINS +2" ]
                                 ]
                                 ()
                         )
@@ -863,7 +863,7 @@ suite =
                             [ Query.hasNot [ text "CUBE" ]
                             , Query.has
                                 [ class "cube"
-                                , attribute (Html.Attributes.title "Doubling cube: p2 owns it")
+                                , attribute (Html.Attributes.title "Doubling cube: Bob owns it")
                                 ]
                             ]
                         )
@@ -2354,7 +2354,9 @@ ctx playerId update model =
     , clock = Nothing
     , receivedAt = 0
     , now = 0
-    , nameOf = identity
+    -- names come from the room's seat list, which `Page.Play` resolves
+    -- before it renders; here the scene's own names stand in for it
+    , nameOf = \id -> Protocol.findPlayer id update.scene |> Maybe.map .name |> Maybe.withDefault id
     , rematchReady = []
     , away = Just []
     , awaySince = \_ -> Nothing
@@ -2482,7 +2484,7 @@ perFixture fixture =
             \_ ->
                 p2Views
                     |> List.filter (\u -> (Protocol.sceneData (D.nullable D.string) "to_act" u.scene |> Maybe.withDefault Nothing) == Just "p1")
-                    |> List.map (\u -> render "p2" u |> Query.has [ text "WAITING FOR P1" ])
+                    |> List.map (\u -> render "p2" u |> Query.has [ text "WAITING FOR ALICE" ])
                     |> allPass
         , test "pressing anywhere on a source point primes a drag whose tap plays that point" <|
             \_ ->
