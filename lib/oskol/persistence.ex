@@ -179,18 +179,33 @@ defmodule Oskol.Persistence do
   (`src/oskol/rooms/seat.gleam`); this is the coarse read behind it.
   """
   def seated_rooms(guest_id, user_id \\ nil) do
-    # Postgrex encodes a jsonb parameter itself: hand it the term, not text.
-    case seat_match(guest_id, user_id) do
+    case seated_rooms_query(guest_id, user_id) do
       nil ->
         []
 
+      query ->
+        Repo.all(query)
+    end
+  end
+
+  @doc false
+  # Kept as a query builder so the regression test can EXPLAIN the exact
+  # query we send to PostgreSQL, including its parameters.
+  def seated_rooms_query(guest_id, user_id \\ nil) do
+    # Postgrex encodes a jsonb parameter itself: hand it the term, not text.
+    case seat_match(guest_id, user_id) do
+      nil ->
+        nil
+
       held ->
         from(g in Game,
-          where: g.status in ["waiting", "playing"],
+          # These literals deliberately match the partial-index predicate.
+          # A bound status array could force a generic prepared plan to scan
+          # instead, even though every caller wants only resumable rooms.
+          where: fragment("? IN ('waiting', 'playing')", g.status),
           where: ^held,
           order_by: [desc: g.updated_at]
         )
-        |> Repo.all()
     end
   end
 
@@ -210,7 +225,10 @@ defmodule Oskol.Persistence do
 
   defp holds(key, value) when is_binary(value) and byte_size(value) > 0 do
     entry = [%{key => value}]
-    dynamic([g], fragment("to_jsonb(?) @> ?::jsonb", g.players, ^entry))
+    # Keep this expression byte-for-byte equivalent to the partial GIN index
+    # in 20260920000001_index_seated_rooms. `to_jsonb(players)` itself is
+    # stable in PostgreSQL and therefore cannot be indexed directly.
+    dynamic([g], fragment("oskol_players_jsonb(?) @> ?::jsonb", g.players, ^entry))
   end
 
   defp holds(_key, _value), do: nil

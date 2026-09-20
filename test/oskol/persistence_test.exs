@@ -169,3 +169,86 @@ defmodule Oskol.Persistence.SeatedRoomsTest do
     assert Persistence.seated_rooms(bob) == []
   end
 end
+
+defmodule Oskol.Persistence.SeatedRoomsIndexTest do
+  # This is deliberately a database test rather than a query-string test:
+  # it protects the expression-index contract between the migration and the
+  # Ecto fragment. Disable sequential scans only while explaining: the
+  # contract is that PostgreSQL can use the index, not that one planner/cost
+  # configuration must prefer it for a tiny test table.
+  use ExUnit.Case, async: false
+
+  alias Oskol.Persistence
+  alias Oskol.Repo
+
+  @guest "index-target-guest"
+  @user "index-target-user"
+
+  setup do
+    owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
+
+    on_exit(fn ->
+      Ecto.Adapters.SQL.Sandbox.stop_owner(owner)
+    end)
+
+    :ok
+  end
+
+  test "the unfinished-room index serves guest and account containment" do
+    now = DateTime.utc_now()
+
+    rows =
+      for n <- 1..20 do
+        holder =
+          case n do
+            17 -> %{"guest_id" => @guest}
+            18 -> %{"user_id" => @user}
+            _ -> %{"guest_id" => "guest-#{n}"}
+          end
+
+        %{
+          id: "seat-index-#{n}",
+          slug: "backgammon",
+          config: %{},
+          players: [Map.put(holder, "id", "p1")],
+          status: if(rem(n, 4) == 0, do: "finished", else: "playing"),
+          winners: [],
+          inserted_at: now,
+          updated_at: now
+        }
+      end
+
+    {count, nil} = Repo.insert_all(Persistence.Game, rows)
+    assert count == length(rows)
+
+    Repo.query!("ANALYZE games")
+
+    assert ["seat-index-17"] = Persistence.seated_rooms(@guest) |> Enum.map(& &1.id)
+
+    assert ["seat-index-18"] =
+             Persistence.seated_rooms("another-browser", @user) |> Enum.map(& &1.id)
+
+    # The existing broad status/updated_at B-tree is also a legal path for
+    # this query. Remove it only inside the sandbox transaction so EXPLAIN
+    # answers the narrow question this regression owns: whether the exact
+    # production query can use the seat-containment GIN index at all.
+    Repo.query!("DROP INDEX games_status_updated_at_index")
+
+    assert index_plan(@guest) =~ "games_unfinished_players_gin"
+    assert index_plan("another-browser", @user) =~ "games_unfinished_players_gin"
+  end
+
+  defp index_plan(guest_id, user_id \\ nil) do
+    query = Persistence.seated_rooms_query(guest_id, user_id)
+    {sql, params} = Ecto.Adapters.SQL.to_sql(:all, Repo, query)
+
+    Repo.query!("SET LOCAL enable_seqscan = off")
+
+    Repo.query!(
+      "EXPLAIN (COSTS OFF) " <> sql,
+      params
+    )
+    |> Map.fetch!(:rows)
+    |> Enum.map_join("\n", fn [line] -> line end)
+  end
+end
