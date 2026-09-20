@@ -228,6 +228,12 @@ defmodule Oskol.Persistence.SeatedRoomsIndexTest do
     assert ["seat-index-18"] =
              Persistence.seated_rooms("another-browser", @user) |> Enum.map(& &1.id)
 
+    # The existing broad status/updated_at B-tree is also a legal path for
+    # this query. Remove it only inside the sandbox transaction so EXPLAIN
+    # answers the narrow question this regression owns: whether the exact
+    # production query can use the seat-containment GIN index at all.
+    Repo.query!("DROP INDEX games_status_updated_at_index")
+
     assert index_plan(@guest) =~ "games_unfinished_players_gin"
     assert index_plan("another-browser", @user) =~ "games_unfinished_players_gin"
   end
