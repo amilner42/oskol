@@ -1229,14 +1229,16 @@ viewPlayerBar ctx player isMe tray =
                     , ( "is-me", isMe )
                     ]
                 ]
-                [ div [ class ("swatch shrink-0 " ++ color), title (p.name ++ " plays " ++ color) ] []
+                [ div [ class ("swatch shrink-0 " ++ color), title (ctx.nameOf p.id ++ " plays " ++ color) ] []
                 , case ctx.accounts of
                     Just owned ->
                         Identity.badge (List.member p.id owned)
 
                     Nothing ->
                         text ""
-                , span [ class "font-bold text-sm sm:text-base truncate" ] [ text p.name ]
+                -- The room's name for the seat, not the one the game started
+                -- with: an account's seat is named by its account.
+                , span [ class "font-bold text-sm sm:text-base truncate" ] [ text (ctx.nameOf p.id) ]
                 , viewPresenceDot ctx p.id
                 , viewRating ctx p.id
                 , span
@@ -2165,7 +2167,7 @@ viewReadyUp ctx between =
 
         opponentName =
             Protocol.opponentOf (seatId ctx) ctx.scene
-                |> Maybe.map (.name >> String.toUpper)
+                |> Maybe.map (.id >> ctx.nameOf >> String.toUpper)
                 |> Maybe.withDefault "OPPONENT"
 
         theyAreReady =
@@ -3330,7 +3332,7 @@ viewMatchSheet ctx =
                     Protocol.counter "score" player
             in
             div [ class "bg-match-col" ]
-                [ span [ class "bg-match-col-name truncate" ] [ text player.name ]
+                [ span [ class "bg-match-col-name truncate" ] [ text (ctx.nameOf player.id) ]
                 , span [ class "bg-match-col-score pixel tabular-nums" ] [ text (String.fromInt score) ]
                 , span [ class "bg-match-col-pr tabular-nums inline-flex items-center gap-1" ]
                     [ if bestMatchPr == Just player.id && List.length matchPrs > 1 then
@@ -3563,10 +3565,6 @@ scoreText ctx scores =
         |> String.join "–"
 
 
-playerName : Ctx -> String -> String
-playerName ctx id =
-    Protocol.findPlayer id ctx.scene |> Maybe.map .name |> Maybe.withDefault (ctx.nameOf id)
-
 
 playerColor : Ctx -> String -> String
 playerColor ctx id =
@@ -3594,7 +3592,7 @@ viewGameOver ctx winners =
 
         scoreline =
             ctx.scene.players
-                |> List.map (\p -> p.name ++ " " ++ String.fromInt (Protocol.counter "score" p))
+                |> List.map (\p -> ctx.nameOf p.id ++ " " ++ String.fromInt (Protocol.counter "score" p))
                 |> String.join " · "
     in
     -- The layer scrolls when the card is taller than the screen (a phone on

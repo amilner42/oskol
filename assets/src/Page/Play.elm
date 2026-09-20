@@ -778,12 +778,27 @@ replayHref model payload number =
         Nothing
 
 
+{-| What a seat is called: the room's own answer (an account's seat is
+named by its account, which may have signed in or renamed itself since the
+game began), else the name the engine started the game with.
+-}
 nameOf : Model -> String -> String
 nameOf model playerId =
-    model.payload
-        |> Maybe.andThen (\p -> Protocol.findPlayer playerId p.update.scene)
-        |> Maybe.map .name
-        |> Maybe.withDefault playerId
+    let
+        seated =
+            model.payload
+                |> Maybe.andThen (\p -> p.players |> List.filter (\seat -> seat.id == playerId) |> List.head)
+                |> Maybe.map .name
+    in
+    case seated of
+        Just name ->
+            name
+
+        Nothing ->
+            model.payload
+                |> Maybe.andThen (\p -> Protocol.findPlayer playerId p.update.scene)
+                |> Maybe.map .name
+                |> Maybe.withDefault playerId
 
 
 clockRunning : Model -> Bool
