@@ -1,8 +1,9 @@
 //// Silent guest identity. Every visitor gets an opaque id in a year-long
 //// cookie and a row the site uses only to remember them conveniently: the
 //// name they last played under, and the display preferences they picked
-//// (`oskol/guests/prefs`). The id authenticates nothing: losing it costs a
-//// prefilled form and a board colour, and nothing else.
+//// (`oskol/guests/prefs`). For an unowned seat, the id is the credential that
+//// holds the seat. Losing it means the seat can be claimed again from the
+//// room link; the guest's name and board colour are also no longer available.
 
 import gleam/list
 import gleam/option.{type Option, None, Some}
