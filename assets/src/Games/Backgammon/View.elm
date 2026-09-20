@@ -3565,10 +3565,6 @@ scoreText ctx scores =
         |> String.join "–"
 
 
-playerName : Ctx -> String -> String
-playerName ctx id =
-    ctx.nameOf id
-
 
 playerColor : Ctx -> String -> String
 playerColor ctx id =

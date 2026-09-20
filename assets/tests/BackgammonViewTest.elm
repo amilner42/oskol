@@ -729,6 +729,22 @@ suite =
                                 ]
                                 ()
                         )
+             , test "every name in the band is the room's, not the one the game started with" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            let
+                                rendered =
+                                    View.view (seatNamed (ctx "p2" (between [ "p1" ] { u | legal = [ ready ] }) View.init)) |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.find [ id "bg-game-result" ] |> Query.has [ text "SEAT-P1 WINS +2" ]
+                                , \_ -> rendered |> Query.find [ id "bg-ready-status" ] |> Query.has [ text "SEAT-P1 IS READY" ]
+                                , \_ -> rendered |> Query.hasNot [ text "Alice" ]
+                                , \_ -> rendered |> Query.hasNot [ text "Bob" ]
+                                ]
+                                ()
+                        )
              , test "a spectator reads who is ready and has nothing to press" <|
                 \_ ->
                     withFixture
@@ -2343,6 +2359,15 @@ lets the dice move.
 watching : View.Model
 watching =
     View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] View.init
+
+
+{-| A table whose seat list disagrees with the scene, which is what an
+account that signed in or renamed itself after the game began looks like:
+the room's name for the seat must be the one that shows.
+-}
+seatNamed : View.Ctx -> View.Ctx
+seatNamed base =
+    { base | nameOf = \id -> "SEAT-" ++ id }
 
 
 ctx : String -> Protocol.Update -> View.Model -> View.Ctx

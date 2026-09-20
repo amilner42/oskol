@@ -13,6 +13,8 @@ import Page.Play as Play exposing (ConnectionStatus(..), Model, Msg(..), Out(..)
 import Protocol exposing (GamePayload, ServerMessage(..), Update)
 import Session exposing (Session)
 import Test exposing (Test, describe, test)
+import Test.Html.Query as Query
+import Test.Html.Selector exposing (text)
 
 
 testSession : Session
@@ -56,7 +58,7 @@ suite : Test
 suite =
     describe "Page.Play.update with fixture payloads"
         (List.map replay FixtureLoader.all
-            ++ [ channelMessages, tabTitle, prefsRace, ratingsWatch, refusedAtTheDoor, refusedMidGame ]
+            ++ [ channelMessages, tabTitle, seatNames, prefsRace, ratingsWatch, refusedAtTheDoor, refusedMidGame ]
         )
 
 
@@ -95,6 +97,45 @@ refusedMidGame =
                 |> Play.update (ServerMessageReceived (ErrorMessage "unauthorized"))
                 |> (\( model, _, out ) -> ( out, model.error ))
                 |> Expect.equal ( Play.NoOut, Just "unauthorized" )
+
+
+{-| A seat's name is the room's to give: an account that signed in or
+renamed itself after the game began is named by its account, while the
+scene still carries the name typed at the door. So the table reads the
+payload's seat list, and the fixture's own scene name must not show.
+-}
+seatNames : Test
+seatNames =
+    test "the table calls a seat what the room calls it, not what the game started with" <|
+        \_ ->
+            case FixtureLoader.byGame "backgammon" |> List.head of
+                Just fixture ->
+                    case Dict.get "p1" fixture.initial of
+                        Just update ->
+                            let
+                                renamed =
+                                    { fixture | seats = fixture.seats |> List.map (\( id, _ ) -> ( id, "SEAT-" ++ id )) }
+
+                                model =
+                                    Play.applyPayload (payload renamed "p1" update) (start fixture) |> first3
+
+                                rendered =
+                                    Play.view model |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> rendered |> Query.has [ text "SEAT-p1" ]
+                                , \_ -> rendered |> Query.has [ text "SEAT-p2" ]
+                                , \_ -> rendered |> Query.hasNot [ text "Alice" ]
+                                , \_ -> rendered |> Query.hasNot [ text "Bob" ]
+                                , \_ -> Play.title model |> Expect.equal "SEAT-p2 · Backgammon"
+                                ]
+                                ()
+
+                        Nothing ->
+                            Expect.fail "no p1 update"
+
+                Nothing ->
+                    Expect.fail "no backgammon fixture"
 
 
 {-| The tab names the opponent once the game is on.
