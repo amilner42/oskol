@@ -1,17 +1,20 @@
 {
+  "name": "oskol",
   "scripts": {
+    "audit:full": "npm audit",
+    "audit:production": "npm audit --omit=dev",
     "format": "npm run format:elm && npm run format:gleam && npm run format:elixir",
     "format:elm": "elm-format assets/src --yes",
     "format:gleam": "gleam format",
     "format:elixir": "mix format"
   },
   "dependencies": {
-    "phoenix": "^1.8.2",
-    "playwright": "^1.57.0"
+    "phoenix": "1.8.14"
   },
   "devDependencies": {
     "elm": "^0.19.1-6",
     "elm-test": "^0.19.1-revision16",
-    "esbuild-plugin-elm": "^0.0.12"
+    "esbuild-plugin-elm": "^0.0.12",
+    "playwright": "1.57.0"
   }
 }

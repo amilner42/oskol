@@ -100,7 +100,6 @@ defmodule Oskol.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:nanoid, "~> 2.1"},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       # Gleam packages
       {:gleam_stdlib, "~> 0.34 or ~> 1.0"},
       {:gleam_json, "~> 3.0"},
@@ -122,7 +121,7 @@ defmodule Oskol.MixProject do
       # The gleam compiler step forwards positional args to deps tasks, which
       # breaks `mix test path/to/test.exs`; compile first, then test without it.
       test: ["compile", "ecto.create --quiet", "ecto.migrate --quiet", "test --no-compile"],
-      setup: ["deps.get", "assets.setup", "assets.build"],
+      setup: ["deps.get", "cmd npm ci", "assets.setup", "assets.build"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind oskol", "cmd --cd assets node build.js"],
       "assets.deploy": [
@@ -130,7 +129,13 @@ defmodule Oskol.MixProject do
         "cmd --cd assets node build.js --deploy",
         "phx.digest"
       ],
-      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: [
+        "cmd npm run audit:production",
+        "compile --warning-as-errors",
+        "deps.unlock --unused",
+        "format",
+        "test"
+      ]
     ]
   end
 end

@@ -1,0 +1,11 @@
+version: 2
+updates:
+  # The Elm compiler toolchain is dev-only and currently has no upstream
+  # remediation for its transitive audit findings. Keep automated PRs focused
+  # on packages that ship to players.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-type: production

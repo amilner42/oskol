@@ -14,17 +14,22 @@
 ARG ELIXIR_VERSION=1.19.2
 ARG OTP_VERSION=28.1.1
 ARG DEBIAN_VERSION=bookworm-20251103-slim
+ARG NODE_VERSION=22.23.2
 
 ARG BUILDER_IMAGE="docker.io/hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
 ARG RUNNER_IMAGE="docker.io/debian:${DEBIAN_VERSION}"
 
+FROM docker.io/node:${NODE_VERSION}-bookworm-slim AS node
+
 FROM ${BUILDER_IMAGE} AS builder
 
-# install build dependencies (including Node.js for Elm compilation and Gleam)
+# Keep Node identical to CI and the version in .tool-versions. Copying the
+# official Debian image avoids NodeSource's mutable major-version installer.
+COPY --from=node /usr/local /usr/local
+
+# install build dependencies (including Gleam)
 RUN apt-get update \
   && apt-get install -y --no-install-recommends build-essential git curl \
-  && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-  && apt-get install -y nodejs \
   && rm -rf /var/lib/apt/lists/*
 
 # install Gleam compiler
@@ -53,8 +58,8 @@ RUN mix deps.get --only $MIX_ENV
 RUN mkdir config
 
 # install npm dependencies for Elm compilation
-COPY package.json package-lock.json* ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # copy compile-time config files before we compile dependencies
 # to ensure any relevant config change will trigger the dependencies
