@@ -26,6 +26,8 @@ defmodule Oskol.Application do
         {Registry, keys: :unique, name: Oskol.GameRegistry},
         # The sign-in rate counters (ETS, per node).
         {Oskol.Auth.Limiter, []},
+        # Bounded daily cleanup of spent and long-expired sign-in rows.
+        {Oskol.Auth.TokenSweeper, []},
         # The persister must outlive and precede the rooms that cast to it.
         {Oskol.Game.Persister, []},
         # Post-game reviews: rooms cast here when a game ends and carry on.

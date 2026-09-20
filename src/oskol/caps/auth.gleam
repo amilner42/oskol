@@ -31,6 +31,30 @@ pub type Issued {
   Issued(token: String, code: String)
 }
 
+/// The configured ceilings for the one mail Oskol sends. The handler decides
+/// which buckets must pass; Elixir only reads these values from application
+/// configuration. `source` is an opaque, one-way key for a request IP, never
+/// an IP address retained by Oskol.
+pub type MailBudget {
+  MailBudget(
+    guest_limit: Int,
+    guest_window_s: Int,
+    address_limit: Int,
+    address_window_s: Int,
+    source_limit: Int,
+    source_window_s: Int,
+    global_limit: Int,
+    global_window_s: Int,
+  )
+}
+
+/// One bucket in an all-or-nothing sign-in mail reservation. The handler
+/// makes this list from its policy; the limiter atomically says whether all
+/// of them can spend one message.
+pub type LimitBucket {
+  LimitBucket(key: String, limit: Int, window_s: Int)
+}
+
 /// What came of typing a six-digit code.
 pub type CodeCheck {
   /// It matched a live token, which is now consumed.
@@ -47,6 +71,13 @@ pub type AuthCaps {
     /// Bump a rate bucket and answer how many it holds inside the window,
     /// this one included. The key and the window are the handler's.
     count: fn(String, Int) -> Int,
+    /// Spend one unit from every bucket only when every bucket has room.
+    /// This is the handler's decision expressed as data; the limiter makes
+    /// the multi-bucket reservation atomic.
+    allow_mail: fn(List(LimitBucket)) -> Bool,
+    /// The configurable ceilings for sign-in mail. The handler still decides
+    /// whether to issue a token; this only supplies its numbers.
+    mail_budget: fn() -> MailBudget,
     /// Mint a token and a code for this address, store their hashes against
     /// the asking browser and where it was, and hand back the plaintext.
     /// Several may be live for one address at once; each dies on its own
@@ -108,6 +139,8 @@ pub type AuthCaps {
 pub fn stub() -> AuthCaps {
   AuthCaps(
     count: fn(_, _) { panic as "stub auth.count" },
+    allow_mail: fn(_) { panic as "stub auth.allow_mail" },
+    mail_budget: fn() { panic as "stub auth.mail_budget" },
     issue_token: fn(_, _, _, _) { panic as "stub auth.issue_token" },
     send_mail: fn(_, _, _) { panic as "stub auth.send_mail" },
     verify_token: fn(_) { panic as "stub auth.verify_token" },

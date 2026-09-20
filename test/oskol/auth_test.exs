@@ -132,6 +132,27 @@ defmodule Oskol.AuthTest do
       assert Auth.consume(first).email == "her@example.com"
       assert Auth.consume(second).email == "her@example.com"
     end
+
+    test "a bounded sweep retires consumed and long-expired tokens, not live ones" do
+      {live, _} = Auth.issue("live@example.com", guest_id(), nil, @ttl)
+      {consumed, _} = Auth.issue("consumed@example.com", guest_id(), nil, @ttl)
+      {expired, _} = Auth.issue("expired@example.com", guest_id(), nil, @ttl)
+
+      assert Auth.consume(consumed).email == "consumed@example.com"
+
+      old = DateTime.add(DateTime.utc_now(), -86_401, :second)
+
+      Repo.update_all(
+        from(t in Auth.LoginToken, where: t.token_hash == ^:crypto.hash(:sha256, expired)),
+        set: [expires_at: old]
+      )
+
+      assert Auth.sweep_dead_tokens(1) == 1
+      assert Repo.aggregate(Auth.LoginToken, :count) == 2
+      assert Auth.sweep_dead_tokens(1) == 1
+      assert Repo.aggregate(Auth.LoginToken, :count) == 1
+      assert Auth.verify(live).email == "live@example.com"
+    end
   end
 
   describe "codes" do

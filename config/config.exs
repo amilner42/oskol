@@ -32,6 +32,18 @@ config :oskol, Oskol.Mailer, adapter: Swoosh.Adapters.Local
 
 config :oskol, :mail_from, "hello@oskol.io"
 
+# The only mail Oskol sends is a sign-in link/code. These fixed-window
+# ceilings are deliberately small for today's traffic: a sustained exhausted
+# global budget is at most 200 messages/day (about 6,000/month, below
+# Postmark's 10,000-message $15/month plan). Change them in runtime config,
+# not in the handler. Source means a one-way in-memory key derived from the
+# request IP; Oskol never stores or logs the IP itself.
+config :oskol, :auth_mail_budget,
+  guest: [limit: 10, window_s: 3_600],
+  address: [limit: 30, window_s: 3_600],
+  source: [limit: 20, window_s: 3_600],
+  global: [limit: 200, window_s: 86_400]
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",

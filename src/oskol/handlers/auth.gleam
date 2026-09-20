@@ -39,7 +39,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import oskol/caps/auth.{
-  type Pending, type User, CodeDead, CodeOk, CodeWrong, User,
+  type Pending, type User, CodeDead, CodeOk, CodeWrong, LimitBucket, User,
 }
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
@@ -56,16 +56,6 @@ pub const ttl_s = 900
 /// million, so five tries is nothing to guess with.
 pub const code_attempts = 5
 
-/// The mail is the only thing worth protecting here, so the limits are on
-/// sending it. The browser is the tighter bucket, because it is the one an
-/// abuser actually has; the address bucket is a high ceiling that stops one
-/// mailbox being buried however many browsers ask.
-pub const starts_per_guest = 10
-
-pub const starts_per_address = 30
-
-pub const start_window_s = 3600
-
 // ---------- POST /papi/auth/start ----------
 
 /// Ask for a sign-in. Answers the same thing every time it is asked
@@ -76,6 +66,7 @@ pub fn start_json(
   session: Session,
   email: String,
   next: String,
+  source: String,
 ) -> Result(String, ApiError) {
   let address = normalise_email(email)
 
@@ -86,7 +77,7 @@ pub fn start_json(
     "That doesn't look like an email address",
   )
 
-  case within_limits(ctx, session, address) {
+  case within_limits(ctx, session, address, source) {
     True -> {
       let issued =
         ctx.auth.issue_token(address, session.guest_id, local_path(next), ttl_s)
@@ -99,21 +90,48 @@ pub fn start_json(
   Ok(envelope.ok([]))
 }
 
-/// Both buckets are bumped whichever one is over, so the counters read the
-/// same however a caller arrives. Per node: one machine today, and a
-/// second one would give each its own allowance (a comment, not a bug —
-/// the ceiling is what matters, not its exactness).
-fn within_limits(ctx: Ctx, session: Session, address: String) -> Bool {
-  let by_guest = case session.guest_id {
-    Some(id) ->
-      ctx.auth.count("start:guest:" <> id, start_window_s) <= starts_per_guest
-    None -> True
+/// One atomic reservation spends from every bucket only when all have room:
+/// a guest already refused cannot poison the global or a victim's address
+/// bucket. These are per node: Oskol runs one machine today, and the global
+/// ceiling deliberately limits that one machine's Postmark spend rather than
+/// pretending to be a distributed security system.
+fn within_limits(
+  ctx: Ctx,
+  session: Session,
+  address: String,
+  source: String,
+) -> Bool {
+  let budget = ctx.auth.mail_budget()
+  let buckets = [
+    LimitBucket(
+      key: "start:address:" <> address,
+      limit: budget.address_limit,
+      window_s: budget.address_window_s,
+    ),
+    LimitBucket(
+      key: "start:source:" <> source,
+      limit: budget.source_limit,
+      window_s: budget.source_window_s,
+    ),
+    LimitBucket(
+      key: "start:global",
+      limit: budget.global_limit,
+      window_s: budget.global_window_s,
+    ),
+  ]
+  let buckets = case session.guest_id {
+    Some(id) -> [
+      LimitBucket(
+        key: "start:guest:" <> id,
+        limit: budget.guest_limit,
+        window_s: budget.guest_window_s,
+      ),
+      ..buckets
+    ]
+    None -> buckets
   }
-  let by_address =
-    ctx.auth.count("start:email:" <> address, start_window_s)
-    <= starts_per_address
 
-  by_guest && by_address
+  ctx.auth.allow_mail(buckets)
 }
 
 // ---------- GET /login/<token> ----------

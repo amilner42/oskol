@@ -16,9 +16,31 @@ defmodule Oskol.Gleam.Caps.Auth do
   alias Oskol.Mail
 
   def build do
-    {:auth_caps, &Limiter.count/2, &issue_token/4, &send_mail/3, &verify_token/1,
-     &consume_token/1, &check_code/4, &find_or_create_user/1, &user/1, &stamp_seats/3,
-     &Auth.bind_guest/2, &Auth.unbind_guest/1, &disconnect/1, &renamed/2, &claim_name/2}
+    {:auth_caps, &Limiter.count/2, &Limiter.allow_mail/1, &mail_budget/0, &issue_token/4,
+     &send_mail/3, &verify_token/1, &consume_token/1, &check_code/4, &find_or_create_user/1,
+     &user/1, &stamp_seats/3, &Auth.bind_guest/2, &Auth.unbind_guest/1, &disconnect/1, &renamed/2,
+     &claim_name/2}
+  end
+
+  # Keep this data-only. Gleam's handler decides which buckets must pass and
+  # keeps the indistinguishable successful response when one does not.
+  defp mail_budget do
+    config = Application.get_env(:oskol, :auth_mail_budget, [])
+
+    {:mail_budget, limit(config, :guest, 10), window_s(config, :guest, 3_600),
+     limit(config, :address, 30), window_s(config, :address, 3_600), limit(config, :source, 20),
+     window_s(config, :source, 3_600), limit(config, :global, 200),
+     window_s(config, :global, 86_400)}
+  end
+
+  defp limit(config, bucket, default), do: positive(config, bucket, :limit, default)
+  defp window_s(config, bucket, default), do: positive(config, bucket, :window_s, default)
+
+  defp positive(config, bucket, key, default) do
+    case config |> Keyword.get(bucket, []) |> Keyword.get(key, default) do
+      value when is_integer(value) and value > 0 -> value
+      _ -> default
+    end
   end
 
   @doc """

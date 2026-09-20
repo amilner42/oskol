@@ -59,6 +59,14 @@ defmodule OskolWeb.Api.AuthApiTest do
     %{token: token, code: String.replace(spaced, " ", ""), mail: mail}
   end
 
+  defp with_mail_budget(budget) do
+    previous = Application.fetch_env!(:oskol, :auth_mail_budget)
+    Application.put_env(:oskol, :auth_mail_budget, budget)
+    on_exit(fn -> Application.put_env(:oskol, :auth_mail_budget, previous) end)
+  end
+
+  defp source(conn, ip), do: put_req_header(conn, "fly-client-ip", ip)
+
   # ---------- POST /papi/auth/start ----------
 
   describe "POST /papi/auth/start" do
@@ -131,6 +139,73 @@ defmodule OskolWeb.Api.AuthApiTest do
                |> json_response(200)
 
       assert Repo.aggregate(Auth.LoginToken, :count) == 10
+    end
+
+    test "rotating guest cookies cannot outsend one source, while every answer stays identical",
+         %{conn: conn} do
+      with_mail_budget(
+        guest: [limit: 10, window_s: 3_600],
+        address: [limit: 30, window_s: 3_600],
+        source: [limit: 2, window_s: 3_600],
+        global: [limit: 200, window_s: 86_400]
+      )
+
+      bodies =
+        for n <- 1..3 do
+          conn
+          |> as_guest(new_guest_id())
+          |> with_csrf()
+          |> source("203.0.113.9")
+          |> post(~p"/papi/auth/start", %{"email" => "rotated#{n}@example.com"})
+          |> response(200)
+        end
+
+      assert Enum.uniq(bodies) == ["{\"ok\":true}"]
+      assert_receive {:email, _}
+      assert_receive {:email, _}
+      refute_receive {:email, _}
+      assert Repo.aggregate(Auth.LoginToken, :count) == 2
+    end
+
+    test "separate sources keep their own allowance and one address keeps its ceiling", %{
+      conn: conn
+    } do
+      with_mail_budget(
+        guest: [limit: 10, window_s: 3_600],
+        address: [limit: 1, window_s: 3_600],
+        source: [limit: 1, window_s: 3_600],
+        global: [limit: 200, window_s: 86_400]
+      )
+
+      first =
+        conn
+        |> as_guest(new_guest_id())
+        |> with_csrf()
+        |> source("203.0.113.10")
+        |> post(~p"/papi/auth/start", %{"email" => "first@example.com"})
+        |> response(200)
+
+      second =
+        conn
+        |> as_guest(new_guest_id())
+        |> with_csrf()
+        |> source("203.0.113.11")
+        |> post(~p"/papi/auth/start", %{"email" => "second@example.com"})
+        |> response(200)
+
+      same_address =
+        conn
+        |> as_guest(new_guest_id())
+        |> with_csrf()
+        |> source("203.0.113.12")
+        |> post(~p"/papi/auth/start", %{"email" => "first@example.com"})
+        |> response(200)
+
+      assert [first, second, same_address] == List.duplicate("{\"ok\":true}", 3)
+      assert_receive {:email, _}
+      assert_receive {:email, _}
+      refute_receive {:email, _}
+      assert Repo.aggregate(Auth.LoginToken, :count) == 2
     end
 
     test "a write with no CSRF token is refused", %{conn: conn} do

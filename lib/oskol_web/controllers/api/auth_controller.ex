@@ -28,7 +28,8 @@ defmodule OskolWeb.Api.AuthController do
         ctx(),
         session(conn),
         param(params, "email"),
-        param(params, "next")
+        param(params, "next"),
+        source_key(conn)
       )
     )
   end
@@ -110,6 +111,21 @@ defmodule OskolWeb.Api.AuthController do
   defp ctx, do: CtxBuilder.build()
 
   defp session(conn), do: CtxBuilder.session(conn)
+
+  # Fly's proxy supplies Fly-Client-IP; locally, the peer IP is the only
+  # source available. Immediately turn either into an opaque limiter key so
+  # an IP is neither persisted nor logged. The Fly header is safe for this
+  # deployment because the public HTTP service is reached through Fly Proxy.
+  defp source_key(conn) do
+    source =
+      case get_req_header(conn, "fly-client-ip") do
+        [ip | _] when byte_size(ip) > 0 -> ip
+        _ -> conn.remote_ip |> :inet.ntoa() |> to_string()
+      end
+
+    :crypto.hash(:sha256, source)
+    |> Base.url_encode64(padding: false)
+  end
 
   defp param(params, key) do
     case Map.get(params, key) do
