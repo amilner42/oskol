@@ -23,8 +23,27 @@ const SEAT = /\/backgammon\/([^/?#]+)/;
  * is prefilled with, what the summary reads); a smoke that only wants a
  * game calls `createGame`.
  */
-async function openCreateDialog(page, path = '/') {
+async function dismissResume(page) {
+  await page.waitForSelector('#resume-modal');
+  await page.click('#close-resume');
+  await page.waitForSelector('#resume-modal', { state: 'detached' });
+}
+
+async function openCreateDialog(page, path = '/', { dismissResume: shouldDismissResume = false } = {}) {
+  const gamesResponse = shouldDismissResume
+    ? page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === 'GET' && url.pathname === '/papi/me/games';
+      })
+    : null;
+
   await page.goto(`${BASE}${path}`);
+
+  if (gamesResponse) {
+    const games = await (await gamesResponse).json();
+    if (games.games && games.games.length > 0) await dismissResume(page);
+  }
+
   await page.click('#start-game');
   // The dialog waits for the game's data, so wait for the dialog.
   await page.waitForSelector('#create-modal #create-name');
@@ -121,4 +140,4 @@ function resultLine(out) {
   return line;
 }
 
-module.exports = { resultLine, BASE, openCreateDialog, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };
+module.exports = { resultLine, BASE, dismissResume, openCreateDialog, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };

@@ -4,7 +4,7 @@
  *   node playwright/review-pages/test.js
  */
 const playwright = require('playwright');
-const { BASE, openCreateDialog, createGame } = require('../lib/flows');
+const { BASE, dismissResume, openCreateDialog, createGame } = require('../lib/flows');
 const OUT = process.argv[2] || 'playwright/screenshots/review-pages';
 const fs = require('fs'); fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,7 +27,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // board. Shoot it, then close it to get at the picker.
     await page.goto(`${BASE}/`); await page.waitForSelector('#resume-modal'); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-04-live-games.png` });
-    await page.click('#close-resume'); await page.waitForSelector('#resume-modal', { state: 'detached' });
+    await dismissResume(page);
     // The theme picker, open on the home board.
     await page.click('#bg-theme-button'); await page.waitForSelector('#bg-theme-list'); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-05-theme-picker.png` });

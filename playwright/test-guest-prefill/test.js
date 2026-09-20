@@ -36,7 +36,7 @@ async function run(browser, errors) {
     log('game created as Alice');
 
     // Same browser, CREATE GAME again: the site remembers.
-    await openCreateDialog(page);
+    await openCreateDialog(page, '/', { dismissResume: true });
     const prefilled = await page.inputValue('#create-name');
     if (prefilled !== 'Alice') throw new Error(`expected prefill "Alice", saw "${prefilled}"`);
     await page.screenshot({ path: `${SHOTS}/01-prefilled.png` });
