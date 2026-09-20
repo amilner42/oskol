@@ -819,8 +819,8 @@ came with the account: signing in stamps every unowned seat its guest holds
 and rotates that guest id, both in one ordered write, and the response
 carries the fresh guest cookie. `next` is validated in Gleam — a local
 path, or `/`. Rate limits are in-memory, per-node atomic reservations behind
-the auth cap: configurable guest, address, source-IP (one-way key only) and
-global mail budgets. Defaults allow 200 real messages/day per running node
+the auth cap: configurable guest, address, source-IP (per-boot HMAC key only,
+and omitted without Fly's trusted header) and global mail budgets. Defaults allow 200 real messages/day per running node
 (under Postmark's 10,000-message monthly plan); spent rows and those expired for more than a
 day are retired in a supervised bounded sweep at boot and then daily. A failed
 pass only logs and retries on the next schedule. There is no switch:

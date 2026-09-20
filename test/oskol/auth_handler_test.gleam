@@ -88,7 +88,7 @@ pub fn a_sign_in_puts_the_token_and_the_code_in_the_mail_test() {
       fakes.guest("g1"),
       "  Her@Example.com ",
       "/backgammon/abc123",
-      "source-key",
+      Some("source-key"),
     )
 
   // Nothing about the address, and nothing about the mail.
@@ -110,14 +110,14 @@ pub fn a_limited_guest_request_reserves_the_configured_policy_and_is_not_mailed_
               == [
                 LimitBucket(key: "start:guest:g1", limit: 2, window_s: 61),
                 LimitBucket(
-                  key: "start:address:her@example.com",
-                  limit: 3,
-                  window_s: 62,
-                ),
-                LimitBucket(
                   key: "start:source:opaque-source",
                   limit: 4,
                   window_s: 63,
+                ),
+                LimitBucket(
+                  key: "start:address:her@example.com",
+                  limit: 3,
+                  window_s: 62,
                 ),
                 LimitBucket(key: "start:global", limit: 5, window_s: 64),
               ]
@@ -134,7 +134,7 @@ pub fn a_limited_guest_request_reserves_the_configured_policy_and_is_not_mailed_
       fakes.guest("g1"),
       "  Her@Example.com ",
       "",
-      "opaque-source",
+      Some("opaque-source"),
     )
   assert body == "{\"ok\":true}"
 }
@@ -151,14 +151,14 @@ pub fn a_limited_anonymous_request_omits_the_guest_bucket_and_is_not_mailed_test
             assert buckets
               == [
                 LimitBucket(
-                  key: "start:address:a@b.com",
-                  limit: 3,
-                  window_s: 62,
-                ),
-                LimitBucket(
                   key: "start:source:opaque-source",
                   limit: 4,
                   window_s: 63,
+                ),
+                LimitBucket(
+                  key: "start:address:a@b.com",
+                  limit: 3,
+                  window_s: 62,
                 ),
                 LimitBucket(key: "start:global", limit: 5, window_s: 64),
               ]
@@ -170,7 +170,43 @@ pub fn a_limited_anonymous_request_omits_the_guest_bucket_and_is_not_mailed_test
     }
 
   let assert Ok(body) =
-    handler.start_json(ctx, fakes.no_guest(), "a@b.com", "", "opaque-source")
+    handler.start_json(
+      ctx,
+      fakes.no_guest(),
+      "a@b.com",
+      "",
+      Some("opaque-source"),
+    )
+  assert body == "{\"ok\":true}"
+}
+
+pub fn a_missing_source_omits_its_bucket_and_is_not_mailed_test() {
+  let ctx =
+    fakes.ctx()
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: AuthCaps(
+          ..ctx.auth,
+          allow_mail: fn(buckets) {
+            assert buckets
+              == [
+                LimitBucket(
+                  key: "start:address:a@b.com",
+                  limit: 3,
+                  window_s: 62,
+                ),
+                LimitBucket(key: "start:global", limit: 5, window_s: 64),
+              ]
+            False
+          },
+          mail_budget: fn() { policy_budget() },
+        ),
+      )
+    }
+
+  let assert Ok(body) =
+    handler.start_json(ctx, fakes.no_guest(), "a@b.com", "", None)
   assert body == "{\"ok\":true}"
 }
 
@@ -187,7 +223,7 @@ pub fn something_that_is_not_an_address_is_refused_before_anything_happens_test(
           fakes.guest("g1"),
           typed,
           "",
-          "source-key",
+          Some("source-key"),
         )
       {
         Error(err) -> error.status(err) == 422

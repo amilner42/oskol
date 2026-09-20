@@ -18,6 +18,7 @@ defmodule Oskol.Auth.Limiter do
   require Logger
 
   @table __MODULE__
+  @call_timeout 250
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -29,11 +30,13 @@ defmodule Oskol.Auth.Limiter do
   refused guest from consuming the node-global budget or another address's.
   """
   def allow_mail(buckets) when is_list(buckets) do
-    GenServer.call(__MODULE__, {:allow_mail, buckets})
+    GenServer.call(__MODULE__, {:allow_mail, buckets}, @call_timeout)
   rescue
     # An unavailable in-memory limiter must not turn login into a 500. The
     # process normally lives for the whole application.
     _ -> true
+  catch
+    :exit, _ -> true
   end
 
   @doc "Forget every count. Tests only."
@@ -60,8 +63,8 @@ defmodule Oskol.Auth.Limiter do
     buckets = Enum.map(buckets, &bucket(&1, now))
 
     if Enum.all?(buckets, fn {_key, _started, limit, _window_s, count} -> count < limit end) do
-      Enum.each(buckets, fn {key, started, _limit, _window_s, count} ->
-        :ets.insert(@table, {key, started, count + 1})
+      Enum.each(buckets, fn {key, started, _limit, window_s, count} ->
+        :ets.insert(@table, {key, started, count + 1, window_s})
       end)
 
       {:reply, true, state}
@@ -72,12 +75,30 @@ defmodule Oskol.Auth.Limiter do
     end
   end
 
-  # Keys nobody has touched for a day are dead weight: an abuser's address
-  # is not worth remembering, and the table must not grow forever.
+  # Each entry owns its actual configured window. Do not erase a valid bucket
+  # merely because it is older than a fixed housekeeping interval.
   @impl true
   def handle_info(:sweep, state) do
-    cutoff = System.system_time(:second) - 86_400
-    :ets.select_delete(@table, [{{:_, :"$1", :_}, [{:<, :"$1", cutoff}], [true]}])
+    now = System.system_time(:second)
+
+    :ets.foldl(
+      fn
+        {key, started, _count, window_s}, :ok when now - started >= window_s ->
+          :ets.delete(@table, key)
+          :ok
+
+        {key, started, _count}, :ok when now - started >= 86_400 ->
+          # An upgrade may leave a pre-window entry in a live ETS table.
+          :ets.delete(@table, key)
+          :ok
+
+        _, :ok ->
+          :ok
+      end,
+      :ok,
+      @table
+    )
+
     schedule_sweep()
     {:noreply, state}
   end
@@ -89,8 +110,14 @@ defmodule Oskol.Auth.Limiter do
               window_s > 0 do
     {started, count} =
       case :ets.lookup(@table, key) do
-        [{^key, started, count}] when now - started < window_s -> {started, count}
-        _ -> {now, 0}
+        [{^key, started, count, _stored_window_s}] when now - started < window_s ->
+          {started, count}
+
+        [{^key, started, count}] when now - started < window_s ->
+          {started, count}
+
+        _ ->
+          {now, 0}
       end
 
     {key, started, limit, window_s, count}
@@ -117,7 +144,7 @@ defmodule Oskol.Auth.Limiter do
 
       marker = {:limit_log, name, started, window_s}
 
-      if :ets.insert_new(@table, {marker, started, 1}) do
+      if :ets.insert_new(@table, {marker, started, 1, window_s}) do
         Logger.warning("auth mail limited: #{name}")
       end
     end)

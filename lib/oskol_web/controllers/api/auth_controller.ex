@@ -20,6 +20,7 @@ defmodule OskolWeb.Api.AuthController do
   use OskolWeb, :controller
 
   alias Oskol.Gleam.CtxBuilder
+  alias Oskol.Auth.SourceKey
 
   def start(conn, params) do
     send_json(
@@ -112,19 +113,21 @@ defmodule OskolWeb.Api.AuthController do
 
   defp session(conn), do: CtxBuilder.session(conn)
 
-  # Fly's proxy supplies Fly-Client-IP; locally, the peer IP is the only
-  # source available. Immediately turn either into an opaque limiter key so
-  # an IP is neither persisted nor logged. The Fly header is safe for this
-  # deployment because the public HTTP service is reached through Fly Proxy.
+  # Fly's proxy supplies exactly one Fly-Client-IP. Without it, there is no
+  # trustworthy visitor address: omit the source bucket rather than treating
+  # Fly's peer IP as every visitor. A boot-secret HMAC keeps the ephemeral ETS
+  # key opaque; raw addresses are never stored or logged.
   defp source_key(conn) do
-    source =
-      case get_req_header(conn, "fly-client-ip") do
-        [ip | _] when byte_size(ip) > 0 -> ip
-        _ -> conn.remote_ip |> :inet.ntoa() |> to_string()
-      end
+    case get_req_header(conn, "fly-client-ip") do
+      [ip] ->
+        case :inet.parse_address(String.to_charlist(ip)) do
+          {:ok, address} -> {:some, address |> :inet.ntoa() |> to_string() |> SourceKey.key()}
+          {:error, _} -> :none
+        end
 
-    :crypto.hash(:sha256, source)
-    |> Base.url_encode64(padding: false)
+      _ ->
+        :none
+    end
   end
 
   defp param(params, key) do

@@ -16,6 +16,7 @@ defmodule OskolWeb.Api.AuthApiTest do
   import Swoosh.TestAssertions
 
   alias Oskol.Auth
+  alias Oskol.Auth.Limiter
   alias Oskol.Repo
 
   setup do
@@ -165,6 +166,68 @@ defmodule OskolWeb.Api.AuthApiTest do
       assert_receive {:email, _}
       refute_receive {:email, _}
       assert Repo.aggregate(Auth.LoginToken, :count) == 2
+    end
+
+    test "a missing Fly header omits the source bucket instead of sharing the proxy peer", %{
+      conn: conn
+    } do
+      with_mail_budget(
+        guest: [limit: 10, window_s: 3_600],
+        address: [limit: 30, window_s: 3_600],
+        source: [limit: 1, window_s: 3_600],
+        global: [limit: 200, window_s: 86_400]
+      )
+
+      for n <- 1..2 do
+        assert %{"ok" => true} =
+                 conn
+                 |> as_guest(new_guest_id())
+                 |> with_csrf()
+                 |> post(~p"/papi/auth/start", %{"email" => "no-header#{n}@example.com"})
+                 |> json_response(200)
+      end
+
+      assert_receive {:email, _}
+      assert_receive {:email, _}
+      assert Repo.aggregate(Auth.LoginToken, :count) == 2
+
+      assert [] =
+               :ets.tab2list(Limiter)
+               |> Enum.filter(fn {key, _started, _count, _window_s} ->
+                 is_binary(key) and String.starts_with?(key, "start:source:")
+               end)
+    end
+
+    test "Fly source keys are stable per address, distinct, and opaque in ETS", %{conn: conn} do
+      with_mail_budget(
+        guest: [limit: 10, window_s: 3_600],
+        address: [limit: 30, window_s: 3_600],
+        source: [limit: 10, window_s: 3_600],
+        global: [limit: 200, window_s: 86_400]
+      )
+
+      for {ip, n} <- [{"203.0.113.10", 1}, {"203.0.113.10", 2}, {"203.0.113.11", 3}] do
+        assert %{"ok" => true} =
+                 conn
+                 |> as_guest(new_guest_id())
+                 |> with_csrf()
+                 |> source(ip)
+                 |> post(~p"/papi/auth/start", %{"email" => "source#{n}@example.com"})
+                 |> json_response(200)
+      end
+
+      source_entries =
+        :ets.tab2list(Limiter)
+        |> Enum.filter(fn {key, _started, _count, _window_s} ->
+          is_binary(key) and String.starts_with?(key, "start:source:")
+        end)
+
+      assert Enum.count(source_entries) == 2
+      assert Enum.sort(Enum.map(source_entries, &elem(&1, 2))) == [1, 2]
+
+      refute Enum.any?(source_entries, fn {key, _started, _count, _window_s} ->
+               key =~ "203.0.113.10" or key =~ "203.0.113.11"
+             end)
     end
 
     test "separate sources keep their own allowance and one address keeps its ceiling", %{

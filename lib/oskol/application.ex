@@ -18,6 +18,8 @@ defmodule Oskol.Application do
     # state always matches the schema its code expects.
     if Application.get_env(:oskol, :migrate_on_boot, false), do: Oskol.Release.migrate()
 
+    Oskol.Auth.SourceKey.boot!()
+
     children =
       [
         OskolWeb.Telemetry,

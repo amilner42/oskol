@@ -66,7 +66,7 @@ pub fn start_json(
   session: Session,
   email: String,
   next: String,
-  source: String,
+  source: Option(String),
 ) -> Result(String, ApiError) {
   let address = normalise_email(email)
 
@@ -99,7 +99,7 @@ fn within_limits(
   ctx: Ctx,
   session: Session,
   address: String,
-  source: String,
+  source: Option(String),
 ) -> Bool {
   let budget = ctx.auth.mail_budget()
   let buckets = [
@@ -109,16 +109,22 @@ fn within_limits(
       window_s: budget.address_window_s,
     ),
     LimitBucket(
-      key: "start:source:" <> source,
-      limit: budget.source_limit,
-      window_s: budget.source_window_s,
-    ),
-    LimitBucket(
       key: "start:global",
       limit: budget.global_limit,
       window_s: budget.global_window_s,
     ),
   ]
+  let buckets = case source {
+    Some(source) -> [
+      LimitBucket(
+        key: "start:source:" <> source,
+        limit: budget.source_limit,
+        window_s: budget.source_window_s,
+      ),
+      ..buckets
+    ]
+    None -> buckets
+  }
   let buckets = case session.guest_id {
     Some(id) -> [
       LimitBucket(
