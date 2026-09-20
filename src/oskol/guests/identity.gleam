@@ -3,7 +3,8 @@
 //// name they last played under, and the display preferences they picked
 //// (`oskol/guests/prefs`). For an unowned seat, the id is the credential that
 //// holds the seat. Losing it means the seat can be claimed again from the
-//// room link; the guest's name and board colour are also no longer available.
+//// room link, and the server's saved name and preferences no longer follow
+//// the visitor; the same browser may still have its local display cache.
 
 import gleam/list
 import gleam/option.{type Option, None, Some}

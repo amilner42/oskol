@@ -1163,8 +1163,8 @@ chip iconName label =
 
 
 {-| A Heroicon, by the class the Tailwind plugin makes for it
-(`hero-<name>`), the same way the HEEx `<.icon>` component draws one. It is
-a mask in the current colour, so the surface decides the ink.
+(`hero-<name>`). It is a mask in the current colour, so the surface decides
+the ink.
 -}
 icon : String -> String -> Html Msg
 icon name size =
