@@ -2,7 +2,7 @@
   "name": "oskol",
   "scripts": {
     "audit:full": "npm audit",
-    "audit:production": "npm audit --omit=dev",
+    "audit:production": "npm audit --omit=dev --audit-level=high",
     "format": "npm run format:elm && npm run format:gleam && npm run format:elixir",
     "format:elm": "elm-format assets/src --yes",
     "format:gleam": "gleam format",

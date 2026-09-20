@@ -130,11 +130,11 @@ defmodule Oskol.MixProject do
         "phx.digest"
       ],
       precommit: [
-        "cmd npm run audit:production",
         "compile --warning-as-errors",
         "deps.unlock --unused",
         "format",
-        "test"
+        "test",
+        "cmd npm run audit:production"
       ]
     ]
   end
