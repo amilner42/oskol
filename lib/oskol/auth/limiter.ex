@@ -1,8 +1,8 @@
 defmodule Oskol.Auth.Limiter do
   @moduledoc """
   The counters behind the sign-in rate limits: one ETS table of
-  `{key, window_start, count}`, incremented through the `count` and
-  `allow_mail` capabilities.
+  `{key, window_start, count}`, incremented through the `allow_mail`
+  capability.
 
   The Gleam handler chooses which buckets a send reserves; application
   configuration supplies their limits and windows through the auth capability.
@@ -24,17 +24,6 @@ defmodule Oskol.Auth.Limiter do
   end
 
   @doc """
-  Bump `key` and answer how many it holds inside the current window, this one
-  included. A window that has run out starts again at one.
-  """
-  def count(key, window_s) when is_binary(key) and is_integer(window_s) and window_s > 0 do
-    GenServer.call(__MODULE__, {:count, key, window_s})
-  rescue
-    # A counter is never worth a 500. Failing open costs at most some mail.
-    _ -> 1
-  end
-
-  @doc """
   Atomically reserve one message from every `{key, limit, window}` bucket.
   Nothing is incremented unless all buckets have room, which prevents a
   refused guest from consuming the node-global budget or another address's.
@@ -42,8 +31,8 @@ defmodule Oskol.Auth.Limiter do
   def allow_mail(buckets) when is_list(buckets) do
     GenServer.call(__MODULE__, {:allow_mail, buckets})
   rescue
-    # As with count/2, an unavailable in-memory limiter must not turn login
-    # into a 500. The process normally lives for the whole application.
+    # An unavailable in-memory limiter must not turn login into a 500. The
+    # process normally lives for the whole application.
     _ -> true
   end
 
@@ -57,23 +46,6 @@ defmodule Oskol.Auth.Limiter do
     ensure_table()
     schedule_sweep()
     {:ok, %{}}
-  end
-
-  @impl true
-  def handle_call({:count, key, window_s}, _from, state) do
-    now = System.system_time(:second)
-
-    count =
-      case :ets.lookup(@table, key) do
-        [{^key, started, _}] when now - started < window_s ->
-          :ets.update_counter(@table, key, {3, 1})
-
-        _ ->
-          :ets.insert(@table, {key, now, 1})
-          1
-      end
-
-    {:reply, count, state}
   end
 
   @impl true

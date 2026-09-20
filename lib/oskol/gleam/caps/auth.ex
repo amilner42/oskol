@@ -16,9 +16,9 @@ defmodule Oskol.Gleam.Caps.Auth do
   alias Oskol.Mail
 
   def build do
-    {:auth_caps, &Limiter.count/2, &Limiter.allow_mail/1, &mail_budget/0, &issue_token/4,
-     &send_mail/3, &verify_token/1, &consume_token/1, &check_code/4, &find_or_create_user/1,
-     &user/1, &stamp_seats/3, &Auth.bind_guest/2, &Auth.unbind_guest/1, &disconnect/1, &renamed/2,
+    {:auth_caps, &Limiter.allow_mail/1, &mail_budget/0, &issue_token/4, &send_mail/3,
+     &verify_token/1, &consume_token/1, &check_code/4, &find_or_create_user/1, &user/1,
+     &stamp_seats/3, &Auth.bind_guest/2, &Auth.unbind_guest/1, &disconnect/1, &renamed/2,
      &claim_name/2}
   end
 

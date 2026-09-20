@@ -9,17 +9,20 @@ defmodule Oskol.Auth.LimiterTest do
     :ok
   end
 
-  test "concurrent first hits are counted atomically" do
-    counts =
+  test "concurrent reservations cannot exceed a fresh bucket's limit" do
+    allowed =
       1..32
-      |> Task.async_stream(fn _ -> Limiter.count("same-key", 3_600) end,
+      |> Task.async_stream(
+        fn _ -> Limiter.allow_mail([{:limit_bucket, "same-key", 32, 3_600}]) end,
         max_concurrency: 32,
         ordered: false,
         timeout: 5_000
       )
-      |> Enum.map(fn {:ok, count} -> count end)
+      |> Enum.map(fn {:ok, allowed?} -> allowed? end)
 
-    assert Enum.sort(counts) == Enum.to_list(1..32)
+    assert Enum.all?(allowed)
+    refute Limiter.allow_mail([{:limit_bucket, "same-key", 32, 3_600}])
+    assert [{"same-key", _started, 32}] = :ets.lookup(Limiter, "same-key")
   end
 
   test "a rejected multi-bucket reservation consumes none of its buckets" do
@@ -33,7 +36,7 @@ defmodule Oskol.Auth.LimiterTest do
              {:limit_bucket, "global", 1, 3_600}
            ])
 
-    assert Limiter.count("global", 3_600) == 2
+    assert [{"global", _started, 1}] = :ets.lookup(Limiter, "global")
   end
 
   test "an allowed reservation preserves a live bucket's fixed window start" do

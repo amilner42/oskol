@@ -68,9 +68,6 @@ pub type CodeCheck {
 
 pub type AuthCaps {
   AuthCaps(
-    /// Bump a rate bucket and answer how many it holds inside the window,
-    /// this one included. The key and the window are the handler's.
-    count: fn(String, Int) -> Int,
     /// Spend one unit from every bucket only when every bucket has room.
     /// This is the handler's decision expressed as data; the limiter makes
     /// the multi-bucket reservation atomic.
@@ -138,7 +135,6 @@ pub type AuthCaps {
 
 pub fn stub() -> AuthCaps {
   AuthCaps(
-    count: fn(_, _) { panic as "stub auth.count" },
     allow_mail: fn(_) { panic as "stub auth.allow_mail" },
     mail_budget: fn() { panic as "stub auth.mail_budget" },
     issue_token: fn(_, _, _, _) { panic as "stub auth.issue_token" },

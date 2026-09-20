@@ -8,8 +8,8 @@
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import oskol/caps/auth.{
-  type MailBudget, AuthCaps, CodeDead, CodeOk, CodeWrong, Issued, MailBudget,
-  Pending, User,
+  type MailBudget, AuthCaps, CodeDead, CodeOk, CodeWrong, Issued, LimitBucket,
+  MailBudget, Pending, User,
 }
 import oskol/caps/guests as guests_caps
 import oskol/core/ctx.{type Ctx, Ctx}
@@ -17,16 +17,12 @@ import oskol/core/error
 import oskol/fakes
 import oskol/handlers/auth as handler
 
-/// Counting that never says "too many".
 fn under_limit(ctx: Ctx) -> Ctx {
   Ctx(
     ..ctx,
-    auth: AuthCaps(
-      ..ctx.auth,
-      count: fn(_, _) { 1 },
-      allow_mail: fn(_) { True },
-      mail_budget: fn() { ordinary_budget() },
-    ),
+    auth: AuthCaps(..ctx.auth, allow_mail: fn(_) { True }, mail_budget: fn() {
+      ordinary_budget()
+    }),
   )
 }
 
@@ -40,6 +36,19 @@ fn ordinary_budget() -> MailBudget {
     source_window_s: 3600,
     global_limit: 200,
     global_window_s: 86_400,
+  )
+}
+
+fn policy_budget() -> MailBudget {
+  MailBudget(
+    guest_limit: 2,
+    guest_window_s: 61,
+    address_limit: 3,
+    address_window_s: 62,
+    source_limit: 4,
+    source_window_s: 63,
+    global_limit: 5,
+    global_window_s: 64,
   )
 }
 
@@ -86,8 +95,9 @@ pub fn a_sign_in_puts_the_token_and_the_code_in_the_mail_test() {
   assert body == "{\"ok\":true}"
 }
 
-pub fn an_address_over_its_limit_is_answered_and_not_mailed_test() {
-  // send_mail and issue_token are left panicking: reaching them fails.
+pub fn a_limited_guest_request_reserves_the_configured_policy_and_is_not_mailed_test() {
+  // send_mail and issue_token are left panicking: reaching them fails. The
+  // refusal cap also proves the exact normalized, opaque policy it received.
   let ctx =
     fakes.ctx()
     |> fn(ctx) {
@@ -95,65 +105,25 @@ pub fn an_address_over_its_limit_is_answered_and_not_mailed_test() {
         ..ctx,
         auth: AuthCaps(
           ..ctx.auth,
-          count: fn(key, window) {
-            assert window == 3600
-            case string.starts_with(key, "start:guest:") {
-              True -> 11
-              False -> 1
-            }
+          allow_mail: fn(buckets) {
+            assert buckets
+              == [
+                LimitBucket(key: "start:guest:g1", limit: 2, window_s: 61),
+                LimitBucket(
+                  key: "start:address:her@example.com",
+                  limit: 3,
+                  window_s: 62,
+                ),
+                LimitBucket(
+                  key: "start:source:opaque-source",
+                  limit: 4,
+                  window_s: 63,
+                ),
+                LimitBucket(key: "start:global", limit: 5, window_s: 64),
+              ]
+            False
           },
-          allow_mail: fn(_) { False },
-          mail_budget: fn() { ordinary_budget() },
-        ),
-      )
-    }
-
-  let assert Ok(body) =
-    handler.start_json(ctx, fakes.guest("g1"), "a@b.com", "", "source-key")
-  assert body == "{\"ok\":true}"
-}
-
-pub fn a_buried_mailbox_is_answered_and_not_mailed_test() {
-  let ctx =
-    fakes.ctx()
-    |> fn(ctx) {
-      Ctx(
-        ..ctx,
-        auth: AuthCaps(
-          ..ctx.auth,
-          count: fn(key, _) {
-            case string.starts_with(key, "start:address:") {
-              True -> 31
-              False -> 1
-            }
-          },
-          allow_mail: fn(_) { False },
-          mail_budget: fn() { ordinary_budget() },
-        ),
-      )
-    }
-
-  let assert Ok(body) =
-    handler.start_json(ctx, fakes.guest("g1"), "a@b.com", "", "source-key")
-  assert body == "{\"ok\":true}"
-}
-
-pub fn an_overused_source_is_answered_and_not_mailed_test() {
-  let ctx =
-    fakes.ctx()
-    |> fn(ctx) {
-      Ctx(
-        ..ctx,
-        auth: AuthCaps(
-          ..ctx.auth,
-          count: fn(key, _) {
-            case string.starts_with(key, "start:source:") {
-              True -> 21
-              False -> 1
-            }
-          },
-          allow_mail: fn(_) { False },
-          mail_budget: fn() { ordinary_budget() },
+          mail_budget: fn() { policy_budget() },
         ),
       )
     }
@@ -161,11 +131,46 @@ pub fn an_overused_source_is_answered_and_not_mailed_test() {
   let assert Ok(body) =
     handler.start_json(
       ctx,
-      fakes.guest("another-cookie"),
-      "a@b.com",
+      fakes.guest("g1"),
+      "  Her@Example.com ",
       "",
-      "source-key",
+      "opaque-source",
     )
+  assert body == "{\"ok\":true}"
+}
+
+pub fn a_limited_anonymous_request_omits_the_guest_bucket_and_is_not_mailed_test() {
+  let ctx =
+    fakes.ctx()
+    |> fn(ctx) {
+      Ctx(
+        ..ctx,
+        auth: AuthCaps(
+          ..ctx.auth,
+          allow_mail: fn(buckets) {
+            assert buckets
+              == [
+                LimitBucket(
+                  key: "start:address:a@b.com",
+                  limit: 3,
+                  window_s: 62,
+                ),
+                LimitBucket(
+                  key: "start:source:opaque-source",
+                  limit: 4,
+                  window_s: 63,
+                ),
+                LimitBucket(key: "start:global", limit: 5, window_s: 64),
+              ]
+            False
+          },
+          mail_budget: fn() { policy_budget() },
+        ),
+      )
+    }
+
+  let assert Ok(body) =
+    handler.start_json(ctx, fakes.no_guest(), "a@b.com", "", "opaque-source")
   assert body == "{\"ok\":true}"
 }
 

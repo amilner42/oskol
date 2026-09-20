@@ -13,17 +13,33 @@ defmodule Oskol.Auth.TokenSweeper do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @impl true
-  def init(_opts) do
-    schedule()
-    {:ok, %{}}
+  def init(opts) do
+    sweep = Keyword.get(opts, :sweep, &Oskol.Auth.sweep_dead_tokens/1)
+    {:ok, %{sweep: sweep}, {:continue, :sweep}}
   end
 
   @impl true
-  def handle_info(:sweep, state) do
-    retired = Oskol.Auth.sweep_dead_tokens(@batch_size)
-    if retired > 0, do: Logger.info("auth token sweep: retired #{retired} rows")
+  def handle_continue(:sweep, state) do
+    run_sweep(state.sweep)
     schedule()
     {:noreply, state}
+  end
+
+  @impl true
+  def handle_info(:sweep, state), do: handle_continue(:sweep, state)
+
+  defp run_sweep(sweep) do
+    case sweep.(@batch_size) do
+      retired when is_integer(retired) and retired >= 0 ->
+        if retired > 0, do: Logger.info("auth token sweep: retired #{retired} rows")
+
+      _ ->
+        Logger.error("auth token sweep failed")
+    end
+  rescue
+    _ -> Logger.error("auth token sweep failed")
+  catch
+    _, _ -> Logger.error("auth token sweep failed")
   end
 
   defp schedule, do: Process.send_after(self(), :sweep, @daily_ms)

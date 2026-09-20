@@ -822,7 +822,8 @@ path, or `/`. Rate limits are in-memory, per-node atomic reservations behind
 the auth cap: configurable guest, address, source-IP (one-way key only) and
 global mail budgets. Defaults allow 200 real messages/day per running node
 (under Postmark's 10,000-message monthly plan); spent rows and those expired for more than a
-day are retired in a supervised bounded daily sweep. There is no switch:
+day are retired in a supervised bounded sweep at boot and then daily. A failed
+pass only logs and retries on the next schedule. There is no switch:
 signing in is always on, and prod sends real mail through Postmark. Decisions:
 `src/oskol/handlers/auth.gleam`.
 
