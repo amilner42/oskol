@@ -95,6 +95,10 @@ pub type AuthCaps {
     /// Drop this browser's live sockets, so a tab at a table does not go on
     /// playing a seat the browser no longer holds.
     disconnect: fn(String) -> Nil,
+    /// The account renamed itself: every live room holding one of its
+    /// seats shows the new name. Nothing is written -- a seat points at
+    /// the account -- so this is only the rooms catching up.
+    renamed: fn(String, String) -> Nil,
     /// Give this account that username, if no other account has it
     /// (regardless of case). `Error(Nil)` when it is taken.
     claim_name: fn(String, String) -> Result(Nil, Nil),
@@ -115,6 +119,7 @@ pub fn stub() -> AuthCaps {
     bind_guest: fn(_, _) { panic as "stub auth.bind_guest" },
     unbind_guest: fn(_) { panic as "stub auth.unbind_guest" },
     disconnect: fn(_) { panic as "stub auth.disconnect" },
+    renamed: fn(_, _) { panic as "stub auth.renamed" },
     claim_name: fn(_, _) { panic as "stub auth.claim_name" },
   )
 }

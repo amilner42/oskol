@@ -18,7 +18,7 @@ defmodule Oskol.Gleam.Caps.Auth do
   def build do
     {:auth_caps, &Limiter.count/2, &issue_token/4, &send_mail/3, &verify_token/1,
      &consume_token/1, &check_code/4, &find_or_create_user/1, &user/1, &stamp_seats/3,
-     &Auth.bind_guest/2, &Auth.unbind_guest/1, &disconnect/1, &claim_name/2}
+     &Auth.bind_guest/2, &Auth.unbind_guest/1, &disconnect/1, &renamed/2, &claim_name/2}
   end
 
   @doc """
@@ -41,7 +41,8 @@ defmodule Oskol.Gleam.Caps.Auth do
         # says. A room that rewrites its seats before it hears cannot undo
         # the stamp: a seat list written to disk never loses an owner
         # (`seat.keep_owners`, in `Oskol.Persistence`).
-        Enum.each(game_ids, &tell(&1, old_guest_id, new_guest_id, user_id))
+        username = Oskol.Auth.username(user_id)
+        Enum.each(game_ids, &tell(&1, old_guest_id, new_guest_id, user_id, username))
         {:ok, count}
 
       # Queued, not yet landed: the browser moves with it; the rooms pick
@@ -54,10 +55,13 @@ defmodule Oskol.Gleam.Caps.Auth do
     end
   end
 
-  defp tell(game_id, old_guest_id, new_guest_id, user_id) do
+  defp tell(game_id, old_guest_id, new_guest_id, user_id, username) do
     case Oskol.Game.find_game(game_id) do
-      {:ok, _pid} -> Oskol.Game.GameServer.stamp(game_id, old_guest_id, new_guest_id, user_id)
-      _ -> 0
+      {:ok, _pid} ->
+        Oskol.Game.GameServer.stamp(game_id, old_guest_id, new_guest_id, user_id, username)
+
+      _ ->
+        0
     end
   end
 
@@ -89,6 +93,19 @@ defmodule Oskol.Gleam.Caps.Auth do
 
   # A browser's own sockets, by the id OskolWeb.UserSocket gives them
   # ("guest:<guest id>"): logging out must not leave a tab playing a seat.
+  # Every live room holding a seat of this account shows the new name. The
+  # rows keep pointing at the account, so nothing is written.
+  defp renamed(user_id, username) do
+    # Every live room is asked, not the rooms the rows say: a room whose
+    # match has finished is still on screen, and a seat claimed a moment
+    # ago may not have reached its row yet. A room with no seat of this
+    # account's does nothing with it.
+    Registry.select(Oskol.GameRegistry, [{{:"$1", :_, :_}, [], [:"$1"]}])
+    |> Enum.each(&Oskol.Game.GameServer.rename(&1, user_id, username))
+
+    nil
+  end
+
   defp claim_name(user_id, name) do
     case Auth.claim_name(user_id, name) do
       :ok -> {:ok, nil}

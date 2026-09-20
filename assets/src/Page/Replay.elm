@@ -259,7 +259,7 @@ title : Model -> String
 title model =
     case model.record of
         Loaded record ->
-            "Replay · " ++ (record.players |> List.map .name |> String.join " vs ")
+            "Replay · " ++ (record.players |> List.map (.id >> Replay.playerNamed record) |> String.join " vs ")
 
         _ ->
             "Replay"
@@ -906,7 +906,7 @@ viewHead model record =
         , case record of
             Just r ->
                 span [ class "rp-tag pixel text-[7px] sm:text-[8px] truncate" ]
-                    [ text (matchLabel r ++ " · " ++ (r.players |> List.map (.name >> String.toUpper) |> String.join " v ")) ]
+                    [ text (matchLabel r ++ " · " ++ (r.players |> List.map (.id >> Replay.playerNamed r >> String.toUpper) |> String.join " v ")) ]
 
             Nothing ->
                 text ""
@@ -964,7 +964,7 @@ viewThemePicker model =
 
 nameOf : Record -> String -> String
 nameOf record id =
-    record.players |> List.filter (\p -> p.id == id) |> List.head |> Maybe.map .name |> Maybe.withDefault ""
+    Replay.playerNamed record id
 
 
 viewReplay : Model -> Record -> Game -> List (Html Msg)
@@ -1032,7 +1032,10 @@ viewReplay model record game =
 
         board =
             Board.viewStill NoOp
-                { players = record.players
+                { players =
+                    List.map
+                        (\p -> { p | name = Replay.playerNamed record p.id })
+                        record.players
                 , viewer = facing model record
                 , scores = scores
                 , cube = record.cube
@@ -1328,7 +1331,7 @@ viewMatchSheet model record =
 
         column player =
             div [ class "bg-match-col" ]
-                [ span [ class "bg-match-col-name truncate" ] [ text player.name ]
+                [ span [ class "bg-match-col-name truncate" ] [ text (Replay.playerNamed record player.id) ]
                 , span [ class "bg-match-col-score pixel tabular-nums" ] [ text (String.fromInt (scoreOf player.id)) ]
                 , span [ class "bg-match-col-pr tabular-nums inline-flex items-center gap-1" ]
                     [ if bestMatchPr == Just player.id && Dict.size model.matchPrs > 1 then
@@ -1669,7 +1672,7 @@ noCubeReason model record game mover =
             record.players
                 |> List.filter (\p -> p.id /= mover)
                 |> List.head
-                |> Maybe.map .name
+                |> Maybe.map (.id >> Replay.playerNamed record)
                 |> Maybe.withDefault "The other side"
     in
     if not record.cube then
@@ -1695,7 +1698,7 @@ viewAnnotation model record note =
             record.players
                 |> List.filter (\p -> p.id /= id_)
                 |> List.head
-                |> Maybe.map .name
+                |> Maybe.map (.id >> Replay.playerNamed record)
                 |> Maybe.withDefault "the other side"
     in
     case note of
@@ -2543,7 +2546,11 @@ viewSummary model record game =
                             div [ class "rp-player" ]
                                 [ div [ class "rp-player-head" ]
                                     [ div [ class ("swatch " ++ t.color) ] []
-                                    , span [ class "font-bold truncate" ] [ text t.name ]
+                                    , span [ class "font-bold truncate" ]
+                                        -- a report built before the seat's
+                                        -- account was named keeps that name;
+                                        -- the record has the current one
+                                        [ text (Replay.playerNamed record t.playerId) ]
                                     , span [ class "rp-pr tabular-nums", Html.Attributes.title "Performance Rating" ]
                                         [ span [ class "pixel text-[7px]" ] [ text "PR " ], text (Replay.formatPr t.pr) ]
                                     ]

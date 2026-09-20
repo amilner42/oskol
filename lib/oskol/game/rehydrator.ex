@@ -27,6 +27,11 @@ defmodule Oskol.Game.Rehydrator do
         :not_found
 
       {:ok, game, actions} ->
+        # The account behind an owned seat is looked up here, not in the
+        # room: a room does no IO of its own. It is what the seat plays
+        # under until that account renames itself, which tells the room.
+        game = %{game | players: Oskol.Persistence.with_usernames(game.players)}
+
         case GameSupervisor.restore_game(game_id, game, actions) do
           {:ok, pid} ->
             {:ok, pid}

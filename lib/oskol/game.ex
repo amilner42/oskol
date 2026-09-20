@@ -77,12 +77,20 @@ defmodule Oskol.Game do
   defdelegate join_game(game_id, player_name, player_pid), to: GameServer
   defdelegate join_game(game_id, player_name, player_pid, guest_id), to: GameServer
   defdelegate join_game(game_id, player_name, player_pid, guest_id, user_id), to: GameServer
+
+  defdelegate join_game(game_id, player_name, player_pid, guest_id, user_id, username),
+    to: GameServer
+
   defdelegate attach(game_id, guest_id, player_pid), to: GameServer
   defdelegate attach(game_id, guest_id, player_pid, client), to: GameServer
   defdelegate attach(game_id, guest_id, player_pid, client, user_id), to: GameServer
   defdelegate claim_seat(game_id, player_id, player_pid), to: GameServer
   defdelegate claim_seat(game_id, player_id, player_pid, guest_id), to: GameServer
   defdelegate claim_seat(game_id, player_id, player_pid, guest_id, user_id), to: GameServer
+
+  defdelegate claim_seat(game_id, player_id, player_pid, guest_id, user_id, username),
+    to: GameServer
+
   defdelegate get_server_state(game_id), to: GameServer, as: :get_state
   defdelegate configure(game_id, attrs), to: GameServer
   defdelegate request_rematch(game_id, player_id), to: GameServer

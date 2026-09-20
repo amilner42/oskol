@@ -49,8 +49,20 @@ defmodule Oskol.Game.GameServer do
   reach. An account is the same, whatever browser it asks from: one seat
   per table. Two players are two browsers.
   """
-  def join_game(game_id, player_name, player_pid \\ nil, guest_id \\ nil, user_id \\ nil) do
-    GenServer.call(via_tuple(game_id), {:join_game, player_name, player_pid, guest_id, user_id})
+  def join_game(
+        game_id,
+        player_name,
+        player_pid \\ nil,
+        guest_id \\ nil,
+        user_id \\ nil,
+        username \\ nil
+      )
+
+  def join_game(game_id, player_name, player_pid, guest_id, user_id, username) do
+    GenServer.call(
+      via_tuple(game_id),
+      {:join_game, player_name, player_pid, guest_id, user_id, username}
+    )
   end
 
   @doc """
@@ -85,8 +97,20 @@ defmodule Oskol.Game.GameServer do
   connected is `{:error, :seat_connected}`; a seat an account owns is
   `{:error, :seat_owned}`, whoever asks — ownership is not a code away.
   """
-  def claim_seat(game_id, player_id, player_pid, guest_id \\ nil, user_id \\ nil) do
-    GenServer.call(via_tuple(game_id), {:claim_seat, player_id, player_pid, guest_id, user_id})
+  def claim_seat(
+        game_id,
+        player_id,
+        player_pid,
+        guest_id \\ nil,
+        user_id \\ nil,
+        username \\ nil
+      )
+
+  def claim_seat(game_id, player_id, player_pid, guest_id, user_id, username) do
+    GenServer.call(
+      via_tuple(game_id),
+      {:claim_seat, player_id, player_pid, guest_id, user_id, username}
+    )
   end
 
   def get_state(game_id), do: GenServer.call(via_tuple(game_id), :get_state)
@@ -130,12 +154,28 @@ defmodule Oskol.Game.GameServer do
   person, one seat per table), but it still moves to the fresh guest id, so
   the browser keeps it as a guest seat.
   """
-  def stamp(game_id, old_guest_id, new_guest_id, user_id) do
-    GenServer.call(via_tuple(game_id), {:stamp, old_guest_id, new_guest_id, user_id})
+  def stamp(game_id, old_guest_id, new_guest_id, user_id, username \\ nil)
+
+  def stamp(game_id, old_guest_id, new_guest_id, user_id, username) do
+    GenServer.call(
+      via_tuple(game_id),
+      {:stamp, old_guest_id, new_guest_id, user_id, username}
+    )
   catch
     # The room stopped before or during this call. Its next rehydrate reads
     # the stamped row.
     :exit, _ -> 0
+  end
+
+  @doc """
+  An account renamed itself: every seat it holds here plays under the new
+  name from now on. Nothing is written -- a seat points at the account --
+  so this is the live room catching up with the one row that changed.
+  """
+  def rename(game_id, user_id, username) do
+    GenServer.call(via_tuple(game_id), {:rename, user_id, username})
+  catch
+    :exit, _ -> :ok
   end
 
   def request_rematch(game_id, player_id) do
@@ -188,7 +228,7 @@ defmodule Oskol.Game.GameServer do
   end
 
   def handle_call(
-        {:join_game, player_name, player_pid, guest_id, user_id},
+        {:join_game, player_name, player_pid, guest_id, user_id, username},
         _from,
         %GameServerState{} = state
       ) do
@@ -213,6 +253,7 @@ defmodule Oskol.Game.GameServer do
 
         connection = %{
           name: player_name,
+          username: username,
           guest_id: guest_id,
           user_id: user_id,
           pid: player_pid,
@@ -264,7 +305,7 @@ defmodule Oskol.Game.GameServer do
   end
 
   def handle_call(
-        {:claim_seat, player_id, player_pid, guest_id, user_id},
+        {:claim_seat, player_id, player_pid, guest_id, user_id, username},
         _from,
         %GameServerState{} = state
       ) do
@@ -300,7 +341,12 @@ defmodule Oskol.Game.GameServer do
         # The seat changes hands: the claiming browser holds it now, so the
         # guest who held it before cannot walk back in behind their back.
         # A signed-in browser takes it as its account's, for good.
-        claimed = %{conn | guest_id: guest_id, user_id: user_id}
+        claimed = %{
+          conn
+          | guest_id: guest_id,
+            user_id: user_id,
+            username: username
+        }
 
         state = %GameServerState{
           state
@@ -320,12 +366,13 @@ defmodule Oskol.Game.GameServer do
   # with the old ids, names and guests, so each player's browser holds the
   # same seat in it.
   def handle_call(
-        {:seed_seat, player_id, name, guest_id, user_id},
+        {:seed_seat, player_id, name, guest_id, user_id, username},
         _from,
         %GameServerState{} = state
       ) do
     connection = %{
       name: name,
+      username: username,
       guest_id: guest_id,
       user_id: user_id,
       pid: nil,
@@ -408,12 +455,25 @@ defmodule Oskol.Game.GameServer do
   # guest holds and nobody owns, and only when the account has no seat here
   # already.
   def handle_call(
-        {:stamp, old_guest_id, new_guest_id, user_id},
+        {:stamp, old_guest_id, new_guest_id, user_id, username},
         _from,
         %GameServerState{} = state
       ) do
-    {stamped, count} = stamp_seats(state, old_guest_id, new_guest_id, user_id)
+    {stamped, count} =
+      stamp_seats(state, old_guest_id, new_guest_id, user_id, username)
+
     {:reply, count, stamped, @timeout}
+  end
+
+  def handle_call({:rename, user_id, username}, _from, %GameServerState{} = state) do
+    connections =
+      Map.new(state.connections, fn {id, conn} ->
+        if conn.user_id == user_id, do: {id, %{conn | username: username}}, else: {id, conn}
+      end)
+
+    new_state = %GameServerState{state | connections: connections}
+    broadcast(new_state, [])
+    {:reply, :ok, new_state, @timeout}
   end
 
   def handle_call(:get_state, _from, %GameServerState{} = state) do
@@ -663,7 +723,7 @@ defmodule Oskol.Game.GameServer do
   # At a table where the account already owns a seat the other seat is not
   # stamped, the same rule the write follows (one person, one seat per
   # table), but it still moves to the fresh guest id with the browser.
-  defp stamp_seats(%GameServerState{} = state, old_guest_id, new_guest_id, user_id)
+  defp stamp_seats(%GameServerState{} = state, old_guest_id, new_guest_id, user_id, username)
        when is_binary(old_guest_id) and is_binary(new_guest_id) and is_binary(user_id) do
     # The rule is Gleam's (`seat.stamp`), the same one the row followed.
     {seats, count} =
@@ -677,14 +737,21 @@ defmodule Oskol.Game.GameServer do
     connections =
       Enum.reduce(seats, state.connections, fn {:seat, id, guest, user}, connections ->
         Map.update!(connections, id, fn conn ->
-          %{conn | guest_id: Interop.unopt(guest), user_id: Interop.unopt(user)}
+          owner = Interop.unopt(user)
+
+          %{
+            conn
+            | guest_id: Interop.unopt(guest),
+              user_id: owner,
+              username: if(owner == user_id, do: username, else: conn.username)
+          }
         end)
       end)
 
     {%GameServerState{state | connections: connections}, count}
   end
 
-  defp stamp_seats(%GameServerState{} = state, _old, _new, _user), do: {state, 0}
+  defp stamp_seats(%GameServerState{} = state, _old, _new, _user, _username), do: {state, 0}
 
   # A rematch is a new room with the same setup (fresh seed) and the same
   # players in the same seats: ids, names, the guest holding each seat and
@@ -707,7 +774,7 @@ defmodule Oskol.Game.GameServer do
           {:ok, ^id, _} =
             GenServer.call(
               via_tuple(rematch_id),
-              {:seed_seat, id, conn.name, conn.guest_id, conn.user_id}
+              {:seed_seat, id, conn.name, conn.guest_id, conn.user_id, conn.username}
             )
         end)
 
@@ -818,6 +885,10 @@ defmodule Oskol.Game.GameServer do
     Enum.reduce(players, {%{}, []}, fn player, {connections, order} ->
       connection = %{
         name: player["name"],
+        # Looked up once, on the way back: an owned seat plays under the
+        # account's name as it is now.
+        # Resolved by the caller before the room came up: a room does no IO.
+        username: player["username"],
         # Rows written before guests existed have no key here: nil is fine,
         # and that seat is held by nobody until someone claims it from the
         # invite link. Rows written before seat tokens were dropped still

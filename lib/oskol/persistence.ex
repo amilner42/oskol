@@ -307,6 +307,57 @@ defmodule Oskol.Persistence do
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(value), do: value
 
+  @doc """
+  The names these seat entries play under: the account's name where an
+  account owns the seat, else the name typed at the door. One query for
+  however many rows, and nothing is copied onto a seat -- a rename is one
+  row, and every game shows it at once.
+  """
+  def display_names(players_lists) do
+    ids =
+      for players <- players_lists,
+          player <- players,
+          is_map(player),
+          id = player["user_id"],
+          is_binary(id) and id != "",
+          uniq: true,
+          do: id
+
+    names = Oskol.Auth.usernames(ids)
+
+    for players <- players_lists do
+      for player <- players, is_map(player) do
+        Map.put(player, "name", names[player["user_id"]] || player["name"] || "")
+      end
+    end
+  end
+
+  @doc """
+  These seat entries with a `username` key on the ones an account owns: the
+  name that seat plays under, looked up once. Nothing is written; the key
+  is for a room coming up, which does no IO of its own.
+  """
+  def with_usernames(players) when is_list(players) do
+    names =
+      Oskol.Auth.usernames(
+        for player <- players,
+            is_map(player),
+            id = player["user_id"],
+            is_binary(id) and id != "",
+            uniq: true,
+            do: id
+      )
+
+    Enum.map(players, fn player ->
+      case is_map(player) && names[player["user_id"]] do
+        name when is_binary(name) -> Map.put(player, "username", name)
+        _ -> player
+      end
+    end)
+  end
+
+  def with_usernames(players), do: players
+
   @doc "Whether a game row already claims this code (live room or not)."
   def game_exists?(game_id) do
     Repo.exists?(from(g in Game, where: g.id == ^game_id))

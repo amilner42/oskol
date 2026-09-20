@@ -98,6 +98,7 @@ fn stored_json(
       #("you", json.string(player_id)),
       #("seated", json.bool(seated)),
       #("accounts", accounts_json(Some(setup))),
+      #("names", names_json(Some(setup))),
       #(
         "record",
         json.object(
@@ -132,6 +133,20 @@ fn accounts_json(setup: Option(Setup)) -> json.Json {
     None -> []
   }
   json.array(owned, json.string)
+}
+
+/// What each seat plays under now: an account's name where one holds the
+/// seat (the account is the name's one home, so a rename shows here at
+/// once), else the name typed at the door. The record's own head has the
+/// names the game started with; a page prefers these.
+fn names_json(setup: Option(Setup)) -> json.Json {
+  case setup {
+    Some(setup) ->
+      json.object(
+        list.map(setup.seats, fn(seat) { #(seat.0, json.string(seat.1)) }),
+      )
+    None -> json.object([])
+  }
 }
 
 /// Everything a record says about a room other than its games: who played
@@ -202,6 +217,10 @@ fn live_json(
 ) -> Result(String, ApiError) {
   use game <- result.try(room(ctx, slug, game_id))
   let #(player_id, seated) = viewer(ctx, game, game_id, session)
+  // The row, for who holds which seat and under what name. The record's
+  // own head carries the names the game started with, and an account may
+  // have signed in or renamed itself since.
+  let setup = ctx.records.setup(game_id)
   case instance.record(game) {
     None -> Error(error.NotFound("This game keeps no record"))
     Some(record) ->
@@ -216,7 +235,8 @@ fn live_json(
           // Whether that seat is really the reader's: a reader who holds no
           // seat here is looking at somebody else's game.
           #("seated", json.bool(seated)),
-          #("accounts", accounts_json(ctx.records.setup(game_id))),
+          #("accounts", accounts_json(setup)),
+          #("names", names_json(setup)),
           #("record", record),
         ]),
       )
