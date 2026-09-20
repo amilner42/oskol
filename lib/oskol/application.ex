@@ -22,7 +22,6 @@ defmodule Oskol.Application do
       [
         OskolWeb.Telemetry,
         Oskol.Repo,
-        {DNSCluster, query: Application.get_env(:oskol, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Oskol.PubSub},
         {Registry, keys: :unique, name: Oskol.GameRegistry},
         # The sign-in rate counters (ETS, per node).

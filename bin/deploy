@@ -1,0 +1,51 @@
+#!/usr/bin/env sh
+# The only supported production deploy path. Rooms and their persister are
+# local processes, so a second Fly machine would create a second owner.
+set -eu
+
+app="${FLY_APP_NAME:-oskol}"
+fly="${FLY_BIN:-fly}"
+
+reject_override() {
+  case "$1" in
+    --app | --app=* | -a | -a?* | --ha | --ha=* | --strategy | --strategy=*)
+      echo "refusing deploy override $1: bin/deploy owns the app, HA, and strategy" >&2
+      exit 1
+      ;;
+  esac
+}
+
+machine_count() {
+  machines="$("$fly" machines list --app "$app" --quiet)" || {
+    echo "could not list Fly machines for $app" >&2
+    return 1
+  }
+
+  printf '%s\n' "$machines" | awk 'NF { count += 1 } END { print count + 0 }'
+}
+
+require_one_machine_before_deploy() {
+  count="$(machine_count)" || exit 1
+
+  if [ "$count" -ne 1 ]; then
+    echo "refusing to deploy $app: Oskol requires exactly one Fly machine (found $count)" >&2
+    exit 1
+  fi
+}
+
+verify_one_machine_after_deploy() {
+  count="$(machine_count)" || exit 1
+
+  if [ "$count" -ne 1 ]; then
+    echo "deploy completed, but $app now reports $count Fly machines; stop using it until one-machine ownership is restored" >&2
+    exit 1
+  fi
+}
+
+for arg in "$@"; do
+  reject_override "$arg"
+done
+
+require_one_machine_before_deploy
+"$fly" deploy "$@" --remote-only --ha=false --strategy rolling --app "$app"
+verify_one_machine_after_deploy

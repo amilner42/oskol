@@ -9,6 +9,12 @@ kill_signal = 'SIGTERM'
 
 [build]
 
+[deploy]
+  # Oskol has one local room owner. A rolling update takes that machine down
+  # before replacing it, so no owners overlap while Fly still verifies the boot.
+  strategy = 'rolling'
+  max_unavailable = 1
+
 [env]
   PHX_HOST = 'oskol.io'
   PORT = '8080'
