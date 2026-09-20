@@ -85,6 +85,7 @@ type alias Record =
     , start : Snapshot -- the position every game starts from
     , games : List Game
     , accounts : List String -- the seats an account owns (the badge beside a name)
+    , names : Dict String String -- what each seat plays under now: an account's own name where one holds it
     }
 
 
@@ -107,12 +108,13 @@ type Entry
 
 recordDecoder : Decoder Record
 recordDecoder =
-    D.map4 (\you seated accounts r -> r you seated accounts)
+    D.map5 (\you seated accounts names r -> r you seated accounts names)
         (D.field "you" D.string)
         (D.oneOf [ D.field "seated" D.bool, D.succeed False ])
         (D.oneOf [ D.field "accounts" (D.list D.string), D.succeed [] ])
+        (D.oneOf [ D.field "names" (D.dict D.string), D.succeed Dict.empty ])
         (D.field "record"
-            (D.map5 (\players target cube start games you seated accounts -> Record you seated players target cube start games accounts)
+            (D.map5 (\players target cube start games you seated accounts names -> Record you seated players target cube start games accounts names)
                 (D.field "players" (D.list playerDecoder))
                 (D.field "target" D.int)
                 (D.oneOf [ D.field "cube" D.bool, D.succeed True ])
@@ -193,6 +195,18 @@ findGame number record =
 
 playerNamed : Record -> String -> String
 playerNamed record id =
+    case Dict.get id record.names of
+        -- The name the seat plays under now: an account's own, where one
+        -- holds it, rather than the one the game started with.
+        Just name ->
+            name
+
+        Nothing ->
+            playerAtStart record id
+
+
+playerAtStart : Record -> String -> String
+playerAtStart record id =
     record.players
         |> List.filter (\p -> p.id == id)
         |> List.head

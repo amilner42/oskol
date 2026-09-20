@@ -198,6 +198,31 @@ defmodule Oskol.Auth do
       end
   end
 
+  @doc """
+  The name this account shows up under, or `nil`. The one place a name
+  lives: a seat an account holds points at the account rather than keeping
+  a copy, so a rename is one row and every game shows it at once.
+  """
+  def username(user_id) when is_binary(user_id) and byte_size(user_id) > 0 do
+    case Ecto.UUID.cast(user_id) do
+      {:ok, uuid} -> Repo.one(from(u in User, where: u.id == ^uuid, select: u.name))
+      :error -> nil
+    end
+  end
+
+  def username(_), do: nil
+
+  @doc "The names of these accounts, by id. Ids nothing answers to are left out."
+  def usernames([]), do: %{}
+
+  def usernames(user_ids) do
+    uuids = for id <- user_ids, is_binary(id), {:ok, uuid} <- [Ecto.UUID.cast(id)], do: uuid
+
+    from(u in User, where: u.id in ^uuids, where: not is_nil(u.name), select: {u.id, u.name})
+    |> Repo.all()
+    |> Map.new()
+  end
+
   @doc "One account, by id. `nil` for an id nothing answers to."
   def user(id) when is_binary(id) do
     case Ecto.UUID.cast(id) do

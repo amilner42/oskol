@@ -50,7 +50,14 @@ defmodule Oskol.Gleam.Caps.Rooms do
        end
      end,
      fn game_id, name, guest_id, user_id ->
-       case Game.join_game(game_id, name, player_pid, unopt(guest_id), unopt(user_id)) do
+       case Game.join_game(
+              game_id,
+              name,
+              player_pid,
+              unopt(guest_id),
+              unopt(user_id),
+              Oskol.Auth.username(unopt(user_id))
+            ) do
          {:ok, player_id, state} ->
            {:ok, {:seat, player_id, state.instance != nil}}
 
@@ -69,7 +76,8 @@ defmodule Oskol.Gleam.Caps.Rooms do
               player_id,
               player_pid || self(),
               unopt(guest_id),
-              unopt(user_id)
+              unopt(user_id),
+              Oskol.Auth.username(unopt(user_id))
             ) do
          {:ok, ^player_id, state} ->
            {:ok, {:seat, player_id, state.instance != nil}}
@@ -124,7 +132,7 @@ defmodule Oskol.Gleam.Caps.Rooms do
   # Somebody who is at the table right now, if anybody is.
   defp inviter_name(state) do
     case Enum.find(state.connections, fn {_id, conn} -> conn.connected end) do
-      {_id, conn} -> conn.name
+      {_id, conn} -> GameServerState.display_name(conn)
       nil -> nil
     end
   end

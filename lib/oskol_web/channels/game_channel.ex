@@ -164,7 +164,14 @@ defmodule OskolWeb.GameChannel do
       conn = state.connections[id]
       # `account`: whether an account owns the seat, for the badge beside
       # the name. A yes or no only: an account id never leaves the server.
-      %{id: id, name: conn.name, connected: conn.connected, account: conn.user_id != nil}
+      %{
+        id: id,
+        # An owned seat plays under its account's name; the rest under the
+        # name typed at the door.
+        name: GameServerState.display_name(conn),
+        connected: conn.connected,
+        account: conn.user_id != nil
+      }
     end)
   end
 end

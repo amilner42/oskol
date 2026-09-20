@@ -24,7 +24,12 @@ defmodule Oskol.Game.GameServerState do
   grants nothing.
   """
   @type connection :: %{
+          # The name typed at the door. It is what an unowned seat plays
+          # under; a seat an account holds plays under `username`, which
+          # points at the account rather than copying it, so a rename shows
+          # everywhere at once.
           name: String.t(),
+          username: String.t() | nil,
           guest_id: String.t() | nil,
           user_id: String.t() | nil,
           pid: pid() | nil,
@@ -184,7 +189,9 @@ defmodule Oskol.Game.GameServerState do
 
   @spec name_taken?(t(), String.t()) :: boolean()
   def name_taken?(%__MODULE__{connections: connections}, name) do
-    Enum.any?(connections, fn {_id, conn} -> conn.name == name end)
+    # Against what the table shows, which for an account's seat is the
+    # account's name rather than the one typed at the door.
+    Enum.any?(connections, fn {_id, conn} -> display_name(conn) == name end)
   end
 
   @doc """
@@ -211,6 +218,16 @@ defmodule Oskol.Game.GameServerState do
   def find_player_id_by_guest(%__MODULE__{} = state, guest_id) do
     find_player_id_for(state, session(guest_id, nil))
   end
+
+  @doc """
+  The name this seat plays under: its account's, if an account holds it,
+  else the name typed at the door.
+  """
+  @spec display_name(connection()) :: String.t()
+  def display_name(%{username: username}) when is_binary(username) and username != "",
+    do: username
+
+  def display_name(%{name: name}), do: name
 
   @doc "A Gleam `Session` for a caller known only as a guest id and an account id."
   @spec session(String.t() | nil, String.t() | nil) :: tuple()

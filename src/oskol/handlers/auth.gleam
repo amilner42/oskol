@@ -275,6 +275,13 @@ fn sign_in(ctx: Ctx, session: Session, pending: Pending) -> SignedIn {
       // (and the name on it) to a fresh id.
       let remembered = identity.remembered_name(ctx, session)
       let fresh = ctx.guests.mint()
+      // Named before the stamp: the stamp hands the seats to the account,
+      // and an account's seat plays under the account's name, so it has to
+      // have one by then.
+      let #(user, is_new) = case user.name {
+        Some(_) -> #(user, False)
+        None -> #(named(ctx, user, remembered), True)
+      }
       let #(saved, signed_in_as) = case
         ctx.auth.stamp_seats(guest_id, fresh, user.id)
       {
@@ -285,12 +292,6 @@ fn sign_in(ctx: Ctx, session: Session, pending: Pending) -> SignedIn {
         Error(Nil) -> #(0, guest_id)
       }
       ctx.auth.bind_guest(signed_in_as, user.id)
-      // A new account gets its username now, so nothing ever has to show
-      // its email: the name it played under, or that with a number.
-      let #(user, is_new) = case user.name {
-        Some(_) -> #(user, False)
-        None -> #(named(ctx, user, remembered), True)
-      }
 
       SignedIn(
         renew: True,
@@ -356,11 +357,13 @@ pub fn name_json(
         Ok(name) ->
           case ctx.auth.claim_name(user_id, name) {
             Error(Nil) -> Error(error.validation_failed("That name is taken."))
-            Ok(Nil) ->
+            Ok(Nil) -> {
+              ctx.auth.renamed(user_id, name)
               case ctx.auth.user(user_id) {
                 Some(user) -> Ok(envelope.ok([#("user", user_json(user))]))
                 None -> Error(error.validation_failed("Sign in first."))
               }
+            }
           }
       }
   }

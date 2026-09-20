@@ -32,11 +32,21 @@ defmodule Oskol.Gleam.Caps.Analysis do
         config = game.config || %{}
 
         {:some,
-         {:game_log, game.slug, config["format"] || "", config["clock"] || "none", game.seed,
-          Enum.map(game.players, fn p -> {p["id"], p["name"]} end),
-          Enum.map(actions, fn a ->
-            {:log_entry, a.kind, opt(a.player_id), Jason.encode!(a.payload), a.at_ms}
-          end)}}
+         {
+           :game_log,
+           game.slug,
+           config["format"] || "",
+           config["clock"] || "none",
+           game.seed,
+           # The names the seats play under, so a review names an account's
+           # seat as the table and the replay do.
+           Enum.map(hd(Oskol.Persistence.display_names([game.players])), fn p ->
+             {p["id"], p["name"]}
+           end),
+           Enum.map(actions, fn a ->
+             {:log_entry, a.kind, opt(a.player_id), Jason.encode!(a.payload), a.at_ms}
+           end)
+         }}
     end
   end
 

@@ -21,14 +21,17 @@ defmodule Oskol.Gleam.Caps.Persistence do
   defp seated_rooms(guest_id, user_id) do
     now = DateTime.utc_now()
 
-    Oskol.Persistence.seated_rooms(unopt(guest_id), unopt(user_id))
-    |> Enum.map(fn game ->
+    rooms = Oskol.Persistence.seated_rooms(unopt(guest_id), unopt(user_id))
+    named = Oskol.Persistence.display_names(Enum.map(rooms, & &1.players))
+
+    Enum.zip(rooms, named)
+    |> Enum.map(fn {game, players} ->
       config = game.config || %{}
       state = game.state || %{}
 
       {:active_room, game.slug, game.id, game.status, config["format"] || "",
        config["clock"] || "none",
-       Enum.map(game.players, fn p ->
+       Enum.map(players, fn p ->
          {p["id"], p["name"] || "", p["guest_id"] || "", p["user_id"] || ""}
        end), Enum.filter(state["to_act"] || [], &is_binary/1), clocks(state["clocks"]),
        clock_age_s(state["at"], game.updated_at, now),

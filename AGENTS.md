@@ -1228,7 +1228,17 @@ username whatever it is sent (`landing.seat_name`). Wherever a name is shown
 (the home bar, both player bars at the table, the replay) a badge says
 guest or account (`Ui.Identity`): the channel's seat list carries
 `account: true|false` per seat and the record carries `accounts` (player
-ids), a yes or no only, never which account. A guest's home bar has the
+ids), a yes or no only, never which account. **A seat points at the
+account, it does not copy its name.** `games.players[i].name` stays the
+name typed at the door; where the seat has a `user_id`, what everyone
+sees is `users.name` — resolved as rows are read
+(`Persistence.display_names/1`, behind the rooms and records caps, and
+`names` in the record) and held in the live room's memory
+(`connection.username`, filled on join, claim, rematch, rehydrate and the
+sign-in stamp; `GameServerState.display_name/1`). So a rename is one row:
+`POST /papi/me/name` writes `users.name`, tells the live rooms holding
+that account's seats (`GameServer.rename/3`, nothing persisted), and every
+game past and present shows the new name at once. A guest's home bar has the
 same caret as an account's, with SIGN IN behind it.
 
 **Accounts** are `users` (uuid id, `email` citext unique, `name` citext

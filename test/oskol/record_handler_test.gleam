@@ -70,6 +70,7 @@ pub fn a_seat_reads_the_whole_record_test() {
         #("you", json.string("p1")),
         #("seated", json.bool(True)),
         #("accounts", json.array([], json.string)),
+        #("names", json.object([])),
         #("record", expected),
       ]),
     )

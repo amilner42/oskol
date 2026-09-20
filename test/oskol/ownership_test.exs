@@ -234,6 +234,99 @@ defmodule Oskol.OwnershipTest do
     end
   end
 
+  describe "the name a seat plays under" do
+    test "an account's seat points at the account: one row renames it everywhere" do
+      u1 = account("pointer@example.com")
+      :ok = Oskol.Auth.claim_name(u1, "arie1")
+      fresh = unique_guest_id()
+      %{game_id: game_id, p1: p1, g1: g1} = lobby("single")
+      {:ok, p2, _} = Game.join_game(game_id, "Bob", nil, "bobs-browser")
+      Persister.flush()
+
+      assert {:ok, 1} = Oskol.Gleam.Caps.Auth.stamp_seats(g1, fresh, u1)
+
+      # The live room shows the account's name; the opponent keeps theirs.
+      state = Game.get_server_state(game_id)
+      assert GameServerState.display_name(state.connections[p1]) == "arie1"
+      assert GameServerState.display_name(state.connections[p2]) == "Bob"
+
+      # Nothing was copied onto the seat: the row still has the name that
+      # was typed at the door, and the account it points at.
+      seat = Persistence.players(game_id) |> Enum.find(&(&1["id"] == p1))
+      assert seat["name"] == "Alice"
+      assert seat["user_id"] == u1
+
+      # A rename is one row, and the live room shows it at once.
+      :ok = Oskol.Auth.claim_name(u1, "arie2")
+      :ok = Oskol.Game.GameServer.rename(game_id, u1, "arie2")
+
+      assert Game.get_server_state(game_id).connections[p1] |> GameServerState.display_name() ==
+               "arie2"
+
+      # And every row read shows it, with nothing written.
+      assert Persistence.players(game_id) |> Enum.find(&(&1["id"] == p1)) |> Map.get("name") ==
+               "Alice"
+
+      assert [named] = Persistence.display_names([Persistence.players(game_id)])
+      assert Enum.find(named, &(&1["id"] == p1))["name"] == "arie2"
+      assert Enum.find(named, &(&1["id"] == p2))["name"] == "Bob"
+    end
+
+    test "renaming through the handler reaches every live room, finished ones too" do
+      u1 = account("live-rename@example.com")
+      :ok = Oskol.Auth.claim_name(u1, "arie5")
+      %{game_id: game_id, p1: p1, g1: g1} = lobby("single")
+      Persister.flush()
+      {1, _} = Persistence.stamp_seats(g1, unique_guest_id(), u1)
+      1 = Oskol.Game.GameServer.stamp(game_id, g1, unique_guest_id(), u1, "arie5")
+
+      # The real path: the handler writes the one row and tells the rooms.
+      body =
+        :oskol@handlers@auth.name_json(
+          Oskol.Gleam.CtxBuilder.build(),
+          {:session, {:some, "any-browser"}, {:some, u1}},
+          "arie6"
+        )
+
+      assert {:ok, _} = body
+      assert Oskol.Auth.username(u1) == "arie6"
+
+      assert Game.get_server_state(game_id).connections[p1] |> GameServerState.display_name() ==
+               "arie6"
+    end
+
+    test "a room rebuilt from its row shows the account's name" do
+      u1 = account("rehydrated-name@example.com")
+      :ok = Oskol.Auth.claim_name(u1, "arie3")
+      fresh = unique_guest_id()
+      %{game_id: game_id, p1: p1, g1: g1} = lobby("single")
+      Persister.flush()
+      {1, _} = Persistence.stamp_seats(g1, fresh, u1)
+
+      :ok = GenServer.stop(Game.find_game(game_id) |> elem(1))
+      wait_until(fn -> Game.find_game(game_id) == :error end)
+      assert {:ok, _} = Game.lookup_game(game_id)
+
+      assert Game.get_server_state(game_id).connections[p1] |> GameServerState.display_name() ==
+               "arie3"
+    end
+
+    test "a signed-in browser claiming an away seat brings its account's name" do
+      u1 = account("claimer-name@example.com")
+      :ok = Oskol.Auth.claim_name(u1, "arie4")
+      %{game_id: game_id, p1: p1} = lobby("single")
+      {:ok, _p2, _} = Game.join_game(game_id, "Bob", nil, "bobs-browser")
+
+      # Through the cap's own shape: the caller looks the name up (a room
+      # does no IO) and hands it over with the account.
+      {:ok, ^p1, _} =
+        Game.claim_seat(game_id, p1, self(), unique_guest_id(), u1, Oskol.Auth.username(u1))
+
+      assert Game.get_server_state(game_id).connections[p1] |> GameServerState.display_name() ==
+               "arie4"
+    end
+  end
+
   describe "a seat list written from a room's memory" do
     test "never takes an owner off a seat" do
       u1 = account("stale-write@example.com")
