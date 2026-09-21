@@ -82,8 +82,9 @@ type alias Roll =
 
 
 type Msg
-    = PlayMove String String
+    = PlayMove String String Int
     | PlayPair Move Move
+    | BearOff Int -- stage the server-owned quick path, preferring this (left) die
     | SwapDice -- the two dice change places: the next die is the left one
     | Simple String
     | Rematch
@@ -189,7 +190,7 @@ noteEvents events model =
         noted
 
     else
-        -- a fresh roll: the dice are next in the order they land
+        -- a fresh roll: the dice are next in canonical high-first order
         { noted | roll = { seq = noted.roll.seq + rolls, watched = True }, swaps = 0 }
 
 
@@ -241,11 +242,14 @@ update msg model =
         SwapDice ->
             ( { model | swaps = model.swaps + 1 }, NoOut )
 
-        PlayMove from to ->
-            ( reset model, Send (encodeMove from to) )
+        PlayMove from to die ->
+            ( reset model, Send (encodeMove from to die) )
 
         PlayPair a b ->
-            ( reset model, SendMany [ encodeMove a.from a.to, encodeMove b.from b.to ] )
+            ( reset model, SendMany [ encodeMove a.from a.to a.die, encodeMove b.from b.to b.die ] )
+
+        BearOff firstDie ->
+            ( reset model, Send (Protocol.encodeAction "bear_off" [ ( "first_die", E.string (String.fromInt firstDie) ) ]) )
 
         Simple name ->
             -- a turn played or a roll asked for: the next roll starts unrotated
@@ -289,9 +293,9 @@ update msg model =
             ( model, NoOut )
 
 
-encodeMove : String -> String -> E.Value
-encodeMove from to =
-    Protocol.encodeAction "move" [ ( "from", E.string from ), ( "to", E.string to ) ]
+encodeMove : String -> String -> Int -> E.Value
+encodeMove from to die =
+    Protocol.encodeAction "move" [ ( "from", E.string from ), ( "to", E.string to ), ( "selected_die", E.string (String.fromInt die) ) ]
 
 
 
@@ -360,6 +364,7 @@ labelOf name legal =
 type alias TapContext =
     { moves : List Move
     , sources : List String
+    , canBearOff : Bool
 
     -- my checkers currently at a location ("bar", "off" or a point id)
     , mineAt : String -> Int
@@ -375,6 +380,8 @@ type alias TapContext =
     the next die -- the first unused one, reading the dice left to right,
     that can play it (`nextDieMove`). An origin is an origin first, even
     when moves also land on it;
+  - the bear-off tray asks the engine to stage its longest legal quick path,
+    preferring the visible left die;
   - exactly one legal move lands on dest, a point I do not hold (or off):
     play it -- unless the dice are doubles and a second identical move
     would land a second checker there, in which case stage the pair (make
@@ -404,7 +411,14 @@ resolveTap tc dest =
             tc.mineAt loc == 0
     in
     if isSource then
-        nextDieMove tc dest |> Maybe.map (\m -> PlayMove m.from m.to)
+        nextDieMove tc dest |> Maybe.map moveMessage
+
+    else if dest == "off" then
+        if tc.canBearOff then
+            List.head tc.unusedDice |> Maybe.map BearOff
+
+        else
+            Nothing
 
     else
         case landing of
@@ -413,7 +427,7 @@ resolveTap tc dest =
                     Just (PlayPair m m)
 
                 else if dest == "off" || fresh dest then
-                    Just (PlayMove m.from m.to)
+                    Just (moveMessage m)
 
                 else
                     Nothing
@@ -427,6 +441,11 @@ resolveTap tc dest =
 
             _ ->
                 Nothing
+
+
+moveMessage : Move -> Msg
+moveMessage move =
+    PlayMove move.from move.to move.die
 
 
 {-| The move that plays `from` with the next die: the first die not yet
@@ -734,6 +753,7 @@ tapContext ctx legalMoves sources =
     in
     { moves = legalMoves
     , sources = sources
+    , canBearOff = hasAction "bear_off" ctx.legal
     , mineAt = mineAt
     , unusedDice = unusedDice
     }

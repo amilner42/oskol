@@ -131,6 +131,22 @@ defmodule Oskol.ReviewsTest do
     end
   end
 
+  # Commit exactly one turn without letting the generic random bot choose
+  # cube, resignation, undo, or any other legal action added by a game UI.
+  defp play_one_turn(game_id, player_id) do
+    state = Oskol.Game.get_server_state(game_id)
+    legal = Oskol.GameKit.legal(state.instance, player_id)
+
+    schema =
+      Enum.find(legal, &(&1["name"] == "play")) ||
+        Enum.find(legal, &(&1["name"] == "move"))
+
+    assert schema
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, player_id, Oskol.Bots.action(schema))
+
+    if schema["name"] == "move", do: play_one_turn(game_id, player_id)
+  end
+
   defp reviews(conn, game_id) do
     conn
     |> as_guest(seat_guest(game_id))
@@ -396,9 +412,42 @@ defmodule Oskol.ReviewsTest do
       Req.Test.json(conn, answer(length(Jason.decode!(body)["turns"])))
     end)
 
-    %{game_id: game_id} = started(2, "match3")
-    assert {:finished, _} = Oskol.Bots.play(game_id, 2, 3000)
+    %{game_id: game_id, p1: p1, p2: p2} = started(2, "match3")
+    state = Oskol.Game.get_server_state(game_id)
+    first = mover(state.instance, [p1, p2])
+    play_one_turn(game_id, first)
+    state = Oskol.Game.get_server_state(game_id)
+    first = mover(state.instance, [p1, p2])
+    second = if first == p1, do: p2, else: p1
+
+    assert {:ok, _, _} =
+             Oskol.Game.player_action(game_id, first, %{
+               "name" => "resign",
+               "params" => %{"stakes" => "single"}
+             })
+
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, second, simple("accept_resign"))
     assert_receive {:holding, engine}, 10_000
+
+    # End the next game while the first game's engine request is held. This
+    # is deliberate rather than a seeded bot path: adding an unrelated legal
+    # action must not change how many games this queue race exercises.
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, p1, simple("ready"))
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, p2, simple("ready"))
+    state = Oskol.Game.get_server_state(game_id)
+    first = mover(state.instance, [p1, p2])
+    play_one_turn(game_id, first)
+    state = Oskol.Game.get_server_state(game_id)
+    first = mover(state.instance, [p1, p2])
+    second = if first == p1, do: p2, else: p1
+
+    assert {:ok, _, _} =
+             Oskol.Game.player_action(game_id, first, %{
+               "name" => "resign",
+               "params" => %{"stakes" => "single"}
+             })
+
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, second, simple("accept_resign"))
     send(engine, :go)
 
     # Read the table, not the endpoint: a request would queue what is owed

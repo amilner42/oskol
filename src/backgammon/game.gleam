@@ -8,8 +8,9 @@ import gamekit/action
 import gamekit/game.{type Game}
 import gamekit/rng.{type Rng}
 import gleam/dict
+import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/result
 
 pub fn game() -> Game(GameState, Action) {
@@ -139,7 +140,26 @@ pub fn decode_action(incoming: action.Incoming) -> Result(Action, String) {
     "move" -> {
       use from <- result.try(loc_param(incoming.params, "from"))
       use to <- result.try(loc_param(incoming.params, "to"))
-      Ok(engine.MoveChecker(from, to))
+      use die <- result.try(action.optional_string_param(
+        incoming.params,
+        "selected_die",
+      ))
+      case die {
+        Some(value) -> {
+          use parsed <- result.try(
+            int.parse(value) |> result.replace_error("Invalid die"),
+          )
+          Ok(engine.MoveCheckerUsing(from, to, parsed))
+        }
+        None -> Ok(engine.MoveChecker(from, to))
+      }
+    }
+    "bear_off" -> {
+      use value <- result.try(action.string_param(incoming.params, "first_die"))
+      use first_die <- result.try(
+        int.parse(value) |> result.replace_error("Invalid first die"),
+      )
+      Ok(engine.BearOff(first_die))
     }
     other -> Error("Unknown action: " <> other)
   }

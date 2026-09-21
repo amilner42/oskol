@@ -77,15 +77,15 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
         #(
           "dice",
           json.array(
-            case state.phase, is_mover {
+            canonical_dice(case state.phase, is_mover {
               // Which dice are used is part of the private staging
               state.Moving(_, _), False -> state.turn_dice(state)
               _, _ -> state.dice_left(state)
-            },
+            }),
             json.int,
           ),
         ),
-        #("last_roll", json.array(state.last_roll, json.int)),
+        #("last_roll", json.array(canonical_dice(state.last_roll), json.int)),
         #("target", json.int(state.config.target)),
         #("game_number", json.int(state.game_number)),
         #("winner_id", case state.phase {
@@ -283,13 +283,15 @@ fn player_zones(state: GameState) -> List(Zone) {
 }
 
 fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
-  let rolled = state.last_roll
+  let rolled = canonical_dice(state.last_roll)
   let left = state.dice_left(state)
   let tokens = case state.phase {
     state.Moving(_, _) -> {
       // Every die of the roll (four for doubles); only the mover sees which
       // are used, since their moves are still private.
-      let all = state.turn_dice(state)
+      // State keeps the seeded roll's raw order for replay; the projection
+      // is the canonical board order players act on: larger die on the left.
+      let all = canonical_dice(state.turn_dice(state))
       let unused = case is_mover {
         True -> left
         False -> all
@@ -303,6 +305,12 @@ fn dice_zone(state: GameState, is_mover: Bool) -> Zone {
     _ -> list.index_map(rolled, fn(value, i) { die_token(i, value, True) })
   }
   scene.zone(engine.dice_zone, scene.Row, tokens)
+}
+
+/// Dice have one public order in every projected phase: larger first. State
+/// retains the seeded roll's raw order so old action logs replay identically.
+fn canonical_dice(dice: List(Int)) -> List(Int) {
+  list.sort(dice, fn(a, b) { int.compare(b, a) })
 }
 
 fn mark_used(

@@ -171,6 +171,8 @@ fn opening_roll(state: GameState) -> GameState {
         True -> White
         False -> Black
       }
+      // Keep the raw white/black opening pair in state for seeded replay.
+      // Projection owns the high-first order players see.
       start_moving(GameState(..state, last_roll: [a, b]), first, [a, b])
     }
   }
@@ -612,6 +614,18 @@ pub fn stage(
   from: board.Loc,
   to: board.Loc,
 ) -> Result(#(GameState, Staged), String) {
+  stage_with_die(state, player_id, from, to, None)
+}
+
+/// Stage a move using the die the player chose. `None` is the legacy action
+/// shape and preserves its historical lower-die tie-break for replay safety.
+pub fn stage_with_die(
+  state: GameState,
+  player_id: PlayerId,
+  from: board.Loc,
+  to: board.Loc,
+  die: Option(Int),
+) -> Result(#(GameState, Staged), String) {
   use color <- result.try(color_of(state, player_id))
   use _ <- result.try(no_offer_pending(state))
   case state.phase {
@@ -619,11 +633,16 @@ pub fn stage(
       let candidates =
         board.legal_moves(state.board, color, dice)
         |> list.filter(fn(m) { m.from == from && m.to == to })
-      // Prefer the exact die when several dice could make the same move
       use chosen <- result.try(
-        candidates
-        |> list.sort(fn(a, b) { int.compare(a.die, b.die) })
-        |> list.first
+        case die {
+          Some(value) -> list.find(candidates, fn(m) { m.die == value })
+          // Persisted actions before selected dice existed relied on this
+          // exact low-die tie-break. Never reinterpret those logs.
+          None ->
+            candidates
+            |> list.sort(fn(a, b) { int.compare(a.die, b.die) })
+            |> list.first
+        }
         |> result.replace_error("Illegal move"),
       )
       let #(next_board, mover, hit) =
@@ -646,6 +665,93 @@ pub fn stage(
     BetweenGames(_, _) -> Error(next_game_not_started)
     Finished(_) -> Error("The match is over")
   }
+}
+
+/// Stage as many legal bear-offs as one tray tap promises: at most two die
+/// uses, preferring the visible left-to-right order but taking the reverse
+/// order when it is the only way to bear off two. Every second move is found
+/// from the state produced by the first, so oversize bear-offs unlocked by
+/// removing the farthest checker are included.
+pub fn stage_bear_off(
+  state: GameState,
+  player_id: PlayerId,
+  first_die: Int,
+) -> Result(#(GameState, List(Staged)), String) {
+  use color <- result.try(color_of(state, player_id))
+  use _ <- result.try(no_offer_pending(state))
+  case state.phase {
+    Moving(c, dice) if c == color ->
+      case list.contains(dice, first_die) {
+        False -> Error("That die is not available")
+        True -> {
+          let preferred =
+            [first_die, ..remove_one(dice, first_die)] |> list.take(2)
+          use preferred_paths <- result.try(bear_off_paths(
+            state,
+            player_id,
+            preferred,
+          ))
+          use reversed_paths <- result.try(bear_off_paths(
+            state,
+            player_id,
+            list.reverse(preferred),
+          ))
+          let paths = list.append(preferred_paths, reversed_paths)
+          let #(next, staged) = best_bear_off_path(paths)
+          case staged {
+            [] -> Error("No checker can bear off")
+            _ -> Ok(#(next, staged))
+          }
+        }
+      }
+    Moving(_, _) -> Error("Not your turn")
+    _ -> Error("You cannot bear off now")
+  }
+}
+
+fn bear_off_paths(
+  state: GameState,
+  player_id: PlayerId,
+  dice: List(Int),
+) -> Result(List(#(GameState, List(Staged))), String) {
+  case dice {
+    [] -> Ok([#(state, [])])
+    [die, ..rest] -> {
+      let candidates =
+        legal_moves(state, player_id)
+        |> list.filter(fn(move) { move.to == board.Off && move.die == die })
+      case candidates {
+        [] -> Ok([#(state, [])])
+        _ ->
+          list.fold(candidates, Ok([]), fn(paths, move) {
+            use paths <- result.try(paths)
+            use #(next, staged) <- result.try(stage_with_die(
+              state,
+              player_id,
+              move.from,
+              move.to,
+              Some(die),
+            ))
+            use tails <- result.try(bear_off_paths(next, player_id, rest))
+            let extended =
+              list.map(tails, fn(path) { #(path.0, [staged, ..path.1]) })
+            Ok(list.append(paths, extended))
+          })
+      }
+    }
+  }
+}
+
+fn best_bear_off_path(
+  paths: List(#(GameState, List(Staged))),
+) -> #(GameState, List(Staged)) {
+  let assert [first, ..rest] = paths
+  list.fold(rest, first, fn(best, candidate) {
+    case list.length(candidate.1) > list.length(best.1) {
+      True -> candidate
+      False -> best
+    }
+  })
 }
 
 /// Take back the most recently staged move.

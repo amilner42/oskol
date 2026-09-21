@@ -26,17 +26,27 @@ suite =
         [ describe "update"
             [ test "playing a move sends it and leaves the model as it started" <|
                 \_ ->
-                    View.update (PlayMove "13" "8") View.init
-                        |> Expect.equal ( View.init, Send (Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "8" ) ]) )
+                    View.update (PlayMove "13" "8" 5) View.init
+                        |> Expect.equal ( View.init, Send (Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "8" ), ( "selected_die", E.string "5" ) ]) )
             , test "playing a pair sends both moves in order" <|
                 \_ ->
                     View.update (PlayPair { from = "13", to = "9", die = 4 } { from = "11", to = "9", die = 2 }) View.init
                         |> Tuple.second
                         |> Expect.equal
                             (SendMany
-                                [ Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "9" ) ]
-                                , Protocol.encodeAction "move" [ ( "from", E.string "11" ), ( "to", E.string "9" ) ]
+                                [ Protocol.encodeAction "move" [ ( "from", E.string "13" ), ( "to", E.string "9" ), ( "selected_die", E.string "4" ) ]
+                                , Protocol.encodeAction "move" [ ( "from", E.string "11" ), ( "to", E.string "9" ), ( "selected_die", E.string "2" ) ]
                                 ]
+                            )
+            , test "bearing off sends the visible first die to the engine-owned quick path" <|
+                \_ ->
+                    View.update (BearOff 6) View.init
+                        |> Tuple.second
+                        |> Expect.equal
+                            (Send
+                                (Protocol.encodeAction "bear_off"
+                                    [ ( "first_die", E.string "6" ) ]
+                                )
                             )
             , test "simple actions send their name with no params" <|
                 \_ ->
@@ -58,6 +68,7 @@ suite =
                 base =
                     { moves = []
                     , sources = []
+                    , canBearOff = False
                     , mineAt = \_ -> 0
                     , unusedDice = []
                     }
@@ -65,7 +76,7 @@ suite =
              [ test "exactly one legal move landing on the point plays it" <|
                 \_ ->
                     View.resolveTap { base | moves = [ { from = "13", to = "8", die = 5 } ], unusedDice = [ 5, 3 ] } "8"
-                        |> Expect.equal (Just (PlayMove "13" "8"))
+                        |> Expect.equal (Just (PlayMove "13" "8" 5))
              , test "two moves from different origins onto an empty point stage the pair" <|
                 \_ ->
                     View.resolveTap
@@ -116,7 +127,7 @@ suite =
                             , unusedDice = [ 3 ]
                         }
                         "7"
-                        |> Expect.equal (Just (PlayMove "10" "7"))
+                        |> Expect.equal (Just (PlayMove "10" "7" 3))
              , test "two moves onto a point I already occupy are ambiguous" <|
                 \_ ->
                     View.resolveTap
@@ -164,8 +175,8 @@ suite =
                             , unusedDice = [ 3, 3 ]
                         }
                         "10"
-                        |> Expect.equal (Just (PlayMove "13" "10"))
-             , test "bearing off never auto-stages a pair" <|
+                        |> Expect.equal (Just (PlayMove "13" "10" 3))
+             , test "the tray does nothing unless the server advertises quick bear-off" <|
                 \_ ->
                     View.resolveTap
                         { base
@@ -180,7 +191,37 @@ suite =
                             , unusedDice = [ 3, 3, 3, 3 ]
                         }
                         "off"
-                        |> Expect.equal (Just (PlayMove "3" "off"))
+                        |> Expect.equal Nothing
+             , test "the empty bear-off tray uses the left die for its first checker" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "6", to = "off", die = 6 } ]
+                            , canBearOff = True
+                            , unusedDice = [ 6, 2 ]
+                        }
+                        "off"
+                        |> Expect.equal (Just (BearOff 6))
+             , test "one tray tap bears off two checkers in left-to-right die order" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "2", to = "off", die = 2 }, { from = "6", to = "off", die = 6 } ]
+                            , canBearOff = True
+                            , unusedDice = [ 6, 2 ]
+                        }
+                        "off"
+                        |> Expect.equal (Just (BearOff 6))
+             , test "bearing off falls back to the right die when the left cannot bear off" <|
+                \_ ->
+                    View.resolveTap
+                        { base
+                            | moves = [ { from = "2", to = "off", die = 2 } ]
+                            , canBearOff = True
+                            , unusedDice = [ 6, 2 ]
+                        }
+                        "off"
+                        |> Expect.equal (Just (BearOff 6))
              , test "a point that is also one of my movable origins plays the origin instead" <|
                 \_ ->
                     View.resolveTap
@@ -190,7 +231,7 @@ suite =
                             , unusedDice = [ 5, 3 ]
                         }
                         "8"
-                        |> Expect.equal (Just (PlayMove "8" "5"))
+                        |> Expect.equal (Just (PlayMove "8" "5" 3))
              , test "three moves landing on the same point are ambiguous" <|
                 \_ ->
                     View.resolveTap
@@ -210,7 +251,7 @@ suite =
                             , unusedDice = [ 5, 3 ]
                         }
                         "13"
-                        |> Expect.equal (Just (PlayMove "13" "8"))
+                        |> Expect.equal (Just (PlayMove "13" "8" 5))
              , test "the next die is the first unused one, reading left to right" <|
                 \_ ->
                     -- the 5 is spent: the 3 is next
@@ -221,7 +262,7 @@ suite =
                             , unusedDice = [ 3 ]
                         }
                         "13"
-                        |> Expect.equal (Just (PlayMove "13" "10"))
+                        |> Expect.equal (Just (PlayMove "13" "10" 3))
              , test "successive origin taps move one checker with several dice" <|
                 \_ ->
                     Expect.all
@@ -233,7 +274,7 @@ suite =
                                     , unusedDice = [ 5, 3 ]
                                 }
                                 "13"
-                                |> Expect.equal (Just (PlayMove "13" "8"))
+                                |> Expect.equal (Just (PlayMove "13" "8" 5))
                         , \_ ->
                             -- The next server scene contains the staged checker
                             -- on 8 and only the 3 remains; tap that new origin.
@@ -244,7 +285,7 @@ suite =
                                     , unusedDice = [ 3 ]
                                 }
                                 "8"
-                                |> Expect.equal (Just (PlayMove "8" "5"))
+                                |> Expect.equal (Just (PlayMove "8" "5" 3))
                         ]
                         ()
              , test "if the leftmost die cannot play that checker, the one after it does" <|
@@ -257,7 +298,7 @@ suite =
                             , unusedDice = [ 5, 3 ]
                         }
                         "13"
-                        |> Expect.equal (Just (PlayMove "13" "10"))
+                        |> Expect.equal (Just (PlayMove "13" "10" 3))
              , test "the dice as rotated decide which die plays" <|
                 \_ ->
                     -- a tap on the dice put the 3 first
@@ -268,7 +309,7 @@ suite =
                             , unusedDice = [ 3, 5 ]
                         }
                         "13"
-                        |> Expect.equal (Just (PlayMove "13" "10"))
+                        |> Expect.equal (Just (PlayMove "13" "10" 3))
              , test "an origin no die can play (the schema named no dice) does nothing" <|
                 \_ ->
                     View.resolveTap
@@ -288,7 +329,7 @@ suite =
                             , unusedDice = [ 2, 4 ]
                         }
                         "bar"
-                        |> Expect.equal (Just (PlayMove "bar" "23"))
+                        |> Expect.equal (Just (PlayMove "bar" "23" 2))
              , test "a tap on another origin plays that one, not a move between them" <|
                 \_ ->
                     View.resolveTap
@@ -298,7 +339,7 @@ suite =
                             , unusedDice = [ 5, 4 ]
                         }
                         "6"
-                        |> Expect.equal (Just (PlayMove "6" "2"))
+                        |> Expect.equal (Just (PlayMove "6" "2" 4))
              ]
             )
         , describe "auto-roll"
@@ -1095,6 +1136,25 @@ suite =
                 \_ ->
                     View.update SwapDice (model 0)
                         |> Expect.equal ( model 1, NoOut )
+             , test "an empty bear-off tray is a tap target for the first checker" <|
+                \_ ->
+                    case firstUpdate of
+                        Just u ->
+                            let
+                                ready =
+                                    { u | legal = [ bearOffSchema [ 6, 2 ], moveSchema "6" "off" 6, moveSchema "2" "off" 2 ] }
+                                        |> withDice [ 6, 2 ]
+                                        |> withOffCount "p1" 0
+                            in
+                            View.view (ctx "p1" ready (model 0))
+                                |> Query.fromHtml
+                                |> Query.find [ class "bg-tray", class "mine", attribute (Html.Attributes.title "Borne off") ]
+                                |> Event.simulate Event.click
+                                |> Event.toResult
+                                |> Expect.equal (Ok (BearOff 6))
+
+                        Nothing ->
+                            Expect.fail "no backgammon fixture"
              , test "a tap on a checker plays the die that stands up" <|
                 \_ ->
                     case firstUpdate of
@@ -1114,8 +1174,8 @@ suite =
                                         |> Result.toMaybe
                             in
                             Expect.all
-                                [ \_ -> tapOn13 0 |> Expect.equal (Just (PlayMove "13" "7"))
-                                , \_ -> tapOn13 1 |> Expect.equal (Just (PlayMove "13" "9"))
+                                [ \_ -> tapOn13 0 |> Expect.equal (Just (PlayMove "13" "7" 6))
+                                , \_ -> tapOn13 1 |> Expect.equal (Just (PlayMove "13" "9" 4))
                                 ]
                                 ()
 
@@ -1256,7 +1316,7 @@ suite =
             , test "clearing the interaction state does not forget the roll" <|
                 \_ ->
                     View.noteEvents [ Protocol.Custom "dice_rolled" E.null ] View.init
-                        |> View.update (PlayMove "13" "8")
+                        |> View.update (PlayMove "13" "8" 5)
                         |> Tuple.first
                         |> .roll
                         |> Expect.equal { seq = 1, watched = True }
@@ -2116,6 +2176,18 @@ moveSchema from to die =
     }
 
 
+bearOffSchema : List Int -> Schema
+bearOffSchema dice =
+    { name = "bear_off"
+    , label = "Bear off"
+    , params =
+        [ { name = "first_die"
+          , kind = Choice (List.map (\die -> ( String.fromInt die, String.fromInt die )) dice)
+          }
+        ]
+    }
+
+
 {-| A scene with one entry of its `data` replaced: the states the renderer
 must show are easier to name here than to hunt for in a playout.
 -}
@@ -2155,6 +2227,26 @@ withDice faces update =
                 (\zone ->
                     if zone.id == "dice" then
                         { zone | tokens = dice, count = List.length dice }
+
+                    else
+                        zone
+                )
+                update.scene.zones
+
+        scene =
+            update.scene
+    in
+    { update | scene = { scene | zones = zones } }
+
+
+withOffCount : String -> Int -> Protocol.Update -> Protocol.Update
+withOffCount playerId count update =
+    let
+        zones =
+            List.map
+                (\zone ->
+                    if zone.id == "off:" ++ playerId then
+                        { zone | count = count, tokens = [] }
 
                     else
                         zone
@@ -2315,10 +2407,56 @@ perFixture fixture =
             View.view (ctx playerId u View.init) |> Query.fromHtml
     in
     describe fixture.name
-        [ test "thirty checkers are always on the board" <|
+        [ test "all thirty checkers are represented, including compressed stacks" <|
             \_ ->
                 p1Views
-                    |> List.map (\u -> render "p1" u |> Query.findAll [ class "checker" ] |> Query.count (Expect.equal 30))
+                    |> List.map
+                        (\u ->
+                            let
+                                checkerZones =
+                                    u.scene.zones
+                                        |> List.filter
+                                            (\z ->
+                                                String.startsWith "point:" z.id
+                                                    || String.startsWith "bar:" z.id
+                                            )
+
+                                checkerCount =
+                                    u.scene.zones
+                                        |> List.concatMap .tokens
+                                        |> List.filter (\token -> token.kind == "checker")
+                                        |> List.length
+
+                                renderedCheckerCount =
+                                    checkerZones
+                                        |> List.map (.tokens >> List.length >> min 5)
+                                        |> List.sum
+
+                                offCount =
+                                    u.scene.zones
+                                        |> List.filter (.id >> String.startsWith "off:")
+                                        |> List.map .count
+                                        |> List.sum
+
+                                tallCounts =
+                                    checkerZones
+                                        |> List.map (.tokens >> List.length)
+                                        |> List.filter ((<) 5)
+
+                                board =
+                                    render "p1" u
+                            in
+                            Expect.all
+                                [ \_ -> Expect.equal 30 checkerCount
+                                , \_ -> board |> Query.findAll [ class "checker" ] |> Query.count (Expect.equal renderedCheckerCount)
+                                , \_ -> board |> Query.findAll [ class "off-stick" ] |> Query.count (Expect.equal offCount)
+                                , \_ ->
+                                    tallCounts
+                                        |> List.map (\n -> board |> Query.has [ class "checker-count", text (String.fromInt n) ])
+                                        |> allPass
+                                ]
+                                ()
+                        )
                     |> allPass
         , test "exactly the legal source points are marked, for both players" <|
             \_ ->
@@ -2395,7 +2533,7 @@ perFixture fixture =
                                         |> Event.toResult
                             in
                             case result of
-                                Ok (PlayMove origin _) ->
+                                Ok (PlayMove origin _ _) ->
                                     Expect.equal from origin
 
                                 _ ->
