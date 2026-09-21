@@ -32,6 +32,20 @@ config :oskol, Oskol.Mailer, adapter: Swoosh.Adapters.Local
 
 config :oskol, :mail_from, "hello@oskol.io"
 
+# The only mail Oskol sends is a sign-in link/code. These fixed-window
+# ceilings are deliberately small for today's traffic: one running node can
+# send up to 200 messages in its 24-hour window (about 6,000/month if it stays
+# up, below Postmark's 10,000-message $15/month plan). ETS resets on a deploy
+# or restart, so this is a best-effort spend guard, not a durable billing cap.
+# Change them in runtime config, not in the handler. Source means a per-boot
+# HMAC key derived only from Fly-Client-IP; without that trusted header, Oskol
+# omits the source bucket. Oskol never stores or logs a raw IP.
+config :oskol, :auth_mail_budget,
+  guest: [limit: 10, window_s: 3_600],
+  address: [limit: 30, window_s: 3_600],
+  source: [limit: 20, window_s: 3_600],
+  global: [limit: 200, window_s: 86_400]
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",

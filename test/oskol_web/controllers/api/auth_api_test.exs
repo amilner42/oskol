@@ -16,6 +16,7 @@ defmodule OskolWeb.Api.AuthApiTest do
   import Swoosh.TestAssertions
 
   alias Oskol.Auth
+  alias Oskol.Auth.Limiter
   alias Oskol.Repo
 
   setup do
@@ -58,6 +59,14 @@ defmodule OskolWeb.Api.AuthApiTest do
 
     %{token: token, code: String.replace(spaced, " ", ""), mail: mail}
   end
+
+  defp with_mail_budget(budget) do
+    previous = Application.fetch_env!(:oskol, :auth_mail_budget)
+    Application.put_env(:oskol, :auth_mail_budget, budget)
+    on_exit(fn -> Application.put_env(:oskol, :auth_mail_budget, previous) end)
+  end
+
+  defp source(conn, ip), do: put_req_header(conn, "fly-client-ip", ip)
 
   # ---------- POST /papi/auth/start ----------
 
@@ -131,6 +140,135 @@ defmodule OskolWeb.Api.AuthApiTest do
                |> json_response(200)
 
       assert Repo.aggregate(Auth.LoginToken, :count) == 10
+    end
+
+    test "rotating guest cookies cannot outsend one source, while every answer stays identical",
+         %{conn: conn} do
+      with_mail_budget(
+        guest: [limit: 10, window_s: 3_600],
+        address: [limit: 30, window_s: 3_600],
+        source: [limit: 2, window_s: 3_600],
+        global: [limit: 200, window_s: 86_400]
+      )
+
+      bodies =
+        for n <- 1..3 do
+          conn
+          |> as_guest(new_guest_id())
+          |> with_csrf()
+          |> source("203.0.113.9")
+          |> post(~p"/papi/auth/start", %{"email" => "rotated#{n}@example.com"})
+          |> response(200)
+        end
+
+      assert Enum.uniq(bodies) == ["{\"ok\":true}"]
+      assert_receive {:email, _}
+      assert_receive {:email, _}
+      refute_receive {:email, _}
+      assert Repo.aggregate(Auth.LoginToken, :count) == 2
+    end
+
+    test "a missing Fly header omits the source bucket instead of sharing the proxy peer", %{
+      conn: conn
+    } do
+      with_mail_budget(
+        guest: [limit: 10, window_s: 3_600],
+        address: [limit: 30, window_s: 3_600],
+        source: [limit: 1, window_s: 3_600],
+        global: [limit: 200, window_s: 86_400]
+      )
+
+      for n <- 1..2 do
+        assert %{"ok" => true} =
+                 conn
+                 |> as_guest(new_guest_id())
+                 |> with_csrf()
+                 |> post(~p"/papi/auth/start", %{"email" => "no-header#{n}@example.com"})
+                 |> json_response(200)
+      end
+
+      assert_receive {:email, _}
+      assert_receive {:email, _}
+      assert Repo.aggregate(Auth.LoginToken, :count) == 2
+
+      assert [] =
+               :ets.tab2list(Limiter)
+               |> Enum.filter(fn {key, _started, _count, _window_s} ->
+                 is_binary(key) and String.starts_with?(key, "start:source:")
+               end)
+    end
+
+    test "Fly source keys are stable per address, distinct, and opaque in ETS", %{conn: conn} do
+      with_mail_budget(
+        guest: [limit: 10, window_s: 3_600],
+        address: [limit: 30, window_s: 3_600],
+        source: [limit: 10, window_s: 3_600],
+        global: [limit: 200, window_s: 86_400]
+      )
+
+      for {ip, n} <- [{"203.0.113.10", 1}, {"203.0.113.10", 2}, {"203.0.113.11", 3}] do
+        assert %{"ok" => true} =
+                 conn
+                 |> as_guest(new_guest_id())
+                 |> with_csrf()
+                 |> source(ip)
+                 |> post(~p"/papi/auth/start", %{"email" => "source#{n}@example.com"})
+                 |> json_response(200)
+      end
+
+      source_entries =
+        :ets.tab2list(Limiter)
+        |> Enum.filter(fn {key, _started, _count, _window_s} ->
+          is_binary(key) and String.starts_with?(key, "start:source:")
+        end)
+
+      assert Enum.count(source_entries) == 2
+      assert Enum.sort(Enum.map(source_entries, &elem(&1, 2))) == [1, 2]
+
+      refute Enum.any?(source_entries, fn {key, _started, _count, _window_s} ->
+               key =~ "203.0.113.10" or key =~ "203.0.113.11"
+             end)
+    end
+
+    test "separate sources keep their own allowance and one address keeps its ceiling", %{
+      conn: conn
+    } do
+      with_mail_budget(
+        guest: [limit: 10, window_s: 3_600],
+        address: [limit: 1, window_s: 3_600],
+        source: [limit: 1, window_s: 3_600],
+        global: [limit: 200, window_s: 86_400]
+      )
+
+      first =
+        conn
+        |> as_guest(new_guest_id())
+        |> with_csrf()
+        |> source("203.0.113.10")
+        |> post(~p"/papi/auth/start", %{"email" => "first@example.com"})
+        |> response(200)
+
+      second =
+        conn
+        |> as_guest(new_guest_id())
+        |> with_csrf()
+        |> source("203.0.113.11")
+        |> post(~p"/papi/auth/start", %{"email" => "second@example.com"})
+        |> response(200)
+
+      same_address =
+        conn
+        |> as_guest(new_guest_id())
+        |> with_csrf()
+        |> source("203.0.113.12")
+        |> post(~p"/papi/auth/start", %{"email" => "first@example.com"})
+        |> response(200)
+
+      assert [first, second, same_address] == List.duplicate("{\"ok\":true}", 3)
+      assert_receive {:email, _}
+      assert_receive {:email, _}
+      refute_receive {:email, _}
+      assert Repo.aggregate(Auth.LoginToken, :count) == 2
     end
 
     test "a write with no CSRF token is refused", %{conn: conn} do

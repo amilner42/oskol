@@ -163,6 +163,30 @@ defmodule Oskol.Auth do
   def check_code(_, _, _, _), do: :dead
 
   @doc """
+  Delete at most `limit` sign-in rows that can no longer be used: any consumed
+  token, or one whose expiry is more than 24 hours past. A supervised daily
+  worker calls this so the table stays bounded without making a login path do
+  cleanup work. Returns how many rows this bounded pass retired.
+  """
+  def sweep_dead_tokens(limit \\ 1_000) when is_integer(limit) and limit > 0 do
+    cutoff = DateTime.add(DateTime.utc_now(), -86_400, :second)
+
+    dead_ids =
+      from(t in LoginToken,
+        where: not is_nil(t.consumed_at) or t.expires_at < ^cutoff,
+        order_by: [asc: t.inserted_at],
+        limit: ^limit,
+        select: t.id
+      )
+
+    {count, _} =
+      from(t in LoginToken, where: t.id in subquery(dead_ids))
+      |> Repo.delete_all()
+
+    count
+  end
+
+  @doc """
   The account for this address, made if it is new; either way its
   `last_login_at` moves forward. One statement, so two links opened at once
   for one new address make one account.
