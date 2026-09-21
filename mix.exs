@@ -68,7 +68,7 @@ defmodule Oskol.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.8.1"},
+      {:phoenix, "~> 1.8.14"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.12"},
       {:postgrex, ">= 0.0.0"},
@@ -89,14 +89,13 @@ defmodule Oskol.MixProject do
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 0.26"},
-      {:hackney, "~> 1.25"},
-      {:sentry, "~> 11.0"},
-      {:jason, "~> 1.2"},
+      {:sentry, "~> 12.0.3"},
+      {:jason, "~> 1.4.5"},
       # HTTP to the analysis engine (oskol-analysis, over Fly's private network)
       {:req, "~> 0.5"},
       # Mail (the sign-in link and code): Postmark in prod, a local mailbox in dev
       {:swoosh, "~> 1.17"},
-      {:bandit, "~> 1.5"},
+      {:bandit, "~> 1.12.5"},
       {:nanoid, "~> 2.1"},
       # Gleam packages
       {:gleam_stdlib, "~> 0.34 or ~> 1.0"},
@@ -132,7 +131,8 @@ defmodule Oskol.MixProject do
         "deps.unlock --unused",
         "format",
         "test",
-        "cmd npm run audit:production"
+        "cmd npm run audit:production",
+        "cmd bin/check-hex-advisories"
       ]
     ]
   end

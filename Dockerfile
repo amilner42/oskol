@@ -15,6 +15,7 @@ ARG ELIXIR_VERSION=1.19.2
 ARG OTP_VERSION=28.1.1
 ARG DEBIAN_VERSION=bookworm-20251103-slim
 ARG NODE_VERSION=22.23.2
+ARG HEX_VERSION=2.5.1
 
 ARG BUILDER_IMAGE="docker.io/hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
 ARG RUNNER_IMAGE="docker.io/debian:${DEBIAN_VERSION}"
@@ -44,7 +45,7 @@ RUN curl -Lo gleam.tar.gz "https://github.com/gleam-lang/gleam/releases/download
 WORKDIR /app
 
 # install hex + rebar + mix_gleam archive
-RUN mix local.hex --force \
+RUN mix local.hex ${HEX_VERSION} --force \
   && mix local.rebar --force \
   && mix archive.install hex mix_gleam 0.6.2 --force
 

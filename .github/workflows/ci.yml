@@ -72,11 +72,13 @@ jobs:
         continue-on-error: true
         run: npm run audit:full
       - name: Hex, rebar and the mix_gleam archive
-        run: mix local.hex --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
+        run: mix local.hex 2.5.1 --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
       - run: mix deps.get
       - run: mix compile
       - name: Production release excludes test-only Gleam
         run: bin/check-prod-release
+      - name: Shipped Hex dependency audit
+        run: bin/check-hex-advisories
       - name: Gleam unit, rules, property and golden tests
         run: bin/test-gleam
       - name: Fixture payloads for elm-test
@@ -137,7 +139,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Hex, rebar and the mix_gleam archive
-        run: mix local.hex --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
+        run: mix local.hex 2.5.1 --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
       - run: mix deps.get
       - run: mix assets.build
       - name: Dev database
