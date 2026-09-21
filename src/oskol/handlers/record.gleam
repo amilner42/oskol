@@ -76,12 +76,9 @@ fn stored_json(
     Some(setup) if setup.slug == slug -> Ok(setup)
     _ -> Error(Nil)
   })
-  // Rows made from a shorter log than the room has now are short of the
-  // games played since: a match settled when its first game ended has only
-  // that game written down. Reading them would silently serve half a match,
-  // so a room in that state takes the slow path, which is always right, and
-  // the reviews read settles it properly.
-  use _ <- result.try(case setup.records_through >= setup.log_length {
+  // A newer completed-game marker means the rows are missing a result.
+  // Ordinary moves in an unfinished game do not invalidate finished games.
+  use _ <- result.try(case !setup.records_stale {
     True -> Ok(Nil)
     False -> Error(Nil)
   })

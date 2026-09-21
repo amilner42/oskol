@@ -23,9 +23,11 @@ defmodule Oskol.Persistence do
       field(:slug, :string)
       field(:config, :map, default: %{})
       field(:seed, :integer)
-      # How far the stored per-game records go, as a position in the action
-      # log. Rows made from a shorter log are missing the games played since.
+      # The log snapshot used to store per-game records, and its completed-
+      # game marker. Only the latter invalidates records: an ordinary move
+      # can lengthen the log without finishing another game.
       field(:records_through, :integer)
+      field(:records_generation, :integer)
       # This room has a game that ended and may still owe an analysis. Set
       # when the game ends, cleared when the queue finds nothing owed.
       field(:analysis_owed, :boolean, default: false)

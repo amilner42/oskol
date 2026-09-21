@@ -79,6 +79,36 @@ defmodule Oskol.RatingsTest do
              |> json_response(404)
   end
 
+  test "cold ratings leave the room stopped and transfer no turn analysis", %{conn: conn} do
+    %{game_id: game_id} = started(42, "match5")
+    Persister.flush()
+    response = Map.put(answer(8.0, 12.0), "turns", [%{"large" => String.duplicate("x", 100_000)}])
+    :ok = Reviews.save(game_id, 1, "done", 1, response, nil, %{"large" => "report"}, 1)
+
+    {:ok, pid} = Oskol.Game.GameSupervisor.find_game(game_id)
+    ref = Process.monitor(pid)
+    :ok = DynamicSupervisor.terminate_child(Oskol.Game.GameSupervisor, pid)
+    assert_receive {:DOWN, ^ref, :process, ^pid, _}
+    wait_for_stopped_room(game_id)
+
+    [row] = Reviews.rating_summaries(game_id)
+    assert row.response == %{"players" => response["players"]}
+    assert %{"players" => [%{"pr" => 8.0}, %{"pr" => 12.0}]} = ratings(conn, game_id)
+    assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
+  end
+
+  defp wait_for_stopped_room(game_id, tries \\ 100)
+
+  defp wait_for_stopped_room(game_id, 0),
+    do: assert(Oskol.Game.GameSupervisor.find_game(game_id) == :error)
+
+  defp wait_for_stopped_room(game_id, tries) do
+    if Oskol.Game.GameSupervisor.find_game(game_id) != :error do
+      Process.sleep(10)
+      wait_for_stopped_room(game_id, tries - 1)
+    end
+  end
+
   test "a room still in its lobby answers the same 404", %{conn: conn} do
     %{game_id: game_id} = lobby()
 

@@ -28,6 +28,9 @@ pub type GameLog {
     /// #(player_id, display name), in seat order.
     seats: List(#(String, String)),
     entries: List(LogEntry),
+    /// Completed-game work marker captured before reading the log. A later
+    /// completion must not be marked settled by this older snapshot.
+    record_generation: Int,
   )
 }
 
@@ -80,8 +83,10 @@ pub type AnalysisCaps {
     /// The room's log, or None when no started game has this code.
     log: fn(String) -> Option(GameLog),
     /// Every stored review of a room, with the engine's answers. The
-    /// expensive read: only the write path and the match ratings use it.
+    /// expensive read: only the write/backfill path uses it.
     stored: fn(String) -> List(Stored),
+    /// Review metadata with only the response's player totals, no turns.
+    ratings: fn(String) -> List(Stored),
     /// Every stored review of a room, without the bodies: what a read needs
     /// to say where each game's analysis stands.
     summaries: fn(String) -> List(Stored),
@@ -108,6 +113,7 @@ pub fn stub() -> AnalysisCaps {
   AnalysisCaps(
     log: fn(_) { panic as "stub analysis.log" },
     stored: fn(_) { panic as "stub analysis.stored" },
+    ratings: fn(_) { panic as "stub analysis.ratings" },
     summaries: fn(_) { panic as "stub analysis.summaries" },
     report: fn(_, _) { panic as "stub analysis.report" },
     save: fn(_, _, _) { panic as "stub analysis.save" },

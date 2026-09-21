@@ -105,6 +105,23 @@ defmodule Oskol.Reviews do
     |> Repo.all()
   end
 
+  @doc "Review metadata and player totals only; never transfer turn analysis to a ratings reader."
+  def rating_summaries(game_id) do
+    from(r in Review,
+      where: r.game_id == ^game_id,
+      order_by: r.game_number,
+      select: %{
+        game_number: r.game_number,
+        status: r.status,
+        attempts: r.attempts,
+        response: fragment("jsonb_build_object('players', ?->'players')", r.response),
+        rendered: not is_nil(r.report),
+        turns: r.turns
+      }
+    )
+    |> Repo.all()
+  end
+
   @doc "One game's rendered analysis, or nil."
   def report(game_id, game_number) do
     from(r in Review,
@@ -165,12 +182,22 @@ defmodule Oskol.Reviews do
     |> Repo.all()
   end
 
+  @doc "The record index, without any of the per-turn bodies."
+  def record_numbers(game_id) do
+    from(r in Record,
+      where: r.game_id == ^game_id,
+      order_by: r.game_number,
+      select: r.game_number
+    )
+    |> Repo.all()
+  end
+
   @doc """
   Write rows for a room's finished games: `[{game_number, entries}]`. A game
   already stored is left exactly as it is — a finished game never changes,
   and rewriting it would only cost writes.
   """
-  def save_records(game_id, rows) do
+  def save_records(game_id, rows, through, generation) do
     now = DateTime.utc_now()
 
     entries =
@@ -185,17 +212,27 @@ defmodule Oskol.Reviews do
         }
       end)
 
-    Repo.insert_all(Record, entries,
-      on_conflict: :nothing,
-      conflict_target: [:game_id, :game_number]
-    )
+    Repo.transaction(fn ->
+      Repo.insert_all(Record, entries,
+        on_conflict: :nothing,
+        conflict_target: [:game_id, :game_number]
+      )
 
-    # Which log these rows were made from. A read compares it with the log
-    # the room has now: shorter means games have been played since and the
-    # rows are short of them, equal means there is nothing to go and look
-    # for. Without it a match settled at its first game would keep serving
-    # one game forever.
-    mark_records_through(game_id)
+      # Use the snapshot that produced the rows. A game may have ended
+      # during replay; reading its new marker now would hide missing rows.
+      # An older concurrent backfill may add rows, but cannot rewind this.
+      from(g in Oskol.Persistence.Game,
+        where: g.id == ^game_id,
+        update: [
+          set: [
+            records_through: fragment("GREATEST(COALESCE(?, 0), ?)", g.records_through, ^through),
+            records_generation:
+              fragment("GREATEST(COALESCE(?, 0), ?)", g.records_generation, ^generation)
+          ]
+        ]
+      )
+      |> Repo.update_all([])
+    end)
 
     :ok
   end
@@ -247,7 +284,9 @@ defmodule Oskol.Reviews do
     query =
       case seen do
         nil ->
-          from(g in Oskol.Persistence.Game, where: g.id == ^game_id)
+          from(g in Oskol.Persistence.Game,
+            where: g.id == ^game_id and is_nil(g.analysis_owed_at)
+          )
 
         %DateTime{} ->
           from(g in Oskol.Persistence.Game,
@@ -271,20 +310,9 @@ defmodule Oskol.Reviews do
     |> Repo.all()
   end
 
-  @doc "Mark a room's records as made from the log it has right now."
-  def mark_records_through(game_id) do
-    from(g in Oskol.Persistence.Game, where: g.id == ^game_id)
-    |> Repo.update_all(set: [records_through: log_length(game_id)])
-
-    :ok
-  end
-
-  @doc "How many steps the room's action log holds."
-  def log_length(game_id) do
-    from(a in "game_actions", where: a.game_id == ^game_id, select: count(a.index))
-    |> Repo.one()
-    |> Kernel.||(0)
-  end
+  @doc "The completed-game work marker; ordinary actions leave it alone."
+  def record_generation(%{analysis_owed_at: nil}), do: 0
+  def record_generation(%{analysis_owed_at: at}), do: DateTime.to_unix(at, :microsecond)
 
   # ---------- The log ----------
 

@@ -7,7 +7,7 @@
 //// first.
 ////
 //// It needs nothing new: the engine's answers are already kept per room,
-//// one row per game (`game_reviews`, the `analysis.stored` cap), with a PR
+//// one row per game (`game_reviews`, the `analysis.ratings` cap), with a PR
 //// per player in each. A game that is still pending, failed, or not over
 //// yet simply does not count; a match with nothing graded yet has no
 //// number to show, and one graded game shows its own PR.
@@ -18,7 +18,6 @@
 //// is the same one refusal -- a caller learns nothing about a room it did
 //// not ask for.
 
-import gamekit/instance.{type Instance}
 import gleam/float
 import gleam/int
 import gleam/json
@@ -26,10 +25,10 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import oskol/caps/analysis.{type Stored, Done, Failed, Pending, Stored}
+import oskol/caps/records.{type Setup}
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
-import oskol/handlers/record
 import oskol/handlers/reviews
 import oskol/reviews/report
 
@@ -46,22 +45,21 @@ pub fn ratings_json(
   game_id: String,
 ) -> Result(String, ApiError) {
   use game <- result.try(room(ctx, game_slug, game_id))
-  // Seat order is the review's player order: the engine numbers its two
-  // players by the seats the game started with. Read from the running game
-  // rather than from the log, so a table polling this every few seconds
-  // costs one row and not a whole action log.
+  // Seat order is persisted. Looking up a running instance would wake a
+  // cold room and replay its whole log merely to name these two seats.
   let seats = case game_slug == reviews.slug {
-    True -> instance.seats(game)
+    True -> game.seats
     False -> []
   }
-  let stored = ctx.analysis.stored(game_id)
-  let graded = graded(stored)
+  let stored = ctx.analysis.ratings(game_id)
+  let by_game = graded_by_game(stored)
+  let graded = list.map(by_game, fn(g) { g.1 })
   Ok(
     envelope.ok([
       #("pending", json.bool(owed(stored))),
       #(
         "players",
-        json.array(list.index_map(seats, fn(s, i) { #(s.id, i) }), fn(pair) {
+        json.array(list.index_map(seats, fn(s, i) { #(s.0, i) }), fn(pair) {
           let #(player_id, index) = pair
           let prs = list.filter_map(graded, at(_, index))
           json.object([
@@ -76,14 +74,14 @@ pub fn ratings_json(
       ),
       #(
         "games",
-        json.array(graded_by_game(stored), fn(game) {
+        json.array(by_game, fn(game) {
           let #(number, prs) = game
           json.object([
             #("game_number", json.int(number)),
             #(
               "players",
               json.array(
-                list.index_map(seats, fn(s, i) { #(s.id, at(prs, i)) }),
+                list.index_map(seats, fn(s, i) { #(s.0, at(prs, i)) }),
                 fn(pair) {
                   json.object([
                     #("player_id", json.string(pair.0)),
@@ -100,13 +98,6 @@ pub fn ratings_json(
       ),
     ]),
   )
-}
-
-/// The PRs of every game of this room the engine has graded, each as its
-/// players' ratings in seat order. A stored answer that does not read as a
-/// review is skipped, exactly as the reviews page skips it.
-fn graded(stored: List(Stored)) -> List(List(Float)) {
-  graded_by_game(stored) |> list.map(fn(g) { g.1 })
 }
 
 /// The same, with each game's number, in game order.
@@ -164,11 +155,9 @@ pub fn average(prs: List(Float)) -> Option(Float) {
 
 /// The same door the record and the reviews open: a room playing this
 /// game, or the one refusal.
-fn room(
-  ctx: Ctx,
-  game_slug: String,
-  game_id: String,
-) -> Result(Instance, ApiError) {
-  record.room(ctx, game_slug, game_id)
-  |> result.replace_error(error.NotFound(not_found_message))
+fn room(ctx: Ctx, game_slug: String, game_id: String) -> Result(Setup, ApiError) {
+  case ctx.records.setup(game_id) {
+    Some(setup) if setup.slug == game_slug -> Ok(setup)
+    _ -> Error(error.NotFound(not_found_message))
+  }
 }

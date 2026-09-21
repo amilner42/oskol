@@ -23,12 +23,9 @@ pub type Setup {
     /// that is not over yet may still have nothing stored simply because
     /// nothing has finished, which is not a reason to go and look.
     finished: Bool,
-    /// How long the action log is now, and how long it was when this
-    /// room's records were last written. Rows made from a shorter log are
-    /// missing whatever was played after it: a match whose rows were
-    /// written when its first game ended has only that game in them.
-    log_length: Int,
-    records_through: Int,
+    /// A finished-game marker newer than the last settled snapshot, or a
+    /// legacy room not settled yet. Ordinary actions do not invalidate it.
+    records_stale: Bool,
   )
 }
 
@@ -43,10 +40,14 @@ pub type RecordsCaps {
     setup: fn(String) -> Option(Setup),
     /// Every stored record row of a room, by game number.
     stored: fn(String) -> List(StoredRecord),
+    /// Finished game numbers alone: index and detail reads need no entries.
+    numbers: fn(String) -> List(Int),
     /// Write rows for a room's finished games: #(game_number, entries as
     /// JSON text). A game already stored is left exactly as it is -- a
     /// finished game never changes.
-    save: fn(String, List(#(Int, String))) -> Nil,
+    /// The log length and completed-game generation belong to the snapshot
+    /// that produced these rows, never a fresh read after replaying it.
+    save: fn(String, List(#(Int, String)), Int, Int) -> Nil,
   )
 }
 
@@ -54,6 +55,7 @@ pub fn stub() -> RecordsCaps {
   RecordsCaps(
     setup: fn(_) { panic as "stub records.setup" },
     stored: fn(_) { panic as "stub records.stored" },
-    save: fn(_, _) { panic as "stub records.save" },
+    numbers: fn(_) { panic as "stub records.numbers" },
+    save: fn(_, _, _, _) { panic as "stub records.save" },
   )
 }

@@ -147,6 +147,53 @@ defmodule Oskol.ReviewsTest do
     if schema["name"] == "move", do: play_one_turn(game_id, player_id)
   end
 
+  defp finish_one_game(game_id, p1, p2) do
+    first = mover(Oskol.Game.get_server_state(game_id).instance, [p1, p2])
+    play_one_turn(game_id, first)
+    first = mover(Oskol.Game.get_server_state(game_id).instance, [p1, p2])
+    second = if first == p1, do: p2, else: p1
+
+    assert {:ok, _, _} =
+             Oskol.Game.player_action(game_id, first, %{
+               "name" => "resign",
+               "params" => %{"stakes" => "single"}
+             })
+
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, second, simple("accept_resign"))
+    Persister.flush()
+  end
+
+  defp read_queries(fun) do
+    id = {__MODULE__, make_ref()}
+    parent = self()
+
+    :ok =
+      :telemetry.attach(
+        id,
+        [:oskol, :repo, :query],
+        fn _, _, meta, {pid, tag} ->
+          send(pid, {tag, meta.query})
+        end,
+        {parent, id}
+      )
+
+    try do
+      fun.()
+    after
+      :telemetry.detach(id)
+    end
+
+    drain_queries(id, [])
+  end
+
+  defp drain_queries(id, queries) do
+    receive do
+      {^id, query} -> drain_queries(id, [query | queries])
+    after
+      0 -> Enum.reverse(queries)
+    end
+  end
+
   defp reviews(conn, game_id) do
     conn
     |> as_guest(seat_guest(game_id))
@@ -307,6 +354,108 @@ defmodule Oskol.ReviewsTest do
     assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
   end
 
+  test "ordinary next-game play leaves index/detail reads independent of logs and record bodies" do
+    engine(self())
+    %{game_id: game_id, p1: p1, p2: p2} = started(2, "match3")
+    finish_one_game(game_id, p1, p2)
+    wait_for(fn -> Enum.any?(Reviews.stored(game_id), &(&1.status == "done")) end)
+    Queue.await_idle()
+
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, p1, simple("ready"))
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, p2, simple("ready"))
+    first = mover(Oskol.Game.get_server_state(game_id).instance, [p1, p2])
+    play_one_turn(game_id, first)
+    Persister.flush()
+
+    queries =
+      read_queries(fn ->
+        assert %{"games" => [%{"game_number" => 1, "status" => "done"}]} =
+                 build_conn()
+                 |> get("/papi/games/backgammon/rooms/#{game_id}/reviews")
+                 |> json_response(200)
+
+        assert %{"review" => %{"turns" => [_ | _]}} =
+                 build_conn()
+                 |> get("/papi/games/backgammon/rooms/#{game_id}/reviews/1")
+                 |> json_response(200)
+      end)
+
+    assert queries != []
+    refute Enum.any?(queries, &String.contains?(&1, "game_actions"))
+    refute Enum.any?(queries, &String.contains?(&1, ~s(."entries")))
+  end
+
+  test "a captured record checkpoint cannot settle a game that ended during replay" do
+    Application.put_env(:oskol, Queue, enabled: false)
+    %{game_id: game_id, p1: p1, p2: p2} = started(2, "match3")
+    finish_one_game(game_id, p1, p2)
+
+    assert %{"games" => [%{"game_number" => 1}]} =
+             build_conn()
+             |> get("/papi/games/backgammon/rooms/#{game_id}/reviews")
+             |> json_response(200)
+
+    old = Reviews.log(game_id)
+    generation = Reviews.record_generation(old.game)
+    rows = Enum.map(Reviews.records(game_id), &{&1.game_number, &1.entries})
+
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, p1, simple("ready"))
+    assert {:ok, _, _} = Oskol.Game.player_action(game_id, p2, simple("ready"))
+    finish_one_game(game_id, p1, p2)
+    assert Reviews.record_generation(Reviews.setup(game_id)) > generation
+
+    :ok = Reviews.save_records(game_id, rows, length(old.actions), generation)
+    {:records_caps, setup, _, _, _} = Oskol.Gleam.Caps.Records.build()
+    assert {:some, {:setup, _, _, _, _, _, _, true}} = setup.(game_id)
+
+    assert %{"games" => [%{"game_number" => 1}, %{"game_number" => 2}]} =
+             build_conn()
+             |> get("/papi/games/backgammon/rooms/#{game_id}/reviews")
+             |> json_response(200)
+
+    newer = Reviews.setup(game_id).records_generation
+    :ok = Reviews.save_records(game_id, rows, length(old.actions), generation)
+    assert Reviews.setup(game_id).records_generation == newer
+    assert {:some, {:setup, _, _, _, _, _, _, false}} = setup.(game_id)
+  end
+
+  test "a task killed while pending is recovered without a queue restart" do
+    parent = self()
+
+    Req.Test.stub(Reviews, fn _conn ->
+      send(parent, {:held_analysis, self()})
+
+      receive do
+        :release -> raise "test should kill the held task"
+      end
+    end)
+
+    %{game_id: game_id, p1: p1, p2: p2} = started(2, "match3")
+    finish_one_game(game_id, p1, p2)
+    assert_receive {:held_analysis, task}, 10_000
+    queue = Process.whereis(Queue)
+    assert [^game_id] = Reviews.rooms_owed_analysis()
+
+    # Recovery scanning must not duplicate running work.
+    Queue.sweep_owed()
+    assert :sys.get_state(queue).again == MapSet.new()
+    refute_received {:held_analysis, _}
+
+    Process.exit(task, :kill)
+    Queue.await_idle()
+    assert [%{status: "pending", attempts: 1}] = Reviews.summaries(game_id)
+    assert Process.whereis(Queue) == queue
+
+    engine(self())
+    # The same scan the periodic timer calls, with no restart or reader.
+    Queue.sweep_owed()
+    Queue.await_idle()
+    assert [%{status: "done", attempts: 2}] = Reviews.summaries(game_id)
+    assert Reviews.rooms_owed_analysis() == []
+    assert_receive {:engine, _}
+    refute_received {:engine, _}
+  end
+
   test "a job lost to a restart is picked up by the sweep at boot", %{conn: conn} do
     # The queue lives in memory: a machine that restarts between a game
     # ending and its job running forgets the job. Nothing else would ever
@@ -345,6 +494,11 @@ defmodule Oskol.ReviewsTest do
     before = DateTime.add(DateTime.utc_now(), -60, :second)
     Oskol.Reviews.mark_analysis_owed(game_id)
     Oskol.Reviews.clear_analysis_owed(game_id, before)
+
+    assert [^game_id] = Oskol.Reviews.rooms_owed_analysis()
+
+    # A recovery pass that saw no note must not erase a later completion.
+    Oskol.Reviews.clear_analysis_owed(game_id, nil)
 
     assert [^game_id] = Oskol.Reviews.rooms_owed_analysis()
 

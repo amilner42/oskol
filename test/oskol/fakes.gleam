@@ -3,6 +3,7 @@
 //// only the caps its branch is supposed to use.
 
 import gleam/dynamic
+import gleam/list
 import gleam/option.{type Option, Some}
 import oskol/caps/analysis as analysis_caps
 import oskol/caps/auth as auth_caps
@@ -161,7 +162,8 @@ pub fn with_records(
     records: records_caps.RecordsCaps(
       setup: fn(_) { setup },
       stored: fn(_) { rows },
-      save: fn(_, _) { Nil },
+      numbers: fn(_) { list.map(rows, fn(row) { row.game_number }) },
+      save: fn(_, _, _, _) { Nil },
     ),
   )
 }

@@ -54,6 +54,7 @@ fn played_log(format: String, seed: Int, steps: Int) -> GameLog {
     seed: seed,
     seats: [#("p1", "Alice"), #("p2", "Bob")],
     entries: entries,
+    record_generation: 0,
   )
 }
 
@@ -143,8 +144,7 @@ fn setup_of(log: GameLog) -> records_caps.Setup {
       )
     }),
     finished: True,
-    log_length: 0,
-    records_through: 0,
+    records_stale: False,
   )
 }
 
@@ -229,6 +229,7 @@ fn with_analysis(
         }
       },
       stored: fn(_) { list.map(get_rows("rows"), fn(row) { row.0 }) },
+      ratings: fn(_) { panic as "reviews must not read ratings" },
       summaries: fn(_) {
         list.map(get_rows("rows"), fn(row) {
           Stored(..row.0, response_json: None)
@@ -322,7 +323,8 @@ fn with_analysis(
           records_caps.StoredRecord(row.0, row.1)
         })
       },
-      save: fn(_, rows) {
+      numbers: fn(_) { list.map(get_records("records"), fn(row) { row.0 }) },
+      save: fn(_, rows, _, _) {
         let held = get_records("records")
         let fresh =
           list.filter(rows, fn(row) {
@@ -337,6 +339,49 @@ fn with_analysis(
 
 fn no_engine(_body: String) -> Result(String, String) {
   panic as "the engine should not be asked"
+}
+
+pub fn recovery_of_a_crashed_final_attempt_exposes_failure_without_more_engine_work_test() {
+  let log = finished_log(4)
+  let ctx = with_analysis(log, [owed(log, 1, Pending, 3)], no_engine)
+  assert reviews.run(ctx, "123456") == None
+  assert recorded("requests") == []
+  assert recorded("saves") == ["1:failed:3:none:none"]
+  let assert Ok(body) =
+    reviews.reviews_json(
+      without_the_log(ctx),
+      fakes.no_guest(),
+      "backgammon",
+      "123456",
+    )
+  assert string.contains(body, "\"status\":\"failed\"")
+}
+
+pub fn settled_index_and_detail_read_neither_log_nor_record_bodies_test() {
+  let log = finished_log(4)
+  let ctx = with_analysis(log, [answered(log, 1)], no_engine)
+  // One legacy backfill establishes the stored rows.
+  let assert Ok(_) =
+    reviews.reviews_json(ctx, fakes.no_guest(), "backgammon", "123456")
+  let ctx = without_the_log(ctx)
+  let ctx =
+    Ctx(
+      ..ctx,
+      records: records_caps.RecordsCaps(
+        ..ctx.records,
+        // Playing more ordinary turns in the next game does not change this.
+        setup: fn(_) {
+          Some(records_caps.Setup(..setup_of(log), finished: False))
+        },
+        stored: fn(_) {
+          panic as "an index/detail read loaded all record bodies"
+        },
+      ),
+    )
+  let assert Ok(_) =
+    reviews.reviews_json(ctx, fakes.no_guest(), "backgammon", "123456")
+  let assert Ok(_) =
+    reviews.review_json(ctx, fakes.no_guest(), "backgammon", "123456", 1)
 }
 
 /// The same room, with its log out of reach: a read of a room whose games
@@ -372,7 +417,7 @@ pub fn a_finished_game_is_reviewed_and_stored_test() {
   // Marked pending before the call, done with the body and the page the
   // page will read after, in order
   assert list.reverse(recorded("saves"))
-    == ["1:pending:0:none:none", "1:done:1:body:page"]
+    == ["1:pending:1:none:none", "1:done:1:body:page"]
   let assert [request] = recorded("requests")
   assert string.contains(request, "\"turns\":[{\"player\":")
   // The depth is the engine's default (4-ply), never set from here
@@ -389,7 +434,7 @@ pub fn a_failed_call_is_recorded_and_retried_with_backoff_test() {
   let ctx = with_analysis(log, [], fn(_) { Error("HTTP 503") })
   assert reviews.run(ctx, "123456") == Some(30_000)
   assert list.reverse(recorded("saves"))
-    == ["1:pending:0:none:none", "1:failed:1:none:none"]
+    == ["1:pending:1:none:none", "1:failed:1:none:none"]
   // The second failure waits longer
   let ctx =
     with_analysis(log, [owed(log, 1, Failed, 1)], fn(_) { Error("timeout") })
@@ -399,7 +444,7 @@ pub fn a_failed_call_is_recorded_and_retried_with_backoff_test() {
     with_analysis(log, [owed(log, 1, Failed, 2)], fn(_) { Error("timeout") })
   assert reviews.run(ctx, "123456") == None
   assert list.reverse(recorded("saves"))
-    == ["1:pending:2:none:none", "1:failed:3:none:none"]
+    == ["1:pending:3:none:none", "1:failed:3:none:none"]
 }
 
 pub fn an_answer_that_does_not_read_is_a_failure_test() {
@@ -407,7 +452,7 @@ pub fn an_answer_that_does_not_read_is_a_failure_test() {
   let ctx = with_analysis(log, [], fn(_) { Ok("{\"detail\":\"nope\"}") })
   assert reviews.run(ctx, "123456") == Some(30_000)
   assert list.reverse(recorded("saves"))
-    == ["1:pending:0:none:none", "1:failed:1:none:none"]
+    == ["1:pending:1:none:none", "1:failed:1:none:none"]
 }
 
 pub fn a_game_done_or_given_up_is_never_run_again_test() {
