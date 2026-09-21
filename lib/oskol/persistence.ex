@@ -5,9 +5,11 @@ defmodule Oskol.Persistence do
   its seed plus its action log, so these two tables are enough to rebuild a
   live room after a deploy or a machine sleep — see `Oskol.Game.Rehydrator`.
 
-  Everything here is plain synchronous Repo work; the room never calls it
-  directly. Writes go through `Oskol.Game.Persister` (async, ordered), reads
-  through the rehydrator.
+  Everything here is plain synchronous Repo work. Ordinary room writes go
+  through `Oskol.Game.Persister` (async, ordered), and reads go through the
+  rehydrator. Explicit abandonment is the exception: after draining its
+  earlier writes through Persister, that room runs the guarded transaction
+  itself so one room's database wait cannot stop every room's write-behind.
   """
 
   import Ecto.Query
@@ -163,6 +165,20 @@ defmodule Oskol.Persistence do
   end
 
   def abandon_game(_, _, _), do: :error
+
+  @doc "Whether this session may attempt to abandon the persisted room, without waking it."
+  def may_abandon_game?(game_id, guest_id, user_id) when is_binary(game_id) do
+    players =
+      from(g in Game,
+        where: g.id == ^game_id and g.status in ["waiting", "playing", "abandoned"],
+        select: g.players
+      )
+      |> Repo.one()
+
+    is_list(players) and held_by?(players, guest_id, user_id)
+  end
+
+  def may_abandon_game?(_, _, _), do: false
 
   # A waiting room can only be cancelled by its sole, creating player. A
   # started room may be ended by either current holder; both are kept as an

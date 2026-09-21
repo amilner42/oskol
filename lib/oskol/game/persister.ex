@@ -73,20 +73,6 @@ defmodule Oskol.Game.Persister do
   end
 
   @doc """
-  End a room without deleting its history. This is a call, not a cast: a
-  live room invokes it from its own process, so every earlier write from that
-  room reaches this serial queue before `abandoned` does.
-  """
-  def abandon_game(game_id, guest_id, user_id) do
-    # This is the one write where an ambiguous timeout would be unsafe: a
-    # caller must not hear failure after the row committed while its room is
-    # still alive. The request waits for the serialized answer instead.
-    GenServer.call(__MODULE__, {:abandon_game, game_id, guest_id, user_id}, :infinity)
-  catch
-    :exit, _ -> :error
-  end
-
-  @doc """
   A browser signed in: hand its seats to the account and move them to its
   fresh guest id (`Oskol.Auth.adopt_seats/3`, one transaction with the
   guest row).
@@ -147,27 +133,6 @@ defmodule Oskol.Game.Persister do
       rescue
         e ->
           Logger.error("SIGN-IN STAMP FAILED: #{Exception.message(e)}")
-          :error
-      end
-
-    {:reply, reply, state}
-  end
-
-  def handle_call({:abandon_game, game_id, guest_id, user_id}, _from, state) do
-    # Unlike ordinary room writes this is a synchronous safety boundary. A
-    # database exception must not take down the global write-behind process
-    # (and lose every other room's queued casts); the room that asked will
-    # stop conservatively on this distinct failure result.
-    reply =
-      try do
-        Persistence.abandon_game(game_id, guest_id, user_id)
-      rescue
-        e ->
-          Logger.error("GAME ABANDON FAILED #{game_id}: #{Exception.message(e)}")
-          :error
-      catch
-        kind, reason ->
-          Logger.error("GAME ABANDON FAILED #{game_id}: #{inspect({kind, reason})}")
           :error
       end
 

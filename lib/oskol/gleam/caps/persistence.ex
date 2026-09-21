@@ -41,18 +41,23 @@ defmodule Oskol.Gleam.Caps.Persistence do
     _ -> []
   end
 
-  # This mutation explicitly wakes a cold room first, then runs through that
-  # room's process. We never update a cold row directly: a concurrent
-  # rehydration could otherwise install stale active memory after the row
-  # changed. The live room puts the transition behind every write it already
-  # sent; the row lock and holder rule live in Persistence.
+  # Refuse from the persisted seats before any lookup can replay a cold room.
+  # This is only a cost guard: the row-locking transaction asks the same
+  # holder rule again and remains authoritative if ownership changes between
+  # this read and the write. An authorized request still wakes a cold room so
+  # no concurrent rehydration can install stale active memory after the row
+  # changes.
   defp abandon(game_id, guest_id, user_id) do
-    case Oskol.Game.lookup_game(game_id) do
-      {:ok, _pid} ->
-        Oskol.Game.GameServer.abandon(game_id, unopt(guest_id), unopt(user_id)) == :ok
+    guest_id = unopt(guest_id)
+    user_id = unopt(user_id)
 
-      :not_found ->
-        false
+    if Oskol.Persistence.may_abandon_game?(game_id, guest_id, user_id) do
+      case Oskol.Game.lookup_game(game_id) do
+        {:ok, _pid} -> Oskol.Game.GameServer.abandon(game_id, guest_id, user_id) == :ok
+        :not_found -> false
+      end
+    else
+      false
     end
   rescue
     _ -> false

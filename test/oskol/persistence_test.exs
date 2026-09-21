@@ -143,17 +143,75 @@ defmodule Oskol.PersistenceTest do
     assert :already_abandoned = Persistence.abandon_game(game_id, "new-device", owner)
   end
 
+  test "the active-seat precheck uses the canonical holder rule without changing the row" do
+    %{game_id: game_id, g1: guest} = lobby("single")
+    row = game_row(game_id)
+    owner = Ecto.UUID.generate()
+    [seat] = row.players
+    Persistence.update_players(game_id, [Map.put(seat, "user_id", owner)])
+
+    refute Persistence.may_abandon_game?(game_id, guest, nil)
+    assert Persistence.may_abandon_game?(game_id, "another-browser", owner)
+    refute Persistence.may_abandon_game?(game_id, "another-browser", Ecto.UUID.generate())
+    assert game_row(game_id).status == "waiting"
+  end
+
   test "a queued move lands before abandonment and cannot revive the row" do
     %{game_id: game_id, g1: alice, mover: mover, state: state} = started(42)
     action = legal_move(state.instance, mover)
 
     assert {:ok, _state, _events} = Game.player_action(game_id, mover, action)
-    # Both Persister messages originate in the room process: its action cast
-    # is ordered before this synchronous abandonment call.
+    # The room's action cast is ordered before its later Persister flush, so
+    # the log is current before the room runs its abandonment transaction.
     assert :ok = Oskol.Game.GameServer.abandon(game_id, alice, nil)
 
     assert [%{kind: "action", index: 0}] = action_rows(game_id)
     assert game_row(game_id).status == "abandoned"
+  end
+
+  test "an abandon transaction does not occupy the global persister" do
+    %{game_id: game_id, g1: alice} = started(42)
+    Persister.flush()
+    {:ok, room_pid} = Oskol.Game.GameSupervisor.find_game(game_id)
+    persister_pid = Process.whereis(Persister)
+    test_pid = self()
+    handler_id = "abandon-process-#{System.unique_integer([:positive])}"
+
+    :ok =
+      :telemetry.attach(
+        handler_id,
+        [:oskol, :repo, :query],
+        fn _event, _measurements, metadata, config ->
+          if self() in [config.room_pid, config.persister_pid] and
+               String.downcase(metadata.query || "") == "begin" do
+            send(config.test_pid, {:abandon_transaction_started, self()})
+
+            receive do
+              :release_abandon_transaction -> :ok
+            after
+              5_000 -> :ok
+            end
+          end
+        end,
+        %{test_pid: test_pid, room_pid: room_pid, persister_pid: persister_pid}
+      )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    task = Task.async(fn -> Oskol.Game.GameServer.abandon(game_id, alice, nil) end)
+    assert_receive {:abandon_transaction_started, transaction_pid}, 1_000
+
+    if transaction_pid != room_pid do
+      send(transaction_pid, :release_abandon_transaction)
+      flunk("abandon transaction ran in #{inspect(transaction_pid)}, not its room")
+    end
+
+    # If the transaction ran inside Persister, this call would sit behind it.
+    # The room is blocked above, while the global queue remains responsive.
+    assert :ok = Persister.flush()
+    send(transaction_pid, :release_abandon_transaction)
+    assert :ok = Task.await(task, 1_000)
+    refute Process.alive?(room_pid)
   end
 end
 

@@ -143,9 +143,9 @@ defmodule Oskol.Game.GameServer do
 
   @doc """
   End this room for both players. The persisted-seat authorization and status
-  transition run through Persister from this room process, after every write
-  it has already queued; on success the room stops before it can accept
-  another move.
+  transition run from this room process after Persister has drained every
+  write it already queued; on success the room stops before it can accept
+  another move. The transaction blocks this room, never the global writer.
   """
   def abandon(game_id, guest_id, user_id) do
     GenServer.call(via_tuple(game_id), {:abandon, guest_id, user_id}, :infinity)
@@ -429,7 +429,7 @@ defmodule Oskol.Game.GameServer do
   end
 
   def handle_call({:abandon, guest_id, user_id}, _from, %GameServerState{} = state) do
-    case Persister.abandon_game(state.game_id, guest_id, user_id) do
+    case persist_abandonment(state.game_id, guest_id, user_id) do
       result when result in [:ok, :already_abandoned] ->
         # Tell every joined table why its socket is closing. The row is
         # already durable, and stopping this server prevents later moves or
@@ -590,6 +590,25 @@ defmodule Oskol.Game.GameServer do
   end
 
   # ---------- Private ----------
+
+  # This call originates in the room, after all of that room's earlier casts
+  # to Persister. Erlang preserves their order, so flush makes the row current
+  # before this transaction begins. Running the transaction here confines a
+  # slow row lock or database wait to the room being ended; Persister remains
+  # free to write every other room.
+  defp persist_abandonment(game_id, guest_id, user_id) do
+    with :ok <- Persister.flush() do
+      Oskol.Persistence.abandon_game(game_id, guest_id, user_id)
+    end
+  rescue
+    e ->
+      Logger.error("GAME ABANDON FAILED #{game_id}: #{Exception.message(e)}")
+      :error
+  catch
+    kind, reason ->
+      Logger.error("GAME ABANDON FAILED #{game_id}: #{inspect({kind, reason})}")
+      :error
+  end
 
   defp do_start(%GameServerState{} = state, seed, control) do
     setup = state.setup
