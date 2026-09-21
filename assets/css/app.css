@@ -1124,9 +1124,8 @@ a.q-card:hover, a.q-card:focus-visible {
 }
 .bg-point.top::before { clip-path: polygon(0 0, 100% 0, 50% 92%); }
 .bg-point.bottom::before { clip-path: polygon(0 100%, 100% 100%, 50% 8%); }
-/* Where a dragged checker may go is shown (`drop-ghost`); which checkers
-   could be picked up is not (`.bg-point.source` is a hook for interaction
-   and tests, and paints nothing). */
+/* `.bg-point.source` is a hook for interaction and tests; it paints
+   nothing, so legal play still reads from the dice and position. */
 .bg-band { min-height: var(--bg-band-h); }
 .checker {
   width: 84%;
@@ -1146,10 +1145,6 @@ a.q-card:hover, a.q-card:focus-visible {
 }
 .checker-count { font-size: 10px; font-weight: 800; line-height: 1; color: var(--bg-checker-light-ink); }
 .checker.black .checker-count { color: var(--bg-checker-dark-ink); }
-/* Drag-and-drop (src/Drag.elm). Only drag sources opt out of touch
-   scrolling -- the page itself keeps scrolling normally elsewhere. */
-[data-drag-capture] { touch-action: none; cursor: grab; }
-.checker.lifted { opacity: 0.35; }
 /* The checkers the last turn landed (or the turn being viewed): a thin
    ring of the accent around the rim, nothing else. */
 .checker.just-moved {
@@ -1157,19 +1152,6 @@ a.q-card:hover, a.q-card:focus-visible {
      which sits too close to some felts), with a thin dark edge outside it */
   box-shadow: 0 0 0 2.5px #ffd23f, 0 0 0 4px rgba(20, 16, 12, 0.9);
 }
-.bg-drag-ghost {
-  position: fixed;
-  z-index: 60;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-  filter: drop-shadow(3px 4px 0 rgba(40, 24, 12, 0.4));
-}
-.bg-drag-ghost .checker { width: 1.4rem; }
-@media (min-width: 640px) { .bg-drag-ghost .checker { width: 1.9rem; } }
-/* Where the dragged checker would land: a translucent checker of the
-   mover's colour that firms up under the pointer. */
-.checker.drop-ghost { opacity: 0.35; transition: opacity 80ms ease-out, transform 80ms ease-out; }
-.checker.drop-ghost.firm { opacity: 0.85; transform: scale(1.06); }
 /* The bar: the frame runs through the middle of the board; checkers hit
    sit on it, and the cube hangs on it. Its three rows are the halves'
    own -- points, band, points -- so the opponent's hit checkers hang
@@ -1222,9 +1204,6 @@ a.q-card:hover, a.q-card:focus-visible {
   background: rgba(0, 0, 0, 0.35); color: rgba(255, 255, 255, 0.8);
   pointer-events: none;
 }
-/* A bearing-off checker's landing: the ghost sits over the first holder. */
-.bg-tray .drop-ghost { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 1.1rem; }
-.bg-tray .drop-ghost.firm { transform: translateY(-50%) scale(1.06); }
 .die {
   --die-size: 2.5rem;
   display: grid; place-items: center;

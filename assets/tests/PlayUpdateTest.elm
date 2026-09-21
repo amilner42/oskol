@@ -185,7 +185,7 @@ replay fixture =
 
 
 {-| A pick made at the table outranks any answer still in flight: the GET
-that left before the tap must not drag the board back.
+that left before the tap must not move the board back.
 -}
 prefsRace : Test
 prefsRace =

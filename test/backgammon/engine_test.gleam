@@ -6,7 +6,10 @@ import gamekit/conformance
 import gamekit/event
 import gamekit/game.{Seat}
 import gamekit/rng
+import gamekit/scene
 import gleam/dict
+import gleam/int
+import gleam/json
 import gleam/list
 import gleam/option.{Some}
 
@@ -42,16 +45,16 @@ pub fn opening_roll_decides_who_moves_first_test() {
 }
 
 pub fn the_opening_roll_gives_the_first_turn_to_the_higher_die_test() {
-  // White rolls the first die, Black the second; the higher plays first
-  // with both dice.
+  // The higher raw roller plays first. State keeps white/black roll order for
+  // replay compatibility; projection ordering is covered separately below.
   list.each(list.range(1, 40), fn(seed) {
     let s = new_game(seed, "single")
     let assert state.Moving(color, dice) = s.phase
-    let assert [a, b] = s.last_roll
-    assert a != b
-    assert dice == [a, b]
+    let #(white_die, black_die) = first_opening_pair(rng.seed(seed))
+    assert s.last_roll == [white_die, black_die]
+    assert dice == [white_die, black_die]
     assert color
-      == case a > b {
+      == case white_die > black_die {
         True -> board.White
         False -> board.Black
       }
@@ -64,6 +67,77 @@ pub fn the_opening_roll_gives_the_first_turn_to_the_higher_die_test() {
     })
   assert list.contains(firsts, board.White)
   assert list.contains(firsts, board.Black)
+}
+
+fn first_opening_pair(random: rng.Rng) -> #(Int, Int) {
+  let #(a, random) = rng.int(random, 6)
+  let #(b, random) = rng.int(random, 6)
+  case a == b {
+    True -> first_opening_pair(random)
+    False -> #(a + 1, b + 1)
+  }
+}
+
+pub fn every_plain_roll_is_projected_high_die_first_test() {
+  let rolls =
+    list.map(list.range(1, 300), fn(seed) {
+      let opened = new_game(seed, "single")
+      let rolling = state.GameState(..opened, phase: state.Rolling(board.White))
+      let assert Ok(#(next, events)) = engine.apply(rolling, "p1", engine.Roll)
+      let assert [a, b] = next.last_roll
+      let high = int.max(a, b)
+      let low = int.min(a, b)
+      let all = case a == b {
+        True -> [a, a, a, a]
+        False -> [high, low]
+      }
+      let projected = backgammon.game().scene(next, scene.Player("p1"))
+      let assert Ok(zone) = scene.find_zone(projected, engine.dice_zone)
+      let values = projected_dice(zone)
+      assert high >= low
+      assert values == list.map(all, json.int)
+      assert list.key_find(projected.data, "dice")
+        == Ok(json.array(all, json.int))
+      assert list.key_find(projected.data, "last_roll")
+        == Ok(json.array([high, low], json.int))
+      assert list.contains(
+        events,
+        event.Custom(
+          "dice_rolled",
+          json.object([
+            #("player_id", json.string("p1")),
+            #("dice", json.array([high, low], json.int)),
+          ]),
+        ),
+      )
+      [high, low]
+    })
+  // The concrete product example is covered rather than only the invariant.
+  assert list.contains(rolls, [6, 2])
+}
+
+pub fn a_finished_position_keeps_every_projected_die_high_first_test() {
+  let s =
+    state.GameState(
+      ..new_game(1, "single"),
+      phase: state.Finished(board.White),
+      last_roll: [2, 6],
+    )
+  let projected = backgammon.game().scene(s, scene.Spectator)
+  let assert Ok(zone) = scene.find_zone(projected, engine.dice_zone)
+  let ordered = json.array([6, 2], json.int)
+  assert projected_dice(zone) == [json.int(6), json.int(2)]
+  // Non-moving phases have no dice left, but the public last roll and the
+  // dice left on the finished board retain the same canonical order.
+  assert list.key_find(projected.data, "dice") == Ok(json.array([], json.int))
+  assert list.key_find(projected.data, "last_roll") == Ok(ordered)
+}
+
+fn projected_dice(zone: scene.Zone) -> List(json.Json) {
+  list.map(zone.tokens, fn(token) {
+    let assert Ok(value) = list.key_find(token.props, "value")
+    value
+  })
 }
 
 pub fn tied_opening_rolls_are_rerolled_test() {

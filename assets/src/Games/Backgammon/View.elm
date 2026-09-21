@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Path, Presence(..), Press, Save(..), Roll, Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, dropZoneId, init, noteEvents, pathsFrom, presenceFlashMs, presenceOf, reachableFrom, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewStill)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Presence(..), Roll, Save(..), Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewStill)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -29,46 +29,31 @@ the dice swaps them, so the next die is always the left one and the
 other die is one tap away too. Destinations still answer a tap of their own: a point where exactly
 one legal move lands plays it, and a point where an unambiguous pair of
 moves would land two checkers (making a point) stages both. There is no
-selection to make or clear; anything a tap cannot say, a drag can. Legal
-moves come from the `move` schemas the server sends, so the board never
-invents legality.
-
-Checkers can also be dragged, through the `Drag` state machine: every
-legal origin (the whole point column, or the bar) is a drag source, so
-grabbing any checker of the stack -- or the point itself -- drags that
-origin's top checker. A press remembers what a plain tap there would have
-done, so tap-to-move is untouched; past the threshold a ghost checker
-rides the pointer and a translucent checker of the mover's colour marks
-each legal destination. Drop targets are hit-tested geometrically:
-pressing asks Main (the `NeedZones` Out) for the client rects of the
-origin's legal destinations via `Browser.Dom.getElement` -- the whole point
-column, or the tray, under the ids `dropZoneId` names -- and releasing on
-one stages that move. Releasing anywhere else snaps the checker back and
-sends nothing.
+selection to make or clear. If both dice can move the same checker, tapping
+the dice first chooses the other one; later moves in the turn use the newly
+staged position. Legal moves come from the `move` schemas the server sends,
+so the board never invents legality.
 
 -}
 
 import Dict
-import Drag
 import Html exposing (Html, button, div, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, style, title)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Json.Decode as D
 import Json.Encode as E
-import Ui.Identity as Identity
 import Protocol exposing (Clock, ParamKind(..), PlayerInfo, Scene, Schema, Token)
 import Svg
 import Svg.Attributes as SvgAttr
+import Ui.Identity as Identity
 import Ui.Scrub
 import Ui.Shell
 import Ui.SignIn
 
 
 type alias Model =
-    { drag : Drag.State String Msg -- the item a drag carries is my checker colour
-    , plans : List ( String, List Move ) -- for the active drag: each destination and the moves that get there
-    , swaps : Int -- taps on the dice this roll: odd means the two dice have changed places
+    { swaps : Int -- taps on the dice this roll: odd means the two dice have changed places
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , resigning : Bool -- the resign panel is open: which stakes to offer
     , themesOpen : Bool -- the board-colour list in the header is showing
@@ -96,34 +81,13 @@ type alias Roll =
     { seq : Int, watched : Bool }
 
 
-{-| A press on a draggable checker: where, my colour (for the ghost), what
-a plain tap there would have done (resolved at press time, by the same
-`resolveTap` the click handlers use), and the origin's legal destinations
-(so Main can measure their drop zones).
--}
-type alias Press =
-    { origin : String
-    , color : String
-    , tap : Maybe Msg
-    , targets : List String
-    , plans : List ( String, List Move ) -- how each target is reached when it takes several dice
-    , x : Float
-    , y : Float
-    }
-
-
 type Msg
-    = PlayMove String String
+    = PlayMove String String Int
     | PlayPair Move Move
-    | PlayPath (List Move) -- one checker, several dice, in order
+    | BearOff Int -- stage the server-owned quick path, preferring this (left) die
     | SwapDice -- the two dice change places: the next die is the left one
     | Simple String
     | Rematch
-    | DragPressed Press
-    | DragMoved { x : Float, y : Float }
-    | DragReleased { x : Float, y : Float }
-    | DragCancelled
-    | GotDropZones (List Drag.Zone)
     | OpenResign
     | CancelResign
     | OfferResign String -- the stakes id from the resign schema's choice
@@ -142,7 +106,6 @@ type Out
     | Send E.Value
     | SendMany (List E.Value)
     | WantRematch
-    | NeedZones (List String)
     | ChoseTheme String -- this player's board colours: display only, never sent to the room
     | OpenSave -- open the sign-in on the game-over card
     | ForSave Ui.SignIn.Msg -- the sign-in on the game-over card, for the page to run
@@ -150,9 +113,7 @@ type Out
 
 init : Model
 init =
-    { drag = Drag.idle
-    , plans = []
-    , swaps = 0
+    { swaps = 0
     , autoRolled = False
     , resigning = False
     , themesOpen = False
@@ -168,7 +129,7 @@ init =
     }
 
 
-{-| Clear the interaction state (drag, panels) without forgetting
+{-| Clear the interaction state (panels) without forgetting
 which roll is on the board: `roll` keys the dice, and forgetting it would
 replay the tumble on every tap.
 -}
@@ -229,7 +190,7 @@ noteEvents events model =
         noted
 
     else
-        -- a fresh roll: the dice are next in the order they land
+        -- a fresh roll: the dice are next in canonical high-first order
         { noted | roll = { seq = noted.roll.seq + rolls, watched = True }, swaps = 0 }
 
 
@@ -281,14 +242,14 @@ update msg model =
         SwapDice ->
             ( { model | swaps = model.swaps + 1 }, NoOut )
 
-        PlayMove from to ->
-            ( reset model, Send (encodeMove from to) )
+        PlayMove from to die ->
+            ( reset model, Send (encodeMove from to die) )
 
         PlayPair a b ->
-            ( reset model, SendMany [ encodeMove a.from a.to, encodeMove b.from b.to ] )
+            ( reset model, SendMany [ encodeMove a.from a.to a.die, encodeMove b.from b.to b.die ] )
 
-        PlayPath steps ->
-            ( reset model, SendMany (List.map (\m -> encodeMove m.from m.to) steps) )
+        BearOff firstDie ->
+            ( reset model, Send (Protocol.encodeAction "bear_off" [ ( "first_die", E.string (String.fromInt firstDie) ) ]) )
 
         Simple name ->
             -- a turn played or a roll asked for: the next roll starts unrotated
@@ -296,38 +257,6 @@ update msg model =
 
         Rematch ->
             ( model, WantRematch )
-
-        DragPressed p ->
-            ( { model | drag = Drag.press { origin = p.origin, item = p.color, tap = p.tap, x = p.x, y = p.y }, plans = p.plans }
-            , NeedZones p.targets
-            )
-
-        DragMoved pos ->
-            ( { model | drag = Drag.move pos model.drag }, NoOut )
-
-        DragReleased pos ->
-            case Drag.release pos model.drag of
-                ( drag, Drag.Drop from to ) ->
-                    -- A drop stages the move exactly as a tap would: one
-                    -- die, or the dice in a row that reach there.
-                    case List.filter (\( dest, _ ) -> dest == to) model.plans |> List.head of
-                        Just ( _, steps ) ->
-                            update (PlayPath steps) { model | drag = drag }
-
-                        Nothing ->
-                            update (PlayMove from to) { model | drag = drag }
-
-                ( drag, Drag.Tap tap ) ->
-                    update tap { model | drag = drag }
-
-                ( drag, Drag.None ) ->
-                    ( { model | drag = drag }, NoOut )
-
-        DragCancelled ->
-            ( { model | drag = Drag.idle }, NoOut )
-
-        GotDropZones zones ->
-            ( { model | drag = Drag.setZones zones model.drag }, NoOut )
 
         ToggleThemes ->
             ( { model | themesOpen = not model.themesOpen }, NoOut )
@@ -349,12 +278,13 @@ update msg model =
             ( reset model
             , Send (Protocol.encodeAction "resign" [ ( "stakes", E.string stakes ) ])
             )
+
         ToggleMatch ->
             ( { model | matchOpen = not model.matchOpen }, NoOut )
 
         ViewTurn index ->
             -- A past turn on the board: nothing else may be up over it.
-            ( { model | viewing = Just index, matchOpen = False, drag = Drag.idle, resigning = False }, NoOut )
+            ( { model | viewing = Just index, matchOpen = False, resigning = False }, NoOut )
 
         ViewLive ->
             ( { model | viewing = Nothing, stale = False }, NoOut )
@@ -363,16 +293,9 @@ update msg model =
             ( model, NoOut )
 
 
-{-| The DOM id Main uses to measure a drop target (a point number or "off").
--}
-dropZoneId : String -> String
-dropZoneId loc =
-    "bg-drop-" ++ loc
-
-
-encodeMove : String -> String -> E.Value
-encodeMove from to =
-    Protocol.encodeAction "move" [ ( "from", E.string from ), ( "to", E.string to ) ]
+encodeMove : String -> String -> Int -> E.Value
+encodeMove from to die =
+    Protocol.encodeAction "move" [ ( "from", E.string from ), ( "to", E.string to ), ( "selected_die", E.string (String.fromInt die) ) ]
 
 
 
@@ -441,18 +364,13 @@ labelOf name legal =
 type alias TapContext =
     { moves : List Move
     , sources : List String
+    , canBearOff : Bool
 
     -- my checkers currently at a location ("bar", "off" or a point id)
     , mineAt : String -> Int
 
     -- values of the dice not yet used this turn, in the order they sit on the board
     , unusedDice : List Int
-
-    -- which way my checkers travel: -1 for white (24 down to 1), +1 for black
-    , direction : Int
-
-    -- the opponent's checkers at a point
-    , theirsAt : String -> Int
     }
 
 
@@ -462,6 +380,8 @@ type alias TapContext =
     the next die -- the first unused one, reading the dice left to right,
     that can play it (`nextDieMove`). An origin is an origin first, even
     when moves also land on it;
+  - the bear-off tray asks the engine to stage its longest legal quick path,
+    preferring the visible left die;
   - exactly one legal move lands on dest, a point I do not hold (or off):
     play it -- unless the dice are doubles and a second identical move
     would land a second checker there, in which case stage the pair (make
@@ -470,7 +390,8 @@ type alias TapContext =
     not hold (one per die, necessarily): stage both (a quick point). An
     opponent's blot there is fine: the point is made and the blot hit;
   - a point I already hold is never played by tapping it;
-  - anything else is ambiguous: no auto-move. A drag reaches it.
+  - anything else is ambiguous: tap an origin (and, when needed, swap the
+    dice first) instead.
 
 -}
 resolveTap : TapContext -> String -> Maybe Msg
@@ -490,7 +411,14 @@ resolveTap tc dest =
             tc.mineAt loc == 0
     in
     if isSource then
-        nextDieMove tc dest |> Maybe.map (\m -> PlayMove m.from m.to)
+        nextDieMove tc dest |> Maybe.map moveMessage
+
+    else if dest == "off" then
+        if tc.canBearOff then
+            List.head tc.unusedDice |> Maybe.map BearOff
+
+        else
+            Nothing
 
     else
         case landing of
@@ -499,7 +427,7 @@ resolveTap tc dest =
                     Just (PlayPair m m)
 
                 else if dest == "off" || fresh dest then
-                    Just (PlayMove m.from m.to)
+                    Just (moveMessage m)
 
                 else
                     Nothing
@@ -515,123 +443,9 @@ resolveTap tc dest =
                 Nothing
 
 
-{-| Where one checker at `origin` can go using several dice in a row --
-both dice either way round, or two, three or four of a double -- beyond
-what a single die reaches (those are `moves`). The first step has to be
-a legal move the server listed; every later step lands on a point the
-opponent does not hold (two or more checkers), never off the board.
-
-When the two orders of a non-double reach the same point by different
-routes, the route whose stop hits a blot wins; when both or neither do,
-the dice go left to right. A double has one route.
-
--}
-type alias Path =
-    { to : String, steps : List Move }
-
-
-pathsFrom : TapContext -> String -> List Path
-pathsFrom tc origin =
-    let
-        orderings =
-            case tc.unusedDice of
-                d :: rest ->
-                    if rest == [] then
-                        []
-
-                    else if List.all ((==) d) rest then
-                        List.range 2 (List.length tc.unusedDice) |> List.map (\n -> List.repeat n d)
-
-                    else
-                        case unique tc.unusedDice of
-                            [ a, b ] ->
-                                [ [ a, b ], [ b, a ] ]
-
-                            _ ->
-                                []
-
-                [] ->
-                    []
-
-        singleTo =
-            tc.moves |> List.filter (\m -> m.from == origin) |> List.map .to
-
-        firstStep die =
-            tc.moves
-                |> List.filter (\m -> m.from == origin && m.die == die && m.to /= "off")
-                |> List.head
-
-        step cur die =
-            String.toInt cur
-                |> Maybe.map (\p -> p + tc.direction * die)
-                |> Maybe.andThen
-                    (\p ->
-                        if p >= 1 && p <= 24 && tc.theirsAt (String.fromInt p) < 2 then
-                            Just { from = cur, to = String.fromInt p, die = die }
-
-                        else
-                            Nothing
-                    )
-
-        walk dice =
-            case dice of
-                first :: rest ->
-                    firstStep first
-                        |> Maybe.andThen
-                            (\m ->
-                                List.foldl
-                                    (\die acc ->
-                                        acc |> Maybe.andThen (\steps -> step (lastTo steps) die |> Maybe.map (\n -> steps ++ [ n ]))
-                                    )
-                                    (Just [ m ])
-                                    rest
-                            )
-                        |> Maybe.map (\steps -> { to = lastTo steps, steps = steps })
-
-                [] ->
-                    Nothing
-
-        lastTo steps =
-            steps |> List.reverse |> List.head |> Maybe.map .to |> Maybe.withDefault origin
-
-        hits path =
-            path.steps
-                |> List.take (List.length path.steps - 1)
-                |> List.any (\m -> tc.theirsAt m.to == 1)
-
-        -- one path per destination: a hitting route first, then dice order
-        pick path found =
-            case List.filter (\p -> p.to == path.to) found of
-                [] ->
-                    found ++ [ path ]
-
-                kept :: _ ->
-                    if hits path && not (hits kept) then
-                        List.map
-                            (\p ->
-                                if p.to == path.to then
-                                    path
-
-                                else
-                                    p
-                            )
-                            found
-
-                    else
-                        found
-    in
-    orderings
-        |> List.filterMap walk
-        |> List.filter (\p -> not (List.member p.to singleTo))
-        |> List.foldl pick []
-
-
-{-| Every destination a checker at `origin` can reach: one die, or several.
--}
-reachableFrom : TapContext -> String -> List String
-reachableFrom tc origin =
-    (tc.moves |> List.filter (\m -> m.from == origin) |> List.map .to)
-        ++ (pathsFrom tc origin |> List.map .to)
+moveMessage : Move -> Msg
+moveMessage move =
+    PlayMove move.from move.to move.die
 
 
 {-| The move that plays `from` with the next die: the first die not yet
@@ -681,11 +495,19 @@ type alias Ctx =
     , rematchReady : List String
     , finished : Maybe (List String)
     , away : Maybe (List String) -- seated players whose connection is down; Nothing where presence is not a fact (a still board)
-    , awaySince : String -> Maybe Int -- client time (ms) an absent player's drop was noticed
-    , prOf : String -> Maybe Float -- a player's PR so far in this match, once a game of it has been graded
+    , awaySince :
+        String
+        -> Maybe Int -- client time (ms) an absent player's drop was noticed
+    , prOf :
+        String
+        -> Maybe Float -- a player's PR so far in this match, once a game of it has been graded
     , theme : String -- the board's colours, this viewer's own (`themes`)
-    , replayHref : Int -> Maybe String -- where a finished game (by number) is replayed, for a seat
-    , gamePrs : Int -> List ( String, Float ) -- each player's PR in a finished game (by number), once graded; [] until then
+    , replayHref :
+        Int
+        -> Maybe String -- where a finished game (by number) is replayed, for a seat
+    , gamePrs :
+        Int
+        -> List ( String, Float ) -- each player's PR in a finished game (by number), once graded; [] until then
     , save : Save -- the sign-in the game-over card offers a guest
     , accounts : Maybe (List String) -- the seats an account owns; Nothing where that is not known (no badge at all)
     }
@@ -801,7 +623,7 @@ view arrived =
                 arrived
 
         -- A past turn on the board: the slab is drawn from that turn's
-        -- snapshot with nothing legal, so no tap, drag or button lands on it;
+        -- snapshot with nothing legal, so no tap or button lands on it;
         -- the header and the record still read the live game.
         ctx =
             case viewedTurn live of
@@ -831,22 +653,8 @@ view arrived =
         sources =
             legalMoves |> List.map .from |> unique
 
-        drag =
-            Drag.active ctx.model.drag
-
         tap =
             tapContext ctx legalMoves sources
-
-        -- While a drag is up, everywhere its checker can be dropped shows,
-        -- one die or several. Nothing lights up otherwise: a tap plays at
-        -- once, so there is never a pending choice to illustrate.
-        targets =
-            case drag of
-                Just d ->
-                    reachableFrom tap d.origin
-
-                Nothing ->
-                    []
 
         themId =
             Protocol.opponentOf (seatId ctx) ctx.scene |> Maybe.map .id |> Maybe.withDefault ""
@@ -855,9 +663,6 @@ view arrived =
             { ctx = ctx
             , myColor = myColor
             , sources = sources
-            , targets = targets
-            , drag = drag
-            , hovered = Drag.hover ctx.model.drag
             , tap = tap
             , landed = lastLanded live
             }
@@ -884,39 +689,12 @@ view arrived =
 
           else
             text ""
-        , case drag of
-            Just d ->
-                viewDragGhost d
-
-            Nothing ->
-                text ""
         , case ctx.finished of
             Just winners ->
                 viewGameOver live winners
 
             Nothing ->
                 text ""
-        ]
-
-
-{-| The checker riding the pointer during a drag, in viewport coordinates
-(the same space the drop zones are measured in).
--}
-viewDragGhost : Drag.Active String -> Html Msg
-viewDragGhost d =
-    div
-        [ class "bg-drag-ghost"
-        , style "left" (String.fromFloat d.x ++ "px")
-        , style "top" (String.fromFloat d.y ++ "px")
-        ]
-        [ div
-            [ classList
-                [ ( "checker", True )
-                , ( "white", d.item == "white" )
-                , ( "black", d.item /= "white" )
-                ]
-            ]
-            []
         ]
 
 
@@ -972,23 +750,12 @@ tapContext ctx legalMoves sources =
         unusedDice =
             unusedDiceTokens ctx
                 |> List.filterMap (Protocol.tokenProp D.int "value")
-
-        theirsAt point =
-            Protocol.zoneTokens ("point:" ++ point) ctx.scene
-                |> List.filter (\t -> Protocol.tokenProp D.string "color" t /= Just myColor)
-                |> List.length
     in
     { moves = legalMoves
     , sources = sources
+    , canBearOff = hasAction "bear_off" ctx.legal
     , mineAt = mineAt
     , unusedDice = unusedDice
-    , direction =
-        if myColor == "white" then
-            -1
-
-        else
-            1
-    , theirsAt = theirsAt
     }
 
 
@@ -1190,9 +957,6 @@ themeBoard =
 
 
 
-
-
-
 -- PLAYER BARS
 --
 -- One identity bar per player, anchored at that player's side of the board:
@@ -1236,6 +1000,7 @@ viewPlayerBar ctx player isMe tray =
 
                     Nothing ->
                         text ""
+
                 -- The room's name for the seat, not the one the game started
                 -- with: an account's seat is named by its account.
                 , span [ class "font-bold text-sm sm:text-base truncate" ] [ text (ctx.nameOf p.id) ]
@@ -1310,6 +1075,7 @@ Coming back at any point returns it to steady green.
 It is drawn only where connections are a fact: a still board in the replay
 knows nothing about anyone's presence (`away` is `Nothing` there), and a
 dot that is always lit would be a lie.
+
 -}
 viewPresenceDot : Ctx -> String -> Html Msg
 viewPresenceDot ctx playerId =
@@ -1462,9 +1228,6 @@ type alias Board =
     { ctx : Ctx
     , myColor : String
     , sources : List String
-    , targets : List String
-    , drag : Maybe (Drag.Active String)
-    , hovered : Maybe String
     , tap : TapContext
     , landed : Landed -- where the last turn landed checkers, and whose they are
     }
@@ -1553,12 +1316,6 @@ viewPoint board isTop index point =
         isSource =
             List.member id board.sources
 
-        isTarget =
-            List.member id board.targets
-
-        dragging =
-            board.drag /= Nothing
-
         click =
             case resolveTap board.tap id of
                 Just msg ->
@@ -1566,15 +1323,6 @@ viewPoint board isTop index point =
 
                 Nothing ->
                     []
-
-        -- A movable origin is draggable across its whole column (any checker
-        -- of the stack, or the point itself); a short press there still taps.
-        interaction =
-            if isSource then
-                dragAttrs board id
-
-            else
-                click
     in
     div
         ([ classList
@@ -1596,89 +1344,20 @@ viewPoint board isTop index point =
                     )
             )
          , title ("Point " ++ id)
-         , Html.Attributes.id (dropZoneId id)
          ]
-            ++ interaction
-        )
-        (viewStackTinted board.landed.color (Dict.get point board.landed.points |> Maybe.withDefault 0) { lifted = liftedAt board id } tokens
-            ++ (if isTarget then
-                    [ dropGhost board (dragging && board.hovered == Just id) ]
+            ++ (if isSource then
+                    [ attribute "data-move-source" "" ]
 
                 else
                     []
                )
+            ++ click
         )
+        (viewStackTinted board.landed.color (Dict.get point board.landed.points |> Maybe.withDefault 0) tokens)
 
 
-{-| Where a checker could land (dragging or after a tap-select): a
-translucent checker of the mover's colour, firming up under the pointer
-while dragging. No boxes, no outlines, ever.
--}
-dropGhost : Board -> Bool -> Html Msg
-dropGhost board firm =
-    div
-        [ classList
-            [ ( "checker drop-ghost relative shrink-0", True )
-            , ( "white", board.myColor == "white" )
-            , ( "black", board.myColor /= "white" )
-            , ( "firm", firm )
-            ]
-        ]
-        []
-
-
-{-| The origin of the active drag shows its top checker dimmed in place.
--}
-liftedAt : Board -> String -> Bool
-liftedAt board loc =
-    board.drag |> Maybe.map (\d -> d.origin == loc) |> Maybe.withDefault False
-
-
-{-| Drag handlers for a legal origin's whole column. The press carries
-what a tap there would do -- the same `resolveTap` answer the click
-handlers use -- and the origin's legal destinations, for Main to measure.
--}
-dragAttrs : Board -> String -> List (Html.Attribute Msg)
-dragAttrs board origin =
-    if List.member origin board.sources then
-        Drag.sourceAttrs
-            { press =
-                \pos ->
-                    DragPressed
-                        { origin = origin
-                        , color = board.myColor
-                        , tap = resolveTap board.tap origin
-                        , targets = reachableFrom board.tap origin |> unique
-                        , plans = pathsFrom board.tap origin |> List.map (\p -> ( p.to, p.steps ))
-                        , x = pos.x
-                        , y = pos.y
-                        }
-            , move = DragMoved
-            , release = DragReleased
-            , cancel = DragCancelled
-            , ignore = Ignore
-            }
-
-    else
-        []
-
-
-{-| What the top checker of a stack carries: dimmed in place while its
-origin is being dragged. Which checkers *could* move is deliberately not
-marked: the board shows where a checker goes once it is picked up, never
-which ones to pick.
--}
-type alias Marks =
-    { lifted : Bool }
-
-
-noMarks : Marks
-noMarks =
-    { lifted = False }
-
-
-viewStack : Marks -> List Token -> List (Html Msg)
-viewStack marks tokens =
+viewStack : List Token -> List (Html Msg)
+viewStack tokens =
     let
         shown =
             List.take 5 tokens
@@ -1692,12 +1371,6 @@ viewStack marks tokens =
     List.indexedMap
         (\i t ->
             viewChecker
-                (if i == lastIndex then
-                    marks
-
-                 else
-                    noMarks
-                )
                 (if i == lastIndex && extra > 0 then
                     Just (extra + 5)
 
@@ -1714,8 +1387,8 @@ turn landed there, as long as they are the mover's `color`. A point holds
 one colour at a time: if its top is the other colour, what landed there
 has been hit since (the viewer staging a hit on a blot the last turn left).
 -}
-viewStackTinted : String -> Int -> Marks -> List Token -> List (Html Msg)
-viewStackTinted color n marks tokens =
+viewStackTinted : String -> Int -> List Token -> List (Html Msg)
+viewStackTinted color n tokens =
     let
         shown =
             List.take 5 tokens
@@ -1729,12 +1402,6 @@ viewStackTinted color n marks tokens =
     List.indexedMap
         (\i t ->
             viewCheckerWith (i > lastIndex - n && (Protocol.tokenProp D.string "color" t |> Maybe.withDefault "white") == color)
-                (if i == lastIndex then
-                    marks
-
-                 else
-                    noMarks
-                )
                 (if i == lastIndex && extra > 0 then
                     Just (extra + 5)
 
@@ -1748,13 +1415,13 @@ viewStackTinted color n marks tokens =
 
 {-| A checker; the top one of a tall stack carries the stack's full count.
 -}
-viewChecker : Marks -> Maybe Int -> Token -> Html Msg
+viewChecker : Maybe Int -> Token -> Html Msg
 viewChecker =
     viewCheckerWith False
 
 
-viewCheckerWith : Bool -> Marks -> Maybe Int -> Token -> Html Msg
-viewCheckerWith justMoved marks count token =
+viewCheckerWith : Bool -> Maybe Int -> Token -> Html Msg
+viewCheckerWith justMoved count token =
     let
         color =
             Protocol.tokenProp D.string "color" token |> Maybe.withDefault "white"
@@ -1764,7 +1431,6 @@ viewCheckerWith justMoved marks count token =
             [ ( "checker relative shrink-0 transition-transform", True )
             , ( "white", color == "white" )
             , ( "black", color /= "white" )
-            , ( "lifted", marks.lifted )
             , ( "just-moved", justMoved )
             ]
         , title token.id
@@ -1781,7 +1447,7 @@ viewCheckerWith justMoved marks count token =
 {-| The bar: one unbroken column from the board's top edge to its bottom,
 straight through the centre band. Hit checkers enter from their owner's
 end -- the opponent's stack down from the top, the viewer's up from the
-bottom. The viewer's whole column drags when a bar entry is legal.
+bottom. The viewer taps anywhere on the bar when entry is legal.
 -}
 viewBarColumn : Board -> String -> Html Msg
 viewBarColumn board themId =
@@ -1812,14 +1478,6 @@ viewBarColumn board themId =
 
             else
                 []
-
-        -- The whole bar drags when a bar entry is legal; a short press taps.
-        interaction =
-            if mine && isSource then
-                dragAttrs board "bar"
-
-            else
-                click
     in
     -- Three rows, the halves' own: the opponent's hit checkers hang from
     -- the top of the upper row, the viewer's stand on the bottom of the
@@ -1829,17 +1487,23 @@ viewBarColumn board themId =
         ([ class "bg-bar grid justify-items-center"
          , title "Bar"
          ]
-            ++ interaction
+            ++ (if isSource then
+                    [ attribute "data-move-source" "" ]
+
+                else
+                    []
+               )
+            ++ click
         )
         [ div [ class "bg-bar-row theirs flex flex-col items-center justify-between gap-px w-full py-1" ]
-            [ div [ class "flex flex-col items-center gap-px w-full" ] (viewStack noMarks theirTokens)
+            [ div [ class "flex flex-col items-center gap-px w-full" ] (viewStack theirTokens)
             , viewCube board Theirs
             ]
         , div [ class "bg-bar-row centre flex items-center justify-center w-full" ]
             [ viewCube board Centred ]
         , div [ class "bg-bar-row mine flex flex-col-reverse items-center justify-between gap-px w-full py-1" ]
             [ div [ class "flex flex-col-reverse items-center gap-px w-full" ]
-                (viewStack { lifted = mine && liftedAt board "bar" } myTokens)
+                (viewStack myTokens)
             , viewCube board Mine
             ]
         ]
@@ -1848,8 +1512,7 @@ viewBarColumn board themId =
 {-| A bear-off tray: three holders of five, the way a real board keeps
 them, laid along the player's identity bar. Borne-off checkers stack
 edge-on, filling the holders from the left, with the count after them.
-The viewer's tray is also where a bearing-off checker is dropped or
-tapped to.
+The viewer's tray is also where a bearing-off checker is tapped to.
 -}
 viewTray : Board -> String -> Bool -> Html Msg
 viewTray board ownerId isMine =
@@ -1862,9 +1525,6 @@ viewTray board ownerId isMine =
 
         color =
             colorOf (Protocol.findPlayer ownerId board.ctx.scene)
-
-        isTarget =
-            mine && List.member "off" board.targets
 
         click =
             if mine then
@@ -1893,12 +1553,6 @@ viewTray board ownerId isMine =
         ([ class ("bg-tray relative flex flex-row items-center shrink-0 " ++ side)
          , title "Borne off"
          ]
-            ++ (if mine then
-                    [ Html.Attributes.id (dropZoneId "off") ]
-
-                else
-                    []
-               )
             ++ click
         )
         (List.map holder [ 0, 1, 2 ]
@@ -1906,12 +1560,6 @@ viewTray board ownerId isMine =
             -- appears once there is one, and the bar has no room to spare
             ++ (if count > 0 then
                     [ span [ class "off-count pixel text-[8px]" ] [ text (String.fromInt count) ] ]
-
-                else
-                    []
-               )
-            ++ (if isTarget then
-                    [ dropGhost board (board.drag /= Nothing && board.hovered == Just "off") ]
 
                 else
                     []
@@ -1936,19 +1584,18 @@ viewTray board ownerId isMine =
 
 viewLeftBand : Board -> List (Html Msg)
 viewLeftBand board =
-    (case betweenGames board.ctx of
-                Just between ->
-                    [ viewGameResult board.ctx between ]
+    case betweenGames board.ctx of
+        Just between ->
+            [ viewGameResult board.ctx between ]
 
-                Nothing ->
-                    leftButtons board.ctx
-                        ++ (if moverIsMe board.ctx then
-                                []
+        Nothing ->
+            leftButtons board.ctx
+                ++ (if moverIsMe board.ctx then
+                        []
 
-                            else
-                                viewRoll board
-                           )
-           )
+                    else
+                        viewRoll board
+                   )
 
 
 leftButtons : Ctx -> List (Html Msg)
@@ -2237,6 +1884,7 @@ viewRoll board =
 
             else
                 []
+
         -- The mover's dice are a control: the next die (the one a tap on
         -- a checker plays) is the left one, and a tap on the dice swaps
         -- them. Only when there is a choice: a double is one value, and
@@ -2249,7 +1897,8 @@ viewRoll board =
 
         hasChoice =
             myMove
-                && (unused |> List.filterMap (Protocol.tokenProp D.int "value") |> unique |> List.length) >= 2
+                && (unused |> List.filterMap (Protocol.tokenProp D.int "value") |> unique |> List.length)
+                >= 2
 
         next =
             if hasChoice then
@@ -2710,8 +2359,6 @@ actionButton ctx name variant =
 
 
 -- GAME OVER
-
-
 -- THE RECORD
 --
 -- What has been played. The engine writes it -- every committed turn in the
@@ -2947,16 +2594,14 @@ lastTurnIn entries =
         |> Maybe.map Tuple.first
 
 
-{-| The model the board is drawn with while a past turn is up: no drag,
-no selection, and dice keyed to the turn (a negative sequence no live
+{-| The model the board is drawn with while a past turn is up: no live
+interaction, and dice keyed to the turn (a negative sequence no live
 roll can have) that never tumble.
 -}
 viewingModel : Int -> Model -> Model
 viewingModel index model =
     { model
-        | drag = Drag.idle
-        , plans = []
-        , swaps = 0
+        | swaps = 0
         , roll = { seq = -1 - index, watched = False }
     }
 
@@ -3099,8 +2744,18 @@ stillScene scene turn =
                                     |> Dict.insert "bar" side.bar
                             , flags =
                                 (p.flags |> List.filter (\f -> f /= "to_move" && f /= "owns_cube"))
-                                    ++ (if p.id == turn.player then [ "to_move" ] else [])
-                                    ++ (if turn.position.cube.owner == Just p.id then [ "owns_cube" ] else [])
+                                    ++ (if p.id == turn.player then
+                                            [ "to_move" ]
+
+                                        else
+                                            []
+                                       )
+                                    ++ (if turn.position.cube.owner == Just p.id then
+                                            [ "owns_cube" ]
+
+                                        else
+                                            []
+                                       )
                         }
                     )
 
@@ -3254,9 +2909,6 @@ viewStill noop s =
             { ctx = ctx
             , myColor = colorOf me
             , sources = []
-            , targets = []
-            , drag = Nothing
-            , hovered = Nothing
             , tap = tapContext ctx [] []
             , landed =
                 { color = moverColour
@@ -3530,7 +3182,18 @@ viewScrub ctx middle =
 
     else
         Ui.Scrub.row { id = "bg-scrub", stale = ctx.model.stale }
-            { first = ( "bg-scrub-first", List.head turns |> Maybe.andThen (\i -> if Just i == current then Nothing else Just (ViewTurn i)) )
+            { first =
+                ( "bg-scrub-first"
+                , List.head turns
+                    |> Maybe.andThen
+                        (\i ->
+                            if Just i == current then
+                                Nothing
+
+                            else
+                                Just (ViewTurn i)
+                        )
+                )
             , back = ( "bg-scrub-back", List.reverse before |> List.head |> Maybe.map ViewTurn )
             , forward =
                 ( "bg-scrub-forward"
@@ -3565,7 +3228,6 @@ scoreText ctx scores =
         |> String.join "–"
 
 
-
 playerColor : Ctx -> String -> String
 playerColor ctx id =
     colorOf (Protocol.findPlayer id ctx.scene)
@@ -3598,81 +3260,81 @@ viewGameOver ctx winners =
     -- The layer scrolls when the card is taller than the screen (a phone on
     -- its side, the sign-in open in it); short cards stay centred.
     div [ class "fixed inset-0 z-50 overflow-y-auto", style "background" "rgba(35, 36, 58, 0.55)" ]
-      [ div [ class "min-h-full flex items-center justify-center p-4" ]
-        [ div [ class "bg-card bg-white p-6 sm:p-8 max-w-md w-full text-center flex flex-col gap-4" ]
-            [ span [ class "pixel text-[10px]", style "color" "var(--bg-accent)" ] [ text "GAME OVER" ]
-            , span [ class "pixel text-base sm:text-lg leading-relaxed" ]
-                [ text
-                    (if iWon then
-                        "YOU WIN!"
+        [ div [ class "min-h-full flex items-center justify-center p-4" ]
+            [ div [ class "bg-card bg-white p-6 sm:p-8 max-w-md w-full text-center flex flex-col gap-4" ]
+                [ span [ class "pixel text-[10px]", style "color" "var(--bg-accent)" ] [ text "GAME OVER" ]
+                , span [ class "pixel text-base sm:text-lg leading-relaxed" ]
+                    [ text
+                        (if iWon then
+                            "YOU WIN!"
 
-                     else
-                        String.toUpper winnerName ++ " WINS"
-                    )
-                ]
-            , span [ class "pixel text-[9px]", style "color" "var(--pencil)" ] [ text scoreline ]
-            , case ctx.save of
-                NoSave ->
-                    text ""
-
-                -- What the player already has, named: this game, and the
-                -- PR the engine is about to give them for it.
-                SaveOffered ->
-                    button
-                        [ Html.Attributes.type_ "button"
-                        , Html.Attributes.id "save-offer"
-                        , class "signin-offer text-[15px] self-center"
-                        , onClick OpenedSave
-                        ]
-                        [ text "Save this game and your PR" ]
-
-                Saving signIn ->
-                    div [ class "text-left border-t pt-4", style "border-color" "rgba(35, 36, 58, 0.12)" ]
-                        [ Html.map SaveMsg (Ui.SignIn.view signIn) ]
-            , span [ class "text-sm", style "color" "var(--pencil)" ]
-                [ text
-                    (case ( meReady, theyReady ) of
-                        ( True, True ) ->
-                            "Starting the rematch…"
-
-                        ( True, False ) ->
-                            "Waiting for your opponent to accept…"
-
-                        ( False, True ) ->
-                            "Your opponent wants a rematch!"
-
-                        _ ->
-                            "Play again?"
-                    )
-                ]
-            , button
-                [ class "btn-arcade pixel text-[10px] px-6 py-4 sky"
-                , disabled meReady
-                , onClick Rematch
-                ]
-                [ text
-                    (if meReady then
-                        "READY"
-
-                     else
-                        "REMATCH"
-                    )
-                ]
-            , div [ class "flex items-center justify-center gap-4" ]
-                [ case lastTurnIndex ctx of
-                    Just index ->
-                        button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-review-moves", onClick (ViewTurn index) ] [ text "REVIEW MOVES" ]
-
-                    Nothing ->
+                         else
+                            String.toUpper winnerName ++ " WINS"
+                        )
+                    ]
+                , span [ class "pixel text-[9px]", style "color" "var(--pencil)" ] [ text scoreline ]
+                , case ctx.save of
+                    NoSave ->
                         text ""
-                , case ctx.replayHref (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) of
-                    Just href ->
-                        Html.a [ Html.Attributes.href href, class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-replay" ] [ text "REPLAY" ]
 
-                    Nothing ->
-                        text ""
-                , Html.a [ Html.Attributes.href "/", class "pixel text-[8px] underline", style "color" "var(--pencil)" ] [ text "ALL GAMES" ]
+                    -- What the player already has, named: this game, and the
+                    -- PR the engine is about to give them for it.
+                    SaveOffered ->
+                        button
+                            [ Html.Attributes.type_ "button"
+                            , Html.Attributes.id "save-offer"
+                            , class "signin-offer text-[15px] self-center"
+                            , onClick OpenedSave
+                            ]
+                            [ text "Save this game and your PR" ]
+
+                    Saving signIn ->
+                        div [ class "text-left border-t pt-4", style "border-color" "rgba(35, 36, 58, 0.12)" ]
+                            [ Html.map SaveMsg (Ui.SignIn.view signIn) ]
+                , span [ class "text-sm", style "color" "var(--pencil)" ]
+                    [ text
+                        (case ( meReady, theyReady ) of
+                            ( True, True ) ->
+                                "Starting the rematch…"
+
+                            ( True, False ) ->
+                                "Waiting for your opponent to accept…"
+
+                            ( False, True ) ->
+                                "Your opponent wants a rematch!"
+
+                            _ ->
+                                "Play again?"
+                        )
+                    ]
+                , button
+                    [ class "btn-arcade pixel text-[10px] px-6 py-4 sky"
+                    , disabled meReady
+                    , onClick Rematch
+                    ]
+                    [ text
+                        (if meReady then
+                            "READY"
+
+                         else
+                            "REMATCH"
+                        )
+                    ]
+                , div [ class "flex items-center justify-center gap-4" ]
+                    [ case lastTurnIndex ctx of
+                        Just index ->
+                            button [ class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-review-moves", onClick (ViewTurn index) ] [ text "REVIEW MOVES" ]
+
+                        Nothing ->
+                            text ""
+                    , case ctx.replayHref (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) of
+                        Just href ->
+                            Html.a [ Html.Attributes.href href, class "pixel text-[8px] underline", style "color" "var(--pencil)", Html.Attributes.id "bg-replay" ] [ text "REPLAY" ]
+
+                        Nothing ->
+                            text ""
+                    , Html.a [ Html.Attributes.href "/", class "pixel text-[8px] underline", style "color" "var(--pencil)" ] [ text "ALL GAMES" ]
+                    ]
                 ]
             ]
         ]
-      ]

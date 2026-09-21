@@ -5,6 +5,7 @@ import backgammon/board.{Bar, Black, Off, Point, White}
 import backgammon/engine
 import backgammon/game as backgammon
 import backgammon/state
+import gamekit/conformance
 import gamekit/event
 import gamekit/game.{Seat}
 import gamekit/rng
@@ -114,6 +115,169 @@ pub fn staged_moves_are_private_until_played_test() {
   let assert [me_mine, _] = mine.players
   assert dict.get(me_theirs.counters, "pips")
     != dict.get(me_mine.counters, "pips")
+}
+
+pub fn selected_moves_use_the_visible_die_while_legacy_moves_keep_their_tie_break_test() {
+  let b =
+    setup([
+      #(White, Point(2), 2),
+      #(White, Off, 13),
+      #(Black, Point(24), 15),
+    ])
+  let s = position(1, b, [6, 2])
+
+  // Both dice can bear off the same checker. Old persisted actions did not
+  // carry a die and historically consumed the lower one.
+  let assert Ok(#(legacy, staged)) = state.stage(s, "p1", Point(2), Off)
+  assert staged.move.die == 2
+  assert state.dice_left(legacy) == [6]
+
+  // New taps name the visible left die explicitly.
+  let assert Ok(#(left_first, staged)) =
+    state.stage_with_die(s, "p1", Point(2), Off, Some(6))
+  assert staged.move.die == 6
+  assert state.dice_left(left_first) == [2]
+
+  // A dice swap names the other die instead.
+  let assert Ok(#(right_first, staged)) =
+    state.stage_with_die(s, "p1", Point(2), Off, Some(2))
+  assert staged.move.die == 2
+  assert state.dice_left(right_first) == [6]
+}
+
+pub fn quick_bear_off_finds_a_second_move_unlocked_by_the_first_test() {
+  let b =
+    setup([
+      #(White, Point(6), 1),
+      #(White, Point(4), 1),
+      #(White, Off, 13),
+      #(Black, Point(24), 15),
+    ])
+  let s = position(2, b, [6, 5])
+  let assert Ok(#(next, staged)) = state.stage_bear_off(s, "p1", 6)
+  let assert [first, second] = staged
+  assert first.move.from == Point(6) && first.move.die == 6
+  assert second.move.from == Point(4) && second.move.die == 5
+  assert state.dice_left(next) == []
+}
+
+pub fn quick_bear_off_honours_swapped_order_and_falls_back_test() {
+  let pair_board =
+    setup([
+      #(White, Point(6), 1),
+      #(White, Point(2), 1),
+      #(White, Off, 13),
+      #(Black, Point(24), 15),
+    ])
+  let pair = position(3, pair_board, [6, 2])
+  let assert Ok(#(_, staged)) = state.stage_bear_off(pair, "p1", 2)
+  let assert [first, second] = staged
+  assert first.move.from == Point(2) && first.move.die == 2
+  assert second.move.from == Point(6) && second.move.die == 6
+
+  let fallback_board =
+    setup([
+      #(White, Point(6), 1),
+      #(White, Off, 14),
+      #(Black, Point(4), 2),
+      #(Black, Point(24), 13),
+    ])
+  let fallback = position(4, fallback_board, [6, 2])
+  let assert Ok(#(_, staged)) = state.stage_bear_off(fallback, "p1", 2)
+  let assert [only] = staged
+  assert only.move.from == Point(6) && only.move.die == 6
+}
+
+pub fn quick_bear_off_uses_two_doubles_and_undo_unwinds_each_test() {
+  let b =
+    setup([
+      #(White, Point(6), 1),
+      #(White, Point(5), 3),
+      #(White, Off, 11),
+      #(Black, Point(24), 15),
+    ])
+  let s = position(5, b, [6, 6, 6, 6])
+  let assert Ok(#(staged, moves)) = state.stage_bear_off(s, "p1", 6)
+  assert list.length(moves) == 2
+  assert state.dice_left(staged) == [6, 6]
+  let assert Ok(#(once, _)) = state.undo(staged, "p1")
+  assert list.length(once.staged) == 1
+  assert state.dice_left(once) == [6, 6, 6]
+  let assert Ok(#(twice, _)) = state.undo(once, "p1")
+  assert twice.staged == []
+  assert state.dice_left(twice) == [6, 6, 6, 6]
+  assert twice.board == s.board
+}
+
+pub fn move_and_bear_off_schemas_generate_actions_the_engine_accepts_test() {
+  let b =
+    setup([
+      #(White, Point(6), 1),
+      #(White, Point(2), 1),
+      #(White, Off, 13),
+      #(Black, Point(24), 15),
+    ])
+  let s = position(6, b, [6, 2])
+  engine.legal(s, "p1")
+  |> list.filter(fn(schema) {
+    schema.name == "move" || schema.name == "bear_off"
+  })
+  |> list.each(fn(schema) {
+    let #(text, _) = conformance.build_action(schema, rng.seed(91))
+    let assert Ok(_) = conformance.apply_json(backgammon.game(), s, "p1", text)
+  })
+}
+
+pub fn raw_quick_bear_off_is_deterministic_and_legacy_action_sequences_apply_safely_test() {
+  let b =
+    setup([
+      #(White, Point(2), 2),
+      #(White, Off, 13),
+      #(Black, Point(24), 15),
+    ])
+  let s = position(7, b, [6, 2])
+  let quick = "{\"name\":\"bear_off\",\"params\":{\"first_die\":\"6\"}}"
+  let assert Ok(a) = conformance.apply_json(backgammon.game(), s, "p1", quick)
+  let assert Ok(b) = conformance.apply_json(backgammon.game(), s, "p1", quick)
+  assert a == b
+
+  let legacy = "{\"name\":\"move\",\"params\":{\"from\":\"2\",\"to\":\"off\"}}"
+  let old_metadata =
+    "{\"name\":\"move\",\"params\":{\"from\":\"2\",\"to\":\"off\",\"die\":\"6\"}}"
+  let selected =
+    "{\"name\":\"move\",\"params\":{\"from\":\"2\",\"to\":\"off\",\"selected_die\":\"6\"}}"
+  let assert Ok(after_legacy) =
+    conformance.apply_json(backgammon.game(), s, "p1", legacy)
+  assert state.dice_left(after_legacy) == [6]
+  let assert Ok(after_old_metadata) =
+    conformance.apply_json(backgammon.game(), s, "p1", old_metadata)
+  assert state.dice_left(after_old_metadata) == [6]
+  let assert Ok(after_second) =
+    conformance.apply_json(backgammon.game(), after_legacy, "p1", selected)
+  assert state.dice_left(after_second) == []
+  let assert Ok(after_metadata_second) =
+    conformance.apply_json(
+      backgammon.game(),
+      after_old_metadata,
+      "p1",
+      selected,
+    )
+  assert state.dice_left(after_metadata_second) == []
+}
+
+pub fn quick_bear_off_is_rejected_while_a_resignation_is_pending_test() {
+  let b =
+    setup([
+      #(White, Point(2), 1),
+      #(White, Off, 14),
+      #(Black, Point(24), 15),
+    ])
+  let s = position(8, b, [6, 2])
+  let assert Ok(offered) = state.resign(s, "p1", board.Single)
+  let assert Error("A resignation is pending") =
+    engine.apply(offered, "p1", engine.BearOff(6))
+  assert offered.board == s.board
+  assert state.dice_left(offered) == [6, 2]
 }
 
 pub fn undo_restores_the_board_and_the_die_test() {
