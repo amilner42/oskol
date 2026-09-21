@@ -142,6 +142,18 @@ defmodule Oskol.Game.GameServer do
   end
 
   @doc """
+  End this room for both players. The persisted-seat authorization and status
+  transition run from this room process after Persister has drained every
+  write it already queued; on success the room stops before it can accept
+  another move. The transaction blocks this room, never the global writer.
+  """
+  def abandon(game_id, guest_id, user_id) do
+    GenServer.call(via_tuple(game_id), {:abandon, guest_id, user_id}, :infinity)
+  catch
+    :exit, _ -> :error
+  end
+
+  @doc """
   A browser signed in: every seat here it held as a guest, and that no
   account owns yet, is that account's now and moves to the browser's fresh
   guest id with it.
@@ -416,6 +428,29 @@ defmodule Oskol.Game.GameServer do
     end
   end
 
+  def handle_call({:abandon, guest_id, user_id}, _from, %GameServerState{} = state) do
+    case persist_abandonment(state.game_id, guest_id, user_id) do
+      result when result in [:ok, :already_abandoned] ->
+        # Tell every joined table why its socket is closing. The row is
+        # already durable, and stopping this server prevents later moves or
+        # write-behind casts from reviving it.
+        Phoenix.PubSub.broadcast(Oskol.PubSub, "game:#{state.game_id}", :game_abandoned)
+        {:stop, :normal, :ok, state}
+
+      # The persister could have committed just before a connection failure.
+      # It is unsafe to keep a room accepting moves without knowing which
+      # answer won; stop it and let a later lookup read the durable row.
+      :error ->
+        Phoenix.PubSub.broadcast(Oskol.PubSub, "game:#{state.game_id}", :game_unavailable)
+        {:stop, :normal, :error, state}
+
+      # A real holder check failed, so this is merely an unauthorized caller,
+      # not an ambiguous write. Keep the real room playing.
+      :refused ->
+        {:reply, :error, state, @timeout}
+    end
+  end
+
   def handle_call({:request_rematch, player_id}, _from, %GameServerState{} = state) do
     cond do
       not GameServerState.started?(state) or not GameKit.finished?(state.instance) ->
@@ -555,6 +590,25 @@ defmodule Oskol.Game.GameServer do
   end
 
   # ---------- Private ----------
+
+  # This call originates in the room, after all of that room's earlier casts
+  # to Persister. Erlang preserves their order, so flush makes the row current
+  # before this transaction begins. Running the transaction here confines a
+  # slow row lock or database wait to the room being ended; Persister remains
+  # free to write every other room.
+  defp persist_abandonment(game_id, guest_id, user_id) do
+    with :ok <- Persister.flush() do
+      Oskol.Persistence.abandon_game(game_id, guest_id, user_id)
+    end
+  rescue
+    e ->
+      Logger.error("GAME ABANDON FAILED #{game_id}: #{Exception.message(e)}")
+      :error
+  catch
+    kind, reason ->
+      Logger.error("GAME ABANDON FAILED #{game_id}: #{inspect({kind, reason})}")
+      :error
+  end
 
   defp do_start(%GameServerState{} = state, seed, control) do
     setup = state.setup

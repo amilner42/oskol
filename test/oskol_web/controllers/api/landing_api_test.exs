@@ -561,6 +561,122 @@ defmodule OskolWeb.Api.LandingApiTest do
     end
   end
 
+  describe "POST /papi/me/games/:id/abandon" do
+    test "ends a live game for both seats and its room cannot resume", %{conn: conn} do
+      %{game_id: game_id, g1: alice, g2: bob} = GameFixtures.started(42)
+      Persister.flush()
+
+      assert %{"ok" => true} =
+               conn
+               |> as_guest(alice)
+               |> with_csrf()
+               |> post(~p"/papi/me/games/#{game_id}/abandon", %{})
+               |> json_response(200)
+
+      assert game_row(game_id).status == "abandoned"
+      assert Persistence.seated_rooms(alice) == []
+      assert Persistence.seated_rooms(bob) == []
+      assert :error = GameSupervisor.find_game(game_id)
+      assert :not_found = Game.lookup_game(game_id)
+    end
+
+    test "rehydrates a cold game to end it, then refuses to resume it", %{conn: conn} do
+      %{game_id: game_id, g1: alice} = GameFixtures.started(42)
+      Persister.flush()
+      {:ok, pid} = GameSupervisor.find_game(game_id)
+      :ok = DynamicSupervisor.terminate_child(GameSupervisor, pid)
+      assert_eventually(fn -> GameSupervisor.find_game(game_id) == :error end)
+
+      assert %{"ok" => true} =
+               conn
+               |> as_guest(alice)
+               |> with_csrf()
+               |> post(~p"/papi/me/games/#{game_id}/abandon", %{})
+               |> json_response(200)
+
+      assert game_row(game_id).status == "abandoned"
+      assert :error = GameSupervisor.find_game(game_id)
+      assert :not_found = Game.lookup_game(game_id)
+    end
+
+    test "retries an already-committed abandon to stop a room that is still live", %{conn: conn} do
+      %{game_id: game_id, g1: alice} = GameFixtures.started(42)
+      Persister.flush()
+      {:ok, pid} = GameSupervisor.find_game(game_id)
+
+      # Model the ambiguous boundary: the guarded write committed, but the
+      # live room has not yet seen the answer and stopped itself.
+      assert :ok = Persistence.abandon_game(game_id, alice, nil)
+      assert Process.alive?(pid)
+
+      assert %{"ok" => true} =
+               conn
+               |> as_guest(alice)
+               |> with_csrf()
+               |> post(~p"/papi/me/games/#{game_id}/abandon", %{})
+               |> json_response(200)
+
+      assert game_row(game_id).status == "abandoned"
+      assert_eventually(fn -> GameSupervisor.find_game(game_id) == :error end)
+    end
+
+    test "refuses a non-holder and a stale guest of an account-owned seat", %{conn: conn} do
+      %{game_id: game_id, g1: alice} = GameFixtures.lobby("single")
+      Persister.flush()
+      {:ok, pid} = GameSupervisor.find_game(game_id)
+      [seat] = Persistence.players(game_id)
+      Persistence.update_players(game_id, [Map.put(seat, "user_id", Ecto.UUID.generate())])
+
+      for guest <- ["not-at-this-table", alice] do
+        assert %{"error" => %{"code" => "not_found"}} =
+                 conn
+                 |> recycle()
+                 |> as_guest(guest)
+                 |> with_csrf()
+                 |> post(~p"/papi/me/games/#{game_id}/abandon", %{})
+                 |> json_response(404)
+      end
+
+      assert game_row(game_id).status == "waiting"
+      # Authorization failure leaves the real table alone; it is not the
+      # ambiguous persistence-failure path that stops a room defensively.
+      assert {:ok, ^pid} = GameSupervisor.find_game(game_id)
+    end
+
+    test "refuses a non-holder before looking up or rehydrating a cold room", %{conn: conn} do
+      %{game_id: game_id} = GameFixtures.started(42)
+      Persister.flush()
+      {:ok, pid} = GameSupervisor.find_game(game_id)
+      :ok = DynamicSupervisor.terminate_child(GameSupervisor, pid)
+      assert_eventually(fn -> GameSupervisor.find_game(game_id) == :error end)
+
+      assert %{"error" => %{"code" => "not_found"}} =
+               conn
+               |> as_guest(GameFixtures.unique_guest_id())
+               |> with_csrf()
+               |> post(~p"/papi/me/games/#{game_id}/abandon", %{})
+               |> json_response(404)
+
+      # The persisted-seat precheck refused the request. Replaying the room's
+      # log would register a process here even though the answer was a 404.
+      assert :error = GameSupervisor.find_game(game_id)
+      assert game_row(game_id).status == "playing"
+    end
+  end
+
+  defp assert_eventually(fun, attempts \\ 20) do
+    if fun.() do
+      :ok
+    else
+      if attempts == 0 do
+        flunk("condition did not become true")
+      else
+        Process.sleep(10)
+        assert_eventually(fun, attempts - 1)
+      end
+    end
+  end
+
   # ---------- /papi/me/prefs ----------
 
   describe "GET and POST /papi/me/prefs" do

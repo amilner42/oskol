@@ -5,9 +5,11 @@ defmodule Oskol.Persistence do
   its seed plus its action log, so these two tables are enough to rebuild a
   live room after a deploy or a machine sleep — see `Oskol.Game.Rehydrator`.
 
-  Everything here is plain synchronous Repo work; the room never calls it
-  directly. Writes go through `Oskol.Game.Persister` (async, ordered), reads
-  through the rehydrator.
+  Everything here is plain synchronous Repo work. Ordinary room writes go
+  through `Oskol.Game.Persister` (async, ordered), and reads go through the
+  rehydrator. Explicit abandonment is the exception: after draining its
+  earlier writes through Persister, that room runs the guarded transaction
+  itself so one room's database wait cannot stop every room's write-behind.
   """
 
   import Ecto.Query
@@ -124,6 +126,84 @@ defmodule Oskol.Persistence do
 
   def mark_finished(game_id, winners) do
     update_game(game_id, status: "finished", winners: winners)
+  end
+
+  @doc """
+  Mark an active game abandoned without removing its row or action history.
+
+  The row is locked while the persisted seat list is checked by the same
+  Gleam holder rule a live room uses. This makes an account-owned seat answer
+  only to that account, even if its old guest id is still in the row.
+  """
+  def abandon_game(game_id, guest_id, user_id) when is_binary(game_id) do
+    Repo.transaction(fn ->
+      game =
+        from(g in Game, where: g.id == ^game_id, lock: "FOR UPDATE")
+        |> Repo.one()
+
+      case abandonable?(game, guest_id, user_id) do
+        :abandon ->
+          from(g in Game, where: g.id == ^game_id)
+          |> Repo.update_all(set: [status: "abandoned", updated_at: DateTime.utc_now()])
+
+          :ok
+
+        :already_abandoned ->
+          # A request may have timed out after this write landed. It is safe
+          # for the same current holder to retry, and lets a live room that
+          # has not stopped yet be shut down on that retry.
+          :already_abandoned
+
+        :error ->
+          :refused
+      end
+    end)
+    |> case do
+      {:ok, result} -> result
+      {:error, _} -> :error
+    end
+  end
+
+  def abandon_game(_, _, _), do: :error
+
+  @doc "Whether this session may attempt to abandon the persisted room, without waking it."
+  def may_abandon_game?(game_id, guest_id, user_id) when is_binary(game_id) do
+    players =
+      from(g in Game,
+        where: g.id == ^game_id and g.status in ["waiting", "playing", "abandoned"],
+        select: g.players
+      )
+      |> Repo.one()
+
+    is_list(players) and held_by?(players, guest_id, user_id)
+  end
+
+  def may_abandon_game?(_, _, _), do: false
+
+  # A waiting room can only be cancelled by its sole, creating player. A
+  # started room may be ended by either current holder; both are kept as an
+  # abandoned row, never deleted.
+  defp abandonable?(%Game{status: "waiting", players: [seat]}, guest_id, user_id) do
+    if held_by?([seat], guest_id, user_id), do: :abandon, else: :error
+  end
+
+  defp abandonable?(%Game{status: "playing", players: players}, guest_id, user_id) do
+    if held_by?(players, guest_id, user_id), do: :abandon, else: :error
+  end
+
+  defp abandonable?(%Game{status: "abandoned", players: players}, guest_id, user_id) do
+    if held_by?(players, guest_id, user_id), do: :already_abandoned, else: :error
+  end
+
+  defp abandonable?(_, _, _), do: :error
+
+  defp held_by?(players, guest_id, user_id) do
+    session = {:session, Interop.opt(blank_to_nil(guest_id)), Interop.opt(blank_to_nil(user_id))}
+
+    case :oskol@rooms@seat.held_by(to_seats(players), session) do
+      {:some, _player_id} -> true
+      :none -> false
+    end
   end
 
   def append_action(game_id, index, kind, player_id, payload, at_ms, state) do

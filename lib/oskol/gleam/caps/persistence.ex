@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Persistence do
   import Oskol.Gleam.Interop
 
   def build do
-    {:persistence_caps, &game_exists?/1, &seated_rooms/2}
+    {:persistence_caps, &game_exists?/1, &seated_rooms/2, &abandon/3}
   end
 
   # A database hiccup must not block creating games: the id space plus the
@@ -39,6 +39,28 @@ defmodule Oskol.Gleam.Caps.Persistence do
     end)
   rescue
     _ -> []
+  end
+
+  # Refuse from the persisted seats before any lookup can replay a cold room.
+  # This is only a cost guard: the row-locking transaction asks the same
+  # holder rule again and remains authoritative if ownership changes between
+  # this read and the write. An authorized request still wakes a cold room so
+  # no concurrent rehydration can install stale active memory after the row
+  # changes.
+  defp abandon(game_id, guest_id, user_id) do
+    guest_id = unopt(guest_id)
+    user_id = unopt(user_id)
+
+    if Oskol.Persistence.may_abandon_game?(game_id, guest_id, user_id) do
+      case Oskol.Game.lookup_game(game_id) do
+        {:ok, _pid} -> Oskol.Game.GameServer.abandon(game_id, guest_id, user_id) == :ok
+        :not_found -> false
+      end
+    else
+      false
+    end
+  rescue
+    _ -> false
   end
 
   # How long ago the snapshot read its clocks: its own stamp, or, for a row

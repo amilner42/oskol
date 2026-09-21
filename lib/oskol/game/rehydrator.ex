@@ -26,6 +26,11 @@ defmodule Oskol.Game.Rehydrator do
       :not_found ->
         :not_found
 
+      {:ok, %{status: "abandoned"}, _actions} ->
+        # An explicit player action ends the room for both sides. Its row and
+        # log remain for history, but no process may be brought back from it.
+        :not_found
+
       {:ok, game, actions} ->
         # The account behind an owned seat is looked up here, not in the
         # room: a room does no IO of its own. It is what the seat plays

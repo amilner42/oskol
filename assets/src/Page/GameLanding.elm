@@ -84,6 +84,9 @@ type alias Model =
     , themesOpen : Bool -- the home board's colour list is showing
     , myGames : List MyGame -- the unfinished games this browser holds a seat in
     , resumeOpen : Bool -- the list of them is showing over the board
+    , abandoning : Maybe MyGame -- the room the player is explicitly ending
+    , abandonBusy : Bool
+    , abandonError : Maybe String
     , signInOpen : Bool -- the sign-in the guest's bar menu opens, in a dialog of its own
     , fetchedAt : Int -- when the list came, ms since the epoch: the clocks count from here
     , now : Int -- the clock the list's running times are read against
@@ -110,6 +113,10 @@ type Msg
     | Tick Time.Posix
     | OpenedResume
     | ClosedResume
+    | RequestedAbandon MyGame
+    | ClosedAbandon
+    | ConfirmedAbandon String
+    | Abandoned String (Result Api.Error ())
     | PressedSignInMenu
     | ClosedSignIn
     | PrefSaved (Result Api.Error (Dict.Dict String String))
@@ -169,6 +176,9 @@ init session slug gameId =
             , themesOpen = False
             , myGames = []
             , resumeOpen = False
+            , abandoning = Nothing
+            , abandonBusy = False
+            , abandonError = Nothing
             , signInOpen = False
             , fetchedAt = 0
             , now = 0
@@ -342,6 +352,38 @@ update msg model =
         ClosedResume ->
             ( { model | resumeOpen = False }, Cmd.none, NoOut )
 
+        RequestedAbandon game ->
+            ( { model | abandoning = Just game, abandonBusy = False, abandonError = Nothing }, Cmd.none, NoOut )
+
+        ClosedAbandon ->
+            if model.abandonBusy then
+                -- Keep the consequence on screen while its one explicit
+                -- write is in flight; a backdrop tap must not make it look
+                -- as though the game was merely dismissed locally.
+                ( model, Cmd.none, NoOut )
+
+            else
+                ( { model | abandoning = Nothing, abandonBusy = False, abandonError = Nothing }, Cmd.none, NoOut )
+
+        ConfirmedAbandon gameId ->
+            ( { model | abandonBusy = True, abandonError = Nothing }
+            , Catalog.abandonGame model.session gameId (Abandoned gameId)
+            , NoOut
+            )
+
+        Abandoned gameId (Ok ()) ->
+            ( removeAbandoned gameId model, Cmd.none, NoOut )
+
+        Abandoned gameId (Err err) ->
+            if Api.errorCode err == "not_found" then
+                -- The other player (or an earlier response we lost) already
+                -- ended it. The server has removed it from future lists, so
+                -- clear this stale local row too.
+                ( removeAbandoned gameId model, Cmd.none, NoOut )
+
+            else
+                ( { model | abandonBusy = False, abandonError = Just (Api.errorMessage err) }, Cmd.none, NoOut )
+
         PickedTheme name ->
             -- The board changes at once; the shell keeps it in this browser
             -- and the session, and the guest's row keeps it for later.
@@ -424,6 +466,21 @@ update msg model =
 
         NoOp ->
             ( model, Cmd.none, NoOut )
+
+
+removeAbandoned : String -> Model -> Model
+removeAbandoned gameId model =
+    let
+        games =
+            List.filter (\game -> game.id /= gameId) model.myGames
+    in
+    { model
+        | myGames = games
+        , resumeOpen = not (List.isEmpty games)
+        , abandoning = Nothing
+        , abandonBusy = False
+        , abandonError = Nothing
+    }
 
 
 {-| The account's username, when this browser is signed in: it plays under
@@ -615,6 +672,7 @@ home { join, toMsg } model =
         }
     , Html.map toMsg (createModal model)
     , Html.map toMsg (resumeModal model)
+    , Html.map toMsg (abandonModal model)
     , Html.map toMsg (signInModal model)
     ]
 
@@ -624,20 +682,26 @@ it is open with a clock running in it, the seconds tick.
 -}
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    if model.resumeOpen then
+    if model.resumeOpen || model.abandoning /= Nothing then
         Sub.batch
             [ Browser.Events.onKeyDown
                 (D.field "key" D.string
                     |> D.andThen
                         (\key ->
                             if key == "Escape" then
-                                D.succeed ClosedResume
+                                D.succeed
+                                    (if model.abandoning /= Nothing then
+                                        ClosedAbandon
+
+                                     else
+                                        ClosedResume
+                                    )
 
                             else
                                 D.fail "ignored key"
                         )
                 )
-            , if List.any clockRunning model.myGames then
+            , if model.resumeOpen && List.any clockRunning model.myGames then
                 Time.every 1000 Tick
 
               else
@@ -1029,7 +1093,7 @@ brings it back.
 -}
 resumeModal : Model -> Html Msg
 resumeModal model =
-    if model.resumeOpen && not (List.isEmpty model.myGames) then
+    if model.resumeOpen && model.abandoning == Nothing && not (List.isEmpty model.myGames) then
         dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
             [ Html.ul [ id "resume-list", class "space-y-2" ] (List.map (resumeRow model) model.myGames)
             , guestNote model
@@ -1037,6 +1101,66 @@ resumeModal model =
 
     else
         Html.text ""
+
+
+{-| The last deliberate step before a room leaves the rejoin list. A started
+game is never presented as a private dismissal: it ends for both players.
+-}
+abandonModal : Model -> Html Msg
+abandonModal model =
+    case model.abandoning of
+        Just game ->
+            let
+                ( heading, copy, action ) =
+                    if game.status == "waiting" then
+                        ( "CANCEL LOBBY"
+                        , "This lobby has no second player. Cancelling ends it and removes it from LIVE GAMES."
+                        , "CANCEL LOBBY"
+                        )
+
+                    else
+                        ( "ABANDON GAME"
+                        , "This ends this game for both players. Neither player will be able to resume it."
+                        , "ABANDON GAME"
+                        )
+            in
+            dialog { id = "abandon-modal", closeId = "close-abandon", label = heading, heading = heading, onClose = ClosedAbandon }
+                [ Html.p [ id "abandon-copy", class "text-[15px] leading-relaxed", style "color: var(--ink)" ] [ Html.text copy ]
+                , case model.abandonError of
+                    Just message ->
+                        Html.p [ id "abandon-error", class "text-sm font-semibold mt-3", style "color: var(--red)" ] [ Html.text message ]
+
+                    Nothing ->
+                        Html.text ""
+                , Html.div [ class "flex gap-3 mt-5" ]
+                    [ Html.button
+                        [ Html.Attributes.type_ "button"
+                        , id "confirm-abandon"
+                        , class "q-btn yellow flex-1 py-3 text-sm"
+                        , Html.Attributes.disabled model.abandonBusy
+                        , onClick (ConfirmedAbandon game.id)
+                        ]
+                        [ Html.text
+                            (if model.abandonBusy then
+                                "ENDING…"
+
+                             else
+                                action
+                            )
+                        ]
+                    , Html.button
+                        [ Html.Attributes.type_ "button"
+                        , id "keep-game"
+                        , class "q-btn plain flex-1 py-3 text-sm"
+                        , Html.Attributes.disabled model.abandonBusy
+                        , onClick ClosedAbandon
+                        ]
+                        [ Html.text "KEEP GAME" ]
+                    ]
+                ]
+
+        Nothing ->
+            Html.text ""
 
 
 {-| One game: who it is against (their initial on a disc), what and how
@@ -1077,11 +1201,11 @@ resumeRow model game =
         detail =
             game.format ++ " · " ++ ago game.idleS
     in
-    Html.li []
+    Html.li [ class "flex flex-col gap-2 sm:flex-row sm:items-stretch" ]
         [ Html.a
             [ href game.path
             , id ("resume-" ++ game.id)
-            , class ("resume-row flex items-center gap-3 px-3.5 py-3 " ++ tone)
+            , class ("resume-row flex w-full min-w-0 items-center gap-3 px-3.5 py-3 sm:flex-1 " ++ tone)
             ]
             [ Html.span [ class "resume-avatar shrink-0 w-10 h-10 rounded-full inline-flex items-center justify-center text-[15px] font-semibold" ] [ Html.text initial ]
             , Html.span [ class "min-w-0 flex-1" ]
@@ -1093,6 +1217,27 @@ resumeRow model game =
                     :: (clockLine model game |> Maybe.map List.singleton |> Maybe.withDefault [])
                 )
             , Html.span [ class "resume-chevron shrink-0 text-lg leading-none", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text "›" ]
+            ]
+        , Html.button
+            [ Html.Attributes.type_ "button"
+            , id ("abandon-" ++ game.id)
+            , class "resume-drop q-btn plain w-full shrink-0 py-2 text-[9px] sm:w-auto sm:px-2 sm:py-0"
+            , Html.Attributes.attribute "aria-label"
+                (if game.status == "waiting" then
+                    "Cancel lobby"
+
+                 else
+                    "Abandon game"
+                )
+            , onClick (RequestedAbandon game)
+            ]
+            [ Html.text
+                (if game.status == "waiting" then
+                    "CANCEL"
+
+                 else
+                    "ABANDON"
+                )
             ]
         ]
 

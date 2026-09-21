@@ -12,7 +12,8 @@ defmodule Oskol.Repo.Migrations.CreateGames do
       # Seat order: [%{id, name, token}]. Tokens round-trip so a player's
       # ?t= URL still opens their seat after rehydration.
       add :players, {:array, :map}, null: false, default: []
-      # waiting | playing | finished (abandoned is reserved; pruning deletes).
+      # waiting | playing | finished | abandoned. An abandoned room retains
+      # its row and actions; only an explicit player action writes it.
       add :status, :string, null: false, default: "waiting"
       add :winners, {:array, :string}, null: false, default: []
 

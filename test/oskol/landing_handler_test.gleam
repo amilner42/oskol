@@ -167,6 +167,31 @@ pub fn my_games_does_not_hand_an_owned_seat_to_the_guest_that_played_it_test() {
   assert string.contains(mine, "\"opponent\":\"Bob\"")
 }
 
+// ---------- POST /papi/me/games/:id/abandon ----------
+
+pub fn abandon_forwards_the_exact_room_and_current_guest_to_persistence_test() {
+  let ctx =
+    reading()
+    |> fakes.with_abandon(#("123456", Some("g1"), None), True)
+
+  let assert Ok(body) = landing.abandon_json(ctx, fakes.guest("g1"), "123456")
+  assert body == "{\"ok\":true}"
+}
+
+pub fn abandon_maps_an_unavailable_or_unheld_room_to_not_found_test() {
+  let ctx =
+    reading()
+    |> fakes.with_abandon(#("123456", Some("g1"), None), False)
+
+  let assert Error(err) = landing.abandon_json(ctx, fakes.guest("g1"), "123456")
+  assert error.code(err) == "not_found"
+  assert envelope.error(err)
+    == #(
+      404,
+      "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"message\":\"That game is no longer active\"}}",
+    )
+}
+
 // ---------- GET /papi/games/:slug ----------
 
 pub fn a_game_page_carries_its_copy_its_formats_and_the_clocks_test() {

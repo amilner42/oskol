@@ -74,6 +74,7 @@ accounts =
                 signedInAs "her@example.com" withGames
                     |> Expect.all
                         [ home >> Query.find [ class "is-me" ] >> Query.has [ text "arie1", attribute (Html.Attributes.attribute "data-identity" "account") ]
+
                         -- the username, never the email: the bar is on screen for anyone
                         , home >> Query.hasNot [ text "her@example.com" ]
                         , home >> Query.find [ id "account-button" ] >> Event.simulate Event.click >> Event.expect GameLanding.ToggledAccount
@@ -90,6 +91,7 @@ accounts =
                         , send GameLanding.ToggledAccount >> home >> Query.find [ id "signin-menu" ] >> Query.has [ text "SIGN IN" ]
                         , send GameLanding.ToggledAccount >> home >> Query.find [ id "signin-menu" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedSignInMenu
                         , send GameLanding.PressedSignInMenu >> home >> Query.find [ id "signin-modal" ] >> Query.has [ id "signin-email" ]
+
                         -- the games list arriving after that sign-in must not open
                         -- LIVE GAMES underneath it (one win, not two)
                         , send GameLanding.PressedSignInMenu
@@ -612,6 +614,60 @@ resume =
                     , \m -> Expect.equal Sub.none (GameLanding.subscriptions (send GameLanding.ClosedResume m))
                     ]
                     withGames
+        , test "every row names its explicit end action and asks before ending it" <|
+            \_ ->
+                withGames
+                    |> Expect.all
+                        [ home >> Query.find [ id "abandon-123456" ] >> Query.has [ text "ABANDON" ]
+                        , home >> Query.find [ id "abandon-9H302Z" ] >> Query.has [ text "CANCEL" ]
+                        , send (GameLanding.RequestedAbandon playing)
+                            >> home
+                            >> Query.find [ id "abandon-modal" ]
+                            >> Query.has [ text "This ends this game for both players.", id "confirm-abandon" ]
+                        , send (GameLanding.RequestedAbandon lobby)
+                            >> home
+                            >> Query.find [ id "abandon-modal" ]
+                            >> Query.has [ text "This lobby has no second player.", id "confirm-abandon" ]
+                        ]
+        , test "an abandon confirmation owns Escape even if LIVE GAMES closed behind it" <|
+            \_ ->
+                withGames
+                    |> send (GameLanding.RequestedAbandon playing)
+                    |> send GameLanding.ClosedResume
+                    |> GameLanding.subscriptions
+                    |> Expect.notEqual Sub.none
+        , test "the confirmation buttons either end it or keep it" <|
+            \_ ->
+                withGames
+                    |> send (GameLanding.RequestedAbandon playing)
+                    |> home
+                    |> Query.find [ id "abandon-modal" ]
+                    |> Expect.all
+                        [ Query.find [ id "confirm-abandon" ] >> Event.simulate Event.click >> Event.expect (GameLanding.ConfirmedAbandon playing.id)
+                        , Query.find [ id "keep-game" ] >> Event.simulate Event.click >> Event.expect GameLanding.ClosedAbandon
+                        ]
+        , test "a stale row disappears when the other player already ended it" <|
+            \_ ->
+                withGames
+                    |> send (GameLanding.RequestedAbandon playing)
+                    |> send (GameLanding.Abandoned playing.id (Err (Api.ApiError { code = "not_found", message = "That game is no longer active" })))
+                    |> home
+                    |> Expect.all
+                        [ Query.hasNot [ id "resume-123456" ]
+                        , Query.has [ id "resume-9H302Z" ]
+                        , Query.hasNot [ id "abandon-modal" ]
+                        ]
+        , test "a successful end removes its row and updates the REJOIN count" <|
+            \_ ->
+                withGames
+                    |> send (GameLanding.RequestedAbandon playing)
+                    |> send (GameLanding.Abandoned playing.id (Ok ()))
+                    |> home
+                    |> Expect.all
+                        [ Query.hasNot [ id "resume-123456" ]
+                        , Query.find [ id "resume-games" ] >> Query.has [ text "REJOIN 1 GAME" ]
+                        , Query.hasNot [ id "abandon-modal" ]
+                        ]
         , test "a visitor with nothing to resume sees neither the list nor the button, and the bar shows pips" <|
             \_ ->
                 home (send (GameLanding.GotMyGames (Ok [])) loadedModel)

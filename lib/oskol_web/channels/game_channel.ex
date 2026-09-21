@@ -113,6 +113,22 @@ defmodule OskolWeb.GameChannel do
     {:noreply, socket}
   end
 
+  # An explicit abandonment ends this room for both seats. Send the reason
+  # before the server goes away, so the other player is not left staring at
+  # a dead table until their next action.
+  def handle_info(:game_abandoned, socket) do
+    push(socket, "error", %{message: "This game was ended for both players"})
+    {:stop, :normal, socket}
+  end
+
+  # The durable answer was unavailable while ending the game. The room stops
+  # rather than risk accepting a move after a possible commit; reopening the
+  # link reads the row again and tells the player what actually survived.
+  def handle_info(:game_unavailable, socket) do
+    push(socket, "error", %{message: "This game is unavailable. Reopen the link and try again"})
+    {:stop, :normal, socket}
+  end
+
   # Another browser attached to this seat: that connection is the seat now,
   # so this one says so and stops rather than lingering as a second live
   # view of it. The same browser coming back never gets here -- the room
