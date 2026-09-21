@@ -471,6 +471,17 @@ defmodule Oskol.ReviewsTest do
     assert {:ok, "{\"turns\":[]}"} = Reviews.request("{}")
   end
 
+  test "a legacy turn-count backfill preserves a newer failed review" do
+    game_id = "turn-count-backfill"
+    :ok = Oskol.Persistence.insert_game(game_id, "backgammon", %{})
+
+    :ok = Reviews.save(game_id, 1, "failed", 3, nil, "engine was down", nil, 0)
+    :ok = Reviews.backfill_turns(game_id, 1, 42)
+
+    assert [%{game_number: 1, status: "failed", attempts: 3, error: "engine was down", turns: 42}] =
+             Reviews.stored(game_id)
+  end
+
   test "only started backgammon rooms have reviews", %{conn: conn} do
     assert conn |> get("/papi/games/backgammon/rooms/999999/reviews?t=x") |> json_response(404)
     assert conn |> get("/papi/games/poker/rooms/999999/reviews?t=x") |> json_response(404)

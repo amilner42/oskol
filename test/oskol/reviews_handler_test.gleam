@@ -215,6 +215,7 @@ fn with_analysis(
   forget("enqueued")
   forget("requests")
   forget("replays")
+  forget("backfills")
   let _ = put_rows("rows", stored)
   let _ = put_records("records", [])
   Ctx(
@@ -283,6 +284,23 @@ fn with_analysis(
               }),
               [row],
             ),
+          )
+        Nil
+      },
+      backfill_turns: fn(_, number, turns) {
+        record_call(
+          "backfills",
+          int.to_string(number) <> ":" <> int.to_string(turns),
+        )
+        let _ =
+          put_rows(
+            "rows",
+            list.map(get_rows("rows"), fn(row) {
+              case { row.0 }.game_number == number {
+                True -> #(Stored(..row.0, turns: turns), row.1)
+                False -> row
+              }
+            }),
           )
         Nil
       },
@@ -400,6 +418,21 @@ pub fn a_game_done_or_given_up_is_never_run_again_test() {
   let ctx = with_analysis(log, [owed(log, 1, Failed, 3)], no_engine)
   assert reviews.run(ctx, "123456") == None
   assert recorded("saves") == []
+}
+
+pub fn a_legacy_turn_count_backfill_changes_no_other_review_state_test() {
+  let log = finished_log(4)
+  let n = turn_count(log, 1)
+  let #(row, page) = owed(log, 1, Failed, 3)
+  let legacy = #(Stored(..row, turns: 0), page)
+  let ctx = with_analysis(log, [legacy], no_engine)
+
+  assert reviews.run(ctx, "123456") == None
+  assert recorded("saves") == []
+  assert recorded("backfills") == ["1:" <> int.to_string(n)]
+  let assert [#(Stored(status: Failed, attempts: 3, turns: turns, ..), _)] =
+    get_rows("rows")
+  assert turns == n
 }
 
 pub fn a_game_still_being_played_is_not_reviewed_test() {
@@ -829,6 +862,22 @@ pub fn a_review_that_gave_up_is_tried_again_for_a_seat_test() {
   // And it answers the index, as GET does
   assert string.contains(body, "\"games\":[{\"game_number\":1,")
   assert !string.contains(body, "\"review\"")
+}
+
+pub fn a_retry_checks_a_stopped_rooms_stored_seat_without_rehydrating_test() {
+  // `with_analysis` starts with room capabilities that panic. The retry
+  // still authenticates g1 from the game row's seats and queues the failed
+  // review; it must not look a room up just to do that.
+  let ctx =
+    with_analysis(
+      finished_log(4),
+      [owed(finished_log(4), 1, Failed, 3)],
+      no_engine,
+    )
+  let assert Ok(_) =
+    reviews.retry_json(ctx, fakes.guest("g1"), "backgammon", "123456", 1)
+  assert recorded("saves") == ["1:pending:0:none:none"]
+  assert recorded("enqueued") == ["123456"]
 }
 
 pub fn a_retry_leaves_every_other_review_alone_test() {
