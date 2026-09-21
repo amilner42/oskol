@@ -447,11 +447,22 @@ defmodule Oskol.ReviewsTest do
     assert Process.whereis(Queue) == queue
 
     engine(self())
-    # The same scan the periodic timer calls, with no restart or reader.
+    # A sweep during crash backoff must leave the interrupted attempt alone.
+    Queue.sweep_owed()
+    Queue.await_idle()
+    assert [%{status: "pending", attempts: 1}] = Reviews.summaries(game_id)
+    refute_received {:engine, _}
+
+    :sys.replace_state(queue, fn state ->
+      put_in(state, [:crashes, game_id, :retry_at], System.monotonic_time(:millisecond) - 1)
+    end)
+
+    # The same scan the periodic timer calls after backoff, no restart/read.
     Queue.sweep_owed()
     Queue.await_idle()
     assert [%{status: "done", attempts: 2}] = Reviews.summaries(game_id)
     assert Reviews.rooms_owed_analysis() == []
+    refute Map.has_key?(:sys.get_state(queue).crashes, game_id)
     assert_receive {:engine, _}
     refute_received {:engine, _}
   end

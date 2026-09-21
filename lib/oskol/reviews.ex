@@ -114,7 +114,12 @@ defmodule Oskol.Reviews do
         game_number: r.game_number,
         status: r.status,
         attempts: r.attempts,
-        response: fragment("jsonb_build_object('players', ?->'players')", r.response),
+        response:
+          fragment(
+            "CASE WHEN ? IS NULL THEN NULL ELSE jsonb_build_object('players', ?->'players') END",
+            r.response,
+            r.response
+          ),
         rendered: not is_nil(r.report),
         turns: r.turns
       }

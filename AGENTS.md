@@ -862,9 +862,17 @@ game or a room talks to it.
   engine to work. The queue scans persisted `analysis_owed` markers at
   boot and every minute; a lost enqueue or crashed worker recovers without
   a reader or a restart. Recovery does not duplicate a running job or skip
-  its retry delay. Attempts are charged before engine IO, so a crash counts
-  toward the same three-attempt budget; an interrupted final attempt becomes
-  a visible failure on recovery. A failed database scan logs and tries again.
+  its retry delay. Attempts are charged before engine IO: a crash during
+  that IO counts toward the same three-attempt budget. When recovery runs,
+  an interrupted final attempt becomes a visible failure. A failed database
+  scan logs and tries again. Task crashes, including those before charging
+  an attempt, have their own in-memory per-room budget: wait one minute,
+  then two, then suspend automatic recovery after
+  the third consecutive crash, logging once. The durable owed marker stays;
+  a fresh enqueue (game ending or explicit player retry) or queue restart
+  reopens the room. While suspended its page may still say pending: the
+  operator alert, not a reader, requests intervention. Other rooms continue,
+  and a normal task result resets its crash streak.
 - **A finished game's answer is written, not rebuilt.** Reading one used to
   replay the room's whole action log and render every graded turn again --
   five seconds and most of a megabyte per call -- and that took production
