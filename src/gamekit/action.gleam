@@ -149,6 +149,24 @@ pub fn int_param(params: Dynamic, name: String) -> Result(Int, String) {
   run(params, decode.field(name, decode.int, decode.success), name)
 }
 
+/// Read an optional string param, distinguishing absence from a malformed
+/// value so games can evolve an action without making old logs unreadable.
+pub fn optional_string_param(
+  params: Dynamic,
+  name: String,
+) -> Result(Option(String), String) {
+  run(
+    params,
+    decode.optional_field(
+      name,
+      None,
+      decode.map(decode.string, Some),
+      decode.success,
+    ),
+    name,
+  )
+}
+
 fn run(
   params: Dynamic,
   decoder: decode.Decoder(a),

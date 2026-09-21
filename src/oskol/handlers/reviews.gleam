@@ -47,6 +47,7 @@ import oskol/core/raw
 import oskol/core/session.{type Session}
 import oskol/handlers/record
 import oskol/reviews/report
+import oskol/rooms/seat
 
 /// The only game with an engine.
 pub const slug = "backgammon"
@@ -269,19 +270,7 @@ fn store_review(
             True -> Nil
             // A row from before turn counts were stored. Everything else
             // about it stays as it is, the rendered page included.
-            False ->
-              ctx.analysis.save(
-                game_id,
-                g.number,
-                Save(
-                  row.status,
-                  row.attempts,
-                  row.response_json,
-                  None,
-                  ctx.analysis.report(game_id, g.number),
-                  turns,
-                ),
-              )
+            False -> ctx.analysis.backfill_turns(game_id, g.number, turns)
           }
       }
   }
@@ -509,7 +498,7 @@ pub fn retry_json(
   game_id: String,
   number: Int,
 ) -> Result(String, ApiError) {
-  use _ <- result.try(record.seat(ctx, session, game_slug, game_id))
+  use _ <- result.try(stored_seat(ctx, session, game_slug, game_id))
   use #(_setup, rows, stored) <- result.try(read(ctx, game_slug, game_id))
   let found = case list.any(rows, fn(row) { row.game_number == number }) {
     True -> find(stored, number)
@@ -527,6 +516,41 @@ pub fn retry_json(
     False -> Nil
   }
   reviews_json(ctx, session, game_slug, game_id)
+}
+
+/// Authorize a retry from the persisted seats, not the room. A stopped room
+/// is deliberately left stopped: rehydrating it would replay its whole log
+/// merely to check an identity the `games` row already has.
+fn stored_seat(
+  ctx: Ctx,
+  session: Session,
+  game_slug: String,
+  game_id: String,
+) -> Result(Nil, ApiError) {
+  let not_found = error.NotFound(record.not_found_message)
+  use setup <- result.try(case game_slug == slug, ctx.records.setup(game_id) {
+    True, Some(setup) if setup.slug == slug -> Ok(setup)
+    _, _ -> Error(not_found)
+  })
+  let seats =
+    list.map(setup.seats, fn(s) {
+      seat.Seat(
+        player_id: s.0,
+        guest_id: some_unless_empty(s.2),
+        user_id: some_unless_empty(s.3),
+      )
+    })
+  case seat.held_by(seats, session) {
+    Some(_) -> Ok(Nil)
+    None -> Error(not_found)
+  }
+}
+
+fn some_unless_empty(value: String) -> Option(String) {
+  case value {
+    "" -> None
+    _ -> Some(value)
+  }
 }
 
 // ---------- Shared ----------

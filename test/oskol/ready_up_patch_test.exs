@@ -222,17 +222,36 @@ defmodule Oskol.ReadyUpPatchTest do
       recorded = fixture["fingerprint"] |> String.split("\n") |> Enum.map(&Jason.decode!/1)
 
       # These scenes were recorded before the move record joined the scene
-      # data (`record`, `games`), and while every die still said whether it
-      # was picked (the twist, since removed): compare everything the
-      # engine shows today.
+      # data (`record`, `games`), while every die still said whether it was
+      # picked (the twist, since removed), and before dice were presented
+      # high-first. Normalize only those presentation changes and compare
+      # everything else the engine shows today.
       comparable = fn scene ->
         scene
-        |> Map.update!("data", &Map.drop(&1, ["record", "games"]))
+        |> Map.update!("data", fn data ->
+          data
+          |> Map.drop(["record", "games"])
+          |> Map.update!("dice", &Enum.sort(&1, :desc))
+          |> Map.update!("last_roll", &Enum.sort(&1, :desc))
+        end)
         |> Map.update!("zones", fn zones ->
           Enum.map(zones, fn zone ->
-            Map.update!(zone, "tokens", fn tokens ->
-              Enum.map(tokens, &Map.update!(&1, "props", fn p -> Map.drop(p, ["picked"]) end))
-            end)
+            tokens =
+              Enum.map(zone["tokens"], fn token ->
+                Map.update!(token, "props", &Map.drop(&1, ["picked"]))
+              end)
+
+            tokens =
+              if zone["id"] == "dice" do
+                tokens
+                |> Enum.sort_by(&get_in(&1, ["props", "value"]), :desc)
+                |> Enum.with_index()
+                |> Enum.map(fn {token, index} -> Map.put(token, "id", "die:#{index}") end)
+              else
+                tokens
+              end
+
+            Map.put(zone, "tokens", tokens)
           end)
         end)
       end

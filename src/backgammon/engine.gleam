@@ -12,8 +12,13 @@ import gleam/result
 
 pub type Action {
   Roll
-  /// Stage a move on your own board.
+  /// Stage a legacy move with no authoritative `selected_die`; old `die`
+  /// metadata is intentionally inert for replay compatibility.
   MoveChecker(from: Loc, to: Loc)
+  /// Stage a move with the die the player selected on the board.
+  MoveCheckerUsing(from: Loc, to: Loc, die: Int)
+  /// Stage the longest legal bear-off path (up to two dice) from one tray tap.
+  BearOff(first_die: Int)
   /// Take back the last staged move.
   Undo
   /// Commit the staged moves and end the turn.
@@ -131,15 +136,25 @@ pub fn apply(
     }
     MoveChecker(from, to) -> {
       use #(next, _staged) <- result.try(state.stage(state, player_id, from, to))
-      // Staging is private: the opponent only learns that the mover is thinking.
-      Ok(
-        #(next, [
-          custom("move_staged", [
-            #("player_id", json.string(player_id)),
-            #("dice_left", json.int(list.length(state.dice_left(next)))),
-          ]),
-        ]),
-      )
+      move_staged(next, player_id)
+    }
+    MoveCheckerUsing(from, to, die) -> {
+      use #(next, _staged) <- result.try(state.stage_with_die(
+        state,
+        player_id,
+        from,
+        to,
+        Some(die),
+      ))
+      move_staged(next, player_id)
+    }
+    BearOff(first_die) -> {
+      use #(next, _staged) <- result.try(state.stage_bear_off(
+        state,
+        player_id,
+        first_die,
+      ))
+      move_staged(next, player_id)
     }
     Undo -> {
       use #(next, _undone) <- result.try(state.undo(state, player_id))
@@ -224,6 +239,21 @@ pub fn apply(
   }
 }
 
+fn move_staged(
+  next: GameState,
+  player_id: String,
+) -> Result(#(GameState, List(Event)), String) {
+  // Staging is private: the opponent only learns that the mover is thinking.
+  Ok(
+    #(next, [
+      custom("move_staged", [
+        #("player_id", json.string(player_id)),
+        #("dice_left", json.int(list.length(state.dice_left(next)))),
+      ]),
+    ]),
+  )
+}
+
 /// Events for a turn's dice: everyone sees the roll. A roll that can play
 /// nothing announces itself here and the turn stays put: the mover still
 /// owns it until they commit the empty turn with `play`.
@@ -232,6 +262,7 @@ fn dice_events(
   player_id: String,
   dice: List(Int),
 ) -> List(Event) {
+  let dice = list.sort(dice, fn(a, b) { int.compare(b, a) })
   let rolled =
     custom("dice_rolled", [
       #("player_id", json.string(player_id)),
@@ -359,8 +390,9 @@ fn legal_in_play(state: GameState, player_id: String) -> List(Schema) {
       action.simple("drop", "Drop"),
     ]
     _, _ -> {
+      let legal_moves = state.legal_moves(state, player_id)
       let moves =
-        state.legal_moves(state, player_id)
+        legal_moves
         |> list.map(fn(m) {
           let from = board.loc_id(m.from)
           let to = board.loc_id(m.to)
@@ -370,9 +402,29 @@ fn legal_in_play(state: GameState, player_id: String) -> List(Schema) {
           action.Schema("move", label_for(m), [
             action.choice("from", [#(from, from)]),
             action.choice("to", [#(to, to)]),
+            // `die` predates selected-die actions and is metadata consumed by
+            // clients. Keep it inert so old conformance logs replay exactly.
             action.choice("die", [#(die, die)]),
+            action.choice("selected_die", [#(die, die)]),
           ])
         })
+      let bear_off = case list.any(legal_moves, fn(m) { m.to == board.Off }) {
+        True -> [
+          action.Schema("bear_off", "Bear off", [
+            action.choice(
+              "first_die",
+              state.dice_left(state)
+                |> list.sort(fn(a, b) { int.compare(b, a) })
+                |> list.unique
+                |> list.map(fn(die) {
+                  let value = int.to_string(die)
+                  #(value, value)
+                }),
+            ),
+          ]),
+        ]
+        False -> []
+      }
       let undo = case state.can_undo(state, player_id) {
         True -> [action.simple("undo", "Undo")]
         False -> []
@@ -385,7 +437,7 @@ fn legal_in_play(state: GameState, player_id: String) -> List(Schema) {
           }
         False -> []
       }
-      list.flatten([moves, undo, play])
+      list.flatten([moves, bear_off, undo, play])
     }
   }
   list.append(main, resign)

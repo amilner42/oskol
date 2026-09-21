@@ -26,7 +26,7 @@ const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-b
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const SOURCE = '[data-drag-capture]';
+const SOURCE = '[data-move-source]';
 
 async function box(page, selector) {
   const b = await page.locator(selector).first().boundingBox();

@@ -90,6 +90,10 @@ pub type AnalysisCaps {
     report: fn(String, Int) -> Option(String),
     /// Upsert one review row: (game_id, game_number, what to write).
     save: fn(String, Int, Save) -> Nil,
+    /// Fill in the count a row from before turn counts were stored lacks.
+    /// This is deliberately not `save`: a queue worker may have changed the
+    /// row since the reader took its snapshot, so only this one field moves.
+    backfill_turns: fn(String, Int, Int) -> Nil,
     /// Ask for a room's owed reviews to be run, off the request. Idempotent:
     /// a room already queued, running or waiting on a retry is not queued
     /// twice.
@@ -107,6 +111,7 @@ pub fn stub() -> AnalysisCaps {
     summaries: fn(_) { panic as "stub analysis.summaries" },
     report: fn(_, _) { panic as "stub analysis.report" },
     save: fn(_, _, _) { panic as "stub analysis.save" },
+    backfill_turns: fn(_, _, _) { panic as "stub analysis.backfill_turns" },
     enqueue: fn(_) { panic as "stub analysis.enqueue" },
     review: fn(_) { panic as "stub analysis.review" },
   )

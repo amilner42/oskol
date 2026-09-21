@@ -108,18 +108,6 @@ if (process.env.NODE_ENV === "development") {
   })
 }
 
-// Drag sources (src/Drag.elm marks them with data-drag-capture): route every
-// pointer event of a gesture to the element it started on, so Elm's
-// pointermove/pointerup handlers keep firing after the pointer leaves it.
-// Capture phase, so no handler on the way down can swallow it. This is the
-// one thing Elm cannot do itself; all drag logic stays in Elm.
-document.addEventListener("pointerdown", (e) => {
-  const source = e.target.closest && e.target.closest("[data-drag-capture]");
-  if (source && source.setPointerCapture) {
-    try { source.setPointerCapture(e.pointerId); } catch (_) {}
-  }
-}, true);
-
 // The Elm app: the whole front end. It owns routing (/, /:slug, /:slug/:id),
 // the landing pages, and the one game client that speaks the gamekit
 // protocol and picks a renderer by game slug.

@@ -504,6 +504,30 @@ pub fn resign_actions_decode_with_and_without_stakes_test() {
     == Ok(engine.DeclineResign)
 }
 
+pub fn move_actions_keep_old_logs_compatible_and_accept_a_selected_die_test() {
+  let decode = fn(text) {
+    let assert Ok(raw) = conformance.parse(text)
+    let assert Ok(incoming) = action.decode_incoming(raw)
+    backgammon.decode_action(incoming)
+  }
+  assert decode(
+      "{\"name\":\"move\",\"params\":{\"from\":\"2\",\"to\":\"off\"}}",
+    )
+    == Ok(engine.MoveChecker(Point(2), Off))
+  assert decode(
+      "{\"name\":\"move\",\"params\":{\"from\":\"2\",\"to\":\"off\",\"die\":\"6\"}}",
+    )
+    == Ok(engine.MoveChecker(Point(2), Off))
+  assert decode(
+      "{\"name\":\"move\",\"params\":{\"from\":\"2\",\"to\":\"off\",\"selected_die\":\"6\"}}",
+    )
+    == Ok(engine.MoveCheckerUsing(Point(2), Off, 6))
+  let assert Error(_) =
+    decode(
+      "{\"name\":\"move\",\"params\":{\"from\":\"2\",\"to\":\"off\",\"selected_die\":6}}",
+    )
+}
+
 fn bear_off_and_play(
   s: state.GameState,
 ) -> #(state.GameState, List(event.Event)) {

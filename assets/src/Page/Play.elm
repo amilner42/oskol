@@ -40,7 +40,6 @@ as the LiveView's lobby did.
 
 import Api
 import Api.Catalog as Catalog
-import Browser.Dom
 import Dict exposing (Dict)
 import Games.Backgammon.View as Backgammon
 import Html exposing (Html)
@@ -347,9 +346,6 @@ update msg model =
                 Backgammon.WantRematch ->
                     update RequestRematch updated
 
-                Backgammon.NeedZones targets ->
-                    stay updated (measureDropZones targets)
-
                 Backgammon.OpenSave ->
                     let
                         ( signIn, cmd ) =
@@ -591,7 +587,6 @@ applyPayload payload model =
         -- says nothing is owed (`GotRatings`).
         gameEnded =
             matchPoints payload > (model.payload |> Maybe.map matchPoints |> Maybe.withDefault (matchPoints payload))
-
     in
     ( { updated
         | ratingsPolls =
@@ -650,34 +645,6 @@ inside a match leaves the match itself ongoing.
 matchPoints : GamePayload -> Int
 matchPoints payload =
     payload.update.scene.players |> List.map (Protocol.counter "score") |> List.sum
-
-
-{-| Measure the drop zones for a backgammon drag: the client rects of the
-origin's legal destinations, by the DOM ids the board view puts on them.
-Coordinates are viewport-relative (`getElement` reports page coordinates,
-so the scroll offset is subtracted); a target the DOM does not have right
-now is simply skipped.
--}
-measureDropZones : List String -> Cmd Msg
-measureDropZones targets =
-    targets
-        |> List.map
-            (\loc ->
-                Browser.Dom.getElement (Backgammon.dropZoneId loc)
-                    |> Task.map
-                        (\found ->
-                            Just
-                                { loc = loc
-                                , left = found.element.x - found.viewport.x
-                                , top = found.element.y - found.viewport.y
-                                , width = found.element.width
-                                , height = found.element.height
-                                }
-                        )
-                    |> Task.onError (\_ -> Task.succeed Nothing)
-            )
-        |> Task.sequence
-        |> Task.perform (List.filterMap identity >> Backgammon.GotDropZones >> BackgammonMsg)
 
 
 {-| Seated players whose connection is currently down.
@@ -838,7 +805,7 @@ keep updated before =
 {-| What the server says this guest keeps, over what this browser had:
 the row is the copy that follows them between browsers, so it wins where
 this page has not been touched. It never wins over a pick made here: an
-answer to a request that left before the tap must not drag the board back
+answer to a request that left before the tap must not move the board back
 to the board that was.
 -}
 absorb : Dict String String -> Model -> Model
@@ -857,6 +824,7 @@ theme : Model -> String
 theme model =
     Dict.get backgammonThemeKey model.prefs
         |> Maybe.withDefault Backgammon.defaultTheme
+
 
 
 -- SUBSCRIPTIONS
