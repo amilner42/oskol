@@ -149,6 +149,14 @@ defmodule Oskol.Reviews do
     :ok
   end
 
+  @doc "Fill in one legacy review's turn count without changing any other field."
+  def backfill_turns(game_id, game_number, turns) when is_integer(turns) and turns >= 0 do
+    from(r in Review, where: r.game_id == ^game_id and r.game_number == ^game_number)
+    |> Repo.update_all(set: [turns: turns])
+
+    :ok
+  end
+
   # ---------- The record ----------
 
   @doc "Every stored record row of a room, by game number."

@@ -3,7 +3,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
   Real IO for src/oskol/caps/analysis.gleam. Keep constructor tags and field
   order in lockstep:
 
-      AnalysisCaps(log, stored, summaries, report, save, enqueue, review)
+      AnalysisCaps(log, stored, summaries, report, save, backfill_turns,
+      enqueue, review)
       GameLog(slug, format, clock, seed, seats, entries)
       LogEntry(kind, player_id, payload_json, at_ms)
       Stored(game_number, status, attempts, response_json, answered, rendered, turns)
@@ -20,7 +21,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
   alias Oskol.Reviews
 
   def build do
-    {:analysis_caps, &log/1, &stored/1, &summaries/1, &report/2, &save/3, &enqueue/1, &review/1}
+    {:analysis_caps, &log/1, &stored/1, &summaries/1, &report/2, &save/3, &backfill_turns/3,
+     &enqueue/1, &review/1}
   end
 
   defp log(game_id) do
@@ -85,6 +87,14 @@ defmodule Oskol.Gleam.Caps.Analysis do
         turns
       )
 
+    nil
+  end
+
+  # A legacy row needs just its count filled in. Do not turn this into a
+  # `save`: a queue worker can have updated status/error after the caller
+  # read its snapshot, and that newer state must survive this backfill.
+  defp backfill_turns(game_id, number, turns) do
+    :ok = Reviews.backfill_turns(game_id, number, turns)
     nil
   end
 
