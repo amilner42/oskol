@@ -16,6 +16,7 @@ defmodule OskolWeb.Api.LandingController do
       GET  /papi/codes/:code               which game answers to a code
       GET  /papi/me/prefs                  this visitor's display preferences
       POST /papi/me/prefs                  keep one of them
+      POST /papi/me/games/:id/abandon      end one room from the rejoin list
 
   Every decision — what a page carries, whether a name will do, what a
   refusal says, what an invite is worth — belongs to the Gleam handlers in
@@ -126,6 +127,10 @@ defmodule OskolWeb.Api.LandingController do
   # holds a seat in, read from their rows. Nothing here wakes a room.
   def my_games(conn, _params) do
     send_json(conn, {:ok, :oskol@handlers@landing.my_games_json(ctx(), session(conn))})
+  end
+
+  def abandon(conn, %{"id" => game_id}) do
+    send_json(conn, :oskol@handlers@landing.abandon_json(ctx(), session(conn), game_id))
   end
 
   # The record opens on the room: it is every committed turn, which both

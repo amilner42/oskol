@@ -17,6 +17,11 @@ pub type PersistenceCaps {
     /// them are really this caller's. A database hiccup is an empty list,
     /// never a broken page.
     seated_rooms: fn(Option(String), Option(String)) -> List(ActiveRoom),
+    /// End one active room the caller currently holds. The persisted seat
+    /// holder rule authorizes this atomically with the status change, so an
+    /// old guest id never ends a seat an account now owns. `True` means the
+    /// row is now abandoned; no game history is deleted.
+    abandon: fn(String, Option(String), Option(String)) -> Bool,
   )
 }
 
@@ -24,5 +29,6 @@ pub fn stub() -> PersistenceCaps {
   PersistenceCaps(
     game_exists: fn(_) { panic as "stub persistence.game_exists" },
     seated_rooms: fn(_, _) { panic as "stub persistence.seated_rooms" },
+    abandon: fn(_, _, _) { panic as "stub persistence.abandon" },
   )
 }

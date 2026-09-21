@@ -142,6 +142,18 @@ defmodule Oskol.Game.GameServer do
   end
 
   @doc """
+  End this room for both players. The persisted-seat authorization and status
+  transition run through Persister from this room process, after every write
+  it has already queued; on success the room stops before it can accept
+  another move.
+  """
+  def abandon(game_id, guest_id, user_id) do
+    GenServer.call(via_tuple(game_id), {:abandon, guest_id, user_id}, :infinity)
+  catch
+    :exit, _ -> :error
+  end
+
+  @doc """
   A browser signed in: every seat here it held as a guest, and that no
   account owns yet, is that account's now and moves to the browser's fresh
   guest id with it.
@@ -413,6 +425,29 @@ defmodule Oskol.Game.GameServer do
 
       {:error, reason} ->
         {:reply, {:error, reason}, state, @timeout}
+    end
+  end
+
+  def handle_call({:abandon, guest_id, user_id}, _from, %GameServerState{} = state) do
+    case Persister.abandon_game(state.game_id, guest_id, user_id) do
+      result when result in [:ok, :already_abandoned] ->
+        # Tell every joined table why its socket is closing. The row is
+        # already durable, and stopping this server prevents later moves or
+        # write-behind casts from reviving it.
+        Phoenix.PubSub.broadcast(Oskol.PubSub, "game:#{state.game_id}", :game_abandoned)
+        {:stop, :normal, :ok, state}
+
+      # The persister could have committed just before a connection failure.
+      # It is unsafe to keep a room accepting moves without knowing which
+      # answer won; stop it and let a later lookup read the durable row.
+      :error ->
+        Phoenix.PubSub.broadcast(Oskol.PubSub, "game:#{state.game_id}", :game_unavailable)
+        {:stop, :normal, :error, state}
+
+      # A real holder check failed, so this is merely an unauthorized caller,
+      # not an ambiguous write. Keep the real room playing.
+      :refused ->
+        {:reply, :error, state, @timeout}
     end
   end
 

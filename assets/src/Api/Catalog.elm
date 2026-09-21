@@ -14,6 +14,7 @@ module Api.Catalog exposing
     , Room
     , RoomSeat
     , RoomState(..)
+    , abandonGame
     , claimSeat
     , clockPresetDecoder
     , clocksInGameOrder
@@ -222,6 +223,14 @@ visitor with no seat anywhere gets an empty list.
 fetchMyGames : Session -> (Result Error (List MyGame) -> msg) -> Cmd msg
 fetchMyGames session toMsg =
     Api.get session "/papi/me/games" myGamesDecoder toMsg
+
+
+{-| End one room from LIVE GAMES. The server checks the current seat holder;
+the id is only an identifier, never a credential.
+-}
+abandonGame : Session -> String -> (Result Error () -> msg) -> Cmd msg
+abandonGame session gameId toMsg =
+    Api.post session ("/papi/me/games/" ++ escape gameId ++ "/abandon") (E.object []) (D.succeed ()) toMsg
 
 
 fetchGame : Session -> String -> (Result Error GamePage -> msg) -> Cmd msg

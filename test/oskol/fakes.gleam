@@ -68,6 +68,28 @@ pub fn with_active_rooms(ctx: Ctx, rooms: List(room.ActiveRoom)) -> Ctx {
   )
 }
 
+/// Persistence caps for a room-end action. The test names the exact room
+/// and session that may end it, so the handler cannot quietly use another
+/// identity or room id.
+pub fn with_abandon(
+  ctx: Ctx,
+  expected: #(String, Option(String), Option(String)),
+  result: Bool,
+) -> Ctx {
+  Ctx(
+    ..ctx,
+    persistence: persistence_caps.PersistenceCaps(
+      ..ctx.persistence,
+      abandon: fn(game_id, guest_id, user_id) {
+        case #(game_id, guest_id, user_id) == expected {
+          True -> result
+          False -> panic as "persistence.abandon got the wrong room or session"
+        }
+      },
+    ),
+  )
+}
+
 pub fn guest(id: String) -> Session {
   Session(guest_id: Some(id), user_id: option.None)
 }

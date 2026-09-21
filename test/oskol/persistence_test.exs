@@ -120,6 +120,41 @@ defmodule Oskol.PersistenceTest do
 
     assert {:ok, ^free} = Game.create_game("backgammon", generate)
   end
+
+  test "abandon keeps the row and only its current holder may make the transition" do
+    %{game_id: game_id, g1: guest} = lobby("single")
+    row = game_row(game_id)
+
+    # An account-owned seat ignores the guest it arrived with. A stale guest
+    # and a different account cannot end this room.
+    owner = Ecto.UUID.generate()
+    [seat] = row.players
+    Persistence.update_players(game_id, [Map.put(seat, "user_id", owner)])
+
+    assert :refused = Persistence.abandon_game(game_id, guest, nil)
+    assert :refused = Persistence.abandon_game(game_id, "another-browser", Ecto.UUID.generate())
+    assert game_row(game_id).status == "waiting"
+
+    assert :ok = Persistence.abandon_game(game_id, "another-browser", owner)
+    assert game_row(game_id).status == "abandoned"
+    # The game and its seat history remain, and an HTTP timeout can safely
+    # retry from its real owner without resurrecting it.
+    assert Persistence.players(game_id) != []
+    assert :already_abandoned = Persistence.abandon_game(game_id, "new-device", owner)
+  end
+
+  test "a queued move lands before abandonment and cannot revive the row" do
+    %{game_id: game_id, g1: alice, mover: mover, state: state} = started(42)
+    action = legal_move(state.instance, mover)
+
+    assert {:ok, _state, _events} = Game.player_action(game_id, mover, action)
+    # Both Persister messages originate in the room process: its action cast
+    # is ordered before this synchronous abandonment call.
+    assert :ok = Oskol.Game.GameServer.abandon(game_id, alice, nil)
+
+    assert [%{kind: "action", index: 0}] = action_rows(game_id)
+    assert game_row(game_id).status == "abandoned"
+  end
 end
 
 defmodule Oskol.Persistence.SeatedRoomsTest do

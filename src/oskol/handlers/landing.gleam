@@ -11,6 +11,7 @@
 ////   GET  /papi/me/prefs                {ok, prefs}
 ////   POST /papi/me/prefs                {key, value} -> {ok, prefs}
 ////   GET  /papi/me/games                {ok, games}
+////   POST /papi/me/games/:id/abandon    {ok}
 ////
 //// Every decision behind these lives in Gleam — what a page carries, what a
 //// name has to be, what an invite link is worth. The Elixir controller only
@@ -401,6 +402,20 @@ pub fn my_games_json(ctx: Ctx, session: Session) -> String {
   envelope.ok([
     #("games", json.array(held, fn(r) { active_room_json(r, session) })),
   ])
+}
+
+/// End a room from the rejoin list. This is deliberate for both kinds of
+/// row: a lobby is cancelled; a started game ends for both players. The
+/// capability locks and checks the persisted holder in the same transition.
+pub fn abandon_json(
+  ctx: Ctx,
+  session: Session,
+  game_id: String,
+) -> Result(String, ApiError) {
+  case ctx.persistence.abandon(game_id, session.guest_id, session.user_id) {
+    True -> Ok(envelope.ok([]))
+    False -> Error(error.NotFound("That game is no longer active"))
+  }
 }
 
 /// One resumable game as the home page lists it: where it is (`path`),

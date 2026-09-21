@@ -126,6 +126,70 @@ defmodule Oskol.Persistence do
     update_game(game_id, status: "finished", winners: winners)
   end
 
+  @doc """
+  Mark an active game abandoned without removing its row or action history.
+
+  The row is locked while the persisted seat list is checked by the same
+  Gleam holder rule a live room uses. This makes an account-owned seat answer
+  only to that account, even if its old guest id is still in the row.
+  """
+  def abandon_game(game_id, guest_id, user_id) when is_binary(game_id) do
+    Repo.transaction(fn ->
+      game =
+        from(g in Game, where: g.id == ^game_id, lock: "FOR UPDATE")
+        |> Repo.one()
+
+      case abandonable?(game, guest_id, user_id) do
+        :abandon ->
+          from(g in Game, where: g.id == ^game_id)
+          |> Repo.update_all(set: [status: "abandoned", updated_at: DateTime.utc_now()])
+
+          :ok
+
+        :already_abandoned ->
+          # A request may have timed out after this write landed. It is safe
+          # for the same current holder to retry, and lets a live room that
+          # has not stopped yet be shut down on that retry.
+          :already_abandoned
+
+        :error ->
+          :refused
+      end
+    end)
+    |> case do
+      {:ok, result} -> result
+      {:error, _} -> :error
+    end
+  end
+
+  def abandon_game(_, _, _), do: :error
+
+  # A waiting room can only be cancelled by its sole, creating player. A
+  # started room may be ended by either current holder; both are kept as an
+  # abandoned row, never deleted.
+  defp abandonable?(%Game{status: "waiting", players: [seat]}, guest_id, user_id) do
+    if held_by?([seat], guest_id, user_id), do: :abandon, else: :error
+  end
+
+  defp abandonable?(%Game{status: "playing", players: players}, guest_id, user_id) do
+    if held_by?(players, guest_id, user_id), do: :abandon, else: :error
+  end
+
+  defp abandonable?(%Game{status: "abandoned", players: players}, guest_id, user_id) do
+    if held_by?(players, guest_id, user_id), do: :already_abandoned, else: :error
+  end
+
+  defp abandonable?(_, _, _), do: :error
+
+  defp held_by?(players, guest_id, user_id) do
+    session = {:session, Interop.opt(blank_to_nil(guest_id)), Interop.opt(blank_to_nil(user_id))}
+
+    case :oskol@rooms@seat.held_by(to_seats(players), session) do
+      {:some, _player_id} -> true
+      :none -> false
+    end
+  end
+
   def append_action(game_id, index, kind, player_id, payload, at_ms, state) do
     Repo.insert!(
       %GameAction{

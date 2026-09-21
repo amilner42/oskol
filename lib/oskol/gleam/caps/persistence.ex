@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Persistence do
   import Oskol.Gleam.Interop
 
   def build do
-    {:persistence_caps, &game_exists?/1, &seated_rooms/2}
+    {:persistence_caps, &game_exists?/1, &seated_rooms/2, &abandon/3}
   end
 
   # A database hiccup must not block creating games: the id space plus the
@@ -39,6 +39,23 @@ defmodule Oskol.Gleam.Caps.Persistence do
     end)
   rescue
     _ -> []
+  end
+
+  # This mutation explicitly wakes a cold room first, then runs through that
+  # room's process. We never update a cold row directly: a concurrent
+  # rehydration could otherwise install stale active memory after the row
+  # changed. The live room puts the transition behind every write it already
+  # sent; the row lock and holder rule live in Persistence.
+  defp abandon(game_id, guest_id, user_id) do
+    case Oskol.Game.lookup_game(game_id) do
+      {:ok, _pid} ->
+        Oskol.Game.GameServer.abandon(game_id, unopt(guest_id), unopt(user_id)) == :ok
+
+      :not_found ->
+        false
+    end
+  rescue
+    _ -> false
   end
 
   # How long ago the snapshot read its clocks: its own stamp, or, for a row

@@ -122,6 +122,30 @@ defmodule OskolWeb.GameChannelTest do
              try_join("missing", %{guest_id: "whoever"})
   end
 
+  test "an abandoned-room broadcast tells a joined player why the table closed" do
+    %{game_id: game_id, g1: g1} = started()
+    {_, socket} = join_room(game_id, g1)
+    Process.unlink(socket.channel_pid)
+    ref = Process.monitor(socket.channel_pid)
+
+    Phoenix.PubSub.broadcast(Oskol.PubSub, "game:#{game_id}", :game_abandoned)
+
+    assert_push "error", %{message: "This game was ended for both players"}
+    assert_receive {:DOWN, ^ref, :process, _, _}, 1000
+  end
+
+  test "an unavailable-room broadcast asks a joined player to reopen the link" do
+    %{game_id: game_id, g1: g1} = started()
+    {_, socket} = join_room(game_id, g1)
+    Process.unlink(socket.channel_pid)
+    ref = Process.monitor(socket.channel_pid)
+
+    Phoenix.PubSub.broadcast(Oskol.PubSub, "game:#{game_id}", :game_unavailable)
+
+    assert_push "error", %{message: "This game is unavailable. Reopen the link and try again"}
+    assert_receive {:DOWN, ^ref, :process, _, _}, 1000
+  end
+
   # The security bar: a browser reaches a seat only as the guest holding it,
   # and nothing else gets a view of the table.
   test "a join from a browser with no guest cookie is refused" do
