@@ -39,7 +39,7 @@ import gleam/result
 import oskol/caps/analysis.{
   type GameLog, type Stored, Done, Failed, Pending, Save, Stored,
 } as caps
-import oskol/caps/records.{type StoredRecord}
+import oskol/caps/records
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
@@ -136,12 +136,42 @@ fn review_one(
     Some(row) -> row.attempts
     None -> 0
   }
-  let attempts = before + 1
+  // A pending attempt belongs to the earlier worker. If its last allowed
+  // request was lost to a crash, expose failure without buying a fourth
+  // request. Only the queue does this, never a reader of a running job.
+  case before >= max_attempts {
+    True -> {
+      ctx.analysis.save(
+        game_id,
+        g.number,
+        Save(
+          Failed,
+          before,
+          None,
+          Some("Analysis worker stopped before storing its answer"),
+          None,
+          list.length(g.turns),
+        ),
+      )
+      Error(Nil)
+    }
+    False -> attempt_review(ctx, game_id, g, seats, before + 1)
+  }
+}
+
+fn attempt_review(
+  ctx: Ctx,
+  game_id: String,
+  g: analysis.GameTurns,
+  seats: List(report.Seat),
+  attempts: Int,
+) -> Result(Int, Nil) {
   let turns = list.length(g.turns)
   ctx.analysis.save(
     game_id,
     g.number,
-    Save(Pending, before, None, None, None, turns),
+    // Charge before IO so task crashes cannot reset the attempt budget.
+    Save(Pending, attempts, None, None, None, turns),
   )
   let body = json.to_string(analysis.request_json(g))
   let outcome =
@@ -208,7 +238,7 @@ fn settle(
         Ok(#(games, record)) -> {
           let seats = seats(log)
           let finished = list.filter(games, fn(g) { g.finished })
-          store_records(ctx, game_id, record, finished)
+          store_records(ctx, game_id, record, finished, log)
           let stored = ctx.analysis.stored(game_id)
           list.each(finished, fn(g) {
             store_review(ctx, game_id, g, seats, stored)
@@ -283,6 +313,7 @@ fn store_records(
   game_id: String,
   record: Option(Json),
   finished: List(analysis.GameTurns),
+  log: GameLog,
 ) -> Nil {
   case record {
     None -> Nil
@@ -293,7 +324,13 @@ fn store_records(
         |> list.filter(fn(row) { list.contains(numbers, row.0) })
       {
         [] -> Nil
-        rows -> ctx.records.save(game_id, rows)
+        rows ->
+          ctx.records.save(
+            game_id,
+            rows,
+            list.length(log.entries),
+            log.record_generation,
+          )
       }
     }
   }
@@ -322,19 +359,19 @@ fn read(
   ctx: Ctx,
   game_slug: String,
   game_id: String,
-) -> Result(#(records.Setup, List(StoredRecord), List(Stored)), ApiError) {
+) -> Result(#(records.Setup, List(Int), List(Stored)), ApiError) {
   let not_found = error.NotFound(record.not_found_message)
   use setup <- result.try(case game_slug == slug, ctx.records.setup(game_id) {
     True, Some(setup) if setup.slug == slug -> Ok(setup)
     _, _ -> Error(not_found)
   })
-  let rows = ctx.records.stored(game_id)
+  let numbers = ctx.records.numbers(game_id)
   let summaries = ctx.analysis.summaries(game_id)
-  case stale(setup, rows, summaries) {
-    False -> Ok(#(setup, rows, summaries))
+  case stale(setup, numbers, summaries) {
+    False -> Ok(#(setup, numbers, summaries))
     True -> {
       let _ = settle(ctx, game_id)
-      Ok(#(setup, ctx.records.stored(game_id), ctx.analysis.summaries(game_id)))
+      Ok(#(setup, ctx.records.numbers(game_id), ctx.analysis.summaries(game_id)))
     }
   }
 }
@@ -348,21 +385,16 @@ fn read(
 /// read, which is the thing this endpoint exists to stop doing.
 fn stale(
   setup: records.Setup,
-  rows: List(StoredRecord),
+  numbers: List(Int),
   summaries: List(Stored),
 ) -> Bool {
-  case setup.finished, summaries {
-    False, [] -> False
-    _, _ ->
-      // Rows made from a shorter log than the room has now are missing the
-      // games played since: a match settled when its first game ended has
-      // only that game written down.
-      setup.records_through < setup.log_length
-      || rows == []
-      || list.any(summaries, fn(row) {
-        row.status == Done && row.answered && !row.rendered
-      })
-  }
+  // Only completed-game work invalidates records. Staging and playing
+  // ordinary turns must not turn index polling into full-match replay.
+  setup.records_stale
+  || { setup.finished && numbers == [] }
+  || list.any(summaries, fn(row) {
+    row.status == Done && row.answered && !row.rendered
+  })
 }
 
 /// The index: which games this room has, and where each one's analysis
@@ -390,10 +422,10 @@ pub fn reviews_json(
       #("players", players_json(setup)),
       #(
         "games",
-        json.array(rows, fn(row) {
-          let found = find(stored, row.game_number)
+        json.array(rows, fn(number) {
+          let found = find(stored, number)
           json.object([
-            #("game_number", json.int(row.game_number)),
+            #("game_number", json.int(number)),
             #("status", json.string(status_of(found))),
             #("turns", json.int(turns_of(found))),
           ])
@@ -417,12 +449,10 @@ pub fn review_json(
   // A game this room has no record of -- a number nobody has, or the one
   // still being played -- is nothing to read, and says so like any other
   // room that is not there.
-  use _ <- result.try(
-    case list.any(rows, fn(row) { row.game_number == number }) {
-      True -> Ok(Nil)
-      False -> Error(error.NotFound(record.not_found_message))
-    },
-  )
+  use _ <- result.try(case list.contains(rows, number) {
+    True -> Ok(Nil)
+    False -> Error(error.NotFound(record.not_found_message))
+  })
   let found = find(stored, number)
   let status = status_of(found)
   Ok(
@@ -500,7 +530,7 @@ pub fn retry_json(
 ) -> Result(String, ApiError) {
   use _ <- result.try(stored_seat(ctx, session, game_slug, game_id))
   use #(_setup, rows, stored) <- result.try(read(ctx, game_slug, game_id))
-  let found = case list.any(rows, fn(row) { row.game_number == number }) {
+  let found = case list.contains(rows, number) {
     True -> find(stored, number)
     False -> None
   }

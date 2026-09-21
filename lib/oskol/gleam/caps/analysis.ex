@@ -3,9 +3,9 @@ defmodule Oskol.Gleam.Caps.Analysis do
   Real IO for src/oskol/caps/analysis.gleam. Keep constructor tags and field
   order in lockstep:
 
-      AnalysisCaps(log, stored, summaries, report, save, backfill_turns,
+      AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
       enqueue, review)
-      GameLog(slug, format, clock, seed, seats, entries)
+      GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
       Stored(game_number, status, attempts, response_json, answered, rendered, turns)
       Save(status, attempts, response_json, error, report_json, turns)
@@ -21,8 +21,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
   alias Oskol.Reviews
 
   def build do
-    {:analysis_caps, &log/1, &stored/1, &summaries/1, &report/2, &save/3, &backfill_turns/3,
-     &enqueue/1, &review/1}
+    {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
+     &backfill_turns/3, &enqueue/1, &review/1}
   end
 
   defp log(game_id) do
@@ -47,16 +47,23 @@ defmodule Oskol.Gleam.Caps.Analysis do
            end),
            Enum.map(actions, fn a ->
              {:log_entry, a.kind, opt(a.player_id), Jason.encode!(a.payload), a.at_ms}
-           end)
+           end),
+           Reviews.record_generation(game)
          }}
     end
   end
 
   defp stored(game_id) do
-    Enum.map(Reviews.stored(game_id), fn r ->
-      {:stored, r.game_number, status(r.status), r.attempts, opt(r.response, &Jason.encode!/1),
-       r.response != nil, r.rendered, r.turns || 0}
-    end)
+    Enum.map(Reviews.stored(game_id), &stored_row/1)
+  end
+
+  defp ratings(game_id) do
+    Enum.map(Reviews.rating_summaries(game_id), &stored_row/1)
+  end
+
+  defp stored_row(r) do
+    {:stored, r.game_number, status(r.status), r.attempts, opt(r.response, &Jason.encode!/1),
+     r.response != nil, r.rendered, r.turns || 0}
   end
 
   defp summaries(game_id) do
@@ -106,6 +113,9 @@ defmodule Oskol.Gleam.Caps.Analysis do
   # that asks it for work -- today a player's retry of a failed analysis --
   # must leave something behind that a restart cannot forget. Writing it
   # here rather than at each call site means a new caller cannot omit it.
+  # This also advances record freshness: a read before the retry job has
+  # re-saved its checkpoint can pay one replay. Ordinary polling cannot
+  # advance the marker or trigger repeated backfills.
   defp enqueue(game_id) do
     Reviews.mark_analysis_owed(game_id)
     Oskol.Reviews.Queue.enqueue(game_id)

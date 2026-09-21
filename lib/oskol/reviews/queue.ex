@@ -4,7 +4,7 @@ defmodule Oskol.Reviews.Queue do
 
   A room casts `enqueue/1` when a game ends (the decision is Gleam's:
   `oskol/handlers/reviews.game_ended`), and so does the reviews endpoint for
-  a game that has none yet. A job is one room: `oskol/handlers/reviews.run`
+  a failed game explicitly retried by its player. A job is one room: `oskol/handlers/reviews.run`
   reviews every game of it that is over and still owed one, one engine
   call per game. One job runs at a time, in a supervised task, so a slow
   engine (a cold machine takes seconds to wake) never holds up a room, a
@@ -18,8 +18,13 @@ defmodule Oskol.Reviews.Queue do
   The queue lives in memory. A restart forgets what was in it, which is why
   a room is marked in the database as owing an analysis before the queue is
   asked (`Oskol.Game.Persister.analysis_owed/1`), and why `sweep_owed/0`
-  runs at boot to queue whatever is still marked. Reading an analysis never
+  runs at boot and periodically to queue whatever is still marked. Reading an analysis never
   queues one: that is what took production down on 2026-09-16.
+
+  Task crashes have a separate per-room budget, including failures before
+  the engine attempt can be charged. Recovery waits one then two minutes;
+  three consecutive crashes suspend automatic recovery for that room until
+  a fresh enqueue or queue restart. The durable owed marker is left intact.
 
   `enabled` (config `:oskol, Oskol.Reviews.Queue`) is off in tests, where
   rooms finish games by the hundred and there is no engine; a test that
@@ -29,6 +34,8 @@ defmodule Oskol.Reviews.Queue do
   require Logger
 
   @task_supervisor Oskol.Reviews.TaskSupervisor
+  @sweep_interval :timer.minutes(1)
+  @max_crashes 3
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -80,17 +87,17 @@ defmodule Oskol.Reviews.Queue do
   A game is analysed once, when it ends, and the queue that does it lives
   in memory: a restart between the game ending and the job running loses
   the job. Since a read never queues engine work, nothing else would pick
-  it up. This runs at boot, so the most a restart costs is a delay.
+  it up. This runs at boot and periodically, so a failed task or lost
+  enqueue recovers while the application stays up.
 
-  Nothing here can analyse a game twice. The mark only says "look"; the
-  job itself skips any game already graded, and a room already queued or
-  running is not queued again.
+  The mark only says "look": the job skips stored grades, and a room
+  already queued or running is not queued again. A request whose answer
+  was lost in a crash may be retried within the attempt budget.
   """
   def sweep_owed do
     if enabled?() do
       owed = Oskol.Reviews.rooms_owed_analysis()
-      if owed != [], do: Logger.info("analysis sweep: #{length(owed)} room(s) owed")
-      Enum.each(owed, &enqueue/1)
+      GenServer.cast(__MODULE__, {:recover, owed})
       length(owed)
     else
       0
@@ -108,8 +115,23 @@ defmodule Oskol.Reviews.Queue do
 
   @impl true
   def handle_continue(:sweep, state) do
-    sweep_owed()
+    recover_owed()
     {:noreply, state}
+  end
+
+  # Recovery must survive an unavailable database without restarting the
+  # queue (which could orphan its running engine task). Always schedule the
+  # next scan; no read endpoint is responsible for dispatching this work.
+  defp recover_owed do
+    Process.send_after(self(), :sweep, @sweep_interval)
+
+    try do
+      sweep_owed()
+    rescue
+      e -> Logger.error("analysis recovery sweep failed: #{Exception.message(e)}")
+    catch
+      kind, reason -> Logger.error("analysis recovery sweep failed: #{inspect({kind, reason})}")
+    end
   end
 
   # `generation` tells a retry timer set before a reset from one set after.
@@ -120,13 +142,36 @@ defmodule Oskol.Reviews.Queue do
       running: nil,
       # Rooms enqueued again while their job ran: they run once more.
       again: MapSet.new(),
+      crashes: %{},
       waiters: [],
       generation: generation
     }
   end
 
   @impl true
+  def handle_cast({:recover, game_ids}, state) do
+    # A sweep must not mark a running room as needing another run: the
+    # durable marker stays set throughout the engine request. Only a new
+    # game ending (the regular enqueue path) requests that second pass.
+    now = System.monotonic_time(:millisecond)
+
+    state =
+      Enum.reduce(game_ids, state, fn game_id, acc ->
+        if MapSet.member?(acc.members, game_id) or crash_blocked?(acc, game_id, now) do
+          acc
+        else
+          %{acc | queue: :queue.in(game_id, acc.queue), members: MapSet.put(acc.members, game_id)}
+        end
+      end)
+
+    {:noreply, next(state)}
+  end
+
   def handle_cast({:enqueue, game_id}, state) do
+    # Only fresh requested work (a game ending or an explicit player retry)
+    # reopens a crashed room. The periodic sweep never resets its budget.
+    state = %{state | crashes: Map.delete(state.crashes, game_id)}
+
     cond do
       # The job for this room is running and may have read the log before
       # this game ended (the next game of a match finishing while the last
@@ -159,8 +204,14 @@ defmodule Oskol.Reviews.Queue do
   end
 
   @impl true
+  def handle_info(:sweep, state) do
+    recover_owed()
+    {:noreply, state}
+  end
+
   def handle_info({ref, result}, %{running: {game_id, ref}} = state) do
     Process.demonitor(ref, [:flush])
+    state = %{state | crashes: Map.delete(state.crashes, game_id)}
 
     state =
       case result do
@@ -176,17 +227,51 @@ defmodule Oskol.Reviews.Queue do
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{running: {game_id, ref}} = state) do
-    Logger.error("REVIEW FAILED (#{game_id}): #{inspect(reason)}")
-    state = %{state | members: MapSet.delete(state.members, game_id)}
-    {:noreply, next(finished(state, game_id))}
+    count = Map.get(state.crashes, game_id, %{count: 0}).count + 1
+    retry_at = System.monotonic_time(:millisecond) + @sweep_interval * count
+
+    if count >= @max_crashes do
+      Logger.error(
+        "REVIEW RECOVERY SUSPENDED (#{game_id}) after #{count} task crashes: #{inspect(reason)}"
+      )
+    else
+      Logger.error("REVIEW FAILED (#{game_id}), crash #{count}: #{inspect(reason)}")
+    end
+
+    # Do not call finished/2: an enqueue received during this failed task
+    # must not bypass the crash backoff via `again`. Its durable marker is
+    # still owed and the next eligible sweep will include the newer game.
+    state = %{
+      state
+      | running: nil,
+        members: MapSet.delete(state.members, game_id),
+        again: MapSet.delete(state.again, game_id),
+        crashes: Map.put(state.crashes, game_id, %{count: count, retry_at: retry_at})
+    }
+
+    {:noreply, next(state)}
   end
 
   # A retry comes due: still a member, so straight back into the line.
   def handle_info({:retry, game_id, generation}, %{generation: generation} = state) do
-    {:noreply, next(%{state | queue: :queue.in(game_id, state.queue)})}
+    if MapSet.member?(state.members, game_id) and
+         not match?({^game_id, _}, state.running) and
+         not :queue.member(game_id, state.queue) and
+         not crash_blocked?(state, game_id, System.monotonic_time(:millisecond)) do
+      {:noreply, next(%{state | queue: :queue.in(game_id, state.queue)})}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info(_other, state), do: {:noreply, state}
+
+  defp crash_blocked?(state, game_id, now) do
+    case Map.get(state.crashes, game_id) do
+      nil -> false
+      %{count: count, retry_at: retry_at} -> count >= @max_crashes or now < retry_at
+    end
+  end
 
   # A job is over; a room enqueued again meanwhile goes straight back in
   # line (a duplicate run is harmless: what is done is skipped).

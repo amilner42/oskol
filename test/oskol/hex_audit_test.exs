@@ -1,5 +1,9 @@
 defmodule Oskol.HexAuditTest do
-  use ExUnit.Case, async: true
+  # The real-project test reloads Mix's dependency graph, temporarily
+  # changing the VM-wide cwd and project stack. It must wait until test
+  # compilation and async cases finish, or their relative paths can resolve
+  # inside a dependency directory instead of the project root.
+  use ExUnit.Case, async: false
 
   Code.require_file("scripts/hex_audit.ex")
 

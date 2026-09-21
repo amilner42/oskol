@@ -859,8 +859,20 @@ game or a room talks to it.
   (30 s, then 2 min). **Reading never queues anything**: a game ending and
   an explicit retry from a seat are the only things that spend engine time,
   because a replay page open on a shared link must not be able to put the
-  engine to work. The queue is in memory, so a game a restart lost is
-  caught up by an operator, not by a reader.
+  engine to work. The queue scans persisted `analysis_owed` markers at
+  boot and every minute; a lost enqueue or crashed worker recovers without
+  a reader or a restart. Recovery does not duplicate a running job or skip
+  its retry delay. Attempts are charged before engine IO: a crash during
+  that IO counts toward the same three-attempt budget. When recovery runs,
+  an interrupted final attempt becomes a visible failure. A failed database
+  scan logs and tries again. Task crashes, including those before charging
+  an attempt, have their own in-memory per-room budget: wait one minute,
+  then two, then suspend automatic recovery after
+  the third consecutive crash, logging once. The durable owed marker stays;
+  a fresh enqueue (game ending or explicit player retry) or queue restart
+  reopens the room. While suspended its page may still say pending: the
+  operator alert, not a reader, requests intervention. Other rooms continue,
+  and a normal task result resets its crash streak.
 - **A finished game's answer is written, not rebuilt.** Reading one used to
   replay the room's whole action log and render every graded turn again --
   five seconds and most of a megabyte per call -- and that took production
@@ -874,6 +886,13 @@ game or a room talks to it.
   written (once so far: the cube chances, `RerenderCubeReports`), a
   migration nulls `report` on the done rows and the same first-read path
   renders each afresh from the stored `response`, with no engine time.
+- Record freshness follows completed-game work, not ordinary actions:
+  `games.records_generation` remembers the `analysis_owed_at` marker the
+  replay read before its log. Record rows and their exact checkpoint are
+  stored atomically, and an older backfill cannot mark a newer completion
+  settled or rewind its checkpoint. Legacy rows establish this marker once.
+  Index/detail reads fetch record numbers only; moving checkers or playing
+  turns in the next game does not cause a new backfill.
 - `game_reviews` holds one row per (game_id, game_number): status
   (`pending`, `done`, `failed`), attempts, the engine's response verbatim,
   the rendered `report`, and that game's `turns`. `report` is what
@@ -896,13 +915,16 @@ game or a room talks to it.
   to play it, plus one `game_records` row per game. It reads the live room
   instead whenever there is one -- that is free, and it carries the game on
   the board, which nothing writes down until it ends. So a replay page on a
-  cold room wakes no room and replays no log.
+  settled cold room wakes no room and replays no log. A missing or stale
+  record still uses the existing recovery path until it is settled.
 - A **match PR** is the same rows read the other way round:
   `GET /papi/games/:slug/rooms/:id/ratings` answers one entry per seat —
   the plain mean, to one decimal, of that seat's PR in the games of *this
   room* the engine has graded (`src/oskol/handlers/ratings.gleam`, on the
-  `analysis.stored` cap; `report.player_prs` reads just the ratings out of
-  an answer rather than the whole review). A game still pending, failed or
+  `analysis.ratings` cap, which selects only the stored response's player
+  totals; `report.player_prs` reads their ratings). Seats come from the
+  stored setup, so ratings never wake a room or read its action log.
+  A game still pending, failed or
   unfinished counts for nothing, and a match with none graded shows no
   number. It is display only, and open like the record; the table prints
   it beside each name and asks again when a game ends. It is deliberately

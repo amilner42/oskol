@@ -2,36 +2,18 @@
 //// room's games count toward a player's match PR, what the average is, and
 //// what a room that is not there answers.
 
-import gamekit/clock
-import gamekit/game.{Seat}
-import gamekit/instance.{type Instance}
-import gamekit/registry
 import gleam/json
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import oskol/caps/analysis.{
-  type Stored, AnalysisCaps, Done, Failed, GameLog, Pending, Stored,
+  type Stored, AnalysisCaps, Done, Failed, Pending, Stored,
 }
-import oskol/caps/rooms as rooms_caps
+import oskol/caps/records as records_caps
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
 import oskol/fakes
 import oskol/handlers/ratings
-import oskol/rooms/errors
-
-fn started() -> Instance {
-  let assert Ok(entry) = registry.find("backgammon")
-  let assert Ok(game) =
-    entry.start(
-      "match5",
-      [Seat("p1", "Alice"), Seat("p2", "Bob")],
-      7,
-      clock.NoClock,
-      0,
-    )
-  game
-}
 
 /// The engine's answer, cut down to the one field a match PR reads.
 fn answer(first: Float, second: Float) -> String {
@@ -74,34 +56,24 @@ fn owed(number: Int, status: analysis.Status, attempts: Int) -> Stored {
   )
 }
 
-/// A live backgammon room whose two seats are p1 and p2, with these stored
-/// reviews behind them.
+/// A persisted backgammon room. All room and full-response capabilities
+/// panic: ratings may read only stored seats and the small player totals.
 fn room_with(slug: String, stored: List(Stored)) -> Ctx {
   let ctx =
     fakes.ctx()
-    |> fakes.with_room(Some(fakes.room()), None)
-    |> fakes.with_slug(Some(slug))
-  let game = started()
-  Ctx(
-    ..ctx,
-    rooms: rooms_caps.RoomsCaps(..ctx.rooms, game: fn(_) { Ok(game) }),
-    analysis: AnalysisCaps(
-      ..ctx.analysis,
-      log: fn(_) {
-        Some(
-          GameLog(
-            slug: "backgammon",
-            format: "match5",
-            clock: "none",
-            seed: 7,
-            seats: [#("p1", "Alice"), #("p2", "Bob")],
-            entries: [],
-          ),
-        )
-      },
-      stored: fn(_) { stored },
-    ),
-  )
+    |> fakes.with_records(
+      Some(records_caps.Setup(
+        slug: slug,
+        format: "match5",
+        clock: "none",
+        seed: 7,
+        seats: [#("p1", "Alice", "g1", ""), #("p2", "Bob", "g2", "")],
+        finished: False,
+        records_stale: False,
+      )),
+      [],
+    )
+  Ctx(..ctx, analysis: AnalysisCaps(..ctx.analysis, ratings: fn(_) { stored }))
 }
 
 fn body(stored: List(Stored)) -> String {
@@ -226,20 +198,13 @@ pub fn a_room_that_is_not_there_says_so_and_nothing_else_test() {
   // No room, a room still in its lobby, and a slug that is not the room's
   // game: one answer for all three, so a caller learns nothing about a room
   // it did not ask for.
-  let gone = fakes.ctx() |> fakes.with_room(None, None)
+  let gone = fakes.ctx() |> fakes.with_records(None, [])
   assert ratings.ratings_json(gone, "backgammon", "000007")
     == Error(error.NotFound(ratings.not_found_message))
 
   assert ratings.ratings_json(room_with("chess", []), "backgammon", "000007")
     == Error(error.NotFound(ratings.not_found_message))
 
-  let lobby =
-    Ctx(
-      ..room_with("backgammon", []),
-      rooms: rooms_caps.RoomsCaps(
-        ..room_with("backgammon", []).rooms,
-        game: fn(_) { Error(errors.GameNotStarted) },
-      ),
-    )
+  let lobby = room_with("backgammon", []) |> fakes.with_records(None, [])
   assert result.is_error(ratings.ratings_json(lobby, "backgammon", "000007"))
 }
