@@ -692,6 +692,61 @@ pub fn a_cube_answer_is_graded_on_the_five_band_scale_test() {
   assert text_at(far, ["verdict"]) == "fail"
 }
 
+/// Both kinds, every band: the engine's own band comes back, and the
+/// verdict is the distance from it. The whole matrix is checked over the
+/// equities in puzzles_grade_test; this is the same rule reached through
+/// the endpoint.
+pub fn every_band_is_graded_through_the_endpoint_test() {
+  reset()
+  let ctx =
+    ctx_with([
+      stored("d1", cube_question(Double), cube_answer()),
+      stored("t1", cube_question(Take), cube_answer()),
+    ])
+  // Doubling is worth a whole point more than playing on (+2); taking pays
+  // the doubler 1.4 where passing pays 1.0, so the responder passes (-2).
+  list.each([#("d1", 2), #("t1", -2)], fn(side) {
+    let #(id, engine) = side
+    list.each([-2, -1, 0, 1, 2], fn(band) {
+      let key = id <> int.to_string(band)
+      let assert Ok(body) = band_attempt(ctx, guest("g1"), id, band, key)
+      assert int_at(body, ["cube", "band"]) == engine
+      let wanted = case band - engine {
+        0 -> "pass"
+        1 | -1 -> "hold"
+        _ -> "fail"
+      }
+      assert text_at(body, ["verdict"]) == wanted
+    })
+  })
+}
+
+/// Too good to double: the engine says no double because playing on is
+/// worth more than the point a pass would hand over. The reveal says so, so
+/// a page can explain why the answer is "no double" without the player
+/// thinking the position is weak.
+pub fn a_too_good_position_says_so_test() {
+  reset()
+  let too_good =
+    CubeAnswer(
+      no_double: 1.4,
+      double_take: 0.9,
+      double_pass: 1.0,
+      probs: Some(probs()),
+      optimal: puzzles.NoDouble,
+      too_good: True,
+    )
+  let ctx = ctx_with([stored("d1", cube_question(Double), too_good)])
+  // min(0.9, 1.0) - 1.4 = -0.5: a big no double.
+  let assert Ok(body) = band_attempt(ctx, guest("g1"), "d1", -2, "k1")
+  assert text_at(body, ["verdict"]) == "pass"
+  assert int_at(body, ["cube", "band"]) == -2
+  assert bool_at(body, ["cube", "too_good"]) == True
+  // And doubling it anyway is four bands out.
+  let assert Ok(wrong) = band_attempt(ctx, guest("g1"), "d1", 2, "k2")
+  assert text_at(wrong, ["verdict"]) == "fail"
+}
+
 pub fn a_band_outside_the_scale_is_refused_test() {
   reset()
   let ctx = ctx_with([stored("d1", cube_question(Double), cube_answer())])
