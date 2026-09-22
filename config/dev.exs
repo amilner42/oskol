@@ -7,7 +7,10 @@ config :oskol, Oskol.Repo,
   username: System.get_env("PGUSER") || "postgres",
   password: System.get_env("PGPASSWORD") || "postgres",
   hostname: System.get_env("PGHOST") || "localhost",
-  database: "oskol_dev",
+  # A branch's own database for a run that must not touch the main
+  # checkout's (an operator task tried out on seeded rooms): set
+  # OSKOL_DEV_DATABASE. Unset, it is the one the human's server uses.
+  database: System.get_env("OSKOL_DEV_DATABASE") || "oskol_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10

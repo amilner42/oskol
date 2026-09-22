@@ -112,6 +112,22 @@ pub type AnalysisCaps {
     /// wants to know which line of the record a turn sits on wants three
     /// integers out of it.
     report_turn: fn(String, Int, Int) -> Option(String),
+    /// Charge a call against a row that keeps everything else it has:
+    /// (game_id, game_number, attempts, error). What the backfill writes
+    /// when re-asking a `done` game fails or its answer cannot be trusted,
+    /// so the page keeps the answer it had and the row still says what
+    /// happened and stops being asked once its tries are spent.
+    charge: fn(String, Int, Int, Option(String)) -> Nil,
+    /// Write a fresh answer over an old one and owe the game its puzzles
+    /// again, in one transaction: (game_id, game_number, what to write).
+    /// The row is written whole as `save` writes it; its extraction marker,
+    /// error and attempts are cleared; and the sources written for turns
+    /// skipped as `post_take_cube` are dropped, since the fresh answer
+    /// grades those on the right cube. One write, so there is never a
+    /// moment when the old answer is stored and the game is owed puzzles
+    /// -- which the live sweep would take as an invitation to extract the
+    /// old answer again. Only the backfill calls this.
+    replace: fn(String, Int, Save) -> Nil,
   )
 }
 
@@ -127,5 +143,7 @@ pub fn stub() -> AnalysisCaps {
     enqueue: fn(_) { panic as "stub analysis.enqueue" },
     review: fn(_) { panic as "stub analysis.review" },
     report_turn: fn(_, _, _) { panic as "stub analysis.report_turn" },
+    charge: fn(_, _, _, _) { panic as "stub analysis.charge" },
+    replace: fn(_, _, _) { panic as "stub analysis.replace" },
   )
 }

@@ -322,6 +322,8 @@ fn with_analysis(
         record_call("requests", body)
         answer(body)
       },
+      charge: fn(_, _, _, _) { panic as "reviews never charge in place" },
+      replace: fn(_, _, _) { panic as "reviews never replace an answer" },
     ),
     puzzles: puzzles_caps.PuzzlesCaps(
       ..puzzles_caps.stub(),
@@ -347,7 +349,7 @@ fn with_analysis(
             <> int.to_string(list.length(sources)),
         )
         let _ = put_ints("extracted", [number, ..get_ints("extracted")])
-        Ok(Nil)
+        Ok(puzzles_caps.Written(list.length(puzzles), 0, list.length(sources)))
       },
       // The review job hands a graded game's mistakes to the decks that
       // own them. No seat here belongs to an account, so there is nothing

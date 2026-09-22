@@ -642,6 +642,19 @@ fn roll(dice: Option(#(Int, Int))) -> String {
 /// the comparison is made with a hair of room.
 pub const mistake_threshold = 0.02
 
+/// Can this answer grade any attempt exactly? A checker answer that holds
+/// every legal result, a cube answer that holds the chances it was judged
+/// on. An incomplete one is honest about it (an attempt outside its five
+/// is unknown) and is the one kind of stored answer that may be replaced,
+/// by a complete answer to the identical question.
+pub fn complete(answer: Answer) -> Bool {
+  case answer {
+    MoveAnswer(complete: complete, ..) -> complete
+    CubeAnswer(probs: Some(_), ..) -> True
+    CubeAnswer(probs: None, ..) -> False
+  }
+}
+
 pub fn is_mistake(equity_lost: Float) -> Bool {
   equity_lost >=. mistake_threshold -. 0.000001
 }

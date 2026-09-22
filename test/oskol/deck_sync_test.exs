@@ -83,7 +83,8 @@ defmodule Oskol.DeckSyncTest do
             "jacoby" => false
           },
           answer: %{"kind" => "move", "complete" => true, "outcomes" => []},
-          evaluated_by: %{"levels" => %{}}
+          evaluated_by: %{"levels" => %{}},
+          complete: true
         }
       end
 
@@ -103,7 +104,7 @@ defmodule Oskol.DeckSyncTest do
         }
       end
 
-    :ok = Puzzles.store(game_id, 1, puzzles, sources)
+    {:ok, _} = Puzzles.store(game_id, 1, puzzles, sources)
   end
 
   # The same position, reached again in another game: one puzzle, a second
@@ -115,7 +116,7 @@ defmodule Oskol.DeckSyncTest do
     # The puzzle goes in again with the same key: `store/4` keeps the row
     # that is already there and hands its id back, which is how the second
     # game's source points at the first game's puzzle.
-    :ok =
+    {:ok, _} =
       Puzzles.store(
         game_id,
         1,
@@ -126,7 +127,8 @@ defmodule Oskol.DeckSyncTest do
             kind: puzzle.kind,
             question: puzzle.question,
             answer: puzzle.answer,
-            evaluated_by: puzzle.evaluated_by
+            evaluated_by: puzzle.evaluated_by,
+            complete: true
           }
         ],
         [
@@ -293,7 +295,7 @@ defmodule Oskol.DeckSyncTest do
     test "a game with no mistakes gives its owner nothing" do
       user = an_account("arie@oskol.test")
       game_id = a_room([seat("p1", guest: "g1", user: user.id)])
-      :ok = Puzzles.store(game_id, 1, [], [])
+      {:ok, _} = Puzzles.store(game_id, 1, [], [])
 
       assert {:ok, 0} = Practice.sync(user.id)
     end

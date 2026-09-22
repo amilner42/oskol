@@ -39,6 +39,7 @@ import gleam/result
 import oskol/caps/analysis.{
   type GameLog, type Stored, Done, Failed, Pending, Save, Stored,
 } as caps
+import oskol/caps/puzzles as puzzles_caps
 import oskol/caps/records
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
@@ -100,7 +101,7 @@ pub fn run(ctx: Ctx, game_id: String) -> Option(Int) {
   // anyone with the link can make, and race this job on the same game.
   case settle(ctx, game_id, Extracting) {
     None -> None
-    Some(#(games, seats)) -> {
+    Some(#(games, seats, _)) -> {
       let stored = ctx.analysis.stored(game_id)
       games
       |> list.filter(fn(g) { owed(g, stored) })
@@ -219,7 +220,7 @@ fn attempt_review(
 /// from it, zipped against the turns the game really had. Both come out of
 /// one parse because both callers want both -- the page to store, the
 /// review to take puzzles from.
-fn rendered(
+pub fn rendered(
   response: String,
   g: analysis.GameTurns,
   seats: List(report.Seat),
@@ -245,23 +246,51 @@ fn write_puzzles(
   seats: List(report.Seat),
   review: report.Review,
 ) -> Nil {
+  case extracted(ctx, game_id, g, seats, review) {
+    // The mistakes exist now, so their pictures can be drawn and the
+    // decks that own them can have them. Here and not in the room: this
+    // is the review job's own task, which is already off every hot path,
+    // and neither a picture that does not draw nor a deck that does not
+    // fill is a reason for a review to fail. Either one that does not
+    // happen at all is the sweep's to find.
+    Ok(_) -> {
+      ctx.puzzles.pictures(game_id, g.number)
+      sync.sync_game(ctx, game_id)
+    }
+    Error(_) -> Nil
+  }
+}
+
+/// This game's puzzles, decided and stored: what `store` wrote, or why
+/// nothing was. Every path that gives up is charged and logged on the
+/// row, so a game that cannot be extracted is never owed for ever.
+pub fn extracted(
+  ctx: Ctx,
+  game_id: String,
+  g: analysis.GameTurns,
+  seats: List(report.Seat),
+  review: report.Review,
+) -> Result(puzzles_caps.Written, String) {
   case extract.from_review(g, seats, review) {
     Ok(#(puzzles, sources)) ->
-      case ctx.puzzles.store(game_id, g.number, puzzles, sources) {
-        // The mistakes exist now, so their pictures can be drawn and the
-        // decks that own them can have them. Here and not in the room:
-        // this is the review job's own task, which is already off every
-        // hot path, and neither a picture that does not draw nor a deck
-        // that does not fill is a reason for a review to fail. Either one
-        // that does not happen at all is the sweep's to find.
-        Ok(Nil) -> {
-          ctx.puzzles.pictures(game_id, g.number)
-          sync.sync_game(ctx, game_id)
-        }
-        Error(_) -> Nil
-      }
-    Error(reason) -> ctx.puzzles.failed(game_id, g.number, reason)
+      ctx.puzzles.store(game_id, g.number, puzzles, sources)
+    Error(reason) -> {
+      ctx.puzzles.failed(game_id, g.number, reason)
+      Error(reason)
+    }
   }
+}
+
+/// A room replayed for something other than a review: its games, its
+/// seats and its stored reviews as the replay found them, with the record
+/// rows and the rendered answers a read wants settled on the way and
+/// nothing extracted. What the backfill starts from. None when the room
+/// is not a started backgammon room, or its log does not replay.
+pub fn replayed_room(
+  ctx: Ctx,
+  game_id: String,
+) -> Option(#(List(analysis.GameTurns), List(report.Seat), List(Stored))) {
+  settle(ctx, game_id, ReadOnly)
 }
 
 /// This game was owed puzzles and is not getting them. Charge the try and
@@ -304,7 +333,7 @@ fn settle(
   ctx: Ctx,
   game_id: String,
   extraction: Extraction,
-) -> Option(#(List(analysis.GameTurns), List(report.Seat))) {
+) -> Option(#(List(analysis.GameTurns), List(report.Seat), List(Stored))) {
   case ctx.analysis.log(game_id) {
     Some(log) if log.slug == slug ->
       case replayed(log) {
@@ -324,7 +353,7 @@ fn settle(
           list.each(finished, fn(g) {
             store_review(ctx, game_id, g, seats, stored, unextracted)
           })
-          Some(#(games, seats))
+          Some(#(games, seats, stored))
         }
         // The log does not replay: nothing to ask the engine about.
         Error(_) -> None

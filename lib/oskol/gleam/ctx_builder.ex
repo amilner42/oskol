@@ -14,6 +14,7 @@ defmodule Oskol.Gleam.CtxBuilder do
     * `:player_pid` — the process that takes a seat (a LiveView; `nil` for
       a stateless request, which seats a player with no live connection).
     * `:generate` — a game-code generator, for tests.
+    * `:review` — the engine call, for an operator task that times it.
 
   The capability closures run in the process that builds them: `subscribe`
   subscribes that process.
@@ -24,7 +25,7 @@ defmodule Oskol.Gleam.CtxBuilder do
   alias Oskol.Gleam.Caps
 
   def build(opts \\ []) do
-    {:ctx, Caps.Analysis.build(), Caps.Auth.build(), Caps.Copy.build(), Caps.Guests.build(),
+    {:ctx, Caps.Analysis.build(opts), Caps.Auth.build(), Caps.Copy.build(), Caps.Guests.build(),
      Caps.Ids.build(opts), Caps.Persistence.build(), Caps.Practice.build(), Caps.Puzzles.build(),
      Caps.Records.build(), Caps.Rooms.build(opts)}
   end

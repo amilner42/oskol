@@ -683,6 +683,25 @@ pub fn a_checker_play_after_a_take_is_recorded_but_not_asked_test() {
   assert s.equity_lost == 0.4
 }
 
+pub fn a_checker_play_after_a_take_graded_by_the_fixed_engine_is_asked_test() {
+  // The engine that sends every result is the one that judges a post-take
+  // play on the doubled cube: nothing to skip.
+  let results = list.repeat(report.MoveResult(moved_board(), 0.0), 12)
+  let #(puzzles, sources) =
+    run(
+      game(1, [
+        a_turn(0, a_position(White), Some(#(6, 4)), Some(analysis.Took)),
+      ]),
+      [graded(Some(a_move(0.4, False, 12, results)), None)],
+    )
+  let assert [p] = puzzles
+  assert p.kind == "move"
+  assert p.complete
+  let assert [s] = sources
+  assert s.key == Some(p.key)
+  assert s.skipped_reason == None
+}
+
 // ---------- Mismatched answers ----------
 
 pub fn an_answer_for_another_game_is_refused_test() {
