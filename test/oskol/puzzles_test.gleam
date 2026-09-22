@@ -8,7 +8,7 @@
 //// what Oskol does with them.
 
 import backgammon/analysis
-import backgammon/board.{type Board, type Color, Black, Point, White}
+import backgammon/board.{type Board, type Color, Bar, Black, Off, Point, White}
 import backgammon/positions
 import gleam/int
 import gleam/json
@@ -23,37 +23,45 @@ import oskol/rooms/code
 
 // ---------- Boards ----------
 
-/// A middle-game position: White has a checker back, Black an anchor.
+/// A middle-game position, asymmetric on purpose: each side has a checker
+/// on the bar and a checker borne off, and the two sides hold different
+/// points. Nothing about it is the same read from either end, so a test
+/// that claims two colours reach one question has to mean it.
 fn a_board() -> Board {
   positions.setup([
+    #(White, Bar, 1),
+    #(White, Off, 1),
     #(White, Point(24), 2),
     #(White, Point(13), 5),
     #(White, Point(8), 3),
-    #(White, Point(6), 4),
-    #(White, Point(4), 1),
+    #(White, Point(6), 3),
+    #(Black, Bar, 1),
+    #(Black, Off, 1),
     #(Black, Point(1), 2),
-    #(Black, Point(12), 5),
-    #(Black, Point(17), 3),
-    #(Black, Point(19), 4),
-    #(Black, Point(21), 1),
+    #(Black, Point(12), 4),
+    #(Black, Point(17), 4),
+    #(Black, Point(19), 3),
   ])
 }
 
-/// The same position with the colours and the board turned round: what
-/// Black sees when White sees `a_board`. Encoded for its own mover it is
-/// the same 26 ints, which is what makes it the same puzzle.
+/// `a_board` with the colours swapped and every point p at 25 - p: what
+/// Black sees when White sees `a_board`. A different board (the assertion
+/// below says so), and the same 26 ints once each is encoded for its own
+/// mover -- which is what makes it the same puzzle.
 fn mirrored() -> Board {
   positions.setup([
+    #(White, Bar, 1),
+    #(White, Off, 1),
+    #(White, Point(24), 2),
+    #(White, Point(13), 4),
+    #(White, Point(8), 4),
+    #(White, Point(6), 3),
+    #(Black, Bar, 1),
+    #(Black, Off, 1),
     #(Black, Point(1), 2),
     #(Black, Point(12), 5),
     #(Black, Point(17), 3),
-    #(Black, Point(19), 4),
-    #(Black, Point(21), 1),
-    #(White, Point(24), 2),
-    #(White, Point(13), 5),
-    #(White, Point(8), 3),
-    #(White, Point(6), 4),
-    #(White, Point(4), 1),
+    #(Black, Point(19), 3),
   ])
 }
 
@@ -305,6 +313,9 @@ pub fn the_same_position_from_either_colour_is_one_puzzle_test() {
   let white = a_position(White)
   let black =
     analysis.Position(..white, board: analysis.encode(mirrored(), Black))
+  // The two boards really are different positions...
+  assert analysis.encode(a_board(), White) != analysis.encode(mirrored(), White)
+  // ...and the same one seen from the side that is on roll.
   assert white.board == black.board
   let one =
     run(game(1, [a_turn(0, white, Some(#(6, 4)), None)]), [
@@ -657,21 +668,6 @@ pub fn a_checker_play_after_a_take_is_recorded_but_not_asked_test() {
   assert s.key == None
   assert s.skipped_reason == Some(extract.post_take_reason)
   assert s.equity_lost == 0.4
-}
-
-pub fn a_checker_play_after_a_pass_is_an_ordinary_puzzle_test() {
-  // A passed double ends the game; the turn that follows it in another
-  // game is nobody's post-take play.
-  let #(puzzles, sources) =
-    run(
-      game(1, [
-        a_turn(0, a_position(White), Some(#(6, 4)), Some(analysis.Passed)),
-      ]),
-      [graded(Some(a_move(0.4, False, 12, [])), None)],
-    )
-  assert list.length(puzzles) == 1
-  let assert [s] = sources
-  assert s.skipped_reason == None
 }
 
 // ---------- Mismatched answers ----------

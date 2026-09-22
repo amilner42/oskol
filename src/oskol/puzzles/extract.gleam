@@ -183,7 +183,11 @@ fn move_answer(
     |> list.sort(fn(a, b) { int.compare(a.rank, b.rank) })
     |> dedupe_ranks([])
     |> list.map(candidate)
-  let complete = results != []
+  // Every legal play, not merely some: a list the engine truncated (an
+  // older service, a cap we did not ask for) must never be stored as the
+  // whole of it, or an attempt would be graded against a partial set and
+  // told it was wrong.
+  let complete = n_legal > 0 && list.length(results) == n_legal
   let outcomes = case complete {
     True ->
       list.map(results, fn(r) {

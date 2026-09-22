@@ -66,6 +66,13 @@ pub type PuzzlesCaps {
     /// never fails a review, so a caller logs and moves on.
     store: fn(String, Int, List(NewPuzzle), List(NewSource)) ->
       Result(Nil, String),
+    /// This game was owed puzzles and could not have them: (game_id,
+    /// game_number, why). Charges the try and logs it, and once the budget
+    /// is spent marks the row so the sweep stops coming back. Every path
+    /// that gives up on a game's puzzles goes through here or through a
+    /// failing `store`, or the sweep would replay that room every minute
+    /// for ever without saying so.
+    failed: fn(String, Int, String) -> Nil,
   )
 }
 
@@ -73,5 +80,6 @@ pub fn stub() -> PuzzlesCaps {
   PuzzlesCaps(
     unextracted: fn(_) { panic as "stub puzzles.unextracted" },
     store: fn(_, _, _, _) { panic as "stub puzzles.store" },
+    failed: fn(_, _, _) { panic as "stub puzzles.failed" },
   )
 }

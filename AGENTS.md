@@ -974,21 +974,46 @@ path builds one and nothing re-asks the engine to recover one.
   was is a `puzzle_sources` row, and the seat of a take is the responder's.
   **A stored answer is never rewritten**: a shared link must not change its
   mind, so a change of shape is a migration.
-- **The answer is complete for new puzzles.** The review request now asks
+- **The answer is complete for new puzzles.** The review request asks
   `all_results`, which costs the engine nothing (it evaluates every legal
   play anyway; `top_moves` only truncates what it writes down), so the
   answer holds every legal play's board and cost plus full details for the
-  top five and the move played. A review taken before that says
+  top five and the move played. `complete` is `results` numbering exactly
+  `n_legal`, never merely "not empty": a truncated list stored as the whole
+  of it would grade a good answer wrong. A review taken before the flag says
   `complete: false`, and an attempt outside its five is honestly unknown.
+- **Only the queue writes puzzles.** `settle` takes `Extracting` from the
+  queue's job and `ReadOnly` from a read, so a GET anyone with the link can
+  make never writes a puzzle, never spends an extraction attempt and cannot
+  race the job on the same game. A read still renders an answer it finds
+  unrendered, exactly as before, and leaves the puzzles owed.
 - **One transaction, one marker.** `puzzles`, `puzzle_sources` and
   `game_reviews.puzzles_extracted_at` land together (`Oskol.Puzzles.store/4`,
   behind the `puzzles` cap). Idempotent: a puzzle is written only where its
-  key is new, a source only where its (game, game number, turn, kind) is.
-  A failure logs and **never fails the review**; the review queue's minute
-  sweep picks up any graded-but-unextracted game and extracts it from the
-  stored answer, never the engine. `puzzles_attempts` is charged before each
-  try, three as an analysis gets, so a write that always fails cannot have
-  the sweep replaying one room for ever.
+  key is new, a source only where its (game, game number, turn, kind) is,
+  and a game is extracted only while it is actually owed -- so a migration
+  that re-renders reports (`RerenderCubeReports`-style) cannot re-extract
+  every done row.
+- **Every giving-up path is charged and logged.** A failure **never fails
+  the review**, but it always spends one of three `puzzles_attempts` and
+  logs why -- including the case Gleam cannot even reach a decision in
+  (`puzzles.failed`, for a stored answer that no longer lines up with the
+  game's turns). The try that spends the last attempt sets the marker with
+  `puzzles_error` beside it, so the minute sweep stops replaying that room.
+  Without that, one bad row would have the sweep replaying its whole log
+  every minute for ever, silently. A puzzle whose every candidate id is
+  taken is skipped with `skipped_reason: "id_exhausted"`, never fatal to
+  the rest of the game.
+- **Nothing old is owed.** The migration marks every review that already
+  existed, because the boot sweep would otherwise backfill all of
+  production at deploy, ahead of live games and out of answers written
+  before `all_results`. Backfilling old rooms is `puzzles-backfill`, and it
+  finds an old row by its stored response (a turn whose `move` carries no
+  `results`), never by the marker. For the same reason, a future path that
+  re-analyses a game that is already `done` must clear
+  `puzzles_extracted_at` itself: `Reviews.save/8`'s upsert deliberately
+  leaves it alone, which is right for today's only rewriter (a retry of a
+  `failed` row, which never had puzzles).
 - `puzzle_attempts`, `puzzle_shares` and `puzzle_images` exist and are
   written by the later tickets (the API, the story link, the board picture).
 - Measured on the seeded match 821900 (12 games): 125 puzzles, 127 sources

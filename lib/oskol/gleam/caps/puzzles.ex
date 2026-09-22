@@ -3,7 +3,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
   Real IO for src/oskol/caps/puzzles.gleam. Keep constructor tags and field
   order in lockstep:
 
-      PuzzlesCaps(unextracted, store)
+      PuzzlesCaps(unextracted, store, failed)
       NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json)
       NewSource(key, game_number, turn, kind, seat, player_id, played,
       equity_lost, grade, skipped_reason)
@@ -21,7 +21,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
   alias Oskol.Puzzles
 
   def build do
-    {:puzzles_caps, &Puzzles.unextracted/1, &store/4}
+    {:puzzles_caps, &Puzzles.unextracted/1, &store/4, &failed/3}
   end
 
   defp store(game_id, game_number, puzzles, sources) do
@@ -34,6 +34,11 @@ defmodule Oskol.Gleam.Caps.Puzzles do
       :ok -> {:ok, nil}
       {:error, reason} -> {:error, to_string(reason)}
     end
+  end
+
+  defp failed(game_id, game_number, reason) do
+    :ok = Puzzles.failed(game_id, game_number, reason)
+    nil
   end
 
   defp puzzle({:new_puzzle, key, ids, kind, question, answer, evaluated_by}) do

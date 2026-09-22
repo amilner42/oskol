@@ -44,6 +44,9 @@ defmodule Oskol.Reviews do
       # tries that has taken. Set in the same transaction as the rows.
       field(:puzzles_extracted_at, :utc_datetime_usec)
       field(:puzzles_attempts, :integer, default: 0)
+      # Why extraction was given up on, when it was. Nil on a row whose
+      # puzzles were written.
+      field(:puzzles_error, :string)
 
       timestamps(type: :utc_datetime_usec)
     end

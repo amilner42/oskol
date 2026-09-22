@@ -93,7 +93,11 @@ pub fn game_ended(game_slug: String, events: List(Event)) -> Bool {
 /// every finished game, and the rendering of any answer the engine had
 /// already given. That is `settle`, and it runs first.
 pub fn run(ctx: Ctx, game_id: String) -> Option(Int) {
-  case settle(ctx, game_id) {
+  // The queue is the only caller that writes puzzles. A read may still
+  // settle a room (rendering an answer it finds unrendered), but it never
+  // extracts: that would put a write and an attempt budget behind a GET
+  // anyone with the link can make, and race this job on the same game.
+  case settle(ctx, game_id, Extracting) {
     None -> None
     Some(#(games, seats)) -> {
       let stored = ctx.analysis.stored(game_id)
@@ -193,7 +197,7 @@ fn attempt_review(
       // The only moment the board each decision was made *on* exists: the
       // stored answer keeps the boards moves lead to, never the one they
       // start from. Puzzles are written here or they are not written.
-      extract_puzzles(ctx, game_id, g, seats, review)
+      write_puzzles(ctx, game_id, g, seats, review)
       Error(Nil)
     }
     Error(reason) -> {
@@ -228,10 +232,12 @@ fn rendered(
 /// question each one asks and whose mistake it was, in one transaction with
 /// the marker that says this game is done with.
 ///
-/// A failure here never fails a review. The capability logs it and leaves
-/// the marker unset, so the queue's sweep comes back for it -- from the
-/// answer already stored, never the engine.
-fn extract_puzzles(
+/// A failure here never fails a review, but it is always charged for and
+/// always logged. Otherwise a game whose answer no longer lines up with its
+/// turns -- an old row whose turn count moved under it -- would be owed
+/// puzzles for ever, and the sweep would replay its whole log every minute
+/// without saying a word.
+fn write_puzzles(
   ctx: Ctx,
   game_id: String,
   g: analysis.GameTurns,
@@ -243,9 +249,23 @@ fn extract_puzzles(
       let _ = ctx.puzzles.store(game_id, g.number, puzzles, sources)
       Nil
     }
-    // The answer is not this game's; the row that holds it is settled as
-    // failed by the render that found the same thing.
-    Error(_) -> Nil
+    Error(reason) -> ctx.puzzles.failed(game_id, g.number, reason)
+  }
+}
+
+/// This game was owed puzzles and is not getting them. Charge the try and
+/// log the reason; once the budget is spent the row is marked so the sweep
+/// lets it go.
+fn no_puzzles(
+  ctx: Ctx,
+  game_id: String,
+  number: Int,
+  reason: String,
+  owed_puzzles: Bool,
+) -> Nil {
+  case owed_puzzles {
+    True -> ctx.puzzles.failed(game_id, number, reason)
+    False -> Nil
   }
 }
 
@@ -261,9 +281,18 @@ fn extract_puzzles(
 /// Called by the queue when a game ends (the replay is the review's own),
 /// and by a read that finds nothing stored -- the one time an old room
 /// pays for itself.
+/// Whether this settle may write puzzles. Only the queue's job may: a read
+/// renders what it finds unrendered, as it always has, and leaves the
+/// puzzles owed for the sweep.
+type Extraction {
+  Extracting
+  ReadOnly
+}
+
 fn settle(
   ctx: Ctx,
   game_id: String,
+  extraction: Extraction,
 ) -> Option(#(List(analysis.GameTurns), List(report.Seat))) {
   case ctx.analysis.log(game_id) {
     Some(log) if log.slug == slug ->
@@ -275,8 +304,12 @@ fn settle(
           let stored = ctx.analysis.stored(game_id)
           // Which games are graded but have no puzzles yet: a crash between
           // the two, or a room reviewed before puzzles existed. Reading it
-          // costs one small query and spends no engine time.
-          let unextracted = ctx.puzzles.unextracted(game_id)
+          // costs one small query and spends no engine time -- and a read
+          // does not ask at all, so it cannot touch the puzzle tables.
+          let unextracted = case extraction {
+            Extracting -> ctx.puzzles.unextracted(game_id)
+            ReadOnly -> []
+          }
           list.each(finished, fn(g) {
             store_review(ctx, game_id, g, seats, stored, unextracted)
           })
@@ -313,7 +346,16 @@ fn store_review(
         // Never rendered, or rendered but never turned into puzzles:
         // either way the stored answer is read once and both are settled.
         Done, Some(response), False, _ | Done, Some(response), True, True ->
-          settle_answer(ctx, game_id, g, seats, row, response, turns)
+          settle_answer(
+            ctx,
+            game_id,
+            g,
+            seats,
+            row,
+            response,
+            turns,
+            owed_puzzles,
+          )
         _, _, _, _ -> backfill_turns(ctx, game_id, g.number, row, turns)
       }
     }
@@ -334,9 +376,15 @@ fn settle_answer(
   row: Stored,
   response: String,
   turns: Int,
+  owed_puzzles: Bool,
 ) -> Nil {
   case report.parse(response) {
-    Error(reason) -> unusable(ctx, game_id, g.number, row, reason, turns)
+    Error(reason) -> {
+      unusable(ctx, game_id, g.number, row, reason, turns)
+      // A rendered row keeps its answer, so nothing else would ever take
+      // this game off the sweep's list. Charge for the try and say why.
+      no_puzzles(ctx, game_id, g.number, reason, owed_puzzles)
+    }
     Ok(review) -> {
       let usable = case row.rendered {
         True -> {
@@ -362,12 +410,16 @@ fn settle_answer(
             }
             Error(reason) -> {
               unusable(ctx, game_id, g.number, row, reason, turns)
+              no_puzzles(ctx, game_id, g.number, reason, owed_puzzles)
               False
             }
           }
       }
-      case usable {
-        True -> extract_puzzles(ctx, game_id, g, seats, review)
+      // Only a game that is actually owed its puzzles: a report re-rendered
+      // by a migration must not re-extract every done row, spend its
+      // attempts and move its marker.
+      case usable && owed_puzzles {
+        True -> write_puzzles(ctx, game_id, g, seats, review)
         False -> Nil
       }
     }
@@ -476,7 +528,7 @@ fn read(
   case stale(setup, numbers, summaries) {
     False -> Ok(#(setup, numbers, summaries))
     True -> {
-      let _ = settle(ctx, game_id)
+      let _ = settle(ctx, game_id, ReadOnly)
       Ok(#(setup, ctx.records.numbers(game_id), ctx.analysis.summaries(game_id)))
     }
   }

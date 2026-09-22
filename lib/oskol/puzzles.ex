@@ -21,6 +21,10 @@ defmodule Oskol.Puzzles do
 
   The attempt is charged before the transaction, deliberately: a write that
   keeps failing must not have the minute sweep replaying one room for ever.
+  Every giving-up path -- a failed transaction, and `failed/3` for a
+  decision Gleam could not even reach -- charges and logs, and the one that
+  spends the last attempt marks the row (`puzzles_extracted_at`, with
+  `puzzles_error` saying why) so the sweep lets it go.
   """
 
   import Ecto.Query
@@ -163,7 +167,7 @@ defmodule Oskol.Puzzles do
   `:ok`, or `{:error, reason}` -- extraction never fails a review.
   """
   def store(game_id, game_number, puzzles, sources) do
-    charge_attempt(game_id, game_number)
+    attempts = charge_attempt(game_id, game_number)
 
     Repo.transaction(fn ->
       ids = resolve_ids(puzzles, 0)
@@ -184,13 +188,24 @@ defmodule Oskol.Puzzles do
         :ok
 
       {:error, reason} ->
-        log_failure(game_id, game_number, reason)
+        gave_up(game_id, game_number, inspect(reason), attempts)
         {:error, inspect(reason)}
     end
   rescue
     e ->
-      log_failure(game_id, game_number, e)
+      gave_up(game_id, game_number, Exception.message(e), attempts_of(game_id, game_number))
       {:error, Exception.message(e)}
+  end
+
+  @doc """
+  This game was owed puzzles and could not have them -- the stored answer
+  no longer lines up with the game's turns, say. Charge the try, log it,
+  and once the budget is spent mark the row so the sweep lets it go.
+  """
+  def failed(game_id, game_number, reason) do
+    attempts = charge_attempt(game_id, game_number)
+    gave_up(game_id, game_number, reason, attempts)
+    :ok
   end
 
   # A puzzle whose key is already stored keeps the id it has; a new one
@@ -208,17 +223,29 @@ defmodule Oskol.Puzzles do
         found
 
       missing ->
-        rows = Enum.map(missing, &puzzle_row(&1, attempt))
+        {writable, exhausted} =
+          missing
+          |> Enum.map(&{&1, puzzle_row(&1, attempt)})
+          |> Enum.split_with(fn {_puzzle, row} -> row.id != nil end)
 
-        if Enum.any?(rows, &is_nil(&1.id)) do
-          raise "puzzle id candidates exhausted for #{hd(missing).key}"
+        # Every candidate id this puzzle had is held by some other key.
+        # Vanishingly unlikely, and never a reason to lose the rest of the
+        # game: this one puzzle is skipped and its sources say so.
+        for {puzzle, _row} <- exhausted do
+          Logger.error("puzzle id candidates exhausted for key #{puzzle.key}")
         end
 
-        # No conflict target: the key index and the id index both apply, and
-        # losing either race means this row is already someone else's
-        # problem, so read back rather than guess.
-        Repo.insert_all(Puzzle, rows, on_conflict: :nothing)
-        Map.merge(found, resolve_ids(missing, attempt + 1))
+        case writable do
+          [] ->
+            found
+
+          rows ->
+            # No conflict target: the key index and the id index both apply,
+            # and losing either race means this row is already someone
+            # else's problem, so read back rather than guess.
+            Repo.insert_all(Puzzle, Enum.map(rows, &elem(&1, 1)), on_conflict: :nothing)
+            Map.merge(found, resolve_ids(Enum.map(rows, &elem(&1, 0)), attempt + 1))
+        end
     end
   end
 
@@ -237,11 +264,23 @@ defmodule Oskol.Puzzles do
     }
   end
 
+  # The reason a source carries when its puzzle could not be given an id.
+  # A storage fact, not a product rule, so it is named here and not in Gleam.
+  @id_exhausted "id_exhausted"
+
   defp source_row(source, game_id, ids) do
     now = DateTime.utc_now()
+    puzzle_id = source.key && Map.get(ids, source.key)
+
+    skipped =
+      cond do
+        source.skipped_reason != nil -> source.skipped_reason
+        source.key != nil and puzzle_id == nil -> @id_exhausted
+        true -> nil
+      end
 
     %{
-      puzzle_id: source.key && Map.get(ids, source.key),
+      puzzle_id: puzzle_id,
       game_id: game_id,
       game_number: source.game_number,
       turn: source.turn,
@@ -251,7 +290,7 @@ defmodule Oskol.Puzzles do
       played: source.played,
       equity_lost: source.equity_lost,
       grade: source.grade,
-      skipped_reason: source.skipped_reason,
+      skipped_reason: skipped,
       inserted_at: now,
       updated_at: now
     }
@@ -259,20 +298,53 @@ defmodule Oskol.Puzzles do
 
   defp mark_extracted(game_id, game_number) do
     from(r in Review, where: r.game_id == ^game_id and r.game_number == ^game_number)
-    |> Repo.update_all(set: [puzzles_extracted_at: DateTime.utc_now()])
+    |> Repo.update_all(set: [puzzles_extracted_at: DateTime.utc_now(), puzzles_error: nil])
   end
 
   # Charged outside the transaction on purpose: a rollback must not refund
   # it, or a write that always fails would have the sweep replaying this
-  # room every minute for ever.
+  # room every minute for ever. Returns the count after this try.
   defp charge_attempt(game_id, game_number) do
-    from(r in Review, where: r.game_id == ^game_id and r.game_number == ^game_number)
-    |> Repo.update_all(inc: [puzzles_attempts: 1])
+    {_, counts} =
+      from(r in Review,
+        where: r.game_id == ^game_id and r.game_number == ^game_number,
+        select: r.puzzles_attempts
+      )
+      |> Repo.update_all(inc: [puzzles_attempts: 1])
+
+    List.first(counts || []) || @max_attempts
   end
 
-  defp log_failure(game_id, game_number, reason) do
-    Logger.error(
-      "puzzle extraction failed for #{game_id} game #{game_number}: #{inspect(reason)}"
+  defp attempts_of(game_id, game_number) do
+    from(r in Review,
+      where: r.game_id == ^game_id and r.game_number == ^game_number,
+      select: r.puzzles_attempts
     )
+    |> Repo.one() || @max_attempts
+  end
+
+  # Log every time, and on the last attempt settle the row so the minute
+  # sweep stops coming back for a game it can never extract. The marker
+  # says "the sweep is done with this"; `puzzles_error` says why, and is
+  # what an operator looks for.
+  defp gave_up(game_id, game_number, reason, attempts) do
+    Logger.error(
+      "puzzle extraction failed for #{game_id} game #{game_number} " <>
+        "(attempt #{attempts}/#{@max_attempts}): #{reason}"
+    )
+
+    if attempts >= @max_attempts do
+      Logger.error("puzzle extraction given up for #{game_id} game #{game_number}: #{reason}")
+
+      from(r in Review, where: r.game_id == ^game_id and r.game_number == ^game_number)
+      |> Repo.update_all(
+        set: [
+          puzzles_extracted_at: DateTime.utc_now(),
+          puzzles_error: String.slice(reason, 0, 500)
+        ]
+      )
+    end
+
+    :ok
   end
 end

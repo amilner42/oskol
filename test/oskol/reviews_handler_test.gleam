@@ -224,6 +224,7 @@ fn with_analysis(
   forget("replays")
   forget("backfills")
   forget("extractions")
+  forget("extraction_failures")
   let _ = put_ints("extracted", [])
   let _ = put_rows("rows", stored)
   let _ = put_records("records", [])
@@ -345,6 +346,16 @@ fn with_analysis(
         let _ = put_ints("extracted", [number, ..get_ints("extracted")])
         Ok(Nil)
       },
+      failed: fn(_, number, reason) {
+        record_call(
+          "extraction_failures",
+          int.to_string(number) <> ":" <> reason,
+        )
+        // Charged and, once the budget is spent, marked: the fake settles
+        // it at once, which is what the sweep sees after the third try.
+        let _ = put_ints("extracted", [number, ..get_ints("extracted")])
+        Nil
+      },
     ),
     records: records_caps.RecordsCaps(
       setup: fn(id) {
@@ -387,6 +398,12 @@ fn with_failing_extraction(ctx: Ctx) -> Ctx {
       Error("the database said no")
     }),
   )
+}
+
+/// A room whose puzzle capability is not there at all: touch it and the
+/// test dies. What a read must be able to do.
+fn with_no_puzzle_writes(ctx: Ctx) -> Ctx {
+  Ctx(..ctx, puzzles: puzzles_caps.stub())
 }
 
 // ---------- Puzzles, written where the pre-move boards are ----------
@@ -447,6 +464,63 @@ pub fn an_extraction_that_fails_leaves_the_review_alone_test() {
   assert string.contains(body, "\"status\":\"done\"")
   // And the game is still owed its puzzles, for the sweep to come back to.
   assert ctx.puzzles.unextracted("123456") == [1]
+}
+
+pub fn a_read_never_writes_puzzles_test() {
+  // Reading a review is open to anyone with the link. It may still settle
+  // a room it finds unrendered -- that is what it has always done -- but
+  // it must not write a puzzle, spend an extraction attempt, or race the
+  // queue's job on the same game.
+  let log = finished_log(4)
+  let body = engine_answer(turn_count(log, 1))
+  let unrendered = #(
+    Stored(
+      game_number: 1,
+      status: Done,
+      attempts: 1,
+      response_json: Some(body),
+      answered: True,
+      rendered: False,
+      turns: turn_count(log, 1),
+    ),
+    None,
+  )
+  let ctx = with_no_puzzle_writes(with_analysis(log, [unrendered], no_engine))
+  let assert Ok(page) =
+    reviews.reviews_json(ctx, fakes.no_guest(), "backgammon", "123456")
+  assert string.contains(page, "\"status\":\"done\"")
+  // The read rendered the answer, as it always did, and nothing else.
+  assert list.reverse(recorded("saves")) == ["1:done:1:body:page"]
+}
+
+pub fn a_game_that_can_never_be_extracted_is_given_up_on_test() {
+  // A stored answer whose turn count no longer matches the game -- an old
+  // row whose turns were re-derived under it. The review is already
+  // rendered, so nothing else would ever take this game off the sweep's
+  // list: every try has to be charged and said out loud.
+  let log = finished_log(4)
+  let wrong = #(
+    Stored(
+      game_number: 1,
+      status: Done,
+      attempts: 1,
+      // One turn, where the game has dozens.
+      response_json: Some(engine_answer(1)),
+      answered: True,
+      rendered: True,
+      turns: turn_count(log, 1),
+    ),
+    Some("a page from before"),
+  )
+  let ctx = with_analysis(log, [wrong], no_engine)
+  assert reviews.run(ctx, "123456") == None
+  let assert [failure] = recorded("extraction_failures")
+  assert string.starts_with(failure, "1:")
+  assert recorded("extractions") == []
+  // Charged, so the sweep stops coming back for it.
+  assert ctx.puzzles.unextracted("123456") == []
+  // And the rendered review is left exactly as it was.
+  assert recorded("saves") == []
 }
 
 /// The same room with the engine out of reach: what the sweep sees on a
