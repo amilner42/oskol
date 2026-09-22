@@ -6,7 +6,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
       PuzzlesCaps(unextracted, store, failed, owned_sources, mark_synced,
       sync_failed, deck_pending, guest_sources, get, mine, game_sources,
       put_attempt, attempt, settle_attempt, serialize, cached_tree, keep_tree,
-      cached_moves, keep_moves)
+      cached_moves, keep_moves, pictures)
       NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json)
       NewSource(key, game_number, turn, kind, seat, player_id, played,
       equity_lost, grade, skipped_reason)
@@ -40,7 +40,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
     {:puzzles_caps, &Puzzles.unextracted/1, &store/4, &failed/3, &owned_sources/2, &mark_synced/1,
      &sync_failed/2, &deck_pending/2, &guest_sources/1, &get/1, &mine/3, &game_sources/2,
      &put_attempt/5, &attempt/3, &settle_attempt/5, &serialize/3, &cached_tree/1, &keep_tree/2,
-     &cached_moves/1, &keep_moves/2}
+     &cached_moves/1, &keep_moves/2, &pictures/2}
   end
 
   defp get(id) do
@@ -157,6 +157,16 @@ defmodule Oskol.Gleam.Caps.Puzzles do
 
   defp guest_sources(guest_id) do
     quietly([], fn -> guest_id |> Puzzles.guest_sources() |> Enum.map(&deck_source/1) end)
+  end
+
+  # A picture is a bonus on top of a stored puzzle: the render bounds and
+  # logs its own failures, and anything past that is logged here and left
+  # for the sweep.
+  defp pictures(game_id, game_number) do
+    quietly(nil, fn ->
+      Oskol.Puzzles.Pictures.render_game(game_id, game_number)
+      nil
+    end)
   end
 
   defp quietly(fallback, fun) do

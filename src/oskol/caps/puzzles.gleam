@@ -273,6 +273,13 @@ pub type PuzzlesCaps(moves) {
     /// Opaque here -- it crosses as a term and comes back as it went.
     cached_moves: fn(String) -> Option(moves),
     keep_moves: fn(String, moves) -> Nil,
+    /// Draw the link pictures of the puzzles one game just wrote: (game_id,
+    /// game_number). Called once `store` has succeeded for that game, and
+    /// only from the review job -- a picture is never drawn on a request.
+    /// Each render is charged and bounded on its own row
+    /// (`Oskol.Puzzles.Pictures`); a picture that does not get drawn is
+    /// the sweep's to find, never a reason for a review to fail.
+    pictures: fn(String, Int) -> Nil,
   )
 }
 
@@ -300,5 +307,6 @@ pub fn stub() -> PuzzlesCaps(moves) {
     keep_tree: fn(_, _) { Nil },
     cached_moves: fn(_) { option.None },
     keep_moves: fn(_, _) { Nil },
+    pictures: fn(_, _) { panic as "stub puzzles.pictures" },
   )
 }

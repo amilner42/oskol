@@ -1,0 +1,4 @@
+#!/bin/sh
+# A binary that exits 0 with something that is not a PNG.
+cat > /dev/null
+printf 'not a picture'
