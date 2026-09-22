@@ -2,9 +2,9 @@ module WordsTest exposing (suite)
 
 {-| The engine's verdict in words, on made-up verdicts.
 
-`ReplayTest` pins these sentences where they are read, on the real record
-of seed room 000011. This pins them where they are written: every grade a
-move can have, every call the engine can make on a cube, from both sides
+`ReplayTest` renders the replay on the real record of seed room 000011
+but asserts nothing about the prose. This is where the sentences are
+pinned: every grade a move can have, every call the engine can make on a cube, from both sides
 of it, and the too-good rule that the Gleam twin (`oskol/puzzles.too_good`)
 has to agree with.
 
