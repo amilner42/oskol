@@ -14,6 +14,12 @@ config :oskol, Oskol.Repo,
 # goes to a Req.Test stub, never the network.
 config :oskol, Oskol.Reviews.Queue, enabled: false
 
+# Puzzle pictures are rasterised by a binary tests never depend on: this
+# stub writes a fixed PNG for any SVG (test_support/fake_rsvg_convert).
+config :oskol, :rsvg,
+  path: Path.expand("../test_support/fake_rsvg_convert", __DIR__),
+  timeout_ms: 5_000
+
 # The sign-in mail never leaves the process in tests:
 # Swoosh.TestAssertions' assert_email_sent is how a test reads it.
 config :oskol, Oskol.Mailer, adapter: Swoosh.Adapters.Test

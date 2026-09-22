@@ -105,8 +105,12 @@ RUN mix release
 # the compiled release and other runtime necessities
 FROM ${RUNNER_IMAGE} AS final
 
+# librsvg2-bin is `rsvg-convert`, which draws a puzzle's link picture from
+# the SVG Gleam writes (`Oskol.Puzzles.Pictures`); fonts-dejavu-core is the
+# one font its text falls back on.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses5 locales ca-certificates \
+     librsvg2-bin fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/*
 
 # Set the locale

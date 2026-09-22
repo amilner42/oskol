@@ -251,6 +251,37 @@ defmodule Oskol.Reviews do
     |> Repo.all()
   end
 
+  @doc """
+  One game's record entries, or nil. What a caller that wants a single
+  game's result should read: the whole-room `records/1` carries every
+  finished game's every line, and a memory line needs one of them.
+  """
+  def record_entries(game_id, game_number) do
+    from(r in Record,
+      where: r.game_id == ^game_id and r.game_number == ^game_number,
+      select: r.entries
+    )
+    |> Repo.one()
+  end
+
+  @doc """
+  One turn of one game's rendered analysis, projected in the database.
+
+  A report is hundreds of kilobytes and a caller that wants to know which
+  line of the record a turn sits on wants three integers out of it. The
+  path is taken by PostgreSQL, so only that turn's object crosses the wire
+  and only it is parsed. `turn` counts from 1, as the review numbers them.
+  """
+  def report_turn(game_id, game_number, turn) when is_integer(turn) and turn >= 1 do
+    from(r in Review,
+      where: r.game_id == ^game_id and r.game_number == ^game_number,
+      select: fragment("? #> ARRAY['turns', ?]", r.report, ^Integer.to_string(turn - 1))
+    )
+    |> Repo.one()
+  end
+
+  def report_turn(_game_id, _game_number, _turn), do: nil
+
   @doc "The record index, without any of the per-turn bodies."
   def record_numbers(game_id) do
     from(r in Record,

@@ -225,12 +225,14 @@ fn with_analysis(
   forget("backfills")
   forget("extractions")
   forget("extraction_failures")
+  forget("pictures")
   let _ = put_ints("extracted", [])
   let _ = put_rows("rows", stored)
   let _ = put_records("records", [])
   Ctx(
     ..fakes.ctx(),
     analysis: AnalysisCaps(
+      ..caps.stub(),
       log: fn(id) {
         record_call("replays", id)
         case id {
@@ -353,6 +355,9 @@ fn with_analysis(
       // own them. No seat here belongs to an account, so there is nothing
       // to hand over and nothing else of the deck's is ever reached.
       deck_pending: fn(_, _) { [] },
+      // And draws the link pictures of what it just stored. The render
+      // itself is Elixir's; what is asserted here is when it is asked.
+      pictures: fn(_, number) { record_call("pictures", int.to_string(number)) },
       failed: fn(_, number, reason) {
         record_call(
           "extraction_failures",
@@ -365,6 +370,7 @@ fn with_analysis(
       },
     ),
     records: records_caps.RecordsCaps(
+      ..records_caps.stub(),
       setup: fn(id) {
         case id {
           "123456" -> Some(setup_of(log))
@@ -377,7 +383,7 @@ fn with_analysis(
         })
       },
       numbers: fn(_) { list.map(get_records("records"), fn(row) { row.0 }) },
-      save: fn(_, rows, _, _) {
+      save: fn(_, rows: List(#(Int, String)), _, _) {
         let held = get_records("records")
         let fresh =
           list.filter(rows, fn(row) {
@@ -426,6 +432,8 @@ pub fn a_reviewed_game_writes_its_puzzles_test() {
   let assert [extraction] = recorded("extractions")
   assert string.starts_with(extraction, "1:")
   assert !string.ends_with(extraction, ":0")
+  // And their pictures are asked for, once, right after the store.
+  assert recorded("pictures") == ["1"]
 }
 
 pub fn a_rerun_writes_no_puzzles_again_test() {
@@ -463,6 +471,8 @@ pub fn an_extraction_that_fails_leaves_the_review_alone_test() {
     )
   assert reviews.run(ctx, "123456") == None
   assert recorded("extractions") == ["refused"]
+  // No puzzles, so no pictures asked for.
+  assert recorded("pictures") == []
   // The review landed exactly as it would have.
   assert list.reverse(recorded("saves"))
     == ["1:pending:1:none:none", "1:done:1:body:page"]

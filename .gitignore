@@ -56,3 +56,4 @@ package-lock.json
 # The golden replays in test/fixtures/replays are committed on purpose.
 /test/fixtures/payloads/
 /assets/tests/Fixtures.elm
+/assets/tests/PuzzleApiFixtures.elm

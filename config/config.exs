@@ -32,6 +32,12 @@ config :oskol, Oskol.Mailer, adapter: Swoosh.Adapters.Local
 
 config :oskol, :mail_from, "hello@oskol.io"
 
+# Puzzle pictures (`Oskol.Puzzles.Pictures`): the SVG Gleam draws is
+# rasterised by librsvg's `rsvg-convert`, on the PATH in the release image
+# (the Dockerfile installs `librsvg2-bin`). A laptop without it draws no
+# pictures and says so; tests point this at a stub.
+config :oskol, :rsvg, path: "rsvg-convert", timeout_ms: 10_000
+
 # The only mail Oskol sends is a sign-in link/code. These fixed-window
 # ceilings are deliberately small for today's traffic: one running node can
 # send up to 200 messages in its 24-hour window (about 6,000/month if it stays

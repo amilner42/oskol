@@ -189,10 +189,15 @@ pub fn reask(ctx: Ctx, game_id: String, room: Room, c: Candidate) -> Outcome {
                       list.length(g.turns),
                     ),
                   )
-                  Reasked(
-                    review.timing_ms,
-                    reviews.extracted(ctx, game_id, g, room.seats, review),
-                  )
+                  let written =
+                    reviews.extracted(ctx, game_id, g, room.seats, review)
+                  // The new puzzles' link pictures, as a fresh review draws
+                  // them. Decks are the caller's, once, at the end.
+                  case written {
+                    Ok(_) -> ctx.puzzles.pictures(game_id, c.number)
+                    Error(_) -> Nil
+                  }
+                  Reasked(review.timing_ms, written)
                 }
               }
           }

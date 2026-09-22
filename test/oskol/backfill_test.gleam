@@ -455,6 +455,9 @@ fn with_room(
         )
         Ok(puzzles_caps.Written(list.length(puzzles), 1, list.length(sources)))
       },
+      pictures: fn(_, number) {
+        record_call("calls", "pictures " <> int.to_string(number))
+      },
     ),
     records: records_caps.RecordsCaps(
       ..records_caps.stub(),
@@ -558,6 +561,7 @@ pub fn a_reask_asks_at_the_stored_levels_with_every_result_test() {
         <> " puzzles "
         <> int.to_string(written.sources)
         <> " sources",
+      "pictures 1",
     ]
   // Every checker play was a mistake, so every one is a puzzle now.
   let mistakes =
