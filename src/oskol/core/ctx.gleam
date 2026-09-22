@@ -23,6 +23,7 @@ import oskol/caps/guests.{type GuestsCaps}
 import oskol/caps/ids.{type IdsCaps}
 import oskol/caps/persistence.{type PersistenceCaps}
 import oskol/caps/practice.{type PracticeCaps}
+import oskol/caps/puzzles.{type PuzzlesCaps}
 import oskol/caps/records.{type RecordsCaps}
 import oskol/caps/rooms.{type RoomsCaps}
 
@@ -35,6 +36,7 @@ pub type Ctx {
     ids: IdsCaps,
     persistence: PersistenceCaps,
     practice: PracticeCaps,
+    puzzles: PuzzlesCaps,
     records: RecordsCaps,
     rooms: RoomsCaps,
   )
