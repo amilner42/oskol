@@ -8,6 +8,10 @@ pub type ApiError {
   /// The request was understood and refused. `code` is the machine-readable
   /// reason; `message` is the sentence a player reads.
   Invalid(code: String, message: String)
+  /// It is there and it is not yours. Only ever answered where the caller
+  /// already holds the name of the thing -- their own idempotency key for
+  /// somebody else's attempt -- so saying so tells them nothing new.
+  Forbidden(message: String)
   /// The request was understood and there is nothing to do it to: a puzzle
   /// that is not in rotation to be put off, an answer with nothing to
   /// amend. Not the caller's mistake and not ours -- the state moved.
@@ -21,6 +25,7 @@ pub fn code(error: ApiError) -> String {
   case error {
     NotFound(_) -> "not_found"
     Invalid(code, _) -> code
+    Forbidden(_) -> "forbidden"
     Conflict(code, _) -> code
     Internal(_) -> "server_error"
   }
@@ -30,6 +35,7 @@ pub fn message(error: ApiError) -> String {
   case error {
     NotFound(message) -> message
     Invalid(_, message) -> message
+    Forbidden(message) -> message
     Conflict(_, message) -> message
     Internal(message) -> message
   }
@@ -39,6 +45,7 @@ pub fn status(error: ApiError) -> Int {
   case error {
     NotFound(_) -> 404
     Invalid(_, _) -> 422
+    Forbidden(_) -> 403
     Conflict(_, _) -> 409
     Internal(_) -> 500
   }

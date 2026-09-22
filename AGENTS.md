@@ -585,6 +585,15 @@ lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images 
 src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
                                 key and id, the answer, the JSON of each column
 src/oskol/puzzles/extract.gleam which turns of a graded game are puzzles
+src/oskol/handlers/puzzles.gleam the puzzle pages: the question, the grade, the
+                                 reveal, what an answer does to a deck, the
+                                 memory line, a game's own mistakes
+src/oskol/puzzles/tree.gleam     every legal way to play a roll, as a DAG of
+                                 boards the page walks (no move generator in Elm)
+src/oskol/puzzles/grade.gleam    right, close or wrong: the checker bands and the
+                                 five-band cube scale
+src/oskol/puzzles/fixture.gleam  real payloads for the Elm suite (mix oskol.fixtures)
+lib/oskol/puzzles/tree_cache.ex  a puzzle's tree, worked out once (ETS, bounded)
 src/oskol/puzzles/picture.gleam a puzzle's link picture as SVG: the board in the
                                 default theme, 1200 x 630, pure
 lib/oskol/puzzles/pictures.ex   rasterises it (rsvg-convert) into puzzle_images in
@@ -801,6 +810,27 @@ GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
                                        the engine has graded (null while it has
                                        graded none), and each graded game's
                                        PRs by seat, for the table's match panel
+GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
+                                         prompt} -- the position, the sentence it
+                                         asks in, and for a checker play every
+                                         legal way to play the roll as a DAG of
+                                         boards. Never the answer, never a name,
+                                         never the game it came from
+GET  /papi/puzzles/:id/tree?node=      (open) one level of a tree too big to send
+                                         whole: {ok, node, tree: Node}
+POST /papi/puzzles/:id/attempts        {moves | band, key} -> {ok, verdict, yours,
+                                         best, top, cube, schedule}. Open; a guest
+                                         and a puzzle outside the caller's deck get
+                                         schedule: null and nothing is written
+POST /papi/puzzles/:id/attempts/:key/outcome  {outcome: sooner|got_it|knew_it|never}
+                                         -> {ok, schedule}. The attempt's own
+                                         account only (403); 409 with nothing to
+                                         amend
+GET  /papi/puzzles/:id/mine            (a seat in the source game, either side)
+                                         {ok, who, played, equity_lost, grade, date,
+                                         result, replay}; 404 otherwise
+GET  /papi/games/:slug/rooms/:id/puzzles?game=n  (a seat) {ok, puzzles: [{id, kind,
+                                         prompt, due}], cursor, counts, game}
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no
@@ -1087,8 +1117,70 @@ path builds one and nothing re-asks the engine to recover one.
   `puzzles_extracted_at` itself: `Reviews.save/8`'s upsert deliberately
   leaves it alone, which is right for today's only rewriter (a retry of a
   `failed` row, which never had puzzles).
-- `puzzle_attempts` and `puzzle_shares` exist and are written by the later
-  tickets (the API, the story link).
+- **The page never knows a rule.** `GET /papi/puzzles/:id` carries the whole
+  turn as a DAG (`src/oskol/puzzles/tree.gleam`): nodes are positions, so
+  every order of the same checkers on a double is one node, and a node's
+  children are exactly the taps the rulebook allows next (must use both, the
+  larger die at the roll). `terminal` is where PLAY is offered and nowhere
+  else. Built by memoising "how many dice can still be played" on (board,
+  dice left) -- asking `board.sequences` per node would redo the exponential
+  walk once per node. A take is turned around before it is shown
+  (`handlers/puzzles.shown`): it is stored from the doubler's side and asked
+  of the responder, and whoever is being asked is White at the bottom.
+- **The tree has a gate.** 100 KB on the wire, 100 ms to build; the build
+  gives up at 260 examined positions (61-75 ms; 400 costs 120 ms) and the
+  byte budget has the last word. Measured over 4,200 position/roll pairs
+  from real random play: median 28 nodes / 9.5 KB / 6.7 ms, p99 350 / 142 KB
+  / 173 ms, worst 539 / 220 KB / 728 ms. About one position in forty is over
+  the byte budget, all of them small doubles in contact-rich middlegames.
+- **A turn too big to send whole is built once and walked.** It answers
+  `tree: {root, nodes: {root only}, lazy: true}` (985 bytes on the worst
+  position there is) and the page asks for each level from
+  `GET /papi/puzzles/:id/tree?node=`. **A node is named by the id that
+  build gave it**, never by a description of itself: an id this puzzle does
+  not hold is a 404, so nothing a caller sends can put the server to work
+  on a position of their choosing, and there is nothing to sign. The tree
+  is kept whole (`Oskol.Puzzles.TreeCache`, twenty entries), so a level is
+  a lookup -- 14 ms on the contrived worst case, against 548 ms to build it
+  the once. The encoded payloads are kept too, per puzzle id, in the same
+  bounded table: both are pure functions of a question that is never
+  rewritten, so a hit is always right and forgetting costs a rebuild.
+- **One grading rule, one place** (`src/oskol/puzzles/grade.gleam`), shared by
+  the guest on a shared link and the account whose ladder is watching. A
+  checker play is graded by the board it leaves, never its notation: under
+  0.02 passes, under 0.08 holds, worse misses, and a board the stored answer
+  has no result for is `unknown` -- old five-candidate rows -- so nobody is
+  told they were wrong on evidence we do not have. A cube answer is graded on
+  the five-band scale: the doubler's margin is `min(DT, DP) - ND`, the
+  responder's is `DP - DT` (positive means take, because the responder picks
+  whatever pays the doubler less), bands at 0.08 and 0.02 either side of
+  zero, and the grade is the distance in bands (0 passes, 1 holds, 2+ misses).
+- **One scheduled answer per opportunity.** A signed-in caller whose deck
+  holds the puzzle writes a `puzzle_attempts` row first, keyed by the id the
+  client minted; the ladder moves only when that row is new *and* the card is
+  due. A review always pushes the due date out, so a second tab or a retry
+  reveals and changes nothing. A miss is `Again` (back to level 0, tomorrow);
+  an `unknown` schedules nothing and defers the card to tomorrow with
+  `self_grade: true`.
+  **Whether an answer counts is read-then-act**, so the whole decision --
+  writing the attempt row, reading the card, moving it -- runs under a
+  transaction-scoped advisory lock on (account, puzzle)
+  (`Oskol.Puzzles.serialize/3`). Without it four tabs at one due card wrote
+  four reviews and took a level-0 card to level 4.
+  **An idempotency key means something only inside one account**: the unique
+  index is (puzzle_id, user_id, idempotency_key) and every read is scoped
+  the same way, or somebody else's key would reach their row.
+  The override (`.../attempts/:key/outcome`) **replaces** the review it named
+  rather than stacking on it, so a pass then SOONER lands at level 0 once.
+  Where there was no review it writes the first one, but only where the
+  answer actually offered that (`self_grade`) -- never merely because none
+  was written, or an answer that never had an opportunity would invent one.
+  GOT IT on an answer nothing checked holds the level rather than raising
+  it. NEVER suspends the card without touching the attempt's own schedule,
+  so a retry of that answer is still the same reply, and nothing can be
+  overridden after it (409).
+- `puzzle_shares` and `puzzle_images` exist and are written by the later
+  tickets (the story link, the board picture).
 - **A puzzle has a picture, drawn once, never on a request.**
   `src/oskol/puzzles/picture.gleam` draws the position as SVG, 1200 x 630,
   in the default theme's colours (`.bg-theme-midnight`, as constants), from

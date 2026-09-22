@@ -26,6 +26,7 @@ import oskol/caps/practice.{type PracticeCaps}
 import oskol/caps/puzzles.{type PuzzlesCaps}
 import oskol/caps/records.{type RecordsCaps}
 import oskol/caps/rooms.{type RoomsCaps}
+import oskol/puzzles/tree.{type Tree}
 
 pub type Ctx {
   Ctx(
@@ -36,7 +37,9 @@ pub type Ctx {
     ids: IdsCaps,
     persistence: PersistenceCaps,
     practice: PracticeCaps,
-    puzzles: PuzzlesCaps,
+    /// The move-tree store crosses the tree itself, so the context names
+    /// what it holds.
+    puzzles: PuzzlesCaps(Tree),
     records: RecordsCaps,
     rooms: RoomsCaps,
   )

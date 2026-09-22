@@ -232,6 +232,7 @@ fn with_analysis(
   Ctx(
     ..fakes.ctx(),
     analysis: AnalysisCaps(
+      ..caps.stub(),
       log: fn(id) {
         record_call("replays", id)
         case id {
@@ -367,6 +368,7 @@ fn with_analysis(
       },
     ),
     records: records_caps.RecordsCaps(
+      ..records_caps.stub(),
       setup: fn(id) {
         case id {
           "123456" -> Some(setup_of(log))
@@ -379,7 +381,7 @@ fn with_analysis(
         })
       },
       numbers: fn(_) { list.map(get_records("records"), fn(row) { row.0 }) },
-      save: fn(_, rows, _, _) {
+      save: fn(_, rows: List(#(Int, String)), _, _) {
         let held = get_records("records")
         let fresh =
           list.filter(rows, fn(row) {

@@ -5,6 +5,7 @@
 import gleam/dynamic
 import gleam/list
 import gleam/option.{type Option, Some}
+import gleam/result
 import oskol/caps/analysis as analysis_caps
 import oskol/caps/auth as auth_caps
 import oskol/caps/copy as copy_caps
@@ -168,6 +169,11 @@ pub fn with_records(
       stored: fn(_) { rows },
       numbers: fn(_) { list.map(rows, fn(row) { row.game_number }) },
       save: fn(_, _, _, _) { Nil },
+      entries_of: fn(_, number) {
+        list.find(rows, fn(row) { row.game_number == number })
+        |> result.map(fn(row) { row.entries_json })
+        |> option.from_result
+      },
     ),
   )
 }

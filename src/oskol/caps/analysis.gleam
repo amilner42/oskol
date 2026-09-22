@@ -106,6 +106,12 @@ pub type AnalysisCaps {
     /// POST a review request body to the engine; the response body, or why
     /// there is none (a status, a timeout, a refused connection).
     review: fn(String) -> Result(String, String),
+    /// One turn of one game's rendered analysis, as JSON text: (game_id,
+    /// game_number, turn counting from 1). Projected in the database,
+    /// because a report is hundreds of kilobytes and a caller that only
+    /// wants to know which line of the record a turn sits on wants three
+    /// integers out of it.
+    report_turn: fn(String, Int, Int) -> Option(String),
   )
 }
 
@@ -120,5 +126,6 @@ pub fn stub() -> AnalysisCaps {
     backfill_turns: fn(_, _, _) { panic as "stub analysis.backfill_turns" },
     enqueue: fn(_) { panic as "stub analysis.enqueue" },
     review: fn(_) { panic as "stub analysis.review" },
+    report_turn: fn(_, _, _) { panic as "stub analysis.report_turn" },
   )
 }
