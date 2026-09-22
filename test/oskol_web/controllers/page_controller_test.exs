@@ -14,6 +14,8 @@ defmodule OskolWeb.PageControllerTest do
     refute body =~ "/chess"
     refute body =~ "/go<"
     refute body =~ "game="
+    # Puzzles are indexable pages, but there are too many to list.
+    refute body =~ "/puzzles"
   end
 
   test "robots allows crawling and points at the sitemap", %{conn: conn} do

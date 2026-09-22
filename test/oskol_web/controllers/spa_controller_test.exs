@@ -165,6 +165,79 @@ defmodule OskolWeb.SpaControllerTest do
     end
   end
 
+  describe "GET /puzzles/:id" do
+    # Everything here runs in the test process (the request is dispatched
+    # in it), so the owner is this process's alone: a *shared* owner in an
+    # async module would lend its connection to every other module running
+    # beside it and pull it from under them when the test ends.
+    setup do
+      owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Oskol.Repo, shared: false)
+      on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
+      :ok
+    end
+
+    # A stored puzzle, exactly as extraction would have written it, under an
+    # id no other test uses: the table is global.
+    defp a_puzzle(name) do
+      {:stored, _id, kind, question, answer} = :oskol@puzzles@fixture.stored_sample(name)
+      id = :crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower)
+
+      Oskol.Repo.insert!(%Oskol.Puzzles.Puzzle{
+        id: id,
+        key: "spa-" <> id,
+        kind: kind,
+        question: Jason.decode!(question),
+        answer: Jason.decode!(answer),
+        evaluated_by: %{}
+      })
+
+      id
+    end
+
+    test "a puzzle's head is its question, with the score and cube beneath", %{conn: conn} do
+      id = a_puzzle("move")
+      html = conn |> get(~p"/puzzles/#{id}") |> html_response(200)
+      assert html =~ ~s(id="elm-app")
+      prompt = esc("White to play 6-4. What's your play?")
+      assert html =~ ~s(>#{prompt} · Oskol</title>)
+      assert html =~ ~s(<meta property="og:title" content="#{prompt}")
+      assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/puzzles/#{id}")
+
+      assert html =~
+               ~s(<meta name="description" content="Match play, 3 away against 5. Cube centred.)
+
+      # The board as the picture, so a pasted link unfurls with it.
+      assert html =~
+               ~s(<meta property="og:image" content="http://localhost:4002/puzzles/#{id}.png">)
+
+      assert html =~ ~s(<meta name="twitter:card" content="summary_large_image">)
+      # Open to search: a puzzle is a public page, unlike a room's replay.
+      refute html =~ ~s(name="robots")
+      # And nothing of where it came from.
+      refute html =~ "Alice"
+      refute html =~ "replay"
+    end
+
+    test "a take is asked from the responder's side: the cube is the other player's", %{
+      conn: conn
+    } do
+      id = a_puzzle("take")
+      html = conn |> get(~p"/puzzles/#{id}") |> html_response(200)
+      assert html =~ ~s(>White is doubled. Take? · Oskol</title>)
+      # Stored as the doubler's (White's, at 2); shown to the one doubled,
+      # whose opponent holds it, with the away scores swapped.
+      assert html =~ ~s(content="Match play, 5 away against 3. Cube at 2, Black&#39;s.)
+    end
+
+    test "a puzzle nobody stored is a 404", %{conn: conn} do
+      assert_error_sent 404, fn -> get(conn, ~p"/puzzles/nope0000") end
+    end
+
+    test "a bare /puzzles names no game and is a 404 too", %{conn: conn} do
+      assert_error_sent 404, fn -> get(conn, "/puzzles") end
+    end
+  end
+
   describe "the card a link unfurls as" do
     test "every page without a picture of its own is the plain summary card, as it always was",
          %{conn: conn} do

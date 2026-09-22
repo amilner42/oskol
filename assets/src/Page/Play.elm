@@ -6,6 +6,8 @@ port module Page.Play exposing
     , applyPayload
     , framed
     , init
+    , shareInvite
+    , shareResult
     , storePref
     , subscriptions
     , title

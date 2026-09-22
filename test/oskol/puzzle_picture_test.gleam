@@ -220,6 +220,10 @@ pub fn match_play_says_how_far_each_side_is_and_marks_crawford_test() {
 pub fn money_play_says_unlimited_and_marks_jacoby_test() {
   let money = Question(..a_question(Move), away_mover: 0, away_opponent: 0)
   assert attribute(picture.svg(money), "score") == "Unlimited"
+  let single = Question(..money, away_mover: 1, away_opponent: 1)
+  assert attribute(picture.svg(single), "score") == "Single game"
+  assert attribute(picture.svg(Question(..single, crawford: True)), "score")
+    == "White 1 away · Black 1 away · Crawford"
 
   let jacoby = Question(..money, jacoby: True)
   assert attribute(picture.svg(jacoby), "score") == "Unlimited · Jacoby"

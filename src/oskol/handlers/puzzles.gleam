@@ -56,8 +56,8 @@ import oskol/core/raw
 import oskol/core/session.{type Session}
 import oskol/practice/deck
 import oskol/puzzles.{
-  type Answer, type Candidate, type Question, CubeAnswer, Double,
-  Move as MoveKind, MoveAnswer, Mover, Opponent, Question, Take,
+  type Answer, type Candidate, type Question, CubeAnswer, Move as MoveKind,
+  MoveAnswer, Mover, Opponent, Question, Take,
 }
 import oskol/puzzles/grade.{type Verdict, Fail, Hold, Pass, Unknown}
 import oskol/puzzles/tree
@@ -138,21 +138,56 @@ fn body(id: String, question: Question, tree: Json) -> String {
   ])
 }
 
-/// The sentence the page asks in and a link preview repeats. A checker play
-/// names its roll; a cube question is two words, because the board and the
-/// score already say everything else.
-pub fn prompt(question: Question) -> String {
-  case question.kind, question.dice {
-    MoveKind, Some(#(high, low)) ->
-      "White to play "
-      <> int.to_string(high)
-      <> "-"
-      <> int.to_string(low)
-      <> ". What's your play?"
-    MoveKind, None -> "What's your play?"
-    Double, _ -> "Double?"
-    Take, _ -> "Take?"
+// ---------- The head of /puzzles/:id ----------
+
+/// What the server writes into the document head of a puzzle's page,
+/// before the client has fetched anything: the question as its title
+/// (what a link unfurls as) and the score and cube as its description.
+/// Nothing else -- no name, no source game, no answer -- because the head
+/// is read by every crawler and every chat app a link is pasted into.
+pub type Head {
+  Head(title: String, description: String)
+}
+
+pub fn head(ctx: Ctx, id: String) -> Result(Head, ApiError) {
+  use stored <- result.try(fetch(ctx, id))
+  use question <- result.try(question_of(stored))
+  let q = shown(question)
+  Ok(Head(title: prompt(q), description: describe(q)))
+}
+
+/// The score and the cube in a sentence: "Match play, 3 away against 5.
+/// Cube at 2, White's." The same words the board's picture captions
+/// (`oskol/puzzles/picture`): no score is unlimited play, and one point
+/// each way is a single game -- a 1-point match and a single game are the
+/// same position, unless it is marked Crawford, which only a match is.
+pub fn describe(q: Question) -> String {
+  let score = case q.away_mover, q.away_opponent, q.crawford {
+    0, 0, _ -> "Unlimited play"
+    1, 1, False -> "Single game"
+    mine, theirs, crawford ->
+      "Match play, "
+      <> int.to_string(mine)
+      <> " away against "
+      <> int.to_string(theirs)
+      <> case crawford {
+        True -> ", Crawford"
+        False -> ""
+      }
   }
+  let cube = case q.cube_owner {
+    Mover -> "Cube at " <> int.to_string(q.cube_value) <> ", White's."
+    Opponent -> "Cube at " <> int.to_string(q.cube_value) <> ", Black's."
+    _ -> "Cube centred."
+  }
+  score <> ". " <> cube <> " A backgammon puzzle: play it on the board."
+}
+
+/// The sentence the page asks in, the head and the picture repeat, and a
+/// session lists a puzzle by: `oskol/puzzles.prompt`, the one sentence,
+/// asked from the solver's side.
+pub fn prompt(question: Question) -> String {
+  puzzles.prompt(question)
 }
 
 /// The question as the person being asked sees it, which is not always the
@@ -314,17 +349,21 @@ fn moves_of(ctx: Ctx, id: String, question: Question) -> Option(tree.Tree) {
 /// keep it with (the fixture task). A position too big to send whole has no
 /// fixture: there is nothing for a page to decode in one.
 fn fresh_tree(question: Question) -> Json {
-  case question.kind, question.dice {
-    MoveKind, Some(roll) ->
-      case tree.from_engine(question.board) {
-        Error(_) -> json.null()
-        Ok(b) ->
-          case within_budget(b, tree.dice_of(roll)) {
-            Some(whole) -> tree.to_json(whole)
-            None -> json.null()
-          }
-      }
+  case question.kind, fresh_moves(question) {
+    MoveKind, Some(whole) -> tree.to_json(whole)
     _, _ -> json.null()
+  }
+}
+
+/// The turn worked out and kept nowhere, where it fits on the wire.
+fn fresh_moves(question: Question) -> Option(tree.Tree) {
+  case question.dice {
+    None -> None
+    Some(roll) ->
+      case tree.from_engine(question.board) {
+        Error(_) -> None
+        Ok(b) -> within_budget(b, tree.dice_of(roll))
+      }
   }
 }
 
@@ -376,7 +415,12 @@ pub fn attempt_json(
   use stored <- result.try(fetch(ctx, id))
   use question <- result.try(question_of(stored))
   use answer <- result.try(answer_of(stored))
-  use judged <- result.try(judge(ctx, stored.id, question, answer, attempted))
+  use judged <- result.try(judge(
+    fn() { moves_of(ctx, stored.id, question) },
+    question,
+    answer,
+    attempted,
+  ))
   let #(verdict, reveal, answer_row) = judged
   use scheduled <- result.try(schedule(
     ctx,
@@ -388,22 +432,48 @@ pub fn attempt_json(
     now_ms,
   ))
   let #(verdict, schedule_json) = scheduled
-  Ok(
-    envelope.ok(
-      list.flatten([
-        [#("verdict", json.string(grade.verdict_name(verdict)))],
-        reveal,
-        [#("schedule", schedule_json)],
-      ]),
-    ),
+  Ok(reveal_body(verdict, reveal, schedule_json))
+}
+
+/// The same reveal with nothing kept and nobody signed in -- what a guest
+/// on a shared link is shown, byte for byte -- for a caller with no
+/// capabilities (the fixture task). A turn too big to send whole has no
+/// fixture, as `puzzle_body` has none.
+pub fn attempt_body(
+  stored: caps.Stored,
+  attempted: Attempted,
+) -> Result(String, ApiError) {
+  use question <- result.try(question_of(stored))
+  use answer <- result.try(answer_of(stored))
+  use judged <- result.try(judge(
+    fn() { fresh_moves(question) },
+    question,
+    answer,
+    attempted,
+  ))
+  let #(verdict, reveal, _row) = judged
+  Ok(reveal_body(verdict, reveal, json.null()))
+}
+
+fn reveal_body(
+  verdict: Verdict,
+  reveal: List(#(String, Json)),
+  schedule_json: Json,
+) -> String {
+  envelope.ok(
+    list.flatten([
+      [#("verdict", json.string(grade.verdict_name(verdict)))],
+      reveal,
+      [#("schedule", schedule_json)],
+    ]),
   )
 }
 
 /// The verdict, the fields a reveal shows, and the answer as the row keeps
 /// it. One place, so a cube question and a checker play cannot drift apart.
+/// The turn is asked for only where a checker play needs it.
 fn judge(
-  ctx: Ctx,
-  id: String,
+  moves: fn() -> Option(tree.Tree),
   question: Question,
   answer: Answer,
   attempted: Attempted,
@@ -411,7 +481,7 @@ fn judge(
   case question.kind {
     MoveKind -> {
       use whole <- result.try(
-        moves_of(ctx, id, question)
+        moves()
         |> option.to_result(error.validation_failed(bad_move_message)),
       )
       judge_move(whole, question, answer, attempted.moves)
@@ -823,7 +893,9 @@ fn settle(
   ctx.puzzles.settle_attempt(attempt.id, scheduled, review_id, None, body)
 }
 
-fn schedule_json(
+/// The schedule as the wire carries it. Public so the fixture task can hand
+/// the client's tests every shape a page has to draw.
+pub fn schedule_json(
   before: Int,
   after: Int,
   due_ms: Int,
@@ -1053,6 +1125,10 @@ pub fn mine_json(
           False -> name_of(room, source.player_id)
         }),
       ),
+      // The other seat, by its display name, so the line can say whose
+      // game it was: "From your game vs Charlie". The reader's own name is
+      // never sent back to them.
+      #("opponent", json.string(opponent_of(room, player_id))),
       #("played", json.string(source.played)),
       #("equity_lost", json.float(source.equity_lost)),
       #("grade", json.string(source.grade)),
@@ -1078,6 +1154,12 @@ fn unless_empty(value: String) -> Option(String) {
     "" -> None
     _ -> Some(value)
   }
+}
+
+fn opponent_of(room: caps.SourceRoom, player_id: String) -> String {
+  list.find(room.seats, fn(s) { s.0 != player_id })
+  |> result.map(fn(s) { s.1 })
+  |> result.unwrap("")
 }
 
 fn name_of(room: caps.SourceRoom, player_id: String) -> String {
@@ -1273,9 +1355,9 @@ fn prompt_of(source: caps.Source) -> String {
     Ok(question) -> prompt(question)
     Error(_) ->
       case source.kind {
-        "double" -> "Double?"
-        "take" -> "Take?"
-        _ -> "What's your play?"
+        "double" -> "White to play. Double?"
+        "take" -> "White is doubled. Take?"
+        _ -> "White to play the roll. What's your play?"
       }
   }
 }

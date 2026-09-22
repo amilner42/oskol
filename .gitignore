@@ -57,3 +57,4 @@ package-lock.json
 /test/fixtures/payloads/
 /assets/tests/Fixtures.elm
 /assets/tests/PuzzleApiFixtures.elm
+/assets/tests/PuzzleRevealFixtures.elm

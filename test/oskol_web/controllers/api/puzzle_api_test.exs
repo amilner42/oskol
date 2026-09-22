@@ -127,7 +127,13 @@ defmodule OskolWeb.Api.PuzzleApiTest do
     test "a cube puzzle has no tree", %{conn: conn} do
       {id, _} = seed_puzzle("double")
       body = conn |> get(~p"/papi/puzzles/#{id}") |> json_response(200)
-      assert %{"ok" => true, "kind" => "double", "prompt" => "Double?", "tree" => nil} = body
+
+      assert %{
+               "ok" => true,
+               "kind" => "double",
+               "prompt" => "White to play. Double?",
+               "tree" => nil
+             } = body
     end
 
     test "an id nobody holds is a 404 in the usual envelope", %{conn: conn} do
@@ -341,6 +347,64 @@ defmodule OskolWeb.Api.PuzzleApiTest do
       :ok = Puzzles.settle_attempt(row.id, true, nil, "sooner", %{"level_after" => 0})
       assert Puzzles.attempt(id, user, "k1").review_id == 77
       assert Puzzles.attempt(id, user, "k1").outcome == "sooner"
+    end
+
+    test "the memory line's day is the game's end, not the day the source was written",
+         %{conn: conn} do
+      {id, _} = seed_puzzle("move")
+      guest = new_guest_id()
+      game_id = "mine-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
+      ended = ~U[2026-03-04 20:00:00.000000Z]
+
+      Repo.insert!(%Oskol.Persistence.Game{
+        id: game_id,
+        slug: "backgammon",
+        config: %{"format" => "single"},
+        seed: 3,
+        players: [
+          %{"id" => "p1", "name" => "Alice", "guest_id" => guest},
+          %{"id" => "p2", "name" => "Charlie", "guest_id" => new_guest_id()}
+        ],
+        status: "finished",
+        winners: ["p2"],
+        inserted_at: ended,
+        updated_at: ended
+      })
+
+      # The review row is opened the moment the game ends; the source is
+      # written whenever extraction (or a backfill) gets to it.
+      Repo.insert!(%Oskol.Reviews.Review{
+        game_id: game_id,
+        game_number: 1,
+        status: "done",
+        attempts: 1,
+        inserted_at: ended,
+        updated_at: ended
+      })
+
+      Repo.insert!(%Puzzles.Source{
+        puzzle_id: id,
+        game_id: game_id,
+        game_number: 1,
+        turn: 4,
+        kind: "move",
+        seat: 0,
+        player_id: "p1",
+        played: "24/23 13/11",
+        equity_lost: 0.11,
+        grade: "bad"
+      })
+
+      body =
+        conn
+        |> put_req_cookie(@cookie, guest)
+        |> get(~p"/papi/puzzles/#{id}/mine")
+        |> json_response(200)
+
+      assert body["date"] == "2026-03-04"
+      assert body["who"] == "you"
+      # The other seat, by name; the reader's own name is never sent.
+      assert body["opponent"] == "Charlie"
     end
 
     test "a puzzle nobody's room points at has no memory line for anyone", %{conn: _conn} do

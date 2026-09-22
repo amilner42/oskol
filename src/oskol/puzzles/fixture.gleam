@@ -16,7 +16,8 @@ import gleam/dict
 import gleam/int
 import gleam/json
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import oskol/caps/puzzles.{type Stored, Stored} as _
 import oskol/handlers/puzzles as handler
 import oskol/puzzles.{
@@ -35,12 +36,113 @@ pub fn samples() -> List(#(String, String)) {
 
 /// The row behind a sample, as an extraction would have written it: what a
 /// test seeds so the server answers from the database and not from here.
+/// `old` is the `move` position as a review from before `all_results`
+/// stored it: two candidates and nothing else, so a play outside them is
+/// an honest unknown.
 pub fn stored_sample(name: String) -> Stored {
   case name {
     "doubles" -> move_puzzle("fixdbl01", doubles_board(), #(3, 3))
     "double" -> cube_puzzle(Double)
     "take" -> cube_puzzle(Take)
+    "old" -> old_move_puzzle("fixold01", hit_board(), #(6, 4))
     _ -> move_puzzle("fixmove1", hit_board(), #(6, 4))
+  }
+}
+
+/// What `POST /papi/puzzles/:id/attempts` answers a guest, one per shape a
+/// reveal has to draw: a checker play that passes, holds, misses and one
+/// the stored answer cannot grade; a double and a take answered right and
+/// wrong. And the three shapes a schedule takes for an account, which the
+/// same endpoint carries in place of `null`.
+pub fn reveals() -> List(#(String, String)) {
+  let move = stored_sample("move")
+  let old = stored_sample("old")
+  let due = 1_800_000_000_000
+  [
+    #("move_pass", attempted(move, moves_to(move, 1), None)),
+    #("move_hold", attempted(move, moves_to(move, 2), None)),
+    #("move_fail", attempted(move, moves_to(move, 3), None)),
+    #("move_unknown", attempted(old, moves_to(move, 3), None)),
+    #("double_pass", attempted(stored_sample("double"), [], Some(2))),
+    #("double_fail", attempted(stored_sample("double"), [], Some(-1))),
+    #("take_pass", attempted(stored_sample("take"), [], Some(-2))),
+    #("take_hold", attempted(stored_sample("take"), [], Some(-1))),
+    #("schedule_amendable", handler.schedule_json(2, 3, due, True, False)),
+    #("schedule_self_grade", handler.schedule_json(3, 3, due, False, True)),
+    #("schedule_settled", handler.schedule_json(1, 1, due, False, False)),
+  ]
+}
+
+fn attempted(
+  stored: Stored,
+  moves: List(#(String, String, Int)),
+  band: Option(Int),
+) -> String {
+  case
+    handler.attempt_body(stored, handler.Attempted(moves, band, "fixture-key"))
+  {
+    Ok(body) -> body
+    Error(_) -> "{\"ok\":false}"
+  }
+}
+
+/// The path through the turn that leaves the board the candidate of that
+/// rank leaves -- what the page sends after walking there. The candidates
+/// are ranked by the terminals' order, so every rank up to the number of
+/// legal plays has one.
+fn moves_to(stored: Stored, rank: Int) -> List(#(String, String, Int)) {
+  case
+    puzzles.question_from_json(stored.question_json),
+    puzzles.answer_from_json(stored.answer_json)
+  {
+    Ok(question), Ok(MoveAnswer(candidates: candidates, ..)) ->
+      case
+        list.find(candidates, fn(c) { c.rank == rank }),
+        question.dice,
+        tree.from_engine(question.board)
+      {
+        Ok(candidate), Some(roll), Ok(b) ->
+          case tree.build(b, tree.dice_of(roll), 100_000) {
+            Ok(t) -> path_to(t, tree.root_id, [], candidate.board)
+            Error(_) -> []
+          }
+        _, _, _ -> []
+      }
+    _, _ -> []
+  }
+}
+
+fn path_to(
+  t: tree.Tree,
+  id: String,
+  so_far: List(#(String, String, Int)),
+  target: List(Int),
+) -> List(#(String, String, Int)) {
+  case tree.node_by_id(t, id) {
+    None -> []
+    Some(n) ->
+      case n.children {
+        [] ->
+          case analysis.encode(n.board, White) == target {
+            True -> list.reverse(so_far)
+            False -> []
+          }
+        children ->
+          list.find_map(children, fn(c) {
+            case
+              path_to(
+                t,
+                c.node,
+                [#(board.loc_id(c.from), board.loc_id(c.to), c.die), ..so_far],
+                target,
+              )
+            {
+              [] -> Error(Nil)
+              found -> Ok(found)
+            }
+          })
+          |> result.unwrap([])
+      }
   }
 }
 
@@ -177,6 +279,32 @@ fn terminals(b: Board, roll: #(Int, Int)) -> List(List(Int)) {
       t.nodes
       |> list.filter(fn(n) { n.children == [] })
       |> list.map(fn(n) { analysis.encode(n.board, White) })
+  }
+}
+
+/// The same position as `move` graded by an engine asked for five moves and
+/// nothing else: two candidates stand for the whole answer, so an attempt
+/// that leaves any other board is unknown.
+fn old_move_puzzle(id: String, b: Board, roll: #(Int, Int)) -> Stored {
+  let whole = move_puzzle(id, b, roll)
+  case puzzles.answer_from_json(whole.answer_json) {
+    Ok(MoveAnswer(candidates: candidates, ..)) -> {
+      let kept = list.take(candidates, 2)
+      Stored(
+        ..whole,
+        answer_json: json.to_string(
+          puzzles.answer_json(MoveAnswer(
+            outcomes: list.map(kept, fn(c) {
+              Outcome(board: c.board, equity_lost: c.equity_lost)
+            }),
+            complete: False,
+            n_legal: list.length(candidates),
+            candidates: kept,
+          )),
+        ),
+      )
+    }
+    _ -> whole
   }
 }
 

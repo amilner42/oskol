@@ -52,8 +52,8 @@ defmodule Oskol.Gleam.Caps.Puzzles do
   end
 
   defp mine(puzzle_id, guest_id, user_id) do
-    Enum.map(Puzzles.mine(puzzle_id, guest_id, user_id), fn {source, slug, players} ->
-      {:source_room, source(source, nil), slug,
+    Enum.map(Puzzles.mine(puzzle_id, guest_id, user_id), fn {source, slug, players, ended_at} ->
+      {:source_room, source(%{source | inserted_at: ended_at}, nil), slug,
        Enum.map(players, fn p ->
          {p["id"] || "", p["name"] || "", p["guest_id"] || "", p["user_id"] || ""}
        end)}
@@ -68,7 +68,9 @@ defmodule Oskol.Gleam.Caps.Puzzles do
 
   # A source, with its puzzle's question where the caller asked for it. A
   # date is a day, not a moment: the memory line says "12 Sep", never a
-  # time, so that is all that crosses.
+  # time, so that is all that crosses -- and for the memory line it is the
+  # day the game ended (`mine` above swaps the review's moment in), not the
+  # day the source was written.
   defp source(s, question) do
     {:source, s.id, s.puzzle_id || "", s.kind, s.game_id, s.game_number, s.turn, s.seat,
      s.player_id || "", s.played || "", s.equity_lost || 0.0, s.grade || "",

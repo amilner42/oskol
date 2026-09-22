@@ -140,13 +140,19 @@ pub fn svg(q: Question) -> String {
         False -> "Unlimited"
       }
     False ->
-      "White "
-      <> away(view.away_mover)
-      <> " · Black "
-      <> away(view.away_opponent)
-      <> case q.crawford {
-        True -> " · Crawford"
-        False -> ""
+      // One point each way is a single game (a 1-point match is the same
+      // position), unless it is marked Crawford, which only a match is.
+      case view.away_mover == 1 && view.away_opponent == 1 && !q.crawford {
+        True -> "Single game"
+        False ->
+          "White "
+          <> away(view.away_mover)
+          <> " · Black "
+          <> away(view.away_opponent)
+          <> case q.crawford {
+            True -> " · Crawford"
+            False -> ""
+          }
       }
   }
   let dice = case q.kind, q.dice {

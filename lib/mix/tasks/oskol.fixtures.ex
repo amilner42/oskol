@@ -99,6 +99,25 @@ defmodule Mix.Tasks.Oskol.Fixtures do
     )
 
     Mix.shell().info("wrote assets/tests/PuzzleApiFixtures.elm (#{length(samples)} puzzles)")
+
+    reveals = Enum.map(:oskol@puzzles@fixture.reveals(), fn {name, json} -> {name, json} end)
+
+    File.write!(
+      "assets/tests/PuzzleRevealFixtures.elm",
+      elm_module(reveals, "PuzzleRevealFixtures", reveal_doc())
+    )
+
+    Mix.shell().info("wrote assets/tests/PuzzleRevealFixtures.elm (#{length(reveals)} reveals)")
+  end
+
+  defp reveal_doc do
+    """
+    Each entry is one `POST /papi/puzzles/:id/attempts` answer, rendered by
+    `oskol/handlers/puzzles` itself for a guest: a checker play that passes,
+    holds, misses and one the answer cannot grade, a double and a take
+    answered right and wrong -- and, on their own, the three shapes the
+    `schedule` object takes for an account.
+    """
   end
 
   defp puzzle_doc do
