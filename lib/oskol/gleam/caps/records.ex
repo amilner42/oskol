@@ -3,7 +3,7 @@ defmodule Oskol.Gleam.Caps.Records do
   Real IO for src/oskol/caps/records.gleam. Keep constructor tags and field
   order in lockstep:
 
-      RecordsCaps(setup, stored, numbers, save)
+      RecordsCaps(setup, stored, numbers, save, entries_of)
       Setup(slug, format, clock, seed, seats, finished, records_stale)
       StoredRecord(game_number, entries_json)
 
@@ -12,10 +12,12 @@ defmodule Oskol.Gleam.Caps.Records do
   looks inside them.
   """
 
+  import Oskol.Gleam.Interop
+
   alias Oskol.Reviews
 
   def build do
-    {:records_caps, &setup/1, &stored/1, &Reviews.record_numbers/1, &save/4}
+    {:records_caps, &setup/1, &stored/1, &Reviews.record_numbers/1, &save/4, &entries_of/2}
   end
 
   defp setup(game_id) do
@@ -39,6 +41,10 @@ defmodule Oskol.Gleam.Caps.Records do
             {p["id"], p["name"], p["guest_id"] || "", p["user_id"] || ""}
           end), game.status == "finished", stale}}
     end
+  end
+
+  defp entries_of(game_id, game_number) do
+    opt(Reviews.record_entries(game_id, game_number), &Jason.encode!/1)
   end
 
   defp stored(game_id) do

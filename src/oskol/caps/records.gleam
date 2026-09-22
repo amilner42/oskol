@@ -48,6 +48,10 @@ pub type RecordsCaps {
     /// The log length and completed-game generation belong to the snapshot
     /// that produced these rows, never a fresh read after replaying it.
     save: fn(String, List(#(Int, String)), Int, Int) -> Nil,
+    /// One game's entries, as JSON text: (game_id, game_number). What a
+    /// caller after a single game's result reads, so a whole match's lines
+    /// are not fetched to answer one question about one game.
+    entries_of: fn(String, Int) -> Option(String),
   )
 }
 
@@ -57,5 +61,6 @@ pub fn stub() -> RecordsCaps {
     stored: fn(_) { panic as "stub records.stored" },
     numbers: fn(_) { panic as "stub records.numbers" },
     save: fn(_, _, _, _) { panic as "stub records.save" },
+    entries_of: fn(_, _) { panic as "stub records.entries_of" },
   )
 }

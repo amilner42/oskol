@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
   order in lockstep:
 
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
-      enqueue, review)
+      enqueue, review, report_turn)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
       Stored(game_number, status, attempts, response_json, answered, rendered, turns)
@@ -14,6 +14,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
   `response` and `report` are hundreds of kilobytes each. `summaries`
   selects neither and `report/2` selects one of them for one game, so the
   only query that carries a body is the one whose answer is the body.
+  `report_turn/3` goes further and has PostgreSQL take the path, so a
+  caller that wants three integers out of a report reads three integers.
   """
 
   import Oskol.Gleam.Interop
@@ -22,7 +24,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
   def build do
     {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
-     &backfill_turns/3, &enqueue/1, &review/1}
+     &backfill_turns/3, &enqueue/1, &review/1, &report_turn/3}
   end
 
   defp log(game_id) do
@@ -71,6 +73,10 @@ defmodule Oskol.Gleam.Caps.Analysis do
       {:stored, r.game_number, status(r.status), r.attempts, :none, r.answered, r.rendered,
        r.turns || 0}
     end)
+  end
+
+  defp report_turn(game_id, number, turn) do
+    opt(Reviews.report_turn(game_id, number, turn), &Jason.encode!/1)
   end
 
   defp report(game_id, number) do
