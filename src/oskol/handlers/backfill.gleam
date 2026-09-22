@@ -97,8 +97,9 @@ pub fn old_contract(review: Review) -> Bool {
 pub fn candidates(ctx: Ctx, game_id: String) -> Result(Found, String) {
   case reviews.replayed_room(ctx, game_id) {
     None -> Error("not a started backgammon room, or its log does not replay")
-    Some(#(games, seats)) -> {
-      let stored = ctx.analysis.stored(game_id)
+    // The rows as the replay read them: `settle` may have rendered one
+    // since, but rendering changes nothing this reads.
+    Some(#(games, seats, stored)) -> {
       let #(found, unreadable) =
         list.fold(stored, #([], []), fn(acc, row) {
           case candidate(row, games) {

@@ -40,6 +40,8 @@ defmodule Mix.Tasks.Oskol.Puzzles.Backfill do
     # this and extracts a game whose answer is being replaced.
     Application.put_env(:oskol, Oskol.Reviews.Queue, enabled: false)
     Mix.Task.run("app.start")
+    # One line per game is the point; the dev logger's query trace is not.
+    Logger.configure(level: :info)
 
     Oskol.Puzzles.Backfill.run(
       write: Keyword.get(opts, :write, false),

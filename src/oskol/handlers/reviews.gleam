@@ -101,7 +101,7 @@ pub fn run(ctx: Ctx, game_id: String) -> Option(Int) {
   // anyone with the link can make, and race this job on the same game.
   case settle(ctx, game_id, Extracting) {
     None -> None
-    Some(#(games, seats)) -> {
+    Some(#(games, seats, _)) -> {
       let stored = ctx.analysis.stored(game_id)
       games
       |> list.filter(fn(g) { owed(g, stored) })
@@ -277,15 +277,15 @@ pub fn extracted(
   }
 }
 
-/// A room replayed for something other than a review: its games and its
-/// seats, with the record rows and the rendered answers a read wants
-/// settled on the way and nothing extracted. What the backfill starts
-/// from. None when the room is not a started backgammon room, or its log
-/// does not replay.
+/// A room replayed for something other than a review: its games, its
+/// seats and its stored reviews as the replay found them, with the record
+/// rows and the rendered answers a read wants settled on the way and
+/// nothing extracted. What the backfill starts from. None when the room
+/// is not a started backgammon room, or its log does not replay.
 pub fn replayed_room(
   ctx: Ctx,
   game_id: String,
-) -> Option(#(List(analysis.GameTurns), List(report.Seat))) {
+) -> Option(#(List(analysis.GameTurns), List(report.Seat), List(Stored))) {
   settle(ctx, game_id, ReadOnly)
 }
 
@@ -329,7 +329,7 @@ fn settle(
   ctx: Ctx,
   game_id: String,
   extraction: Extraction,
-) -> Option(#(List(analysis.GameTurns), List(report.Seat))) {
+) -> Option(#(List(analysis.GameTurns), List(report.Seat), List(Stored))) {
   case ctx.analysis.log(game_id) {
     Some(log) if log.slug == slug ->
       case replayed(log) {
@@ -349,7 +349,7 @@ fn settle(
           list.each(finished, fn(g) {
             store_review(ctx, game_id, g, seats, stored, unextracted)
           })
-          Some(#(games, seats))
+          Some(#(games, seats, stored))
         }
         // The log does not replay: nothing to ask the engine about.
         Error(_) -> None
