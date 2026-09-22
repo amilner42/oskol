@@ -234,7 +234,7 @@ routeTo url oldModel =
                 }
                 |> wrap model Play PlayMsg
 
-        -- Practising has no home yet (`puzzles-home`); the word is reserved
+        -- Practicing has no home yet (`puzzles-home`); the word is reserved
         -- on both sides so that it can have one.
         Just Route.Puzzles ->
             ( { model | page = NotFound }, Cmd.none )

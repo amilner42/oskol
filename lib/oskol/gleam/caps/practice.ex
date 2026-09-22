@@ -159,7 +159,7 @@ defmodule Oskol.Gleam.Caps.Practice do
         {:session, Enum.map(reviews, &card/1), Enum.map(fresh, &card/1), remaining}
 
       # No deck at all: an account that has never made a mistake, or one
-      # whose first sync has not run yet. Nothing to practise is a session
+      # whose first sync has not run yet. Nothing to practice is a session
       # with nothing in it, not a failure -- and asking must not create a
       # row, or every page view would.
       {:error, :not_found} ->

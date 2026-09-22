@@ -4,7 +4,7 @@
 //// knows that. Built for real in lib/oskol/gleam/caps/practice.ex -- that
 //// file and this one must agree on constructor tags and field order.
 ////
-//// The deck belongs to an **account**. A guest practises everything an
+//// The deck belongs to an **account**. A guest practices everything an
 //// account can, but nothing is remembered for them, so a handler only
 //// reaches these capabilities once it has a user id.
 ////

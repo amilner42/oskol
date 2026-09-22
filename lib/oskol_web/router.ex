@@ -40,7 +40,7 @@ defmodule OskolWeb.Router do
     get "/me", AuthController, :me
     post "/me/name", AuthController, :rename
 
-    # Practising your own mistakes: an account's deck, or a guest's list.
+    # Practicing your own mistakes: an account's deck, or a guest's list.
     get "/practice", PracticeController, :index
     post "/practice/more", PracticeController, :more
     post "/practice/tz", PracticeController, :tz

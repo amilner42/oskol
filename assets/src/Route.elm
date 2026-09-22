@@ -17,7 +17,7 @@ module Route exposing
     /            the game library
     /:slug       one game's start page (`?game=` an invite)
     /login/:token  the page a mailed sign-in link opens
-    /puzzles     practising (the home of it lands with `puzzles-home`)
+    /puzzles     practicing (the home of it lands with `puzzles-home`)
     /puzzles/:id one puzzle: a position and its question
     /:slug/:id   a running game
     /:slug/:id/replay   a game played again, turn by turn, with its analysis
@@ -46,7 +46,7 @@ type Route
     | Login String
       -- slug, ?game= (a room code)
     | GameLanding String (Maybe String)
-      -- practising: reserved, as the server reserves it
+      -- practicing: reserved, as the server reserves it
     | Puzzles
       -- a puzzle, by id
     | Puzzle String

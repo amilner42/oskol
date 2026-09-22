@@ -54,7 +54,7 @@ defmodule OskolWeb.Api.PracticeApiTest do
                body
     end
 
-    test "a guest with no games has nothing to practise, and no deck is made", %{conn: conn} do
+    test "a guest with no games has nothing to practice, and no deck is made", %{conn: conn} do
       body = conn |> get(~p"/papi/practice") |> json_response(200)
       assert body["puzzles"] == []
       # Guests never get a deck, whatever they ask for.

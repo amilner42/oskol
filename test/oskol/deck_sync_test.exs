@@ -474,7 +474,7 @@ defmodule Oskol.DeckSyncTest do
       assert Puzzles.guest_sources(guest) == []
     end
 
-    test "a browser with no games has nothing to practise" do
+    test "a browser with no games has nothing to practice" do
       assert Puzzles.guest_sources("nobody-at-all") == []
       assert Puzzles.guest_sources("") == []
     end
