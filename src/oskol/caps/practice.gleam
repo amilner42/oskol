@@ -122,16 +122,27 @@ pub type Summary {
   )
 }
 
-/// A refusal the player has to be told about, as opposed to a bug.
+/// A refusal, rather than a crash.
+///
+/// The first four are things a player did and must be told about. The last two cannot happen
+/// from the pages as they stand -- the timezone and a card's content are ours, not theirs --
+/// but this is the boundary, so they cross as answers rather than as a `MatchError` on the way
+/// out. A handler still turns them into a 500: they are our bug, not the player's.
 pub type PracticeError {
   /// No such card in this player's deck.
   UnknownCard
   /// The card is paused: it cannot be answered until it is resumed.
   CardSuspended
+  /// The card has not been put into rotation yet, so there is no schedule to move.
+  CardNotStarted
   /// The attempt is older than the card's newest log entry.
   OutOfOrder
   /// That row cannot be corrected (it is not an attempt).
   NotAmendable
+  /// The deck was opened with something that is not an IANA timezone name.
+  UnknownTimezone
+  /// A card was offered with content that is not a JSON object.
+  BadContent
 }
 
 pub type PracticeCaps {
@@ -139,10 +150,10 @@ pub type PracticeCaps {
     /// Make sure this account has a deck, with their timezone and how many
     /// new cards a day they get. Idempotent; it is the first call of any
     /// practice session.
-    put_user: fn(String, String, Int) -> Nil,
+    put_user: fn(String, String, Int) -> Result(Nil, PracticeError),
     /// Add cards. Keys already in the deck are left exactly as they are, so
     /// re-adding a game's mistakes is safe. Returns how many were new.
-    put_items: fn(String, List(Item)) -> Int,
+    put_items: fn(String, List(Item)) -> Result(Int, PracticeError),
     /// A session's worth of work.
     queue: fn(String, Ask) -> Session,
     /// Put named new cards into rotation now. Returns how many moved.
@@ -154,7 +165,9 @@ pub type PracticeCaps {
     /// all along. This is the Anki-style override after the reveal.
     amend: fn(String, String, Int, Outcome) -> Result(Graded, PracticeError),
     /// Push a card's due date out without touching its level ("not today").
-    /// The date is Unix milliseconds.
+    /// The date is Unix milliseconds. The card has to be in rotation: there
+    /// is nothing to move on one that has never been started, and starting
+    /// it later would overwrite the date anyway.
     defer_until: fn(String, String, Int) -> Result(Graded, PracticeError),
     /// "I already know these": each jumps to the top level. Recorded in the
     /// log, so it survives a rebuild. Returns how many moved.

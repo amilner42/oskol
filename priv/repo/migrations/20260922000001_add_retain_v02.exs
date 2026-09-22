@@ -1,10 +1,11 @@
-defmodule Oskol.Repo.Migrations.AddRetain do
+defmodule Oskol.Repo.Migrations.AddRetainV02 do
   @moduledoc """
   The puzzle deck's tables (`retain_users`, `retain_items`, `retain_reviews`).
 
   The library owns its own schema and versions it; this migration only says
-  which version Oskol is on. Upgrading `retain` later means a new migration
-  here at the next version, not an edit to this one.
+  which version Oskol is on, and is named for it. Upgrading `retain` later
+  means a new migration beside this one (`..._add_retain_v03.exs`, from
+  `mix retain.gen.migration`), never an edit to this one.
   """
   use Ecto.Migration
 

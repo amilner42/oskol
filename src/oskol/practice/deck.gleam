@@ -10,7 +10,8 @@
 import gleam/option.{None, Some}
 import oskol/caps/practice.{
   type Ask, type Graded, type Item, type Outcome, type PracticeError,
-  type Session, Ask, CardSuspended, NotAmendable, OutOfOrder, UnknownCard,
+  type Session, Ask, BadContent, CardNotStarted, CardSuspended, NotAmendable,
+  OutOfOrder, UnknownCard, UnknownTimezone,
 }
 import oskol/core/ctx.{type Ctx}
 import oskol/core/error.{type ApiError}
@@ -29,6 +30,13 @@ pub const suspended_message = "You have put that puzzle aside."
 pub const out_of_order_message = "That answer arrived out of order."
 
 pub const not_amendable_message = "That answer cannot be changed."
+
+pub const not_started_message = "You have not started that puzzle yet."
+
+/// Ours, not theirs: a deck opened with a bad timezone or a card offered with
+/// content that is not an object. The player is told nothing useful because
+/// there is nothing they can do about it.
+pub const deck_broken_message = "Your deck is not available right now."
 
 /// What a normal session asks for: everything due first, then new material.
 ///
@@ -51,9 +59,16 @@ pub fn daily_ask(offset: Int) -> Ask {
 /// Make sure the account has a deck and put these puzzles in it. Returns how
 /// many were new: re-adding a game's mistakes is safe, so this is also what
 /// signing in does with the games a browser brought along.
-pub fn enroll(ctx: Ctx, uid: String, tz: String, items: List(Item)) -> Int {
-  ctx.practice.put_user(uid, tz, new_per_day)
-  ctx.practice.put_items(uid, items)
+pub fn enroll(
+  ctx: Ctx,
+  uid: String,
+  tz: String,
+  items: List(Item),
+) -> Result(Int, ApiError) {
+  case ctx.practice.put_user(uid, tz, new_per_day) {
+    Ok(Nil) -> ctx.practice.put_items(uid, items) |> refusal
+    Error(error) -> Error(api_error(error))
+  }
 }
 
 /// A session's worth of work for this account.
@@ -94,21 +109,32 @@ pub fn snooze(
   ctx.practice.defer_until(uid, key, until_ms) |> refusal
 }
 
-/// The sentence a player reads. A puzzle that is not in their deck is the
-/// only one of these that is a 404: the others are things they did.
+/// The sentence a player reads.
 pub fn message(error: PracticeError) -> String {
   case error {
     UnknownCard -> unknown_card_message
     CardSuspended -> suspended_message
+    CardNotStarted -> not_started_message
     OutOfOrder -> out_of_order_message
     NotAmendable -> not_amendable_message
+    UnknownTimezone | BadContent -> deck_broken_message
   }
 }
 
-fn refusal(result: Result(Graded, PracticeError)) -> Result(Graded, ApiError) {
+/// A puzzle that is not in the deck is the only 404. The things the player
+/// did are 422s with their own sentence; the two that are our fault are 500s,
+/// answered on purpose rather than by crashing on the way out.
+fn api_error(error: PracticeError) -> ApiError {
+  case error {
+    UnknownCard -> error.NotFound(unknown_card_message)
+    UnknownTimezone | BadContent -> error.Internal(deck_broken_message)
+    other -> error.validation_failed(message(other))
+  }
+}
+
+fn refusal(result: Result(a, PracticeError)) -> Result(a, ApiError) {
   case result {
-    Ok(graded) -> Ok(graded)
-    Error(UnknownCard) -> Error(error.NotFound(unknown_card_message))
-    Error(other) -> Error(error.validation_failed(message(other)))
+    Ok(value) -> Ok(value)
+    Error(error) -> Error(api_error(error))
   }
 }

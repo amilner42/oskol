@@ -7,10 +7,11 @@
 
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import oskol/caps/practice.{
-  type Ask, type Graded, type Item, type PracticeError, Again, Card,
-  CardSuspended, Fail, Graded, Item, New, NotAmendable, OutOfOrder, Pass,
-  PracticeCaps, Session, UnknownCard,
+  type Ask, type Graded, type Item, type PracticeError, Again, BadContent, Card,
+  CardNotStarted, CardSuspended, Fail, Graded, Item, New, NotAmendable,
+  OutOfOrder, Pass, PracticeCaps, Session, UnknownCard, UnknownTimezone,
 }
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
@@ -131,17 +132,69 @@ pub fn enrolling_opens_the_deck_before_putting_anything_in_it_test() {
           assert uid == "acct"
           assert tz == "Europe/Paris"
           assert per_day == deck.new_per_day
-          Nil
+          Ok(Nil)
         },
         put_items: fn(uid, given: List(Item)) {
           assert uid == "acct"
           assert list.length(given) == 1
-          1
+          Ok(1)
         },
       ),
     )
 
-  assert deck.enroll(ctx, "acct", "Europe/Paris", items) == 1
+  assert deck.enroll(ctx, "acct", "Europe/Paris", items) == Ok(1)
+}
+
+pub fn a_deck_that_cannot_be_opened_is_a_500_not_a_crash_test() {
+  // Neither of these can come from a puzzle page -- the timezone and a card's
+  // content are ours -- but the cap is the boundary, so they arrive as answers
+  // and the player is told nothing they cannot act on.
+  let bad_tz =
+    Ctx(
+      ..fakes.ctx(),
+      practice: PracticeCaps(..fakes.ctx().practice, put_user: fn(_, _, _) {
+        Error(UnknownTimezone)
+      }),
+    )
+
+  assert deck.enroll(bad_tz, "acct", "Mars/Olympus", [])
+    == Error(error.Internal(deck.deck_broken_message))
+
+  let bad_content =
+    Ctx(
+      ..fakes.ctx(),
+      practice: PracticeCaps(
+        ..fakes.ctx().practice,
+        put_user: fn(_, _, _) { Ok(Nil) },
+        put_items: fn(_, _) { Error(BadContent) },
+      ),
+    )
+
+  assert deck.enroll(bad_content, "acct", "Etc/UTC", [])
+    == Error(error.Internal(deck.deck_broken_message))
+}
+
+pub fn nothing_is_put_in_a_deck_that_could_not_be_opened_test() {
+  // put_items must not run when put_user failed: the stub panics if it does.
+  let ctx =
+    Ctx(
+      ..fakes.ctx(),
+      practice: PracticeCaps(..fakes.ctx().practice, put_user: fn(_, _, _) {
+        Error(UnknownTimezone)
+      }),
+    )
+
+  assert deck.enroll(ctx, "acct", "Mars/Olympus", []) |> result.is_error
+}
+
+pub fn snoozing_a_card_not_in_rotation_says_so_test() {
+  // A defer on a card that has never been started would move a date nothing
+  // reads and then be overwritten the moment it is started, so the deck
+  // refuses it rather than pretending.
+  let ctx = fakes.ctx() |> refusing(CardNotStarted)
+
+  assert deck.snooze(ctx, "acct", "pos:a", 1000)
+    == Error(error.validation_failed(deck.not_started_message))
 }
 
 pub fn an_answer_that_lands_comes_back_graded_test() {
@@ -190,12 +243,15 @@ pub fn the_refusals_a_player_caused_are_422_with_their_own_sentence_test() {
 }
 
 pub fn every_refusal_has_a_sentence_and_they_are_all_different_test() {
+  // The five a player can cause each say something different; the two that
+  // are our fault deliberately share one sentence that admits nothing.
   let sentences =
-    [UnknownCard, CardSuspended, OutOfOrder, NotAmendable]
+    [UnknownCard, CardSuspended, CardNotStarted, OutOfOrder, NotAmendable]
     |> list.map(deck.message)
 
-  assert list.length(list.unique(sentences)) == 4
+  assert list.length(list.unique(sentences)) == 5
   assert list.all(sentences, fn(s) { s != "" })
+  assert deck.message(UnknownTimezone) == deck.message(BadContent)
 }
 
 pub fn correcting_names_the_row_it_corrects_test() {

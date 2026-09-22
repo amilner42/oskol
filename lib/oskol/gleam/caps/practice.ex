@@ -14,8 +14,8 @@ defmodule Oskol.Gleam.Caps.Practice do
       due_count, mean_level)
       Outcome: :pass | :partial | :fail | :again | :known
       Status: :new | :active | :suspended
-      PracticeError: :unknown_card | :card_suspended | :out_of_order
-      | :not_amendable
+      PracticeError: :unknown_card | :card_suspended | :card_not_started
+      | :out_of_order | :not_amendable | :unknown_timezone | :bad_content
 
   Times cross as Unix milliseconds, as they do everywhere else on this
   boundary; a card's `content` crosses as JSON text, because Retain stores it
@@ -25,10 +25,15 @@ defmodule Oskol.Gleam.Caps.Practice do
   order, and an unsorted list would make the same deck serialise differently
   between runs -- the same rule the scenes follow.
 
-  Only the three writes a player can be refused return a `Result`: answering a
-  card that is not theirs, is paused, or is out of order, and correcting a row
-  that is not an attempt. Everything else raises and surfaces as a 500, which
-  is what a missing deck is -- `put_user` opens every session.
+  Every call that can be refused returns a `Result` rather than raising. Most
+  of those refusals are things a player did -- a card that is not theirs, one
+  they paused, one not yet in rotation, an answer out of order, a row that is
+  not an attempt. Two are ours: a timezone that is not an IANA name and a
+  card whose content is not a JSON object. Neither can happen from the pages
+  as they stand, but this is the boundary, so they come back as `:unknown_
+  timezone` and `:bad_content` instead of a `MatchError` that would surface
+  as an unexplained 500. A handler still answers 500 for those two; the
+  difference is that it does so on purpose.
   """
 
   import Oskol.Gleam.Interop
@@ -47,23 +52,42 @@ defmodule Oskol.Gleam.Caps.Practice do
 
   defp put_user(uid, tz, new_per_day) do
     tz = if tz == "", do: @default_tz, else: tz
-    {:ok, _} = Retain.put_user(uid, tz: tz, new_per_day: new_per_day)
-    nil
+
+    case Retain.put_user(uid, tz: tz, new_per_day: new_per_day) do
+      {:ok, _} -> {:ok, nil}
+      # The only thing a caller can get wrong here.
+      {:error, %Ecto.Changeset{}} -> {:error, :unknown_timezone}
+    end
   end
 
   defp put_items(uid, items) do
-    rows =
-      Enum.map(items, fn {:item, key, tags, content_json, position} ->
-        %{
-          key: key,
-          tags: Map.new(tags),
-          content: Jason.decode!(content_json),
-          position: unopt(position)
-        }
-      end)
+    with {:ok, rows} <- item_rows(items),
+         {:ok, %{inserted: inserted}} <- Retain.put_items(uid, rows) do
+      {:ok, inserted}
+    else
+      # A card's content is stored opaquely, but it has to be a JSON object to be stored at
+      # all; anything else is a bug above this line, not a crash below it.
+      :error -> {:error, :bad_content}
+      {:error, {:invalid_item, _index, _changeset}} -> {:error, :bad_content}
+    end
+  end
 
-    {:ok, %{inserted: inserted}} = Retain.put_items(uid, rows)
-    inserted
+  defp item_rows(items) do
+    Enum.reduce_while(items, {:ok, []}, fn {:item, key, tags, content_json, position},
+                                           {:ok, rows} ->
+      case Jason.decode(content_json) do
+        {:ok, content} when is_map(content) ->
+          row = %{key: key, tags: Map.new(tags), content: content, position: unopt(position)}
+          {:cont, {:ok, [row | rows]}}
+
+        _ ->
+          {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, rows} -> {:ok, Enum.reverse(rows)}
+      :error -> :error
+    end
   end
 
   defp queue(uid, {:ask, tags, limit, offset, new_after_reviews, new_limit}) do
@@ -138,6 +162,7 @@ defmodule Oskol.Gleam.Caps.Practice do
 
   defp graded({:error, :not_found}), do: {:error, :unknown_card}
   defp graded({:error, :suspended}), do: {:error, :card_suspended}
+  defp graded({:error, :not_started}), do: {:error, :card_not_started}
   defp graded({:error, :out_of_order}), do: {:error, :out_of_order}
   defp graded({:error, :not_amendable}), do: {:error, :not_amendable}
 

@@ -118,7 +118,8 @@ library: a Leitner ladder over an append-only review log, in Oskol's own
 Postgres, with nothing to start. It is **pinned by commit, never a branch** --
 a player's schedule must not move because someone pushed upstream. Its tables
 arrive through `Retain.Migration`, one Oskol migration per schema version
-(`priv/repo/migrations/*_add_retain.exs`), and the ladder is
+(`priv/repo/migrations/*_add_retain_v<NN>.exs`, from `mix retain.gen.migration`
+-- never edit one, add the next), and the ladder is
 `config :retain, intervals: [1, 1, 3, 7, 21, 58, 145, 365]`: level 0 is a day
 rather than retain's zero, so a puzzle just missed comes back tomorrow instead
 of later in the same session. Nothing outside
@@ -592,7 +593,8 @@ lib/oskol/gleam/caps/practice.ex its real IO, over retain: times cross as Unix m
                                  card's content as JSON text, tags sorted
 src/oskol/practice/deck.gleam    the deck's own rules: due before new, ten new a day,
                                  KEEP GOING uncapped, and the sentence each refusal
-                                 gives the player
+                                 gives the player (a puzzle not in the deck is the
+                                 only 404; a snooze needs a card in rotation)
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
 assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
 assets/src/Route.elm             the three client routes, mirroring the server's

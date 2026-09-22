@@ -43,7 +43,7 @@ defmodule Oskol.PracticeTest do
     }
 
     uid = "acct-#{System.unique_integer([:positive])}"
-    caps.put_user.(uid, "America/Vancouver", 10)
+    {:ok, nil} = caps.put_user.(uid, "America/Vancouver", 10)
 
     {:ok, caps: caps, uid: uid}
   end
@@ -63,14 +63,14 @@ defmodule Oskol.PracticeTest do
   test "put_user opens a deck and is idempotent", %{caps: caps, uid: uid} do
     # The setup already called it once; calling it again is what every
     # session does, and it must not fail or duplicate.
-    assert caps.put_user.(uid, "America/Vancouver", 10) == nil
+    assert caps.put_user.(uid, "America/Vancouver", 10) == {:ok, nil}
     assert {:ok, %Retain.User{tz: "America/Vancouver", new_per_day: 10}} = Retain.fetch_user(uid)
-    assert Repo.aggregate(Retain.User, :count) == 1
+    assert Repo.aggregate(from(u in Retain.User, where: u.uid == ^uid), :count) == 1
 
     # An empty timezone falls back rather than raising: a deck is opened
     # before anyone has told us where the player is.
     other = "acct-#{System.unique_integer([:positive])}"
-    assert caps.put_user.(other, "", 10) == nil
+    assert caps.put_user.(other, "", 10) == {:ok, nil}
     assert {:ok, %Retain.User{tz: tz}} = Retain.fetch_user(other)
     assert tz == Practice.default_tz()
   end
@@ -86,11 +86,11 @@ defmodule Oskol.PracticeTest do
       item("pos:b/cube", [{"kind", "cube"}], %{}, {:some, 2})
     ]
 
-    assert caps.put_items.(uid, items) == 2
+    assert caps.put_items.(uid, items) == {:ok, 2}
 
     # Re-adding the same game's mistakes is safe: nothing is new.
-    assert caps.put_items.(uid, items) == 0
-    assert caps.put_items.(uid, items ++ [item("pos:c/move")]) == 1
+    assert caps.put_items.(uid, items) == {:ok, 0}
+    assert caps.put_items.(uid, items ++ [item("pos:c/move")]) == {:ok, 1}
 
     {:ok, stored} = Retain.fetch_item(uid, "pos:a/move")
     assert stored.content == content
@@ -102,7 +102,7 @@ defmodule Oskol.PracticeTest do
     caps: caps,
     uid: uid
   } do
-    2 = caps.put_items.(uid, [item("pos:a"), item("pos:b")])
+    {:ok, 2} = caps.put_items.(uid, [item("pos:a"), item("pos:b")])
 
     # Nothing is in rotation yet, so everything arrives as new material.
     assert {:session, [], fresh, 10} = caps.queue.(uid, ask())
@@ -123,6 +123,28 @@ defmodule Oskol.PracticeTest do
     assert_in_delta DateTime.diff(card.due, DateTime.utc_now(), :second), 86_400, 60
   end
 
+  test "a deck cannot be opened with a timezone that is not one, and says so", %{caps: caps} do
+    other = "acct-#{System.unique_integer([:positive])}"
+    assert {:error, :unknown_timezone} = caps.put_user.(other, "Mars/Olympus", 10)
+    assert Retain.fetch_user(other) == {:error, :not_found}
+  end
+
+  test "a card whose content is not a JSON object is refused, and nothing is written", %{
+    caps: caps,
+    uid: uid
+  } do
+    # Neither of these can come from a puzzle page; the cap is the boundary anyway.
+    assert {:error, :bad_content} = caps.put_items.(uid, [{:item, "a", [], "[1,2]", :none}])
+    assert {:error, :bad_content} = caps.put_items.(uid, [{:item, "a", [], "\"nope\"", :none}])
+    assert {:error, :bad_content} = caps.put_items.(uid, [{:item, "a", [], "not json", :none}])
+
+    # Not even the valid card that came with the bad one.
+    assert {:error, :bad_content} =
+             caps.put_items.(uid, [item("good"), {:item, "bad", [], "[]", :none}])
+
+    assert Retain.fetch_item(uid, "good") == {:error, :not_found}
+  end
+
   test "the configured ladder is the brief's, not retain's default" do
     assert Application.get_env(:retain, :intervals) == [1, 1, 3, 7, 21, 58, 145, 365]
 
@@ -132,7 +154,7 @@ defmodule Oskol.PracticeTest do
 
   test "an offset walks further down the due list", %{caps: caps, uid: uid} do
     keys = Enum.map(1..6, &"pos:#{&1}")
-    6 = caps.put_items.(uid, Enum.map(keys, &item/1))
+    {:ok, 6} = caps.put_items.(uid, Enum.map(keys, &item/1))
     assert caps.start.(uid, keys) == 6
 
     assert {:session, first, _, _} = caps.queue.(uid, ask(limit: 4))
@@ -144,7 +166,7 @@ defmodule Oskol.PracticeTest do
   end
 
   test "new material is held back until nothing is due", %{caps: caps, uid: uid} do
-    2 = caps.put_items.(uid, [item("due:1"), item("fresh:1")])
+    {:ok, 2} = caps.put_items.(uid, [item("due:1"), item("fresh:1")])
     assert caps.start.(uid, ["due:1"]) == 1
 
     assert {:session, reviews, [], _} = caps.queue.(uid, ask(new_after_reviews: true))
@@ -156,7 +178,7 @@ defmodule Oskol.PracticeTest do
   end
 
   test "tags filter the queue and group the summary", %{caps: caps, uid: uid} do
-    4 =
+    {:ok, 4} =
       caps.put_items.(uid, [
         item("a", [{"kind", "cube"}]),
         item("b", [{"kind", "cube"}]),
@@ -180,7 +202,7 @@ defmodule Oskol.PracticeTest do
     caps: caps,
     uid: uid
   } do
-    1 = caps.put_items.(uid, [item("pos:a")])
+    {:ok, 1} = caps.put_items.(uid, [item("pos:a")])
 
     assert {:ok, {:graded, 0, 1, due_ms, review_id}} = caps.review.(uid, "pos:a", :pass)
     assert is_integer(review_id)
@@ -195,11 +217,11 @@ defmodule Oskol.PracticeTest do
     assert card.lapses == 1
     # Append-only: the row it corrected is still there.
     assert %Retain.Review{outcome: :pass} = Repo.get!(Retain.Review, review_id)
-    assert Repo.aggregate(Retain.Review, :count) == 2
+    assert reviews(uid) == 2
   end
 
   test ":again drops to the bottom, :fail only one step", %{caps: caps, uid: uid} do
-    1 = caps.put_items.(uid, [item("pos:a")])
+    {:ok, 1} = caps.put_items.(uid, [item("pos:a")])
     for _ <- 1..4, do: {:ok, _} = caps.review.(uid, "pos:a", :pass)
     assert {:ok, %Retain.Item{level: 4}} = Retain.fetch_item(uid, "pos:a")
 
@@ -207,8 +229,32 @@ defmodule Oskol.PracticeTest do
     assert {:ok, {:graded, 3, 0, _, _}} = caps.review.(uid, "pos:a", :again)
   end
 
+  test "a card not yet in rotation cannot be snoozed, and starting it stays honest", %{
+    caps: caps,
+    uid: uid
+  } do
+    {:ok, 1} = caps.put_items.(uid, [item("fresh")])
+    until_ms = System.system_time(:millisecond) + 5 * 24 * 60 * 60 * 1000
+
+    # A defer on a new card would move a date nothing reads, and `start` would write over it
+    # with no log row -- which is exactly how live state and a rebuild came to disagree.
+    assert {:error, :card_not_started} = caps.defer_until.(uid, "fresh", until_ms)
+
+    assert caps.start.(uid, ["fresh"]) == 1
+    live = snapshot(uid, ["fresh"])
+
+    assert {:ok, _} = Retain.rebuild(uid)
+    assert snapshot(uid, ["fresh"]) == live
+
+    # Started, it snoozes like anything else, and that still round-trips.
+    assert {:ok, {:graded, 0, 0, ^until_ms, _}} = caps.defer_until.(uid, "fresh", until_ms)
+    deferred = snapshot(uid, ["fresh"])
+    assert {:ok, _} = Retain.rebuild(uid)
+    assert snapshot(uid, ["fresh"]) == deferred
+  end
+
   test "defer moves the due date and leaves the ladder alone", %{caps: caps, uid: uid} do
-    1 = caps.put_items.(uid, [item("pos:a")])
+    {:ok, 1} = caps.put_items.(uid, [item("pos:a")])
     {:ok, _} = caps.review.(uid, "pos:a", :pass)
     {:ok, before} = Retain.fetch_item(uid, "pos:a")
 
@@ -226,7 +272,7 @@ defmodule Oskol.PracticeTest do
     caps: caps,
     uid: uid
   } do
-    3 = caps.put_items.(uid, [item("a"), item("b"), item("c")])
+    {:ok, 3} = caps.put_items.(uid, [item("a"), item("b"), item("c")])
 
     assert caps.master.(uid, ["a", "b"]) == 2
     assert {:ok, %Retain.Item{level: 7}} = Retain.fetch_item(uid, "a")
@@ -249,7 +295,7 @@ defmodule Oskol.PracticeTest do
     caps: caps,
     uid: uid
   } do
-    1 = caps.put_items.(uid, [item("pos:a")])
+    {:ok, 1} = caps.put_items.(uid, [item("pos:a")])
 
     assert {:error, :unknown_card} = caps.review.(uid, "nope", :pass)
     assert {:error, :unknown_card} = caps.defer_until.(uid, "nope", 0)
@@ -269,7 +315,7 @@ defmodule Oskol.PracticeTest do
 
   test "a rebuild of the log reproduces every card the cap wrote", %{caps: caps, uid: uid} do
     keys = Enum.map(1..5, &"pos:#{&1}")
-    5 = caps.put_items.(uid, Enum.map(keys, &item/1))
+    {:ok, 5} = caps.put_items.(uid, Enum.map(keys, &item/1))
 
     # A session's worth of everything the cap can write.
     for {key, outcome} <- Enum.zip(keys, [:pass, :partial, :fail, :again, :known]) do
@@ -291,6 +337,17 @@ defmodule Oskol.PracticeTest do
 
     assert {:ok, %{items: 5}} = Retain.rebuild(uid)
     assert snapshot(uid, keys) == live
+  end
+
+  defp reviews(uid) do
+    Repo.aggregate(
+      from(r in Retain.Review,
+        join: i in assoc(r, :item),
+        join: u in assoc(i, :user),
+        where: u.uid == ^uid
+      ),
+      :count
+    )
   end
 
   defp snapshot(uid, keys) do

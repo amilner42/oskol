@@ -102,7 +102,7 @@ defmodule Oskol.MixProject do
       # branch: the schedule a player is on must not move under them because
       # someone pushed upstream. We own the library (amilner42/retain), so a
       # change it needs is a PR there and a new ref here.
-      {:retain, github: "amilner42/retain", ref: "790786981a918548aa1ab5564547a62c578d2d80"},
+      {:retain, github: "amilner42/retain", ref: "1b454b1170095ee754e80970172e325f5bd51b3e"},
       # Gleam packages
       {:gleam_stdlib, "~> 0.34 or ~> 1.0"},
       {:gleam_json, "~> 3.0"},
