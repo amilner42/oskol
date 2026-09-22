@@ -1,0 +1,7 @@
+#!/bin/sh
+# Stands in for rsvg-convert under test: swallows the SVG on stdin and
+# writes something that begins as a PNG does, saying how many bytes came
+# in, so a test can see the drawing reached the binary without needing
+# librsvg on the machine.
+bytes=$(wc -c | tr -d ' ')
+printf '\211PNG\r\n\032\nfake %s bytes' "$bytes"

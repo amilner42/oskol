@@ -26,12 +26,15 @@ defmodule Oskol.Reviews.Queue do
   three consecutive crashes suspend automatic recovery for that room until
   a fresh enqueue or queue restart. The durable owed marker is left intact.
 
-  A job is a room, or an account's mistakes deck (`{:deck, user_id}`,
-  `sync_deck/1`). They share the line because they share the reason for
-  having one: work that must happen off a room, off a request and one at a
-  time, and that has to be recoverable from the database when the queue
-  forgets it. A deck job is collapsible -- it syncs everything the account
-  is owed -- so two of them are never worth queueing.
+  A job is a room, an account's mistakes deck (`{:deck, user_id}`,
+  `sync_deck/1`), or the puzzle pictures still owed (`:pictures`). They
+  share the line because they share the reason for having one: work that
+  must happen off a room, off a request and one at a time, and that has to
+  be recoverable from the database when the queue forgets it. A deck job
+  is collapsible -- it syncs everything the account is owed -- so two of
+  them are never worth queueing; the pictures job is one batch of the
+  newest owed, queued by the sweep alone, so it is one job a minute at
+  most.
 
   `enabled` (config `:oskol, Oskol.Reviews.Queue`) is off in tests, where
   rooms finish games by the hundred and there is no engine; a test that
@@ -43,6 +46,9 @@ defmodule Oskol.Reviews.Queue do
   @task_supervisor Oskol.Reviews.TaskSupervisor
   @sweep_interval :timer.minutes(1)
   @max_crashes 3
+  # Puzzle pictures drawn per sweep: a quarter of a second each, so a
+  # batch is a few seconds of the line once a minute, however many are owed.
+  @pictures_batch 20
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -93,6 +99,23 @@ defmodule Oskol.Reviews.Queue do
     :ok
   end
 
+  # The pictures a review job did not draw (a crash, a puzzle from before
+  # pictures, a render that failed with tries to spare): one batch, newest
+  # first. Each render is charged on its own row, so a puzzle that cannot
+  # be drawn leaves the batch after three. A crash outside that charge (the
+  # database going away mid-batch) is logged and left for the next sweep:
+  # nothing about this job is a room's, so the crash budget that suspends
+  # a room until its next game would suspend every picture until a
+  # restart.
+  def run(:pictures) do
+    Oskol.Puzzles.Pictures.render_owed(@pictures_batch)
+    :ok
+  rescue
+    e ->
+      Logger.error("puzzle pictures batch failed: #{Exception.message(e)}")
+      :ok
+  end
+
   def run(game_id) when is_binary(game_id) do
     # The room's last writes (the step that ended the game) go through the
     # write-behind persister; let them land before reading the log.
@@ -139,9 +162,12 @@ defmodule Oskol.Reviews.Queue do
       # And the accounts whose mistakes are not in their deck yet: a sync
       # lost to a crash or a deploy, or a sign-in whose cast never ran.
       decks = for row <- Oskol.Practice.pending(), do: {:deck, row.user_id}
+      # And the puzzles with no picture yet: one bounded batch.
+      pictures = if Oskol.Puzzles.Pictures.any_owed?(), do: [:pictures], else: []
 
-      GenServer.cast(__MODULE__, {:recover, owed ++ decks})
-      length(owed) + length(decks)
+      jobs = owed ++ decks ++ pictures
+      GenServer.cast(__MODULE__, {:recover, jobs})
+      length(jobs)
     else
       0
     end

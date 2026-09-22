@@ -551,8 +551,9 @@ src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     decisions live in Gleam" below): core (ctx, session,
                     error, envelope), caps (the IO a handler may do),
                     rooms (codes, names, errors, invite), guests/identity,
-                    landing/copy, reviews/report, puzzles (+ puzzles/extract),
-                    practice/deck (the puzzle deck), handlers (rooms, landing,
+                    landing/copy, reviews/report, puzzles (+ puzzles/extract,
+                    puzzles/picture), practice/deck (the puzzle deck),
+                    handlers (rooms, landing,
                     reviews, record, ratings, auth)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
@@ -572,7 +573,8 @@ lib/oskol/reviews.ex            game_reviews + game_records tables, the log a re
                                 reads, the engine's HTTP
 src/oskol/core/raw.gleam        stored JSON back onto the wire without rebuilding it
 lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room,
-                                and deck syncs the same way ({:deck, user_id})
+                                deck syncs the same way ({:deck, user_id}), and one
+                                batch of owed puzzle pictures a sweep (:pictures)
 src/oskol/practice/sync.gleam   filling an account's mistakes deck: whose, in what
                                 order, what is stamped, and when to give up
 src/oskol/handlers/practice.gleam  a practice session: an account's deck, a guest's
@@ -583,6 +585,12 @@ lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images 
 src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
                                 key and id, the answer, the JSON of each column
 src/oskol/puzzles/extract.gleam which turns of a graded game are puzzles
+src/oskol/puzzles/picture.gleam a puzzle's link picture as SVG: the board in the
+                                default theme, 1200 x 630, pure
+lib/oskol/puzzles/pictures.ex   rasterises it (rsvg-convert) into puzzle_images in
+                                the review job and the sweep, bounded; never on a request
+lib/oskol_web/plugs/puzzle_picture.ex  GET /puzzles/:id.png from the row, or the
+                                 site's board (priv/static/images/puzzle-board.png)
 lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 src/oskol/rooms/seat.gleam       who holds a seat (the guest, or the account that
@@ -1079,8 +1087,41 @@ path builds one and nothing re-asks the engine to recover one.
   `puzzles_extracted_at` itself: `Reviews.save/8`'s upsert deliberately
   leaves it alone, which is right for today's only rewriter (a retry of a
   `failed` row, which never had puzzles).
-- `puzzle_attempts`, `puzzle_shares` and `puzzle_images` exist and are
-  written by the later tickets (the API, the story link, the board picture).
+- `puzzle_attempts` and `puzzle_shares` exist and are written by the later
+  tickets (the API, the story link).
+- **A puzzle has a picture, drawn once, never on a request.**
+  `src/oskol/puzzles/picture.gleam` draws the position as SVG, 1200 x 630,
+  in the default theme's colours (`.bg-theme-midnight`, as constants), from
+  the solver's side exactly as `prompt` speaks (a take is `flip`ped, cube
+  owner and scores with it): the board with the mover as White at the
+  bottom, stacks with a count over five, bar and trays, the dice for a
+  move, the cube at its owner's side, the score line, the prompt. Text is
+  SVG text in a system font stack; nothing loads. `Oskol.Puzzles.Pictures`
+  rasterises it with `rsvg-convert` (`config :oskol, :rsvg`; the release
+  image installs `librsvg2-bin` and `fonts-dejavu-core`; the SVG rides in
+  as an environment string through `sh` because a port cannot close stdin
+  alone) and stores the PNG in `puzzle_images` (about 90 KB: cairo's PNG
+  writer, no compression flag). Drawn in the review job right after
+  `store` succeeds (`puzzles.pictures` cap, `render_game/2`) and by the
+  queue's minute sweep for whatever that missed (`render_owed/1`, a
+  `:pictures` job, twenty a batch). Every try is charged to
+  `puzzle_images.attempts` first; the third failure writes `error` and the
+  sweep lets the row go until `Pictures.reset_attempts/0`. A missing
+  binary is logged and charged to nobody, so a deploy without it cannot
+  burn every puzzle's budget. `GET /puzzles/:id.png`
+  (`OskolWeb.Plugs.PuzzlePicture`, an endpoint plug beside `Plug.Static`:
+  no session, no guest cookie, no router -- and the router's grammar has
+  no `:id.png`) serves the row `public, max-age=31536000, immutable` with
+  an ETag, or the site's board (`priv/static/images/puzzle-board.png`,
+  committed, regenerated by `Pictures.write_default!/0`) at `max-age=300`
+  while a puzzle has none; an id that names no puzzle is a 404; `?s=` is
+  ignored. The root layout's `<.share_card image={assigns[:puzzle_image]}>`
+  emits `og:image`, its width and height, `twitter:card`
+  `summary_large_image` and `twitter:image` when a page sets
+  `:puzzle_image` to the picture's absolute URL, and byte for byte the old
+  `summary` tag when it does not. Tests stub the binary
+  (`test_support/fake_rsvg_convert`) and run the real one only when the
+  machine has it.
 - Measured on the seeded match 821900 (12 games): 125 puzzles, 127 sources
   (103 move, 19 double, 3 take; 2 skipped post-take), mean stored row 1.7 KB.
   With every legal result the answer column goes from a mean of 2.4 KB to

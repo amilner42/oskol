@@ -141,6 +141,13 @@ pub type PuzzlesCaps {
     /// deck, so this is their whole session: newest game first, nothing
     /// scheduled, nothing written.
     guest_sources: fn(String) -> List(DeckSource),
+    /// Draw the link pictures of the puzzles one game just wrote: (game_id,
+    /// game_number). Called once `store` has succeeded for that game, and
+    /// only from the review job -- a picture is never drawn on a request.
+    /// Each render is charged and bounded on its own row
+    /// (`Oskol.Puzzles.Pictures`); a picture that does not get drawn is
+    /// the sweep's to find, never a reason for a review to fail.
+    pictures: fn(String, Int) -> Nil,
   )
 }
 
@@ -154,5 +161,6 @@ pub fn stub() -> PuzzlesCaps {
     sync_failed: fn(_, _) { panic as "stub puzzles.sync_failed" },
     deck_pending: fn(_, _) { panic as "stub puzzles.deck_pending" },
     guest_sources: fn(_) { panic as "stub puzzles.guest_sources" },
+    pictures: fn(_, _) { panic as "stub puzzles.pictures" },
   )
 }

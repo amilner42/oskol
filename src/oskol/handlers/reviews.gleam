@@ -248,12 +248,16 @@ fn write_puzzles(
   case extract.from_review(g, seats, review) {
     Ok(#(puzzles, sources)) ->
       case ctx.puzzles.store(game_id, g.number, puzzles, sources) {
-        // The mistakes exist now, so the decks that own them can have
-        // them. Here and not in the room: this is the review job's own
-        // task, which is already off every hot path, and a deck that does
-        // not fill is never a reason for a review to fail. A sync that
-        // does not happen at all is the sweep's to find.
-        Ok(Nil) -> sync.sync_game(ctx, game_id)
+        // The mistakes exist now, so their pictures can be drawn and the
+        // decks that own them can have them. Here and not in the room:
+        // this is the review job's own task, which is already off every
+        // hot path, and neither a picture that does not draw nor a deck
+        // that does not fill is a reason for a review to fail. Either one
+        // that does not happen at all is the sweep's to find.
+        Ok(Nil) -> {
+          ctx.puzzles.pictures(game_id, g.number)
+          sync.sync_game(ctx, game_id)
+        }
         Error(_) -> Nil
       }
     Error(reason) -> ctx.puzzles.failed(game_id, g.number, reason)

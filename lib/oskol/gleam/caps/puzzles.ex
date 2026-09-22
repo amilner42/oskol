@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
   order in lockstep:
 
       PuzzlesCaps(unextracted, store, failed, owned_sources, mark_synced,
-      sync_failed, deck_pending, guest_sources)
+      sync_failed, deck_pending, guest_sources, pictures)
       NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json)
       NewSource(key, game_number, turn, kind, seat, player_id, played,
       equity_lost, grade, skipped_reason)
@@ -28,7 +28,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
 
   def build do
     {:puzzles_caps, &Puzzles.unextracted/1, &store/4, &failed/3, &owned_sources/2, &mark_synced/1,
-     &sync_failed/2, &deck_pending/2, &guest_sources/1}
+     &sync_failed/2, &deck_pending/2, &guest_sources/1, &pictures/2}
   end
 
   # The deck's own capabilities degrade rather than raise, the way
@@ -64,6 +64,16 @@ defmodule Oskol.Gleam.Caps.Puzzles do
 
   defp guest_sources(guest_id) do
     quietly([], fn -> guest_id |> Puzzles.guest_sources() |> Enum.map(&deck_source/1) end)
+  end
+
+  # A picture is a bonus on top of a stored puzzle: the render bounds and
+  # logs its own failures, and anything past that is logged here and left
+  # for the sweep.
+  defp pictures(game_id, game_number) do
+    quietly(nil, fn ->
+      Oskol.Puzzles.Pictures.render_game(game_id, game_number)
+      nil
+    end)
   end
 
   defp quietly(fallback, fun) do

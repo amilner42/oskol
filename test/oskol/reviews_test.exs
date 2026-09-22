@@ -328,6 +328,16 @@ defmodule Oskol.ReviewsTest do
       assert Enum.all?(puzzle.answer["outcomes"], &(&1["equity_lost"] > 0))
     end
 
+    # And each one's link picture was drawn in the same job, right after
+    # the store, through the real `pictures` capability (the test binary
+    # answers a PNG for any SVG).
+    for puzzle <- puzzles do
+      assert {:ok, <<0x89, "PNG", _::binary>>} = Oskol.Puzzles.Pictures.png(puzzle.id)
+      assert Repo.get(Oskol.Puzzles.Image, puzzle.id).attempts == 1
+    end
+
+    refute Oskol.Puzzles.Pictures.any_owed?()
+
     # Extracted, so the minute sweep has nothing more to do here.
     assert Oskol.Puzzles.unextracted(game_id) == []
 
