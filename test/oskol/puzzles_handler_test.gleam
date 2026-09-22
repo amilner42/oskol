@@ -78,6 +78,8 @@ fn reset() -> Nil {
   let _ = put("records", [])
   let _ = put("turns", [])
   let _ = put("built", [])
+  let _ = put("wrote", [])
+  let _ = put("hits", [])
   let _ = put_trees("moves:big", [])
   let _ = put_attempts("attempts", [])
   let _ = put_cards("cards", [])
