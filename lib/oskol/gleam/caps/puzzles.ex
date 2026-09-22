@@ -6,7 +6,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
       PuzzlesCaps(unextracted, store, failed, owned_sources, mark_synced,
       sync_failed, deck_pending, guest_sources, get, mine, game_sources,
       put_attempt, attempt, settle_attempt, serialize, cached_tree, keep_tree,
-      cached_moves, keep_moves, pictures)
+      cached_moves, keep_moves, pictures, mint_share, share)
       NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json,
       complete)
       Written(puzzles, upgraded, sources)
@@ -22,6 +22,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
       Attempt(id, puzzle_id, user_id, key, verdict, outcome, scheduled,
       review_id, schedule_json, fresh)
       Scheduled(verdict, schedule_json)
+      Share(token, puzzle_id, shared_name, source)
 
   A question, an answer and an evaluator cross as JSON text: Gleam wrote
   them and Gleam reads them back, so nothing here looks inside one.
@@ -42,7 +43,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
     {:puzzles_caps, &Puzzles.unextracted/1, &store/4, &failed/3, &owned_sources/2, &mark_synced/1,
      &sync_failed/2, &deck_pending/2, &guest_sources/1, &get/1, &mine/3, &game_sources/2,
      &put_attempt/5, &attempt/3, &settle_attempt/5, &serialize/3, &cached_tree/1, &keep_tree/2,
-     &cached_moves/1, &keep_moves/2, &pictures/2}
+     &cached_moves/1, &keep_moves/2, &pictures/2, &Puzzles.mint_share/5, &share/1}
   end
 
   defp get(id) do
@@ -57,6 +58,13 @@ defmodule Oskol.Gleam.Caps.Puzzles do
        Enum.map(players, fn p ->
          {p["id"] || "", p["name"] || "", p["guest_id"] || "", p["user_id"] || ""}
        end)}
+    end)
+  end
+
+  defp share(token) do
+    opt(Puzzles.share(token), fn {share, source, ended_at} ->
+      {:share, share.token, share.puzzle_id, share.shared_name || "",
+       source(%{source | inserted_at: ended_at}, nil)}
     end)
   end
 

@@ -18,7 +18,9 @@ module Route exposing
     /:slug       one game's start page (`?game=` an invite)
     /login/:token  the page a mailed sign-in link opens
     /puzzles     practising (the home of it lands with `puzzles-home`)
-    /puzzles/:id one puzzle: a position and its question
+    /puzzles/:id one puzzle: a position and its question (`?s=` a story
+                 token: the same puzzle, with the sharer's story after
+                 the attempt)
     /:slug/:id   a running game
     /:slug/:id/replay   a game played again, turn by turn, with its analysis
                         (`?game=` which game of the match, `?step=` the line
@@ -48,8 +50,8 @@ type Route
     | GameLanding String (Maybe String)
       -- practising: reserved, as the server reserves it
     | Puzzles
-      -- a puzzle, by id
-    | Puzzle String
+      -- a puzzle, by id, and ?s= (a share-with-my-story token)
+    | Puzzle String (Maybe String)
       -- slug, game id
     | Play String String
       -- slug, game id, ?game= (a game's number), ?step= (a line of its record)
@@ -66,7 +68,7 @@ parser =
         -- Likewise "puzzles": before Play, or /puzzles/:id would be a
         -- room of a game called puzzles.
         , map Puzzles (s "puzzles")
-        , map Puzzle (s "puzzles" </> string)
+        , map Puzzle (s "puzzles" </> string <?> Query.string "s")
         , map Play (string </> string)
         , map Replay (string </> string </> s "replay" <?> Query.int "game" <?> Query.int "step")
         , map GameLanding (string <?> Query.string "game")
@@ -112,11 +114,12 @@ play slug gameId =
 
 
 {-| One puzzle's page. The link is plain: a puzzle names nobody, so there
-is nothing for it to carry.
+is nothing for it to carry. (A story link carries `?s=`, and the server
+mints those: the client only copies what it is handed.)
 -}
 puzzle : String -> Route
 puzzle id =
-    Puzzle id
+    Puzzle id Nothing
 
 
 href : Route -> String
@@ -138,8 +141,8 @@ href route =
         Puzzles ->
             "/puzzles"
 
-        Puzzle id ->
-            "/puzzles/" ++ id
+        Puzzle id share ->
+            "/puzzles/" ++ id ++ query [ ( "s", share ) ]
 
         Play slug gameId ->
             "/" ++ slug ++ "/" ++ gameId

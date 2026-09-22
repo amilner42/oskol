@@ -1802,7 +1802,7 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 .pz-memory-link { color: var(--pen); font-weight: 700; white-space: nowrap; }
 /* Under the board after the reveal: SHARE, and NEXT when there is one. */
 .pz-controls { padding-top: 0.4rem; }
-.pz-actions { display: flex; gap: 8px; }
+.pz-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .pz-action { gap: 6px; padding: 7px 14px; font-family: "Press Start 2P", monospace; font-size: 8px; }
 
 .rp-page {

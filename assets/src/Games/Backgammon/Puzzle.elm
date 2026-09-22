@@ -4,8 +4,8 @@ module Games.Backgammon.Puzzle exposing
     , decoder, treeDecoder, nodeDecoder
     , Table, Seat, Out(..), view
     , nodeAt, played, snapshot, pips, pipsAgainst
-    , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory
-    , revealDecoder, scheduleDecoder, memoryDecoder, verdictName
+    , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory, Story
+    , revealDecoder, scheduleDecoder, memoryDecoder, storyDecoder, verdictName
     , asReplayCandidate, gradeOf, optimalOf, bands
     )
 
@@ -47,10 +47,12 @@ The reveal is the other half of the wire: what `POST .../attempts` answers
 once the turn is committed (the verdict, the move played, the best and the
 top five, or the cube's call on the five-band scale, and for an account
 where the card now stands), what `.../outcome` answers (the schedule
-again) and what `/mine` says to a player of the source game.
+again) and what `/mine` says to a player of the source game. A page
+opened from a story link (`?s=`) gets the sharer's `Story` on the reveal
+too, and only there.
 
-@docs Reveal, Verdict, Candidate, CubeReveal, Schedule, Memory
-@docs revealDecoder, scheduleDecoder, memoryDecoder, verdictName
+@docs Reveal, Verdict, Candidate, CubeReveal, Schedule, Memory, Story
+@docs revealDecoder, scheduleDecoder, memoryDecoder, storyDecoder, verdictName
 @docs asReplayCandidate, gradeOf, optimalOf, bands
 
 -}
@@ -502,6 +504,7 @@ type alias Reveal =
     , top : List Candidate
     , cube : Maybe CubeReveal
     , schedule : Maybe Schedule
+    , story : Maybe Story
     }
 
 
@@ -595,13 +598,54 @@ type alias Memory =
 
 revealDecoder : D.Decoder Reveal
 revealDecoder =
-    D.map6 Reveal
+    D.map7 Reveal
         (D.field "verdict" verdictDecoder)
         (D.field "yours" (D.nullable candidateDecoder))
         (D.field "best" (D.nullable candidateDecoder))
         (D.field "top" (D.list candidateDecoder))
         (D.field "cube" (D.nullable cubeRevealDecoder))
         (D.field "schedule" (D.nullable scheduleDecoder))
+        (D.field "story" (D.nullable storyDecoder))
+
+
+{-| The story a share-with-my-story link tells, once the reader has tried:
+the sharer's name and decision, its grade, how that game went for them,
+and the two sentences the server wrote from those (`headline` is what the
+link unfurled as, `line` what the reveal shows). The opponent is in none
+of it, by rule.
+-}
+type alias Story =
+    { name : String
+    , kind : String
+    , played : String
+    , grade : String
+    , equityLost : Float
+    , date : String -- an ISO day: "2026-09-12"
+    , result : Maybe { won : Bool, points : Int }
+    , headline : String
+    , line : String
+    }
+
+
+storyDecoder : D.Decoder Story
+storyDecoder =
+    D.map8 Story
+        (D.field "name" D.string)
+        (D.field "kind" D.string)
+        (D.field "played" D.string)
+        (D.field "grade" D.string)
+        (D.field "equity_lost" D.float)
+        (D.field "date" D.string)
+        (D.field "result"
+            (D.nullable
+                (D.map2 (\won points -> { won = won, points = points })
+                    (D.field "won" D.bool)
+                    (D.field "points" D.int)
+                )
+            )
+        )
+        (D.field "headline" D.string)
+        |> D.andThen (\partial -> D.map partial (D.field "line" D.string))
 
 
 {-| A verdict is one of four words, and a fifth fails the answer: a page

@@ -226,7 +226,7 @@ pub fn an_unknown_slug_is_a_not_found_envelope_test() {
 fn creating(ctx: Ctx, expected: room.Setup) -> Ctx {
   Ctx(
     ..ctx,
-    ids: ids_caps.IdsCaps(game_code: fn() { "123456" }),
+    ids: ids_caps.IdsCaps(..ids_caps.stub(), game_code: fn() { "123456" }),
     persistence: persistence_caps.PersistenceCaps(
       ..ctx.persistence,
       game_exists: fn(_) { False },

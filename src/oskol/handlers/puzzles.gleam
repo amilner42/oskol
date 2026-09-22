@@ -54,11 +54,13 @@ import oskol/core/envelope
 import oskol/core/error.{type ApiError}
 import oskol/core/raw
 import oskol/core/session.{type Session}
+import oskol/handlers/shares
 import oskol/practice/deck
 import oskol/puzzles.{
   type Answer, type Candidate, type Question, CubeAnswer, Move as MoveKind,
   MoveAnswer, Mover, Opponent, Question, Take,
 }
+import oskol/puzzles/game_over
 import oskol/puzzles/grade.{type Verdict, Fail, Hold, Pass, Unknown}
 import oskol/puzzles/tree
 import oskol/rooms/seat
@@ -145,15 +147,24 @@ fn body(id: String, question: Question, tree: Json) -> String {
 /// (what a link unfurls as) and the score and cube as its description.
 /// Nothing else -- no name, no source game, no answer -- because the head
 /// is read by every crawler and every chat app a link is pasted into.
+///
+/// The one exception is the sharer's own name, on a link they minted to
+/// carry it (`?s=`, `handlers/shares`): "Arie got this wrong. What's your
+/// play?" as the title, the description as it always is. A token that
+/// opens no story here leaves the head exactly as it was.
 pub type Head {
   Head(title: String, description: String)
 }
 
-pub fn head(ctx: Ctx, id: String) -> Result(Head, ApiError) {
+pub fn head(ctx: Ctx, id: String, share: String) -> Result(Head, ApiError) {
   use stored <- result.try(fetch(ctx, id))
   use question <- result.try(question_of(stored))
   let q = shown(question)
-  Ok(Head(title: prompt(q), description: describe(q)))
+  let title = case shares.sharer(ctx, stored.id, share) {
+    Some(name) -> shares.headline(name, q)
+    None -> prompt(q)
+  }
+  Ok(Head(title: title, description: describe(q)))
 }
 
 /// The score and the cube in a sentence: "Match play, 3 away against 5.
@@ -405,11 +416,15 @@ pub type Attempted {
   Attempted(moves: List(#(String, String, Int)), band: Option(Int), key: String)
 }
 
+/// `share` is the `?s=` the page was opened with, or "": the story it
+/// opens rides on the reveal and nowhere earlier, because it says what was
+/// played and how that was graded (`handlers/shares`).
 pub fn attempt_json(
   ctx: Ctx,
   session: Session,
   id: String,
   attempted: Attempted,
+  share: String,
   now_ms: Int,
 ) -> Result(String, ApiError) {
   use stored <- result.try(fetch(ctx, id))
@@ -432,7 +447,12 @@ pub fn attempt_json(
     now_ms,
   ))
   let #(verdict, schedule_json) = scheduled
-  Ok(reveal_body(verdict, reveal, schedule_json))
+  Ok(reveal_body(
+    verdict,
+    reveal,
+    schedule_json,
+    shares.story_json(ctx, stored.id, shown(question), share),
+  ))
 }
 
 /// The same reveal with nothing kept and nobody signed in -- what a guest
@@ -452,19 +472,20 @@ pub fn attempt_body(
     attempted,
   ))
   let #(verdict, reveal, _row) = judged
-  Ok(reveal_body(verdict, reveal, json.null()))
+  Ok(reveal_body(verdict, reveal, json.null(), json.null()))
 }
 
 fn reveal_body(
   verdict: Verdict,
   reveal: List(#(String, Json)),
   schedule_json: Json,
+  story_json: Json,
 ) -> String {
   envelope.ok(
     list.flatten([
       [#("verdict", json.string(grade.verdict_name(verdict)))],
       reveal,
-      [#("schedule", schedule_json)],
+      [#("schedule", schedule_json), #("story", story_json)],
     ]),
   )
 }
@@ -1176,39 +1197,14 @@ fn result_json(ctx: Ctx, room: caps.SourceRoom, player_id: String) -> Json {
   case ctx.records.entries_of(source.game_id, source.game_number) {
     None -> json.null()
     Some(entries) ->
-      case json.parse(entries, game_over_decoder()) {
-        Ok(Some(#(winner, points))) ->
+      case game_over.of(entries) {
+        Some(#(winner, points)) ->
           json.object([
             #("won", json.bool(winner == player_id)),
             #("points", json.int(points)),
           ])
-        _ -> json.null()
+        None -> json.null()
       }
-  }
-}
-
-/// The winner and the points of the one `game_over` line a game's record
-/// ends on. Everything else in the record is a turn, and none of it is this
-/// line's business.
-fn game_over_decoder() -> decode.Decoder(Option(#(String, Int))) {
-  use entries <- decode.then(decode.list(record_entry_decoder()))
-  decode.success(
-    entries
-    |> list.filter_map(option.to_result(_, Nil))
-    |> list.first
-    |> option.from_result,
-  )
-}
-
-fn record_entry_decoder() -> decode.Decoder(Option(#(String, Int))) {
-  use kind <- decode.optional_field("kind", "", decode.string)
-  case kind {
-    "game_over" -> {
-      use winner <- decode.optional_field("winner", "", decode.string)
-      use points <- decode.optional_field("points", 0, decode.int)
-      decode.success(Some(#(winner, points)))
-    }
-    _ -> decode.success(None)
   }
 }
 

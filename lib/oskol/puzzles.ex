@@ -241,6 +241,69 @@ defmodule Oskol.Puzzles do
 
   defp holds(_key, _value), do: nil
 
+  # ---------- Shares ----------
+
+  @doc """
+  Mint a story link for one decision, or hand back the one this sharer
+  already has for it.
+
+  One row per (source, sharer), and the unique index is what says so: the
+  insert is `on_conflict: :nothing`, and the read after it returns whichever
+  token stands -- the one just offered, or the one an earlier request won
+  with. Two tabs pressing the button together get the same link, and no
+  read-then-act gap can mint two.
+
+  Who may mint one is Gleam's decision (`oskol/handlers/shares`); this writes
+  what it was told. The name is frozen here, on purpose: the person who
+  consented to be named must not change underneath the link.
+  """
+  def mint_share(puzzle_id, source_id, shared_by, shared_name, token) do
+    now = DateTime.utc_now()
+
+    Repo.insert_all(
+      Share,
+      [
+        %{
+          token: token,
+          puzzle_id: puzzle_id,
+          source_id: source_id,
+          shared_by: shared_by,
+          shared_name: shared_name,
+          inserted_at: now
+        }
+      ],
+      on_conflict: :nothing,
+      conflict_target: [:source_id, :shared_by]
+    )
+
+    Repo.one!(
+      from(s in Share,
+        where: s.source_id == ^source_id and s.shared_by == ^shared_by,
+        select: s.token,
+        limit: 1
+      )
+    )
+  end
+
+  @doc """
+  A story link by its token, with the decision it tells, or nil. The day
+  is the game's end, as the memory line's is.
+  """
+  def share(token) when is_binary(token) and token != "" do
+    Repo.one(
+      from(sh in Share,
+        join: s in Source,
+        on: s.id == sh.source_id,
+        left_join: r in Review,
+        on: r.game_id == s.game_id and r.game_number == s.game_number,
+        where: sh.token == ^token,
+        select: {sh, s, coalesce(r.inserted_at, s.inserted_at)}
+      )
+    )
+  end
+
+  def share(_token), do: nil
+
   # ---------- Attempts ----------
 
   @doc """
