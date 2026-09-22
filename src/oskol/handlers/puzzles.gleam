@@ -36,7 +36,7 @@
 //// stacking on it.
 
 import backgammon/analysis
-import backgammon/board.{type Board, type Move, Move, White}
+import backgammon/board.{type Board, White}
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json.{type Json}
@@ -98,6 +98,14 @@ pub const tree_byte_budget = 100_000
 /// budget is 100. A tree that fits inside 260 positions is at most about
 /// 114 KB, so the byte budget still has the last word.
 pub const tree_node_budget = 260
+
+/// The absolute ceiling on working a turn out at all, for the few positions
+/// that will not fit on the wire and are played a level at a time. Far above
+/// anything real -- the worst position in four thousand from actual play
+/// needed 539, and the most contrived doubles anyone could build need about
+/// 2,400 -- so it is not a budget but a guard: a position past it is one
+/// nobody has ever reached, and no request is spent on it.
+pub const tree_ceiling = 20_000
 
 /// Levels come back after these many days (`oskol/practice/deck` owns the
 /// ladder itself); a day is this many milliseconds, which is what an
@@ -200,8 +208,8 @@ fn question_json(q: Question) -> Json {
 
 /// Every legal way to play the roll, or nothing at all for a cube question.
 ///
-/// The tree is a pure function of the stored question, so it is worked out
-/// once per puzzle and kept: the store is bounded and may forget, and a
+/// The payload is a pure function of the stored question, so it is worked
+/// out once per puzzle and kept: the store is bounded and may forget, and a
 /// miss only costs the build again.
 fn tree_of(ctx: Ctx, id: String, question: Question) -> Json {
   case question.kind, question.dice {
@@ -212,7 +220,7 @@ fn tree_of(ctx: Ctx, id: String, question: Question) -> Json {
           case tree.from_engine(question.board) {
             Error(_) -> json.null()
             Ok(b) -> {
-              let text = json.to_string(tree.to_json(built(b, roll)))
+              let text = json.to_string(tree.to_json(payload(ctx, id, b, roll)))
               ctx.puzzles.keep_tree(id, text)
               raw.json(text)
             }
@@ -222,82 +230,132 @@ fn tree_of(ctx: Ctx, id: String, question: Question) -> Json {
   }
 }
 
-fn fresh_tree(question: Question) -> Json {
-  case question.kind, question.dice {
-    MoveKind, Some(roll) ->
-      case tree.from_engine(question.board) {
-        Error(_) -> json.null()
-        Ok(b) -> tree.to_json(built(b, roll))
+/// The whole turn where it fits on the wire, the root alone where it does
+/// not.
+///
+/// A turn that does not fit is worked out in full anyway, once, and kept.
+/// The page then walks it by the ids that build gave them, one level per
+/// request, and every one of those is a lookup rather than a search: the
+/// difference between paying for the position once and paying for it on
+/// every tap. It is also what makes a node id mean something, because an
+/// id nobody minted for this puzzle is simply not in it.
+fn payload(ctx: Ctx, id: String, b: Board, roll: #(Int, Int)) -> tree.Tree {
+  let dice = tree.dice_of(roll)
+  case within_budget(b, dice) {
+    Some(whole) -> whole
+    None ->
+      case full_tree(ctx, id, b, dice) {
+        Some(whole) -> tree.lazy_view(whole)
+        // Past even the ceiling: no position anybody has reached, and not
+        // worth a request. The page draws the question with nothing to tap.
+        None -> tree.Tree(root: tree.root_id, nodes: [], lazy: True)
       }
-    _, _ -> json.null()
   }
 }
 
-/// The whole turn where it fits, the root alone where it does not.
-fn built(b: Board, roll: #(Int, Int)) -> tree.Tree {
-  let dice = tree.dice_of(roll)
+/// The whole turn, if it is small enough to send whole.
+fn within_budget(b: Board, dice: List(Int)) -> Option(tree.Tree) {
   case tree.build(b, dice, tree_node_budget) {
-    Error(_) -> tree.lazy_root(b, dice)
+    Error(_) -> None
     Ok(whole) ->
       case
         string.byte_size(json.to_string(tree.to_json(whole)))
         <= tree_byte_budget
       {
-        True -> whole
-        False -> tree.lazy_root(b, dice)
+        True -> Some(whole)
+        False -> None
       }
+  }
+}
+
+/// This puzzle's turn worked out in full, from the store or built once and
+/// kept there. Only ever reached for a turn too big to send whole, which is
+/// the only kind worth keeping: one that fits is a few dozen positions and
+/// is cheaper to rebuild than to store.
+fn full_tree(
+  ctx: Ctx,
+  id: String,
+  b: Board,
+  dice: List(Int),
+) -> Option(tree.Tree) {
+  case ctx.puzzles.cached_moves(id) {
+    Some(whole) -> Some(whole)
+    None ->
+      case tree.build(b, dice, tree_ceiling) {
+        Error(_) -> None
+        Ok(whole) -> {
+          ctx.puzzles.keep_moves(id, whole)
+          Some(whole)
+        }
+      }
+  }
+}
+
+/// The turn a question asks about, worked out in full: what an attempt is
+/// checked against and what a level request reads.
+fn moves_of(ctx: Ctx, id: String, question: Question) -> Option(tree.Tree) {
+  case question.dice {
+    None -> None
+    Some(roll) ->
+      case tree.from_engine(question.board) {
+        Error(_) -> None
+        Ok(b) -> {
+          let dice = tree.dice_of(roll)
+          case within_budget(b, dice) {
+            Some(whole) -> Some(whole)
+            None -> full_tree(ctx, id, b, dice)
+          }
+        }
+      }
+  }
+}
+
+/// The same payload with nothing kept, for a caller with no capabilities to
+/// keep it with (the fixture task). A position too big to send whole has no
+/// fixture: there is nothing for a page to decode in one.
+fn fresh_tree(question: Question) -> Json {
+  case question.kind, question.dice {
+    MoveKind, Some(roll) ->
+      case tree.from_engine(question.board) {
+        Error(_) -> json.null()
+        Ok(b) ->
+          case within_budget(b, tree.dice_of(roll)) {
+            Some(whole) -> tree.to_json(whole)
+            None -> json.null()
+          }
+      }
+    _, _ -> json.null()
   }
 }
 
 // ---------- GET /papi/puzzles/:id/tree?node= ----------
 
-/// One level of a tree served lazily. The node's own id carries the
-/// position and the dice left, so this holds nothing between requests and
-/// replays nothing: it applies the rules to a board the page is already
-/// looking at. A node id that will not read back, or one whose dice are not
-/// this puzzle's roll, is refused.
+/// One level of a tree served lazily.
+///
+/// The node is named by the id this puzzle's own build gave it, so there is
+/// nothing to validate and nothing to forge: an id this puzzle does not
+/// hold is a 404, and no board a caller made up is ever played out. The
+/// tree is read from the store, so a level costs a lookup.
 pub fn tree_node_json(
   ctx: Ctx,
   id: String,
   node: String,
 ) -> Result(String, ApiError) {
+  let nothing = error.NotFound(not_found_message)
   use stored <- result.try(fetch(ctx, id))
   use question <- result.try(question_of(stored))
-  use roll <- result.try(
-    question.dice
-    |> option.to_result(error.NotFound(not_found_message)),
+  use whole <- result.try(
+    moves_of(ctx, stored.id, question) |> option.to_result(nothing),
   )
-  use parsed <- result.try(
-    tree.from_lazy_id(node)
-    |> result.replace_error(error.NotFound(not_found_message)),
+  use found <- result.try(
+    tree.node_by_id(whole, node) |> option.to_result(nothing),
   )
-  let #(b, dice_left, moved) = parsed
-  use _ <- result.try(case fits(dice_left, tree.dice_of(roll)) {
-    True -> Ok(Nil)
-    False -> Error(error.NotFound(not_found_message))
-  })
   Ok(
     envelope.ok([
       #("node", json.string(node)),
-      #("tree", tree.node_json(tree.level(b, dice_left, moved, node))),
+      #("tree", tree.node_json(found)),
     ]),
   )
-}
-
-/// Are these the dice a turn could still have left, out of that roll?
-fn fits(left: List(Int), roll: List(Int)) -> Bool {
-  case left {
-    [] -> True
-    [die, ..rest] -> list.contains(roll, die) && fits(rest, drop_one(roll, die))
-  }
-}
-
-fn drop_one(dice: List(Int), die: Int) -> List(Int) {
-  case dice {
-    [] -> []
-    [d, ..rest] if d == die -> rest
-    [d, ..rest] -> [d, ..drop_one(rest, die)]
-  }
 }
 
 // ---------- POST /papi/puzzles/:id/attempts ----------
@@ -318,7 +376,7 @@ pub fn attempt_json(
   use stored <- result.try(fetch(ctx, id))
   use question <- result.try(question_of(stored))
   use answer <- result.try(answer_of(stored))
-  use judged <- result.try(judge(question, answer, attempted))
+  use judged <- result.try(judge(ctx, stored.id, question, answer, attempted))
   let #(verdict, reveal, answer_row) = judged
   use scheduled <- result.try(schedule(
     ctx,
@@ -344,34 +402,42 @@ pub fn attempt_json(
 /// The verdict, the fields a reveal shows, and the answer as the row keeps
 /// it. One place, so a cube question and a checker play cannot drift apart.
 fn judge(
+  ctx: Ctx,
+  id: String,
   question: Question,
   answer: Answer,
   attempted: Attempted,
 ) -> Result(#(Verdict, List(#(String, Json)), String), ApiError) {
   case question.kind {
-    MoveKind -> judge_move(question, answer, attempted.moves)
+    MoveKind -> {
+      use whole <- result.try(
+        moves_of(ctx, id, question)
+        |> option.to_result(error.validation_failed(bad_move_message)),
+      )
+      judge_move(whole, question, answer, attempted.moves)
+    }
     _ -> judge_cube(question, answer, attempted.band)
   }
 }
 
 fn judge_move(
+  whole: tree.Tree,
   question: Question,
   answer: Answer,
   moves: List(#(String, String, Int)),
 ) -> Result(#(Verdict, List(#(String, Json)), String), ApiError) {
   let refused = error.validation_failed(bad_move_message)
-  use start <- result.try(
-    tree.from_engine(question.board) |> result.replace_error(refused),
-  )
-  use roll <- result.try(option.to_result(question.dice, refused))
-  use played <- result.try(walk(start, tree.dice_of(roll), moves))
+  // Walked through the turn that was actually offered, rather than worked
+  // out again a step at a time: the same positions, and no search per move.
+  use played <- result.try(walk(whole, tree.root_id, moves, []))
+  let #(ended, steps) = played
   // Half a turn is not an answer: PLAY is offered on a position where
   // nothing more can be played, and only there.
-  use _ <- result.try(case tree.legal_children(played.0, played.1) {
+  use _ <- result.try(case ended.children {
     [] -> Ok(Nil)
     _ -> Error(refused)
   })
-  let landed_on = analysis.encode(played.0, White)
+  let landed_on = analysis.encode(ended.board, White)
   let cost = grade.move_cost(answer, landed_on)
   let verdict = grade.move_verdict(cost)
   let best = grade.best(answer)
@@ -393,7 +459,7 @@ fn judge_move(
       json.object([
         #(
           "moves",
-          json.array(played.2, fn(m) {
+          json.array(steps, fn(m) {
             json.object([
               #("from", json.string(board.loc_id(m.from))),
               #("to", json.string(board.loc_id(m.to))),
@@ -455,33 +521,32 @@ fn described(answer: Answer, landed_on: List(Int)) -> Option(Candidate) {
   }
 }
 
-/// Walk a claimed path from the root: every step has to be one the rules
-/// allow from where the last one left off, which is exactly what the page
-/// was offered.
+/// Walk a claimed path from the root of the turn the page was given. Every
+/// step has to be a child of where the last one left off, which is exactly
+/// what the page was offered -- so an attempt is checked against the same
+/// tree it was played on, not against a fresh opinion about the rules.
 fn walk(
-  b: Board,
-  dice: List(Int),
+  whole: tree.Tree,
+  from: String,
   moves: List(#(String, String, Int)),
-) -> Result(#(Board, List(Int), List(Move)), ApiError) {
+  so_far: List(tree.Child),
+) -> Result(#(tree.Node, List(tree.Child)), ApiError) {
   let refused = error.validation_failed(bad_move_message)
+  use here <- result.try(
+    tree.node_by_id(whole, from) |> option.to_result(refused),
+  )
   case moves {
-    [] -> Ok(#(b, dice, []))
-    [#(from, to, die), ..rest] -> {
-      use from <- result.try(
-        board.parse_loc(from) |> result.replace_error(refused),
+    [] -> Ok(#(here, list.reverse(so_far)))
+    [#(from_loc, to_loc, die), ..rest] -> {
+      use step <- result.try(
+        list.find(here.children, fn(c) {
+          board.loc_id(c.from) == from_loc
+          && board.loc_id(c.to) == to_loc
+          && c.die == die
+        })
+        |> result.replace_error(refused),
       )
-      use to <- result.try(board.parse_loc(to) |> result.replace_error(refused))
-      let wanted = Move(from: from, to: to, die: die)
-      use _ <- result.try(
-        case list.contains(tree.legal_children(b, dice), wanted) {
-          True -> Ok(Nil)
-          False -> Error(refused)
-        },
-      )
-      let #(next, _, _) = board.apply_move(b, White, wanted)
-      use walked <- result.try(walk(next, drop_one(dice, die), rest))
-      let #(end, left, played) = walked
-      Ok(#(end, left, [wanted, ..played]))
+      walk(whole, step.node, rest, [step, ..so_far])
     }
   }
 }
@@ -600,36 +665,69 @@ fn schedule(
         "" -> Error(error.validation_failed(no_key_message))
         _ -> Ok(Nil)
       })
-      case ctx.practice.card(uid, id) {
-        None -> Ok(#(verdict, json.null()))
-        Some(card) -> {
-          let attempt =
-            ctx.puzzles.put_attempt(
-              id,
-              uid,
-              key,
-              answer_row,
-              grade.verdict_name(verdict),
-            )
-          case attempt.fresh {
-            False -> Ok(#(stored_verdict(attempt, verdict), kept(attempt)))
-            True -> move_ladder(ctx, uid, id, card, verdict, attempt, now_ms)
-          }
-        }
+      // Everything from here to the card moving is one account, one puzzle,
+      // one at a time: whether this answer counts is read-then-act, and two
+      // tabs that both read a due card would otherwise both move it.
+      use scheduled <- result.try(
+        ctx.puzzles.serialize(uid, id, fn() {
+          decide(ctx, uid, id, verdict, answer_row, key, now_ms)
+        }),
+      )
+      Ok(
+        #(
+          named_verdict(scheduled.verdict, verdict),
+          case scheduled.schedule_json {
+            "" -> json.null()
+            text -> raw.json(text)
+          },
+        ),
+      )
+    }
+  }
+}
+
+/// What this answer does, decided with nobody else deciding it. Nothing for
+/// a puzzle the caller's deck does not hold: the answer is graded and
+/// revealed and forgotten, which is exactly what a shared link is for.
+fn decide(
+  ctx: Ctx,
+  uid: String,
+  id: String,
+  verdict: Verdict,
+  answer_row: String,
+  key: String,
+  now_ms: Int,
+) -> Result(caps.Scheduled, ApiError) {
+  case ctx.practice.card(uid, id) {
+    None -> Ok(caps.Scheduled(grade.verdict_name(verdict), ""))
+    Some(card) -> {
+      let attempt =
+        ctx.puzzles.put_attempt(
+          id,
+          uid,
+          key,
+          answer_row,
+          grade.verdict_name(verdict),
+        )
+      case attempt.fresh {
+        // The key was already there: this is the same answer arriving
+        // twice, and it reports what it reported the first time.
+        False -> Ok(caps.Scheduled(attempt.verdict, attempt.schedule_json))
+        True -> move_ladder(ctx, uid, id, card, verdict, attempt, now_ms)
       }
     }
   }
 }
 
-/// The verdict the row already holds. A key is one answer: if a client
-/// reuses it for a different one, the row is what stands.
-fn stored_verdict(attempt: caps.Attempt, fresh: Verdict) -> Verdict {
-  case attempt.verdict {
+/// A verdict by name, falling back to the one just worked out. A key is one
+/// answer: where a client reuses it for a different one, the row stands.
+fn named_verdict(name: String, fallback: Verdict) -> Verdict {
+  case name {
     "pass" -> Pass
     "hold" -> Hold
     "fail" -> Fail
     "unknown" -> Unknown
-    _ -> fresh
+    _ -> fallback
   }
 }
 
@@ -648,7 +746,7 @@ fn move_ladder(
   verdict: Verdict,
   attempt: caps.Attempt,
   now_ms: Int,
-) -> Result(#(Verdict, Json), ApiError) {
+) -> Result(caps.Scheduled, ApiError) {
   // A card nobody has seen yet is introduced by being answered: that is
   // what "new" means from the player's side.
   let card = case card.status {
@@ -663,14 +761,14 @@ fn move_ladder(
     // nothing to say about when it comes back.
     Suspended, _, _ -> {
       settle(ctx, attempt, False, None, "")
-      Ok(#(verdict, json.null()))
+      Ok(caps.Scheduled(grade.verdict_name(verdict), ""))
     }
     // Answered again before it is due: the reveal, and nothing else.
     _, False, _ -> {
       let body =
         schedule_json(card.level, card.level, card.due_ms, False, False)
       settle(ctx, attempt, False, None, body)
-      Ok(#(verdict, raw.json(body)))
+      Ok(caps.Scheduled(grade.verdict_name(verdict), body))
     }
     // The engine has no result for this play, so nobody may be told they
     // were wrong. The card waits until tomorrow rather than sitting due in
@@ -683,7 +781,7 @@ fn move_ladder(
       }
       let body = schedule_json(card.level, level, due, False, True)
       settle(ctx, attempt, False, None, body)
-      Ok(#(verdict, raw.json(body)))
+      Ok(caps.Scheduled(grade.verdict_name(verdict), body))
     }
     _, True, _ ->
       case deck.answer(ctx, uid, id, outcome_of(verdict)) {
@@ -698,7 +796,7 @@ fn move_ladder(
               False,
             )
           settle(ctx, attempt, True, Some(graded.review_id), body)
-          Ok(#(verdict, raw.json(body)))
+          Ok(caps.Scheduled(grade.verdict_name(verdict), body))
         }
       }
   }
@@ -750,10 +848,12 @@ fn schedule_json(
 ///
 /// It **replaces** the automatic review rather than stacking on it -- a pass
 /// then SOONER lands at level 0 once, not below -- because the deck's log is
-/// append-only and a correction supersedes the row it names. Where there was
-/// no automatic review (the engine could not grade the play), this writes the
-/// first one. NEVER is a deck action: it puts the card aside, and works on
-/// any card the deck holds.
+/// append-only and a correction supersedes the row it names. Where the
+/// engine could not grade the play there is no review to correct, and this
+/// writes the first one instead -- but only where the answer actually
+/// offered that (`self_grade`), never merely because no review was written.
+/// NEVER is a deck action: it puts the card aside without touching the
+/// attempt's own schedule, and nothing can be overridden afterwards.
 pub fn outcome_json(
   ctx: Ctx,
   session: Session,
@@ -770,23 +870,31 @@ pub fn outcome_json(
   use uid <- result.try(
     session.user_id |> option.to_result(error.Forbidden(not_yours_message)),
   )
+  // By account, never by key alone: a key is a uuid the client made up and
+  // is only unique within one deck.
   use attempt <- result.try(
-    ctx.puzzles.attempt(id, key)
+    ctx.puzzles.attempt(id, uid, key)
     |> option.to_result(error.NotFound(not_found_message)),
   )
-  use _ <- result.try(case attempt.user_id == uid {
-    True -> Ok(Nil)
-    False -> Error(error.Forbidden(not_yours_message))
-  })
   // Every override is a deck action, and there is no deck action on a card
   // the deck does not hold.
   use _ <- result.try(
     ctx.practice.card(uid, id)
-    |> option.to_result(error.Conflict(nothing_to_amend_message)),
+    |> option.to_result(nothing_to_amend()),
   )
+  // Once a card has been put aside there is nothing left to say about it.
+  // Pressing NEVER again is the same action and answers the same way.
+  use _ <- result.try(case attempt.outcome == Some(never_name), wanted {
+    True, Never -> Ok(Nil)
+    True, _ -> Error(nothing_to_amend())
+    False, _ -> Ok(Nil)
+  })
   case wanted {
     Never -> {
       let _ = ctx.practice.suspend(uid, [id])
+      // The attempt's own schedule stands: suspending is something done to
+      // the card, and a retry of the answer that wrote it must still come
+      // back with what it came back with.
       ctx.puzzles.settle_attempt(
         attempt.id,
         attempt.scheduled,
@@ -794,7 +902,7 @@ pub fn outcome_json(
         Some(outcome),
         "",
       )
-      Ok(envelope.ok([#("schedule", json.null())]))
+      Ok(envelope.ok([#("schedule", kept(attempt))]))
     }
     _ -> {
       let chosen = chosen_outcome(wanted, attempt.verdict)
@@ -803,13 +911,15 @@ pub fn outcome_json(
         // that same row, so a second thought replaces the first rather than
         // correcting the correction.
         Some(review_id) -> deck.correct(ctx, uid, id, review_id, chosen)
-        // Nothing to correct: either the engine could not grade the play and
-        // the player is grading it themselves, or there was never anything
-        // at stake here.
+        // No review to correct. That is only an invitation to write one
+        // where the answer said so -- the engine could not grade the play
+        // and asked the player to. Anywhere else (a card that was not due,
+        // one already put aside) there was no opportunity here, and writing
+        // a review would be inventing one.
         None ->
-          case attempt.verdict == grade.verdict_name(Unknown) {
+          case self_graded(attempt) {
             True -> deck.answer(ctx, uid, id, chosen)
-            False -> Error(error.Conflict(nothing_to_amend_message))
+            False -> Error(nothing_to_amend())
           }
       })
       let body =
@@ -832,12 +942,33 @@ pub fn outcome_json(
   }
 }
 
+fn nothing_to_amend() -> ApiError {
+  error.Conflict("nothing_to_amend", nothing_to_amend_message)
+}
+
+/// Did this answer ask the player to grade it themselves? The schedule the
+/// attempt reported is what said so, and it is on the row, so the question
+/// is answered from the row rather than guessed from the verdict.
+fn self_graded(attempt: caps.Attempt) -> Bool {
+  case attempt.schedule_json {
+    "" -> False
+    text ->
+      json.parse(text, {
+        use flag <- decode.optional_field("self_grade", False, decode.bool)
+        decode.success(flag)
+      })
+      |> result.unwrap(False)
+  }
+}
+
 type Override {
   Sooner
   GotIt
   KnewIt
   Never
 }
+
+const never_name = "never"
 
 fn named(outcome: String) -> Result(Override, Nil) {
   case outcome {
@@ -849,8 +980,10 @@ fn named(outcome: String) -> Result(Override, Nil) {
   }
 }
 
-/// GOT IT means "as graded": the engine's own verdict, or -- where it had
-/// none -- a plain pass, which is what the player is claiming.
+/// GOT IT means "as graded". Where the engine graded the play, that is its
+/// own verdict. Where it could not, the player is claiming they got it --
+/// which holds the card's level rather than moving it up, because nothing
+/// checked the claim.
 fn chosen_outcome(wanted: Override, verdict: String) -> Outcome {
   case wanted {
     Sooner -> Again
@@ -861,7 +994,7 @@ fn chosen_outcome(wanted: Override, verdict: String) -> Outcome {
         "pass" -> PassOutcome
         "hold" -> Partial
         "fail" -> Again
-        _ -> PassOutcome
+        _ -> Partial
       }
   }
 }
@@ -947,18 +1080,15 @@ fn name_of(room: caps.SourceRoom, player_id: String) -> String {
   |> result.unwrap("")
 }
 
-/// How that game ended, from the reader's own side. Read off the record row
-/// the game wrote when it finished; a game with no row yet simply has no
-/// result to report.
+/// How that game ended, from the reader's own side. One row, read by game
+/// number: a match's other games have nothing to say about this one, and a
+/// whole match's lines is a lot to fetch to learn who won a single game.
 fn result_json(ctx: Ctx, room: caps.SourceRoom, player_id: String) -> Json {
   let source = room.source
-  case
-    ctx.records.stored(source.game_id)
-    |> list.find(fn(row) { row.game_number == source.game_number })
-  {
-    Error(_) -> json.null()
-    Ok(row) ->
-      case json.parse(row.entries_json, game_over_decoder()) {
+  case ctx.records.entries_of(source.game_id, source.game_number) {
+    None -> json.null()
+    Some(entries) ->
+      case json.parse(entries, game_over_decoder()) {
         Ok(Some(#(winner, points))) ->
           json.object([
             #("won", json.bool(winner == player_id)),
@@ -995,9 +1125,11 @@ fn record_entry_decoder() -> decode.Decoder(Option(#(String, Int))) {
 }
 
 /// Where in the replay this decision was made. The review already knows
-/// which line of the record each of its turns is (`entry`, `double_entry`,
-/// `answer_entry`), and a step is that line plus one, because step zero is
-/// the position the game opened from.
+/// which line of the record each of its turns is, and a step is that line
+/// plus one, because step zero is the position the game opened from.
+///
+/// Only that one turn is read: the review itself is hundreds of kilobytes
+/// and the database takes the path.
 fn replay_link(ctx: Ctx, room: caps.SourceRoom) -> String {
   let source = room.source
   let base =
@@ -1014,32 +1146,54 @@ fn replay_link(ctx: Ctx, room: caps.SourceRoom) -> String {
 }
 
 fn step_of(ctx: Ctx, source: caps.Source) -> Option(Int) {
-  let field = case source.kind {
-    "double" -> "double_entry"
-    "take" -> "answer_entry"
-    _ -> "entry"
-  }
-  case ctx.analysis.report(source.game_id, source.game_number) {
+  case
+    ctx.analysis.report_turn(source.game_id, source.game_number, source.turn)
+  {
     None -> None
     Some(text) ->
-      case json.parse(text, entries_decoder(field)) {
+      case json.parse(text, lines_decoder()) {
         Error(_) -> None
-        Ok(entries) ->
-          case list.drop(entries, source.turn - 1) |> list.first {
-            Ok(Some(entry)) -> Some(entry + 1)
-            _ -> None
-          }
+        Ok(lines) -> option.map(line_of(source.kind, lines), fn(n) { n + 1 })
       }
   }
 }
 
-fn entries_decoder(field: String) -> decode.Decoder(List(Option(Int))) {
-  decode.at(["turns"], decode.list(entry_decoder(field)))
+/// Which line of the record a decision sits on.
+///
+/// A double has a line of its own. A *missed* double does not -- nothing
+/// was offered, so the mistake is marked on the move that was played
+/// instead, and the replay reads it off `entry`. The take of a double is
+/// always answered, so it always has its own line and never falls back.
+/// The same rule the replay's own mistake list follows (`Page/Replay.elm`).
+fn line_of(kind: String, lines: Lines) -> Option(Int) {
+  case kind {
+    "double" -> option.or(lines.double_entry, lines.entry)
+    "take" -> lines.answer_entry
+    _ -> lines.entry
+  }
 }
 
-fn entry_decoder(field: String) -> decode.Decoder(Option(Int)) {
-  use value <- decode.optional_field(field, None, decode.optional(decode.int))
-  decode.success(value)
+type Lines {
+  Lines(
+    entry: Option(Int),
+    double_entry: Option(Int),
+    answer_entry: Option(Int),
+  )
+}
+
+fn lines_decoder() -> decode.Decoder(Lines) {
+  use entry <- decode.optional_field("entry", None, decode.optional(decode.int))
+  use double_entry <- decode.optional_field(
+    "double_entry",
+    None,
+    decode.optional(decode.int),
+  )
+  use answer_entry <- decode.optional_field(
+    "answer_entry",
+    None,
+    decode.optional(decode.int),
+  )
+  decode.success(Lines(entry, double_entry, answer_entry))
 }
 
 // ---------- GET /papi/games/:slug/rooms/:id/puzzles?game=n ----------

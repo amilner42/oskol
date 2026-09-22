@@ -3,17 +3,22 @@ defmodule Oskol.Gleam.Caps.Puzzles do
   Real IO for src/oskol/caps/puzzles.gleam. Keep constructor tags and field
   order in lockstep:
 
-      PuzzlesCaps(unextracted, store, failed, get, mine, game_sources,
-      put_attempt, attempt, settle_attempt, cached_tree, keep_tree)
+      PuzzlesCaps(unextracted, store, failed, owned_sources, mark_synced,
+      sync_failed, deck_pending, guest_sources, get, mine, game_sources,
+      put_attempt, attempt, settle_attempt, serialize, cached_tree, keep_tree,
+      cached_moves, keep_moves)
       NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json)
       NewSource(key, game_number, turn, kind, seat, player_id, played,
       equity_lost, grade, skipped_reason)
+      DeckSource(source_id, puzzle_id, kind, question_json, ended_ms, seat)
+      Pending(user_id, game_ids, sources)
       Stored(id, kind, question_json, answer_json)
       Source(id, puzzle_id, kind, game_id, game_number, turn, seat,
       player_id, played, equity_lost, grade, date, question_json)
       SourceRoom(source, slug, seats)
       Attempt(id, puzzle_id, user_id, key, verdict, outcome, scheduled,
       review_id, schedule_json, fresh)
+      Scheduled(verdict, schedule_json)
 
   A question, an answer and an evaluator cross as JSON text: Gleam wrote
   them and Gleam reads them back, so nothing here looks inside one.
@@ -25,12 +30,16 @@ defmodule Oskol.Gleam.Caps.Puzzles do
 
   import Oskol.Gleam.Interop
 
+  require Logger
+
   alias Oskol.Puzzles
   alias Oskol.Puzzles.TreeCache
 
   def build do
-    {:puzzles_caps, &Puzzles.unextracted/1, &store/4, &failed/3, &get/1, &mine/3, &game_sources/2,
-     &put_attempt/5, &attempt/2, &settle_attempt/5, &cached_tree/1, &keep_tree/2}
+    {:puzzles_caps, &Puzzles.unextracted/1, &store/4, &failed/3, &owned_sources/2, &mark_synced/1,
+     &sync_failed/2, &deck_pending/2, &guest_sources/1, &get/1, &mine/3, &game_sources/2,
+     &put_attempt/5, &attempt/3, &settle_attempt/5, &serialize/3, &cached_tree/1, &keep_tree/2,
+     &cached_moves/1, &keep_moves/2}
   end
 
   defp get(id) do
@@ -71,8 +80,8 @@ defmodule Oskol.Gleam.Caps.Puzzles do
     attempt_row(row, freshness == :fresh)
   end
 
-  defp attempt(puzzle_id, key) do
-    opt(Puzzles.attempt(puzzle_id, key), &attempt_row(&1, false))
+  defp attempt(puzzle_id, user_id, key) do
+    opt(Puzzles.attempt(puzzle_id, user_id, key), &attempt_row(&1, false))
   end
 
   defp attempt_row(row, fresh) do
@@ -88,6 +97,12 @@ defmodule Oskol.Gleam.Caps.Puzzles do
     nil
   end
 
+  # Gleam decides what an answer does; this only makes sure two requests
+  # are not deciding it about the same card at the same moment.
+  defp serialize(user_id, puzzle_id, decide) do
+    Puzzles.serialize(user_id, puzzle_id, decide)
+  end
+
   defp decoded(""), do: nil
   defp decoded(json), do: Jason.decode!(json)
 
@@ -97,6 +112,71 @@ defmodule Oskol.Gleam.Caps.Puzzles do
     :ok = TreeCache.put(id, text)
     nil
   end
+
+  # A built tree crosses as itself. Gleam made it, Gleam reads it, and this
+  # only holds onto it -- the same way a room process crosses as an opaque
+  # handle.
+  defp cached_moves(id), do: opt(TreeCache.moves(id))
+
+  defp keep_moves(id, tree) do
+    :ok = TreeCache.put_moves(id, tree)
+    nil
+  end
+
+  # The deck's own capabilities degrade rather than raise, the way
+  # `seated_rooms` does: they are asked from inside the review job's task
+  # and from the sweep, and a database hiccup must not lose a review that
+  # has already been stored or take a sweep down. Nothing is marked, so the
+  # next sweep does exactly the work this one did not.
+  defp owned_sources(user_id, game_ids) do
+    quietly([], fn -> user_id |> Puzzles.owned_sources(game_ids) |> Enum.map(&deck_source/1) end)
+  end
+
+  defp mark_synced(ids) do
+    quietly(nil, fn ->
+      :ok = Puzzles.mark_synced(ids)
+      nil
+    end)
+  end
+
+  defp sync_failed(ids, reason) do
+    quietly(nil, fn ->
+      :ok = Puzzles.sync_failed(ids, reason)
+      nil
+    end)
+  end
+
+  defp deck_pending(game_ids, limit) do
+    quietly([], fn ->
+      for row <- Puzzles.deck_pending(game_ids, limit) do
+        {:pending, row.user_id, row.game_ids, row.sources}
+      end
+    end)
+  end
+
+  defp guest_sources(guest_id) do
+    quietly([], fn -> guest_id |> Puzzles.guest_sources() |> Enum.map(&deck_source/1) end)
+  end
+
+  defp quietly(fallback, fun) do
+    fun.()
+  rescue
+    e ->
+      Logger.error("deck capability failed: #{Exception.message(e)}")
+      fallback
+  end
+
+  # A seat crosses as the Gleam seat rules read it, exactly as a `games`
+  # row's seats do: the holder rule is Gleam's, and nothing here judges an
+  # id. A stored question crosses as the JSON text Gleam wrote.
+  defp deck_source(row) do
+    {:deck_source, row.id, row.puzzle_id, row.kind, Jason.encode!(row.question),
+     DateTime.to_unix(row.ended_at, :millisecond),
+     {:seat, row.player_id, opt(blank_to_nil(row.guest_id)), opt(blank_to_nil(row.user_id))}}
+  end
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(value), do: value
 
   defp store(game_id, game_number, puzzles, sources) do
     case Puzzles.store(

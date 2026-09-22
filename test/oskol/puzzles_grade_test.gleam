@@ -6,6 +6,7 @@
 //// are read off the same three equities and a sign the wrong way round
 //// would tell half the players the opposite of the truth.
 
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -13,6 +14,7 @@ import oskol/puzzles.{
   Candidate, CubeAnswer, Double, DoublePass, DoubleTake, Move, MoveAnswer,
   NoDouble, Outcome, Probs, Take,
 }
+import oskol/puzzles/fixture
 import oskol/puzzles/grade.{Fail, Hold, Pass, Unknown}
 
 fn probs() -> puzzles.Probs {
@@ -249,6 +251,41 @@ pub fn too_good_is_still_a_no_double_test() {
   assert too_good
   let _ = DoubleTake
   let _ = DoublePass
+}
+
+/// Every fixture the client's tests are built on has to be a real answer:
+/// the word the engine puts on a cube decision and the three equities it
+/// put it on must agree. A fixture labelled "double and pass" whose numbers
+/// say "big take" would grade the opposite of what it claims to be, and a
+/// page built against it would look right and be wrong.
+pub fn every_fixture_means_what_it_says_test() {
+  list.each(fixture.samples(), fn(sample) {
+    let #(name, _) = sample
+    let stored = fixture.stored_sample(name)
+    case puzzles.answer_from_json(stored.answer_json) {
+      Ok(CubeAnswer(nd, dt, dp, _, optimal, too_good) as answer) -> {
+        // The doubler's own call, read off the equities: doubling is worth
+        // whatever the other side will allow, min(DT, DP).
+        let doubling = float.min(dt, dp)
+        let wanted = case doubling <=. nd, dt >. dp {
+          True, _ -> NoDouble
+          False, True -> DoublePass
+          False, False -> DoubleTake
+        }
+        assert optimal == wanted
+        // And the scale agrees with the word: a pass is on the negative
+        // side for the responder, a take on the positive.
+        let assert Some(band) = grade.engine_band(Take, answer)
+        assert case wanted {
+          DoublePass -> band < 0
+          DoubleTake -> band > 0
+          _ -> True
+        }
+        assert too_good == puzzles.too_good(optimal, nd, dp)
+      }
+      _ -> Nil
+    }
+  })
 }
 
 fn abs(value: Int) -> Int {

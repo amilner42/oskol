@@ -46,6 +46,7 @@ import oskol/core/error.{type ApiError}
 import oskol/core/raw
 import oskol/core/session.{type Session}
 import oskol/handlers/record
+import oskol/practice/sync
 import oskol/puzzles/extract
 import oskol/reviews/report
 import oskol/rooms/seat
@@ -245,10 +246,16 @@ fn write_puzzles(
   review: report.Review,
 ) -> Nil {
   case extract.from_review(g, seats, review) {
-    Ok(#(puzzles, sources)) -> {
-      let _ = ctx.puzzles.store(game_id, g.number, puzzles, sources)
-      Nil
-    }
+    Ok(#(puzzles, sources)) ->
+      case ctx.puzzles.store(game_id, g.number, puzzles, sources) {
+        // The mistakes exist now, so the decks that own them can have
+        // them. Here and not in the room: this is the review job's own
+        // task, which is already off every hot path, and a deck that does
+        // not fill is never a reason for a review to fail. A sync that
+        // does not happen at all is the sweep's to find.
+        Ok(Nil) -> sync.sync_game(ctx, game_id)
+        Error(_) -> Nil
+      }
     Error(reason) -> ctx.puzzles.failed(game_id, g.number, reason)
   }
 }

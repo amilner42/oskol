@@ -151,6 +151,16 @@ defmodule OskolWeb.Api.PuzzleApiTest do
       body = conn |> get(~p"/papi/puzzles/#{id}/tree?node=made-up") |> json_response(404)
       assert %{"ok" => false} = body
     end
+
+    test "a node this puzzle minted is one it answers for", %{conn: conn} do
+      {id, payload} = seed_puzzle("move")
+      [child | _] = root_children(payload)
+
+      body = conn |> get(~p"/papi/puzzles/#{id}/tree?node=#{child["node"]}") |> json_response(200)
+
+      assert %{"ok" => true, "node" => node, "tree" => %{"children" => _}} = body
+      assert node == child["node"]
+    end
   end
 
   describe "POST /papi/puzzles/:id/attempts" do
@@ -276,6 +286,46 @@ defmodule OskolWeb.Api.PuzzleApiTest do
       assert Repo.aggregate(Puzzles.Attempt, :count) == 1
     end
 
+    test "a key means something only inside its own account", %{conn: _conn} do
+      # The unique index is (puzzle_id, user_id, idempotency_key), and a key
+      # is a uuid a browser made up: two of them can pick the same string.
+      # Reading one by key alone would hand one person's attempt -- and the
+      # override that moves their ladder -- to whoever sent the same bytes.
+      {id, _} = seed_puzzle("move")
+      mine = insert_user()
+      theirs = insert_user()
+
+      {:fresh, first} = Puzzles.put_attempt(id, mine, "shared", %{}, "pass")
+      {:fresh, second} = Puzzles.put_attempt(id, theirs, "shared", %{}, "fail")
+
+      # Two attempts, not one, and each account reads its own.
+      assert first.id != second.id
+      assert Puzzles.attempt(id, mine, "shared").id == first.id
+      assert Puzzles.attempt(id, theirs, "shared").id == second.id
+      assert Puzzles.attempt(id, insert_user(), "shared") == nil
+
+      # And settling one leaves the other exactly as it was.
+      :ok = Puzzles.settle_attempt(second.id, true, 99, "sooner", %{"level_after" => 0})
+      assert Puzzles.attempt(id, mine, "shared").review_id == nil
+      assert Puzzles.attempt(id, mine, "shared").outcome == nil
+    end
+
+    test "a deck action does not blank what an answer reported", %{conn: _conn} do
+      {id, _} = seed_puzzle("move")
+      user = insert_user()
+      {:fresh, row} = Puzzles.put_attempt(id, user, "k1", %{}, "pass")
+      :ok = Puzzles.settle_attempt(row.id, true, 7, nil, %{"level_after" => 3})
+
+      # Pressing NEVER records the outcome and suspends the card; the
+      # schedule the answer reported has to survive it, because a retry of
+      # that answer is contractually the same reply.
+      :ok = Puzzles.settle_attempt(row.id, true, nil, "never", nil)
+      kept = Puzzles.attempt(id, user, "k1")
+      assert kept.outcome == "never"
+      assert kept.schedule == %{"level_after" => 3}
+      assert kept.review_id == 7
+    end
+
     test "settling an attempt records what the deck did", %{conn: _conn} do
       {id, _} = seed_puzzle("move")
       user = insert_user()
@@ -283,14 +333,14 @@ defmodule OskolWeb.Api.PuzzleApiTest do
 
       :ok = Puzzles.settle_attempt(row.id, true, 77, nil, %{"level_after" => 3})
 
-      settled = Puzzles.attempt(id, "k1")
+      settled = Puzzles.attempt(id, user, "k1")
       assert settled.scheduled
       assert settled.review_id == 77
       assert settled.schedule == %{"level_after" => 3}
       # An outcome that was not given does not erase the one that was.
       :ok = Puzzles.settle_attempt(row.id, true, nil, "sooner", %{"level_after" => 0})
-      assert Puzzles.attempt(id, "k1").review_id == 77
-      assert Puzzles.attempt(id, "k1").outcome == "sooner"
+      assert Puzzles.attempt(id, user, "k1").review_id == 77
+      assert Puzzles.attempt(id, user, "k1").outcome == "sooner"
     end
 
     test "a puzzle nobody's room points at has no memory line for anyone", %{conn: _conn} do

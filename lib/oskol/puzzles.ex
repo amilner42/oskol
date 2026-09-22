@@ -69,6 +69,8 @@ defmodule Oskol.Puzzles do
       field(:grade, :string)
       field(:skipped_reason, :string)
       field(:deck_synced_at, :utc_datetime_usec)
+      field(:deck_attempts, :integer, default: 0)
+      field(:deck_error, :string)
 
       timestamps(type: :utc_datetime_usec)
     end
@@ -241,27 +243,73 @@ defmodule Oskol.Puzzles do
            on_conflict: :nothing,
            conflict_target: [:puzzle_id, :user_id, :idempotency_key]
          ) do
-      {1, _} -> {:fresh, attempt(puzzle_id, key)}
-      {0, _} -> {:kept, attempt(puzzle_id, key)}
+      {1, _} -> {:fresh, attempt(puzzle_id, user_id, key)}
+      {0, _} -> {:kept, attempt(puzzle_id, user_id, key)}
     end
   end
 
-  @doc "An attempt by the key its own client minted. Whose it is, is Gleam's to check."
-  def attempt(puzzle_id, key) do
+  @doc """
+  One account's attempt under the key its own client minted.
+
+  Scoped to the account, and the unique index says why: a key is only
+  unique within one (`puzzle_id, user_id, idempotency_key`). It is a uuid
+  the browser made up, so two of them can collide, and reading by key alone
+  would hand one person's attempt -- and their override -- to whoever sent
+  the same string.
+  """
+  def attempt(puzzle_id, user_id, key) do
     Repo.one(
       from(a in Attempt,
-        where: a.puzzle_id == ^puzzle_id and a.idempotency_key == ^key,
+        where:
+          a.puzzle_id == ^puzzle_id and a.user_id == ^user_id and
+            a.idempotency_key == ^key,
         limit: 1
       )
     )
   end
 
-  @doc "What happened after the deck was asked."
+  @doc """
+  Run `decide` with nobody else deciding what an answer does to the same
+  account's same card.
+
+  Whether an answer counts is read-then-act -- is this attempt row new, and
+  is the card due -- so two requests that both read before either wrote
+  would both find a due card and both move the ladder. A transaction-scoped
+  advisory lock keyed on the account and the puzzle makes that one at a
+  time; it is released when the transaction ends, so it is safe behind
+  pgbouncer's transaction pooling, which a session lock would not be.
+
+  A refusal is still an answer -- the player did answer, and the attempt
+  row should stand -- so nothing here rolls back on the value `decide`
+  returns. Only a raise does.
+  """
+  def serialize(user_id, puzzle_id, decide) do
+    {:ok, result} =
+      Repo.transaction(fn ->
+        Repo.query!("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [
+          user_id <> ":" <> puzzle_id
+        ])
+
+        decide.()
+      end)
+
+    result
+  end
+
+  @doc """
+  What happened after the deck was asked.
+
+  A nil `schedule` leaves the one already on the row alone. Pressing NEVER
+  is a deck action, not an answer: it suspends the card, and the schedule
+  the answer reported has to survive it, because a retry of that answer is
+  contractually the same reply.
+  """
   def settle_attempt(id, scheduled, review_id, outcome, schedule) do
     from(a in Attempt, where: a.id == ^id)
     |> Repo.update_all(
       set:
-        [scheduled: scheduled, schedule: schedule, updated_at: DateTime.utc_now()] ++
+        [scheduled: scheduled, updated_at: DateTime.utc_now()] ++
+          if(schedule, do: [schedule: schedule], else: []) ++
           if(review_id, do: [review_id: review_id], else: []) ++
           if(outcome, do: [outcome: outcome], else: [])
     )
@@ -470,6 +518,198 @@ defmodule Oskol.Puzzles do
       select: r.puzzles_attempts
     )
     |> Repo.one() || @max_attempts
+  end
+
+  # ---------- What the deck is owed ----------
+
+  @doc """
+  The mistakes on seats this account owns that no deck holds yet, newest
+  game first, narrowed to `game_ids` when any are given.
+
+  The query is coarse on purpose: it finds the rows whose seat *names* this
+  account, and each row comes back with its seat so that
+  `src/oskol/rooms/seat.gleam` -- and not this file -- decides whose
+  mistake it is. Nothing here compares a credential.
+
+  Reading charges a try against every row it returns, exactly as an engine
+  call is charged before it is made: a sync that keeps crashing must not
+  have the sweep coming back for the same rows every minute for ever. A row
+  that reaches a deck is marked and leaves this query, so the charge only
+  outlives a failure.
+  """
+  def owned_sources(user_id, game_ids) when is_binary(user_id) do
+    ids =
+      unsynced_sources()
+      |> where([s, g, p], fragment("? ->> 'user_id'", p) == ^user_id)
+      |> scope_games(game_ids)
+      |> select([s], s.id)
+      |> Repo.all()
+
+    charge_sync(ids)
+    sources_by_id(ids)
+  end
+
+  @doc "The deck holds these source rows now."
+  def mark_synced([]), do: :ok
+
+  def mark_synced(ids) when is_list(ids) do
+    from(s in Source, where: s.id in ^ids)
+    |> Repo.update_all(set: [deck_synced_at: DateTime.utc_now(), deck_error: nil])
+
+    :ok
+  end
+
+  @doc """
+  These rows could not be put in a deck. Logged every time, and recorded on
+  the rows once their tries are spent, so the sweep lets them go and an
+  operator can see why it did.
+  """
+  def sync_failed([], _reason), do: :ok
+
+  def sync_failed(ids, reason) when is_list(ids) do
+    Logger.error("deck sync failed for #{length(ids)} puzzle sources: #{reason}")
+
+    from(s in Source, where: s.id in ^ids, where: s.deck_attempts >= @max_attempts)
+    |> Repo.update_all(set: [deck_error: String.slice(to_string(reason), 0, 500)])
+
+    :ok
+  end
+
+  @doc """
+  The accounts with mistakes no deck holds yet, and the games those
+  mistakes are in: at most `limit` of them, the most recent first.
+
+  A read, and only a read. It is the sweep's work list, the dry run of
+  `mix oskol.puzzles.sync`, and how a game that has just been graded finds
+  out whose mistakes it wrote.
+  """
+  def deck_pending(game_ids, limit) when is_list(game_ids) and is_integer(limit) do
+    unsynced_sources()
+    |> where([s, g, p], not is_nil(fragment("? ->> 'user_id'", p)))
+    |> scope_games(game_ids)
+    |> group_by([s, g, p], fragment("? ->> 'user_id'", p))
+    |> select([s, g, p], %{
+      user_id: fragment("? ->> 'user_id'", p),
+      game_ids: fragment("array_agg(DISTINCT ?)", s.game_id),
+      sources: count(s.id),
+      recent: max(s.inserted_at)
+    })
+    |> order_by([s], desc: max(s.inserted_at))
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
+  @doc """
+  The mistakes on seats this guest's cookie holds and no account owns,
+  newest game first.
+
+  A guest has no deck, so this is their whole practice session. The
+  containment test is the one the seated-rooms index answers; the seat
+  rides back with each row and the holder rule says which of them are
+  really this browser's.
+  """
+  def guest_sources(guest_id, limit \\ 500)
+
+  def guest_sources(guest_id, limit) when is_binary(guest_id) and guest_id != "" do
+    held = [%{"guest_id" => guest_id}]
+
+    from(g in Oskol.Persistence.Game,
+      join: s in Source,
+      on: s.game_id == g.id and not is_nil(s.puzzle_id),
+      inner_lateral_join:
+        p in fragment("jsonb_array_elements(oskol_players_jsonb(?))", g.players),
+      on: fragment("? ->> 'id'", p) == s.player_id,
+      where: fragment("oskol_players_jsonb(?) @> ?::jsonb", g.players, ^held),
+      where: fragment("? ->> 'guest_id'", p) == ^guest_id,
+      where: is_nil(fragment("? ->> 'user_id'", p)),
+      order_by: [desc: s.inserted_at, desc: s.id],
+      limit: ^limit,
+      select: %{
+        id: s.id,
+        puzzle_id: s.puzzle_id,
+        kind: s.kind,
+        ended_at: s.inserted_at,
+        player_id: s.player_id,
+        guest_id: fragment("? ->> 'guest_id'", p),
+        user_id: fragment("? ->> 'user_id'", p)
+      }
+    )
+    |> Repo.all()
+    |> with_questions()
+  end
+
+  def guest_sources(_guest_id, _limit), do: []
+
+  # Every unsynced source that still has tries left, joined to its game and
+  # to the seat entry it names. The seat itself is never judged here.
+  defp unsynced_sources do
+    from(s in Source,
+      join: g in Oskol.Persistence.Game,
+      on: g.id == s.game_id,
+      inner_lateral_join:
+        p in fragment("jsonb_array_elements(oskol_players_jsonb(?))", g.players),
+      on: fragment("? ->> 'id'", p) == s.player_id,
+      where: not is_nil(s.puzzle_id),
+      where: is_nil(s.deck_synced_at),
+      where: s.deck_attempts < @max_attempts
+    )
+  end
+
+  defp scope_games(query, []), do: query
+  defp scope_games(query, game_ids), do: where(query, [s], s.game_id in ^game_ids)
+
+  # Charged outside any transaction and before the write, for the same
+  # reason the extraction charges there: a rollback must not refund it.
+  defp charge_sync([]), do: :ok
+
+  defp charge_sync(ids) do
+    from(s in Source, where: s.id in ^ids)
+    |> Repo.update_all(inc: [deck_attempts: 1])
+
+    :ok
+  end
+
+  defp sources_by_id([]), do: []
+
+  defp sources_by_id(ids) do
+    from(s in Source,
+      join: g in Oskol.Persistence.Game,
+      on: g.id == s.game_id,
+      inner_lateral_join:
+        p in fragment("jsonb_array_elements(oskol_players_jsonb(?))", g.players),
+      on: fragment("? ->> 'id'", p) == s.player_id,
+      where: s.id in ^ids,
+      order_by: [desc: s.inserted_at, desc: s.id],
+      select: %{
+        id: s.id,
+        puzzle_id: s.puzzle_id,
+        kind: s.kind,
+        ended_at: s.inserted_at,
+        player_id: s.player_id,
+        guest_id: fragment("? ->> 'guest_id'", p),
+        user_id: fragment("? ->> 'user_id'", p)
+      }
+    )
+    |> Repo.all()
+    |> with_questions()
+  end
+
+  # The questions these sources ask, in one query rather than one each. The
+  # puzzle row is what a card carries and what a prompt is written from.
+  defp with_questions([]), do: []
+
+  defp with_questions(rows) do
+    questions =
+      from(p in Puzzle,
+        where: p.id in ^Enum.map(rows, & &1.puzzle_id),
+        select: {p.id, p.question}
+      )
+      |> Repo.all()
+      |> Map.new()
+
+    for row <- rows, question = Map.get(questions, row.puzzle_id), question != nil do
+      Map.put(row, :question, question)
+    end
   end
 
   # Log every time, and on the last attempt settle the row so the minute

@@ -34,7 +34,6 @@ import backgammon/board.{
   White,
 }
 import backgammon/record
-import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/json.{type Json}
@@ -497,48 +496,33 @@ fn side(b: Board, color: Color) -> record.Side {
 
 // ---------- One level at a time ----------
 
-/// A node of a tree too big to send whole, named so the server can answer
-/// for it without holding anything: the position and the dice left are in
-/// the id. It is opaque to the page and says nothing about the answer --
-/// it is the board the page is already looking at.
-pub fn lazy_id(b: Board, dice: List(Int), moved: Option(Moved)) -> String {
-  let text =
-    string.join(
-      [
-        board_key(b),
-        string.join(list.map(dice, int.to_string), ","),
-        case moved {
-          Some(m) ->
-            board.loc_id(m.from)
-            <> ">"
-            <> board.loc_id(m.to)
-            <> case m.hit {
-              True -> "*"
-              False -> ""
-            }
-          None -> ""
-        },
-      ],
-      ";",
-    )
-  "z"
-  <> {
-    bit_array.from_string(text) |> bit_array.base16_encode |> string.lowercase
-  }
+/// The same tree with only its root in it, marked lazy: what a puzzle too
+/// big to send whole answers with. The rest is fetched a level at a time
+/// from `GET /papi/puzzles/:id/tree?node=`, by the ids this tree already
+/// gave them -- so a node can only be asked for if this puzzle minted it.
+pub fn lazy_view(t: Tree) -> Tree {
+  Tree(
+    root: t.root,
+    nodes: list.filter(t.nodes, fn(n) { n.id == t.root }),
+    lazy: True,
+  )
 }
 
-/// The root of a tree served lazily: the one node, and its children named
-/// by their own ids.
-pub fn lazy_root(b: Board, dice: List(Int)) -> Tree {
-  Tree(root: root_id, nodes: [level(b, dice, None, root_id)], lazy: True)
+/// One node of a built tree, by the id it was given.
+pub fn node_by_id(t: Tree, id: String) -> Option(Node) {
+  list.find(t.nodes, fn(n) { n.id == id }) |> option.from_result
 }
 
 /// The taps the rules allow from one position, on its own. What a page was
 /// offered, and so what an attempt is checked against.
 pub fn legal_children(b: Board, dice: List(Int)) -> List(Move) {
-  let #(_, moves) = children_moves(fresh(1_000_000), b, dice)
+  let #(_, moves) = children_moves(fresh(unbounded), b, dice)
   moves
 }
+
+/// No budget. Only for a caller that has already decided this position is
+/// worth working out in full and is going to keep the answer.
+pub const unbounded = 1_000_000
 
 fn fresh(limit: Int) -> Build {
   Build(
@@ -550,109 +534,4 @@ fn fresh(limit: Int) -> Build {
     over: False,
     limit: limit,
   )
-}
-
-/// One node worked out on its own: what it looks like, and the ids of the
-/// positions its legal taps reach.
-pub fn level(
-  b: Board,
-  dice: List(Int),
-  moved: Option(Moved),
-  id: String,
-) -> Node {
-  let moves = legal_children(b, dice)
-  Node(
-    id: id,
-    board: b,
-    dice_left: dice,
-    moved: moved,
-    children: list.map(moves, fn(move) {
-      let #(next, _, hit) = board.apply_move(b, White, move)
-      Child(
-        die: move.die,
-        from: move.from,
-        to: move.to,
-        node: lazy_id(
-          next,
-          remove_one(dice, move.die),
-          Some(Moved(from: move.from, to: move.to, hit: hit != None)),
-        ),
-      )
-    }),
-  )
-}
-
-/// A lazy id read back: the position, the dice still to play, and the step
-/// that reached it. Error for anything that is not one -- a page asking for
-/// a node it was never offered learns nothing.
-pub fn from_lazy_id(
-  id: String,
-) -> Result(#(Board, List(Int), Option(Moved)), Nil) {
-  use rest <- result.try(case string.starts_with(id, "z") {
-    True -> Ok(string.drop_start(id, 1))
-    False -> Error(Nil)
-  })
-  use bytes <- result.try(bit_array.base16_decode(string.uppercase(rest)))
-  use text <- result.try(bit_array.to_string(bytes))
-  case string.split(text, ";") {
-    [board_text, dice_text, moved_text] -> {
-      use b <- result.try(board_from_key(board_text))
-      let dice = case dice_text {
-        "" -> []
-        _ ->
-          string.split(dice_text, ",")
-          |> list.filter_map(int.parse)
-      }
-      Ok(#(b, dice, moved_from_text(moved_text)))
-    }
-    _ -> Error(Nil)
-  }
-}
-
-fn moved_from_text(text: String) -> Option(Moved) {
-  let #(body, hit) = case string.ends_with(text, "*") {
-    True -> #(string.drop_end(text, 1), True)
-    False -> #(text, False)
-  }
-  case string.split(body, ">") {
-    [from, to] ->
-      case board.parse_loc(from), board.parse_loc(to) {
-        Ok(from), Ok(to) -> Some(Moved(from: from, to: to, hit: hit))
-        _, _ -> None
-      }
-    _ -> None
-  }
-}
-
-/// The inverse of `board_key`: a list of "w6", "b bar", "woff"... back into
-/// the board it counts.
-fn board_from_key(text: String) -> Result(Board, Nil) {
-  let entries = case text {
-    "" -> []
-    _ -> string.split(text, ",")
-  }
-  let checkers =
-    entries
-    |> list.filter_map(fn(entry) {
-      case string.pop_grapheme(entry) {
-        Ok(#("w", loc)) ->
-          board.parse_loc(loc) |> result.map(fn(l) { #(White, l) })
-        Ok(#("b", loc)) ->
-          board.parse_loc(loc) |> result.map(fn(l) { #(Black, l) })
-        _ -> Error(Nil)
-      }
-    })
-  case
-    list.length(checkers) == list.length(entries) && list.length(entries) == 30
-  {
-    False -> Error(Nil)
-    True ->
-      Ok(Board(
-        checkers: checkers
-        |> list.index_map(fn(entry, i) {
-          #(board.prefix(entry.0) <> int.to_string(i + 1), entry)
-        })
-        |> dict.from_list,
-      ))
-  }
 }

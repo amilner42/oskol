@@ -336,74 +336,76 @@ pub fn children_agree_with_the_move_generator_test() {
 // ---------- The budget, and the level-at-a-time fallback ----------
 
 /// A position that needs more than the budget allows gives nothing, so the
-/// caller serves the root alone instead of a megabyte.
+/// caller works it out once under the ceiling and keeps it instead.
 pub fn a_build_over_the_budget_gives_up_test() {
-  let spread =
-    positions.setup(
-      list.append(
-        list.range(10, 24) |> list.map(fn(p) { #(White, Point(p), 1) }),
-        [
-          #(Black, Point(1), 4),
-          #(Black, Point(2), 4),
-          #(Black, Point(3), 4),
-          #(Black, Point(4), 3),
-        ],
-      ),
-    )
+  let spread = spread_board()
   assert tree.build(spread, [1, 1, 1, 1], 260) == Error(Nil)
-  // And the root alone is always available.
-  let lazy = tree.lazy_root(spread, [1, 1, 1, 1])
+  // And it is not that the position is impossible -- given room, it builds.
+  let assert Ok(whole) = tree.build(spread, [1, 1, 1, 1], 20_000)
+  assert list.length(whole.nodes) > 260
+  assert !whole.lazy
+}
+
+fn spread_board() -> Board {
+  positions.setup(
+    list.append(
+      list.range(10, 24) |> list.map(fn(p) { #(White, Point(p), 1) }),
+      [
+        #(Black, Point(1), 4),
+        #(Black, Point(2), 4),
+        #(Black, Point(3), 4),
+        #(Black, Point(4), 3),
+      ],
+    ),
+  )
+}
+
+/// A tree too big to send whole goes out as its root alone. The rest is
+/// still there to be asked for, by the ids this build gave them.
+pub fn a_lazy_view_is_the_root_alone_test() {
+  let assert Ok(whole) = tree.build(spread_board(), [1, 1, 1, 1], 20_000)
+  let lazy = tree.lazy_view(whole)
   assert lazy.lazy
+  assert lazy.root == whole.root
   assert list.length(lazy.nodes) == 1
-  assert list.length(root(lazy).children) == 15
+  assert root(lazy).children == root(whole).children
+  // Every id the root offers is one the whole tree holds, so the page can
+  // always ask for the next level.
+  assert list.all(root(lazy).children, fn(c) {
+    tree.node_by_id(whole, c.node) != None
+  })
 }
 
-/// A lazily served node carries its own position, so the server can answer
-/// for it without keeping anything.
-pub fn a_lazy_id_reads_back_test() {
-  let b =
-    positions.setup([
-      #(White, Point(13), 2),
-      #(White, Point(6), 13),
-      #(Black, Point(1), 2),
-      #(Black, Point(12), 13),
-    ])
-  let id = tree.lazy_id(b, [4], Some(tree.Moved(Point(13), Point(7), True)))
-  let assert Ok(#(back, dice, moved)) = tree.from_lazy_id(id)
-  assert dice == [4]
-  assert moved == Some(tree.Moved(Point(13), Point(7), True))
-  assert analysis.encode(back, White) == analysis.encode(b, White)
+/// A node is looked up by the id this puzzle's own build gave it, so an id
+/// from nowhere is nothing at all. There is no board to make up and nothing
+/// to forge.
+pub fn a_node_id_only_means_something_in_its_own_tree_test() {
+  let assert Ok(whole) = tree.build(hit_position(), [6, 4], 1000)
+  let assert Ok(other) = tree.build(board.initial(), [6, 4], 1000)
+  assert tree.node_by_id(whole, tree.root_id) != None
+  assert tree.node_by_id(whole, "made-up") == None
+  assert tree.node_by_id(whole, "") == None
+  // Ids repeat between trees, which is exactly why a lookup is scoped to
+  // one: the same name in another tree is another position.
+  let assert Some(mine) = tree.node_by_id(whole, "n1")
+  let assert Some(theirs) = tree.node_by_id(other, "n1")
+  assert mine.board != theirs.board
 }
 
-pub fn a_made_up_node_id_is_refused_test() {
-  assert tree.from_lazy_id("") == Error(Nil)
-  assert tree.from_lazy_id("r") == Error(Nil)
-  assert tree.from_lazy_id("znotbase16") == Error(Nil)
-  // Well-formed hex that is not a board.
-  assert tree.from_lazy_id("z6162") == Error(Nil)
-}
-
-/// One level worked out on its own says exactly what the whole tree would
-/// have said about that node.
-pub fn a_level_matches_the_whole_tree_test() {
-  let b =
-    positions.setup([
-      #(White, Point(13), 2),
-      #(White, Point(4), 4),
-      #(White, Point(5), 4),
-      #(White, Point(6), 5),
-      #(Black, Point(1), 2),
-      #(Black, Point(2), 2),
-      #(Black, Point(7), 1),
-      #(Black, Point(17), 3),
-      #(Black, Point(18), 3),
-      #(Black, Point(20), 2),
-      #(Black, Point(21), 2),
-    ])
-  let whole = built(b, #(6, 4))
-  let level = tree.level(b, tree.dice_of(#(6, 4)), None, tree.root_id)
-  assert steps(level) == steps(root(whole))
-  assert level.dice_left == root(whole).dice_left
+fn hit_position() -> Board {
+  positions.setup([
+    #(White, Point(13), 2),
+    #(White, Point(4), 4),
+    #(White, Point(5), 4),
+    #(White, Point(6), 5),
+    #(Black, Point(1), 2),
+    #(Black, Point(2), 2),
+    #(Black, Point(7), 1),
+    #(Black, Point(17), 3),
+    #(Black, Point(18), 3),
+    #(Black, Point(20), 2),
+    #(Black, Point(21), 2),
+  ])
 }
 
 // ---------- What goes on the wire ----------
@@ -433,11 +435,10 @@ pub fn the_wire_board_is_mover_relative_test() {
 
 /// An eager tree says nothing about being lazy; a lazy one says so.
 pub fn only_a_lazy_tree_says_lazy_test() {
-  let b = board.initial()
-  let eager = built(b, #(3, 1))
+  let eager = built(board.initial(), #(3, 1))
   assert !string.contains(json.to_string(tree.to_json(eager)), "lazy")
   assert string.contains(
-    json.to_string(tree.to_json(tree.lazy_root(b, [3, 1]))),
+    json.to_string(tree.to_json(tree.lazy_view(eager))),
     "\"lazy\":true",
   )
 }

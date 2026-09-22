@@ -571,7 +571,13 @@ lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, 
 lib/oskol/reviews.ex            game_reviews + game_records tables, the log a review
                                 reads, the engine's HTTP
 src/oskol/core/raw.gleam        stored JSON back onto the wire without rebuilding it
-lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room
+lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room,
+                                and deck syncs the same way ({:deck, user_id})
+src/oskol/practice/sync.gleam   filling an account's mistakes deck: whose, in what
+                                order, what is stamped, and when to give up
+src/oskol/handlers/practice.gleam  a practice session: an account's deck, a guest's
+                                own mistakes, the browser's timezone, burying one
+lib/oskol/practice.ex           those decisions run with the real rows behind them
 lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images tables;
                                 the one write, in one transaction with its marker
 src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
@@ -824,6 +830,19 @@ GET  /papi/me                          {ok, guest_name, user: {email, name} | nu
 POST /papi/me/name                     {name} -> {ok, user}  (a signed-in browser
                                        renames its account; 422 "That name is
                                        taken." when another account has it)
+GET  /papi/practice?offset=n           {ok, puzzles: [{id, kind, prompt, due}],
+                                         cursor, counts: {due, new_today,
+                                         deck} | null, game: null}
+                                       -- an account's deck (due, then new),
+                                       a guest's own mistakes (unscheduled,
+                                       counts null, no writes), or nothing
+POST /papi/practice/more               KEEP GOING: ten more new ones into
+                                       rotation, then the same session
+POST /papi/practice/tz                 {tz} -> {ok, tz}  (an IANA name, on the
+                                       account's deck; Etc/UTC until set)
+POST /papi/practice/bury               {id} -> {ok, id, level, due}  (back at
+                                       the player's own midnight, level kept;
+                                       409 when it is not in rotation)
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
 GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
@@ -851,7 +870,8 @@ be typed at it.
 A game's own `clocks` are preset ids; `clock_presets` carries every preset,
 so the picker can name the ones the game offers. Statuses: 404 `not_found`
 (no such game, no such code, a room that is over), 422 `validation_failed`
-(a name, a mode, a clock or a seat the room refused), 500 `server_error`.
+(a name, a mode, a clock or a seat the room refused), 409 `not_in_rotation`
+(a puzzle the session has moved past), 500 `server_error`.
 Every decision behind these lives in `src/oskol/handlers/landing.gleam`,
 except the record's, in `src/oskol/handlers/record.gleam`, and the reviews',
 in `src/oskol/handlers/reviews.gleam`. A lobby, a slug that is not the
@@ -1087,17 +1107,24 @@ path builds one and nothing re-asks the engine to recover one.
   walk once per node. A take is turned around before it is shown
   (`handlers/puzzles.shown`): it is stored from the doubler's side and asked
   of the responder, and whoever is being asked is White at the bottom.
-- **The tree has a gate.** 100 KB on the wire, 100 ms to build. Over either,
-  a puzzle answers `tree: {root, nodes: {root only}, lazy: true}` and the
-  page fetches each level from `GET /papi/puzzles/:id/tree?node=`, whose node
-  ids carry their own position so nothing is held between requests. The
-  build gives up at 260 examined positions (61 ms; 400 costs 120 ms), and the
-  byte budget has the last word. Trees are kept per puzzle id in a bounded
-  ETS table (`Oskol.Puzzles.TreeCache`) -- a pure function of a question that
-  is never rewritten, so a hit is always right and forgetting costs a
-  rebuild. Measured over 4,200 position/roll pairs from real random play:
-  median 28 nodes / 9.5 KB / 6.7 ms, p99 350 / 142 KB / 173 ms, worst 539 /
-  220 KB / 728 ms; 2.6% exceed the byte budget, all of them small doubles.
+- **The tree has a gate.** 100 KB on the wire, 100 ms to build; the build
+  gives up at 260 examined positions (61-75 ms; 400 costs 120 ms) and the
+  byte budget has the last word. Measured over 4,200 position/roll pairs
+  from real random play: median 28 nodes / 9.5 KB / 6.7 ms, p99 350 / 142 KB
+  / 173 ms, worst 539 / 220 KB / 728 ms. About one position in forty is over
+  the byte budget, all of them small doubles in contact-rich middlegames.
+- **A turn too big to send whole is built once and walked.** It answers
+  `tree: {root, nodes: {root only}, lazy: true}` (985 bytes on the worst
+  position there is) and the page asks for each level from
+  `GET /papi/puzzles/:id/tree?node=`. **A node is named by the id that
+  build gave it**, never by a description of itself: an id this puzzle does
+  not hold is a 404, so nothing a caller sends can put the server to work
+  on a position of their choosing, and there is nothing to sign. The tree
+  is kept whole (`Oskol.Puzzles.TreeCache`, twenty entries), so a level is
+  a lookup -- 14 ms on the contrived worst case, against 548 ms to build it
+  the once. The encoded payloads are kept too, per puzzle id, in the same
+  bounded table: both are pure functions of a question that is never
+  rewritten, so a hit is always right and forgetting costs a rebuild.
 - **One grading rule, one place** (`src/oskol/puzzles/grade.gleam`), shared by
   the guest on a shared link and the account whose ladder is watching. A
   checker play is graded by the board it leaves, never its notation: under
@@ -1114,16 +1141,70 @@ path builds one and nothing re-asks the engine to recover one.
   due. A review always pushes the due date out, so a second tab or a retry
   reveals and changes nothing. A miss is `Again` (back to level 0, tomorrow);
   an `unknown` schedules nothing and defers the card to tomorrow with
-  `self_grade: true`. The override (`.../attempts/:key/outcome`) **replaces**
-  the review it named rather than stacking on it, so a pass then SOONER lands
-  at level 0 once; where there was no review (a self-graded unknown) it
-  writes the first one, and NEVER suspends the card.
+  `self_grade: true`.
+  **Whether an answer counts is read-then-act**, so the whole decision --
+  writing the attempt row, reading the card, moving it -- runs under a
+  transaction-scoped advisory lock on (account, puzzle)
+  (`Oskol.Puzzles.serialize/3`). Without it four tabs at one due card wrote
+  four reviews and took a level-0 card to level 4.
+  **An idempotency key means something only inside one account**: the unique
+  index is (puzzle_id, user_id, idempotency_key) and every read is scoped
+  the same way, or somebody else's key would reach their row.
+  The override (`.../attempts/:key/outcome`) **replaces** the review it named
+  rather than stacking on it, so a pass then SOONER lands at level 0 once.
+  Where there was no review it writes the first one, but only where the
+  answer actually offered that (`self_grade`) -- never merely because none
+  was written, or an answer that never had an opportunity would invent one.
+  GOT IT on an answer nothing checked holds the level rather than raising
+  it. NEVER suspends the card without touching the attempt's own schedule,
+  so a retry of that answer is still the same reply, and nothing can be
+  overridden after it (409).
 - `puzzle_shares` and `puzzle_images` exist and are written by the later
   tickets (the story link, the board picture).
 - Measured on the seeded match 821900 (12 games): 125 puzzles, 127 sources
   (103 move, 19 double, 3 take; 2 skipped post-take), mean stored row 1.7 KB.
   With every legal result the answer column goes from a mean of 2.4 KB to
   4.2 KB (max 17 KB, a 177-play double).
+
+**The deck fills itself.** An account's mistakes become cards in its deck
+with nobody pressing anything: `src/oskol/practice/sync.gleam` (`sync_deck`)
+reads the sources on the seats that account owns and no deck holds yet,
+enrols them (`deck.enroll` -> retain, tags `{deck: "mistakes", kind}`,
+content the stored question, position newest game first) and stamps
+`puzzle_sources.deck_synced_at`. The holder rule decides whose a mistake is,
+as everywhere: the query narrows by an id, `rooms/seat.holder` answers.
+Three callers, all off every hot path: the review job, where a game's
+`store` has just succeeded (`sync_game`, in `handlers/reviews`); the sign-in
+stamp, cast to the review queue from the **persister's own handler** once
+its transaction has committed, so a caller that already timed out
+(`stamp_seats/3` answers `:pending`) still leaves a full deck; and the
+queue's minute sweep, for anything the first two missed.
+`mix oskol.puzzles.sync` is that sweep by hand (dry run unless `--write`; a
+dry run writes nothing and charges nothing). Idempotent at both levels, and
+bounded the way extraction is: reading an account's sources charges one of
+three `deck_attempts`, and a row that runs out keeps a `deck_error` instead
+of being swept for ever. A deck job is `{:deck, user_id}` in the same queue
+as a room's review, collapsible because it syncs everything that account is
+owed. A card's position is seconds *back* from 2020, not negated Unix time:
+retain's `position` is a 32-bit column.
+
+**`GET /papi/practice`** is one page for three callers
+(`src/oskol/handlers/practice.gleam`). Signed in: the deck, everything due
+before anything new (`new: :after_reviews`), twenty at a time, `?offset=`
+for the next batch (past the first it asks for no new cards, so paging walks
+the due ordering only) and `counts: {due, new_today, deck}`. A guest: the
+mistakes on the seats their cookie holds and no account owns, newest game
+first, unscheduled, `counts: null`, and **nothing written** -- only an
+account has a deck. Nobody: an empty list, not an error. Reading never
+starts a card or spends a day's budget. `POST /papi/practice/more` is KEEP
+GOING: ten more into rotation over the day's budget, then the same session.
+`POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
+(no new column: retain already keeps a learner's timezone, and it is the
+only thing that reads one). Gleam checks the shape, the zone database checks
+the name; `Etc/UTC` until it is set, and filling a deck passes no zone so it
+can never undo one. `POST /papi/practice/bury {id}` puts a puzzle the
+session left ungraded back to the start of the player's tomorrow, level kept
+-- 409 when it is not in rotation, which is what `error.Conflict` is for.
 
 ## Mail
 

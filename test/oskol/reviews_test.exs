@@ -465,7 +465,7 @@ defmodule Oskol.ReviewsTest do
     assert Reviews.record_generation(Reviews.setup(game_id)) > generation
 
     :ok = Reviews.save_records(game_id, rows, length(old.actions), generation)
-    {:records_caps, setup, _, _, _} = Oskol.Gleam.Caps.Records.build()
+    {:records_caps, setup, _, _, _, _} = Oskol.Gleam.Caps.Records.build()
     assert {:some, {:setup, _, _, _, _, _, _, true}} = setup.(game_id)
 
     assert %{"games" => [%{"game_number" => 1}, %{"game_number" => 2}]} =

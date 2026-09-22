@@ -21,6 +21,13 @@ defmodule Oskol.Puzzles.TreeCache do
   use GenServer
 
   @table :oskol_puzzle_trees
+  # The built tree of a turn too big to send whole, kept as a term rather
+  # than as bytes: a level request reads one node out of it and an attempt
+  # walks it. Far fewer entries, because each one is far bigger -- the most
+  # contrived doubles anybody can build are a couple of thousand positions,
+  # and real play tops out near five hundred.
+  @moves_table :oskol_puzzle_moves
+  @max_moves 20
   # About 100 KB apiece at the very worst, and a typical one is a few KB,
   # so this is tens of megabytes in the pathological case and well under
   # one in practice.
@@ -49,9 +56,31 @@ defmodule Oskol.Puzzles.TreeCache do
     ArgumentError -> :ok
   end
 
+  @doc "The built tree for this puzzle, or nil."
+  def moves(id) do
+    case :ets.lookup(@moves_table, id) do
+      [{^id, tree}] -> tree
+      [] -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  @doc "Keep this one."
+  def put_moves(id, tree) do
+    if :ets.info(@moves_table, :size) >= @max_moves,
+      do: :ets.delete_all_objects(@moves_table)
+
+    :ets.insert(@moves_table, {id, tree})
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
   @doc false
   def clear do
     :ets.delete_all_objects(@table)
+    :ets.delete_all_objects(@moves_table)
     :ok
   rescue
     ArgumentError -> :ok
@@ -60,6 +89,7 @@ defmodule Oskol.Puzzles.TreeCache do
   @impl true
   def init(_opts) do
     :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
+    :ets.new(@moves_table, [:named_table, :public, :set, read_concurrency: true])
     {:ok, %{}}
   end
 end

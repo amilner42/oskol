@@ -136,6 +136,16 @@ defmodule Oskol.Game.Persister do
           :error
       end
 
+    # The seats are the account's as of this moment, so its mistakes are
+    # too. Asked here and not from the sign-in handler because *here* is
+    # where the transaction committed: the caller may have timed out
+    # waiting (`stamp_seats/3` answers `:pending` after a minute) and gone
+    # home, and the deck must fill anyway. A cast, so nothing about a deck
+    # is ever in front of a room's queued writes.
+    with {:ok, {stamped, _game_ids}} when stamped > 0 <- reply do
+      Oskol.Reviews.Queue.sync_deck(user_id)
+    end
+
     {:reply, reply, state}
   end
 

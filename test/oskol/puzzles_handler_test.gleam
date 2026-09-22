@@ -9,6 +9,7 @@
 import backgammon/analysis
 import backgammon/board.{type Board, Black, Point, White}
 import backgammon/positions
+import gleam/dict
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
 import gleam/int
@@ -74,6 +75,10 @@ fn recorded(key: String) -> List(String) {
 
 fn reset() -> Nil {
   let _ = put("deck", [])
+  let _ = put("records", [])
+  let _ = put("turns", [])
+  let _ = put("built", [])
+  let _ = put_trees("moves:big", [])
   let _ = put_attempts("attempts", [])
   let _ = put_cards("cards", [])
   Nil
@@ -218,7 +223,7 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
       put_attempt: fn(puzzle_id, uid, key, answer, verdict) {
         case
           list.find(get_attempts("attempts"), fn(a) {
-            a.puzzle_id == puzzle_id && a.key == key
+            a.puzzle_id == puzzle_id && a.user_id == uid && a.key == key
           })
         {
           Ok(existing) -> puzzles_caps.Attempt(..existing, fresh: False)
@@ -243,9 +248,9 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
           }
         }
       },
-      attempt: fn(puzzle_id, key) {
+      attempt: fn(puzzle_id, uid, key) {
         list.find(get_attempts("attempts"), fn(a) {
-          a.puzzle_id == puzzle_id && a.key == key
+          a.puzzle_id == puzzle_id && a.user_id == uid && a.key == key
         })
         |> option.from_result
       },
@@ -262,7 +267,10 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
                     scheduled: scheduled,
                     review_id: option.or(review_id, a.review_id),
                     outcome: option.or(outcome, a.outcome),
-                    schedule_json: schedule,
+                    schedule_json: case schedule {
+                      "" -> a.schedule_json
+                      text -> text
+                    },
                   )
               }
             }),
@@ -272,21 +280,21 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
     ),
     practice: practice.PracticeCaps(
       ..practice.stub(),
-      card: fn(_uid, key) {
-        list.find(get_cards("cards"), fn(c) { c.0 == key })
+      card: fn(uid, key) {
+        list.find(get_cards("cards"), fn(c) { c.0 == held(uid, key) })
         |> result.map(fn(c) { c.1 })
         |> option.from_result
       },
-      start: fn(_uid, keys) {
+      start: fn(uid, keys) {
         record_call("deck", "start:" <> string.join(keys, ","))
-        list.each(keys, fn(key) { move_card(key, Active, 0, now) })
+        list.each(keys, fn(key) { move_card(held(uid, key), Active, 0, now) })
         list.length(keys)
       },
-      review: fn(_uid, key, outcome) {
+      review: fn(uid, key, outcome) {
         record_call("deck", "review:" <> key <> ":" <> outcome_name(outcome))
-        Ok(apply_outcome(key, outcome))
+        Ok(apply_outcome(held(uid, key), outcome))
       },
-      amend: fn(_uid, key, review_id, outcome) {
+      amend: fn(uid, key, review_id, outcome) {
         record_call(
           "deck",
           "amend:"
@@ -299,30 +307,31 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
         // A correction is applied to the level the card had *before* the
         // review it supersedes, which is what "replaces, never stacks"
         // means.
-        case list.find(get_cards("cards"), fn(c) { c.0 == key }) {
+        case list.find(get_cards("cards"), fn(c) { c.0 == held(uid, key) }) {
           Error(_) -> Error(UnknownCard)
           Ok(#(_, card)) -> {
-            let before = superseded_level(key)
-            move_card(key, card.status, before, now)
-            Ok(apply_outcome(key, outcome))
+            let before = superseded_level(held(uid, key))
+            move_card(held(uid, key), card.status, before, now)
+            Ok(apply_outcome(held(uid, key), outcome))
           }
         }
       },
-      defer_until: fn(_uid, key, until) {
+      defer_until: fn(uid, key, until) {
         record_call("deck", "defer:" <> key)
-        case list.find(get_cards("cards"), fn(c) { c.0 == key }) {
+        case list.find(get_cards("cards"), fn(c) { c.0 == held(uid, key) }) {
           Error(_) -> Error(UnknownCard)
           Ok(#(_, card)) -> {
-            move_card(key, card.status, card.level, until)
+            move_card(held(uid, key), card.status, card.level, until)
             Ok(Graded(card.level, card.level, until, 0))
           }
         }
       },
-      suspend: fn(_uid, keys) {
+      suspend: fn(uid, keys) {
         record_call("deck", "suspend:" <> string.join(keys, ","))
         list.each(keys, fn(key) {
-          case list.find(get_cards("cards"), fn(c) { c.0 == key }) {
-            Ok(#(_, card)) -> move_card(key, Suspended, card.level, card.due_ms)
+          case list.find(get_cards("cards"), fn(c) { c.0 == held(uid, key) }) {
+            Ok(#(_, card)) ->
+              move_card(held(uid, key), Suspended, card.level, card.due_ms)
             Error(_) -> Nil
           }
         })
@@ -395,8 +404,23 @@ fn outcome_name(outcome: Outcome) -> String {
   }
 }
 
+/// One deck's card, named the way the real one is: an account and a key.
+fn held(uid: String, key: String) -> String {
+  uid <> "|" <> key
+}
+
 fn deck_holds(key: String, status: practice.Status, level: Int, due: Int) -> Nil {
-  move_card(key, status, level, due)
+  deck_holds_for("u1", key, status, level, due)
+}
+
+fn deck_holds_for(
+  uid: String,
+  key: String,
+  status: practice.Status,
+  level: Int,
+  due: Int,
+) -> Nil {
+  move_card(held(uid, key), status, level, due)
 }
 
 fn guest(id: String) -> session.Session {
@@ -937,16 +961,40 @@ pub fn got_it_keeps_the_engines_own_grade_test() {
 }
 
 /// An answer the engine could not grade has no review to correct, so the
-/// player's own word is the first one.
+/// player's own word is the first one -- and it holds the level rather than
+/// moving it up, because nothing checked the claim.
 pub fn a_self_grade_writes_the_first_review_test() {
   reset()
   deck_holds("p1", Active, 3, now - day)
   let ctx = ctx_with([stored("p1", move_question(), old_move_answer())])
-  let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(2), "k1")
+  let assert Ok(graded) = attempt(ctx, account("u1"), "p1", path_to(2), "k1")
+  assert bool_at(graded, ["schedule", "self_grade"]) == True
   let assert Ok(body) = override(ctx, account("u1"), "p1", "k1", "got_it")
-  assert int_at(body, ["schedule", "level_after"]) == 4
+  assert int_at(body, ["schedule", "level_after"]) == 3
   let assert [newest, ..] = recorded("deck")
-  assert newest == "review:p1:pass"
+  assert newest == "review:p1:partial"
+  // SOONER on the same answer is still a miss, and KNEW IT still the top.
+  let assert Ok(sooner) = override(ctx, account("u1"), "p1", "k1", "sooner")
+  assert int_at(sooner, ["schedule", "level_after"]) == 0
+}
+
+/// An answer that never had an opportunity has nothing to grade, and the
+/// override may not invent one. The card was not due, so the attempt
+/// scheduled nothing and said `self_grade: false`.
+pub fn a_self_grade_on_an_answer_that_had_no_opportunity_is_refused_test() {
+  reset()
+  deck_holds("p1", Active, 3, now + 5 * day)
+  let ctx = ctx_with([stored("p1", move_question(), old_move_answer())])
+  let assert Ok(graded) = attempt(ctx, account("u1"), "p1", path_to(2), "k1")
+  assert text_at(graded, ["verdict"]) == "unknown"
+  assert bool_at(graded, ["schedule", "self_grade"]) == False
+  assert bool_at(graded, ["schedule", "amendable"]) == False
+  assert override(ctx, account("u1"), "p1", "k1", "got_it")
+    == Error(error.Conflict(
+      "nothing_to_amend",
+      handler.nothing_to_amend_message,
+    ))
+  assert recorded("deck") == []
 }
 
 /// NEVER is a deck action, not a correction: it puts the card aside, and
@@ -955,22 +1003,63 @@ pub fn never_puts_the_card_aside_test() {
   reset()
   deck_holds("p1", Active, 2, now - day)
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
-  let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(0), "k1")
+  let assert Ok(graded) = attempt(ctx, account("u1"), "p1", path_to(0), "k1")
   let assert Ok(body) = override(ctx, account("u1"), "p1", "k1", "never")
-  assert is_null(body, "schedule")
   let assert [newest, ..] = recorded("deck")
   assert newest == "suspend:p1"
+  // The answer's own schedule stands: suspending is something done to the
+  // card, not a correction of what the answer reported.
+  assert int_at(body, ["schedule", "level_after"])
+    == int_at(graded, ["schedule", "level_after"])
+  // So a retry of that answer is still the same reply.
+  let assert Ok(again) = attempt(ctx, account("u1"), "p1", path_to(0), "k1")
+  assert again == graded
+  // And there is nothing left to override.
+  assert override(ctx, account("u1"), "p1", "k1", "sooner")
+    == Error(error.Conflict(
+      "nothing_to_amend",
+      handler.nothing_to_amend_message,
+    ))
+  // Pressing it twice is the same action and answers the same way.
+  let assert Ok(twice) = override(ctx, account("u1"), "p1", "k1", "never")
+  assert twice == body
 }
 
-pub fn an_override_on_someone_elses_answer_is_refused_test() {
+/// A key is a uuid the browser made up, and it means something only inside
+/// the account that sent it. Somebody else's key names nothing here, so it
+/// cannot reach their attempt -- and an override of it is not refused with
+/// "not yours", which would confirm it exists; it simply is not there.
+pub fn a_key_only_means_something_in_its_own_account_test() {
+  reset()
+  deck_holds("p1", Active, 2, now - day)
+  let ctx = ctx_with([stored("p1", move_question(), move_answer())])
+  let assert Ok(mine) = attempt(ctx, account("u1"), "p1", path_to(0), "k1")
+  assert int_at(mine, ["schedule", "level_after"]) == 3
+
+  // The same key from another account is another attempt entirely: it is
+  // graded on its own, and it does not touch the first one.
+  deck_holds_for("u2", "p1", Active, 0, now - day)
+  let assert Ok(theirs) = attempt(ctx, account("u2"), "p1", path_to(2), "k1")
+  assert text_at(theirs, ["verdict"]) == "fail"
+  assert list.length(get_attempts("attempts")) == 2
+
+  // And neither can override the other's.
+  assert override(ctx, account("u2"), "p1", "k1", "sooner")
+    != Error(error.Forbidden(handler.not_yours_message))
+  let assert Ok(ours) = override(ctx, account("u1"), "p1", "k1", "sooner")
+  assert int_at(ours, ["schedule", "level_after"]) == 0
+}
+
+/// A browser that is not signed in has no attempt of its own anywhere, and
+/// is told so without being told whether anybody else's exists.
+pub fn an_override_from_a_guest_is_refused_test() {
   reset()
   deck_holds("p1", Active, 2, now - day)
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
   let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(0), "k1")
-  assert override(ctx, account("u2"), "p1", "k1", "sooner")
-    == Error(error.Forbidden(handler.not_yours_message))
-  // And a guest has no attempt to correct at all.
   assert override(ctx, guest("g1"), "p1", "k1", "sooner")
+    == Error(error.Forbidden(handler.not_yours_message))
+  assert override(ctx, session.anonymous(), "p1", "k1", "sooner")
     == Error(error.Forbidden(handler.not_yours_message))
 }
 
@@ -982,7 +1071,10 @@ pub fn an_override_with_nothing_to_amend_is_a_conflict_test() {
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
   let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(0), "k1")
   assert override(ctx, account("u1"), "p1", "k1", "sooner")
-    == Error(error.Conflict(handler.nothing_to_amend_message))
+    == Error(error.Conflict(
+      "nothing_to_amend",
+      handler.nothing_to_amend_message,
+    ))
 }
 
 pub fn an_override_of_an_attempt_that_is_not_there_is_a_404_test() {
@@ -1054,23 +1146,33 @@ fn mine_ctx(rooms: List(puzzles_caps.SourceRoom)) -> Ctx {
     }),
     records: records_caps.RecordsCaps(
       ..records_caps.stub(),
-      stored: fn(_) {
-        [
-          records_caps.StoredRecord(
-            game_number: 2,
-            entries_json: "[{\"kind\":\"turn\"},{\"kind\":\"game_over\",\"number\":2,\"winner\":\"p2\",\"points\":2}]",
-          ),
-        ]
+      // Only this game's row is ever read: a match's other games have
+      // nothing to say about who won this one.
+      entries_of: fn(_, number) {
+        record_call("records", int.to_string(number))
+        case number {
+          2 ->
+            Some(
+              "[{\"kind\":\"turn\"},{\"kind\":\"game_over\",\"number\":2,\"winner\":\"p2\",\"points\":2}]",
+            )
+          _ -> None
+        }
       },
       numbers: fn(_) { [1, 2] },
       setup: fn(_) { Some(setup_with(two_seats)) },
     ),
     analysis: analysis_caps.AnalysisCaps(
       ..analysis_caps.stub(),
-      report: fn(_, _) {
-        Some(
-          "{\"turns\":[{\"entry\":0},{\"entry\":2},{\"entry\":5,\"double_entry\":4}]}",
-        )
+      // And only this turn of the review: a report is hundreds of
+      // kilobytes and the answer is three integers.
+      report_turn: fn(_, _, turn) {
+        record_call("turns", int.to_string(turn))
+        case turn {
+          3 -> Some("{\"entry\":5,\"double_entry\":4,\"answer_entry\":6}")
+          // A double nobody offered has no line of its own.
+          4 -> Some("{\"entry\":9,\"double_entry\":null,\"answer_entry\":null}")
+          _ -> None
+        }
       },
     ),
   )
@@ -1261,12 +1363,23 @@ pub fn a_game_the_room_never_played_is_a_404_test() {
 
 // ---------- The level-at-a-time fallback ----------
 
-pub fn a_tree_level_answers_for_a_node_it_is_given_test() {
+pub fn a_tree_level_answers_for_a_node_this_puzzle_minted_test() {
   reset()
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
-  let id = tree.lazy_id(hit_board(), [6, 4], None)
-  let assert Ok(body) = handler.tree_node_json(ctx, "p1", id)
-  assert text_at(body, ["node"]) == id
+  // The ids come from the puzzle's own answer, which is the only place a
+  // page ever gets one.
+  let assert Ok(shown) = handler.puzzle_json(ctx, "p1")
+  let assert Ok(child) =
+    json.parse(
+      shown,
+      decode.at(
+        ["tree", "nodes", tree.root_id, "children"],
+        decode.list(decode.at(["node"], decode.string)),
+      ),
+    )
+  let assert [first, ..] = child
+  let assert Ok(body) = handler.tree_node_json(ctx, "p1", first)
+  assert text_at(body, ["node"]) == first
   assert bool_at(body, ["tree", "terminal"]) == False
   let assert Ok(children) =
     json.parse(
@@ -1274,19 +1387,105 @@ pub fn a_tree_level_answers_for_a_node_it_is_given_test() {
       decode.at(["tree", "children"], decode.list(decode.dynamic)),
     )
   assert list.length(children) == 2
+  // And the root itself is a node like any other.
+  let assert Ok(root) = handler.tree_node_json(ctx, "p1", tree.root_id)
+  assert bool_at(root, ["tree", "terminal"]) == False
 }
 
-pub fn a_node_that_is_not_this_puzzles_roll_is_refused_test() {
+/// An id this puzzle never minted is nothing at all. There is no board in
+/// an id to be made up, so nothing a caller sends can put the server to
+/// work on a position of their choosing.
+pub fn a_node_id_from_nowhere_is_refused_test() {
   reset()
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
-  // The right board, dice this roll never had.
-  let wrong = tree.lazy_id(hit_board(), [5, 5], None)
-  assert handler.tree_node_json(ctx, "p1", wrong)
-    == Error(error.NotFound(handler.not_found_message))
   assert handler.tree_node_json(ctx, "p1", "made-up")
+    == Error(error.NotFound(handler.not_found_message))
+  assert handler.tree_node_json(ctx, "p1", "")
+    == Error(error.NotFound(handler.not_found_message))
+  // A node id that is real in some other puzzle is not real in this one:
+  // the lookup is scoped to the tree that minted it.
+  assert handler.tree_node_json(ctx, "nosuchpz", tree.root_id)
     == Error(error.NotFound(handler.not_found_message))
   // A cube puzzle has no tree to walk.
   let cube = ctx_with([stored("d1", cube_question(Double), cube_answer())])
-  assert handler.tree_node_json(cube, "d1", wrong)
+  assert handler.tree_node_json(cube, "d1", tree.root_id)
     == Error(error.NotFound(handler.not_found_message))
 }
+
+/// A turn too big to send whole is worked out once and kept, and every
+/// level after that is a lookup in it -- never a fresh search, and never
+/// one a stranger can ask for on a board of their own choosing.
+pub fn a_lazy_puzzle_is_built_once_and_walked_test() {
+  reset()
+  let ctx = lazy_ctx()
+  let assert Ok(shown) = handler.puzzle_json(ctx, "big")
+  // The root alone, and it says so.
+  assert bool_at(shown, ["tree", "lazy"]) == True
+  let assert Ok(ids) =
+    json.parse(
+      shown,
+      decode.at(["tree", "nodes"], decode.dict(decode.string, decode.dynamic)),
+    )
+  assert dict.size(ids) == 1
+  // Built once: the second look, and every level, reads the store.
+  assert recorded("built") == ["big"]
+  let assert Ok(children) =
+    json.parse(
+      shown,
+      decode.at(
+        ["tree", "nodes", tree.root_id, "children"],
+        decode.list(decode.at(["node"], decode.string)),
+      ),
+    )
+  let assert [first, ..] = children
+  let assert Ok(_) = handler.tree_node_json(ctx, "big", first)
+  let assert Ok(_) = handler.tree_node_json(ctx, "big", first)
+  assert recorded("built") == ["big"]
+}
+
+/// The spread-out double-ones the tree contract was frozen against: too
+/// big for the wire, and kept so the page can walk it.
+fn lazy_ctx() -> Ctx {
+  let spread =
+    positions.setup(
+      list.append(
+        list.range(10, 24) |> list.map(fn(p) { #(White, Point(p), 1) }),
+        [
+          #(Black, Point(1), 4),
+          #(Black, Point(2), 4),
+          #(Black, Point(3), 4),
+          #(Black, Point(4), 3),
+        ],
+      ),
+    )
+  let question =
+    Question(
+      ..move_question(),
+      board: analysis.encode(spread, White),
+      dice: Some(#(1, 1)),
+    )
+  let base = ctx_with([stored("big", question, move_answer())])
+  Ctx(
+    ..base,
+    puzzles: puzzles_caps.PuzzlesCaps(
+      ..base.puzzles,
+      cached_moves: fn(id) {
+        case get_trees("moves:" <> id) {
+          [whole, ..] -> Some(whole)
+          [] -> None
+        }
+      },
+      keep_moves: fn(id, whole) {
+        record_call("built", id)
+        let _ = put_trees("moves:" <> id, [whole])
+        Nil
+      },
+    ),
+  )
+}
+
+@external(erlang, "erlang", "put")
+fn put_trees(key: String, value: List(tree.Tree)) -> Dynamic
+
+@external(erlang, "erlang", "get")
+fn get_trees(key: String) -> List(tree.Tree)

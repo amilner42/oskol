@@ -231,6 +231,7 @@ fn with_analysis(
   Ctx(
     ..fakes.ctx(),
     analysis: AnalysisCaps(
+      ..caps.stub(),
       log: fn(id) {
         record_call("replays", id)
         case id {
@@ -347,6 +348,10 @@ fn with_analysis(
         let _ = put_ints("extracted", [number, ..get_ints("extracted")])
         Ok(Nil)
       },
+      // The review job hands a graded game's mistakes to the decks that
+      // own them. No seat here belongs to an account, so there is nothing
+      // to hand over and nothing else of the deck's is ever reached.
+      deck_pending: fn(_, _) { [] },
       failed: fn(_, number, reason) {
         record_call(
           "extraction_failures",
@@ -359,6 +364,7 @@ fn with_analysis(
       },
     ),
     records: records_caps.RecordsCaps(
+      ..records_caps.stub(),
       setup: fn(id) {
         case id {
           "123456" -> Some(setup_of(log))
@@ -371,7 +377,7 @@ fn with_analysis(
         })
       },
       numbers: fn(_) { list.map(get_records("records"), fn(row) { row.0 }) },
-      save: fn(_, rows, _, _) {
+      save: fn(_, rows: List(#(Int, String)), _, _) {
         let held = get_records("records")
         let fresh =
           list.filter(rows, fn(row) {

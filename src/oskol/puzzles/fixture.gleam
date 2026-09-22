@@ -200,9 +200,15 @@ fn cube_puzzle(kind: Kind) -> Stored {
   stored(
     id,
     question,
+    // A genuine double-and-pass, and the numbers have to say so: taking
+    // pays the doubler 1.12 where passing pays them the point, so the
+    // responder passes (DP - DT = -0.12, a plain pass) and the doubler
+    // doubles (min(DT, DP) - ND = +0.69, a big double). A label that its
+    // own equities contradict would make a fixture that grades the
+    // opposite of what it claims to be.
     CubeAnswer(
       no_double: 0.31,
-      double_take: 0.84,
+      double_take: 1.12,
       double_pass: 1.0,
       probs: Some(probs()),
       optimal: DoublePass,

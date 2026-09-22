@@ -9,6 +9,8 @@
 //// is new, and running the same extraction again writes nothing.
 
 import gleam/option.{type Option}
+import oskol/core/error.{type ApiError}
+import oskol/rooms/seat.{type Seat}
 
 /// A puzzle to write, unless its key is already there.
 pub type NewPuzzle {
@@ -50,6 +52,40 @@ pub type NewSource {
     grade: String,
     skipped_reason: Option(String),
   )
+}
+
+/// One stored mistake, as the deck reads it: which puzzle it points at,
+/// what it asks, and the seat that made it.
+///
+/// The seat rides along so that **the holder rule decides whose mistake
+/// this is, not the query**. The queries behind these capabilities narrow
+/// by a guest id or an account id the way `seated_rooms` does -- a coarse,
+/// indexed containment test over `games.players` -- and `rooms/seat.holder`
+/// then says which of the rows that came back are really the caller's.
+pub type DeckSource {
+  DeckSource(
+    /// The `puzzle_sources` row, so a sync stamps exactly what it enrolled.
+    source_id: Int,
+    puzzle_id: String,
+    /// "move", "double" or "take".
+    kind: String,
+    /// The stored question, as JSON text: what a prompt is built from, and
+    /// what a card carries so a session needs no second query. A question
+    /// is immutable (it is the puzzle's key), so a copy of one cannot go
+    /// stale.
+    question_json: String,
+    /// When the game this came from ended, in Unix milliseconds -- read off
+    /// the moment its mistakes were written down, which follows the game's
+    /// end by seconds and never puts two games in the wrong order. New
+    /// cards are introduced newest game first.
+    ended_ms: Int,
+    seat: Seat,
+  )
+}
+
+/// An account the deck sweep still owes work to, and where that work is.
+pub type Pending {
+  Pending(user_id: String, game_ids: List(String), sources: Int)
 }
 
 /// A puzzle as it was written: the question and the answer, still as the
@@ -95,6 +131,12 @@ pub type SourceRoom {
   )
 }
 
+/// What answering one puzzle did, as the serialized section hands it back:
+/// the verdict that stands and the schedule that was reported.
+pub type Scheduled {
+  Scheduled(verdict: String, schedule_json: String)
+}
+
 /// One answer somebody gave, as the row holds it.
 pub type Attempt {
   Attempt(
@@ -119,7 +161,10 @@ pub type Attempt {
   )
 }
 
-pub type PuzzlesCaps {
+/// `moves` is a built move tree (`oskol/puzzles/tree.Tree`). It is a type
+/// variable rather than that type because a capability describes IO, and
+/// the store it crosses into neither reads it nor knows what it is.
+pub type PuzzlesCaps(moves) {
   PuzzlesCaps(
     /// The game numbers of a room whose review the engine has answered and
     /// whose puzzles have never been written: a crash between the two, a
@@ -140,6 +185,31 @@ pub type PuzzlesCaps {
     /// failing `store`, or the sweep would replay that room every minute
     /// for ever without saying so.
     failed: fn(String, Int, String) -> Nil,
+    /// The mistakes on seats this account owns that its deck does not hold
+    /// yet, newest game first: `(user_id, game_ids)`, and every game of
+    /// theirs when the list is empty. A row that has run out of tries is
+    /// left out, so nothing loops for ever.
+    ///
+    /// **Asking charges a try**, exactly as an engine call does: a sync
+    /// that keeps crashing must not have the sweep coming back every
+    /// minute for the same rows. A row that syncs is marked and leaves
+    /// this query, so the charge only outlives a failure.
+    owned_sources: fn(String, List(String)) -> List(DeckSource),
+    /// The deck holds these source rows now.
+    mark_synced: fn(List(Int)) -> Nil,
+    /// These rows could not be put in a deck: log it, and once their tries
+    /// are spent record why, so the sweep lets them go.
+    sync_failed: fn(List(Int), String) -> Nil,
+    /// The accounts with mistakes no deck holds yet, most recent first, at
+    /// most this many, in these games (everywhere when the list is empty).
+    /// The sweep's work list, what its dry run prints, and how a game that
+    /// has just been graded finds out whose mistakes it wrote. Asking
+    /// costs nothing and charges nothing.
+    deck_pending: fn(List(String), Int) -> List(Pending),
+    /// The mistakes on seats this guest's cookie holds. A guest has no
+    /// deck, so this is their whole session: newest game first, nothing
+    /// scheduled, nothing written.
+    guest_sources: fn(String) -> List(DeckSource),
     /// One puzzle by id, or nothing. Open: a puzzle is a position and a
     /// question, and the answer never rides in this.
     get: fn(String) -> Option(Stored),
@@ -159,34 +229,68 @@ pub type PuzzlesCaps {
     /// this call is what wrote it -- which is what stops a retried POST
     /// moving anybody's ladder twice.
     put_attempt: fn(String, String, String, String, String) -> Attempt,
-    /// An attempt by the key its own client minted: (puzzle_id, key).
-    /// Whose it is, is the handler's to check.
-    attempt: fn(String, String) -> Option(Attempt),
+    /// An attempt by the key its own client minted: (puzzle_id, user_id,
+    /// key). Scoped to the account, because a key is only unique within
+    /// one -- it is a uuid the client made up, and two browsers could pick
+    /// the same one. Looking one up by key alone would hand somebody
+    /// else's row to whoever guessed it.
+    attempt: fn(String, String, String) -> Option(Attempt),
     /// What happened after the deck was asked: (attempt id, scheduled,
-    /// review id, outcome, schedule as JSON text).
+    /// review id, outcome, schedule as JSON text). An empty schedule leaves
+    /// the one already on the row alone, so a deck action that is not an
+    /// answer cannot blank what an answer reported.
     settle_attempt: fn(Int, Bool, Option(Int), Option(String), String) -> Nil,
-    /// The move tree already built for a puzzle id, as JSON text. A pure
+    /// Decide what one answer does to one account's card with nobody else
+    /// deciding the same thing at the same moment: (user_id, puzzle_id,
+    /// what to decide).
+    ///
+    /// Whether an answer counts is read-then-act -- is this attempt row
+    /// new, and is the card due -- and two requests that read before either
+    /// wrote would both find a due card and both move the ladder. Everything
+    /// from writing the attempt row to moving the card runs in here, one
+    /// account and one puzzle at a time.
+    ///
+    /// A refusal is still an answer: the attempt row stands, because the
+    /// player did answer, so nothing here rolls back on `Error`.
+    serialize: fn(String, String, fn() -> Result(Scheduled, ApiError)) ->
+      Result(Scheduled, ApiError),
+    /// The payload already built for a puzzle id, as JSON text. A pure
     /// function of the stored question, so a hit is always right, and the
     /// store is bounded and may forget at any time.
     cached_tree: fn(String) -> Option(String),
     keep_tree: fn(String, String) -> Nil,
+    /// The same for a turn too big to send whole, kept as the tree itself
+    /// rather than as bytes: a level request reads one node out of it and
+    /// an attempt walks it, and neither wants to parse a megabyte back.
+    /// Opaque here -- it crosses as a term and comes back as it went.
+    cached_moves: fn(String) -> Option(moves),
+    keep_moves: fn(String, moves) -> Nil,
   )
 }
 
-pub fn stub() -> PuzzlesCaps {
+pub fn stub() -> PuzzlesCaps(moves) {
   PuzzlesCaps(
     unextracted: fn(_) { panic as "stub puzzles.unextracted" },
     store: fn(_, _, _, _) { panic as "stub puzzles.store" },
     failed: fn(_, _, _) { panic as "stub puzzles.failed" },
+    owned_sources: fn(_, _) { panic as "stub puzzles.owned_sources" },
+    mark_synced: fn(_) { panic as "stub puzzles.mark_synced" },
+    sync_failed: fn(_, _) { panic as "stub puzzles.sync_failed" },
+    deck_pending: fn(_, _) { panic as "stub puzzles.deck_pending" },
+    guest_sources: fn(_) { panic as "stub puzzles.guest_sources" },
     get: fn(_) { panic as "stub puzzles.get" },
     mine: fn(_, _, _) { panic as "stub puzzles.mine" },
     game_sources: fn(_, _) { panic as "stub puzzles.game_sources" },
     put_attempt: fn(_, _, _, _, _) { panic as "stub puzzles.put_attempt" },
-    attempt: fn(_, _) { panic as "stub puzzles.attempt" },
+    attempt: fn(_, _, _) { panic as "stub puzzles.attempt" },
     settle_attempt: fn(_, _, _, _, _) { panic as "stub puzzles.settle_attempt" },
+    // Nothing to serialize against in a test: run it.
+    serialize: fn(_, _, decide) { decide() },
     // A cache that never hits is a correct cache; a test that does not
     // arrange one still gets a tree.
     cached_tree: fn(_) { option.None },
     keep_tree: fn(_, _) { Nil },
+    cached_moves: fn(_) { option.None },
+    keep_moves: fn(_, _) { Nil },
   )
 }
