@@ -485,7 +485,7 @@ pub fn a_double_puzzle_has_no_dice_and_no_tree_test() {
   let ctx = ctx_with([stored("d1", cube_question(Double), cube_answer())])
   let assert Ok(body) = handler.puzzle_json(ctx, "d1")
   assert text_at(body, ["kind"]) == "double"
-  assert text_at(body, ["prompt"]) == "Double?"
+  assert text_at(body, ["prompt"]) == "White to play. Double?"
   assert is_null(body, "tree")
   assert is_null(body, "question") == False
   assert decode.run(
@@ -503,7 +503,7 @@ pub fn a_take_puzzle_is_shown_from_the_responders_side_test() {
   let ctx = ctx_with([stored("t1", cube_question(Take), cube_answer())])
   let assert Ok(body) = handler.puzzle_json(ctx, "t1")
   assert text_at(body, ["kind"]) == "take"
-  assert text_at(body, ["prompt"]) == "Take?"
+  assert text_at(body, ["prompt"]) == "White is doubled. Take?"
   // The doubler held the cube; from the responder's side the opponent does.
   assert text_at(body, ["question", "cube", "owner"]) == "opponent"
   // And the away scores swap with the sides.
@@ -547,7 +547,7 @@ pub fn the_head_is_the_question_and_the_score_test() {
     == "Match play, 3 away against 5. Cube centred. A backgammon puzzle: play it on the board."
   let assert Ok(handler.Head(take_title, take_description)) =
     handler.head(ctx, "t1")
-  assert take_title == "Take?"
+  assert take_title == "White is doubled. Take?"
   assert string.starts_with(
     take_description,
     "Match play, 5 away against 3. Cube at 1, Black's.",
@@ -568,7 +568,18 @@ pub fn a_money_game_says_so_in_the_head_test() {
         cube_owner: puzzles.Mover,
       ),
     ),
-    "Money play. Cube at 4, White's.",
+    "Unlimited play. Cube at 4, White's.",
+  )
+  // One point each way is a single game, not a match at 1 away against 1.
+  assert string.starts_with(
+    handler.describe(puzzles.Question(..q, away_mover: 1, away_opponent: 1)),
+    "Single game. Cube centred.",
+  )
+  assert string.starts_with(
+    handler.describe(
+      puzzles.Question(..q, away_mover: 1, away_opponent: 1, crawford: True),
+    ),
+    "Match play, 1 away against 1, Crawford.",
   )
   assert string.starts_with(
     handler.describe(puzzles.Question(..q, crawford: True)),
@@ -1235,6 +1246,7 @@ pub fn the_mover_sees_their_own_mistake_test() {
   let ctx = mine_ctx([source_room(two_seats, "p1")])
   let assert Ok(body) = handler.mine_json(ctx, guest("guest-a"), "p1")
   assert text_at(body, ["who"]) == "you"
+  assert text_at(body, ["opponent"]) == "Charlie"
   assert text_at(body, ["played"]) == "24/23 13/11"
   assert text_at(body, ["grade"]) == "bad"
   assert text_at(body, ["date"]) == "2026-09-12"
@@ -1253,6 +1265,8 @@ pub fn the_opponent_sees_whose_mistake_it_was_test() {
   let ctx = mine_ctx([source_room(two_seats, "p1")])
   let assert Ok(body) = handler.mine_json(ctx, guest("guest-c"), "p1")
   assert text_at(body, ["who"]) == "Arie"
+  // The reader is Charlie: the opponent is Arie, whose mistake it was.
+  assert text_at(body, ["opponent"]) == "Arie"
   assert bool_at(body, ["result", "won"]) == True
 }
 
@@ -1364,7 +1378,7 @@ pub fn a_games_puzzles_are_the_seats_own_test() {
   assert ids
     == [
       #("a1", "move", "White to play 6-4. What's your play?", False),
-      #("c1", "take", "Take?", False),
+      #("c1", "take", "White is doubled. Take?", False),
     ]
   // The other seat sees their own, and only theirs.
   let assert Ok(theirs) =

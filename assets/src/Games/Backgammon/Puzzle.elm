@@ -577,12 +577,13 @@ type alias Schedule =
 
 
 {-| The memory line, for a player of the game the puzzle came from: whose
-move it was ("you", or the opponent by name), what was played and what it
-cost, the day, how that game ended from the reader's side, and where in
-the replay it happened.
+move it was ("you", or the opponent by name), who the opponent was, what
+was played and what it cost, the day the game ended, how it ended from the
+reader's side, and where in the replay it happened.
 -}
 type alias Memory =
     { who : String
+    , opponent : String
     , played : String
     , equityLost : Float
     , grade : String
@@ -675,8 +676,9 @@ scheduleDecoder =
 
 memoryDecoder : D.Decoder Memory
 memoryDecoder =
-    D.map7 Memory
+    D.map8 Memory
         (D.field "who" D.string)
+        (D.field "opponent" D.string)
         (D.field "played" D.string)
         (D.field "equity_lost" D.float)
         (D.field "grade" D.string)

@@ -765,8 +765,13 @@ arrive at any of them cold, and moving between them afterwards is a
   both sides), and a bare `/puzzles` is a 404 until `puzzles-home`. The
   head (`SpaController.puzzle`, words from `handlers/puzzles.head`) is the
   question as the title and og:title, the score and cube as the
-  description, nothing else; an id nobody stored is a 404. Not in the
-  sitemap: too many.
+  description ("Match play, 3 away against 5. Cube centred."; no score is
+  "Unlimited play", one point each way "Single game" unless Crawford, the
+  picture's own words), the board's picture as og:image, nothing else; an
+  id nobody stored is a 404. Not in the sitemap: too many. There is one
+  prompt, `oskol/puzzles.prompt` ("White to play 6-4. What's your play?",
+  "White to play. Double?", "White is doubled. Take?"): the wire, the head,
+  the page and the picture all read it.
 - `/login/<token>` the page a mailed sign-in link opens. It **reads** the
   token and writes nothing: the page says "Sign in as you@example.com" with
   one button, and that button POSTs `/papi/auth/link`, which is the only
@@ -843,8 +848,12 @@ POST /papi/puzzles/:id/attempts/:key/outcome  {outcome: sooner|got_it|knew_it|ne
                                          account only (403); 409 with nothing to
                                          amend
 GET  /papi/puzzles/:id/mine            (a seat in the source game, either side)
-                                         {ok, who, played, equity_lost, grade, date,
-                                         result, replay}; 404 otherwise
+                                         {ok, who, opponent, played, equity_lost,
+                                         grade, date, result, replay}; 404 otherwise.
+                                         `who` is "you" or the other seat's display
+                                         name; `opponent` the other seat's, always;
+                                         `date` the day the game ended (its review
+                                         row's), never the day the source was written
 GET  /papi/games/:slug/rooms/:id/puzzles?game=n  (a seat) {ok, puzzles: [{id, kind,
                                          prompt, due}], cursor, counts, game}
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else

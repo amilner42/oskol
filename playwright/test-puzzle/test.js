@@ -191,7 +191,7 @@ async function run(browser, setup, errors) {
     await bob.click('#bg-action-play');
     await bob.waitForSelector('#pz-memory');
     const bobLine = (await bob.textContent('#pz-memory')).trim();
-    must(/^From your game on \d+ \w{3}\. Alice played .+, a (dubious|bad|very bad) move, and you (won|lost) \d+ points?\./.test(bobLine), `the opponent's memory line: "${bobLine}"`);
+    must(/^From your game vs Alice, \d+ \w{3}\. Alice played .+ \(a (dubious|bad|very bad) move\) and you (won|lost) \d+ points?\./.test(bobLine), `the opponent's memory line: "${bobLine}"`);
     const bobLink = await bob.getAttribute('#pz-memory-link', 'href');
     must(bobLink.startsWith(`/backgammon/${setup.game_id}/replay?game=1&step=`), `it links to the moment in the replay: ${bobLink}`);
     must(!(await bob.locator('#pz-level').count()), 'a guest, seated or not, has no level line');
@@ -250,7 +250,9 @@ async function run(browser, setup, errors) {
     must((await alice.locator('#pz-outcomes button').count()) === 4, 'the four buttons are offered');
     must((await alice.locator('#pz-outcomes button[aria-pressed="true"]').count()) === 1, 'the graded one is preselected');
     const aliceLine = (await alice.textContent('#pz-memory')).trim();
-    must(/^From your game on \d+ \w{3}\. You played .+, a (dubious|bad|very bad) move, and you (won|lost) \d+ points?\./.test(aliceLine), `the player's memory line: "${aliceLine}"`);
+    // The opponent by name; the account is Alice's own (its name is never
+    // sent back to her), so the line names Bob.
+    must(/^From your game vs Bob, \d+ \w{3}\. You played .+ \(a (dubious|bad|very bad) move\) and (won|lost) \d+ points?\./.test(aliceLine), `the player's memory line: "${aliceLine}"`);
 
     await alice.click('#pz-outcome-sooner');
     await alice.waitForFunction(() => document.querySelector('#pz-outcome-sooner').getAttribute('aria-pressed') === 'true', null, { timeout: 5000 });

@@ -713,23 +713,34 @@ scoreLine puzzle =
         q =
             puzzle.question
 
+        -- The picture's caption and the head's words: no score is
+        -- unlimited play, one point each way a single game (a 1-point
+        -- match is the same position) unless it is marked Crawford.
         score =
             case q.score of
                 Nothing ->
-                    "Money play"
+                    if q.jacoby then
+                        "Unlimited · Jacoby"
+
+                    else
+                        "Unlimited"
 
                 Just s ->
-                    "White "
-                        ++ String.fromInt s.moverAway
-                        ++ " away, Black "
-                        ++ String.fromInt s.opponentAway
-                        ++ " away"
-                        ++ (if q.crawford then
-                                " · Crawford"
+                    if s.moverAway == 1 && s.opponentAway == 1 && not q.crawford then
+                        "Single game"
 
-                            else
-                                ""
-                           )
+                    else
+                        "White "
+                            ++ String.fromInt s.moverAway
+                            ++ " away, Black "
+                            ++ String.fromInt s.opponentAway
+                            ++ " away"
+                            ++ (if q.crawford then
+                                    " · Crawford"
+
+                                else
+                                    ""
+                               )
 
         cube =
             case q.cube.owner of
@@ -1217,15 +1228,18 @@ viewMemory model =
             ]
 
 
-{-| "From your game on 12 Sep. You played 24/23 13/11, a bad move, and
-lost 2 points." -- or the opponent by name, and how it went for the
-reader.
+{-| "From your game vs Charlie, 12 Sep. You played 24/23 13/11 (a bad
+move) and lost 2 points." -- or "Charlie played ... and you won 2
+points." when it was their mistake.
 -}
 memoryLine : Puzzle.Memory -> String
 memoryLine memory =
     let
+        mine =
+            memory.who == "you"
+
         who =
-            if memory.who == "you" then
+            if mine then
                 "You"
 
             else
@@ -1248,12 +1262,18 @@ memoryLine memory =
         ending =
             case memory.result of
                 Just r ->
-                    (if r.won then
-                        " and you won "
+                    (if mine then
+                        " and "
 
                      else
-                        " and you lost "
+                        " and you "
                     )
+                        ++ (if r.won then
+                                "won "
+
+                            else
+                                "lost "
+                           )
                         ++ String.fromInt r.points
                         ++ (if r.points == 1 then
                                 " point"
@@ -1264,8 +1284,15 @@ memoryLine memory =
 
                 Nothing ->
                     ""
+
+        game =
+            if memory.opponent == "" then
+                "From your game, "
+
+            else
+                "From your game vs " ++ memory.opponent ++ ", "
     in
-    "From your game on " ++ dayOf memory.date ++ ". " ++ who ++ " played " ++ memory.played ++ ", " ++ grade ++ "," ++ ending ++ "."
+    game ++ dayOf memory.date ++ ". " ++ who ++ " played " ++ memory.played ++ " (" ++ grade ++ ")" ++ ending ++ "."
 
 
 {-| "2026-09-12" as "12 Sep".

@@ -216,7 +216,7 @@ kinds =
                     (\p ->
                         Expect.all
                             [ \_ -> p.kind |> Expect.equal "double"
-                            , \_ -> p.prompt |> Expect.equal "Double?"
+                            , \_ -> p.prompt |> Expect.equal "White to play. Double?"
                             , \_ -> p.question.dice |> Expect.equal []
                             , \_ -> p.tree |> Expect.equal Nothing
                             ]
@@ -228,7 +228,7 @@ kinds =
                     (\p ->
                         Expect.all
                             [ \_ -> p.kind |> Expect.equal "take"
-                            , \_ -> p.prompt |> Expect.equal "Take?"
+                            , \_ -> p.prompt |> Expect.equal "White is doubled. Take?"
 
                             -- Stored from the doubler's side, shown from
                             -- the responder's: the cube changes hands and

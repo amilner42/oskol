@@ -56,8 +56,8 @@ import oskol/core/raw
 import oskol/core/session.{type Session}
 import oskol/practice/deck
 import oskol/puzzles.{
-  type Answer, type Candidate, type Question, CubeAnswer, Double,
-  Move as MoveKind, MoveAnswer, Mover, Opponent, Question, Take,
+  type Answer, type Candidate, type Question, CubeAnswer, Move as MoveKind,
+  MoveAnswer, Mover, Opponent, Question, Take,
 }
 import oskol/puzzles/grade.{type Verdict, Fail, Hold, Pass, Unknown}
 import oskol/puzzles/tree
@@ -157,16 +157,20 @@ pub fn head(ctx: Ctx, id: String) -> Result(Head, ApiError) {
 }
 
 /// The score and the cube in a sentence: "Match play, 3 away against 5.
-/// Cube at 2, White's." A backgammon puzzle with no score is money play.
+/// Cube at 2, White's." The same words the board's picture captions
+/// (`oskol/puzzles/picture`): no score is unlimited play, and one point
+/// each way is a single game -- a 1-point match and a single game are the
+/// same position, unless it is marked Crawford, which only a match is.
 pub fn describe(q: Question) -> String {
-  let score = case q.away_mover, q.away_opponent {
-    0, 0 -> "Money play"
-    mine, theirs ->
+  let score = case q.away_mover, q.away_opponent, q.crawford {
+    0, 0, _ -> "Unlimited play"
+    1, 1, False -> "Single game"
+    mine, theirs, crawford ->
       "Match play, "
       <> int.to_string(mine)
       <> " away against "
       <> int.to_string(theirs)
-      <> case q.crawford {
+      <> case crawford {
         True -> ", Crawford"
         False -> ""
       }
@@ -179,21 +183,11 @@ pub fn describe(q: Question) -> String {
   score <> ". " <> cube <> " A backgammon puzzle: play it on the board."
 }
 
-/// The sentence the page asks in and a link preview repeats. A checker play
-/// names its roll; a cube question is two words, because the board and the
-/// score already say everything else.
+/// The sentence the page asks in, the head and the picture repeat, and a
+/// session lists a puzzle by: `oskol/puzzles.prompt`, the one sentence,
+/// asked from the solver's side.
 pub fn prompt(question: Question) -> String {
-  case question.kind, question.dice {
-    MoveKind, Some(#(high, low)) ->
-      "White to play "
-      <> int.to_string(high)
-      <> "-"
-      <> int.to_string(low)
-      <> ". What's your play?"
-    MoveKind, None -> "What's your play?"
-    Double, _ -> "Double?"
-    Take, _ -> "Take?"
-  }
+  puzzles.prompt(question)
 }
 
 /// The question as the person being asked sees it, which is not always the
@@ -1131,6 +1125,10 @@ pub fn mine_json(
           False -> name_of(room, source.player_id)
         }),
       ),
+      // The other seat, by its display name, so the line can say whose
+      // game it was: "From your game vs Charlie". The reader's own name is
+      // never sent back to them.
+      #("opponent", json.string(opponent_of(room, player_id))),
       #("played", json.string(source.played)),
       #("equity_lost", json.float(source.equity_lost)),
       #("grade", json.string(source.grade)),
@@ -1156,6 +1154,12 @@ fn unless_empty(value: String) -> Option(String) {
     "" -> None
     _ -> Some(value)
   }
+}
+
+fn opponent_of(room: caps.SourceRoom, player_id: String) -> String {
+  list.find(room.seats, fn(s) { s.0 != player_id })
+  |> result.map(fn(s) { s.1 })
+  |> result.unwrap("")
 }
 
 fn name_of(room: caps.SourceRoom, player_id: String) -> String {
@@ -1351,9 +1355,9 @@ fn prompt_of(source: caps.Source) -> String {
     Ok(question) -> prompt(question)
     Error(_) ->
       case source.kind {
-        "double" -> "Double?"
-        "take" -> "Take?"
-        _ -> "What's your play?"
+        "double" -> "White to play. Double?"
+        "take" -> "White is doubled. Take?"
+        _ -> "White to play the roll. What's your play?"
       }
   }
 }

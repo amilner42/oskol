@@ -157,14 +157,19 @@ defmodule Oskol.Puzzles do
         []
 
       held ->
+        # The day is the game's end -- the review row is opened the moment
+        # the game ends -- as the deck's ordering has it, and never the day
+        # the source was extracted, which a backfill would make today.
         from(s in Source,
           join: g in Game,
           on: g.id == s.game_id,
+          left_join: r in Review,
+          on: r.game_id == s.game_id and r.game_number == s.game_number,
           where: s.puzzle_id == ^puzzle_id,
           where: ^held,
           order_by: [desc: g.updated_at, desc: s.game_number, desc: s.turn],
           limit: 20,
-          select: {s, g.slug, g.players}
+          select: {s, g.slug, g.players, coalesce(r.inserted_at, s.inserted_at)}
         )
         |> Repo.all()
         |> with_names()
@@ -192,11 +197,13 @@ defmodule Oskol.Puzzles do
   # the record does, so the names are resolved here and never copied.
   defp with_names(rows) do
     resolved =
-      Oskol.Persistence.display_names(Enum.map(rows, fn {_s, _slug, players} -> players end))
+      Oskol.Persistence.display_names(Enum.map(rows, fn {_s, _slug, players, _} -> players end))
 
     rows
     |> Enum.zip(resolved)
-    |> Enum.map(fn {{source, slug, _}, players} -> {source, slug, players} end)
+    |> Enum.map(fn {{source, slug, _, ended_at}, players} ->
+      {source, slug, players, ended_at}
+    end)
   end
 
   # "a seat this guest took, or a seat this account owns". The same

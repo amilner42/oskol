@@ -18,6 +18,7 @@ import Api
 import Dict
 import Expect
 import Games.Backgammon.Puzzle as Puzzle exposing (Verdict(..))
+import Html
 import Html.Attributes
 import Json.Decode as D
 import Json.Encode as E
@@ -224,10 +225,36 @@ staging =
                     |> Expect.all
                         [ has [ id "pz-board" ]
                         , \q -> q |> Query.find [ id "pz-prompt" ] |> Query.has [ text "White to play 6-4. What's your play?" ]
-                        , \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "White 3 away, Black 5 away" ]
+                        , \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "White 3 away, Black 5 away · cube centred" ]
                         , hasNot [ id "pz-reveal" ]
                         , hasNot [ id "pz-share" ]
                         ]
+        , test "one point each way is a single game; marked Crawford it is a match; no score is unlimited" <|
+            \_ ->
+                let
+                    scored mover opp crawford =
+                        question "move"
+                            |> String.replace "\"mover_away\":3,\"opponent_away\":5" ("\"mover_away\":" ++ mover ++ ",\"opponent_away\":" ++ opp)
+                            |> String.replace "\"crawford\":false" ("\"crawford\":" ++ crawford)
+
+                    scoreLineOf json =
+                        case D.decodeString Puzzle.decoder json of
+                            Ok p ->
+                                let
+                                    ( fresh, _ ) =
+                                        Page.init Session.empty { id = "fix", hasNext = False, origin = "" }
+                                in
+                                rendered (step (GotPuzzle (Ok p)) fresh) |> Query.find [ id "pz-score" ]
+
+                            Err e ->
+                                Query.fromHtml (Html.text (D.errorToString e))
+                in
+                Expect.all
+                    [ \_ -> scoreLineOf (scored "1" "1" "false") |> Query.has [ text "Single game · cube centred" ]
+                    , \_ -> scoreLineOf (scored "1" "1" "true") |> Query.has [ text "White 1 away, Black 1 away · Crawford · cube centred" ]
+                    , \_ -> scoreLineOf (String.replace "\"score\":{\"mover_away\":3,\"opponent_away\":5}" "\"score\":null" (question "move")) |> Query.has [ text "Unlimited · cube centred" ]
+                    ]
+                    ()
         , test "a tap walks to a child and UNDO walks back" <|
             \_ ->
                 let
@@ -715,7 +742,7 @@ next =
 
 memoryJson : String
 memoryJson =
-    """{"ok":true,"who":"you","played":"24/23 13/11","equity_lost":0.11,"grade":"bad","date":"2026-09-12","result":{"won":false,"points":2},"replay":"/backgammon/000011/replay?game=2&step=6"}"""
+    """{"ok":true,"who":"you","opponent":"Charlie","played":"24/23 13/11","equity_lost":0.11,"grade":"bad","date":"2026-09-12","result":{"won":false,"points":2},"replay":"/backgammon/000011/replay?game=2&step=6"}"""
 
 
 memory : Test
@@ -744,14 +771,24 @@ memory =
             \_ ->
                 rendered (step (got memoryJson) after)
                     |> Expect.all
-                        [ \q -> q |> Query.find [ id "pz-memory" ] |> Query.has [ text "From your game on 12 Sep. You played 24/23 13/11, a bad move, and you lost 2 points." ]
+                        [ \q -> q |> Query.find [ id "pz-memory" ] |> Query.has [ text "From your game vs Charlie, 12 Sep. You played 24/23 13/11 (a bad move) and lost 2 points." ]
                         , \q -> q |> Query.find [ id "pz-memory-link" ] |> Query.has [ attribute (Html.Attributes.href "/backgammon/000011/replay?game=2&step=6") ]
                         ]
         , test "the opponent's mistake, by name, and a win" <|
             \_ ->
                 Page.memoryLine
-                    { who = "Charlie", played = "8/2 6/2", equityLost = 0.05, grade = "doubtful", date = "2026-01-03", result = Just { won = True, points = 1 }, replay = "/x" }
-                    |> Expect.equal "From your game on 3 Jan. Charlie played 8/2 6/2, a dubious move, and you won 1 point."
+                    { who = "Charlie", opponent = "Charlie", played = "8/2 6/2", equityLost = 0.05, grade = "doubtful", date = "2026-01-03", result = Just { won = True, points = 1 }, replay = "/x" }
+                    |> Expect.equal "From your game vs Charlie, 3 Jan. Charlie played 8/2 6/2 (a dubious move) and you won 1 point."
+        , test "a memory line without an opponent to name, or a result, still reads" <|
+            \_ ->
+                Page.memoryLine
+                    { who = "you", opponent = "", played = "8/2 6/2", equityLost = 0.11, grade = "bad", date = "2026-01-03", result = Nothing, replay = "/x" }
+                    |> Expect.equal "From your game, 3 Jan. You played 8/2 6/2 (a bad move)."
+        , test "a memory line missing the opponent fails to decode rather than naming nobody" <|
+            \_ ->
+                Api.parseBody Puzzle.memoryDecoder (String.replace "\"opponent\":\"Charlie\"," "" memoryJson)
+                    |> Result.toMaybe
+                    |> Expect.equal Nothing
         , test "on a 404: nothing, silently" <|
             \_ ->
                 rendered (step (got """{"ok":false,"error":{"code":"not_found","message":"You were not in the game that puzzle came from"}}""") after)
