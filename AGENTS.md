@@ -111,6 +111,22 @@ This is a web application written using the Phoenix web framework.
 - `mix deps.clean --all` is **almost never needed**. **Avoid** using it unless you have good reason
 <!-- phoenix:elixir-end -->
 
+### The retain dependency
+
+Spaced repetition for the puzzle deck is `retain` (amilner42/retain), our own
+library: a Leitner ladder over an append-only review log, in Oskol's own
+Postgres, with nothing to start. It is **pinned by commit, never a branch** --
+a player's schedule must not move because someone pushed upstream. Its tables
+arrive through `Retain.Migration`, one Oskol migration per schema version
+(`priv/repo/migrations/*_add_retain_v<NN>.exs`, from `mix retain.gen.migration`
+-- never edit one, add the next), and the ladder is
+`config :retain, intervals: [1, 1, 3, 7, 21, 58, 145, 365]`: level 0 is a day
+rather than retain's zero, so a puzzle just missed comes back tomorrow instead
+of later in the same session. Nothing outside
+`lib/oskol/gleam/caps/practice.ex` calls `Retain.*` -- above that it is the
+`practice` cap, in Gleam. A change retain needs is a PR there and a new `ref:`
+here, not a fork.
+
 <!-- phoenix:phoenix-start -->
 ## Phoenix guidelines
 
@@ -535,8 +551,9 @@ src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     decisions live in Gleam" below): core (ctx, session,
                     error, envelope), caps (the IO a handler may do),
                     rooms (codes, names, errors, invite), guests/identity,
-                    landing/copy, reviews/report, handlers (rooms, landing,
-                    reviews, record, ratings, auth)
+                    landing/copy, reviews/report, practice/deck (the puzzle
+                    deck), handlers (rooms, landing, reviews, record,
+                    ratings, auth)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
@@ -568,6 +585,16 @@ lib/oskol_web/controllers/page_controller.ex   "/:slug/:id" serves the same clie
 lib/oskol_web/controllers/removed_game_controller.ex   old /poker, /go, /chess links -> "/"
 lib/oskol/gleam/ctx_builder.ex   builds the Gleam Ctx and Session for a caller
 lib/oskol/gleam/caps/*.ex        the real IO behind src/oskol/caps/*.gleam
+src/oskol/caps/practice.gleam    the puzzle deck: what a player is drilling, what is
+                                 due now, how an attempt went, and the correction
+                                 after the reveal. The retain library is behind it and
+                                 nothing above this file knows that
+lib/oskol/gleam/caps/practice.ex its real IO, over retain: times cross as Unix ms, a
+                                 card's content as JSON text, tags sorted
+src/oskol/practice/deck.gleam    the deck's own rules: due before new, ten new a day,
+                                 KEEP GOING uncapped, and the sentence each refusal
+                                 gives the player (a puzzle not in the deck is the
+                                 only 404; a snooze needs a card in rotation)
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
 assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
 assets/src/Route.elm             the three client routes, mirroring the server's
