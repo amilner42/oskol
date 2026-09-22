@@ -26,8 +26,7 @@ defmodule Oskol.Gleam.CtxBuilder do
   def build(opts \\ []) do
     {:ctx, Caps.Analysis.build(), Caps.Auth.build(), Caps.Copy.build(), Caps.Guests.build(),
      Caps.Ids.build(opts), Caps.Persistence.build(), Caps.Practice.build(), Caps.Puzzles.build(),
-     Caps.Records.build(),
-     Caps.Rooms.build(opts)}
+     Caps.Records.build(), Caps.Rooms.build(opts)}
   end
 
   @doc """
