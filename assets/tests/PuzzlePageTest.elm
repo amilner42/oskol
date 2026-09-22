@@ -42,6 +42,8 @@ suite =
         , schedule
         , next
         , memory
+        , sharing
+        , story
         ]
 
 
@@ -83,7 +85,7 @@ page : { hasNext : Bool } -> String -> Page.Model
 page config name =
     let
         ( model, _ ) =
-            Page.init Session.empty { id = "fix", hasNext = config.hasNext, origin = "http://oskol.test" }
+            Page.init Session.empty { id = "fix", hasNext = config.hasNext, origin = "http://oskol.test", share = Nothing }
 
         loaded =
             case D.decodeString Puzzle.decoder (question name) of
@@ -242,7 +244,7 @@ staging =
                             Ok p ->
                                 let
                                     ( fresh, _ ) =
-                                        Page.init Session.empty { id = "fix", hasNext = False, origin = "" }
+                                        Page.init Session.empty { id = "fix", hasNext = False, origin = "", share = Nothing }
                                 in
                                 rendered (step (GotPuzzle (Ok p)) fresh) |> Query.find [ id "pz-score" ]
 
@@ -402,7 +404,7 @@ posting =
             \_ ->
                 let
                     ( fresh, _ ) =
-                        Page.init Session.empty { id = "fix", hasNext = False, origin = "" }
+                        Page.init Session.empty { id = "fix", hasNext = False, origin = "", share = Nothing }
 
                     model =
                         case D.decodeString Puzzle.decoder (question "move") of
@@ -795,4 +797,141 @@ memory =
                     |> hasNot [ id "pz-memory" ]
         , test "and never before the attempt" <|
             \_ -> rendered (page { hasNext = False } "move") |> hasNot [ id "pz-memory" ]
+        ]
+
+
+
+-- SHARING
+
+
+{-| The memory line as the opponent reads it: the mistake was Charlie's.
+-}
+theirMemoryJson : String
+theirMemoryJson =
+    String.replace "\"who\":\"you\"" "\"who\":\"Charlie\"" memoryJson
+
+
+sharing : Test
+sharing =
+    let
+        revealedPage =
+            let
+                model =
+                    page { hasNext = False } "move"
+
+                ( path, _ ) =
+                    aTurn model
+            in
+            model |> step (BoardOut (Puzzle.Stepped path)) |> revealed (reveal "move_fail")
+
+        got body =
+            case Api.parseBody Puzzle.memoryDecoder body of
+                Ok m ->
+                    GotMemory (Ok m)
+
+                Err e ->
+                    GotMemory (Err e)
+    in
+    describe "Share with my mistake"
+        [ test "is offered to the player whose own mistake it was" <|
+            \_ ->
+                rendered (step (got memoryJson) revealedPage)
+                    |> Expect.all
+                        [ has [ id "pz-share" ]
+                        , \q -> q |> Query.find [ id "pz-share-story" ] |> Query.has [ text "SHARE WITH MY MISTAKE" ]
+                        ]
+        , test "and not to the opponent, who has a memory line of their own" <|
+            \_ -> rendered (step (got theirMemoryJson) revealedPage) |> hasNot [ id "pz-share-story" ]
+        , test "nor to a stranger, who has none" <|
+            \_ ->
+                rendered (step (got """{"ok":false,"error":{"code":"not_found","message":"no"}}""") revealedPage)
+                    |> Expect.all [ has [ id "pz-share" ], hasNot [ id "pz-share-story" ] ]
+        , test "and never before the reveal" <|
+            \_ -> rendered (page { hasNext = False } "move") |> hasNot [ id "pz-share-story" ]
+        , test "the button says what the share sheet answered, and SHARE's label is left alone" <|
+            \_ ->
+                rendered (revealedPage |> step (got memoryJson) |> step ShareStory |> step (GotShare (Ok "/puzzles/fix?s=TOKEN0000001")) |> step (ShareReported "copied"))
+                    |> Expect.all
+                        [ \q -> q |> Query.find [ id "pz-share-story" ] |> Query.has [ text "Copied" ]
+                        , \q -> q |> Query.find [ id "pz-share" ] |> Query.has [ text "SHARE" ]
+                        ]
+        , test "a refusal says so" <|
+            \_ ->
+                rendered (revealedPage |> step (got memoryJson) |> step ShareStory |> step (GotShare (Err (Api.ApiError { code = "forbidden", message = "Only the player who made this mistake can share it" }))))
+                    |> Query.find [ id "pz-share-story" ]
+                    |> Query.has [ text "Copy failed" ]
+        ]
+
+
+
+-- THE STORY
+
+
+storyJson : String
+storyJson =
+    """{"name":"Arie","kind":"move","played":"24/23 13/11","grade":"bad","equity_lost":0.11,"date":"2026-09-12","result":{"won":false,"points":2},"headline":"Arie got this wrong. What's your play?","line":"Arie played 24/23 13/11 (a bad move) and lost 2 points."}"""
+
+
+{-| The reveal a page opened with `?s=` gets: the same answer, with the
+story where the plain page's `null` was.
+-}
+revealWithStory : String -> String
+revealWithStory name =
+    String.replace "\"story\":null" ("\"story\":" ++ storyJson) (reveal name)
+
+
+story : Test
+story =
+    let
+        opened share =
+            let
+                ( model, _ ) =
+                    Page.init Session.empty { id = "fix", hasNext = False, origin = "http://oskol.test", share = share }
+
+                loaded =
+                    case D.decodeString Puzzle.decoder (question "move") of
+                        Ok p ->
+                            GotPuzzle (Ok p)
+
+                        Err e ->
+                            GotPuzzle (Err (Api.DecodeError (D.errorToString e)))
+
+                withKey =
+                    model |> step loaded |> step (GotKey "key-0123")
+
+                ( path, _ ) =
+                    aTurn withKey
+            in
+            withKey |> step (BoardOut (Puzzle.Stepped path))
+    in
+    describe "the story a share link tells"
+        [ test "the token the page was opened with rides on the attempt" <|
+            \_ ->
+                Page.attemptBody (opened (Just "TOKEN0000001"))
+                    |> Maybe.map (E.encode 0)
+                    |> Maybe.map (String.contains "\"s\":\"TOKEN0000001\"")
+                    |> Expect.equal (Just True)
+        , test "and a plain page sends none" <|
+            \_ ->
+                Page.attemptBody (opened Nothing)
+                    |> Maybe.map (E.encode 0)
+                    |> Maybe.map (String.contains "\"s\":")
+                    |> Expect.equal (Just False)
+        , test "the reveal shows the story in the server's words, under the reveal" <|
+            \_ ->
+                rendered (opened (Just "TOKEN0000001") |> revealed (revealWithStory "move_fail"))
+                    |> Query.find [ id "pz-story" ]
+                    |> Query.has [ text "Arie played 24/23 13/11 (a bad move) and lost 2 points." ]
+        , test "and nothing where the answer carries none" <|
+            \_ -> rendered (opened Nothing |> revealed (reveal "move_fail")) |> hasNot [ id "pz-story" ]
+        , test "a story missing its line fails the reveal rather than showing nothing" <|
+            \_ ->
+                decodeReveal (String.replace ",\"line\":\"Arie played 24/23 13/11 (a bad move) and lost 2 points.\"" "" (revealWithStory "move_fail"))
+                    |> Result.toMaybe
+                    |> Expect.equal Nothing
+        , test "every fixture reveal decodes with the story slot present and empty" <|
+            \_ ->
+                [ "move_pass", "move_fail", "double_fail", "take_pass" ]
+                    |> List.map (\n -> decodeReveal (reveal n) |> Result.map .story)
+                    |> Expect.equal (List.repeat 4 (Ok Nothing))
         ]

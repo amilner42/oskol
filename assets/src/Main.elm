@@ -239,7 +239,7 @@ routeTo url oldModel =
         Just Route.Puzzles ->
             ( { model | page = NotFound }, Cmd.none )
 
-        Just (Route.Puzzle id) ->
+        Just (Route.Puzzle id share) ->
             let
                 -- The run stays a run only while the puzzle opened is one
                 -- of its own (NEXT, or back to the one before): a link to
@@ -255,6 +255,7 @@ routeTo url oldModel =
                 { id = id
                 , hasNext = nextInRun run /= Nothing
                 , origin = model.origin
+                , share = share
                 }
                 |> wrap { model | run = run } Puzzle PuzzleMsg
 

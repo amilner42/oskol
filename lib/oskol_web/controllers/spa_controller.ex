@@ -85,9 +85,20 @@ defmodule OskolWeb.SpaController do
   as the description. `oskol/handlers/puzzles.head` writes both, and they
   say nothing a puzzle does not say to everyone -- no name, no source game,
   no answer. A puzzle nobody stored is a 404 like an unknown game.
+
+  `?s=<token>` is a story link (`oskol/handlers/shares`): the title becomes
+  "Arie got this wrong. What's your play?" where the token opens a story
+  for this puzzle, and nothing changes where it does not. The canonical
+  URL stays the clean one either way, so a search engine sees one page.
   """
-  def puzzle(conn, %{"id" => id}) do
-    case :oskol@handlers@puzzles.head(Oskol.Gleam.CtxBuilder.build(), id) do
+  def puzzle(conn, %{"id" => id} = params) do
+    share =
+      case Map.get(params, "s") do
+        token when is_binary(token) -> token
+        _ -> ""
+      end
+
+    case :oskol@handlers@puzzles.head(Oskol.Gleam.CtxBuilder.build(), id, share) do
       {:ok, {:head, title, description}} ->
         conn
         |> assign(:page_title, title)

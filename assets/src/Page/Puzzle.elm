@@ -37,6 +37,14 @@ override the grade. For a player who was in the game the puzzle came from,
 either seat, `/mine` adds the memory line, asked for after the attempt and
 never before. A guest sees neither, and loses nothing.
 
+Sharing is two buttons after the reveal. SHARE copies the clean link. For
+the player whose own mistake it was (the memory line says "you"), "Share
+with my mistake" asks the server for a story link (`POST .../shares`) and
+copies that: it opens as the same puzzle with `?s=`, and after the friend's
+own attempt the reveal carries the `story` -- the sharer's name and move,
+in the server's words -- which this page shows under the memory line. The
+`?s=` the page was opened with rides on the attempt and nowhere else.
+
 The page is opened from a link most of the time and is complete on its
 own. NEXT appears only when the shell says there is a next puzzle: a
 practice run is the shell's (`Main`), because it outlives this page.
@@ -105,8 +113,19 @@ type alias Model =
     , outcomeError : Maybe String -- why the last override did not go through
     , memory : Maybe Puzzle.Memory
     , shareLabel : Maybe String
+    , share : Maybe String -- the ?s= this page was opened with: a story token
+    , storyLabel : Maybe String -- what "Share with my mistake" says right now
+    , sharing : Sharing -- which button the share sheet's answer is for
     , now : Int -- client time (ms) when the reveal landed, for "back in 7 days"
     }
+
+
+{-| The two share buttons report through one port, so the page remembers
+which of them is waiting for the answer.
+-}
+type Sharing
+    = CleanLink
+    | StoryLink
 
 
 type Msg
@@ -123,6 +142,8 @@ type Msg
     | GotOutcome String (Result Api.Error (Maybe Schedule))
     | GotMemory (Result Api.Error Puzzle.Memory)
     | Share
+    | ShareStory
+    | GotShare (Result Api.Error String)
     | ShareReported String
     | ShareLabelCleared
     | Next
@@ -137,7 +158,7 @@ type Out
     | WantsNext
 
 
-init : Session -> { id : String, hasNext : Bool, origin : String } -> ( Model, Cmd Msg )
+init : Session -> { id : String, hasNext : Bool, origin : String, share : Maybe String } -> ( Model, Cmd Msg )
 init session config =
     ( { session = session
       , id = config.id
@@ -157,6 +178,9 @@ init session config =
       , outcomeError = Nothing
       , memory = Nothing
       , shareLabel = Nothing
+      , share = config.share
+      , storyLabel = Nothing
+      , sharing = CleanLink
       , now = 0
       }
     , Cmd.batch
@@ -344,7 +368,20 @@ update msg model =
             stay { model | fetching = List.filter ((/=) node) model.fetching } Cmd.none
 
         Share ->
-            stay model (shareInvite (model.origin ++ Route.href (Route.puzzle model.id)))
+            stay { model | sharing = CleanLink } (shareInvite (model.origin ++ Route.href (Route.puzzle model.id)))
+
+        -- The story link is the server's to mint: only the seat that made
+        -- the mistake gets one, and the page copies what it is handed.
+        ShareStory ->
+            stay { model | sharing = StoryLink, storyLabel = Just "…" }
+                (Api.post model.session (base model.id ++ "/shares") (E.object []) (D.field "url" D.string) GotShare)
+
+        GotShare (Ok url) ->
+            stay model (shareInvite (model.origin ++ url))
+
+        GotShare (Err _) ->
+            stay { model | storyLabel = Just "Copy failed" }
+                (Process.sleep 1500 |> Task.perform (\_ -> ShareLabelCleared))
 
         ShareReported result ->
             let
@@ -359,11 +396,18 @@ update msg model =
                         _ ->
                             Just "Copy failed"
             in
-            stay { model | shareLabel = label }
+            stay
+                (case model.sharing of
+                    CleanLink ->
+                        { model | shareLabel = label }
+
+                    StoryLink ->
+                        { model | storyLabel = label }
+                )
                 (Process.sleep 1500 |> Task.perform (\_ -> ShareLabelCleared))
 
         ShareLabelCleared ->
-            stay { model | shareLabel = Nothing } Cmd.none
+            stay { model | shareLabel = Nothing, storyLabel = Nothing } Cmd.none
 
         Next ->
             ( model, Cmd.none, WantsNext )
@@ -462,13 +506,15 @@ attemptBody model =
                             if node.terminal then
                                 Just
                                     (E.object
-                                        [ ( "moves"
-                                          , E.list
+                                        ([ ( "moves"
+                                           , E.list
                                                 (\m -> E.object [ ( "from", E.string m.from ), ( "to", E.string m.to ), ( "die", E.int m.die ) ])
                                                 moves
-                                          )
-                                        , ( "key", E.string model.key )
-                                        ]
+                                           )
+                                         , ( "key", E.string model.key )
+                                         ]
+                                            ++ shareField model
+                                        )
                                     )
 
                             else
@@ -481,13 +527,26 @@ attemptBody model =
                     Nothing
 
                 ( _, _, Just band ) ->
-                    Just (E.object [ ( "band", E.int band ), ( "key", E.string model.key ) ])
+                    Just (E.object ([ ( "band", E.int band ), ( "key", E.string model.key ) ] ++ shareField model))
 
                 _ ->
                     Nothing
 
         _ ->
             Nothing
+
+
+{-| The story token the page was opened with, for the attempt: the story
+it opens is on the reveal and nowhere earlier.
+-}
+shareField : Model -> List ( String, E.Value )
+shareField model =
+    case model.share of
+        Just token ->
+            [ ( "s", E.string token ) ]
+
+        Nothing ->
+            []
 
 
 subscriptions : Model -> Sub Msg
@@ -800,11 +859,22 @@ viewControls model puzzle =
                     , text (Maybe.withDefault "SHARE" model.shareLabel)
                     ]
 
-                 -- "Share with my mistake" (a link that unfurls with the
-                 -- sharer's name and move) goes here once `puzzles-share-story`
-                 -- mints it: a second button for the seat that made the
-                 -- mistake, next to this one.
                  ]
+                    -- "Share with my mistake": a link that unfurls with the
+                    -- sharer's name and move, for the seat that made the
+                    -- mistake and nobody else. The memory line already
+                    -- said whose mistake it was; the server refuses anyone
+                    -- else anyway.
+                    ++ (if Maybe.map .who model.memory == Just "you" then
+                            [ button [ class "q-btn plain pz-action", id "pz-share-story", onClick ShareStory ]
+                                [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
+                                , text (Maybe.withDefault "SHARE WITH MY MISTAKE" model.storyLabel)
+                                ]
+                            ]
+
+                        else
+                            []
+                       )
                     ++ (if model.hasNext then
                             [ button [ class "q-btn pz-action", id "pz-next", onClick Next ]
                                 [ text "NEXT", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
@@ -863,6 +933,7 @@ viewReveal model puzzle reveal =
                )
             ++ viewSchedule model reveal
             ++ viewMemory model
+            ++ viewStory reveal
         )
 
 
@@ -1226,6 +1297,20 @@ viewMemory model =
                 , a [ href memory.replay, class "pz-memory-link", id "pz-memory-link" ] [ text "See it in the replay →" ]
                 ]
             ]
+
+
+{-| The story a share-with-my-story link told, in the server's own words:
+"Arie played 24/23 13/11 (a bad move) and lost 2 points." Only on the
+reveal, and only where the page was opened with the token.
+-}
+viewStory : Reveal -> List (Html Msg)
+viewStory reveal =
+    case reveal.story of
+        Nothing ->
+            []
+
+        Just story ->
+            [ div [ class "pz-memory pz-story", id "pz-story" ] [ text story.line ] ]
 
 
 {-| "From your game vs Charlie, 12 Sep. You played 24/23 13/11 (a bad

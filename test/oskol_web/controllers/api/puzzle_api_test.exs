@@ -18,6 +18,8 @@ defmodule OskolWeb.Api.PuzzleApiTest do
   # sandbox, not async.
   use OskolWeb.ConnCase, async: false
 
+  import Ecto.Query, only: [from: 2]
+
   alias Oskol.Puzzles
   alias Oskol.Puzzles.TreeCache
   alias Oskol.Repo
@@ -264,6 +266,229 @@ defmodule OskolWeb.Api.PuzzleApiTest do
         |> json_response(404)
 
       assert %{"ok" => false, "error" => %{"code" => "not_found"}} = body
+    end
+  end
+
+  # A finished game the puzzle came from: Arie (seat p1) made the mistake,
+  # Charlie sat opposite. Returns the guest ids holding each seat.
+  defp a_source_game(puzzle_id, opts \\ []) do
+    arie = Keyword.get(opts, :arie, new_guest_id())
+    charlie = new_guest_id()
+    game_id = "share-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
+
+    Repo.insert!(%Oskol.Persistence.Game{
+      id: game_id,
+      slug: "backgammon",
+      config: %{"format" => "single"},
+      seed: 3,
+      players: [
+        Map.merge(
+          %{"id" => "p1", "name" => "Arie", "guest_id" => arie},
+          Keyword.get(opts, :p1, %{})
+        ),
+        %{"id" => "p2", "name" => "Charlie", "guest_id" => charlie}
+      ],
+      status: "finished",
+      winners: ["p2"]
+    })
+
+    Repo.insert!(%Puzzles.Source{
+      puzzle_id: puzzle_id,
+      game_id: game_id,
+      game_number: 1,
+      turn: 4,
+      kind: "move",
+      seat: 0,
+      player_id: "p1",
+      played: "24/23 13/11",
+      equity_lost: 0.11,
+      grade: "bad"
+    })
+
+    %{game_id: game_id, arie: arie, charlie: charlie}
+  end
+
+  @token ~r/^[0-9A-HJKMNP-TV-Z]{12}$/
+
+  describe "POST /papi/puzzles/:id/shares" do
+    test "the seat that made the mistake mints a link, and the same one again", %{conn: conn} do
+      {id, _} = seed_puzzle("move")
+      %{arie: arie} = a_source_game(id)
+
+      first =
+        conn
+        |> put_req_cookie(@cookie, arie)
+        |> with_csrf()
+        |> post(~p"/papi/puzzles/#{id}/shares", %{})
+        |> json_response(200)
+
+      assert %{"ok" => true, "token" => token, "url" => url} = first
+      assert token =~ @token
+      assert url == "/puzzles/#{id}?s=#{token}"
+
+      again =
+        conn
+        |> put_req_cookie(@cookie, arie)
+        |> with_csrf()
+        |> post(~p"/papi/puzzles/#{id}/shares", %{})
+        |> json_response(200)
+
+      assert again["token"] == token
+      assert Repo.aggregate(Puzzles.Share, :count) == 1
+      assert Repo.get!(Puzzles.Share, token).shared_name == "Arie"
+      assert Repo.get!(Puzzles.Share, token).shared_by == arie
+    end
+
+    test "an owned seat mints as its account, from any browser, under its username", %{
+      conn: conn
+    } do
+      {id, _} = seed_puzzle("move")
+
+      user =
+        Oskol.Auth.find_or_create_user("share-#{System.unique_integer([:positive])}@oskol.test")
+
+      # An account is named at its first sign-in; this one signed in as arie1.
+      Repo.update_all(from(u in Oskol.Auth.User, where: u.id == ^user.id), set: [name: "arie1"])
+      %{arie: old_guest} = a_source_game(id, p1: %{"user_id" => user.id})
+
+      # A fresh browser signed in as the account.
+      browser = new_guest_id()
+      Oskol.Guests.touch(browser)
+
+      Repo.update_all(from(g in Oskol.Guests.Guest, where: g.id == ^browser),
+        set: [user_id: user.id]
+      )
+
+      body =
+        conn
+        |> put_req_cookie(@cookie, browser)
+        |> with_csrf()
+        |> post(~p"/papi/puzzles/#{id}/shares", %{})
+        |> json_response(200)
+
+      share = Repo.get!(Puzzles.Share, body["token"])
+      assert share.shared_by == user.id
+      # The username, not the name typed at the door.
+      assert share.shared_name == "arie1"
+
+      # The guest that used to hold the seat holds nothing now.
+      refused =
+        conn
+        |> put_req_cookie(@cookie, old_guest)
+        |> with_csrf()
+        |> post(~p"/papi/puzzles/#{id}/shares", %{})
+        |> json_response(403)
+
+      assert refused["error"]["code"] == "forbidden"
+    end
+
+    test "the opponent and a stranger are both refused, in the same words", %{conn: conn} do
+      {id, _} = seed_puzzle("move")
+      %{charlie: charlie} = a_source_game(id)
+
+      for guest <- [charlie, new_guest_id()] do
+        body =
+          conn
+          |> put_req_cookie(@cookie, guest)
+          |> with_csrf()
+          |> post(~p"/papi/puzzles/#{id}/shares", %{})
+          |> json_response(403)
+
+        assert body == %{
+                 "ok" => false,
+                 "error" => %{
+                   "code" => "forbidden",
+                   "message" => "Only the player who made this mistake can share it"
+                 }
+               }
+      end
+
+      assert Repo.aggregate(Puzzles.Share, :count) == 0
+    end
+
+    test "a puzzle nobody stored is a 404, and a GET mints nothing", %{conn: conn} do
+      {id, _} = seed_puzzle("move")
+      %{arie: arie} = a_source_game(id)
+
+      conn
+      |> put_req_cookie(@cookie, arie)
+      |> with_csrf()
+      |> post(~p"/papi/puzzles/nosuchpz/shares", %{})
+      |> json_response(404)
+
+      assert conn
+             |> put_req_cookie(@cookie, arie)
+             |> get(~p"/papi/puzzles/#{id}/shares")
+             |> response(404)
+
+      assert Repo.aggregate(Puzzles.Share, :count) == 0
+    end
+  end
+
+  describe "the story on the attempt" do
+    test "a valid token puts the sharer's story on the reveal, and only there", %{conn: conn} do
+      {id, payload} = seed_puzzle("move")
+      %{arie: arie} = a_source_game(id)
+
+      %{"token" => token} =
+        conn
+        |> put_req_cookie(@cookie, arie)
+        |> with_csrf()
+        |> post(~p"/papi/puzzles/#{id}/shares", %{})
+        |> json_response(200)
+
+      # The question, with the token: nothing extra, nothing named.
+      shown = conn |> get(~p"/papi/puzzles/#{id}?s=#{token}") |> json_response(200)
+      refute Map.has_key?(shown, "story")
+      refute Jason.encode!(shown) =~ "Arie"
+
+      # A friend's attempt, with the token.
+      body =
+        conn
+        |> with_csrf()
+        |> post(~p"/papi/puzzles/#{id}/attempts", %{
+          "moves" => path_through(payload),
+          "key" => "friend-1",
+          "s" => token
+        })
+        |> json_response(200)
+
+      assert %{"story" => story} = body
+      assert story["name"] == "Arie"
+      assert story["played"] == "24/23 13/11"
+      assert story["grade"] == "bad"
+      assert story["line"] == "Arie played 24/23 13/11 (a bad move)."
+      assert story["headline"] == "Arie got this wrong. What's your play?"
+      # The opponent is nowhere in it.
+      refute Jason.encode!(body) =~ "Charlie"
+    end
+
+    test "an unknown token, another puzzle's, or none: no story, no error", %{conn: conn} do
+      {id, payload} = seed_puzzle("move")
+      {other, _} = seed_puzzle("double")
+      %{arie: arie} = a_source_game(other)
+
+      %{"token" => token} =
+        conn
+        |> put_req_cookie(@cookie, arie)
+        |> with_csrf()
+        |> post(~p"/papi/puzzles/#{other}/shares", %{})
+        |> json_response(200)
+
+      for {s, key} <- [{"NOSUCHTOKEN0", "k1"}, {token, "k2"}, {"", "k3"}] do
+        body =
+          conn
+          |> with_csrf()
+          |> post(~p"/papi/puzzles/#{id}/attempts", %{
+            "moves" => path_through(payload),
+            "key" => key,
+            "s" => s
+          })
+          |> json_response(200)
+
+        assert body["story"] == nil, s
+        refute Jason.encode!(body) =~ "Arie", s
+      end
     end
   end
 

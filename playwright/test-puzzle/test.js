@@ -17,7 +17,14 @@
  *     account's deck; on the puzzle the reveal ends with the level line and
  *     the four buttons, one preselected, and the memory line "You played
  *     ..."; SOONER puts it back to the start: "back tomorrow".
- *  4. Phones: 390x844, 320x568 and 844x390: nothing scrolls sideways, the
+ *  4. Share with my mistake: only that player's page offers it (not the
+ *     stranger's, not the opponent's, and the opponent's POST is a 403).
+ *     Pressed, it copies a `?s=` link whose head says "Alice got this
+ *     wrong. What's your play?" and whose canonical is the clean page. A
+ *     friend in a fresh browser opens it, tries, and reads "Alice played
+ *     ... and lost N points"; Bob's name is nowhere on that page, and the
+ *     clean link (step 1) told no story.
+ *  5. Phones: 390x844, 320x568 and 844x390: nothing scrolls sideways, the
  *     board fits, and upright it is the table's own size.
  *
  * Run with the dev server up (/dev routes on):
@@ -154,6 +161,8 @@ async function run(browser, setup, errors) {
     must(!(await stranger.locator('#bg-action-play').count()), 'the board is a picture once the answer is in');
     must(!(await stranger.locator('#pz-level').count()), 'a guest has no level line');
     must(!(await stranger.locator('#pz-memory').count()), 'a stranger has no memory line');
+    must(!(await stranger.locator('#pz-story').count()), 'the clean link tells no story');
+    must(!(await stranger.locator('#pz-share-story').count()), 'a stranger cannot share a mistake');
     must(!(await stranger.locator('#pz-next').count()), 'a puzzle opened from a link has no NEXT');
     const attempts = requests.filter((r) => r.path.endsWith('/attempts'));
     must(attempts.length === 1 && attempts[0].method === 'POST', 'one attempt was posted');
@@ -195,6 +204,13 @@ async function run(browser, setup, errors) {
     const bobLink = await bob.getAttribute('#pz-memory-link', 'href');
     must(bobLink.startsWith(`/backgammon/${setup.game_id}/replay?game=1&step=`), `it links to the moment in the replay: ${bobLink}`);
     must(!(await bob.locator('#pz-level').count()), 'a guest, seated or not, has no level line');
+    must(!(await bob.locator('#pz-share-story').count()), 'the opponent is not offered "Share with my mistake"');
+    const bobMint = await bob.evaluate(async (id) => {
+      const csrf = document.querySelector('meta[name="csrf-token"]').content;
+      const res = await fetch(`/papi/puzzles/${id}/shares`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': csrf }, body: '{}' });
+      return { status: res.status, body: await res.json() };
+    }, puzzle.id);
+    must(bobMint.status === 403 && bobMint.body.error.code === 'forbidden', `and the server refuses the opponent's POST: ${bobMint.status} ${bobMint.body.error.message}`);
 
     // ---- 3. the player who made the mistake, signed in ----
     const aliceContext = await seatedContext(browser, setup.players[0].guest, { viewport: { width: 390, height: 844 } });
@@ -259,7 +275,64 @@ async function run(browser, setup, errors) {
     const sooner = (await alice.textContent('#pz-level-line')).trim();
     must(/^Level \d+ → 0 · back tomorrow$/.test(sooner) || /^Level 0 · back tomorrow$/.test(sooner), `SOONER puts it back to the start: "${sooner}"`);
 
-    // ---- 4. phones ----
+    // ---- 4. share with my mistake ----
+    await aliceContext.grantPermissions(['clipboard-read', 'clipboard-write']);
+    must((await alice.locator('#pz-share-story').count()) === 1, 'the player whose mistake it was is offered "Share with my mistake"');
+    // Alice signed in, so her seat is the account's and the story names the
+    // account by its username, whatever it was called at the door.
+    const me = await (await alice.request.get(`${BASE}/papi/me`)).json();
+    const sharer = me.user && me.user.name;
+    must(sharer && sharer !== 'Bob', `the sharer is the account, shown as "${sharer}"`);
+    const mintStarted = new Map();
+    alice.on('request', (r) => { if (r.url().endsWith('/shares') && r.method() === 'POST') mintStarted.set(r, Date.now()); });
+    alice.on('response', (r) => {
+      const started = mintStarted.get(r.request());
+      if (started) log(`measured: POST /shares answered ${r.status()} in ${Date.now() - started} ms`);
+    });
+    await alice.click('#pz-share-story');
+    await alice.waitForFunction(() => document.querySelector('#pz-share-story').textContent.trim() === 'Copied', null, { timeout: 5000 });
+    const storyUrl = await alice.evaluate(() => navigator.clipboard.readText());
+    const storyMatch = storyUrl.match(new RegExp(`^${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\?s=([0-9A-HJKMNP-TV-Z]{12})$`));
+    must(storyMatch, `it copied a story link: ${storyUrl}`);
+    await alice.click('#pz-share-story');
+    await alice.waitForFunction(() => document.querySelector('#pz-share-story').textContent.trim() === 'Copied', null, { timeout: 5000 });
+    must((await alice.evaluate(() => navigator.clipboard.readText())) === storyUrl, 'and pressing it again copies the same link');
+
+    // The head a chat app reads off the story link.
+    const storyHead = await (await alice.request.get(storyUrl)).text();
+    must(storyHead.includes(`property="og:title" content="${sharer} got this wrong. What&#39;s your play?"`), `the story link unfurls as "${sharer} got this wrong. What's your play?"`);
+    // The canonical's host is the endpoint's own (config, not PORT); its
+    // path is what matters: the clean page, no token.
+    const canonical = (storyHead.match(/<link[^>]*rel="canonical"[^>]*href="([^"]+)"/) || [])[1] || '';
+    must(canonical.endsWith(`/puzzles/${puzzle.id}`), `and its canonical is the clean page: ${canonical}`);
+    must(!storyHead.includes('Bob') && !storyHead.includes(puzzle.played), 'the head names no opponent and gives away no move');
+    const plainHead = await (await alice.request.get(url)).text();
+    must(!plainHead.includes('got this wrong'), 'the clean link\'s head is the plain question');
+
+    // A friend, in a fresh browser.
+    const friend = await open('friend', await browser.newContext({ viewport: { width: 390, height: 844 } }));
+    await friend.goto(storyUrl);
+    await friend.waitForSelector('#pz-board .bg-stack');
+    must(!(await friend.locator('#pz-story').count()), 'the friend reads no story before trying');
+    must(friend.url() === storyUrl, `the page keeps the token in the address bar: ${friend.url()}`);
+    friend.on('response', async (r) => {
+      if (r.url().includes('/attempts') && r.request().method() === 'POST') {
+        const body = await r.text();
+        const story = (JSON.parse(body).story || {});
+        log(`measured: the reveal with a story is ${body.length} bytes, the story itself ${JSON.stringify(story).length}`);
+      }
+    });
+    await stageATurn(friend);
+    await friend.click('#bg-action-play');
+    await friend.waitForSelector('#pz-story');
+    const storyLine = (await friend.textContent('#pz-story')).trim();
+    must(new RegExp(`^${sharer} played .+ \\(a (dubious|bad|very bad) move\\)( and (lost \\d+ points?|won anyway))?\\.$`).test(storyLine), `the story: "${storyLine}"`);
+    must(storyLine.includes(`${sharer} played ${puzzle.played}`), 'and it is the move Alice really played');
+    const friendPage = await friend.evaluate(() => document.body.innerText);
+    must(!friendPage.includes('Bob'), 'the opponent\'s name is nowhere on the friend\'s page');
+    must(!(await friend.locator('#pz-memory').count()) && !(await friend.locator('#pz-share-story').count()), 'the friend has no memory line and nothing to share of their own');
+
+    // ---- 5. phones ----
     const table = await bob.context().newPage();
     await table.goto(`${BASE}/backgammon/${setup.game_id}`);
     await table.waitForSelector('.bg-page .bg-board');
