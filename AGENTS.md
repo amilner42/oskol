@@ -591,7 +591,13 @@ assets/src/Ui/Scrub.elm          one row of plates (arrows outside, buttons betw
                                  the table's board and the replay's, the same on both
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Backgammon/View.elm  the backgammon board (and the two
-                                 player bars: name, presence dot, match PR)
+                                 player bars: name, presence dot, match PR);
+                                 `viewStill` draws one position, `viewPlay` the
+                                 same slab with its taps switched on
+assets/src/Games/Backgammon/Puzzle.elm  a puzzle as the wire sends it (the
+                                 question and the DAG of legal moves) and the
+                                 board it is played on: a tap walks to a child,
+                                 undo walks back, PLAY on a terminal node
 assets/src/View/Clock.elm        clock display
 assets/css/app.css               the multicade/notebook design system (paper, pixel,
                                  pix, btn-arcade, tile, bg-board...)
