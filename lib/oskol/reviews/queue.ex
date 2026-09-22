@@ -93,10 +93,17 @@ defmodule Oskol.Reviews.Queue do
   The mark only says "look": the job skips stored grades, and a room
   already queued or running is not queued again. A request whose answer
   was lost in a crash may be retried within the attempt budget.
+
+  The same scan picks up a room whose game is graded but whose puzzles
+  were never written -- a crash between the two, or a game reviewed before
+  puzzles existed. That costs a replay and no engine time: the job reads
+  the answer already stored. It is bounded the same way, by attempts
+  charged before each try.
   """
   def sweep_owed do
     if enabled?() do
-      owed = Oskol.Reviews.rooms_owed_analysis()
+      owed = Enum.uniq(Oskol.Reviews.rooms_owed_analysis() ++ Oskol.Puzzles.rooms_owed_puzzles())
+
       GenServer.cast(__MODULE__, {:recover, owed})
       length(owed)
     else

@@ -40,6 +40,10 @@ defmodule Oskol.Reviews do
       field(:report, :map)
       # How many turns this game had; 0 is a game with nothing to grade.
       field(:turns, :integer)
+      # When this game's puzzles were written (Oskol.Puzzles), and how many
+      # tries that has taken. Set in the same transaction as the rows.
+      field(:puzzles_extracted_at, :utc_datetime_usec)
+      field(:puzzles_attempts, :integer, default: 0)
 
       timestamps(type: :utc_datetime_usec)
     end

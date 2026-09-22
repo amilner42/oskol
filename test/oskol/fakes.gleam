@@ -11,6 +11,7 @@ import oskol/caps/copy as copy_caps
 import oskol/caps/guests as guests_caps
 import oskol/caps/ids as ids_caps
 import oskol/caps/persistence as persistence_caps
+import oskol/caps/puzzles as puzzles_caps
 import oskol/caps/records as records_caps
 import oskol/caps/rooms as rooms_caps
 import oskol/core/ctx.{type Ctx, Ctx}
@@ -26,6 +27,7 @@ pub fn ctx() -> Ctx {
     guests: guests_caps.stub(),
     ids: ids_caps.stub(),
     persistence: persistence_caps.stub(),
+    puzzles: puzzles_caps.stub(),
     records: records_caps.stub(),
     rooms: rooms_caps.stub(),
   )

@@ -25,6 +25,7 @@ import oskol/caps/analysis.{
   type GameLog, type Stored, AnalysisCaps, Done, Failed, GameLog, LogEntry,
   Pending, Stored,
 } as caps
+import oskol/caps/puzzles as puzzles_caps
 import oskol/caps/records as records_caps
 import oskol/caps/rooms as rooms_caps
 import oskol/core/ctx.{type Ctx, Ctx}
@@ -171,6 +172,12 @@ fn put_rows(key: String, value: List(Row)) -> Dynamic
 fn get_rows(key: String) -> List(Row)
 
 @external(erlang, "erlang", "put")
+fn put_ints(key: String, value: List(Int)) -> Dynamic
+
+@external(erlang, "erlang", "get")
+fn get_ints(key: String) -> List(Int)
+
+@external(erlang, "erlang", "put")
 fn put_records(key: String, value: List(#(Int, String))) -> Dynamic
 
 @external(erlang, "erlang", "get")
@@ -216,6 +223,8 @@ fn with_analysis(
   forget("requests")
   forget("replays")
   forget("backfills")
+  forget("extractions")
+  let _ = put_ints("extracted", [])
   let _ = put_rows("rows", stored)
   let _ = put_records("records", [])
   Ctx(
@@ -311,6 +320,32 @@ fn with_analysis(
         answer(body)
       },
     ),
+    puzzles: puzzles_caps.PuzzlesCaps(
+      unextracted: fn(_) {
+        // A graded game whose puzzles have not been written yet: the rows
+        // the sweep's partial index answers with.
+        get_rows("rows")
+        |> list.filter(fn(row) {
+          { row.0 }.status == Done && { row.0 }.response_json != None
+        })
+        |> list.map(fn(row) { { row.0 }.game_number })
+        |> list.filter(fn(number) {
+          !list.contains(get_ints("extracted"), number)
+        })
+      },
+      store: fn(_, number, puzzles, sources) {
+        record_call(
+          "extractions",
+          int.to_string(number)
+            <> ":"
+            <> int.to_string(list.length(puzzles))
+            <> ":"
+            <> int.to_string(list.length(sources)),
+        )
+        let _ = put_ints("extracted", [number, ..get_ints("extracted")])
+        Ok(Nil)
+      },
+    ),
     records: records_caps.RecordsCaps(
       setup: fn(id) {
         case id {
@@ -339,6 +374,90 @@ fn with_analysis(
 
 fn no_engine(_body: String) -> Result(String, String) {
   panic as "the engine should not be asked"
+}
+
+/// The same room, with a write path that refuses. Extraction is a bonus on
+/// top of a review that is already stored, so nothing about the review may
+/// change when it fails.
+fn with_failing_extraction(ctx: Ctx) -> Ctx {
+  Ctx(
+    ..ctx,
+    puzzles: puzzles_caps.PuzzlesCaps(..ctx.puzzles, store: fn(_, _, _, _) {
+      record_call("extractions", "refused")
+      Error("the database said no")
+    }),
+  )
+}
+
+// ---------- Puzzles, written where the pre-move boards are ----------
+
+pub fn a_reviewed_game_writes_its_puzzles_test() {
+  let log = finished_log(4)
+  let n = turn_count(log, 1)
+  let ctx = with_analysis(log, [], fn(_) { Ok(engine_answer(n)) })
+  assert reviews.run(ctx, "123456") == None
+  // One extraction, for game 1, with a source for every mistake the engine
+  // found. Every move in this answer is doubtful, so every turn that was
+  // not a dance is one.
+  let assert [extraction] = recorded("extractions")
+  assert string.starts_with(extraction, "1:")
+  assert !string.ends_with(extraction, ":0")
+}
+
+pub fn a_rerun_writes_no_puzzles_again_test() {
+  let log = finished_log(4)
+  let n = turn_count(log, 1)
+  let ctx = with_analysis(log, [], fn(_) { Ok(engine_answer(n)) })
+  assert reviews.run(ctx, "123456") == None
+  // The engine is not asked again, and neither is the write path: the
+  // marker the first extraction left is what says so.
+  assert reviews.run(without_the_engine(ctx), "123456") == None
+  assert list.length(recorded("extractions")) == 1
+}
+
+pub fn a_graded_game_whose_puzzles_were_lost_is_extracted_without_the_engine_test() {
+  // A crash between the answer landing and the extraction, or a game
+  // graded before puzzles existed: the sweep queues the room and the job
+  // reads the answer already stored.
+  let log = finished_log(4)
+  let ctx = with_analysis(log, [answered(log, 1)], no_engine)
+  assert reviews.run(ctx, "123456") == None
+  assert recorded("requests") == []
+  let assert [extraction] = recorded("extractions")
+  assert string.starts_with(extraction, "1:")
+  // Nothing about the stored review moved: it was already done and
+  // rendered.
+  assert recorded("saves") == []
+}
+
+pub fn an_extraction_that_fails_leaves_the_review_alone_test() {
+  let log = finished_log(4)
+  let n = turn_count(log, 1)
+  let ctx =
+    with_failing_extraction(
+      with_analysis(log, [], fn(_) { Ok(engine_answer(n)) }),
+    )
+  assert reviews.run(ctx, "123456") == None
+  assert recorded("extractions") == ["refused"]
+  // The review landed exactly as it would have.
+  assert list.reverse(recorded("saves"))
+    == ["1:pending:1:none:none", "1:done:1:body:page"]
+  let assert Ok(body) =
+    reviews.reviews_json(ctx, fakes.no_guest(), "backgammon", "123456")
+  assert string.contains(body, "\"status\":\"done\"")
+  // And the game is still owed its puzzles, for the sweep to come back to.
+  assert ctx.puzzles.unextracted("123456") == [1]
+}
+
+/// The same room with the engine out of reach: what the sweep sees on a
+/// second visit, where everything that needs the engine is already done.
+fn without_the_engine(ctx: Ctx) -> Ctx {
+  Ctx(
+    ..ctx,
+    analysis: AnalysisCaps(..ctx.analysis, review: fn(_) {
+      panic as "the engine should not be asked again"
+    }),
+  )
 }
 
 pub fn recovery_of_a_crashed_final_attempt_exposes_failure_without_more_engine_work_test() {
