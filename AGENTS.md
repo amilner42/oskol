@@ -612,7 +612,16 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  MOVE and CUBE tabs, each a sentence in words (built from
                                  the chances) over the numbers in columns
 assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay reads them:
-                                 decoders, the board at each step, verdicts per record line
+                                 decoders, the board at each step, verdicts per record line;
+                                 the engine's cube call is read once here, into `Optimal`
+                                 (no double, double/take, double/pass, or a word a later
+                                 engine wrote), and its answer into `Response`
+assets/src/Games/Backgammon/Words.elm   the engine's verdict in words and numbers, pure:
+                                 the move's two sentences, the cube's from either side,
+                                 the three equities with the call in ink, the chance cells
+                                 and grade tags. The replay reads it and the puzzle
+                                 reveal will; `tooGood` is the twin of Gleam's
+                                 `oskol/puzzles.too_good` and moves with it
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
 assets/src/Ui/Scrub.elm          one row of plates (arrows outside, buttons between) under
                                  the table's board and the replay's, the same on both
@@ -1165,6 +1174,11 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   (`ReplayFixtures`): decoders, the board at every step, stepping, keys,
   swipes, game switching, and the analysis filling in without moving the
   viewer; polling only while something is pending.
+- `WordsTest`: the verdict sentences where they are written, on made-up
+  verdicts -- every move grade with its gains and costs, every cube call
+  from both sides of the cube, the too-good rule the Gleam twin shares,
+  and the engine's three words read into `Optimal` (a fourth falls back
+  rather than being guessed at).
 
 **Elixir (`mix test`)**
 - `test/oskol/room_test.exs`: `Oskol.Bots` (test_support) plays random
