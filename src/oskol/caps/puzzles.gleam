@@ -9,6 +9,7 @@
 //// is new, and running the same extraction again writes nothing.
 
 import gleam/option.{type Option}
+import oskol/rooms/seat.{type Seat}
 
 /// A puzzle to write, unless its key is already there.
 pub type NewPuzzle {
@@ -52,6 +53,40 @@ pub type NewSource {
   )
 }
 
+/// One stored mistake, as the deck reads it: which puzzle it points at,
+/// what it asks, and the seat that made it.
+///
+/// The seat rides along so that **the holder rule decides whose mistake
+/// this is, not the query**. The queries behind these capabilities narrow
+/// by a guest id or an account id the way `seated_rooms` does -- a coarse,
+/// indexed containment test over `games.players` -- and `rooms/seat.holder`
+/// then says which of the rows that came back are really the caller's.
+pub type DeckSource {
+  DeckSource(
+    /// The `puzzle_sources` row, so a sync stamps exactly what it enrolled.
+    source_id: Int,
+    puzzle_id: String,
+    /// "move", "double" or "take".
+    kind: String,
+    /// The stored question, as JSON text: what a prompt is built from, and
+    /// what a card carries so a session needs no second query. A question
+    /// is immutable (it is the puzzle's key), so a copy of one cannot go
+    /// stale.
+    question_json: String,
+    /// When the game this came from ended, in Unix milliseconds -- read off
+    /// the moment its mistakes were written down, which follows the game's
+    /// end by seconds and never puts two games in the wrong order. New
+    /// cards are introduced newest game first.
+    ended_ms: Int,
+    seat: Seat,
+  )
+}
+
+/// An account the deck sweep still owes work to, and where that work is.
+pub type Pending {
+  Pending(user_id: String, game_ids: List(String), sources: Int)
+}
+
 pub type PuzzlesCaps {
   PuzzlesCaps(
     /// The game numbers of a room whose review the engine has answered and
@@ -73,6 +108,31 @@ pub type PuzzlesCaps {
     /// failing `store`, or the sweep would replay that room every minute
     /// for ever without saying so.
     failed: fn(String, Int, String) -> Nil,
+    /// The mistakes on seats this account owns that its deck does not hold
+    /// yet, newest game first: `(user_id, game_ids)`, and every game of
+    /// theirs when the list is empty. A row that has run out of tries is
+    /// left out, so nothing loops for ever.
+    ///
+    /// **Asking charges a try**, exactly as an engine call does: a sync
+    /// that keeps crashing must not have the sweep coming back every
+    /// minute for the same rows. A row that syncs is marked and leaves
+    /// this query, so the charge only outlives a failure.
+    owned_sources: fn(String, List(String)) -> List(DeckSource),
+    /// The deck holds these source rows now.
+    mark_synced: fn(List(Int)) -> Nil,
+    /// These rows could not be put in a deck: log it, and once their tries
+    /// are spent record why, so the sweep lets them go.
+    sync_failed: fn(List(Int), String) -> Nil,
+    /// The accounts with mistakes no deck holds yet, most recent first, at
+    /// most this many, in these games (everywhere when the list is empty).
+    /// The sweep's work list, what its dry run prints, and how a game that
+    /// has just been graded finds out whose mistakes it wrote. Asking
+    /// costs nothing and charges nothing.
+    deck_pending: fn(List(String), Int) -> List(Pending),
+    /// The mistakes on seats this guest's cookie holds. A guest has no
+    /// deck, so this is their whole session: newest game first, nothing
+    /// scheduled, nothing written.
+    guest_sources: fn(String) -> List(DeckSource),
   )
 }
 
@@ -81,5 +141,10 @@ pub fn stub() -> PuzzlesCaps {
     unextracted: fn(_) { panic as "stub puzzles.unextracted" },
     store: fn(_, _, _, _) { panic as "stub puzzles.store" },
     failed: fn(_, _, _) { panic as "stub puzzles.failed" },
+    owned_sources: fn(_, _) { panic as "stub puzzles.owned_sources" },
+    mark_synced: fn(_) { panic as "stub puzzles.mark_synced" },
+    sync_failed: fn(_, _) { panic as "stub puzzles.sync_failed" },
+    deck_pending: fn(_, _) { panic as "stub puzzles.deck_pending" },
+    guest_sources: fn(_) { panic as "stub puzzles.guest_sources" },
   )
 }

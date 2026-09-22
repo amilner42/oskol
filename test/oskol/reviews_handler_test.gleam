@@ -322,6 +322,7 @@ fn with_analysis(
       },
     ),
     puzzles: puzzles_caps.PuzzlesCaps(
+      ..puzzles_caps.stub(),
       unextracted: fn(_) {
         // A graded game whose puzzles have not been written yet: the rows
         // the sweep's partial index answers with.
@@ -346,6 +347,10 @@ fn with_analysis(
         let _ = put_ints("extracted", [number, ..get_ints("extracted")])
         Ok(Nil)
       },
+      // The review job hands a graded game's mistakes to the decks that
+      // own them. No seat here belongs to an account, so there is nothing
+      // to hand over and nothing else of the deck's is ever reached.
+      deck_pending: fn(_, _) { [] },
       failed: fn(_, number, reason) {
         record_call(
           "extraction_failures",

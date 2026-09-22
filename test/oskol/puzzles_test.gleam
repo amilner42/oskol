@@ -397,6 +397,19 @@ pub fn money_play_stores_no_score_test() {
   )
 }
 
+pub fn a_money_question_reads_back_as_it_was_written_test() {
+  // Unlimited play is how most games here are played, and it writes an
+  // explicit null where a match writes a score. Reading the two away
+  // scores through a path refused that null, and every puzzle of every
+  // unlimited game was unreadable.
+  let q =
+    puzzle.question_of(puzzle.Move, a_position(White), Some(#(3, 1)), True)
+  let assert Ok(read) =
+    puzzle.question_from_json(json.to_string(puzzle.question_json(q)))
+  assert read == q
+  assert read.away_mover == 0 && read.away_opponent == 0
+}
+
 pub fn a_key_and_its_ids_are_the_same_every_time_test() {
   let q =
     puzzle.question_of(puzzle.Move, a_position(White), Some(#(3, 1)), False)

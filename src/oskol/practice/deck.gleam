@@ -7,7 +7,9 @@
 //// and turns the cap's refusals into the sentence a player reads. Everything
 //// it needs arrives through the Ctx, so it is pure and tested on stubs.
 
+import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import oskol/caps/practice.{
   type Ask, type Graded, type Item, type Outcome, type PracticeError,
   type Session, Ask, BadContent, CardNotStarted, CardSuspended, NotAmendable,
@@ -22,6 +24,20 @@ pub const new_per_day = 10
 
 /// How many puzzles one page of a session holds.
 pub const page = 20
+
+/// How many new puzzles KEEP GOING puts into rotation, each time it is
+/// pressed. The brief caps the day for the player who takes what they are
+/// given; it never caps the one who asks for more.
+pub const keep_going_new = 10
+
+/// What a deck runs on until its owner's browser says otherwise. Every
+/// "due today" and every "tomorrow" is read in this zone, so the answer to
+/// "is this due?" is the site's day and not the player's until then.
+pub const default_timezone = "Etc/UTC"
+
+pub const unknown_timezone_message = "We do not know that timezone."
+
+pub const not_in_rotation_message = "That puzzle is not in your rotation, so there is nothing to put off."
 
 pub const unknown_card_message = "That puzzle is not in your deck."
 
@@ -97,6 +113,93 @@ pub fn correct(
   outcome: Outcome,
 ) -> Result(Graded, ApiError) {
   ctx.practice.amend(uid, key, review_id, outcome) |> refusal
+}
+
+/// KEEP GOING: put more new puzzles into rotation, over today's budget,
+/// and say how many moved. The caller fetches the session again after.
+pub fn keep_going(ctx: Ctx, uid: String) -> Int {
+  ctx.practice.start_new(uid, keep_going_new)
+}
+
+// ---------- Where the player is ----------
+
+/// The browser has told us its timezone. Written once, on the deck itself,
+/// which is the only thing that reads it -- "due today" and "back
+/// tomorrow" are both that player's own day.
+///
+/// The shape is checked here and the name itself by the deck, which has
+/// the zone database: an unknown one is the player's browser being wrong
+/// about itself, so it is a refusal they can read and not a 500.
+pub fn set_timezone(ctx: Ctx, uid: String, tz: String) -> Result(Nil, ApiError) {
+  case valid_timezone(tz) {
+    False -> Error(error.validation_failed(unknown_timezone_message))
+    True ->
+      case ctx.practice.put_user(uid, tz, new_per_day) {
+        Ok(Nil) -> Ok(Nil)
+        Error(UnknownTimezone) ->
+          Error(error.validation_failed(unknown_timezone_message))
+        Error(other) -> Error(api_error(other))
+      }
+  }
+}
+
+/// Does this look like an IANA zone name? "Europe/Paris",
+/// "America/Argentina/Buenos_Aires", "UTC".
+///
+/// Shape only: one to three segments of letters, digits, `_`, `+` or `-`,
+/// each starting with a letter, and nothing long enough to be an attack.
+/// Whether the name is one the world actually has is the zone database's
+/// answer, not a list kept here that would go stale every time a country
+/// changes its mind.
+pub fn valid_timezone(tz: String) -> Bool {
+  let parts = string.split(tz, "/")
+  let count = list.length(parts)
+  string.length(tz) <= 64
+  && count >= 1
+  && count <= 3
+  && list.all(parts, segment)
+}
+
+fn segment(part: String) -> Bool {
+  case string.to_graphemes(part) {
+    [] -> False
+    [first, ..rest] ->
+      letter(first) && list.all(rest, fn(c) { letter(c) || extra(c) })
+  }
+}
+
+fn letter(c: String) -> Bool {
+  string.length(c) == 1
+  && string.contains(
+    does: "abcdefghijklmnopqrstuvwxyz",
+    contain: string.lowercase(c),
+  )
+}
+
+fn extra(c: String) -> Bool {
+  string.length(c) == 1 && string.contains(does: "0123456789_+-", contain: c)
+}
+
+// ---------- Putting one off ----------
+
+/// Bury a puzzle: it comes back at the start of the player's tomorrow, at
+/// the level it already had.
+///
+/// This is what happens to an answer the engine could not grade and the
+/// player did not grade either. It cannot simply be left alone: a due card
+/// nobody ever answers sits at the front of the queue for ever, in front
+/// of every new one.
+///
+/// A puzzle that is not in rotation is not a refusal of anything the
+/// player typed -- it is a session that has moved on -- so it answers 409
+/// rather than 422.
+pub fn bury(ctx: Ctx, uid: String, key: String) -> Result(Graded, ApiError) {
+  case ctx.practice.defer_tomorrow(uid, key) {
+    Ok(graded) -> Ok(graded)
+    Error(CardNotStarted) ->
+      Error(error.Conflict("not_in_rotation", not_in_rotation_message))
+    Error(other) -> Error(api_error(other))
+  }
 }
 
 /// "Not today": push a puzzle out without moving it on the ladder.
