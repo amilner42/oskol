@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), Presence(..), Roll, Save(..), Side, Snapshot, StillBoard, TapContext, Turn, autoRoll, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewStill)
+module Games.Backgammon.View exposing (Ctx, Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewPlay, viewStill)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -663,7 +663,7 @@ view arrived =
             { ctx = ctx
             , myColor = myColor
             , sources = sources
-            , tap = tap
+            , resolve = resolveTap tap
             , landed = lastLanded live
             }
     in
@@ -1228,7 +1228,11 @@ type alias Board =
     { ctx : Ctx
     , myColor : String
     , sources : List String
-    , tap : TapContext
+
+    -- What a tap on a location plays, if anything. The table resolves it
+    -- against the server's legal moves; a still board answers nothing; a
+    -- puzzle board answers only the taps its tree can honour (`viewPlay`).
+    , resolve : String -> Maybe Msg
     , landed : Landed -- where the last turn landed checkers, and whose they are
     }
 
@@ -1317,7 +1321,7 @@ viewPoint board isTop index point =
             List.member id board.sources
 
         click =
-            case resolveTap board.tap id of
+            case board.resolve id of
                 Just msg ->
                     [ onClick msg, class "cursor-pointer" ]
 
@@ -1469,7 +1473,7 @@ viewBarColumn board themId =
 
         click =
             if mine then
-                case resolveTap board.tap "bar" of
+                case board.resolve "bar" of
                     Just msg ->
                         [ onClick msg, class "cursor-pointer" ]
 
@@ -1528,7 +1532,7 @@ viewTray board ownerId isMine =
 
         click =
             if mine then
-                case resolveTap board.tap "off" of
+                case board.resolve "off" of
                     Just msg ->
                         [ onClick msg, class "cursor-pointer" ]
 
@@ -2819,6 +2823,40 @@ type alias StillBoard =
 
 viewStill : msg -> StillBoard -> Html msg
 viewStill noop s =
+    Html.map (\_ -> noop) (slab s stillOnly)
+
+
+{-| What a slab answers, beyond being a picture. A still board answers
+nothing (`stillOnly`); a puzzle board answers taps against the moves its
+tree offers, and puts the staging controls in the band.
+-}
+type alias Taps =
+    { playable : Bool -- the mover is on the clock here: their bar is active, their dice are a control
+    , legal : List Schema -- the band's own actions (`undo`, `play`, `bear_off`)
+    , moves : List Move -- the legal moves a tap resolves against
+    , spent : Maybe (List Int) -- the dice still to play; Nothing leaves every die standing
+    , swaps : Int -- taps on the dice: which one plays next
+    , honours : Msg -> Bool -- a tap the caller can actually carry out
+    }
+
+
+stillOnly : Taps
+stillOnly =
+    { playable = False
+    , legal = []
+    , moves = []
+    , spent = Nothing
+    , swaps = 0
+    , honours = \_ -> False
+    }
+
+
+{-| One position on the table's own slab: both identity bars, the board,
+the trays and the cube on the bar, drawn by the functions the table uses.
+`taps` decides whether anything on it answers a tap.
+-}
+slab : StillBoard -> Taps -> Html Msg
+slab s taps =
     let
         scoreOf id =
             s.scores |> List.filter (\( p, _ ) -> p == id) |> List.head |> Maybe.map Tuple.second |> Maybe.withDefault 0
@@ -2851,7 +2889,7 @@ viewStill noop s =
             stillScene base { player = Maybe.withDefault "" s.mover, dice = s.dice, position = s.position }
 
         -- a double on offer parks the cube in the middle at twice its value
-        scene =
+        offered =
             case s.offer of
                 Just from ->
                     { drawn
@@ -2873,11 +2911,34 @@ viewStill noop s =
                 Nothing ->
                     drawn
 
+        -- A playable board is the mover's turn: their bar shows it, and
+        -- nothing waits for anyone. A still one is nobody's turn.
+        scene =
+            if taps.playable then
+                spendDice taps.spent (withSceneData "to_act" (E.string (Maybe.withDefault "" s.mover)) offered)
+
+            else
+                spendDice taps.spent offered
+
         ctx =
             { playerId = s.viewer
             , scene = scene
-            , legal = []
-            , model = { init | viewing = Just s.key, still = True, roll = { seq = -1 - s.key, watched = False } }
+            , legal = taps.legal
+            , model =
+                { init
+                    | still = True
+                    , swaps = taps.swaps
+                    , roll = { seq = -1 - s.key, watched = False }
+
+                    -- a still board is a past turn with no way back to a
+                    -- live one; a playable board is the turn itself
+                    , viewing =
+                        if taps.playable then
+                            Nothing
+
+                        else
+                            Just s.key
+                }
             , clock = Nothing
             , receivedAt = 0
             , now = 0
@@ -2905,26 +2966,280 @@ viewStill noop s =
         moverColour =
             s.mover |> Maybe.andThen (\id -> Protocol.findPlayer id scene) |> colorOf
 
+        sources =
+            taps.moves |> List.map .from |> unique
+
+        tap =
+            tapContext ctx taps.moves sources
+
         board =
             { ctx = ctx
             , myColor = colorOf me
-            , sources = []
-            , tap = tapContext ctx [] []
+            , sources = sources
+            , resolve =
+                \loc ->
+                    resolveTap tap loc
+                        |> Maybe.andThen
+                            (\msg ->
+                                if taps.honours msg then
+                                    Just msg
+
+                                else
+                                    Nothing
+                            )
             , landed =
                 { color = moverColour
                 , points = List.foldl (\p acc -> Dict.update p (\c -> Just (1 + Maybe.withDefault 0 c)) acc) Dict.empty s.landed
                 }
             }
     in
-    Html.map (\_ -> noop)
-        (div [ class ("bg-still " ++ themeClass s.theme) ]
-            [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
-                [ viewPlayerBar ctx (Protocol.opponentOf (seatId ctx) ctx.scene) False (viewTray board themId False)
-                , viewBoard board
-                , viewPlayerBar ctx me True (viewTray board (seatId ctx) True)
-                ]
+    div [ class ("bg-still " ++ themeClass s.theme) ]
+        [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
+            [ viewPlayerBar ctx (Protocol.opponentOf (seatId ctx) ctx.scene) False (viewTray board themId False)
+            , viewBoard board
+            , viewPlayerBar ctx me True (viewTray board (seatId ctx) True)
             ]
+        ]
+
+
+{-| Set one field of a scene's `data`.
+-}
+withSceneData : String -> E.Value -> Scene -> Scene
+withSceneData field value scene =
+    { scene
+        | data =
+            D.decodeValue (D.dict D.value) scene.data
+                |> Result.withDefault Dict.empty
+                |> Dict.insert field value
+                |> E.dict identity identity
+    }
+
+
+{-| Mark the dice the turn has already spent. `stillScene` stands every die
+of the roll up; given the dice still to play, one token per value still to
+come stays standing, reading the roll as it was thrown, and the rest are
+used -- so a double's spent dice are the last of its four.
+-}
+spendDice : Maybe (List Int) -> Scene -> Scene
+spendDice left scene =
+    case left of
+        Nothing ->
+            scene
+
+        Just remaining ->
+            let
+                spend token ( rest, kept ) =
+                    let
+                        value =
+                            Protocol.tokenProp D.int "value" token |> Maybe.withDefault 0
+
+                        unspent =
+                            List.member value rest
+                    in
+                    ( if unspent then
+                        dropFirst value rest
+
+                      else
+                        rest
+                    , { token | props = E.object [ ( "value", E.int value ), ( "used", E.bool (not unspent) ) ] } :: kept
+                    )
+            in
+            { scene
+                | zones =
+                    scene.zones
+                        |> List.map
+                            (\z ->
+                                if z.id == "dice" then
+                                    { z | tokens = List.foldl spend ( remaining, [] ) z.tokens |> Tuple.second |> List.reverse }
+
+                                else
+                                    z
+                            )
+            }
+
+
+{-| The list without its first occurrence of `x`.
+-}
+dropFirst : a -> List a -> List a
+dropFirst x list =
+    case list of
+        [] ->
+            []
+
+        head :: rest ->
+            if head == x then
+                rest
+
+            else
+                head :: dropFirst x rest
+
+
+
+-- A PLAYABLE BOARD, WITH NO ROOM BEHIND IT
+--
+-- The still board with its taps switched on: a puzzle hands it the moves
+-- that are legal right now and the node each one reaches, and hears back
+-- which node was stepped to. Every rule -- what may move, what is hit,
+-- which dice are left, whether the turn is complete -- has already been
+-- decided by whoever built the tree; this board only draws the position
+-- it was given and reports the taps it was told to honour.
+
+
+{-| One legal move and the node it reaches.
+-}
+type alias Step =
+    { move : Move, node : String }
+
+
+{-| A board that stages a turn with nothing behind it: the picture
+(`still`), the moves legal from where the player has walked to, and the
+moves legal one step on (`after`, which is what makes the quick-pair and
+bear-off shortcuts two legal steps rather than a leap).
+-}
+type alias PlayBoard =
+    { still : StillBoard
+    , steps : List Step -- the legal moves from this node
+    , after : String -> List Step -- the legal moves from the node a step reaches
+    , diceLeft : List Int -- the dice still to play, in the order they sit
+    , terminal : Bool -- nothing more can be played: PLAY is offered here and only here
+    , canUndo : Bool -- there is a step to take back
+    , swaps : Int -- taps on the dice: which one a tap on a checker plays
+    }
+
+
+{-| What the board tells the page. The page owns the walk: it appends the
+nodes of a `Stepped` to its path, and drops the last on `Undo`, which is
+how undo lands on the previous node's exact position.
+-}
+type PlayOut
+    = Stepped (List String) -- walk on to these nodes, in order; a shortcut is two steps
+    | Undo
+    | Play
+    | Swapped -- the dice changed places
+
+
+viewPlay : PlayBoard -> Html PlayOut
+viewPlay pb =
+    Html.map (playOut pb)
+        (slab pb.still
+            { playable = True
+            , legal = playLegal pb
+            , moves = List.map .move pb.steps
+            , spent = Just pb.diceLeft
+            , swaps = pb.swaps
+            , honours = \msg -> playSteps pb msg /= Nothing
+            }
         )
+
+
+{-| The band's buttons: the bear-off tray answers a tap only where a
+checker can come off, UNDO once something is staged, PLAY once the turn is
+complete.
+-}
+playLegal : PlayBoard -> List Schema
+playLegal pb =
+    let
+        action name =
+            { name = name, label = name, params = [] }
+    in
+    List.filterMap identity
+        [ if List.any (\s -> s.move.to == "off") pb.steps then
+            Just (action "bear_off")
+
+          else
+            Nothing
+        , if pb.canUndo then
+            Just (action "undo")
+
+          else
+            Nothing
+        , if pb.terminal then
+            Just (action "play")
+
+          else
+            Nothing
+        ]
+
+
+playOut : PlayBoard -> Msg -> PlayOut
+playOut pb msg =
+    case msg of
+        SwapDice ->
+            Swapped
+
+        Simple "undo" ->
+            Undo
+
+        Simple "play" ->
+            Play
+
+        _ ->
+            -- a tap the tree cannot honour is never wired up in the first
+            -- place (`honours`), so this walks nowhere
+            Stepped (playSteps pb msg |> Maybe.withDefault [])
+
+
+{-| The nodes a tap walks to, or nothing where the tree offers no first
+step at all. A quick pair and the bear-off shortcut are two steps, and the
+second is taken only where it is a child of the node the first one leaves;
+where it is not -- the moves cannot both be played, or the node beyond has
+not been fetched yet -- the tap still plays the first, which is a legal
+move either way. A tap that the tree can honour is never refused.
+-}
+playSteps : PlayBoard -> Msg -> Maybe (List String)
+playSteps pb msg =
+    case msg of
+        PlayMove from to die ->
+            stepTo pb.steps { from = from, to = to, die = die } |> Maybe.map List.singleton
+
+        PlayPair a b ->
+            stepTo pb.steps a
+                |> Maybe.map
+                    (\first ->
+                        case stepTo (pb.after first) b of
+                            Just second ->
+                                [ first, second ]
+
+                            Nothing ->
+                                [ first ]
+                    )
+
+        BearOff die ->
+            bearOffStep pb.steps die
+                |> Maybe.map
+                    (\first ->
+                        case bearOffStep (pb.after first.node) (dropFirst first.move.die pb.diceLeft |> List.head |> Maybe.withDefault 0) of
+                            Just second ->
+                                [ first.node, second.node ]
+
+                            Nothing ->
+                                [ first.node ]
+                    )
+
+        _ ->
+            Nothing
+
+
+stepTo : List Step -> Move -> Maybe String
+stepTo steps move =
+    steps |> List.filter (\s -> s.move == move) |> List.head |> Maybe.map .node
+
+
+{-| The checker the tray takes off: the one the preferred die bears off if
+it can, else whichever can.
+-}
+bearOffStep : List Step -> Int -> Maybe Step
+bearOffStep steps die =
+    let
+        off =
+            List.filter (\s -> s.move.to == "off") steps
+    in
+    case List.filter (\s -> s.move.die == die) off of
+        chosen :: _ ->
+            Just chosen
+
+        [] ->
+            List.head off
 
 
 {-| The door to a finished game's replay page, for a seat (the page opens on

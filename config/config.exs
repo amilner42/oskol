@@ -46,6 +46,17 @@ config :oskol, :auth_mail_budget,
   source: [limit: 20, window_s: 3_600],
   global: [limit: 200, window_s: 86_400]
 
+# The puzzle deck's spaced repetition (the `retain` library): our repo, our
+# tables, no processes to start.
+#
+# The ladder is the brief's: a miss comes back tomorrow, then 1, 3, 7, 21, 58,
+# 145 and 365 days. Level 0 is one day rather than retain's default zero,
+# because a puzzle you just got wrong should come back tomorrow, not later in
+# the same session -- the player is still looking at the answer.
+config :retain,
+  repo: Oskol.Repo,
+  intervals: [1, 1, 3, 7, 21, 58, 145, 365]
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
