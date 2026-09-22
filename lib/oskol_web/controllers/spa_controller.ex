@@ -95,6 +95,9 @@ defmodule OskolWeb.SpaController do
         |> assign(:canonical, url(~p"/puzzles/#{id}"))
         |> assign(:og_title, title)
         |> assign(:og_description, description)
+        # The board, drawn once (Oskol.Puzzles.Pictures) and served by
+        # OskolWeb.Plugs.PuzzlePicture: what the link unfurls with.
+        |> assign(:puzzle_image, OskolWeb.Endpoint.url() <> "/puzzles/" <> id <> ".png")
         |> render_spa()
 
       {:error, _} ->

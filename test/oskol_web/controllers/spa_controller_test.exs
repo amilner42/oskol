@@ -206,6 +206,11 @@ defmodule OskolWeb.SpaControllerTest do
       assert html =~
                ~s(<meta name="description" content="Match play, 3 away against 5. Cube centred.)
 
+      # The board as the picture, so a pasted link unfurls with it.
+      assert html =~
+               ~s(<meta property="og:image" content="http://localhost:4002/puzzles/#{id}.png">)
+
+      assert html =~ ~s(<meta name="twitter:card" content="summary_large_image">)
       # Open to search: a puzzle is a public page, unlike a room's replay.
       refute html =~ ~s(name="robots")
       # And nothing of where it came from.
@@ -230,6 +235,54 @@ defmodule OskolWeb.SpaControllerTest do
 
     test "a bare /puzzles names no game and is a 404 too", %{conn: conn} do
       assert_error_sent 404, fn -> get(conn, "/puzzles") end
+    end
+  end
+
+  describe "the card a link unfurls as" do
+    test "every page without a picture of its own is the plain summary card, as it always was",
+         %{conn: conn} do
+      for path <- [~p"/", ~p"/backgammon", ~p"/backgammon/123456/replay"] do
+        html = conn |> get(path) |> html_response(200)
+        assert html =~ ~s(<meta name="twitter:card" content="summary">), path
+        refute html =~ "og:image", path
+        refute html =~ "twitter:image", path
+        refute html =~ "summary_large_image", path
+      end
+    end
+
+    test "a page with a picture of its own gets the large card with it, at its size",
+         %{conn: conn} do
+      # No page sets `:puzzle_image` in this suite yet (the puzzle page does):
+      # the layout is rendered as that page renders it, with the assign.
+      image = url(~p"/puzzles/abc12345.png")
+
+      html =
+        Phoenix.Template.render_to_string(OskolWeb.Layouts, "root", "html",
+          conn: conn,
+          inner_content: "",
+          page_title: "White to play 6-4. What's your play?",
+          puzzle_image: image
+        )
+
+      assert html =~ ~s(<meta property="og:image" content="#{image}">)
+      assert html =~ ~s(<meta property="og:image:width" content="1200">)
+      assert html =~ ~s(<meta property="og:image:height" content="630">)
+      assert html =~ ~s(<meta name="twitter:card" content="summary_large_image">)
+      assert html =~ ~s(<meta name="twitter:image" content="#{image}">)
+      refute html =~ ~s(<meta name="twitter:card" content="summary">)
+      # The picture is an absolute URL: a preview fetches it from elsewhere.
+      assert image =~ ~r{^http://localhost:4002/puzzles/abc12345\.png$}
+    end
+
+    test "the layout without the assign renders the one tag the page always had", %{conn: conn} do
+      html =
+        Phoenix.Template.render_to_string(OskolWeb.Layouts, "root", "html",
+          conn: conn,
+          inner_content: ""
+        )
+
+      assert html =~ ~s(<meta name="twitter:card" content="summary">)
+      refute html =~ "og:image"
     end
   end
 

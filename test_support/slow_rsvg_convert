@@ -1,0 +1,4 @@
+#!/bin/sh
+# A binary that never answers, for the timeout.
+cat > /dev/null
+sleep 30
