@@ -10,6 +10,7 @@ defmodule Oskol.ReviewsTest do
   # their own processes: shared sandbox, not async.
   use OskolWeb.ConnCase, async: false
 
+  import Ecto.Query
   import Oskol.GameFixtures
 
   alias Oskol.Game.Persister
@@ -34,8 +35,9 @@ defmodule Oskol.ReviewsTest do
     :ok
   end
 
-  # An engine that grades every turn it is sent as a doubtful move, and
-  # counts the requests it gets.
+  # An engine that grades the opening turn best and every turn after it as
+  # a mistake worth 0.05 -- so this, the only end-to-end run, really crosses
+  # the puzzle-extraction seam -- and counts the requests it gets.
   # Everything the stub has reported so far, thrown away.
   defp drain_engine_calls do
     receive do
@@ -81,21 +83,46 @@ defmodule Oskol.ReviewsTest do
       "pr" => 4.2
     }
 
+    # The opening turn is played perfectly; everything after it gives up
+    # 0.05, which is a mistake and so a puzzle.
+    move = fn
+      0 ->
+        %{
+          "played" => candidate.(1, 0.0),
+          "best" => candidate.(1, 0.0),
+          "top" => [candidate.(1, 0.0)],
+          "n_legal" => 4,
+          "forced" => false,
+          "error" => 0.0,
+          "grade" => "best"
+        }
+
+      _ ->
+        %{
+          "played" => candidate.(2, -0.05),
+          "best" => candidate.(1, 0.0),
+          "top" => [candidate.(1, 0.0), candidate.(2, -0.05)],
+          # `all_results`: one entry per legal play, which is what lets a
+          # puzzle grade any answer instead of shrugging at one outside the
+          # top five.
+          "results" =>
+            for r <- 1..4 do
+              %{"board" => [], "equity_diff" => -0.01 * r}
+            end,
+          "n_legal" => 4,
+          "forced" => false,
+          "error" => 0.05,
+          "grade" => "doubtful"
+        }
+    end
+
     %{
       "turns" =>
         for i <- 0..(n - 1) do
           %{
             "index" => i,
             "cube" => nil,
-            "move" => %{
-              "played" => candidate.(1, 0.0),
-              "best" => candidate.(1, 0.0),
-              "top" => [candidate.(1, 0.0)],
-              "n_legal" => 4,
-              "forced" => false,
-              "error" => 0.0,
-              "grade" => "best"
-            },
+            "move" => move.(i),
             "luck" => %{"luck" => 0.1}
           }
         end,
@@ -270,6 +297,39 @@ defmodule Oskol.ReviewsTest do
 
     assert [%{"number" => 1, "move" => %{"grade" => "best"}, "luck" => 0.1} | _] =
              review["turns"]
+
+    # And the mistakes the engine found crossed into the puzzle tables
+    # through the real capability -- the one place the Gleam record and its
+    # Elixir tuple twin are checked against each other for real.
+    sources = Repo.all(from(s in Oskol.Puzzles.Source, where: s.game_id == ^game_id))
+    assert length(sources) > 0
+    assert Enum.all?(sources, &(&1.kind == "move"))
+    assert Enum.all?(sources, &(&1.equity_lost == 0.05))
+    assert Enum.all?(sources, &(&1.grade == "doubtful"))
+    assert Enum.all?(sources, &(&1.game_number == 1))
+    # The opening turn was played best, so nothing is asked about it.
+    refute Enum.any?(sources, &(&1.turn == 1))
+
+    ids = sources |> Enum.map(& &1.puzzle_id) |> Enum.reject(&is_nil/1)
+    assert length(ids) == length(sources)
+    puzzles = Repo.all(from(p in Oskol.Puzzles.Puzzle, where: p.id in ^ids))
+    assert length(puzzles) == length(Enum.uniq(ids))
+
+    for puzzle <- puzzles do
+      assert String.length(puzzle.id) == 8
+      assert puzzle.kind == "move"
+      assert [_ | _] = puzzle.question["board"]
+      assert [_, _] = puzzle.question["dice"]
+      # The engine sent a result for every legal play, so the answer says
+      # it is complete and holds all four -- not only the five described.
+      assert puzzle.answer["complete"] == true
+      assert puzzle.answer["n_legal"] == 4
+      assert length(puzzle.answer["outcomes"]) == 4
+      assert Enum.all?(puzzle.answer["outcomes"], &(&1["equity_lost"] > 0))
+    end
+
+    # Extracted, so the minute sweep has nothing more to do here.
+    assert Oskol.Puzzles.unextracted(game_id) == []
 
     # A game the room does not have is not there
     assert conn

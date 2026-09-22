@@ -603,14 +603,22 @@ pub fn danced(turn: Turn) -> Bool {
 
 // ---------- The request ----------
 
-/// The body of `POST /backgammon/review` for one game: luck and the top
-/// five moves. The search depth is the service's own default (4-ply for
-/// moves and the cube, since 2026-09-15), so it is set in one place, the
-/// engine, and the answer says which it used (`levels`).
+/// The body of `POST /backgammon/review` for one game: luck, the top five
+/// moves described in full, and every legal play's board and cost besides.
+/// The search depth is the service's own default (4-ply for moves and the
+/// cube, since 2026-09-15), so it is set in one place, the engine, and the
+/// answer says which it used (`levels`).
+///
+/// `all_results` costs the engine nothing -- it evaluates every legal play
+/// anyway, and `top_moves` only truncates what it writes down -- and it is
+/// what lets a puzzle made from this game grade any answer exactly instead
+/// of shrugging at one outside the top five. An engine that does not know
+/// the flag answers as it always did.
 pub fn request_json(g: GameTurns) -> Json {
   json.object([
     #("jacoby", json.bool(g.jacoby)),
     #("top_moves", json.int(5)),
+    #("all_results", json.bool(True)),
     #("include_luck", json.bool(True)),
     #("turns", json.array(g.turns, turn_json)),
   ])

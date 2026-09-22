@@ -551,9 +551,9 @@ src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     decisions live in Gleam" below): core (ctx, session,
                     error, envelope), caps (the IO a handler may do),
                     rooms (codes, names, errors, invite), guests/identity,
-                    landing/copy, reviews/report, practice/deck (the puzzle
-                    deck), handlers (rooms, landing, reviews, record,
-                    ratings, auth)
+                    landing/copy, reviews/report, puzzles (+ puzzles/extract),
+                    practice/deck (the puzzle deck), handlers (rooms, landing,
+                    reviews, record, ratings, auth)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
@@ -572,6 +572,11 @@ lib/oskol/reviews.ex            game_reviews + game_records tables, the log a re
                                 reads, the engine's HTTP
 src/oskol/core/raw.gleam        stored JSON back onto the wire without rebuilding it
 lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room
+lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images tables;
+                                the one write, in one transaction with its marker
+src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
+                                key and id, the answer, the JSON of each column
+src/oskol/puzzles/extract.gleam which turns of a graded game are puzzles
 lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 src/oskol/rooms/seat.gleam       who holds a seat (the guest, or the account that
@@ -982,6 +987,81 @@ game or a room talks to it.
   `.venv/bin/uvicorn app.main:app --port 18082`. Tests never hit the
   network: the queue is off (`config :oskol, Oskol.Reviews.Queue`) unless
   a test turns it on, and requests go to a `Req.Test` stub.
+
+## Puzzles (backgammon)
+
+Every mistake the engine finds becomes a puzzle: the position, the
+question in the game's own words, and the answer. Written once, at the
+one moment the board a decision was made *on* exists -- the review job,
+with the engine's answer and the game's own turns both in memory. No read
+path builds one and nothing re-asks the engine to recover one.
+
+- **Gleam decides.** `src/oskol/puzzles/extract.gleam` says what counts: any
+  decision that gave up 0.02 or more (doubtful and worse), checker or cube,
+  never a forced play, a dance, or a "no double" where no double could have
+  been offered (the replay's own cube rule -- the opening roll, a cube the
+  mover does not hold, the Crawford game). The checker play of a turn whose
+  double was taken is skipped until `bg-analysis-post-take-context` lands:
+  the engine grades it on the pre-offer cube. Skipped turns are still
+  written, as a source with a reason and no puzzle, so a repair can count
+  them.
+- **A puzzle is public and deduplicated.** `src/oskol/puzzles.gleam` is the
+  stored shape: the question is mover-relative (the engine's 26-int board
+  from the player on roll's side, the roll high die first, the cube value
+  and owner, the away scores, Crawford, Jacoby; a cube question carries no
+  dice), the `key` is the sha256 of its canonical one-line form, and the id
+  is eight characters of the room-code alphabet read off that same digest.
+  A `double` and a `take` are two questions on one position, and both store
+  the same three equities -- always the *doubler's* payoff. Whose mistake it
+  was is a `puzzle_sources` row, and the seat of a take is the responder's.
+  **A stored answer is never rewritten**: a shared link must not change its
+  mind, so a change of shape is a migration.
+- **The answer is complete for new puzzles.** The review request asks
+  `all_results`, which costs the engine nothing (it evaluates every legal
+  play anyway; `top_moves` only truncates what it writes down), so the
+  answer holds every legal play's board and cost plus full details for the
+  top five and the move played. `complete` is `results` numbering exactly
+  `n_legal`, never merely "not empty": a truncated list stored as the whole
+  of it would grade a good answer wrong. A review taken before the flag says
+  `complete: false`, and an attempt outside its five is honestly unknown.
+- **Only the queue writes puzzles.** `settle` takes `Extracting` from the
+  queue's job and `ReadOnly` from a read, so a GET anyone with the link can
+  make never writes a puzzle, never spends an extraction attempt and cannot
+  race the job on the same game. A read still renders an answer it finds
+  unrendered, exactly as before, and leaves the puzzles owed.
+- **One transaction, one marker.** `puzzles`, `puzzle_sources` and
+  `game_reviews.puzzles_extracted_at` land together (`Oskol.Puzzles.store/4`,
+  behind the `puzzles` cap). Idempotent: a puzzle is written only where its
+  key is new, a source only where its (game, game number, turn, kind) is,
+  and a game is extracted only while it is actually owed -- so a migration
+  that re-renders reports (`RerenderCubeReports`-style) cannot re-extract
+  every done row.
+- **Every giving-up path is charged and logged.** A failure **never fails
+  the review**, but it always spends one of three `puzzles_attempts` and
+  logs why -- including the case Gleam cannot even reach a decision in
+  (`puzzles.failed`, for a stored answer that no longer lines up with the
+  game's turns). The try that spends the last attempt sets the marker with
+  `puzzles_error` beside it, so the minute sweep stops replaying that room.
+  Without that, one bad row would have the sweep replaying its whole log
+  every minute for ever, silently. A puzzle whose every candidate id is
+  taken is skipped with `skipped_reason: "id_exhausted"`, never fatal to
+  the rest of the game.
+- **Nothing old is owed.** The migration marks every review that already
+  existed, because the boot sweep would otherwise backfill all of
+  production at deploy, ahead of live games and out of answers written
+  before `all_results`. Backfilling old rooms is `puzzles-backfill`, and it
+  finds an old row by its stored response (a turn whose `move` carries no
+  `results`), never by the marker. For the same reason, a future path that
+  re-analyses a game that is already `done` must clear
+  `puzzles_extracted_at` itself: `Reviews.save/8`'s upsert deliberately
+  leaves it alone, which is right for today's only rewriter (a retry of a
+  `failed` row, which never had puzzles).
+- `puzzle_attempts`, `puzzle_shares` and `puzzle_images` exist and are
+  written by the later tickets (the API, the story link, the board picture).
+- Measured on the seeded match 821900 (12 games): 125 puzzles, 127 sources
+  (103 move, 19 double, 3 take; 2 skipped post-take), mean stored row 1.7 KB.
+  With every legal result the answer column goes from a mean of 2.4 KB to
+  4.2 KB (max 17 KB, a 177-play double).
 
 ## Mail
 

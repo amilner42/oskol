@@ -46,6 +46,7 @@ import oskol/core/error.{type ApiError}
 import oskol/core/raw
 import oskol/core/session.{type Session}
 import oskol/handlers/record
+import oskol/puzzles/extract
 import oskol/reviews/report
 import oskol/rooms/seat
 
@@ -92,7 +93,11 @@ pub fn game_ended(game_slug: String, events: List(Event)) -> Bool {
 /// every finished game, and the rendering of any answer the engine had
 /// already given. That is `settle`, and it runs first.
 pub fn run(ctx: Ctx, game_id: String) -> Option(Int) {
-  case settle(ctx, game_id) {
+  // The queue is the only caller that writes puzzles. A read may still
+  // settle a room (rendering an answer it finds unrendered), but it never
+  // extracts: that would put a write and an attempt budget behind a GET
+  // anyone with the link can make, and race this job on the same game.
+  case settle(ctx, game_id, Extracting) {
     None -> None
     Some(#(games, seats)) -> {
       let stored = ctx.analysis.stored(game_id)
@@ -179,15 +184,20 @@ fn attempt_review(
     // Stored only once it renders: a done review is one the page can read
     // back without doing any of this again.
     |> result.try(fn(response) {
-      rendered(response, g, seats) |> result.map(fn(page) { #(response, page) })
+      rendered(response, g, seats)
+      |> result.map(fn(both) { #(response, both.0, both.1) })
     })
   case outcome {
-    Ok(#(response, page)) -> {
+    Ok(#(response, review, page)) -> {
       ctx.analysis.save(
         game_id,
         g.number,
         Save(Done, attempts, Some(response), None, Some(page), turns),
       )
+      // The only moment the board each decision was made *on* exists: the
+      // stored answer keeps the boards moves lead to, never the one they
+      // start from. Puzzles are written here or they are not written.
+      write_puzzles(ctx, game_id, g, seats, review)
       Error(Nil)
     }
     Error(reason) -> {
@@ -204,16 +214,59 @@ fn attempt_review(
   }
 }
 
-/// The engine's answer as the page reads it, zipped against the turns the
-/// game really had.
+/// The engine's answer read once: the review itself, and the page rendered
+/// from it, zipped against the turns the game really had. Both come out of
+/// one parse because both callers want both -- the page to store, the
+/// review to take puzzles from.
 fn rendered(
   response: String,
   g: analysis.GameTurns,
   seats: List(report.Seat),
-) -> Result(String, String) {
-  report.parse(response)
-  |> result.try(report.to_json(_, g.turns, seats))
-  |> result.map(json.to_string)
+) -> Result(#(report.Review, String), String) {
+  use review <- result.try(report.parse(response))
+  use page <- result.try(report.to_json(review, g.turns, seats))
+  Ok(#(review, json.to_string(page)))
+}
+
+/// Write down this game's puzzles: the mistakes the engine just found, the
+/// question each one asks and whose mistake it was, in one transaction with
+/// the marker that says this game is done with.
+///
+/// A failure here never fails a review, but it is always charged for and
+/// always logged. Otherwise a game whose answer no longer lines up with its
+/// turns -- an old row whose turn count moved under it -- would be owed
+/// puzzles for ever, and the sweep would replay its whole log every minute
+/// without saying a word.
+fn write_puzzles(
+  ctx: Ctx,
+  game_id: String,
+  g: analysis.GameTurns,
+  seats: List(report.Seat),
+  review: report.Review,
+) -> Nil {
+  case extract.from_review(g, seats, review) {
+    Ok(#(puzzles, sources)) -> {
+      let _ = ctx.puzzles.store(game_id, g.number, puzzles, sources)
+      Nil
+    }
+    Error(reason) -> ctx.puzzles.failed(game_id, g.number, reason)
+  }
+}
+
+/// This game was owed puzzles and is not getting them. Charge the try and
+/// log the reason; once the budget is spent the row is marked so the sweep
+/// lets it go.
+fn no_puzzles(
+  ctx: Ctx,
+  game_id: String,
+  number: Int,
+  reason: String,
+  owed_puzzles: Bool,
+) -> Nil {
+  case owed_puzzles {
+    True -> ctx.puzzles.failed(game_id, number, reason)
+    False -> Nil
+  }
 }
 
 // ---------- Writing down what a read will want ----------
@@ -228,9 +281,18 @@ fn rendered(
 /// Called by the queue when a game ends (the replay is the review's own),
 /// and by a read that finds nothing stored -- the one time an old room
 /// pays for itself.
+/// Whether this settle may write puzzles. Only the queue's job may: a read
+/// renders what it finds unrendered, as it always has, and leaves the
+/// puzzles owed for the sweep.
+type Extraction {
+  Extracting
+  ReadOnly
+}
+
 fn settle(
   ctx: Ctx,
   game_id: String,
+  extraction: Extraction,
 ) -> Option(#(List(analysis.GameTurns), List(report.Seat))) {
   case ctx.analysis.log(game_id) {
     Some(log) if log.slug == slug ->
@@ -240,8 +302,16 @@ fn settle(
           let finished = list.filter(games, fn(g) { g.finished })
           store_records(ctx, game_id, record, finished, log)
           let stored = ctx.analysis.stored(game_id)
+          // Which games are graded but have no puzzles yet: a crash between
+          // the two, or a room reviewed before puzzles existed. Reading it
+          // costs one small query and spends no engine time -- and a read
+          // does not ask at all, so it cannot touch the puzzle tables.
+          let unextracted = case extraction {
+            Extracting -> ctx.puzzles.unextracted(game_id)
+            ReadOnly -> []
+          }
           list.each(finished, fn(g) {
-            store_review(ctx, game_id, g, seats, stored)
+            store_review(ctx, game_id, g, seats, stored, unextracted)
           })
           Some(#(games, seats))
         }
@@ -262,6 +332,7 @@ fn store_review(
   g: analysis.GameTurns,
   seats: List(report.Seat),
   stored: List(Stored),
+  unextracted: List(Int),
 ) -> Nil {
   let turns = list.length(g.turns)
   case find(stored, g.number), turns {
@@ -269,11 +340,60 @@ fn store_review(
     None, 0 ->
       ctx.analysis.save(game_id, g.number, Save(Done, 0, None, None, None, 0))
     None, _ -> Nil
-    Some(row), _ ->
-      case row.status, row.response_json, row.rendered {
-        Done, Some(response), False ->
-          case rendered(response, g, seats) {
-            Ok(page) ->
+    Some(row), _ -> {
+      let owed_puzzles = list.contains(unextracted, g.number)
+      case row.status, row.response_json, row.rendered, owed_puzzles {
+        // Never rendered, or rendered but never turned into puzzles:
+        // either way the stored answer is read once and both are settled.
+        Done, Some(response), False, _ | Done, Some(response), True, True ->
+          settle_answer(
+            ctx,
+            game_id,
+            g,
+            seats,
+            row,
+            response,
+            turns,
+            owed_puzzles,
+          )
+        _, _, _, _ -> backfill_turns(ctx, game_id, g.number, row, turns)
+      }
+    }
+  }
+}
+
+/// A stored engine answer, read once and settled: the page rendered if it
+/// never was, the puzzles written if they never were.
+///
+/// Rendering is the expensive half and is wanted only once, so a row that
+/// already has its page back is not put through it again merely because
+/// its puzzles are owed.
+fn settle_answer(
+  ctx: Ctx,
+  game_id: String,
+  g: analysis.GameTurns,
+  seats: List(report.Seat),
+  row: Stored,
+  response: String,
+  turns: Int,
+  owed_puzzles: Bool,
+) -> Nil {
+  case report.parse(response) {
+    Error(reason) -> {
+      unusable(ctx, game_id, g.number, row, reason, turns)
+      // A rendered row keeps its answer, so nothing else would ever take
+      // this game off the sweep's list. Charge for the try and say why.
+      no_puzzles(ctx, game_id, g.number, reason, owed_puzzles)
+    }
+    Ok(review) -> {
+      let usable = case row.rendered {
+        True -> {
+          backfill_turns(ctx, game_id, g.number, row, turns)
+          True
+        }
+        False ->
+          case report.to_json(review, g.turns, seats) {
+            Ok(page) -> {
               ctx.analysis.save(
                 game_id,
                 g.number,
@@ -282,27 +402,65 @@ fn store_review(
                   row.attempts,
                   Some(response),
                   None,
-                  Some(page),
+                  Some(json.to_string(page)),
                   turns,
                 ),
               )
-            // The answer is not this game's and never will be: say so once
-            // rather than trying to render it on every read.
-            Error(reason) ->
-              ctx.analysis.save(
-                game_id,
-                g.number,
-                Save(Failed, max_attempts, None, Some(reason), None, turns),
-              )
-          }
-        _, _, _ ->
-          case row.turns == turns {
-            True -> Nil
-            // A row from before turn counts were stored. Everything else
-            // about it stays as it is, the rendered page included.
-            False -> ctx.analysis.backfill_turns(game_id, g.number, turns)
+              True
+            }
+            Error(reason) -> {
+              unusable(ctx, game_id, g.number, row, reason, turns)
+              no_puzzles(ctx, game_id, g.number, reason, owed_puzzles)
+              False
+            }
           }
       }
+      // Only a game that is actually owed its puzzles: a report re-rendered
+      // by a migration must not re-extract every done row, spend its
+      // attempts and move its marker.
+      case usable && owed_puzzles {
+        True -> write_puzzles(ctx, game_id, g, seats, review)
+        False -> Nil
+      }
+    }
+  }
+}
+
+/// The answer is not this game's and never will be: say so once rather
+/// than trying to render it on every read. A row whose page is already
+/// stored keeps it -- whatever is wrong with the answer now, the page was
+/// built from it once.
+fn unusable(
+  ctx: Ctx,
+  game_id: String,
+  number: Int,
+  row: Stored,
+  reason: String,
+  turns: Int,
+) -> Nil {
+  case row.rendered {
+    False ->
+      ctx.analysis.save(
+        game_id,
+        number,
+        Save(Failed, max_attempts, None, Some(reason), None, turns),
+      )
+    True -> backfill_turns(ctx, game_id, number, row, turns)
+  }
+}
+
+/// A row from before turn counts were stored. Everything else about it
+/// stays as it is, the rendered page included.
+fn backfill_turns(
+  ctx: Ctx,
+  game_id: String,
+  number: Int,
+  row: Stored,
+  turns: Int,
+) -> Nil {
+  case row.turns == turns {
+    True -> Nil
+    False -> ctx.analysis.backfill_turns(game_id, number, turns)
   }
 }
 
@@ -370,7 +528,7 @@ fn read(
   case stale(setup, numbers, summaries) {
     False -> Ok(#(setup, numbers, summaries))
     True -> {
-      let _ = settle(ctx, game_id)
+      let _ = settle(ctx, game_id, ReadOnly)
       Ok(#(setup, ctx.records.numbers(game_id), ctx.analysis.summaries(game_id)))
     }
   }

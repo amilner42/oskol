@@ -74,11 +74,23 @@ pub type MoveReview {
     played: Candidate,
     best: Candidate,
     top: List(Candidate),
+    /// Every legal play the engine evaluated -- the board it leaves and
+    /// how much worse than the best it is -- when the request asked for
+    /// them (`all_results`). Empty for an answer written before that, and
+    /// never rendered into the page: this is what lets a puzzle grade any
+    /// answer exactly, and it would only make a review bigger.
+    results: List(MoveResult),
     n_legal: Int,
     forced: Bool,
     error: Float,
     grade: String,
   )
+}
+
+/// One legal play, compactly: where it leaves the checkers and what it
+/// gives up. `equity_diff` is best-relative, so zero or negative.
+pub type MoveResult {
+  MoveResult(board: List(Int), equity_diff: Float)
 }
 
 pub type Candidate {
@@ -266,13 +278,37 @@ fn move_decoder() -> Decoder(MoveReview) {
       use played <- decode.field("played", candidate_decoder())
       use best <- decode.field("best", candidate_decoder())
       use top <- decode.field("top", decode.list(candidate_decoder()))
+      // Absent from every answer the engine gave before `all_results` was
+      // asked for, and that is not an error: the review renders the same
+      // either way, and a puzzle made from one simply says its answer is
+      // incomplete.
+      use results <- decode.optional_field(
+        "results",
+        [],
+        decode.list(result_decoder()),
+      )
       use n_legal <- decode.field("n_legal", decode.int)
       use forced <- decode.field("forced", decode.bool)
       use error <- decode.field("error", number())
       use grade <- decode.field("grade", decode.string)
-      decode.success(Moved(played, best, top, n_legal, forced, error, grade))
+      decode.success(Moved(
+        played,
+        best,
+        top,
+        results,
+        n_legal,
+        forced,
+        error,
+        grade,
+      ))
     }
   }
+}
+
+fn result_decoder() -> Decoder(MoveResult) {
+  use board <- decode.field("board", decode.list(decode.int))
+  use equity_diff <- decode.field("equity_diff", number())
+  decode.success(MoveResult(board, equity_diff))
 }
 
 fn candidate_decoder() -> Decoder(Candidate) {
@@ -467,7 +503,9 @@ fn turn_json(
       // The engine lists a dance as a forced "move" that changes nothing;
       // it is a dance, and a page says so.
       Some(Danced), _ | _, True -> json.object([#("danced", json.bool(True))])
-      Some(Moved(played, best, top, n_legal, forced, error, grade)), False ->
+      Some(Moved(played, best, top, _results, n_legal, forced, error, grade)),
+        False
+      ->
         json.object([
           #("danced", json.bool(False)),
           #("grade", json.string(grade)),
