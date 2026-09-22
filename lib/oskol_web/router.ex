@@ -101,6 +101,12 @@ defmodule OskolWeb.Router do
     # "/login" names no game, so it is a 404 like any other unknown slug.
     get "/login/:token", LoginController, :show
 
+    # A puzzle: one position and its question, open to anyone with the
+    # link and indexable. Declared before "/:slug" so "puzzles" is a
+    # reserved word like "login"; a bare "/puzzles" is a 404 until the
+    # practice home lands.
+    get "/puzzles/:id", SpaController, :puzzle
+
     # Games Oskol no longer hosts (see RemovedGameController): every old
     # link to one of them, start page, invite or table, goes home.
     get "/poker", RemovedGameController, :home

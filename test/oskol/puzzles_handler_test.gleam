@@ -529,6 +529,53 @@ pub fn an_unknown_puzzle_is_a_404_test() {
     == Error(error.NotFound(handler.not_found_message))
 }
 
+// ---------- The head of /puzzles/:id ----------
+
+/// The page's head is the same question the page asks, with the score and
+/// the cube under it -- from the side being asked, so a take reads as the
+/// responder's page does -- and nothing else: no name, no game, no answer.
+pub fn the_head_is_the_question_and_the_score_test() {
+  reset()
+  let ctx =
+    ctx_with([
+      stored("p1", move_question(), move_answer()),
+      stored("t1", cube_question(Take), cube_answer()),
+    ])
+  let assert Ok(handler.Head(title, description)) = handler.head(ctx, "p1")
+  assert title == "White to play 6-4. What's your play?"
+  assert description
+    == "Match play, 3 away against 5. Cube centred. A backgammon puzzle: play it on the board."
+  let assert Ok(handler.Head(take_title, take_description)) =
+    handler.head(ctx, "t1")
+  assert take_title == "Take?"
+  assert string.starts_with(
+    take_description,
+    "Match play, 5 away against 3. Cube at 1, Black's.",
+  )
+  assert handler.head(ctx, "nope")
+    == Error(error.NotFound(handler.not_found_message))
+}
+
+pub fn a_money_game_says_so_in_the_head_test() {
+  let q = move_question()
+  assert string.starts_with(
+    handler.describe(
+      puzzles.Question(
+        ..q,
+        away_mover: 0,
+        away_opponent: 0,
+        cube_value: 4,
+        cube_owner: puzzles.Mover,
+      ),
+    ),
+    "Money play. Cube at 4, White's.",
+  )
+  assert string.starts_with(
+    handler.describe(puzzles.Question(..q, crawford: True)),
+    "Match play, 3 away against 5, Crawford. Cube centred.",
+  )
+}
+
 /// A tree is worked out once and kept, because it is a pure function of a
 /// question that is never rewritten.
 pub fn a_tree_is_only_built_once_test() {

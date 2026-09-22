@@ -78,6 +78,30 @@ defmodule OskolWeb.SpaController do
     end
   end
 
+  @doc """
+  A puzzle's page (`/puzzles/:id`). The head is the one thing the page
+  cannot supply for itself before it has fetched anything, and the one
+  thing a link preview reads: the question as the title, the score and cube
+  as the description. `oskol/handlers/puzzles.head` writes both, and they
+  say nothing a puzzle does not say to everyone -- no name, no source game,
+  no answer. A puzzle nobody stored is a 404 like an unknown game.
+  """
+  def puzzle(conn, %{"id" => id}) do
+    case :oskol@handlers@puzzles.head(Oskol.Gleam.CtxBuilder.build(), id) do
+      {:ok, {:head, title, description}} ->
+        conn
+        |> assign(:page_title, title)
+        |> assign(:meta_description, description)
+        |> assign(:canonical, url(~p"/puzzles/#{id}"))
+        |> assign(:og_title, title)
+        |> assign(:og_description, description)
+        |> render_spa()
+
+      {:error, _} ->
+        raise OskolWeb.NotFoundError
+    end
+  end
+
   defp render_spa(conn) do
     guest_id = get_session(conn, :guest_id)
     guest_name = if guest_id, do: Oskol.Guests.touch(guest_id)

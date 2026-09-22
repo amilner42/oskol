@@ -1,15 +1,18 @@
 module Games.Backgammon.Words exposing
     ( answerInWords
+    , answerWhy
     , chanceCells
     , cubeChances
     , cubeLine
     , cubeVerdict
     , doubleInWords
+    , doubleWhy
     , gradeTag
     , inWords
     , lost
     , moveInWords
     , noDoubleInWords
+    , noDoubleWhy
     , properDouble
     , signed
     , spoken
@@ -142,30 +145,35 @@ properDouble who win =
 -}
 doubleInWords : String -> String -> Replay.CubeReview -> String
 doubleInWords who opp cube =
+    cubeVerdict who "doubled" cube.doubler ++ " " ++ doubleWhy who opp cube
+
+
+{-| Why, on a double that was offered (or is being asked about): the
+position in the engine's terms, with nothing about what was done.
+-}
+doubleWhy : String -> String -> Replay.CubeReview -> String
+doubleWhy who opp cube =
     let
         win =
             cube.probs |> Maybe.map .win |> Maybe.withDefault 0.5
-
-        why =
-            if tooGood cube.optimal cube.noDouble cube.doublePass then
-                who ++ " is winning here by too much: " ++ opp ++ " can pass for a single point, when playing on for the gammon is worth more."
-
-            else
-                case cube.optimal of
-                    NoDouble ->
-                        if win < 0.5 then
-                            who ++ " is losing here: doubling hands " ++ opp ++ " a cube they are glad to take."
-
-                        else
-                            standing who win ++ ", but not by enough to make the cube worth turning: " ++ opp ++ " has an easy take, and waiting keeps the chance to double later."
-
-                    DoublePass ->
-                        standing who win ++ " by enough that " ++ opp ++ " should pass."
-
-                    _ ->
-                        properDouble who win
     in
-    cubeVerdict who "doubled" cube.doubler ++ " " ++ why
+    if tooGood cube.optimal cube.noDouble cube.doublePass then
+        who ++ " is winning here by too much: " ++ opp ++ " can pass for a single point, when playing on for the gammon is worth more."
+
+    else
+        case cube.optimal of
+            NoDouble ->
+                if win < 0.5 then
+                    who ++ " is losing here: doubling hands " ++ opp ++ " a cube they are glad to take."
+
+                else
+                    standing who win ++ ", but not by enough to make the cube worth turning: " ++ opp ++ " has an easy take, and waiting keeps the chance to double later."
+
+            DoublePass ->
+                standing who win ++ " by enough that " ++ opp ++ " should pass."
+
+            _ ->
+                properDouble who win
 
 
 {-| The engine's word on a cube that stayed where it was: the verdict,
@@ -173,33 +181,38 @@ then why.
 -}
 noDoubleInWords : String -> String -> Replay.CubeReview -> String
 noDoubleInWords who opp cube =
+    cubeVerdict who "did not double" cube.doubler ++ " " ++ noDoubleWhy who opp cube
+
+
+{-| Why, on a cube that stayed where it was: the position in the engine's
+terms, with nothing about what was done.
+-}
+noDoubleWhy : String -> String -> Replay.CubeReview -> String
+noDoubleWhy who opp cube =
     let
         win =
             cube.probs |> Maybe.map .win |> Maybe.withDefault 0.5
-
-        why =
-            if tooGood cube.optimal cube.noDouble cube.doublePass then
-                who ++ " is winning here by too much to double: better to play on for the gammon than to let " ++ opp ++ " pass for a point."
-
-            else
-                case cube.optimal of
-                    DoublePass ->
-                        standing who win ++ " by enough that " ++ opp ++ " should pass: doubling would have taken the point."
-
-                    NoDouble ->
-                        if win < 0.5 then
-                            who ++ " is losing here, and the cube stays where it is."
-
-                        else if win < 0.55 then
-                            "The game is close here: not a double yet."
-
-                        else
-                            standing who win ++ ", but not by enough to double yet: " ++ opp ++ " would have an easy take, and the cube is worth more held."
-
-                    _ ->
-                        properDouble who win
     in
-    cubeVerdict who "did not double" cube.doubler ++ " " ++ why
+    if tooGood cube.optimal cube.noDouble cube.doublePass then
+        who ++ " is winning here by too much to double: better to play on for the gammon than to let " ++ opp ++ " pass for a point."
+
+    else
+        case cube.optimal of
+            DoublePass ->
+                standing who win ++ " by enough that " ++ opp ++ " should pass: doubling would have taken the point."
+
+            NoDouble ->
+                if win < 0.5 then
+                    who ++ " is losing here, and the cube stays where it is."
+
+                else if win < 0.55 then
+                    "The game is close here: not a double yet."
+
+                else
+                    standing who win ++ ", but not by enough to double yet: " ++ opp ++ " would have an easy take, and the cube is worth more held."
+
+            _ ->
+                properDouble who win
 
 
 {-| The engine's word on the answer to a double, from the taker's side:
@@ -208,31 +221,37 @@ the verdict, then why.
 answerInWords : String -> Replay.CubeReview -> Replay.Verdict -> String
 answerInWords taker cube verdict =
     let
-        shouldPass =
-            cube.optimal == DoublePass || tooGood cube.optimal cube.noDouble cube.doublePass
-
         did =
             if cube.response == Just Replay.Pass then
                 "passed"
 
             else
                 "took"
+    in
+    cubeVerdict taker did verdict ++ " " ++ answerWhy taker cube
+
+
+{-| Why, from the taker's side: the position in the engine's terms, with
+nothing about what was done.
+-}
+answerWhy : String -> Replay.CubeReview -> String
+answerWhy taker cube =
+    let
+        shouldPass =
+            cube.optimal == DoublePass || tooGood cube.optimal cube.noDouble cube.doublePass
 
         -- the taker's own chances: the doubler's, the other way round
         win =
             cube.probs |> Maybe.map (\p -> 1 - p.win) |> Maybe.withDefault 0.5
-
-        why =
-            if shouldPass then
-                taker ++ " is losing here by too much to take: a pass gives up one point rather than risking two or more."
-
-            else if win >= 0.5 then
-                taker ++ " is the favourite here, double or not: an easy take."
-
-            else
-                taker ++ " is behind here but has enough to play on for double the stake."
     in
-    cubeVerdict taker did verdict ++ " " ++ why
+    if shouldPass then
+        taker ++ " is losing here by too much to take: a pass gives up one point rather than risking two or more."
+
+    else if win >= 0.5 then
+        taker ++ " is the favourite here, double or not: an easy take."
+
+    else
+        taker ++ " is behind here but has enough to play on for double the stake."
 
 
 {-| The chances a cube decision was judged on, in the move table's

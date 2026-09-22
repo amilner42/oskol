@@ -4,6 +4,9 @@ module Games.Backgammon.Puzzle exposing
     , decoder, treeDecoder, nodeDecoder
     , Table, Seat, Out(..), view
     , nodeAt, played, snapshot, pips, pipsAgainst
+    , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory
+    , revealDecoder, scheduleDecoder, memoryDecoder, verdictName
+    , asReplayCandidate, gradeOf, optimalOf, bands
     )
 
 {-| A puzzle as the server sends it, and the board it is played on.
@@ -40,9 +43,20 @@ and the identity bars print: a count of the position, not a rule about it.
 @docs Table, Seat, Out, view
 @docs nodeAt, played, snapshot, pips, pipsAgainst
 
+The reveal is the other half of the wire: what `POST .../attempts` answers
+once the turn is committed (the verdict, the move played, the best and the
+top five, or the cube's call on the five-band scale, and for an account
+where the card now stands), what `.../outcome` answers (the schedule
+again) and what `/mine` says to a player of the source game.
+
+@docs Reveal, Verdict, Candidate, CubeReveal, Schedule, Memory
+@docs revealDecoder, scheduleDecoder, memoryDecoder, verdictName
+@docs asReplayCandidate, gradeOf, optimalOf, bands
+
 -}
 
 import Dict exposing (Dict)
+import Games.Backgammon.Replay as Replay
 import Games.Backgammon.View as View
 import Html exposing (Html)
 import Json.Decode as D
@@ -470,3 +484,297 @@ pips side =
 pipsAgainst : Side -> Int
 pipsAgainst side =
     (side.points |> List.indexedMap (\i n -> n * (24 - i)) |> List.sum) + (side.bar * 25)
+
+
+
+-- THE REVEAL
+
+
+{-| What an attempt is answered with. `yours` is the play as the answer
+describes it, or nothing where the stored answer holds no result for it
+(`Unknown`); `best` and `top` are the engine's; `cube` is there for a cube
+question and `schedule` for an account whose deck holds the card.
+-}
+type alias Reveal =
+    { verdict : Verdict
+    , yours : Maybe Candidate
+    , best : Maybe Candidate
+    , top : List Candidate
+    , cube : Maybe CubeReveal
+    , schedule : Maybe Schedule
+    }
+
+
+{-| How the answer went. `Unknown` is not a miss: the engine did not rank
+that play, so nobody is told they were wrong.
+-}
+type Verdict
+    = Pass
+    | Hold
+    | Fail
+    | Unknown
+
+
+verdictName : Verdict -> String
+verdictName verdict =
+    case verdict of
+        Pass ->
+            "pass"
+
+        Hold ->
+            "hold"
+
+        Fail ->
+            "fail"
+
+        Unknown ->
+            "unknown"
+
+
+{-| One play the reveal describes: its rank among every legal play (or
+nothing, for a play the answer only costed), its notation (empty for such
+a play), what it is worth and what it gives up against the best, the board
+it leaves and where its checkers landed, and its chances where the engine
+described it.
+-}
+type alias Candidate =
+    { rank : Maybe Int
+    , notation : String
+    , equity : Maybe Float
+    , equityLost : Float
+    , position : Maybe Board
+    , landed : List Int
+    , probs : Maybe Replay.Probs
+    }
+
+
+{-| The engine's call on the cube: its band on the same five-band scale
+the player answered on, over the three equities it was made from. The
+equities are always the doubler's payoff, whichever side was asked.
+-}
+type alias CubeReveal =
+    { band : Int
+    , noDouble : Float
+    , doubleTake : Float
+    , doublePass : Float
+    , probs : Maybe Replay.Probs
+    , tooGood : Bool
+    }
+
+
+{-| Where the card stands in the player's deck after this answer. `due` is
+Unix milliseconds. `amendable` says the engine's grade moved the ladder
+and may be overridden; `selfGrade` that it could not grade the play and
+the player is asked to; neither means there is nothing to say.
+-}
+type alias Schedule =
+    { levelBefore : Int
+    , levelAfter : Int
+    , due : Int
+    , amendable : Bool
+    , selfGrade : Bool
+    }
+
+
+{-| The memory line, for a player of the game the puzzle came from: whose
+move it was ("you", or the opponent by name), what was played and what it
+cost, the day, how that game ended from the reader's side, and where in
+the replay it happened.
+-}
+type alias Memory =
+    { who : String
+    , played : String
+    , equityLost : Float
+    , grade : String
+    , date : String -- an ISO day: "2026-09-12"
+    , result : Maybe { won : Bool, points : Int }
+    , replay : String -- a local path
+    }
+
+
+revealDecoder : D.Decoder Reveal
+revealDecoder =
+    D.map6 Reveal
+        (D.field "verdict" verdictDecoder)
+        (D.field "yours" (D.nullable candidateDecoder))
+        (D.field "best" (D.nullable candidateDecoder))
+        (D.field "top" (D.list candidateDecoder))
+        (D.field "cube" (D.nullable cubeRevealDecoder))
+        (D.field "schedule" (D.nullable scheduleDecoder))
+
+
+{-| A verdict is one of four words, and a fifth fails the answer: a page
+that read a word it does not know as "unknown" would tell a player the
+engine had not ranked a play it had.
+-}
+verdictDecoder : D.Decoder Verdict
+verdictDecoder =
+    D.string
+        |> D.andThen
+            (\word ->
+                case word of
+                    "pass" ->
+                        D.succeed Pass
+
+                    "hold" ->
+                        D.succeed Hold
+
+                    "fail" ->
+                        D.succeed Fail
+
+                    "unknown" ->
+                        D.succeed Unknown
+
+                    other ->
+                        D.fail ("not a verdict: " ++ other)
+            )
+
+
+candidateDecoder : D.Decoder Candidate
+candidateDecoder =
+    D.map7 Candidate
+        (D.field "rank" (D.nullable D.int))
+        (D.field "notation" D.string)
+        (D.field "equity" (D.nullable D.float))
+        (D.field "equity_lost" D.float)
+        (D.field "position" (D.nullable boardDecoder))
+        (D.field "landed" (D.list D.int))
+        (D.field "probs" (D.nullable probsDecoder))
+
+
+probsDecoder : D.Decoder Replay.Probs
+probsDecoder =
+    D.map5 Replay.Probs
+        (D.field "win" D.float)
+        (D.field "gammon_win" D.float)
+        (D.field "backgammon_win" D.float)
+        (D.field "gammon_loss" D.float)
+        (D.field "backgammon_loss" D.float)
+
+
+cubeRevealDecoder : D.Decoder CubeReveal
+cubeRevealDecoder =
+    D.map6 CubeReveal
+        (D.field "band" D.int)
+        (D.field "no_double" D.float)
+        (D.field "double_take" D.float)
+        (D.field "double_pass" D.float)
+        (D.field "probs" (D.nullable probsDecoder))
+        (D.field "too_good" D.bool)
+
+
+scheduleDecoder : D.Decoder Schedule
+scheduleDecoder =
+    D.map5 Schedule
+        (D.field "level_before" D.int)
+        (D.field "level_after" D.int)
+        (D.field "due" D.int)
+        (D.field "amendable" D.bool)
+        (D.field "self_grade" D.bool)
+
+
+memoryDecoder : D.Decoder Memory
+memoryDecoder =
+    D.map7 Memory
+        (D.field "who" D.string)
+        (D.field "played" D.string)
+        (D.field "equity_lost" D.float)
+        (D.field "grade" D.string)
+        (D.field "date" D.string)
+        (D.field "result"
+            (D.nullable
+                (D.map2 (\won points -> { won = won, points = points })
+                    (D.field "won" D.bool)
+                    (D.field "points" D.int)
+                )
+            )
+        )
+        (D.field "replay" D.string)
+
+
+{-| A candidate in the shape the replay's words and table read. The mover
+is White, so the position's pip counts are the mover's and the opponent's
+on the question's numbering.
+-}
+asReplayCandidate : Candidate -> Replay.Candidate
+asReplayCandidate c =
+    { rank = Maybe.withDefault 0 c.rank
+    , notation = c.notation
+    , equity = Maybe.withDefault (0 - c.equityLost) c.equity
+    , equityLost = c.equityLost
+    , played = False
+    , position =
+        c.position
+            |> Maybe.map
+                (\b ->
+                    { white = { points = b.white.points, bar = b.white.bar, off = b.white.off, pips = pips b.white }
+                    , black = { points = b.black.points, bar = b.black.bar, off = b.black.off, pips = pipsAgainst b.black }
+                    }
+                )
+    , landed = c.landed
+    , probs = c.probs
+    }
+
+
+{-| The site's grade for what a play gave up: the bands the replay prints
+and a puzzle is graded by (under 0.02 is right, under 0.08 doubtful,
+under 0.16 bad). The best play is `best`; a right play that is not the
+best is `ok`.
+-}
+gradeOf : Float -> String
+gradeOf lost =
+    if lost <= 0 then
+        "best"
+
+    else if lost < 0.02 - 0.000001 then
+        "ok"
+
+    else if lost < 0.08 - 0.000001 then
+        "doubtful"
+
+    else if lost < 0.16 - 0.000001 then
+        "bad"
+
+    else
+        "very_bad"
+
+
+{-| The engine's call as the three-equity line marks it, from its band:
+for the doubler, a positive band is a double (a pass where passing pays
+them at least as much as a take); for the responder, a positive band is a
+take. Borderline on a take is read as the take: the responder picks
+whatever pays the doubler less, and at the line they are equal.
+-}
+optimalOf : String -> CubeReveal -> Replay.Optimal
+optimalOf kind cube =
+    case kind of
+        "take" ->
+            if cube.band >= 0 then
+                Replay.DoubleTake
+
+            else
+                Replay.DoublePass
+
+        _ ->
+            if cube.band > 0 then
+                if cube.doublePass <= cube.doubleTake then
+                    Replay.DoublePass
+
+                else
+                    Replay.DoubleTake
+
+            else
+                Replay.NoDouble
+
+
+{-| The five answers to a cube question, worst for the cube first (-2 to
++2), in the words of the side being asked.
+-}
+bands : String -> List ( Int, String )
+bands kind =
+    case kind of
+        "take" ->
+            [ ( -2, "Big pass" ), ( -1, "Pass" ), ( 0, "Borderline" ), ( 1, "Take" ), ( 2, "Big take" ) ]
+
+        _ ->
+            [ ( -2, "Big no double" ), ( -1, "No double" ), ( 0, "Borderline" ), ( 1, "Double" ), ( 2, "Big double" ) ]

@@ -69,6 +69,12 @@ suite =
                     Expect.equal
                         (Just (Replay "backgammon" "AB12CD" Nothing Nothing))
                         (parse "/backgammon/AB12CD/replay?game=two")
+            , test "a puzzle, by its id" <|
+                \_ -> Expect.equal (Just (Puzzle "AB12CD34")) (parse "/puzzles/AB12CD34")
+            , test "a puzzle is not a room of a game called puzzles" <|
+                \_ -> Expect.notEqual (Just (Play "puzzles" "AB12CD34")) (parse "/puzzles/AB12CD34")
+            , test "practising is its own page, not a game's start page" <|
+                \_ -> Expect.equal (Just Puzzles) (parse "/puzzles")
             , test "the sitemap belongs to the server" <|
                 \_ -> Expect.equal Nothing (parse "/sitemap.xml")
             , test "so does the dev dashboard" <|
@@ -107,6 +113,8 @@ suite =
                 [ Library
                 , GameLanding "backgammon" (Just "AB12CD")
                 , Play "backgammon" "AB12CD"
+                , Puzzles
+                , Puzzle "AB12CD34"
                 , Replay "backgammon" "AB12CD" (Just 2) Nothing
                 , Replay "backgammon" "AB12CD" (Just 2) (Just 17)
                 , Replay "backgammon" "AB12CD" Nothing Nothing

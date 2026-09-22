@@ -1732,6 +1732,79 @@ a.bg-match-door:hover { background: var(--paper-2); }
   .bg-still .bg-band .die .grid > div > div { width: calc(var(--die-size) * 0.15); height: calc(var(--die-size) * 0.15); }
 }
 
+/* The puzzle page (`Page/Puzzle.elm`): the replay's page, board and note
+   (`.rp-*`, `.bg-still`) with its own question, scale and reveal on top.
+   Upright, the board is the table's own size: the point height is the
+   table's 9rem, not the replay's screen-fitted one. `:where` keeps this at
+   the replay's specificity so the sideways and desktop rules below still
+   size the board from the screen, exactly as they do for the replay. */
+:where(.pz-page) .bg-still { --bg-point-h: 9rem; }
+.rp-page.pz-page { height: auto; min-height: 100dvh; overflow: visible; }
+/* A puzzle is one position, not a match: the bars' score chips say nothing. */
+.pz-page .score-chip { display: none; }
+.pz-ask { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; }
+.pz-prompt { font-size: 17px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; }
+.pz-score { font-size: 12px; color: var(--pencil); }
+/* A puzzle page's board is played, not scrubbed: the replay's dimming of
+   played dice waits for the reveal (`.dice-played` is set only then). */
+.pz-note { margin-top: 0; }
+.pz-page .rp-note { max-height: none; }
+.pz-note-quiet { color: var(--pencil); }
+.pz-note-quiet .rp-words { color: var(--pencil); font-style: italic; }
+/* The five answers to a cube question, in one row; after the reveal the
+   same row is the scale, the engine's band inked. */
+.pz-bands { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; width: 100%; max-width: 32rem; }
+.pz-band {
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  min-height: 2.6rem; padding: 4px 2px; border: 2px solid var(--ink); border-radius: 4px;
+  background: #fff; color: var(--ink); font-size: 10.5px; font-weight: 700; line-height: 1.15;
+  box-shadow: 2px 2px 0 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s;
+}
+button.pz-band { cursor: pointer; }
+button.pz-band:not(:disabled):hover { background: var(--paper-2); }
+button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
+.pz-band.is-on { background: var(--highlighter); }
+.pz-scale .pz-band { box-shadow: none; border-color: var(--pencil); color: var(--pencil); font-weight: 600; min-height: 2.2rem; font-size: 10px; }
+.pz-scale .pz-band.is-on { border-color: var(--ink); color: var(--ink); background: var(--highlighter); }
+.pz-scale .pz-band.is-engine { border-color: #1f7a45; color: #1f7a45; background: #e4f4e9; font-weight: 800; box-shadow: 0 0 0 2px #1f7a45; }
+.pz-scale .pz-band.is-engine.is-on { background: var(--highlighter); }
+/* The verdict, in the grades' colours: right is the best move's green,
+   close the doubtful yellow, a miss the very-bad red, unranked pencil. */
+.pz-verdict { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 2px solid var(--ink); }
+.pz-verdict-word { padding: 3px 6px; border: 2px solid currentColor; border-radius: 3px; white-space: nowrap; }
+.pz-verdict-why { font-size: 13px; font-weight: 600; }
+.pz-verdict.is-pass { color: #1f7a45; }
+.pz-verdict.is-pass .pz-verdict-word { background: #e4f4e9; }
+.pz-verdict.is-hold { color: #8a5d00; }
+.pz-verdict.is-hold .pz-verdict-word { background: #fff1c9; }
+.pz-verdict.is-fail { color: #b3261e; }
+.pz-verdict.is-fail .pz-verdict-word { background: #fde1df; }
+.pz-verdict.is-unknown { color: var(--pencil); }
+.pz-verdict.is-unknown .pz-verdict-word { background: var(--paper-2); }
+/* "you" beside the move played in the candidate table. */
+.pz-you { margin-left: 5px; font-size: 8px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pen); vertical-align: 2px; }
+/* The level line and the four buttons that amend it. */
+.pz-level { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--pencil); display: flex; flex-direction: column; gap: 6px; }
+.pz-level-line { font-size: 12.5px; font-weight: 700; }
+.pz-outcomes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.pz-outcome {
+  padding: 6px 2px; border: 2px solid var(--ink); border-radius: 4px; background: #fff; color: var(--ink);
+  font-family: "Press Start 2P", monospace; font-size: 7px; line-height: 1.2; cursor: pointer;
+  box-shadow: 2px 2px 0 0 var(--ink); transition: transform 0.08s, box-shadow 0.08s;
+}
+.pz-outcome:not(:disabled):hover { background: var(--paper-2); }
+.pz-outcome:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
+.pz-outcome.is-on { background: var(--ink); color: var(--paper); }
+.pz-outcome:disabled { cursor: default; }
+.pz-outcome-error { font-size: 12px; color: var(--red); }
+/* The memory line: the reader's own game, and the way to that moment. */
+.pz-memory { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--paper-2); font-size: 12.5px; }
+.pz-memory-link { color: var(--pen); font-weight: 700; white-space: nowrap; }
+/* Under the board after the reveal: SHARE, and NEXT when there is one. */
+.pz-controls { padding-top: 0.4rem; }
+.pz-actions { display: flex; gap: 8px; }
+.pz-action { gap: 6px; padding: 7px 14px; font-family: "Press Start 2P", monospace; font-size: 8px; }
+
 .rp-page {
   height: 100dvh;
   display: flex;
@@ -2036,3 +2109,21 @@ a.rp-match-row:hover { color: var(--ink); }
 .identity-icon { display: inline-flex; flex: none; line-height: 0; }
 .identity-icon.is-guest { opacity: 0.6; }
 .identity-icon.is-account { color: #3fb96f; }
+
+/* The puzzle page sideways: the question sits under the header in the
+   column beside the board, then the answers (or SHARE / NEXT), then the
+   reveal, which scrolls. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  .rp-page.pz-page { grid-template-rows: auto auto auto minmax(0, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
+  .pz-page .pz-ask { grid-column: 2; grid-row: 2; }
+  .pz-page .rp-controls-wrap { grid-row: 3; }
+  .pz-page .rp-side { grid-row: 4; overflow-y: auto; min-height: 0; }
+  .pz-page .rp-note { max-height: none; }
+  .pz-prompt { font-size: 14px; }
+  .pz-band { min-height: 2.2rem; font-size: 9.5px; }
+}
+@media (min-width: 1024px) {
+  .rp-page.pz-page { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto auto auto; }
+  .pz-ask { width: 100%; }
+  .pz-page .rp-note { height: auto; flex: 1; min-height: 0; overflow-y: auto; }
+}

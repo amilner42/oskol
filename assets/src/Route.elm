@@ -8,6 +8,7 @@ module Route exposing
     , invite
     , library
     , play
+    , puzzle
     , replay
     )
 
@@ -16,6 +17,8 @@ module Route exposing
     /            the game library
     /:slug       one game's start page (`?game=` an invite)
     /login/:token  the page a mailed sign-in link opens
+    /puzzles     practising (the home of it lands with `puzzles-home`)
+    /puzzles/:id one puzzle: a position and its question
     /:slug/:id   a running game
     /:slug/:id/replay   a game played again, turn by turn, with its analysis
                         (`?game=` which game of the match, `?step=` the line
@@ -43,6 +46,10 @@ type Route
     | Login String
       -- slug, ?game= (a room code)
     | GameLanding String (Maybe String)
+      -- practising: reserved, as the server reserves it
+    | Puzzles
+      -- a puzzle, by id
+    | Puzzle String
       -- slug, game id
     | Play String String
       -- slug, game id, ?game= (a game's number), ?step= (a line of its record)
@@ -56,6 +63,10 @@ parser =
         -- Before Play: "login" is a reserved word, not a game slug, exactly
         -- as the server's router has it.
         , map Login (s "login" </> string)
+        -- Likewise "puzzles": before Play, or /puzzles/:id would be a
+        -- room of a game called puzzles.
+        , map Puzzles (s "puzzles")
+        , map Puzzle (s "puzzles" </> string)
         , map Play (string </> string)
         , map Replay (string </> string </> s "replay" <?> Query.int "game" <?> Query.int "step")
         , map GameLanding (string <?> Query.string "game")
@@ -100,6 +111,14 @@ play slug gameId =
     Play slug gameId
 
 
+{-| One puzzle's page. The link is plain: a puzzle names nobody, so there
+is nothing for it to carry.
+-}
+puzzle : String -> Route
+puzzle id =
+    Puzzle id
+
+
 href : Route -> String
 href route =
     case route of
@@ -115,6 +134,12 @@ href route =
 
         GameLanding slug game ->
             "/" ++ slug ++ query [ ( "game", game ) ]
+
+        Puzzles ->
+            "/puzzles"
+
+        Puzzle id ->
+            "/puzzles/" ++ id
 
         Play slug gameId ->
             "/" ++ slug ++ "/" ++ gameId

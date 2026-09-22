@@ -631,6 +631,14 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  best move, the dice take the move back; a turn's note has
                                  MOVE and CUBE tabs, each a sentence in words (built from
                                  the chances) over the numbers in columns
+assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over the board
+                                 (Games/Backgammon/Puzzle.elm's `Table`, the page owning
+                                 the path and the lazy fetches), PLAY or the five-band
+                                 scale, the reveal in the replay's words, the level line
+                                 and its four buttons, the memory line, SHARE, NEXT
+assets/src/Games/Backgammon/Puzzle.elm  the puzzle wire: the question and tree decoders,
+                                 the board on a tree node, and the reveal's decoders
+                                 (verdict, candidates, cube band, schedule, memory)
 assets/src/Games/Backgammon/Replay.elm  the record and reviews as the replay reads them:
                                  decoders, the board at each step, verdicts per record line;
                                  the engine's cube call is read once here, into `Optimal`
@@ -743,6 +751,14 @@ arrive at any of them cold, and moving between them afterwards is a
   current in the address bar (replaced, not pushed, so back still leaves
   the page), which is what makes a reload land on the same line and a
   link carry a move to a friend; `step` is omitted at the start of a game.
+- `/puzzles/<id>` one puzzle: the position, "White to play 6-4. What's your
+  play?", the board to play it on, then the reveal. Open to anyone with
+  the link and indexable; `puzzles` is a reserved slug (before `/:slug` on
+  both sides), and a bare `/puzzles` is a 404 until `puzzles-home`. The
+  head (`SpaController.puzzle`, words from `handlers/puzzles.head`) is the
+  question as the title and og:title, the score and cube as the
+  description, nothing else; an id nobody stored is a 404. Not in the
+  sitemap: too many.
 - `/login/<token>` the page a mailed sign-in link opens. It **reads** the
   token and writes nothing: the page says "Sign in as you@example.com" with
   one button, and that button POSTs `/papi/auth/link`, which is the only
@@ -1242,6 +1258,29 @@ out -- so a second page at an offset would skip exactly as many cards as the
 player had just answered: 21 due would end after 20 with one unseen and the
 day's new cards never offered at all. "Done for today" is a fetch that comes
 back empty, and nothing else.
+**The page** (`/puzzles/:id`, `assets/src/Page/Puzzle.elm`) fetches the
+question and nothing else until PLAY: the answer is not in that response,
+and `/mine` is asked only after the attempt, so a page open on a shared
+link can put nothing within reach. The board is the table's own
+(`Games/Backgammon/Puzzle.elm` on `View.viewPlay`; a lazy tree's levels
+are fetched as the path reaches them), UNDO and PLAY are its own band; a
+cube question is five buttons (-2..+2, "Big no double" to "Big double",
+"Big pass" to "Big take"). The reveal is the replay's words and table
+(`Words`, with `doubleWhy`/`noDoubleWhy`/`answerWhy` for a position nobody
+has acted on yet) with "you" marked and a candidate tappable onto the
+board; the cube's scale marks the engine's band over `cubeLine`. The
+attempt's key is minted once per page load (`elm/random`) and a PLAY that
+lands before it waits for it, so a retry is the same answer. Signed in
+with a `schedule`, the level line ("Level 2 → 3 · back in 7 days"; "back
+tomorrow") and SOONER / GOT IT / KNEW IT / NEVER, the graded one
+preselected when `amendable` (SOONER after a miss, GOT IT otherwise),
+none when `self_grade`, absent when neither; NEVER says the card is out
+of the deck. SHARE is the table's `shareInvite` port on the clean URL.
+NEXT is the shell's: `Main.run` (`{ids, at}`) is the practice run, kept
+across `pushUrl`s because every page is rebuilt on one; the page is told
+`hasNext` and answers `WantsNext`, and Main pushes the next id. Nothing
+starts a run yet: the practice home and the cards hand Main the list.
+
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
 (no new column: retain already keeps a learner's timezone, and it is the
 only thing that reads one). Gleam checks the shape, the zone database checks
@@ -1325,6 +1364,16 @@ node playwright/test-backgammon-replay/test.js  # the replay of a finished match
                                                # the room): steps, keys, swipes, analysis
                                                # pending -> done, retry, phones; the analysis
                                                # is stubbed unless REPLAY_REAL=1
+node playwright/test-puzzle/test.js             # a puzzle from a link: setup.exs arranges a game,
+                                               # grades it against a Req.Test engine in its own VM
+                                               # (real legal plays, the played one a mistake) and
+                                               # extracts; a stranger, the opponent (memory line)
+                                               # and the mistake's own player signed in (level
+                                               # line, SOONER) play it; phones; the board is the
+                                               # table's size
+node playwright/review-puzzle/test.js           # screenshots of the puzzle page: question, staged,
+                                               # reveal, a candidate, the cube scale (phone, small,
+                                               # landscape, desktop)
 node playwright/test-spa-landing/test.js        # the home board and CREATE GAME's dialog, old
                                                # links redirect, a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
@@ -1419,7 +1468,10 @@ Every game is its seed plus its action log, and the suite leans on that.
 **Fixtures (`mix oskol.fixtures`)** come from `gamekit/fixture`: replays are
 small and committed; payload captures (every update every viewer received
 for the first steps of a playout) are derived, gitignored, and embedded in
-`assets/tests/Fixtures.elm` for elm-test.
+`assets/tests/Fixtures.elm` for elm-test. `oskol/puzzles/fixture` does the
+same for the puzzle wire: `PuzzleApiFixtures.elm` (the question, per kind)
+and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
+`handlers/puzzles.attempt_body`, and the three schedule shapes).
 
 **Elm (`elm-test`)**
 - `ProtocolTest`: every fixture payload decodes; cross-checks that hold for
@@ -1437,6 +1489,12 @@ for the first steps of a playout) are derived, gitignored, and embedded in
   four menu entries, CREATE GAME's dialog (the mode and clock dropdowns,
   their defaults, the summary, inline validation), the theme picker, and
   the invite's three answers.
+- `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
+  (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
+  node is fetched and merged, PLAY posts exactly the path with the key (and
+  waits for the key), the verdict and "you" in the table, the cube scale
+  with the engine's band, the level line in its three states and after an
+  override, NEXT only from the shell, the memory line on 200 and not on 404.
 - `ReplayTest`: the replay on the real record and analysis of seed 000011
   (`ReplayFixtures`): decoders, the board at every step, stepping, keys,
   swipes, game switching, and the analysis filling in without moving the
