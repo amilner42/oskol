@@ -97,6 +97,12 @@ defmodule Oskol.MixProject do
       {:swoosh, "~> 1.17"},
       {:bandit, "~> 1.12.5"},
       {:nanoid, "~> 2.1"},
+      # Spaced repetition for the puzzle deck: a Leitner ladder over an
+      # append-only review log, in our own Postgres. Pinned by commit, not by
+      # branch: the schedule a player is on must not move under them because
+      # someone pushed upstream. We own the library (amilner42/retain), so a
+      # change it needs is a PR there and a new ref here.
+      {:retain, github: "amilner42/retain", ref: "790786981a918548aa1ab5564547a62c578d2d80"},
       # Gleam packages
       {:gleam_stdlib, "~> 0.34 or ~> 1.0"},
       {:gleam_json, "~> 3.0"},
