@@ -178,6 +178,63 @@ defmodule Oskol.Reviews do
     :ok
   end
 
+  @doc """
+  Write a fresh answer over an old one and owe the game its puzzles again,
+  in one transaction: `save/8`, then `Oskol.Puzzles.reopen/2` (the
+  extraction marker cleared, the `post_take_cube` sources dropped). One
+  write on purpose: there is never a moment when the old answer is stored
+  and the game is owed puzzles, which the live sweep would extract from
+  the old answer. The backfill's, and nobody else's.
+  """
+  def replace(game_id, game_number, status, attempts, response, error, report, turns) do
+    {:ok, :ok} =
+      Repo.transaction(fn ->
+        :ok = save(game_id, game_number, status, attempts, response, error, report, turns)
+        :ok = Oskol.Puzzles.reopen(game_id, game_number)
+      end)
+
+    :ok
+  end
+
+  @doc """
+  Charge engine calls against one row and say what happened, changing
+  nothing else: the answer and the page stay. What the backfill writes on
+  a `done` game it could not re-ask (the engine did not answer, or its
+  answer could not be trusted) -- the page keeps what it had, and the row
+  says why and stops being asked once its tries are spent.
+  """
+  def charge(game_id, game_number, attempts, error)
+      when is_integer(attempts) and attempts >= 0 and (is_nil(error) or is_binary(error)) do
+    from(r in Review, where: r.game_id == ^game_id and r.game_number == ^game_number)
+    |> Repo.update_all(
+      set: [
+        attempts: attempts,
+        error: error && String.slice(error, 0, 500),
+        updated_at: DateTime.utc_now()
+      ]
+    )
+
+    :ok
+  end
+
+  @doc """
+  Every room with a graded game, oldest graded first, or the one named.
+  The backfill's work list; which of a room's games are old is Gleam's to
+  say from the stored answer, so this reads no body.
+  """
+  def rooms_reviewed(game_id \\ nil) do
+    from(r in Review,
+      where: r.status == "done" and not is_nil(r.response),
+      group_by: r.game_id,
+      order_by: [asc: min(r.inserted_at), asc: r.game_id],
+      select: r.game_id
+    )
+    |> then(fn query ->
+      if game_id, do: where(query, [r], r.game_id == ^game_id), else: query
+    end)
+    |> Repo.all()
+  end
+
   @doc "Fill in one legacy review's turn count without changing any other field."
   def backfill_turns(game_id, game_number, turns) when is_integer(turns) and turns >= 0 do
     from(r in Review, where: r.game_id == ^game_id and r.game_number == ^game_number)

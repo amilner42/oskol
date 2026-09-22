@@ -15,12 +15,14 @@
 //// Not a puzzle: a forced play, a roll that could play nothing, a "no
 //// double" the engine grades where no double could have been offered (the
 //// opening roll, a cube the mover does not hold, the Crawford game -- the
-//// same rule the replay draws its cube verdicts by), and, for now, the
-//// checker play of a turn whose double was taken: the engine evaluates
-//// those on the cube as it stood *before* the offer
-//// (`bg-analysis-post-take-context`). Those last ones are still written
-//// down, as a source with a reason and no puzzle, so a repair can find and
-//// count them once the engine is fixed.
+//// same rule the replay draws its cube verdicts by), and the checker play
+//// of a turn whose double was taken *when the answer predates the engine's
+//// fix*: until `bg-analysis-post-take-context` shipped, the engine graded
+//// those on the cube as it stood before the offer. That fix and
+//// `all_results` shipped together, so an answer whose moves carry no
+//// `results` is one graded on the wrong cube, and only those are skipped
+//// -- written down as a source with a reason and no puzzle, so the
+//// backfill (`puzzles-backfill`) can find, count and re-ask them.
 
 import backgammon/analysis.{type GameTurns, type Turn, Took}
 import gleam/int
@@ -34,6 +36,17 @@ import oskol/reviews/report.{type Review, type TurnReview, Moved}
 
 /// A turn whose checker play the engine graded on the wrong cube.
 pub const post_take_reason = "post_take_cube"
+
+/// Was this answer graded before the engine sent every legal result? The
+/// engine started sending `results` in the same release that fixed the
+/// cube a post-take play is judged on, so a move without them is one from
+/// before both.
+pub fn before_results(move: report.MoveReview) -> Bool {
+  case move {
+    Moved(results: [], ..) -> True
+    _ -> False
+  }
+}
 
 /// Everything one graded game writes: the puzzles it found and the sources
 /// that point at them, ready for `caps/puzzles.store`. Error when the
@@ -103,6 +116,7 @@ fn new_puzzle(
     question_json: json.to_string(puzzle.question_json(question)),
     answer_json: json.to_string(puzzle.answer_json(answer)),
     evaluated_by_json: json.to_string(puzzle.evaluated_by_json(by)),
+    complete: puzzle.complete(answer),
   )
 }
 
@@ -147,9 +161,10 @@ fn move_puzzle(
               },
             )
           }
-          case turn.double == Some(Took) {
-            // The engine graded this play on the cube as it stood before
-            // the double it followed. Recorded, not asked.
+          case turn.double == Some(Took) && results == [] {
+            // An old answer graded this play on the cube as it stood
+            // before the double it followed. Recorded, not asked, until
+            // the backfill asks the fixed engine.
             True -> [#(None, source(None))]
             False -> {
               let question =

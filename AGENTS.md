@@ -1024,10 +1024,13 @@ path builds one and nothing re-asks the engine to recover one.
   never a forced play, a dance, or a "no double" where no double could have
   been offered (the replay's own cube rule -- the opening roll, a cube the
   mover does not hold, the Crawford game). The checker play of a turn whose
-  double was taken is skipped until `bg-analysis-post-take-context` lands:
-  the engine grades it on the pre-offer cube. Skipped turns are still
-  written, as a source with a reason and no puzzle, so a repair can count
-  them.
+  double was taken is skipped when its answer predates the engine's fix
+  (`bg-analysis-post-take-context`): that engine graded it on the pre-offer
+  cube. The fix shipped with `all_results`, so "old" is read off the answer
+  itself -- a move without `results` (`extract.before_results`) -- and an
+  answer from the fixed engine has every such play asked. Skipped turns are
+  still written, as a source with a reason and no puzzle, so the backfill
+  can count and re-ask them.
 - **A puzzle is public and deduplicated.** `src/oskol/puzzles.gleam` is the
   stored shape: the question is mover-relative (the engine's 26-int board
   from the player on roll's side, the roll high die first, the cube value
@@ -1038,7 +1041,14 @@ path builds one and nothing re-asks the engine to recover one.
   the same three equities -- always the *doubler's* payoff. Whose mistake it
   was is a `puzzle_sources` row, and the seat of a take is the responder's.
   **A stored answer is never rewritten**: a shared link must not change its
-  mind, so a change of shape is a migration.
+  mind, so a change of shape is a migration. The one audited exception: an
+  answer that is not `complete` (a column, Gleam's word on it:
+  `puzzle.complete` -- every legal result for a checker play, the chances
+  for a cube verdict) is replaced by a complete answer to the identical
+  question, in `Oskol.Puzzles.store/4`, with `answer_upgraded_at` set. The
+  question is the key so it is the same puzzle, the complete answer is a
+  superset, and nothing anyone was shown changes: an attempt that was
+  "unknown" becomes gradable. A complete answer is never touched.
 - **The answer is complete for new puzzles.** The review request asks
   `all_results`, which costs the engine nothing (it evaluates every legal
   play anyway; `top_moves` only truncates what it writes down), so the
@@ -1072,13 +1082,34 @@ path builds one and nothing re-asks the engine to recover one.
 - **Nothing old is owed.** The migration marks every review that already
   existed, because the boot sweep would otherwise backfill all of
   production at deploy, ahead of live games and out of answers written
-  before `all_results`. Backfilling old rooms is `puzzles-backfill`, and it
-  finds an old row by its stored response (a turn whose `move` carries no
-  `results`), never by the marker. For the same reason, a future path that
-  re-analyses a game that is already `done` must clear
-  `puzzles_extracted_at` itself: `Reviews.save/8`'s upsert deliberately
-  leaves it alone, which is right for today's only rewriter (a retry of a
-  `failed` row, which never had puzzles).
+  before `all_results`. Backfilling old rooms is the operator's
+  **`mix oskol.puzzles.backfill`** (`Oskol.Release.puzzles_backfill/1` from
+  a release; dry run unless `--write`; `--room`, `--limit`, `--reset`;
+  the queue off for the run), the one sanctioned re-ask: every decision in
+  `src/oskol/handlers/backfill.gleam`, the walk and the counts in
+  `Oskol.Puzzles.Backfill`. It finds an old row by its stored response (a
+  turn whose `move` carries no `results`, `backfill.old_contract`), never
+  by the marker; asks the engine again at the row's own levels with
+  `all_results`, through the same request builder, replay and render a
+  fresh review uses; checks the fresh answer before trusting it
+  (`backfill.trusted`: a result per legal play, a board on every
+  candidate, chances on every cube verdict -- an answer that falls short
+  is quarantined: not stored, the row charged to the limit with the reason
+  in `error`, named in the counts); then writes the fresh answer and page
+  over the old with the game's puzzles reopened in the same transaction
+  (`analysis.replace` -> `Reviews.replace/8` + `Puzzles.reopen/2`: marker
+  cleared, `post_take_cube` sources dropped -- one write, so the live
+  sweep never finds an old answer owed puzzles), and extracts through
+  `reviews.extracted`, which writes the new puzzles and upgrades the old
+  incomplete ones. An engine failure charges one attempt
+  on the `done` row (`analysis.charge`: attempts and `error` only, the page
+  untouched) and the run goes on; three spent and the game waits for
+  `--reset`. Decks are synced at the end. A second run finds nothing and
+  writes nothing. For the same reason, a future path that re-analyses a
+  game that is already `done` must clear `puzzles_extracted_at` itself:
+  `Reviews.save/8`'s upsert deliberately leaves it alone, which is right
+  for the other rewriter (a retry of a `failed` row, which never had
+  puzzles).
 - `puzzle_attempts`, `puzzle_shares` and `puzzle_images` exist and are
   written by the later tickets (the API, the story link, the board picture).
 - Measured on the seeded match 821900 (12 games): 125 puzzles, 127 sources
@@ -1209,6 +1240,8 @@ cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null   # E
 cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm  # Elm tests (needs `mix oskol.fixtures payloads`)
 mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
+                      # OSKOL_DEV_DATABASE names another dev database (a branch trying an
+                      # operator task on seeded rooms, beside the main checkout's oskol_dev)
 mix oskol.seed        # local backgammon rooms at codes 000001.. parked in positions worth
                       # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated
                       # but held by nobody, P1 to act; prints each room's invite link, and

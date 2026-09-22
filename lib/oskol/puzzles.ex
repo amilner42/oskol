@@ -19,6 +19,12 @@ defmodule Oskol.Puzzles do
   id, so Gleam offers several and this takes the first that nobody else's
   key holds.
 
+  A stored answer is never rewritten, with one audited exception: a
+  puzzle whose answer is not `complete` (Gleam's word, stored beside it)
+  takes a complete answer to the same question, and `answer_upgraded_at`
+  says so. That is what lets the backfill reconcile puzzles written from
+  answers older than `all_results`; a complete answer is never touched.
+
   The attempt is charged before the transaction, deliberately: a write that
   keeps failing must not have the minute sweep replaying one room for ever.
   Every giving-up path -- a failed transaction, and `failed/3` for a
@@ -34,6 +40,10 @@ defmodule Oskol.Puzzles do
   alias Oskol.Reviews.Review
 
   @max_attempts 3
+  # The reason `oskol/puzzles/extract` writes on a checker play it skipped
+  # for the engine's old cube bug (`post_take_reason`): a Gleam constant is
+  # inlined, so it is written twice, like the attempt budget.
+  @post_take "post_take_cube"
 
   defmodule Puzzle do
     @moduledoc "One question, asked of anyone, with the engine's answer."
@@ -46,6 +56,10 @@ defmodule Oskol.Puzzles do
       field(:question, :map)
       field(:answer, :map)
       field(:evaluated_by, :map)
+      # The answer grades any attempt exactly (`oskol/puzzles.complete`).
+      # The one thing that lets `answer` be written twice.
+      field(:complete, :boolean, default: false)
+      field(:answer_upgraded_at, :utc_datetime_usec)
 
       timestamps(type: :utc_datetime_usec)
     end
@@ -163,29 +177,34 @@ defmodule Oskol.Puzzles do
   Write one game's puzzles, its sources and its extraction marker, all in
   one transaction.
 
-  `puzzles` are `%{key:, ids:, kind:, question:, answer:, evaluated_by:}`
-  and `sources` `%{key:, game_number:, turn:, kind:, seat:, player_id:,
-  played:, equity_lost:, grade:, skipped_reason:}`, both already decided in
-  Gleam. A source names its puzzle by key; this resolves the key to the id
-  the row actually ended up with, so two extractions racing on the same
-  position agree.
+  `puzzles` are `%{key:, ids:, kind:, question:, answer:, evaluated_by:,
+  complete:}` and `sources` `%{key:, game_number:, turn:, kind:, seat:,
+  player_id:, played:, equity_lost:, grade:, skipped_reason:}`, both
+  already decided in Gleam. A source names its puzzle by key; this resolves
+  the key to the id the row actually ended up with, so two extractions
+  racing on the same position agree.
 
-  `:ok`, or `{:error, reason}` -- extraction never fails a review.
+  `{:ok, %{puzzles:, upgraded:, sources:}}` with the rows this write
+  actually made (a rerun is all zeros; `upgraded` is stored puzzles whose
+  incomplete answer this game's complete one replaced), or `{:error,
+  reason}` -- extraction never fails a review.
   """
   def store(game_id, game_number, puzzles, sources) do
     attempts = charge_attempt(game_id, game_number)
 
     Repo.transaction(fn ->
-      ids = resolve_ids(puzzles, 0)
+      {ids, written} = resolve_ids(puzzles, 0, 0)
+      upgraded = upgrade_answers(puzzles)
 
-      sources
-      |> Enum.map(&source_row(&1, game_id, ids))
-      |> then(fn rows ->
-        Repo.insert_all(Source, rows,
-          on_conflict: :nothing,
-          conflict_target: [:game_id, :game_number, :turn, :kind]
-        )
-      end)
+      {inserted, _} =
+        sources
+        |> Enum.map(&source_row(&1, game_id, ids))
+        |> then(fn rows ->
+          Repo.insert_all(Source, rows,
+            on_conflict: :nothing,
+            conflict_target: [:game_id, :game_number, :turn, :kind]
+          )
+        end)
 
       # The sources exist now, so the account that owns each seat can be
       # written onto them -- in this transaction, because the sweep's index
@@ -193,10 +212,11 @@ defmodule Oskol.Puzzles do
       refresh_owners([game_id])
 
       mark_extracted(game_id, game_number)
+      %{puzzles: written, upgraded: upgraded, sources: inserted}
     end)
     |> case do
-      {:ok, _} ->
-        :ok
+      {:ok, counts} ->
+        {:ok, counts}
 
       {:error, reason} ->
         gave_up(game_id, game_number, inspect(reason), attempts)
@@ -206,6 +226,36 @@ defmodule Oskol.Puzzles do
     e ->
       gave_up(game_id, game_number, Exception.message(e), attempts_of(game_id, game_number))
       {:error, Exception.message(e)}
+  end
+
+  @doc """
+  This game's answer has been replaced and its puzzles are owed again.
+
+  One transaction: the extraction marker, its error and its attempts are
+  cleared, and the sources written for turns skipped as `post_take_cube`
+  are dropped, so the fresh answer -- which grades those on the right cube
+  -- can write them as puzzles. Every other source, and every puzzle,
+  stays: `store/4` is idempotent over them. Called inside the transaction
+  that stores the fresh answer (`Oskol.Reviews.replace/8`), so the game is
+  never owed puzzles while its old answer is what is stored.
+  """
+  def reopen(game_id, game_number) do
+    {:ok, _} =
+      Repo.transaction(fn ->
+        from(s in Source,
+          where:
+            s.game_id == ^game_id and s.game_number == ^game_number and
+              s.skipped_reason == @post_take
+        )
+        |> Repo.delete_all()
+
+        from(r in Review, where: r.game_id == ^game_id and r.game_number == ^game_number)
+        |> Repo.update_all(
+          set: [puzzles_extracted_at: nil, puzzles_error: nil, puzzles_attempts: 0]
+        )
+      end)
+
+    :ok
   end
 
   @doc """
@@ -222,16 +272,17 @@ defmodule Oskol.Puzzles do
   # A puzzle whose key is already stored keeps the id it has; a new one
   # takes the first of Gleam's candidates that no other key holds. Looping
   # rather than picking once, because the winner of a race is whichever
-  # write got there first, not whichever we hoped for.
-  defp resolve_ids([], _attempt), do: %{}
+  # write got there first, not whichever we hoped for. Returns the ids by
+  # key and how many rows this write made.
+  defp resolve_ids([], _attempt, written), do: {%{}, written}
 
-  defp resolve_ids(puzzles, attempt) do
+  defp resolve_ids(puzzles, attempt, written) do
     keys = Enum.map(puzzles, & &1.key)
     found = Repo.all(from(p in Puzzle, where: p.key in ^keys, select: {p.key, p.id})) |> Map.new()
 
     case Enum.reject(puzzles, &Map.has_key?(found, &1.key)) do
       [] ->
-        found
+        {found, written}
 
       missing ->
         {writable, exhausted} =
@@ -248,16 +299,46 @@ defmodule Oskol.Puzzles do
 
         case writable do
           [] ->
-            found
+            {found, written}
 
           rows ->
             # No conflict target: the key index and the id index both apply,
             # and losing either race means this row is already someone
             # else's problem, so read back rather than guess.
-            Repo.insert_all(Puzzle, Enum.map(rows, &elem(&1, 1)), on_conflict: :nothing)
-            Map.merge(found, resolve_ids(Enum.map(rows, &elem(&1, 0)), attempt + 1))
+            {inserted, _} =
+              Repo.insert_all(Puzzle, Enum.map(rows, &elem(&1, 1)), on_conflict: :nothing)
+
+            {more, written} =
+              resolve_ids(Enum.map(rows, &elem(&1, 0)), attempt + 1, written + inserted)
+
+            {Map.merge(found, more), written}
         end
     end
+  end
+
+  # The one write that touches a stored answer: a complete answer to a
+  # question whose stored answer is not complete. Decided on the `complete`
+  # column, Gleam's word on each answer, so nothing here reads inside one;
+  # a complete row is never matched, so a rerun writes nothing. Returns
+  # how many rows it upgraded.
+  defp upgrade_answers(puzzles) do
+    puzzles
+    |> Enum.filter(& &1.complete)
+    |> Enum.reduce(0, fn puzzle, count ->
+      {upgraded, _} =
+        from(p in Puzzle, where: p.key == ^puzzle.key and p.complete == false)
+        |> Repo.update_all(
+          set: [
+            answer: puzzle.answer,
+            evaluated_by: puzzle.evaluated_by,
+            complete: true,
+            answer_upgraded_at: DateTime.utc_now(),
+            updated_at: DateTime.utc_now()
+          ]
+        )
+
+      count + upgraded
+    end)
   end
 
   defp puzzle_row(puzzle, attempt) do
@@ -270,6 +351,7 @@ defmodule Oskol.Puzzles do
       question: puzzle.question,
       answer: puzzle.answer,
       evaluated_by: puzzle.evaluated_by,
+      complete: puzzle.complete,
       inserted_at: now,
       updated_at: now
     }

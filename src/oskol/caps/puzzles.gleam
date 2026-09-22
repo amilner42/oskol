@@ -24,6 +24,25 @@ pub type NewPuzzle {
     question_json: String,
     answer_json: String,
     evaluated_by_json: String,
+    /// The answer can grade any attempt exactly (`oskol/puzzles.complete`).
+    /// The one thing that may change a stored answer: a complete one
+    /// replaces an incomplete one for the same question, and nothing else
+    /// is ever rewritten.
+    complete: Bool,
+  )
+}
+
+/// What one game's write actually did, as row counts. A rerun of the same
+/// extraction is all zeros.
+pub type Written {
+  Written(
+    /// Puzzles whose key was new.
+    puzzles: Int,
+    /// Stored puzzles whose incomplete answer was replaced by this game's
+    /// complete one (`puzzles.answer_upgraded_at`).
+    upgraded: Int,
+    /// Source rows that were new.
+    sources: Int,
   )
 }
 
@@ -108,7 +127,7 @@ pub type PuzzlesCaps {
     /// not owed forever. Error(reason) when the write failed; extraction
     /// never fails a review, so a caller logs and moves on.
     store: fn(String, Int, List(NewPuzzle), List(NewSource)) ->
-      Result(Nil, String),
+      Result(Written, String),
     /// This game was owed puzzles and could not have them: (game_id,
     /// game_number, why). Charges the try and logs it, and once the budget
     /// is spent marks the row so the sweep stops coming back. Every path

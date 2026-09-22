@@ -615,13 +615,37 @@ pub fn danced(turn: Turn) -> Bool {
 /// of shrugging at one outside the top five. An engine that does not know
 /// the flag answers as it always did.
 pub fn request_json(g: GameTurns) -> Json {
-  json.object([
-    #("jacoby", json.bool(g.jacoby)),
-    #("top_moves", json.int(5)),
-    #("all_results", json.bool(True)),
-    #("include_luck", json.bool(True)),
-    #("turns", json.array(g.turns, turn_json)),
-  ])
+  request_json_at(g, None, None)
+}
+
+/// The same request at a named search depth (`move_level`, `cube_level`,
+/// as the engine names them: "4ply"), for asking a game again at the
+/// depth its stored answer was graded at. None leaves the engine's own
+/// default in charge, as a fresh review does.
+pub fn request_json_at(
+  g: GameTurns,
+  move_level: Option(String),
+  cube_level: Option(String),
+) -> Json {
+  let level = fn(name, value) {
+    case value {
+      Some(level) -> [#(name, json.string(level))]
+      None -> []
+    }
+  }
+  json.object(
+    list.flatten([
+      [
+        #("jacoby", json.bool(g.jacoby)),
+        #("top_moves", json.int(5)),
+        #("all_results", json.bool(True)),
+        #("include_luck", json.bool(True)),
+      ],
+      level("move_level", move_level),
+      level("cube_level", cube_level),
+      [#("turns", json.array(g.turns, turn_json))],
+    ]),
+  )
 }
 
 pub fn turn_json(turn: Turn) -> Json {

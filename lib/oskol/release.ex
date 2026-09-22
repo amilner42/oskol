@@ -77,4 +77,39 @@ defmodule Oskol.Release do
 
     result
   end
+
+  @doc """
+  The puzzles backfill, from a release: re-ask the engine about every game
+  graded before it sent every legal result, replace the answer and the
+  page, write the puzzles complete and sync the decks.
+
+      bin/oskol eval 'Oskol.Release.puzzles_backfill(dry_run: true)'
+      bin/oskol eval 'Oskol.Release.puzzles_backfill(dry_run: false)'
+      bin/oskol eval 'Oskol.Release.puzzles_backfill(dry_run: false, room: "821900", limit: 1)'
+
+  `reset: true` first lets games whose three tries are spent be asked
+  again. A bare `eval` VM runs no queue, so nothing races it; the live
+  app's queue is another VM, and its sweep never touches a `done` game
+  whose marker is set, which every game is until this reopens it and
+  writes it back in the same call.
+  """
+  def puzzles_backfill(opts \\ []) do
+    write? = Keyword.get(opts, :dry_run, true) == false
+    Application.load(@app)
+    # The engine is reached over HTTP, which a bare `eval` VM has not
+    # started; the repo alone is not enough here.
+    {:ok, _} = Application.ensure_all_started(:req)
+
+    {:ok, totals, _} =
+      Ecto.Migrator.with_repo(Oskol.Repo, fn _repo ->
+        Oskol.Puzzles.Backfill.run(
+          write: write?,
+          room: Keyword.get(opts, :room),
+          limit: Keyword.get(opts, :limit),
+          reset: Keyword.get(opts, :reset, false)
+        )
+      end)
+
+    totals
+  end
 end

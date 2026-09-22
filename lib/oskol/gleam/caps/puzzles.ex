@@ -5,7 +5,9 @@ defmodule Oskol.Gleam.Caps.Puzzles do
 
       PuzzlesCaps(unextracted, store, failed, owned_sources, mark_synced,
       sync_failed, deck_pending, guest_sources)
-      NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json)
+      NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json,
+      complete)
+      Written(puzzles, upgraded, sources)
       NewSource(key, game_number, turn, kind, seat, player_id, played,
       equity_lost, grade, skipped_reason)
       DeckSource(source_id, puzzle_id, game_id, game_number, kind, turn,
@@ -93,7 +95,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
            Enum.map(puzzles, &puzzle/1),
            Enum.map(sources, &source/1)
          ) do
-      :ok -> {:ok, nil}
+      {:ok, counts} -> {:ok, {:written, counts.puzzles, counts.upgraded, counts.sources}}
       {:error, reason} -> {:error, to_string(reason)}
     end
   end
@@ -103,14 +105,15 @@ defmodule Oskol.Gleam.Caps.Puzzles do
     nil
   end
 
-  defp puzzle({:new_puzzle, key, ids, kind, question, answer, evaluated_by}) do
+  defp puzzle({:new_puzzle, key, ids, kind, question, answer, evaluated_by, complete}) do
     %{
       key: key,
       ids: ids,
       kind: kind,
       question: Jason.decode!(question),
       answer: Jason.decode!(answer),
-      evaluated_by: Jason.decode!(evaluated_by)
+      evaluated_by: Jason.decode!(evaluated_by),
+      complete: complete
     }
   end
 

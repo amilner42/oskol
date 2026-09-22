@@ -68,7 +68,8 @@ defmodule Oskol.PuzzlesTest do
       kind: Keyword.get(opts, :kind, "move"),
       question: %{"kind" => "move", "board" => [0, 1, 2], "dice" => [6, 4]},
       answer: %{"kind" => "move", "complete" => true, "outcomes" => []},
-      evaluated_by: %{"levels" => %{"moves" => "4ply", "cube" => "4ply"}}
+      evaluated_by: %{"levels" => %{"moves" => "4ply", "cube" => "4ply"}},
+      complete: Keyword.get(opts, :complete, true)
     }
   end
 
@@ -101,7 +102,7 @@ defmodule Oskol.PuzzlesTest do
       key = a_key()
       [first_id | _] = ids = some_ids()
 
-      assert :ok =
+      assert {:ok, _} =
                Puzzles.store(game_id, 1, [a_puzzle(key, ids: ids)], [a_source(key)])
 
       assert [puzzle] = puzzles_keyed(key)
@@ -128,10 +129,10 @@ defmodule Oskol.PuzzlesTest do
       puzzles = [a_puzzle(key)]
       sources = [a_source(key)]
 
-      assert :ok = Puzzles.store(game_id, 1, puzzles, sources)
+      assert {:ok, _} = Puzzles.store(game_id, 1, puzzles, sources)
       first = review_row(game_id).puzzles_extracted_at
 
-      assert :ok = Puzzles.store(game_id, 1, puzzles, sources)
+      assert {:ok, _} = Puzzles.store(game_id, 1, puzzles, sources)
 
       assert [_one] = puzzles_keyed(key)
       assert [_one_source] = sources_of(game_id)
@@ -145,8 +146,8 @@ defmodule Oskol.PuzzlesTest do
       other = a_room()
       key = a_key()
 
-      assert :ok = Puzzles.store(one, 1, [a_puzzle(key)], [a_source(key)])
-      assert :ok = Puzzles.store(other, 1, [a_puzzle(key)], [a_source(key, turn: 9)])
+      assert {:ok, _} = Puzzles.store(one, 1, [a_puzzle(key)], [a_source(key)])
+      assert {:ok, _} = Puzzles.store(other, 1, [a_puzzle(key)], [a_source(key, turn: 9)])
 
       assert [puzzle] = puzzles_keyed(key)
       assert [first] = sources_of(one)
@@ -171,7 +172,7 @@ defmodule Oskol.PuzzlesTest do
         updated_at: now
       })
 
-      assert :ok =
+      assert {:ok, _} =
                Puzzles.store(game_id, 1, [a_puzzle(key, ids: ids)], [a_source(key)])
 
       assert %{id: ^second} = Repo.get_by(Puzzles.Puzzle, key: key)
@@ -181,7 +182,7 @@ defmodule Oskol.PuzzlesTest do
     test "a skipped decision is a source with a reason and no puzzle" do
       game_id = a_room()
 
-      assert :ok =
+      assert {:ok, _} =
                Puzzles.store(game_id, 1, [], [
                  a_source(nil, skipped_reason: "post_take_cube")
                ])
@@ -196,7 +197,7 @@ defmodule Oskol.PuzzlesTest do
     test "a game with no mistakes is still marked, so the sweep lets it go" do
       game_id = a_room()
 
-      assert :ok = Puzzles.store(game_id, 1, [], [])
+      assert {:ok, _} = Puzzles.store(game_id, 1, [], [])
 
       assert review_row(game_id).puzzles_extracted_at
       assert Puzzles.unextracted(game_id) == []
@@ -209,7 +210,7 @@ defmodule Oskol.PuzzlesTest do
 
       # One puzzle with no id left to try, one perfectly ordinary. Losing a
       # billion-to-one id race must not cost the game its other puzzles.
-      assert :ok =
+      assert {:ok, _} =
                Puzzles.store(
                  game_id,
                  1,
@@ -245,6 +246,50 @@ defmodule Oskol.PuzzlesTest do
       # Charged outside the transaction, so a write that always fails does
       # not have the sweep replaying this room every minute for ever.
       assert row.puzzles_attempts == 1
+    end
+
+    test "a complete answer replaces an incomplete one for the same question, once" do
+      game_id = a_room()
+      key = a_key()
+      incomplete = a_puzzle(key, complete: false)
+
+      complete = %{
+        a_puzzle(key)
+        | answer: %{"kind" => "move", "complete" => true, "outcomes" => [1]}
+      }
+
+      assert {:ok, %{puzzles: 1, upgraded: 0}} =
+               Puzzles.store(game_id, 1, [incomplete], [a_source(key)])
+
+      assert [%{complete: false, answer_upgraded_at: nil}] = puzzles_keyed(key)
+
+      # The same question with every result: the one sanctioned rewrite,
+      # and it says so.
+      assert {:ok, %{puzzles: 0, upgraded: 1, sources: 0}} =
+               Puzzles.store(game_id, 1, [complete], [a_source(key)])
+
+      assert [puzzle] = puzzles_keyed(key)
+      assert puzzle.complete
+      assert puzzle.answer["outcomes"] == [1]
+      assert puzzle.answer_upgraded_at
+
+      # Complete already: left exactly alone, however often it comes round.
+      again = %{complete | answer: %{"kind" => "move", "complete" => true, "outcomes" => [2]}}
+      assert {:ok, %{upgraded: 0}} = Puzzles.store(game_id, 1, [again], [a_source(key)])
+      assert [%{answer: %{"outcomes" => [1]}}] = puzzles_keyed(key)
+    end
+
+    test "an incomplete answer never replaces anything" do
+      game_id = a_room()
+      key = a_key()
+
+      assert {:ok, _} = Puzzles.store(game_id, 1, [a_puzzle(key)], [a_source(key)])
+      assert [%{complete: true} = before] = puzzles_keyed(key)
+
+      assert {:ok, %{upgraded: 0}} =
+               Puzzles.store(game_id, 1, [a_puzzle(key, complete: false)], [a_source(key)])
+
+      assert [^before] = puzzles_keyed(key)
     end
 
     test "a game that can never be extracted is swept three times and then never again" do
@@ -300,9 +345,35 @@ defmodule Oskol.PuzzlesTest do
       assert review_row(game_id).puzzles_error == "a passing squall"
 
       # An operator's retry, or a fresh enqueue, still writes cleanly.
-      assert :ok = Puzzles.store(game_id, 1, [a_puzzle(a_key())], [])
+      assert {:ok, _} = Puzzles.store(game_id, 1, [a_puzzle(a_key())], [])
       assert is_nil(review_row(game_id).puzzles_error)
       assert review_row(game_id).puzzles_extracted_at
+    end
+  end
+
+  describe "reopen/2" do
+    test "owes the game its puzzles again and drops only the post-take sources" do
+      game_id = a_room()
+      key = a_key()
+
+      assert {:ok, _} =
+               Puzzles.store(game_id, 1, [a_puzzle(key)], [
+                 a_source(key, turn: 4),
+                 a_source(nil, turn: 7, skipped_reason: "post_take_cube")
+               ])
+
+      assert review_row(game_id).puzzles_extracted_at
+      assert :ok = Puzzles.reopen(game_id, 1)
+
+      # The skipped turn can be written as a puzzle now; the real source
+      # and the puzzle it points at stay.
+      assert [%{turn: 4, puzzle_id: id}] = sources_of(game_id)
+      assert [%{id: ^id}] = puzzles_keyed(key)
+      row = review_row(game_id)
+      assert is_nil(row.puzzles_extracted_at)
+      assert is_nil(row.puzzles_error)
+      assert row.puzzles_attempts == 0
+      assert Puzzles.unextracted(game_id) == [1]
     end
   end
 
@@ -314,7 +385,7 @@ defmodule Oskol.PuzzlesTest do
       assert game_id in Puzzles.rooms_owed_puzzles()
 
       key = a_key()
-      assert :ok = Puzzles.store(game_id, 1, [a_puzzle(key)], [a_source(key)])
+      assert {:ok, _} = Puzzles.store(game_id, 1, [a_puzzle(key)], [a_source(key)])
 
       assert Puzzles.unextracted(game_id) == []
       refute game_id in Puzzles.rooms_owed_puzzles()
@@ -344,7 +415,7 @@ defmodule Oskol.PuzzlesTest do
       game_id = a_room()
       key = a_key()
       [id | _] = ids = some_ids()
-      :ok = Puzzles.store(game_id, 1, [a_puzzle(key, ids: ids)], [a_source(key)])
+      {:ok, _} = Puzzles.store(game_id, 1, [a_puzzle(key, ids: ids)], [a_source(key)])
       [source] = sources_of(game_id)
       user = Oskol.Auth.find_or_create_user(a_key() <> "@oskol.test")
       token = a_key()
@@ -402,7 +473,7 @@ defmodule Oskol.PuzzlesTest do
     test "a puzzle's rows go when its room does" do
       game_id = a_room()
       key = a_key()
-      :ok = Puzzles.store(game_id, 1, [a_puzzle(key)], [a_source(key)])
+      {:ok, _} = Puzzles.store(game_id, 1, [a_puzzle(key)], [a_source(key)])
 
       Repo.delete_all(from(g in Persistence.Game, where: g.id == ^game_id))
 

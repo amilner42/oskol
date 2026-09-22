@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
   order in lockstep:
 
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
-      enqueue, review)
+      enqueue, review, charge, replace)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
       Stored(game_number, status, attempts, response_json, answered, rendered, turns)
@@ -20,9 +20,13 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
   alias Oskol.Reviews
 
-  def build do
+  @doc """
+  The caps. `:review` injects the engine call (an operator task wrapping it
+  to time it, a test standing in for it); the default POSTs to the engine.
+  """
+  def build(opts \\ []) do
     {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
-     &backfill_turns/3, &enqueue/1, &review/1}
+     &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &charge/4, &replace/3}
   end
 
   defp log(game_id) do
@@ -119,6 +123,31 @@ defmodule Oskol.Gleam.Caps.Analysis do
   defp enqueue(game_id) do
     Reviews.mark_analysis_owed(game_id)
     Oskol.Reviews.Queue.enqueue(game_id)
+    nil
+  end
+
+  # The backfill's charge against a `done` row: attempts and error only, so
+  # the answer and the page a reader is served stay exactly as they were.
+  defp charge(game_id, number, attempts, error) do
+    :ok = Reviews.charge(game_id, number, attempts, unopt(error))
+    nil
+  end
+
+  # The backfill's one write of a fresh answer: the row as `save` writes
+  # it, and the game's puzzles reopened, in one transaction.
+  defp replace(game_id, number, {:save, status, attempts, response, error, report, turns}) do
+    :ok =
+      Reviews.replace(
+        game_id,
+        number,
+        Atom.to_string(status),
+        attempts,
+        decode(response),
+        unopt(error),
+        decode(report),
+        turns
+      )
+
     nil
   end
 
