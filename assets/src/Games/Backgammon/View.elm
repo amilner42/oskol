@@ -3179,10 +3179,12 @@ playOut pb msg =
             Stepped (playSteps pb msg |> Maybe.withDefault [])
 
 
-{-| The nodes a tap walks to, or nothing where the tree does not offer
-them. A quick pair and the bear-off shortcut are two steps, and the second
-has to be legal from the node the first one leaves or the tap is not
-offered at all.
+{-| The nodes a tap walks to, or nothing where the tree offers no first
+step at all. A quick pair and the bear-off shortcut are two steps, and the
+second is taken only where it is a child of the node the first one leaves;
+where it is not -- the moves cannot both be played, or the node beyond has
+not been fetched yet -- the tap still plays the first, which is a legal
+move either way. A tap that the tree can honour is never refused.
 -}
 playSteps : PlayBoard -> Msg -> Maybe (List String)
 playSteps pb msg =
@@ -3192,9 +3194,14 @@ playSteps pb msg =
 
         PlayPair a b ->
             stepTo pb.steps a
-                |> Maybe.andThen
+                |> Maybe.map
                     (\first ->
-                        stepTo (pb.after first) b |> Maybe.map (\second -> [ first, second ])
+                        case stepTo (pb.after first) b of
+                            Just second ->
+                                [ first, second ]
+
+                            Nothing ->
+                                [ first ]
                     )
 
         BearOff die ->

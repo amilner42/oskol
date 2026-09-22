@@ -11,6 +11,7 @@ live, exactly as the server's tree is in production.
 
 -}
 
+import Dict
 import Expect
 import Games.Backgammon.Puzzle as Puzzle exposing (Out(..))
 import Games.Backgammon.View as View
@@ -112,6 +113,22 @@ suite =
                                 ]
                                 ()
                         )
+            , test "a malformed tree fails the answer rather than emptying it" <|
+                \_ ->
+                    let
+                        bent =
+                            String.replace "\"terminal\":true" "\"terminal\":\"yes\"" PuzzleFixtures.hit
+                    in
+                    Expect.all
+                        [ \_ -> D.decodeString Puzzle.decoder PuzzleFixtures.hit |> Result.map (.tree >> (/=) Nothing) |> Expect.equal (Ok True)
+                        , \_ -> D.decodeString Puzzle.decoder bent |> Result.toMaybe |> Expect.equal Nothing
+                        , \_ ->
+                            String.replace "\"dice\":[6,4]" "\"dice\":[\"six\",4]" PuzzleFixtures.hit
+                                |> D.decodeString Puzzle.decoder
+                                |> Result.toMaybe
+                                |> Expect.equal Nothing
+                        ]
+                        ()
             , test "a path the tree does not offer is no position at all" <|
                 \_ ->
                     onPuzzle PuzzleFixtures.hit
@@ -119,6 +136,12 @@ suite =
                             Expect.all
                                 [ \_ -> Puzzle.nodeAt tree [ "n3" ] |> Expect.equal Nothing
                                 , \_ -> Puzzle.nodeAt tree [ "nope" ] |> Expect.equal Nothing
+
+                                -- half a turn is not an attempt: `played`
+                                -- answers the same as `nodeAt`
+                                , \_ -> Puzzle.played tree [ "n3" ] |> Expect.equal Nothing
+                                , \_ -> Puzzle.played tree [ "n1", "nope" ] |> Expect.equal Nothing
+                                , \_ -> Puzzle.played tree [] |> Expect.equal (Just [])
                                 ]
                                 ()
                         )
@@ -145,17 +168,11 @@ suite =
             , test "a double has nothing to swap" <|
                 \_ ->
                     onTable PuzzleFixtures.doubles
-                        (\t ->
-                            rendered t
-                                |> Query.find [ id "dice-row" ]
-                                |> Event.simulate Event.click
-                                |> Event.toResult
-                                |> Expect.err
-                        )
+                        (\t -> answersNothing (rendered t) [ id "dice-row" ])
             , test "a point no child reaches answers nothing" <|
                 \_ ->
                     onTable PuzzleFixtures.hit
-                        (\t -> tapPoint t 20 |> Expect.err)
+                        (\t -> answersNothing (rendered t) [ class "bg-point", pointTitle 20 ])
             , test "the board is the node's: the staged checker has moved" <|
                 \_ ->
                     onTable PuzzleFixtures.hit
@@ -288,7 +305,7 @@ suite =
             , test "the entry the tree does not offer cannot be tapped for" <|
                 \_ ->
                     onTable PuzzleFixtures.bar
-                        (\t -> tapPoint t 22 |> Expect.err)
+                        (\t -> answersNothing (rendered t) [ class "bg-point", pointTitle 22 ])
             , test "a turn that is over with a die left offers PLAY and nothing else" <|
                 \_ ->
                     onTable PuzzleFixtures.bar
@@ -322,7 +339,7 @@ suite =
                         (\_ tree ->
                             Expect.all
                                 [ \_ -> Puzzle.nodeAt tree [ "a", "c" ] |> Maybe.map .terminal |> Expect.equal (Just True)
-                                , \_ -> Puzzle.played tree [ "a", "c" ] |> List.map .die |> Expect.equal [ 5, 2 ]
+                                , \_ -> Puzzle.played tree [ "a", "c" ] |> Maybe.map (List.map .die) |> Expect.equal (Just [ 5, 2 ])
                                 ]
                                 ()
                         )
@@ -333,7 +350,7 @@ suite =
             , test "the tray answers nothing where no checker can come off" <|
                 \_ ->
                     onTable PuzzleFixtures.hit
-                        (\t -> tapTray t |> Expect.err)
+                        (\t -> answersNothing (rendered t) [ class "bg-tray", class "mine" ])
             , test "the tray fills as checkers come off" <|
                 \_ ->
                     onTable PuzzleFixtures.off
@@ -384,9 +401,9 @@ suite =
                         (\_ tree ->
                             Expect.all
                                 [ \_ -> Puzzle.nodeAt tree [ "n1", "n3" ] |> Expect.equal (Puzzle.nodeAt tree [ "n2", "n3" ])
-                                , \_ -> Puzzle.played tree [ "n1", "n3" ] |> List.map .from |> Expect.equal [ "13", "13" ]
-                                , \_ -> Puzzle.played tree [ "n1", "n3" ] |> List.map .die |> Expect.equal [ 6, 4 ]
-                                , \_ -> Puzzle.played tree [ "n2", "n3" ] |> List.map .die |> Expect.equal [ 4, 6 ]
+                                , \_ -> Puzzle.played tree [ "n1", "n3" ] |> Maybe.map (List.map .from) |> Expect.equal (Just [ "13", "13" ])
+                                , \_ -> Puzzle.played tree [ "n1", "n3" ] |> Maybe.map (List.map .die) |> Expect.equal (Just [ 6, 4 ])
+                                , \_ -> Puzzle.played tree [ "n2", "n3" ] |> Maybe.map (List.map .die) |> Expect.equal (Just [ 4, 6 ])
                                 ]
                                 ()
                         )
@@ -407,35 +424,102 @@ suite =
                                 ()
                         )
             ]
-        , describe "both orientations"
-            [ test "the mover plays white at the bottom" <|
+        , describe "which way round it is drawn"
+            -- The question is stored from the mover's side, so there is only
+            -- one way round it reads: the mover is White at the bottom, their
+            -- home board bottom right, whatever colour they had in the game
+            -- the mistake came from. The page is not offered the choice.
+            [ test "the mover is white at the bottom, with their home bottom right" <|
                 \_ ->
                     onTable PuzzleFixtures.hit
                         (\t ->
                             Expect.all
                                 [ \_ -> rendered t |> Query.find [ class "bg-point", pointTitle 13 ] |> Query.findAll [ classes [ "checker", "white" ] ] |> Query.count (Expect.equal 2)
                                 , \_ -> rendered t |> Query.find [ class "player-bar", class "is-me" ] |> Query.find [ class "swatch" ] |> Query.has [ class "white" ]
-                                , \_ -> tapPoint t 13 |> Expect.equal (Ok (Stepped [ "n1" ]))
+                                , \_ -> homeBoard (rendered t) |> Query.has [ pointTitle 1 ]
+                                , \_ -> homeBoard (rendered t) |> Query.has [ pointTitle 6 ]
+
+                                -- the count on the bar is the count of the
+                                -- position that is drawn, not of its mirror
+                                , \_ -> rendered t |> Query.find [ class "player-bar", class "is-me" ] |> Query.has [ text "92 PIPS" ]
+                                , \_ -> rendered t |> Query.findAll [ class "player-bar" ] |> Query.index 0 |> Query.has [ text "175 PIPS" ]
                                 ]
                                 ()
                         )
-            , test "the same puzzle with the mover in black is the same puzzle" <|
+            , test "and it is the same way round in a puzzle that bears off" <|
+                \_ ->
+                    onTable PuzzleFixtures.off
+                        (\t ->
+                            Expect.all
+                                [ \_ -> rendered t |> Query.find [ class "bg-point", pointTitle 2 ] |> Query.findAll [ classes [ "checker", "white" ] ] |> Query.count (Expect.equal 1)
+                                , \_ -> rendered t |> Query.find [ class "player-bar", class "is-me" ] |> Query.find [ class "swatch" ] |> Query.has [ class "white" ]
+
+                                -- the checkers come off at the near end: the
+                                -- mover bears off from 6..1, which is home
+                                , \_ -> homeBoard (rendered t) |> Query.has [ pointTitle 1 ]
+                                , \_ -> rendered t |> Query.find [ class "player-bar", class "is-me" ] |> Query.has [ text "3 PIPS" ]
+                                , \_ -> rendered t |> Query.findAll [ class "player-bar" ] |> Query.index 0 |> Query.has [ text "45 PIPS" ]
+                                ]
+                                ()
+                        )
+            , test "the checkers the turn has landed are marked, all of them" <|
                 \_ ->
                     onTable PuzzleFixtures.hit
-                        (\white ->
+                        (\t ->
+                            Expect.all
+                                [ \_ -> justMovedOn (rendered t) 7 0
+                                , \_ -> justMovedOn (rendered (walk t [ "n1" ])) 7 1
+
+                                -- the whole turn, not just its last step
+                                , \_ -> justMovedOn (rendered (walk t [ "n1", "n3" ])) 7 1
+                                , \_ -> justMovedOn (rendered (walk t [ "n1", "n3" ])) 9 1
+                                ]
+                                ()
+                        )
+            ]
+        , describe "a tree that arrives a level at a time"
+            -- A lazy tree holds the root and whatever has been fetched. The
+            -- board must never refuse a move it was offered, and must never
+            -- go blank waiting for a node.
+            [ test "a pair whose second node has not arrived still plays the first move" <|
+                \_ ->
+                    onTable PuzzleFixtures.doubles
+                        (\t ->
                             let
-                                t =
-                                    { white
-                                        | mover = { id = "mover", name = "Black", color = "black" }
-                                        , opponent = { id = "other", name = "White", color = "white" }
-                                    }
+                                -- the node the first step lands on is what
+                                -- has not arrived, so what is legal beyond
+                                -- it cannot be known yet
+                                pruned =
+                                    withoutNode t "n1"
                             in
                             Expect.all
-                                [ \_ -> rendered t |> Query.find [ class "bg-point", pointTitle 13 ] |> Query.findAll [ classes [ "checker", "black" ] ] |> Query.count (Expect.equal 2)
-                                , \_ -> rendered t |> Query.find [ class "player-bar", class "is-me" ] |> Query.find [ class "swatch" ] |> Query.has [ class "black" ]
-                                , \_ -> rendered t |> Query.find [ class "player-bar", class "is-me" ] |> Query.has [ text "92 PIPS" ]
-                                , \_ -> tapPoint t 13 |> Expect.equal (Ok (Stepped [ "n1" ]))
-                                , \_ -> checkersOn (rendered (walk t [ "n1" ])) 7 1
+                                [ \_ -> tapPoint t 10 |> Expect.equal (Ok (Stepped [ "n1", "n2b" ]))
+                                , \_ -> tapPoint pruned 10 |> Expect.equal (Ok (Stepped [ "n1" ]))
+                                ]
+                                ()
+                        )
+            , test "a step whose node has not arrived keeps the last position on screen" <|
+                \_ ->
+                    onTable PuzzleFixtures.doubles
+                        (\white ->
+                            let
+                                waiting =
+                                    walk (withoutNode white "n1") [ "n1" ]
+                            in
+                            Expect.all
+                                [ \_ -> checkersOn (rendered waiting) 13 2
+                                , \_ -> diceUsed (rendered waiting) 4 0
+
+                                -- nothing to tap until it lands, and no PLAY
+                                , \_ -> answersNothing (rendered waiting) [ class "bg-point", pointTitle 13 ]
+                                , \_ -> rendered waiting |> Query.findAll [ id "bg-action-play" ] |> Query.count (Expect.equal 0)
+
+                                -- but UNDO, so the page can always back out
+                                , \_ ->
+                                    rendered waiting
+                                        |> Query.find [ id "bg-action-undo" ]
+                                        |> Event.simulate Event.click
+                                        |> Event.expect Undo
                                 ]
                                 ()
                         )
@@ -470,8 +554,8 @@ onTable json f =
                 { question = p.question
                 , tree = tree
                 , path = []
-                , mover = { id = "mover", name = "White", color = "white" }
-                , opponent = { id = "other", name = "Black", color = "black" }
+                , mover = { id = "mover", name = "Mover" }
+                , opponent = { id = "other", name = "Opponent" }
                 , scores = [ ( "mover", 0 ), ( "other", 0 ) ]
                 , theme = View.defaultTheme
                 , swaps = 0
@@ -483,6 +567,17 @@ onTable json f =
 walk : Puzzle.Table -> List String -> Puzzle.Table
 walk table path =
     { table | path = path }
+
+
+{-| The same puzzle with one node not fetched yet, as a lazy tree's is not.
+-}
+withoutNode : Puzzle.Table -> String -> Puzzle.Table
+withoutNode table id =
+    let
+        tree =
+            table.tree
+    in
+    { table | tree = { tree | nodes = Dict.remove id tree.nodes, lazy = True } }
 
 
 children : Puzzle.Tree -> List String -> List Puzzle.Child
@@ -541,6 +636,40 @@ checkersOn q point n =
         |> Query.find [ class "bg-point", pointTitle point ]
         |> Query.findAll [ class "checker" ]
         |> Query.count (Expect.equal n)
+
+
+{-| How many of a point's checkers are marked as just moved.
+-}
+justMovedOn : Query.Single Out -> Int -> Int -> Expect.Expectation
+justMovedOn q point n =
+    q
+        |> Query.find [ class "bg-point", pointTitle point ]
+        |> Query.findAll [ classes [ "checker", "just-moved" ] ]
+        |> Query.count (Expect.equal n)
+
+
+{-| The mover's home board: the bottom row of the right-hand half, where
+the points they bear off from sit once the board is the right way round.
+-}
+homeBoard : Query.Single Out -> Query.Single Out
+homeBoard q =
+    q
+        |> Query.findAll [ class "bg-half" ]
+        |> Query.index 1
+        |> Query.findAll [ class "bg-points" ]
+        |> Query.index 1
+
+
+{-| An element that is there and answers no tap. Asserting the click fails
+is not enough on its own: a selector that matches nothing fails too.
+-}
+answersNothing : Query.Single Out -> List Test.Html.Selector.Selector -> Expect.Expectation
+answersNothing q selectors =
+    Expect.all
+        [ \_ -> q |> Query.findAll selectors |> Query.count (Expect.equal 1)
+        , \_ -> q |> Query.find selectors |> Event.simulate Event.click |> Event.toResult |> Expect.err
+        ]
+        ()
 
 
 {-| How many dice are drawn, and how many of them the turn has spent.

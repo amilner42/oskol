@@ -21,6 +21,16 @@ lands on the previous position exactly as it was. The page owns the walk
 (`Table.path`); this module only draws the node the path ends on and says
 which nodes a tap would walk to.
 
+The mover is always shown as White at the bottom, whatever colour they had
+in the game they made the mistake in: the question is stored from their
+side of the board, so that is the only way round it reads.
+
+A tree may be `lazy`: the server sent the root alone and the page fetches
+each level as it is reached. So a `Stepped` can name a node the tree does
+not hold yet. While that is true the board keeps the last position it does
+hold on screen, as a picture with nothing to tap but UNDO, rather than
+going blank; when the fetch lands the page re-renders and play carries on.
+
 The one arithmetic it does is the pip count, which the wire does not carry
 and the identity bars print: a count of the position, not a rule about it.
 
@@ -136,7 +146,7 @@ questionDecoder : D.Decoder Question
 questionDecoder =
     D.map6 Question
         (D.field "board" boardDecoder)
-        (D.oneOf [ D.field "dice" (D.list D.int), D.succeed [] ])
+        (optional "dice" (D.list D.int) |> D.map (Maybe.withDefault []))
         (D.field "cube" cubeDecoder)
         (optional "score" scoreDecoder)
         (D.field "crawford" D.bool)
@@ -168,7 +178,7 @@ treeDecoder =
     D.map3 Tree
         (D.field "root" D.string)
         (D.field "nodes" (D.dict nodeDecoder))
-        (D.oneOf [ D.field "lazy" D.bool, D.succeed False ])
+        (optional "lazy" D.bool |> D.map (Maybe.withDefault False))
 
 
 nodeDecoder : D.Decoder Node
@@ -195,11 +205,22 @@ childDecoder =
         (D.field "node" D.string)
 
 
-{-| A field that may be absent or null.
+{-| A field that may be absent or null -- and nothing else. A key that is
+there is decoded strictly: a malformed tree must fail the whole answer
+rather than quietly become a puzzle with nothing to play.
 -}
 optional : String -> D.Decoder a -> D.Decoder (Maybe a)
 optional field dec =
-    D.oneOf [ D.field field (D.nullable dec), D.succeed Nothing ]
+    D.value
+        |> D.andThen
+            (\value ->
+                case D.decodeValue (D.field field D.value) value of
+                    Ok _ ->
+                        D.field field (D.nullable dec)
+
+                    Err _ ->
+                        D.succeed Nothing
+            )
 
 
 
@@ -228,24 +249,60 @@ nodeAt tree path =
 
 
 {-| The path as the moves it played, in order: what an attempt is made of.
+Nothing where the tree does not hold the whole path, the same answer
+`nodeAt` gives: half a turn is not an attempt.
 -}
-played : Tree -> List String -> List Child
+played : Tree -> List String -> Maybe (List Child)
 played tree path =
     let
         walk ids current acc =
             case ( ids, current ) of
+                ( [], _ ) ->
+                    Just (List.reverse acc)
+
                 ( id :: rest, Just node ) ->
                     case node.children |> List.filter (\c -> c.node == id) |> List.head of
                         Just child ->
                             walk rest (Dict.get id tree.nodes) (child :: acc)
 
                         Nothing ->
-                            List.reverse acc
+                            Nothing
 
-                _ ->
-                    List.reverse acc
+                ( _, Nothing ) ->
+                    Nothing
     in
     walk path (Dict.get tree.root tree.nodes) []
+
+
+{-| The position to draw. Normally the one the path ends on; where the path
+runs past what the tree holds -- a lazy tree whose next level has not
+arrived -- the last position it does hold, so the board stays on screen
+instead of going blank. `False` says it is that stale picture.
+-}
+shownAt : Tree -> List String -> Maybe ( Node, Bool )
+shownAt tree path =
+    List.foldl
+        (\id current ->
+            case current of
+                Just ( node, True ) ->
+                    if List.any (\c -> c.node == id) node.children then
+                        case Dict.get id tree.nodes of
+                            Just next ->
+                                Just ( next, True )
+
+                            Nothing ->
+                                -- the step is a real one, its node has not
+                                -- been fetched yet
+                                Just ( node, False )
+
+                    else
+                        Just ( node, False )
+
+                other ->
+                    other
+        )
+        (Dict.get tree.root tree.nodes |> Maybe.map (\node -> ( node, True )))
+        path
 
 
 
@@ -253,10 +310,12 @@ played tree path =
 
 
 {-| Who is shown on one side of the board. A puzzle names nobody by
-default: the page decides what, if anything, the bars say.
+default: the page decides what, if anything, the bars say. Not which
+colour: the mover plays White at the bottom, always, because the question
+is stored from their side of the board.
 -}
 type alias Seat =
-    { id : String, name : String, color : String }
+    { id : String, name : String }
 
 
 {-| A puzzle on the board: the question, every legal way to play it, and
@@ -289,13 +348,12 @@ type Out
 
 view : Table -> Html Out
 view table =
-    case nodeAt table.tree table.path of
-        Just node ->
-            Html.map out (View.viewPlay (playBoard table node))
+    case shownAt table.tree table.path of
+        Just ( node, current ) ->
+            Html.map out (View.viewPlay (playBoard table node current))
 
         Nothing ->
-            -- a path the tree does not hold: a lazy tree whose next level
-            -- has not arrived, or a bad id. Nothing to draw.
+            -- not even the root: there is no tree to draw
             Html.text ""
 
 
@@ -315,17 +373,22 @@ out o =
             Swapped
 
 
-playBoard : Table -> Node -> View.PlayBoard
-playBoard table node =
+{-| `current` is false while the path runs past what the tree holds: the
+last position it does hold is drawn as a picture -- nothing to tap, no
+PLAY -- with UNDO still there, so the page can always back out of a step
+whose node has not arrived.
+-}
+playBoard : Table -> Node -> Bool -> View.PlayBoard
+playBoard table node current =
     let
         stepsOf n =
             n.children |> List.map (\c -> { move = { from = c.from, to = c.to, die = c.die }, node = c.node })
-
-        seat s =
-            { id = s.id, name = s.name, color = s.color }
     in
     { still =
-        { players = [ seat table.mover, seat table.opponent ]
+        { players =
+            [ { id = table.mover.id, name = table.mover.name, color = "white" }
+            , { id = table.opponent.id, name = table.opponent.name, color = "black" }
+            ]
         , viewer = table.mover.id
         , scores = table.scores
         , cube = not table.question.crawford
@@ -334,33 +397,39 @@ playBoard table node =
         , position = snapshot table.question.cube table.mover table.opponent node.board
         , mover = Just table.mover.id
         , dice = table.question.dice
-        , landed = landedAt node
+        , landed = landedOn table.tree table.path
         , offer = Nothing
         , accounts = Nothing
         }
-    , steps = stepsOf node
+    , steps =
+        if current then
+            stepsOf node
+
+        else
+            []
     , after = \id -> Dict.get id table.tree.nodes |> Maybe.map stepsOf |> Maybe.withDefault []
     , diceLeft = node.diceLeft
-    , terminal = node.terminal
+    , terminal = current && node.terminal
     , canUndo = table.path /= []
     , swaps = table.swaps
     }
 
 
-{-| The point the step that reached this node landed on, so the checker
-that just moved is marked the way the table marks the last turn's.
+{-| The points the turn so far has landed checkers on, marked the way the
+table marks the last turn's. A checker borne off lands nowhere on the
+board, and neither does one that was hit, so neither is marked -- the same
+as the replay, whose record only counts points too.
 -}
-landedAt : Node -> List Int
-landedAt node =
-    node.moved
-        |> Maybe.andThen (.to >> String.toInt)
-        |> Maybe.map List.singleton
+landedOn : Tree -> List String -> List Int
+landedOn tree path =
+    played tree path
         |> Maybe.withDefault []
+        |> List.filterMap (.to >> String.toInt)
 
 
-{-| The wire's board as the slab draws one. The mover's checkers are
-`board.white` whatever colour the page gives them, so a puzzle shown with
-the mover in black is the same position the other way round.
+{-| The wire's board as the slab draws one. The mover is White and the
+opponent Black, because the wire numbers the points from the mover's side:
+the mover runs 24 -> 1, which is the way White runs on the slab.
 -}
 snapshot : Cube -> Seat -> Seat -> Board -> View.Snapshot
 snapshot cube mover opponent board =
@@ -382,11 +451,10 @@ snapshot cube mover opponent board =
                 _ ->
                     Nothing
     in
-    if mover.color == "white" then
-        { white = mine board.white, black = theirs board.black, cube = { value = cube.value, owner = owner } }
-
-    else
-        { white = theirs board.black, black = mine board.white, cube = { value = cube.value, owner = owner } }
+    { white = mine board.white
+    , black = theirs board.black
+    , cube = { value = cube.value, owner = owner }
+    }
 
 
 {-| The mover's pip count: they run 24 -> 1, and off the bar they are 25
