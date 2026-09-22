@@ -179,7 +179,7 @@ homeBoard =
             \_ ->
                 home (page { guestName = Nothing } "backgammon" Nothing)
                     |> Query.has [ class "home-board", id "start-game" ]
-        , test "its menu is four entries: create, join, and two on their way" <|
+        , test "its menu is four entries: create, join, puzzles, and one on its way" <|
             \_ ->
                 home loadedModel
                     |> Query.find [ class "home-menu" ]
@@ -188,15 +188,27 @@ homeBoard =
                         [ Query.count (Expect.equal 4)
                         , Query.index 0 >> Query.has [ id "start-game", text "CREATE GAME" ]
                         , Query.index 1 >> Query.has [ id "join-game-board", text "JOIN GAME" ]
-                        , Query.index 2 >> Query.has [ text "TACTICS", text "SOON", disabled ]
+                        , Query.index 2 >> Query.has [ tag "button", id "puzzles", text "PUZZLES" ]
+                        , Query.index 2 >> Query.hasNot [ text "SOON" ]
                         , Query.index 3 >> Query.has [ text "ANALYSIS", text "SOON", disabled ]
                         ]
-        , test "the two on their way are not buttons: nothing to press" <|
+        , test "PUZZLES opens the practice home" <|
+            \_ ->
+                home loadedModel
+                    |> Query.find [ id "puzzles" ]
+                    |> Event.simulate Event.click
+                    |> Event.expect GameLanding.PressedPuzzles
+        , test "and the shell is told where to go" <|
+            \_ ->
+                GameLanding.update GameLanding.PressedPuzzles loadedModel
+                    |> (\( _, _, out ) -> out)
+                    |> Expect.equal (GameLanding.Go "/puzzles")
+        , test "the one on its way is not a button: three to press, nothing more" <|
             \_ ->
                 home loadedModel
                     |> Query.find [ class "home-menu" ]
                     |> Query.findAll [ tag "button" ]
-                    |> Query.count (Expect.equal 2)
+                    |> Query.count (Expect.equal 3)
         , test "JOIN GAME is the shell's code prompt" <|
             \_ ->
                 home loadedModel

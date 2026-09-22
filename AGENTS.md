@@ -579,6 +579,8 @@ src/oskol/practice/sync.gleam   filling an account's mistakes deck: whose, in wh
                                 order, what is stamped, and when to give up
 src/oskol/handlers/practice.gleam  a practice session: an account's deck, a guest's
                                 own mistakes, the browser's timezone, burying one
+src/oskol/handlers/puzzles_hub.gleam  TRY ONE: a random puzzle whose answer stands
+                                clear, for a stranger on the practice home
 lib/oskol/practice.ex           those decisions run with the real rows behind them
 lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images tables;
                                 the one write, in one transaction with its marker
@@ -639,11 +641,16 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  best move, the dice take the move back; a turn's note has
                                  MOVE and CUBE tabs, each a sentence in words (built from
                                  the chances) over the numbers in columns
+assets/src/Page/Puzzles.elm      "/puzzles" the practice home: an account's counts and
+                                 PRACTISE (or "Done for today" and KEEP GOING), a guest's
+                                 "23 mistakes from your 4 games", a stranger's TRY ONE
+assets/src/Api/Practice.elm      /papi/practice, /more, /tz and /papi/puzzles/random
 assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over the board
                                  (Games/Backgammon/Puzzle.elm's `Table`, the page owning
                                  the path and the lazy fetches), PLAY or the five-band
                                  scale, the reveal in the replay's words, the level line
-                                 and its four buttons, the memory line, SHARE, NEXT
+                                 and its four buttons, the memory line, SHARE, NEXT, and
+                                 the end of a run: the score, then KEEP GOING or the sign-in
 assets/src/Games/Backgammon/Puzzle.elm  the puzzle wire: the question and tree decoders,
                                  the board on a tree node, and the reveal's decoders
                                  (verdict, candidates, cube band, schedule, memory)
@@ -759,10 +766,15 @@ arrive at any of them cold, and moving between them afterwards is a
   current in the address bar (replaced, not pushed, so back still leaves
   the page), which is what makes a reload land on the same line and a
   link carry a move to a friend; `step` is omitted at the start of a game.
+- `/puzzles` the practice home, PUZZLES on the home menu: what this
+  visitor has to practise and PRACTISE, which starts a run (see "The home
+  and a run" under Puzzles). Open to anyone, indexable, in the sitemap; the
+  head (`SpaController.puzzles`) is "Puzzles" and the brief's one-liner,
+  the same to everyone.
 - `/puzzles/<id>` one puzzle: the position, "White to play 6-4. What's your
   play?", the board to play it on, then the reveal. Open to anyone with
   the link and indexable; `puzzles` is a reserved slug (before `/:slug` on
-  both sides), and a bare `/puzzles` is a 404 until `puzzles-home`. The
+  both sides). The
   head (`SpaController.puzzle`, words from `handlers/puzzles.head`) is the
   question as the title and og:title, the score and cube as the
   description ("Match play, 3 away against 5. Cube centred."; no score is
@@ -874,13 +886,27 @@ POST /papi/me/name                     {name} -> {ok, user}  (a signed-in browse
                                        taken." when another account has it)
 GET  /papi/practice                    {ok, puzzles: [{id, kind, prompt, due}],
                                          cursor: null, counts: {due,
-                                         new_today, deck} | null, game: null}
-                                       -- an account's deck (due, then new),
-                                       a guest's own mistakes (unscheduled,
-                                       counts null, no writes), or nothing.
-                                       Never paged: every fetch is the front
-                                       of the queue, and "Done for today" is
-                                       a fetch that comes back empty
+                                         new_today, new_tomorrow, deck} | null,
+                                         mistakes: {puzzles, games} | null,
+                                         game: null}
+                                       -- an account's deck (due, then new;
+                                       new_tomorrow is the day's budget or
+                                       the cards never seen, whichever is
+                                       fewer), a guest's own mistakes
+                                       (unscheduled, counts null, no writes;
+                                       `mistakes` counts all of them, from
+                                       how many games), or nothing. Never
+                                       paged: every fetch is the front of
+                                       the queue, and "Done for today" is a
+                                       fetch that comes back empty
+GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
+                                       random complete puzzle whose answer
+                                       stands clear (a checker play whose
+                                       runner-up gives up 0.02 or more, a
+                                       cube in an outer band, |margin| >=
+                                       0.08); 404 with a sentence while the
+                                       pool has none. Reads nothing about
+                                       the caller and writes nothing
 POST /papi/practice/more               KEEP GOING: ten more new ones into
                                        rotation, then the same session
 POST /papi/practice/tz                 {tz} -> {ok, tz}  (an IANA name, on the
@@ -1357,10 +1383,48 @@ tomorrow") and SOONER / GOT IT / KNEW IT / NEVER, the graded one
 preselected when `amendable` (SOONER after a miss, GOT IT otherwise),
 none when `self_grade`, absent when neither; NEVER says the card is out
 of the deck. SHARE is the table's `shareInvite` port on the clean URL.
-NEXT is the shell's: `Main.run` (`{ids, at}`) is the practice run, kept
-across `pushUrl`s because every page is rebuilt on one; the page is told
-`hasNext` and answers `WantsNext`, and Main pushes the next id. Nothing
-starts a run yet: the practice home and the cards hand Main the list.
+NEXT is the shell's: `Main.run` (`{ids, at, verdicts}`) is the practice
+run, kept across `pushUrl`s because every page is rebuilt on one; the
+page is told `hasNext` (true anywhere in a run: the next puzzle, or the
+run's end) and answers `WantsNext`, and Main pushes the next id.
+
+**The home and a run** (`/puzzles`, `assets/src/Page/Puzzles.elm`; PUZZLES
+on the home menu where TACTICS / SOON was, ANALYSIS / SOON stays). One
+page on `GET /papi/practice`'s one answer: an account with a deck reads
+"12 due · 4 new today · 231 in your deck" and PRACTISE, or, with nothing
+due and nothing new, "Done for today", "4 new tomorrow · 231 in your
+deck" and KEEP GOING (`POST /papi/practice/more`, then the session it
+answers is the run); a guest with games reads "23 mistakes from your 4
+games", that progress is not saved, and the same PRACTISE; a stranger
+(and an account whose deck is empty) two lines on what this is and TRY
+ONE (`GET /papi/puzzles/random`, a 404's sentence shown under the button
+while the pool has none). A quiet "Sign in" line opens `Ui.SignIn`
+(next `/puzzles`) for whoever wants it before the run asks. Signed in,
+the page POSTs the browser's zone
+(`Intl.DateTimeFormat().resolvedOptions().timeZone`, a boot flag `tz`) to
+`/papi/practice/tz` once per visit, and never for a guest.
+
+A page that starts a run answers `Out = StartRun (List String)`: Main
+sets `run = {ids, at = 0, verdicts = []}` and pushes the first id (the
+game-over card and the replay will use the same `Out`). The puzzle page
+reports every reveal (`Out = Answered Verdict`); Main keeps it on the run
+by puzzle id (an answer given again replaces, never counts twice). At the
+last id `WantsNext` is answered with the score (`Page.Puzzle.endRun
+{right, close, total}`: a pass is right, a hold close, a miss or an
+unknown neither; the total is the run's length) and the page ends the run
+on its own card, the board gone: "7 of 10 right" (and "2 close"), then
+for an account a refetch of `/papi/practice` -- empty is "Done for today.
+4 new tomorrow." (just "Done for today." when tomorrow brings none) and
+KEEP GOING, which runs what it brought or says the deck has nothing more
+to start; more due is "N more to go." and CONTINUE -- and for a guest
+"Sign in and we'll keep this: these come back until you stop making
+them." over `Ui.SignIn` (next `/puzzles`; the stamp and the deck sync are
+the server's, and CONTINUE lands on the home with a deck). The page's
+other `Out`s for this: `StartRun`, `SignedIn (Maybe User)`, `Go path`.
+Decisions on the server: `handlers/practice` (counts, a guest's
+`mistakes`) and `handlers/puzzles_hub` (TRY ONE's clear-answer rule, on
+the `puzzles.sample` cap: up to 40 complete puzzles in the database's
+random order, the first that qualifies).
 
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
 (no new column: retain already keeps a learner's timezone, and it is the
@@ -1457,6 +1521,14 @@ node playwright/test-puzzle/test.js             # a puzzle from a link: setup.ex
 node playwright/review-puzzle/test.js           # screenshots of the puzzle page: question, staged,
                                                # reveal, a candidate, the cube scale (phone, small,
                                                # landscape, desktop)
+node playwright/test-puzzles-hub/test.js        # the practice home and a run: setup.exs's game, the
+                                               # first seat trimmed to 12 mistakes; a stranger's TRY
+                                               # ONE, a guest's run of 12 to the score and the sign-in
+                                               # ask, sign in there, the account's counts and its
+                                               # timezone sent once, a run of 10 to "Done for today.
+                                               # 2 new tomorrow.", KEEP GOING's 2; phones
+node playwright/review-puzzles-hub/test.js      # screenshots of the practice home (stranger, guest,
+                                               # account, done for today) and both end screens
 node playwright/test-spa-landing/test.js        # the home board and CREATE GAME's dialog, old
                                                # links redirect, a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
@@ -1577,7 +1649,14 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
   node is fetched and merged, PLAY posts exactly the path with the key (and
   waits for the key), the verdict and "you" in the table, the cube scale
   with the engine's band, the level line in its three states and after an
-  override, NEXT only from the shell, the memory line on 200 and not on 404.
+  override, NEXT only from the shell, the memory line on 200 and not on 404;
+  the end of a run: every verdict reported, the score card for a guest (the
+  sign-in, going on to `/puzzles`) and for an account (done for today, KEEP
+  GOING and CONTINUE start what the deck answers).
+- `PuzzlesHubTest`: the practice home on the wire's three answers (the
+  counts line, a guest's mistakes line, a stranger's TRY ONE and the empty
+  pool's sentence), PRACTISE and KEEP GOING as `StartRun`, and a decoder
+  that refuses a malformed count rather than defaulting it.
 - `ReplayTest`: the replay on the real record and analysis of seed 000011
   (`ReplayFixtures`): decoders, the board at every step, stepping, keys,
   swipes, game switching, and the analysis filling in without moving the

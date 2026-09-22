@@ -65,6 +65,9 @@ defmodule OskolWeb.Router do
     # analysis engine nothing; what is written down is the deck's, and only
     # for a signed-in browser.
     get "/games/:slug/rooms/:id/puzzles", PuzzleController, :game
+    # TRY ONE on the practice home: before "/puzzles/:id", or "random"
+    # would be read as an id.
+    get "/puzzles/random", PuzzlesHubController, :random
     get "/puzzles/:id", PuzzleController, :show
     get "/puzzles/:id/tree", PuzzleController, :tree
     get "/puzzles/:id/mine", PuzzleController, :mine
@@ -101,10 +104,10 @@ defmodule OskolWeb.Router do
     # "/login" names no game, so it is a 404 like any other unknown slug.
     get "/login/:token", LoginController, :show
 
-    # A puzzle: one position and its question, open to anyone with the
-    # link and indexable. Declared before "/:slug" so "puzzles" is a
-    # reserved word like "login"; a bare "/puzzles" is a 404 until the
-    # practice home lands.
+    # Practising: the home of it, and one puzzle. Both open to anyone and
+    # indexable. Declared before "/:slug" so "puzzles" is a reserved word
+    # like "login".
+    get "/puzzles", SpaController, :puzzles
     get "/puzzles/:id", SpaController, :puzzle
 
     # Games Oskol no longer hosts (see RemovedGameController): every old

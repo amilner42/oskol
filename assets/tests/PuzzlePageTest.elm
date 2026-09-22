@@ -15,6 +15,7 @@ follows the shell, and the memory line appears on a 200 and never on a
 -}
 
 import Api
+import Api.Practice as Practice
 import Dict
 import Expect
 import Games.Backgammon.Puzzle as Puzzle exposing (Verdict(..))
@@ -29,6 +30,7 @@ import Session
 import Test exposing (Test, describe, test)
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, tag, text)
+import Ui.SignIn as SignIn
 
 
 suite : Test
@@ -41,6 +43,7 @@ suite =
         , cube
         , schedule
         , next
+        , runEnd
         , memory
         ]
 
@@ -733,6 +736,216 @@ next =
             \_ -> rendered (after { hasNext = False }) |> hasNot [ id "pz-next" ]
         , test "and never before the reveal" <|
             \_ -> rendered (page { hasNext = True } "move") |> hasNot [ id "pz-next" ]
+        , test "but a puzzle of a run that did not load still offers it, so the run is not stranded" <|
+            \_ ->
+                let
+                    missing config =
+                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, origin = "http://oskol.test" }
+                            |> Tuple.first
+                            |> step (GotPuzzle (Err (Api.ApiError { code = "not_found", message = "no" })))
+                in
+                Expect.all
+                    [ \_ -> rendered (missing { hasNext = True }) |> has [ id "pz-missing", id "pz-next" ]
+                    , \_ -> out Next (missing { hasNext = True }) |> Expect.equal Page.WantsNext
+                    , \_ -> rendered (missing { hasNext = False }) |> hasNot [ id "pz-next" ]
+                    ]
+                    ()
+        ]
+
+
+
+-- THE END OF A RUN
+
+
+practiceJson : String -> String
+practiceJson counts =
+    """{"ok":true,"puzzles":[],"cursor":null,"counts":""" ++ counts ++ ""","mistakes":null,"game":null}"""
+
+
+moreJson : String
+moreJson =
+    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true},{"id":"bbbbbbbb","kind":"move","prompt":"White to play 3-1. What's your play?","due":true}],"cursor":null,"counts":{"due":2,"new_today":0,"new_tomorrow":0,"deck":12},"mistakes":null,"game":null}"""
+
+
+practice : String -> Result Api.Error Practice.Practice
+practice =
+    Api.parseBody Practice.practiceDecoder
+
+
+account : Session.Session
+account =
+    Session.withUser (Just { email = "arie@example.com", name = Just "arie" }) Session.empty
+
+
+{-| A page at the run's last puzzle, answered, with the shell's score
+handed over.
+-}
+ended : Session.Session -> Page.Model
+ended session =
+    let
+        ( model, _ ) =
+            Page.init session { id = "fix", hasNext = True, origin = "http://oskol.test" }
+
+        loaded =
+            case D.decodeString Puzzle.decoder (question "move") of
+                Ok p ->
+                    GotPuzzle (Ok p)
+
+                Err e ->
+                    GotPuzzle (Err (Api.DecodeError (D.errorToString e)))
+
+        answered =
+            model |> step loaded |> step (GotKey "key-0123")
+
+        ( path, _ ) =
+            aTurn answered
+    in
+    answered
+        |> step (BoardOut (Puzzle.Stepped path))
+        |> revealed (reveal "move_pass")
+        |> Page.endRun { right = 7, close = 2, total = 10 }
+        |> Tuple.first
+
+
+runEnd : Test
+runEnd =
+    describe "the end of a run"
+        [ test "every verdict is reported to the shell, which keeps the score" <|
+            \_ ->
+                let
+                    model =
+                        page { hasNext = True } "move"
+
+                    ( path, _ ) =
+                        aTurn model
+
+                    staged =
+                        model |> step (BoardOut (Puzzle.Stepped path))
+                in
+                case decodeReveal (reveal "move_hold") of
+                    Ok r ->
+                        out (GotReveal (Ok r)) staged |> Expect.equal (Page.Answered Hold)
+
+                    Err e ->
+                        Expect.fail e
+        , test "the score takes the board's place: right, and close" <|
+            \_ ->
+                rendered (ended Session.empty)
+                    |> Expect.all
+                        [ \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "7 of 10 right" ]
+                        , \q -> q |> Query.find [ id "pz-close" ] |> Query.has [ text "2 close" ]
+                        , hasNot [ id "pz-board" ]
+                        , hasNot [ id "pz-next" ]
+                        ]
+        , test "the words" <|
+            \_ -> Page.runScore { right = 0, close = 0, total = 3 } |> Expect.equal "0 of 3 right"
+        , test "a guest is asked to sign in, in the one component, going on to the practice home" <|
+            \_ ->
+                let
+                    model =
+                        ended Session.empty
+                in
+                Expect.all
+                    [ \_ -> rendered model |> has [ id "pz-signin-ask" ]
+                    , \_ -> rendered model |> has [ id "signin", id "signin-email" ]
+                    , \_ -> rendered model |> hasNot [ id "pz-keep-going" ]
+                    , \_ ->
+                        case model.ended of
+                            Just { after } ->
+                                case after of
+                                    Page.AskSignIn signIn ->
+                                        Expect.equal "/puzzles" signIn.next
+
+                                    _ ->
+                                        Expect.fail "a guest's end is the sign-in"
+
+                            Nothing ->
+                                Expect.fail "the run has not ended"
+                    ]
+                    ()
+        , test "a sign-in that went through is the shell's to note, and CONTINUE goes to the home" <|
+            \_ ->
+                let
+                    won =
+                        { saved = 1, next = "/puzzles", user = Just { email = "arie@example.com", name = Just "arie" }, new = False }
+                in
+                Expect.all
+                    [ \_ -> out (EndSignInMsg (SignIn.GotCode (Ok won))) (ended Session.empty) |> Expect.equal (Page.SignedIn won.user)
+                    , \_ ->
+                        ended Session.empty
+                            |> step (EndSignInMsg (SignIn.GotCode (Ok won)))
+                            |> out (EndSignInMsg SignIn.PressedContinue)
+                            |> Expect.equal (Page.Go "/puzzles")
+                    ]
+                    ()
+        , test "an account asks its deck what is left; nothing is done for today, with KEEP GOING" <|
+            \_ ->
+                let
+                    model =
+                        ended account
+                in
+                Expect.all
+                    [ \_ -> rendered model |> hasNot [ id "signin" ]
+                    , \_ -> rendered model |> has [ text "ASKING YOUR DECK…" ]
+                    , \_ ->
+                        model
+                            |> step (GotLeft (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":4,"deck":231}""")))
+                            |> rendered
+                            |> Expect.all
+                                [ \q -> q |> Query.find [ id "pz-done" ] |> Query.has [ text "Done for today. 4 new tomorrow." ]
+                                , has [ id "pz-keep-going" ]
+                                , hasNot [ id "pz-nothing-more" ]
+                                ]
+                    ]
+                    ()
+        , test "KEEP GOING starts what it brought, and CONTINUE what was already left" <|
+            \_ ->
+                let
+                    done =
+                        ended account |> step (GotLeft (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":4,"deck":231}""")))
+                in
+                Expect.all
+                    [ \_ -> done |> step PressedKeepGoing |> out (GotMore (practice moreJson)) |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                    , \_ -> done |> step PressedKeepGoing |> rendered |> Query.find [ id "pz-keep-going" ] |> Query.has [ attribute (Html.Attributes.disabled True) ]
+                    , \_ ->
+                        let
+                            left =
+                                ended account |> step (GotLeft (practice moreJson))
+                        in
+                        Expect.all
+                            [ \_ -> rendered left |> Query.find [ id "pz-more-due" ] |> Query.has [ text "2 more to go." ]
+                            , \_ -> out PressedContinueRun left |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                            ]
+                            ()
+                    ]
+                    ()
+        , test "a deck with nothing more to start says so, once KEEP GOING has asked" <|
+            \_ ->
+                let
+                    nothingNew =
+                        ended account
+                            |> step (GotLeft (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":0,"deck":12}""")))
+                in
+                Expect.all
+                    [ \_ ->
+                        rendered nothingNew
+                            |> Expect.all
+                                [ \q -> q |> Query.find [ id "pz-done" ] |> Query.has [ text "Done for today." ]
+                                , \q -> q |> Query.find [ id "pz-done" ] |> Query.hasNot [ text "tomorrow" ]
+                                , has [ id "pz-keep-going" ]
+                                , hasNot [ id "pz-nothing-more" ]
+                                ]
+                    , \_ ->
+                        nothingNew
+                            |> step PressedKeepGoing
+                            |> step (GotMore (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":0,"deck":12}""")))
+                            |> rendered
+                            |> Expect.all
+                                [ has [ id "pz-nothing-more" ]
+                                , hasNot [ id "pz-keep-going" ]
+                                ]
+                    ]
+                    ()
         ]
 
 

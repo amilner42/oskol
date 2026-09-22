@@ -6,7 +6,7 @@ defmodule Oskol.Gleam.Caps.Puzzles do
       PuzzlesCaps(unextracted, store, failed, owned_sources, mark_synced,
       sync_failed, deck_pending, guest_sources, get, mine, game_sources,
       put_attempt, attempt, settle_attempt, serialize, cached_tree, keep_tree,
-      cached_moves, keep_moves, pictures)
+      cached_moves, keep_moves, pictures, sample)
       NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json,
       complete)
       Written(puzzles, upgraded, sources)
@@ -42,13 +42,21 @@ defmodule Oskol.Gleam.Caps.Puzzles do
     {:puzzles_caps, &Puzzles.unextracted/1, &store/4, &failed/3, &owned_sources/2, &mark_synced/1,
      &sync_failed/2, &deck_pending/2, &guest_sources/1, &get/1, &mine/3, &game_sources/2,
      &put_attempt/5, &attempt/3, &settle_attempt/5, &serialize/3, &cached_tree/1, &keep_tree/2,
-     &cached_moves/1, &keep_moves/2, &pictures/2}
+     &cached_moves/1, &keep_moves/2, &pictures/2, &sample/1}
   end
 
   defp get(id) do
-    opt(Puzzles.get(id), fn row ->
-      {:stored, row.id, row.kind, Jason.encode!(row.question), Jason.encode!(row.answer)}
-    end)
+    opt(Puzzles.get(id), &stored/1)
+  end
+
+  # The pool TRY ONE draws from: complete answers only, in the database's
+  # own random order. Gleam picks from what comes back.
+  defp sample(n) do
+    Enum.map(Puzzles.sample(n), &stored/1)
+  end
+
+  defp stored(row) do
+    {:stored, row.id, row.kind, Jason.encode!(row.question), Jason.encode!(row.answer)}
   end
 
   defp mine(puzzle_id, guest_id, user_id) do

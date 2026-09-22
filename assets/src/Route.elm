@@ -9,6 +9,7 @@ module Route exposing
     , library
     , play
     , puzzle
+    , puzzles
     , replay
     )
 
@@ -17,7 +18,7 @@ module Route exposing
     /            the game library
     /:slug       one game's start page (`?game=` an invite)
     /login/:token  the page a mailed sign-in link opens
-    /puzzles     practising (the home of it lands with `puzzles-home`)
+    /puzzles     the practice home: what you have to practise, or one to try
     /puzzles/:id one puzzle: a position and its question
     /:slug/:id   a running game
     /:slug/:id/replay   a game played again, turn by turn, with its analysis
@@ -46,7 +47,7 @@ type Route
     | Login String
       -- slug, ?game= (a room code)
     | GameLanding String (Maybe String)
-      -- practising: reserved, as the server reserves it
+      -- the practice home
     | Puzzles
       -- a puzzle, by id
     | Puzzle String
@@ -117,6 +118,13 @@ is nothing for it to carry.
 puzzle : String -> Route
 puzzle id =
     Puzzle id
+
+
+{-| The practice home.
+-}
+puzzles : Route
+puzzles =
+    Puzzles
 
 
 href : Route -> String

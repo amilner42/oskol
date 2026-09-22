@@ -8,6 +8,7 @@ Three routes, and they are the server's three routes:
     /            Page.GameLanding "backgammon" — the home page, the board
     /:slug       Page.GameLanding — the invite a shared link opens
     /login/:token  Page.Login — what a mailed sign-in link opens
+    /puzzles     Page.Puzzles — the practice home
     /puzzles/:id   Page.Puzzle — one position and its question
     /:slug/:id   Page.Play — the game, unchanged
     /:slug/:id/replay   Page.Replay — a game played again, with its analysis
@@ -16,8 +17,11 @@ A practice run -- the puzzles a session works through, one NEXT at a
 time -- is kept here (`run`) and not in the puzzle page, because it has to
 outlive the page: every `pushUrl` to the next puzzle builds that page
 afresh. The pages that start a run (the practice home, a finished game's
-card) hand the shell the list; the puzzle page only asks whether there is
-a next, and says when it wants it.
+card) hand the shell the list (`StartRun ids`, which opens the first);
+the puzzle page reports each verdict (`Answered`), which the run keeps as
+its score, and says when it wants the next (`WantsNext`): the shell
+opens it, or, at the last, hands the page the score (`Page.Puzzle.endRun`)
+and the page ends the run on its own screen.
 
 The JOIN GAME prompt lives here rather than in a page because it is chrome:
 six characters in, and out comes that room's ordinary invite link, which is
@@ -35,10 +39,12 @@ import Browser.Navigation as Nav
 import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as D
+import Games.Backgammon.Puzzle exposing (Verdict(..))
 import Page.GameLanding
 import Page.Login
 import Page.Play
 import Page.Puzzle
+import Page.Puzzles
 import Page.Replay
 import Route exposing (Route)
 import Session exposing (Session)
@@ -69,9 +75,14 @@ type alias Model =
     -- that page alone. The server read the token; it wrote nothing.
     , loginFlags : Maybe String
 
-    -- The practice run in progress, if any: the puzzle ids in order and
-    -- which one is open. Nothing starts one yet (`puzzles-home` and the
-    -- cards will); a puzzle opened from a link has no next.
+    -- The browser's timezone (an IANA name, or ""), for the practice home
+    -- to tell the deck once.
+    , tz : String
+
+    -- The practice run in progress, if any: the puzzle ids in order, which
+    -- one is open, and the verdict on each answered so far. The practice
+    -- home starts one (and the cards will); a puzzle opened from a link
+    -- has no next.
     , run : Maybe Run
     , joinOpen : Bool
     , joinCode : String
@@ -86,10 +97,14 @@ type Page
     | Play Page.Play.Model
     | Replay Page.Replay.Model
     | Puzzle Page.Puzzle.Model
+    | Puzzles Page.Puzzles.Model
 
 
 type alias Run =
-    { ids : List String, at : Int }
+    { ids : List String
+    , at : Int
+    , verdicts : List ( String, Verdict ) -- by puzzle id; an answer given again replaces the first
+    }
 
 
 type Msg
@@ -100,6 +115,7 @@ type Msg
     | PlayMsg Page.Play.Msg
     | ReplayMsg Page.Replay.Msg
     | PuzzleMsg Page.Puzzle.Msg
+    | PuzzlesMsg Page.Puzzles.Msg
     | OpenedJoin
     | ClosedJoin
     | JoinCodeInput String
@@ -126,6 +142,9 @@ init flags url key =
                 , loginFlags =
                     D.decodeValue (D.field "login" (D.nullable D.string)) flags
                         |> Result.withDefault Nothing
+                , tz =
+                    D.decodeValue (D.field "tz" D.string) flags
+                        |> Result.withDefault ""
                 , run = Nothing
                 , joinOpen = False
                 , joinCode = ""
@@ -157,6 +176,9 @@ withSession session model =
 
                 Puzzle pageModel ->
                     Puzzle (Page.Puzzle.withSession session pageModel)
+
+                Puzzles pageModel ->
+                    Puzzles (Page.Puzzles.withSession session pageModel)
 
                 other ->
                     other
@@ -234,10 +256,9 @@ routeTo url oldModel =
                 }
                 |> wrap model Play PlayMsg
 
-        -- Practising has no home yet (`puzzles-home`); the word is reserved
-        -- on both sides so that it can have one.
         Just Route.Puzzles ->
-            ( { model | page = NotFound }, Cmd.none )
+            Page.Puzzles.init model.session { tz = model.tz }
+                |> wrap model Puzzles PuzzlesMsg
 
         Just (Route.Puzzle id) ->
             let
@@ -253,7 +274,10 @@ routeTo url oldModel =
             in
             Page.Puzzle.init model.session
                 { id = id
-                , hasNext = nextInRun run /= Nothing
+
+                -- In a run there is always somewhere after this one: the
+                -- next puzzle, or the run's end.
+                , hasNext = run /= Nothing
                 , origin = model.origin
                 }
                 |> wrap { model | run = run } Puzzle PuzzleMsg
@@ -297,6 +321,46 @@ indexOf wanted items =
 nextInRun : Maybe Run -> Maybe String
 nextInRun run =
     run |> Maybe.andThen (\r -> r.ids |> List.drop (r.at + 1) |> List.head)
+
+
+{-| A run of these puzzles, from the first. An empty list starts nothing.
+-}
+startRun : List String -> Model -> ( Model, Cmd Msg )
+startRun ids model =
+    case ids of
+        [] ->
+            ( model, Cmd.none )
+
+        first :: _ ->
+            ( { model | run = Just { ids = ids, at = 0, verdicts = [] } }
+            , Nav.pushUrl model.key (Route.href (Route.puzzle first))
+            )
+
+
+{-| The verdict on the open puzzle, kept on the run. Answering the same
+puzzle again (back, then PLAY) replaces the first verdict rather than
+counting twice.
+-}
+answered : Verdict -> Run -> Run
+answered verdict run =
+    case run.ids |> List.drop run.at |> List.head of
+        Just id ->
+            { run | verdicts = ( id, verdict ) :: List.filter (\( other, _ ) -> other /= id) run.verdicts }
+
+        Nothing ->
+            run
+
+
+{-| A pass is right, a hold is close, a miss or an unknown is neither;
+the total is the run's length, answered or not.
+-}
+score : Run -> Page.Puzzle.Score
+score run =
+    let
+        count verdict =
+            run.verdicts |> List.filter (\( _, v ) -> v == verdict) |> List.length
+    in
+    { right = count Pass, close = count Hold, total = List.length run.ids }
 
 
 {-| The game page asks for two things the shell owns: the URL to go to, and
@@ -445,15 +509,63 @@ update msg model =
 
                 withPage =
                     { model | page = Puzzle newPageModel }
-            in
-            case ( out, nextInRun model.run ) of
-                ( Page.Puzzle.WantsNext, Just next ) ->
-                    ( withPage
-                    , Cmd.batch [ Cmd.map PuzzleMsg cmd, Nav.pushUrl model.key (Route.href (Route.puzzle next)) ]
-                    )
 
-                _ ->
+                more extra =
+                    Cmd.batch [ Cmd.map PuzzleMsg cmd, extra ]
+            in
+            case out of
+                Page.Puzzle.NoOut ->
                     ( withPage, Cmd.map PuzzleMsg cmd )
+
+                Page.Puzzle.Answered verdict ->
+                    ( { withPage | run = Maybe.map (answered verdict) model.run }, Cmd.map PuzzleMsg cmd )
+
+                Page.Puzzle.WantsNext ->
+                    case ( nextInRun model.run, model.run ) of
+                        ( Just next, _ ) ->
+                            ( withPage, more (Nav.pushUrl model.key (Route.href (Route.puzzle next))) )
+
+                        -- The last of the run: the page ends it, with the score.
+                        ( Nothing, Just run ) ->
+                            Page.Puzzle.endRun (score run) newPageModel
+                                |> wrap model Puzzle PuzzleMsg
+                                |> Tuple.mapSecond more
+
+                        ( Nothing, Nothing ) ->
+                            ( withPage, Cmd.map PuzzleMsg cmd )
+
+                Page.Puzzle.StartRun ids ->
+                    startRun ids withPage |> Tuple.mapSecond more
+
+                Page.Puzzle.SignedIn user ->
+                    signedIn user withPage |> Tuple.mapSecond more
+
+                Page.Puzzle.Go path ->
+                    ( withPage, more (Nav.pushUrl model.key path) )
+
+        ( PuzzlesMsg pageMsg, Puzzles pageModel ) ->
+            let
+                ( newPageModel, cmd, out ) =
+                    Page.Puzzles.update pageMsg pageModel
+
+                withPage =
+                    { model | page = Puzzles newPageModel }
+
+                more extra =
+                    Cmd.batch [ Cmd.map PuzzlesMsg cmd, extra ]
+            in
+            case out of
+                Page.Puzzles.NoOut ->
+                    ( withPage, Cmd.map PuzzlesMsg cmd )
+
+                Page.Puzzles.StartRun ids ->
+                    startRun ids withPage |> Tuple.mapSecond more
+
+                Page.Puzzles.Go path ->
+                    ( withPage, more (Nav.pushUrl model.key path) )
+
+                Page.Puzzles.SignedIn user ->
+                    signedIn user withPage |> Tuple.mapSecond more
 
         ( OpenedJoin, _ ) ->
             ( { model | joinOpen = True, joinCode = "", joinError = Nothing }
@@ -596,6 +708,9 @@ view model =
             Puzzle pageModel ->
                 Html.map PuzzleMsg (Page.Puzzle.view pageModel)
 
+            Puzzles pageModel ->
+                framed model [ Html.map PuzzlesMsg (Page.Puzzles.view pageModel) ]
+
             Login pageModel ->
                 framed model [ Html.map LoginMsg (Page.Login.view pageModel) ]
 
@@ -664,6 +779,9 @@ title model =
 
         Puzzle pageModel ->
             Page.Puzzle.title pageModel
+
+        Puzzles pageModel ->
+            Page.Puzzles.title pageModel
 
         Login pageModel ->
             Page.Login.title pageModel

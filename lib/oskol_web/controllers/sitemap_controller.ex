@@ -1,11 +1,13 @@
 defmodule OskolWeb.SitemapController do
-  @moduledoc "The library and one landing page per game, for search engines."
+  @moduledoc "The library, one landing page per game and the practice home, for search engines."
   use OskolWeb, :controller
 
   alias Oskol.GameKit
 
   def index(conn, _params) do
-    urls = [url(~p"/") | Enum.map(GameKit.games(), fn game -> url(~p"/#{game["slug"]}") end)]
+    urls =
+      [url(~p"/") | Enum.map(GameKit.games(), fn game -> url(~p"/#{game["slug"]}") end)] ++
+        [url(~p"/puzzles")]
 
     body =
       [

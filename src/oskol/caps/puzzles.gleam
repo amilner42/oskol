@@ -299,6 +299,11 @@ pub type PuzzlesCaps(moves) {
     /// (`Oskol.Puzzles.Pictures`); a picture that does not get drawn is
     /// the sweep's to find, never a reason for a review to fail.
     pictures: fn(String, Int) -> Nil,
+    /// Up to this many stored puzzles whose answer is `complete`, in an
+    /// order the database chose at random: the pool TRY ONE draws from.
+    /// Which of them stands clear enough to be asked of a stranger is the
+    /// handler's rule (`handlers/puzzles_hub`), applied to what comes back.
+    sample: fn(Int) -> List(Stored),
   )
 }
 
@@ -327,5 +332,6 @@ pub fn stub() -> PuzzlesCaps(moves) {
     cached_moves: fn(_) { option.None },
     keep_moves: fn(_, _) { Nil },
     pictures: fn(_, _) { panic as "stub puzzles.pictures" },
+    sample: fn(_) { panic as "stub puzzles.sample" },
   )
 }

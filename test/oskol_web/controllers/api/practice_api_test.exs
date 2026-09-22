@@ -66,7 +66,7 @@ defmodule OskolWeb.Api.PracticeApiTest do
 
       body = conn |> get(~p"/papi/practice") |> json_response(200)
       assert body["puzzles"] == []
-      assert body["counts"] == %{"due" => 0, "new_today" => 0, "deck" => 0}
+      assert body["counts"] == %{"due" => 0, "new_today" => 0, "new_tomorrow" => 0, "deck" => 0}
       # Reading a session must not open a deck for an account that has none.
       assert Retain.fetch_user(user.id) == {:error, :not_found}
     end

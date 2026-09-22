@@ -233,8 +233,19 @@ defmodule OskolWeb.SpaControllerTest do
       assert_error_sent 404, fn -> get(conn, ~p"/puzzles/nope0000") end
     end
 
-    test "a bare /puzzles names no game and is a 404 too", %{conn: conn} do
-      assert_error_sent 404, fn -> get(conn, "/puzzles") end
+    test "the practice home is its own page, with a head that says the same to everyone", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/puzzles") |> html_response(200)
+      assert html =~ ~s(id="elm-app")
+      assert html =~ ~s(>Puzzles · Oskol</title>)
+      assert html =~ ~s(<meta property="og:title" content="Puzzles")
+      assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/puzzles")
+      assert html =~ ~s(<meta name="description" content="Practise your own mistakes.)
+      # Indexable, like a puzzle; a stranger is exactly who it is for.
+      refute html =~ ~s(name="robots")
+      # No picture of its own: the plain card.
+      refute html =~ ~s(summary_large_image)
     end
   end
 

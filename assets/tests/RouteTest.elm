@@ -91,6 +91,10 @@ suite =
                 \_ -> Expect.equal (Just Library) (parse (Route.href (Route.gameLanding "backgammon")))
             , test "an invite link: the room, and nothing identifying" <|
                 \_ -> Expect.equal "/backgammon?game=AB12CD" (Route.href (Route.invite "backgammon" "AB12CD"))
+            , test "the practice home" <|
+                \_ -> Expect.equal "/puzzles" (Route.href Route.puzzles)
+            , test "a puzzle's link" <|
+                \_ -> Expect.equal "/puzzles/AB12CD34" (Route.href (Route.puzzle "AB12CD34"))
             , test "a seat's link is the room's link: there is nothing else to it" <|
                 \_ ->
                     Route.href (Route.play "backgammon" "AB12CD")

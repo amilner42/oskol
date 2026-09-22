@@ -150,6 +150,15 @@ const app = Elm.Main.init({
     // null on every other page). Decoded by Page.Login.
     login: meta("login"),
     prefs: storedPrefs,
+    // Where this browser is, as an IANA zone name: what "due today" and
+    // "back tomorrow" are measured against once the practice home sends it.
+    tz: (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+      } catch (_) {
+        return "";
+      }
+    })(),
   },
 });
 
