@@ -294,7 +294,13 @@ defmodule Oskol.Auth do
       when is_binary(old_guest_id) and is_binary(new_guest_id) and is_binary(user_id) do
     Repo.transaction(fn ->
       Oskol.Guests.move(old_guest_id, new_guest_id)
-      Oskol.Persistence.stamp_seats(old_guest_id, new_guest_id, user_id)
+      {count, game_ids} = Oskol.Persistence.stamp_seats(old_guest_id, new_guest_id, user_id)
+      # The seats are the account's as of this transaction, so the mistakes
+      # made on them are too. Written here, with the seats, because the deck
+      # sweep's index is keyed on it: a source that never learns its owner
+      # is never offered to anybody's deck.
+      :ok = Oskol.Puzzles.refresh_owners(game_ids)
+      {count, game_ids}
     end)
     |> case do
       {:ok, result} -> {:ok, result}

@@ -10,7 +10,8 @@ defmodule Oskol.Gleam.Caps.Puzzles do
       NewPuzzle(key, ids, kind, question_json, answer_json, evaluated_by_json)
       NewSource(key, game_number, turn, kind, seat, player_id, played,
       equity_lost, grade, skipped_reason)
-      DeckSource(source_id, puzzle_id, kind, question_json, ended_ms, seat)
+      DeckSource(source_id, puzzle_id, game_id, game_number, kind, turn,
+      question_json, ended_ms, seat)
       Pending(user_id, game_ids, sources)
       Stored(id, kind, question_json, answer_json)
       Source(id, puzzle_id, kind, game_id, game_number, turn, seat,
@@ -170,8 +171,8 @@ defmodule Oskol.Gleam.Caps.Puzzles do
   # row's seats do: the holder rule is Gleam's, and nothing here judges an
   # id. A stored question crosses as the JSON text Gleam wrote.
   defp deck_source(row) do
-    {:deck_source, row.id, row.puzzle_id, row.kind, Jason.encode!(row.question),
-     DateTime.to_unix(row.ended_at, :millisecond),
+    {:deck_source, row.id, row.puzzle_id, row.game_id, row.game_number, row.kind, row.turn,
+     Jason.encode!(row.question), DateTime.to_unix(row.ended_at, :millisecond),
      {:seat, row.player_id, opt(blank_to_nil(row.guest_id)), opt(blank_to_nil(row.user_id))}}
   end
 

@@ -42,4 +42,39 @@ defmodule Oskol.Release do
     IO.puts("#{length(reports)} rooms, #{if write?, do: "written", else: "dry run"}")
     reports
   end
+
+  @doc """
+  Fill the mistakes decks that are owed one, from a release.
+
+      bin/oskol eval 'Oskol.Release.puzzles_sync(dry_run: true)'
+      bin/oskol eval 'Oskol.Release.puzzles_sync(dry_run: false, reset: true)'
+
+  The same sweep the review queue runs every minute; this is for looking,
+  and for draining a backlog now rather than within the minute. `reset:`
+  first lets the rows that gave up be tried again. A bare `eval` VM runs
+  no queue, so nothing races it.
+  """
+  def puzzles_sync(opts \\ []) do
+    write? = Keyword.get(opts, :dry_run, true) == false
+    Application.load(@app)
+
+    {:ok, result, _} =
+      Ecto.Migrator.with_repo(Oskol.Repo, fn _repo ->
+        if Keyword.get(opts, :reset, false) do
+          IO.puts("#{Oskol.Practice.reset()} rows reopened")
+        end
+
+        pending = Oskol.Practice.pending(Keyword.get(opts, :limit, Oskol.Practice.sweep_batch()))
+        Enum.each(pending, &IO.puts("#{&1.user_id}: #{&1.sources} mistakes"))
+
+        if write?, do: Oskol.Practice.sweep(), else: %{accounts: 0, added: 0, failed: 0}
+      end)
+
+    IO.puts(
+      "#{result.accounts} decks filled, #{result.added} new cards, " <>
+        "#{result.failed} refused#{if write?, do: "", else: " (dry run)"}"
+    )
+
+    result
+  end
 end

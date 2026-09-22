@@ -67,17 +67,25 @@ pub type DeckSource {
     /// The `puzzle_sources` row, so a sync stamps exactly what it enrolled.
     source_id: Int,
     puzzle_id: String,
+    /// The game this mistake was made in, and which game of the match:
+    /// what a relapse writes down about itself.
+    game_id: String,
+    game_number: Int,
     /// "move", "double" or "take".
     kind: String,
+    /// Which turn of its game, counting from 1. Two mistakes of one game
+    /// are drilled in the order they were made.
+    turn: Int,
     /// The stored question, as JSON text: what a prompt is built from, and
     /// what a card carries so a session needs no second query. A question
     /// is immutable (it is the puzzle's key), so a copy of one cannot go
     /// stale.
     question_json: String,
-    /// When the game this came from ended, in Unix milliseconds -- read off
-    /// the moment its mistakes were written down, which follows the game's
-    /// end by seconds and never puts two games in the wrong order. New
-    /// cards are introduced newest game first.
+    /// When the game this came from ended, in Unix milliseconds: the
+    /// moment its review row was opened, which is the game ending and not
+    /// the moment somebody got round to extracting it. New cards are
+    /// introduced newest game first, and a backfill or a retried review
+    /// must not put an old game at the front of the queue.
     ended_ms: Int,
     seat: Seat,
   )

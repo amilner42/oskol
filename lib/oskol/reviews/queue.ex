@@ -165,16 +165,23 @@ defmodule Oskol.Reviews.Queue do
   # Recovery must survive an unavailable database without restarting the
   # queue (which could orphan its running engine task). Always schedule the
   # next scan; no read endpoint is responsible for dispatching this work.
+  #
+  # The scan itself runs in a task, not here: it is three queries against
+  # tables that grow, and this process is also the one a room casts to when
+  # a game ends. It casts its own answer back, so a slow scan delays
+  # nothing but itself.
   defp recover_owed do
     Process.send_after(self(), :sweep, @sweep_interval)
 
-    try do
-      sweep_owed()
-    rescue
-      e -> Logger.error("analysis recovery sweep failed: #{Exception.message(e)}")
-    catch
-      kind, reason -> Logger.error("analysis recovery sweep failed: #{inspect({kind, reason})}")
-    end
+    Task.Supervisor.start_child(@task_supervisor, fn ->
+      try do
+        sweep_owed()
+      rescue
+        e -> Logger.error("analysis recovery sweep failed: #{Exception.message(e)}")
+      catch
+        kind, reason -> Logger.error("analysis recovery sweep failed: #{inspect({kind, reason})}")
+      end
+    end)
   end
 
   # `generation` tells a retry timer set before a reset from one set after.

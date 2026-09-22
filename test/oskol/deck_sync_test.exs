@@ -106,6 +106,46 @@ defmodule Oskol.DeckSyncTest do
     :ok = Puzzles.store(game_id, 1, puzzles, sources)
   end
 
+  # The same position, reached again in another game: one puzzle, a second
+  # source.
+  defp same_mistake(game_id, first_game) do
+    [%{puzzle_id: puzzle_id} | _] = sources_of(first_game)
+    puzzle = Repo.get(Puzzles.Puzzle, puzzle_id)
+
+    # The puzzle goes in again with the same key: `store/4` keeps the row
+    # that is already there and hands its id back, which is how the second
+    # game's source points at the first game's puzzle.
+    :ok =
+      Puzzles.store(
+        game_id,
+        1,
+        [
+          %{
+            key: puzzle.key,
+            ids: [puzzle.id],
+            kind: puzzle.kind,
+            question: puzzle.question,
+            answer: puzzle.answer,
+            evaluated_by: puzzle.evaluated_by
+          }
+        ],
+        [
+          %{
+            key: puzzle.key,
+            game_number: 1,
+            turn: 1,
+            kind: "move",
+            seat: 0,
+            player_id: "p1",
+            played: "13/8 13/11",
+            equity_lost: 0.061,
+            grade: "bad",
+            skipped_reason: nil
+          }
+        ]
+      )
+  end
+
   defp ids_for(game_id, player_id) do
     base =
       :crypto.hash(:sha256, game_id <> player_id)
@@ -115,13 +155,38 @@ defmodule Oskol.DeckSyncTest do
     for n <- 1..4, do: base <> Integer.to_string(n)
   end
 
+  # Move a room's review row back in time: when its game was played, which
+  # is what the deck orders on.
+  defp backdate(game_id, amount, unit) do
+    when_ = DateTime.add(DateTime.utc_now(), amount, unit)
+
+    from(r in Oskol.Reviews.Review, where: r.game_id == ^game_id)
+    |> Repo.update_all(set: [inserted_at: when_])
+  end
+
   defp sources_of(game_id) do
     from(s in Puzzles.Source, where: s.game_id == ^game_id, order_by: s.turn) |> Repo.all()
   end
 
   defp cards(user_id) do
-    {:ok, %{reviews: _, new: new}} = Retain.queue(user_id, limit: 50)
+    {:ok, %{new: new}} = Retain.queue(user_id, limit: 50)
     Enum.map(new, & &1.key)
+  end
+
+  # A session exactly as the handler asks for one: the front of the queue,
+  # due before new, twenty at a time.
+  defp session(user_id) do
+    {:ok, %{reviews: reviews, new: new}} =
+      Retain.queue(user_id, limit: 20, new: :after_reviews)
+
+    Enum.map(reviews ++ new, & &1.key)
+  end
+
+  defp answer_all(user_id, keys) do
+    Enum.each(keys, fn key ->
+      {:ok, _} = Retain.start(user_id, [key])
+      {:ok, _} = Retain.review(user_id, key, :pass)
+    end)
   end
 
   # ---------- Whose mistakes go in ----------
@@ -188,6 +253,41 @@ defmodule Oskol.DeckSyncTest do
       [newest, oldest] = cards(user.id)
       assert newest == hd(sources_of(newer)).puzzle_id
       assert oldest == hd(sources_of(older)).puzzle_id
+    end
+
+    test "orders by when the game was played, not when it was extracted" do
+      user = an_account("arie@oskol.test")
+      older = a_room([seat("p1", guest: "g1", user: user.id)])
+      newer = a_room([seat("p1", guest: "g1", user: user.id)])
+
+      # The newer game really is the newer game...
+      backdate(older, -3, :day)
+
+      # ...but its mistakes are written down second, which is what a
+      # backfill or a retried review looks like.
+      mistakes(newer, ["p1"])
+      mistakes(older, ["p1"])
+
+      assert {:ok, 2} = Practice.sync(user.id)
+
+      assert cards(user.id) == [
+               hd(sources_of(newer)).puzzle_id,
+               hd(sources_of(older)).puzzle_id
+             ]
+    end
+
+    test "drills one game's mistakes in the order they were made" do
+      user = an_account("arie@oskol.test")
+      game_id = a_room([seat("p1", guest: "g1", user: user.id)])
+      # Two seats' worth of rows, both on this account's seat: turns 1 and 2.
+      mistakes(game_id, ["p1", "p1b"])
+      Repo.update_all(Puzzles.Source, set: [player_id: "p1"])
+      :ok = Puzzles.refresh_owners([game_id])
+
+      assert {:ok, 2} = Practice.sync(user.id)
+
+      [first, second] = Enum.sort_by(sources_of(game_id), & &1.turn)
+      assert cards(user.id) == [first.puzzle_id, second.puzzle_id]
     end
 
     test "a game with no mistakes gives its owner nothing" do
@@ -300,19 +400,32 @@ defmodule Oskol.DeckSyncTest do
       game_id = a_room([seat("p1", guest: guest)])
       mistakes(game_id, ["p1"])
 
-      # The persister answers `:pending` when the caller's call times out;
-      # the handler runs to the end regardless, which is the whole reason
-      # the deck is asked for from there and not from the request.
+      # The caller really does give up: a call that times out before the
+      # handler has answered is exactly what `stamp_seats/3` turns into
+      # `:pending` in production, and the whole reason the deck is asked
+      # for from the handler and not from the request.
       fresh = "guest-after-timeout"
 
-      task =
-        Task.async(fn ->
-          Oskol.Game.Persister.stamp_seats(guest, fresh, user.id)
-        end)
+      gave_up =
+        try do
+          GenServer.call(
+            Oskol.Game.Persister,
+            {:stamp_seats, guest, fresh, user.id},
+            0
+          )
+        catch
+          :exit, {:timeout, _} -> :pending
+        end
 
-      assert {:ok, {1, [^game_id]}} = Task.await(task, 5_000)
+      assert gave_up == :pending
 
+      # The handler runs to the end regardless: the seats moved and the
+      # deck filled, with nobody left waiting for either.
+      :ok = Oskol.Game.Persister.flush()
       :ok = Oskol.Reviews.Queue.await_idle()
+
+      assert [%{"user_id" => owner}] = Repo.reload(%Persistence.Game{id: game_id}).players
+      assert owner == user.id
       assert cards(user.id) == [hd(sources_of(game_id)).puzzle_id]
     end
 
@@ -365,6 +478,180 @@ defmodule Oskol.DeckSyncTest do
     end
   end
 
+  # ---------- When the deck itself is away ----------
+
+  describe "a deck that cannot be reached" do
+    # The realistic failure, and the one that used to lose mistakes
+    # silently: not retain refusing, but retain raising. The rows were
+    # charged for the try and nothing was written down about why.
+    defp with_broken_deck(fun) do
+      was = Application.get_env(:retain, :repo)
+      Application.put_env(:retain, :repo, Oskol.NoSuchRepoAtAll)
+
+      try do
+        fun.()
+      after
+        Application.put_env(:retain, :repo, was)
+      end
+    end
+
+    test "records why on the row, and --reset lets it be tried again" do
+      user = an_account("arie@oskol.test")
+      game_id = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(game_id, ["p1"])
+
+      with_broken_deck(fn ->
+        for _ <- 1..3, do: assert(:error = Practice.sync(user.id))
+      end)
+
+      [source] = sources_of(game_id)
+      assert source.deck_attempts == 3
+      assert is_nil(source.deck_synced_at)
+      # Not silence: the row says what went wrong, and an operator can find
+      # it. Without this the mistake is gone for good with no trace.
+      assert source.deck_error =~ "NoSuchRepoAtAll"
+
+      # Out of tries, so no sweep offers it any more...
+      assert Practice.pending() == []
+
+      # ...until the operator, having fixed the cause, reopens it.
+      assert Practice.reset() == 1
+      assert [%{user_id: _}] = Practice.pending()
+      assert {:ok, 1} = Practice.sync(user.id)
+
+      reopened = Repo.reload(source)
+      assert reopened.deck_synced_at != nil
+      # And a row that syncs does not keep yesterday's complaint.
+      assert is_nil(reopened.deck_error)
+    end
+  end
+
+  # ---------- A session, against the real ladder ----------
+
+  describe "a session over real retain" do
+    test "21 due and 10 new: the session finishes all 31, a page at a time" do
+      user = an_account("arie@oskol.test")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC")
+
+      keys = for n <- 1..31, do: "k#{String.pad_leading("#{n}", 2, "0")}"
+      {:ok, _} = Retain.put_items(user.id, for(k <- keys, do: %{key: k, tags: %{}, content: %{}}))
+
+      # 21 of them are in rotation and due; the other 10 have never been
+      # shown.
+      # Started yesterday: a card put into rotation today counts against
+      # today's ten new, and this session is about what is *due*.
+      yesterday = DateTime.add(DateTime.utc_now(), -1, :day)
+      {due, _fresh} = Enum.split(keys, 21)
+      {:ok, _} = Retain.start(user.id, due, now: yesterday)
+
+      first = session(user.id)
+      assert length(first) == 20
+
+      # The player answers the page. Each one leaves the due set, which is
+      # exactly what an offset would have skipped over.
+      answer_all(user.id, first)
+
+      second = session(user.id)
+      # The 21st, and it alone: the day's new cards wait until nothing is
+      # due, which is the brief's rule and retain's `new: :after_reviews`.
+      assert length(second) == 1
+      assert second != first
+      answer_all(user.id, second)
+
+      third = session(user.id)
+      assert length(third) == 10
+      assert Enum.sort(first ++ second ++ third) == Enum.sort(keys)
+
+      # And only when there is nothing left does a fetch come back empty,
+      # which is the one thing "Done for today" waits on.
+      answer_all(user.id, third)
+      assert session(user.id) == []
+    end
+
+    test "KEEP GOING puts ten more in front of the player, over the day's budget" do
+      user = an_account("arie@oskol.test")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC", new_per_day: 10)
+
+      keys = for n <- 1..30, do: "k#{String.pad_leading("#{n}", 2, "0")}"
+      {:ok, _} = Retain.put_items(user.id, for(k <- keys, do: %{key: k, tags: %{}, content: %{}}))
+
+      today = session(user.id)
+      assert length(today) == 10
+      answer_all(user.id, today)
+
+      # The day's budget is spent, so an ordinary fetch is empty...
+      assert session(user.id) == []
+
+      # ...and KEEP GOING is what gets past that.
+      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _} =
+        Oskol.Gleam.Caps.Practice.build()
+
+      assert start_new.(user.id, 10) == 10
+      more = session(user.id)
+      assert length(more) == 10
+      assert Enum.all?(more, &(&1 not in today))
+    end
+  end
+
+  # ---------- Making the same mistake again ----------
+
+  describe "a mistake made again" do
+    setup do
+      user = an_account("arie@oskol.test")
+      first = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(first, ["p1"])
+      assert {:ok, 1} = Practice.sync(user.id)
+      key = hd(sources_of(first)).puzzle_id
+
+      # The same position, reached again in a later game.
+      later = a_room([seat("p1", guest: "g1", user: user.id)])
+      same_mistake(later, first)
+
+      {:ok, user: user, key: key, later: later}
+    end
+
+    test "comes back to the front when the card is in rotation", ctx do
+      {:ok, _} = Retain.start(ctx.user.id, [ctx.key])
+      {:ok, _} = Retain.review(ctx.user.id, ctx.key, :pass)
+      {:ok, before} = Retain.fetch_item(ctx.user.id, ctx.key)
+      assert before.level > 0
+
+      # Nothing new to add -- the deck already holds this one -- and that
+      # is exactly the point: the player has just made it again.
+      assert {:ok, 0} = Practice.sync(ctx.user.id)
+
+      {:ok, item} = Retain.fetch_item(ctx.user.id, ctx.key)
+      assert item.level == 0
+      assert item.lapses > before.lapses
+      # The row is stamped either way: the deck does hold it.
+      assert Enum.all?(sources_of(ctx.later), &(&1.deck_synced_at != nil))
+    end
+
+    test "leaves a puzzle the player put aside alone", ctx do
+      {:ok, _} = Retain.start(ctx.user.id, [ctx.key])
+      {:ok, _} = Retain.suspend(ctx.user.id, [ctx.key])
+
+      assert {:ok, 0} = Practice.sync(ctx.user.id)
+
+      {:ok, item} = Retain.fetch_item(ctx.user.id, ctx.key)
+      # NEVER means never. A game they happened to play does not undo it.
+      assert item.suspended
+      assert item.reps == 0
+    end
+
+    test "does nothing to a card that has never been shown", ctx do
+      {:ok, before} = Retain.fetch_item(ctx.user.id, ctx.key)
+      assert is_nil(before.started_at)
+
+      assert {:ok, 0} = Practice.sync(ctx.user.id)
+
+      {:ok, item} = Retain.fetch_item(ctx.user.id, ctx.key)
+      # Already at the front of the queue, with nothing to take away.
+      assert is_nil(item.started_at)
+      assert item.reps == 0
+    end
+  end
+
   # ---------- The operator's task ----------
 
   describe "mix oskol.puzzles.sync" do
@@ -382,6 +669,25 @@ defmodule Oskol.DeckSyncTest do
       assert is_nil(source.deck_synced_at)
       assert source.deck_attempts == 0
       assert Retain.fetch_user(user.id) == {:error, :not_found}
+    end
+
+    test "--reset reopens the rows that gave up" do
+      user = an_account("arie@oskol.test")
+      game_id = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(game_id, ["p1"])
+      [source] = sources_of(game_id)
+
+      Repo.update_all(Puzzles.Source, set: [deck_attempts: 3, deck_error: "something broke"])
+      assert Practice.pending() == []
+
+      output =
+        ExUnit.CaptureIO.capture_io(fn ->
+          Mix.Tasks.Oskol.Puzzles.Sync.run(["--reset", "--write"])
+        end)
+
+      assert output =~ "1 rows reopened"
+      assert output =~ "1 decks filled"
+      assert Repo.reload(source).deck_synced_at != nil
     end
 
     test "--write fills the decks it just listed" do

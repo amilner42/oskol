@@ -280,10 +280,11 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
     ),
     practice: practice.PracticeCaps(
       ..practice.stub(),
-      card: fn(uid, key) {
-        list.find(get_cards("cards"), fn(c) { c.0 == held(uid, key) })
-        |> result.map(fn(c) { c.1 })
-        |> option.from_result
+      cards: fn(uid, keys) {
+        list.filter_map(keys, fn(key) {
+          list.find(get_cards("cards"), fn(c) { c.0 == held(uid, key) })
+          |> result.map(fn(c) { c.1 })
+        })
       },
       start: fn(uid, keys) {
         record_call("deck", "start:" <> string.join(keys, ","))

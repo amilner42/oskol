@@ -698,7 +698,7 @@ fn decide(
   key: String,
   now_ms: Int,
 ) -> Result(caps.Scheduled, ApiError) {
-  case ctx.practice.card(uid, id) {
+  case card_of(ctx, uid, id) {
     None -> Ok(caps.Scheduled(grade.verdict_name(verdict), ""))
     Some(card) -> {
       let attempt =
@@ -879,8 +879,7 @@ pub fn outcome_json(
   // Every override is a deck action, and there is no deck action on a card
   // the deck does not hold.
   use _ <- result.try(
-    ctx.practice.card(uid, id)
-    |> option.to_result(nothing_to_amend()),
+    card_of(ctx, uid, id) |> option.to_result(nothing_to_amend()),
   )
   // Once a card has been put aside there is nothing left to say about it.
   // Pressing NEVER again is the same action and answers the same way.
@@ -940,6 +939,13 @@ pub fn outcome_json(
       Ok(envelope.ok([#("schedule", raw.json(body))]))
     }
   }
+}
+
+/// Where one puzzle stands in this account's deck, if the deck holds it at
+/// all. The deck answers about a list of keys, because a session asks about
+/// a session's worth; an attempt is about one.
+fn card_of(ctx: Ctx, uid: String, id: String) -> Option(Card) {
+  ctx.practice.cards(uid, [id]) |> list.first |> option.from_result
 }
 
 fn nothing_to_amend() -> ApiError {

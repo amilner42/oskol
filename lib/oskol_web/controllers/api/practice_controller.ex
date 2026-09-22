@@ -2,7 +2,7 @@ defmodule OskolWeb.Api.PracticeController do
   @moduledoc """
   A practice session, as JSON:
 
-      GET  /papi/practice?offset=n  what to put in front of the player next
+      GET  /papi/practice           what to put in front of the player next
       POST /papi/practice/more      KEEP GOING: more new ones, then the session
       POST /papi/practice/tz        {tz} -- where this browser is
       POST /papi/practice/bury      {id} -- back tomorrow, level kept
@@ -16,15 +16,12 @@ defmodule OskolWeb.Api.PracticeController do
 
   alias Oskol.Gleam.CtxBuilder
 
-  def index(conn, params) do
-    send_json(
-      conn,
-      :oskol@handlers@practice.practice_json(ctx(), session(conn), offset(params))
-    )
+  def index(conn, _params) do
+    send_json(conn, :oskol@handlers@practice.practice_json(ctx(), session(conn)))
   end
 
-  def more(conn, params) do
-    send_json(conn, :oskol@handlers@practice.more_json(ctx(), session(conn), offset(params)))
+  def more(conn, _params) do
+    send_json(conn, :oskol@handlers@practice.more_json(ctx(), session(conn)))
   end
 
   def tz(conn, params) do
@@ -44,15 +41,6 @@ defmodule OskolWeb.Api.PracticeController do
   defp ctx, do: CtxBuilder.build()
 
   defp session(conn), do: CtxBuilder.session(conn)
-
-  # A cursor the client got from us. Anything else starts at the beginning;
-  # the handler decides what an offset means.
-  defp offset(params) do
-    case Integer.parse(param(params, "offset")) do
-      {value, ""} -> value
-      _ -> 0
-    end
-  end
 
   defp param(params, key) do
     case Map.get(params, key) do

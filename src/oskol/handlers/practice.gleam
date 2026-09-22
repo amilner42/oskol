@@ -1,6 +1,6 @@
 //// A practice session: what to put in front of the player next.
 ////
-////   GET  /papi/practice?offset=n   the session
+////   GET  /papi/practice              the session
 ////   POST /papi/practice/more       KEEP GOING: more new ones, then the session
 ////   POST /papi/practice/tz         {tz} -- where this browser is
 ////   POST /papi/practice/bury       {id} -- back tomorrow, level kept
@@ -9,9 +9,10 @@
 //// same page for all three:
 ////
 ////   * an **account** gets its deck -- everything due first, then new
-////     material once nothing is due, twenty at a time. `offset` walks
-////     further down the same due ordering, which is how a session keeps
-////     going without being given more new cards than the day allows.
+////     material once nothing is due, twenty at a time. Every fetch is the
+////     front of the queue: the due set is live, so what the player has
+////     just answered has left it, and a page taken at an offset would
+////     skip exactly as many cards as they had answered.
 ////   * a **guest** gets the mistakes on the seats their cookie holds,
 ////     newest game first. No schedule, no counts, and nothing written:
 ////     only an account has a deck, and a guest who never signs in loses
@@ -24,7 +25,6 @@
 //// A new card is not due until it is first seen, and it is answering one
 //// that starts it, so a page that is merely opened twice costs nothing.
 
-import gleam/int
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -40,16 +40,12 @@ import oskol/practice/sync
 import oskol/puzzles
 import oskol/rooms/seat
 
-/// The session. `offset` is the page: 0, then whatever the last answer's
-/// `cursor` said.
-pub fn practice_json(
-  ctx: Ctx,
-  session: Session,
-  offset: Int,
-) -> Result(String, ApiError) {
+/// The session: what to put in front of the player right now. There is no
+/// page after it -- when they have answered these, they ask again.
+pub fn practice_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
   case session.user_id, session.guest_id {
-    Some(uid), _ -> Ok(account_session(ctx, uid, at(offset)))
-    None, Some(guest_id) -> Ok(guest_session(ctx, guest_id, at(offset)))
+    Some(uid), _ -> Ok(account_session(ctx, uid))
+    None, Some(guest_id) -> Ok(guest_session(ctx, guest_id))
     None, None -> Ok(empty())
   }
 }
@@ -60,17 +56,15 @@ pub fn practice_json(
 /// Only an account has a rotation to add to. For a guest the page already
 /// holds every mistake they have, so this is the next page of it and
 /// nothing else -- and, as everywhere a guest practises, it writes nothing.
-pub fn more_json(
-  ctx: Ctx,
-  session: Session,
-  offset: Int,
-) -> Result(String, ApiError) {
+pub fn more_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
   case session.user_id {
     Some(uid) -> {
       let _ = deck.keep_going(ctx, uid)
-      Ok(account_session(ctx, uid, at(offset)))
+      // From the front again: the cards that were just started are due
+      // now, so they are exactly what the next page is.
+      Ok(account_session(ctx, uid))
     }
-    None -> practice_json(ctx, session, offset)
+    None -> practice_json(ctx, session)
   }
 }
 
@@ -117,18 +111,11 @@ fn signed_in(session: Session) -> Result(String, ApiError) {
 
 // ---------- An account's session ----------
 
-fn account_session(ctx: Ctx, uid: String, offset: Int) -> String {
-  let found = deck.session(ctx, uid, offset)
+fn account_session(ctx: Ctx, uid: String) -> String {
+  let found = deck.session(ctx, uid)
   let entries =
     list.append(cards(found.reviews, True), cards(found.fresh, False))
-  body(
-    entries,
-    // Only the due half is paged: past the first page the deck is asked
-    // for no new cards at all, so a full page of reviews is the one thing
-    // that can mean "there is more".
-    next_cursor(offset, list.length(found.reviews)),
-    Some(counts(ctx, uid, found)),
-  )
+  body(entries, Some(counts(ctx, uid, found)))
 }
 
 fn cards(items: List(Card), due: Bool) -> List(Json) {
@@ -180,19 +167,18 @@ fn counts(ctx: Ctx, uid: String, found: DeckSession) -> Json {
 /// rows that came back are really this browser's, which is what keeps an
 /// owned seat out of it -- a browser that logged out, or the next person
 /// on the same laptop, is offered nothing of the account's.
-fn guest_session(ctx: Ctx, guest_id: String, offset: Int) -> String {
-  let mine =
+fn guest_session(ctx: Ctx, guest_id: String) -> String {
+  let page =
     ctx.puzzles.guest_sources(guest_id)
     |> list.filter(fn(source) {
       seat.holder(source.seat, Session(guest_id: Some(guest_id), user_id: None))
     })
     |> dedupe([], [])
-  let page = mine |> list.drop(offset) |> list.take(deck.page)
+    |> list.take(deck.page)
   body(
     list.map(page, fn(source) {
       entry(source.puzzle_id, source.kind, source.question_json, False)
     }),
-    next_cursor(offset, list.length(page)),
     None,
   )
 }
@@ -216,17 +202,13 @@ fn dedupe(
 
 // ---------- The shape on the wire ----------
 
-fn body(
-  entries: List(Json),
-  cursor: Option(String),
-  counts: Option(Json),
-) -> String {
+fn body(entries: List(Json), counts: Option(Json)) -> String {
   envelope.ok([
     #("puzzles", json.preprocessed_array(entries)),
-    #("cursor", case cursor {
-      Some(value) -> json.string(value)
-      None -> json.null()
-    }),
+    // Always null. A session is not paged: the client asks again and gets
+    // the front of the queue, which is what is left. The field stays
+    // because the wire has it and a client may still be reading it.
+    #("cursor", json.null()),
     #("counts", option.unwrap(counts, json.null())),
     // This endpoint is never one game's mistakes; the per-game list is its
     // own route and names the game it answered for.
@@ -235,7 +217,7 @@ fn body(
 }
 
 fn empty() -> String {
-  body([], None, None)
+  body([], None)
 }
 
 /// One puzzle as a session lists it: what it is and what it asks. The
@@ -257,23 +239,5 @@ fn prompt(question_json: String) -> String {
     // A card whose question no longer reads as one is still a puzzle the
     // page can open; it is the page that has the whole of it.
     Error(_) -> "What's your play?"
-  }
-}
-
-/// "There is another page" is a full one: a short page is the end of the
-/// ordering, and asking again for an empty one is what "Done for today"
-/// waits on.
-fn next_cursor(offset: Int, got: Int) -> Option(String) {
-  case got == deck.page {
-    True -> Some(int.to_string(offset + deck.page))
-    False -> None
-  }
-}
-
-/// A cursor from the client is a number or it is the beginning.
-fn at(offset: Int) -> Int {
-  case offset > 0 {
-    True -> offset
-    False -> 0
   }
 }
