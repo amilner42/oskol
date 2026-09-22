@@ -178,6 +178,10 @@ pub type PracticeCaps {
     resume: fn(String, List(String)) -> Int,
     /// Aggregates over the deck, grouped by the given tag keys.
     summary: fn(String, List(String)) -> List(Summary),
+    /// The card this account holds for one key, if their deck holds it at
+    /// all: (user id, key). Creates nothing and moves nothing -- it is what
+    /// an attempt asks before it decides whether anything is at stake.
+    card: fn(String, String) -> Option(Card),
   )
 }
 
@@ -194,5 +198,6 @@ pub fn stub() -> PracticeCaps {
     suspend: fn(_, _) { panic as "stub practice.suspend" },
     resume: fn(_, _) { panic as "stub practice.resume" },
     summary: fn(_, _) { panic as "stub practice.summary" },
+    card: fn(_, _) { panic as "stub practice.card" },
   )
 }

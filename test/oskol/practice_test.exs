@@ -26,7 +26,7 @@ defmodule Oskol.PracticeTest do
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
     {:practice_caps, put_user, put_items, queue, start, review, amend, defer_until, master,
-     suspend, resume, summary} = Practice.build()
+     suspend, resume, summary, card} = Practice.build()
 
     caps = %{
       put_user: put_user,
@@ -39,7 +39,8 @@ defmodule Oskol.PracticeTest do
       master: master,
       suspend: suspend,
       resume: resume,
-      summary: summary
+      summary: summary,
+      card: card
     }
 
     uid = "acct-#{System.unique_integer([:positive])}"
@@ -337,6 +338,32 @@ defmodule Oskol.PracticeTest do
 
     assert {:ok, %{items: 5}} = Retain.rebuild(uid)
     assert snapshot(uid, keys) == live
+  end
+
+  describe "card" do
+    test "answers where one card stands, and nothing for a key the deck lacks", %{
+      caps: caps,
+      uid: uid
+    } do
+      {:ok, 1} = caps.put_items.(uid, [item("pos:1")])
+
+      # In the deck, never introduced: the status an attempt has to start.
+      assert {:some, {:card, "pos:1", [], "{}", 0, _due, 0, 0, :new}} = caps.card.(uid, "pos:1")
+
+      1 = caps.start.(uid, ["pos:1"])
+      {:ok, {:graded, _, after_level, _, _}} = caps.review.(uid, "pos:1", :pass)
+
+      assert {:some, {:card, "pos:1", _, _, ^after_level, _, 1, 0, :active}} =
+               caps.card.(uid, "pos:1")
+
+      1 = caps.suspend.(uid, ["pos:1"])
+      assert {:some, {:card, "pos:1", _, _, _, _, _, _, :suspended}} = caps.card.(uid, "pos:1")
+
+      # A key this deck does not hold, and an account with no deck at all,
+      # are the same answer: there is nothing at stake in either.
+      assert caps.card.(uid, "pos:nope") == :none
+      assert caps.card.("acct-nobody", "pos:1") == :none
+    end
   end
 
   defp reviews(uid) do

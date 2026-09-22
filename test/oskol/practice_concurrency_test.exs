@@ -33,7 +33,8 @@ defmodule Oskol.PracticeConcurrencyTest do
     # both at once: a game ends and files its mistakes while they are practising. The two used
     # to take their row locks in different orders -- introduction order and the caller's key
     # order -- so each could hold the row the other wanted next, and Postgres killed one.
-    {:practice_caps, put_user, put_items, _, start, _, _, _, master, _, _, _} = Practice.build()
+    {:practice_caps, put_user, put_items, _, start, _, _, _, master, _, _, _, _} =
+      Practice.build()
 
     uid = "#{@prefix}#{System.unique_integer([:positive])}"
     keys = Enum.map(1..40, &"pos:#{&1}")

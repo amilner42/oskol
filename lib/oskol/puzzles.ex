@@ -30,6 +30,7 @@ defmodule Oskol.Puzzles do
   import Ecto.Query
   require Logger
 
+  alias Oskol.Persistence.Game
   alias Oskol.Repo
   alias Oskol.Reviews.Review
 
@@ -86,6 +87,11 @@ defmodule Oskol.Puzzles do
       field(:outcome, :string)
       field(:scheduled, :boolean, default: false)
       field(:at, :utc_datetime_usec)
+      # The deck review this attempt wrote, which an override supersedes.
+      field(:review_id, :integer)
+      # What the answer reported: a retry has to say the same thing again,
+      # and by then the card has moved.
+      field(:schedule, :map)
 
       timestamps(type: :utc_datetime_usec)
     end
@@ -118,6 +124,149 @@ defmodule Oskol.Puzzles do
 
       timestamps(type: :utc_datetime_usec)
     end
+  end
+
+  # ---------- Reading one back ----------
+
+  @doc "One puzzle by id, or nil. The whole row: Gleam reads both bodies."
+  def get(id) when is_binary(id) do
+    Repo.get(Puzzle, id)
+  end
+
+  @doc """
+  The sources of a puzzle in rooms that list this guest id or this account
+  id among their seats, newest game first, with the room's slug and seats.
+
+  The query only *narrows*, to the rooms a caller could plausibly be seated
+  in; who really holds a seat is the one holder rule in Gleam, asked on the
+  seats that come back with each row. The same `players` containment the
+  home page's list of games uses, so the same partial index serves it.
+  """
+  def mine(puzzle_id, guest_id, user_id) do
+    case seat_match(guest_id, user_id) do
+      nil ->
+        []
+
+      held ->
+        from(s in Source,
+          join: g in Game,
+          on: g.id == s.game_id,
+          where: s.puzzle_id == ^puzzle_id,
+          where: ^held,
+          order_by: [desc: g.updated_at, desc: s.game_number, desc: s.turn],
+          limit: 20,
+          select: {s, g.slug, g.players}
+        )
+        |> Repo.all()
+        |> with_names()
+    end
+  end
+
+  @doc """
+  One game of one room's decisions, in turn order, each with its puzzle's
+  question so a list can ask every one in its own words without a read
+  apiece. Decisions no puzzle was written for come too; the caller drops
+  them.
+  """
+  def game_sources(game_id, game_number) do
+    from(s in Source,
+      left_join: p in Puzzle,
+      on: p.id == s.puzzle_id,
+      where: s.game_id == ^game_id and s.game_number == ^game_number,
+      order_by: [asc: s.turn, asc: s.id],
+      select: {s, p.question}
+    )
+    |> Repo.all()
+  end
+
+  # The `players` jsonb holds the account name only by reference, exactly as
+  # the record does, so the names are resolved here and never copied.
+  defp with_names(rows) do
+    resolved =
+      Oskol.Persistence.display_names(Enum.map(rows, fn {_s, _slug, players} -> players end))
+
+    rows
+    |> Enum.zip(resolved)
+    |> Enum.map(fn {{source, slug, _}, players} -> {source, slug, players} end)
+  end
+
+  # "a seat this guest took, or a seat this account owns". The same
+  # expression `Oskol.Persistence` indexes.
+  defp seat_match(guest_id, user_id) do
+    guest = holds("guest_id", guest_id)
+    user = holds("user_id", user_id)
+
+    cond do
+      guest && user -> dynamic([_s, g], ^guest or ^user)
+      guest -> guest
+      user -> user
+      true -> nil
+    end
+  end
+
+  defp holds(key, value) when is_binary(value) and byte_size(value) > 0 do
+    entry = [%{key => value}]
+    dynamic([_s, g], fragment("oskol_players_jsonb(?) @> ?::jsonb", g.players, ^entry))
+  end
+
+  defp holds(_key, _value), do: nil
+
+  # ---------- Attempts ----------
+
+  @doc """
+  Write this answer down unless its key is already there, and hand back the
+  row that stands together with whether this call is what wrote it.
+
+  That flag is the whole point. An idempotency key is one answer: a retried
+  POST, a second tab, a phone that sent it twice all reach this and find the
+  row already here, and only a row this call wrote is allowed to move
+  anybody's ladder.
+  """
+  def put_attempt(puzzle_id, user_id, key, answer, verdict) do
+    now = DateTime.utc_now()
+
+    row = %{
+      puzzle_id: puzzle_id,
+      user_id: user_id,
+      idempotency_key: key,
+      answer: answer,
+      verdict: verdict,
+      scheduled: false,
+      at: now,
+      inserted_at: now,
+      updated_at: now
+    }
+
+    case Repo.insert_all(Attempt, [row],
+           on_conflict: :nothing,
+           conflict_target: [:puzzle_id, :user_id, :idempotency_key]
+         ) do
+      {1, _} -> {:fresh, attempt(puzzle_id, key)}
+      {0, _} -> {:kept, attempt(puzzle_id, key)}
+    end
+  end
+
+  @doc "An attempt by the key its own client minted. Whose it is, is Gleam's to check."
+  def attempt(puzzle_id, key) do
+    Repo.one(
+      from(a in Attempt,
+        where: a.puzzle_id == ^puzzle_id and a.idempotency_key == ^key,
+        limit: 1
+      )
+    )
+  end
+
+  @doc "What happened after the deck was asked."
+  def settle_attempt(id, scheduled, review_id, outcome, schedule) do
+    from(a in Attempt, where: a.id == ^id)
+    |> Repo.update_all(
+      set:
+        [scheduled: scheduled, schedule: schedule, updated_at: DateTime.utc_now()] ++
+          if(review_id, do: [review_id: review_id], else: []) ++
+          if(outcome, do: [outcome: outcome], else: [])
+    )
+
+    :ok
   end
 
   # ---------- What is still owed ----------

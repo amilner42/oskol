@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Practice do
   constructor tags and field order in lockstep:
 
       PracticeCaps(put_user, put_items, queue, start, review, amend,
-      defer_until, master, suspend, resume, summary)
+      defer_until, master, suspend, resume, summary, card)
       Item(key, tags, content_json, position)
       Card(key, tags, content_json, level, due_ms, reps, lapses, status)
       Session(reviews, fresh, new_remaining_today)
@@ -45,7 +45,7 @@ defmodule Oskol.Gleam.Caps.Practice do
 
   def build do
     {:practice_caps, &put_user/3, &put_items/2, &queue/2, &start/2, &review/3, &amend/4,
-     &defer_until/3, &master/2, &suspend/2, &resume/2, &summary/2}
+     &defer_until/3, &master/2, &suspend/2, &resume/2, &summary/2, &card/2}
   end
 
   def default_tz, do: @default_tz
@@ -145,6 +145,16 @@ defmodule Oskol.Gleam.Caps.Practice do
       {:summary, pairs(row.group), row.count, row.new_count, row.active_count,
        row.suspended_count, row.due_count, row.mean_level / 1}
     end)
+  end
+
+  # One card, or nothing: an account with no deck at all and an account whose
+  # deck does not hold this puzzle are the same answer, because they mean the
+  # same thing to the caller -- there is nothing at stake in this answer.
+  defp card(uid, key) do
+    case Retain.fetch_item(uid, key) do
+      {:ok, item} -> {:some, card(item)}
+      {:error, _} -> :none
+    end
   end
 
   ## Conversions

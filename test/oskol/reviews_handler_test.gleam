@@ -322,6 +322,7 @@ fn with_analysis(
       },
     ),
     puzzles: puzzles_caps.PuzzlesCaps(
+      ..puzzles_caps.stub(),
       unextracted: fn(_) {
         // A graded game whose puzzles have not been written yet: the rows
         // the sweep's partial index answers with.

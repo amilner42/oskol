@@ -54,6 +54,16 @@ defmodule OskolWeb.Router do
     get "/games/:slug/rooms/:id/reviews/:game_number", LandingController, :review
     get "/games/:slug/rooms/:id/record", LandingController, :record
     get "/games/:slug/rooms/:id/ratings", LandingController, :ratings
+
+    # Puzzles. A puzzle is open to anyone with the link and costs the
+    # analysis engine nothing; what is written down is the deck's, and only
+    # for a signed-in browser.
+    get "/games/:slug/rooms/:id/puzzles", PuzzleController, :game
+    get "/puzzles/:id", PuzzleController, :show
+    get "/puzzles/:id/tree", PuzzleController, :tree
+    get "/puzzles/:id/mine", PuzzleController, :mine
+    post "/puzzles/:id/attempts", PuzzleController, :attempt
+    post "/puzzles/:id/attempts/:key/outcome", PuzzleController, :outcome
   end
 
   # Enable LiveDashboard in development. Declared before the game routes so
