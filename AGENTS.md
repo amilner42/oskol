@@ -800,12 +800,15 @@ GET  /papi/me                          {ok, guest_name, user: {email, name} | nu
 POST /papi/me/name                     {name} -> {ok, user}  (a signed-in browser
                                        renames its account; 422 "That name is
                                        taken." when another account has it)
-GET  /papi/practice?offset=n           {ok, puzzles: [{id, kind, prompt, due}],
-                                         cursor, counts: {due, new_today,
-                                         deck} | null, game: null}
+GET  /papi/practice                    {ok, puzzles: [{id, kind, prompt, due}],
+                                         cursor: null, counts: {due,
+                                         new_today, deck} | null, game: null}
                                        -- an account's deck (due, then new),
                                        a guest's own mistakes (unscheduled,
-                                       counts null, no writes), or nothing
+                                       counts null, no writes), or nothing.
+                                       Never paged: every fetch is the front
+                                       of the queue, and "Done for today" is
+                                       a fetch that comes back empty
 POST /papi/practice/more               KEEP GOING: ten more new ones into
                                        rotation, then the same session
 POST /papi/practice/tz                 {tz} -> {ok, tz}  (an IANA name, on the
@@ -1087,25 +1090,57 @@ stamp, cast to the review queue from the **persister's own handler** once
 its transaction has committed, so a caller that already timed out
 (`stamp_seats/3` answers `:pending`) still leaves a full deck; and the
 queue's minute sweep, for anything the first two missed.
-`mix oskol.puzzles.sync` is that sweep by hand (dry run unless `--write`; a
-dry run writes nothing and charges nothing). Idempotent at both levels, and
-bounded the way extraction is: reading an account's sources charges one of
-three `deck_attempts`, and a row that runs out keeps a `deck_error` instead
-of being swept for ever. A deck job is `{:deck, user_id}` in the same queue
-as a room's review, collapsible because it syncs everything that account is
-owed. A card's position is seconds *back* from 2020, not negated Unix time:
-retain's `position` is a 32-bit column.
+`mix oskol.puzzles.sync` is that sweep by hand (dry run unless `--write`,
+which writes nothing and charges nothing; `--reset` reopens the rows that
+gave up; `Oskol.Release.puzzles_sync/1` is the release twin, and both turn
+the queue off first so the boot sweep does not charge the same rows beside
+them). A deck job is `{:deck, user_id}` in the same queue as a room's
+review, collapsible because it syncs everything that account is owed, and
+the minute scan runs in a task rather than in the queue process.
+
+**Bounded, and never silent.** Idempotent at both levels; reading an
+account's sources charges one of three `deck_attempts`; and a try that
+fails — *including* retain raising, which is the failure that actually
+happens — writes `deck_error` on the rows and leaves them out of the sweep
+until an operator reopens them. A `DeckUnavailable` refusal is how an
+exception crosses the cap boundary instead of being logged and lost.
+
+**What the queries are keyed on.** `puzzle_sources.owner_user_id` is the
+account whose seat made the mistake, written from `games.players[seat]` in
+the same transaction as the sources and again when a sign-in stamps that
+game's seats (`Oskol.Puzzles.refresh_owners/1`). It is an index key, never
+an authority: `seat.holder` still decides, in Gleam, of every row handed
+back. Without it the sweep's question is a lateral join over every unsynced
+row every minute, and since a guest's mistakes are never synced that set
+grows for ever. `ended_ms` is the game's **review row**, not the source's:
+newest game played first, so a backfill or a retried review cannot put an
+old game at the front; within one game, turn order. A card's position is
+seconds *back* from 2020, not negated Unix time: retain's `position` is a
+32-bit column.
+
+**A mistake you make again comes back.** When a sync finds a puzzle the
+deck already holds, that is the player making it again in a real game, so
+the card takes an `:again` (back to level 0) with a note saying which game
+— but only a card **in rotation**: one never shown is already at the front
+of the queue, and a suspended one the player said NEVER to, which a game
+they happened to play must not undo.
 
 **`GET /papi/practice`** is one page for three callers
 (`src/oskol/handlers/practice.gleam`). Signed in: the deck, everything due
-before anything new (`new: :after_reviews`), twenty at a time, `?offset=`
-for the next batch (past the first it asks for no new cards, so paging walks
-the due ordering only) and `counts: {due, new_today, deck}`. A guest: the
-mistakes on the seats their cookie holds and no account owns, newest game
-first, unscheduled, `counts: null`, and **nothing written** -- only an
-account has a deck. Nobody: an empty list, not an error. Reading never
-starts a card or spends a day's budget. `POST /papi/practice/more` is KEEP
-GOING: ten more into rotation over the day's budget, then the same session.
+before anything new (`new: :after_reviews`), twenty at a time, and
+`counts: {due, new_today, deck}`. A guest: the mistakes on the seats their
+cookie holds and no account owns, newest game first, unscheduled,
+`counts: null`, and **nothing written** -- only an account has a deck.
+Nobody: an empty list, not an error. Reading never starts a card or spends a
+day's budget. `POST /papi/practice/more` is KEEP GOING: ten more into
+rotation over the day's budget, then the same session.
+
+**A session is never paged.** Every fetch is the front of the queue and
+`cursor` is always null. The due set is live -- answering a card takes it
+out -- so a second page at an offset would skip exactly as many cards as the
+player had just answered: 21 due would end after 20 with one unseen and the
+day's new cards never offered at all. "Done for today" is a fetch that comes
+back empty, and nothing else.
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
 (no new column: retain already keeps a learner's timezone, and it is the
 only thing that reads one). Gleam checks the shape, the zone database checks

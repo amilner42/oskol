@@ -29,13 +29,16 @@
 //// ever.
 
 import gleam/int
+import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/order
 import gleam/set
-import oskol/caps/practice.{type Item, Item}
+import oskol/caps/practice.{
+  type Card, type Item, type PracticeError, Active, Item,
+}
 import oskol/caps/puzzles.{type DeckSource, type Pending}
 import oskol/core/ctx.{type Ctx}
-import oskol/core/error.{type ApiError}
 import oskol/core/session.{Session}
 import oskol/practice/deck
 import oskol/rooms/seat
@@ -81,7 +84,7 @@ pub fn sync_deck(
   ctx: Ctx,
   user_id: String,
   game_ids: List(String),
-) -> Result(Int, ApiError) {
+) -> Result(Int, PracticeError) {
   case user_id {
     "" -> Ok(0)
     _ -> {
@@ -110,21 +113,65 @@ fn enroll(
   ctx: Ctx,
   user_id: String,
   sources: List(DeckSource),
-) -> Result(Int, ApiError) {
+) -> Result(Int, PracticeError) {
   let ids = list.map(sources, fn(s) { s.source_id })
+  let offered = items(sources)
+  // Which of these the deck already holds, before anything is added: a
+  // puzzle that is already there is one this player has just made again.
+  let held = ctx.practice.cards(user_id, list.map(offered, fn(i) { i.key }))
   // The timezone is deliberately not named here: filling a deck has no
   // opinion about where its owner is, and saying "UTC" would undo the one
   // place that does (`POST /papi/practice/tz`).
-  case deck.enroll(ctx, user_id, "", items(sources)) {
+  case deck.enroll_items(ctx, user_id, "", offered) {
     Ok(added) -> {
+      relapse(ctx, user_id, sources, held)
       ctx.puzzles.mark_synced(ids)
       Ok(added)
     }
     Error(refusal) -> {
-      ctx.puzzles.sync_failed(ids, error.message(refusal))
+      ctx.puzzles.sync_failed(ids, deck.reason(refusal))
       Error(refusal)
     }
   }
+}
+
+/// **A mistake you make again comes back.** A puzzle already in the deck
+/// that shows up in a new game is not a card to add -- it is a card the
+/// player has just failed, in the only place that really counts -- so it
+/// goes back to the start exactly as a missed answer would.
+///
+/// Only a card **in rotation**: a card the player has never been shown is
+/// already at the front of the queue and has nothing to lose, and a
+/// suspended one they have said NEVER to, which a game they happened to
+/// play must not undo.
+fn relapse(
+  ctx: Ctx,
+  user_id: String,
+  sources: List(DeckSource),
+  held: List(Card),
+) -> Nil {
+  list.each(sources, fn(source) {
+    case list.find(held, fn(card) { card.key == source.puzzle_id }) {
+      Ok(card) if card.status == Active -> {
+        let _ = ctx.practice.relapse(user_id, source.puzzle_id, meta(source))
+        Nil
+      }
+      _ -> Nil
+    }
+  })
+}
+
+/// Where a relapse came from, so the log says what happened rather than
+/// only that something did.
+fn meta(source: DeckSource) -> String {
+  json.to_string(
+    json.object([
+      #("source", json.string("game")),
+      #("game_id", json.string(source.game_id)),
+      #("game_number", json.int(source.game_number)),
+      #("turn", json.int(source.turn)),
+    ]),
+  )
 }
 
 /// The cards these mistakes become, newest game first and one per puzzle.
@@ -136,7 +183,7 @@ fn enroll(
 /// either way, because the deck does hold them.
 fn items(sources: List(DeckSource)) -> List(Item) {
   sources
-  |> list.sort(fn(a, b) { int.compare(b.ended_ms, a.ended_ms) })
+  |> list.sort(newest_first)
   |> list.fold(#([], set.new()), fn(acc, source) {
     let #(items, seen) = acc
     case set.contains(seen, source.puzzle_id) {
@@ -145,6 +192,16 @@ fn items(sources: List(DeckSource)) -> List(Item) {
     }
   })
   |> fn(acc) { list.reverse(acc.0) }
+}
+
+/// Newest game first, and within a game the order the mistakes were made
+/// in. Two cards of one game share a position, so the order they are
+/// offered in is the order they go in.
+fn newest_first(a: DeckSource, b: DeckSource) -> order.Order {
+  case int.compare(b.ended_ms, a.ended_ms) {
+    order.Eq -> int.compare(a.turn, b.turn)
+    other -> other
+  }
 }
 
 fn item(source: DeckSource) -> Item {
@@ -187,7 +244,10 @@ pub fn pending(ctx: Ctx, limit: Int) -> List(Pending) {
 
 /// Sync every account the deck still owes, and say how it went for each.
 /// A refusal for one account never stops the next: they share nothing.
-pub fn sweep(ctx: Ctx, limit: Int) -> List(#(String, Result(Int, ApiError))) {
+pub fn sweep(
+  ctx: Ctx,
+  limit: Int,
+) -> List(#(String, Result(Int, PracticeError))) {
   pending(ctx, limit)
   |> list.map(fn(row) { #(row.user_id, sync_deck(ctx, row.user_id, [])) })
 }

@@ -143,6 +143,14 @@ pub type PracticeError {
   UnknownTimezone
   /// A card was offered with content that is not a JSON object.
   BadContent
+  /// The deck itself could not be reached: the database was down, or the
+  /// library raised. `reason` is for the operator, never for the player.
+  ///
+  /// This is the refusal that actually happens. Without it a sync would
+  /// have to let an exception through, and an exception is how a mistake
+  /// gets silently lost: the rows have been charged for the try and
+  /// nothing writes down why it failed.
+  DeckUnavailable(reason: String)
 }
 
 pub type PracticeCaps {
@@ -159,6 +167,14 @@ pub type PracticeCaps {
     /// Add cards. Keys already in the deck are left exactly as they are, so
     /// re-adding a game's mistakes is safe. Returns how many were new.
     put_items: fn(String, List(Item)) -> Result(Int, PracticeError),
+    /// Which of these keys this deck already holds, and where each one
+    /// stands. What a sync asks before it offers a game's mistakes: a
+    /// puzzle already in the deck is one the player has made again.
+    cards: fn(String, List(String)) -> List(Card),
+    /// The player made this mistake again, in a real game rather than at a
+    /// puzzle: the card goes back to the start, like any miss. `meta_json`
+    /// says which game it was, so the log can be read back.
+    relapse: fn(String, String, String) -> Result(Graded, PracticeError),
     /// A session's worth of work.
     queue: fn(String, Ask) -> Session,
     /// Put named new cards into rotation now. Returns how many moved.
@@ -200,6 +216,8 @@ pub fn stub() -> PracticeCaps {
   PracticeCaps(
     put_user: fn(_, _, _) { panic as "stub practice.put_user" },
     put_items: fn(_, _) { panic as "stub practice.put_items" },
+    cards: fn(_, _) { panic as "stub practice.cards" },
+    relapse: fn(_, _, _) { panic as "stub practice.relapse" },
     queue: fn(_, _) { panic as "stub practice.queue" },
     start: fn(_, _) { panic as "stub practice.start" },
     start_new: fn(_, _) { panic as "stub practice.start_new" },

@@ -68,6 +68,10 @@ defmodule Oskol.Puzzles do
       field(:grade, :string)
       field(:skipped_reason, :string)
       field(:deck_synced_at, :utc_datetime_usec)
+      # The account whose seat made this mistake, derived from the game's
+      # players. An index key, never an authority: who holds a seat is
+      # decided in Gleam, of the seat itself.
+      field(:owner_user_id, Ecto.UUID)
       field(:deck_attempts, :integer, default: 0)
       field(:deck_error, :string)
 
@@ -182,6 +186,11 @@ defmodule Oskol.Puzzles do
           conflict_target: [:game_id, :game_number, :turn, :kind]
         )
       end)
+
+      # The sources exist now, so the account that owns each seat can be
+      # written onto them -- in this transaction, because the sweep's index
+      # is keyed on it and a row without it would never be found.
+      refresh_owners([game_id])
 
       mark_extracted(game_id, game_number)
     end)
@@ -344,8 +353,8 @@ defmodule Oskol.Puzzles do
   """
   def owned_sources(user_id, game_ids) when is_binary(user_id) do
     ids =
-      unsynced_sources()
-      |> where([s, g, p], fragment("? ->> 'user_id'", p) == ^user_id)
+      owed_deck()
+      |> where([s], s.owner_user_id == ^user_id)
       |> scope_games(game_ids)
       |> select([s], s.id)
       |> Repo.all()
@@ -389,12 +398,11 @@ defmodule Oskol.Puzzles do
   out whose mistakes it wrote.
   """
   def deck_pending(game_ids, limit) when is_list(game_ids) and is_integer(limit) do
-    unsynced_sources()
-    |> where([s, g, p], not is_nil(fragment("? ->> 'user_id'", p)))
+    owed_deck()
     |> scope_games(game_ids)
-    |> group_by([s, g, p], fragment("? ->> 'user_id'", p))
-    |> select([s, g, p], %{
-      user_id: fragment("? ->> 'user_id'", p),
+    |> group_by([s], s.owner_user_id)
+    |> select([s], %{
+      user_id: type(s.owner_user_id, :string),
       game_ids: fragment("array_agg(DISTINCT ?)", s.game_id),
       sources: count(s.id),
       recent: max(s.inserted_at)
@@ -402,6 +410,46 @@ defmodule Oskol.Puzzles do
     |> order_by([s], desc: max(s.inserted_at))
     |> limit(^limit)
     |> Repo.all()
+  end
+
+  @doc """
+  Let the rows that gave up be tried again: an operator has fixed whatever
+  `deck_error` was complaining about. Returns how many were reopened.
+  """
+  def reset_deck_attempts do
+    {count, _} =
+      from(s in Source, where: not is_nil(s.deck_error), where: is_nil(s.deck_synced_at))
+      |> Repo.update_all(set: [deck_attempts: 0, deck_error: nil])
+
+    count
+  end
+
+  @doc """
+  Point these games' sources at the accounts that own their seats.
+
+  Run inside the write that can change the answer: when the sources are
+  first written, and when a sign-in stamps a game's seats. One statement,
+  and it only ever writes where the answer moved, so running it twice
+  writes nothing the second time.
+  """
+  def refresh_owners([]), do: :ok
+
+  def refresh_owners(game_ids) when is_list(game_ids) do
+    Repo.query!(
+      """
+      UPDATE puzzle_sources s
+      SET owner_user_id = (p ->> 'user_id')::uuid, updated_at = now()
+      FROM games g, LATERAL jsonb_array_elements(oskol_players_jsonb(g.players)) p
+      WHERE g.id = s.game_id
+        AND s.game_id = ANY($1)
+        AND p ->> 'id' = s.player_id
+        AND p ->> 'user_id' IS NOT NULL
+        AND s.owner_user_id IS DISTINCT FROM (p ->> 'user_id')::uuid
+      """,
+      [game_ids]
+    )
+
+    :ok
   end
 
   @doc """
@@ -424,16 +472,21 @@ defmodule Oskol.Puzzles do
       inner_lateral_join:
         p in fragment("jsonb_array_elements(oskol_players_jsonb(?))", g.players),
       on: fragment("? ->> 'id'", p) == s.player_id,
+      left_join: r in Review,
+      on: r.game_id == s.game_id and r.game_number == s.game_number,
       where: fragment("oskol_players_jsonb(?) @> ?::jsonb", g.players, ^held),
       where: fragment("? ->> 'guest_id'", p) == ^guest_id,
       where: is_nil(fragment("? ->> 'user_id'", p)),
-      order_by: [desc: s.inserted_at, desc: s.id],
+      order_by: [desc: coalesce(r.inserted_at, s.inserted_at), asc: s.turn],
       limit: ^limit,
       select: %{
         id: s.id,
         puzzle_id: s.puzzle_id,
+        game_id: s.game_id,
+        game_number: s.game_number,
         kind: s.kind,
-        ended_at: s.inserted_at,
+        turn: s.turn,
+        ended_at: coalesce(r.inserted_at, s.inserted_at),
         player_id: s.player_id,
         guest_id: fragment("? ->> 'guest_id'", p),
         user_id: fragment("? ->> 'user_id'", p)
@@ -445,15 +498,14 @@ defmodule Oskol.Puzzles do
 
   def guest_sources(_guest_id, _limit), do: []
 
-  # Every unsynced source that still has tries left, joined to its game and
-  # to the seat entry it names. The seat itself is never judged here.
-  defp unsynced_sources do
+  # Mistakes an account owns that its deck does not hold and that still have
+  # tries left: the whole of what the sweep is for, and exactly the partial
+  # index `puzzle_sources_owed_deck` holds. No join, because a guest's
+  # mistakes are never synced and this set would otherwise grow with every
+  # guest who ever plays.
+  defp owed_deck do
     from(s in Source,
-      join: g in Oskol.Persistence.Game,
-      on: g.id == s.game_id,
-      inner_lateral_join:
-        p in fragment("jsonb_array_elements(oskol_players_jsonb(?))", g.players),
-      on: fragment("? ->> 'id'", p) == s.player_id,
+      where: not is_nil(s.owner_user_id),
       where: not is_nil(s.puzzle_id),
       where: is_nil(s.deck_synced_at),
       where: s.deck_attempts < @max_attempts
@@ -483,13 +535,18 @@ defmodule Oskol.Puzzles do
       inner_lateral_join:
         p in fragment("jsonb_array_elements(oskol_players_jsonb(?))", g.players),
       on: fragment("? ->> 'id'", p) == s.player_id,
+      left_join: r in Review,
+      on: r.game_id == s.game_id and r.game_number == s.game_number,
       where: s.id in ^ids,
-      order_by: [desc: s.inserted_at, desc: s.id],
+      order_by: [desc: coalesce(r.inserted_at, s.inserted_at), asc: s.turn],
       select: %{
         id: s.id,
         puzzle_id: s.puzzle_id,
+        game_id: s.game_id,
+        game_number: s.game_number,
         kind: s.kind,
-        ended_at: s.inserted_at,
+        turn: s.turn,
+        ended_at: coalesce(r.inserted_at, s.inserted_at),
         player_id: s.player_id,
         guest_id: fragment("? ->> 'guest_id'", p),
         user_id: fragment("? ->> 'user_id'", p)

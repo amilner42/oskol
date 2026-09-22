@@ -71,9 +71,16 @@ defmodule OskolWeb.Api.PracticeApiTest do
       assert Retain.fetch_user(user.id) == {:error, :not_found}
     end
 
-    test "a cursor that is not a number starts at the beginning", %{conn: conn} do
-      body = conn |> get(~p"/papi/practice?offset=nonsense") |> json_response(200)
-      assert body["puzzles"] == []
+    test "a session is never paged, whatever the query string says", %{conn: conn} do
+      # There is no offset any more: the due set is live, so every fetch is
+      # the front of the queue. A left-over `?offset=` from an old client
+      # is ignored rather than reaching the database -- a number too big
+      # for a bigint used to come back as a 500.
+      for query <- ["", "?offset=20", "?offset=99999999999999999999", "?offset=nonsense"] do
+        body = conn |> get("/papi/practice" <> query) |> json_response(200)
+        assert body["puzzles"] == []
+        assert body["cursor"] == nil
+      end
     end
   end
 

@@ -13,7 +13,10 @@ import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
-import oskol/caps/practice.{type Item, PracticeCaps}
+import oskol/caps/practice.{
+  type Card, type Item, type Status, Active, Card, DeckUnavailable, Graded, New,
+  PracticeCaps, Suspended,
+}
 import oskol/caps/puzzles.{type DeckSource, DeckSource, Pending, PuzzlesCaps} as _
 import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/fakes
@@ -26,13 +29,40 @@ import oskol/rooms/seat.{type Seat, Seat}
 /// A mistake on a seat: whose seat it is, which puzzle, and when the game
 /// it came from ended.
 fn source(id: Int, puzzle_id: String, owner: Seat, ended_ms: Int) -> DeckSource {
+  turned(id, puzzle_id, owner, ended_ms, 1)
+}
+
+fn turned(
+  id: Int,
+  puzzle_id: String,
+  owner: Seat,
+  ended_ms: Int,
+  turn: Int,
+) -> DeckSource {
   DeckSource(
     source_id: id,
     puzzle_id: puzzle_id,
+    game_id: "room" <> int.to_string(id),
+    game_number: 1,
     kind: "move",
+    turn: turn,
     question_json: json.to_string(puzzle.question_json(question())),
     ended_ms: ended_ms,
     seat: owner,
+  )
+}
+
+/// A card the deck already holds, in the state the test cares about.
+fn card(key: String, status: Status) -> Card {
+  Card(
+    key: key,
+    tags: [],
+    content_json: "{}",
+    level: 3,
+    due_ms: 0,
+    reps: 4,
+    lapses: 1,
+    status: status,
   )
 }
 
@@ -68,6 +98,11 @@ fn with_deck(ctx: Ctx, sources: List(DeckSource)) -> Ctx {
       put_user: fn(uid, tz, per_day) {
         record("opened", uid <> "/" <> tz <> "/" <> int.to_string(per_day))
         Ok(Nil)
+      },
+      cards: fn(_uid, _keys) { [] },
+      relapse: fn(_uid, key, meta) {
+        record("relapsed", key <> " " <> meta)
+        Ok(Graded(level_before: 3, level_after: 0, due_ms: 0, review_id: 1))
       },
       put_items: fn(_uid, items) {
         list.each(items, fn(item: Item) {
@@ -251,16 +286,103 @@ pub fn a_deck_that_refuses_leaves_the_rows_to_be_tried_again_test() {
     Ctx(
       ..ctx,
       practice: PracticeCaps(..ctx.practice, put_items: fn(_, _) {
-        Error(practice.BadContent)
+        Error(DeckUnavailable("connection refused"))
       }),
     )
 
   let assert Error(_) = sync.sync_deck(refusing, "arie", [])
   // Nothing is stamped, and both rows are told why, so the tries they have
   // been charged for can run out rather than the sweep coming back for
-  // ever.
+  // ever. The operator's sentence, not the player's: "your deck is not
+  // available right now" is no use to the person who has to go and look.
   assert recorded("stamped") == []
   assert list.length(recorded("failed")) == 2
+  assert recorded("failed")
+    |> list.all(string.contains(_, "connection refused"))
+}
+
+// ---------- Making the same mistake again ----------
+
+/// A deck that already holds `key` in this state.
+fn holding(ctx: Ctx, key: String, status: Status) -> Ctx {
+  Ctx(
+    ..ctx,
+    practice: PracticeCaps(..ctx.practice, cards: fn(_uid, keys) {
+      case list.contains(keys, key) {
+        True -> [card(key, status)]
+        False -> []
+      }
+    }),
+  )
+}
+
+pub fn a_mistake_made_again_comes_back_to_the_front_test() {
+  forget()
+  let ctx =
+    with_deck(fakes.ctx(), [source(1, "again", owned("p1", "arie"), 2000)])
+    |> holding("again", Active)
+
+  let assert Ok(_) = sync.sync_deck(ctx, "arie", [])
+  // A card in rotation that turns up in a new game is a card the player
+  // has just failed, in the only place that really counts.
+  assert list.length(recorded("relapsed")) == 1
+  let assert [line] = recorded("relapsed")
+  assert string.starts_with(line, "again ")
+  // And the log says where it came from.
+  assert string.contains(line, "\"source\":\"game\"")
+  assert string.contains(line, "\"game_id\":\"room1\"")
+  assert string.contains(line, "\"turn\":1")
+  // The row is still stamped: the deck holds it either way.
+  assert recorded("stamped") == ["1"]
+}
+
+pub fn a_puzzle_put_aside_stays_put_aside_test() {
+  forget()
+  let ctx =
+    with_deck(fakes.ctx(), [source(1, "never", owned("p1", "arie"), 2000)])
+    |> holding("never", Suspended)
+
+  let assert Ok(_) = sync.sync_deck(ctx, "arie", [])
+  // The player said NEVER. A game they happened to play does not undo it.
+  assert recorded("relapsed") == []
+  assert recorded("stamped") == ["1"]
+}
+
+pub fn a_card_never_shown_needs_no_pushing_test() {
+  forget()
+  let ctx =
+    with_deck(fakes.ctx(), [source(1, "fresh", owned("p1", "arie"), 2000)])
+    |> holding("fresh", New)
+
+  let assert Ok(_) = sync.sync_deck(ctx, "arie", [])
+  // It has never been in front of them, so it is already at the front of
+  // the queue and there is nothing to take away.
+  assert recorded("relapsed") == []
+}
+
+pub fn a_first_sync_relapses_nothing_test() {
+  forget()
+  let ctx =
+    with_deck(fakes.ctx(), [source(1, "new", owned("p1", "arie"), 2000)])
+
+  let assert Ok(1) = sync.sync_deck(ctx, "arie", [])
+  assert recorded("relapsed") == []
+}
+
+// ---------- Two mistakes in one game ----------
+
+pub fn one_games_mistakes_are_drilled_in_the_order_they_were_made_test() {
+  forget()
+  let ctx =
+    with_deck(fakes.ctx(), [
+      turned(1, "later", owned("p1", "arie"), 2000, 9),
+      turned(2, "earlier", owned("p1", "arie"), 2000, 3),
+    ])
+
+  let assert Ok(2) = sync.sync_deck(ctx, "arie", [])
+  // One game, one position: the turn decides, and the order they are
+  // offered in is the order the deck introduces them in.
+  assert list.map(positions(), fn(pair) { pair.0 }) == ["earlier", "later"]
 }
 
 // ---------- One game, and the sweep ----------
@@ -333,7 +455,7 @@ fn newest_first(key: String) -> List(String) {
 
 fn forget() -> Nil {
   list.each(
-    ["opened", "enrolled", "asked", "stamped", "failed", "pending"],
+    ["opened", "enrolled", "asked", "stamped", "failed", "pending", "relapsed"],
     fn(key) {
       let _ = put(key, [])
       Nil

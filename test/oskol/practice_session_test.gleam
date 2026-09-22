@@ -67,9 +67,15 @@ fn with_deck(ctx: Ctx, due: Int, fresh: Int) -> Ctx {
     practice: PracticeCaps(
       ..ctx.practice,
       queue: fn(_uid, ask: Ask) {
+        let reviews = keys("due", due, 0)
         Session(
-          reviews: keys("due", due, ask.offset),
-          fresh: keys("new", fresh, 0),
+          reviews: reviews,
+          // Exactly what retain does with `new: :after_reviews`, so a
+          // handler that asked for the wrong thing fails here.
+          fresh: case ask.new_after_reviews && reviews != [] {
+            True -> []
+            False -> keys("new", fresh, 0)
+          },
           new_remaining_today: 7,
         )
       },
@@ -109,7 +115,10 @@ fn with_guest_mistakes(ctx: Ctx, sources: List(#(String, Seat))) -> Ctx {
         DeckSource(
           source_id: index,
           puzzle_id: entry.0,
+          game_id: "room1",
+          game_number: 1,
           kind: "move",
+          turn: index + 1,
           question_json: question_json(Move),
           ended_ms: 1_790_000_000_000 - index,
           seat: entry.1,
@@ -130,20 +139,28 @@ fn owned_seat(user_id: String) -> Seat {
 // ---------- An account ----------
 
 pub fn an_account_gets_everything_due_before_anything_new_test() {
+  // Anything due at all, and the day's new cards wait their turn: that is
+  // what the deck is asked for, and the page hands back what it answered.
   let ctx = with_deck(fakes.ctx(), 2, 3)
-  let assert Ok(body) =
-    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), 0)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
-  // Due first, in the order the deck gave them, then the new ones.
-  assert ids(body) == ["due1", "due2", "new1", "new2", "new3"]
+  assert ids(body) == ["due1", "due2"]
   assert string.contains(body, "\"due\":true")
+  assert !string.contains(body, "\"due\":false")
+}
+
+pub fn a_new_card_says_it_is_not_due_test() {
+  let ctx = with_deck(fakes.ctx(), 0, 2)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+
+  assert ids(body) == ["new1", "new2"]
   assert string.contains(body, "\"due\":false")
+  assert !string.contains(body, "\"due\":true")
 }
 
 pub fn an_account_is_told_what_is_due_what_is_left_today_and_how_big_the_deck_is_test() {
   let ctx = with_deck(fakes.ctx(), 1, 1)
-  let assert Ok(body) =
-    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), 0)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
   assert string.contains(
     body,
@@ -153,26 +170,35 @@ pub fn an_account_is_told_what_is_due_what_is_left_today_and_how_big_the_deck_is
   assert string.contains(body, "\"game\":null")
 }
 
-pub fn a_full_page_of_reviews_offers_the_next_one_test() {
-  let ctx = with_deck(fakes.ctx(), 20, 0)
+pub fn a_session_is_never_paged_test() {
+  // A full page and a short one alike: there is no cursor to follow. The
+  // due set is live, so the next page is whatever is still due when the
+  // client asks again -- an offset would skip exactly the cards the player
+  // had just answered. "Done for today" is a fetch that comes back empty.
+  let full = with_deck(fakes.ctx(), 20, 0)
   let assert Ok(body) =
-    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), 0)
-  assert string.contains(body, "\"cursor\":\"20\"")
+    practice.practice_json(full, fakes.signed_in("g1", "u1"))
+  assert list.length(ids(body)) == 20
+  assert string.contains(body, "\"cursor\":null")
 
-  // And the page after it walks further down the same ordering.
-  let assert Ok(next) =
-    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), 20)
-  assert list.first(ids(next)) == Ok("due21")
-  assert string.contains(next, "\"cursor\":\"40\"")
+  let short = with_deck(fakes.ctx(), 3, 2)
+  let assert Ok(rest) =
+    practice.practice_json(short, fakes.signed_in("g1", "u1"))
+  assert string.contains(rest, "\"cursor\":null")
 }
 
-pub fn a_short_page_is_the_end_of_the_session_test() {
-  let ctx = with_deck(fakes.ctx(), 3, 2)
-  let assert Ok(body) =
-    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), 0)
-  // "Done for today" waits on a fetch that comes back with nothing, so a
-  // page that is not full must not pretend there is more.
-  assert string.contains(body, "\"cursor\":null")
+pub fn new_cards_wait_until_nothing_is_due_test() {
+  // The brief: everything due comes first. With one card still due the
+  // day's new ones are not offered yet -- they arrive on the fetch after
+  // it, which is why a session must keep asking rather than paging.
+  let ctx = with_deck(fakes.ctx(), 1, 10)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  assert ids(body) == ["due1"]
+
+  let cleared = with_deck(fakes.ctx(), 0, 10)
+  let assert Ok(after) =
+    practice.practice_json(cleared, fakes.signed_in("g1", "u1"))
+  assert list.length(ids(after)) == 10
 }
 
 pub fn a_puzzle_is_asked_in_its_own_words_test() {
@@ -191,8 +217,7 @@ pub fn a_puzzle_is_asked_in_its_own_words_test() {
         summary: fn(_, _) { [] },
       ),
     )
-  let assert Ok(body) =
-    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), 0)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
   assert string.contains(body, "White to play 6-4. What's your play?")
   assert string.contains(body, "White to play. Double?")
@@ -210,8 +235,7 @@ pub fn keep_going_starts_more_and_answers_the_session_test() {
         count
       }),
     )
-  let assert Ok(body) =
-    practice.more_json(started, fakes.signed_in("g1", "u1"), 0)
+  let assert Ok(body) = practice.more_json(started, fakes.signed_in("g1", "u1"))
   assert ids(body) == ["new1", "new2"]
 }
 
@@ -228,7 +252,7 @@ pub fn a_guest_gets_the_mistakes_on_the_seats_their_cookie_holds_test() {
       #("theirs", owned_seat("u1")),
       #("stranger", guest_seat("g2")),
     ])
-  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"), 0)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"))
 
   assert ids(body) == ["mine"]
   // No schedule and no counts: only an account has a deck.
@@ -242,20 +266,20 @@ pub fn a_guest_sees_one_card_per_puzzle_test() {
       #("same", guest_seat("g1")),
       #("same", guest_seat("g1")),
     ])
-  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"), 0)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"))
   assert ids(body) == ["same"]
 }
 
 pub fn keep_going_writes_nothing_for_a_guest_test() {
   // The practice caps all panic, so reaching the deck at all fails here.
   let ctx = with_guest_mistakes(fakes.ctx(), [#("mine", guest_seat("g1"))])
-  let assert Ok(body) = practice.more_json(ctx, fakes.guest("g1"), 0)
+  let assert Ok(body) = practice.more_json(ctx, fakes.guest("g1"))
   assert ids(body) == ["mine"]
 }
 
 pub fn nobody_gets_an_empty_session_and_not_an_error_test() {
   // Nothing is asked of anything: a stranger has no seat and no deck.
-  let assert Ok(body) = practice.practice_json(fakes.ctx(), fakes.no_guest(), 0)
+  let assert Ok(body) = practice.practice_json(fakes.ctx(), fakes.no_guest())
   assert ids(body) == []
   assert string.contains(body, "\"counts\":null")
   assert string.contains(body, "\"cursor\":null")

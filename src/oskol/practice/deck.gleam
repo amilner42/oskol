@@ -8,12 +8,12 @@
 //// it needs arrives through the Ctx, so it is pure and tested on stubs.
 
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{None}
 import gleam/string
 import oskol/caps/practice.{
   type Ask, type Graded, type Item, type Outcome, type PracticeError,
-  type Session, Ask, BadContent, CardNotStarted, CardSuspended, NotAmendable,
-  OutOfOrder, UnknownCard, UnknownTimezone,
+  type Session, Ask, BadContent, CardNotStarted, CardSuspended, DeckUnavailable,
+  NotAmendable, OutOfOrder, UnknownCard, UnknownTimezone,
 }
 import oskol/core/ctx.{type Ctx}
 import oskol/core/error.{type ApiError}
@@ -54,21 +54,22 @@ pub const not_started_message = "You have not started that puzzle yet."
 /// there is nothing they can do about it.
 pub const deck_broken_message = "Your deck is not available right now."
 
-/// What a normal session asks for: everything due first, then new material.
+/// What a session asks for: everything due first, then new material once
+/// nothing is due, a page at a time.
 ///
-/// `offset` is what KEEP GOING moves: the brief caps the day's *new* cards,
-/// never the reviews, so a player who wants to keep going walks further down
-/// the same due ordering and is given no more new ones.
-pub fn daily_ask(offset: Int) -> Ask {
+/// **Always from the beginning.** The due ordering is live -- answering a
+/// card takes it out of the set -- so a second page at an offset would
+/// skip exactly as many cards as the player had just answered, and a
+/// session of 21 would end after 20 with one unseen and every new card
+/// never offered. A page is always the front of the queue, and what the
+/// player has answered is gone from it by itself.
+pub fn daily_ask() -> Ask {
   Ask(
     tags: [],
     limit: page,
-    offset: offset,
+    offset: 0,
     new_after_reviews: True,
-    new_limit: case offset {
-      0 -> None
-      _ -> Some(0)
-    },
+    new_limit: None,
   )
 }
 
@@ -81,15 +82,28 @@ pub fn enroll(
   tz: String,
   items: List(Item),
 ) -> Result(Int, ApiError) {
+  enroll_items(ctx, uid, tz, items) |> refusal
+}
+
+/// The same, keeping the deck's own refusal rather than the sentence a
+/// player would read. The sync writes the reason onto the rows it could
+/// not place, and "your deck is not available right now" is no use to the
+/// operator who has to go and look.
+pub fn enroll_items(
+  ctx: Ctx,
+  uid: String,
+  tz: String,
+  items: List(Item),
+) -> Result(Int, PracticeError) {
   case ctx.practice.put_user(uid, tz, new_per_day) {
-    Ok(Nil) -> ctx.practice.put_items(uid, items) |> refusal
-    Error(error) -> Error(api_error(error))
+    Ok(Nil) -> ctx.practice.put_items(uid, items)
+    Error(error) -> Error(error)
   }
 }
 
-/// A session's worth of work for this account.
-pub fn session(ctx: Ctx, uid: String, offset: Int) -> Session {
-  ctx.practice.queue(uid, daily_ask(offset))
+/// A session's worth of work for this account: the front of the queue.
+pub fn session(ctx: Ctx, uid: String) -> Session {
+  ctx.practice.queue(uid, daily_ask())
 }
 
 /// Grade an answer. The caller has already decided this attempt counts (the
@@ -220,7 +234,16 @@ pub fn message(error: PracticeError) -> String {
     CardNotStarted -> not_started_message
     OutOfOrder -> out_of_order_message
     NotAmendable -> not_amendable_message
-    UnknownTimezone | BadContent -> deck_broken_message
+    UnknownTimezone | BadContent | DeckUnavailable(_) -> deck_broken_message
+  }
+}
+
+/// What goes on the row an operator will read, which is not what goes on
+/// the page a player reads: a deck that could not be reached says how.
+pub fn reason(error: PracticeError) -> String {
+  case error {
+    DeckUnavailable(reason) -> reason
+    other -> message(other)
   }
 }
 
@@ -230,7 +253,8 @@ pub fn message(error: PracticeError) -> String {
 fn api_error(error: PracticeError) -> ApiError {
   case error {
     UnknownCard -> error.NotFound(unknown_card_message)
-    UnknownTimezone | BadContent -> error.Internal(deck_broken_message)
+    UnknownTimezone | BadContent | DeckUnavailable(_) ->
+      error.Internal(deck_broken_message)
     other -> error.validation_failed(message(other))
   }
 }

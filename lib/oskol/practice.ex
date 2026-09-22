@@ -36,16 +36,27 @@ defmodule Oskol.Practice do
         {:ok, added}
 
       {:error, error} ->
-        Logger.error("DECK SYNC REFUSED (#{user_id}): #{:oskol@core@error.message(error)}")
+        # Already logged and already written onto the rows it could not
+        # place (`sync_failed`), which is what an operator reads and what
+        # `--reset` selects on.
+        Logger.error("DECK SYNC REFUSED (#{user_id}): #{:oskol@practice@deck.reason(error)}")
         :error
     end
   rescue
     e ->
-      # The rows were charged for this try as they were read, so a sync
-      # that keeps blowing up here runs out of tries like any other.
+      # The deck's own exceptions are refusals by the time they get here
+      # (`Caps.Practice.unavailable/1`), so this is the last resort and not
+      # the usual path. The rows were charged for the try as they were
+      # read, so it still runs out rather than looping.
       Logger.error("DECK SYNC FAILED (#{user_id}): #{Exception.message(e)}")
       :error
   end
+
+  @doc """
+  Let every row that gave up be tried again -- an operator has fixed
+  whatever `deck_error` said. Returns how many were reopened.
+  """
+  def reset, do: Oskol.Puzzles.reset_deck_attempts()
 
   @doc """
   The accounts the deck still owes work to, at most `limit` of them: what
