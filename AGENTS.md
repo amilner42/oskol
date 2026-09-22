@@ -571,7 +571,13 @@ lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, 
 lib/oskol/reviews.ex            game_reviews + game_records tables, the log a review
                                 reads, the engine's HTTP
 src/oskol/core/raw.gleam        stored JSON back onto the wire without rebuilding it
-lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room
+lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room,
+                                and deck syncs the same way ({:deck, user_id})
+src/oskol/practice/sync.gleam   filling an account's mistakes deck: whose, in what
+                                order, what is stamped, and when to give up
+src/oskol/handlers/practice.gleam  a practice session: an account's deck, a guest's
+                                own mistakes, the browser's timezone, burying one
+lib/oskol/practice.ex           those decisions run with the real rows behind them
 lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images tables;
                                 the one write, in one transaction with its marker
 src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
@@ -803,6 +809,22 @@ GET  /papi/me                          {ok, guest_name, user: {email, name} | nu
 POST /papi/me/name                     {name} -> {ok, user}  (a signed-in browser
                                        renames its account; 422 "That name is
                                        taken." when another account has it)
+GET  /papi/practice                    {ok, puzzles: [{id, kind, prompt, due}],
+                                         cursor: null, counts: {due,
+                                         new_today, deck} | null, game: null}
+                                       -- an account's deck (due, then new),
+                                       a guest's own mistakes (unscheduled,
+                                       counts null, no writes), or nothing.
+                                       Never paged: every fetch is the front
+                                       of the queue, and "Done for today" is
+                                       a fetch that comes back empty
+POST /papi/practice/more               KEEP GOING: ten more new ones into
+                                       rotation, then the same session
+POST /papi/practice/tz                 {tz} -> {ok, tz}  (an IANA name, on the
+                                       account's deck; Etc/UTC until set)
+POST /papi/practice/bury               {id} -> {ok, id, level, due}  (back at
+                                       the player's own midnight, level kept;
+                                       409 when it is not in rotation)
 GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
 GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
@@ -830,7 +852,8 @@ be typed at it.
 A game's own `clocks` are preset ids; `clock_presets` carries every preset,
 so the picker can name the ones the game offers. Statuses: 404 `not_found`
 (no such game, no such code, a room that is over), 422 `validation_failed`
-(a name, a mode, a clock or a seat the room refused), 500 `server_error`.
+(a name, a mode, a clock or a seat the room refused), 409 `not_in_rotation`
+(a puzzle the session has moved past), 500 `server_error`.
 Every decision behind these lives in `src/oskol/handlers/landing.gleam`,
 except the record's, in `src/oskol/handlers/record.gleam`, and the reviews',
 in `src/oskol/handlers/reviews.gleam`. A lobby, a slug that is not the
@@ -1062,6 +1085,78 @@ path builds one and nothing re-asks the engine to recover one.
   (103 move, 19 double, 3 take; 2 skipped post-take), mean stored row 1.7 KB.
   With every legal result the answer column goes from a mean of 2.4 KB to
   4.2 KB (max 17 KB, a 177-play double).
+
+**The deck fills itself.** An account's mistakes become cards in its deck
+with nobody pressing anything: `src/oskol/practice/sync.gleam` (`sync_deck`)
+reads the sources on the seats that account owns and no deck holds yet,
+enrols them (`deck.enroll` -> retain, tags `{deck: "mistakes", kind}`,
+content the stored question, position newest game first) and stamps
+`puzzle_sources.deck_synced_at`. The holder rule decides whose a mistake is,
+as everywhere: the query narrows by an id, `rooms/seat.holder` answers.
+Three callers, all off every hot path: the review job, where a game's
+`store` has just succeeded (`sync_game`, in `handlers/reviews`); the sign-in
+stamp, cast to the review queue from the **persister's own handler** once
+its transaction has committed, so a caller that already timed out
+(`stamp_seats/3` answers `:pending`) still leaves a full deck; and the
+queue's minute sweep, for anything the first two missed.
+`mix oskol.puzzles.sync` is that sweep by hand (dry run unless `--write`,
+which writes nothing and charges nothing; `--reset` reopens the rows that
+gave up; `Oskol.Release.puzzles_sync/1` is the release twin, and both turn
+the queue off first so the boot sweep does not charge the same rows beside
+them). A deck job is `{:deck, user_id}` in the same queue as a room's
+review, collapsible because it syncs everything that account is owed, and
+the minute scan runs in a task rather than in the queue process.
+
+**Bounded, and never silent.** Idempotent at both levels; reading an
+account's sources charges one of three `deck_attempts`; and a try that
+fails — *including* retain raising, which is the failure that actually
+happens — writes `deck_error` on the rows and leaves them out of the sweep
+until an operator reopens them. A `DeckUnavailable` refusal is how an
+exception crosses the cap boundary instead of being logged and lost.
+
+**What the queries are keyed on.** `puzzle_sources.owner_user_id` is the
+account whose seat made the mistake, written from `games.players[seat]` in
+the same transaction as the sources and again when a sign-in stamps that
+game's seats (`Oskol.Puzzles.refresh_owners/1`). It is an index key, never
+an authority: `seat.holder` still decides, in Gleam, of every row handed
+back. Without it the sweep's question is a lateral join over every unsynced
+row every minute, and since a guest's mistakes are never synced that set
+grows for ever. `ended_ms` is the game's **review row**, not the source's:
+newest game played first, so a backfill or a retried review cannot put an
+old game at the front; within one game, turn order. A card's position is
+seconds *back* from 2020, not negated Unix time: retain's `position` is a
+32-bit column.
+
+**A mistake you make again comes back.** When a sync finds a puzzle the
+deck already holds, that is the player making it again in a real game, so
+the card takes an `:again` (back to level 0) with a note saying which game
+— but only a card **in rotation**: one never shown is already at the front
+of the queue, and a suspended one the player said NEVER to, which a game
+they happened to play must not undo.
+
+**`GET /papi/practice`** is one page for three callers
+(`src/oskol/handlers/practice.gleam`). Signed in: the deck, everything due
+before anything new (`new: :after_reviews`), twenty at a time, and
+`counts: {due, new_today, deck}`. A guest: the mistakes on the seats their
+cookie holds and no account owns, newest game first, unscheduled,
+`counts: null`, and **nothing written** -- only an account has a deck.
+Nobody: an empty list, not an error. Reading never starts a card or spends a
+day's budget. `POST /papi/practice/more` is KEEP GOING: ten more into
+rotation over the day's budget, then the same session.
+
+**A session is never paged.** Every fetch is the front of the queue and
+`cursor` is always null. The due set is live -- answering a card takes it
+out -- so a second page at an offset would skip exactly as many cards as the
+player had just answered: 21 due would end after 20 with one unseen and the
+day's new cards never offered at all. "Done for today" is a fetch that comes
+back empty, and nothing else.
+`POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
+(no new column: retain already keeps a learner's timezone, and it is the
+only thing that reads one). Gleam checks the shape, the zone database checks
+the name; `Etc/UTC` until it is set, and filling a deck passes no zone so it
+can never undo one. `POST /papi/practice/bury {id}` puts a puzzle the
+session left ungraded back to the start of the player's tomorrow, level kept
+-- 409 when it is not in rotation, which is what `error.Conflict` is for.
 
 ## Mail
 

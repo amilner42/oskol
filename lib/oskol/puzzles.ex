@@ -68,6 +68,12 @@ defmodule Oskol.Puzzles do
       field(:grade, :string)
       field(:skipped_reason, :string)
       field(:deck_synced_at, :utc_datetime_usec)
+      # The account whose seat made this mistake, derived from the game's
+      # players. An index key, never an authority: who holds a seat is
+      # decided in Gleam, of the seat itself.
+      field(:owner_user_id, Ecto.UUID)
+      field(:deck_attempts, :integer, default: 0)
+      field(:deck_error, :string)
 
       timestamps(type: :utc_datetime_usec)
     end
@@ -180,6 +186,11 @@ defmodule Oskol.Puzzles do
           conflict_target: [:game_id, :game_number, :turn, :kind]
         )
       end)
+
+      # The sources exist now, so the account that owns each seat can be
+      # written onto them -- in this transaction, because the sweep's index
+      # is keyed on it and a row without it would never be found.
+      refresh_owners([game_id])
 
       mark_extracted(game_id, game_number)
     end)
@@ -321,6 +332,246 @@ defmodule Oskol.Puzzles do
       select: r.puzzles_attempts
     )
     |> Repo.one() || @max_attempts
+  end
+
+  # ---------- What the deck is owed ----------
+
+  @doc """
+  The mistakes on seats this account owns that no deck holds yet, newest
+  game first, narrowed to `game_ids` when any are given.
+
+  The query is coarse on purpose: it finds the rows whose seat *names* this
+  account, and each row comes back with its seat so that
+  `src/oskol/rooms/seat.gleam` -- and not this file -- decides whose
+  mistake it is. Nothing here compares a credential.
+
+  Reading charges a try against every row it returns, exactly as an engine
+  call is charged before it is made: a sync that keeps crashing must not
+  have the sweep coming back for the same rows every minute for ever. A row
+  that reaches a deck is marked and leaves this query, so the charge only
+  outlives a failure.
+  """
+  def owned_sources(user_id, game_ids) when is_binary(user_id) do
+    ids =
+      owed_deck()
+      |> where([s], s.owner_user_id == ^user_id)
+      |> scope_games(game_ids)
+      |> select([s], s.id)
+      |> Repo.all()
+
+    charge_sync(ids)
+    sources_by_id(ids)
+  end
+
+  @doc "The deck holds these source rows now."
+  def mark_synced([]), do: :ok
+
+  def mark_synced(ids) when is_list(ids) do
+    from(s in Source, where: s.id in ^ids)
+    |> Repo.update_all(set: [deck_synced_at: DateTime.utc_now(), deck_error: nil])
+
+    :ok
+  end
+
+  @doc """
+  These rows could not be put in a deck. Logged every time, and recorded on
+  the rows once their tries are spent, so the sweep lets them go and an
+  operator can see why it did.
+  """
+  def sync_failed([], _reason), do: :ok
+
+  def sync_failed(ids, reason) when is_list(ids) do
+    Logger.error("deck sync failed for #{length(ids)} puzzle sources: #{reason}")
+
+    from(s in Source, where: s.id in ^ids, where: s.deck_attempts >= @max_attempts)
+    |> Repo.update_all(set: [deck_error: String.slice(to_string(reason), 0, 500)])
+
+    :ok
+  end
+
+  @doc """
+  The accounts with mistakes no deck holds yet, and the games those
+  mistakes are in: at most `limit` of them, the most recent first.
+
+  A read, and only a read. It is the sweep's work list, the dry run of
+  `mix oskol.puzzles.sync`, and how a game that has just been graded finds
+  out whose mistakes it wrote.
+  """
+  def deck_pending(game_ids, limit) when is_list(game_ids) and is_integer(limit) do
+    owed_deck()
+    |> scope_games(game_ids)
+    |> group_by([s], s.owner_user_id)
+    |> select([s], %{
+      user_id: type(s.owner_user_id, :string),
+      game_ids: fragment("array_agg(DISTINCT ?)", s.game_id),
+      sources: count(s.id),
+      recent: max(s.inserted_at)
+    })
+    |> order_by([s], desc: max(s.inserted_at))
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
+  @doc """
+  Let the rows that gave up be tried again: an operator has fixed whatever
+  `deck_error` was complaining about. Returns how many were reopened.
+  """
+  def reset_deck_attempts do
+    {count, _} =
+      from(s in Source, where: not is_nil(s.deck_error), where: is_nil(s.deck_synced_at))
+      |> Repo.update_all(set: [deck_attempts: 0, deck_error: nil])
+
+    count
+  end
+
+  @doc """
+  Point these games' sources at the accounts that own their seats.
+
+  Run inside the write that can change the answer: when the sources are
+  first written, and when a sign-in stamps a game's seats. One statement,
+  and it only ever writes where the answer moved, so running it twice
+  writes nothing the second time.
+  """
+  def refresh_owners([]), do: :ok
+
+  def refresh_owners(game_ids) when is_list(game_ids) do
+    Repo.query!(
+      """
+      UPDATE puzzle_sources s
+      SET owner_user_id = (p ->> 'user_id')::uuid, updated_at = now()
+      FROM games g, LATERAL jsonb_array_elements(oskol_players_jsonb(g.players)) p
+      WHERE g.id = s.game_id
+        AND s.game_id = ANY($1)
+        AND p ->> 'id' = s.player_id
+        AND p ->> 'user_id' IS NOT NULL
+        AND s.owner_user_id IS DISTINCT FROM (p ->> 'user_id')::uuid
+      """,
+      [game_ids]
+    )
+
+    :ok
+  end
+
+  @doc """
+  The mistakes on seats this guest's cookie holds and no account owns,
+  newest game first.
+
+  A guest has no deck, so this is their whole practice session. The
+  containment test is the one the seated-rooms index answers; the seat
+  rides back with each row and the holder rule says which of them are
+  really this browser's.
+  """
+  def guest_sources(guest_id, limit \\ 500)
+
+  def guest_sources(guest_id, limit) when is_binary(guest_id) and guest_id != "" do
+    held = [%{"guest_id" => guest_id}]
+
+    from(g in Oskol.Persistence.Game,
+      join: s in Source,
+      on: s.game_id == g.id and not is_nil(s.puzzle_id),
+      inner_lateral_join:
+        p in fragment("jsonb_array_elements(oskol_players_jsonb(?))", g.players),
+      on: fragment("? ->> 'id'", p) == s.player_id,
+      left_join: r in Review,
+      on: r.game_id == s.game_id and r.game_number == s.game_number,
+      where: fragment("oskol_players_jsonb(?) @> ?::jsonb", g.players, ^held),
+      where: fragment("? ->> 'guest_id'", p) == ^guest_id,
+      where: is_nil(fragment("? ->> 'user_id'", p)),
+      order_by: [desc: coalesce(r.inserted_at, s.inserted_at), asc: s.turn],
+      limit: ^limit,
+      select: %{
+        id: s.id,
+        puzzle_id: s.puzzle_id,
+        game_id: s.game_id,
+        game_number: s.game_number,
+        kind: s.kind,
+        turn: s.turn,
+        ended_at: coalesce(r.inserted_at, s.inserted_at),
+        player_id: s.player_id,
+        guest_id: fragment("? ->> 'guest_id'", p),
+        user_id: fragment("? ->> 'user_id'", p)
+      }
+    )
+    |> Repo.all()
+    |> with_questions()
+  end
+
+  def guest_sources(_guest_id, _limit), do: []
+
+  # Mistakes an account owns that its deck does not hold and that still have
+  # tries left: the whole of what the sweep is for, and exactly the partial
+  # index `puzzle_sources_owed_deck` holds. No join, because a guest's
+  # mistakes are never synced and this set would otherwise grow with every
+  # guest who ever plays.
+  defp owed_deck do
+    from(s in Source,
+      where: not is_nil(s.owner_user_id),
+      where: not is_nil(s.puzzle_id),
+      where: is_nil(s.deck_synced_at),
+      where: s.deck_attempts < @max_attempts
+    )
+  end
+
+  defp scope_games(query, []), do: query
+  defp scope_games(query, game_ids), do: where(query, [s], s.game_id in ^game_ids)
+
+  # Charged outside any transaction and before the write, for the same
+  # reason the extraction charges there: a rollback must not refund it.
+  defp charge_sync([]), do: :ok
+
+  defp charge_sync(ids) do
+    from(s in Source, where: s.id in ^ids)
+    |> Repo.update_all(inc: [deck_attempts: 1])
+
+    :ok
+  end
+
+  defp sources_by_id([]), do: []
+
+  defp sources_by_id(ids) do
+    from(s in Source,
+      join: g in Oskol.Persistence.Game,
+      on: g.id == s.game_id,
+      inner_lateral_join:
+        p in fragment("jsonb_array_elements(oskol_players_jsonb(?))", g.players),
+      on: fragment("? ->> 'id'", p) == s.player_id,
+      left_join: r in Review,
+      on: r.game_id == s.game_id and r.game_number == s.game_number,
+      where: s.id in ^ids,
+      order_by: [desc: coalesce(r.inserted_at, s.inserted_at), asc: s.turn],
+      select: %{
+        id: s.id,
+        puzzle_id: s.puzzle_id,
+        game_id: s.game_id,
+        game_number: s.game_number,
+        kind: s.kind,
+        turn: s.turn,
+        ended_at: coalesce(r.inserted_at, s.inserted_at),
+        player_id: s.player_id,
+        guest_id: fragment("? ->> 'guest_id'", p),
+        user_id: fragment("? ->> 'user_id'", p)
+      }
+    )
+    |> Repo.all()
+    |> with_questions()
+  end
+
+  # The questions these sources ask, in one query rather than one each. The
+  # puzzle row is what a card carries and what a prompt is written from.
+  defp with_questions([]), do: []
+
+  defp with_questions(rows) do
+    questions =
+      from(p in Puzzle,
+        where: p.id in ^Enum.map(rows, & &1.puzzle_id),
+        select: {p.id, p.question}
+      )
+      |> Repo.all()
+      |> Map.new()
+
+    for row <- rows, question = Map.get(questions, row.puzzle_id), question != nil do
+      Map.put(row, :question, question)
+    end
   end
 
   # Log every time, and on the last attempt settle the row so the minute

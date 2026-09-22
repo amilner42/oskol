@@ -143,6 +143,14 @@ pub type PracticeError {
   UnknownTimezone
   /// A card was offered with content that is not a JSON object.
   BadContent
+  /// The deck itself could not be reached: the database was down, or the
+  /// library raised. `reason` is for the operator, never for the player.
+  ///
+  /// This is the refusal that actually happens. Without it a sync would
+  /// have to let an exception through, and an exception is how a mistake
+  /// gets silently lost: the rows have been charged for the try and
+  /// nothing writes down why it failed.
+  DeckUnavailable(reason: String)
 }
 
 pub type PracticeCaps {
@@ -150,14 +158,32 @@ pub type PracticeCaps {
     /// Make sure this account has a deck, with their timezone and how many
     /// new cards a day they get. Idempotent; it is the first call of any
     /// practice session.
+    ///
+    /// An **empty timezone** means "whatever this deck already has, and the
+    /// default if it has none". Filling a deck must never quietly move a
+    /// player back to UTC because the sync that did it had no opinion about
+    /// where they are; only `POST /papi/practice/tz` names a zone.
     put_user: fn(String, String, Int) -> Result(Nil, PracticeError),
     /// Add cards. Keys already in the deck are left exactly as they are, so
     /// re-adding a game's mistakes is safe. Returns how many were new.
     put_items: fn(String, List(Item)) -> Result(Int, PracticeError),
+    /// Which of these keys this deck already holds, and where each one
+    /// stands. What a sync asks before it offers a game's mistakes: a
+    /// puzzle already in the deck is one the player has made again.
+    cards: fn(String, List(String)) -> List(Card),
+    /// The player made this mistake again, in a real game rather than at a
+    /// puzzle: the card goes back to the start, like any miss. `meta_json`
+    /// says which game it was, so the log can be read back.
+    relapse: fn(String, String, String) -> Result(Graded, PracticeError),
     /// A session's worth of work.
     queue: fn(String, Ask) -> Session,
     /// Put named new cards into rotation now. Returns how many moved.
     start: fn(String, List(String)) -> Int,
+    /// Put this many new cards into rotation now, in the order they are
+    /// meant to be introduced in, whatever is left of today's budget. This
+    /// is KEEP GOING: the brief caps the day's new cards for the player who
+    /// takes what they are given, never for the one who asks for more.
+    start_new: fn(String, Int) -> Int,
     /// Record an attempt and move the card.
     review: fn(String, String, Outcome) -> Result(Graded, PracticeError),
     /// Correct an earlier attempt: the row stays, a new one supersedes it,
@@ -169,6 +195,11 @@ pub type PracticeCaps {
     /// is nothing to move on one that has never been started, and starting
     /// it later would overwrite the date anyway.
     defer_until: fn(String, String, Int) -> Result(Graded, PracticeError),
+    /// The same, to the start of the player's own tomorrow. Which instant
+    /// that is depends on the clock and on the timezone this deck was
+    /// opened with, and neither is Gleam's to read -- so the deck works it
+    /// out, as it already does for "due today".
+    defer_tomorrow: fn(String, String) -> Result(Graded, PracticeError),
     /// "I already know these": each jumps to the top level. Recorded in the
     /// log, so it survives a rebuild. Returns how many moved.
     master: fn(String, List(String)) -> Int,
@@ -185,11 +216,15 @@ pub fn stub() -> PracticeCaps {
   PracticeCaps(
     put_user: fn(_, _, _) { panic as "stub practice.put_user" },
     put_items: fn(_, _) { panic as "stub practice.put_items" },
+    cards: fn(_, _) { panic as "stub practice.cards" },
+    relapse: fn(_, _, _) { panic as "stub practice.relapse" },
     queue: fn(_, _) { panic as "stub practice.queue" },
     start: fn(_, _) { panic as "stub practice.start" },
+    start_new: fn(_, _) { panic as "stub practice.start_new" },
     review: fn(_, _, _) { panic as "stub practice.review" },
     amend: fn(_, _, _, _) { panic as "stub practice.amend" },
     defer_until: fn(_, _, _) { panic as "stub practice.defer_until" },
+    defer_tomorrow: fn(_, _) { panic as "stub practice.defer_tomorrow" },
     master: fn(_, _) { panic as "stub practice.master" },
     suspend: fn(_, _) { panic as "stub practice.suspend" },
     resume: fn(_, _) { panic as "stub practice.resume" },

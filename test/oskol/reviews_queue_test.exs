@@ -28,11 +28,24 @@ defmodule Oskol.ReviewsQueueTest do
         # self-rescheduling timer chain in the shared application queue.
         {:ok, pid} = GenServer.start_link(Queue, [])
         :sys.get_state(pid)
+        # The scan itself runs in a supervised task, off this process, so
+        # wait for the scan and not merely for the cast that started it.
+        await_sweep()
         assert Process.alive?(pid)
         GenServer.stop(pid)
       end)
 
     assert log =~ "analysis recovery sweep failed"
+  end
+
+  # The recovery scan is a task of Oskol.Reviews.TaskSupervisor; it is done
+  # when the supervisor has no children left.
+  defp await_sweep(left \\ 2_000) do
+    cond do
+      Task.Supervisor.children(Oskol.Reviews.TaskSupervisor) == [] -> :ok
+      left <= 0 -> flunk("the recovery scan never finished")
+      true -> Process.sleep(10) && await_sweep(left - 10)
+    end
   end
 
   test "crashes before charging an attempt back off and stop after three, without blocking other rooms" do

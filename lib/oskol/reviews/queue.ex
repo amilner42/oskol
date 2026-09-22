@@ -26,6 +26,13 @@ defmodule Oskol.Reviews.Queue do
   three consecutive crashes suspend automatic recovery for that room until
   a fresh enqueue or queue restart. The durable owed marker is left intact.
 
+  A job is a room, or an account's mistakes deck (`{:deck, user_id}`,
+  `sync_deck/1`). They share the line because they share the reason for
+  having one: work that must happen off a room, off a request and one at a
+  time, and that has to be recoverable from the database when the queue
+  forgets it. A deck job is collapsible -- it syncs everything the account
+  is owed -- so two of them are never worth queueing.
+
   `enabled` (config `:oskol, Oskol.Reviews.Queue`) is off in tests, where
   rooms finish games by the hundred and there is no engine; a test that
   wants the queue turns it on and waits with `await_idle/1`.
@@ -47,6 +54,24 @@ defmodule Oskol.Reviews.Queue do
     :ok
   end
 
+  @doc """
+  Fill this account's mistakes deck, off whatever asked for it.
+
+  Cast, never called: the one caller that matters is the sign-in stamp,
+  and it asks from inside the persister's own handler once its transaction
+  has committed -- by which time the browser that asked may have given up
+  waiting. Nothing about a deck belongs in that reply.
+
+  A job is one account and syncs everything of theirs that is unsynced, so
+  two sign-ins in a row collapse into one and the games that came along
+  need not be carried here: they are exactly the games the query is about
+  to find.
+  """
+  def sync_deck(user_id) when is_binary(user_id) do
+    if enabled?(), do: GenServer.cast(__MODULE__, {:enqueue, {:deck, user_id}})
+    :ok
+  end
+
   @doc "Wait until nothing is queued or running (retries may still be pending). For tests."
   def await_idle(timeout \\ 30_000) do
     GenServer.call(__MODULE__, :await_idle, timeout)
@@ -59,8 +84,16 @@ defmodule Oskol.Reviews.Queue do
     Application.get_env(:oskol, __MODULE__, []) |> Keyword.get(:enabled, true)
   end
 
-  @doc "One job: review what the room is owed. `{:retry, ms}` or `:ok`."
-  def run(game_id) do
+  @doc "One job, whatever kind. `{:retry, ms}` or `:ok`."
+  def run({:deck, user_id}) do
+    # Behind the rooms' queued writes, as every sign-in read is: the stamp
+    # that made these seats the account's went through the same persister.
+    Oskol.Game.Persister.flush()
+    Oskol.Practice.sync(user_id)
+    :ok
+  end
+
+  def run(game_id) when is_binary(game_id) do
     # The room's last writes (the step that ended the game) go through the
     # write-behind persister; let them land before reading the log.
     Oskol.Game.Persister.flush()
@@ -103,9 +136,12 @@ defmodule Oskol.Reviews.Queue do
   def sweep_owed do
     if enabled?() do
       owed = Enum.uniq(Oskol.Reviews.rooms_owed_analysis() ++ Oskol.Puzzles.rooms_owed_puzzles())
+      # And the accounts whose mistakes are not in their deck yet: a sync
+      # lost to a crash or a deploy, or a sign-in whose cast never ran.
+      decks = for row <- Oskol.Practice.pending(), do: {:deck, row.user_id}
 
-      GenServer.cast(__MODULE__, {:recover, owed})
-      length(owed)
+      GenServer.cast(__MODULE__, {:recover, owed ++ decks})
+      length(owed) + length(decks)
     else
       0
     end
@@ -129,16 +165,23 @@ defmodule Oskol.Reviews.Queue do
   # Recovery must survive an unavailable database without restarting the
   # queue (which could orphan its running engine task). Always schedule the
   # next scan; no read endpoint is responsible for dispatching this work.
+  #
+  # The scan itself runs in a task, not here: it is three queries against
+  # tables that grow, and this process is also the one a room casts to when
+  # a game ends. It casts its own answer back, so a slow scan delays
+  # nothing but itself.
   defp recover_owed do
     Process.send_after(self(), :sweep, @sweep_interval)
 
-    try do
-      sweep_owed()
-    rescue
-      e -> Logger.error("analysis recovery sweep failed: #{Exception.message(e)}")
-    catch
-      kind, reason -> Logger.error("analysis recovery sweep failed: #{inspect({kind, reason})}")
-    end
+    Task.Supervisor.start_child(@task_supervisor, fn ->
+      try do
+        sweep_owed()
+      rescue
+        e -> Logger.error("analysis recovery sweep failed: #{Exception.message(e)}")
+      catch
+        kind, reason -> Logger.error("analysis recovery sweep failed: #{inspect({kind, reason})}")
+      end
+    end)
   end
 
   # `generation` tells a retry timer set before a reset from one set after.
@@ -239,10 +282,11 @@ defmodule Oskol.Reviews.Queue do
 
     if count >= @max_crashes do
       Logger.error(
-        "REVIEW RECOVERY SUSPENDED (#{game_id}) after #{count} task crashes: #{inspect(reason)}"
+        "REVIEW RECOVERY SUSPENDED (#{label(game_id)}) after #{count} task crashes: " <>
+          inspect(reason)
       )
     else
-      Logger.error("REVIEW FAILED (#{game_id}), crash #{count}: #{inspect(reason)}")
+      Logger.error("REVIEW FAILED (#{label(game_id)}), crash #{count}: #{inspect(reason)}")
     end
 
     # Do not call finished/2: an enqueue received during this failed task
@@ -272,6 +316,10 @@ defmodule Oskol.Reviews.Queue do
   end
 
   def handle_info(_other, state), do: {:noreply, state}
+
+  # A job is a room's id, or `{:deck, user_id}` for an account's mistakes.
+  defp label(job) when is_binary(job), do: job
+  defp label(job), do: inspect(job)
 
   defp crash_blocked?(state, game_id, now) do
     case Map.get(state.crashes, game_id) do

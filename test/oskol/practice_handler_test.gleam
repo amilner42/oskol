@@ -78,22 +78,19 @@ fn graded() -> Graded {
 
 pub fn a_session_asks_for_due_first_then_new_test() {
   // The brief: everything due comes first, then at most the day's new cards.
-  let ask = deck.daily_ask(0)
+  let ask = deck.daily_ask()
   assert ask.new_after_reviews == True
   assert ask.limit == deck.page
-  assert ask.offset == 0
-  // No cap below the day's budget on the first page.
+  // No cap below the day's budget.
   assert ask.new_limit == None
 }
 
-pub fn keep_going_walks_further_down_and_adds_no_new_cards_test() {
-  // KEEP GOING is uncapped for reviews and capped at zero for new material:
-  // the day's ten are the day's ten however long the player keeps going.
-  let ask = deck.daily_ask(20)
-  assert ask.offset == 20
-  assert ask.limit == deck.page
-  assert ask.new_limit == Some(0)
-  assert ask.new_after_reviews == True
+pub fn every_page_is_the_front_of_the_queue_test() {
+  // Never an offset. The due set is live: a card answered has left it, so
+  // a second page taken at an offset would skip exactly as many cards as
+  // the player had just answered -- a session of 21 would end after 20
+  // with one unseen and the day's new cards never offered at all.
+  assert deck.daily_ask().offset == 0
 }
 
 pub fn the_day_gives_ten_new_cards_test() {
@@ -102,7 +99,7 @@ pub fn the_day_gives_ten_new_cards_test() {
 
 pub fn a_session_hands_back_what_the_deck_answered_test() {
   let ctx = fakes.ctx() |> with_queue(2, 1)
-  let session = deck.session(ctx, "acct", 0)
+  let session = deck.session(ctx, "acct")
 
   assert list.map(session.reviews, fn(c) { c.key }) == ["due1", "due2"]
   assert list.map(session.fresh, fn(c) { c.key }) == ["new1"]

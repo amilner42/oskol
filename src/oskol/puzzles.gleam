@@ -367,16 +367,20 @@ pub fn question_decoder() -> Decoder(Question) {
   )
   use value <- decode.subfield(["cube", "value"], decode.int)
   use owner <- decode.subfield(["cube", "owner"], decode.string)
-  use mover_away <- decode.then(decode.optionally_at(
-    ["score", "mover_away"],
-    0,
-    decode.int,
-  ))
-  use opponent_away <- decode.then(decode.optionally_at(
-    ["score", "opponent_away"],
-    0,
-    decode.int,
-  ))
+  // Money play writes `"score": null` rather than reporting 0-away, so the
+  // whole object is optional *and* nullable. Reading the two fields through
+  // a path would refuse an explicit null, and every unlimited game's
+  // puzzles are written that way.
+  use score <- decode.optional_field(
+    "score",
+    None,
+    decode.optional({
+      use mover <- decode.field("mover_away", decode.int)
+      use opponent <- decode.field("opponent_away", decode.int)
+      decode.success(#(mover, opponent))
+    }),
+  )
+  let #(mover_away, opponent_away) = option.unwrap(score, #(0, 0))
   use crawford <- decode.optional_field("crawford", False, decode.bool)
   use jacoby <- decode.optional_field("jacoby", False, decode.bool)
   decode.success(Question(
@@ -601,6 +605,35 @@ fn sorted(dice: #(Int, Int)) -> #(Int, Int) {
   case dice.0 >= dice.1 {
     True -> dice
     False -> #(dice.1, dice.0)
+  }
+}
+
+// ---------- The sentence a puzzle is asked in ----------
+
+/// What a puzzle asks, in the game's own words: the head of its page, the
+/// line above its board and the line a session lists it by, all one string
+/// so that the three can never say different things.
+///
+/// Written from the **solver's** side, which is the side a page draws at
+/// the bottom: the mover for a move or a double, and the player being
+/// doubled for a take (whose board a page flips). The solver is White
+/// whatever colour they had in the game, which is the whole of the
+/// orientation rule.
+pub fn prompt(q: Question) -> String {
+  case q.kind {
+    Move -> "White to play " <> roll(q.dice) <> ". " <> "What's your play?"
+    Double -> "White to play. Double?"
+    Take -> "White is doubled. Take?"
+  }
+}
+
+/// A roll as it is written: "6-4", and "3-3" for a double.
+fn roll(dice: Option(#(Int, Int))) -> String {
+  case dice {
+    Some(#(high, low)) -> int.to_string(high) <> "-" <> int.to_string(low)
+    // A move question always has its dice; a stored one that somehow does
+    // not still has to ask something a page can print.
+    None -> "the roll"
   }
 }
 

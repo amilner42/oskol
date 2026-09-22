@@ -25,17 +25,21 @@ defmodule Oskol.PracticeTest do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
-    {:practice_caps, put_user, put_items, queue, start, review, amend, defer_until, master,
-     suspend, resume, summary} = Practice.build()
+    {:practice_caps, put_user, put_items, cards, relapse, queue, start, start_new, review, amend,
+     defer_until, defer_tomorrow, master, suspend, resume, summary} = Practice.build()
 
     caps = %{
       put_user: put_user,
       put_items: put_items,
+      cards: cards,
+      relapse: relapse,
       queue: queue,
       start: start,
+      start_new: start_new,
       review: review,
       amend: amend,
       defer_until: defer_until,
+      defer_tomorrow: defer_tomorrow,
       master: master,
       suspend: suspend,
       resume: resume,
