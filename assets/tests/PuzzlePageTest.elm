@@ -742,7 +742,7 @@ next =
             \_ ->
                 let
                     missing config =
-                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, origin = "http://oskol.test" }
+                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, origin = "http://oskol.test", share = Nothing }
                             |> Tuple.first
                             |> step (GotPuzzle (Err (Api.ApiError { code = "not_found", message = "no" })))
                 in
@@ -786,7 +786,7 @@ ended : Session.Session -> Page.Model
 ended session =
     let
         ( model, _ ) =
-            Page.init session { id = "fix", hasNext = True, origin = "http://oskol.test" }
+            Page.init session { id = "fix", hasNext = True, origin = "http://oskol.test", share = Nothing }
 
         loaded =
             case D.decodeString Puzzle.decoder (question "move") of
