@@ -198,21 +198,22 @@ pub fn taking_that_pays_the_doubler_more_is_a_pass_test() {
   // The same position asked of the doubler: doubling is worth min(DT, DP),
   // which is the pass, and that is a whole point better than not doubling.
   assert grade.engine_band(Double, answer) == Some(2)
-  // Answering "big take" against a big pass is two bands out and misses;
-  // answering "pass" is one band out and holds.
-  assert grade.cube_verdict(2, -2) == Fail
-  assert grade.cube_verdict(-1, -2) == Hold
+  // Answering "take" against a big pass is the wrong side and misses;
+  // answering "pass" is the right side and passes, however big.
+  assert grade.cube_verdict(1, -2) == Fail
+  assert grade.cube_verdict(-1, -2) == Pass
 }
 
-/// All twenty-five pairs, both sides: the same band passes, one off holds,
-/// two or more misses.
+/// Both sides against every band, for the doubler and the responder: the
+/// right side passes, the wrong side misses, and a coin flip holds either
+/// way.
 pub fn the_whole_cube_matrix_test() {
-  list.each(grade.bands, fn(answered) {
+  list.each([-1, 1], fn(answered) {
     list.each(grade.bands, fn(engine) {
-      let wanted = case abs(answered - engine) {
-        0 -> Pass
-        1 -> Hold
-        _ -> Fail
+      let wanted = case engine == 0, { answered > 0 } == { engine > 0 } {
+        True, _ -> Hold
+        False, True -> Pass
+        False, False -> Fail
       }
       let assert Some(doubler) = grade.engine_band(Double, doubler_at(engine))
       let assert Some(responder) = grade.engine_band(Take, responder_at(engine))
@@ -222,20 +223,21 @@ pub fn the_whole_cube_matrix_test() {
   })
 }
 
-/// The brief's own two examples, spelled out.
+/// The rule in the player's words: nobody fails a coin flip, and a plain
+/// or a big double are one answer at the table.
 pub fn the_briefs_examples_test() {
-  // Double when the engine said Borderline holds...
+  // Double when the engine said too close to call holds...
   assert grade.cube_verdict(1, 0) == Hold
   // ...Double when it said No double misses.
   assert grade.cube_verdict(1, -1) == Fail
-  // Borderline against a big double misses; a big double against a plain
-  // one holds.
-  assert grade.cube_verdict(0, 2) == Fail
-  assert grade.cube_verdict(2, 1) == Hold
+  // Double against a big double passes: the size is the reveal's to show.
+  assert grade.cube_verdict(1, 2) == Pass
 }
 
 pub fn a_band_outside_the_scale_is_refused_test() {
-  assert list.all(grade.bands, grade.band_in_range)
+  assert list.all([-2, -1, 1, 2], grade.band_in_range)
+  // Too close to call is the engine's word, not an answer.
+  assert !grade.band_in_range(0)
   assert !grade.band_in_range(3)
   assert !grade.band_in_range(-3)
 }
@@ -286,11 +288,4 @@ pub fn every_fixture_means_what_it_says_test() {
       _ -> Nil
     }
   })
-}
-
-fn abs(value: Int) -> Int {
-  case value < 0 {
-    True -> -value
-    False -> value
-  }
 }

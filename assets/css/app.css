@@ -1764,6 +1764,8 @@ a.bg-match-door:hover { background: var(--paper-2); }
 /* The five answers to a cube question, in one row; after the reveal the
    same row is the scale, the engine's band inked. */
 .pz-bands { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; width: 100%; max-width: 32rem; }
+.pz-bands.pz-answers { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-width: 22rem; }
+.pz-answers .pz-band { min-height: 3rem; font-size: 12px; }
 .pz-band {
   display: flex; align-items: center; justify-content: center; text-align: center;
   min-height: 2.6rem; padding: 4px 2px; border: 2px solid var(--ink); border-radius: 4px;

@@ -94,7 +94,7 @@ async function stageATurn(page) {
 async function answer(page) {
   await page.waitForSelector('#pz-bands, #bg-action-play, [data-move-source]', { timeout: 10000 });
   if (await page.locator('#pz-bands').count()) {
-    await page.click('#pz-band-0');
+    await page.click('#pz-band-1');
     return;
   }
   await stageATurn(page);

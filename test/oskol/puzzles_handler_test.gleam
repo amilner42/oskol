@@ -754,7 +754,7 @@ pub fn an_unfinished_turn_is_refused_test() {
     == Error(error.validation_failed(handler.bad_move_message))
 }
 
-pub fn a_cube_answer_is_graded_on_the_five_band_scale_test() {
+pub fn a_cube_answer_is_graded_by_its_side_test() {
   reset()
   let ctx =
     ctx_with([
@@ -762,28 +762,25 @@ pub fn a_cube_answer_is_graded_on_the_five_band_scale_test() {
       stored("t1", cube_question(Take), cube_answer()),
     ])
   // Doubling is worth min(1.4, 1.0) - 0.0 = 1.0 more than not doubling: a
-  // big double.
-  let assert Ok(body) = band_attempt(ctx, guest("g1"), "d1", 2, "k1")
+  // big double, and "double" is the right side of it.
+  let assert Ok(body) = band_attempt(ctx, guest("g1"), "d1", 1, "k1")
   assert text_at(body, ["verdict"]) == "pass"
   assert int_at(body, ["cube", "band"]) == 2
   assert bool_at(body, ["cube", "too_good"]) == False
   // Taking pays the doubler 1.4 where passing pays 1.0, so the responder
-  // passes, and passes big.
-  let assert Ok(take) = band_attempt(ctx, guest("g1"), "t1", -2, "k2")
+  // passes, and passes big: "pass" is right, "take" is wrong.
+  let assert Ok(take) = band_attempt(ctx, guest("g1"), "t1", -1, "k2")
   assert text_at(take, ["verdict"]) == "pass"
   assert int_at(take, ["cube", "band"]) == -2
-  // One band out holds, two miss.
-  let assert Ok(near) = band_attempt(ctx, guest("g1"), "t1", -1, "k3")
-  assert text_at(near, ["verdict"]) == "hold"
-  let assert Ok(far) = band_attempt(ctx, guest("g1"), "t1", 0, "k4")
-  assert text_at(far, ["verdict"]) == "fail"
+  let assert Ok(wrong) = band_attempt(ctx, guest("g1"), "t1", 1, "k3")
+  assert text_at(wrong, ["verdict"]) == "fail"
 }
 
-/// Both kinds, every band: the engine's own band comes back, and the
-/// verdict is the distance from it. The whole matrix is checked over the
+/// Both kinds, both sides: the engine's own band comes back, and the
+/// verdict is the side against it. The whole matrix is checked over the
 /// equities in puzzles_grade_test; this is the same rule reached through
 /// the endpoint.
-pub fn every_band_is_graded_through_the_endpoint_test() {
+pub fn every_side_is_graded_through_the_endpoint_test() {
   reset()
   let ctx =
     ctx_with([
@@ -794,14 +791,13 @@ pub fn every_band_is_graded_through_the_endpoint_test() {
   // the doubler 1.4 where passing pays 1.0, so the responder passes (-2).
   list.each([#("d1", 2), #("t1", -2)], fn(side) {
     let #(id, engine) = side
-    list.each([-2, -1, 0, 1, 2], fn(band) {
+    list.each([-1, 1], fn(band) {
       let key = id <> int.to_string(band)
       let assert Ok(body) = band_attempt(ctx, guest("g1"), id, band, key)
       assert int_at(body, ["cube", "band"]) == engine
-      let wanted = case band - engine {
-        0 -> "pass"
-        1 | -1 -> "hold"
-        _ -> "fail"
+      let wanted = case { band > 0 } == { engine > 0 } {
+        True -> "pass"
+        False -> "fail"
       }
       assert text_at(body, ["verdict"]) == wanted
     })
@@ -825,12 +821,12 @@ pub fn a_too_good_position_says_so_test() {
     )
   let ctx = ctx_with([stored("d1", cube_question(Double), too_good)])
   // min(0.9, 1.0) - 1.4 = -0.5: a big no double.
-  let assert Ok(body) = band_attempt(ctx, guest("g1"), "d1", -2, "k1")
+  let assert Ok(body) = band_attempt(ctx, guest("g1"), "d1", -1, "k1")
   assert text_at(body, ["verdict"]) == "pass"
   assert int_at(body, ["cube", "band"]) == -2
   assert bool_at(body, ["cube", "too_good"]) == True
-  // And doubling it anyway is four bands out.
-  let assert Ok(wrong) = band_attempt(ctx, guest("g1"), "d1", 2, "k2")
+  // And doubling it anyway is the wrong side.
+  let assert Ok(wrong) = band_attempt(ctx, guest("g1"), "d1", 1, "k2")
   assert text_at(wrong, ["verdict"]) == "fail"
 }
 
@@ -840,6 +836,9 @@ pub fn a_band_outside_the_scale_is_refused_test() {
   assert band_attempt(ctx, guest("g1"), "d1", 3, "k1")
     == Error(error.validation_failed(handler.bad_band_message))
   assert band_attempt(ctx, guest("g1"), "d1", -3, "k2")
+    == Error(error.validation_failed(handler.bad_band_message))
+  // Too close to call is the engine's word, not an answer.
+  assert band_attempt(ctx, guest("g1"), "d1", 0, "k0")
     == Error(error.validation_failed(handler.bad_band_message))
   assert handler.attempt_json(
       ctx,
