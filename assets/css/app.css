@@ -1483,7 +1483,12 @@ a.bg-match-door:hover { background: var(--paper-2); }
    characters, which is the trade this file refuses just above. So in that
    band the career line goes and the match PR stays, exactly as before. */
 .bar-pr-career { opacity: 0.72; }
-@media (max-width: 389px) {
+/* ...and a name is worth more than a second number: at 390 the career's
+   extra 21px came out of a seven-character name ("borisov" became "bori..."),
+   which is the trade this file refuses for the PR itself. So the career line
+   waits for a screen with room to spare; on a phone the table shows the
+   number being played for, and the home page shows the career. */
+@media (max-width: 639px) {
   .bg-page .bar-pr-career { display: none; }
 }
 

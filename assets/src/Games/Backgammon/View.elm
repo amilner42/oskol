@@ -1146,9 +1146,11 @@ it costs no height: two lines of 7px pixel type with no leading sit inside
 the 20px line box the name already claims (34px of bar either way,
 measured), so the board loses nothing.
 
-It does cost width -- 50px becomes 71px -- which a 390 phone can pay out of
-the name and a 375 one cannot, so below 390 the career line goes and the
-match PR stays (app.css). Below 375 the whole chip already went.
+It does cost width -- 50px becomes 71px -- which a phone pays out of the
+name ("borisov" became "bori..." at 390), so below 640 the career line goes
+and the match PR stays (app.css): on a phone the table shows the number
+being played for, and the home page shows the career. Below 375 the whole
+chip already went.
 
 -}
 viewRating : Ctx -> String -> Html Msg
