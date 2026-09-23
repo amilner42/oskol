@@ -641,10 +641,23 @@ assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
 assets/src/Route.elm             the three client routes, mirroring the server's
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
-assets/src/Page/GameLanding.elm  "/" the home page (CREATE GAME's dialog, the theme
-                                 picker) and "/:slug?game=" what an invite offers
-assets/src/Page/HomeBoard.elm    the home page's board: the table edge to edge, the
+assets/src/Page/GameLanding.elm  "/" the guest's home page (CREATE GAME's dialog, the
+                                 theme picker) and "/:slug?game=" what an invite offers.
+                                 `createOnly`, `createModal` and `themePicker` are what
+                                 the signed-in home starts a game and picks a board with
+assets/src/Page/HomeBoard.elm    the guest home's board: the table edge to edge, the
                                  2x2 menu in its right band
+assets/src/Page/Home.elm         "/" for an account: the bar (the name, PLAY, JOIN,
+                                 PUZZLES, the boards), live games with your move first,
+                                 form (two numbers, the sentence, the line), practice
+                                 (what is due, PRACTICE, the ladder and the 30 days) and
+                                 the last graded games with MORE, each a link to its
+                                 replay. Everything from one answer; `Main` picks between
+                                 this and the board by the session
+assets/src/Api/Home.elm          /papi/me/home and /papi/me/games/graded, and the one
+                                 line a browser with no account gets
+assets/src/Ui/LiveGames.elm      one row per game you can pick back up, drawn the same
+                                 on both homes
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it;
                                  asks /puzzles?game=n for each game /ratings reports
                                  graded (a seat only) and feeds both result cards'
@@ -690,7 +703,8 @@ assets/src/Games/Backgammon/Words.elm   the engine's verdict in words and number
                                  and grade tags. The replay reads it and the puzzle
                                  reveal will; `tooGood` is the twin of Gleam's
                                  `oskol/puzzles.too_good` and moves with it
-assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt, the footer
+assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt (JOIN, on both
+                                 homes), the footer
 assets/src/Ui/Scrub.elm          one row of plates (arrows outside, buttons between) under
                                  the table's board and the replay's, the same on both
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
@@ -722,6 +736,8 @@ assets/src/Ui/SignIn.elm         signing in, the one component every entry embed
                                  email -> "Check your email" + six digits -> the win
 assets/src/Api/Auth.elm          /papi/auth/* and /papi/me for the client
 playwright/test-accounts/test.js the whole sign-in flow in three browsers
+playwright/test-home/test.js     the signed-in home end to end (setup.exs makes the
+                                 account and its graded games)
 ```
 
 ## Platform decisions live in Gleam (`src/oskol/`)
@@ -764,7 +780,13 @@ All three are Elm routes, and all three are server routes: a visitor may
 arrive at any of them cold, and moving between them afterwards is a
 `pushUrl`, not a page load.
 
-- `/` the home page (the library, listing backgammon)
+- `/` the home page, which is two pages: a guest gets the board and its
+  four buttons (`Page.GameLanding`), an account gets its own home --
+  live games, form, practice, recent games (`Page.Home`, from
+  `GET /papi/me/home`). `Main` picks by the session and picks again when
+  `/papi/me` lands, so a browser that turns out to be signed in ends up on
+  its own home with no reload, and one that logs out is handed the board
+  back. The server serves the same shell either way.
 - `/papi/library`, `/papi/games/:slug` (GET and POST) the landing pages as
   JSON for the Elm client. Public like the pages, session-based guest
   identity, CSRF token in `x-csrf-token`. Envelope: `{"ok": true, ...}` or
@@ -1677,6 +1699,12 @@ node playwright/test-accounts/test.js           # signing in: the code from LIVE
                                                # link (asks first), an owned seat nobody
                                                # can claim, log out; mail read from
                                                # /dev/last-login; phone screenshots
+node playwright/test-home/test.js               # the signed-in home: the bar, live games,
+                                               # the form's numbers and line, the practice
+                                               # line, ten recent games then MORE, a tap
+                                               # into a replay (it arranges its account)
+node playwright/review-home/test.js             # screenshots of the signed-in home: full,
+                                               # empty, CREATE GAME, the boards (4 sizes)
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
@@ -1817,10 +1845,15 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
 - `RouteTest`, `SessionTest`, `CatalogTest`: the client's routes round-trip,
   the boot flags, and the `/papi` envelope and decoders (which are lax about
   keys they do not need and strict about the ones they do).
-- `GameLandingTest`: the home page on decoded responses — the board and its
-  four menu entries, CREATE GAME's dialog (the mode and clock dropdowns,
-  their defaults, the summary, inline validation), the theme picker, and
-  the invite's three answers.
+- `GameLandingTest`: the guest home on decoded responses — the board and
+  its four menu entries, CREATE GAME's dialog (the mode and clock
+  dropdowns, their defaults, the summary, inline validation), the theme
+  picker, and the invite's three answers.
+- `HomeTest`: the signed-in home on `/papi/me/home` as the handler writes
+  it — each section, each empty state, the form printing no numbers under
+  three graded games, MORE appending the next page and then going, the
+  grade band a rating is coloured by, and a guest's answer handing the
+  shell `SignedOut` rather than drawing an empty home.
 - `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
   (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
   node is fetched and merged, PLAY posts exactly the path with the key (and

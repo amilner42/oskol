@@ -1,4 +1,4 @@
-module Ui.Shell exposing (Config, bare, bird, mark, joinButton, joinCodeInputId, view)
+module Ui.Shell exposing (Config, bare, bird, mark, joinButton, joinCodeInputId, quietJoinButton, view)
 
 {-| The chrome every landing page sits in: the OSKOL wordmark, the JOIN GAME
 prompt behind it, and the footer.
@@ -80,6 +80,22 @@ joinButton config =
         , onClick config.onOpenJoin
         ]
         [ Html.text "JOIN GAME" ]
+
+
+{-| The same control in the quiet notebook, for the signed-in home's bar
+(`Page.Home`), which is paper rather than board. The prompt behind it is
+the one prompt: the code, what is typed into it and what is done with it
+all stay here and in `Main`.
+-}
+quietJoinButton : Config msg -> Html msg
+quietJoinButton config =
+    Html.button
+        [ type_ "button"
+        , id "home-join"
+        , onClick config.onOpenJoin
+        , class "q-btn plain w-full sm:w-auto rounded-lg px-3 sm:px-7 py-2.5 text-[13px] sm:text-sm whitespace-nowrap"
+        ]
+        [ Html.text "JOIN" ]
 
 
 topbar : Config msg -> Html msg

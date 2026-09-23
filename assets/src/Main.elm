@@ -43,6 +43,7 @@ import Html.Attributes
 import Json.Decode as D
 import Games.Backgammon.Puzzle exposing (Verdict(..))
 import Page.GameLanding
+import Page.Home
 import Page.Login
 import Page.Play
 import Page.Puzzle
@@ -96,6 +97,7 @@ type Page
     = NotFound
     | Login Page.Login.Model
     | GameLanding Page.GameLanding.Model
+    | Home Page.Home.Model
     | Play Page.Play.Model
     | Replay Page.Replay.Model
     | Puzzle Page.Puzzle.Model
@@ -114,6 +116,7 @@ type Msg
     = LinkClicked Browser.UrlRequest
     | UrlChanged Url
     | GameLandingMsg Page.GameLanding.Msg
+    | HomeMsg Page.Home.Msg
     | LoginMsg Page.Login.Msg
     | PlayMsg Page.Play.Msg
     | ReplayMsg Page.Replay.Msg
@@ -171,6 +174,9 @@ withSession session model =
                 GameLanding pageModel ->
                     GameLanding (Page.GameLanding.withSession session pageModel)
 
+                Home pageModel ->
+                    Home (Page.Home.withSession session pageModel)
+
                 Play pageModel ->
                     Play (Page.Play.withSession session pageModel)
 
@@ -199,8 +205,55 @@ signedIn user model =
     let
         session =
             Session.withUser user model.session
+
+        ( settled, cmd ) =
+            settle (withSession session model)
     in
-    ( withSession session model, Auth.fetchMe session GotMe )
+    ( settled, Cmd.batch [ cmd, Auth.fetchMe session GotMe ] )
+
+
+{-| `/` is two pages -- the guest's board and the account's home -- and
+which one it is is known only once `/papi/me` has answered, which is after
+the first paint. So whenever the session moves (the answer lands, a
+sign-in goes through, a log-out), the page at `/` is checked against it
+and opened afresh if it is the wrong one of the two. A browser that is
+really signed in therefore ends up on its own home with no reload, and one
+that logs out is handed the guest home back.
+
+Every other route draws the same page either way, so this touches only `/`.
+
+-}
+settle : Model -> ( Model, Cmd Msg )
+settle model =
+    case ( model.route, model.page, model.session.user ) of
+        ( Just Route.Library, GameLanding pageModel, Just _ ) ->
+            -- Not out from under an open sign-in: the win it ends on is
+            -- the answer to what was just done, and CONTINUE from it is
+            -- what clears the way here.
+            if Page.GameLanding.signingIn pageModel then
+                ( model, Cmd.none )
+
+            else
+                openHome model
+
+        ( Just Route.Library, Home _, Nothing ) ->
+            openHome model
+
+        _ ->
+            ( model, Cmd.none )
+
+
+{-| `/`, as this session should see it.
+-}
+openHome : Model -> ( Model, Cmd Msg )
+openHome model =
+    case model.session.user of
+        Just _ ->
+            Page.Home.init model.session |> wrap model Home HomeMsg
+
+        Nothing ->
+            Page.GameLanding.init model.session "backgammon" Nothing
+                |> landing model
 
 
 {-| Scheme, host and port of the page we were served from: what an invite
@@ -242,9 +295,10 @@ routeTo url oldModel =
             ( { model | page = NotFound }, Cmd.none )
 
         -- The home page is the backgammon page: Oskol is a backgammon site.
+        -- A player with an account gets their own home there instead --
+        -- their games, their form, their practice (`Page.Home`).
         Just Route.Library ->
-            Page.GameLanding.init model.session "backgammon" Nothing
-                |> landing model
+            openHome model
 
         Just (Route.Login token) ->
             Page.Login.init model.session { token = token, flags = model.loginFlags }
@@ -307,6 +361,15 @@ routeTo url oldModel =
                     Page.Replay.init model.session
                         { slug = slug, gameId = gameId, game = game, step = step }
                         |> wrap model Replay ReplayMsg
+
+
+{-| Whatever that step did, `/` is then the page this session should be
+looking at: a guest home whose sign-in has just finished becomes the
+account's home here, with no reload and no second round trip.
+-}
+andSettle : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+andSettle ( model, cmd ) =
+    settle model |> Tuple.mapSecond (\more -> Cmd.batch [ cmd, more ])
 
 
 wrap : Model -> (pageModel -> Page) -> (pageMsg -> Msg) -> ( pageModel, Cmd pageMsg ) -> ( Model, Cmd Msg )
@@ -436,6 +499,43 @@ update msg model =
         ( GameLandingMsg pageMsg, GameLanding pageModel ) ->
             Page.GameLanding.update pageMsg pageModel
                 |> landing model
+                |> andSettle
+
+        ( HomeMsg pageMsg, Home pageModel ) ->
+            let
+                ( newPageModel, cmd, out ) =
+                    Page.Home.update pageMsg pageModel
+
+                withPage =
+                    { model | page = Home newPageModel }
+
+                more extra =
+                    Cmd.batch [ Cmd.map HomeMsg cmd, extra ]
+            in
+            case out of
+                Page.Home.NoOut ->
+                    ( withPage, Cmd.map HomeMsg cmd )
+
+                Page.Home.Go path ->
+                    ( withPage, more (Nav.pushUrl model.key path) )
+
+                Page.Home.TookSeat seat ->
+                    ( { withPage | session = Session.withGuestName seat.name model.session }
+                    , more (Nav.pushUrl model.key seat.path)
+                    )
+
+                Page.Home.ChoseTheme name ->
+                    ( { withPage | session = Session.withPref "backgammon_theme" name model.session }
+                    , more (Page.Play.storePref { key = "backgammon_theme", value = name })
+                    )
+
+                Page.Home.StartRun ids ->
+                    startRun (Route.href Route.library) ids withPage |> Tuple.mapSecond more
+
+                -- This browser turns out to have no account (logged out
+                -- here or in another tab): the guest home is what `/` is.
+                Page.Home.SignedOut ->
+                    signedIn Nothing withPage |> Tuple.mapSecond more
 
         ( LoginMsg pageMsg, Login pageModel ) ->
             let
@@ -454,7 +554,7 @@ update msg model =
                     ( withPage, Cmd.map LoginMsg cmd )
 
         ( GotMe (Ok me), _ ) ->
-            ( withSession (Session.withMe me model.session) model, Cmd.none )
+            settle (withSession (Session.withMe me model.session) model)
 
         -- Nothing known beyond the cookie: a guest, signing in off.
         ( GotMe (Err _), _ ) ->
@@ -683,6 +783,9 @@ subscriptions model =
             GameLanding pageModel ->
                 Sub.map GameLandingMsg (Page.GameLanding.subscriptions pageModel)
 
+            Home pageModel ->
+                Sub.map HomeMsg (Page.Home.subscriptions pageModel)
+
             _ ->
                 Sub.none
         , if model.joinOpen then
@@ -733,6 +836,16 @@ view model =
 
             Login pageModel ->
                 framed model [ Html.map LoginMsg (Page.Login.view pageModel) ]
+
+            Home pageModel ->
+                -- Its own chrome, like the board home: the page draws its
+                -- own bar, and the shell brings the paper and the code
+                -- prompt behind JOIN.
+                Shell.bare (shellConfig model)
+                    (Page.Home.view
+                        { join = Shell.quietJoinButton (shellConfig model), toMsg = HomeMsg }
+                        pageModel
+                    )
 
             GameLanding pageModel ->
                 if Page.GameLanding.isHome pageModel then
@@ -802,6 +915,9 @@ title model =
 
         Puzzles pageModel ->
             Page.Puzzles.title pageModel
+
+        Home pageModel ->
+            Page.Home.title pageModel
 
         Login pageModel ->
             Page.Login.title pageModel

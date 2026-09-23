@@ -133,6 +133,8 @@ async function run(browser, errors) {
     await shots(a.page, '03-win');
     await a.page.click('#signin-continue');
     await a.page.waitForSelector('#signin-win', { state: 'detached' });
+    // CONTINUE from the win lands on the account's own home.
+    await a.page.waitForSelector('#home-bar');
     if ((await a.page.$('#guest-note')) !== null) throw new Error('signed in, LIVE GAMES has no pitch');
     const bar = (await a.page.textContent('#account-button')).trim();
     if (!bar.includes(username)) throw new Error(`the bar should show the username: "${bar}"`);
@@ -205,12 +207,10 @@ async function run(browser, errors) {
     const a2 = await a.context.newPage();
     a2.on('pageerror', (e) => errors.push(`A2 pageerror: ${e.message}`));
     await a2.goto(`${BASE}/`);
-    await a2.waitForSelector('#account-button');
-    // The account's games open LIVE GAMES over the board once the list
-    // arrives; close it first.
-    await a2.waitForSelector('#resume-modal', { timeout: 10000 });
-    await a2.click('#close-resume');
-    await a2.waitForSelector('#resume-modal', { state: 'detached' });
+    // Signed in, `/` is the account's own home: its games are a section of
+    // the page rather than a dialog over the board.
+    await a2.waitForSelector('#home-bar #account-button');
+    await a2.waitForSelector(`#home-live-list #resume-${game.gameId}`);
     await a2.click('#account-button');
     await a2.click('#logout');
     // The bar is the guest's again: the guest mark, and SIGN IN behind the caret.

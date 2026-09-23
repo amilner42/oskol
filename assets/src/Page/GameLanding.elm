@@ -3,10 +3,14 @@ module Page.GameLanding exposing
     , Msg(..)
     , Out(..)
     , cleanName
+    , createModal
+    , createOnly
     , home
     , init
     , isHome
+    , signingIn
     , subscriptions
+    , themePicker
     , title
     , update
     , view
@@ -50,6 +54,7 @@ import Page.HomeBoard
 import Route
 import Session exposing (Session)
 import Ui.Identity as Identity
+import Ui.LiveGames as LiveGames
 import Ui.Notebook as Notebook exposing (style)
 import Ui.SignIn as SignIn
 
@@ -197,6 +202,26 @@ init session slug gameId =
                 ]
             , NoOut
             )
+
+
+{-| CREATE GAME's dialog, and the board picker, on a page that is not this
+one: the signed-in home (`Page.Home`) draws its own sections but starts a
+game and picks a board through this page's model, `createModal` and
+`themePicker`, so there are not two of either to keep in step.
+
+It fetches the game's formats and clock presets and nothing else: the
+games this browser holds are the home's own answer (`/papi/me/home`), so
+asking `/papi/me/games` a second time here would cost a query for a list
+that is already on the page.
+
+-}
+createOnly : Session -> String -> ( Model, Cmd Msg )
+createOnly session slug =
+    let
+        ( model, _, _ ) =
+            init session slug Nothing
+    in
+    ( model, Catalog.fetchGame session slug GotGame )
 
 
 title : Model -> String
@@ -732,6 +757,16 @@ themePicker model =
         ]
 
 
+{-| A sign-in is open on this page: the email, the six digits, or the win
+they end on. The shell asks before it swaps this page for the signed-in
+home at `/`, because the win is the answer to what was just done and
+CONTINUE from it is what opens that home.
+-}
+signingIn : Model -> Bool
+signingIn model =
+    model.signIn /= Nothing
+
+
 {-| The home page shows the board, not the form: the backgammon page before
 anything is chosen, once its data has come.
 -}
@@ -1035,70 +1070,13 @@ resumeModal : Model -> Html Msg
 resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
         dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
-            [ Html.ul [ id "resume-list", class "space-y-2" ] (List.map (resumeRow model) model.myGames)
+            [ Html.ul [ id "resume-list", class "space-y-2" ]
+                (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now }) model.myGames)
             , guestNote model
             ]
 
     else
         Html.text ""
-
-
-{-| One game: who it is against (their initial on a disc), what and how
-long ago underneath, and on the right whose move it is with the clocks
-under that when there are any. The whole row is the link.
--}
-resumeRow : Model -> MyGame -> Html Msg
-resumeRow model game =
-    let
-        opponent =
-            case ( game.status, game.opponent ) of
-                ( "waiting", _ ) ->
-                    Nothing
-
-                ( _, name ) ->
-                    name
-
-        ( against, initial ) =
-            case opponent of
-                Just name ->
-                    ( "vs " ++ name, String.left 1 (String.toUpper name) )
-
-                Nothing ->
-                    ( "Waiting for a player", "·" )
-
-        ( status, tone ) =
-            case opponent of
-                Nothing ->
-                    ( "Lobby", "lobby" )
-
-                Just _ ->
-                    if game.yourMove then
-                        ( "Your move", "yours" )
-
-                    else
-                        ( "Their move", "theirs" )
-
-        detail =
-            game.format ++ " · " ++ ago game.idleS
-    in
-    Html.li []
-        [ Html.a
-            [ href game.path
-            , id ("resume-" ++ game.id)
-            , class ("resume-row flex items-center gap-3 px-3.5 py-3 " ++ tone)
-            ]
-            [ Html.span [ class "resume-avatar shrink-0 w-10 h-10 rounded-full inline-flex items-center justify-center text-[15px] font-semibold" ] [ Html.text initial ]
-            , Html.span [ class "min-w-0 flex-1" ]
-                [ Html.span [ class "block font-semibold text-[15px] leading-tight truncate", style "color: var(--ink)" ] [ Html.text against ]
-                , Html.span [ class "block q-note text-[12px] leading-tight truncate mt-1" ] [ Html.text detail ]
-                ]
-            , Html.span [ class "shrink-0 flex flex-col items-end gap-1" ]
-                (Html.span [ class ("resume-pill text-[11px] font-semibold leading-none px-2 py-1 rounded-full " ++ tone) ] [ Html.text status ]
-                    :: (clockLine model game |> Maybe.map List.singleton |> Maybe.withDefault [])
-                )
-            , Html.span [ class "resume-chevron shrink-0 text-lg leading-none", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text "›" ]
-            ]
-        ]
 
 
 {-| Under the list, its own panel: one line on what holds these games,
@@ -1174,84 +1152,6 @@ icon : String -> String -> Html Msg
 icon name size =
     Html.span [ class (name ++ " " ++ size ++ " shrink-0"), Html.Attributes.attribute "aria-hidden" "true" ] []
 
-
-
-{-| The two clocks, the running one counting down: mine then theirs. The
-row holds the times as the room last read them and how long ago that was;
-the running side is charged for that plus the seconds since the list
-came, less the free time that was still on the move, so what shows is
-what the table would. When the running one is mine it breathes, to say
-so. Under no clock, nothing.
--}
-clockLine : Model -> MyGame -> Maybe (Html Msg)
-clockLine model game =
-    case game.time of
-        Nothing ->
-            Nothing
-
-        Just time ->
-            let
-                elapsed =
-                    time.ageS * 1000 + max 0 (model.now - model.fetchedAt)
-
-                charged =
-                    max 0 (elapsed - time.freeMs)
-
-                left ms running =
-                    if running then
-                        max 0 (ms - charged)
-
-                    else
-                        ms
-
-                mine =
-                    mmss (left time.mineMs (time.running == Catalog.Mine))
-
-                theirs =
-                    mmss (left time.theirsMs (time.running == Catalog.Theirs))
-            in
-            Just
-                (Html.span [ class "resume-clock text-[12px] leading-none tabular-nums whitespace-nowrap" ]
-                    [ Html.span
-                        [ class
-                            (if time.running == Catalog.Mine then
-                                "clock-live"
-
-                             else
-                                "clock-mine"
-                            )
-                        ]
-                        [ Html.text mine ]
-                    , Html.span [ class "clock-sep" ] [ Html.text " / " ]
-                    , Html.span [ class "clock-theirs" ] [ Html.text theirs ]
-                    ]
-                )
-
-
-mmss : Int -> String
-mmss ms =
-    let
-        total =
-            (ms + 999) // 1000
-    in
-    String.fromInt (total // 60) ++ ":" ++ String.padLeft 2 '0' (String.fromInt (modBy 60 total))
-
-
-{-| How long ago, in the coarsest unit that is still honest.
--}
-ago : Int -> String
-ago seconds =
-    if seconds < 60 then
-        "just now"
-
-    else if seconds < 3600 then
-        String.fromInt (seconds // 60) ++ " min ago"
-
-    else if seconds < 86400 then
-        String.fromInt (seconds // 3600) ++ " h ago"
-
-    else
-        String.fromInt (seconds // 86400) ++ " d ago"
 
 
 {-| A clock as the dropdown lists it: its name and, when it has one, what
