@@ -25,7 +25,7 @@ module Page.Puzzle exposing
 {-| `/puzzles/:id` — one position and its question. The board, the dice,
 the score and cube, and "White to play 6-4. What's your play?"; the
 player plays the roll on the board as at the table and presses PLAY (or,
-on a cube question, picks one of five answers), and only then the reveal:
+on a cube question, answers double or not, take or pass), and only then the reveal:
 the verdict, their move against the best in the replay's own words, the
 candidate table, and for a cube the engine's band on the same scale.
 
@@ -1050,10 +1050,10 @@ viewPuzzle model puzzle =
                                         "Play the roll on the board, then press PLAY."
 
                                     "take" ->
-                                        "White has been doubled. Pick one of the five answers."
+                                        "White has been doubled. Take, or pass?"
 
                                     _ ->
-                                        "Would you turn the cube? Pick one of the five answers."
+                                        "Would you turn the cube? Double, or not?"
                                 )
                             ]
                         ]
@@ -1171,7 +1171,7 @@ scoreLine puzzle =
     score ++ " · " ++ cube
 
 
-{-| Under the board: on a cube question, the five answers; after the
+{-| Under the board: on a cube question, the two answers; after the
 reveal, SHARE and NEXT. A checker play's UNDO and PLAY are the board's
 own, in its centre band, exactly as at the table.
 -}
