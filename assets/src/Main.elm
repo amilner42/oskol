@@ -17,11 +17,13 @@ A practice run -- the puzzles a session works through, one NEXT at a
 time -- is kept here (`run`) and not in the puzzle page, because it has to
 outlive the page: every `pushUrl` to the next puzzle builds that page
 afresh. The pages that start a run (the practice home, a finished game's
-card) hand the shell the list (`StartRun ids`, which opens the first);
-the puzzle page reports each verdict (`Answered`), which the run keeps as
-its score, and says when it wants the next (`WantsNext`): the shell
-opens it, or, at the last, hands the page the score (`Page.Puzzle.endRun`)
-and the page ends the run on its own screen.
+result card at the table, the replay) hand the shell the list (`StartRun
+ids`, which opens the first) and the shell notes where it was started
+from (`next`); the puzzle page reports each verdict (`Answered`), which
+the run keeps as its score, and says when it wants the next
+(`WantsNext`): the shell opens it, or, at the last, hands the page the
+score and the way back (`Page.Puzzle.endRun`) and the page ends the run
+on its own screen.
 
 The JOIN GAME prompt lives here rather than in a page because it is chrome:
 six characters in, and out comes that room's ordinary invite link, which is
@@ -80,9 +82,9 @@ type alias Model =
     , tz : String
 
     -- The practice run in progress, if any: the puzzle ids in order, which
-    -- one is open, and the verdict on each answered so far. The practice
-    -- home starts one (and the cards will); a puzzle opened from a link
-    -- has no next.
+    -- one is open, the verdict on each answered so far, and where it was
+    -- started from. The practice home, a result card and the replay start
+    -- one; a puzzle opened from a link has no next.
     , run : Maybe Run
     , joinOpen : Bool
     , joinCode : String
@@ -104,6 +106,7 @@ type alias Run =
     { ids : List String
     , at : Int
     , verdicts : List ( String, Verdict ) -- by puzzle id; an answer given again replaces the first
+    , next : String -- the page the run was started from: where a guest who signs in at its end goes on to
     }
 
 
@@ -323,16 +326,17 @@ nextInRun run =
     run |> Maybe.andThen (\r -> r.ids |> List.drop (r.at + 1) |> List.head)
 
 
-{-| A run of these puzzles, from the first. An empty list starts nothing.
+{-| A run of these puzzles, from the first, started from the page at
+`next`. An empty list starts nothing.
 -}
-startRun : List String -> Model -> ( Model, Cmd Msg )
-startRun ids model =
+startRun : String -> List String -> Model -> ( Model, Cmd Msg )
+startRun next ids model =
     case ids of
         [] ->
             ( model, Cmd.none )
 
         first :: _ ->
-            ( { model | run = Just { ids = ids, at = 0, verdicts = [] } }
+            ( { model | run = Just { ids = ids, at = 0, verdicts = [], next = next } }
             , Nav.pushUrl model.key (Route.href (Route.puzzle first))
             )
 
@@ -462,6 +466,12 @@ update msg model =
                     signedIn user { model | page = Play newPageModel }
                         |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map PlayMsg cmd, more ])
 
+                -- PRACTICE THIS GAME'S N MISTAKES: the run ends back at
+                -- this table.
+                Page.Play.StartRun ids ->
+                    startRun (Route.href (Route.play newPageModel.gameSlug newPageModel.gameId)) ids { model | page = Play newPageModel }
+                        |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map PlayMsg cmd, more ])
+
                 _ ->
                     ( { model
                         | page = Play newPageModel
@@ -486,7 +496,7 @@ update msg model =
 
         ( ReplayMsg pageMsg, Replay pageModel ) ->
             let
-                ( newPageModel, cmd ) =
+                ( newPageModel, cmd, out ) =
                     Page.Replay.update pageMsg pageModel
 
                 -- The address bar follows the game and the line on the
@@ -500,7 +510,15 @@ update msg model =
                     else
                         Cmd.none
             in
-            ( { model | page = Replay newPageModel }, Cmd.batch [ Cmd.map ReplayMsg cmd, address ] )
+            case out of
+                -- PRACTICE THIS GAME'S N MISTAKES: the run ends back on
+                -- this replay, at this game.
+                Page.Replay.StartRun ids ->
+                    startRun (Page.Replay.url newPageModel) ids { model | page = Replay newPageModel }
+                        |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map ReplayMsg cmd, more ])
+
+                Page.Replay.NoOut ->
+                    ( { model | page = Replay newPageModel }, Cmd.batch [ Cmd.map ReplayMsg cmd, address ] )
 
         ( PuzzleMsg pageMsg, Puzzle pageModel ) ->
             let
@@ -527,7 +545,7 @@ update msg model =
 
                         -- The last of the run: the page ends it, with the score.
                         ( Nothing, Just run ) ->
-                            Page.Puzzle.endRun (score run) newPageModel
+                            Page.Puzzle.endRun (score run) run.next newPageModel
                                 |> wrap model Puzzle PuzzleMsg
                                 |> Tuple.mapSecond more
 
@@ -535,7 +553,7 @@ update msg model =
                             ( withPage, Cmd.map PuzzleMsg cmd )
 
                 Page.Puzzle.StartRun ids ->
-                    startRun ids withPage |> Tuple.mapSecond more
+                    startRun (Route.href Route.puzzles) ids withPage |> Tuple.mapSecond more
 
                 Page.Puzzle.SignedIn user ->
                     signedIn user withPage |> Tuple.mapSecond more
@@ -559,7 +577,7 @@ update msg model =
                     ( withPage, Cmd.map PuzzlesMsg cmd )
 
                 Page.Puzzles.StartRun ids ->
-                    startRun ids withPage |> Tuple.mapSecond more
+                    startRun (Route.href Route.puzzles) ids withPage |> Tuple.mapSecond more
 
                 Page.Puzzles.Go path ->
                     ( withPage, more (Nav.pushUrl model.key path) )

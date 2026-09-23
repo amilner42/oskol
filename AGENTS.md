@@ -634,13 +634,18 @@ assets/src/Page/GameLanding.elm  "/" the home page (CREATE GAME's dialog, the th
                                  picker) and "/:slug?game=" what an invite offers
 assets/src/Page/HomeBoard.elm    the home page's board: the table edge to edge, the
                                  2x2 menu in its right band
-assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
+assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it;
+                                 asks /puzzles?game=n for each game /ratings reports
+                                 graded (a seat only) and feeds both result cards'
+                                 PRACTICE THIS GAME'S N MISTAKES and save offer
 assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again, with the
                                  engine's analysis (polls /reviews while any is pending):
                                  the mistakes list jumps to a step, the band offers the
                                  best move, the dice take the move back; a turn's note has
                                  MOVE and CUBE tabs, each a sentence in words (built from
-                                 the chances) over the numbers in columns
+                                 the chances) over the numbers in columns; a seated
+                                 reader's ANALYSIS tab offers PRACTICE THIS GAME'S N
+                                 MISTAKES per game (`Out = StartRun`)
 assets/src/Page/Puzzles.elm      "/puzzles" the practice home: an account's counts and
                                  PRACTICE (or "Done for today" and KEEP GOING), a guest's
                                  "23 mistakes from your 4 games", a stranger's TRY ONE
@@ -868,6 +873,10 @@ GET  /papi/puzzles/:id/mine            (a seat in the source game, either side)
                                          row's), never the day the source was written
 GET  /papi/games/:slug/rooms/:id/puzzles?game=n  (a seat) {ok, puzzles: [{id, kind,
                                          prompt, due}], cursor, counts, game}
+                                         -- 404 without a seat; 409 `puzzles_pending`
+                                         while the game's review is done but its
+                                         puzzles are not yet written (the page
+                                         asks again in a moment)
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no
@@ -1237,6 +1246,21 @@ path builds one and nothing re-asks the engine to recover one.
   responder's is `DP - DT` (positive means take, because the responder picks
   whatever pays the doubler less), bands at 0.08 and 0.02 either side of
   zero, and the grade is the distance in bands (0 passes, 1 holds, 2+ misses).
+- **Every finished game is the moment.** Both result cards at the table --
+  the game-over card and the between-games card of a match or of
+  unlimited play -- and the replay's ANALYSIS tab offer PRACTICE THIS
+  GAME'S N MISTAKES (`practice-game`; "1 MISTAKE"; on the cards a quiet
+  "No mistakes in this game" for none) once the game's review is done:
+  `Page/Play.elm` asks `/puzzles?game=n` for each game `/ratings` lists
+  as graded, for a seat only (a spectator would be told 404), and the
+  replay asks for the game being read as it switches; both keep the ids
+  and hand them to Main as `StartRun`. The puzzles are written a moment
+  after the grade, so the endpoint answers 409 `puzzles_pending` until
+  they are, and the page asks again (3 s apart, twenty times at most).
+  The run ends on the puzzle page's own screen, a guest's sign-in going
+  back to the table (or the replay) it was pressed at. The between-games
+  card also makes the save offer, so unlimited play -- most games here --
+  asks a guest to sign in after every game, not only at a match's end.
 - **One scheduled answer per opportunity.** A signed-in caller whose deck
   holds the puzzle writes a `puzzle_attempts` row first, keyed by the id the
   client minted; the ladder moves only when that row is new *and* the card is
@@ -1405,8 +1429,10 @@ the page POSTs the browser's zone
 `/papi/practice/tz` once per visit, and never for a guest.
 
 A page that starts a run answers `Out = StartRun (List String)`: Main
-sets `run = {ids, at = 0, verdicts = []}` and pushes the first id (the
-game-over card and the replay will use the same `Out`). The puzzle page
+sets `run = {ids, at = 0, verdicts = [], next}` and pushes the first id.
+`next` is the page the run was started from (the practice home, the
+table, the replay), and is where a guest who signs in at the run's end
+goes on to. The puzzle page
 reports every reveal (`Out = Answered Verdict`); Main keeps it on the run
 by puzzle id (an answer given again replaces, never counts twice). At the
 last id `WantsNext` is answered with the score (`Page.Puzzle.endRun
@@ -1772,8 +1798,11 @@ from the invite link, like anyone else's.
 
 **Signing in is the win after the value, never a gate.** It is offered
 where a player already has something to keep — under LIVE GAMES on the
-home board ("Save these 3 games"), on the table's game-over card ("Save
-this game and your PR"), under an invite whose seat belongs to an account
+home board ("Save these 3 games"), on the table's result cards, the
+game-over card and the between-games card of a match or of unlimited play
+alike ("Save this game and your PR"; between games the open sign-in is a
+sheet over the board, so READY stays in the band), at the end of a
+practice run, under an invite whose seat belongs to an account
 — always the one component, `Ui.SignIn`, in the same words, and never
 more than a line until pressed; a guest who ignores it loses nothing and
 plays exactly as before. Signed in, the home bar shows the account with

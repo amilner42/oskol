@@ -543,7 +543,77 @@ suite =
                         Nothing ->
                             Expect.fail "no backgammon fixture"
              in
-             [ test "the band shows the result, the score and READY" <|
+             [ test "the card offers the game's mistakes to practice once they are counted, worded by the count" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            let
+                                with count =
+                                    View.view
+                                        (let
+                                            c =
+                                                ctx "p1" (between [] { u | legal = [ ready ] }) View.init
+                                         in
+                                         { c | mistakes = \_ -> count }
+                                        )
+                                        |> Query.fromHtml
+                            in
+                            Expect.all
+                                [ \_ -> with (Just 6) |> Query.find [ id "practice-game" ] |> Query.has [ text "PRACTICE THIS GAME'S 6 MISTAKES" ]
+                                , \_ -> with (Just 1) |> Query.find [ id "practice-game" ] |> Query.has [ text "PRACTICE THIS GAME'S 1 MISTAKE" ]
+
+                                -- pressed, the page starts a run of that game's
+                                , \_ -> with (Just 6) |> Query.find [ id "practice-game" ] |> Event.simulate Event.click |> Event.expect (PracticeGame 1)
+
+                                -- none: said quietly, no button
+                                , \_ -> with (Just 0) |> Query.hasNot [ id "practice-game" ]
+                                , \_ -> with (Just 0) |> Query.find [ id "practice-none" ] |> Query.has [ text "No mistakes in this game" ]
+
+                                -- not counted yet (the analysis pending), or a spectator: nothing at all
+                                , \_ -> with Nothing |> Query.hasNot [ id "practice-game" ]
+                                , \_ -> with Nothing |> Query.hasNot [ id "practice-none" ]
+
+                                -- and READY is still where it was, whatever the card offers
+                                , \_ -> with (Just 6) |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "READY" ]
+                                ]
+                                ()
+                        )
+             , test "the card makes the save offer between games too, in the same three states, without covering READY" <|
+                \_ ->
+                    withFixture
+                        (\u ->
+                            let
+                                with save =
+                                    View.view
+                                        (let
+                                            c =
+                                                ctx "p1" (between [] { u | legal = [ ready ] }) View.init
+                                         in
+                                         { c | save = save }
+                                        )
+                                        |> Query.fromHtml
+
+                                saving =
+                                    View.Saving (Tuple.first (Ui.SignIn.init { next = "/backgammon/123456", email = "" }))
+                            in
+                            Expect.all
+                                -- no offer unless the page makes one (signed in, or a spectator)
+                                [ \_ -> with View.NoSave |> Query.hasNot [ id "save-offer" ]
+                                , \_ -> with View.NoSave |> Query.hasNot [ id "bg-save-sheet" ]
+
+                                -- a guest's offer names what they have, and opens the sign-in
+                                , \_ -> with View.SaveOffered |> Query.find [ id "bg-game-result" ] |> Query.find [ id "save-offer" ] |> Query.has [ text "Save this game and your PR" ]
+                                , \_ -> with View.SaveOffered |> Query.find [ id "save-offer" ] |> Event.simulate Event.click |> Event.expect OpenedSave
+
+                                -- open, the sign-in is a sheet of its own, with the card and READY still in the band
+                                , \_ -> with saving |> Query.find [ id "bg-save-sheet" ] |> Query.has [ id "signin-email" ]
+                                , \_ -> with saving |> Query.find [ id "bg-game-result" ] |> Query.hasNot [ id "signin-email" ]
+                                , \_ -> with saving |> Query.find [ id "bg-action-ready" ] |> Query.has [ text "READY" ]
+                                , \_ -> with saving |> Query.find [ id "save-close" ] |> Event.simulate Event.click |> Event.expect ClosedSave
+                                ]
+                                ()
+                        )
+             , test "the band shows the result, the score and READY" <|
                 \_ ->
                     withFixture
                         (\u ->
@@ -1891,6 +1961,48 @@ suite =
                                 -- no offer to save anything unless the page makes one
                                 , \_ -> card |> Query.hasNot [ id "save-offer" ]
 
+                                -- the game's mistakes to practice, once counted; worded by the count
+                                , \_ -> card |> Query.hasNot [ id "practice-game" ]
+                                , \_ -> card |> Query.hasNot [ id "practice-none" ]
+                                , \_ ->
+                                    View.view
+                                        (let
+                                            c =
+                                                ctx "p1" over View.init
+                                         in
+                                         { c | mistakes = \_ -> Just 6 }
+                                        )
+                                        |> Query.fromHtml
+                                        |> Query.find [ id "practice-game" ]
+                                        |> Expect.all
+                                            [ Query.has [ text "PRACTICE THIS GAME'S 6 MISTAKES" ]
+                                            , Event.simulate Event.click >> Event.expect (PracticeGame 1)
+                                            ]
+                                , \_ ->
+                                    View.view
+                                        (let
+                                            c =
+                                                ctx "p1" over View.init
+                                         in
+                                         { c | mistakes = \_ -> Just 1 }
+                                        )
+                                        |> Query.fromHtml
+                                        |> Query.find [ id "practice-game" ]
+                                        |> Query.has [ text "PRACTICE THIS GAME'S 1 MISTAKE" ]
+                                , \_ ->
+                                    View.view
+                                        (let
+                                            c =
+                                                ctx "p1" over View.init
+                                         in
+                                         { c | mistakes = \_ -> Just 0 }
+                                        )
+                                        |> Query.fromHtml
+                                        |> Expect.all
+                                            [ Query.hasNot [ id "practice-game" ]
+                                            , Query.find [ id "practice-none" ] >> Query.has [ text "No mistakes in this game" ]
+                                            ]
+
                                 -- a guest's offer names what they have, and opens the sign-in
                                 , \_ ->
                                     View.view
@@ -2349,6 +2461,7 @@ ctx playerId update model =
     , gamePrs = \_ -> []
     , save = View.NoSave
     , accounts = Just [ "p1" ]
+    , mistakes = \_ -> Nothing
     , finished =
         case update.outcome of
             Protocol.Finished winners ->

@@ -1623,6 +1623,13 @@ a.bg-match-door:hover { background: var(--paper-2); }
   /* The band is short and its halves are fixed: what it says wraps inside
      itself rather than pushing the points around. */
   .bg-page .bg-band .pixel { line-height: 1.25; }
+  /* Between games the band holds the result card -- the result, REPLAY,
+     PRACTICE THIS GAME'S N MISTAKES and the save offer -- and the height
+     formula above gives it that room by taking it from the points. */
+  .bg-page.is-between { --bg-band-h: 7rem; }
+  .bg-page.is-between .bg-game-result { gap: 0; }
+  .bg-page.is-between .bg-game-result .btn-arcade { font-size: 6px; padding: 0.3rem 0.4rem; }
+  .bg-page.is-between .bg-game-result .bg-save-offer { font-size: 9px; }
   .bg-page #bg-no-moves { font-size: 7px; min-width: 0; }
   .bg-page .bg-band .btn-arcade { padding: 0.3rem 0.45rem; }
   /* four dice (doubles) and a message have to share one half-band */
@@ -1672,6 +1679,9 @@ a.bg-match-door:hover { background: var(--paper-2); }
     grid-template-rows: auto minmax(0, 1fr);
     justify-content: center;
   }
+  /* Between games the band holds the result card (see the landscape
+     layout); the height formula gives it the room. */
+  .bg-page.is-between { --bg-band-h: 6.5rem; }
   /* The slab alone, centred. */
   .bg-page .bg-main {
     width: 100%;

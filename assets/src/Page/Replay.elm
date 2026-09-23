@@ -2,6 +2,7 @@ module Page.Replay exposing
     ( Loadable(..)
     , Model
     , Msg(..)
+    , Out(..)
     , Showing(..)
     , Tab(..)
     , init
@@ -41,9 +42,16 @@ Stepping: the buttons under the board, the arrow keys (Home and End for
 the first and last line), a swipe across the board, or a tap on a line of
 the move list.
 
+A reader who holds a seat here is offered PRACTICE THIS GAME'S N MISTAKES
+on the analysis of each game whose review is done: the page asks
+`/puzzles?game=n` for that game's mistakes, the seat's own, as the game is
+switched to, and the shell runs them (`StartRun`) and brings the reader
+back to this page at the end.
+
 -}
 
 import Api
+import Api.Practice as Practice
 import Browser.Dom
 import Browser.Events
 import Dict
@@ -127,6 +135,8 @@ type alias Model =
     , themesOpen : Bool -- the board picker's list is showing
     , gamePrs : Dict.Dict Int (List ( String, Float )) -- each graded game's PRs by seat, from /ratings
     , matchPrs : Dict.Dict String Float -- each seat's PR over the match so far
+    , mistakes : Dict.Dict Int (List String) -- each graded game's mistakes for the reader's seat, by number: what PRACTICE runs
+    , mistakeAsks : Dict.Dict Int Int -- asks made for a game's mistakes still unanswered (they land a moment after the grade)
     }
 
 
@@ -192,6 +202,8 @@ init session config =
             , themesOpen = False
             , gamePrs = Dict.empty
             , matchPrs = Dict.empty
+            , mistakes = Dict.empty
+            , mistakeAsks = Dict.empty
             }
     in
     ( model
@@ -251,9 +263,51 @@ wantAnalysis ( model, cmd ) =
         ( { model | fetching = number :: model.fetching }
         , Cmd.batch [ cmd, fetchAnalysis model number ]
         )
+            |> wantMistakes
+
+    else
+        wantMistakes ( model, cmd )
+
+
+{-| Ask for the mistakes of the game being read, if its review is done, the
+reader holds a seat here (a stranger would be told 404) and they are not
+in hand or on their way. Written a moment after the grade, so an ask may
+be told to come back (`GotMistakes`).
+-}
+wantMistakes : ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+wantMistakes ( model, cmd ) =
+    let
+        number =
+            model.game
+
+        status =
+            model.index |> Maybe.andThen (Replay.indexEntry number) |> Maybe.map .status
+    in
+    if
+        (status == Just Done)
+            && seated model
+            && not (Dict.member number model.mistakes)
+            && not (Dict.member number model.mistakeAsks)
+    then
+        ( { model | mistakeAsks = Dict.insert number 1 model.mistakeAsks }
+        , Cmd.batch [ cmd, Practice.gameMistakes model.session model.slug model.gameId number (GotMistakes number) ]
+        )
 
     else
         ( model, cmd )
+
+
+{-| How long the page waits between asks for a game whose puzzles are still
+being written, and how many it makes before it stops: a minute in all.
+-}
+mistakesRetryMs : Float
+mistakesRetryMs =
+    3000
+
+
+maxMistakeAsks : Int
+maxMistakeAsks =
+    20
 
 
 title : Model -> String
@@ -293,12 +347,79 @@ type Msg
     | ToggleThemes -- open or close the board picker
     | PickTheme String -- this reader's board colours: display only
     | GotRatings (Result Api.Error Catalog.Ratings)
+    | AskMistakes Int
+    | GotMistakes Int (Result Api.Error Practice.Practice)
+    | PracticeGame Int -- PRACTICE THIS GAME'S N MISTAKES
     | NoOp
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+{-| What the shell does for the page: nothing, or run these puzzles and
+bring the reader back here at the end.
+-}
+type Out
+    = NoOut
+    | StartRun (List String)
+
+
+update : Msg -> Model -> ( Model, Cmd Msg, Out )
 update msg model =
     case msg of
+        PracticeGame number ->
+            case Dict.get number model.mistakes of
+                Just ids ->
+                    ( model, Cmd.none, StartRun ids )
+
+                Nothing ->
+                    ( model, Cmd.none, NoOut )
+
+        _ ->
+            let
+                ( next, cmd ) =
+                    advance msg model
+            in
+            ( next, cmd, NoOut )
+
+
+{-| Every message but the one the shell acts on.
+-}
+advance : Msg -> Model -> ( Model, Cmd Msg )
+advance msg model =
+    case msg of
+        PracticeGame _ ->
+            ( model, Cmd.none )
+
+        AskMistakes number ->
+            case Dict.get number model.mistakeAsks of
+                Just asks ->
+                    if asks < maxMistakeAsks then
+                        ( { model | mistakeAsks = Dict.insert number (asks + 1) model.mistakeAsks }
+                        , Practice.gameMistakes model.session model.slug model.gameId number (GotMistakes number)
+                        )
+
+                    else
+                        ( { model | mistakeAsks = Dict.remove number model.mistakeAsks }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        GotMistakes number (Ok practice) ->
+            ( { model
+                | mistakes = Dict.insert number (List.map .id practice.puzzles) model.mistakes
+                , mistakeAsks = Dict.remove number model.mistakeAsks
+              }
+            , Cmd.none
+            )
+
+        GotMistakes number (Err err) ->
+            if Practice.stillWriting err then
+                -- The grade is in and the puzzles are on their way: a
+                -- moment, then again (bounded by `maxMistakeAsks`).
+                ( model, Process.sleep mistakesRetryMs |> Task.perform (\_ -> AskMistakes number) )
+
+            else
+                -- No seat here after all, or a network slip: no button.
+                ( { model | mistakeAsks = Dict.remove number model.mistakeAsks }, Cmd.none )
+
         Flipped ->
             ( { model | flipped = not model.flipped }, Cmd.none )
 
@@ -2130,7 +2251,8 @@ viewSummary model record game =
     div [ class "rp-summary", id "rp-summary" ]
         (case analysis |> Maybe.andThen .review of
             Just review ->
-                (review.players
+                viewPractice model game
+                    :: (review.players
                     |> List.map
                         (\t ->
                             let
@@ -2169,12 +2291,49 @@ viewSummary model record game =
                                 , viewMistakes model review t
                                 ]
                         )
-                )
+                   )
 
             -- where the analysis stands is the note's to say, above the tabs
             Nothing ->
                 [ div [ class "rp-explain" ] [ text "Each player's PR, errors and luck appear here once the game is analysed." ] ]
         )
+
+
+{-| PRACTICE THIS GAME'S N MISTAKES, for a reader who holds a seat here,
+once this game's mistakes are counted (`wantMistakes`): the door to a run
+of them. Nothing for a stranger, nothing while they are on their way, and
+nothing for a game with none -- each player's list already says so.
+-}
+viewPractice : Model -> Game -> Html Msg
+viewPractice model game =
+    case Dict.get game.number model.mistakes of
+        Just [] ->
+            text ""
+
+        Just ids ->
+            div [ class "rp-practice" ]
+                [ button
+                    [ class "btn-arcade compact pixel text-[7px] px-3 py-2 yellow w-full"
+                    , id "practice-game"
+                    , attribute "data-game" (String.fromInt game.number)
+                    , attribute "data-count" (String.fromInt (List.length ids))
+                    , onClick (PracticeGame game.number)
+                    ]
+                    [ text
+                        ("PRACTICE THIS GAME'S "
+                            ++ String.fromInt (List.length ids)
+                            ++ (if List.length ids == 1 then
+                                    " MISTAKE"
+
+                                else
+                                    " MISTAKES"
+                               )
+                        )
+                    ]
+                ]
+
+        Nothing ->
+            text ""
 
 
 {-| What cost this player: every doubtful, bad and very bad move and every

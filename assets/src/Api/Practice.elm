@@ -5,11 +5,13 @@ module Api.Practice exposing
     , Practice
     , Random
     , fetch
+    , gameMistakes
     , more
     , practiceDecoder
     , random
     , randomDecoder
     , sendTimezone
+    , stillWriting
     )
 
 {-| A practice session, over `/papi/practice`, and the practice home's one
@@ -19,6 +21,9 @@ endpoint of its own (`/papi/puzzles/random`).
     POST /papi/practice/more     KEEP GOING: ten more into rotation, then the session
     POST /papi/practice/tz       {tz}: where this browser is
     GET  /papi/puzzles/random    TRY ONE: a puzzle whose answer stands clear
+    GET  /papi/games/:slug/rooms/:id/puzzles?game=n
+                                 a finished game's mistakes, for the seat
+                                 the caller holds (the cards, the replay)
 
 A session is never paged: every fetch is the front of the queue, and what
 the player has answered has left it. The client keeps the list it was
@@ -88,6 +93,28 @@ type alias Random =
 fetch : Session -> (Result Error Practice -> msg) -> Cmd msg
 fetch session toMsg =
     Api.get session "/papi/practice" practiceDecoder toMsg
+
+
+{-| One finished game's mistakes, the caller's own seat's, in order: what
+PRACTICE THIS GAME'S N MISTAKES counts and then runs. A 404 is a reader
+with no seat here; `stillWriting` is a game whose grade is in but whose
+puzzles are still being written, which the page asks again for in a
+moment.
+-}
+gameMistakes : Session -> String -> String -> Int -> (Result Error Practice -> msg) -> Cmd msg
+gameMistakes session slug gameId number toMsg =
+    Api.get session
+        ("/papi/games/" ++ slug ++ "/rooms/" ++ gameId ++ "/puzzles?game=" ++ String.fromInt number)
+        practiceDecoder
+        toMsg
+
+
+{-| The one refusal worth asking again after: the review is done and its
+puzzles are on their way (a 409, `puzzles_pending`).
+-}
+stillWriting : Error -> Bool
+stillWriting err =
+    Api.errorCode err == "puzzles_pending"
 
 
 {-| KEEP GOING. The answer is the session that results, so one call does.

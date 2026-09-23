@@ -803,7 +803,7 @@ ended session =
     answered
         |> step (BoardOut (Puzzle.Stepped path))
         |> revealed (reveal "move_pass")
-        |> Page.endRun { right = 7, close = 2, total = 10 }
+        |> Page.endRun { right = 7, close = 2, total = 10 } "/puzzles"
         |> Tuple.first
 
 
@@ -863,6 +863,26 @@ runEnd =
                                 Expect.fail "the run has not ended"
                     ]
                     ()
+        , test "a run started from a table ends with a sign-in that goes back to that table" <|
+            \_ ->
+                let
+                    model =
+                        ended Session.empty
+                            |> (\m -> { m | ended = Nothing })
+                            |> Page.endRun { right = 1, close = 0, total = 1 } "/backgammon/abc123"
+                            |> Tuple.first
+                in
+                case model.ended of
+                    Just { after } ->
+                        case after of
+                            Page.AskSignIn signIn ->
+                                Expect.equal "/backgammon/abc123" signIn.next
+
+                            _ ->
+                                Expect.fail "a guest's end is the sign-in"
+
+                    Nothing ->
+                        Expect.fail "the run has not ended"
         , test "a sign-in that went through is the shell's to note, and CONTINUE goes to the home" <|
             \_ ->
                 let
