@@ -238,10 +238,10 @@ defmodule Oskol.Gleam.Caps.Practice do
   defp summary(uid, group_by) do
     # A deck that is not there yet has nothing to total up, exactly as it
     # has nothing to queue. Asking must not create one.
+    # The headline has to count the same cards `queue/2` can return. A
+    # "due today" count beside an immediate-only queue invites a player to
+    # expect cards that cannot yet be reviewed.
     rows =
-      # The headline has to count the same cards `queue/2` can return. A
-      # "due today" count beside an immediate-only queue invites a player to
-      # expect cards that cannot yet be reviewed.
       case Retain.summary(uid, group_by: group_by, before: DateTime.utc_now()) do
         {:ok, rows} -> rows
         {:error, :not_found} -> []

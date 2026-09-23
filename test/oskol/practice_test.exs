@@ -133,7 +133,9 @@ defmodule Oskol.PracticeTest do
 
     due_later = DateTime.add(DateTime.utc_now(), 60 * 60, :second)
     due_later_ms = DateTime.to_unix(due_later, :millisecond)
-    assert {:ok, {:graded, 0, 0, ^due_later_ms, _}} = caps.defer_until.(uid, "later", due_later_ms)
+
+    assert {:ok, {:graded, 0, 0, ^due_later_ms, _}} =
+             caps.defer_until.(uid, "later", due_later_ms)
 
     assert {:session, [], [], _} = caps.queue.(uid, ask())
     assert [{:summary, [], 1, 0, 1, 0, 0, +0.0}] = caps.summary.(uid, [])
