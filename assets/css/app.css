@@ -1871,7 +1871,7 @@ a.rp-match-row:hover { color: var(--ink); }
 /* The wrapper is what is positioned: the button inside keeps its own
    press transform and stays put. It is also a fixed width, so the two
    labels take turns in the same place. */
-.rp-best-toggle-wrap { position: absolute; top: 50%; z-index: 2; width: 10.5rem; display: flex; justify-content: center; }
+.rp-best-toggle-wrap { position: absolute; top: 50%; z-index: 2; width: 7rem; display: flex; justify-content: center; }
 .rp-best-toggle-wrap.is-left { left: 25%; transform: translate(-50%, -50%); }
 .rp-best-toggle-wrap.is-right { left: 75%; transform: translate(-50%, -50%); }
 .rp-best-toggle { white-space: nowrap; }

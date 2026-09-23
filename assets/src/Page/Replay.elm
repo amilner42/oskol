@@ -1250,11 +1250,12 @@ viewOverview model record game =
         ]
 
 
-{-| In the band, on the half opposite the dice: the door between the
-move played and the engine's best. "SHOW BEST MOVE" while the played move
-is up and it was not the best; "SEE MOVE PLAYED" while the best is up;
-nothing when the two are one, since the board's green edge already says
-so. For either player: a review is a walk through the game.
+{-| In the band, on the half opposite the dice: the door to the engine's
+best, an eye and BEST, while the played move is up and it was not the
+best; nothing while the best is up (the dice, or the played row of the
+table, bring the move made back) and nothing when the two are one, since
+the board's green edge already says so. For either player: a review is a
+walk through the game.
 -}
 viewBestMoveToggle : Model -> Record -> Game -> { a | mover : Maybe String } -> Html Msg
 viewBestMoveToggle model record game still =
@@ -1285,11 +1286,18 @@ viewBestMoveToggle model record game still =
                 bestIsPlayed =
                     m.played.rank == m.best.rank
 
+                -- an eye and one word: it puts the engine's move on the
+                -- board, and goes away while it is there; the dice (or the
+                -- played row of the table) bring the move made back
                 showBest =
-                    button [ class "rp-best-toggle btn-arcade sky pixel text-[8px] px-3 py-2", id "rp-best-toggle", onClick (Show (Proposed m.best.rank)) ] [ text "SHOW BEST MOVE" ]
-
-                seePlayed =
-                    button [ class "rp-best-toggle btn-arcade plain pixel text-[8px] px-3 py-2", id "rp-best-toggle", onClick (Show Played) ] [ text "SEE MOVE PLAYED" ]
+                    button
+                        [ class "rp-best-toggle btn-arcade sky pixel text-[8px] px-3 py-2 inline-flex items-center gap-1.5"
+                        , id "rp-best-toggle"
+                        , Html.Attributes.title "Show the best move"
+                        , attribute "aria-label" "Show the best move"
+                        , onClick (Show (Proposed m.best.rank))
+                        ]
+                        [ span [ class "hero-eye w-3.5 h-3.5", attribute "aria-hidden" "true" ] [], text "BEST" ]
             in
             case model.showing of
                 -- the move taken back: the best move is the door; the dice
@@ -1310,7 +1318,7 @@ viewBestMoveToggle model record game still =
                         div [ class ("rp-best-toggle-wrap " ++ side) ] [ showBest ]
 
                 Proposed _ ->
-                    div [ class ("rp-best-toggle-wrap " ++ side) ] [ seePlayed ]
+                    text ""
 
         _ ->
             text ""
