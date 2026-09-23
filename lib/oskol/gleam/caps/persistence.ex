@@ -3,6 +3,8 @@ defmodule Oskol.Gleam.Caps.Persistence do
 
   import Oskol.Gleam.Interop
 
+  require Logger
+
   def build do
     {:persistence_caps, &game_exists?/1, &seated_rooms/2, &room/1}
   end
@@ -31,7 +33,8 @@ defmodule Oskol.Gleam.Caps.Persistence do
   end
 
   # One row, whoever asks, as the same record: an invite link's head reads
-  # it. A hiccup is nothing, and the link gets the game page's own head.
+  # it. A hiccup is nothing -- the link gets the game page's own head --
+  # but it is logged, so a bug here cannot quietly turn every invite plain.
   defp room(game_id) do
     case Oskol.Persistence.room(game_id) do
       nil ->
@@ -42,7 +45,14 @@ defmodule Oskol.Gleam.Caps.Persistence do
         {:some, active_room(game, players, DateTime.utc_now())}
     end
   rescue
-    _ -> :none
+    # Only the test sandbox raises this. Not a production condition.
+    e in DBConnection.OwnershipError ->
+      Logger.debug("invite head skipped: #{Exception.message(e)}")
+      :none
+
+    e ->
+      Logger.error("INVITE HEAD FAILED (#{game_id}): #{Exception.message(e)}")
+      :none
   end
 
   defp active_room(game, players, now) do

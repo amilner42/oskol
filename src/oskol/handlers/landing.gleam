@@ -227,7 +227,9 @@ pub const invite_description = "Take the other seat and roll. Backgammon with th
 
 /// "<name> wants to play a match to 7 on a 5 min clock": the format's
 /// name read as a phrase (a format the game no longer lists is plain
-/// "backgammon"), the clock's when there is one.
+/// "backgammon"), the clock's when there is one (a preset the site no
+/// longer lists is still "a clock": the game is timed, whatever it was
+/// called).
 fn invite_title(name: String, r: ActiveRoom) -> String {
   let format =
     registry.find(r.slug)
@@ -248,7 +250,12 @@ fn invite_title(name: String, r: ActiveRoom) -> String {
   let on = case clock.preset(r.clock) {
     Ok(p) if p.control != clock.NoClock ->
       " on a " <> string.lowercase(p.name) <> " clock"
-    _ -> ""
+    Ok(_) -> ""
+    Error(_) ->
+      case r.clock {
+        "" | "none" -> ""
+        _ -> " on a clock"
+      }
   }
   name <> " wants to play " <> what <> on
 }
