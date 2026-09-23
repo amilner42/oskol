@@ -139,20 +139,113 @@ pub fn parse(body: String) -> Result(Review, String) {
 
 /// Just the performance ratings, in seat order, without reading the turns.
 /// A whole review is large (every turn, with its candidate moves); a match
-/// PR needs two numbers out of it, and asks for only those.
+/// PR needs two numbers out of it, and asks for only those: each seat's
+/// totals and the first turn's cube verdict, which is all it takes to leave
+/// out the one decision the engine grades that nobody could have made (see
+/// `unofferable`). A whole response reads the same way.
 pub fn player_prs(body: String) -> Result(List(Float), String) {
-  json.parse(
-    body,
-    decode.field(
-      "players",
-      decode.list({
-        use pr <- decode.field("pr", number())
-        decode.success(pr)
+  json.parse(body, {
+    use players <- decode.field("players", decode.list(rating_decoder()))
+    use first <- decode.optional_field(
+      "turns",
+      [],
+      decode.list(opening_decoder()),
+    )
+    let phantom = case first {
+      [#(Some(seat), Some(cube)), ..] ->
+        case unofferable(1, cube, True) {
+          True -> Some(#(seat, cube.doubler))
+          False -> None
+        }
+      _ -> None
+    }
+    decode.success(
+      list.index_map(players, fn(rating, seat) {
+        case rating, phantom {
+          #(_, Some(totals)), Some(#(s, verdict)) if s == seat ->
+            without_verdicts(totals, [verdict]).pr
+          #(pr, _), _ -> pr
+        }
       }),
-      decode.success,
-    ),
-  )
+    )
+  })
   |> result.replace_error("The engine's review named no ratings")
+}
+
+/// A seat's rating as stored: its whole totals when they are there, else
+/// just the number.
+fn rating_decoder() -> Decoder(#(Float, Option(Totals))) {
+  decode.one_of(totals_decoder() |> decode.map(fn(t) { #(t.pr, Some(t)) }), [
+    {
+      use pr <- decode.field("pr", number())
+      decode.success(#(pr, None))
+    },
+  ])
+}
+
+/// The seat on roll and the cube verdict of a turn, and nothing else.
+fn opening_decoder() -> Decoder(#(Option(Int), Option(CubeReview))) {
+  use seat <- decode.optional_field("player", None, decode.optional(decode.int))
+  use cube <- decode.optional_field(
+    "cube",
+    None,
+    decode.one_of(decode.optional(cube_decoder()), [decode.success(None)]),
+  )
+  decode.success(#(seat, cube))
+}
+
+// ---------- Performance rating ----------
+
+/// A "no double" the engine graded where the mover could not have doubled.
+/// The engine grades the cube on every turn its own rules allow, and that
+/// includes the opening roll, which is thrown before anyone holds the cube.
+/// After Crawford that verdict is a missed double charged to whoever opens
+/// behind, on a decision that never existed. The page shows no verdict
+/// there, and a PR counts no decision there. `number` is the turn's place in
+/// the game, from 1; `can_double` is `analysis.engine_can_double` of it.
+pub fn unofferable(number: Int, cube: CubeReview, can_double: Bool) -> Bool {
+  cube.action == "no_double" && { number == 1 || !can_double }
+}
+
+/// A seat's totals without cube verdicts the engine counted but should not
+/// have: each leaves the cube decisions, the error and the mistakes, and the
+/// PR is worked out again the engine's way (equity lost per unforced
+/// decision, times 500).
+pub fn without_verdicts(t: Totals, verdicts: List(Verdict)) -> Totals {
+  case verdicts {
+    [] -> t
+    _ -> {
+      let cube_error =
+        list.fold(verdicts, t.cube_error, fn(acc, v) { acc -. v.error })
+        |> float.max(0.0)
+      let cube_decisions = int.max(0, t.cube_decisions - list.length(verdicts))
+      let mistakes =
+        list.fold(verdicts, t.mistakes, fn(acc, v) {
+          case v.mistake {
+            Some(name) ->
+              case dict.get(acc, name) {
+                Ok(n) if n > 1 -> dict.insert(acc, name, n - 1)
+                Ok(_) -> dict.delete(acc, name)
+                Error(_) -> acc
+              }
+            None -> acc
+          }
+        })
+      let error = t.move_error +. cube_error
+      let decisions = t.move_decisions + cube_decisions
+      Totals(
+        ..t,
+        cube_decisions: cube_decisions,
+        cube_error: cube_error,
+        mistakes: mistakes,
+        error: error,
+        pr: case decisions {
+          0 -> 0.0
+          _ -> error /. int.to_float(decisions) *. 500.0
+        },
+      )
+    }
+  }
 }
 
 /// JSON numbers from Python may be written as 0 or 0.0.
@@ -401,6 +494,33 @@ pub fn to_json(
       [] -> Seat("", "", "")
     }
   }
+  let hidden =
+    list.index_map(pairs, fn(pair, i) {
+      let #(turn, graded) = pair
+      case graded.cube {
+        Some(cube) ->
+          case
+            unofferable(i + 1, cube, analysis.engine_can_double(turn.position))
+          {
+            True -> [#(turn.player, cube.doubler)]
+            False -> []
+          }
+        None -> []
+      }
+    })
+    |> list.flatten
+  let players =
+    list.index_map(review.players, fn(t, seat) {
+      without_verdicts(
+        t,
+        list.filter_map(hidden, fn(h) {
+          case h.0 == seat {
+            True -> Ok(h.1)
+            False -> Error(Nil)
+          }
+        }),
+      )
+    })
   Ok(
     json.object([
       // The search depth the engine used, for moves and for the cube.
@@ -415,10 +535,9 @@ pub fn to_json(
       #("timing_ms", json.nullable(review.timing_ms, json.int)),
       #(
         "players",
-        json.array(
-          list.index_map(review.players, fn(t, i) { #(t, i) }),
-          fn(pair) { totals_json(pair.0, pair.1, seat_of(pair.1)) },
-        ),
+        json.array(list.index_map(players, fn(t, i) { #(t, i) }), fn(pair) {
+          totals_json(pair.0, pair.1, seat_of(pair.1))
+        }),
       ),
       #(
         "turns",
@@ -517,15 +636,13 @@ fn turn_json(
           #("top", json.array(top, fn(c) { candidate(c, played.rank) })),
         ])
     }),
-    // The engine grades "no double" on every turn, the opening roll and a
-    // cube the mover did not hold included. A verdict on a double that
-    // could not have been offered is nothing a page should show.
+    // A verdict on a double that could not have been offered is nothing a
+    // page should show (`unofferable`); the seat's totals leave it out too.
     #("cube", case graded.cube {
       None -> json.null()
       Some(cube) ->
         case
-          cube.action == "no_double"
-          && { number == 1 || !analysis.engine_can_double(turn.position) }
+          unofferable(number, cube, analysis.engine_can_double(turn.position))
         {
           True -> json.null()
           False ->

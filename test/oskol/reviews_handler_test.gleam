@@ -16,10 +16,12 @@ import gamekit/instance
 import gamekit/rng.{type Rng}
 import gleam/dynamic.{type Dynamic}
 import gleam/dynamic/decode
+import gleam/float
 import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import oskol/caps/analysis.{
   type GameLog, type Stored, AnalysisCaps, Done, Failed, GameLog, LogEntry,
@@ -1191,4 +1193,152 @@ pub fn only_backgammon_rooms_have_reviews_test() {
   let ctx = with_analysis(poker, [], no_engine)
   let assert Error(error.NotFound(_)) =
     reviews.reviews_json(ctx, fakes.guest("g1"), "backgammon", "123456")
+}
+
+// ---------- PR: no decision nobody could have made ----------
+
+/// A "no double" the engine graded as a missed double.
+fn missed_double(error: String) -> String {
+  "{\"action\":\"no_double\",\"response\":null,\"analysis\":{\"optimal_action\":\"Double/Pass\",\"equity_nd\":0.9,\"equity_dt\":1.2,\"equity_dp\":1.0},\"doubler\":{\"error\":"
+  <> error
+  <> ",\"grade\":\"doubtful\",\"mistake\":\"missed_double\"},\"taker\":null}"
+}
+
+/// An engine answer for these turns with a missed double graded on the
+/// turns named, charged (as the engine charges it) to the seat on roll,
+/// and each seat's totals as the engine adds them up: 3 checker decisions
+/// at no error, plus every cube verdict graded.
+fn answer_with_cubes(
+  turns: List(bg_analysis.Turn),
+  cubes: List(#(Int, String)),
+) -> String {
+  let turn = fn(t: bg_analysis.Turn, i) {
+    let cube = case list.key_find(cubes, i) {
+      Ok(error) -> missed_double(error)
+      Error(_) -> "null"
+    }
+    "{\"index\":"
+    <> int.to_string(i)
+    <> ",\"player\":"
+    <> int.to_string(t.player)
+    <> ",\"cube\":"
+    <> cube
+    <> ",\"move\":null,\"luck\":null}"
+  }
+  let seat_of = fn(i) {
+    let assert Ok(t) = list.first(list.drop(turns, i))
+    t.player
+  }
+  let totals = fn(seat) {
+    let mine = list.filter(cubes, fn(c) { seat_of(c.0) == seat })
+    let assert Ok(errors) =
+      list.try_map(mine, fn(c) {
+        case float.parse(c.1) {
+          Ok(f) -> Ok(f)
+          Error(_) -> int.parse(c.1) |> result.map(int.to_float)
+        }
+      })
+    let error = float.sum(errors)
+    let decisions = 3 + list.length(mine)
+    "{\"moves\":{\"decisions\":3,\"forced\":0,\"error\":0,\"grades\":{}},\"cube\":{\"decisions\":"
+    <> int.to_string(list.length(mine))
+    <> ",\"error\":"
+    <> float.to_string(error)
+    <> ",\"mistakes\":{\"missed_double\":"
+    <> int.to_string(list.length(mine))
+    <> "}},\"luck\":0,\"error\":"
+    <> float.to_string(error)
+    <> ",\"pr\":"
+    <> float.to_string(error /. int.to_float(decisions) *. 500.0)
+    <> "}"
+  }
+  "{\"turns\":["
+  <> string.join(list.index_map(turns, turn), ",")
+  <> "],\"players\":["
+  <> totals(0)
+  <> ","
+  <> totals(1)
+  <> "]}"
+}
+
+fn page_players(body: String, turns: List(bg_analysis.Turn)) -> List(Dynamic) {
+  let assert Ok(players) =
+    json.parse(
+      page_of(body, turns),
+      decode.field("players", decode.list(decode.dynamic), decode.success),
+    )
+  players
+}
+
+fn page_field(player: Dynamic, path: List(String), d: decode.Decoder(a)) -> a {
+  let assert Ok(value) = decode.run(player, decode.at(path, d))
+  value
+}
+
+pub fn the_opening_rolls_no_double_is_no_decision_in_the_pr_test() {
+  // A match game, where the cube is live (a single game has none)
+  let turns = game_number(played_log("match5", 4, 3000), 1).turns
+  let assert [first, ..] = turns
+  let assert True = bg_analysis.engine_can_double(first.position)
+  // After Crawford the trailer "should" double at once, so the engine
+  // charges whoever opens behind a missed double on the opening roll.
+  let body = answer_with_cubes(turns, [#(0, "0.07")])
+  let assert Ok(engine_prs) =
+    json.parse(
+      body,
+      decode.field(
+        "players",
+        decode.list(decode.field("pr", decode.float, decode.success)),
+        decode.success,
+      ),
+    )
+  let assert Ok(engine_pr) = list.first(list.drop(engine_prs, first.player))
+  assert engine_pr >. 8.0
+  let assert Ok(opener) =
+    list.first(list.drop(page_players(body, turns), first.player))
+  assert page_field(opener, ["pr"], decode.float) == 0.0
+  assert page_field(opener, ["error"], decode.float) == 0.0
+  assert page_field(opener, ["cube", "decisions"], decode.int) == 0
+  assert page_field(opener, ["cube", "mistakes", "missed_double"], decode.int)
+    == 0
+  // The match PR reads the same number from the same answer
+  let assert Ok(prs) = report.player_prs(body)
+  assert list.first(list.drop(prs, first.player)) == Ok(0.0)
+}
+
+pub fn a_double_that_could_have_been_offered_still_counts_test() {
+  let turns = game_number(played_log("match5", 4, 3000), 1).turns
+  // The first turn after the opening where a double could have been offered
+  let assert Ok(#(third, at)) =
+    list.index_map(turns, fn(t, i) { #(t, i) })
+    |> list.drop(1)
+    |> list.find(fn(p) { bg_analysis.engine_can_double({ p.0 }.position) })
+  let body = answer_with_cubes(turns, [#(at, "0.08")])
+  let assert Ok(player) =
+    list.first(list.drop(page_players(body, turns), third.player))
+  // 0.08 lost over 3 checker decisions and 1 cube decision
+  let pr = page_field(player, ["pr"], decode.float)
+  assert pr >. 9.99 && pr <. 10.01
+  assert page_field(player, ["cube", "decisions"], decode.int) == 1
+  let assert Ok(prs) = report.player_prs(body)
+  assert list.first(list.drop(prs, third.player)) == Ok(pr)
+}
+
+pub fn the_match_pr_reads_the_opening_from_the_slim_row_test() {
+  // What `Reviews.rating_summaries` selects: the seats' totals and the first
+  // turn's seat and cube, never the turns' analysis.
+  let totals =
+    "{\"moves\":{\"decisions\":3,\"forced\":0,\"error\":0,\"grades\":{}},\"cube\":{\"decisions\":1,\"error\":0.07,\"mistakes\":{\"missed_double\":1}},\"luck\":0,\"error\":0.07,\"pr\":8.75}"
+  let slim =
+    "{\"players\":["
+    <> totals
+    <> ","
+    <> totals
+    <> "],\"turns\":[{\"player\":1,\"cube\":"
+    <> missed_double("0.07")
+    <> "}]}"
+  assert report.player_prs(slim) == Ok([8.75, 0.0])
+  // A game with no turn to read (stripped to {}) keeps the engine's numbers
+  let bare = "{\"players\":[" <> totals <> "," <> totals <> "],\"turns\":[{}]}"
+  assert report.player_prs(bare) == Ok([8.75, 8.75])
 }
