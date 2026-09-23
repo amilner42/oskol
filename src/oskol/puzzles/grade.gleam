@@ -153,10 +153,15 @@ pub fn best(answer: Answer) -> Option(Candidate) {
 
 /// The bands, -2..+2. `+1` and `+2` are always the aggressive answer: for
 /// the doubler, double and big double; for the responder, take and big take.
+/// The engine's verdict lands on one of the five; the player answers with a
+/// side only, as at the table: double or not, take or pass.
 pub const bands = [-2, -1, 0, 1, 2]
 
+/// An answer is a side: positive for double or take, negative for no
+/// double or pass. Zero is the engine's "too close to call", which is not
+/// something a player can do with a cube.
 pub fn band_in_range(band: Int) -> Bool {
-  band >= -2 && band <= 2
+  band >= -2 && band <= 2 && band != 0
 }
 
 /// How far the engine says this side should lean, from the three equities
@@ -190,19 +195,13 @@ fn sign(margin: Float) -> Int {
   }
 }
 
-/// The verdict for an answer on the five-band scale: the same band passes,
-/// one off holds, two or more misses.
+/// The verdict for a side against the engine's band: the right side
+/// passes, the wrong side misses, and when the engine calls it too close
+/// (within 0.02 either way) either side holds -- nobody fails a coin flip.
 pub fn cube_verdict(answered: Int, engine: Int) -> Verdict {
-  case int_absolute(answered - engine) {
-    0 -> Pass
-    1 -> Hold
-    _ -> Fail
-  }
-}
-
-fn int_absolute(value: Int) -> Int {
-  case value < 0 {
-    True -> -value
-    False -> value
+  case engine == 0, { answered > 0 } == { engine > 0 } {
+    True, _ -> Hold
+    False, True -> Pass
+    False, False -> Fail
   }
 }

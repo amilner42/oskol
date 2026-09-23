@@ -567,22 +567,22 @@ revealing =
 cube : Test
 cube =
     describe "a cube question"
-        [ test "the five answers, worst for the cube first, in the side's words" <|
+        [ test "the two answers, as at the table, in the side's words" <|
             \_ ->
                 Expect.all
                     [ \_ ->
                         rendered (page { hasNext = False } "double")
                             |> Query.find [ id "pz-bands" ]
                             |> Query.findAll [ tag "button" ]
-                            |> Query.count (Expect.equal 5)
+                            |> Query.count (Expect.equal 2)
                     , \_ ->
                         rendered (page { hasNext = False } "double")
-                            |> Query.find [ id "pz-band-minus2" ]
-                            |> Query.has [ text "Big no double" ]
+                            |> Query.find [ id "pz-band-minus1" ]
+                            |> Query.has [ text "No double" ]
                     , \_ ->
                         rendered (page { hasNext = False } "take")
-                            |> Query.find [ id "pz-band-2" ]
-                            |> Query.has [ text "Big take" ]
+                            |> Query.find [ id "pz-band-1" ]
+                            |> Query.has [ text "Take" ]
                     , \_ -> rendered (page { hasNext = False } "double") |> hasNot [ id "bg-action-play" ]
                     ]
                     ()
@@ -590,11 +590,11 @@ cube =
             \_ ->
                 let
                     picked =
-                        step (PickedBand 2) (page { hasNext = False } "double")
+                        step (PickedBand 1) (page { hasNext = False } "double")
                 in
                 Expect.all
                     [ \_ -> picked.attempt |> Expect.equal Sending
-                    , \_ -> Page.attemptBody picked |> Maybe.map (E.encode 0) |> Expect.equal (Just "{\"band\":2,\"key\":\"key-0123\"}")
+                    , \_ -> Page.attemptBody picked |> Maybe.map (E.encode 0) |> Expect.equal (Just "{\"band\":1,\"key\":\"key-0123\"}")
                     ]
                     ()
         , test "the reveal marks the engine's band on the scale over the three equities" <|
@@ -610,12 +610,14 @@ cube =
                         , \q -> q |> Query.find [ id "pz-scale" ] |> Query.findAll [ attribute (Html.Attributes.attribute "data-engine" "true") ] |> Query.count (Expect.equal 1)
                         , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-engine" "true") ] |> Query.has [ attribute (Html.Attributes.attribute "data-band" "2"), text "Big double" ]
                         , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-band" "1") ] |> Query.has [ class "is-on" ]
+                        , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-band" "2") ] |> Query.has [ class "is-on" ]
+                        , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-band" "0") ] |> Query.hasNot [ class "is-on" ]
                         , \q -> q |> Query.find [ class "rp-cube-eq", class "is-pick" ] |> Query.has [ text "Double, pass" ]
                         , \q -> q |> Query.find [ id "pz-reveal" ] |> Query.has [ text "White is winning here by enough that Black should pass." ]
                         ]
         , test "a take is answered from the taker's side" <|
             \_ ->
-                rendered (page { hasNext = False } "take" |> step (PickedBand -2) |> revealed (reveal "take_pass"))
+                rendered (page { hasNext = False } "take" |> step (PickedBand -1) |> revealed (reveal "take_pass"))
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "pass") ]
                         , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-engine" "true") ] |> Query.has [ text "Big pass" ]

@@ -63,10 +63,12 @@ pub fn reveals() -> List(#(String, String)) {
     #("move_hold", attempted(move, moves_to(move, 2), None)),
     #("move_fail", attempted(move, moves_to(move, 3), None)),
     #("move_unknown", attempted(old, moves_to(move, 3), None)),
-    #("double_pass", attempted(stored_sample("double"), [], Some(2))),
+    #("double_pass", attempted(stored_sample("double"), [], Some(1))),
     #("double_fail", attempted(stored_sample("double"), [], Some(-1))),
-    #("take_pass", attempted(stored_sample("take"), [], Some(-2))),
-    #("take_hold", attempted(stored_sample("take"), [], Some(-1))),
+    #("take_pass", attempted(stored_sample("take"), [], Some(-1))),
+    // A coin flip: taking and passing are within 0.02 of each other, so
+    // either answer holds.
+    #("take_hold", attempted(close_take(), [], Some(1))),
     #("schedule_amendable", handler.schedule_json(2, 3, due, True, False)),
     #("schedule_self_grade", handler.schedule_json(3, 3, due, False, True)),
     #("schedule_settled", handler.schedule_json(1, 1, due, False, False)),
@@ -341,6 +343,28 @@ fn cube_puzzle(kind: Kind) -> Stored {
       probs: Some(probs()),
       optimal: DoublePass,
       too_good: False,
+    ),
+  )
+}
+
+/// The same take with the numbers a hair apart: the engine's band is zero
+/// and the reveal says too close to call.
+fn close_take() -> Stored {
+  let Stored(id: _, kind: kind, question_json: question, answer_json: _) =
+    cube_puzzle(Take)
+  Stored(
+    id: "fixtakec",
+    kind: kind,
+    question_json: question,
+    answer_json: json.to_string(
+      puzzles.answer_json(CubeAnswer(
+        no_double: 0.31,
+        double_take: 1.01,
+        double_pass: 1.0,
+        probs: Some(probs()),
+        optimal: DoublePass,
+        too_good: False,
+      )),
     ),
   )
 }

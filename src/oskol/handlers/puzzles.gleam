@@ -85,7 +85,7 @@ pub const still_writing_message = "This game's mistakes are still being written.
 
 pub const bad_move_message = "That is not a legal way to play the roll"
 
-pub const bad_band_message = "That is not one of the five answers"
+pub const bad_band_message = "That is not one of the two answers"
 
 pub const no_key_message = "That answer arrived without a key"
 

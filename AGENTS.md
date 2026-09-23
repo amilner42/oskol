@@ -593,7 +593,8 @@ src/oskol/handlers/puzzles.gleam the puzzle pages: the question, the grade, the
 src/oskol/puzzles/tree.gleam     every legal way to play a roll, as a DAG of
                                  boards the page walks (no move generator in Elm)
 src/oskol/puzzles/grade.gleam    right, close or wrong: the checker bands and the
-                                 five-band cube scale
+                                 cube answered by its side against the
+                                 engine's five bands
 src/oskol/puzzles/fixture.gleam  real payloads for the Elm suite (mix oskol.fixtures)
 lib/oskol/puzzles/tree_cache.ex  a puzzle's tree, worked out once (ETS, bounded)
 src/oskol/puzzles/picture.gleam a puzzle's link picture as SVG: the board in the
@@ -652,7 +653,7 @@ assets/src/Page/Puzzles.elm      "/puzzles" the practice home: an account's coun
 assets/src/Api/Practice.elm      /papi/practice, /more, /tz and /papi/puzzles/random
 assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over the board
                                  (Games/Backgammon/Puzzle.elm's `Table`, the page owning
-                                 the path and the lazy fetches), PLAY or the five-band
+                                 the path and the lazy fetches), PLAY or the two cube
                                  scale, the reveal in the replay's words, the level line
                                  and its four buttons, the memory line, SHARE, NEXT, and
                                  the end of a run: the score, then KEEP GOING or the sign-in
@@ -1262,11 +1263,14 @@ path builds one and nothing re-asks the engine to recover one.
   checker play is graded by the board it leaves, never its notation: under
   0.02 passes, under 0.08 holds, worse misses, and a board the stored answer
   has no result for is `unknown` -- old five-candidate rows -- so nobody is
-  told they were wrong on evidence we do not have. A cube answer is graded on
-  the five-band scale: the doubler's margin is `min(DT, DP) - ND`, the
+  told they were wrong on evidence we do not have. A cube question is answered
+  with a side, as at the table (double or not, take or pass); the engine's
+  verdict is finer: the doubler's margin is `min(DT, DP) - ND`, the
   responder's is `DP - DT` (positive means take, because the responder picks
   whatever pays the doubler less), bands at 0.08 and 0.02 either side of
-  zero, and the grade is the distance in bands (0 passes, 1 holds, 2+ misses).
+  zero. The right side passes, the wrong side misses, and when the engine's
+  band is zero (too close to call) either side holds: nobody fails a coin
+  flip. The reveal shows the five bands with the engine's marked.
 - **Every finished game is the moment.** Both result cards at the table --
   the game-over card and the between-games card of a match or of
   unlimited play -- and the replay's ANALYSIS tab offer PRACTICE THIS
@@ -1440,8 +1444,9 @@ and `/mine` is asked only after the attempt, so a page open on a shared
 link can put nothing within reach. The board is the table's own
 (`Games/Backgammon/Puzzle.elm` on `View.viewPlay`; a lazy tree's levels
 are fetched as the path reaches them), UNDO and PLAY are its own band; a
-cube question is five buttons (-2..+2, "Big no double" to "Big double",
-"Big pass" to "Big take"). The reveal is the replay's words and table
+cube question is two buttons, as at the table (DOUBLE / NO DOUBLE, TAKE /
+PASS; the engine's five-band verdict is the reveal's scale). The reveal is
+the replay's words and table
 (`Words`, with `doubleWhy`/`noDoubleWhy`/`answerWhy` for a position nobody
 has acted on yet) with "you" marked and a candidate tappable onto the
 board; the cube's scale marks the engine's band over `cubeLine`. The

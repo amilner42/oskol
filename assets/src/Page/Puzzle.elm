@@ -1191,8 +1191,8 @@ viewControls model puzzle =
     in
     div [ class "rp-controls-wrap pz-controls flex flex-col items-center gap-2" ]
         [ if puzzle.kind /= "move" && not revealed then
-            div [ class "pz-bands", id "pz-bands" ]
-                (Puzzle.bands puzzle.kind
+            div [ class "pz-bands pz-answers", id "pz-bands" ]
+                (Puzzle.answers puzzle.kind
                     |> List.map
                         (\( band, label ) ->
                             button
@@ -1539,7 +1539,7 @@ viewCubeReveal model puzzle cube =
             |> List.map
                 (\( band, label ) ->
                     span
-                        [ classList [ ( "pz-band", True ), ( "is-engine", band == cube.band ), ( "is-on", model.band == Just band ) ]
+                        [ classList [ ( "pz-band", True ), ( "is-engine", band == cube.band ), ( "is-on", band /= 0 && Maybe.map (\b -> b > 0) model.band == Just (band > 0) ) ]
                         , attribute "data-band" (String.fromInt band)
                         , attribute "data-engine"
                             (if band == cube.band then
