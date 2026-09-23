@@ -92,7 +92,14 @@ defmodule Oskol.RatingsTest do
   test "cold ratings leave the room stopped and transfer no turn analysis", %{conn: conn} do
     %{game_id: game_id} = started(42, "match5")
     Persister.flush()
-    response = Map.put(answer(8.0, 12.0), "turns", [%{"large" => String.duplicate("x", 100_000)}])
+    large = %{"large" => String.duplicate("x", 100_000)}
+
+    response =
+      Map.put(answer(8.0, 12.0), "turns", [
+        %{"player" => 0, "cube" => nil, "move" => large},
+        large
+      ])
+
     :ok = Reviews.save(game_id, 1, "done", 1, response, nil, %{"large" => "report"}, 1)
 
     {:ok, pid} = Oskol.Game.GameSupervisor.find_game(game_id)
@@ -102,9 +109,49 @@ defmodule Oskol.RatingsTest do
     wait_for_stopped_room(game_id)
 
     [row] = Reviews.rating_summaries(game_id)
-    assert row.response == %{"players" => response["players"]}
+    # The seats' totals and the first turn's seat and cube verdict (none
+    # here), never a move's analysis or a later turn
+    assert row.response == %{"players" => response["players"], "turns" => [%{"player" => 0}]}
     assert %{"players" => [%{"pr" => 8.0}, %{"pr" => 12.0}]} = ratings(conn, game_id)
     assert Oskol.Game.GameSupervisor.find_game(game_id) == :error
+  end
+
+  test "the opening roll's no double counts for nothing in a match PR", %{conn: conn} do
+    %{game_id: game_id} = started(43, "match5")
+    Persister.flush()
+    # How the engine totals it: seat 1 opened behind after Crawford and was
+    # charged a 0.07 missed double on the opening roll, over 3 checker plays
+    totals = fn cube_decisions, cube_error, pr ->
+      %{
+        "moves" => %{"decisions" => 3, "forced" => 0, "error" => 0, "grades" => %{}},
+        "cube" => %{"decisions" => cube_decisions, "error" => cube_error, "mistakes" => %{}},
+        "luck" => 0,
+        "error" => cube_error,
+        "pr" => pr
+      }
+    end
+
+    opening = %{
+      "index" => 0,
+      "player" => 1,
+      "cube" => %{
+        "action" => "no_double",
+        "response" => nil,
+        "analysis" => %{
+          "optimal_action" => "Double/Pass",
+          "equity_nd" => 0.9,
+          "equity_dt" => 1.2,
+          "equity_dp" => 1.0
+        },
+        "doubler" => %{"error" => 0.07, "grade" => "doubtful", "mistake" => "missed_double"},
+        "taker" => nil
+      }
+    }
+
+    response = %{"turns" => [opening], "players" => [totals.(0, 0, 0.0), totals.(1, 0.07, 8.75)]}
+    :ok = Reviews.save(game_id, 1, "done", 1, response, nil, %{"large" => "report"}, 1)
+
+    assert %{"players" => [%{"pr" => +0.0}, %{"pr" => +0.0}]} = ratings(conn, game_id)
   end
 
   defp wait_for_stopped_room(game_id, tries \\ 100)

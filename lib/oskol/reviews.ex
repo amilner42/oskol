@@ -121,9 +121,21 @@ defmodule Oskol.Reviews do
         game_number: r.game_number,
         status: r.status,
         attempts: r.attempts,
+        # The seats' totals, and the first turn's seat and cube verdict:
+        # all `report.player_prs` needs to leave out the opening roll's
+        # "no double", which nobody could have offered.
         response:
           fragment(
-            "CASE WHEN ? IS NULL THEN NULL ELSE jsonb_build_object('players', ?->'players') END",
+            """
+            CASE WHEN ? IS NULL THEN NULL ELSE jsonb_build_object(
+              'players', ?->'players',
+              'turns', jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+                'player', ?->'turns'->0->'player',
+                'cube', ?->'turns'->0->'cube'))))
+            END
+            """,
+            r.response,
+            r.response,
             r.response,
             r.response
           ),
