@@ -60,6 +60,7 @@ too, and only there.
 import Dict exposing (Dict)
 import Games.Backgammon.Replay as Replay
 import Games.Backgammon.View as View
+import Games.Backgammon.Words as Words
 import Html exposing (Html)
 import Json.Decode as D
 
@@ -769,20 +770,7 @@ best is `ok`.
 -}
 gradeOf : Float -> String
 gradeOf lost =
-    if lost <= 0 then
-        "best"
-
-    else if lost < 0.02 - 0.000001 then
-        "ok"
-
-    else if lost < 0.08 - 0.000001 then
-        "doubtful"
-
-    else if lost < 0.16 - 0.000001 then
-        "bad"
-
-    else
-        "very_bad"
+    Words.gradeOf lost
 
 
 {-| The engine's call as the three-equity line marks it, from its band:

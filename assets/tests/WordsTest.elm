@@ -27,7 +27,8 @@ import Test.Html.Selector as Selector
 suite : Test
 suite =
     describe "Words"
-        [ moveSentences
+        [ candidateSentences
+        , moveSentences
         , doublerSentences
         , responderSentences
         , tooGoodRule
@@ -123,6 +124,40 @@ saysMove expected m =
 
 
 -- MOVES
+
+
+candidateSentences : Test
+candidateSentences =
+    describe "a candidate on the board"
+        (let
+            best =
+                candidate "8/4 6/4" (Just (probs 0.44 0.13 0.12))
+
+            says expected c =
+                Words.candidateInWords c best |> Query.fromHtml |> Query.contains [ Html.text expected ]
+         in
+         [ test "the best move is named as such" <|
+            \_ -> says "8/4 6/4 is the best move." best
+         , test "a bad one is graded off what it gives up, against the best" <|
+            \_ ->
+                let
+                    c =
+                        candidate "24/20 6/4" (Just (probs 0.4 0.1 0.15))
+                in
+                says "24/20 6/4 is a bad move. The best move here results in 4.0% more wins, 3.0% more gammons and 3.0% fewer gammons against." { c | equityLost = 0.1 }
+         , test "a dubious one without chances still has its lead" <|
+            \_ ->
+                let
+                    c =
+                        candidate "13/9 6/4" Nothing
+                in
+                says "13/9 6/4 is a dubious move." { c | equityLost = 0.03 }
+         , test "the marks are the annotators'" <|
+            \_ ->
+                Expect.equal [ "✓", "", "?!", "?", "??" ]
+                    (List.map (Words.gradeOf >> Words.gradeMark) [ 0, 0.01, 0.03, 0.1, 0.2 ])
+         ]
+        )
 
 
 moveSentences : Test

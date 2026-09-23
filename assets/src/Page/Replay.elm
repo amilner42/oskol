@@ -57,7 +57,7 @@ import Browser.Events
 import Dict
 import Games.Backgammon.Replay as Replay exposing (Annotation(..), Candidate, Entry(..), Game, GameAnalysis, GameReview, Index, MoveReview(..), Record, Review, Status(..), TurnReview)
 import Games.Backgammon.View as Board
-import Games.Backgammon.Words exposing (answerInWords, chanceCells, cubeChances, cubeLine, doubleInWords, gradeTag, inWords, lost, moveInWords, noDoubleInWords, signed, verdictTag)
+import Games.Backgammon.Words exposing (answerInWords, candidateInWords, chanceCells, cubeChances, cubeLine, doubleInWords, gradeMark, gradeOf, gradeTag, inWords, lost, moveInWords, noDoubleInWords, signed, verdictTag)
 import Api.Catalog as Catalog
 import Page.Play exposing (storePref)
 import Html exposing (Html, button, div, span, text)
@@ -1351,27 +1351,6 @@ viewDiceToggle model record game still =
             text ""
 
 
-{-| The annotators' mark for a grade: a tick, nothing, ?!, ?, ??.
--}
-gradeMark : String -> String
-gradeMark grade =
-    case grade of
-        "best" ->
-            "✓"
-
-        "doubtful" ->
-            "?!"
-
-        "bad" ->
-            "?"
-
-        "very_bad" ->
-            "??"
-
-        _ ->
-            ""
-
-
 touchAt : (( Float, Float ) -> Msg) -> D.Decoder Msg
 touchAt toMsg =
     D.field "changedTouches"
@@ -1830,30 +1809,57 @@ viewAnnotation model record note =
                     div [ class "rp-verdict" ] [ span [ style "color" "var(--pencil)" ] [ text "No legal move: nothing to grade." ], luckOf turn ]
 
                 Moved m ->
-                    div [ class "rp-verdict-block" ]
-                        [ div [ class "rp-verdict" ]
-                            [ gradeTag m.grade
-                            , if m.forced then
-                                span [ style "color" "var(--pencil)" ] [ text "Forced" ]
+                    let
+                        -- A candidate on the board is what the note is
+                        -- about, not the move that was played.
+                        shown =
+                            case model.showing of
+                                Proposed rank ->
+                                    m.top |> List.filter (\c -> c.rank == rank) |> List.head
 
-                              else if m.grade == "best" then
-                                span [ style "color" "var(--pencil)" ] [ text "The engine's choice" ]
+                                _ ->
+                                    Nothing
+                    in
+                    case shown of
+                        Just c ->
+                            div [ class "rp-verdict-block" ]
+                                [ div [ class "rp-verdict" ]
+                                    [ gradeTag (gradeOf c.equityLost)
+                                    , if c.rank == 1 then
+                                        span [ style "color" "var(--pencil)" ] [ text "The engine's choice" ]
 
-                              else
-                                lost m.equityLost
-                            , luckOf turn
-                            ]
-                        , if m.forced then
-                            text ""
+                                      else
+                                        lost c.equityLost
+                                    ]
+                                , candidateInWords c m.best
+                                , viewCandidates model m
+                                ]
 
-                          else
-                            moveInWords (name turn.player) m
-                        , if m.forced || List.length m.top <= 1 then
-                            text ""
+                        Nothing ->
+                            div [ class "rp-verdict-block" ]
+                                [ div [ class "rp-verdict" ]
+                                    [ gradeTag m.grade
+                                    , if m.forced then
+                                        span [ style "color" "var(--pencil)" ] [ text "Forced" ]
 
-                          else
-                            viewCandidates model m
-                        ]
+                                      else if m.grade == "best" then
+                                        span [ style "color" "var(--pencil)" ] [ text "The engine's choice" ]
+
+                                      else
+                                        lost m.equityLost
+                                    , luckOf turn
+                                    ]
+                                , if m.forced then
+                                    text ""
+
+                                  else
+                                    moveInWords (name turn.player) m
+                                , if m.forced || List.length m.top <= 1 then
+                                    text ""
+
+                                  else
+                                    viewCandidates model m
+                                ]
 
         DoubleNote turn cube ->
             div [ class "rp-verdict-block" ]
@@ -2016,7 +2022,7 @@ viewCandidates model m =
                                 , ( "is-longer", String.length c.notation > 15 )
                                 ]
                             ]
-                            [ text c.notation ]
+                            [ text c.notation, candidateMark c.equityLost ]
                          , span [ class "rp-cand-lost rp-col-eq tabular-nums" ]
                             [ text
                                 (if c.equityLost > 0 then
@@ -2032,6 +2038,22 @@ viewCandidates model m =
                 )
            )
         )
+
+
+{-| The annotators' mark beside a candidate: how bad it is at a glance.
+-}
+candidateMark : Float -> Html msg
+candidateMark equityLost =
+    let
+        grade =
+            gradeOf equityLost
+    in
+    case gradeMark grade of
+        "" ->
+            text ""
+
+        mark ->
+            span [ class ("rp-cand-grade g-" ++ grade), attribute "data-grade" grade ] [ text mark ]
 
 
 {-| Where this game's analysis stands, when it is not simply done.
