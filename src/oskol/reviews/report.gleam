@@ -144,6 +144,23 @@ pub fn parse(body: String) -> Result(Review, String) {
 /// out the one decision the engine grades that nobody could have made (see
 /// `unofferable`). A whole response reads the same way.
 pub fn player_prs(body: String) -> Result(List(Float), String) {
+  player_totals(body) |> result.map(list.map(_, fn(rating) { rating.0 }))
+}
+
+/// The same read, keeping the totals themselves: each seat's rating and,
+/// where the row stores them, the whole totals behind it -- the error and
+/// the decision counts a PR over several games is worked out from.
+///
+/// A row written before totals were stored carries only the number, so its
+/// seat is `#(pr, None)`: there is a rating to print but nothing to add up,
+/// and a caller that is adding up must skip it rather than count it as no
+/// error over no decisions.
+///
+/// The phantom opening "no double" is off both, so the totals agree with
+/// the rating beside them.
+pub fn player_totals(
+  body: String,
+) -> Result(List(#(Float, Option(Totals))), String) {
   json.parse(body, {
     use players <- decode.field("players", decode.list(rating_decoder()))
     use first <- decode.optional_field(
@@ -162,9 +179,11 @@ pub fn player_prs(body: String) -> Result(List(Float), String) {
     decode.success(
       list.index_map(players, fn(rating, seat) {
         case rating, phantom {
-          #(_, Some(totals)), Some(#(s, verdict)) if s == seat ->
-            without_verdicts(totals, [verdict]).pr
-          #(pr, _), _ -> pr
+          #(_, Some(totals)), Some(#(s, verdict)) if s == seat -> {
+            let corrected = without_verdicts(totals, [verdict])
+            #(corrected.pr, Some(corrected))
+          }
+          rating, _ -> rating
         }
       }),
     )

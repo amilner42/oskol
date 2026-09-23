@@ -3,6 +3,7 @@
 //// it back to Elixir, exactly as the platform holds a game instance.
 
 import gleam/dynamic.{type Dynamic}
+import gleam/int
 import gleam/option.{type Option}
 
 /// A live room. It is an Erlang process, and it stays opaque on purpose:
@@ -52,6 +53,12 @@ pub type Table {
 /// link's.
 pub fn seat_path(slug: String, game_id: String) -> String {
   "/" <> slug <> "/" <> game_id
+}
+
+/// The URL of one game of a room, played again. Open like the record it is
+/// drawn from: a replay is what both players and any spectator already saw.
+pub fn replay_path(slug: String, game_id: String, game_number: Int) -> String {
+  seat_path(slug, game_id) <> "/replay?game=" <> int.to_string(game_number)
 }
 
 /// An unfinished room a guest holds a seat in, as its row tells it: enough

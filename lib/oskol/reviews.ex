@@ -146,6 +146,132 @@ defmodule Oskol.Reviews do
     |> Repo.all()
   end
 
+  @doc """
+  The graded games of one account, newest answer first: what the home's
+  form, its chart and its recent list are all read from.
+
+  One statement, and nothing in it wakes a room or touches an action log.
+  It is the seat-to-account join `bg-career-pr` describes: the rooms this
+  account holds a seat in, their games the engine has answered for, and out
+  of each answer only the seats' totals -- the same projection
+  `rating_summaries/1` takes, because a whole response is hundreds of
+  kilobytes and a rating is two numbers out of it.
+
+  The containment test is the one `games_players_gin` is built on
+  (`oskol_players_jsonb(players) @> '[{"user_id": ...}]'`), byte for byte;
+  the LATERAL `unnest` beside it is only there to name *which* seat matched,
+  which the index cannot say.
+
+  `before` pages: `{ended_at, game_number, game_id}` from the previous
+  page's last row, compared as one row against the same three expressions
+  the order is on, so no row is shown twice or skipped. The moment is
+  truncated to the millisecond on both sides, because that is the
+  resolution a cursor survives the wire at: ordering on the stored
+  microseconds while paging on milliseconds silently skips every row that
+  shares a millisecond with the one a page stopped on. It only narrows what
+  this caller already reaches -- the account is `user_id`, never the
+  cursor's.
+  """
+  def graded_for(user_id, limit, before \\ nil)
+      when is_binary(user_id) and is_integer(limit) and limit > 0 do
+    {sql, params} = graded_for_sql(user_id, limit, before)
+    %{rows: rows} = Ecto.Adapters.SQL.query!(Repo, sql, params)
+
+    Enum.map(rows, fn [
+                        game_id,
+                        slug,
+                        game_number,
+                        seat,
+                        player_id,
+                        opponent,
+                        winner,
+                        points,
+                        kind,
+                        totals,
+                        ended_at
+                      ] ->
+      %{
+        game_id: game_id,
+        slug: slug,
+        game_number: game_number,
+        seat: seat,
+        player_id: player_id,
+        opponent: opponent,
+        winner: winner,
+        points: points,
+        kind: kind,
+        totals: totals,
+        # A raw statement hands a timestamp back naive; every caller above
+        # here works in UTC instants.
+        ended_at: DateTime.from_naive!(ended_at, "Etc/UTC")
+      }
+    end)
+  end
+
+  @doc false
+  # Kept as a builder so the regression test can EXPLAIN the exact statement
+  # we send, with its parameters.
+  def graded_for_sql(user_id, limit, before \\ nil) do
+    # Postgrex encodes a jsonb parameter itself: hand it the term, not
+    # text. A text parameter through a `::jsonb` cast becomes a JSON
+    # *string*, which no containment test ever matches.
+    mine = [%{"user_id" => user_id}]
+
+    {cursor_sql, cursor_params} =
+      case before do
+        nil ->
+          {"", []}
+
+        {%DateTime{} = at, game_number, game_id} ->
+          {"AND (date_trunc('milliseconds', r.inserted_at), r.game_number, g.id) < ($4, $5, $6)",
+           [DateTime.to_naive(at), game_number, game_id]}
+      end
+
+    sql = """
+    SELECT g.id,
+           g.slug,
+           r.game_number,
+           seat.ord - 1,
+           seat.p ->> 'id',
+           COALESCE(u.name, opp.p ->> 'name'),
+           CASE WHEN last.line ->> 'kind' = 'game_over' THEN last.line ->> 'winner' END,
+           CASE WHEN last.line ->> 'kind' = 'game_over'
+                THEN COALESCE((last.line ->> 'points')::int, 0) ELSE 0 END,
+           CASE WHEN last.line ->> 'kind' = 'game_over'
+                THEN COALESCE(last.line ->> 'result', '') ELSE '' END,
+           jsonb_build_object(
+             'players', r.response -> 'players',
+             'turns', jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+               'player', r.response -> 'turns' -> 0 -> 'player',
+               'cube', r.response -> 'turns' -> 0 -> 'cube')))),
+           date_trunc('milliseconds', r.inserted_at)
+    FROM games g
+    JOIN LATERAL unnest(g.players) WITH ORDINALITY AS seat(p, ord)
+      ON seat.p ->> 'user_id' = $1
+    JOIN game_reviews r
+      ON r.game_id = g.id AND r.status = 'done' AND r.response IS NOT NULL
+    LEFT JOIN LATERAL (
+      SELECT o.p
+      FROM unnest(g.players) WITH ORDINALITY AS o(p, ord)
+      WHERE o.ord <> seat.ord
+      ORDER BY o.ord
+      LIMIT 1
+    ) AS opp ON TRUE
+    LEFT JOIN users u ON u.id = NULLIF(opp.p ->> 'user_id', '')::uuid
+    LEFT JOIN LATERAL (
+      SELECT rec.entries -> -1 AS line
+      FROM game_records rec
+      WHERE rec.game_id = g.id AND rec.game_number = r.game_number
+    ) AS last ON TRUE
+    WHERE oskol_players_jsonb(g.players) @> $2
+      #{cursor_sql}
+    ORDER BY date_trunc('milliseconds', r.inserted_at) DESC, r.game_number DESC, g.id DESC
+    LIMIT $3
+    """
+
+    {sql, [user_id, mine, limit] ++ cursor_params}
+  end
+
   @doc "One game's rendered analysis, or nil."
   def report(game_id, game_number) do
     from(r in Review,

@@ -585,7 +585,7 @@ defmodule Oskol.DeckSyncTest do
       assert session(user.id) == []
 
       # ...and KEEP GOING is what gets past that.
-      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _} =
+      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _, _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert start_new.(user.id, 10) == 10

@@ -209,6 +209,15 @@ pub type PracticeCaps {
     resume: fn(String, List(String)) -> Int,
     /// Aggregates over the deck, grouped by the given tag keys.
     summary: fn(String, List(String)) -> List(Summary),
+    /// How many cards sit at each level, lowest first: one entry per rung
+    /// of the ladder, so the picture of a deck is eight integers rather
+    /// than every card. A deck that is not there yet is all zeroes.
+    ladder: fn(String) -> List(Int),
+    /// Which of the last `n` days this deck was practised on, oldest
+    /// first and ending today, in the deck's own timezone -- the strip the
+    /// home draws. An attempt counts; putting a card off does not. A deck
+    /// that is not there yet is all False.
+    days: fn(String, Int) -> List(Bool),
   )
 }
 
@@ -229,5 +238,7 @@ pub fn stub() -> PracticeCaps {
     suspend: fn(_, _) { panic as "stub practice.suspend" },
     resume: fn(_, _) { panic as "stub practice.resume" },
     summary: fn(_, _) { panic as "stub practice.summary" },
+    ladder: fn(_) { panic as "stub practice.ladder" },
+    days: fn(_, _) { panic as "stub practice.days" },
   )
 }
