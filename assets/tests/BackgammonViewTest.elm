@@ -806,6 +806,17 @@ suite =
                         Nothing ->
                             Expect.fail "no backgammon fixture"
 
+                -- A number for the seat at the bottom of the board and none
+                -- for the other: the two bars must not be able to borrow
+                -- each other's.
+                onlyP1 : Float -> String -> Maybe Float
+                onlyP1 value id =
+                    if id == "p1" then
+                        Just value
+
+                    else
+                        Nothing
+
                 cubeOwnedBy owner c =
                     { c
                         | scene =
@@ -936,6 +947,39 @@ suite =
                 \_ ->
                     on (\c -> { c | prOf = \_ -> Nothing })
                         (\q -> Query.findAll [ class "bar-pr" ] q |> Query.count (Expect.equal 0))
+             , test "an account's career is stacked under the match PR, labelled" <|
+                \_ ->
+                    on (\c -> { c | prOf = onlyP1 8.4, careerOf = onlyP1 7.1 })
+                        (Expect.all
+                            [ Query.has [ class "bar-pr", text "Match PR: ", text "8.4" ]
+                            , Query.has [ class "bar-pr-career", text "Career ", text "7.1" ]
+
+                            -- one seat has an account, the other does not:
+                            -- the chip is on one bar and the career line
+                            -- on that same one.
+                            , \q -> Query.findAll [ class "bar-pr" ] q |> Query.count (Expect.equal 1)
+                            , \q -> Query.findAll [ class "bar-pr-career" ] q |> Query.count (Expect.equal 1)
+                            ]
+                        )
+             , test "a guest seat, or an account with too few games, wears the match PR alone" <|
+                \_ ->
+                    on (\c -> { c | prOf = onlyP1 8.4, careerOf = \_ -> Nothing })
+                        (Expect.all
+                            [ Query.has [ class "bar-pr", text "8.4" ]
+                            , \q -> Query.findAll [ class "bar-pr-career" ] q |> Query.count (Expect.equal 0)
+                            ]
+                        )
+             , test "a career with no graded game of this match yet still shows" <|
+                \_ ->
+                    -- The first game of a match is not graded until it is
+                    -- over, and the career is the number that is already
+                    -- true: it must not wait for this table.
+                    on (\c -> { c | prOf = \_ -> Nothing, careerOf = onlyP1 7.1 })
+                        (Expect.all
+                            [ Query.has [ class "bar-pr-career", text "Career ", text "7.1" ]
+                            , \q -> Query.findAll [ class "bar-pr-line" ] q |> Query.count (Expect.equal 0)
+                            ]
+                        )
              ]
             )
         , describe "a roll that plays nothing"
@@ -2456,6 +2500,7 @@ ctx playerId update model =
     , away = Just []
     , awaySince = \_ -> Nothing
     , prOf = \_ -> Nothing
+    , careerOf = \_ -> Nothing
     , theme = View.defaultTheme
     , replayHref = \n -> Just ("/backgammon/123456/replay?t=tok&game=" ++ String.fromInt n)
     , gamePrs = \_ -> []

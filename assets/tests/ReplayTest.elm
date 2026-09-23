@@ -42,6 +42,7 @@ suite =
         , words
         , rendered
         , practice
+        , careers
         , phone
         ]
 
@@ -1067,4 +1068,85 @@ phone =
                                 other ->
                                     Expect.fail ("a mistake should be a GoTo, not " ++ Debug.toString other)
                        )
+        ]
+
+
+
+-- THE CAREER IN THE OVERVIEW
+
+
+{-| Each player's PR for the game being read, and under it the career of
+the account that owns the seat, from `/ratings`. A guest seat and an
+account with too few graded games are the same thing here: the server
+sends no number, and the overview prints the game's PR alone.
+-}
+careers : Test
+careers =
+    let
+        white =
+            "0bec7bb403d96f546cf96b17b2dffa9c"
+
+        black =
+            "3738dd2a34739c4a6869e09a05d35f7d"
+
+        ratingsOf : List ( String, Float ) -> Msg
+        ratingsOf pairs =
+            GotRatings
+                (Ok
+                    { prs = Dict.empty
+                    , careers = Dict.fromList pairs
+                    , graded = 3
+                    , pending = False
+                    , games = Dict.empty
+                    }
+                )
+
+        overview : List ( String, Float ) -> Query.Single Msg
+        overview pairs =
+            loaded (Just 3)
+                |> run (gotEverything ++ [ ratingsOf pairs ])
+                |> Page.view
+                |> Query.fromHtml
+                |> Query.find [ Selector.id "rp-overview" ]
+    in
+    describe "the career under each player's PR in the overview"
+        [ test "both seats owned: two game PRs, two careers, each labelled" <|
+            \_ ->
+                overview [ ( white, 7.1 ), ( black, 12.4 ) ]
+                    |> Expect.all
+                        [ Query.findAll [ Selector.class "rp-pr" ] >> Query.count (Expect.equal 2)
+                        , Query.findAll [ Selector.class "rp-career" ] >> Query.count (Expect.equal 2)
+                        , Query.findAll [ Selector.class "rp-career" ]
+                            >> Query.index 0
+                            >> Query.has [ Selector.text "CAREER ", Selector.text "7.1" ]
+                        , Query.findAll [ Selector.class "rp-career" ]
+                            >> Query.index 1
+                            >> Query.has [ Selector.text "12.4" ]
+                        ]
+        , test "one seat owned: the career is on that player and not the other" <|
+            \_ ->
+                overview [ ( white, 7.1 ) ]
+                    |> Expect.all
+                        [ Query.findAll [ Selector.class "rp-pr" ] >> Query.count (Expect.equal 2)
+                        , Query.findAll [ Selector.class "rp-career" ] >> Query.count (Expect.equal 1)
+                        , Query.findAll [ Selector.class "rp-pr-stack" ]
+                            >> Query.index 1
+                            >> Query.hasNot [ Selector.class "rp-career" ]
+                        ]
+        , test "two guests: the game's PRs alone, as before" <|
+            \_ ->
+                overview []
+                    |> Expect.all
+                        [ Query.findAll [ Selector.class "rp-pr" ] >> Query.count (Expect.equal 2)
+                        , Query.findAll [ Selector.class "rp-career" ] >> Query.count (Expect.equal 0)
+                        ]
+        , test "a page that never heard from /ratings shows no career" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run gotEverything
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.id "rp-overview" ]
+                    |> Query.findAll [ Selector.class "rp-career" ]
+                    |> Query.count (Expect.equal 0)
         ]

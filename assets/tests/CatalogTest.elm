@@ -58,6 +58,18 @@ ratings =
                     """{"ok":true,"pending":true,"players":[]}"""
                     |> Result.map .pending
                     |> Expect.equal (Ok True)
+        , test "a seat's career is read beside its match PR; a seat without one is not in that dictionary" <|
+            \_ ->
+                D.decodeString Catalog.ratingsDecoder
+                    """{"ok":true,"pending":false,"players":[{"player_id":"p1","games":2,"pr":8.4,"career":7.1},{"player_id":"p2","games":2,"pr":11.0,"career":null}]}"""
+                    |> Result.map (\r -> ( Dict.toList r.careers, Dict.toList r.prs ))
+                    |> Expect.equal (Ok ( [ ( "p1", 7.1 ) ], [ ( "p1", 8.4 ), ( "p2", 11.0 ) ] ))
+        , test "an answer from before careers were served decodes, with none" <|
+            \_ ->
+                D.decodeString Catalog.ratingsDecoder
+                    """{"ok":true,"pending":false,"players":[{"player_id":"p1","games":2,"pr":8.4}]}"""
+                    |> Result.map (\r -> ( Dict.toList r.careers, Dict.toList r.prs ))
+                    |> Expect.equal (Ok ( [], [ ( "p1", 8.4 ) ] ))
         , test "an answer with no pending key is nothing to wait for" <|
             \_ ->
                 D.decodeString Catalog.ratingsDecoder
