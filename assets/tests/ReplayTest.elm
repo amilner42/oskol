@@ -22,7 +22,10 @@ import Games.Backgammon.Replay as Replay exposing (Annotation(..), Entry(..), Mo
 import Json.Decode as D
 import Page.Replay as Page exposing (Loadable(..), Msg(..), Showing(..))
 import ReplayFixtures
+import Session
 import Test exposing (Test, describe, test)
+import Test.Html.Event as Event
+import Ui.SignIn as SignIn
 import Test.Html.Query as Query
 import Test.Html.Selector as Selector
 
@@ -39,6 +42,7 @@ suite =
         , words
         , rendered
         , practice
+        , phone
         ]
 
 
@@ -142,6 +146,13 @@ session =
     { csrf = "", guestName = Nothing, prefs = Dict.empty, user = Nothing }
 
 
+{-| The same page with an account signed in on the browser.
+-}
+signedIn : Page.Model -> Page.Model
+signedIn model =
+    Page.withSession (Session.withUser (Just { email = "ari@oskol.test", name = Just "ari" }) model.session) model
+
+
 {-| The page with the record in, on game `wanted`.
 -}
 loaded : Maybe Int -> Page.Model
@@ -186,7 +197,7 @@ mistakes ids =
 
 practice : Test
 practice =
-    describe "PRACTICE THIS GAME'S N MISTAKES on the analysis"
+    describe "the overview's practice line: the mistakes are kept, or sign in to practice them"
         [ test "a seated reader is asked for the game being read once its review is done, and again for each game switched to" <|
             \_ ->
                 loaded (Just 3)
@@ -206,26 +217,80 @@ practice =
                     |> .mistakeAsks
                     |> Dict.isEmpty
                     |> Expect.equal True
-        , test "the button names the count, and pressing it hands the shell that game's ids" <|
+        , test "signed in (the account reaching the page after it is up, as /papi/me does), the overview says the mistakes are in their practice already: nothing to press" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run (gotEverything ++ [ mistakes [ "aaaaaaaa", "bbbbbbbb" ] ])
+                    |> signedIn
+                    |> Expect.all
+                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.class "is-kept", Selector.text "These 2 mistakes are in your practice already." ]
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.tag "button", Selector.id "rp-deck-signin-open" ] |> Query.count (Expect.equal 0)
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
+
+                        -- one is one
+                        , \m -> m |> run [ mistakes [ "aaaaaaaa" ] ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.text "This mistake is in your practice already." ]
+
+                        -- another game's count is not this one's
+                        , \m -> m |> run [ PickGame 1 ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
+                        ]
+        , test "a guest reads 'Sign in to practice these N mistakes', the sign-in behind those words" <|
             \_ ->
                 loaded (Just 3)
                     |> run (gotEverything ++ [ mistakes [ "aaaaaaaa", "bbbbbbbb" ] ])
                     |> Expect.all
-                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "practice-game" ] |> Query.has [ Selector.text "PRACTICE THIS GAME'S 2 MISTAKES" ]
-                        , \m -> outOf (PracticeGame 3) m |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.text "Sign in", Selector.text " to practice these 2 mistakes." ]
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin-open" ] |> Query.has [ Selector.text "Sign in" ]
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "signin" ]
+                        , \m -> m |> run [ mistakes [ "aaaaaaaa" ] ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.text " to practice this mistake." ]
 
-                        -- one is one
-                        , \m -> m |> run [ mistakes [ "aaaaaaaa" ] ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "practice-game" ] |> Query.has [ Selector.text "PRACTICE THIS GAME'S 1 MISTAKE" ]
+                        -- pressed: the one component, under a line that says the same
+                        , \m -> m |> run [ OpenedSignIn ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin" ] |> Query.has [ Selector.id "signin" ]
+                        , \m -> m |> run [ OpenedSignIn ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.text "Sign in to practice these 2 mistakes." ]
+                        , \m -> m |> run [ OpenedSignIn ] |> .signIn |> Maybe.map .next |> Expect.equal (Just "/backgammon/000011/replay?game=3")
+                        , \m -> m |> run [ OpenedSignIn, OpenedSignIn ] |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.id "signin" ] |> Query.count (Expect.equal 1)
 
-                        -- another game's count is not this one's
-                        , \m -> m |> run [ PickGame 1 ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
-                        , \m -> outOf (PracticeGame 1) m |> Expect.equal Page.NoOut
+                        -- the word is the door: a guest's tap opens it
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin-open" ] |> Event.simulate Event.click |> Event.expect OpenedSignIn
                         ]
-        , test "no button while the mistakes are uncounted, and none for a game with none" <|
+        , test "a guest signing in here reads the win, and CONTINUE folds it into the kept line" <|
+            \_ ->
+                let
+                    won =
+                        { saved = 1, next = "/backgammon/000011/replay?game=3", user = Just { email = "ari@oskol.test", name = Just "ari" }, new = False }
+
+                    opened =
+                        loaded (Just 3) |> run (gotEverything ++ [ mistakes [ "aaaaaaaa", "bbbbbbbb" ], OpenedSignIn ])
+
+                    -- the code accepted: the page tells the shell, which sets
+                    -- the account on the session (as Main's `signedIn` does)
+                    ( afterCode, _, out ) =
+                        Page.update (SignInMsg (SignIn.GotCode (Ok won))) opened
+
+                    signedInHere =
+                        signedIn afterCode
+                in
+                Expect.all
+                    [ \_ -> out |> Expect.equal (Page.SignedIn won.user)
+                    , \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin" ] |> Query.has [ Selector.id "signin", Selector.text "You're in." ]
+                    , \m -> m |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "is-kept" ] |> Query.count (Expect.equal 0)
+                    , \m -> m |> run [ SignInMsg SignIn.PressedContinue ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.class "is-kept", Selector.text "These 2 mistakes are in your practice already." ]
+                    , \m -> m |> run [ SignInMsg SignIn.PressedContinue ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "signin" ]
+                    , \m -> m |> run [ SignInMsg SignIn.PressedContinue ] |> .step |> Expect.equal 0
+                    ]
+                    signedInHere
+        , test "no line while the mistakes are uncounted, none for a game with none, none for a stranger" <|
             \_ ->
                 Expect.all
-                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
-                    , \m -> m |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
+                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
+                    , \m -> m |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
+                    , \m -> m |> signedIn |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
+                    , \_ ->
+                        Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
+                            |> Tuple.first
+                            |> run ([ GotRecord (Ok shared) ] ++ gotEverything)
+                            |> Page.view
+                            |> Query.fromHtml
+                            |> Query.hasNot [ Selector.id "rp-deck" ]
                     ]
                     (loaded (Just 3) |> run gotEverything)
         , test "puzzles still being written: asked again, bounded; any other refusal ends it" <|
@@ -769,14 +834,6 @@ rendered =
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-analysis-state" ]
                     |> Query.has [ Selector.text "Loading the analysis…" ]
-        , test "the move list marks the current line" <|
-            \_ ->
-                loaded (Just 3)
-                    |> run [ PickTab Page.MovesTab, Next, Next ]
-                    |> Page.view
-                    |> Query.fromHtml
-                    |> Query.find [ Selector.class "rp-line", Selector.class "is-on" ]
-                    |> Query.has [ Selector.id "rp-line-2" ]
         , test "every game of the match can be picked, from the match panel" <|
             \_ ->
                 loaded (Just 3)
@@ -785,4 +842,229 @@ rendered =
                     |> Query.fromHtml
                     |> Query.findAll [ Selector.class "rp-match-row" ]
                     |> Query.count (Expect.equal 3)
+        ]
+
+
+
+
+
+
+-- THE SIDE: ONE PANEL, THREE TABS
+
+
+{-| Game 2's analysis with its fourth turn's move made free, so that turn's
+missed double (0.065 lost) is the costlier side. The fixture has no turn
+where the cube cost more than the move; this makes one, and fails loudly if
+the number it edits is no longer there.
+-}
+cubeCostlier : Replay.GameAnalysis
+cubeCostlier =
+    let
+        edited =
+            String.replace "\"equity_lost\":0.37702810764312744" "\"equity_lost\":0.0" ReplayFixtures.analysisGame2
+    in
+    if edited == ReplayFixtures.analysisGame2 then
+        Debug.todo "the fixture no longer has game 2's fourth move at 0.377 lost"
+
+    else
+        analysis edited
+
+
+onPhone : Page.Model -> Page.Model
+onPhone model =
+    run ([ Resized 390 844 ] ++ gotEverything) model
+
+
+onDesktop : Page.Model -> Page.Model
+onDesktop model =
+    run ([ Resized 1440 900 ] ++ gotEverything) model
+
+
+tabOn : String -> Page.Model -> Expect.Expectation
+tabOn id_ model =
+    model
+        |> Page.view
+        |> Query.fromHtml
+        |> Query.find [ Selector.id id_ ]
+        |> Query.has [ Selector.class "is-on" ]
+
+
+offered : String -> Bool -> Page.Model -> Expect.Expectation
+offered id_ expected model =
+    model
+        |> Page.view
+        |> Query.fromHtml
+        |> Query.find [ Selector.id id_ ]
+        |> Query.has [ Selector.disabled (not expected) ]
+
+
+shows : String -> Bool -> Page.Model -> Expect.Expectation
+shows id_ expected model =
+    model
+        |> Page.view
+        |> Query.fromHtml
+        |> Query.findAll [ Selector.id id_ ]
+        |> Query.count
+            (Expect.equal
+                (if expected then
+                    1
+
+                 else
+                    0
+                )
+            )
+
+
+{-| The side is the same one panel on every screen; what the screen decides
+is the page's layout, and these say the same of both.
+-}
+onEveryScreen : String -> (Page.Model -> Expect.Expectation) -> Test
+onEveryScreen name check =
+    describe name
+        [ test "on a phone" <| \_ -> check (loaded (Just 3) |> onPhone)
+        , test "on a desktop" <| \_ -> check (loaded (Just 3) |> onDesktop)
+        ]
+
+
+phone : Test
+phone =
+    describe "the side is one panel with three tabs"
+        [ test "a phone upright or held sideways gets the page that scrolls; a tablet, a desktop and an unmeasured page a fixed one" <|
+            \_ ->
+                Expect.all
+                    [ \m -> m |> run [ Resized 390 844 ] |> Page.onePanel |> Expect.equal True
+                    , \m -> m |> run [ Resized 320 568 ] |> Page.onePanel |> Expect.equal True
+                    , \m -> m |> run [ Resized 844 390 ] |> Page.onePanel |> Expect.equal True
+                    , \m -> m |> run [ Resized 740 360 ] |> Page.onePanel |> Expect.equal True
+                    , \m -> m |> run [ Resized 768 1024 ] |> Page.onePanel |> Expect.equal False
+                    , \m -> m |> run [ Resized 640 480 ] |> Page.onePanel |> Expect.equal False
+                    , \m -> m |> run [ Resized 1440 900 ] |> Page.onePanel |> Expect.equal False
+                    , \m -> m |> Page.onePanel |> Expect.equal False
+                    ]
+                    (loaded (Just 3))
+        , test "the page wears is-one on a phone and not on a desktop" <|
+            \_ ->
+                Expect.all
+                    [ onPhone >> Page.view >> Query.fromHtml >> Query.has [ Selector.class "is-one" ]
+                    , onDesktop >> Page.view >> Query.fromHtml >> Query.hasNot [ Selector.class "is-one" ]
+                    ]
+                    (loaded (Just 3))
+        , onEveryScreen "one panel, one bar of three tabs, OVERVIEW MOVE CUBE, and no move list" <|
+            run [ Next ]
+                >> Page.view
+                >> Query.fromHtml
+                >> Expect.all
+                    [ Query.findAll [ Selector.class "rp-panel" ] >> Query.count (Expect.equal 1)
+                    , Query.findAll [ Selector.class "rp-note-tabs" ] >> Query.count (Expect.equal 0)
+                    , Query.findAll [ Selector.class "rp-tabs" ] >> Query.count (Expect.equal 1)
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.count (Expect.equal 3)
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 0 >> Query.has [ Selector.id "rp-tab-overview", Selector.text "OVERVIEW" ]
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 1 >> Query.has [ Selector.id "rp-note-move", Selector.text "MOVE" ]
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 2 >> Query.has [ Selector.id "rp-note-cube", Selector.text "CUBE" ]
+                    , Query.hasNot [ Selector.text "MOVES" ]
+                    , Query.findAll [ Selector.class "rp-line" ] >> Query.count (Expect.equal 0)
+                    ]
+        , onEveryScreen "the start opens on OVERVIEW: the summary, no note, no game name; MOVE and CUBE are not offered" <|
+            Expect.all
+                [ tabOn "rp-tab-overview"
+                , shows "rp-overview" True
+                , shows "rp-summary" True
+                , shows "rp-note" False
+                , offered "rp-tab-overview" True
+                , offered "rp-note-move" False
+                , offered "rp-note-cube" False
+                , Page.view >> Query.fromHtml >> Query.hasNot [ Selector.text "GAME 3" ]
+                , Page.view >> Query.fromHtml >> Query.find [ Selector.id "rp-overview" ] >> Query.findAll [ Selector.class "rp-pr" ] >> Query.count (Expect.equal 2)
+                ]
+        , test "the overview says where a pending analysis stands" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ Resized 390 844, GotIndex (Ok (index ReplayFixtures.indexPending)) ]
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.id "rp-overview" ]
+                    |> Query.has [ Selector.id "rp-analysis-state", Selector.text "Analysing game 3 at 4-ply… this can take a few minutes" ]
+        , onEveryScreen "a step opens MOVE, that move's verdict; CUBE is its other side; each alone" <|
+            run [ Next ]
+                >> Expect.all
+                    [ tabOn "rp-note-move"
+                    , offered "rp-note-move" True
+                    , offered "rp-note-cube" True
+                    , shows "rp-note" True
+                    , shows "rp-overview" False
+                    , Page.view >> Query.fromHtml >> Query.find [ Selector.id "rp-note" ] >> Query.has [ Selector.text "Bad", Selector.text "24/14" ]
+                    , run [ PickTab Page.CubeTab ] >> Expect.all [ tabOn "rp-note-cube", shows "rp-note" True, shows "rp-overview" False, .showing >> Expect.equal Before ]
+                    , run [ PickTab Page.CubeTab, PickTab Page.MoveTab ] >> Expect.all [ tabOn "rp-note-move", .showing >> Expect.equal Played ]
+                    ]
+        , onEveryScreen "OVERVIEW mid-game keeps the step (the move played back on the board), and MOVE is the way back to it" <|
+            run [ Next, Next, Next, PickTab Page.CubeTab, PickTab Page.OverviewTab ]
+                >> Expect.all
+                    [ tabOn "rp-tab-overview"
+                    , shows "rp-overview" True
+                    , shows "rp-note" False
+                    , .step >> Expect.equal 3
+                    , .showing >> Expect.equal Played
+                    , offered "rp-note-move" True
+                    , run [ PickTab Page.MoveTab ] >> Expect.all [ tabOn "rp-note-move", shows "rp-note" True, .step >> Expect.equal 3 ]
+                    ]
+        , onEveryScreen "only one of the three is on" <|
+            \m ->
+                Expect.all
+                    (List.map
+                        (\msgs m_ ->
+                            m_ |> run msgs |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "rp-tab", Selector.class "is-on" ] |> Query.count (Expect.equal 1)
+                        )
+                        [ [], [ Next ], [ Next, PickTab Page.CubeTab ], [ Next, PickTab Page.OverviewTab ], [ Next, PickTab Page.OverviewTab, PickTab Page.MoveTab ] ]
+                    )
+                    m
+        , test "CUBE is offered on a roll only: not at the start, not on a double or a result; MOVE on any line but the start" <|
+            \_ ->
+                Expect.all
+                    [ run [ GoTo 4 ] >> Expect.all [ offered "rp-note-cube" True, offered "rp-note-move" True ]
+                    , run [ GoTo 5 ] >> Expect.all [ offered "rp-note-cube" False, offered "rp-note-move" True ]
+                    , run [ Last ] >> Expect.all [ offered "rp-note-cube" False, offered "rp-note-move" True ]
+                    , run [ Last, First ] >> Expect.all [ offered "rp-note-cube" False, offered "rp-note-move" False, tabOn "rp-tab-overview" ]
+                    ]
+                    (loaded (Just 2) |> onPhone)
+        , onEveryScreen "a step lands on MOVE, whichever tab was open" <|
+            Expect.all
+                [ run [ Next, PickTab Page.CubeTab, Next ] >> Expect.all [ tabOn "rp-note-move", .showing >> Expect.equal Played, .step >> Expect.equal 2 ]
+                , run [ Next, PickTab Page.OverviewTab, Next ] >> Expect.all [ tabOn "rp-note-move", .step >> Expect.equal 2 ]
+                , run [ Next, PickTab Page.OverviewTab, TouchStarted ( 300, 400 ), TouchEnded ( 200, 410 ) ] >> Expect.all [ tabOn "rp-note-move", .step >> Expect.equal 2 ]
+                ]
+        , test "a step lands on CUBE when the cube cost more than the move" <|
+            \_ ->
+                loaded (Just 2)
+                    |> run [ Resized 390 844, GotIndex (Ok allDone), GotAnalysis 2 (Ok cubeCostlier), GoTo 4 ]
+                    |> Expect.all [ tabOn "rp-note-cube", .showing >> Expect.equal Before, shows "rp-note" True ]
+        , test "the analysis landing on a step already open on MOVE may turn it to CUBE; not one open on the overview" <|
+            \_ ->
+                Expect.all
+                    [ run [ GoTo 4, GotAnalysis 2 (Ok cubeCostlier) ] >> Expect.all [ tabOn "rp-note-cube", .showing >> Expect.equal Before ]
+                    , run [ GoTo 4, PickTab Page.OverviewTab, GotAnalysis 2 (Ok cubeCostlier) ] >> Expect.all [ tabOn "rp-tab-overview", .step >> Expect.equal 4 ]
+                    ]
+                    (loaded (Just 2) |> run [ Resized 390 844, GotIndex (Ok allDone) ])
+        , onEveryScreen "a mistake tapped in the overview lands on its verdict, and the first arrow is the overview again" <|
+            Expect.all
+                [ run [ GoTo 3 ] >> Expect.all [ tabOn "rp-note-move", shows "rp-note" True, shows "rp-overview" False, .step >> Expect.equal 3 ]
+                , run [ GoTo 3, First ] >> Expect.all [ tabOn "rp-tab-overview", shows "rp-overview" True, shows "rp-note" False ]
+                ]
+        , test "the mistakes list is those doors" <|
+            \_ ->
+                loaded (Just 3)
+                    |> onPhone
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.findAll [ Selector.class "rp-mistake" ]
+                    |> Query.first
+                    |> Event.simulate Event.click
+                    |> Event.toResult
+                    |> (\r ->
+                            case r of
+                                Ok (GoTo _) ->
+                                    Expect.pass
+
+                                other ->
+                                    Expect.fail ("a mistake should be a GoTo, not " ++ Debug.toString other)
+                       )
         ]

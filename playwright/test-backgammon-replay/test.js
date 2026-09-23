@@ -9,21 +9,26 @@
  *    while `/reviews` answers pending; stepping with the buttons and the
  *    arrow keys moves one line at a time; when the analysis lands (the
  *    page polls) the grades fill in and the viewer stays on the same step;
- *    a candidate move goes on the board and comes off again; the ANALYSIS
- *    tab shows each player's PR; End goes to the last line.
+ *    a candidate move goes on the board and comes off again; OVERVIEW
+ *    shows each player's PR and keeps the step; End goes to the last line.
  * 2. A game whose analysis failed says so and offers TRY AGAIN, which
  *    re-asks (a POST) and fills the game in.
  * 3. Polling stops once nothing is pending.
- * 4. Phone 390x844, 320x568 and 844x390: nothing scrolls sideways, the
- *    board fits the screen, a swipe across the board steps, and the
- *    current line of the move list is in view.
+ *    board fits the screen, and a swipe across the board steps.
+ *    Everywhere, the side is one panel under one bar of three tabs
+ *    (OVERVIEW, MOVE, CUBE): the start opens on OVERVIEW with MOVE and
+ *    CUBE greyed, a step opens MOVE, CUBE is offered on a roll only,
+ *    OVERVIEW mid-game keeps the step and MOVE comes back to it, each
+ *    shows its content alone; on a phone the page scrolls rather than
+ *    any panel.
  * 5. The table offers REPLAY at game over, and it opens this page.
  *
- * The analysis is stubbed by default: `/reviews` (the index: a status and a
- * turn count per game) and `/reviews/<n>` (one game's analysis) are both
- * answered in the browser, the analysis built from the room's own record
- * (every verdict names a real line of it), pending for the first few asks,
- * then done -- except game 1, which fails until retried. With REPLAY_REAL=1 the real endpoint
+ * The analysis is stubbed by default (`lib/replay-stub.js`): `/reviews`
+ * (the index: a status and a turn count per game) and `/reviews/<n>` (one
+ * game's analysis) are both answered in the browser, the analysis built
+ * from the room's own record (every verdict names a real line of it),
+ * pending for the first few asks, then done -- except game 1, which fails
+ * until retried. With REPLAY_REAL=1 the real endpoint
  * is used and the script waits for the engine (needs ANALYSIS_URL
  * reachable by the server).
  *
@@ -33,6 +38,7 @@ const playwright = require('playwright');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const { resultLine } = require('../lib/flows');
+const { stubAnalysis } = require('../lib/replay-stub');
 
 const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 4400}`;
 const SHOTS = process.env.SHOTS_DIR || 'playwright/screenshots/test-backgammon-replay';
@@ -54,112 +60,6 @@ function arrangeRoom() {
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }
   );
   return JSON.parse(resultLine(out));
-}
-
-// ---------- the stubbed analysis ----------
-
-const GRADES = ['best', 'ok', 'doubtful', 'bad', 'very_bad', 'best', 'best'];
-
-/** A review of one game built from its record: every turn graded, a best
- * move that leaves the previous position (so it visibly differs), every
- * double and answer judged. */
-function reviewOf(record, game) {
-  const seat = (id) => record.players.findIndex((p) => p.id === id);
-  const color = (id) => record.players[seat(id)].color;
-  const turns = [];
-  let before = record.start;
-  let n = 0;
-  game.entries.forEach((e, i) => {
-    if (e.kind === 'turn') {
-      n += 1;
-      const grade = GRADES[n % GRADES.length];
-      const lost = { best: 0, ok: 0.012, doubtful: 0.045, bad: 0.11, very_bad: 0.31 }[grade];
-      const side = (pos) => ({ white: pos.white, black: pos.black });
-      const played = {
-        rank: grade === 'best' ? 1 : 2, notation: e.moves.join(' ') || '(no play)', equity: 0.1 - lost,
-        equity_lost: lost, played: true, position: side(e.position), landed: e.landed,
-      };
-      const best = {
-        rank: 1, notation: grade === 'best' ? played.notation : '13/7 8/7', equity: 0.1, equity_lost: 0,
-        played: grade === 'best', position: grade === 'best' ? side(e.position) : side(before), landed: [7, 7],
-      };
-      turns.push({
-        number: turns.length + 1, log_index: 0, entry: i, double_entry: null, answer_entry: null,
-        seat: seat(e.player), player_id: e.player, color: color(e.player), dice: e.dice, double: null,
-        move: e.moves.length === 0 ? { danced: true } : {
-          danced: false, grade, equity_lost: lost, forced: false, n_legal: 9,
-          played, best, top: grade === 'best' ? [best] : [best, played],
-        },
-        cube: null, luck: n % 3 === 0 ? 0.087 : -0.021,
-      });
-      before = e.position;
-    } else if (e.kind === 'double') {
-      const answer = game.entries[i + 1];
-      const passed = answer && answer.kind === 'drop';
-      turns.push({
-        number: turns.length + 1, log_index: 0, entry: null, double_entry: i,
-        answer_entry: answer && (answer.kind === 'take' || passed) ? i + 1 : null,
-        seat: seat(e.player), player_id: e.player, color: color(e.player), dice: null,
-        double: passed ? 'pass' : 'take', move: null, luck: null,
-        cube: {
-          action: 'double', response: passed ? 'pass' : 'take', optimal: 'No Double',
-          equities: { no_double: 0.084, double_take: -0.283, double_pass: 1.0 },
-          doubler: { seat: seat(e.player), grade: 'very_bad', equity_lost: 0.3675, mistake: 'wrong_double' },
-          taker: { seat: 1 - seat(e.player), grade: passed ? 'very_bad' : 'ok', equity_lost: passed ? 1.28 : 0, mistake: passed ? 'wrong_pass' : null },
-        },
-      });
-    }
-  });
-  const totals = (p, i) => ({
-    seat: i, player_id: p.id, name: p.name, color: p.color, pr: i === 0 ? 8.43 : 12.07, error: 0.5, luck: i === 0 ? 0.412 : -0.412,
-    moves: { decisions: 30, forced: 2, error: 0.4, grades: { best: 12, ok: 8, doubtful: 5, bad: 3, very_bad: 2 } },
-    cube: { decisions: 4, error: 0.1, mistakes: { missed_double: 0, wrong_double: 1, wrong_take: 0, wrong_pass: 0 } },
-  });
-  return { levels: { moves: '4ply', cube: '4ply' }, timing_ms: 61000, players: record.players.map(totals), turns };
-}
-
-/** Answer `/reviews`, `/reviews/<n>` and the retry in the browser.
- *
- * The index is the cheap answer the page polls; one game's analysis is
- * asked for on its own, and only for the game being read.
- */
-async function stubAnalysis(context, record, counts) {
-  let retried = false;
-  const statusOf = (g) => {
-    if (g.number === 1 && !retried) return counts.get >= 3 ? 'failed' : 'pending';
-    return counts.get < 3 ? 'pending' : 'done';
-  };
-  const turnsOf = (g) => g.entries.filter((e) => e.kind === 'turn').length;
-  const index = () => ({
-    ok: true,
-    players: record.players.map((p, i) => ({ seat: i, player_id: p.id, name: p.name, color: p.color })),
-    games: record.games.map((g) => ({ game_number: g.number, status: statusOf(g), turns: turnsOf(g) })),
-  });
-  const one = (number) => {
-    const g = record.games.find((x) => x.number === number);
-    if (!g) return { ok: false, error: { code: 'not_found', message: 'no such game' } };
-    const status = statusOf(g);
-    return { ok: true, game_number: number, status, turns: turnsOf(g), review: status === 'done' ? reviewOf(record, g) : null };
-  };
-  // Nothing here carries anything in the URL but the game number: who is
-  // asking is the guest cookie the request goes out with.
-  await context.route(/\/papi\/games\/backgammon\/rooms\/[^/]+\/reviews(\/(retry|\d+))?(\?|$)/, async (route) => {
-    const url = route.request().url();
-    const game = url.match(/\/reviews\/(\d+)/);
-    let body;
-    if (url.includes('/reviews/retry')) {
-      counts.retry += 1;
-      retried = true;
-      body = index();
-    } else if (game) {
-      counts.game += 1;
-      body = one(Number(game[1]));
-    } else {
-      counts.get += 1;
-      body = index();
-    }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-  });
 }
 
 // ---------- checks ----------
@@ -199,29 +99,56 @@ async function count(page, expected) {
   return page.evaluate(read);
 }
 
-async function currentLineVisible(page, what) {
-  // The page opens on ANALYSIS; the list this checks is a tab away.
-  if (!(await page.locator('#rp-list').count())) await page.click('.rp-tab:has-text("MOVES")');
-  // the list scrolls to the line a frame after the step renders
-  const inView = await page
-    .waitForFunction(() => {
-      const line = document.querySelector('.rp-line.is-on');
-      const list = document.getElementById('rp-list');
-      if (!line || !list) return false;
-      const a = line.getBoundingClientRect();
-      const b = list.getBoundingClientRect();
-      return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
-    }, null, { timeout: 2000 })
-    .then(() => true, () => false);
-  if (!inView) {
-    await page.screenshot({ path: `${SHOTS}/failed-${what}.png` });
-    log(JSON.stringify(await page.evaluate(() => {
-      const line = document.querySelector('.rp-line.is-on');
-      const list = document.getElementById('rp-list');
-      return { line: line && line.getBoundingClientRect(), list: list && list.getBoundingClientRect(), scroll: list && list.scrollTop };
-    })));
+/** The side is one panel under one bar of three tabs, OVERVIEW, MOVE and
+ * CUBE, each showing its content alone; MOVE and CUBE are offered only
+ * where they have something to say; OVERVIEW keeps the step. On a phone
+ * the page scrolls, never a panel. Leaves the page where it found it. */
+async function onePanel(page, what, { phone }) {
+  const tabs = ['#rp-tab-overview', '#rp-note-move', '#rp-note-cube'];
+  for (const tab of tabs) must(await page.locator(`#rp-panel .rp-tabs ${tab}`).count() === 1, `${what}: the one panel has the tab ${tab}`);
+  must(await page.locator('.rp-panel').count() === 1 && await page.locator('.rp-tabs').count() === 1 && await page.locator('.rp-note-tabs').count() === 0, `${what}: one panel, one bar`);
+  must(await page.locator('#rp-list, .rp-line').count() === 0, `${what}: no move list`);
+  // The start: OVERVIEW, and neither MOVE nor CUBE is a door.
+  const step = Number(await page.getAttribute('.rp-controls-wrap', 'data-step'));
+  await page.click('#rp-first');
+  await page.waitForFunction(() => document.querySelector('.rp-controls-wrap').dataset.step === '0', null, { timeout: 2000 });
+  await page.waitForSelector('#rp-overview', { timeout: 2000 });
+  must(await page.locator('#rp-tab-overview.is-on').count() === 1, `${what}: the start opens on OVERVIEW`);
+  must(await page.locator('#rp-overview #rp-summary .rp-pr').count() === 2, `${what}: the overview is the summary, both PRs`);
+  must(await page.locator('#practice-game').count() === 0, `${what}: nothing to press for practice on the overview`);
+  must(await page.locator('#rp-note-move:disabled').count() === 1 && await page.locator('#rp-note-cube:disabled').count() === 1, `${what}: MOVE and CUBE are not offered before the first roll`);
+  // Back where it was, then on to a roll if that line is not one (the
+  // room is random play: a line can be a double, a take, a dance): MOVE
+  // is the roll's verdict, CUBE its other side.
+  for (let i = 0; i < step; i++) await page.click('#rp-next');
+  await page.waitForFunction((want) => document.querySelector('.rp-controls-wrap').dataset.step === String(want), step, { timeout: 2000 });
+  for (let i = 0; i < 12 && !(await page.locator('#rp-note-cube:enabled').count() && await page.locator('#rp-note .rp-grade').count()); i++) {
+    await page.click('#rp-next');
+    await sleep(120);
   }
-  must(inView, `${what}: the current line of the move list is in view`);
+  const roll = Number(await page.getAttribute('.rp-controls-wrap', 'data-step'));
+  await page.waitForSelector('#rp-note-cube:enabled', { timeout: 2000 });
+  must(await page.locator('#rp-note-move.is-on').count() === 1 && await page.locator('#rp-panel > #rp-note .rp-grade').count() === 1, `${what}: a step opens MOVE, that move's verdict`);
+  await page.click('#rp-note-cube');
+  await page.waitForSelector('#rp-note-cube.is-on', { timeout: 2000 });
+  must(await page.locator('#rp-panel > #rp-note').count() === 1 && await page.locator('#rp-overview').count() === 0, `${what}: CUBE shows the note alone`);
+  // OVERVIEW mid-game keeps the step; MOVE is the way back.
+  await page.click('#rp-tab-overview');
+  await page.waitForSelector('#rp-overview', { timeout: 2000 });
+  must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === roll && await page.locator('#rp-note').count() === 0, `${what}: OVERVIEW mid-game keeps step ${roll} and shows the overview alone`);
+  must(await page.locator('.rp-tab.is-on').count() === 1, `${what}: one tab is on`);
+  if (phone) {
+    // The overview is the tallest: the page, not the panel, is what scrolls.
+    const scroll = await page.evaluate(() => ({
+      page: document.scrollingElement.scrollHeight > innerHeight,
+      panels: [...document.querySelectorAll('.rp-panel, .rp-note, .rp-summary, .rp-overview')].filter((el) => el.scrollHeight > el.clientHeight + 1).length,
+    }));
+    must(scroll.page, `${what}: the page scrolls`);
+    must(scroll.panels === 0, `${what}: no panel scrolls inside itself`);
+  }
+  await page.click('#rp-note-move');
+  await page.waitForSelector('#rp-note-move.is-on', { timeout: 2000 });
+  must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === roll && await page.locator('#rp-note .rp-grade').count() === 1, `${what}: MOVE comes back to step ${roll}'s verdict`);
 }
 
 async function swipe(page, dx) {
@@ -314,10 +241,6 @@ async function main() {
     // The analysis lands while the viewer is on step 4.
     await page.waitForSelector('#rp-note .rp-grade', { timeout: REAL ? 180000 : 15000 });
     must((await count(page, `4 / ${last.entries.length}`)) === `4 / ${last.entries.length}`, 'the grades fill in without moving the viewer');
-    // The page opens on ANALYSIS; the move list is a tab away.
-    await page.click('.rp-tab:has-text("MOVES")');
-    await page.waitForSelector('.rp-line');
-    must(await page.locator('.rp-line .rp-mark').count() > 0, 'the move list carries the grades');
 
     // Find a turn that was not the engine's best, and put its best on the board.
     let found = false;
@@ -337,15 +260,14 @@ async function main() {
     must(await page.locator('.rp-board.is-proposed').count() === 0, 'and the played move comes back');
     await page.screenshot({ path: `${SHOTS}/03-desktop-graded.png` });
 
-    await page.click('.rp-tab:has-text("ANALYSIS")');
-    await page.waitForSelector('#rp-summary .rp-pr');
-    must(await page.locator('#rp-summary .rp-pr').count() === 2, 'the summary gives both players a PR');
+    await page.click('#rp-tab-overview');
+    await page.waitForSelector('#rp-overview .rp-pr');
+    must(await page.locator('#rp-overview .rp-pr').count() === 2, 'the overview gives both players a PR');
     await page.screenshot({ path: `${SHOTS}/04-desktop-summary.png` });
-    await page.click('.rp-tab:has-text("MOVES")');
+    await onePanel(page, 'desktop', { phone: false });
 
     await page.keyboard.press('End');
     must((await count(page, `${last.entries.length} / ${last.entries.length}`)) === `${last.entries.length} / ${last.entries.length}`, 'End goes to the last line');
-    await currentLineVisible(page, 'desktop');
 
     // ---------- 2. a failed game, tried again ----------
     if (!REAL) {
@@ -379,7 +301,7 @@ async function main() {
       watch(p, phone.name);
       await p.goto(url(`&game=${last.number}`));
       await p.waitForSelector('.bg-still .bg-board', { timeout: 20000 });
-      await p.waitForSelector('#rp-note', { timeout: 20000 });
+      await p.waitForSelector('#rp-panel', { timeout: 20000 });
       await sleep(REAL ? 3000 : 500);
       await swipe(p, -120);
       await swipe(p, -120);
@@ -401,7 +323,7 @@ async function main() {
         const side = await p.locator('.rp-side').boundingBox();
         must(side.x >= board.x + board.width - 1, 'landscape: the notes sit beside the board, not on it');
       }
-      await currentLineVisible(p, phone.name);
+      await onePanel(p, phone.name, { phone: true });
       await p.screenshot({ path: `${SHOTS}/06-${phone.name}.png` });
       await ctx.close();
     }

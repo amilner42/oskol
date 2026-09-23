@@ -641,12 +641,21 @@ assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
                                  PRACTICE THIS GAME'S N MISTAKES and save offer
 assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again, with the
                                  engine's analysis (polls /reviews while any is pending):
-                                 the mistakes list jumps to a step, the band offers the
-                                 best move, the dice take the move back; a turn's note has
-                                 MOVE and CUBE tabs, each a sentence in words (built from
-                                 the chances) over the numbers in columns; a seated
-                                 reader's ANALYSIS tab offers PRACTICE THIS GAME'S N
-                                 MISTAKES per game (`Out = StartRun`)
+                                 beside the board one panel with three tabs, OVERVIEW
+                                 (each player's PR and grade counts, the mistakes list,
+                                 each a door to its step; always there, and it keeps
+                                 the step), MOVE (the line's verdict: a sentence in words
+                                 built from the chances over the numbers in columns;
+                                 greyed at the start) and CUBE (a roll's other side,
+                                 greyed off a roll); a step opens MOVE, or CUBE when it
+                                 cost more; the band offers the best move, the dice take
+                                 the move back; a seated reader's overview says the
+                                 game's mistakes are in their practice already (signed
+                                 in) or "Sign in to practice these N mistakes",
+                                 `Ui.SignIn` behind the words (`Out = SignedIn`); on a
+                                 phone (`onePanel`: under 640 wide, or
+                                 under 480 tall sideways) the panel has no scroll of its
+                                 own and the page scrolls
 assets/src/Page/Puzzles.elm      "/puzzles" the practice home: an account's counts and
                                  PRACTICE (or "Done for today" and KEEP GOING), a guest's
                                  "23 mistakes from your 4 games", a stranger's TRY ONE
@@ -1274,13 +1283,17 @@ path builds one and nothing re-asks the engine to recover one.
   chances, nothing more.
 - **Every finished game is the moment.** Both result cards at the table --
   the game-over card and the between-games card of a match or of
-  unlimited play -- and the replay's ANALYSIS tab offer PRACTICE THIS
-  GAME'S N MISTAKES (`practice-game`; "1 MISTAKE"; on the cards a quiet
-  "No mistakes in this game" for none) once the game's review is done:
-  `Page/Play.elm` asks `/puzzles?game=n` for each game `/ratings` lists
-  as graded, for a seat only (a spectator would be told 404), and the
-  replay asks for the game being read as it switches; both keep the ids
-  and hand them to Main as `StartRun`. The puzzles are written a moment
+  unlimited play -- offer PRACTICE THIS GAME'S N MISTAKES
+  (`practice-game`; "1 MISTAKE"; a quiet "No mistakes in this game" for
+  none) once the game's review is done, and the replay's OVERVIEW has
+  nothing to press: signed in, a line says the game's mistakes are in
+  their practice already; a guest reads "Sign in to practice these N
+  mistakes", `Ui.SignIn` behind the first words (`rp-deck`,
+  `rp-deck-signin-open`). `Page/Play.elm`
+  asks `/puzzles?game=n` for each game `/ratings` lists as graded, for a
+  seat only (a spectator would be told 404), and the replay asks for the
+  game being read as it switches; the cards keep the ids and hand them
+  to Main as `StartRun`, the replay keeps the count. The puzzles are written a moment
   after the grade, so the endpoint answers 409 `puzzles_pending` until
   they are, and the page asks again (3 s apart, twenty times at most).
   The run ends on the puzzle page's own screen, a guest's sign-in going
@@ -1611,6 +1624,8 @@ node playwright/test-spa-landing/test.js        # the home board and CREATE GAME
 node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
                                                # the lobby and the theme picker (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
+node playwright/review-replay-mobile/test.js    # screenshots of the replay's verdict, CUBE and
+                                               # overview on two phones, sideways, and a desktop
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`:

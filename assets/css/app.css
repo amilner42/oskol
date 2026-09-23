@@ -1871,7 +1871,7 @@ a.rp-match-row:hover { color: var(--ink); }
 /* The wrapper is what is positioned: the button inside keeps its own
    press transform and stays put. It is also a fixed width, so the two
    labels take turns in the same place. */
-.rp-best-toggle-wrap { position: absolute; top: 50%; z-index: 2; width: 10.5rem; display: flex; justify-content: center; }
+.rp-best-toggle-wrap { position: absolute; top: 50%; z-index: 2; width: 7rem; display: flex; justify-content: center; }
 .rp-best-toggle-wrap.is-left { left: 25%; transform: translate(-50%, -50%); }
 .rp-best-toggle-wrap.is-right { left: 75%; transform: translate(-50%, -50%); }
 .rp-best-toggle { white-space: nowrap; }
@@ -1904,7 +1904,7 @@ a.rp-match-row:hover { color: var(--ink); }
   background: #fff; border: 3px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink);
   padding: 6px 10px; font-size: 13px; line-height: 1.35;
 }
-.rp-note .swatch, .rp-list .swatch, .rp-summary .swatch { width: 0.85rem; flex: none; align-self: center; }
+.rp-note .swatch, .rp-summary .swatch { width: 0.85rem; flex: none; align-self: center; }
 .rp-what { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .rp-dice { font-weight: 800; flex: none; min-width: 1.4rem; }
 .rp-moves { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -1998,7 +1998,11 @@ a.rp-match-row:hover { color: var(--ink); }
   .rp-progress > span, .rp-dot.pending { animation: none; }
 }
 
-/* The tabs and what they show are one box, drawn as the note above it. */
+/* The side is one box: the bar of two tabs, ANALYSIS and CUBE, and under
+   it the overview (at the start) or the note (a line's verdict), which is
+   what scrolls when the column is a fixed height. The note's own border
+   is the puzzle page's, which draws it on its own; here the box is the
+   panel's. */
 .rp-panel {
   flex: 1; min-height: 0; display: flex; flex-direction: column;
   background: #fff; border: 3px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink);
@@ -2007,15 +2011,24 @@ a.rp-match-row:hover { color: var(--ink); }
 .rp-tab { flex: 1; padding: 7px 6px; background: #fff; color: var(--ink); border: 0; cursor: pointer; }
 .rp-tab + .rp-tab { border-left: 2px solid var(--ink); }
 .rp-tab.is-on { background: var(--ink); color: var(--paper); }
-.rp-list, .rp-summary {
-  flex: 1; min-height: 7rem; overflow-y: auto; overscroll-behavior: contain;
-  padding: 6px 10px; font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums;
+/* CUBE before the first roll, or on a line that is not a roll: there, but
+   not a door. */
+.rp-tab:disabled { color: var(--pencil); opacity: 0.45; cursor: default; }
+.rp-panel > .rp-note { flex: 1; height: auto; min-height: 0; max-height: none; border: 0; box-shadow: none; }
+.rp-overview { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+.rp-overview > .rp-state { flex: none; margin: 6px 10px 0; }
+.rp-summary {
+  flex: none; padding: 6px 10px; font-size: 13px; line-height: 1.35; font-variant-numeric: tabular-nums;
 }
-.rp-line { display: flex; align-items: baseline; gap: 6px; padding: 3px 6px; margin: 0 -6px; cursor: pointer; }
-.rp-line:hover { background: color-mix(in oklab, #ffd23f 20%, #fff); }
-.rp-line.is-on { background: color-mix(in oklab, #ffd23f 50%, #fff); box-shadow: inset 3px 0 0 0 var(--ink); }
 .rp-mark { flex: none; font-weight: 800; font-size: 12px; padding: 0 4px; border-radius: 3px; }
 .rp-mark.g-best, .rp-mark.g-ok { background: transparent; }
+/* Over the summary: the mistakes are in the deck (signed in, a check), or
+   what signing in keeps, with the sign-in beneath when pressed. */
+.rp-deck { margin: 4px 0 8px; padding: 6px 8px; border-radius: 6px; background: var(--paper-2); font-size: 12.5px; line-height: 1.4; color: var(--pencil); }
+.rp-deck.is-kept { display: flex; align-items: flex-start; gap: 6px; color: var(--ink); }
+.rp-deck.is-kept > span { flex: none; margin-top: 2px; color: #3fb96f; }
+.rp-deck-line { margin-bottom: 8px; }
+.rp-page.is-one .rp-deck { font-size: 14px; padding: 8px 10px; }
 /* The summary: each player's PR, errors and luck. */
 .rp-player { padding: 6px 0; border-bottom: 1px dashed var(--pencil); }
 .rp-player-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -2024,6 +2037,32 @@ a.rp-match-row:hover { color: var(--ink); }
 .rp-count-chip { border: 1px solid var(--pencil); border-radius: 3px; padding: 0 5px; color: var(--pencil); }
 .rp-count-chip[class*="g-"] { border-color: currentColor; font-weight: 700; }
 .rp-explain { margin-top: 8px; font-size: 12px; color: var(--pencil); }
+
+/* A phone (`Page/Replay.elm` sets `is-one` on one narrower than 640, or
+   shorter than 480 held sideways): the one panel has no scroll of its
+   own. It is
+   as tall as what it shows and the page scrolls, the board and the row of
+   arrows at its top. The puzzle page shares `.rp-*` and never sets this. */
+.rp-page.is-one { height: auto; min-height: 100dvh; overflow: visible; }
+/* Room to breathe, upright: the header off the board, the board off the
+   arrows, the arrows off the panel. */
+.rp-page.is-one { padding: 12px 10px calc(18px + env(safe-area-inset-bottom)); gap: 14px; }
+.rp-page.is-one .rp-stage { gap: 12px; }
+.rp-page.is-one .rp-main { gap: 18px; }
+.rp-page.is-one .rp-main, .rp-page.is-one .rp-side, .rp-page.is-one .rp-panel { flex: none; min-height: 0; }
+.rp-page.is-one .rp-panel { overflow: visible; }
+.rp-page.is-one .rp-tab { padding: 9px 2px; }
+.rp-page.is-one .rp-overview .rp-state { margin: 8px 10px 0; }
+.rp-page.is-one .rp-note, .rp-page.is-one .rp-overview, .rp-page.is-one .rp-summary {
+  flex: none; height: auto; min-height: 4.5rem; max-height: none; overflow: visible; overscroll-behavior: auto;
+  padding: 8px 10px 12px; font-size: 14px;
+}
+.rp-page.is-one .rp-overview { padding: 0; }
+.rp-page.is-one .rp-words { font-size: 16px; line-height: 1.45; }
+.rp-page.is-one .rp-cube { margin-top: 10px; }
+.rp-page.is-one .rp-cube-value { font-size: 14px; }
+.rp-page.is-one .rp-state, .rp-page.is-one .rp-counts, .rp-page.is-one .rp-explain { font-size: 13px; }
+.rp-page.is-one .rp-mistake { font-size: 14px; padding: 6px 8px; }
 
 /* A phone held sideways: the board takes the screen's height on the left;
    the header, the games, the controls and the notes are a column beside
@@ -2043,7 +2082,6 @@ a.rp-match-row:hover { color: var(--ink); }
   .rp-side { grid-column: 2; grid-row: 3; }
   .rp-board { grid-column: 1; grid-row: 1 / -1; align-self: center; }
   .rp-note { max-height: 45%; }
-  .rp-list, .rp-summary { min-height: 0; }
   .bg-still {
     --bg-frame-w: 6px;
     --bg-lip: 5px;
@@ -2070,6 +2108,18 @@ a.rp-match-row:hover { color: var(--ink); }
   .bg-still .bg-band .die .grid > div > div { width: 4px; height: 4px; }
 }
 
+/* The same phone sideways with one panel: the column beside the board
+   grows with the tab it shows and the page scrolls; the board keeps the
+   screen's height and the top of the page. The board spans the rows, so
+   the last one is the `fr` that takes its height (an `auto` row would be
+   stretched to share it, leaving a gap over the panel), and the panel sits
+   at that row's top. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  .rp-page.is-one { height: auto; min-height: 100dvh; overflow: visible; grid-template-rows: auto auto 1fr; gap: 8px 12px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  .rp-page.is-one .rp-board, .rp-page.is-one .rp-side { align-self: start; }
+  .rp-page.is-one .rp-tab { padding: 8px 1px; font-size: 7px; }
+}
+
 /* A desktop: the board sized by the window's height, the notes beside it
    in a column as tall as the board. */
 @media (min-width: 1024px) {
@@ -2089,9 +2139,6 @@ a.rp-match-row:hover { color: var(--ink); }
   .rp-board { grid-column: 1; grid-row: 1; }
   .rp-controls-wrap { grid-column: 1; grid-row: 2; }
   .rp-side { grid-column: 2; grid-row: 1; width: 22rem; min-height: 0; }
-  /* The note is the height of a graded turn (the title, the verdict, the
-     five candidates) from the start, so stepping into one moves nothing. */
-  .rp-note { flex: none; height: 19rem; max-height: none; }
   .bg-still {
     --bg-frame-w: 14px;
     --bg-lip: 6px;
