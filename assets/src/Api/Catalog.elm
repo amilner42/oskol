@@ -33,6 +33,7 @@ module Api.Catalog exposing
     , joinRoom
     , libraryDecoder
     , lookupCode
+    , myGameDecoder
     , myGamesDecoder
     , offeredClocks
     , prefsDecoder

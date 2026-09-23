@@ -2200,3 +2200,58 @@ a.rp-match-row:hover { color: var(--ink); }
   .pz-ask { width: 100%; }
   .pz-page .rp-note { height: auto; flex: 1; min-height: 0; overflow-y: auto; }
 }
+
+/* ---------------------------------------------------------------------
+   The signed-in home (`Page.Home`): the quiet notebook with nothing on
+   it but type, white space and the three pictures. There is no card
+   here on purpose -- the sections are separated by air and their
+   eyebrows, not by boxes inside boxes -- so what follows is only the few
+   things the notebook does not already say.
+   --------------------------------------------------------------------- */
+
+/* The account on the bar, and its one-line menu: the board home's control
+   on paper, so the hover is ink rather than white and the menu hangs
+   below the name instead of above it. */
+.hm-account { color: inherit; transition: background 0.12s; }
+.hm-account:hover, .hm-account[aria-expanded="true"] { background: rgba(35, 36, 58, 0.06); }
+.hm-account-menu {
+  position: absolute; left: 0; top: calc(100% + 8px); z-index: 30;
+  background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 12px;
+  box-shadow: 3px 3px 0 0 var(--ink); padding: 4px; min-width: 9rem;
+}
+.hm-account-menu button { display: block; width: 100%; text-align: left; border-radius: 8px; }
+.hm-account-menu button:hover { background: var(--paper-2); }
+
+/* The board picker is the board home's (`GameLanding.themePicker`), whose
+   control is painted for the dark board; on paper it takes the page's own
+   pencil. The panel it opens brings its own ground and needs nothing. */
+.hm .home-themes > button {
+  color: var(--pencil);
+  background: transparent; border: 0; border-radius: 999px;
+  transition: color 0.12s;
+}
+.hm .home-themes > button:hover { color: var(--ink); }
+.hm .home-themes > button .home-palette { transition: transform 0.18s ease; }
+.hm .home-themes > button[aria-expanded="true"] .home-palette { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  .hm .home-themes > button, .hm .home-themes > button .home-palette { transition: none; }
+}
+
+/* While the answer is on its way: the height the page will have, and
+   nothing in it. Better an empty screen for a moment than a spinner that
+   is replaced by content of another size. */
+.hm-skeleton { min-height: 60vh; }
+
+/* The recent games: a list of lines, a hairline between them, and no box
+   around any of it. */
+.hm-games > li + li { border-top: 1px solid rgba(35, 36, 58, 0.1); }
+.hm-game { transition: background 0.12s; border-radius: 8px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; }
+.hm-game:hover, .hm-game:focus-visible { background: var(--paper-2); outline: none; }
+
+/* A game's rating, in its grade's colour (`.g-best`, `.g-ok`,
+   `.g-very_bad` above): the colour is the whole of the verdict, so the
+   chip is small and carries no border. */
+.hm-pr {
+  display: inline-block; min-width: 2.6rem; text-align: center;
+  padding: 2px 6px; border-radius: 4px;
+}

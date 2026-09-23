@@ -103,6 +103,10 @@ if [[ "${1:-}" == "--browser" ]]; then
   # it arranges its own room (setup.exs) the same way.
   node playwright/test-backgammon-replay/test.js
   node playwright/test-guest-prefill/test.js
+  # The signed-in home at `/`: the bar, live games, the form, the practice
+  # line and the recent list with its MORE. It arranges its own account
+  # (setup.exs) and creates the live game in the browser.
+  node playwright/test-home/test.js
   # Signing in by email, the mail read from /dev/last-login: the code, the
   # link, an owned seat nobody can claim, logging out.
   node playwright/test-accounts/test.js
