@@ -96,8 +96,10 @@ type Msg
     | ViewLive -- back to the live game
     | ToggleThemes
     | PickTheme String
-    | OpenedSave -- the game-over card's "Save this game and your PR"
+    | OpenedSave -- a result card's "Save this game and your PR"
+    | ClosedSave -- the between-games sign-in sheet's close
     | SaveMsg Ui.SignIn.Msg
+    | PracticeGame Int -- a result card's PRACTICE THIS GAME'S N MISTAKES, by game number
     | Ignore
 
 
@@ -107,8 +109,10 @@ type Out
     | SendMany (List E.Value)
     | WantRematch
     | ChoseTheme String -- this player's board colours: display only, never sent to the room
-    | OpenSave -- open the sign-in on the game-over card
-    | ForSave Ui.SignIn.Msg -- the sign-in on the game-over card, for the page to run
+    | OpenSave -- open the sign-in on a result card
+    | CloseSave -- put the between-games sign-in sheet away
+    | ForSave Ui.SignIn.Msg -- the sign-in on a result card, for the page to run
+    | Practice Int -- start a run of this finished game's mistakes (the page holds the ids)
 
 
 init : Model
@@ -220,7 +224,8 @@ autoRoll legal model =
         ( model, Nothing )
 
 
-{-| What the game-over card offers a guest: nothing (signed in, or a
+{-| What a result card -- the game-over card, or the between-games card of
+a match or of unlimited play -- offers a guest: nothing (signed in, or a
 spectator), the one line that opens the sign-in, or the sign-in itself,
 which the page runs.
 -}
@@ -236,8 +241,14 @@ update msg model =
         OpenedSave ->
             ( model, OpenSave )
 
+        ClosedSave ->
+            ( model, CloseSave )
+
         SaveMsg saveMsg ->
             ( model, ForSave saveMsg )
+
+        PracticeGame number ->
+            ( model, Practice number )
 
         SwapDice ->
             ( { model | swaps = model.swaps + 1 }, NoOut )
@@ -508,8 +519,11 @@ type alias Ctx =
     , gamePrs :
         Int
         -> List ( String, Float ) -- each player's PR in a finished game (by number), once graded; [] until then
-    , save : Save -- the sign-in the game-over card offers a guest
+    , save : Save -- the sign-in a result card offers a guest
     , accounts : Maybe (List String) -- the seats an account owns; Nothing where that is not known (no badge at all)
+    , mistakes :
+        Int
+        -> Maybe Int -- how many mistakes of a finished game (by number) are this seat's to practice: Nothing until the analysis is done and they are counted, and always for a spectator
     }
 
 
@@ -671,7 +685,10 @@ view arrived =
     -- height, not by a fixed width: `.bg-page` in app.css derives every
     -- board dimension from `100dvh`, and the page becomes a column as wide
     -- as the board and its rail, so the header spans exactly that.
-    div [ classList [ ( "bg-page " ++ themeClass live.theme ++ " paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ) ] ]
+    -- `is-between` while the between-games card is up: the layouts that
+    -- size the board from the screen's height (a phone on its side, a
+    -- desktop window) give the band the card's room, in app.css.
+    div [ classList [ ( "bg-page " ++ themeClass live.theme ++ " paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ), ( "is-between", betweenGames live /= Nothing ) ] ]
         [ viewHeader live
         , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid content-center" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
@@ -689,6 +706,12 @@ view arrived =
 
           else
             text ""
+        , case ( betweenGames live, live.save ) of
+            ( Just _, Saving signIn ) ->
+                viewSaveSheet signIn
+
+            _ ->
+                text ""
         , case ctx.finished of
             Just winners ->
                 viewGameOver live winners
@@ -1781,20 +1804,106 @@ viewGameResult ctx between =
 
                 _ ->
                     ctx.scene.players |> List.map scoreOf |> String.join "-"
+
+        gameNumber =
+            Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1
     in
-    span
-        [ class "pixel text-[8px] sm:text-[9px] px-1 leading-relaxed text-center min-w-0"
+    -- The card sits in the left half of the band, opposite READY, and
+    -- never grows into it: everything it offers is a line of its own
+    -- column, and the sign-in it opens is a sheet (`viewSaveSheet`).
+    div
+        [ class "bg-game-result pixel text-[8px] sm:text-[9px] px-1 leading-relaxed text-center min-w-0 flex flex-col items-center gap-0.5 sm:gap-1"
         , Html.Attributes.id "bg-game-result"
         ]
         [ span [ style "color" "var(--bg-accent)" ] [ text headline ]
-        , Html.br [] []
         , span [ style "color" "var(--pencil)" ] [ text (how ++ " · " ++ score) ]
-        , case ctx.replayHref (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) of
+        , case ctx.replayHref gameNumber of
             Just _ ->
-                span [] [ Html.br [] [], replayLink ctx (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1) "REPLAY" ]
+                replayLink ctx gameNumber "REPLAY"
 
             Nothing ->
                 text ""
+        , viewPractice ctx gameNumber
+        , case ctx.save of
+            SaveOffered ->
+                button
+                    [ Html.Attributes.type_ "button"
+                    , Html.Attributes.id "save-offer"
+                    , class "signin-offer bg-save-offer font-sans text-[10px] sm:text-[12px] leading-snug"
+                    , onClick OpenedSave
+                    ]
+                    [ text "Save this game and your PR" ]
+
+            -- Open, the sign-in is a sheet over the board (`viewSaveSheet`):
+            -- the band has no room for a form, and READY stays where it is.
+            Saving _ ->
+                text ""
+
+            NoSave ->
+                text ""
+        ]
+
+
+{-| PRACTICE THIS GAME'S N MISTAKES: the door from a result card to a run
+of that game's mistakes, once the analysis is done and they are counted
+(`Ctx.mistakes`). Nothing while the analysis is pending, nothing for a
+spectator; a game with none says so quietly.
+-}
+viewPractice : Ctx -> Int -> Html Msg
+viewPractice ctx gameNumber =
+    case ctx.mistakes gameNumber of
+        Just 0 ->
+            span [ class "font-sans text-[11px] sm:text-[12px]", style "color" "var(--pencil)", Html.Attributes.id "practice-none" ]
+                [ text "No mistakes in this game" ]
+
+        Just count ->
+            button
+                [ Html.Attributes.type_ "button"
+                , Html.Attributes.id "practice-game"
+                , attribute "data-game" (String.fromInt gameNumber)
+                , attribute "data-count" (String.fromInt count)
+                , class "btn-arcade compact pixel text-[7px] sm:text-[8px] px-2 py-1.5 leading-snug yellow"
+                , onClick (PracticeGame gameNumber)
+                ]
+                [ text (practiceLabel count) ]
+
+        Nothing ->
+            text ""
+
+
+practiceLabel : Int -> String
+practiceLabel count =
+    "PRACTICE THIS GAME'S "
+        ++ String.fromInt count
+        ++ (if count == 1 then
+                " MISTAKE"
+
+            else
+                " MISTAKES"
+           )
+
+
+{-| The between-games sign-in, opened from the card's offer: a sheet over
+the board, closed by its ✕ or its backdrop, the same door the match panel
+uses. The card itself stays in the band with READY beside it; the sheet is
+only up while the player is signing in and one tap puts it away.
+-}
+viewSaveSheet : Ui.SignIn.Model -> Html Msg
+viewSaveSheet signIn =
+    div [ class "fixed inset-0 z-40 flex items-end sm:items-center justify-center p-3", Html.Attributes.id "bg-save-sheet" ]
+        [ div [ class "absolute inset-0", style "background" "rgba(35, 36, 58, 0.55)", onClick ClosedSave ] []
+        , div [ class "bg-card bg-white relative w-full max-w-md p-5 sm:p-8 text-left max-h-full overflow-y-auto" ]
+            [ button
+                [ Html.Attributes.type_ "button"
+                , class "absolute top-2 right-2 pixel text-[10px] px-2 py-1"
+                , style "color" "var(--pencil)"
+                , Html.Attributes.id "save-close"
+                , title "Close"
+                , onClick ClosedSave
+                ]
+                [ text "✕" ]
+            , Html.map SaveMsg (Ui.SignIn.view signIn)
+            ]
         ]
 
 
@@ -2954,6 +3063,7 @@ slab s taps =
             , replayHref = \_ -> Nothing
             , gamePrs = \_ -> []
             , save = NoSave
+            , mistakes = \_ -> Nothing
             , accounts = s.accounts
             }
 
@@ -3588,6 +3698,7 @@ viewGameOver ctx winners =
                         )
                     ]
                 , span [ class "pixel text-[9px]", style "color" "var(--pencil)" ] [ text scoreline ]
+                , viewPractice ctx (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1)
                 , case ctx.save of
                     NoSave ->
                         text ""

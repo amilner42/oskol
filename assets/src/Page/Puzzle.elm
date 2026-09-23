@@ -57,8 +57,9 @@ page. The page reports each verdict (`Answered`) and asks for the next
 (`WantsNext`); at the run's last puzzle the shell answers with the score
 (`endRun`) and the page ends the run here: "7 of 10 right", then for an
 account what the deck has left ("Done for today. 4 new tomorrow." and
-KEEP GOING) and for a guest the sign-in, in the one component, with the
-practice home as where it goes on to.
+KEEP GOING) and for a guest the sign-in, in the one component, going on
+to wherever the run was started from (the practice home, or the table a
+result card's PRACTICE was pressed at).
 
 -}
 
@@ -153,7 +154,7 @@ type alias End =
 {-| What the end screen offers under the score.
 -}
 type After
-    = -- a guest: the sign-in, going on to the practice home
+    = -- a guest: the sign-in, going on to where the run was started from
       AskSignIn SignIn.Model
       -- an account: asking the deck what is left
     | Refetching
@@ -551,11 +552,13 @@ update msg model =
             stay model Cmd.none
 
 
-{-| The run is over, at this puzzle: the shell hands the page the score.
-An account is asked what its deck has left; a guest is asked to sign in.
+{-| The run is over, at this puzzle: the shell hands the page the score,
+and where the run was started from (`next`), which is where a guest who
+signs in here goes on to. An account is asked what its deck has left; a
+guest is asked to sign in.
 -}
-endRun : Score -> Model -> ( Model, Cmd Msg )
-endRun score model =
+endRun : Score -> String -> Model -> ( Model, Cmd Msg )
+endRun score next model =
     case model.session.user of
         Just _ ->
             ( { model | ended = Just { score = score, after = Refetching } }
@@ -565,7 +568,7 @@ endRun score model =
         Nothing ->
             let
                 ( signIn, cmd ) =
-                    SignIn.init { next = Route.href Route.puzzles, email = "" }
+                    SignIn.init { next = next, email = "" }
             in
             ( { model | ended = Just { score = score, after = AskSignIn signIn } }
             , Cmd.map EndSignInMsg cmd

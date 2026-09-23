@@ -25,6 +25,7 @@
 const playwright = require('playwright');
 const { execFileSync } = require('child_process');
 const { BASE, resultLine, seatedContext } = require('../lib/flows');
+const { pressNext } = require('../lib/puzzles');
 
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -108,15 +109,11 @@ async function answerAndNext(page, n) {
   await page.waitForSelector('#pz-board .bg-stack');
   await answer(page);
   await page.waitForSelector('#pz-reveal');
-  await page.waitForSelector('#pz-next');
-  const id = new URL(page.url()).pathname;
-  await page.click('#pz-next');
-  // The next puzzle is another URL, or the end screen on this one.
-  await page.waitForFunction(
-    (was) => new URL(location.href).pathname !== was || document.querySelector('#pz-end'),
-    id,
-    { timeout: 10000 }
-  );
+  // The next puzzle is another URL, or the end screen on this one. The
+  // reveal keeps filling in after NEXT appears (the memory line lands a
+  // request later and pushes NEXT down), so a click aimed a frame earlier
+  // can land beside it: `pressNext` clicks again if nothing moved.
+  await pressNext(page);
   log(`puzzle ${n} answered`);
 }
 

@@ -38,6 +38,7 @@ suite =
         , polling
         , words
         , rendered
+        , practice
         ]
 
 
@@ -148,12 +149,102 @@ loaded wanted =
     Page.init session { slug = "backgammon", gameId = "000011", game = wanted, step = Nothing }
         |> Tuple.first
         |> Page.update (GotRecord (Ok record))
-        |> Tuple.first
+        |> first3
 
 
 run : List Msg -> Page.Model -> Page.Model
 run msgs model =
-    List.foldl (\msg m -> Page.update msg m |> Tuple.first) model msgs
+    List.foldl (\msg m -> Page.update msg m |> first3) model msgs
+
+
+first3 : ( a, b, c ) -> a
+first3 ( a, _, _ ) =
+    a
+
+
+outOf : Msg -> Page.Model -> Page.Out
+outOf msg model =
+    Page.update msg model |> (\( _, _, out ) -> out)
+
+
+{-| A game's mistakes, as `/puzzles?game=n` lists them.
+-}
+mistakes : List String -> Msg
+mistakes ids =
+    GotMistakes 3
+        (Ok
+            { puzzles = List.map (\id -> { id = id, kind = "move", prompt = "White to play 6-4. What's your play?", due = False }) ids
+            , counts = Nothing
+            , mistakes = Nothing
+            }
+        )
+
+
+
+-- PRACTICE
+
+
+practice : Test
+practice =
+    describe "PRACTICE THIS GAME'S N MISTAKES on the analysis"
+        [ test "a seated reader is asked for the game being read once its review is done, and again for each game switched to" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run [ GotIndex (Ok allDone) ]
+                    |> Expect.all
+                        [ \m -> Dict.toList m.mistakeAsks |> Expect.equal [ ( 3, 1 ) ]
+                        , \m -> run [ PickGame 1 ] m |> .mistakeAsks |> Dict.keys |> Expect.equal [ 1, 3 ]
+
+                        -- not while the game's review is still pending
+                        , \_ -> loaded (Just 3) |> run [ GotIndex (Ok (index ReplayFixtures.indexPending)) ] |> .mistakeAsks |> Dict.isEmpty |> Expect.equal True
+                        ]
+        , test "a stranger is never asked for: they hold no seat, and the answer would be a 404" <|
+            \_ ->
+                Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
+                    |> Tuple.first
+                    |> run [ GotRecord (Ok shared), GotIndex (Ok allDone) ]
+                    |> .mistakeAsks
+                    |> Dict.isEmpty
+                    |> Expect.equal True
+        , test "the button names the count, and pressing it hands the shell that game's ids" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run (gotEverything ++ [ mistakes [ "aaaaaaaa", "bbbbbbbb" ] ])
+                    |> Expect.all
+                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "practice-game" ] |> Query.has [ Selector.text "PRACTICE THIS GAME'S 2 MISTAKES" ]
+                        , \m -> outOf (PracticeGame 3) m |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+
+                        -- one is one
+                        , \m -> m |> run [ mistakes [ "aaaaaaaa" ] ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "practice-game" ] |> Query.has [ Selector.text "PRACTICE THIS GAME'S 1 MISTAKE" ]
+
+                        -- another game's count is not this one's
+                        , \m -> m |> run [ PickGame 1 ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
+                        , \m -> outOf (PracticeGame 1) m |> Expect.equal Page.NoOut
+                        ]
+        , test "no button while the mistakes are uncounted, and none for a game with none" <|
+            \_ ->
+                Expect.all
+                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
+                    , \m -> m |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
+                    ]
+                    (loaded (Just 3) |> run gotEverything)
+        , test "puzzles still being written: asked again, bounded; any other refusal ends it" <|
+            \_ ->
+                let
+                    asked =
+                        loaded (Just 3) |> run [ GotIndex (Ok allDone) ]
+
+                    stillWriting =
+                        GotMistakes 3 (Err (Api.ApiError { code = "puzzles_pending", message = "" }))
+                in
+                Expect.all
+                    [ \m -> m |> run [ stillWriting ] |> .mistakeAsks |> Dict.get 3 |> Expect.equal (Just 1)
+                    , \m -> m |> run [ stillWriting, AskMistakes 3 ] |> .mistakeAsks |> Dict.get 3 |> Expect.equal (Just 2)
+                    , \m -> m |> run (List.repeat 30 (AskMistakes 3)) |> .mistakeAsks |> Dict.member 3 |> Expect.equal False
+                    , \m -> m |> run [ GotMistakes 3 (Err (Api.ApiError { code = "not_found", message = "" })) ] |> .mistakeAsks |> Dict.isEmpty |> Expect.equal True
+                    ]
+                    asked
+        ]
 
 
 

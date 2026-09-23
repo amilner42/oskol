@@ -1444,9 +1444,12 @@ fn game_ctx(sources: List(puzzles_caps.Source)) -> Ctx {
   let base = ctx_with([])
   Ctx(
     ..base,
-    puzzles: puzzles_caps.PuzzlesCaps(..base.puzzles, game_sources: fn(_, _) {
-      sources
-    }),
+    puzzles: puzzles_caps.PuzzlesCaps(
+      ..base.puzzles,
+      game_sources: fn(_, _) { sources },
+      // Every game's puzzles are written: the plain case.
+      unextracted: fn(_) { [] },
+    ),
     records: records_caps.RecordsCaps(
       ..records_caps.stub(),
       setup: fn(_) { Some(setup_with(two_seats)) },
@@ -1518,6 +1521,44 @@ fn id_decoder() -> decode.Decoder(#(String, String, String, Bool)) {
 pub fn a_spectator_gets_no_games_puzzles_test() {
   reset()
   let ctx = game_ctx([source("a1", "move", "p1", 3, move_question())])
+  assert handler.game_puzzles_json(
+      ctx,
+      guest("nobody"),
+      "backgammon",
+      "000011",
+      2,
+    )
+    == Error(error.NotFound(handler.no_game_message))
+}
+
+// The grade is stored before the puzzles are (two transactions, the
+// review job's): a card asking in between is told to ask again, never
+// that the game had no mistakes.
+pub fn a_game_whose_puzzles_are_still_being_written_is_a_409_test() {
+  reset()
+  let base = game_ctx([source("a1", "move", "p1", 3, move_question())])
+  let ctx =
+    Ctx(
+      ..base,
+      puzzles: puzzles_caps.PuzzlesCaps(..base.puzzles, unextracted: fn(_) {
+        [2]
+      }),
+    )
+  assert handler.game_puzzles_json(
+      ctx,
+      guest("guest-a"),
+      "backgammon",
+      "000011",
+      2,
+    )
+    == Error(error.Conflict(
+      handler.still_writing_code,
+      handler.still_writing_message,
+    ))
+  // Another game of the room, already written, answers as before.
+  let assert Ok(_) =
+    handler.game_puzzles_json(ctx, guest("guest-a"), "backgammon", "000011", 1)
+  // And a stranger is still told nothing, before the row is even read.
   assert handler.game_puzzles_json(
       ctx,
       guest("nobody"),

@@ -74,6 +74,15 @@ pub const no_memory_message = "You were not in the game that puzzle came from"
 
 pub const no_game_message = "No puzzles for that game"
 
+/// The review is done but its puzzles are not written yet: they land in a
+/// second transaction after the grade (`handlers/reviews.write_puzzles`),
+/// and a card that asks the moment the grade shows must not be told "no
+/// mistakes" for a game whose mistakes are on their way. A 409, so the
+/// page asks again in a moment.
+pub const still_writing_code = "puzzles_pending"
+
+pub const still_writing_message = "This game's mistakes are still being written. Try again in a moment."
+
 pub const bad_move_message = "That is not a legal way to play the roll"
 
 pub const bad_band_message = "That is not one of the five answers"
@@ -1317,6 +1326,12 @@ pub fn game_puzzles_json(
     True -> Ok(Nil)
     False -> Error(nothing)
   })
+  use _ <- result.try(
+    case list.contains(ctx.puzzles.unextracted(game_id), number) {
+      True -> Error(error.Conflict(still_writing_code, still_writing_message))
+      False -> Ok(Nil)
+    },
+  )
   Ok(
     envelope.ok([
       #(
