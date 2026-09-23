@@ -414,15 +414,24 @@ practiceButton count =
         [ Html.text "PRACTICE" ]
 
 
-{-| "12 due · 4 new today · 231 in your deck".
+{-| "12 due · 4 new today · 231 in your deck". The middle figure is the
+day's budget of new cards still to come; once it is spent (the ten, or
+KEEP GOING, both count) it goes, rather than reading as "nothing new" --
+KEEP GOING is always there.
 -}
 countsLine : Practice.Counts -> String
 countsLine counts =
     String.join " · "
-        [ String.fromInt counts.due ++ " due"
-        , String.fromInt counts.newToday ++ " new today"
-        , String.fromInt counts.deck ++ " in your deck"
-        ]
+        (List.filterMap identity
+            [ Just (String.fromInt counts.due ++ " due")
+            , if counts.newToday > 0 then
+                Just (String.fromInt counts.newToday ++ " new today")
+
+              else
+                Nothing
+            , Just (String.fromInt counts.deck ++ " in your deck")
+            ]
+        )
 
 
 {-| "4 new tomorrow · 231 in your deck", or only the deck when tomorrow
