@@ -150,6 +150,11 @@ defmodule Oskol.Gleam.Caps.Practice do
         tags: Map.new(tags),
         limit: limit,
         offset: offset,
+        # Retain's default is every card due by the learner's next midnight.
+        # A practice page can only offer cards due *now*: the puzzle handler
+        # quite correctly will not record an early answer. Keep this cutoff
+        # aligned with the handler's `due_ms <= now_ms` decision.
+        before: DateTime.utc_now(),
         new: if(new_after_reviews, do: :after_reviews, else: :always)
       ]
       |> put_opt(:new_limit, unopt(new_limit))
@@ -234,7 +239,10 @@ defmodule Oskol.Gleam.Caps.Practice do
     # A deck that is not there yet has nothing to total up, exactly as it
     # has nothing to queue. Asking must not create one.
     rows =
-      case Retain.summary(uid, group_by: group_by) do
+      # The headline has to count the same cards `queue/2` can return. A
+      # "due today" count beside an immediate-only queue invites a player to
+      # expect cards that cannot yet be reviewed.
+      case Retain.summary(uid, group_by: group_by, before: DateTime.utc_now()) do
         {:ok, rows} -> rows
         {:error, :not_found} -> []
       end
