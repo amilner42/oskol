@@ -40,6 +40,12 @@ defmodule OskolWeb.Router do
     get "/me", AuthController, :me
     post "/me/name", AuthController, :rename
 
+    # Practicing your own mistakes: an account's deck, or a guest's list.
+    get "/practice", PracticeController, :index
+    post "/practice/more", PracticeController, :more
+    post "/practice/tz", PracticeController, :tz
+    post "/practice/bury", PracticeController, :bury
+
     get "/library", LandingController, :library
     get "/codes/:code", LandingController, :code
     get "/me/prefs", LandingController, :prefs
@@ -54,6 +60,22 @@ defmodule OskolWeb.Router do
     get "/games/:slug/rooms/:id/reviews/:game_number", LandingController, :review
     get "/games/:slug/rooms/:id/record", LandingController, :record
     get "/games/:slug/rooms/:id/ratings", LandingController, :ratings
+
+    # Puzzles. A puzzle is open to anyone with the link and costs the
+    # analysis engine nothing; what is written down is the deck's, and only
+    # for a signed-in browser.
+    get "/games/:slug/rooms/:id/puzzles", PuzzleController, :game
+    # TRY ONE on the practice home: before "/puzzles/:id", or "random"
+    # would be read as an id.
+    get "/puzzles/random", PuzzlesHubController, :random
+    get "/puzzles/:id", PuzzleController, :show
+    get "/puzzles/:id/tree", PuzzleController, :tree
+    get "/puzzles/:id/mine", PuzzleController, :mine
+    post "/puzzles/:id/attempts", PuzzleController, :attempt
+    post "/puzzles/:id/attempts/:key/outcome", PuzzleController, :outcome
+    # A story link, minted only by the seat that made the mistake, and only
+    # ever by a POST: a GET never mints anything.
+    post "/puzzles/:id/shares", PuzzleController, :share
   end
 
   # Enable LiveDashboard in development. Declared before the game routes so
@@ -84,6 +106,12 @@ defmodule OskolWeb.Router do
     # writes nothing (POST /papi/auth/link is what signs anyone in). A bare
     # "/login" names no game, so it is a 404 like any other unknown slug.
     get "/login/:token", LoginController, :show
+
+    # Practicing: the home of it, and one puzzle. Both open to anyone and
+    # indexable. Declared before "/:slug" so "puzzles" is a reserved word
+    # like "login".
+    get "/puzzles", SpaController, :puzzles
+    get "/puzzles/:id", SpaController, :puzzle
 
     # Games Oskol no longer hosts (see RemovedGameController): every old
     # link to one of them, start page, invite or table, goes home.

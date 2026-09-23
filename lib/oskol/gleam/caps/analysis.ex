@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
   order in lockstep:
 
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
-      enqueue, review)
+      enqueue, review, report_turn, charge, replace)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
       Stored(game_number, status, attempts, response_json, answered, rendered, turns)
@@ -14,15 +14,22 @@ defmodule Oskol.Gleam.Caps.Analysis do
   `response` and `report` are hundreds of kilobytes each. `summaries`
   selects neither and `report/2` selects one of them for one game, so the
   only query that carries a body is the one whose answer is the body.
+  `report_turn/3` goes further and has PostgreSQL take the path, so a
+  caller that wants three integers out of a report reads three integers.
   """
 
   import Oskol.Gleam.Interop
 
   alias Oskol.Reviews
 
-  def build do
+  @doc """
+  The caps. `:review` injects the engine call (an operator task wrapping it
+  to time it, a test standing in for it); the default POSTs to the engine.
+  """
+  def build(opts \\ []) do
     {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
-     &backfill_turns/3, &enqueue/1, &review/1}
+     &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
+     &charge/4, &replace/3}
   end
 
   defp log(game_id) do
@@ -73,6 +80,10 @@ defmodule Oskol.Gleam.Caps.Analysis do
     end)
   end
 
+  defp report_turn(game_id, number, turn) do
+    opt(Reviews.report_turn(game_id, number, turn), &Jason.encode!/1)
+  end
+
   defp report(game_id, number) do
     opt(Reviews.report(game_id, number), &Jason.encode!/1)
   end
@@ -119,6 +130,31 @@ defmodule Oskol.Gleam.Caps.Analysis do
   defp enqueue(game_id) do
     Reviews.mark_analysis_owed(game_id)
     Oskol.Reviews.Queue.enqueue(game_id)
+    nil
+  end
+
+  # The backfill's charge against a `done` row: attempts and error only, so
+  # the answer and the page a reader is served stay exactly as they were.
+  defp charge(game_id, number, attempts, error) do
+    :ok = Reviews.charge(game_id, number, attempts, unopt(error))
+    nil
+  end
+
+  # The backfill's one write of a fresh answer: the row as `save` writes
+  # it, and the game's puzzles reopened, in one transaction.
+  defp replace(game_id, number, {:save, status, attempts, response, error, report, turns}) do
+    :ok =
+      Reviews.replace(
+        game_id,
+        number,
+        Atom.to_string(status),
+        attempts,
+        decode(response),
+        unopt(error),
+        decode(report),
+        turns
+      )
+
     nil
   end
 

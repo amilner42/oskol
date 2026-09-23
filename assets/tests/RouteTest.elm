@@ -69,6 +69,16 @@ suite =
                     Expect.equal
                         (Just (Replay "backgammon" "AB12CD" Nothing Nothing))
                         (parse "/backgammon/AB12CD/replay?game=two")
+            , test "a puzzle, by its id" <|
+                \_ -> Expect.equal (Just (Puzzle "AB12CD34" Nothing)) (parse "/puzzles/AB12CD34")
+            , test "a story link: the same puzzle, and the token it was shared with" <|
+                \_ -> Expect.equal (Just (Puzzle "AB12CD34" (Just "TOKEN0000001"))) (parse "/puzzles/AB12CD34?s=TOKEN0000001")
+            , test "the client's own puzzle link is the clean one" <|
+                \_ -> Expect.equal "/puzzles/AB12CD34" (Route.href (Route.puzzle "AB12CD34"))
+            , test "a puzzle is not a room of a game called puzzles" <|
+                \_ -> Expect.notEqual (Just (Play "puzzles" "AB12CD34")) (parse "/puzzles/AB12CD34")
+            , test "practicing is its own page, not a game's start page" <|
+                \_ -> Expect.equal (Just Puzzles) (parse "/puzzles")
             , test "the sitemap belongs to the server" <|
                 \_ -> Expect.equal Nothing (parse "/sitemap.xml")
             , test "so does the dev dashboard" <|
@@ -85,6 +95,10 @@ suite =
                 \_ -> Expect.equal (Just Library) (parse (Route.href (Route.gameLanding "backgammon")))
             , test "an invite link: the room, and nothing identifying" <|
                 \_ -> Expect.equal "/backgammon?game=AB12CD" (Route.href (Route.invite "backgammon" "AB12CD"))
+            , test "the practice home" <|
+                \_ -> Expect.equal "/puzzles" (Route.href Route.puzzles)
+            , test "a puzzle's link" <|
+                \_ -> Expect.equal "/puzzles/AB12CD34" (Route.href (Route.puzzle "AB12CD34"))
             , test "a seat's link is the room's link: there is nothing else to it" <|
                 \_ ->
                     Route.href (Route.play "backgammon" "AB12CD")
@@ -107,6 +121,9 @@ suite =
                 [ Library
                 , GameLanding "backgammon" (Just "AB12CD")
                 , Play "backgammon" "AB12CD"
+                , Puzzles
+                , Puzzle "AB12CD34" Nothing
+                , Puzzle "AB12CD34" (Just "TOKEN0000001")
                 , Replay "backgammon" "AB12CD" (Just 2) Nothing
                 , Replay "backgammon" "AB12CD" (Just 2) (Just 17)
                 , Replay "backgammon" "AB12CD" Nothing Nothing

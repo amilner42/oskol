@@ -6,6 +6,8 @@ port module Page.Play exposing
     , applyPayload
     , framed
     , init
+    , shareInvite
+    , shareResult
     , storePref
     , subscriptions
     , title
@@ -40,6 +42,7 @@ as the LiveView's lobby did.
 
 import Api
 import Api.Catalog as Catalog
+import Api.Practice as Practice
 import Dict exposing (Dict)
 import Games.Backgammon.View as Backgammon
 import Html exposing (Html)
@@ -133,7 +136,9 @@ type alias Model =
     , awayNew : List String -- players who went missing in the latest payload, awaiting their moment
     , ratingsGraded : Int -- games of this match the engine had answered for, as of the last ask
     , ratingsPolls : Int -- asks made while a grade is on its way; 0 is not waiting for one
-    , signIn : Maybe SignIn.Model -- the game-over card's sign-in, once opened
+    , signIn : Maybe SignIn.Model -- a result card's sign-in, once opened
+    , mistakes : Dict Int (List String) -- each graded game's mistakes for this seat, by game number: the puzzle ids a card's PRACTICE runs
+    , mistakeAsks : Dict Int Int -- asks made for a game's mistakes still unanswered (the puzzles land a moment after the grade)
     }
 
 
@@ -169,6 +174,8 @@ init session config =
       , ratingsGraded = 0
       , ratingsPolls = 0
       , signIn = Nothing
+      , mistakes = Dict.empty
+      , mistakeAsks = Dict.empty
       }
     , Cmd.batch
         -- One tick late, deliberately: a port message sent while the program
@@ -222,9 +229,10 @@ withSession session model =
     { model | session = session }
 
 
-{-| The game-over card's offer, to a guest in a seat: the game they just
-played and the PR it is about to earn them are theirs to keep. Open, it is
-the sign-in itself, until they CONTINUE from the win. Nothing for a
+{-| A result card's offer -- at game over and between the games of a
+match or of unlimited play alike -- to a guest in a seat: the game they
+just played and the PR it is about to earn them are theirs to keep. Open,
+it is the sign-in itself, until they CONTINUE from the win. Nothing for a
 spectator or a signed-in player.
 -}
 saveOffer : Model -> GamePayload -> Backgammon.Save
@@ -274,6 +282,8 @@ type Msg
     | PollRatings
     | PrefSaved (Result Api.Error (Dict String String))
     | SignInMsg SignIn.Msg
+    | AskMistakes Int
+    | GotMistakes Int (Result Api.Error Practice.Practice)
     | NoOp
 
 
@@ -288,8 +298,11 @@ type Out
       -- for the rest of the visit, so leaving the table and coming back
       -- does not undo it.
     | Remember String String
-      -- This browser just signed in (at game over): the shell re-reads who it is.
+      -- This browser just signed in (on a result card): the shell re-reads who it is.
     | SignedIn (Maybe Session.User)
+      -- PRACTICE THIS GAME'S N MISTAKES: the shell runs these puzzles, and
+      -- brings the player back here at the end.
+    | StartRun (List String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg, Out )
@@ -353,8 +366,21 @@ update msg model =
                     in
                     stay { updated | signIn = Just signIn } (Cmd.map SignInMsg cmd)
 
+                Backgammon.CloseSave ->
+                    stay { updated | signIn = Nothing } Cmd.none
+
                 Backgammon.ForSave signInMsg ->
                     update (SignInMsg signInMsg) updated
+
+                -- The ids were fetched when the grade landed (`askMistakes`);
+                -- the button is only there once they were.
+                Backgammon.Practice number ->
+                    case Dict.get number updated.mistakes of
+                        Just ids ->
+                            ( updated, Cmd.none, StartRun ids )
+
+                        Nothing ->
+                            stay updated Cmd.none
 
                 Backgammon.ChoseTheme name ->
                     -- Three places keep it: the page (instantly), this
@@ -443,7 +469,7 @@ update msg model =
             stay model Cmd.none
 
         GotRatings (Ok ratings) ->
-            stay
+            askMistakes
                 { model
                     | ratings = ratings.prs
                     , gamePrs = ratings.games
@@ -467,7 +493,6 @@ update msg model =
                             -- Nothing owed and nothing outstanding.
                             0
                 }
-                Cmd.none
 
         GotRatings (Err _) ->
             -- A PR beside a name is a nicety, and the bars read fine
@@ -483,6 +508,41 @@ update msg model =
 
         PrefSaved (Err _) ->
             stay model Cmd.none
+
+        AskMistakes number ->
+            case Dict.get number model.mistakeAsks of
+                Just asks ->
+                    if asks < maxMistakeAsks then
+                        stay { model | mistakeAsks = Dict.insert number (asks + 1) model.mistakeAsks }
+                            (Practice.gameMistakes model.session model.gameSlug model.gameId number (GotMistakes number))
+
+                    else
+                        -- Enough: the card goes without its button until
+                        -- the page is opened again.
+                        stay { model | mistakeAsks = Dict.remove number model.mistakeAsks } Cmd.none
+
+                Nothing ->
+                    stay model Cmd.none
+
+        GotMistakes number (Ok practice) ->
+            stay
+                { model
+                    | mistakes = Dict.insert number (List.map .id practice.puzzles) model.mistakes
+                    , mistakeAsks = Dict.remove number model.mistakeAsks
+                }
+                Cmd.none
+
+        GotMistakes number (Err err) ->
+            if Practice.stillWriting err then
+                -- The grade is in and the puzzles are on their way: a
+                -- moment, then again (bounded by `maxMistakeAsks`).
+                stay model (Process.sleep mistakesRetryMs |> Task.perform (\_ -> AskMistakes number))
+
+            else
+                -- A refusal (no seat here after all) or a network slip:
+                -- no button, and the next answer from /ratings may ask
+                -- again.
+                stay { model | mistakeAsks = Dict.remove number model.mistakeAsks } Cmd.none
 
         SignInMsg signInMsg ->
             case model.signIn of
@@ -514,6 +574,52 @@ update msg model =
 stay : Model -> Cmd Msg -> ( Model, Cmd Msg, Out )
 stay model cmd =
     ( model, cmd, NoOut )
+
+
+{-| Ask for the mistakes of every graded game this seat has not been
+answered for and is not already asking about. A graded game is one
+`/ratings` lists (`gamePrs`), which it does only once its review is done;
+the puzzles are written a moment after that, so an ask may be told to come
+back (`GotMistakes`). A spectator has no seat to ask for and is not asked
+for one: the answer would be a 404.
+-}
+askMistakes : Model -> ( Model, Cmd Msg, Out )
+askMistakes model =
+    let
+        seated =
+            case model.payload of
+                Just payload ->
+                    List.any (\p -> p.id == payload.playerId) payload.players
+
+                Nothing ->
+                    False
+
+        wanted =
+            if seated then
+                Dict.keys model.gamePrs
+                    |> List.filter (\n -> not (Dict.member n model.mistakes) && not (Dict.member n model.mistakeAsks))
+
+            else
+                []
+    in
+    ( { model | mistakeAsks = List.foldl (\n asks -> Dict.insert n 1 asks) model.mistakeAsks wanted }
+    , Cmd.batch (List.map (\n -> Practice.gameMistakes model.session model.gameSlug model.gameId n (GotMistakes n)) wanted)
+    , NoOut
+    )
+
+
+{-| How long a card waits between asks for a game whose puzzles are still
+being written, and how many asks it makes before it stops: a minute in
+all, against a write that takes well under a second.
+-}
+mistakesRetryMs : Float
+mistakesRetryMs =
+    3000
+
+
+maxMistakeAsks : Int
+maxMistakeAsks =
+    20
 
 
 clearShareLabel : Cmd Msg
@@ -587,15 +693,32 @@ applyPayload payload model =
         -- says nothing is owed (`GotRatings`).
         gameEnded =
             matchPoints payload > (model.payload |> Maybe.map matchPoints |> Maybe.withDefault (matchPoints payload))
-    in
-    ( { updated
-        | ratingsPolls =
-            if gameEnded then
-                1
+
+        -- A sign-in left open on the between-games card is put away when
+        -- the next game starts: the card it was opened from is gone, and
+        -- the next result card makes its own offer.
+        signIn =
+            if payload.update.scene.phase == "between_games" || finishedWinners payload /= Nothing then
+                updated.signIn
 
             else
-                updated.ratingsPolls
-      }
+                Nothing
+
+        -- Who this browser is here is the room's answer, and it is what
+        -- decides whether a graded game's mistakes are its to ask for.
+        ( withMistakes, mistakesCmd, _ ) =
+            askMistakes
+                { updated
+                    | signIn = signIn
+                    , ratingsPolls =
+                        if gameEnded then
+                            1
+
+                        else
+                            updated.ratingsPolls
+                }
+    in
+    ( withMistakes
     , Cmd.batch
         [ Task.perform ClockSynced Time.now
         , rollCmd
@@ -604,6 +727,7 @@ applyPayload payload model =
 
           else
             Cmd.none
+        , mistakesCmd
         ]
     , follow
     )
@@ -917,6 +1041,7 @@ view model =
                                     , gamePrs = \n -> Dict.get n model.gamePrs |> Maybe.withDefault []
                                     , save = saveOffer model payload
                                     , accounts = Just (payload.players |> List.filter .account |> List.map .id)
+                                    , mistakes = \n -> Dict.get n model.mistakes |> Maybe.map List.length
                                     }
                                 )
 

@@ -116,6 +116,7 @@ type Msg
     | OpenedSignIn
     | SignInMsg SignIn.Msg
     | ToggledAccount
+    | PressedPuzzles
     | PressedLogOut
     | LoggedOut (Result Api.Error ())
     | NoOp
@@ -274,6 +275,9 @@ update msg model =
 
         ToggledAccount ->
             ( { model | accountOpen = not model.accountOpen }, Cmd.none, NoOut )
+
+        PressedPuzzles ->
+            ( model, Cmd.none, Go (Route.href Route.puzzles) )
 
         -- The guest's bar menu: the same sign-in, in a dialog of its own.
         PressedSignInMenu ->
@@ -599,8 +603,8 @@ view model =
 
 
 {-| The home page: the board with its menu (CREATE GAME, the shell's JOIN
-GAME passed in as `join`, and the ones marked soon), the theme picker in its
-top bar, and CREATE GAME's dialog over it when it is open.
+GAME passed in as `join`, PUZZLES, and the one marked soon), the theme
+picker in its top bar, and CREATE GAME's dialog over it when it is open.
 -}
 home : { join : Html msg, toMsg : Msg -> msg } -> Model -> List (Html msg)
 home { join, toMsg } model =
@@ -608,7 +612,7 @@ home { join, toMsg } model =
         { you = Html.map toMsg (homeYou model)
         , actions = List.map (Html.map toMsg) (homeActions model)
         , join = join
-        , soon = homeSoon
+        , more = Html.map toMsg puzzlesButton :: homeSoon
         , theme = homeTheme model
         , picker = Html.map toMsg (themePicker model)
         , note = Html.map toMsg (gamesNote model)
@@ -1294,12 +1298,25 @@ lowerFirst text =
     String.toLower (String.left 1 text) ++ String.dropLeft 1 text
 
 
+{-| Practicing your own mistakes: the second row's first entry, where
+TACTICS was promised. It opens the practice home, which says what there
+is to practice.
+-}
+puzzlesButton : Html Msg
+puzzlesButton =
+    Html.button
+        [ class "btn-arcade plain home-puzzles pixel text-[9px] sm:text-[11px] px-3 py-3 sm:px-5 text-center leading-relaxed"
+        , id "puzzles"
+        , onClick PressedPuzzles
+        ]
+        [ Html.text "PUZZLES" ]
+
+
 {-| The ways in that are on their way.
 -}
 homeSoon : List (Html msg)
 homeSoon =
-    [ soonButton "TACTICS"
-    , soonButton "ANALYSIS"
+    [ soonButton "ANALYSIS"
     ]
 
 

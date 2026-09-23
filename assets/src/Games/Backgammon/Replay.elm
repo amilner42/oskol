@@ -9,7 +9,9 @@ module Games.Backgammon.Replay exposing
     , Index
     , IndexEntry
     , MoveReview(..)
+    , Optimal(..)
     , Player
+    , Response(..)
     , Record
     , Review
     , Status(..)
@@ -35,7 +37,9 @@ module Games.Backgammon.Replay exposing
     , lastStep
     , mistakeLabel
     , moveAt
+    , optimalFromEngine
     , playerNamed
+    , responseFromEngine
     , recordDecoder
     , stepCount
     , stillAt
@@ -448,10 +452,66 @@ type alias Probs =
     }
 
 
+{-| The engine's call on a cube decision. It writes it in words ("No
+Double", "Double/Take"); everything downstream branches on this type
+instead, so no sentence reads the engine's prose for meaning.
+
+The twin is Gleam's `oskol/puzzles.Optimal`, and `optimalFromEngine`
+below is `optimal_from_engine`: the same words, read the same way, so
+the replay and a puzzle never disagree about what the engine said.
+
+-}
+type Optimal
+    = NoDouble
+    | DoubleTake
+    | DoublePass
+      -- A word from a later engine that this one does not know.
+    | OtherCall String
+
+
+{-| The engine's `optimal_action` as the call it means. "no" wins over
+"pass" wins over "take", as in the Gleam twin, and a word with none of
+them is kept as it came rather than guessed at.
+-}
+optimalFromEngine : String -> Optimal
+optimalFromEngine word =
+    let
+        lower =
+            String.toLower word
+    in
+    if String.contains "no" lower then
+        NoDouble
+
+    else if String.contains "pass" lower then
+        DoublePass
+
+    else if String.contains "take" lower then
+        DoubleTake
+
+    else
+        OtherCall word
+
+
+{-| What the responder did with a double that was offered.
+-}
+type Response
+    = Take
+    | Pass
+
+
+responseFromEngine : String -> Response
+responseFromEngine word =
+    if word == "pass" then
+        Pass
+
+    else
+        Take
+
+
 type alias CubeReview =
     { action : String
-    , response : Maybe String
-    , optimal : String -- the engine's call, in words: "No Double", "Double/Take"
+    , response : Maybe Response
+    , optimal : Optimal
     , noDouble : Float
     , doubleTake : Float
     , doublePass : Float
@@ -642,8 +702,8 @@ cubeDecoder : Decoder CubeReview
 cubeDecoder =
     D.succeed CubeReview
         |> field "action" D.string
-        |> andMap (D.oneOf [ D.field "response" (D.nullable D.string), D.succeed Nothing ])
-        |> field "optimal" D.string
+        |> andMap (D.oneOf [ D.field "response" (D.nullable (D.map responseFromEngine D.string)), D.succeed Nothing ])
+        |> andMap (D.field "optimal" (D.map optimalFromEngine D.string))
         |> andMap (D.at [ "equities", "no_double" ] D.float)
         |> andMap (D.at [ "equities", "double_take" ] D.float)
         |> andMap (D.at [ "equities", "double_pass" ] D.float)

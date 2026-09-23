@@ -106,6 +106,17 @@ if [[ "${1:-}" == "--browser" ]]; then
   # Signing in by email, the mail read from /dev/last-login: the code, the
   # link, an owned seat nobody can claim, logging out.
   node playwright/test-accounts/test.js
+  # A puzzle from a link: it arranges a game graded against a stubbed
+  # engine (setup.exs, in its own VM), then a stranger, the opponent and
+  # the signed-in player who made the mistake each play it.
+  node playwright/test-puzzle/test.js
+  # The practice home: PUZZLES on the menu, a stranger's TRY ONE, a guest's
+  # and an account's counts and a run from PRACTICE.
+  node playwright/test-puzzles-hub/test.js
+  # PRACTICE THIS GAME'S N MISTAKES from the result cards: it arranges an
+  # unlimited session and a single game (setup.exs), a guest runs one and
+  # is asked to sign in, an account runs the other.
+  node playwright/test-puzzles-cards/test.js
 fi
 
 step "all green"

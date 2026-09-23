@@ -78,6 +78,68 @@ defmodule OskolWeb.SpaController do
     end
   end
 
+  @doc """
+  The practice home (`/puzzles`): what a visitor has to practice, or, for a
+  stranger, what this is and one puzzle to try. The page reads everything
+  from `/papi/practice`; the head is the one thing it cannot supply, and
+  it says the same to everyone.
+  """
+  def puzzles(conn, _params) do
+    conn
+    |> assign(:page_title, puzzles_title())
+    |> assign(:meta_description, puzzles_description())
+    |> assign(:canonical, url(~p"/puzzles"))
+    |> assign(:og_title, puzzles_title())
+    |> assign(:og_description, puzzles_description())
+    |> render_spa()
+  end
+
+  def puzzles_title, do: "Puzzles"
+
+  def puzzles_description do
+    "Practice your own mistakes. Every mistake the engine finds in a game you played " <>
+      "becomes a backgammon puzzle and comes back until you stop making it. " <>
+      "Every puzzle is a link anyone can open and try."
+  end
+
+  @doc """
+  A puzzle's page (`/puzzles/:id`). The head is the one thing the page
+  cannot supply for itself before it has fetched anything, and the one
+  thing a link preview reads: the question as the title, the score and cube
+  as the description. `oskol/handlers/puzzles.head` writes both, and they
+  say nothing a puzzle does not say to everyone -- no name, no source game,
+  no answer. A puzzle nobody stored is a 404 like an unknown game.
+
+  `?s=<token>` is a story link (`oskol/handlers/shares`): the title becomes
+  "Arie got this wrong. What's your play?" where the token opens a story
+  for this puzzle, and nothing changes where it does not. The canonical
+  URL stays the clean one either way, so a search engine sees one page.
+  """
+  def puzzle(conn, %{"id" => id} = params) do
+    share =
+      case Map.get(params, "s") do
+        token when is_binary(token) -> token
+        _ -> ""
+      end
+
+    case :oskol@handlers@puzzles.head(Oskol.Gleam.CtxBuilder.build(), id, share) do
+      {:ok, {:head, title, description}} ->
+        conn
+        |> assign(:page_title, title)
+        |> assign(:meta_description, description)
+        |> assign(:canonical, url(~p"/puzzles/#{id}"))
+        |> assign(:og_title, title)
+        |> assign(:og_description, description)
+        # The board, drawn once (Oskol.Puzzles.Pictures) and served by
+        # OskolWeb.Plugs.PuzzlePicture: what the link unfurls with.
+        |> assign(:puzzle_image, OskolWeb.Endpoint.url() <> "/puzzles/" <> id <> ".png")
+        |> render_spa()
+
+      {:error, _} ->
+        raise OskolWeb.NotFoundError
+    end
+  end
+
   defp render_spa(conn) do
     guest_id = get_session(conn, :guest_id)
     guest_name = if guest_id, do: Oskol.Guests.touch(guest_id)

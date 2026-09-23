@@ -603,17 +603,49 @@ pub fn danced(turn: Turn) -> Bool {
 
 // ---------- The request ----------
 
-/// The body of `POST /backgammon/review` for one game: luck and the top
-/// five moves. The search depth is the service's own default (4-ply for
-/// moves and the cube, since 2026-09-15), so it is set in one place, the
-/// engine, and the answer says which it used (`levels`).
+/// The body of `POST /backgammon/review` for one game: luck, the top five
+/// moves described in full, and every legal play's board and cost besides.
+/// The search depth is the service's own default (4-ply for moves and the
+/// cube, since 2026-09-15), so it is set in one place, the engine, and the
+/// answer says which it used (`levels`).
+///
+/// `all_results` costs the engine nothing -- it evaluates every legal play
+/// anyway, and `top_moves` only truncates what it writes down -- and it is
+/// what lets a puzzle made from this game grade any answer exactly instead
+/// of shrugging at one outside the top five. An engine that does not know
+/// the flag answers as it always did.
 pub fn request_json(g: GameTurns) -> Json {
-  json.object([
-    #("jacoby", json.bool(g.jacoby)),
-    #("top_moves", json.int(5)),
-    #("include_luck", json.bool(True)),
-    #("turns", json.array(g.turns, turn_json)),
-  ])
+  request_json_at(g, None, None)
+}
+
+/// The same request at a named search depth (`move_level`, `cube_level`,
+/// as the engine names them: "4ply"), for asking a game again at the
+/// depth its stored answer was graded at. None leaves the engine's own
+/// default in charge, as a fresh review does.
+pub fn request_json_at(
+  g: GameTurns,
+  move_level: Option(String),
+  cube_level: Option(String),
+) -> Json {
+  let level = fn(name, value) {
+    case value {
+      Some(level) -> [#(name, json.string(level))]
+      None -> []
+    }
+  }
+  json.object(
+    list.flatten([
+      [
+        #("jacoby", json.bool(g.jacoby)),
+        #("top_moves", json.int(5)),
+        #("all_results", json.bool(True)),
+        #("include_luck", json.bool(True)),
+      ],
+      level("move_level", move_level),
+      level("cube_level", cube_level),
+      [#("turns", json.array(g.turns, turn_json))],
+    ]),
+  )
 }
 
 pub fn turn_json(turn: Turn) -> Json {

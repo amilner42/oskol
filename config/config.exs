@@ -32,6 +32,12 @@ config :oskol, Oskol.Mailer, adapter: Swoosh.Adapters.Local
 
 config :oskol, :mail_from, "hello@oskol.io"
 
+# Puzzle pictures (`Oskol.Puzzles.Pictures`): the SVG Gleam draws is
+# rasterised by librsvg's `rsvg-convert`, on the PATH in the release image
+# (the Dockerfile installs `librsvg2-bin`). A laptop without it draws no
+# pictures and says so; tests point this at a stub.
+config :oskol, :rsvg, path: "rsvg-convert", timeout_ms: 10_000
+
 # The only mail Oskol sends is a sign-in link/code. These fixed-window
 # ceilings are deliberately small for today's traffic: one running node can
 # send up to 200 messages in its 24-hour window (about 6,000/month if it stays
@@ -45,6 +51,17 @@ config :oskol, :auth_mail_budget,
   address: [limit: 30, window_s: 3_600],
   source: [limit: 20, window_s: 3_600],
   global: [limit: 200, window_s: 86_400]
+
+# The puzzle deck's spaced repetition (the `retain` library): our repo, our
+# tables, no processes to start.
+#
+# The ladder is the brief's: a miss comes back tomorrow, then 1, 3, 7, 21, 58,
+# 145 and 365 days. Level 0 is one day rather than retain's default zero,
+# because a puzzle you just got wrong should come back tomorrow, not later in
+# the same session -- the player is still looking at the answer.
+config :retain,
+  repo: Oskol.Repo,
+  intervals: [1, 1, 3, 7, 21, 58, 145, 365]
 
 # Configure esbuild (the version is required)
 config :esbuild,

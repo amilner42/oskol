@@ -29,7 +29,7 @@ fn minting(
 ) -> Ctx {
   Ctx(
     ..ctx,
-    ids: ids_caps.IdsCaps(game_code: fn() { code }),
+    ids: ids_caps.IdsCaps(..ids_caps.stub(), game_code: fn() { code }),
     persistence: persistence_caps.PersistenceCaps(
       ..ctx.persistence,
       game_exists: fn(_) { taken },

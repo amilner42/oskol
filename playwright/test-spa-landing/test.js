@@ -48,9 +48,17 @@ async function shots(browser, viewport, tag, errors) {
     const checkers = await page.locator('.home-board .checker').count();
     if (checkers !== 30) throw new Error(`the home board shows ${checkers} checkers, not 30`);
     const menu = (await page.textContent('#home-menu')).replace(/\s+/g, ' ').trim();
-    for (const entry of ['CREATE GAME', 'JOIN GAME', 'TACTICS', 'ANALYSIS']) {
+    for (const entry of ['CREATE GAME', 'JOIN GAME', 'PUZZLES', 'ANALYSIS']) {
       if (!menu.includes(entry)) throw new Error(`the menu reads "${menu}", with no ${entry}`);
     }
+    if (menu.includes('TACTICS')) throw new Error(`the menu still promises TACTICS: "${menu}"`);
+    // PUZZLES is a way in, not a promise: it opens the practice home
+    // without a page load, and the board is still a tap away.
+    await page.click('#puzzles');
+    await page.waitForSelector('#puzzles-hub');
+    if (new URL(page.url()).pathname !== '/puzzles') throw new Error(`PUZZLES landed on ${page.url()}`);
+    await page.goBack();
+    await page.waitForSelector('#home-menu #start-game');
     // Nothing scrolls sideways at either width.
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth

@@ -13,18 +13,19 @@ import Html.Attributes exposing (attribute, class, id, style)
 import Ui.Shell
 
 
-{-| `actions` go in the right half's band beside the dice; `note` is the
-right end of the player's own bar at the foot, where a game shows the pip
-count (the games waiting for them, when there are any).
+{-| `actions` go in the right half's band beside the dice, then `join` and
+then `more` (the second row: practicing, and what is on its way); `note`
+is the right end of the player's own bar at the foot, where a game shows
+the pip count (the games waiting for them, when there are any).
 -}
-view : { actions : List (Html msg), join : Html msg, soon : List (Html msg), you : Html msg, theme : String, picker : Html msg, note : Html msg } -> Html msg
+view : { actions : List (Html msg), join : Html msg, more : List (Html msg), you : Html msg, theme : String, picker : Html msg, note : Html msg } -> Html msg
 view config =
     div [ class ("bg-page home-board " ++ Games.Backgammon.View.themeClass config.theme) ]
         [ div [ class "bg-main" ]
             [ div [ class "bg-stack" ]
                 [ topBar config.picker
                 , board
-                    [ div [ id "home-menu", class "home-menu grid grid-cols-2 gap-2.5 sm:gap-3" ] (config.actions ++ [ config.join ] ++ config.soon) ]
+                    [ div [ id "home-menu", class "home-menu grid grid-cols-2 gap-2.5 sm:gap-3" ] (config.actions ++ [ config.join ] ++ config.more) ]
                 , bar "white" config.you True config.note
                 ]
             ]

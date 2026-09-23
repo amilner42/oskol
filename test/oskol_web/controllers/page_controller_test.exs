@@ -4,7 +4,7 @@ defmodule OskolWeb.PageControllerTest do
   # `/` and `/:slug` belong to `OskolWeb.SpaController` now; their heads are
   # covered in `spa_controller_test.exs`.
 
-  test "the sitemap lists the library and the game", %{conn: conn} do
+  test "the sitemap lists the library, the game and the practice home", %{conn: conn} do
     conn = get(conn, ~p"/sitemap.xml")
     assert response_content_type(conn, :xml) =~ "application/xml"
     body = response(conn, 200)
@@ -14,6 +14,10 @@ defmodule OskolWeb.PageControllerTest do
     refute body =~ "/chess"
     refute body =~ "/go<"
     refute body =~ "game="
+    # The practice home is one page; the puzzles themselves are indexable
+    # too, but there are too many to list.
+    assert body =~ "<loc>http://localhost:4002/puzzles</loc>"
+    refute body =~ "/puzzles/"
   end
 
   test "robots allows crawling and points at the sitemap", %{conn: conn} do

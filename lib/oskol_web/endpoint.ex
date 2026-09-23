@@ -54,6 +54,11 @@ defmodule OskolWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # A puzzle's link picture (`/puzzles/:id.png`): static-like content
+  # served from its row before the session, the guest cookie and the
+  # router, which none of it needs. Everything else passes through.
+  plug OskolWeb.Plugs.PuzzlePicture
+
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],

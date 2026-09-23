@@ -165,6 +165,231 @@ defmodule OskolWeb.SpaControllerTest do
     end
   end
 
+  describe "GET /puzzles/:id" do
+    # Everything here runs in the test process (the request is dispatched
+    # in it), so the owner is this process's alone: a *shared* owner in an
+    # async module would lend its connection to every other module running
+    # beside it and pull it from under them when the test ends.
+    setup do
+      owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Oskol.Repo, shared: false)
+      on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
+      :ok
+    end
+
+    # A stored puzzle, exactly as extraction would have written it, under an
+    # id no other test uses: the table is global.
+    defp a_puzzle(name) do
+      {:stored, _id, kind, question, answer} = :oskol@puzzles@fixture.stored_sample(name)
+      id = :crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower)
+
+      Oskol.Repo.insert!(%Oskol.Puzzles.Puzzle{
+        id: id,
+        key: "spa-" <> id,
+        kind: kind,
+        question: Jason.decode!(question),
+        answer: Jason.decode!(answer),
+        evaluated_by: %{}
+      })
+
+      id
+    end
+
+    test "a puzzle's head is its question, with the score and cube beneath", %{conn: conn} do
+      id = a_puzzle("move")
+      html = conn |> get(~p"/puzzles/#{id}") |> html_response(200)
+      assert html =~ ~s(id="elm-app")
+      prompt = esc("White to play 6-4. What's your play?")
+      assert html =~ ~s(>#{prompt} · Oskol</title>)
+      assert html =~ ~s(<meta property="og:title" content="#{prompt}")
+      assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/puzzles/#{id}")
+
+      assert html =~
+               ~s(<meta name="description" content="Match play, 3 away against 5. Cube centred.)
+
+      # The board as the picture, so a pasted link unfurls with it.
+      assert html =~
+               ~s(<meta property="og:image" content="http://localhost:4002/puzzles/#{id}.png">)
+
+      assert html =~ ~s(<meta name="twitter:card" content="summary_large_image">)
+      # Open to search: a puzzle is a public page, unlike a room's replay.
+      refute html =~ ~s(name="robots")
+      # And nothing of where it came from.
+      refute html =~ "Alice"
+      refute html =~ "replay"
+    end
+
+    test "a take is asked from the responder's side: the cube is the other player's", %{
+      conn: conn
+    } do
+      id = a_puzzle("take")
+      html = conn |> get(~p"/puzzles/#{id}") |> html_response(200)
+      assert html =~ ~s(>White is doubled. Take? · Oskol</title>)
+      # Stored as the doubler's (White's, at 2); shown to the one doubled,
+      # whose opponent holds it, with the away scores swapped.
+      assert html =~ ~s(content="Match play, 5 away against 3. Cube at 2, Black&#39;s.)
+    end
+
+    # A story link: a finished game with a source for the puzzle, and the
+    # share row the seat that made the mistake minted.
+    defp a_story(puzzle_id) do
+      game_id = "spa-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
+      now = DateTime.utc_now()
+
+      Oskol.Repo.insert!(%Oskol.Persistence.Game{
+        id: game_id,
+        slug: "backgammon",
+        config: %{"format" => "single"},
+        seed: 3,
+        players: [
+          %{"id" => "p1", "name" => "Arie", "guest_id" => "g-arie"},
+          %{"id" => "p2", "name" => "Charlie", "guest_id" => "g-charlie"}
+        ],
+        status: "finished",
+        winners: ["p2"]
+      })
+
+      source =
+        Oskol.Repo.insert!(%Oskol.Puzzles.Source{
+          puzzle_id: puzzle_id,
+          game_id: game_id,
+          game_number: 1,
+          turn: 4,
+          kind: "move",
+          seat: 0,
+          player_id: "p1",
+          played: "24/23 13/11",
+          equity_lost: 0.11,
+          grade: "bad"
+        })
+
+      token =
+        "TOKEN" <>
+          (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :upper) |> String.slice(0, 7))
+
+      Oskol.Repo.insert!(%Oskol.Puzzles.Share{
+        token: token,
+        puzzle_id: puzzle_id,
+        source_id: source.id,
+        shared_by: "g-arie",
+        shared_name: "Arie",
+        inserted_at: now
+      })
+
+      token
+    end
+
+    test "a story link's head names the sharer, and the canonical stays the clean page", %{
+      conn: conn
+    } do
+      id = a_puzzle("move")
+      token = a_story(id)
+      html = conn |> get(~p"/puzzles/#{id}?s=#{token}") |> html_response(200)
+      headline = esc("Arie got this wrong. What's your play?")
+      assert html =~ ~s(>#{headline} · Oskol</title>)
+      assert html =~ ~s(<meta property="og:title" content="#{headline}")
+      assert html =~ ~s(<meta name="twitter:title" content="#{headline}")
+      # The description, the picture and the canonical are the plain page's.
+      assert html =~ ~s(<meta name="description" content="Match play, 3 away against 5.)
+      assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/puzzles/#{id}")
+      assert html =~ ~s(<meta property="og:url" content="http://localhost:4002/puzzles/#{id}")
+
+      assert html =~
+               ~s(<meta property="og:image" content="http://localhost:4002/puzzles/#{id}.png")
+
+      # The opponent is nowhere, and neither is the move: the story waits
+      # for the reader's own attempt.
+      refute html =~ "Charlie"
+      refute html =~ "24/23"
+    end
+
+    test "a token nobody minted, or minted for another puzzle, leaves the head as it was", %{
+      conn: conn
+    } do
+      id = a_puzzle("move")
+      other = a_puzzle("double")
+      token = a_story(other)
+      prompt = esc("White to play 6-4. What's your play?")
+
+      for path <- [
+            ~p"/puzzles/#{id}?s=NOSUCHTOKEN0",
+            ~p"/puzzles/#{id}?s=#{token}",
+            ~p"/puzzles/#{id}?s="
+          ] do
+        html = conn |> get(path) |> html_response(200)
+        assert html =~ ~s(<meta property="og:title" content="#{prompt}"), path
+        refute html =~ "got this wrong", path
+        refute html =~ "Arie", path
+      end
+    end
+
+    test "a puzzle nobody stored is a 404", %{conn: conn} do
+      assert_error_sent 404, fn -> get(conn, ~p"/puzzles/nope0000") end
+    end
+
+    test "the practice home is its own page, with a head that says the same to everyone", %{
+      conn: conn
+    } do
+      html = conn |> get(~p"/puzzles") |> html_response(200)
+      assert html =~ ~s(id="elm-app")
+      assert html =~ ~s(>Puzzles · Oskol</title>)
+      assert html =~ ~s(<meta property="og:title" content="Puzzles")
+      assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/puzzles")
+      assert html =~ ~s(<meta name="description" content="Practice your own mistakes.)
+      # Indexable, like a puzzle; a stranger is exactly who it is for.
+      refute html =~ ~s(name="robots")
+      # No picture of its own: the plain card.
+      refute html =~ ~s(summary_large_image)
+    end
+  end
+
+  describe "the card a link unfurls as" do
+    test "every page without a picture of its own is the plain summary card, as it always was",
+         %{conn: conn} do
+      for path <- [~p"/", ~p"/backgammon", ~p"/backgammon/123456/replay"] do
+        html = conn |> get(path) |> html_response(200)
+        assert html =~ ~s(<meta name="twitter:card" content="summary">), path
+        refute html =~ "og:image", path
+        refute html =~ "twitter:image", path
+        refute html =~ "summary_large_image", path
+      end
+    end
+
+    test "a page with a picture of its own gets the large card with it, at its size",
+         %{conn: conn} do
+      # No page sets `:puzzle_image` in this suite yet (the puzzle page does):
+      # the layout is rendered as that page renders it, with the assign.
+      image = url(~p"/puzzles/abc12345.png")
+
+      html =
+        Phoenix.Template.render_to_string(OskolWeb.Layouts, "root", "html",
+          conn: conn,
+          inner_content: "",
+          page_title: "White to play 6-4. What's your play?",
+          puzzle_image: image
+        )
+
+      assert html =~ ~s(<meta property="og:image" content="#{image}">)
+      assert html =~ ~s(<meta property="og:image:width" content="1200">)
+      assert html =~ ~s(<meta property="og:image:height" content="630">)
+      assert html =~ ~s(<meta name="twitter:card" content="summary_large_image">)
+      assert html =~ ~s(<meta name="twitter:image" content="#{image}">)
+      refute html =~ ~s(<meta name="twitter:card" content="summary">)
+      # The picture is an absolute URL: a preview fetches it from elsewhere.
+      assert image =~ ~r{^http://localhost:4002/puzzles/abc12345\.png$}
+    end
+
+    test "the layout without the assign renders the one tag the page always had", %{conn: conn} do
+      html =
+        Phoenix.Template.render_to_string(OskolWeb.Layouts, "root", "html",
+          conn: conn,
+          inner_content: ""
+        )
+
+      assert html =~ ~s(<meta name="twitter:card" content="summary">)
+      refute html =~ "og:image"
+    end
+  end
+
   describe "guest identity" do
     setup do
       # Every write below happens in this process (a controller request runs

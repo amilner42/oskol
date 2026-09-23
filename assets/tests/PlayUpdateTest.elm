@@ -5,6 +5,7 @@ module PlayUpdateTest exposing (suite)
 channel messages must land where they should.
 -}
 
+import Api
 import Dict
 import Expect
 import FixtureLoader exposing (Fixture)
@@ -58,7 +59,7 @@ suite : Test
 suite =
     describe "Page.Play.update with fixture payloads"
         (List.map replay FixtureLoader.all
-            ++ [ channelMessages, tabTitle, seatNames, prefsRace, ratingsWatch, refusedAtTheDoor, refusedMidGame ]
+            ++ [ channelMessages, tabTitle, seatNames, prefsRace, ratingsWatch, mistakesOnCards, refusedAtTheDoor, refusedMidGame ]
         )
 
 
@@ -266,6 +267,143 @@ ratingsWatch =
                     |> .ratingsPolls
                     |> Expect.equal 0
         ]
+
+
+{-| PRACTICE THIS GAME'S N MISTAKES is fed by one ask per graded game,
+made for a seat and never for a spectator; the puzzles land a moment after
+the grade, so an ask may be told to come back, and it does, bounded.
+-}
+mistakesOnCards : Test
+mistakesOnCards =
+    let
+        graded numbers =
+            { prs = Dict.empty, graded = List.length numbers, pending = False, games = Dict.fromList (List.map (\n -> ( n, [ ( "p1", 5.0 ) ] )) numbers) }
+
+        entry id =
+            { id = id, kind = "move", prompt = "White to play 6-4. What's your play?", due = False }
+
+        answer ids =
+            { puzzles = List.map entry ids, counts = Nothing, mistakes = Nothing }
+
+        stillWriting =
+            Api.ApiError { code = "puzzles_pending", message = "This game's mistakes are still being written. Try again in a moment." }
+
+        refused =
+            Api.ApiError { code = "not_found", message = "No puzzles for that game" }
+
+        firstUpdate fixture =
+            Dict.get "p1" fixture.initial
+
+        seatedAt fixture =
+            -- the first payload says who this browser is: p1, a seat
+            case firstUpdate fixture of
+                Just u ->
+                    feed fixture (start fixture) u
+
+                Nothing ->
+                    start fixture
+
+        watching fixture =
+            -- the spectator's payload: nobody the room seats
+            case firstUpdate fixture of
+                Just u ->
+                    Play.applyPayload (payload fixture "watcher" u) (start fixture) |> first3
+
+                Nothing ->
+                    start fixture
+
+        got msg model =
+            Play.update msg model |> first3
+
+        outOf msg model =
+            Play.update msg model |> (\( _, _, out ) -> out)
+    in
+    describe "the mistakes a result card offers to practice"
+        (case FixtureLoader.byGame "backgammon" |> List.head of
+            Just fixture ->
+                [ test "a graded game is asked about once, for a seat" <|
+                    \_ ->
+                        seatedAt fixture
+                            |> got (GotRatings (Ok (graded [ 1 ])))
+                            |> Expect.all
+                                [ \m -> Dict.toList m.mistakeAsks |> Expect.equal [ ( 1, 1 ) ]
+
+                                -- the next answer from /ratings does not ask again while one is out
+                                , \m -> got (GotRatings (Ok (graded [ 1 ]))) m |> .mistakeAsks |> Dict.toList |> Expect.equal [ ( 1, 1 ) ]
+                                ]
+                , test "the answer is kept by game, and PRACTICE runs exactly those ids" <|
+                    \_ ->
+                        seatedAt fixture
+                            |> got (GotRatings (Ok (graded [ 1 ])))
+                            |> got (GotMistakes 1 (Ok (answer [ "aaaaaaaa", "bbbbbbbb" ])))
+                            |> Expect.all
+                                [ \m -> Dict.get 1 m.mistakes |> Expect.equal (Just [ "aaaaaaaa", "bbbbbbbb" ])
+                                , \m -> Dict.member 1 m.mistakeAsks |> Expect.equal False
+                                , \m -> outOf (BackgammonMsg (Backgammon.PracticeGame 1)) m |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+
+                                -- a game not answered for starts nothing
+                                , \m -> outOf (BackgammonMsg (Backgammon.PracticeGame 2)) m |> Expect.equal NoOut
+
+                                -- and is not asked about again once answered
+                                , \m -> got (GotRatings (Ok (graded [ 1, 2 ]))) m |> .mistakeAsks |> Dict.toList |> Expect.equal [ ( 2, 1 ) ]
+                                ]
+                , test "a spectator is never asked for: the answer would be a 404" <|
+                    \_ ->
+                        watching fixture
+                            |> got (GotRatings (Ok (graded [ 1 ])))
+                            |> .mistakeAsks
+                            |> Dict.isEmpty
+                            |> Expect.equal True
+                , test "a grade that lands before the room has said who this browser is waits for the payload" <|
+                    \_ ->
+                        start fixture
+                            |> got (GotRatings (Ok (graded [ 1 ])))
+                            |> Expect.all
+                                [ \m -> Dict.isEmpty m.mistakeAsks |> Expect.equal True
+                                , \m ->
+                                    (case firstUpdate fixture of
+                                        Just u ->
+                                            feed fixture m u
+
+                                        Nothing ->
+                                            m
+                                    )
+                                        |> .mistakeAsks
+                                        |> Dict.toList
+                                        |> Expect.equal [ ( 1, 1 ) ]
+                                ]
+                , test "puzzles still being written: the ask is kept and made again, and gives up after enough" <|
+                    \_ ->
+                        let
+                            told =
+                                seatedAt fixture
+                                    |> got (GotRatings (Ok (graded [ 1 ])))
+                                    |> got (GotMistakes 1 (Err stillWriting))
+                        in
+                        Expect.all
+                            [ \m -> Dict.get 1 m.mistakeAsks |> Expect.equal (Just 1)
+                            , \m -> got (AskMistakes 1) m |> .mistakeAsks |> Dict.get 1 |> Expect.equal (Just 2)
+                            , \m ->
+                                List.foldl (\_ acc -> got (AskMistakes 1) acc) m (List.repeat 30 ())
+                                    |> .mistakeAsks
+                                    |> Dict.member 1
+                                    |> Expect.equal False
+                            ]
+                            told
+                , test "any other refusal ends the asking: no button, and nothing hammered" <|
+                    \_ ->
+                        seatedAt fixture
+                            |> got (GotRatings (Ok (graded [ 1 ])))
+                            |> got (GotMistakes 1 (Err refused))
+                            |> Expect.all
+                                [ \m -> Dict.isEmpty m.mistakeAsks |> Expect.equal True
+                                , \m -> Dict.isEmpty m.mistakes |> Expect.equal True
+                                ]
+                ]
+
+            Nothing ->
+                [ test "no backgammon fixture" <| \_ -> Expect.fail "no backgammon fixture" ]
+        )
 
 
 startAt : String -> Model

@@ -44,7 +44,7 @@ defmodule Oskol.RatingsTest do
     :ok = Reviews.save(game_id, 1, "pending", 1, nil, nil, nil, 1)
 
     assert [%{response: nil}] = Reviews.rating_summaries(game_id)
-    {:analysis_caps, _, _, ratings, _, _, _, _, _, _} = Oskol.Gleam.Caps.Analysis.build()
+    {:analysis_caps, _, _, ratings, _, _, _, _, _, _, _, _, _} = Oskol.Gleam.Caps.Analysis.build()
     assert [{:stored, 1, :pending, 1, :none, false, false, 1}] = ratings.(game_id)
   end
 
