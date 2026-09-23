@@ -1502,9 +1502,9 @@ viewCandidates model reveal =
         )
 
 
-{-| A cube question's reveal: the scale with the engine's band marked (and
-the one picked), the three equities with its pick in ink, the chances it
-judged on. The sentence is the replay's, from the doubler's side.
+{-| A cube question's reveal: the replay's sentence from the doubler's
+side, the three equities with the engine's pick in ink, the chances it
+judged on. Nothing else: the verdict line above already said which way.
 -}
 viewCubeReveal : Model -> Puzzle -> Puzzle.CubeReveal -> List (Html Msg)
 viewCubeReveal model puzzle cube =
@@ -1534,25 +1534,7 @@ viewCubeReveal model puzzle cube =
                 _ ->
                     Words.doubleWhy "White" "Black" review
     in
-    [ div [ class "pz-bands pz-scale", id "pz-scale" ]
-        (Puzzle.bands puzzle.kind
-            |> List.map
-                (\( band, label ) ->
-                    span
-                        [ classList [ ( "pz-band", True ), ( "is-engine", band == cube.band ), ( "is-on", band /= 0 && Maybe.map (\b -> b > 0) model.band == Just (band > 0) ) ]
-                        , attribute "data-band" (String.fromInt band)
-                        , attribute "data-engine"
-                            (if band == cube.band then
-                                "true"
-
-                             else
-                                "false"
-                            )
-                        ]
-                        [ text label ]
-                )
-        )
-    , Words.inWords words
+    [ Words.inWords words
     , cubeLine review
     , cubeChances "White" review
     ]

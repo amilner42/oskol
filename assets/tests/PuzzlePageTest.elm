@@ -607,11 +607,7 @@ cube =
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "fail") ]
                         , hasNot [ id "pz-bands", tag "button" ]
-                        , \q -> q |> Query.find [ id "pz-scale" ] |> Query.findAll [ attribute (Html.Attributes.attribute "data-engine" "true") ] |> Query.count (Expect.equal 1)
-                        , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-engine" "true") ] |> Query.has [ attribute (Html.Attributes.attribute "data-band" "2"), text "Big double" ]
-                        , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-band" "1") ] |> Query.has [ class "is-on" ]
-                        , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-band" "2") ] |> Query.has [ class "is-on" ]
-                        , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-band" "0") ] |> Query.hasNot [ class "is-on" ]
+                        , hasNot [ id "pz-scale" ]
                         , \q -> q |> Query.find [ class "rp-cube-eq", class "is-pick" ] |> Query.has [ text "Double, pass" ]
                         , \q -> q |> Query.find [ id "pz-reveal" ] |> Query.has [ text "White is winning here by enough that Black should pass." ]
                         ]
@@ -620,7 +616,6 @@ cube =
                 rendered (page { hasNext = False } "take" |> step (PickedBand -1) |> revealed (reveal "take_pass"))
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "pass") ]
-                        , \q -> q |> Query.find [ id "pz-scale" ] |> Query.find [ attribute (Html.Attributes.attribute "data-engine" "true") ] |> Query.has [ text "Big pass" ]
                         , \q -> q |> Query.find [ id "pz-reveal" ] |> Query.has [ text "White is losing here by too much to take" ]
                         ]
         ]

@@ -1270,7 +1270,8 @@ path builds one and nothing re-asks the engine to recover one.
   whatever pays the doubler less), bands at 0.08 and 0.02 either side of
   zero. The right side passes, the wrong side misses, and when the engine's
   band is zero (too close to call) either side holds: nobody fails a coin
-  flip. The reveal shows the five bands with the engine's marked.
+  flip. The reveal shows the engine's pick among the three equities and the
+  chances, nothing more.
 - **Every finished game is the moment.** Both result cards at the table --
   the game-over card and the between-games card of a match or of
   unlimited play -- and the replay's ANALYSIS tab offer PRACTICE THIS
@@ -1445,7 +1446,7 @@ link can put nothing within reach. The board is the table's own
 (`Games/Backgammon/Puzzle.elm` on `View.viewPlay`; a lazy tree's levels
 are fetched as the path reaches them), UNDO and PLAY are its own band; a
 cube question is two buttons, as at the table (DOUBLE / NO DOUBLE, TAKE /
-PASS; the engine's five-band verdict is the reveal's scale). The reveal is
+PASS). The reveal is
 the replay's words and table
 (`Words`, with `doubleWhy`/`noDoubleWhy`/`answerWhy` for a position nobody
 has acted on yet) with "you" marked and a candidate tappable onto the
