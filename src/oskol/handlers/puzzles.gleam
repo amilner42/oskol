@@ -1288,7 +1288,7 @@ fn lines_decoder() -> decode.Decoder(Lines) {
 
 /// The mistakes one game of a room made, for the seat the caller holds.
 ///
-/// Theirs only: the card at game over offers "practise this game's six
+/// Theirs only: the card at game over offers "practice this game's six
 /// mistakes", and they are the six the reader made, not their opponent's. A
 /// caller at no seat here is the same 404 as a game that is not there, so
 /// nobody reads a room they are not sitting at.

@@ -19,7 +19,7 @@
 ////     nothing they were promised.
 ////   * **nobody** -- a stranger with no games behind them -- gets an
 ////     empty list. Not an error: there is nothing wrong with having
-////     nothing to practise yet.
+////     nothing to practice yet.
 ////
 //// Reading a session never starts a card and never spends a day's budget.
 //// A new card is not due until it is first seen, and it is answering one
@@ -56,7 +56,7 @@ pub fn practice_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
 ///
 /// Only an account has a rotation to add to. For a guest the page already
 /// holds every mistake they have, so this is the next page of it and
-/// nothing else -- and, as everywhere a guest practises, it writes nothing.
+/// nothing else -- and, as everywhere a guest practices, it writes nothing.
 pub fn more_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
   case session.user_id {
     Some(uid) -> {
@@ -209,7 +209,7 @@ fn mistakes(mine: List(DeckSource)) -> Json {
 }
 
 /// One card per puzzle, keeping the first (and so the newest): the same
-/// position reached in two games is one mistake to practise, not two.
+/// position reached in two games is one mistake to practice, not two.
 fn dedupe(
   sources: List(DeckSource),
   seen: List(String),

@@ -9,11 +9,11 @@
  *     and TRY ONE opens a puzzle with no NEXT (one puzzle is not a run).
  *  2. Alice, a guest holding the seat that made the mistakes, opens
  *     /puzzles: "12 mistakes from your 1 game", that nothing is saved,
- *     PRACTISE. The run: twelve puzzles, PLAY and NEXT each, then the
+ *     PRACTICE. The run: twelve puzzles, PLAY and NEXT each, then the
  *     score and the sign-in ask. She signs in right there (the mail read
  *     from /dev/last-login) and CONTINUE lands her back on /puzzles with
  *     a deck: the counts line, and her timezone sent once.
- *  3. As an account: PRACTISE runs the day's ten, ends on "Done for
+ *  3. As an account: PRACTICE runs the day's ten, ends on "Done for
  *     today. 2 new tomorrow." and KEEP GOING; KEEP GOING runs the two,
  *     and the end says the deck has nothing more to start.
  *  4. Phones: the home at 390x844, 320x568 and 844x390 scrolls nowhere
@@ -55,7 +55,7 @@ function arrange() {
   const kept = JSON.parse(resultLine(execFileSync('mix', ['run', '-e', trim], {
     encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
   }))).kept;
-  must(kept === KEPT, `the first seat has ${KEPT} mistakes to practise (${kept})`);
+  must(kept === KEPT, `the first seat has ${KEPT} mistakes to practice (${kept})`);
   return setup;
 }
 
@@ -88,14 +88,25 @@ async function stageATurn(page) {
   if (!(await page.locator('#bg-action-play').count())) throw new Error(`PLAY is not offered once the roll is played at ${page.url()}`);
 }
 
-/** One puzzle of a run: play it, see the reveal, press NEXT. */
+/** Answer whatever question is on the page: a cube question is five
+ * bands (the middle one will do), a checker play is staged and PLAYed. */
+async function answer(page) {
+  await page.waitForSelector('#pz-bands, #bg-action-play, [data-move-source]', { timeout: 10000 });
+  if (await page.locator('#pz-bands').count()) {
+    await page.click('#pz-band-0');
+    return;
+  }
+  await stageATurn(page);
+  await page.click('#bg-action-play');
+}
+
+/** One puzzle of a run: answer it, see the reveal, press NEXT. */
 async function answerAndNext(page, n) {
   // The previous puzzle's reveal leaves the DOM a frame after the URL
   // moved on; the new board is the one without it.
   await page.waitForSelector('#pz-reveal', { state: 'detached' });
   await page.waitForSelector('#pz-board .bg-stack');
-  await stageATurn(page);
-  await page.click('#bg-action-play');
+  await answer(page);
   await page.waitForSelector('#pz-reveal');
   await page.waitForSelector('#pz-next');
   const id = new URL(page.url()).pathname;
@@ -147,12 +158,12 @@ async function run(browser, setup, errors) {
     must(!html.includes('name="robots"'), 'the practice home is indexable');
     await stranger.waitForSelector('#puzzles-hub #hub-try-one');
     must(await stranger.locator('#hub-about').count(), 'a stranger is told what this is');
-    must(!(await stranger.locator('#hub-practise').count()), 'and has nothing to practise');
+    must(!(await stranger.locator('#hub-practice').count()), 'and has nothing to practice');
     await stranger.click('#hub-try-one');
     await stranger.waitForSelector('#pz-board .bg-stack');
     must(/^\/puzzles\/[0-9A-Z]{8}$/i.test(new URL(stranger.url()).pathname), `TRY ONE opened a puzzle: ${stranger.url()}`);
-    await stageATurn(stranger);
-    await stranger.click('#bg-action-play');
+    // TRY ONE may hand out a cube question as readily as a checker play.
+    await answer(stranger);
     await stranger.waitForSelector('#pz-reveal');
     must(!(await stranger.locator('#pz-next').count()), 'one puzzle is not a run: no NEXT');
 
@@ -164,14 +175,14 @@ async function run(browser, setup, errors) {
       if (r.method() === 'POST' && r.url().includes('/papi/practice/tz')) posts.push(r.postDataJSON());
     });
     await alice.goto(`${BASE}/puzzles`);
-    await alice.waitForSelector('#hub-practise');
+    await alice.waitForSelector('#hub-practice');
     const headline = (await alice.textContent('#hub-headline')).trim();
     must(headline === `${KEPT} mistakes from your 1 game`, `a guest reads what is hers: "${headline}"`);
     must(await alice.locator('#hub-unsaved').count(), 'and that nothing is saved yet');
     must(posts.length === 0, 'a guest\'s timezone is nobody\'s to keep');
-    await alice.click('#hub-practise');
+    await alice.click('#hub-practice');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
-    log('PRACTISE started the run');
+    log('PRACTICE started the run');
     await runToEnd(alice, KEPT);
     await alice.waitForSelector('#pz-signin-ask');
     must(await alice.locator('#signin-email').count(), 'a guest is asked to sign in, in the one component');
@@ -190,7 +201,7 @@ async function run(browser, setup, errors) {
     log('CONTINUE landed back on the practice home');
     // Signed in now, and the page knows it from the server's answer: the
     // browser's zone goes to the deck, once for this load of the page.
-    await alice.waitForFunction(() => document.querySelector('#hub-practise, #hub-keep-going, #hub-try-one'));
+    await alice.waitForFunction(() => document.querySelector('#hub-practice, #hub-keep-going, #hub-try-one'));
     await sleep(300);
     must(posts.length === 1 && typeof posts[0].tz === 'string' && posts[0].tz.length > 0, `the browser's timezone was sent: ${JSON.stringify(posts[0])}`);
 
@@ -215,12 +226,12 @@ async function run(browser, setup, errors) {
 
     // ---- 3. as an account ----
     await alice.goto(`${BASE}/puzzles`);
-    await alice.waitForSelector('#hub-practise');
+    await alice.waitForSelector('#hub-practice');
     const counts = (await alice.textContent('#hub-headline')).trim();
     must(new RegExp(`^\\d+ due · 10 new today · ${KEPT} in your deck$`).test(counts), `an account reads its counts: "${counts}"`);
     await sleep(300);
     must(posts.length === 2, `the timezone goes once per load of the page, never per fetch (${posts.length} for 2 loads)`);
-    await alice.click('#hub-practise');
+    await alice.click('#hub-practice');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
     await runToEnd(alice, 10);
     await alice.waitForSelector('#pz-done');

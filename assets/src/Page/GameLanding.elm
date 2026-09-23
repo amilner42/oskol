@@ -1298,9 +1298,9 @@ lowerFirst text =
     String.toLower (String.left 1 text) ++ String.dropLeft 1 text
 
 
-{-| Practising your own mistakes: the second row's first entry, where
+{-| Practicing your own mistakes: the second row's first entry, where
 TACTICS was promised. It opens the practice home, which says what there
-is to practise.
+is to practice.
 -}
 puzzlesButton : Html Msg
 puzzlesButton =

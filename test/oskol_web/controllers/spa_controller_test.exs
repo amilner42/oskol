@@ -241,7 +241,7 @@ defmodule OskolWeb.SpaControllerTest do
       assert html =~ ~s(>Puzzles · Oskol</title>)
       assert html =~ ~s(<meta property="og:title" content="Puzzles")
       assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/puzzles")
-      assert html =~ ~s(<meta name="description" content="Practise your own mistakes.)
+      assert html =~ ~s(<meta name="description" content="Practice your own mistakes.)
       # Indexable, like a puzzle; a stranger is exactly who it is for.
       refute html =~ ~s(name="robots")
       # No picture of its own: the plain card.

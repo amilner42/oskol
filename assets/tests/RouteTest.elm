@@ -73,7 +73,7 @@ suite =
                 \_ -> Expect.equal (Just (Puzzle "AB12CD34")) (parse "/puzzles/AB12CD34")
             , test "a puzzle is not a room of a game called puzzles" <|
                 \_ -> Expect.notEqual (Just (Play "puzzles" "AB12CD34")) (parse "/puzzles/AB12CD34")
-            , test "practising is its own page, not a game's start page" <|
+            , test "practicing is its own page, not a game's start page" <|
                 \_ -> Expect.equal (Just Puzzles) (parse "/puzzles")
             , test "the sitemap belongs to the server" <|
                 \_ -> Expect.equal Nothing (parse "/sitemap.xml")

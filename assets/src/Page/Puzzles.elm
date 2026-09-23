@@ -17,18 +17,18 @@ module Page.Puzzles exposing
 `GET /papi/practice` is one answer for three callers:
 
   - an **account** with a deck: "12 due · 4 new today · 231 in your deck"
-    and PRACTISE, which runs what the deck put first. Nothing due and
+    and PRACTICE, which runs what the deck put first. Nothing due and
     nothing new is "Done for today", with KEEP GOING to start more.
   - a **guest** with games behind them: "23 mistakes from your 4 games",
     a line that nothing is saved until they sign in, and the same
-    PRACTISE. The sign-in itself is asked at the end of the run, once
+    PRACTICE. The sign-in itself is asked at the end of the run, once
     they have felt it; a quiet line here opens it early for whoever
     wants it.
   - a **stranger**: two lines on what this is, and TRY ONE -- a random
     puzzle whose answer stands clear, or an honest line while the pool
     has none.
 
-PRACTISE hands the shell the list (`StartRun`): the run outlives this
+PRACTICE hands the shell the list (`StartRun`): the run outlives this
 page, so it is the shell's (`Main.run`). Signed in, the page also sends
 the browser's timezone once, so "due today" and "back tomorrow" are the
 player's day and not UTC's.
@@ -85,7 +85,7 @@ type State
 
 type Msg
     = GotPractice (Result Api.Error Practice)
-    | PressedPractise
+    | PressedPractice
     | PressedKeepGoing
     | GotMore (Result Api.Error Practice)
     | PressedTryOne
@@ -182,7 +182,7 @@ update msg model =
             -- leaves the deck on the day it had, which is nothing to say.
             ( model, Cmd.none, NoOut )
 
-        PressedPractise ->
+        PressedPractice ->
             case model.practice of
                 Loaded practice ->
                     start practice model
@@ -270,7 +270,7 @@ update msg model =
             ( model, Cmd.none, NoOut )
 
 
-{-| PRACTISE: the list the server put first, as a run. An empty list is
+{-| PRACTICE: the list the server put first, as a run. An empty list is
 nothing to start, and the page already says so.
 -}
 start : Practice -> Model -> ( Model, Cmd Msg, Out )
@@ -323,7 +323,7 @@ body model visitor =
             stranger model
 
 
-{-| An account: what the deck holds, and PRACTISE; or, with nothing due
+{-| An account: what the deck holds, and PRACTICE; or, with nothing due
 and nothing new, "Done for today" and KEEP GOING.
 -}
 account : Model -> Practice.Counts -> List Practice.Entry -> List (Html Msg)
@@ -353,12 +353,12 @@ account model counts entries =
 
         _ ->
             [ headline (countsLine counts)
-            , practise (List.length entries)
+            , practiceButton (List.length entries)
             ]
 
 
 {-| A guest with games behind them: what is theirs, that it is not kept
-yet, and PRACTISE. The sign-in is asked at the end of the run; the line
+yet, and PRACTICE. The sign-in is asked at the end of the run; the line
 here is for whoever wants it now.
 -}
 guest : Model -> Practice.Mistakes -> List Practice.Entry -> List (Html Msg)
@@ -366,7 +366,7 @@ guest model mistakes entries =
     [ headline (mistakesLine mistakes)
     , Html.p [ id "hub-unsaved", class "q-note text-[13px] leading-snug mb-5" ]
         [ Html.text "Your progress is not saved until you sign in." ]
-    , practise (List.length entries)
+    , practiceButton (List.length entries)
     , signInLine model
     ]
 
@@ -375,9 +375,9 @@ guest model mistakes entries =
 -}
 stranger : Model -> List (Html Msg)
 stranger model =
-    [ headline "Practise your own mistakes."
+    [ headline "Practice your own mistakes."
     , Html.p [ id "hub-about", class "text-base mb-5", Notebook.style "color: var(--ink)" ]
-        [ Html.text "Every mistake the engine finds in your games becomes a puzzle here, and comes back until you stop making it. Practise them, and share any puzzle with a link." ]
+        [ Html.text "Every mistake the engine finds in your games becomes a puzzle here, and comes back until you stop making it. Practice them, and share any puzzle with a link." ]
     , Html.button
         [ Attr.type_ "button"
         , id "hub-try-one"
@@ -402,16 +402,16 @@ stranger model =
     ]
 
 
-practise : Int -> Html Msg
-practise count =
+practiceButton : Int -> Html Msg
+practiceButton count =
     Html.button
         [ Attr.type_ "button"
-        , id "hub-practise"
+        , id "hub-practice"
         , class "q-btn w-full px-6 py-3.5 text-[15px]"
         , Attr.disabled (count == 0)
-        , onClick PressedPractise
+        , onClick PressedPractice
         ]
-        [ Html.text "PRACTISE" ]
+        [ Html.text "PRACTICE" ]
 
 
 {-| "12 due · 4 new today · 231 in your deck".

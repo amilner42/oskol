@@ -2,7 +2,7 @@ module PuzzlesHubTest exposing (suite)
 
 {-| The practice home on the server's three answers: an account's deck,
 a guest's mistakes, and nobody's empty list. What each shows, what
-PRACTISE hands the shell, what TRY ONE does with a puzzle and with an
+PRACTICE hands the shell, what TRY ONE does with a puzzle and with an
 empty pool, and what KEEP GOING does when there is nothing more.
 -}
 
@@ -152,18 +152,18 @@ isGuest state =
 anAccount : Test
 anAccount =
     describe "an account with a deck"
-        [ test "reads its counts in one line, and is offered PRACTISE" <|
+        [ test "reads its counts in one line, and is offered PRACTICE" <|
             \_ ->
                 rendered (loaded accountJson)
                     |> Expect.all
                         [ Query.find [ id "hub-headline" ] >> Query.has [ text "12 due · 4 new today · 231 in your deck" ]
-                        , Query.find [ id "hub-practise" ] >> Query.has [ text "PRACTISE" ]
+                        , Query.find [ id "hub-practice" ] >> Query.has [ text "PRACTICE" ]
                         , Query.hasNot [ id "hub-try-one" ]
                         , Query.hasNot [ id "hub-unsaved" ]
                         ]
-        , test "PRACTISE hands the shell the run, in the deck's order" <|
+        , test "PRACTICE hands the shell the run, in the deck's order" <|
             \_ ->
-                out PressedPractise (loaded accountJson)
+                out PressedPractice (loaded accountJson)
                     |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ])
         , test "the words are the wire's numbers" <|
             \_ ->
@@ -176,7 +176,7 @@ anAccount =
                         [ Query.find [ id "hub-headline" ] >> Query.has [ text "Done for today." ]
                         , Query.find [ id "hub-counts" ] >> Query.has [ text "4 new tomorrow · 231 in your deck" ]
                         , Query.find [ id "hub-keep-going" ] >> Query.has [ text "KEEP GOING" ]
-                        , Query.hasNot [ id "hub-practise" ]
+                        , Query.hasNot [ id "hub-practice" ]
                         ]
         , test "KEEP GOING's answer is the run when it brought puzzles" <|
             \_ ->
@@ -197,7 +197,7 @@ anAccount =
                 rendered (loaded emptyDeckJson)
                     |> Expect.all
                         [ Query.has [ id "hub-try-one" ]
-                        , Query.hasNot [ id "hub-practise" ]
+                        , Query.hasNot [ id "hub-practice" ]
                         , Query.hasNot [ id "hub-keep-going" ]
                         ]
         ]
@@ -210,18 +210,18 @@ anAccount =
 aGuest : Test
 aGuest =
     describe "a guest with games behind them"
-        [ test "reads what is theirs, that nothing is kept yet, and is offered PRACTISE" <|
+        [ test "reads what is theirs, that nothing is kept yet, and is offered PRACTICE" <|
             \_ ->
                 rendered (loaded guestJson)
                     |> Expect.all
                         [ Query.find [ id "hub-headline" ] >> Query.has [ text "23 mistakes from your 4 games" ]
                         , Query.find [ id "hub-unsaved" ] >> Query.has [ text "not saved" ]
-                        , Query.find [ id "hub-practise" ] >> Query.has [ text "PRACTISE" ]
+                        , Query.find [ id "hub-practice" ] >> Query.has [ text "PRACTICE" ]
                         , Query.hasNot [ id "hub-try-one" ]
                         ]
-        , test "PRACTISE runs their mistakes" <|
+        , test "PRACTICE runs their mistakes" <|
             \_ ->
-                out PressedPractise (loaded guestJson)
+                out PressedPractice (loaded guestJson)
                     |> Expect.equal (StartRun [ "cccccccc", "dddddddd" ])
         , test "one of each is singular" <|
             \_ ->
@@ -255,7 +255,7 @@ aStranger =
                     |> Expect.all
                         [ Query.find [ id "hub-about" ] >> Query.has [ text "Every mistake the engine finds", text "share any puzzle with a link" ]
                         , Query.find [ id "hub-try-one" ] >> Query.has [ text "TRY ONE" ]
-                        , Query.hasNot [ id "hub-practise" ]
+                        , Query.hasNot [ id "hub-practice" ]
                         , Query.has [ id "hub-signin-open" ]
                         ]
         , test "TRY ONE asks for a puzzle, and goes to the one it is given" <|

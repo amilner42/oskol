@@ -642,7 +642,7 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  MOVE and CUBE tabs, each a sentence in words (built from
                                  the chances) over the numbers in columns
 assets/src/Page/Puzzles.elm      "/puzzles" the practice home: an account's counts and
-                                 PRACTISE (or "Done for today" and KEEP GOING), a guest's
+                                 PRACTICE (or "Done for today" and KEEP GOING), a guest's
                                  "23 mistakes from your 4 games", a stranger's TRY ONE
 assets/src/Api/Practice.elm      /papi/practice, /more, /tz and /papi/puzzles/random
 assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over the board
@@ -767,7 +767,7 @@ arrive at any of them cold, and moving between them afterwards is a
   the page), which is what makes a reload land on the same line and a
   link carry a move to a friend; `step` is omitted at the start of a game.
 - `/puzzles` the practice home, PUZZLES on the home menu: what this
-  visitor has to practise and PRACTISE, which starts a run (see "The home
+  visitor has to practice and PRACTICE, which starts a run (see "The home
   and a run" under Puzzles). Open to anyone, indexable, in the sitemap; the
   head (`SpaController.puzzles`) is "Puzzles" and the brief's one-liner,
   the same to everyone.
@@ -1391,11 +1391,11 @@ run's end) and answers `WantsNext`, and Main pushes the next id.
 **The home and a run** (`/puzzles`, `assets/src/Page/Puzzles.elm`; PUZZLES
 on the home menu where TACTICS / SOON was, ANALYSIS / SOON stays). One
 page on `GET /papi/practice`'s one answer: an account with a deck reads
-"12 due · 4 new today · 231 in your deck" and PRACTISE, or, with nothing
+"12 due · 4 new today · 231 in your deck" and PRACTICE, or, with nothing
 due and nothing new, "Done for today", "4 new tomorrow · 231 in your
 deck" and KEEP GOING (`POST /papi/practice/more`, then the session it
 answers is the run); a guest with games reads "23 mistakes from your 4
-games", that progress is not saved, and the same PRACTISE; a stranger
+games", that progress is not saved, and the same PRACTICE; a stranger
 (and an account whose deck is empty) two lines on what this is and TRY
 ONE (`GET /papi/puzzles/random`, a 404's sentence shown under the button
 while the pool has none). A quiet "Sign in" line opens `Ui.SignIn`
@@ -1655,7 +1655,7 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
   GOING and CONTINUE start what the deck answers).
 - `PuzzlesHubTest`: the practice home on the wire's three answers (the
   counts line, a guest's mistakes line, a stranger's TRY ONE and the empty
-  pool's sentence), PRACTISE and KEEP GOING as `StartRun`, and a decoder
+  pool's sentence), PRACTICE and KEEP GOING as `StartRun`, and a decoder
   that refuses a malformed count rather than defaulting it.
 - `ReplayTest`: the replay on the real record and analysis of seed 000011
   (`ReplayFixtures`): decoders, the board at every step, stepping, keys,

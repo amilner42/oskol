@@ -73,8 +73,13 @@ async function runToEnd(page) {
   for (let n = 1; n <= KEPT; n++) {
     await page.waitForSelector('#pz-reveal', { state: 'detached' });
     await page.waitForSelector('#pz-board .bg-stack');
-    await stageATurn(page);
-    await page.click('#bg-action-play');
+    await page.waitForSelector('#pz-bands, #bg-action-play, [data-move-source]', { timeout: 10000 });
+    if (await page.locator('#pz-bands').count()) {
+      await page.click('#pz-band-0');
+    } else {
+      await stageATurn(page);
+      await page.click('#bg-action-play');
+    }
     await page.waitForSelector('#pz-next');
     const was = new URL(page.url()).pathname;
     await page.click('#pz-next');
@@ -114,9 +119,9 @@ async function shotAtEverySize(page, name, ready) {
     await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
     const page = await context.newPage();
     await page.goto(`${BASE}/puzzles`);
-    await shotAtEverySize(page, '02-hub-guest', '#hub-practise');
+    await shotAtEverySize(page, '02-hub-guest', '#hub-practice');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.click('#hub-practise');
+    await page.click('#hub-practice');
     await runToEnd(page);
     await shotAtEverySize(page, '03-end-guest', '#pz-signin-ask');
 
@@ -139,9 +144,9 @@ async function shotAtEverySize(page, name, ready) {
     }
     if (deck === 0) execFileSync('mix', ['oskol.puzzles.sync', '--write'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     await page.goto(`${BASE}/puzzles`);
-    await shotAtEverySize(page, '04-hub-account', '#hub-practise');
+    await shotAtEverySize(page, '04-hub-account', '#hub-practice');
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.click('#hub-practise');
+    await page.click('#hub-practice');
     await runToEnd(page);
     await shotAtEverySize(page, '05-end-account', '#pz-done');
     await page.goto(`${BASE}/puzzles`);

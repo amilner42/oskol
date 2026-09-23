@@ -40,7 +40,7 @@ defmodule OskolWeb.Router do
     get "/me", AuthController, :me
     post "/me/name", AuthController, :rename
 
-    # Practising your own mistakes: an account's deck, or a guest's list.
+    # Practicing your own mistakes: an account's deck, or a guest's list.
     get "/practice", PracticeController, :index
     post "/practice/more", PracticeController, :more
     post "/practice/tz", PracticeController, :tz
@@ -104,7 +104,7 @@ defmodule OskolWeb.Router do
     # "/login" names no game, so it is a 404 like any other unknown slug.
     get "/login/:token", LoginController, :show
 
-    # Practising: the home of it, and one puzzle. Both open to anyone and
+    # Practicing: the home of it, and one puzzle. Both open to anyone and
     # indexable. Declared before "/:slug" so "puzzles" is a reserved word
     # like "login".
     get "/puzzles", SpaController, :puzzles

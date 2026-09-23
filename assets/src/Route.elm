@@ -18,7 +18,7 @@ module Route exposing
     /            the game library
     /:slug       one game's start page (`?game=` an invite)
     /login/:token  the page a mailed sign-in link opens
-    /puzzles     the practice home: what you have to practise, or one to try
+    /puzzles     the practice home: what you have to practice, or one to try
     /puzzles/:id one puzzle: a position and its question
     /:slug/:id   a running game
     /:slug/:id/replay   a game played again, turn by turn, with its analysis

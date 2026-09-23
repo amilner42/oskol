@@ -14,7 +14,7 @@ import Ui.Shell
 
 
 {-| `actions` go in the right half's band beside the dice, then `join` and
-then `more` (the second row: practising, and what is on its way); `note`
+then `more` (the second row: practicing, and what is on its way); `note`
 is the right end of the player's own bar at the foot, where a game shows
 the pip count (the games waiting for them, when there are any).
 -}

@@ -2,7 +2,7 @@
 ////
 ////   GET /papi/puzzles/random     TRY ONE -- a puzzle for a stranger
 ////
-//// A stranger with no games behind them has no mistakes to practise, so
+//// A stranger with no games behind them has no mistakes to practice, so
 //// the home offers one puzzle from the public pool. Not any puzzle: one
 //// whose best move stands clear, so that a first taste is a fair question
 //// and not a coin toss between two plays the engine could barely tell
