@@ -1210,28 +1210,24 @@ viewControls model puzzle =
             text ""
         , if revealed then
             div [ class "pz-actions", id "pz-actions" ]
-                ([ button [ class "q-btn plain pz-action", id "pz-share", onClick Share ]
-                    [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
-                    , text (Maybe.withDefault "SHARE" model.shareLabel)
-                    ]
+                -- One SHARE. For the player whose own mistake this was (the
+                -- memory line said "you") it shares the link with their
+                -- story, which is the one worth sending; for everyone else
+                -- the clean link. The server refuses a story to anyone else
+                -- anyway.
+                ((if Maybe.map .who model.memory == Just "you" then
+                    button [ class "q-btn plain pz-action", id "pz-share-story", onClick ShareStory ]
+                        [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
+                        , text (Maybe.withDefault "SHARE" model.storyLabel)
+                        ]
 
-                 ]
-                    -- "Share with my mistake": a link that unfurls with the
-                    -- sharer's name and move, for the seat that made the
-                    -- mistake and nobody else. The memory line already
-                    -- said whose mistake it was; the server refuses anyone
-                    -- else anyway.
-                    ++ (if Maybe.map .who model.memory == Just "you" then
-                            [ button [ class "q-btn plain pz-action", id "pz-share-story", onClick ShareStory ]
-                                [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
-                                , text (Maybe.withDefault "SHARE WITH MY MISTAKE" model.storyLabel)
-                                ]
-                            ]
-
-                        else
-                            []
-                       )
-                    ++ (if model.hasNext then
+                  else
+                    button [ class "q-btn plain pz-action", id "pz-share", onClick Share ]
+                        [ span [ class "hero-link w-4 h-4", attribute "aria-hidden" "true" ] []
+                        , text (Maybe.withDefault "SHARE" model.shareLabel)
+                        ]
+                 )
+                    :: (if model.hasNext then
                             [ button [ class "q-btn pz-action", id "pz-next", onClick Next ]
                                 [ text "NEXT", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
                             ]
@@ -1279,7 +1275,16 @@ candidatesOf reveal =
 viewReveal : Model -> Puzzle -> Reveal -> Html Msg
 viewReveal model puzzle reveal =
     div [ class "rp-note pz-note", id "pz-reveal" ]
-        (viewVerdict reveal
+        -- The verdict is about the play made; a candidate on the board has
+        -- its own grade at the head of the note, so the verdict steps aside
+        -- rather than sit over a move it does not judge.
+        ((case shownCandidate model reveal of
+            Just _ ->
+                text ""
+
+            Nothing ->
+                viewVerdict reveal
+         )
             :: (case reveal.cube of
                     Just cube ->
                         viewCubeReveal model puzzle cube

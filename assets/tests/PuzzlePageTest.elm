@@ -527,6 +527,8 @@ revealing =
                 Expect.all
                     [ \_ -> rendered showing |> Query.find [ id "pz-reveal" ] |> Query.has [ text "is the best move." ]
                     , \_ -> rendered showing |> Query.find [ id "pz-reveal" ] |> Query.hasNot [ text "You played" ]
+                    , \_ -> rendered showing |> hasNot [ id "pz-verdict" ]
+                    , \_ -> rendered model |> Query.findAll [ id "pz-verdict" ] |> Query.count (Expect.equal 1)
                     , \_ -> rendered model |> Query.find [ id "pz-reveal" ] |> Query.has [ text "You played" ]
                     , \_ -> rendered model |> Query.find [ id "pz-candidates" ] |> Query.findAll [ class "rp-cand-grade" ] |> Query.count (Expect.atLeast 1)
                     ]
@@ -1102,8 +1104,8 @@ sharing =
             \_ ->
                 rendered (step (got memoryJson) revealedPage)
                     |> Expect.all
-                        [ has [ id "pz-share" ]
-                        , \q -> q |> Query.find [ id "pz-share-story" ] |> Query.has [ text "SHARE WITH MY MISTAKE" ]
+                        [ hasNot [ id "pz-share" ]
+                        , \q -> q |> Query.find [ id "pz-share-story" ] |> Query.has [ text "SHARE" ]
                         ]
         , test "and not to the opponent, who has a memory line of their own" <|
             \_ -> rendered (step (got theirMemoryJson) revealedPage) |> hasNot [ id "pz-share-story" ]
@@ -1113,12 +1115,12 @@ sharing =
                     |> Expect.all [ has [ id "pz-share" ], hasNot [ id "pz-share-story" ] ]
         , test "and never before the reveal" <|
             \_ -> rendered (page { hasNext = False } "move") |> hasNot [ id "pz-share-story" ]
-        , test "the button says what the share sheet answered, and SHARE's label is left alone" <|
+        , test "the one button says what the share sheet answered" <|
             \_ ->
                 rendered (revealedPage |> step (got memoryJson) |> step ShareStory |> step (GotShare (Ok "/puzzles/fix?s=TOKEN0000001")) |> step (ShareReported "copied"))
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-share-story" ] |> Query.has [ text "Copied" ]
-                        , \q -> q |> Query.find [ id "pz-share" ] |> Query.has [ text "SHARE" ]
+                        , hasNot [ id "pz-share" ]
                         ]
         , test "a refusal says so" <|
             \_ ->
