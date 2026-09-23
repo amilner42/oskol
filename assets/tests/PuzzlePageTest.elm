@@ -666,11 +666,11 @@ schedule =
                         , \q -> q |> Query.findAll [ id "pz-outcomes" ] |> Query.count (Expect.equal 1)
                         , \q -> q |> Query.findAll [ class "pz-outcome", attribute (Html.Attributes.attribute "aria-pressed" "true") ] |> Query.count (Expect.equal 0)
                         ]
-        , test "settled: the line alone" <|
+        , test "an early retry says it is already scheduled" <|
             \_ ->
                 rendered (withSchedule "move_pass" "schedule_settled")
                     |> Expect.all
-                        [ \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Level 1 · back in 7 days" ]
+                        [ \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Already scheduled." ]
                         , hasNot [ id "pz-outcomes" ]
                         ]
         , test "a guest: no level line at all" <|
