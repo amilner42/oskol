@@ -783,7 +783,16 @@ arrive at any of them cold, and moving between them afterwards is a
   id nobody stored is a 404. Not in the sitemap: too many. There is one
   prompt, `oskol/puzzles.prompt` ("White to play 6-4. What's your play?",
   "White to play. Double?", "White is doubled. Take?"): the wire, the head,
-  the page and the picture all read it.
+  the page and the picture all read it. `/puzzles/<id>?s=<token>` is a
+  **story link** (`handlers/shares`): the same page, whose head says
+  "Arie got this wrong. What's your play?" (the sharer's name, then the
+  prompt's question: "Double?", "Take?") and whose reveal, after the
+  reader's own attempt, adds "Arie played 24/23 13/11 (a bad move) and
+  lost 2 points." The canonical stays the clean URL; the picture ignores
+  `?s=`; a token nobody minted, or minted for another puzzle, is ignored
+  and the page is the plain one. Only the seat that made the mistake can
+  mint one (`POST /papi/puzzles/:id/shares`), and it names the sharer
+  only, never the opponent.
 - `/login/<token>` the page a mailed sign-in link opens. It **reads** the
   token and writes nothing: the page says "Sign in as you@example.com" with
   one button, and that button POSTs `/papi/auth/link`, which is the only
@@ -851,14 +860,26 @@ GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
                                          never the game it came from
 GET  /papi/puzzles/:id/tree?node=      (open) one level of a tree too big to send
                                          whole: {ok, node, tree: Node}
-POST /papi/puzzles/:id/attempts        {moves | band, key} -> {ok, verdict, yours,
-                                         best, top, cube, schedule}. Open; a guest
-                                         and a puzzle outside the caller's deck get
-                                         schedule: null and nothing is written
+POST /papi/puzzles/:id/attempts        {moves | band, key, s?} -> {ok, verdict, yours,
+                                         best, top, cube, schedule, story}. Open; a
+                                         guest and a puzzle outside the caller's deck
+                                         get schedule: null and nothing is written.
+                                         `s` is the story token the page was opened
+                                         with: `story` is {name, kind, played, grade,
+                                         equity_lost, date, result, headline, line}
+                                         where it opens one for this puzzle, else
+                                         null -- on the reveal and nowhere earlier
 POST /papi/puzzles/:id/attempts/:key/outcome  {outcome: sooner|got_it|knew_it|never}
                                          -> {ok, schedule}. The attempt's own
                                          account only (403); 409 with nothing to
                                          amend
+POST /papi/puzzles/:id/shares          {} -> {ok, token, url}  (the seat that
+                                       made the mistake, by the holder rule --
+                                       guest or account -- mints its story link,
+                                       `/puzzles/:id?s=<token>`, the same one on
+                                       every press; the opponent and a stranger
+                                       are a 403 in one sentence; a GET never
+                                       mints)
 GET  /papi/puzzles/:id/mine            (a seat in the source game, either side)
                                          {ok, who, opponent, played, equity_lost,
                                          grade, date, result, replay}; 404 otherwise.
@@ -1261,8 +1282,32 @@ path builds one and nothing re-asks the engine to recover one.
   it. NEVER suspends the card without touching the attempt's own schedule,
   so a retry of that answer is still the same reply, and nothing can be
   overridden after it (409).
-- `puzzle_shares` and `puzzle_images` exist and are written by the later
-  tickets (the story link, the board picture).
+- **Share with my mistake** (`src/oskol/handlers/shares.gleam`). After the
+  reveal, the seat that made the mistake -- and only it: the source's own
+  `player_id`, held by the holder rule, so a guest by its cookie and an
+  account from any browser it is signed in on, never the opponent, never a
+  stranger (403, one sentence) -- may `POST /papi/puzzles/:id/shares` and
+  get a story link, `/puzzles/:id?s=<token>`. The row is `puzzle_shares`:
+  a twelve-character token of the room-code alphabet (`ids.share_token`,
+  two game codes), the puzzle, the source, `shared_by` (the account id for
+  an owned seat, the guest id for an unowned one) and `shared_name`, the
+  sharer's display name **frozen at the mint** (a rename or a seat taken
+  over must not change who the story names). One row per (source,
+  sharer): `Oskol.Puzzles.mint_share/5` inserts against that unique index
+  `on_conflict: :nothing` and reads back the token that stands, so two
+  tabs pressing together get one link. The token is nothing but a token:
+  `?s=` changes the head's title (`shares.headline`: "Arie got this wrong.
+  What's your play?" / "Double?" / "Take?") and puts `story` on the
+  reader's own attempt's answer (`shares.story_json`, with `line`: "Arie
+  played 24/23 13/11 (a bad move) and lost 2 points." -- a cube source
+  reads "didn't double" / "doubled" / "took" / "passed", "a bad
+  decision"); the GET, the picture and the canonical ignore it, and a
+  token nobody minted or minted for another puzzle is silently the plain
+  page. The page (`Page/Puzzle.elm`) shows the second button only when
+  `/mine` answered `who: "you"`, sends `s` on the attempt, and renders
+  `story.line` under the memory line. The result comes from the game's
+  record (`puzzles/game_over`, the same reading the memory line uses).
+  `puzzle_images` is the board picture, below.
 - **A puzzle has a picture, drawn once, never on a request.**
   `src/oskol/puzzles/picture.gleam` draws the position as SVG, 1200 x 630,
   in the default theme's colours (`.bg-theme-midnight`, as constants), from

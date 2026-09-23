@@ -73,6 +73,9 @@ defmodule OskolWeb.Router do
     get "/puzzles/:id/mine", PuzzleController, :mine
     post "/puzzles/:id/attempts", PuzzleController, :attempt
     post "/puzzles/:id/attempts/:key/outcome", PuzzleController, :outcome
+    # A story link, minted only by the seat that made the mistake, and only
+    # ever by a POST: a GET never mints anything.
+    post "/puzzles/:id/shares", PuzzleController, :share
   end
 
   # Enable LiveDashboard in development. Declared before the game routes so
