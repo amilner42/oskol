@@ -122,6 +122,7 @@ type alias Model =
     , playWhenKeyed : Bool -- PLAY was pressed before the key was minted
     , attempt : Attempt
     , showing : Maybe Int -- a candidate's rank on the board; Nothing is the move played
+    , before : Bool -- the roll on the board it was thrown into: the move taken back, as the replay's dice do
     , outcome : Maybe String -- the override the player pressed, once it went through
     , outcomeSending : Bool
     , outcomeError : Maybe String -- why the last override did not go through
@@ -184,6 +185,7 @@ type Msg
     | GotReveal (Result Api.Error Reveal)
     | RevealedAt Time.Posix
     | Show (Maybe Int)
+    | ToggleBefore
     | PressedOutcome String
     | GotOutcome String (Result Api.Error (Maybe Schedule))
     | GotMemory (Result Api.Error Puzzle.Memory)
@@ -230,6 +232,7 @@ init session config =
       , playWhenKeyed = False
       , attempt = NotYet
       , showing = Nothing
+      , before = False
       , outcome = Nothing
       , outcomeSending = False
       , outcomeError = Nothing
@@ -341,7 +344,7 @@ update msg model =
         GotReveal (Ok reveal) ->
             let
                 revealed =
-                    { model | attempt = Revealed reveal, showing = Nothing }
+                    { model | attempt = Revealed reveal, showing = Nothing, before = False }
             in
             ( revealed
             , Cmd.batch
@@ -363,7 +366,13 @@ update msg model =
             stay { model | now = Time.posixToMillis time } Cmd.none
 
         Show rank ->
-            stay { model | showing = rank } Cmd.none
+            stay { model | showing = rank, before = False } Cmd.none
+
+        -- The dice, tapped after the reveal: the move comes off the board and
+        -- the roll sits on the position it was thrown into; tapped again, the
+        -- move is back. A candidate on the board goes first.
+        ToggleBefore ->
+            stay { model | before = not model.before, showing = Nothing } Cmd.none
 
         PressedOutcome outcome ->
             if model.outcomeSending then
@@ -928,15 +937,11 @@ viewPuzzle model puzzle =
         yoursGrade =
             reveal |> Maybe.andThen .yours |> Maybe.map (.equityLost >> Puzzle.gradeOf)
 
-        boardHtml =
-            case ( proposed |> Maybe.andThen .position, puzzle.tree, reveal ) of
-                ( Just position, _, _ ) ->
-                    Board.viewStill NoOp (still model puzzle position (Maybe.map .landed proposed |> Maybe.withDefault []))
-
-                -- The turn is committed: the board it left, as a picture,
-                -- the checkers that moved marked as the table marks a
-                -- played turn's.
-                ( Nothing, Just tree, Just _ ) ->
+        -- The turn is committed: the board it left, as a picture, the
+        -- checkers that moved marked as the table marks a played turn's.
+        committed =
+            case puzzle.tree of
+                Just tree ->
                     let
                         position =
                             Puzzle.nodeAt tree model.path |> Maybe.map .board |> Maybe.withDefault puzzle.question.board
@@ -947,6 +952,23 @@ viewPuzzle model puzzle =
                                 |> List.filterMap (.to >> String.toInt)
                     in
                     Board.viewStill NoOp (still model puzzle position landed)
+
+                Nothing ->
+                    Board.viewStill NoOp (still model puzzle puzzle.question.board [])
+
+        boardHtml =
+            case ( proposed |> Maybe.andThen .position, puzzle.tree, reveal ) of
+                -- The move taken back: the roll on the board it was thrown
+                -- into, nothing moved yet, as the replay's dice show it.
+                ( Nothing, Just _, Just _ ) ->
+                    if model.before then
+                        Board.viewStill NoOp (still model puzzle puzzle.question.board [])
+
+                    else
+                        committed
+
+                ( Just position, _, _ ) ->
+                    Board.viewStill NoOp (still model puzzle position (Maybe.map .landed proposed |> Maybe.withDefault []))
 
                 ( Nothing, Just tree, Nothing ) ->
                     Html.map BoardOut
@@ -980,12 +1002,13 @@ viewPuzzle model puzzle =
                     , ( "is-proposed", proposed /= Nothing )
                     , ( "is-graded", proposed == Nothing && yoursGrade /= Nothing )
                     , ( "g-" ++ Maybe.withDefault "" yoursGrade, proposed == Nothing && yoursGrade /= Nothing )
-                    , ( "dice-played", reveal /= Nothing )
+                    , ( "dice-played", reveal /= Nothing && not model.before )
                     , ( "is-revealed", reveal /= Nothing )
                     ]
                 , id "pz-board"
                 ]
                 [ boardHtml
+                , viewDiceToggle model puzzle
                 , case proposed of
                     Just c ->
                         span [ class "rp-proposed pixel text-[7px] inline-flex items-center gap-1.5" ]
@@ -1037,6 +1060,40 @@ viewPuzzle model puzzle =
             ]
         ]
     ]
+
+
+{-| Over the dice, after the reveal, on a checker-play puzzle: tap to take
+the move back and see the roll on the board it was thrown into; tap again
+to see the move. The same door the replay's dice are, in the same place:
+the mover is always at the bottom here, so the dice sit on the right.
+-}
+viewDiceToggle : Model -> Puzzle -> Html Msg
+viewDiceToggle model puzzle =
+    case ( model.attempt, puzzle.tree ) of
+        ( Revealed _, Just _ ) ->
+            button
+                [ class "rp-dice-toggle is-right"
+                , id "pz-dice-toggle"
+                , attribute "aria-label"
+                    (if model.before then
+                        "Show the move"
+
+                     else
+                        "Take the move back: see the roll on the board it was thrown into"
+                    )
+                , Html.Attributes.title
+                    (if model.before then
+                        "Show the move"
+
+                     else
+                        "See the roll before the move"
+                    )
+                , onClick ToggleBefore
+                ]
+                []
+
+        _ ->
+            text ""
 
 
 {-| The still board of a position: the question's cube and dice, the

@@ -168,7 +168,7 @@ anAccount =
         , test "the words are the wire's numbers" <|
             \_ ->
                 Hub.countsLine { due = 1, newToday = 0, newTomorrow = 3, deck = 9 }
-                    |> Expect.equal "1 due · 0 new today · 9 in your deck"
+                    |> Expect.equal "1 due · 9 in your deck"
         , test "nothing due and nothing new is done for today, with KEEP GOING" <|
             \_ ->
                 rendered (loaded doneJson)

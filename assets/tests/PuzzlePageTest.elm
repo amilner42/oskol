@@ -515,6 +515,25 @@ revealing =
                     , \_ -> rendered (step (Show Nothing) showing) |> Query.find [ id "pz-board" ] |> Query.hasNot [ class "is-proposed" ]
                     ]
                     ()
+        , test "the dice take the move back, and again bring it back" <|
+            \_ ->
+                let
+                    model =
+                        after "move_hold"
+
+                    before =
+                        step ToggleBefore model
+                in
+                Expect.all
+                    [ \_ -> rendered model |> Query.find [ id "pz-board" ] |> Query.has [ class "dice-played" ]
+                    , \_ -> rendered model |> Query.findAll [ id "pz-dice-toggle" ] |> Query.count (Expect.equal 1)
+                    , \_ -> rendered before |> Query.find [ id "pz-board" ] |> Query.hasNot [ class "dice-played" ]
+                    , \_ -> rendered (step ToggleBefore before) |> Query.find [ id "pz-board" ] |> Query.has [ class "dice-played" ]
+
+                    -- a candidate on the board puts the move back first
+                    , \_ -> rendered (step (Show (Just 1)) before) |> Query.find [ id "pz-board" ] |> Query.has [ class "is-proposed", class "dice-played" ]
+                    ]
+                    ()
         , test "the board no longer answers once the answer is in" <|
             \_ ->
                 let
