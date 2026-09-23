@@ -2,12 +2,15 @@ module Page.Replay exposing
     ( Loadable(..)
     , Model
     , Msg(..)
+    , NoteTab(..)
     , Out(..)
+    , Pane(..)
     , Showing(..)
     , Tab(..)
     , init
     , keyDecoder
     , maxPolls
+    , onePanel
     , pollEveryMs
     , polling
     , subscriptions
@@ -108,6 +111,17 @@ type Tab
     | SummaryTab
 
 
+{-| On a phone the two boxes of the side (the note with its MOVE and CUBE,
+the game panel with its ANALYSIS and MOVES) are one panel with one bar of
+four tabs, so one of the two is in front. `noteTab` and `tab` keep saying
+which side of each is open, exactly as on a desktop, where both boxes show
+and this is not read.
+-}
+type Pane
+    = NotePane
+    | GamePane
+
+
 type alias Model =
     { session : Session
     , slug : String
@@ -127,6 +141,8 @@ type alias Model =
     , showing : Showing
     , noteTab : Maybe NoteTab -- which side of the turn's verdict is open; Nothing until the step decides
     , tab : Tab
+    , pane : Pane -- on a phone, which of the two boxes is in front
+    , screen : Maybe { width : Int, height : Int } -- the viewport, once measured; it picks the phone's one-panel layout
     , touch : Maybe ( Float, Float ) -- where a touch on the board began
     , polls : Int -- asks made while something was pending
     , retrying : List Int -- games whose retry is on its way
@@ -194,6 +210,8 @@ init session config =
             , showing = Played
             , noteTab = Nothing
             , tab = SummaryTab
+            , pane = NotePane
+            , screen = Nothing
             , touch = Nothing
             , polls = 0
             , retrying = []
@@ -211,8 +229,25 @@ init session config =
         [ Api.get session (base model ++ "/record") Replay.recordDecoder GotRecord
         , fetchIndex model
         , Catalog.fetchRatings session config.slug config.gameId GotRatings
+        , Browser.Dom.getViewport |> Task.perform (\v -> Resized (round v.viewport.width) (round v.viewport.height))
         ]
     )
+
+
+{-| Whether the side is one panel with four tabs rather than two boxes: a
+phone upright (narrower than 640), or a phone held sideways (shorter than
+480, and not a desktop). The stylesheet's board sizing keys on the same
+shapes by media query; the panel's layout keys on the class this sets, so
+the two can never disagree. Unmeasured, the page is a desktop.
+-}
+onePanel : Model -> Bool
+onePanel model =
+    case model.screen of
+        Just { width, height } ->
+            width < 640 || (height < 480 && width < 1024)
+
+        Nothing ->
+            False
 
 
 base : Model -> String
@@ -338,6 +373,8 @@ type Msg
     | Last
     | Show Showing
     | PickTab Tab
+    | JumpTo Int -- a mistake tapped: go there and put its verdict in front
+    | Resized Int Int -- the viewport, measured at the start and on every resize
     | TouchStarted ( Float, Float )
     | TouchEnded ( Float, Float )
     | Retry Int
@@ -562,6 +599,7 @@ advance msg model =
         PickNote tab ->
             ( { model
                 | noteTab = Just tab
+                , pane = NotePane
                 , showing =
                     case tab of
                         CubeTab ->
@@ -589,7 +627,17 @@ advance msg model =
             ( { model | showing = showing }, follow model.step )
 
         PickTab tab ->
-            ( { model | tab = tab }, if tab == MovesTab then follow model.step else Cmd.none )
+            ( { model | tab = tab, pane = GamePane }, if tab == MovesTab then follow model.step else Cmd.none )
+
+        -- A mistake is a door to its verdict: on a phone that means the
+        -- note comes in front of the list it was tapped in. A plain step
+        -- (the arrows, a swipe, a line of the move list) leaves the panel
+        -- where it is.
+        JumpTo step ->
+            goTo step { model | pane = NotePane }
+
+        Resized width height ->
+            ( { model | screen = Just { width = width, height = height } }, Cmd.none )
 
         TouchStarted point ->
             ( { model | touch = Just point }, Cmd.none )
@@ -929,6 +977,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ Browser.Events.onKeyDown keyDecoder
+        , Browser.Events.onResize Resized
         , if polling model then
             Time.every pollEveryMs (\_ -> Poll)
 
@@ -969,7 +1018,7 @@ keyMsg key =
 
 view : Model -> Html Msg
 view model =
-    div [ class "rp-page paper", id "replay" ]
+    div [ classList [ ( "rp-page paper", True ), ( "is-one", onePanel model ) ], id "replay" ]
         (case model.record of
             Loading ->
                 [ viewHead model Nothing, div [ class "rp-message pixel text-[9px]" ] [ text "LOADING THE GAME…" ] ]
@@ -1218,23 +1267,69 @@ viewReplay model record game =
                 ]
             , viewControls model record game
             ]
-        , div [ class "rp-side" ]
-            [ viewNote model record game
-            , div [ class "rp-panel" ]
-                [ div [ class "rp-tabs" ]
-                    [ tabButton model SummaryTab "ANALYSIS"
-                    , tabButton model MovesTab "MOVES"
-                    ]
-                , case model.tab of
-                    MovesTab ->
-                        viewMoves model record game
+        , if onePanel model then
+            viewSideOne model record game
 
-                    SummaryTab ->
-                        viewSummary model record game
+          else
+            div [ class "rp-side" ]
+                [ viewNote model record game
+                , div [ class "rp-panel" ]
+                    [ div [ class "rp-tabs" ]
+                        [ tabButton model SummaryTab "ANALYSIS"
+                        , tabButton model MovesTab "MOVES"
+                        ]
+                    , viewGamePane model record game
+                    ]
                 ]
-            ]
         ]
     ]
+
+
+{-| A phone's side: the two boxes as one panel under one bar of four tabs,
+MOVE and CUBE (the note's two sides) then ANALYSIS and MOVES (the game
+panel's), one content at a time. The panel has no scroll of its own: it is
+as tall as what it shows, and the page scrolls.
+-}
+viewSideOne : Model -> Record -> Game -> Html Msg
+viewSideOne model record game =
+    let
+        open =
+            model.noteTab |> Maybe.withDefault MoveTab
+
+        tab on id_ label msg =
+            button
+                [ classList [ ( "rp-tab pixel text-[8px]", True ), ( "is-on", on ) ]
+                , id id_
+                , onClick msg
+                ]
+                [ text label ]
+    in
+    div [ class "rp-side" ]
+        [ div [ class "rp-panel", id "rp-panel" ]
+            [ div [ class "rp-tabs", id "rp-tabs" ]
+                [ tab (model.pane == NotePane && open == MoveTab) "rp-note-move" "MOVE" (PickNote MoveTab)
+                , tab (model.pane == NotePane && open == CubeTab) "rp-note-cube" "CUBE" (PickNote CubeTab)
+                , tab (model.pane == GamePane && model.tab == SummaryTab) "rp-tab-analysis" "ANALYSIS" (PickTab SummaryTab)
+                , tab (model.pane == GamePane && model.tab == MovesTab) "rp-tab-moves" "MOVES" (PickTab MovesTab)
+                ]
+            , case model.pane of
+                NotePane ->
+                    viewNoteBody False model record game
+
+                GamePane ->
+                    viewGamePane model record game
+            ]
+        ]
+
+
+viewGamePane : Model -> Record -> Game -> Html Msg
+viewGamePane model record game =
+    case model.tab of
+        MovesTab ->
+            viewMoves model record game
+
+        SummaryTab ->
+            viewSummary model record game
 
 
 {-| In the band, on the half opposite the dice: the door between the
@@ -1626,6 +1721,15 @@ viewControls model record game =
 
 viewNote : Model -> Record -> Game -> Html Msg
 viewNote model record game =
+    viewNoteBody True model record game
+
+
+{-| The note's box: what this line was, the verdict (a turn's MOVE and
+CUBE tabs at its top when `withTabs`; on a phone the panel's bar has them
+and the body shows the open side alone), and where the analysis stands.
+-}
+viewNoteBody : Bool -> Model -> Record -> Game -> Html Msg
+viewNoteBody withTabs model record game =
     let
         name =
             Replay.playerNamed record
@@ -1678,7 +1782,7 @@ viewNote model record game =
     in
     div [ class "rp-note", id "rp-note" ]
         (what
-            :: viewNotes model record game notes
+            :: viewNotes withTabs model record game notes
             ++ [ viewAnalysisState model game analysis ]
         )
 
@@ -1687,8 +1791,8 @@ viewNote model record game =
 been turned, and the move played) are tabs, open on the one that was a
 mistake, else on the move.
 -}
-viewNotes : Model -> Record -> Game -> List Annotation -> List (Html Msg)
-viewNotes model record game notes =
+viewNotes : Bool -> Model -> Record -> Game -> List Annotation -> List (Html Msg)
+viewNotes withTabs model record game notes =
     case ( Replay.entryAt game model.step, notes ) of
         ( _, [] ) ->
             []
@@ -1741,20 +1845,26 @@ viewNotes model record game notes =
                         ]
                         [ text label ]
             in
-            [ div [ class "rp-note-tabs", id "rp-note-tabs" ]
-                [ tab MoveTab "MOVE", tab CubeTab "CUBE" ]
-            , case open of
-                MoveTab ->
-                    moveNote |> Maybe.map (viewAnnotation model record) |> Maybe.withDefault (text "")
+            (if withTabs then
+                [ div [ class "rp-note-tabs", id "rp-note-tabs" ]
+                    [ tab MoveTab "MOVE", tab CubeTab "CUBE" ]
+                ]
 
-                CubeTab ->
-                    case cubeNote of
-                        Just n ->
-                            viewAnnotation model record n
+             else
+                []
+            )
+                ++ [ case open of
+                        MoveTab ->
+                            moveNote |> Maybe.map (viewAnnotation model record) |> Maybe.withDefault (text "")
 
-                        Nothing ->
-                            div [ class "rp-words rp-no-cube" ] [ text (noCubeReason model record game t.player) ]
-            ]
+                        CubeTab ->
+                            case cubeNote of
+                                Just n ->
+                                    viewAnnotation model record n
+
+                                Nothing ->
+                                    div [ class "rp-words rp-no-cube" ] [ text (noCubeReason model record game t.player) ]
+                   ]
 
         -- A double, a take, a pass: the one verdict it is.
         ( _, one :: _ ) ->
@@ -2456,7 +2566,7 @@ viewMistakes model review totals =
                         button
                             [ classList [ ( "rp-mistake", True ), ( "is-on", model.step == r.step ) ]
                             , attribute "data-step" (String.fromInt r.step)
-                            , onClick (GoTo r.step)
+                            , onClick (JumpTo r.step)
                             ]
                             [ listTag r.grade
                             , span [ class "rp-mistake-turn pixel text-[7px]" ] [ text ("T" ++ String.fromInt r.turn) ]
@@ -2476,6 +2586,14 @@ tabButton : Model -> Tab -> String -> Html Msg
 tabButton model tab label =
     button
         [ classList [ ( "rp-tab pixel text-[8px]", True ), ( "is-on", model.tab == tab ) ]
+        , id
+            (case tab of
+                SummaryTab ->
+                    "rp-tab-analysis"
+
+                MovesTab ->
+                    "rp-tab-moves"
+            )
         , onClick (PickTab tab)
         ]
         [ text label ]

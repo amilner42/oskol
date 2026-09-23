@@ -2025,6 +2025,27 @@ a.rp-match-row:hover { color: var(--ink); }
 .rp-count-chip[class*="g-"] { border-color: currentColor; font-weight: 700; }
 .rp-explain { margin-top: 8px; font-size: 12px; color: var(--pencil); }
 
+/* A phone (`Page/Replay.elm` sets `is-one` on one narrower than 640, or
+   shorter than 480 held sideways): the side is one panel under one bar of
+   four tabs, MOVE, CUBE, ANALYSIS, MOVES, with no scroll of its own. It is
+   as tall as what it shows and the page scrolls, the board and the row of
+   arrows at its top. The puzzle page shares `.rp-*` and never sets this. */
+.rp-page.is-one { height: auto; min-height: 100dvh; overflow: visible; }
+.rp-page.is-one .rp-main, .rp-page.is-one .rp-side, .rp-page.is-one .rp-panel { flex: none; min-height: 0; }
+.rp-page.is-one .rp-panel { overflow: visible; }
+.rp-page.is-one .rp-tab { padding: 9px 2px; }
+.rp-page.is-one .rp-note, .rp-page.is-one .rp-list, .rp-page.is-one .rp-summary {
+  flex: none; height: auto; min-height: 4.5rem; max-height: none; overflow: visible; overscroll-behavior: auto;
+  padding: 8px 10px 12px; font-size: 14px;
+}
+.rp-page.is-one .rp-note { border: 0; box-shadow: none; }
+.rp-page.is-one .rp-words { font-size: 16px; line-height: 1.45; }
+.rp-page.is-one .rp-cube { margin-top: 10px; }
+.rp-page.is-one .rp-cube-value { font-size: 14px; }
+.rp-page.is-one .rp-state, .rp-page.is-one .rp-counts, .rp-page.is-one .rp-explain { font-size: 13px; }
+.rp-page.is-one .rp-mistake { font-size: 14px; padding: 6px 8px; }
+.rp-page.is-one .rp-line { padding: 4px 6px; }
+
 /* A phone held sideways: the board takes the screen's height on the left;
    the header, the games, the controls and the notes are a column beside
    it. */
@@ -2068,6 +2089,18 @@ a.rp-match-row:hover { color: var(--ink); }
   .bg-still .bg-band .die { --die-size: 1.5rem; box-shadow: 2px 2px 0 0 var(--bg-checker-edge); }
   .bg-still .bg-band .die .grid { width: 1.15rem; height: 1.15rem; }
   .bg-still .bg-band .die .grid > div > div { width: 4px; height: 4px; }
+}
+
+/* The same phone sideways with one panel: the column beside the board
+   grows with the tab it shows and the page scrolls; the board keeps the
+   screen's height and the top of the page. The board spans the rows, so
+   the last one is the `fr` that takes its height (an `auto` row would be
+   stretched to share it, leaving a gap over the panel), and the panel sits
+   at that row's top. */
+@media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
+  .rp-page.is-one { height: auto; min-height: 100dvh; overflow: visible; grid-template-rows: auto auto 1fr; }
+  .rp-page.is-one .rp-board, .rp-page.is-one .rp-side { align-self: start; }
+  .rp-page.is-one .rp-tab { padding: 8px 1px; font-size: 7px; }
 }
 
 /* A desktop: the board sized by the window's height, the notes beside it

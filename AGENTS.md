@@ -646,7 +646,10 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  MOVE and CUBE tabs, each a sentence in words (built from
                                  the chances) over the numbers in columns; a seated
                                  reader's ANALYSIS tab offers PRACTICE THIS GAME'S N
-                                 MISTAKES per game (`Out = StartRun`)
+                                 MISTAKES per game (`Out = StartRun`); on a phone
+                                 (`onePanel`: under 640 wide, or under 480 tall
+                                 sideways) the note and the game panel are one
+                                 panel with four tabs, the page scrolling, not it
 assets/src/Page/Puzzles.elm      "/puzzles" the practice home: an account's counts and
                                  PRACTICE (or "Done for today" and KEEP GOING), a guest's
                                  "23 mistakes from your 4 games", a stranger's TRY ONE
@@ -1611,6 +1614,8 @@ node playwright/test-spa-landing/test.js        # the home board and CREATE GAME
 node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
                                                # the lobby and the theme picker (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
+node playwright/review-replay-mobile/test.js    # screenshots of the replay's MOVE, ANALYSIS and
+                                               # MOVES tabs on two phones, sideways, and a desktop
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`:
