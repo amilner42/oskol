@@ -127,6 +127,20 @@ defmodule Oskol.PracticeTest do
     assert_in_delta DateTime.diff(card.due, DateTime.utc_now(), :second), 86_400, 60
   end
 
+  test "a card due later today is neither queued nor counted as due", %{caps: caps, uid: uid} do
+    {:ok, 1} = caps.put_items.(uid, [item("later")])
+    assert caps.start.(uid, ["later"]) == 1
+
+    due_later = DateTime.add(DateTime.utc_now(), 60 * 60, :second)
+    due_later_ms = DateTime.to_unix(due_later, :millisecond)
+
+    assert {:ok, {:graded, 0, 0, ^due_later_ms, _}} =
+             caps.defer_until.(uid, "later", due_later_ms)
+
+    assert {:session, [], [], _} = caps.queue.(uid, ask())
+    assert [{:summary, [], 1, 0, 1, 0, 0, +0.0}] = caps.summary.(uid, [])
+  end
+
   test "a deck cannot be opened with a timezone that is not one, and says so", %{caps: caps} do
     other = "acct-#{System.unique_integer([:positive])}"
     assert {:error, :unknown_timezone} = caps.put_user.(other, "Mars/Olympus", 10)

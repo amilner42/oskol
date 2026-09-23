@@ -1573,6 +1573,9 @@ viewSchedule model reveal =
                     if model.outcome == Just "never" then
                         "Out of your deck: it will not come back."
 
+                    else if not schedule.amendable && not schedule.selfGrade then
+                        "Already scheduled."
+
                     else
                         levelLine model.now schedule
 
@@ -1635,7 +1638,8 @@ preselected verdict schedule =
 
 
 {-| "Level 2 → 3 · back in 7 days". A level that did not move is named
-once.
+once. An attempt that did not count is kept out of this line by
+`viewSchedule`: its existing schedule must not look like a review result.
 -}
 levelLine : Int -> Schedule -> String
 levelLine now schedule =
