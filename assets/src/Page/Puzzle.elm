@@ -1279,7 +1279,16 @@ candidatesOf reveal =
 viewReveal : Model -> Puzzle -> Reveal -> Html Msg
 viewReveal model puzzle reveal =
     div [ class "rp-note pz-note", id "pz-reveal" ]
-        (viewVerdict reveal
+        -- The verdict is about the play made; a candidate on the board has
+        -- its own grade at the head of the note, so the verdict steps aside
+        -- rather than sit over a move it does not judge.
+        ((case shownCandidate model reveal of
+            Just _ ->
+                text ""
+
+            Nothing ->
+                viewVerdict reveal
+         )
             :: (case reveal.cube of
                     Just cube ->
                         viewCubeReveal model puzzle cube

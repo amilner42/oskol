@@ -527,6 +527,8 @@ revealing =
                 Expect.all
                     [ \_ -> rendered showing |> Query.find [ id "pz-reveal" ] |> Query.has [ text "is the best move." ]
                     , \_ -> rendered showing |> Query.find [ id "pz-reveal" ] |> Query.hasNot [ text "You played" ]
+                    , \_ -> rendered showing |> hasNot [ id "pz-verdict" ]
+                    , \_ -> rendered model |> Query.findAll [ id "pz-verdict" ] |> Query.count (Expect.equal 1)
                     , \_ -> rendered model |> Query.find [ id "pz-reveal" ] |> Query.has [ text "You played" ]
                     , \_ -> rendered model |> Query.find [ id "pz-candidates" ] |> Query.findAll [ class "rp-cand-grade" ] |> Query.count (Expect.atLeast 1)
                     ]
