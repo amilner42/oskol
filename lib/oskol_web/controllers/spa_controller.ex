@@ -61,8 +61,6 @@ defmodule OskolWeb.SpaController do
   # board's picture. Any other room, and the bare game page, keep the game's
   # own head; the canonical stays the game page either way, so an invite
   # never competes with it.
-  defp invite_head(conn, _slug, nil), do: conn
-
   defp invite_head(conn, slug, game_id) when is_binary(game_id) do
     case :oskol@handlers@landing.invite_head(Oskol.Gleam.CtxBuilder.build(), slug, game_id) do
       {:some, {title, description}} ->
@@ -77,6 +75,9 @@ defmodule OskolWeb.SpaController do
         conn
     end
   end
+
+  # No `?game=`, or one that is not a string (`?game[]=`): the game page.
+  defp invite_head(conn, _slug, _), do: conn
 
   @doc """
   A room's replay (`/:slug/:id/replay`). It needs no seat: the Elm client

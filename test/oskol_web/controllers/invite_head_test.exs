@@ -91,7 +91,8 @@ defmodule OskolWeb.InviteHeadTest do
       assert GameSupervisor.find_game(id) == :error
     end
 
-    test "a room that has started, or is over, keeps the game's own head and no picture", %{
+    # a finished row is the same `None` in Gleam (landing_handler_test)
+    test "a room that has started keeps the game's own head and no picture", %{
       conn: conn
     } do
       %{game_id: id} = GameFixtures.started()
@@ -104,8 +105,12 @@ defmodule OskolWeb.InviteHeadTest do
       conn |> get(~p"/backgammon?game=nosuchroom") |> html_response(200) |> generic_head()
     end
 
-    test "the bare game page is untouched", %{conn: conn} do
+    test "the bare game page is untouched, and so is one with a ?game= that is not a string", %{
+      conn: conn
+    } do
       conn |> get(~p"/backgammon") |> html_response(200) |> generic_head()
+      conn |> get("/backgammon?game[]=abc123") |> html_response(200) |> generic_head()
+      conn |> get("/backgammon?game[x]=abc123") |> html_response(200) |> generic_head()
     end
 
     test "the picture is served, at the card's size", %{conn: conn} do

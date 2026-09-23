@@ -100,6 +100,10 @@ pub fn the_invite_names_the_format_as_a_phrase_and_the_clock_only_when_there_is_
     == Some("Arie wants to play unlimited backgammon on a 10 min clock")
   // a format the game no longer lists is still a sentence, not a crash
   assert head("match9", "none") == Some("Arie wants to play backgammon")
+  // a clock preset the site retired (rooms keep theirs) is still a clock
+  assert head("match3", "retired_clock")
+    == Some("Arie wants to play a match to 3 on a clock")
+  assert head("match3", "") == Some("Arie wants to play a match to 3")
 }
 
 pub fn the_inviter_is_the_seat_as_the_row_names_it_test() {
