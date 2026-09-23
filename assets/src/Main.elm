@@ -183,6 +183,9 @@ withSession session model =
                 Puzzles pageModel ->
                     Puzzles (Page.Puzzles.withSession session pageModel)
 
+                Replay pageModel ->
+                    Replay (Page.Replay.withSession session pageModel)
+
                 other ->
                     other
     }
@@ -512,10 +515,8 @@ update msg model =
                         Cmd.none
             in
             case out of
-                -- PRACTICE THIS GAME'S N MISTAKES: the run ends back on
-                -- this replay, at this game.
-                Page.Replay.StartRun ids ->
-                    startRun (Page.Replay.url newPageModel) ids { model | page = Replay newPageModel }
+                Page.Replay.SignedIn user ->
+                    signedIn user { model | page = Replay newPageModel }
                         |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map ReplayMsg cmd, more ])
 
                 Page.Replay.NoOut ->

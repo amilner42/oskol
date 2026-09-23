@@ -115,6 +115,7 @@ async function onePanel(page, what, { phone }) {
   await page.waitForSelector('#rp-overview', { timeout: 2000 });
   must(await page.locator('#rp-tab-overview.is-on').count() === 1, `${what}: the start opens on OVERVIEW`);
   must(await page.locator('#rp-overview #rp-summary .rp-pr').count() === 2, `${what}: the overview is the summary, both PRs`);
+  must(await page.locator('#practice-game').count() === 0, `${what}: nothing to press for practice on the overview`);
   must(await page.locator('#rp-note-move:disabled').count() === 1 && await page.locator('#rp-note-cube:disabled').count() === 1, `${what}: MOVE and CUBE are not offered before the first roll`);
   // A roll: MOVE is its verdict, CUBE its other side.
   for (let i = 0; i < step; i++) await page.click('#rp-next');

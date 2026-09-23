@@ -22,6 +22,7 @@ import Games.Backgammon.Replay as Replay exposing (Annotation(..), Entry(..), Mo
 import Json.Decode as D
 import Page.Replay as Page exposing (Loadable(..), Msg(..), Showing(..))
 import ReplayFixtures
+import Session
 import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
 import Test.Html.Query as Query
@@ -144,6 +145,13 @@ session =
     { csrf = "", guestName = Nothing, prefs = Dict.empty, user = Nothing }
 
 
+{-| The same page with an account signed in on the browser.
+-}
+signedIn : Page.Model -> Page.Model
+signedIn model =
+    Page.withSession (Session.withUser (Just { email = "ari@oskol.test", name = Just "ari" }) model.session) model
+
+
 {-| The page with the record in, on game `wanted`.
 -}
 loaded : Maybe Int -> Page.Model
@@ -188,7 +196,7 @@ mistakes ids =
 
 practice : Test
 practice =
-    describe "PRACTICE THIS GAME'S N MISTAKES on the analysis"
+    describe "the overview's practice line: the mistakes are kept, or sign in to practice them"
         [ test "a seated reader is asked for the game being read once its review is done, and again for each game switched to" <|
             \_ ->
                 loaded (Just 3)
@@ -208,26 +216,54 @@ practice =
                     |> .mistakeAsks
                     |> Dict.isEmpty
                     |> Expect.equal True
-        , test "the button names the count, and pressing it hands the shell that game's ids" <|
+        , test "signed in (the account reaching the page after it is up, as /papi/me does), the overview says the mistakes are in their practice already: nothing to press" <|
+            \_ ->
+                loaded (Just 3)
+                    |> run (gotEverything ++ [ mistakes [ "aaaaaaaa", "bbbbbbbb" ] ])
+                    |> signedIn
+                    |> Expect.all
+                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.class "is-kept", Selector.text "These 2 mistakes are in your practice already." ]
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.tag "button", Selector.id "rp-deck-signin-open" ] |> Query.count (Expect.equal 0)
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
+
+                        -- one is one
+                        , \m -> m |> run [ mistakes [ "aaaaaaaa" ] ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.text "This mistake is in your practice already." ]
+
+                        -- another game's count is not this one's
+                        , \m -> m |> run [ PickGame 1 ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
+                        ]
+        , test "a guest reads 'Sign in to practice these N mistakes', the sign-in behind those words" <|
             \_ ->
                 loaded (Just 3)
                     |> run (gotEverything ++ [ mistakes [ "aaaaaaaa", "bbbbbbbb" ] ])
                     |> Expect.all
-                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "practice-game" ] |> Query.has [ Selector.text "PRACTICE THIS GAME'S 2 MISTAKES" ]
-                        , \m -> outOf (PracticeGame 3) m |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                        [ \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.text "Sign in", Selector.text " to practice these 2 mistakes." ]
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin-open" ] |> Query.has [ Selector.text "Sign in" ]
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "signin" ]
+                        , \m -> m |> run [ mistakes [ "aaaaaaaa" ] ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.text " to practice this mistake." ]
 
-                        -- one is one
-                        , \m -> m |> run [ mistakes [ "aaaaaaaa" ] ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "practice-game" ] |> Query.has [ Selector.text "PRACTICE THIS GAME'S 1 MISTAKE" ]
+                        -- pressed: the one component, under a line that says the same
+                        , \m -> m |> run [ OpenedSignIn ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin" ] |> Query.has [ Selector.id "signin" ]
+                        , \m -> m |> run [ OpenedSignIn ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.text "Sign in to practice these 2 mistakes." ]
+                        , \m -> m |> run [ OpenedSignIn ] |> .signIn |> Maybe.map .next |> Expect.equal (Just "/backgammon/000011/replay?game=3")
+                        , \m -> m |> run [ OpenedSignIn, OpenedSignIn ] |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.id "signin" ] |> Query.count (Expect.equal 1)
 
-                        -- another game's count is not this one's
-                        , \m -> m |> run [ PickGame 1 ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
-                        , \m -> outOf (PracticeGame 1) m |> Expect.equal Page.NoOut
+                        -- the word is the mistakes list's door too: a guest's tap opens it
+                        , \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin-open" ] |> Event.simulate Event.click |> Event.expect OpenedSignIn
                         ]
-        , test "no button while the mistakes are uncounted, and none for a game with none" <|
+        , test "no line while the mistakes are uncounted, none for a game with none, none for a stranger" <|
             \_ ->
                 Expect.all
-                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
-                    , \m -> m |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "practice-game" ]
+                    [ \m -> m |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
+                    , \m -> m |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
+                    , \m -> m |> signedIn |> run [ mistakes [] ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "rp-deck" ]
+                    , \_ ->
+                        Page.init session { slug = "backgammon", gameId = "000011", game = Just 3, step = Nothing }
+                            |> Tuple.first
+                            |> run ([ GotRecord (Ok shared) ] ++ gotEverything)
+                            |> Page.view
+                            |> Query.fromHtml
+                            |> Query.hasNot [ Selector.id "rp-deck" ]
                     ]
                     (loaded (Just 3) |> run gotEverything)
         , test "puzzles still being written: asked again, bounded; any other refusal ends it" <|

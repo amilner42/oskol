@@ -18,6 +18,7 @@ module Page.Replay exposing
     , locate
     , settled
     , url
+    , withSession
     )
 
 {-| `/:slug/:id/replay` — a room's games played again, one line of the
@@ -43,11 +44,12 @@ Stepping: the buttons under the board, the arrow keys (Home and End for
 the first and last line), a swipe across the board, or a tap on a line of
 the move list.
 
-A reader who holds a seat here is offered PRACTICE THIS GAME'S N MISTAKES
-on the analysis of each game whose review is done: the page asks
-`/puzzles?game=n` for that game's mistakes, the seat's own, as the game is
-switched to, and the shell runs them (`StartRun`) and brings the reader
-back to this page at the end.
+A reader who holds a seat here has their mistakes counted for each game
+whose review is done: the page asks `/puzzles?game=n` for that game's
+mistakes, the seat's own, as the game is switched to, and the overview
+says they are in their practice already (signed in) or offers to sign in
+to practice them (a guest, the sign-in behind those two words). Nothing
+to press.
 
 -}
 
@@ -61,7 +63,7 @@ import Games.Backgammon.View as Board
 import Games.Backgammon.Words exposing (answerInWords, candidateInWords, chanceCells, cubeChances, cubeLine, doubleInWords, gradeMark, gradeOf, gradeTag, inWords, lost, moveInWords, noDoubleInWords, signed, verdictTag)
 import Api.Catalog as Catalog
 import Page.Play exposing (storePref)
-import Html exposing (Html, button, div, span, text)
+import Html exposing (Html, button, div, p, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, style)
 import Html.Events exposing (on, onClick)
 import Json.Decode as D
@@ -75,6 +77,7 @@ import Task
 import Time
 import Ui.Scrub
 import Ui.Shell
+import Ui.SignIn as SignIn
 
 
 
@@ -135,7 +138,8 @@ type alias Model =
     , themesOpen : Bool -- the board picker's list is showing
     , gamePrs : Dict.Dict Int (List ( String, Float )) -- each graded game's PRs by seat, from /ratings
     , matchPrs : Dict.Dict String Float -- each seat's PR over the match so far
-    , mistakes : Dict.Dict Int (List String) -- each graded game's mistakes for the reader's seat, by number: what PRACTICE runs
+    , mistakes : Dict.Dict Int (List String) -- each graded game's mistakes for the reader's seat, by number: what the deck holds
+    , signIn : Maybe SignIn.Model -- the overview's sign-in, once opened
     , mistakeAsks : Dict.Dict Int Int -- asks made for a game's mistakes still unanswered (they land a moment after the grade)
     }
 
@@ -204,6 +208,7 @@ init session config =
             , matchPrs = Dict.empty
             , mistakes = Dict.empty
             , mistakeAsks = Dict.empty
+            , signIn = Nothing
             }
     in
     ( model
@@ -367,25 +372,45 @@ type Msg
     | GotRatings (Result Api.Error Catalog.Ratings)
     | AskMistakes Int
     | GotMistakes Int (Result Api.Error Practice.Practice)
-    | PracticeGame Int -- PRACTICE THIS GAME'S N MISTAKES
+    | OpenedSignIn -- the overview's "Sign in", for a guest with mistakes to keep
+    | SignInMsg SignIn.Msg
     | NoOp
 
 
-{-| What the shell does for the page: nothing, or run these puzzles and
-bring the reader back here at the end.
+{-| What the shell does for the page: nothing, or take the account this
+page just signed in.
 -}
 type Out
     = NoOut
-    | StartRun (List String)
+    | SignedIn (Maybe Session.User)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg, Out )
 update msg model =
     case msg of
-        PracticeGame number ->
-            case Dict.get number model.mistakes of
-                Just ids ->
-                    ( model, Cmd.none, StartRun ids )
+        SignInMsg signInMsg ->
+            case model.signIn of
+                Just signIn ->
+                    let
+                        ( next, cmd, out ) =
+                            SignIn.update model.session signInMsg signIn
+
+                        updated =
+                            { model | signIn = Just next }
+                    in
+                    case out of
+                        SignIn.NoOut ->
+                            ( updated, Cmd.map SignInMsg cmd, NoOut )
+
+                        -- Signed in: the seat is the account's now and its
+                        -- mistakes are in the deck. Tell the shell.
+                        SignIn.SignedIn result ->
+                            ( updated, Cmd.map SignInMsg cmd, SignedIn result.user )
+
+                        -- CONTINUE: `next` is this page, so there is
+                        -- nowhere to go; the sign-in folds away.
+                        SignIn.Continue _ ->
+                            ( { updated | signIn = Nothing }, Cmd.none, NoOut )
 
                 Nothing ->
                     ( model, Cmd.none, NoOut )
@@ -398,13 +423,25 @@ update msg model =
             ( next, cmd, NoOut )
 
 
-{-| Every message but the one the shell acts on.
+{-| Every message but the sign-in's, which the shell hears about.
 -}
 advance : Msg -> Model -> ( Model, Cmd Msg )
 advance msg model =
     case msg of
-        PracticeGame _ ->
+        SignInMsg _ ->
             ( model, Cmd.none )
+
+        OpenedSignIn ->
+            case model.signIn of
+                Nothing ->
+                    let
+                        ( signIn, cmd ) =
+                            SignIn.init { next = url model, email = "" }
+                    in
+                    ( { model | signIn = Just signIn }, Cmd.map SignInMsg cmd )
+
+                Just _ ->
+                    ( model, Cmd.none )
 
         AskMistakes number ->
             case Dict.get number model.mistakeAsks of
@@ -787,6 +824,15 @@ defaultTab model =
 
     else
         MoveTab
+
+
+{-| The shell's session, as `/papi/me` fills it in after the page is up
+or a sign-in changes it: the account is what the overview's practice line
+reads.
+-}
+withSession : Session -> Model -> Model
+withSession session model =
+    { model | session = session }
 
 
 {-| Whether the record is in, so the game on the page is the page's choice
@@ -2177,7 +2223,7 @@ viewSummary model record game =
     div [ class "rp-summary", id "rp-summary" ]
         (case analysis |> Maybe.andThen .review of
             Just review ->
-                viewPractice model game
+                viewDeck model game
                     :: (review.players
                     |> List.map
                         (\t ->
@@ -2225,38 +2271,60 @@ viewSummary model record game =
         )
 
 
-{-| PRACTICE THIS GAME'S N MISTAKES, for a reader who holds a seat here,
-once this game's mistakes are counted (`wantMistakes`): the door to a run
-of them. Nothing for a stranger, nothing while they are on their way, and
-nothing for a game with none -- each player's list already says so.
+{-| Over the summary, for a reader who holds a seat here, once this game's
+mistakes are counted (`wantMistakes`) and there are any: nothing to press.
+Signed in, the mistakes are in their practice already and the line says
+so; a guest reads "Sign in to practice these N mistakes", the one sign-in
+component behind the first two words (the site's rule: the win after the
+value, never a gate). Nothing for a stranger, nothing while the count is
+on its way, and nothing for a game with none -- each player's list
+already says so.
 -}
-viewPractice : Model -> Game -> Html Msg
-viewPractice model game =
+viewDeck : Model -> Game -> Html Msg
+viewDeck model game =
     case Dict.get game.number model.mistakes of
         Just [] ->
             text ""
 
         Just ids ->
-            div [ class "rp-practice" ]
-                [ button
-                    [ class "btn-arcade compact pixel text-[7px] px-3 py-2 yellow w-full"
-                    , id "practice-game"
-                    , attribute "data-game" (String.fromInt game.number)
-                    , attribute "data-count" (String.fromInt (List.length ids))
-                    , onClick (PracticeGame game.number)
-                    ]
-                    [ text
-                        ("PRACTICE THIS GAME'S "
-                            ++ String.fromInt (List.length ids)
-                            ++ (if List.length ids == 1 then
-                                    " MISTAKE"
+            let
+                n =
+                    List.length ids
 
-                                else
-                                    " MISTAKES"
-                               )
-                        )
-                    ]
-                ]
+                these =
+                    if n == 1 then
+                        "this mistake"
+
+                    else
+                        "these " ++ String.fromInt n ++ " mistakes"
+
+                toPractice =
+                    " to practice " ++ these ++ "."
+            in
+            case ( model.session.user, model.signIn ) of
+                ( Just _, _ ) ->
+                    p [ class "rp-deck is-kept", id "rp-deck", attribute "data-game" (String.fromInt game.number), attribute "data-count" (String.fromInt n) ]
+                        [ span [ class "hero-check-circle w-4 h-4", attribute "aria-hidden" "true" ] []
+                        , text
+                            (if n == 1 then
+                                "This mistake is in your practice already."
+
+                             else
+                                "These " ++ String.fromInt n ++ " mistakes are in your practice already."
+                            )
+                        ]
+
+                ( Nothing, Just signIn ) ->
+                    div [ class "rp-deck", id "rp-deck", attribute "data-count" (String.fromInt n) ]
+                        [ p [ class "rp-deck-line" ] [ text ("Sign in" ++ toPractice) ]
+                        , div [ id "rp-deck-signin" ] [ Html.map SignInMsg (SignIn.view signIn) ]
+                        ]
+
+                ( Nothing, Nothing ) ->
+                    p [ class "rp-deck", id "rp-deck", attribute "data-count" (String.fromInt n) ]
+                        [ button [ Html.Attributes.type_ "button", id "rp-deck-signin-open", class "signin-link", onClick OpenedSignIn ] [ text "Sign in" ]
+                        , text toPractice
+                        ]
 
         Nothing ->
             text ""

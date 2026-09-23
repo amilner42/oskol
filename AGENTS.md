@@ -649,9 +649,11 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  greyed at the start) and CUBE (a roll's other side,
                                  greyed off a roll); a step opens MOVE, or CUBE when it
                                  cost more; the band offers the best move, the dice take
-                                 the move back; a seated reader's overview offers
-                                 PRACTICE THIS GAME'S N MISTAKES per game (`Out =
-                                 StartRun`); on a phone (`onePanel`: under 640 wide, or
+                                 the move back; a seated reader's overview says the
+                                 game's mistakes are in their practice already (signed
+                                 in) or "Sign in to practice these N mistakes",
+                                 `Ui.SignIn` behind the words (`Out = SignedIn`); on a
+                                 phone (`onePanel`: under 640 wide, or
                                  under 480 tall sideways) the panel has no scroll of its
                                  own and the page scrolls
 assets/src/Page/Puzzles.elm      "/puzzles" the practice home: an account's counts and
@@ -1281,13 +1283,17 @@ path builds one and nothing re-asks the engine to recover one.
   chances, nothing more.
 - **Every finished game is the moment.** Both result cards at the table --
   the game-over card and the between-games card of a match or of
-  unlimited play -- and the replay's OVERVIEW offer PRACTICE THIS
-  GAME'S N MISTAKES (`practice-game`; "1 MISTAKE"; on the cards a quiet
-  "No mistakes in this game" for none) once the game's review is done:
-  `Page/Play.elm` asks `/puzzles?game=n` for each game `/ratings` lists
-  as graded, for a seat only (a spectator would be told 404), and the
-  replay asks for the game being read as it switches; both keep the ids
-  and hand them to Main as `StartRun`. The puzzles are written a moment
+  unlimited play -- offer PRACTICE THIS GAME'S N MISTAKES
+  (`practice-game`; "1 MISTAKE"; a quiet "No mistakes in this game" for
+  none) once the game's review is done, and the replay's OVERVIEW has
+  nothing to press: signed in, a line says the game's mistakes are in
+  their practice already; a guest reads "Sign in to practice these N
+  mistakes", `Ui.SignIn` behind the first words (`rp-deck`,
+  `rp-deck-signin-open`). `Page/Play.elm`
+  asks `/puzzles?game=n` for each game `/ratings` lists as graded, for a
+  seat only (a spectator would be told 404), and the replay asks for the
+  game being read as it switches; the cards keep the ids and hand them
+  to Main as `StartRun`, the replay keeps the count. The puzzles are written a moment
   after the grade, so the endpoint answers 409 `puzzles_pending` until
   they are, and the page asks again (3 s apart, twenty times at most).
   The run ends on the puzzle page's own screen, a guest's sign-in going

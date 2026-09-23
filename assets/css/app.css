@@ -2022,6 +2022,13 @@ a.rp-match-row:hover { color: var(--ink); }
 }
 .rp-mark { flex: none; font-weight: 800; font-size: 12px; padding: 0 4px; border-radius: 3px; }
 .rp-mark.g-best, .rp-mark.g-ok { background: transparent; }
+/* Over the summary: the mistakes are in the deck (signed in, a check), or
+   what signing in keeps, with the sign-in beneath when pressed. */
+.rp-deck { margin: 4px 0 8px; padding: 6px 8px; border-radius: 6px; background: var(--paper-2); font-size: 12.5px; line-height: 1.4; color: var(--pencil); }
+.rp-deck.is-kept { display: flex; align-items: flex-start; gap: 6px; color: var(--ink); }
+.rp-deck.is-kept > span { flex: none; margin-top: 2px; color: #3fb96f; }
+.rp-deck-line { margin-bottom: 8px; }
+.rp-page.is-one .rp-deck { font-size: 14px; padding: 8px 10px; }
 /* The summary: each player's PR, errors and luck. */
 .rp-player { padding: 6px 0; border-bottom: 1px dashed var(--pencil); }
 .rp-player-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
