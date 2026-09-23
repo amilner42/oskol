@@ -1776,10 +1776,6 @@ button.pz-band { cursor: pointer; }
 button.pz-band:not(:disabled):hover { background: var(--paper-2); }
 button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
 .pz-band.is-on { background: var(--highlighter); }
-.pz-scale .pz-band { box-shadow: none; border-color: var(--pencil); color: var(--pencil); font-weight: 600; min-height: 2.2rem; font-size: 10px; }
-.pz-scale .pz-band.is-on { border-color: var(--ink); color: var(--ink); background: var(--highlighter); }
-.pz-scale .pz-band.is-engine { border-color: #1f7a45; color: #1f7a45; background: #e4f4e9; font-weight: 800; box-shadow: 0 0 0 2px #1f7a45; }
-.pz-scale .pz-band.is-engine.is-on { background: var(--highlighter); }
 /* The verdict, in the grades' colours: right is the best move's green,
    close the doubtful yellow, a miss the very-bad red, unranked pencil. */
 .pz-verdict { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding-bottom: 6px; margin-bottom: 4px; border-bottom: 2px solid var(--ink); }
