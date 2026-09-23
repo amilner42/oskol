@@ -59,11 +59,28 @@ async function playRun(page, { onReveal = async () => {}, max = 40 } = {}) {
     await page.waitForSelector('#pz-reveal', { timeout: 15000 });
     answered += 1;
     await onReveal(page, answered);
-    await page.waitForSelector('#pz-next', { timeout: 5000 });
-    await page.click('#pz-next');
-    await sleep(200);
+    await pressNext(page);
   }
   throw new Error(`the run did not end within ${max} puzzles`);
 }
 
-module.exports = { mailFor, stageATurn, playRun, sleep };
+/**
+ * NEXT, until the page has moved on: to the next puzzle's URL, or to the
+ * end screen on this one. The reveal keeps filling in after NEXT appears
+ * (the memory line lands a request later, and pushes NEXT down), so a
+ * click aimed a frame earlier can land beside it; a click that moved
+ * nothing is made again.
+ */
+async function pressNext(page) {
+  const was = new URL(page.url()).pathname;
+  const moved = (from) => new URL(location.href).pathname !== from || !!document.querySelector('#pz-end');
+  for (let i = 0; i < 4; i++) {
+    await page.waitForSelector('#pz-next', { timeout: 5000 });
+    await page.click('#pz-next');
+    const ok = await page.waitForFunction(moved, was, { timeout: 3000 }).then(() => true, () => false);
+    if (ok) return;
+  }
+  throw new Error(`NEXT moved nothing at ${page.url()}`);
+}
+
+module.exports = { mailFor, stageATurn, playRun, pressNext, sleep };
