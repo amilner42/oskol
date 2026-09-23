@@ -9,16 +9,18 @@
  *    while `/reviews` answers pending; stepping with the buttons and the
  *    arrow keys moves one line at a time; when the analysis lands (the
  *    page polls) the grades fill in and the viewer stays on the same step;
- *    a candidate move goes on the board and comes off again; the ANALYSIS
- *    tab shows each player's PR; End goes to the last line.
+ *    a candidate move goes on the board and comes off again; OVERVIEW
+ *    shows each player's PR and keeps the step; End goes to the last line.
  * 2. A game whose analysis failed says so and offers TRY AGAIN, which
  *    re-asks (a POST) and fills the game in.
  * 3. Polling stops once nothing is pending.
- * 4. Phone 390x844, 320x568 and 844x390: nothing scrolls sideways, the
- *    board fits the screen, a swipe across the board steps, and the
- *    current line of the move list is in view. The side is one panel
- *    under one bar of four tabs (MOVE, CUBE, ANALYSIS, MOVES), each
- *    showing its content, and the page scrolls rather than any panel.
+ *    board fits the screen, and a swipe across the board steps.
+ *    Everywhere, the side is one panel under one bar of three tabs
+ *    (OVERVIEW, MOVE, CUBE): the start opens on OVERVIEW with MOVE and
+ *    CUBE greyed, a step opens MOVE, CUBE is offered on a roll only,
+ *    OVERVIEW mid-game keeps the step and MOVE comes back to it, each
+ *    shows its content alone; on a phone the page scrolls rather than
+ *    any panel.
  * 5. The table offers REPLAY at game over, and it opens this page.
  *
  * The analysis is stubbed by default (`lib/replay-stub.js`): `/reviews`
@@ -97,55 +99,48 @@ async function count(page, expected) {
   return page.evaluate(read);
 }
 
-async function currentLineVisible(page, what) {
-  // The page opens on ANALYSIS; the list this checks is a tab away.
-  if (!(await page.locator('#rp-list').count())) await page.click('.rp-tab:has-text("MOVES")');
-  // the list scrolls to the line a frame after the step renders
-  const inView = await page
-    .waitForFunction(() => {
-      const line = document.querySelector('.rp-line.is-on');
-      const list = document.getElementById('rp-list');
-      if (!line || !list) return false;
-      const a = line.getBoundingClientRect();
-      const b = list.getBoundingClientRect();
-      return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
-    }, null, { timeout: 2000 })
-    .then(() => true, () => false);
-  if (!inView) {
-    await page.screenshot({ path: `${SHOTS}/failed-${what}.png` });
-    log(JSON.stringify(await page.evaluate(() => {
-      const line = document.querySelector('.rp-line.is-on');
-      const list = document.getElementById('rp-list');
-      return { line: line && line.getBoundingClientRect(), list: list && list.getBoundingClientRect(), scroll: list && list.scrollTop };
-    })));
-  }
-  must(inView, `${what}: the current line of the move list is in view`);
-}
-
-/** A phone's side is one panel: one bar of four tabs, each showing its
- * content, and the page scrolling, never a panel. */
-async function onePanel(page, what) {
-  const tabs = ['#rp-note-move', '#rp-note-cube', '#rp-tab-analysis', '#rp-tab-moves'];
+/** The side is one panel under one bar of three tabs, OVERVIEW, MOVE and
+ * CUBE, each showing its content alone; MOVE and CUBE are offered only
+ * where they have something to say; OVERVIEW keeps the step. On a phone
+ * the page scrolls, never a panel. Leaves the page where it found it. */
+async function onePanel(page, what, { phone }) {
+  const tabs = ['#rp-tab-overview', '#rp-note-move', '#rp-note-cube'];
   for (const tab of tabs) must(await page.locator(`#rp-panel .rp-tabs ${tab}`).count() === 1, `${what}: the one panel has the tab ${tab}`);
-  must(await page.locator('.rp-panel').count() === 1 && await page.locator('.rp-note-tabs').count() === 0, `${what}: one panel, one bar`);
-  const shows = { '#rp-note-move': '#rp-note', '#rp-note-cube': '#rp-note', '#rp-tab-analysis': '#rp-summary', '#rp-tab-moves': '#rp-list' };
-  for (const tab of tabs) {
-    await page.click(tab);
-    await page.waitForSelector(`${tab}.is-on`, { timeout: 2000 });
-    must(await page.locator('.rp-tab.is-on').count() === 1, `${what}: ${tab} is the one tab on`);
-    must(await page.locator(`#rp-panel > ${shows[tab]}`).count() === 1, `${what}: ${tab} shows ${shows[tab]}`);
-    for (const other of Object.values(shows).filter((o) => o !== shows[tab])) {
-      must(await page.locator(other).count() === 0, `${what}: ${tab} shows nothing of ${other}`);
-    }
+  must(await page.locator('.rp-panel').count() === 1 && await page.locator('.rp-tabs').count() === 1 && await page.locator('.rp-note-tabs').count() === 0, `${what}: one panel, one bar`);
+  must(await page.locator('#rp-list, .rp-line').count() === 0, `${what}: no move list`);
+  // The start: OVERVIEW, and neither MOVE nor CUBE is a door.
+  const step = Number(await page.getAttribute('.rp-controls-wrap', 'data-step'));
+  await page.click('#rp-first');
+  await page.waitForFunction(() => document.querySelector('.rp-controls-wrap').dataset.step === '0', null, { timeout: 2000 });
+  await page.waitForSelector('#rp-overview', { timeout: 2000 });
+  must(await page.locator('#rp-tab-overview.is-on').count() === 1, `${what}: the start opens on OVERVIEW`);
+  must(await page.locator('#rp-overview #rp-summary .rp-pr').count() === 2, `${what}: the overview is the summary, both PRs`);
+  must(await page.locator('#rp-note-move:disabled').count() === 1 && await page.locator('#rp-note-cube:disabled').count() === 1, `${what}: MOVE and CUBE are not offered before the first roll`);
+  // A roll: MOVE is its verdict, CUBE its other side.
+  for (let i = 0; i < step; i++) await page.click('#rp-next');
+  await page.waitForFunction((want) => document.querySelector('.rp-controls-wrap').dataset.step === String(want), step, { timeout: 2000 });
+  await page.waitForSelector('#rp-note-cube:enabled', { timeout: 2000 });
+  must(await page.locator('#rp-note-move.is-on').count() === 1 && await page.locator('#rp-panel > #rp-note .rp-grade').count() === 1, `${what}: a step opens MOVE, that move's verdict`);
+  await page.click('#rp-note-cube');
+  await page.waitForSelector('#rp-note-cube.is-on', { timeout: 2000 });
+  must(await page.locator('#rp-panel > #rp-note').count() === 1 && await page.locator('#rp-overview').count() === 0, `${what}: CUBE shows the note alone`);
+  // OVERVIEW mid-game keeps the step; MOVE is the way back.
+  await page.click('#rp-tab-overview');
+  await page.waitForSelector('#rp-overview', { timeout: 2000 });
+  must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === step && await page.locator('#rp-note').count() === 0, `${what}: OVERVIEW mid-game keeps step ${step} and shows the overview alone`);
+  must(await page.locator('.rp-tab.is-on').count() === 1, `${what}: one tab is on`);
+  if (phone) {
+    // The overview is the tallest: the page, not the panel, is what scrolls.
+    const scroll = await page.evaluate(() => ({
+      page: document.scrollingElement.scrollHeight > innerHeight,
+      panels: [...document.querySelectorAll('.rp-panel, .rp-note, .rp-summary, .rp-overview')].filter((el) => el.scrollHeight > el.clientHeight + 1).length,
+    }));
+    must(scroll.page, `${what}: the page scrolls`);
+    must(scroll.panels === 0, `${what}: no panel scrolls inside itself`);
   }
-  // MOVES is the tallest: the page, not the panel, is what scrolls.
-  const scroll = await page.evaluate(() => ({
-    page: document.scrollingElement.scrollHeight > innerHeight,
-    panels: [...document.querySelectorAll('.rp-panel, .rp-note, .rp-list, .rp-summary')].filter((el) => el.scrollHeight > el.clientHeight + 1).length,
-  }));
-  must(scroll.page, `${what}: the page scrolls`);
-  must(scroll.panels === 0, `${what}: no panel scrolls inside itself`);
   await page.click('#rp-note-move');
+  await page.waitForSelector('#rp-note-move.is-on', { timeout: 2000 });
+  must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === step && await page.locator('#rp-note .rp-grade').count() === 1, `${what}: MOVE comes back to step ${step}'s verdict`);
 }
 
 async function swipe(page, dx) {
@@ -238,10 +233,6 @@ async function main() {
     // The analysis lands while the viewer is on step 4.
     await page.waitForSelector('#rp-note .rp-grade', { timeout: REAL ? 180000 : 15000 });
     must((await count(page, `4 / ${last.entries.length}`)) === `4 / ${last.entries.length}`, 'the grades fill in without moving the viewer');
-    // The page opens on ANALYSIS; the move list is a tab away.
-    await page.click('.rp-tab:has-text("MOVES")');
-    await page.waitForSelector('.rp-line');
-    must(await page.locator('.rp-line .rp-mark').count() > 0, 'the move list carries the grades');
 
     // Find a turn that was not the engine's best, and put its best on the board.
     let found = false;
@@ -261,15 +252,14 @@ async function main() {
     must(await page.locator('.rp-board.is-proposed').count() === 0, 'and the played move comes back');
     await page.screenshot({ path: `${SHOTS}/03-desktop-graded.png` });
 
-    await page.click('.rp-tab:has-text("ANALYSIS")');
-    await page.waitForSelector('#rp-summary .rp-pr');
-    must(await page.locator('#rp-summary .rp-pr').count() === 2, 'the summary gives both players a PR');
+    await page.click('#rp-tab-overview');
+    await page.waitForSelector('#rp-overview .rp-pr');
+    must(await page.locator('#rp-overview .rp-pr').count() === 2, 'the overview gives both players a PR');
     await page.screenshot({ path: `${SHOTS}/04-desktop-summary.png` });
-    await page.click('.rp-tab:has-text("MOVES")');
+    await onePanel(page, 'desktop', { phone: false });
 
     await page.keyboard.press('End');
     must((await count(page, `${last.entries.length} / ${last.entries.length}`)) === `${last.entries.length} / ${last.entries.length}`, 'End goes to the last line');
-    await currentLineVisible(page, 'desktop');
 
     // ---------- 2. a failed game, tried again ----------
     if (!REAL) {
@@ -303,7 +293,7 @@ async function main() {
       watch(p, phone.name);
       await p.goto(url(`&game=${last.number}`));
       await p.waitForSelector('.bg-still .bg-board', { timeout: 20000 });
-      await p.waitForSelector('#rp-note', { timeout: 20000 });
+      await p.waitForSelector('#rp-panel', { timeout: 20000 });
       await sleep(REAL ? 3000 : 500);
       await swipe(p, -120);
       await swipe(p, -120);
@@ -325,8 +315,7 @@ async function main() {
         const side = await p.locator('.rp-side').boundingBox();
         must(side.x >= board.x + board.width - 1, 'landscape: the notes sit beside the board, not on it');
       }
-      await currentLineVisible(p, phone.name);
-      await onePanel(p, phone.name);
+      await onePanel(p, phone.name, { phone: true });
       await p.screenshot({ path: `${SHOTS}/06-${phone.name}.png` });
       await ctx.close();
     }

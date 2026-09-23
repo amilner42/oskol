@@ -771,14 +771,6 @@ rendered =
                     |> Query.fromHtml
                     |> Query.find [ Selector.id "rp-analysis-state" ]
                     |> Query.has [ Selector.text "Loading the analysis…" ]
-        , test "the move list marks the current line" <|
-            \_ ->
-                loaded (Just 3)
-                    |> run [ PickTab Page.MovesTab, Next, Next ]
-                    |> Page.view
-                    |> Query.fromHtml
-                    |> Query.find [ Selector.class "rp-line", Selector.class "is-on" ]
-                    |> Query.has [ Selector.id "rp-line-2" ]
         , test "every game of the match can be picked, from the match panel" <|
             \_ ->
                 loaded (Just 3)
@@ -791,7 +783,10 @@ rendered =
 
 
 
--- A PHONE: ONE PANEL, FOUR TABS
+
+
+
+-- THE SIDE: ONE PANEL, THREE TABS
 
 
 {-| Game 2's analysis with its fourth turn's move made free, so that turn's
@@ -817,6 +812,11 @@ onPhone model =
     run ([ Resized 390 844 ] ++ gotEverything) model
 
 
+onDesktop : Page.Model -> Page.Model
+onDesktop model =
+    run ([ Resized 1440 900 ] ++ gotEverything) model
+
+
 tabOn : String -> Page.Model -> Expect.Expectation
 tabOn id_ model =
     model
@@ -824,6 +824,15 @@ tabOn id_ model =
         |> Query.fromHtml
         |> Query.find [ Selector.id id_ ]
         |> Query.has [ Selector.class "is-on" ]
+
+
+offered : String -> Bool -> Page.Model -> Expect.Expectation
+offered id_ expected model =
+    model
+        |> Page.view
+        |> Query.fromHtml
+        |> Query.find [ Selector.id id_ ]
+        |> Query.has [ Selector.disabled (not expected) ]
 
 
 shows : String -> Bool -> Page.Model -> Expect.Expectation
@@ -843,10 +852,21 @@ shows id_ expected model =
             )
 
 
+{-| The side is the same one panel on every screen; what the screen decides
+is the page's layout, and these say the same of both.
+-}
+onEveryScreen : String -> (Page.Model -> Expect.Expectation) -> Test
+onEveryScreen name check =
+    describe name
+        [ test "on a phone" <| \_ -> check (loaded (Just 3) |> onPhone)
+        , test "on a desktop" <| \_ -> check (loaded (Just 3) |> onDesktop)
+        ]
+
+
 phone : Test
 phone =
-    describe "on a phone the side is one panel with four tabs"
-        [ test "a phone upright or held sideways gets the one panel; a tablet, a desktop and an unmeasured page keep two boxes" <|
+    describe "the side is one panel with three tabs"
+        [ test "a phone upright or held sideways gets the page that scrolls; a tablet, a desktop and an unmeasured page a fixed one" <|
             \_ ->
                 Expect.all
                     [ \m -> m |> run [ Resized 390 844 ] |> Page.onePanel |> Expect.equal True
@@ -859,87 +879,116 @@ phone =
                     , \m -> m |> Page.onePanel |> Expect.equal False
                     ]
                     (loaded (Just 3))
-        , test "the page wears is-one and one bar of four tabs, MOVE CUBE ANALYSIS MOVES, and no second bar" <|
-            \_ ->
-                loaded (Just 3)
-                    |> onPhone
-                    |> run [ Next ]
-                    |> Page.view
-                    |> Query.fromHtml
-                    |> Expect.all
-                        [ Query.has [ Selector.class "is-one" ]
-                        , Query.findAll [ Selector.class "rp-panel" ] >> Query.count (Expect.equal 1)
-                        , Query.findAll [ Selector.class "rp-note-tabs" ] >> Query.count (Expect.equal 0)
-                        , Query.find [ Selector.id "rp-tabs" ] >> Query.findAll [ Selector.class "rp-tab" ] >> Query.count (Expect.equal 4)
-                        , Query.find [ Selector.id "rp-tabs" ] >> Query.findAll [ Selector.class "rp-tab" ] >> Query.index 0 >> Query.has [ Selector.id "rp-note-move", Selector.text "MOVE" ]
-                        , Query.find [ Selector.id "rp-tabs" ] >> Query.findAll [ Selector.class "rp-tab" ] >> Query.index 1 >> Query.has [ Selector.id "rp-note-cube", Selector.text "CUBE" ]
-                        , Query.find [ Selector.id "rp-tabs" ] >> Query.findAll [ Selector.class "rp-tab" ] >> Query.index 2 >> Query.has [ Selector.id "rp-tab-analysis", Selector.text "ANALYSIS" ]
-                        , Query.find [ Selector.id "rp-tabs" ] >> Query.findAll [ Selector.class "rp-tab" ] >> Query.index 3 >> Query.has [ Selector.id "rp-tab-moves", Selector.text "MOVES" ]
-                        ]
-        , test "a desktop keeps its two boxes: the note's two tabs above, the panel's two below" <|
-            \_ ->
-                loaded (Just 3)
-                    |> run ([ Resized 1440 900 ] ++ gotEverything ++ [ Next ])
-                    |> Page.view
-                    |> Query.fromHtml
-                    |> Expect.all
-                        [ Query.hasNot [ Selector.class "is-one" ]
-                        , Query.find [ Selector.id "rp-note" ] >> Query.findAll [ Selector.class "rp-note-tab" ] >> Query.count (Expect.equal 2)
-                        , Query.findAll [ Selector.class "rp-tab" ] >> Query.count (Expect.equal 2)
-                        , Query.findAll [ Selector.id "rp-summary" ] >> Query.count (Expect.equal 1)
-                        ]
-        , test "the panel opens on MOVE, and each tab shows its own content alone" <|
+        , test "the page wears is-one on a phone and not on a desktop" <|
             \_ ->
                 Expect.all
-                    [ tabOn "rp-note-move"
-                    , shows "rp-note" True
-                    , shows "rp-summary" False
-                    , shows "rp-list" False
-                    , run [ PickTab Page.SummaryTab ] >> Expect.all [ tabOn "rp-tab-analysis", shows "rp-summary" True, shows "rp-note" False, shows "rp-list" False ]
-                    , run [ PickTab Page.MovesTab ] >> Expect.all [ tabOn "rp-tab-moves", shows "rp-list" True, shows "rp-note" False, shows "rp-summary" False ]
-                    , run [ PickTab Page.MovesTab, PickNote Page.CubeTab ] >> Expect.all [ tabOn "rp-note-cube", shows "rp-note" True, shows "rp-list" False, .showing >> Expect.equal Before ]
+                    [ onPhone >> Page.view >> Query.fromHtml >> Query.has [ Selector.class "is-one" ]
+                    , onDesktop >> Page.view >> Query.fromHtml >> Query.hasNot [ Selector.class "is-one" ]
                     ]
-                    (loaded (Just 3) |> onPhone |> run [ Next ])
-        , test "only one of the four is on" <|
+                    (loaded (Just 3))
+        , onEveryScreen "one panel, one bar of three tabs, OVERVIEW MOVE CUBE, and no move list" <|
+            run [ Next ]
+                >> Page.view
+                >> Query.fromHtml
+                >> Expect.all
+                    [ Query.findAll [ Selector.class "rp-panel" ] >> Query.count (Expect.equal 1)
+                    , Query.findAll [ Selector.class "rp-note-tabs" ] >> Query.count (Expect.equal 0)
+                    , Query.findAll [ Selector.class "rp-tabs" ] >> Query.count (Expect.equal 1)
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.count (Expect.equal 3)
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 0 >> Query.has [ Selector.id "rp-tab-overview", Selector.text "OVERVIEW" ]
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 1 >> Query.has [ Selector.id "rp-note-move", Selector.text "MOVE" ]
+                    , Query.findAll [ Selector.class "rp-tab" ] >> Query.index 2 >> Query.has [ Selector.id "rp-note-cube", Selector.text "CUBE" ]
+                    , Query.hasNot [ Selector.text "MOVES" ]
+                    , Query.findAll [ Selector.class "rp-line" ] >> Query.count (Expect.equal 0)
+                    ]
+        , onEveryScreen "the start opens on OVERVIEW: the summary, no note, no game name; MOVE and CUBE are not offered" <|
+            Expect.all
+                [ tabOn "rp-tab-overview"
+                , shows "rp-overview" True
+                , shows "rp-summary" True
+                , shows "rp-note" False
+                , offered "rp-tab-overview" True
+                , offered "rp-note-move" False
+                , offered "rp-note-cube" False
+                , Page.view >> Query.fromHtml >> Query.hasNot [ Selector.text "GAME 3" ]
+                , Page.view >> Query.fromHtml >> Query.find [ Selector.id "rp-overview" ] >> Query.findAll [ Selector.class "rp-pr" ] >> Query.count (Expect.equal 2)
+                ]
+        , test "the overview says where a pending analysis stands" <|
             \_ ->
+                loaded (Just 3)
+                    |> run [ Resized 390 844, GotIndex (Ok (index ReplayFixtures.indexPending)) ]
+                    |> Page.view
+                    |> Query.fromHtml
+                    |> Query.find [ Selector.id "rp-overview" ]
+                    |> Query.has [ Selector.id "rp-analysis-state", Selector.text "Analysing game 3 at 4-ply… this can take a few minutes" ]
+        , onEveryScreen "a step opens MOVE, that move's verdict; CUBE is its other side; each alone" <|
+            run [ Next ]
+                >> Expect.all
+                    [ tabOn "rp-note-move"
+                    , offered "rp-note-move" True
+                    , offered "rp-note-cube" True
+                    , shows "rp-note" True
+                    , shows "rp-overview" False
+                    , Page.view >> Query.fromHtml >> Query.find [ Selector.id "rp-note" ] >> Query.has [ Selector.text "Bad", Selector.text "24/14" ]
+                    , run [ PickTab Page.CubeTab ] >> Expect.all [ tabOn "rp-note-cube", shows "rp-note" True, shows "rp-overview" False, .showing >> Expect.equal Before ]
+                    , run [ PickTab Page.CubeTab, PickTab Page.MoveTab ] >> Expect.all [ tabOn "rp-note-move", .showing >> Expect.equal Played ]
+                    ]
+        , onEveryScreen "OVERVIEW mid-game keeps the step, and MOVE is the way back to it" <|
+            run [ Next, Next, Next, PickTab Page.OverviewTab ]
+                >> Expect.all
+                    [ tabOn "rp-tab-overview"
+                    , shows "rp-overview" True
+                    , shows "rp-note" False
+                    , .step >> Expect.equal 3
+                    , offered "rp-note-move" True
+                    , run [ PickTab Page.MoveTab ] >> Expect.all [ tabOn "rp-note-move", shows "rp-note" True, .step >> Expect.equal 3 ]
+                    ]
+        , onEveryScreen "only one of the three is on" <|
+            \m ->
                 Expect.all
                     (List.map
-                        (\msgs m ->
-                            m |> run msgs |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "rp-tab", Selector.class "is-on" ] |> Query.count (Expect.equal 1)
+                        (\msgs m_ ->
+                            m_ |> run msgs |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "rp-tab", Selector.class "is-on" ] |> Query.count (Expect.equal 1)
                         )
-                        [ [], [ PickNote Page.CubeTab ], [ PickTab Page.SummaryTab ], [ PickTab Page.MovesTab ], [ PickTab Page.MovesTab, PickNote Page.MoveTab ] ]
+                        [ [], [ Next ], [ Next, PickTab Page.CubeTab ], [ Next, PickTab Page.OverviewTab ], [ Next, PickTab Page.OverviewTab, PickTab Page.MoveTab ] ]
                     )
-                    (loaded (Just 3) |> onPhone |> run [ Next ])
-        , test "a step lands on MOVE, whichever side of the note was open" <|
+                    m
+        , test "CUBE is offered on a roll only: not at the start, not on a double or a result; MOVE on any line but the start" <|
             \_ ->
-                loaded (Just 3)
-                    |> onPhone
-                    |> run [ Next, PickNote Page.CubeTab, Next ]
-                    |> Expect.all [ tabOn "rp-note-move", .showing >> Expect.equal Played, .step >> Expect.equal 2 ]
+                Expect.all
+                    [ run [ GoTo 4 ] >> Expect.all [ offered "rp-note-cube" True, offered "rp-note-move" True ]
+                    , run [ GoTo 5 ] >> Expect.all [ offered "rp-note-cube" False, offered "rp-note-move" True ]
+                    , run [ Last ] >> Expect.all [ offered "rp-note-cube" False, offered "rp-note-move" True ]
+                    , run [ Last, First ] >> Expect.all [ offered "rp-note-cube" False, offered "rp-note-move" False, tabOn "rp-tab-overview" ]
+                    ]
+                    (loaded (Just 2) |> onPhone)
+        , onEveryScreen "a step lands on MOVE, whichever tab was open" <|
+            Expect.all
+                [ run [ Next, PickTab Page.CubeTab, Next ] >> Expect.all [ tabOn "rp-note-move", .showing >> Expect.equal Played, .step >> Expect.equal 2 ]
+                , run [ Next, PickTab Page.OverviewTab, Next ] >> Expect.all [ tabOn "rp-note-move", .step >> Expect.equal 2 ]
+                , run [ Next, PickTab Page.OverviewTab, TouchStarted ( 300, 400 ), TouchEnded ( 200, 410 ) ] >> Expect.all [ tabOn "rp-note-move", .step >> Expect.equal 2 ]
+                ]
         , test "a step lands on CUBE when the cube cost more than the move" <|
             \_ ->
                 loaded (Just 2)
                     |> run [ Resized 390 844, GotIndex (Ok allDone), GotAnalysis 2 (Ok cubeCostlier), GoTo 4 ]
                     |> Expect.all [ tabOn "rp-note-cube", .showing >> Expect.equal Before, shows "rp-note" True ]
-        , test "the tab in front survives stepping: MOVES stays MOVES, ANALYSIS stays ANALYSIS" <|
+        , test "the analysis landing on a step already open on MOVE may turn it to CUBE; not one open on the overview" <|
             \_ ->
                 Expect.all
-                    [ run [ PickTab Page.MovesTab, Next, Next, GoTo 5, Prev ] >> Expect.all [ tabOn "rp-tab-moves", shows "rp-list" True, .step >> Expect.equal 4 ]
-                    , run [ PickTab Page.SummaryTab, Next, Last ] >> Expect.all [ tabOn "rp-tab-analysis", shows "rp-summary" True ]
-                    , run [ PickTab Page.SummaryTab, TouchStarted ( 300, 400 ), TouchEnded ( 200, 410 ) ] >> Expect.all [ tabOn "rp-tab-analysis", .step >> Expect.equal 1 ]
+                    [ run [ GoTo 4, GotAnalysis 2 (Ok cubeCostlier) ] >> Expect.all [ tabOn "rp-note-cube", .showing >> Expect.equal Before ]
+                    , run [ GoTo 4, PickTab Page.OverviewTab, GotAnalysis 2 (Ok cubeCostlier) ] >> Expect.all [ tabOn "rp-tab-overview", .step >> Expect.equal 4 ]
                     ]
-                    (loaded (Just 3) |> onPhone)
-        , test "a mistake tapped in ANALYSIS brings its verdict in front" <|
-            \_ ->
-                loaded (Just 3)
-                    |> onPhone
-                    |> run [ PickTab Page.SummaryTab, JumpTo 3 ]
-                    |> Expect.all [ tabOn "rp-note-move", shows "rp-note" True, .step >> Expect.equal 3 ]
+                    (loaded (Just 2) |> run [ Resized 390 844, GotIndex (Ok allDone) ])
+        , onEveryScreen "a mistake tapped in the overview lands on its verdict, and the first arrow is the overview again" <|
+            Expect.all
+                [ run [ GoTo 3 ] >> Expect.all [ tabOn "rp-note-move", shows "rp-note" True, shows "rp-overview" False, .step >> Expect.equal 3 ]
+                , run [ GoTo 3, First ] >> Expect.all [ tabOn "rp-tab-overview", shows "rp-overview" True, shows "rp-note" False ]
+                ]
         , test "the mistakes list is those doors" <|
             \_ ->
                 loaded (Just 3)
                     |> onPhone
-                    |> run [ PickTab Page.SummaryTab ]
                     |> Page.view
                     |> Query.fromHtml
                     |> Query.findAll [ Selector.class "rp-mistake" ]
@@ -948,10 +997,10 @@ phone =
                     |> Event.toResult
                     |> (\r ->
                             case r of
-                                Ok (JumpTo _) ->
+                                Ok (GoTo _) ->
                                     Expect.pass
 
                                 other ->
-                                    Expect.fail ("a mistake should be a JumpTo, not " ++ Debug.toString other)
+                                    Expect.fail ("a mistake should be a GoTo, not " ++ Debug.toString other)
                        )
         ]

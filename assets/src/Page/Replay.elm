@@ -2,9 +2,7 @@ module Page.Replay exposing
     ( Loadable(..)
     , Model
     , Msg(..)
-    , NoteTab(..)
     , Out(..)
-    , Pane(..)
     , Showing(..)
     , Tab(..)
     , init
@@ -98,28 +96,16 @@ type Showing
     | Before -- the roll on the position it was thrown into, the move not yet made
 
 
-{-| The two sides of a turn's verdict: the move played, and the cube that
-could have been turned before the roll.
+{-| The panel's three tabs: the game's overview (each player's PR, the
+mistakes, PRACTICE), and the two sides of a roll's verdict, the move
+played and the cube that could have been turned before it. The overview is
+always there, so a reader can look at it mid-game and press MOVE to come
+back to the same line.
 -}
-type NoteTab
-    = MoveTab
-    | CubeTab
-
-
 type Tab
-    = MovesTab
-    | SummaryTab
-
-
-{-| On a phone the two boxes of the side (the note with its MOVE and CUBE,
-the game panel with its ANALYSIS and MOVES) are one panel with one bar of
-four tabs, so one of the two is in front. `noteTab` and `tab` keep saying
-which side of each is open, exactly as on a desktop, where both boxes show
-and this is not read.
--}
-type Pane
-    = NotePane
-    | GamePane
+    = OverviewTab
+    | MoveTab
+    | CubeTab
 
 
 type alias Model =
@@ -139,9 +125,7 @@ type alias Model =
     , game : Int -- the game being replayed, by number
     , step : Int -- 0 is the start; n is the board after the game's nth line
     , showing : Showing
-    , noteTab : Maybe NoteTab -- which side of the turn's verdict is open; Nothing until the step decides
-    , tab : Tab
-    , pane : Pane -- on a phone, which of the two boxes is in front
+    , tab : Tab -- what the panel shows; a step lands on the line's verdict
     , screen : Maybe { width : Int, height : Int } -- the viewport, once measured; it picks the phone's one-panel layout
     , touch : Maybe ( Float, Float ) -- where a touch on the board began
     , polls : Int -- asks made while something was pending
@@ -208,9 +192,7 @@ init session config =
             , game = Maybe.withDefault 1 config.game
             , step = 0
             , showing = Played
-            , noteTab = Nothing
-            , tab = SummaryTab
-            , pane = NotePane
+            , tab = OverviewTab
             , screen = Nothing
             , touch = Nothing
             , polls = 0
@@ -234,11 +216,13 @@ init session config =
     )
 
 
-{-| Whether the side is one panel with four tabs rather than two boxes: a
-phone upright (narrower than 640), or a phone held sideways (shorter than
-480, and not a desktop). The stylesheet's board sizing keys on the same
-shapes by media query; the panel's layout keys on the class this sets, so
-the two can never disagree. Unmeasured, the page is a desktop.
+{-| Whether this is a phone: upright and narrower than 640, or held
+sideways and shorter than 480 (and not a desktop). The side is the same
+one panel everywhere; on a phone it has no scroll of its own and the page
+scrolls, on a desktop it is a column as tall as the board that scrolls
+inside. The stylesheet's board sizing keys on the same shapes by media
+query; the panel's layout keys on the class this sets, so the two can
+never disagree. Unmeasured, the page is a desktop.
 -}
 onePanel : Model -> Bool
 onePanel model =
@@ -366,19 +350,16 @@ type Msg
     | Poll
     | PickGame Int
     | GoTo Int
-    | PickNote NoteTab
+    | PickTab Tab
     | First
     | Prev
     | Next
     | Last
     | Show Showing
-    | PickTab Tab
-    | JumpTo Int -- a mistake tapped: go there and put its verdict in front
     | Resized Int Int -- the viewport, measured at the start and on every resize
     | TouchStarted ( Float, Float )
     | TouchEnded ( Float, Float )
     | Retry Int
-    | Follow Int -- keep this step's line in view, if it is still the current one
     | Flipped -- turn the board around
     | ToggleMatch -- open or close the match panel
     | ToggleThemes -- open or close the board picker
@@ -519,7 +500,7 @@ advance msg model =
                         , game = chosen |> Maybe.map .number |> Maybe.withDefault 1
                     }
                 , if step > 0 then
-                    follow step
+                    Cmd.none
 
                   else
                     Cmd.none
@@ -534,7 +515,7 @@ advance msg model =
             -- index's, so nothing moves.
             wantAnalysis
                 ( { model | index = Just index, reviewsError = False, failures = 0, asking = False, retrying = [] }
-                , follow model.step
+                , Cmd.none
                 )
 
         GotIndex (Err _) ->
@@ -557,12 +538,12 @@ advance msg model =
                         , fetching = List.filter (\n -> n /= number) model.fetching
                     }
             in
-            ( if number == model.game && model.noteTab == Nothing && model.showing == Played then
+            ( if number == model.game && model.tab == MoveTab && model.showing == Played then
                 arrive model.step stored
 
               else
                 stored
-            , follow model.step
+            , Cmd.none
             )
 
         GotAnalysis number (Err _) ->
@@ -589,17 +570,17 @@ advance msg model =
                 ( model, Cmd.none )
 
             else
-                wantAnalysis ( { model | matchOpen = False, game = number, step = 0, showing = Played, noteTab = Nothing }, follow 0 )
+                wantAnalysis ( { model | matchOpen = False, game = number, step = 0, showing = Played, tab = OverviewTab }, Cmd.none )
 
         GoTo step ->
             goTo step model
 
         -- The cube tab is about the position before the roll, so the dice
-        -- come off the board with it; the move tab puts the move back.
-        PickNote tab ->
+        -- come off the board with it; the move tab puts the move back; the
+        -- overview leaves the board as it is, and the step with it.
+        PickTab tab ->
             ( { model
-                | noteTab = Just tab
-                , pane = NotePane
+                | tab = tab
                 , showing =
                     case tab of
                         CubeTab ->
@@ -607,6 +588,9 @@ advance msg model =
 
                         MoveTab ->
                             Played
+
+                        OverviewTab ->
+                            model.showing
               }
             , Cmd.none
             )
@@ -624,17 +608,7 @@ advance msg model =
             goTo (currentGame model |> Maybe.map Replay.lastStep |> Maybe.withDefault 0) model
 
         Show showing ->
-            ( { model | showing = showing }, follow model.step )
-
-        PickTab tab ->
-            ( { model | tab = tab, pane = GamePane }, if tab == MovesTab then follow model.step else Cmd.none )
-
-        -- A mistake is a door to its verdict: on a phone that means the
-        -- note comes in front of the list it was tapped in. A plain step
-        -- (the arrows, a swipe, a line of the move list) leaves the panel
-        -- where it is.
-        JumpTo step ->
-            goTo step { model | pane = NotePane }
+            ( { model | showing = showing }, Cmd.none )
 
         Resized width height ->
             ( { model | screen = Just { width = width, height = height } }, Cmd.none )
@@ -685,13 +659,6 @@ advance msg model =
                 GotIndex
             )
 
-        Follow step ->
-            if step == model.step then
-                ( model, followNow step )
-
-            else
-                ( model, Cmd.none )
-
         NoOp ->
             ( model, Cmd.none )
 
@@ -722,28 +689,29 @@ goTo step model =
         ( model, Cmd.none )
 
     else
-        ( arrive clamped model, follow clamped )
+        ( arrive clamped model, Cmd.none )
 
 
-{-| Land on a step: the move on the board, and the note open on the move,
-unless the cube was this turn's mistake, in which case the note opens on
-the cube and the board shows the position it was about.
+{-| Land on a step: the move on the board, and the panel open on the move,
+unless the cube was this turn's mistake, in which case it opens on the
+cube and the board shows the position it was about. The start is the
+overview.
 -}
 arrive : Int -> Model -> Model
 arrive step model =
     let
         placed =
-            { model | step = step, showing = Played, noteTab = Nothing }
+            { model | step = step, showing = Played }
 
         tab =
-            defaultNoteTab placed
+            defaultTab placed
     in
     case tab of
-        Just CubeTab ->
-            { placed | noteTab = tab, showing = Before }
+        CubeTab ->
+            { placed | tab = tab, showing = Before }
 
         _ ->
-            { placed | noteTab = tab }
+            { placed | tab = tab }
 
 
 {-| The engine's verdicts on one line of the current game. A game played
@@ -776,11 +744,12 @@ notesAt model index =
             )
 
 
-{-| Which side a turn's note should open on: the cube when it cost more
-than the move, else the move. Nothing before the analysis is in.
+{-| What a step opens on: the overview at the start; else the cube when it
+cost more than the move, else the move (which, before the analysis is in,
+is what the line was).
 -}
-defaultNoteTab : Model -> Maybe NoteTab
-defaultNoteTab model =
+defaultTab : Model -> Tab
+defaultTab model =
     let
         notes =
             notesAt model (model.step - 1)
@@ -810,15 +779,14 @@ defaultNoteTab model =
                             Nothing
                 )
     in
-    if model.step > 0 && notes /= [] then
-        if cubeCost > 0 && cubeCost > moveCost then
-            Just CubeTab
+    if model.step == 0 then
+        OverviewTab
 
-        else
-            Just MoveTab
+    else if cubeCost > 0 && cubeCost > moveCost then
+        CubeTab
 
     else
-        Nothing
+        MoveTab
 
 
 {-| Whether the record is in, so the game on the page is the page's choice
@@ -861,7 +829,7 @@ locate game step model =
                     Loaded record ->
                         case Replay.findGame number record of
                             Just _ ->
-                                wantAnalysis ( { model | matchOpen = False, game = number, step = 0, showing = Played, noteTab = Nothing }, Cmd.none )
+                                wantAnalysis ( { model | matchOpen = False, game = number, step = 0, showing = Played, tab = OverviewTab }, Cmd.none )
 
                             Nothing ->
                                 ( model, Cmd.none )
@@ -873,52 +841,6 @@ locate game step model =
             goTo (Maybe.withDefault 0 step) switched
     in
     ( placed, Cmd.batch [ cmd, cmd2 ] )
-
-
-{-| Keep the current line of the move list in view, once the steps have
-stopped for a moment: measuring takes a few frames, and two measurements
-under way at once would read each other's scrolling.
--}
-follow : Int -> Cmd Msg
-follow step =
-    Process.sleep 120 |> Task.perform (\_ -> Follow step)
-
-
-followNow : Int -> Cmd Msg
-followNow step =
-    Browser.Dom.getElement (lineId step)
-        |> Task.andThen
-            (\line ->
-                Browser.Dom.getElement "rp-list"
-                    |> Task.andThen
-                        (\list ->
-                            Browser.Dom.getViewportOf "rp-list"
-                                |> Task.andThen
-                                    (\vp ->
-                                        let
-                                            top =
-                                                vp.viewport.y + line.element.y - list.element.y
-
-                                            bottom =
-                                                top + line.element.height
-
-                                            visible =
-                                                top >= vp.viewport.y && bottom <= vp.viewport.y + vp.viewport.height
-                                        in
-                                        if visible then
-                                            Task.succeed ()
-
-                                        else
-                                            Browser.Dom.setViewportOf "rp-list" 0 (top - vp.viewport.height / 3)
-                                    )
-                        )
-            )
-        |> Task.attempt (\_ -> NoOp)
-
-
-lineId : Int -> String
-lineId step =
-    "rp-line-" ++ String.fromInt step
 
 
 currentGame : Model -> Maybe Game
@@ -1267,39 +1189,35 @@ viewReplay model record game =
                 ]
             , viewControls model record game
             ]
-        , if onePanel model then
-            viewSideOne model record game
-
-          else
-            div [ class "rp-side" ]
-                [ viewNote model record game
-                , div [ class "rp-panel" ]
-                    [ div [ class "rp-tabs" ]
-                        [ tabButton model SummaryTab "ANALYSIS"
-                        , tabButton model MovesTab "MOVES"
-                        ]
-                    , viewGamePane model record game
-                    ]
-                ]
+        , viewSide model record game
         ]
     ]
 
 
-{-| A phone's side: the two boxes as one panel under one bar of four tabs,
-MOVE and CUBE (the note's two sides) then ANALYSIS and MOVES (the game
-panel's), one content at a time. The panel has no scroll of its own: it is
-as tall as what it shows, and the page scrolls.
+{-| The side: one panel under one bar of three tabs. OVERVIEW is the game's
+(each player's PR, the mistakes, PRACTICE), always there; MOVE is the
+line's verdict, so it is nothing at the start; CUBE is a roll's other
+side, offered on a roll only. A step opens the line's verdict, and OVERVIEW
+keeps the step, so MOVE is the way back to it. On a desktop the panel is
+a column as tall as the board that scrolls inside; on a phone it is as
+tall as what it shows and the page scrolls.
 -}
-viewSideOne : Model -> Record -> Game -> Html Msg
-viewSideOne model record game =
+viewSide : Model -> Record -> Game -> Html Msg
+viewSide model record game =
     let
-        open =
-            model.noteTab |> Maybe.withDefault MoveTab
+        cubeOffered =
+            case Replay.entryAt game model.step of
+                Just (TurnEntry _) ->
+                    True
 
-        tab on id_ label msg =
+                _ ->
+                    False
+
+        tab on offered id_ label msg =
             button
                 [ classList [ ( "rp-tab pixel text-[8px]", True ), ( "is-on", on ) ]
                 , id id_
+                , disabled (not offered)
                 , onClick msg
                 ]
                 [ text label ]
@@ -1307,29 +1225,29 @@ viewSideOne model record game =
     div [ class "rp-side" ]
         [ div [ class "rp-panel", id "rp-panel" ]
             [ div [ class "rp-tabs", id "rp-tabs" ]
-                [ tab (model.pane == NotePane && open == MoveTab) "rp-note-move" "MOVE" (PickNote MoveTab)
-                , tab (model.pane == NotePane && open == CubeTab) "rp-note-cube" "CUBE" (PickNote CubeTab)
-                , tab (model.pane == GamePane && model.tab == SummaryTab) "rp-tab-analysis" "ANALYSIS" (PickTab SummaryTab)
-                , tab (model.pane == GamePane && model.tab == MovesTab) "rp-tab-moves" "MOVES" (PickTab MovesTab)
+                [ tab (model.tab == OverviewTab) True "rp-tab-overview" "OVERVIEW" (PickTab OverviewTab)
+                , tab (model.tab == MoveTab) (model.step > 0) "rp-note-move" "MOVE" (PickTab MoveTab)
+                , tab (model.tab == CubeTab) cubeOffered "rp-note-cube" "CUBE" (PickTab CubeTab)
                 ]
-            , case model.pane of
-                NotePane ->
-                    viewNoteBody False model record game
+            , case model.tab of
+                OverviewTab ->
+                    viewOverview model record game
 
-                GamePane ->
-                    viewGamePane model record game
+                _ ->
+                    viewNote model record game
             ]
         ]
 
 
-viewGamePane : Model -> Record -> Game -> Html Msg
-viewGamePane model record game =
-    case model.tab of
-        MovesTab ->
-            viewMoves model record game
-
-        SummaryTab ->
-            viewSummary model record game
+{-| The game's overview: where the analysis stands, then the summary. The
+game's name is the header's and the match sheet's to give.
+-}
+viewOverview : Model -> Record -> Game -> Html Msg
+viewOverview model record game =
+    div [ class "rp-overview", id "rp-overview" ]
+        [ viewAnalysisState model game (currentReview model)
+        , viewSummary model record game
+        ]
 
 
 {-| In the band, on the half opposite the dice: the door between the
@@ -1719,17 +1637,11 @@ viewControls model record game =
 -- THE NOTE: WHAT THIS STEP WAS, AND WHAT THE ENGINE THINKS OF IT
 
 
+{-| The note: what this line was, the verdict on the side of it the panel's
+bar has open, and where the analysis stands.
+-}
 viewNote : Model -> Record -> Game -> Html Msg
 viewNote model record game =
-    viewNoteBody True model record game
-
-
-{-| The note's box: what this line was, the verdict (a turn's MOVE and
-CUBE tabs at its top when `withTabs`; on a phone the panel's bar has them
-and the body shows the open side alone), and where the analysis stands.
--}
-viewNoteBody : Bool -> Model -> Record -> Game -> Html Msg
-viewNoteBody withTabs model record game =
     let
         name =
             Replay.playerNamed record
@@ -1782,27 +1694,26 @@ viewNoteBody withTabs model record game =
     in
     div [ class "rp-note", id "rp-note" ]
         (what
-            :: viewNotes withTabs model record game notes
+            :: viewNotes model record game notes
             ++ [ viewAnalysisState model game analysis ]
         )
 
 
-{-| A step's verdicts. One is simply shown; two (the cube that could have
-been turned, and the move played) are tabs, open on the one that was a
-mistake, else on the move.
+{-| A step's verdicts. One is simply shown; a roll has two (the move
+played, and the cube that could have been turned before it), and the
+panel's bar says which is open: the one that was a mistake, else the move.
 -}
-viewNotes : Bool -> Model -> Record -> Game -> List Annotation -> List (Html Msg)
-viewNotes withTabs model record game notes =
+viewNotes : Model -> Record -> Game -> List Annotation -> List (Html Msg)
+viewNotes model record game notes =
     case ( Replay.entryAt game model.step, notes ) of
         ( _, [] ) ->
             []
 
-        -- A turn: the move on the left, the cube on the right, always both,
-        -- as the panel below has its two tabs.
+        -- A roll: the side the bar has open.
         ( Just (TurnEntry t), _ ) ->
             let
-                open =
-                    model.noteTab |> Maybe.withDefault MoveTab
+                cubeSide =
+                    model.tab == CubeTab
 
                 moveNote =
                     notes
@@ -1829,42 +1740,18 @@ viewNotes withTabs model record game notes =
                                         False
                             )
                         |> List.head
-
-                tab which label =
-                    button
-                        [ classList [ ( "rp-note-tab pixel text-[8px]", True ), ( "is-on", which == open ) ]
-                        , id
-                            (case which of
-                                MoveTab ->
-                                    "rp-note-move"
-
-                                CubeTab ->
-                                    "rp-note-cube"
-                            )
-                        , onClick (PickNote which)
-                        ]
-                        [ text label ]
             in
-            (if withTabs then
-                [ div [ class "rp-note-tabs", id "rp-note-tabs" ]
-                    [ tab MoveTab "MOVE", tab CubeTab "CUBE" ]
-                ]
+            [ if cubeSide then
+                case cubeNote of
+                    Just n ->
+                        viewAnnotation model record n
 
-             else
-                []
-            )
-                ++ [ case open of
-                        MoveTab ->
-                            moveNote |> Maybe.map (viewAnnotation model record) |> Maybe.withDefault (text "")
+                    Nothing ->
+                        div [ class "rp-words rp-no-cube" ] [ text (noCubeReason model record game t.player) ]
 
-                        CubeTab ->
-                            case cubeNote of
-                                Just n ->
-                                    viewAnnotation model record n
-
-                                Nothing ->
-                                    div [ class "rp-words rp-no-cube" ] [ text (noCubeReason model record game t.player) ]
-                   ]
+              else
+                moveNote |> Maybe.map (viewAnnotation model record) |> Maybe.withDefault (text "")
+            ]
 
         -- A double, a take, a pass: the one verdict it is.
         ( _, one :: _ ) ->
@@ -2239,110 +2126,9 @@ viewAnalysisState model game analysis =
 
 
 
--- THE MOVE LIST
-
-
-viewMoves : Model -> Record -> Game -> Html Msg
-viewMoves model record game =
-    let
-        review =
-            currentReview model |> Maybe.andThen .review
-
-        line step content =
-            div
-                [ classList [ ( "rp-line", True ), ( "is-on", step == model.step ) ]
-                , id (lineId step)
-                , onClick (GoTo step)
-                ]
-                content
-
-        entryLine index entry =
-            let
-                step =
-                    index + 1
-
-                tag =
-                    review
-                        |> Maybe.andThen (\r -> Replay.moveAt r index)
-                        |> Maybe.andThen
-                            (\( _, move ) ->
-                                case move of
-                                    Moved m ->
-                                        if m.forced then
-                                            Nothing
-
-                                        else
-                                            Just (listTag m.grade)
-
-                                    Danced ->
-                                        Nothing
-                            )
-                        |> Maybe.withDefault (text "")
-
-                cubeTag =
-                    notesAt model index
-                        |> List.filterMap
-                            (\a ->
-                                case a of
-                                    DoubleNote _ c ->
-                                        c.doubler.mistake |> Maybe.map (\_ -> listTag c.doubler.grade)
-
-                                    AnswerNote _ _ v ->
-                                        v.mistake |> Maybe.map (\_ -> listTag v.grade)
-
-                                    NoDoubleNote _ c ->
-                                        c.doubler.mistake |> Maybe.map (\_ -> listTag c.doubler.grade)
-
-                                    MoveNote _ _ ->
-                                        Nothing
-                            )
-            in
-            case entry of
-                TurnEntry t ->
-                    line step
-                        ([ div [ class ("swatch " ++ colorOf record t.player) ] []
-                         , span [ class "rp-dice" ] [ text (t.dice |> List.map String.fromInt |> String.join "") ]
-                         , span [ class "rp-moves" ]
-                            [ text
-                                (if t.moves == [] then
-                                    "(no play)"
-
-                                 else
-                                    String.join " " t.moves
-                                )
-                            ]
-                         , tag
-                         ]
-                            ++ cubeTag
-                        )
-
-                DoubleEntry d ->
-                    line step ([ div [ class ("swatch " ++ colorOf record d.player) ] [], span [ class "rp-moves italic" ] [ text ("Doubles to " ++ String.fromInt d.value) ] ] ++ cubeTag)
-
-                TakeEntry p ->
-                    line step ([ div [ class ("swatch " ++ colorOf record p) ] [], span [ class "rp-moves italic" ] [ text "Takes" ] ] ++ cubeTag)
-
-                DropEntry p ->
-                    line step ([ div [ class ("swatch " ++ colorOf record p) ] [], span [ class "rp-moves italic" ] [ text "Passes" ] ] ++ cubeTag)
-
-                ResignEntry p ->
-                    line step [ div [ class ("swatch " ++ colorOf record p) ] [], span [ class "rp-moves italic" ] [ text "Resigns" ] ]
-
-                ResultEntry r ->
-                    line step
-                        [ span [ class "rp-moves font-bold" ] [ text (Replay.playerNamed record r.winner ++ resultWords r.result ++ " · " ++ pointsText r.points) ]
-                        , span [ class "tabular-nums font-bold" ] [ text (scoreText record r.scores) ]
-                        ]
-    in
-    div [ class "rp-list", id "rp-list" ]
-        (line 0 [ span [ class "rp-moves", style "color" "var(--pencil)" ] [ text "Start" ] ]
-            :: List.indexedMap entryLine game.entries
-        )
-
-
-{-| A grade as the list marks it: the symbols annotators use, `?!` for
-doubtful, `?` for bad, `??` for very bad; a best or fine move is unmarked
-beyond a tick.
+{-| A grade as the mistakes list marks it: the symbols annotators use,
+`?!` for doubtful, `?` for bad, `??` for very bad; a best or fine move is
+unmarked beyond a tick.
 -}
 listTag : String -> Html msg
 listTag grade =
@@ -2566,7 +2352,7 @@ viewMistakes model review totals =
                         button
                             [ classList [ ( "rp-mistake", True ), ( "is-on", model.step == r.step ) ]
                             , attribute "data-step" (String.fromInt r.step)
-                            , onClick (JumpTo r.step)
+                            , onClick (GoTo r.step)
                             ]
                             [ listTag r.grade
                             , span [ class "rp-mistake-turn pixel text-[7px]" ] [ text ("T" ++ String.fromInt r.turn) ]
@@ -2582,49 +2368,9 @@ countChip grade label n =
     span [ classList [ ( "rp-count-chip", True ), ( "g-" ++ grade, n > 0 ) ] ] [ text (label ++ " " ++ String.fromInt n) ]
 
 
-tabButton : Model -> Tab -> String -> Html Msg
-tabButton model tab label =
-    button
-        [ classList [ ( "rp-tab pixel text-[8px]", True ), ( "is-on", model.tab == tab ) ]
-        , id
-            (case tab of
-                SummaryTab ->
-                    "rp-tab-analysis"
-
-                MovesTab ->
-                    "rp-tab-moves"
-            )
-        , onClick (PickTab tab)
-        ]
-        [ text label ]
-
-
-
 -- WORDS
 
 
 colorOf : Record -> String -> String
 colorOf record id_ =
     record.players |> List.filter (\p -> p.id == id_) |> List.head |> Maybe.map .color |> Maybe.withDefault "white"
-
-
-resultWords : String -> String
-resultWords result =
-    case result of
-        "gammon" ->
-            " wins a gammon"
-
-        "backgammon" ->
-            " wins a backgammon"
-
-        _ ->
-            " wins"
-
-
-pointsText : Int -> String
-pointsText points =
-    if points == 1 then
-        "1 pt"
-
-    else
-        String.fromInt points ++ " pts"

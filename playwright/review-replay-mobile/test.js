@@ -1,8 +1,9 @@
 /**
  * Screenshots of the replay on phones and a desktop, for eyeballing the
- * one-panel layout: at 390x844, 320x568, 844x390 and 1440x900, the MOVE
- * tab on a graded turn, the ANALYSIS tab and the MOVES tab. The phones are
- * shot whole (the page scrolls), the desktop as the window shows it.
+ * one-panel side: at 390x844, 320x568, 844x390 and 1440x900, ANALYSIS on
+ * a graded turn (the verdict), CUBE on it, and ANALYSIS at the start (the
+ * overview). The phones are shot whole (the page scrolls), the desktop as
+ * the window shows it.
  *
  * The room is arranged by the replay smoke's `setup.exs` and the analysis
  * is stubbed the way the smoke stubs it (`lib/replay-stub.js`), so no
@@ -59,26 +60,25 @@ function arrangeRoom() {
       const page = await ctx.newPage();
       await page.goto(`${BASE}/backgammon/${room.game_id}/replay?game=${last.number}`);
       await page.waitForSelector('.bg-still .bg-board', { timeout: 20000 });
-      await page.waitForSelector('#rp-note', { timeout: 20000 });
+      await page.waitForSelector('#rp-panel, #rp-note', { timeout: 20000 });
       await sleep(400);
       // A graded turn with candidates: step until the table is there.
       for (let i = 0; i < 12 && !(await page.locator('.rp-cand:not(.is-played)').count()); i++) {
         await page.click('#rp-next');
         await sleep(150);
       }
-      await page.click('#rp-note-move');
       await sleep(300);
       const shot = async (what) => {
         await page.screenshot({ path: `${OUT}/${screen.name}-${what}.png`, fullPage: screen.phone });
         log(`${screen.name}: ${what}`);
       };
-      await shot('1-move');
-      await page.click('#rp-tab-analysis');
+      await shot('1-verdict');
+      await page.click('#rp-note-cube');
       await sleep(300);
-      await shot('2-analysis');
-      await page.click('#rp-tab-moves');
-      await sleep(400);
-      await shot('3-moves');
+      await shot('2-cube');
+      await page.click('#rp-first');
+      await sleep(300);
+      await shot('3-overview');
       await ctx.close();
     }
   } finally {
