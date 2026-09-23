@@ -1327,18 +1327,35 @@ viewMoveReveal model reveal =
                 bestWords =
                     "The best move here is " ++ best.notation ++ "."
             in
-            [ case reveal.yours of
-                Just yours ->
-                    Words.moveInWords "You"
-                        { grade = Puzzle.gradeOf yours.equityLost
-                        , played = Puzzle.asReplayCandidate yours
-                        , best = Puzzle.asReplayCandidate best
-                        }
+            [ case shownCandidate model reveal of
+                -- A candidate on the board: the note is about it, not
+                -- about the play just made.
+                Just c ->
+                    div []
+                        [ div [ class "rp-verdict" ]
+                            [ gradeTag (Words.gradeOf c.equityLost)
+                            , if c.rank == Just 1 then
+                                span [ attribute "style" "color: var(--pencil)" ] [ text "The engine's choice" ]
+
+                              else
+                                Words.lost c.equityLost
+                            ]
+                        , Words.candidateInWords (Puzzle.asReplayCandidate c) (Puzzle.asReplayCandidate best)
+                        ]
 
                 Nothing ->
-                    div [ class "rp-words" ] [ text ("Your play is outside the moves this review kept, so nothing is said about it. " ++ bestWords) ]
-            , case reveal.yours of
-                Just yours ->
+                    case reveal.yours of
+                        Just yours ->
+                            Words.moveInWords "You"
+                                { grade = Puzzle.gradeOf yours.equityLost
+                                , played = Puzzle.asReplayCandidate yours
+                                , best = Puzzle.asReplayCandidate best
+                                }
+
+                        Nothing ->
+                            div [ class "rp-words" ] [ text ("Your play is outside the moves this review kept, so nothing is said about it. " ++ bestWords) ]
+            , case ( shownCandidate model reveal, reveal.yours ) of
+                ( Nothing, Just yours ) ->
                     if yours.notation == "" then
                         div [ class "rp-words", attribute "style" "color: var(--pencil)" ]
                             [ text ("Your play is outside the five the engine described: it costs " ++ Replay.formatEquity yours.equityLost ++ ". " ++ bestWords) ]
@@ -1346,10 +1363,38 @@ viewMoveReveal model reveal =
                     else
                         text ""
 
-                Nothing ->
+                _ ->
                     text ""
             , viewCandidates model reveal
             ]
+
+
+{-| The annotators' mark beside a candidate: how bad it is at a glance.
+-}
+candidateMark : Float -> Html msg
+candidateMark equityLost =
+    let
+        grade =
+            Words.gradeOf equityLost
+    in
+    case Words.gradeMark grade of
+        "" ->
+            text ""
+
+        mark ->
+            span [ class ("rp-cand-grade g-" ++ grade), attribute "data-grade" grade ] [ text mark ]
+
+
+{-| The candidate whose position is on the board, when one is.
+-}
+shownCandidate : Model -> Reveal -> Maybe Candidate
+shownCandidate model reveal =
+    case model.showing of
+        Just rank ->
+            candidatesOf reveal |> List.filter (\c -> c.rank == Just rank) |> List.head
+
+        Nothing ->
+            Nothing
 
 
 {-| The replay's table: rank, move, equity (or what it gives up), the
@@ -1433,6 +1478,7 @@ viewCandidates model reveal =
                                  else
                                     c.notation
                                 )
+                            , candidateMark c.equityLost
                             , if isYours then
                                 span [ class "pz-you" ] [ text "you" ]
 

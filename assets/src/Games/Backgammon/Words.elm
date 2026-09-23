@@ -1,12 +1,15 @@
 module Games.Backgammon.Words exposing
     ( answerInWords
     , answerWhy
+    , candidateInWords
     , chanceCells
     , cubeChances
     , cubeLine
     , cubeVerdict
     , doubleInWords
     , doubleWhy
+    , gradeMark
+    , gradeOf
     , gradeTag
     , inWords
     , lost
@@ -286,60 +289,6 @@ moveInWords who m =
     case ( m.played.probs, m.best.probs ) of
         ( Just played, Just best ) ->
             let
-                -- best less played, in points of a percent
-                wins =
-                    (best.win - played.win) * 100
-
-                gammons =
-                    (best.gammonWin - played.gammonWin) * 100
-
-                gammoned =
-                    (best.gammonLoss - played.gammonLoss) * 100
-
-                amount d =
-                    Replay.fixed1 (abs d) ++ "%"
-
-                matters d =
-                    abs d >= 0.5
-
-                gains =
-                    List.filterMap identity
-                        [ if wins > 0 && matters wins then
-                            Just (amount wins ++ " more wins")
-
-                          else
-                            Nothing
-                        , if gammons > 0 && matters gammons then
-                            Just (amount gammons ++ " more gammons")
-
-                          else
-                            Nothing
-                        , if gammoned < 0 && matters gammoned then
-                            Just (amount gammoned ++ " fewer gammons against")
-
-                          else
-                            Nothing
-                        ]
-
-                costs =
-                    List.filterMap identity
-                        [ if wins < 0 && matters wins then
-                            Just (amount wins ++ " fewer wins")
-
-                          else
-                            Nothing
-                        , if gammons < 0 && matters gammons then
-                            Just (amount gammons ++ " fewer gammons")
-
-                          else
-                            Nothing
-                        , if gammoned > 0 && matters gammoned then
-                            Just (amount gammoned ++ " more gammons against")
-
-                          else
-                            Nothing
-                        ]
-
                 played_ =
                     case m.grade of
                         "best" ->
@@ -359,32 +308,175 @@ moveInWords who m =
 
                         _ ->
                             who ++ " played a move the engine would not."
-
-                best_ =
-                    if m.grade == "best" then
-                        ""
-
-                    else if m.grade == "ok" then
-                        " The best move here is a shade better."
-
-                    else
-                        case ( gains, costs ) of
-                            ( [], [] ) ->
-                                " The best move here is better by the engine's count, though the chances differ by less than half a point."
-
-                            ( _, [] ) ->
-                                " The best move here results in " ++ spoken gains ++ "."
-
-                            ( [], _ ) ->
-                                " The best move here gives up " ++ spoken costs ++ ", but comes out ahead once every roll is counted."
-
-                            _ ->
-                                " The best move here results in " ++ spoken gains ++ ", at the cost of " ++ spoken costs ++ "."
             in
-            div [ class "rp-words" ] [ text (played_ ++ best_) ]
+            div [ class "rp-words" ] [ text (played_ ++ againstBest m.grade played best) ]
 
         _ ->
             text ""
+
+
+{-| A candidate on the board, in the same words: "8/2 9/4 is the best
+move." or "8/2 8/3 is a bad move. The best move here results in 1.2% more
+wins." The grade is read off what it gives up, so a row of the table and
+the note above it always agree.
+-}
+candidateInWords : Candidate -> Candidate -> Html msg
+candidateInWords c best =
+    let
+        grade =
+            gradeOf c.equityLost
+
+        lead =
+            case grade of
+                "best" ->
+                    c.notation ++ " is the best move."
+
+                "ok" ->
+                    c.notation ++ " is a fine move."
+
+                "doubtful" ->
+                    c.notation ++ " is a dubious move."
+
+                "bad" ->
+                    c.notation ++ " is a bad move."
+
+                _ ->
+                    c.notation ++ " is a very bad move."
+    in
+    div [ class "rp-words" ]
+        [ text
+            (case ( c.probs, best.probs ) of
+                ( Just played, Just best_ ) ->
+                    lead ++ againstBest grade played best_
+
+                _ ->
+                    lead
+            )
+        ]
+
+
+{-| What the best move has over a play, in points of a percent: nothing
+for the best move itself, "a shade better" for an ok one, else the gains
+and the costs spoken.
+-}
+againstBest : String -> Replay.Probs -> Replay.Probs -> String
+againstBest grade played best =
+    let
+        -- best less played, in points of a percent
+        wins =
+            (best.win - played.win) * 100
+
+        gammons =
+            (best.gammonWin - played.gammonWin) * 100
+
+        gammoned =
+            (best.gammonLoss - played.gammonLoss) * 100
+
+        amount d =
+            Replay.fixed1 (abs d) ++ "%"
+
+        matters d =
+            abs d >= 0.5
+
+        gains =
+            List.filterMap identity
+                [ if wins > 0 && matters wins then
+                    Just (amount wins ++ " more wins")
+
+                  else
+                    Nothing
+                , if gammons > 0 && matters gammons then
+                    Just (amount gammons ++ " more gammons")
+
+                  else
+                    Nothing
+                , if gammoned < 0 && matters gammoned then
+                    Just (amount gammoned ++ " fewer gammons against")
+
+                  else
+                    Nothing
+                ]
+
+        costs =
+            List.filterMap identity
+                [ if wins < 0 && matters wins then
+                    Just (amount wins ++ " fewer wins")
+
+                  else
+                    Nothing
+                , if gammons < 0 && matters gammons then
+                    Just (amount gammons ++ " fewer gammons")
+
+                  else
+                    Nothing
+                , if gammoned > 0 && matters gammoned then
+                    Just (amount gammoned ++ " more gammons against")
+
+                  else
+                    Nothing
+                ]
+    in
+    if grade == "best" then
+        ""
+
+    else if grade == "ok" then
+        " The best move here is a shade better."
+
+    else
+        case ( gains, costs ) of
+            ( [], [] ) ->
+                " The best move here is better by the engine's count, though the chances differ by less than half a point."
+
+            ( _, [] ) ->
+                " The best move here results in " ++ spoken gains ++ "."
+
+            ( [], _ ) ->
+                " The best move here gives up " ++ spoken costs ++ ", but comes out ahead once every roll is counted."
+
+            _ ->
+                " The best move here results in " ++ spoken gains ++ ", at the cost of " ++ spoken costs ++ "."
+
+
+{-| The site's bands on what a play gives up: XG's, the ones the engine
+grades with (`report.gleam`) and the puzzles grade with (`grade.gleam`).
+-}
+gradeOf : Float -> String
+gradeOf equity =
+    if equity <= 0 then
+        "best"
+
+    else if equity < 0.02 - 0.000001 then
+        "ok"
+
+    else if equity < 0.08 - 0.000001 then
+        "doubtful"
+
+    else if equity < 0.16 - 0.000001 then
+        "bad"
+
+    else
+        "very_bad"
+
+
+{-| The annotators' mark for a grade: a tick, nothing, ?!, ?, ??.
+-}
+gradeMark : String -> String
+gradeMark grade =
+    case grade of
+        "best" ->
+            "✓"
+
+        "doubtful" ->
+            "?!"
+
+        "bad" ->
+            "?"
+
+        "very_bad" ->
+            "??"
+
+        _ ->
+            ""
 
 
 {-| "a", "a and b", "a, b and c".

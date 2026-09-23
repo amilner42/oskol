@@ -515,6 +515,22 @@ revealing =
                     , \_ -> rendered (step (Show Nothing) showing) |> Query.find [ id "pz-board" ] |> Query.hasNot [ class "is-proposed" ]
                     ]
                     ()
+        , test "a candidate on the board is what the note is about" <|
+            \_ ->
+                let
+                    model =
+                        after "move_hold"
+
+                    showing =
+                        step (Show (Just 1)) model
+                in
+                Expect.all
+                    [ \_ -> rendered showing |> Query.find [ id "pz-reveal" ] |> Query.has [ text "is the best move." ]
+                    , \_ -> rendered showing |> Query.find [ id "pz-reveal" ] |> Query.hasNot [ text "You played" ]
+                    , \_ -> rendered model |> Query.find [ id "pz-reveal" ] |> Query.has [ text "You played" ]
+                    , \_ -> rendered model |> Query.find [ id "pz-candidates" ] |> Query.findAll [ class "rp-cand-grade" ] |> Query.count (Expect.atLeast 1)
+                    ]
+                    ()
         , test "the dice take the move back, and again bring it back" <|
             \_ ->
                 let
