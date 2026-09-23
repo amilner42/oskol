@@ -15,9 +15,10 @@ defmodule OskolWeb.Layouts do
   @doc """
   The card a link to this page unfurls as. A page with a picture of its
   own -- a puzzle's board, 1200 x 630, drawn once and served from
-  `/puzzles/:id.png` -- sets `:puzzle_image` to that picture's absolute
-  URL and gets the large card with it; every other page is the plain
-  summary card, byte for byte what it was before there were pictures.
+  `/puzzles/:id.png`; an open invite's opening position -- sets
+  `:share_image` to that picture's absolute URL and gets the large card
+  with it; every other page is the plain summary card, byte for byte what
+  it was before there were pictures.
   """
   attr :image, :string, default: nil
 

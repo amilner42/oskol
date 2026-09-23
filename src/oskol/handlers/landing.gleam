@@ -24,6 +24,7 @@ import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
@@ -194,6 +195,62 @@ fn summary(table: Option(Table)) -> Option(String) {
     Some(table) -> Some(table.summary)
     None -> None
   }
+}
+
+// ---------- the head an invite link unfurls with ----------
+
+/// What an invite link (`/:slug?game=<id>`) says in a chat before anyone
+/// taps it: for a room waiting for its second player, who wants to play
+/// what -- "Arie wants to play a match to 7 on a 5 min clock" -- and what
+/// to do about it. Read from the row alone, so a crawler wakes no room and
+/// the inviter is the seat's name, not a live connection's (the host's tab
+/// is usually closed by the time a friend opens the link). Any other room
+/// -- started, over, unknown, another game's -- gets the game page's own
+/// head, so an old link says nothing about who played whom.
+pub fn invite_head(
+  ctx: Ctx,
+  slug: String,
+  game_id: String,
+) -> Option(#(String, String)) {
+  case ctx.persistence.room(game_id) {
+    Some(r) if r.slug == slug && r.status == "waiting" ->
+      case r.seats {
+        [#(_, name, _, _)] if name != "" ->
+          Some(#(invite_title(name, r), invite_description))
+        _ -> None
+      }
+    _ -> None
+  }
+}
+
+pub const invite_description = "Take the other seat and roll. Backgammon with the doubling cube, free, no account needed, on your phone; every finished game is graded by the engine."
+
+/// "<name> wants to play a match to 7 on a 5 min clock": the format's
+/// name read as a phrase (a format the game no longer lists is plain
+/// "backgammon"), the clock's when there is one.
+fn invite_title(name: String, r: ActiveRoom) -> String {
+  let format =
+    registry.find(r.slug)
+    |> result.try(fn(entry) {
+      list.find(entry.info.formats, fn(f) { f.id == r.format })
+    })
+    |> result.map(fn(f) { string.lowercase(f.name) })
+  let what = case format {
+    Ok("single game") -> "a game of backgammon"
+    Ok("unlimited") -> "unlimited backgammon"
+    Ok(lower) ->
+      case string.starts_with(lower, "match") {
+        True -> "a " <> lower
+        False -> "backgammon (" <> lower <> ")"
+      }
+    Error(_) -> "backgammon"
+  }
+  let on = case clock.preset(r.clock) {
+    Ok(p) if p.control != clock.NoClock ->
+      " on a " <> string.lowercase(p.name) <> " clock"
+    _ -> ""
+  }
+  name <> " wants to play " <> what <> on
 }
 
 // ---------- POST /papi/games/:slug/rooms/:id ----------

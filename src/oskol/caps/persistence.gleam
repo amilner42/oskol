@@ -17,6 +17,11 @@ pub type PersistenceCaps {
     /// them are really this caller's. A database hiccup is an empty list,
     /// never a broken page.
     seated_rooms: fn(Option(String), Option(String)) -> List(ActiveRoom),
+    /// One room as its row holds it, whoever asks: what an invite link's
+    /// head is built from, so a crawler wakes nothing and the inviter is
+    /// the seat's name, not a live connection's. A missing row, or a
+    /// database hiccup, is None.
+    room: fn(String) -> Option(ActiveRoom),
   )
 }
 
@@ -24,5 +29,6 @@ pub fn stub() -> PersistenceCaps {
   PersistenceCaps(
     game_exists: fn(_) { panic as "stub persistence.game_exists" },
     seated_rooms: fn(_, _) { panic as "stub persistence.seated_rooms" },
+    room: fn(_) { panic as "stub persistence.room" },
   )
 }

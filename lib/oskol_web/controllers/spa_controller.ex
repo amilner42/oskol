@@ -33,7 +33,7 @@ defmodule OskolWeb.SpaController do
     |> render_spa()
   end
 
-  def game(conn, %{"slug" => slug}) do
+  def game(conn, %{"slug" => slug} = params) do
     case GameKit.game_info(slug) do
       {:ok, info} ->
         copy = GameCopy.for_game(info)
@@ -45,12 +45,36 @@ defmodule OskolWeb.SpaController do
         |> assign(:og_title, copy.title)
         |> assign(:og_description, copy.description)
         |> assign(:json_ld, game_json_ld(info, copy))
+        |> invite_head(slug, params["game"])
         |> render_spa()
 
       # A real 404 (not a redirect): crawlers and typos should not land on
       # the library.
       :error ->
         raise OskolWeb.NotFoundError
+    end
+  end
+
+  # An invite link (`?game=`) to a room waiting for its second player
+  # unfurls as the invitation it is: who wants to play what, in Gleam's
+  # words from the room's row (nothing wakes a room for a crawler), and the
+  # board's picture. Any other room, and the bare game page, keep the game's
+  # own head; the canonical stays the game page either way, so an invite
+  # never competes with it.
+  defp invite_head(conn, _slug, nil), do: conn
+
+  defp invite_head(conn, slug, game_id) when is_binary(game_id) do
+    case :oskol@handlers@landing.invite_head(Oskol.Gleam.CtxBuilder.build(), slug, game_id) do
+      {:some, {title, description}} ->
+        conn
+        |> assign(:page_title, title)
+        |> assign(:og_title, title)
+        |> assign(:meta_description, description)
+        |> assign(:og_description, description)
+        |> assign(:share_image, url(~p"/images/invite-board.png"))
+
+      :none ->
+        conn
     end
   end
 
@@ -132,7 +156,7 @@ defmodule OskolWeb.SpaController do
         |> assign(:og_description, description)
         # The board, drawn once (Oskol.Puzzles.Pictures) and served by
         # OskolWeb.Plugs.PuzzlePicture: what the link unfurls with.
-        |> assign(:puzzle_image, OskolWeb.Endpoint.url() <> "/puzzles/" <> id <> ".png")
+        |> assign(:share_image, OskolWeb.Endpoint.url() <> "/puzzles/" <> id <> ".png")
         |> render_spa()
 
       {:error, _} ->

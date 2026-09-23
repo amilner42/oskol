@@ -603,6 +603,10 @@ lib/oskol/puzzles/pictures.ex   rasterises it (rsvg-convert) into puzzle_images 
                                 the review job and the sweep, bounded; never on a request
 lib/oskol_web/plugs/puzzle_picture.ex  GET /puzzles/:id.png from the row, or the
                                  site's board (priv/static/images/puzzle-board.png)
+priv/static/images/invite-board.png  the picture an invite link unfurls with: the
+                                 opening position and the invitation's words, drawn
+                                 once by `Pictures.write_invite!` from
+                                 `puzzles/picture.invite_svg`
 lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
 src/oskol/rooms/seat.gleam       who holds a seat (the guest, or the account that
@@ -760,7 +764,15 @@ arrive at any of them cold, and moving between them afterwards is a
   identity, CSRF token in `x-csrf-token`. Envelope: `{"ok": true, ...}` or
   `{"ok": false, "error": {"code", "message"}}` (404 not_found,
   422 validation_failed, 500 server_error).
-- `/backgammon` create a game; `/backgammon?game=<id>` is the invite link
+- `/backgammon` create a game; `/backgammon?game=<id>` is the invite link.
+  Its head is the invitation while the room waits for its second player:
+  "Arie wants to play a match to 7 on a 5 min clock", what to do about it,
+  and the opening position as the card's picture (`landing.invite_head`,
+  in Gleam, from the room's row through the cap `persistence.room`: a
+  crawler wakes no room, and the inviter is the seat's name, not a live
+  connection's). Any other room -- started, over, unknown, another game's
+  -- and the bare page get the game's own head; the canonical is always
+  `/backgammon`, so an invite never competes with it
 - `/backgammon/<id>` a running game — and, until the second player arrives,
   the waiting room: a room with no instance yet answers the game channel
   with a lobby payload. The URL says which room and nothing else; what it

@@ -252,6 +252,27 @@ pub fn a_board_that_is_not_26_ints_is_refused_not_drawn_empty_test() {
 
 // ---------- The default picture ----------
 
+pub fn the_invite_picture_is_the_opening_position_with_the_invitations_words_test() {
+  let svg = picture.invite_svg()
+
+  assert count(svg, "class=\"checker white\"") == 15
+  assert count(svg, "class=\"checker black\"") == 15
+  assert checkers(svg, "white", "24") == 2
+  assert checkers(svg, "white", "13") == 5
+  assert checkers(svg, "white", "8") == 3
+  assert checkers(svg, "white", "6") == 5
+  assert checkers(svg, "black", "1") == 2
+  assert checkers(svg, "black", "12") == 5
+  assert checkers(svg, "black", "17") == 3
+  assert checkers(svg, "black", "19") == 5
+  assert count(svg, "class=\"die\"") == 0
+  assert string.contains(svg, "class=\"cube\" data-owner=\"center\"")
+  assert string.contains(svg, "take the other seat and roll")
+  assert string.contains(svg, "Backgammon on Oskol")
+  assert !string.contains(svg, "puzzles")
+  assert !string.contains(svg, "Did you get this")
+}
+
 pub fn the_default_picture_is_the_opening_position_test() {
   let svg = picture.default_svg()
 
