@@ -131,6 +131,7 @@ type alias Model =
     , prefs : Dict String String -- this viewer's display preferences (a board's colours)
     , picked : List String -- preference keys this viewer set here, which no answer may undo
     , ratings : Dict String Float -- each seat's PR so far in this match, once a game of it is graded
+    , careers : Dict String Float -- each seat's account over every graded game it has played, once it has enough
     , gamePrs : Dict Int (List ( String, Float )) -- each graded game's PRs, by game number, in seat order
     , awaySince : Dict String Int -- client time (ms) each absent player's drop was noticed
     , awayNew : List String -- players who went missing in the latest payload, awaiting their moment
@@ -168,6 +169,7 @@ init session config =
       , prefs = session.prefs
       , picked = []
       , ratings = Dict.empty
+      , careers = Dict.empty
       , gamePrs = Dict.empty
       , awaySince = Dict.empty
       , awayNew = []
@@ -472,6 +474,7 @@ update msg model =
             askMistakes
                 { model
                     | ratings = ratings.prs
+                    , careers = ratings.careers
                     , gamePrs = ratings.games
                     , ratingsGraded = max model.ratingsGraded ratings.graded
                     , ratingsPolls =
@@ -736,8 +739,10 @@ applyPayload payload model =
 {-| How often the page asks again while a grade is coming, and how many
 times it is willing to. The engine takes minutes on a long game at 4-ply
 and works one room at a time, so the wait can be long: five seconds apart
-for twenty minutes, the same patience the replay page has. Each ask is one
-row read.
+for twenty minutes, the same patience the replay page has. Each ask is a
+handful of row reads: this room's stored gradings, plus one indexed query
+per seat an account owns (at most two) for the career beside the name.
+Nothing it asks for wakes a room or spends engine time.
 -}
 pollRatingsEveryMs : Float
 pollRatingsEveryMs =
@@ -1036,6 +1041,7 @@ view model =
                                     , away = Just (awayIds payload)
                                     , awaySince = \id -> Dict.get id model.awaySince
                                     , prOf = \id -> Dict.get id model.ratings
+                                    , careerOf = \id -> Dict.get id model.careers
                                     , theme = theme model
                                     , replayHref = replayHref model payload
                                     , gamePrs = \n -> Dict.get n model.gamePrs |> Maybe.withDefault []

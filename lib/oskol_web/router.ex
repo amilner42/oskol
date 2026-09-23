@@ -51,6 +51,10 @@ defmodule OskolWeb.Router do
     get "/me/prefs", LandingController, :prefs
     post "/me/prefs", LandingController, :save_pref
     get "/me/games", LandingController, :my_games
+    # The signed-in home, in one answer, and the rest of its graded games
+    # ten at a time.
+    get "/me/games/graded", HomeController, :graded
+    get "/me/home", HomeController, :show
     get "/games/:slug", LandingController, :show
     post "/games/:slug", LandingController, :create
     get "/games/:slug/rooms/:id", LandingController, :room

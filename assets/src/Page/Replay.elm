@@ -138,6 +138,7 @@ type alias Model =
     , themesOpen : Bool -- the board picker's list is showing
     , gamePrs : Dict.Dict Int (List ( String, Float )) -- each graded game's PRs by seat, from /ratings
     , matchPrs : Dict.Dict String Float -- each seat's PR over the match so far
+    , careerPrs : Dict.Dict String Float -- each seat's account over every graded game it has played; empty for a guest seat and for an account with too few
     , mistakes : Dict.Dict Int (List String) -- each graded game's mistakes for the reader's seat, by number: what the deck holds
     , signIn : Maybe SignIn.Model -- the overview's sign-in, once opened
     , mistakeAsks : Dict.Dict Int Int -- asks made for a game's mistakes still unanswered (they land a moment after the grade)
@@ -206,6 +207,7 @@ init session config =
             , themesOpen = False
             , gamePrs = Dict.empty
             , matchPrs = Dict.empty
+            , careerPrs = Dict.empty
             , mistakes = Dict.empty
             , mistakeAsks = Dict.empty
             , signIn = Nothing
@@ -495,7 +497,9 @@ advance msg model =
             )
 
         GotRatings (Ok ratings) ->
-            ( { model | gamePrs = ratings.games, matchPrs = ratings.prs }, Cmd.none )
+            ( { model | gamePrs = ratings.games, matchPrs = ratings.prs, careerPrs = ratings.careers }
+            , Cmd.none
+            )
 
         GotRatings (Err _) ->
             ( model, Cmd.none )
@@ -2240,8 +2244,24 @@ viewSummary model record game =
                                         -- account was named keeps that name;
                                         -- the record has the current one
                                         [ text (Replay.playerNamed record t.playerId) ]
-                                    , span [ class "rp-pr tabular-nums", Html.Attributes.title "Performance Rating" ]
-                                        [ span [ class "pixel text-[7px]" ] [ text "PR " ], text (Replay.formatPr t.pr) ]
+                                    , div [ class "rp-pr-stack" ]
+                                        (span [ class "rp-pr tabular-nums", Html.Attributes.title "Performance rating for this game" ]
+                                            [ span [ class "pixel text-[7px]" ] [ text "PR " ], text (Replay.formatPr t.pr) ]
+                                            :: (case Dict.get t.playerId model.careerPrs of
+                                                    Nothing ->
+                                                        []
+
+                                                    Just career ->
+                                                        [ span
+                                                            [ class "rp-career tabular-nums"
+                                                            , Html.Attributes.title "Career PR: every graded game this account has played (lower is better)"
+                                                            ]
+                                                            [ span [ class "pixel text-[7px]" ] [ text "CAREER " ]
+                                                            , text (Replay.formatPr career)
+                                                            ]
+                                                        ]
+                                               )
+                                        )
                                     ]
                                 , div [ class "rp-counts tabular-nums" ]
                                     [ countChip "doubtful" "Doubtful" (count "doubtful")

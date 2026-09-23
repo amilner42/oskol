@@ -1,13 +1,16 @@
 //// What the ratings endpoint decides, on stub capabilities: which of a
-//// room's games count toward a player's match PR, what the average is, and
-//// what a room that is not there answers.
+//// room's games count toward a player's match PR, what the average is,
+//// whose career goes beside it, and what a room that is not there answers.
 
+import gleam/int
 import gleam/json
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import oskol/caps/analysis.{
-  type Stored, AnalysisCaps, Done, Failed, Pending, Stored,
+  type GradedGame, type Stored, AnalysisCaps, Done, Failed, GradedGame, Pending,
+  Stored,
 }
 import oskol/caps/records as records_caps
 import oskol/core/ctx.{type Ctx, Ctx}
@@ -59,6 +62,17 @@ fn owed(number: Int, status: analysis.Status, attempts: Int) -> Stored {
 /// A persisted backgammon room. All room and full-response capabilities
 /// panic: ratings may read only stored seats and the small player totals.
 fn room_with(slug: String, stored: List(Stored)) -> Ctx {
+  seated(slug, stored, "", "")
+}
+
+/// The same room with an account named against either seat ("" for a seat
+/// no account owns).
+fn seated(
+  slug: String,
+  stored: List(Stored),
+  first: String,
+  second: String,
+) -> Ctx {
   let ctx =
     fakes.ctx()
     |> fakes.with_records(
@@ -67,7 +81,7 @@ fn room_with(slug: String, stored: List(Stored)) -> Ctx {
         format: "match5",
         clock: "none",
         seed: 7,
-        seats: [#("p1", "Alice", "g1", ""), #("p2", "Bob", "g2", "")],
+        seats: [#("p1", "Alice", "g1", first), #("p2", "Bob", "g2", second)],
         finished: False,
         records_stale: False,
       )),
@@ -112,6 +126,20 @@ fn expecting(
   pending: Bool,
   entries: List(#(String, Int, Option(Float))),
 ) -> String {
+  careers(
+    pending,
+    list.map(entries, fn(entry) {
+      let #(player_id, games, pr) = entry
+      #(player_id, games, pr, None)
+    }),
+  )
+}
+
+/// The same, spelling out each seat's career as well.
+fn careers(
+  pending: Bool,
+  entries: List(#(String, Int, Option(Float), Option(Float))),
+) -> String {
   json.to_string(
     json.object([
       #("ok", json.bool(True)),
@@ -119,19 +147,24 @@ fn expecting(
       #(
         "players",
         json.array(entries, fn(entry) {
-          let #(player_id, games, pr) = entry
+          let #(player_id, games, pr, career) = entry
           json.object([
             #("player_id", json.string(player_id)),
             #("games", json.int(games)),
-            #("pr", case pr {
-              Some(value) -> json.float(value)
-              None -> json.null()
-            }),
+            #("pr", nullable(pr)),
+            #("career", nullable(career)),
           ])
         }),
       ),
     ]),
   )
+}
+
+fn nullable(value: Option(Float)) -> json.Json {
+  case value {
+    Some(value) -> json.float(value)
+    None -> json.null()
+  }
 }
 
 pub fn one_graded_game_shows_its_own_pr_test() {
@@ -207,4 +240,162 @@ pub fn a_room_that_is_not_there_says_so_and_nothing_else_test() {
 
   let lobby = room_with("backgammon", []) |> fakes.with_records(None, [])
   assert result.is_error(ratings.ratings_json(lobby, "backgammon", "000007"))
+}
+
+// ---------- The career beside the match PR ----------
+//
+// The match PR is this room's graded games. Beside it goes the career: the
+// account that owns the seat, over every graded game it has anywhere. It is
+// the home page's number, worked out by the home page's maths, so the two
+// pages can never disagree about the same person.
+
+/// One seat's totals as the engine stores them: the equity lost and the
+/// decisions it was lost over, which is what a career is added up from.
+fn totals(error: Float, decisions: Int) -> json.Json {
+  json.object([
+    #(
+      "moves",
+      json.object([
+        #("decisions", json.int(decisions)),
+        #("forced", json.int(0)),
+        #("error", json.float(error)),
+        #("grades", json.object([])),
+      ]),
+    ),
+    #(
+      "cube",
+      json.object([
+        #("decisions", json.int(0)),
+        #("error", json.float(0.0)),
+        #("mistakes", json.object([])),
+      ]),
+    ),
+    #("luck", json.float(0.0)),
+    #("error", json.float(error)),
+    #("pr", json.float(error /. int.to_float(decisions) *. 500.0)),
+  ])
+}
+
+/// A graded game of this account's, somewhere on the site: its own seat's
+/// totals is all the career reads.
+fn graded(number: Int, error: Float, decisions: Int) -> GradedGame {
+  GradedGame(
+    game_id: "000042",
+    game_number: number,
+    slug: "backgammon",
+    seat: 0,
+    player_id: "p1",
+    opponent: Some("Bob"),
+    winner: Some("p1"),
+    points: 1,
+    kind: "single",
+    response_json: json.to_string(
+      json.object([
+        #("turns", json.preprocessed_array([])),
+        #("players", json.preprocessed_array([totals(error, decisions)])),
+      ]),
+    ),
+    ended_at_ms: 1_700_000_000_000 + number,
+  )
+}
+
+/// A graded game whose stored answer carries a rating but no totals (a row
+/// written before they were stored): there is nothing in it to add up.
+fn ratingless(number: Int) -> GradedGame {
+  GradedGame(
+    ..graded(number, 1.0, 10),
+    response_json: json.to_string(
+      json.object([
+        #("turns", json.preprocessed_array([])),
+        #(
+          "players",
+          json.preprocessed_array([json.object([#("pr", json.float(4.0))])]),
+        ),
+      ]),
+    ),
+  )
+}
+
+/// Five ordinary games, of `n` decisions each, losing `error` in every one.
+fn history(count: Int, error: Float, decisions: Int) -> List(GradedGame) {
+  list.range(1, count)
+  |> list.map(fn(number) { graded(number, error, decisions) })
+}
+
+/// A room whose first seat belongs to `alice`, with that account's graded
+/// games behind it, and whose second seat belongs to nobody.
+fn owned(rows: List(GradedGame), stored: List(Stored)) -> Ctx {
+  seated("backgammon", stored, "alice", "")
+  |> fakes.with_graded_accounts([#("alice", rows)])
+}
+
+/// The answer's seats alone, without the per-game list these tests do not
+/// read.
+fn seat_lines(ctx: Ctx) -> String {
+  let assert Ok(body) = ratings.ratings_json(ctx, "backgammon", "000007")
+  let assert Ok(#(head, _)) = string.split_once(body, ",\"games\":[")
+  head <> "}"
+}
+
+pub fn an_owned_seat_shows_its_accounts_career_test() {
+  // Five games, each losing 0.2 equity over 10 decisions: 1.0 over 50,
+  // which is a PR of 10.0. The seat beside it belongs to no account, so
+  // there is nothing to print there -- and asking for one would have
+  // panicked in the stub.
+  let ctx = owned(history(5, 0.2, 10), [done(1, 8.4, 12.1)])
+  assert seat_lines(ctx)
+    == careers(False, [
+      #("p1", 1, Some(8.4), Some(10.0)),
+      #("p2", 1, Some(12.1), None),
+    ])
+}
+
+pub fn four_graded_games_are_not_a_career_yet_test() {
+  // The floor is five: a number a stranger reads off a bar must not be
+  // made of an evening.
+  let ctx = owned(history(4, 0.2, 10), [])
+  assert seat_lines(ctx)
+    == careers(False, [#("p1", 0, None, None), #("p2", 0, None, None)])
+}
+
+pub fn a_career_is_weighted_by_decisions_not_by_game_test() {
+  // One short game played badly and four long ones played well. Averaging
+  // the five PRs gives 14.0 and lets the three-decision game speak for the
+  // whole career; the equity lost over the decisions it was lost over
+  // gives 6.1, which is how the engine rates one game.
+  let rows = [graded(1, 0.5, 5), ..history(4, 0.5, 50)]
+  let ctx = owned(rows, [])
+  assert seat_lines(ctx)
+    == careers(False, [#("p1", 0, None, Some(6.1)), #("p2", 0, None, None)])
+}
+
+pub fn a_game_whose_totals_are_missing_counts_for_nothing_test() {
+  // It is not a zero and it is not a free game toward the floor: four
+  // countable games and a row nothing can be read out of is still four.
+  let short = owned([ratingless(9), ..history(4, 0.2, 10)], [])
+  assert seat_lines(short)
+    == careers(False, [#("p1", 0, None, None), #("p2", 0, None, None)])
+
+  // With five countable games behind it, the uncountable one changes
+  // neither the number nor the fact that there is one.
+  let enough = owned([ratingless(9), ..history(5, 0.2, 10)], [])
+  assert seat_lines(enough)
+    == careers(False, [#("p1", 0, None, Some(10.0)), #("p2", 0, None, None)])
+}
+
+pub fn each_seat_reads_its_own_accounts_games_test() {
+  // Two accounts at one table. The stub panics on any account a test did
+  // not arrange for, so a seat that read the other one's history -- or the
+  // same one twice -- fails here.
+  let ctx =
+    seated("backgammon", [], "alice", "bob")
+    |> fakes.with_graded_accounts([
+      #("alice", history(5, 0.2, 10)),
+      #("bob", history(6, 0.5, 20)),
+    ])
+  assert seat_lines(ctx)
+    == careers(False, [
+      #("p1", 0, None, Some(10.0)),
+      #("p2", 0, None, Some(12.5)),
+    ])
 }

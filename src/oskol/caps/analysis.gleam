@@ -78,6 +78,53 @@ pub type Save {
   )
 }
 
+/// Where a page of graded games stopped, so the next one carries on from
+/// exactly there: the moment the engine's answer was stored, and the game
+/// it was for. The two ids break the tie when several answers land in the
+/// same millisecond, which is what a finished match does.
+pub type Cursor {
+  Cursor(ended_at_ms: Int, game_number: Int, game_id: String)
+}
+
+/// One graded game of one account's, as the home reads it: which game it
+/// was, which seat of it is theirs, who was across the board, how it ended
+/// for them, and the engine's answer projected down to the seats' totals.
+///
+/// `response_json` is not the whole answer -- that is hundreds of kilobytes
+/// a game -- but the same projection `ratings` takes: every seat's totals
+/// plus the opening turn's cube verdict, which is all `report.player_totals`
+/// needs to leave out the one decision nobody could have made.
+///
+/// The result comes from the game's record row (`won`, `points`, `kind`).
+/// A graded game whose record has not been written yet has none, and the
+/// page says nothing rather than guessing.
+pub type GradedGame {
+  GradedGame(
+    game_id: String,
+    game_number: Int,
+    slug: String,
+    /// The account's seat, counting from 0.
+    seat: Int,
+    /// That seat's player id, which is what the record's result line names.
+    player_id: String,
+    /// What the other seat plays under -- the account's username where an
+    /// account owns it. None at a table that never had a second player.
+    opponent: Option(String),
+    /// The record's result line for this game, as it was written: who won,
+    /// for how many points, and how ("single", "gammon", "backgammon",
+    /// "resigned"). None where no record row has been written yet -- whose
+    /// game it was is then something the page says nothing about rather
+    /// than guessing.
+    winner: Option(String),
+    points: Int,
+    kind: String,
+    response_json: String,
+    /// When the engine's answer was stored, in Unix milliseconds. The
+    /// order the list comes in, and half of its cursor.
+    ended_at_ms: Int,
+  )
+}
+
 pub type AnalysisCaps {
   AnalysisCaps(
     /// The room's log, or None when no started game has this code.
@@ -128,6 +175,15 @@ pub type AnalysisCaps {
     /// -- which the live sweep would take as an invitation to extract the
     /// old answer again. Only the backfill calls this.
     replace: fn(String, Int, Save) -> Nil,
+    /// The graded games of one **account**, newest answer first: (user id,
+    /// how many, where the previous page stopped). One query over the
+    /// review rows joined to the seats an account owns, so the home reads
+    /// a player's whole form without waking a room or touching a log.
+    ///
+    /// The account is the caller's own, never a parameter a client chose:
+    /// the cursor only says where to carry on, and the rows it can reach
+    /// are the same ones either way.
+    graded_for: fn(String, Int, Option(Cursor)) -> List(GradedGame),
   )
 }
 
@@ -145,5 +201,6 @@ pub fn stub() -> AnalysisCaps {
     report_turn: fn(_, _, _) { panic as "stub analysis.report_turn" },
     charge: fn(_, _, _, _) { panic as "stub analysis.charge" },
     replace: fn(_, _, _) { panic as "stub analysis.replace" },
+    graded_for: fn(_, _, _) { panic as "stub analysis.graded_for" },
   )
 }

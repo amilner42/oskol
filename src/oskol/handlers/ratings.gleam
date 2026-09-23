@@ -29,15 +29,18 @@ import oskol/caps/records.{type Setup}
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
+import oskol/handlers/home
 import oskol/handlers/reviews
 import oskol/reviews/report
 
 pub const not_found_message = "No ratings for that game"
 
 /// One entry per seat, in seat order: the player id, how many games of this
-/// match have been graded, and the PR to print (null while none have). Plus
-/// `pending`, which says the engine still owes this room an answer, so a
-/// table watching the number knows to ask again rather than poll forever.
+/// match have been graded, the PR to print (null while none have), and
+/// `career`, the same seat's rating over every graded game of the account
+/// that owns it (null for a seat no account owns, or one with too few).
+/// Plus `pending`, which says the engine still owes this room an answer, so
+/// a table watching the number knows to ask again rather than poll forever.
 /// And `games`: each graded game's PRs by seat, for the match panel.
 pub fn ratings_json(
   ctx: Ctx,
@@ -59,16 +62,14 @@ pub fn ratings_json(
       #("pending", json.bool(owed(stored))),
       #(
         "players",
-        json.array(list.index_map(seats, fn(s, i) { #(s.0, i) }), fn(pair) {
-          let #(player_id, index) = pair
+        json.array(list.index_map(seats, fn(s, i) { #(s, i) }), fn(pair) {
+          let #(#(player_id, _name, _guest_id, account_id), index) = pair
           let prs = list.filter_map(graded, at(_, index))
           json.object([
             #("player_id", json.string(player_id)),
             #("games", json.int(list.length(prs))),
-            #("pr", case average(prs) {
-              Some(pr) -> json.float(pr)
-              None -> json.null()
-            }),
+            #("pr", nullable_float(average(prs))),
+            #("career", nullable_float(career(ctx, account_id))),
           ])
         }),
       ),
@@ -130,6 +131,41 @@ fn owed(stored: List(Stored)) -> Bool {
 
 fn at(prs: List(Float), index: Int) -> Result(Float, Nil) {
   list.drop(prs, index) |> list.first
+}
+
+/// How the account that owns this seat has played *everywhere*: its PR over
+/// every game the engine has graded for it, which is the number the home
+/// page prints as "Career" and the one a player recognises from other
+/// sites. The match PR beside it stays what it always was.
+///
+/// It is the home's own number, worked out by the home's own maths
+/// (`home.counted`, then `home.window_pr` over every game, decision-weighted
+/// exactly as the engine rates one), so the table, the replay and the home
+/// can never print two different careers for the same person.
+///
+/// Nothing for a seat no account owns -- a guest is a browser, not a person,
+/// and has no career to speak of -- and nothing under
+/// `home.min_career_games`: this number is a stranger's first impression of
+/// a player, so it is held to a higher floor than the home's own.
+///
+/// Cost: one query per **owned** seat, so at most two for a table, each the
+/// same indexed read the home makes and bounded by `home.career_cap`. It
+/// reads rows only: no room is woken, no log replayed, no engine time spent.
+fn career(ctx: Ctx, account_id: String) -> Option(Float) {
+  case account_id {
+    "" -> None
+    user_id ->
+      ctx.analysis.graded_for(user_id, home.career_cap, None)
+      |> home.counted
+      |> home.window_pr(home.min_career_games)
+  }
+}
+
+fn nullable_float(value: Option(Float)) -> json.Json {
+  case value {
+    Some(value) -> json.float(value)
+    None -> json.null()
+  }
 }
 
 /// The number to print, or nothing when the engine has graded no game of

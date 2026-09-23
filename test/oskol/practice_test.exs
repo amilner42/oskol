@@ -26,7 +26,8 @@ defmodule Oskol.PracticeTest do
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
     {:practice_caps, put_user, put_items, cards, relapse, queue, start, start_new, review, amend,
-     defer_until, defer_tomorrow, master, suspend, resume, summary} = Practice.build()
+     defer_until, defer_tomorrow, master, suspend, resume, summary, ladder, days} =
+      Practice.build()
 
     caps = %{
       put_user: put_user,
@@ -43,7 +44,9 @@ defmodule Oskol.PracticeTest do
       master: master,
       suspend: suspend,
       resume: resume,
-      summary: summary
+      summary: summary,
+      ladder: ladder,
+      days: days
     }
 
     uid = "acct-#{System.unique_integer([:positive])}"
@@ -63,6 +66,59 @@ defmodule Oskol.PracticeTest do
   end
 
   defp keys(cards), do: Enum.map(cards, fn {:card, key, _, _, _, _, _, _, _} -> key end)
+
+  test "the ladder counts every card by level, and an empty deck is eight zeroes",
+       %{caps: caps, uid: uid} do
+    assert caps.ladder.(uid) == [0, 0, 0, 0, 0, 0, 0, 0]
+
+    {:ok, 3} = caps.put_items.(uid, [item("a"), item("b"), item("c")])
+    # Three new cards: all on the bottom rung, and the bars add up to the
+    # deck size printed beside them.
+    assert caps.ladder.(uid) == [3, 0, 0, 0, 0, 0, 0, 0]
+    assert [{:summary, _, 3, _, _, _, _, _}] = caps.summary.(uid, [])
+
+    # One answered right climbs a rung; a card at the top jumps to the end.
+    assert 3 = caps.start.(uid, ["a", "b", "c"])
+    {:ok, _} = caps.review.(uid, "a", :pass)
+    assert caps.ladder.(uid) == [2, 1, 0, 0, 0, 0, 0, 0]
+
+    assert 1 = caps.master.(uid, ["b"])
+    assert caps.ladder.(uid) == [1, 1, 0, 0, 0, 0, 0, 1]
+
+    # A paused card is still in the deck, so it is still on the ladder.
+    assert 1 = caps.suspend.(uid, ["c"])
+    assert caps.ladder.(uid) == [1, 1, 0, 0, 0, 0, 0, 1]
+
+    # Another account's deck is not this one's.
+    other = "acct-#{System.unique_integer([:positive])}"
+    {:ok, nil} = caps.put_user.(other, "America/Vancouver", 10)
+    assert caps.ladder.(other) == [0, 0, 0, 0, 0, 0, 0, 0]
+  end
+
+  test "the day strip marks the days this deck was practised on", %{caps: caps, uid: uid} do
+    # A deck with nothing in it has practised on none of them, and the
+    # strip is still as long as it was asked for.
+    assert caps.days.(uid, 30) == List.duplicate(false, 30)
+    assert length(caps.days.(uid, 7)) == 7
+
+    {:ok, 2} = caps.put_items.(uid, [item("a"), item("b")])
+    assert 2 = caps.start.(uid, ["a", "b"])
+    {:ok, _} = caps.review.(uid, "a", :pass)
+
+    strip = caps.days.(uid, 30)
+    assert length(strip) == 30
+    # Oldest first, ending today: today is the last mark.
+    assert List.last(strip) == true
+    assert Enum.count(strip, & &1) == 1
+
+    # Putting a card off is not practice.
+    other = "acct-#{System.unique_integer([:positive])}"
+    {:ok, nil} = caps.put_user.(other, "America/Vancouver", 10)
+    {:ok, 1} = caps.put_items.(other, [item("c")])
+    assert 1 = caps.start.(other, ["c"])
+    {:ok, _} = caps.defer_tomorrow.(other, "c")
+    assert Enum.count(caps.days.(other, 30), & &1) == 0
+  end
 
   test "put_user opens a deck and is idempotent", %{caps: caps, uid: uid} do
     # The setup already called it once; calling it again is what every

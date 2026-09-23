@@ -37,16 +37,28 @@ async function openCreateDialog(page, path = '/', { dismissResume: shouldDismiss
       })
     : null;
 
+  // `/` is two pages -- the guest's board and an account's own home -- and
+  // which one it is is settled only once /papi/me has answered, so wait for
+  // that answer before reading the page. Set up before the visit: it may be
+  // back before the first paint.
+  const me = page.waitForResponse((response) => new URL(response.url()).pathname === '/papi/me');
+
   await page.goto(`${BASE}${path}`);
+  await me;
 
   if (gamesResponse) {
     const games = await (await gamesResponse).json();
     if (games.games && games.games.length > 0) await dismissResume(page);
   }
 
-  await page.click('#start-game');
-  // The dialog waits for the game's data, so wait for the dialog.
-  await page.waitForSelector('#create-modal #create-name');
+  // CREATE GAME on the board, PLAY on an account's home. The dialog behind
+  // them is the same one.
+  await page.waitForSelector('#start-game, #home-play');
+  const signedIn = (await page.$('#home-play')) !== null;
+  await page.click(signedIn ? '#home-play' : '#start-game');
+  // The dialog waits for the game's data, so wait for the dialog. Signed
+  // in there is no name to type: the account plays under its username.
+  await page.waitForSelector(signedIn ? '#create-modal #create-as' : '#create-modal #create-name');
 }
 
 /**
@@ -57,7 +69,7 @@ async function openCreateDialog(page, path = '/', { dismissResume: shouldDismiss
  */
 async function createGame(page, { name = 'Alice', mode, clock } = {}) {
   await openCreateDialog(page);
-  await page.fill('#create-name', name);
+  if (await page.$('#create-name')) await page.fill('#create-name', name);
   if (mode) await page.selectOption('#create-mode', mode);
   if (clock) await page.selectOption('#create-clock', clock);
   await page.click('#create-game');
@@ -78,7 +90,9 @@ async function joinByLink(page, inviteUrl, name = 'Bob') {
 /** JOIN GAME on the home page: six characters, then the same invite. */
 async function joinByCode(page, code, name = 'Bob') {
   await page.goto(`${BASE}/`);
-  await page.click('#join-game-board');
+  // JOIN GAME on the board, JOIN on an account's home: the same prompt.
+  await page.waitForSelector('#join-game-board, #home-join');
+  await page.click((await page.$('#home-join')) ? '#home-join' : '#join-game-board');
   await page.waitForSelector('#join-modal #join-code-input');
   // The sixth character submits on its own.
   await page.fill('#join-code-input', code);

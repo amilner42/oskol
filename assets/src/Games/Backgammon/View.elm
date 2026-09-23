@@ -512,6 +512,9 @@ type alias Ctx =
     , prOf :
         String
         -> Maybe Float -- a player's PR so far in this match, once a game of it has been graded
+    , careerOf :
+        String
+        -> Maybe Float -- the account that owns a seat, over every graded game it has played; Nothing for a guest seat and for an account with too few
     , theme : String -- the board's colours, this viewer's own (`themes`)
     , replayHref :
         Int
@@ -1129,31 +1132,80 @@ viewPresenceDot ctx playerId =
                 []
 
 
-{-| This player's performance rating so far in this match, quietly beside
-the name: the mean of the games of it the analysis engine has graded. The
-server does the averaging and decides when there is one to do; here it is
-either a number to print or nothing at all.
+{-| This player's performance ratings, quietly beside the name: the match
+so far, and under it the career of the account that owns the seat. The
+server does the averaging, decides when there is one to do and holds the
+career to a floor of its own; here each is either a number to print or
+nothing at all, and a guest seat prints neither.
+
+The two are **stacked**, not strung along one line. A phone's bar cannot
+carry "Match PR: 6.2 · Career 7.1" without eating the name, and two numbers
+with no labels ("PR 6.2 · 7.1") say nothing about which is which. Stacked,
+both keep their word and the chip is narrower than the one-line form -- and
+it costs no height: two lines of 7px pixel type with no leading sit inside
+the 20px line box the name already claims (34px of bar either way,
+measured), so the board loses nothing.
+
+It does cost width -- 50px becomes 71px -- which a phone pays out of the
+name ("borisov" became "bori..." at 390), so below 640 the career line goes
+and the match PR stays (app.css): on a phone the table shows the number
+being played for, and the home page shows the career. Below 375 the whole
+chip already went.
+
 -}
 viewRating : Ctx -> String -> Html Msg
 viewRating ctx playerId =
-    case ctx.prOf playerId of
-        Nothing ->
+    case ( ctx.prOf playerId, ctx.careerOf playerId ) of
+        ( Nothing, Nothing ) ->
             text ""
 
-        Just pr ->
+        ( match, career ) ->
             span
-                [ class "bar-pr pixel text-[7px] sm:text-[8px] shrink-0 whitespace-nowrap"
-                , title "Performance rating over the graded games of this match (lower is better)"
+                [ class "bar-pr pixel text-[7px] sm:text-[8px] shrink-0 whitespace-nowrap leading-none flex flex-col gap-px items-end"
+                , title (ratingTitle match career)
                 ]
-                -- A phone's portrait bar has no room for the long form:
-                -- with a clock and a bear-off count on it, "Match PR:" is
-                -- what pushes the name out (a clocked phone drops the PR
-                -- altogether, in app.css). The title says it in full
-                -- everywhere, and a sideways phone has room for both.
-                [ span [ class "hidden sm:inline" ] [ text "Match PR: " ]
-                , span [ class "sm:hidden" ] [ text "PR " ]
-                , text (oneDecimal pr)
-                ]
+                (List.filterMap identity
+                    [ Maybe.map matchLine match
+                    , Maybe.map careerLine career
+                    ]
+                )
+
+
+{-| The match line, in the words the bar has always used: a phone's
+portrait bar has no room for the long form, so "Match PR:" is a plain "PR"
+there (with a clock on it the whole chip goes, in app.css). The title says
+it in full everywhere.
+-}
+matchLine : Float -> Html Msg
+matchLine pr =
+    span [ class "bar-pr-line" ]
+        [ span [ class "hidden sm:inline" ] [ text "Match PR: " ]
+        , span [ class "sm:hidden" ] [ text "PR " ]
+        , text (oneDecimal pr)
+        ]
+
+
+{-| The career line. The word is spelled out at every size: it is the one
+number here that is about the player rather than the table, and an
+unlabelled second figure would only be read as another match.
+-}
+careerLine : Float -> Html Msg
+careerLine pr =
+    span [ class "bar-pr-career" ]
+        [ text "Career "
+        , text (oneDecimal pr)
+        ]
+
+
+ratingTitle : Maybe Float -> Maybe Float -> String
+ratingTitle match career =
+    String.join " · "
+        (List.filterMap identity
+            [ Maybe.map (\pr -> "Match PR " ++ oneDecimal pr ++ " over the graded games of this match") match
+            , Maybe.map (\pr -> "Career PR " ++ oneDecimal pr ++ " over every graded game") career
+            ]
+        )
+        ++ " (lower is better)"
 
 
 {-| A PR as the books write it: one decimal, always, so "8" reads as "8.0"
@@ -3059,6 +3111,7 @@ slab s taps =
             , away = Nothing
             , awaySince = \_ -> Nothing
             , prOf = \_ -> Nothing
+            , careerOf = \_ -> Nothing
             , theme = s.theme
             , replayHref = \_ -> Nothing
             , gamePrs = \_ -> []
