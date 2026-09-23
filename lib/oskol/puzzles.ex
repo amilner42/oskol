@@ -157,6 +157,16 @@ defmodule Oskol.Puzzles do
   end
 
   @doc """
+  Up to `n` puzzles whose answer is complete, in random order: what TRY ONE
+  on the practice home draws from. Random order is the database's
+  (`random()` over the complete rows); which of them stands clear enough to
+  ask a stranger is Gleam's rule, applied to what comes back.
+  """
+  def sample(n) when is_integer(n) and n > 0 do
+    Repo.all(from(p in Puzzle, where: p.complete, order_by: fragment("random()"), limit: ^n))
+  end
+
+  @doc """
   The sources of a puzzle in rooms that list this guest id or this account
   id among their seats, newest game first, with the room's slug and seats.
 

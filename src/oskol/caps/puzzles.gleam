@@ -315,6 +315,11 @@ pub type PuzzlesCaps(moves) {
     /// A story link by its token, or nothing. The caller checks the puzzle
     /// it names: a token minted for one puzzle says nothing on another.
     share: fn(String) -> Option(Share),
+    /// Up to this many stored puzzles whose answer is `complete`, in an
+    /// order the database chose at random: the pool TRY ONE draws from.
+    /// Which of them stands clear enough to be asked of a stranger is the
+    /// handler's rule (`handlers/puzzles_hub`), applied to what comes back.
+    sample: fn(Int) -> List(Stored),
   )
 }
 
@@ -345,5 +350,6 @@ pub fn stub() -> PuzzlesCaps(moves) {
     pictures: fn(_, _) { panic as "stub puzzles.pictures" },
     mint_share: fn(_, _, _, _, _) { panic as "stub puzzles.mint_share" },
     share: fn(_) { panic as "stub puzzles.share" },
+    sample: fn(_) { panic as "stub puzzles.sample" },
   )
 }

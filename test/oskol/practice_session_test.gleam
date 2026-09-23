@@ -162,12 +162,41 @@ pub fn an_account_is_told_what_is_due_what_is_left_today_and_how_big_the_deck_is
   let ctx = with_deck(fakes.ctx(), 1, 1)
   let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
+  // Tomorrow brings the day's budget: the deck has 20 never seen, which is
+  // more than a day gives.
   assert string.contains(
     body,
-    "\"counts\":{\"due\":9,\"new_today\":7,\"deck\":42}",
+    "\"counts\":{\"due\":9,\"new_today\":7,\"new_tomorrow\":10,\"deck\":42}",
   )
+  // An account's mistakes are its deck: the guest's count is not sent.
+  assert string.contains(body, "\"mistakes\":null")
   // This endpoint is never one game's mistakes.
   assert string.contains(body, "\"game\":null")
+}
+
+pub fn tomorrow_brings_what_is_left_when_that_is_less_than_a_day_test() {
+  let ctx =
+    Ctx(
+      ..with_deck(fakes.ctx(), 0, 0),
+      practice: PracticeCaps(
+        ..with_deck(fakes.ctx(), 0, 0).practice,
+        summary: fn(_uid, _group) {
+          [
+            Summary(
+              group: [],
+              count: 12,
+              new_count: 2,
+              active_count: 10,
+              suspended_count: 0,
+              due_count: 0,
+              mean_level: 1.5,
+            ),
+          ]
+        },
+      ),
+    )
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  assert string.contains(body, "\"new_tomorrow\":2")
 }
 
 pub fn a_session_is_never_paged_test() {
@@ -258,6 +287,46 @@ pub fn a_guest_gets_the_mistakes_on_the_seats_their_cookie_holds_test() {
   // No schedule and no counts: only an account has a deck.
   assert string.contains(body, "\"due\":false")
   assert string.contains(body, "\"counts\":null")
+  // What the home says they have behind them: theirs only, from one room.
+  assert string.contains(body, "\"mistakes\":{\"puzzles\":1,\"games\":1}")
+}
+
+pub fn a_guest_is_told_how_many_mistakes_from_how_many_games_test() {
+  // More than a page of them, from two rooms: the count is the whole of
+  // what is theirs, not the twenty the page carries, and the same puzzle
+  // reached twice is one mistake.
+  let sources =
+    list.map(list.range(1, 23), fn(n) {
+      #("p" <> int.to_string(n), guest_seat("g1"))
+    })
+  let ctx =
+    Ctx(
+      ..fakes.ctx(),
+      puzzles: PuzzlesCaps(..fakes.ctx().puzzles, guest_sources: fn(_guest_id) {
+        list.index_map(
+          list.append(sources, [#("p1", guest_seat("g1"))]),
+          fn(entry, index) {
+            DeckSource(
+              source_id: index,
+              puzzle_id: entry.0,
+              game_id: case index < 10 {
+                True -> "room1"
+                False -> "room2"
+              },
+              game_number: 1,
+              kind: "move",
+              turn: index + 1,
+              question_json: question_json(Move),
+              ended_ms: 1_790_000_000_000 - index,
+              seat: entry.1,
+            )
+          },
+        )
+      }),
+    )
+  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"))
+  assert list.length(ids(body)) == 20
+  assert string.contains(body, "\"mistakes\":{\"puzzles\":23,\"games\":2}")
 }
 
 pub fn a_guest_sees_one_card_per_puzzle_test() {
@@ -282,6 +351,7 @@ pub fn nobody_gets_an_empty_session_and_not_an_error_test() {
   let assert Ok(body) = practice.practice_json(fakes.ctx(), fakes.no_guest())
   assert ids(body) == []
   assert string.contains(body, "\"counts\":null")
+  assert string.contains(body, "\"mistakes\":null")
   assert string.contains(body, "\"cursor\":null")
 }
 

@@ -79,6 +79,30 @@ defmodule OskolWeb.SpaController do
   end
 
   @doc """
+  The practice home (`/puzzles`): what a visitor has to practice, or, for a
+  stranger, what this is and one puzzle to try. The page reads everything
+  from `/papi/practice`; the head is the one thing it cannot supply, and
+  it says the same to everyone.
+  """
+  def puzzles(conn, _params) do
+    conn
+    |> assign(:page_title, puzzles_title())
+    |> assign(:meta_description, puzzles_description())
+    |> assign(:canonical, url(~p"/puzzles"))
+    |> assign(:og_title, puzzles_title())
+    |> assign(:og_description, puzzles_description())
+    |> render_spa()
+  end
+
+  def puzzles_title, do: "Puzzles"
+
+  def puzzles_description do
+    "Practice your own mistakes. Every mistake the engine finds in a game you played " <>
+      "becomes a backgammon puzzle and comes back until you stop making it. " <>
+      "Every puzzle is a link anyone can open and try."
+  end
+
+  @doc """
   A puzzle's page (`/puzzles/:id`). The head is the one thing the page
   cannot supply for itself before it has fetched anything, and the one
   thing a link preview reads: the question as the title, the score and cube

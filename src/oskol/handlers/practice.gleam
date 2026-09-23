@@ -19,12 +19,13 @@
 ////     nothing they were promised.
 ////   * **nobody** -- a stranger with no games behind them -- gets an
 ////     empty list. Not an error: there is nothing wrong with having
-////     nothing to practise yet.
+////     nothing to practice yet.
 ////
 //// Reading a session never starts a card and never spends a day's budget.
 //// A new card is not due until it is first seen, and it is answering one
 //// that starts it, so a page that is merely opened twice costs nothing.
 
+import gleam/int
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -55,7 +56,7 @@ pub fn practice_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
 ///
 /// Only an account has a rotation to add to. For a guest the page already
 /// holds every mistake they have, so this is the next page of it and
-/// nothing else -- and, as everywhere a guest practises, it writes nothing.
+/// nothing else -- and, as everywhere a guest practices, it writes nothing.
 pub fn more_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
   case session.user_id {
     Some(uid) -> {
@@ -115,7 +116,7 @@ fn account_session(ctx: Ctx, uid: String) -> String {
   let found = deck.session(ctx, uid)
   let entries =
     list.append(cards(found.reviews, True), cards(found.fresh, False))
-  body(entries, Some(counts(ctx, uid, found)))
+  body(entries, Some(counts(ctx, uid, found)), None)
 }
 
 fn cards(items: List(Card), due: Bool) -> List(Json) {
@@ -134,7 +135,9 @@ fn kind_of(card: Card) -> String {
 }
 
 /// What a page prints beside the queue: how many are due, how much of
-/// today's new budget is left, and how big the deck is altogether.
+/// today's new budget is left, how many new ones tomorrow will bring (the
+/// day's budget, or the cards never seen when there are fewer of those),
+/// and how big the deck is altogether.
 fn counts(ctx: Ctx, uid: String, found: DeckSession) -> Json {
   let summary =
     ctx.practice.summary(uid, [])
@@ -149,6 +152,13 @@ fn counts(ctx: Ctx, uid: String, found: DeckSession) -> Json {
       }),
     ),
     #("new_today", json.int(found.new_remaining_today)),
+    #(
+      "new_tomorrow",
+      json.int(case summary {
+        Some(row) -> int.min(row.new_count, deck.new_per_day)
+        None -> 0
+      }),
+    ),
     #(
       "deck",
       json.int(case summary {
@@ -168,23 +178,38 @@ fn counts(ctx: Ctx, uid: String, found: DeckSession) -> Json {
 /// owned seat out of it -- a browser that logged out, or the next person
 /// on the same laptop, is offered nothing of the account's.
 fn guest_session(ctx: Ctx, guest_id: String) -> String {
-  let page =
+  let mine =
     ctx.puzzles.guest_sources(guest_id)
     |> list.filter(fn(source) {
       seat.holder(source.seat, Session(guest_id: Some(guest_id), user_id: None))
     })
     |> dedupe([], [])
-    |> list.take(deck.page)
+  let page = list.take(mine, deck.page)
   body(
     list.map(page, fn(source) {
       entry(source.puzzle_id, source.kind, source.question_json, False)
     }),
     None,
+    Some(mistakes(mine)),
   )
 }
 
+/// What the home says a guest has behind them: "23 mistakes from your 4
+/// games". Counted over everything that is theirs, not the page.
+fn mistakes(mine: List(DeckSource)) -> Json {
+  let games =
+    mine
+    |> list.map(fn(source) { source.game_id })
+    |> list.unique
+    |> list.length
+  json.object([
+    #("puzzles", json.int(list.length(mine))),
+    #("games", json.int(games)),
+  ])
+}
+
 /// One card per puzzle, keeping the first (and so the newest): the same
-/// position reached in two games is one mistake to practise, not two.
+/// position reached in two games is one mistake to practice, not two.
 fn dedupe(
   sources: List(DeckSource),
   seen: List(String),
@@ -202,7 +227,11 @@ fn dedupe(
 
 // ---------- The shape on the wire ----------
 
-fn body(entries: List(Json), counts: Option(Json)) -> String {
+fn body(
+  entries: List(Json),
+  counts: Option(Json),
+  mistakes: Option(Json),
+) -> String {
   envelope.ok([
     #("puzzles", json.preprocessed_array(entries)),
     // Always null. A session is not paged: the client asks again and gets
@@ -210,6 +239,9 @@ fn body(entries: List(Json), counts: Option(Json)) -> String {
     // because the wire has it and a client may still be reading it.
     #("cursor", json.null()),
     #("counts", option.unwrap(counts, json.null())),
+    // A guest's: how many mistakes are theirs and from how many games.
+    // Null for an account (`counts` says it) and for nobody.
+    #("mistakes", option.unwrap(mistakes, json.null())),
     // This endpoint is never one game's mistakes; the per-game list is its
     // own route and names the game it answered for.
     #("game", json.null()),
@@ -217,7 +249,7 @@ fn body(entries: List(Json), counts: Option(Json)) -> String {
 }
 
 fn empty() -> String {
-  body([], None)
+  body([], None, None)
 }
 
 /// One puzzle as a session lists it: what it is and what it asks. The

@@ -1,15 +1,20 @@
 module Page.Puzzle exposing
-    ( Attempt(..)
+    ( After(..)
+    , Attempt(..)
+    , End
     , Loadable(..)
     , Model
     , Msg(..)
     , Out(..)
+    , Score
     , attemptBody
     , backIn
+    , endRun
     , init
     , levelLine
     , memoryLine
     , preselected
+    , runScore
     , subscriptions
     , title
     , update
@@ -46,19 +51,26 @@ in the server's words -- which this page shows under the memory line. The
 `?s=` the page was opened with rides on the attempt and nowhere else.
 
 The page is opened from a link most of the time and is complete on its
-own. NEXT appears only when the shell says there is a next puzzle: a
-practice run is the shell's (`Main`), because it outlives this page.
+own. NEXT appears only when the shell says there is somewhere after this
+one: a practice run is the shell's (`Main`), because it outlives this
+page. The page reports each verdict (`Answered`) and asks for the next
+(`WantsNext`); at the run's last puzzle the shell answers with the score
+(`endRun`) and the page ends the run here: "7 of 10 right", then for an
+account what the deck has left ("Done for today. 4 new tomorrow." and
+KEEP GOING) and for a guest the sign-in, in the one component, with the
+practice home as where it goes on to.
 
 -}
 
 import Api
+import Api.Practice as Practice exposing (Practice)
 import Dict
 import Games.Backgammon.Puzzle as Puzzle exposing (Candidate, Puzzle, Reveal, Schedule, Verdict(..))
 import Games.Backgammon.Replay as Replay
 import Games.Backgammon.View as Board
 import Games.Backgammon.Words as Words exposing (chanceCells, cubeChances, cubeLine, gradeTag, signed)
 import Html exposing (Html, a, button, div, h1, p, span, text)
-import Html.Attributes exposing (attribute, class, classList, disabled, href, id)
+import Html.Attributes exposing (attribute, class, classList, disabled, href, id, type_)
 import Html.Events exposing (onClick)
 import Json.Decode as D
 import Json.Encode as E
@@ -70,6 +82,7 @@ import Session exposing (Session)
 import Task
 import Time
 import Ui.Shell
+import Ui.SignIn as SignIn
 
 
 
@@ -97,7 +110,7 @@ type Attempt
 type alias Model =
     { session : Session
     , id : String
-    , hasNext : Bool -- the shell has a puzzle after this one
+    , hasNext : Bool -- the shell has somewhere after this one: a run's next puzzle, or its end
     , origin : String -- scheme, host and port, for the link SHARE copies
     , puzzle : Loadable Puzzle
     , path : List String -- the nodes stepped to, oldest first
@@ -117,7 +130,39 @@ type alias Model =
     , storyLabel : Maybe String -- what "Share with my mistake" says right now
     , sharing : Sharing -- which button the share sheet's answer is for
     , now : Int -- client time (ms) when the reveal landed, for "back in 7 days"
+    , ended : Maybe End -- the run is over: the score, and what comes after it
     }
+
+
+{-| A run's score, as the shell counted it: a pass is right, a hold is
+close, anything else is neither.
+-}
+type alias Score =
+    { right : Int
+    , close : Int
+    , total : Int
+    }
+
+
+type alias End =
+    { score : Score
+    , after : After
+    }
+
+
+{-| What the end screen offers under the score.
+-}
+type After
+    = -- a guest: the sign-in, going on to the practice home
+      AskSignIn SignIn.Model
+      -- an account: asking the deck what is left
+    | Refetching
+      -- an account: what is left, and whether KEEP GOING is in flight
+    | Left Practice Bool
+      -- an account: KEEP GOING brought nothing, so the deck has nothing
+      -- more to start today
+    | NothingMore Practice
+    | Unreachable String
 
 
 {-| The two share buttons report through one port, so the page remembers
@@ -147,15 +192,26 @@ type Msg
     | ShareReported String
     | ShareLabelCleared
     | Next
+    | GotLeft (Result Api.Error Practice)
+    | PressedKeepGoing
+    | GotMore (Result Api.Error Practice)
+    | PressedContinueRun
+    | EndSignInMsg SignIn.Msg
     | NoOp
 
 
-{-| What the shell does for the page: nothing, or go to the next puzzle of
-the run it is keeping.
+{-| What the shell does for the page: nothing; note a verdict on the run's
+score; go to the next puzzle of the run it is keeping (or, at the last,
+hand back the score); start a run of these; take note of a sign-in; go
+somewhere.
 -}
 type Out
     = NoOut
+    | Answered Verdict
     | WantsNext
+    | StartRun (List String)
+    | SignedIn (Maybe Session.User)
+    | Go String
 
 
 init : Session -> { id : String, hasNext : Bool, origin : String, share : Maybe String } -> ( Model, Cmd Msg )
@@ -182,6 +238,7 @@ init session config =
       , storyLabel = Nothing
       , sharing = CleanLink
       , now = 0
+      , ended = Nothing
       }
     , Cmd.batch
         [ Api.get session (base config.id) Puzzle.decoder GotPuzzle
@@ -285,16 +342,18 @@ update msg model =
                 revealed =
                     { model | attempt = Revealed reveal, showing = Nothing }
             in
-            stay revealed
-                (Cmd.batch
-                    [ Task.perform RevealedAt Time.now
+            ( revealed
+            , Cmd.batch
+                [ Task.perform RevealedAt Time.now
 
-                    -- Only now: the memory line is a fact about the player
-                    -- and the game, and asking for it before the answer
-                    -- would put the move that was played within reach.
-                    , Api.get model.session (base model.id ++ "/mine") Puzzle.memoryDecoder GotMemory
-                    ]
-                )
+                -- Only now: the memory line is a fact about the player
+                -- and the game, and asking for it before the answer
+                -- would put the move that was played within reach.
+                , Api.get model.session (base model.id ++ "/mine") Puzzle.memoryDecoder GotMemory
+                ]
+              -- The shell keeps the run's score.
+            , Answered reveal.verdict
+            )
 
         GotReveal (Err err) ->
             stay { model | attempt = Refused (Api.errorMessage err) } Cmd.none
@@ -412,8 +471,120 @@ update msg model =
         Next ->
             ( model, Cmd.none, WantsNext )
 
+        GotLeft result ->
+            stay (afterEnd (leftOf result) model) Cmd.none
+
+        PressedKeepGoing ->
+            case model.ended of
+                Just { after } ->
+                    case after of
+                        Left practice False ->
+                            stay (afterEnd (Left practice True) model) (Practice.more model.session GotMore)
+
+                        _ ->
+                            stay model Cmd.none
+
+                Nothing ->
+                    stay model Cmd.none
+
+        -- KEEP GOING's answer is the session that results: run it, or say
+        -- there was nothing more to start.
+        GotMore (Ok practice) ->
+            case practice.puzzles of
+                [] ->
+                    stay (afterEnd (NothingMore practice) model) Cmd.none
+
+                entries ->
+                    ( afterEnd (Left practice False) model, Cmd.none, StartRun (List.map .id entries) )
+
+        GotMore (Err err) ->
+            stay (afterEnd (Unreachable (Api.errorMessage err)) model) Cmd.none
+
+        PressedContinueRun ->
+            case model.ended of
+                Just { after } ->
+                    case after of
+                        Left practice _ ->
+                            case practice.puzzles of
+                                [] ->
+                                    stay model Cmd.none
+
+                                entries ->
+                                    ( model, Cmd.none, StartRun (List.map .id entries) )
+
+                        _ ->
+                            stay model Cmd.none
+
+                Nothing ->
+                    stay model Cmd.none
+
+        EndSignInMsg signInMsg ->
+            case model.ended of
+                Just { after } ->
+                    case after of
+                        AskSignIn signIn ->
+                            let
+                                ( next, cmd, out ) =
+                                    SignIn.update model.session signInMsg signIn
+
+                                updated =
+                                    afterEnd (AskSignIn next) model
+                            in
+                            case out of
+                                SignIn.NoOut ->
+                                    stay updated (Cmd.map EndSignInMsg cmd)
+
+                                SignIn.SignedIn result ->
+                                    ( updated, Cmd.map EndSignInMsg cmd, SignedIn result.user )
+
+                                -- CONTINUE: the practice home, with a deck now.
+                                SignIn.Continue path ->
+                                    ( updated, Cmd.none, Go path )
+
+                        _ ->
+                            stay model Cmd.none
+
+                Nothing ->
+                    stay model Cmd.none
+
         NoOp ->
             stay model Cmd.none
+
+
+{-| The run is over, at this puzzle: the shell hands the page the score.
+An account is asked what its deck has left; a guest is asked to sign in.
+-}
+endRun : Score -> Model -> ( Model, Cmd Msg )
+endRun score model =
+    case model.session.user of
+        Just _ ->
+            ( { model | ended = Just { score = score, after = Refetching } }
+            , Practice.fetch model.session GotLeft
+            )
+
+        Nothing ->
+            let
+                ( signIn, cmd ) =
+                    SignIn.init { next = Route.href Route.puzzles, email = "" }
+            in
+            ( { model | ended = Just { score = score, after = AskSignIn signIn } }
+            , Cmd.map EndSignInMsg cmd
+            )
+
+
+afterEnd : After -> Model -> Model
+afterEnd after model =
+    { model | ended = Maybe.map (\end -> { end | after = after }) model.ended }
+
+
+leftOf : Result Api.Error Practice -> After
+leftOf result =
+    case result of
+        Ok practice ->
+            Left practice False
+
+        Err err ->
+            Unreachable (Api.errorMessage err)
 
 
 stay : Model -> Cmd Msg -> ( Model, Cmd Msg, Out )
@@ -561,30 +732,155 @@ subscriptions _ =
 view : Model -> Html Msg
 view model =
     div [ class "rp-page pz-page paper", id "puzzle" ]
-        (case model.puzzle of
-            Loading ->
+        (case ( model.ended, model.puzzle ) of
+            ( Just end, _ ) ->
+                [ viewHead, viewEnd model end ]
+
+            ( Nothing, Loading ) ->
                 [ viewHead, div [ class "rp-message pixel text-[9px]" ] [ text "LOADING THE PUZZLE…" ] ]
 
-            Missing ->
+            ( Nothing, Missing ) ->
                 [ viewHead
                 , div [ class "rp-message", id "pz-missing" ]
                     [ span [ class "pixel text-[9px]" ] [ text "NO SUCH PUZZLE" ]
                     , span [ class "text-sm", attribute "style" "color: var(--pencil)" ] [ text "That link does not open anything. It may have been typed wrong." ]
                     , a [ href (Route.href Route.library), class "font-semibold", attribute "style" "color: var(--pen)" ] [ text "Back to the board →" ]
+                    , skip model
                     ]
                 ]
 
-            Unavailable reason ->
+            ( Nothing, Unavailable reason ) ->
                 [ viewHead
                 , div [ class "rp-message" ]
                     [ span [ class "pixel text-[9px]" ] [ text "NO PUZZLE" ]
                     , span [ class "text-sm", attribute "style" "color: var(--pencil)" ] [ text reason ]
+                    , skip model
                     ]
                 ]
 
-            Loaded puzzle ->
+            ( Nothing, Loaded puzzle ) ->
                 viewPuzzle model puzzle
         )
+
+
+
+-- THE END OF A RUN
+
+
+{-| The score, and what comes after it: for an account what the deck has
+left, for a guest the sign-in.
+-}
+viewEnd : Model -> End -> Html Msg
+viewEnd model end =
+    div [ class "pz-end mx-auto w-full max-w-md q-card sheet p-6 sm:p-8 mt-4", id "pz-end" ]
+        (p [ class "pixel q-eyebrow text-[9px] mb-3" ] [ text "RUN OVER" ]
+            :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-1", attribute "style" "color: var(--ink)" ]
+                [ text (runScore end.score) ]
+            :: closeLine end.score
+            :: viewAfter model end.after
+        )
+
+
+{-| "Done for today. 4 new tomorrow." -- and just the first sentence when
+tomorrow brings nothing new; what the player got wrong still comes back
+on its day.
+-}
+doneLine : Practice.Counts -> String
+doneLine counts =
+    if counts.newTomorrow > 0 then
+        "Done for today. " ++ String.fromInt counts.newTomorrow ++ " new tomorrow."
+
+    else
+        "Done for today."
+
+
+{-| "7 of 10 right".
+-}
+runScore : Score -> String
+runScore score =
+    String.fromInt score.right ++ " of " ++ String.fromInt score.total ++ " right"
+
+
+closeLine : Score -> Html Msg
+closeLine score =
+    if score.close > 0 then
+        p [ id "pz-close", class "q-note text-[13px] mb-4" ]
+            [ text (String.fromInt score.close ++ " close") ]
+
+    else
+        p [ class "mb-4" ] []
+
+
+viewAfter : Model -> After -> List (Html Msg)
+viewAfter _ after =
+    case after of
+        Refetching ->
+            [ p [ class "pixel text-[9px]", attribute "style" "color: var(--pencil)" ] [ text "ASKING YOUR DECK…" ] ]
+
+        Unreachable reason ->
+            [ p [ class "text-base", attribute "style" "color: var(--ink)" ] [ text reason ]
+            , a [ href (Route.href Route.puzzles), class "inline-block font-semibold mt-3", attribute "style" "color: var(--pen)" ] [ text "Back to puzzles →" ]
+            ]
+
+        Left practice busy ->
+            case ( practice.puzzles, practice.counts ) of
+                ( [], Just counts ) ->
+                    [ p [ id "pz-done", class "text-[18px] font-bold leading-snug", attribute "style" "color: var(--ink)" ]
+                        [ text (doneLine counts) ]
+                    , p [ class "q-note text-[13px] mb-5" ] [ text (String.fromInt counts.deck ++ " in your deck") ]
+                    , button
+                        [ type_ "button", id "pz-keep-going", class "q-btn plain w-full px-6 py-3.5 text-[15px]", disabled busy, onClick PressedKeepGoing ]
+                        [ text
+                            (if busy then
+                                "STARTING…"
+
+                             else
+                                "KEEP GOING"
+                            )
+                        ]
+                    ]
+
+                ( [], Nothing ) ->
+                    -- Signed in, but the server saw no deck: the practice
+                    -- home says what there is.
+                    [ a [ href (Route.href Route.puzzles), id "pz-home", class "inline-block font-semibold", attribute "style" "color: var(--pen)" ] [ text "Back to puzzles →" ] ]
+
+                ( entries, _ ) ->
+                    [ p [ id "pz-more-due", class "text-[18px] font-bold leading-snug mb-5", attribute "style" "color: var(--ink)" ]
+                        [ text (String.fromInt (List.length entries) ++ " more to go.") ]
+                    , button
+                        [ type_ "button", id "pz-continue", class "q-btn w-full px-6 py-3.5 text-[15px]", onClick PressedContinueRun ]
+                        [ text "CONTINUE" ]
+                    ]
+
+        NothingMore practice ->
+            [ p [ id "pz-done", class "text-[18px] font-bold leading-snug", attribute "style" "color: var(--ink)" ]
+                [ text "Done for today." ]
+            , p [ class "q-note text-[13px] mb-3" ]
+                [ text (String.fromInt (Maybe.map .deck practice.counts |> Maybe.withDefault 0) ++ " in your deck") ]
+            , p [ id "pz-nothing-more", class "q-note text-[13px] leading-snug" ]
+                [ text "That's every puzzle in your deck for now. The ones you get wrong come back on their day." ]
+            , a [ href (Route.href Route.puzzles), class "inline-block font-semibold mt-4", attribute "style" "color: var(--pen)" ] [ text "Back to puzzles →" ]
+            ]
+
+        AskSignIn signIn ->
+            [ p [ id "pz-signin-ask", class "text-[16px] font-semibold leading-snug mb-4", attribute "style" "color: var(--ink)" ]
+                [ text "Sign in and we'll keep this: these come back until you stop making them." ]
+            , Html.map EndSignInMsg (SignIn.view signIn)
+            ]
+
+
+{-| A puzzle of a run that did not load must not strand the run: NEXT is
+still the way on, here as everywhere in a run.
+-}
+skip : Model -> Html Msg
+skip model =
+    if model.hasNext then
+        button [ class "q-btn pz-action mt-2", id "pz-next", onClick Next ]
+            [ text "NEXT", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
+
+    else
+        text ""
 
 
 viewHead : Html Msg

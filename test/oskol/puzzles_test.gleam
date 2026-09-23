@@ -673,7 +673,7 @@ pub fn a_checker_play_after_a_take_is_recorded_but_not_asked_test() {
       ]),
       [graded(Some(a_move(0.4, False, 12, [])), None)],
     )
-  // Nothing to practise: the engine graded that play on the cube as it
+  // Nothing to practice: the engine graded that play on the cube as it
   // stood before the double it followed.
   assert puzzles == []
   let assert [s] = sources

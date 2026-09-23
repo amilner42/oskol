@@ -30,7 +30,7 @@ defmodule Oskol.PracticeConcurrencyTest do
   @tag :slow
   test "two ways into one deck at once do not deadlock" do
     # `start` and `master` both touch many cards of one account, and a player can easily cause
-    # both at once: a game ends and files its mistakes while they are practising. The two used
+    # both at once: a game ends and files its mistakes while they are practicing. The two used
     # to take their row locks in different orders -- introduction order and the caller's key
     # order -- so each could hold the row the other wanted next, and Postgres killed one.
     {:practice_caps, put_user, put_items, _, _, _, start, _, _, _, _, _, master, _, _, _} =

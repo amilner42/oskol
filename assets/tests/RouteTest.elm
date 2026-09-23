@@ -77,7 +77,7 @@ suite =
                 \_ -> Expect.equal "/puzzles/AB12CD34" (Route.href (Route.puzzle "AB12CD34"))
             , test "a puzzle is not a room of a game called puzzles" <|
                 \_ -> Expect.notEqual (Just (Play "puzzles" "AB12CD34")) (parse "/puzzles/AB12CD34")
-            , test "practising is its own page, not a game's start page" <|
+            , test "practicing is its own page, not a game's start page" <|
                 \_ -> Expect.equal (Just Puzzles) (parse "/puzzles")
             , test "the sitemap belongs to the server" <|
                 \_ -> Expect.equal Nothing (parse "/sitemap.xml")
@@ -95,6 +95,10 @@ suite =
                 \_ -> Expect.equal (Just Library) (parse (Route.href (Route.gameLanding "backgammon")))
             , test "an invite link: the room, and nothing identifying" <|
                 \_ -> Expect.equal "/backgammon?game=AB12CD" (Route.href (Route.invite "backgammon" "AB12CD"))
+            , test "the practice home" <|
+                \_ -> Expect.equal "/puzzles" (Route.href Route.puzzles)
+            , test "a puzzle's link" <|
+                \_ -> Expect.equal "/puzzles/AB12CD34" (Route.href (Route.puzzle "AB12CD34"))
             , test "a seat's link is the room's link: there is nothing else to it" <|
                 \_ ->
                     Route.href (Route.play "backgammon" "AB12CD")
