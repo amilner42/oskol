@@ -210,14 +210,26 @@ pub fn with_graded(
   uid: String,
   rows: List(analysis_caps.GradedGame),
 ) -> Ctx {
+  with_graded_accounts(ctx, [#(uid, rows)])
+}
+
+/// The same, for a test with more than one account in it -- two seats at a
+/// table, each with a history of their own. An account the test did not
+/// arrange for still panics, so a handler that read the wrong person's
+/// games fails loudly rather than being handed a number that happens to
+/// look right.
+pub fn with_graded_accounts(
+  ctx: Ctx,
+  accounts: List(#(String, List(analysis_caps.GradedGame))),
+) -> Ctx {
   Ctx(
     ..ctx,
     analysis: analysis_caps.AnalysisCaps(
       ..ctx.analysis,
       graded_for: fn(asked, limit, before) {
-        case asked == uid {
-          False -> panic as "analysis.graded_for asked for another account"
-          True ->
+        case list.key_find(accounts, asked) {
+          Error(_) -> panic as "analysis.graded_for asked for another account"
+          Ok(rows) ->
             rows
             |> list.filter(fn(row) {
               case before {

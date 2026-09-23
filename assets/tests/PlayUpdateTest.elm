@@ -224,7 +224,7 @@ ratingsWatch : Test
 ratingsWatch =
     let
         answer graded pending =
-            { prs = Dict.empty, graded = graded, pending = pending, games = Dict.empty }
+            { prs = Dict.empty, careers = Dict.empty, graded = graded, pending = pending, games = Dict.empty }
 
         got graded pending model =
             Play.update (GotRatings (Ok (answer graded pending))) model |> first3
@@ -277,7 +277,7 @@ mistakesOnCards : Test
 mistakesOnCards =
     let
         graded numbers =
-            { prs = Dict.empty, graded = List.length numbers, pending = False, games = Dict.fromList (List.map (\n -> ( n, [ ( "p1", 5.0 ) ] )) numbers) }
+            { prs = Dict.empty, careers = Dict.empty, graded = List.length numbers, pending = False, games = Dict.fromList (List.map (\n -> ( n, [ ( "p1", 5.0 ) ] )) numbers) }
 
         entry id =
             { id = id, kind = "move", prompt = "White to play 6-4. What's your play?", due = False }

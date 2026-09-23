@@ -281,9 +281,16 @@ fetchPrefs session toMsg =
 performance rating over the games of it the analysis engine has graded, by
 player id. A seat the server has no number for is simply not in the
 dictionary, and nor is anyone in a match with nothing graded yet.
+
+`careers` is the wider number beside it: the account that owns a seat, over
+every graded game it has played anywhere. The server holds it to a floor of
+its own, so a seat no account owns and one whose account has too few games
+are the same thing here -- not in the dictionary, and nothing to draw.
+
 -}
 type alias Ratings =
     { prs : Dict String Float -- by player id, for the seats that have a number
+    , careers : Dict String Float -- by player id, for the seats whose account has a career
     , graded : Int -- games of this match the engine has answered for
     , pending : Bool -- a grade is on its way (a row opened, or a retry coming)
     , games : Dict Int (List ( String, Float )) -- each graded game's PRs by game number, in seat order
@@ -301,20 +308,22 @@ ratingsDecoder =
         seats =
             D.field "players"
                 (D.list
-                    (D.map3 (\id pr games -> ( id, pr, games ))
+                    (D.map4 (\id pr career games -> { id = id, pr = pr, career = career, games = games })
                         (D.field "player_id" D.string)
                         (D.field "pr" (D.nullable D.float))
+                        (D.oneOf [ D.field "career" (D.nullable D.float), D.succeed Nothing ])
                         (D.oneOf [ D.field "games" D.int, D.succeed 0 ])
                     )
                 )
+
+        by field rows =
+            rows |> List.filterMap (\row -> Maybe.map (Tuple.pair row.id) (field row)) |> Dict.fromList
     in
     D.map3
         (\rows pending games ->
-            { prs =
-                rows
-                    |> List.filterMap (\( id, pr, _ ) -> Maybe.map (Tuple.pair id) pr)
-                    |> Dict.fromList
-            , graded = rows |> List.map (\( _, _, games_ ) -> games_) |> List.maximum |> Maybe.withDefault 0
+            { prs = by .pr rows
+            , careers = by .career rows
+            , graded = rows |> List.map .games |> List.maximum |> Maybe.withDefault 0
             , pending = pending
             , games = Dict.fromList games
             }

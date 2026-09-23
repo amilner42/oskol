@@ -9,9 +9,15 @@ defmodule Oskol.RatingsTest do
 
   import Oskol.GameFixtures
 
+  alias Oskol.Auth
   alias Oskol.Game.Persister
+  alias Oskol.Persistence
   alias Oskol.Repo
   alias Oskol.Reviews
+
+  # A ratings read is a page's poll: it must stay in the same class as the
+  # home's whole answer, which the brief budgets at 100 ms.
+  @budget_ms 100
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
@@ -34,6 +40,56 @@ defmodule Oskol.RatingsTest do
     conn
     |> get("/papi/games/backgammon/rooms/#{game_id}/ratings")
     |> json_response(200)
+  end
+
+  # A finished room somewhere else on the site with `user_id` in seat 0, and
+  # one graded game in it: `error` equity lost over `decisions` decisions,
+  # which is what a career is added up from.
+  defp elsewhere(user_id, weight), do: elsewhere(user_id, weight, & &1)
+
+  defp elsewhere(user_id, {error, decisions}, shape) do
+    game_id = unique_game_id("c")
+    owned_room(game_id, user_id)
+
+    :ok =
+      Reviews.save(game_id, 1, "done", 1, shape.(totals_answer(error, decisions)), nil, nil, 30)
+
+    game_id
+  end
+
+  defp owned_room(game_id, user_id) do
+    Repo.insert!(%Persistence.Game{
+      id: game_id,
+      slug: "backgammon",
+      config: %{"format" => "single", "clock" => "none"},
+      seed: 42,
+      players: [
+        %{"id" => "p1", "name" => "Alice", "guest_id" => unique_guest_id(), "user_id" => user_id},
+        %{"id" => "p2", "name" => "Bob", "guest_id" => unique_guest_id(), "user_id" => nil}
+      ],
+      status: "finished",
+      winners: [],
+      inserted_at: DateTime.utc_now(),
+      updated_at: DateTime.utc_now()
+    })
+
+    :ok
+  end
+
+  # The engine's answer with the totals a career is made of, at whatever
+  # weight the caller wants.
+  defp totals_answer(error, decisions) do
+    seat = fn error, decisions ->
+      %{
+        "moves" => %{"decisions" => decisions, "forced" => 0, "error" => error, "grades" => %{}},
+        "cube" => %{"decisions" => 0, "error" => 0.0, "mistakes" => %{}},
+        "luck" => 0.0,
+        "error" => error,
+        "pr" => error / decisions * 500
+      }
+    end
+
+    %{"turns" => [], "players" => [seat.(error, decisions), seat.(1.0, 10)]}
   end
 
   defp seat(players, id), do: Enum.find(players, &(&1["player_id"] == id))
@@ -155,6 +211,109 @@ defmodule Oskol.RatingsTest do
     :ok = Reviews.save(game_id, 1, "done", 1, response, nil, %{"large" => "report"}, 1)
 
     assert %{"players" => [%{"pr" => +0.0}, %{"pr" => +0.0}]} = ratings(conn, game_id)
+  end
+
+  describe "the career beside the match PR" do
+    test "an owned seat wears its account's career, and an unowned seat none", %{conn: conn} do
+      user = Auth.find_or_create_user("career@oskol.test")
+      %{game_id: game_id, p1: p1, p2: p2} = started(42, "match5", user: user.id)
+      Persister.flush()
+
+      # Four graded games is not a career yet: the floor is five.
+      for _ <- 1..4, do: elsewhere(user.id, {0.2, 10})
+      assert %{"players" => four} = ratings(conn, game_id)
+      assert %{"pr" => nil, "career" => nil} = seat(four, p1)
+
+      # The fifth makes one: 1.0 of equity lost over 50 decisions, times
+      # 500, is a PR of 10.0. The seat opposite belongs to no account and
+      # stays bare, which is what a guest sees for ever.
+      elsewhere(user.id, {0.2, 10})
+      assert %{"players" => five} = ratings(conn, game_id)
+      assert %{"career" => 10.0} = seat(five, p1)
+      assert %{"career" => nil} = seat(five, p2)
+
+      # A sixth game, three decisions long and played badly (its own PR is
+      # 166.7). Averaging the six PRs would give 36.1 and let that one game
+      # speak for the whole career; the equity lost over the decisions it
+      # was lost over gives 2.0 over 53, which is 18.9.
+      elsewhere(user.id, {1.0, 3})
+      assert %{"players" => six} = ratings(conn, game_id)
+      assert %{"career" => 18.9} = seat(six, p1)
+
+      # The match PR is still this room's own games, and still empty.
+      assert %{"games" => 0, "pr" => nil} = seat(six, p1)
+    end
+
+    test "this room's own graded games are part of the career too", %{conn: conn} do
+      user = Auth.find_or_create_user("here@oskol.test")
+      %{game_id: game_id, p1: p1} = started(42, "match5", user: user.id)
+      Persister.flush()
+
+      for _ <- 1..4, do: elsewhere(user.id, {0.2, 10})
+      :ok = Reviews.save(game_id, 1, "done", 1, totals_answer(0.2, 10), nil, nil, 30)
+
+      # Five graded games, one of them the one on the board: the career is
+      # the same 10.0, and the match PR is that one game's own rating.
+      assert %{"players" => players} = ratings(conn, game_id)
+      assert %{"games" => 1, "pr" => 10.0, "career" => 10.0} = seat(players, p1)
+    end
+
+    test "a review whose stored answer carries no totals counts for nothing", %{conn: conn} do
+      user = Auth.find_or_create_user("totalless@oskol.test")
+      %{game_id: game_id, p1: p1} = started(42, "match5", user: user.id)
+      Persister.flush()
+
+      for _ <- 1..4, do: elsewhere(user.id, {0.2, 10})
+
+      # A row as they were written before totals were stored: a rating and
+      # nothing to add up. It is not a fifth game, and it is not a zero.
+      _ =
+        elsewhere(user.id, {0.2, 10}, fn _ ->
+          %{"turns" => [], "players" => [%{"pr" => 4.0}, %{"pr" => 9.0}]}
+        end)
+
+      assert %{"players" => players} = ratings(conn, game_id)
+      assert %{"career" => nil} = seat(players, p1)
+    end
+
+    @tag :slow
+    test "two owned seats with a hundred games each answer inside the budget", %{conn: conn} do
+      alice = Auth.find_or_create_user("alice-cost@oskol.test")
+      bob = Auth.find_or_create_user("bob-cost@oskol.test")
+
+      %{game_id: game_id, p1: p1, p2: p2} = started(42, "match5", user: alice.id)
+      Persister.flush()
+
+      # Bob's seat, stamped as a sign-in would stamp it.
+      row = Repo.get!(Persistence.Game, game_id)
+
+      players =
+        Enum.map(row.players, fn p ->
+          if p["id"] == p2, do: Map.put(p, "user_id", bob.id), else: p
+        end)
+
+      Repo.update!(Ecto.Changeset.change(row, players: players))
+
+      for _ <- 1..100 do
+        elsewhere(alice.id, {3.0, 30})
+        elsewhere(bob.id, {6.0, 30})
+      end
+
+      # Warm the connection and the plan, then measure the request itself.
+      _ = ratings(conn, game_id)
+      {us, body} = :timer.tc(fn -> ratings(recycle(conn), game_id) end)
+      ms = us / 1000
+
+      assert %{"career" => 50.0} = seat(body["players"], p1)
+      assert %{"career" => 100.0} = seat(body["players"], p2)
+
+      IO.puts(
+        "\n  GET .../ratings, two owned seats, 100 graded games each: #{Float.round(ms, 1)} ms"
+      )
+
+      assert ms < @budget_ms,
+             "ratings took #{Float.round(ms, 1)} ms with two careers of 100 games (budget #{@budget_ms} ms)"
+    end
   end
 
   defp wait_for_stopped_room(game_id, tries \\ 100)

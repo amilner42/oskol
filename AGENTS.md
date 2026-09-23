@@ -695,7 +695,8 @@ assets/src/Ui/Scrub.elm          one row of plates (arrows outside, buttons betw
                                  the table's board and the replay's, the same on both
 assets/src/Protocol.elm          protocol decoders (game-agnostic)
 assets/src/Games/Backgammon/View.elm  the backgammon board (and the two
-                                 player bars: name, presence dot, match PR);
+                                 player bars: name, presence dot, match PR
+                                 with the account's career under it);
                                  `viewStill` draws one position, `viewPlay` the
                                  same slab with its taps switched on
 assets/src/Games/Backgammon/Puzzle.elm  a puzzle as the wire sends it (the
@@ -879,12 +880,15 @@ GET  /papi/games/:slug/rooms/:id/record  (open)
                                        the reader's own, else the first -- and `seated`
                                        says whether that seat is theirs)
 GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
-                                       games, pr}], games: [{game_number,
-                                       players: [{player_id, pr}]}]} -- each
-                                       seat's PR over the games of THIS match
-                                       the engine has graded (null while it has
-                                       graded none), and each graded game's
-                                       PRs by seat, for the table's match panel
+                                       games, pr, career}], games:
+                                       [{game_number, players: [{player_id,
+                                       pr}]}]} -- each seat's PR over the games
+                                       of THIS match the engine has graded (null
+                                       while it has graded none), `career` the
+                                       same seat's account over every graded game
+                                       it has played (null for a seat no account
+                                       owns and under 5 games), and each graded
+                                       game's PRs by seat, for the match panel
 GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
                                          prompt} -- the position, the sentence it
                                          asks in, and for a checker play every
@@ -1210,10 +1214,19 @@ game or a room talks to it.
   A game still pending, failed or
   unfinished counts for nothing, and a match with none graded shows no
   number. It is display only, and open like the record; the table prints
-  it beside each name and asks again when a game ends. It is deliberately
-  *this match* and not a career average: a career one needs a join from a
-  seat to a person (`games.players[i].guest_id`), which waits for accounts
-  — `bg-career-pr` in Aveline.
+  it beside each name and asks again when a game ends.
+- Beside it, a **career PR**: the same answer's `career` per seat, the
+  account that owns it over every graded game it has played anywhere. It is
+  the home page's own number, from the home page's own maths
+  (`home.counted`, `home.window_pr`, decision-weighted, `home.career_cap`)
+  over the `analysis.graded_for` cap, so the table, the replay and the home
+  can never print two different careers for one person. Null for a seat no
+  account owns — a guest is a browser, not a person — and under
+  `home.min_career_games` (5). One query per *owned* seat, so at most two
+  for a table, rows only: no room woken, no log replayed, no engine time.
+  The table stacks it under the match PR in the player bar (and drops it
+  below 390px, where it would cost the name three characters); the replay's
+  overview puts it under each player's PR for the game.
 - Config `:oskol, :analysis`: prod reads `ANALYSIS_URL` (default
   `http://oskol-analysis.flycast`) and connects over IPv6 (Fly's private
   network; `ANALYSIS_IPV6=false` turns it off). Dev defaults to

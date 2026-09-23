@@ -1474,6 +1474,18 @@ a.bg-match-door:hover { background: var(--paper-2); }
 @media (max-width: 639px) {
   .bg-page .player-bar:has(.clock-chip) .bar-pr { display: none; }
 }
+/* The career sits under the match PR, quieter than it: the table's own
+   number is the one being played for, and the career is who is playing.
+   Stacking costs no height -- two 7px pixel lines sit inside the 20px line
+   box the name already claims: 34px of bar either way, measured -- but it is
+   21px wider than the match PR alone (50px becomes 71px). At 390 that takes
+   8px off a seven-character name; at 375 it takes 23px, about three
+   characters, which is the trade this file refuses just above. So in that
+   band the career line goes and the match PR stays, exactly as before. */
+.bar-pr-career { opacity: 0.72; }
+@media (max-width: 389px) {
+  .bg-page .bar-pr-career { display: none; }
+}
 
 .player-bar { border: 3px solid var(--ink); background: #fff; box-shadow: 4px 4px 0 0 var(--ink); }
 .player-bar.active { border-color: var(--bg-sky); box-shadow: 4px 4px 0 0 var(--bg-sky); background: color-mix(in oklab, var(--bg-sky) 14%, #fff); }
@@ -2033,6 +2045,11 @@ a.rp-match-row:hover { color: var(--ink); }
 .rp-player { padding: 6px 0; border-bottom: 1px dashed var(--pencil); }
 .rp-player-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .rp-pr { margin-left: auto; font-weight: 800; font-size: 18px; white-space: nowrap; }
+/* The game's PR, and under it the career of the account that played it:
+   the same stacking the table's bars use, so a reader meets the two
+   numbers in the same arrangement wherever they are. */
+.rp-pr-stack { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; line-height: 1.05; }
+.rp-career { font-size: 12px; font-weight: 700; color: var(--pencil); white-space: nowrap; }
 .rp-counts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; font-size: 12px; }
 .rp-count-chip { border: 1px solid var(--pencil); border-radius: 3px; padding: 0 5px; color: var(--pencil); }
 .rp-count-chip[class*="g-"] { border-color: currentColor; font-weight: 700; }
