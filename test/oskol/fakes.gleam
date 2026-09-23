@@ -3,9 +3,12 @@
 //// only the caps its branch is supposed to use.
 
 import gleam/dynamic
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
+import gleam/order
 import gleam/result
+import gleam/string
 import oskol/caps/analysis as analysis_caps
 import oskol/caps/auth as auth_caps
 import oskol/caps/copy as copy_caps
@@ -193,4 +196,98 @@ pub fn with_records(
 /// points at.
 pub fn signed_in_guest(id: String, user_id: String) -> Session {
   Session(guest_id: Some(id), user_id: Some(user_id))
+}
+
+/// Analysis caps that answer one account's graded games, newest first.
+///
+/// The stub pages for real -- it honours the limit and steps over
+/// everything at or before the cursor, as the query does -- and it panics
+/// when asked about any other account, so a handler that reached for
+/// somebody else's games, or ignored the page it was given, fails loudly
+/// instead of being handed what the test happened to expect.
+pub fn with_graded(
+  ctx: Ctx,
+  uid: String,
+  rows: List(analysis_caps.GradedGame),
+) -> Ctx {
+  Ctx(
+    ..ctx,
+    analysis: analysis_caps.AnalysisCaps(
+      ..ctx.analysis,
+      graded_for: fn(asked, limit, before) {
+        case asked == uid {
+          False -> panic as "analysis.graded_for asked for another account"
+          True ->
+            rows
+            |> list.filter(fn(row) {
+              case before {
+                option.None -> True
+                Some(cursor) -> after_cursor(row, cursor)
+              }
+            })
+            |> list.take(limit)
+        }
+      },
+    ),
+  )
+}
+
+/// Ordered as the query orders it: the answer's moment, then the game
+/// number, then the room, each newest-first. A row is "after" the cursor
+/// when it is further down that list.
+fn after_cursor(
+  row: analysis_caps.GradedGame,
+  cursor: analysis_caps.Cursor,
+) -> Bool {
+  case int.compare(row.ended_at_ms, cursor.ended_at_ms) {
+    order.Lt -> True
+    order.Gt -> False
+    order.Eq ->
+      case int.compare(row.game_number, cursor.game_number) {
+        order.Lt -> True
+        order.Gt -> False
+        order.Eq -> string.compare(row.game_id, cursor.game_id) == order.Lt
+      }
+  }
+}
+
+/// Practice caps for a page that only reads a deck: what is due, how big
+/// it is, the ladder and the days practised. Everything a session does to
+/// a deck still panics.
+pub fn with_deck(
+  ctx: Ctx,
+  due: Int,
+  size: Int,
+  ladder: List(Int),
+  days: List(Bool),
+) -> Ctx {
+  Ctx(
+    ..ctx,
+    practice: practice_caps.PracticeCaps(
+      ..ctx.practice,
+      summary: fn(_, _) {
+        case size {
+          0 -> []
+          _ -> [
+            practice_caps.Summary(
+              group: [],
+              count: size,
+              new_count: 0,
+              active_count: size,
+              suspended_count: 0,
+              due_count: due,
+              mean_level: 0.0,
+            ),
+          ]
+        }
+      },
+      ladder: fn(_) { ladder },
+      days: fn(_, n) {
+        case list.length(days) == n {
+          True -> days
+          False -> panic as "practice.days asked for a window it was not given"
+        }
+      },
+    ),
+  )
 }

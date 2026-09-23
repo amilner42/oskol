@@ -4,11 +4,14 @@ defmodule Oskol.Gleam.Caps.Analysis do
   order in lockstep:
 
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
-      enqueue, review, report_turn, charge, replace)
+      enqueue, review, report_turn, charge, replace, graded_for)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
       Stored(game_number, status, attempts, response_json, answered, rendered, turns)
       Save(status, attempts, response_json, error, report_json, turns)
+      GradedGame(game_id, game_number, slug, seat, player_id, opponent, winner,
+      points, kind, response_json, ended_at_ms)
+      Cursor(ended_at_ms, game_number, game_id)
       Status: :pending | :done | :failed
 
   `response` and `report` are hundreds of kilobytes each. `summaries`
@@ -29,7 +32,26 @@ defmodule Oskol.Gleam.Caps.Analysis do
   def build(opts \\ []) do
     {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
      &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
-     &charge/4, &replace/3}
+     &charge/4, &replace/3, &graded_for/3}
+  end
+
+  # One account's graded games, newest answer first. The row already
+  # carries only the seats' totals out of the engine's answer; everything
+  # this hands over is small, whatever the answers behind it weigh.
+  defp graded_for(user_id, limit, before) do
+    user_id
+    |> Reviews.graded_for(limit, cursor(before))
+    |> Enum.map(fn row ->
+      {:graded_game, row.game_id, row.game_number, row.slug, row.seat, row.player_id,
+       opt(row.opponent), opt(row.winner), row.points, row.kind, Jason.encode!(row.totals),
+       DateTime.to_unix(row.ended_at, :millisecond)}
+    end)
+  end
+
+  defp cursor(:none), do: nil
+
+  defp cursor({:some, {:cursor, ended_at_ms, game_number, game_id}}) do
+    {DateTime.from_unix!(ended_at_ms, :millisecond), game_number, game_id}
   end
 
   defp log(game_id) do

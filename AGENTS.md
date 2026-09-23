@@ -554,7 +554,7 @@ src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     landing/copy, reviews/report, puzzles (+ puzzles/extract,
                     puzzles/picture), practice/deck (the puzzle deck),
                     handlers (rooms, landing,
-                    reviews, record, ratings, auth)
+                    reviews, record, ratings, auth, home)
 test/gamekit/       protocol, rng, clock, action, event, golden replays
 test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
@@ -631,6 +631,12 @@ src/oskol/practice/deck.gleam    the deck's own rules: due before new, ten new a
                                  gives the player (a puzzle not in the deck is the
                                  only 404; a snooze needs a card in rotation)
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
+lib/oskol_web/controllers/api/home_controller.ex      /papi/me/home and the
+                                 graded games it pages
+src/oskol/handlers/home.gleam    the signed-in home: the live games, the two
+                                 PR windows and the sentence, the deck's
+                                 ladder and days, the recent games and their
+                                 cursor
 assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
 assets/src/Route.elm             the three client routes, mirroring the server's
 assets/src/Api.elm               the /papi envelope + CSRF header
@@ -975,6 +981,17 @@ GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
                                        -- the unfinished rooms the caller's
                                        guest holds a seat in, newest activity
                                        first, from the rows alone
+GET  /papi/me/home                     {ok, signed_in: false} for a guest;
+                                       else {ok, signed_in: true, live, form,
+                                       practice, recent, more, next} -- the
+                                       whole signed-in home in one answer
+                                       (see "The home" below)
+GET  /papi/me/games/graded?before=<cursor>
+                                       {ok, games, more, next} -- the next ten
+                                       graded games. `before` is the previous
+                                       answer's `next` and nothing else; a
+                                       mangled one is a 422, never the first
+                                       page again
 ```
 
 `path` is the URL of the seat that was just taken (`/:slug/:id`, carrying
@@ -1046,6 +1063,61 @@ reaches a scene, an event or the game channel, and each player's board is
 their own. The client also keeps the pick in `localStorage` (the `storePref`
 port), which is what paints the board before the round trip and all a
 visitor whose guest cookie is gone has.
+
+## The home
+
+A signed-in player has games waiting, a rating and a deck; the guest home
+(a board and four buttons) shows none of it. `GET /papi/me/home` is the
+whole signed-in home in **one** answer, and every part of it comes from
+rows: nothing wakes a room, replays a log or spends engine time. A guest
+gets `{ok: true, signed_in: false}` and keeps the home they have.
+
+```
+{ok, signed_in: true,
+ live:     [ /papi/me/games' entries, unchanged ],
+ form:     {games, recent, career, sentence,
+            series: [{game_id, game_number, pr, error, decisions, ended_at}]},
+ practice: {due, deck, ladder: [n0..n7], days: [30 bools]},
+ recent:   [{game_id, game_number, slug, path, opponent,
+             result: {won, points, kind} | null,
+             pr, error, decisions, ended_at}],
+ more, next}
+```
+
+- **A rating is decision-weighted.** A window's PR is the equity lost
+  across its games over the decisions it was lost over, times 500 — the
+  engine's own definition of one game's PR, applied to several, so a
+  nine-decision game does not weigh like an eighty-nine-decision one.
+  `recent` is the newest 20, `career` all of them (bounded at
+  `home.career_cap`), one decimal, `null` under 3 graded games; the
+  number printed beside a name at a table waits for 5
+  (`home.min_career_games`). `sentence` is the same two numbers in words,
+  because lower is better and a figure alone does not say so.
+- **Only graded games count**, like the match PR: pending, failed and
+  unfinished games are worth nothing — and so is a stored answer that
+  carries a rating but not the totals behind it, which counts for nothing
+  rather than as a flawless game.
+- `series` is **oldest first** (the order the line is drawn), capped at
+  `home.series_cap`; every other list is newest first. `error` and
+  `decisions` ride along so the client can draw the rolling window exactly
+  rather than re-deriving it from a rounded PR.
+- **One query** behind form and recent: `analysis.graded_for`
+  (`Oskol.Reviews.graded_for/3`) joins the review rows to the seats an
+  account owns through the `games_players_gin` containment, and projects
+  each answer down to the seats' totals in the database, as
+  `rating_summaries` does. `recent`'s first ten ride in the home answer;
+  the rest come ten at a time from `/papi/me/games/graded?before=`, whose
+  cursor is `<ended_at_ms>:<game_number>:<game_id>` and is compared as one
+  row against the same three expressions the order is on, truncated to the
+  millisecond on both sides. A cursor only narrows what the caller already
+  reaches: the account is the session's, never the cursor's.
+- `practice` is the deck as the practice home reads it (`due`, `deck`)
+  plus two pictures Retain does not answer on its own and the cap reads
+  off its rows: `ladder`, the cards at each of the eight levels, and
+  `days`, whether the deck was practised on each of the last 30 local
+  days (an attempt counts, a deferral does not).
+- Decisions: `src/oskol/handlers/home.gleam`. Reading never creates a
+  deck, and never queues a review.
 
 ## Post-game reviews (backgammon)
 

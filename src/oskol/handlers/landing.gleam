@@ -446,6 +446,13 @@ fn find_info(slug: String) -> Result(Info, ApiError) {
 /// holds no seat anywhere, so their list is empty. Read from the rows: a
 /// home visit wakes no room.
 pub fn my_games_json(ctx: Ctx, session: Session) -> String {
+  envelope.ok([#("games", json.preprocessed_array(my_games(ctx, session)))])
+}
+
+/// The same list, as the entries themselves: a page that carries more than
+/// live games (the home) asks for all of its sections in one answer, and
+/// which rooms are a caller's is decided in one place either way.
+pub fn my_games(ctx: Ctx, session: Session) -> List(Json) {
   // By guest or by account: a signed-in browser sees the games its account
   // holds wherever they were played, and `active_room_json` asks the holder
   // rule which seat in each is theirs.
@@ -458,13 +465,11 @@ pub fn my_games_json(ctx: Ctx, session: Session) -> String {
   // stays on a seat after an account owns it (history): a browser that
   // logged out, or the next person on that laptop, must not be offered
   // games it can no longer open.
-  let held =
-    list.filter(rooms, fn(room) {
-      seat.held_by(list.map(room.seats, as_seat), session) != None
-    })
-  envelope.ok([
-    #("games", json.array(held, fn(r) { active_room_json(r, session) })),
-  ])
+  rooms
+  |> list.filter(fn(room) {
+    seat.held_by(list.map(room.seats, as_seat), session) != None
+  })
+  |> list.map(fn(r) { active_room_json(r, session) })
 }
 
 /// One resumable game as the home page lists it: where it is (`path`),

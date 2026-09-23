@@ -5,7 +5,7 @@ defmodule Oskol.Gleam.Caps.Practice do
 
       PracticeCaps(put_user, put_items, cards, relapse, queue, start,
       start_new, review, amend, defer_until, defer_tomorrow, master,
-      suspend, resume, summary)
+      suspend, resume, summary, ladder, days)
       Item(key, tags, content_json, position)
       Card(key, tags, content_json, level, due_ms, reps, lapses, status)
       Session(reviews, fresh, new_remaining_today)
@@ -38,6 +38,7 @@ defmodule Oskol.Gleam.Caps.Practice do
   difference is that it does so on purpose.
   """
 
+  import Ecto.Query
   import Oskol.Gleam.Interop
 
   require Logger
@@ -50,7 +51,75 @@ defmodule Oskol.Gleam.Caps.Practice do
   def build do
     {:practice_caps, &put_user/3, &put_items/2, &cards/2, &relapse/3, &queue/2, &start/2,
      &start_new/2, &review/3, &amend/4, &defer_until/3, &defer_tomorrow/2, &master/2, &suspend/2,
-     &resume/2, &summary/2}
+     &resume/2, &summary/2, &ladder/1, &days/2}
+  end
+
+  # ---------- The two pictures the home draws ----------
+  #
+  # Retain answers "how is this deck doing" as one row of totals and as a
+  # series of readings over time; neither is "how many cards sit on each
+  # rung" or "which days did this person practise". Both are one grouped
+  # count over rows Retain owns, so they are read here rather than folded
+  # out of something that was not meant to answer them. `Retain.Item` and
+  # `Retain.Review` are the library's public schemas and we own the library
+  # (amilner42/retain); when it grows these two readings, these go.
+
+  # Cards per level, lowest first: every card in the deck, whatever its
+  # status, so the bars add up to the deck size printed beside them.
+  defp ladder(uid) do
+    levels = length(Retain.Config.intervals())
+
+    counts =
+      case Retain.fetch_user(uid) do
+        {:error, :not_found} ->
+          %{}
+
+        {:ok, user} ->
+          from(i in Retain.Item,
+            where: i.user_id == ^user.id,
+            group_by: i.level,
+            select: {i.level, count(i.id)}
+          )
+          |> Oskol.Repo.all()
+          |> Map.new()
+      end
+
+    for level <- 0..(levels - 1), do: Map.get(counts, level, 0)
+  end
+
+  # Which of the last `n` local days this deck was practised on, oldest
+  # first and ending today. An attempt counts; putting a card off until
+  # tomorrow is not practice, and a correction sits on the day of the
+  # answer it corrects -- the same two exclusions `Retain.streak/2` makes,
+  # so the strip and a streak can never disagree.
+  defp days(uid, n) when is_integer(n) and n > 0 do
+    case Retain.fetch_user(uid) do
+      {:error, :not_found} ->
+        List.duplicate(false, n)
+
+      {:ok, user} ->
+        today = Retain.Clock.local_date(DateTime.utc_now(), user.tz)
+        first = Date.add(today, -(n - 1))
+        # Bounded by a day before the window opens, whatever the zone's
+        # offset: the strip reads an index range, not every row this deck
+        # has ever written.
+        since = DateTime.add(Retain.Clock.start_of_day(first, user.tz), -1, :day)
+
+        practised =
+          from(r in Retain.Review,
+            join: i in Retain.Item,
+            on: i.id == r.item_id,
+            where:
+              i.user_id == ^user.id and is_nil(r.supersedes_id) and
+                r.outcome != ^:defer and r.at >= ^since,
+            distinct: true,
+            select: fragment("((? AT TIME ZONE 'UTC') AT TIME ZONE ?)::date", r.at, ^user.tz)
+          )
+          |> Oskol.Repo.all()
+          |> MapSet.new()
+
+        for offset <- 0..(n - 1), do: MapSet.member?(practised, Date.add(first, offset))
+    end
   end
 
   def default_tz, do: @default_tz
