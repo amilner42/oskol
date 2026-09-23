@@ -613,8 +613,9 @@ advance msg model =
             goTo step model
 
         -- The cube tab is about the position before the roll, so the dice
-        -- come off the board with it; the move tab puts the move back; the
-        -- overview leaves the board as it is, and the step with it.
+        -- come off the board with it; the move tab and the overview put
+        -- the move played back (the overview keeps the step, not the
+        -- roll taken back).
         PickTab tab ->
             ( { model
                 | tab = tab
@@ -623,11 +624,8 @@ advance msg model =
                         CubeTab ->
                             Before
 
-                        MoveTab ->
+                        _ ->
                             Played
-
-                        OverviewTab ->
-                            model.showing
               }
             , Cmd.none
             )
@@ -2301,8 +2299,19 @@ viewDeck model game =
                 toPractice =
                     " to practice " ++ these ++ "."
             in
-            case ( model.session.user, model.signIn ) of
-                ( Just _, _ ) ->
+            -- The open sign-in comes first: a guest whose code was just
+            -- accepted is signed in (Main hears of it before CONTINUE is
+            -- pressed), and the win -- "You're in.", the username, CONTINUE
+            -- -- is theirs to read; it folds away on CONTINUE, into the
+            -- kept line.
+            case ( model.signIn, model.session.user ) of
+                ( Just signIn, _ ) ->
+                    div [ class "rp-deck", id "rp-deck", attribute "data-count" (String.fromInt n) ]
+                        [ p [ class "rp-deck-line" ] [ text ("Sign in" ++ toPractice) ]
+                        , div [ id "rp-deck-signin" ] [ Html.map SignInMsg (SignIn.view signIn) ]
+                        ]
+
+                ( Nothing, Just _ ) ->
                     p [ class "rp-deck is-kept", id "rp-deck", attribute "data-game" (String.fromInt game.number), attribute "data-count" (String.fromInt n) ]
                         [ span [ class "hero-check-circle w-4 h-4", attribute "aria-hidden" "true" ] []
                         , text
@@ -2312,12 +2321,6 @@ viewDeck model game =
                              else
                                 "These " ++ String.fromInt n ++ " mistakes are in your practice already."
                             )
-                        ]
-
-                ( Nothing, Just signIn ) ->
-                    div [ class "rp-deck", id "rp-deck", attribute "data-count" (String.fromInt n) ]
-                        [ p [ class "rp-deck-line" ] [ text ("Sign in" ++ toPractice) ]
-                        , div [ id "rp-deck-signin" ] [ Html.map SignInMsg (SignIn.view signIn) ]
                         ]
 
                 ( Nothing, Nothing ) ->

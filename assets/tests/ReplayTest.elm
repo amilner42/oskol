@@ -25,6 +25,7 @@ import ReplayFixtures
 import Session
 import Test exposing (Test, describe, test)
 import Test.Html.Event as Event
+import Ui.SignIn as SignIn
 import Test.Html.Query as Query
 import Test.Html.Selector as Selector
 
@@ -248,9 +249,35 @@ practice =
                         , \m -> m |> run [ OpenedSignIn ] |> .signIn |> Maybe.map .next |> Expect.equal (Just "/backgammon/000011/replay?game=3")
                         , \m -> m |> run [ OpenedSignIn, OpenedSignIn ] |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.id "signin" ] |> Query.count (Expect.equal 1)
 
-                        -- the word is the mistakes list's door too: a guest's tap opens it
+                        -- the word is the door: a guest's tap opens it
                         , \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin-open" ] |> Event.simulate Event.click |> Event.expect OpenedSignIn
                         ]
+        , test "a guest signing in here reads the win, and CONTINUE folds it into the kept line" <|
+            \_ ->
+                let
+                    won =
+                        { saved = 1, next = "/backgammon/000011/replay?game=3", user = Just { email = "ari@oskol.test", name = Just "ari" }, new = False }
+
+                    opened =
+                        loaded (Just 3) |> run (gotEverything ++ [ mistakes [ "aaaaaaaa", "bbbbbbbb" ], OpenedSignIn ])
+
+                    -- the code accepted: the page tells the shell, which sets
+                    -- the account on the session (as Main's `signedIn` does)
+                    ( afterCode, _, out ) =
+                        Page.update (SignInMsg (SignIn.GotCode (Ok won))) opened
+
+                    signedInHere =
+                        signedIn afterCode
+                in
+                Expect.all
+                    [ \_ -> out |> Expect.equal (Page.SignedIn won.user)
+                    , \m -> m |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck-signin" ] |> Query.has [ Selector.id "signin", Selector.text "You're in." ]
+                    , \m -> m |> Page.view |> Query.fromHtml |> Query.findAll [ Selector.class "is-kept" ] |> Query.count (Expect.equal 0)
+                    , \m -> m |> run [ SignInMsg SignIn.PressedContinue ] |> Page.view |> Query.fromHtml |> Query.find [ Selector.id "rp-deck" ] |> Query.has [ Selector.class "is-kept", Selector.text "These 2 mistakes are in your practice already." ]
+                    , \m -> m |> run [ SignInMsg SignIn.PressedContinue ] |> Page.view |> Query.fromHtml |> Query.hasNot [ Selector.id "signin" ]
+                    , \m -> m |> run [ SignInMsg SignIn.PressedContinue ] |> .step |> Expect.equal 0
+                    ]
+                    signedInHere
         , test "no line while the mistakes are uncounted, none for a game with none, none for a stranger" <|
             \_ ->
                 Expect.all
@@ -969,13 +996,14 @@ phone =
                     , run [ PickTab Page.CubeTab ] >> Expect.all [ tabOn "rp-note-cube", shows "rp-note" True, shows "rp-overview" False, .showing >> Expect.equal Before ]
                     , run [ PickTab Page.CubeTab, PickTab Page.MoveTab ] >> Expect.all [ tabOn "rp-note-move", .showing >> Expect.equal Played ]
                     ]
-        , onEveryScreen "OVERVIEW mid-game keeps the step, and MOVE is the way back to it" <|
-            run [ Next, Next, Next, PickTab Page.OverviewTab ]
+        , onEveryScreen "OVERVIEW mid-game keeps the step (the move played back on the board), and MOVE is the way back to it" <|
+            run [ Next, Next, Next, PickTab Page.CubeTab, PickTab Page.OverviewTab ]
                 >> Expect.all
                     [ tabOn "rp-tab-overview"
                     , shows "rp-overview" True
                     , shows "rp-note" False
                     , .step >> Expect.equal 3
+                    , .showing >> Expect.equal Played
                     , offered "rp-note-move" True
                     , run [ PickTab Page.MoveTab ] >> Expect.all [ tabOn "rp-note-move", shows "rp-note" True, .step >> Expect.equal 3 ]
                     ]

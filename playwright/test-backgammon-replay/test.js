@@ -117,9 +117,16 @@ async function onePanel(page, what, { phone }) {
   must(await page.locator('#rp-overview #rp-summary .rp-pr').count() === 2, `${what}: the overview is the summary, both PRs`);
   must(await page.locator('#practice-game').count() === 0, `${what}: nothing to press for practice on the overview`);
   must(await page.locator('#rp-note-move:disabled').count() === 1 && await page.locator('#rp-note-cube:disabled').count() === 1, `${what}: MOVE and CUBE are not offered before the first roll`);
-  // A roll: MOVE is its verdict, CUBE its other side.
+  // Back where it was, then on to a roll if that line is not one (the
+  // room is random play: a line can be a double, a take, a dance): MOVE
+  // is the roll's verdict, CUBE its other side.
   for (let i = 0; i < step; i++) await page.click('#rp-next');
   await page.waitForFunction((want) => document.querySelector('.rp-controls-wrap').dataset.step === String(want), step, { timeout: 2000 });
+  for (let i = 0; i < 12 && !(await page.locator('#rp-note-cube:enabled').count() && await page.locator('#rp-note .rp-grade').count()); i++) {
+    await page.click('#rp-next');
+    await sleep(120);
+  }
+  const roll = Number(await page.getAttribute('.rp-controls-wrap', 'data-step'));
   await page.waitForSelector('#rp-note-cube:enabled', { timeout: 2000 });
   must(await page.locator('#rp-note-move.is-on').count() === 1 && await page.locator('#rp-panel > #rp-note .rp-grade').count() === 1, `${what}: a step opens MOVE, that move's verdict`);
   await page.click('#rp-note-cube');
@@ -128,7 +135,7 @@ async function onePanel(page, what, { phone }) {
   // OVERVIEW mid-game keeps the step; MOVE is the way back.
   await page.click('#rp-tab-overview');
   await page.waitForSelector('#rp-overview', { timeout: 2000 });
-  must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === step && await page.locator('#rp-note').count() === 0, `${what}: OVERVIEW mid-game keeps step ${step} and shows the overview alone`);
+  must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === roll && await page.locator('#rp-note').count() === 0, `${what}: OVERVIEW mid-game keeps step ${roll} and shows the overview alone`);
   must(await page.locator('.rp-tab.is-on').count() === 1, `${what}: one tab is on`);
   if (phone) {
     // The overview is the tallest: the page, not the panel, is what scrolls.
@@ -141,7 +148,7 @@ async function onePanel(page, what, { phone }) {
   }
   await page.click('#rp-note-move');
   await page.waitForSelector('#rp-note-move.is-on', { timeout: 2000 });
-  must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === step && await page.locator('#rp-note .rp-grade').count() === 1, `${what}: MOVE comes back to step ${step}'s verdict`);
+  must(Number(await page.getAttribute('.rp-controls-wrap', 'data-step')) === roll && await page.locator('#rp-note .rp-grade').count() === 1, `${what}: MOVE comes back to step ${roll}'s verdict`);
 }
 
 async function swipe(page, dx) {

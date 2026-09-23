@@ -643,8 +643,8 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  engine's analysis (polls /reviews while any is pending):
                                  beside the board one panel with three tabs, OVERVIEW
                                  (each player's PR and grade counts, the mistakes list,
-                                 a door to each step; always there, and it keeps the
-                                 step), MOVE (the line's verdict: a sentence in words
+                                 each a door to its step; always there, and it keeps
+                                 the step), MOVE (the line's verdict: a sentence in words
                                  built from the chances over the numbers in columns;
                                  greyed at the start) and CUBE (a roll's other side,
                                  greyed off a roll); a step opens MOVE, or CUBE when it
