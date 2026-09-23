@@ -54,6 +54,95 @@ pub fn a_visitor_we_do_not_know_has_no_name_test() {
   assert string.contains(body, "\"guest_name\":null")
 }
 
+// ---------- the head an invite link unfurls with ----------
+
+/// A room waiting for its second player: one seat, the creator's.
+fn lobby() -> room.ActiveRoom {
+  ActiveRoom(
+    ..open_room(),
+    status: "waiting",
+    format: "match7",
+    clock: "bg5",
+    seats: [#("p1", "Arie", "g1", "")],
+    to_act: [],
+    clocks: [],
+  )
+}
+
+pub fn an_open_invite_unfurls_as_who_wants_to_play_what_test() {
+  let ctx = reading() |> fakes.with_row(Some(lobby()))
+
+  assert landing.invite_head(ctx, "backgammon", "123456")
+    == Some(#(
+      "Arie wants to play a match to 7 on a 5 min clock",
+      landing.invite_description,
+    ))
+  assert string.starts_with(
+    landing.invite_description,
+    "Take the other seat and roll.",
+  )
+}
+
+pub fn the_invite_names_the_format_as_a_phrase_and_the_clock_only_when_there_is_one_test() {
+  let head = fn(format, clock) {
+    reading()
+    |> fakes.with_row(Some(ActiveRoom(..lobby(), format: format, clock: clock)))
+    |> landing.invite_head("backgammon", "123456")
+    |> option.map(fn(h) { h.0 })
+  }
+
+  assert head("single", "none")
+    == Some("Arie wants to play a game of backgammon")
+  assert head("match3", "none") == Some("Arie wants to play a match to 3")
+  assert head("match5", "blitz")
+    == Some("Arie wants to play a match to 5 on a blitz clock")
+  assert head("unlimited", "bg10")
+    == Some("Arie wants to play unlimited backgammon on a 10 min clock")
+  // a format the game no longer lists is still a sentence, not a crash
+  assert head("match9", "none") == Some("Arie wants to play backgammon")
+}
+
+pub fn the_inviter_is_the_seat_as_the_row_names_it_test() {
+  // An account-owned seat's name is the username, put on the row's seat by
+  // Elixir before the cap answers; here it is just whatever the seat says.
+  let ctx =
+    reading()
+    |> fakes.with_row(Some(
+      ActiveRoom(..lobby(), seats: [#("p1", "arie1", "g9", "u1")]),
+    ))
+
+  assert landing.invite_head(ctx, "backgammon", "123456")
+    |> option.map(fn(h) { h.0 })
+    == Some("arie1 wants to play a match to 7 on a 5 min clock")
+}
+
+pub fn any_room_but_a_waiting_one_keeps_the_game_pages_own_head_test() {
+  let head = fn(row) {
+    reading()
+    |> fakes.with_row(row)
+    |> landing.invite_head("backgammon", "123456")
+  }
+
+  // started, or over: nothing about who played whom
+  assert head(Some(ActiveRoom(..lobby(), status: "playing"))) == None
+  assert head(Some(open_room())) == None
+  assert head(Some(ActiveRoom(..lobby(), status: "finished"))) == None
+  // unknown
+  assert head(None) == None
+  // another game's room under this game's link
+  assert head(Some(ActiveRoom(..lobby(), slug: "chess"))) == None
+  // a seat with no name, or a lobby the row somehow shows two seats in
+  assert head(Some(ActiveRoom(..lobby(), seats: [#("p1", "", "g1", "")])))
+    == None
+  assert head(Some(
+      ActiveRoom(..lobby(), seats: [
+        #("p1", "Arie", "g1", ""),
+        #("p2", "Bo", "g2", ""),
+      ]),
+    ))
+    == None
+}
+
 // ---------- GET /papi/me/games ----------
 
 fn open_room() -> room.ActiveRoom {

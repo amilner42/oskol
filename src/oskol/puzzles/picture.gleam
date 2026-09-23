@@ -182,6 +182,22 @@ pub fn default_svg() -> String {
   )
 }
 
+/// The picture an invite link unfurls with: the opening position, nobody
+/// on roll, cube in the middle, and the invitation's words. Drawn once
+/// (`Oskol.Puzzles.Pictures.write_invite!`) and committed at
+/// priv/static/images/invite-board.png; the link's title says who wants
+/// to play what.
+pub fn invite_svg() -> String {
+  document(
+    opening,
+    None,
+    1,
+    Centered,
+    "Backgammon on Oskol",
+    "You're invited: take the other seat and roll.",
+  )
+}
+
 /// The opening position in the engine's 26 ints: index 0 the opponent's
 /// bar, 1..24 the points as White moves along them (24 -> 1), 25 White's
 /// bar. White's 24-point is index 24.

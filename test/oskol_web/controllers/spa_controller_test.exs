@@ -356,7 +356,9 @@ defmodule OskolWeb.SpaControllerTest do
 
     test "a page with a picture of its own gets the large card with it, at its size",
          %{conn: conn} do
-      # No page sets `:puzzle_image` in this suite yet (the puzzle page does):
+      # The layout is rendered as a page with a picture renders it (the
+      # puzzle page, an open invite): with the assign.
+      # No page sets `:share_image` by hand in this suite:
       # the layout is rendered as that page renders it, with the assign.
       image = url(~p"/puzzles/abc12345.png")
 
@@ -365,7 +367,7 @@ defmodule OskolWeb.SpaControllerTest do
           conn: conn,
           inner_content: "",
           page_title: "White to play 6-4. What's your play?",
-          puzzle_image: image
+          share_image: image
         )
 
       assert html =~ ~s(<meta property="og:image" content="#{image}">)

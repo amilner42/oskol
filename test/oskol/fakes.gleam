@@ -63,6 +63,17 @@ pub fn with_slug(ctx: Ctx, slug: Option(String)) -> Ctx {
   Ctx(..ctx, rooms: rooms_caps.RoomsCaps(..ctx.rooms, slug_of: fn(_) { slug }))
 }
 
+/// Persistence caps that answer one room's row, or none.
+pub fn with_row(ctx: Ctx, row: option.Option(room.ActiveRoom)) -> Ctx {
+  Ctx(
+    ..ctx,
+    persistence: persistence_caps.PersistenceCaps(
+      ..ctx.persistence,
+      room: fn(_) { row },
+    ),
+  )
+}
+
 /// Persistence caps that answer which rooms a guest holds a seat in.
 pub fn with_active_rooms(ctx: Ctx, rooms: List(room.ActiveRoom)) -> Ctx {
   Ctx(

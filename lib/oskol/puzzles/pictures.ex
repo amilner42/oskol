@@ -159,6 +159,22 @@ defmodule Oskol.Puzzles.Pictures do
     byte_size(png)
   end
 
+  @invite_path Path.expand("../../../priv/static/images/invite-board.png", __DIR__)
+
+  @doc """
+  The picture an invite link unfurls with (`priv/static/images/invite-board.png`):
+  the opening position with the invitation's words, from the same renderer.
+  Run once, and again whenever the renderer or the words change:
+
+      mix run -e 'Oskol.Puzzles.Pictures.write_invite!()'
+  """
+  def write_invite!(path \\ @invite_path) do
+    {:ok, exe} = binary([])
+    {:ok, png} = rasterise(:oskol@puzzles@picture.invite_svg(), exe, [])
+    File.write!(path, png)
+    byte_size(png)
+  end
+
   # ---------- The pieces ----------
 
   @doc "The SVG of a stored question (a `puzzles.question` map), for measuring and tooling."

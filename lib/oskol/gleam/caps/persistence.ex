@@ -4,7 +4,7 @@ defmodule Oskol.Gleam.Caps.Persistence do
   import Oskol.Gleam.Interop
 
   def build do
-    {:persistence_caps, &game_exists?/1, &seated_rooms/2}
+    {:persistence_caps, &game_exists?/1, &seated_rooms/2, &room/1}
   end
 
   # A database hiccup must not block creating games: the id space plus the
@@ -25,20 +25,37 @@ defmodule Oskol.Gleam.Caps.Persistence do
     named = Oskol.Persistence.display_names(Enum.map(rooms, & &1.players))
 
     Enum.zip(rooms, named)
-    |> Enum.map(fn {game, players} ->
-      config = game.config || %{}
-      state = game.state || %{}
-
-      {:active_room, game.slug, game.id, game.status, config["format"] || "",
-       config["clock"] || "none",
-       Enum.map(players, fn p ->
-         {p["id"], p["name"] || "", p["guest_id"] || "", p["user_id"] || ""}
-       end), Enum.filter(state["to_act"] || [], &is_binary/1), clocks(state["clocks"]),
-       clock_age_s(state["at"], game.updated_at, now),
-       max(DateTime.diff(now, game.updated_at, :second), 0)}
-    end)
+    |> Enum.map(fn {game, players} -> active_room(game, players, now) end)
   rescue
     _ -> []
+  end
+
+  # One row, whoever asks, as the same record: an invite link's head reads
+  # it. A hiccup is nothing, and the link gets the game page's own head.
+  defp room(game_id) do
+    case Oskol.Persistence.room(game_id) do
+      nil ->
+        :none
+
+      game ->
+        [players] = Oskol.Persistence.display_names([game.players || []])
+        {:some, active_room(game, players, DateTime.utc_now())}
+    end
+  rescue
+    _ -> :none
+  end
+
+  defp active_room(game, players, now) do
+    config = game.config || %{}
+    state = game.state || %{}
+
+    {:active_room, game.slug, game.id, game.status, config["format"] || "",
+     config["clock"] || "none",
+     Enum.map(players, fn p ->
+       {p["id"], p["name"] || "", p["guest_id"] || "", p["user_id"] || ""}
+     end), Enum.filter(state["to_act"] || [], &is_binary/1), clocks(state["clocks"]),
+     clock_age_s(state["at"], game.updated_at, now),
+     max(DateTime.diff(now, game.updated_at, :second), 0)}
   end
 
   # How long ago the snapshot read its clocks: its own stamp, or, for a row

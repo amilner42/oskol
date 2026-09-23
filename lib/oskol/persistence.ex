@@ -235,6 +235,9 @@ defmodule Oskol.Persistence do
 
   defp holds(_key, _value), do: nil
 
+  @doc "A room's row as it stands, without waking it or reading its log; nil for none."
+  def room(game_id) when is_binary(game_id), do: Repo.get(Game, game_id)
+
   @doc "A room's seats as the row holds them, without waking it or reading its log."
   def players(game_id) when is_binary(game_id) do
     from(g in Game, where: g.id == ^game_id, select: g.players)
