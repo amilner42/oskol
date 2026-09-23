@@ -229,6 +229,99 @@ defmodule OskolWeb.SpaControllerTest do
       assert html =~ ~s(content="Match play, 5 away against 3. Cube at 2, Black&#39;s.)
     end
 
+    # A story link: a finished game with a source for the puzzle, and the
+    # share row the seat that made the mistake minted.
+    defp a_story(puzzle_id) do
+      game_id = "spa-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
+      now = DateTime.utc_now()
+
+      Oskol.Repo.insert!(%Oskol.Persistence.Game{
+        id: game_id,
+        slug: "backgammon",
+        config: %{"format" => "single"},
+        seed: 3,
+        players: [
+          %{"id" => "p1", "name" => "Arie", "guest_id" => "g-arie"},
+          %{"id" => "p2", "name" => "Charlie", "guest_id" => "g-charlie"}
+        ],
+        status: "finished",
+        winners: ["p2"]
+      })
+
+      source =
+        Oskol.Repo.insert!(%Oskol.Puzzles.Source{
+          puzzle_id: puzzle_id,
+          game_id: game_id,
+          game_number: 1,
+          turn: 4,
+          kind: "move",
+          seat: 0,
+          player_id: "p1",
+          played: "24/23 13/11",
+          equity_lost: 0.11,
+          grade: "bad"
+        })
+
+      token =
+        "TOKEN" <>
+          (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :upper) |> String.slice(0, 7))
+
+      Oskol.Repo.insert!(%Oskol.Puzzles.Share{
+        token: token,
+        puzzle_id: puzzle_id,
+        source_id: source.id,
+        shared_by: "g-arie",
+        shared_name: "Arie",
+        inserted_at: now
+      })
+
+      token
+    end
+
+    test "a story link's head names the sharer, and the canonical stays the clean page", %{
+      conn: conn
+    } do
+      id = a_puzzle("move")
+      token = a_story(id)
+      html = conn |> get(~p"/puzzles/#{id}?s=#{token}") |> html_response(200)
+      headline = esc("Arie got this wrong. What's your play?")
+      assert html =~ ~s(>#{headline} · Oskol</title>)
+      assert html =~ ~s(<meta property="og:title" content="#{headline}")
+      assert html =~ ~s(<meta name="twitter:title" content="#{headline}")
+      # The description, the picture and the canonical are the plain page's.
+      assert html =~ ~s(<meta name="description" content="Match play, 3 away against 5.)
+      assert html =~ ~s(<link rel="canonical" href="http://localhost:4002/puzzles/#{id}")
+      assert html =~ ~s(<meta property="og:url" content="http://localhost:4002/puzzles/#{id}")
+
+      assert html =~
+               ~s(<meta property="og:image" content="http://localhost:4002/puzzles/#{id}.png")
+
+      # The opponent is nowhere, and neither is the move: the story waits
+      # for the reader's own attempt.
+      refute html =~ "Charlie"
+      refute html =~ "24/23"
+    end
+
+    test "a token nobody minted, or minted for another puzzle, leaves the head as it was", %{
+      conn: conn
+    } do
+      id = a_puzzle("move")
+      other = a_puzzle("double")
+      token = a_story(other)
+      prompt = esc("White to play 6-4. What's your play?")
+
+      for path <- [
+            ~p"/puzzles/#{id}?s=NOSUCHTOKEN0",
+            ~p"/puzzles/#{id}?s=#{token}",
+            ~p"/puzzles/#{id}?s="
+          ] do
+        html = conn |> get(path) |> html_response(200)
+        assert html =~ ~s(<meta property="og:title" content="#{prompt}"), path
+        refute html =~ "got this wrong", path
+        refute html =~ "Arie", path
+      end
+    end
+
     test "a puzzle nobody stored is a 404", %{conn: conn} do
       assert_error_sent 404, fn -> get(conn, ~p"/puzzles/nope0000") end
     end

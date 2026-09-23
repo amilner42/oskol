@@ -263,7 +263,7 @@ routeTo url oldModel =
             Page.Puzzles.init model.session { tz = model.tz }
                 |> wrap model Puzzles PuzzlesMsg
 
-        Just (Route.Puzzle id) ->
+        Just (Route.Puzzle id share) ->
             let
                 -- The run stays a run only while the puzzle opened is one
                 -- of its own (NEXT, or back to the one before): a link to
@@ -282,6 +282,7 @@ routeTo url oldModel =
                 -- next puzzle, or the run's end.
                 , hasNext = run /= Nothing
                 , origin = model.origin
+                , share = share
                 }
                 |> wrap { model | run = run } Puzzle PuzzleMsg
 

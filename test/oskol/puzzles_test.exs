@@ -410,6 +410,71 @@ defmodule Oskol.PuzzlesTest do
     end
   end
 
+  describe "mint_share/5" do
+    test "one link per (decision, sharer), whichever request got there first" do
+      game_id = a_room()
+      key = a_key()
+      [id | _] = ids = some_ids()
+      {:ok, _} = Puzzles.store(game_id, 1, [a_puzzle(key, ids: ids)], [a_source(key)])
+      [source] = sources_of(game_id)
+
+      assert Puzzles.mint_share(id, source.id, "guest-a", "Arie", "TOKEN0000001") ==
+               "TOKEN0000001"
+
+      # The second offer loses to the row that stands, and the name is the
+      # one frozen with it.
+      assert Puzzles.mint_share(id, source.id, "guest-a", "Renamed", "TOKEN0000002") ==
+               "TOKEN0000001"
+
+      assert Repo.get!(Puzzles.Share, "TOKEN0000001").shared_name == "Arie"
+      refute Repo.get(Puzzles.Share, "TOKEN0000002")
+      # Another sharer of the same decision (an account that took the seat
+      # over) gets a link of their own.
+      assert Puzzles.mint_share(id, source.id, "user-1", "arie1", "TOKEN0000003") ==
+               "TOKEN0000003"
+
+      assert Repo.aggregate(Puzzles.Share, :count) == 2
+    end
+
+    test "requests minting together get one link" do
+      game_id = a_room()
+      key = a_key()
+      [id | _] = ids = some_ids()
+      {:ok, _} = Puzzles.store(game_id, 1, [a_puzzle(key, ids: ids)], [a_source(key)])
+      [source] = sources_of(game_id)
+
+      tokens =
+        1..8
+        |> Task.async_stream(
+          fn n ->
+            Puzzles.mint_share(id, source.id, "guest-a", "Arie", "TOKEN000000#{n}")
+          end,
+          max_concurrency: 8,
+          timeout: :infinity
+        )
+        |> Enum.map(fn {:ok, token} -> token end)
+
+      assert length(Enum.uniq(tokens)) == 1
+      assert Repo.aggregate(Puzzles.Share, :count) == 1
+    end
+
+    test "share/1 reads the link with its decision, and the day the game ended" do
+      game_id = a_room()
+      key = a_key()
+      [id | _] = ids = some_ids()
+      {:ok, _} = Puzzles.store(game_id, 1, [a_puzzle(key, ids: ids)], [a_source(key)])
+      [source] = sources_of(game_id)
+      "TOKEN0000001" = Puzzles.mint_share(id, source.id, "guest-a", "Arie", "TOKEN0000001")
+
+      assert {share, read, ended_at} = Puzzles.share("TOKEN0000001")
+      assert share.puzzle_id == id
+      assert read.id == source.id
+      assert %DateTime{} = ended_at
+      assert Puzzles.share("NOSUCHTOKEN0") == nil
+      assert Puzzles.share("") == nil
+    end
+  end
+
   describe "the tables the later tickets write" do
     test "an attempt, a share and an image round-trip" do
       game_id = a_room()

@@ -9,6 +9,7 @@ defmodule OskolWeb.Api.PuzzleController do
       POST /papi/puzzles/:id/attempts                grade it and reveal it
       POST /papi/puzzles/:id/attempts/:key/outcome   the player's override
       GET  /papi/puzzles/:id/mine                    the memory line
+      POST /papi/puzzles/:id/shares                  a share-with-my-story link
       GET  /papi/games/:slug/rooms/:id/puzzles?game= one game's mistakes
 
   Every decision -- what a puzzle says, whether an answer is right, what it
@@ -43,9 +44,16 @@ defmodule OskolWeb.Api.PuzzleController do
         session(conn),
         id,
         {:attempted, moves(params), band(params), param(params, "key")},
+        # The `?s=` the page was opened with, if any: the story it opens
+        # rides on this answer and nowhere earlier.
+        param(params, "s"),
         System.system_time(:millisecond)
       )
     )
+  end
+
+  def share(conn, %{"id" => id}) do
+    send_json(conn, :oskol@handlers@shares.mint_json(ctx(), session(conn), id))
   end
 
   def outcome(conn, %{"id" => id, "key" => key} = params) do

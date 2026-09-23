@@ -541,18 +541,18 @@ pub fn the_head_is_the_question_and_the_score_test() {
       stored("p1", move_question(), move_answer()),
       stored("t1", cube_question(Take), cube_answer()),
     ])
-  let assert Ok(handler.Head(title, description)) = handler.head(ctx, "p1")
+  let assert Ok(handler.Head(title, description)) = handler.head(ctx, "p1", "")
   assert title == "White to play 6-4. What's your play?"
   assert description
     == "Match play, 3 away against 5. Cube centred. A backgammon puzzle: play it on the board."
   let assert Ok(handler.Head(take_title, take_description)) =
-    handler.head(ctx, "t1")
+    handler.head(ctx, "t1", "")
   assert take_title == "White is doubled. Take?"
   assert string.starts_with(
     take_description,
     "Match play, 5 away against 3. Cube at 1, Black's.",
   )
-  assert handler.head(ctx, "nope")
+  assert handler.head(ctx, "nope", "")
     == Error(error.NotFound(handler.not_found_message))
 }
 
@@ -668,6 +668,7 @@ fn attempt(
     session,
     id,
     handler.Attempted(moves: moves, band: None, key: key),
+    "",
     now,
   )
 }
@@ -684,6 +685,7 @@ fn band_attempt(
     session,
     id,
     handler.Attempted(moves: [], band: Some(band), key: key),
+    "",
     now,
   )
 }
@@ -844,6 +846,7 @@ pub fn a_band_outside_the_scale_is_refused_test() {
       guest("g1"),
       "d1",
       handler.Attempted(moves: [], band: None, key: "k3"),
+      "",
       now,
     )
     == Error(error.validation_failed(handler.bad_band_message))
@@ -1317,6 +1320,122 @@ pub fn a_cube_mistake_points_at_its_own_line_test() {
   let ctx = mine_ctx([cube])
   let assert Ok(body) = handler.mine_json(ctx, guest("guest-a"), "p1")
   assert text_at(body, ["replay"]) == "/backgammon/000011/replay?game=2&step=5"
+}
+
+// ---------- The story on the attempt ----------
+
+/// A context where token "tok-ok" opens the story of p1's source, told by
+/// Arie, and nothing else does.
+fn story_ctx() -> Ctx {
+  let base = mine_ctx([source_room(two_seats, "p1")])
+  let room = source_room(two_seats, "p1")
+  Ctx(
+    ..base,
+    puzzles: puzzles_caps.PuzzlesCaps(..base.puzzles, share: fn(token) {
+      record_call("shares", token)
+      case token {
+        "tok-ok" ->
+          Some(puzzles_caps.Share(
+            token: token,
+            puzzle_id: "p1",
+            shared_name: "Arie",
+            source: room.source,
+          ))
+        // A real token, minted for some other puzzle.
+        "tok-other" ->
+          Some(puzzles_caps.Share(
+            token: token,
+            puzzle_id: "p9",
+            shared_name: "Arie",
+            source: room.source,
+          ))
+        _ -> None
+      }
+    }),
+  )
+}
+
+/// The friend who opens a story link is told the story once they have
+/// tried: the sharer's name, the move, the grade, the result, and never
+/// the opponent.
+pub fn a_valid_token_puts_the_story_on_the_reveal_test() {
+  reset()
+  let ctx = story_ctx()
+  let assert Ok(body) =
+    handler.attempt_json(
+      ctx,
+      guest("nobody"),
+      "p1",
+      handler.Attempted(moves: path_to(2), band: None, key: "k1"),
+      "tok-ok",
+      now,
+    )
+  assert text_at(body, ["story", "name"]) == "Arie"
+  assert text_at(body, ["story", "played"]) == "24/23 13/11"
+  assert text_at(body, ["story", "grade"]) == "bad"
+  assert bool_at(body, ["story", "result", "won"]) == False
+  assert text_at(body, ["story", "line"])
+    == "Arie played 24/23 13/11 (a bad move) and lost 2 points."
+  assert text_at(body, ["story", "headline"])
+    == "Arie got this wrong. What's your play?"
+  assert !string.contains(body, "Charlie")
+  // The verdict is still the friend's own.
+  assert text_at(body, ["verdict"]) == "fail"
+}
+
+pub fn a_token_nobody_minted_is_ignored_test() {
+  reset()
+  let ctx = story_ctx()
+  let assert Ok(body) =
+    handler.attempt_json(
+      ctx,
+      guest("nobody"),
+      "p1",
+      handler.Attempted(moves: path_to(0), band: None, key: "k1"),
+      "tok-nope",
+      now,
+    )
+  assert is_null(body, "story")
+  assert text_at(body, ["verdict"]) == "pass"
+  // A token minted for another puzzle says nothing on this one.
+  let assert Ok(other) =
+    handler.attempt_json(
+      ctx,
+      guest("nobody"),
+      "p1",
+      handler.Attempted(moves: path_to(0), band: None, key: "k2"),
+      "tok-other",
+      now,
+    )
+  assert is_null(other, "story")
+  assert !string.contains(other, "Arie")
+}
+
+pub fn no_token_means_no_story_and_no_lookup_test() {
+  reset()
+  let ctx = story_ctx()
+  let assert Ok(body) = attempt(ctx, guest("nobody"), "p1", path_to(1), "k1")
+  assert is_null(body, "story")
+  assert recorded("shares") == []
+}
+
+/// The head of a story link carries the sharer's name and the question;
+/// any other token leaves it as it was.
+pub fn the_head_of_a_story_link_names_the_sharer_test() {
+  reset()
+  let ctx = story_ctx()
+  let assert Ok(handler.Head(title, description)) =
+    handler.head(ctx, "p1", "tok-ok")
+  assert title == "Arie got this wrong. What's your play?"
+  // One row: the share. The head never reads the game's record.
+  assert recorded("shares") == ["tok-ok"]
+  assert recorded("records") == []
+  assert description
+    == "Match play, 3 away against 5. Cube centred. A backgammon puzzle: play it on the board."
+  let assert Ok(handler.Head(plain, _)) = handler.head(ctx, "p1", "tok-nope")
+  assert plain == "White to play 6-4. What's your play?"
+  let assert Ok(handler.Head(other, _)) = handler.head(ctx, "p1", "tok-other")
+  assert other == "White to play 6-4. What's your play?"
 }
 
 // ---------- GET /papi/games/:slug/rooms/:id/puzzles?game=n ----------

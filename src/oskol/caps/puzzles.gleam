@@ -158,6 +158,14 @@ pub type SourceRoom {
   )
 }
 
+/// A share-with-my-story link, read back by its token: which puzzle it is
+/// about, the name the sharer consented to be shown under (frozen when the
+/// link was minted: a rename or a seat taken over must not change who the
+/// story names), and the one decision it tells.
+pub type Share {
+  Share(token: String, puzzle_id: String, shared_name: String, source: Source)
+}
+
 /// What answering one puzzle did, as the serialized section hands it back:
 /// the verdict that stands and the schedule that was reported.
 pub type Scheduled {
@@ -299,6 +307,14 @@ pub type PuzzlesCaps(moves) {
     /// (`Oskol.Puzzles.Pictures`); a picture that does not get drawn is
     /// the sweep's to find, never a reason for a review to fail.
     pictures: fn(String, Int) -> Nil,
+    /// Mint a story link, or hand back the one this sharer already has for
+    /// this decision: (puzzle_id, source_id, shared_by, shared_name, a fresh
+    /// token). One row per (source, sharer), whichever request got there
+    /// first, so the token that comes back may not be the one offered.
+    mint_share: fn(String, Int, String, String, String) -> String,
+    /// A story link by its token, or nothing. The caller checks the puzzle
+    /// it names: a token minted for one puzzle says nothing on another.
+    share: fn(String) -> Option(Share),
     /// Up to this many stored puzzles whose answer is `complete`, in an
     /// order the database chose at random: the pool TRY ONE draws from.
     /// Which of them stands clear enough to be asked of a stranger is the
@@ -332,6 +348,8 @@ pub fn stub() -> PuzzlesCaps(moves) {
     cached_moves: fn(_) { option.None },
     keep_moves: fn(_, _) { Nil },
     pictures: fn(_, _) { panic as "stub puzzles.pictures" },
+    mint_share: fn(_, _, _, _, _) { panic as "stub puzzles.mint_share" },
+    share: fn(_) { panic as "stub puzzles.share" },
     sample: fn(_) { panic as "stub puzzles.sample" },
   )
 }

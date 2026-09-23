@@ -143,6 +143,7 @@ defmodule Oskol.PuzzlesConcurrencyTest do
       {:session, {:some, "guest-" <> key}, {:some, uid}},
       @puzzle,
       {:attempted, moves, :none, key},
+      "",
       System.system_time(:millisecond)
     )
     |> case do
