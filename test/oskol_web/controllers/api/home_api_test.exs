@@ -245,7 +245,17 @@ defmodule OskolWeb.Api.HomeApiTest do
                "due" => 0,
                "deck" => 0,
                "ladder" => List.duplicate(0, 8),
-               "days" => List.duplicate(false, 30)
+               "days" => List.duplicate(false, 30),
+               # The day's ring: nothing answered and nothing to answer,
+               # and no deck opened to find that out.
+               "today" => %{"done" => 0, "target" => 0},
+               # Three bands, every one of them empty.
+               "severity" => [
+                 %{"grade" => "very_bad", "total" => 0, "patched" => 0},
+                 %{"grade" => "bad", "total" => 0, "patched" => 0},
+                 %{"grade" => "doubtful", "total" => 0, "patched" => 0}
+               ],
+               "patched_level" => 4
              }
 
       # A read must not make a deck for an account that has never

@@ -348,14 +348,16 @@ pub fn with_active_days(ctx: Ctx, uid: String, days: List(Bool)) -> Ctx {
 }
 
 /// Practice caps for a page that only reads a deck: what is due, how big
-/// it is, the ladder and the days practised. Everything a session does to
-/// a deck still panics.
+/// it is, the ladder, the days practised, where the day stands and the
+/// deck by band. Everything a session does to a deck still panics.
 pub fn with_deck(
   ctx: Ctx,
   due: Int,
   size: Int,
   ladder: List(Int),
   days: List(Bool),
+  day: practice_caps.Day,
+  severity: List(practice_caps.Severity),
 ) -> Ctx {
   Ctx(
     ..ctx,
@@ -368,7 +370,12 @@ pub fn with_deck(
             practice_caps.Summary(
               group: [],
               count: size,
-              new_count: 0,
+              // Never started: the ladder's bottom rung, which is where a
+              // card that has not been introduced sits.
+              new_count: case ladder {
+                [new, ..] -> new
+                [] -> 0
+              },
               active_count: size,
               suspended_count: 0,
               due_count: due,
@@ -382,6 +389,13 @@ pub fn with_deck(
         case list.length(days) == n {
           True -> days
           False -> panic as "practice.days asked for a window it was not given"
+        }
+      },
+      day: fn(_) { day },
+      severity: fn(_, level) {
+        case level {
+          4 -> severity
+          _ -> panic as "practice.severity asked with another patched level"
         }
       },
     ),

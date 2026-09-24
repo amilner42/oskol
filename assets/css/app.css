@@ -1769,6 +1769,26 @@ a.bg-match-door:hover { background: var(--paper-2); }
 .rp-page.pz-page { height: auto; min-height: 100dvh; overflow: visible; }
 /* A puzzle is one position, not a match: the bars' score chips say nothing. */
 .pz-page .score-chip { display: none; }
+/* Where this session is, over the question: "4 of 10" with a bar that
+   fills to the same fraction, a mark per puzzle in the verdict's own
+   colours, and the day's ring beside them. Only drawn in a run. */
+.pz-progress { display: flex; align-items: center; gap: 10px; padding: 2px 2px 0; }
+.pz-progress-bar { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.pz-progress-count { color: var(--pencil); letter-spacing: 0.06em; }
+.pz-progress-track { height: 4px; border-radius: 2px; background: var(--paper-2); overflow: hidden; }
+.pz-progress-fill { height: 100%; background: var(--ink); border-radius: 2px; transition: width 0.25s ease; }
+.pz-marks { display: flex; flex-wrap: wrap; gap: 3px; }
+/* Why this position is in front of you, under the marks: the mistake's
+   own severity and whose game it came from. */
+.pz-why { font-size: 11.5px; color: var(--pencil); }
+.pz-mark { width: 9px; height: 9px; border-radius: 2px; border: 1px solid transparent; background: var(--paper-2); }
+.pz-mark.is-blank { background: transparent; border-color: var(--pencil); opacity: 0.45; }
+.pz-mark.is-pass { background: #1f7a45; }
+.pz-mark.is-hold { background: #d7a100; }
+.pz-mark.is-fail { background: #b3261e; }
+.pz-mark.is-unknown { background: var(--pencil); }
+/* The one being played, answered or not. */
+.pz-mark.is-here { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px var(--ink); }
 .pz-ask { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; }
 .pz-prompt { font-size: 17px; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; }
 .pz-score { font-size: 12px; color: var(--pencil); }
@@ -1811,6 +1831,9 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 /* The level line and the four buttons that amend it. */
 .pz-level { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--pencil); display: flex; flex-direction: column; gap: 6px; }
 .pz-level-line { font-size: 12.5px; font-weight: 700; }
+/* The milestone: a mistake patched, in the best move's green. One line,
+   no badge and no animation -- it is an achievement, not a firework. */
+.pz-level.is-patched .pz-level-line { color: #1f7a45; }
 .pz-outcomes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
 .pz-outcome {
   padding: 6px 2px; border: 2px solid var(--ink); border-radius: 4px; background: #fff; color: var(--ink);
@@ -2192,16 +2215,21 @@ a.rp-match-row:hover { color: var(--ink); }
    column beside the board, then the answers (or SHARE / NEXT), then the
    reveal, which scrolls. */
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
-  .rp-page.pz-page { grid-template-rows: auto auto auto minmax(0, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
-  .pz-page .pz-ask { grid-column: 2; grid-row: 2; }
-  .pz-page .rp-controls-wrap { grid-row: 3; }
-  .pz-page .rp-side { grid-row: 4; overflow-y: auto; min-height: 0; }
+  .rp-page.pz-page { grid-template-rows: auto auto auto auto minmax(0, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
+  .pz-page .pz-progress { grid-column: 2; grid-row: 2; }
+  .pz-page .pz-ask { grid-column: 2; grid-row: 3; }
+  .pz-page .rp-controls-wrap { grid-row: 4; }
+  .pz-page .rp-side { grid-row: 5; overflow-y: auto; min-height: 0; }
   .pz-page .rp-note { max-height: none; }
   .pz-prompt { font-size: 14px; }
   .pz-band { min-height: 2.2rem; font-size: 9.5px; }
+  /* The strip gives up what it can: the screen's height is the board's. */
+  .pz-page .chart-ring { width: 34px; height: 34px; }
+  .pz-page .pz-marks { gap: 2px; }
+  .pz-page .pz-mark { width: 7px; height: 7px; }
 }
 @media (min-width: 1024px) {
-  .rp-page.pz-page { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto auto auto; }
+  .rp-page.pz-page { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto auto auto auto; }
   .pz-ask { width: 100%; }
   .pz-page .rp-note { height: auto; flex: 1; min-height: 0; overflow-y: auto; }
 }

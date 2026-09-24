@@ -3,24 +3,48 @@
 ////
 //// This is the seam between the puzzle pages and the `practice` capability.
 //// It holds the rules from the brief that are about the deck rather than
-//// about backgammon -- due before new, ten new a day, KEEP GOING uncapped --
+//// about backgammon -- due before new, three new a day worst first, what
+//// counts as patched, KEEP GOING uncapped --
 //// and turns the cap's refusals into the sentence a player reads. Everything
 //// it needs arrives through the Ctx, so it is pure and tested on stubs.
 
+import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{None}
 import gleam/string
 import oskol/caps/practice.{
   type Ask, type Graded, type Item, type Outcome, type PracticeError,
-  type Session, Ask, BadContent, CardNotStarted, CardSuspended, DeckUnavailable,
-  NotAmendable, OutOfOrder, UnknownCard, UnknownTimezone,
+  type Session, type Severity, Ask, BadContent, CardNotStarted, CardSuspended,
+  DeckUnavailable, NotAmendable, OutOfOrder, Severity, UnknownCard,
+  UnknownTimezone,
 }
 import oskol/core/ctx.{type Ctx}
 import oskol/core/error.{type ApiError}
 
-/// New cards a day, from the brief. Everything due comes first; only then up
-/// to this many, newest game first.
-pub const new_per_day = 10
+/// New cards a day. Everything due comes first; only then up to this many,
+/// **worst first** (`practice/sync.position_of`).
+///
+/// Three, not ten. A deck is made of the player's own mistakes, and the
+/// work that moves a player is answering the ones they already have again
+/// -- three new positions a day is a pace a person keeps, where ten is a
+/// queue that grows faster than it is patched. KEEP GOING is still
+/// uncapped for whoever wants more.
+pub const new_per_day = 3
+
+/// The rung at which a mistake counts as **patched**.
+///
+/// The ladder's intervals are [1, 1, 3, 7, 21, 58, 145, 365] days, so a
+/// card at level 4 has been answered right four times running and is not
+/// due again for three weeks: a mistake you have genuinely stopped
+/// making, rather than one you happened to get right this morning. This
+/// is the only place the number lives -- the page is told it.
+pub const patched_level = 4
+
+/// The bands a deck is counted in, worst first: the site's own grades,
+/// which is what `puzzle_sources.grade` already holds. A mistake is at
+/// worst 0.16 equity lost (very bad), 0.08 (bad) or 0.02 (dubious); below
+/// that it is not a mistake and never becomes a card.
+pub const bands = ["very_bad", "bad", "doubtful"]
 
 /// How many puzzles one page of a session holds.
 pub const page = 20
@@ -133,6 +157,73 @@ pub fn correct(
 /// and say how many moved. The caller fetches the session again after.
 pub fn keep_going(ctx: Ctx, uid: String) -> Int {
   ctx.practice.start_new(uid, keep_going_new)
+}
+
+// ---------- Today ----------
+
+/// The day's work: how many answers this account has recorded in its own
+/// local day, and how many there are to give. The ring on the home and at
+/// the top of a session; the streak's twin -- the streak is the days, this
+/// is today.
+pub type Today {
+  Today(done: Int, target: Int)
+}
+
+/// The target is **the day's actual work**, not a fixed number: what has
+/// been answered, plus everything still due, plus whatever new cards the
+/// day still allows. Twelve due and three new is a target of fifteen, and
+/// a day with nothing due and nothing new is already done.
+///
+/// It is counted this way rather than as "due now" so that it does not
+/// shrink under the player as they answer: every answer moves `done` up
+/// and leaves the target where it was. KEEP GOING goes past it, and then
+/// `done` simply exceeds the target, which is the truth.
+pub fn today(ctx: Ctx, uid: String, due: Int) -> Today {
+  let day = ctx.practice.day(uid)
+  Today(done: day.answered, target: day.answered + due + day.new_remaining)
+}
+
+/// How many cards are due right now, for callers that have not already
+/// read the deck's summary for something else.
+pub fn due_count(ctx: Ctx, uid: String) -> Int {
+  case ctx.practice.summary(uid, []) |> list.first {
+    Ok(row) -> row.due_count
+    Error(Nil) -> 0
+  }
+}
+
+/// One shape, on every endpoint that carries it (`/papi/practice`, a
+/// game's own list, and the home's practice block), so the client has one
+/// decoder and the ring cannot mean two things.
+pub fn today_json(today: Today) -> Json {
+  json.object([
+    #("done", json.int(today.done)),
+    #("target", json.int(today.target)),
+  ])
+}
+
+// ---------- How much of the deck is patched ----------
+
+/// The deck counted by how bad the mistake was, worst band first, with
+/// every band named even when it is empty: the page's three lines are the
+/// three bands, and a band that has gone quiet must read "0 of 0" rather
+/// than disappear and shift the two beside it.
+pub fn severity(ctx: Ctx, uid: String) -> List(Severity) {
+  let rows = ctx.practice.severity(uid, patched_level)
+  list.map(bands, fn(band) {
+    case list.find(rows, fn(row) { row.grade == band }) {
+      Ok(row) -> row
+      Error(Nil) -> Severity(grade: band, total: 0, patched: 0)
+    }
+  })
+}
+
+pub fn severity_json(band: Severity) -> Json {
+  json.object([
+    #("grade", json.string(band.grade)),
+    #("total", json.int(band.total)),
+    #("patched", json.int(band.patched)),
+  ])
 }
 
 // ---------- Where the player is ----------

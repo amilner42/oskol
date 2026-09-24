@@ -1,9 +1,11 @@
 module Api.Practice exposing
-    ( Counts
+    ( Band
+    , Counts
     , Entry
     , Mistakes
     , Practice
     , Random
+    , Today
     , fetch
     , gameMistakes
     , more
@@ -11,13 +13,17 @@ module Api.Practice exposing
     , random
     , randomDecoder
     , sendTimezone
+    , bandDecoder
     , stillWriting
+    , todayDecoder
     )
 
 {-| A practice session, over `/papi/practice`, and the practice home's one
 endpoint of its own (`/papi/puzzles/random`).
 
-    GET  /papi/practice          {puzzles, counts | null, mistakes | null}
+    GET  /papi/practice          {puzzles, counts | null, mistakes | null,
+                                  today | null, severity | null,
+                                  patched_level}
     POST /papi/practice/more     KEEP GOING: ten more into rotation, then the session
     POST /papi/practice/tz       {tz}: where this browser is
     GET  /papi/puzzles/random    TRY ONE: a puzzle whose answer stands clear
@@ -62,6 +68,26 @@ type alias Counts =
     }
 
 
+{-| The day's goal: how many answers this account has recorded in its own
+local day, and how many the pace asks for. An account's only -- a guest
+has no deck, so no day of theirs is counted and no ring is shown.
+-}
+type alias Today =
+    { done : Int
+    , target : Int
+    }
+
+
+{-| One band of mistakes: how bad, how many the player has made, and how
+many of them they have patched (stopped making).
+-}
+type alias Band =
+    { grade : String
+    , total : Int
+    , patched : Int
+    }
+
+
 {-| A guest's: how many mistakes are theirs, from how many games.
 -}
 type alias Mistakes =
@@ -78,6 +104,9 @@ type alias Practice =
     { puzzles : List Entry
     , counts : Maybe Counts
     , mistakes : Maybe Mistakes
+    , today : Maybe Today
+    , severity : List Band
+    , patchedLevel : Int
     }
 
 
@@ -139,10 +168,13 @@ random session toMsg =
 
 practiceDecoder : Decoder Practice
 practiceDecoder =
-    D.map3 Practice
+    D.map6 Practice
         (D.field "puzzles" (D.list entryDecoder))
         (optional "counts" countsDecoder)
         (optional "mistakes" mistakesDecoder)
+        (optional "today" todayDecoder)
+        (D.map (Maybe.withDefault []) (optional "severity" (D.list bandDecoder)))
+        (D.map (Maybe.withDefault 0) (optional "patched_level" D.int))
 
 
 {-| A key that may be absent (an older answer, or another endpoint's) or
@@ -179,6 +211,21 @@ countsDecoder =
         (D.field "new_today" D.int)
         (D.field "new_tomorrow" D.int)
         (D.field "deck" D.int)
+
+
+todayDecoder : Decoder Today
+todayDecoder =
+    D.map2 Today
+        (D.field "done" D.int)
+        (D.field "target" D.int)
+
+
+bandDecoder : Decoder Band
+bandDecoder =
+    D.map3 Band
+        (D.field "grade" D.string)
+        (D.field "total" D.int)
+        (D.field "patched" D.int)
 
 
 mistakesDecoder : Decoder Mistakes

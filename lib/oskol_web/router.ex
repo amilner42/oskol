@@ -75,6 +75,7 @@ defmodule OskolWeb.Router do
     get "/puzzles/:id", PuzzleController, :show
     get "/puzzles/:id/tree", PuzzleController, :tree
     get "/puzzles/:id/mine", PuzzleController, :mine
+    get "/puzzles/:id/why", PuzzleController, :why
     post "/puzzles/:id/attempts", PuzzleController, :attempt
     post "/puzzles/:id/attempts/:key/outcome", PuzzleController, :outcome
     # A story link, minted only by the seat that made the mistake, and only

@@ -4,8 +4,8 @@ module Games.Backgammon.Puzzle exposing
     , decoder, treeDecoder, nodeDecoder
     , Table, Seat, Out(..), view
     , nodeAt, played, snapshot, pips, pipsAgainst
-    , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory, Story
-    , revealDecoder, scheduleDecoder, memoryDecoder, storyDecoder, verdictName
+    , Reveal, Verdict(..), Candidate, CubeReveal, Schedule, Memory, Story, Why
+    , revealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
     , asReplayCandidate, gradeOf, optimalOf, bands, answers
     )
 
@@ -51,8 +51,8 @@ again) and what `/mine` says to a player of the source game. A page
 opened from a story link (`?s=`) gets the sharer's `Story` on the reveal
 too, and only there.
 
-@docs Reveal, Verdict, Candidate, CubeReveal, Schedule, Memory, Story
-@docs revealDecoder, scheduleDecoder, memoryDecoder, storyDecoder, verdictName
+@docs Reveal, Verdict, Candidate, CubeReveal, Schedule, Memory, Story, Why
+@docs revealDecoder, scheduleDecoder, memoryDecoder, whyDecoder, storyDecoder, verdictName
 @docs asReplayCandidate, gradeOf, optimalOf, bands, answers
 
 -}
@@ -577,6 +577,11 @@ type alias Schedule =
     , due : Int
     , amendable : Bool
     , selfGrade : Bool
+
+    -- This answer is the one that patched the mistake: it crossed the
+    -- rung where a mistake counts as stopped. The server decides it
+    -- (`deck.patched_level`), so the page keeps no copy of the number.
+    , patched : Bool
     }
 
 
@@ -711,12 +716,34 @@ cubeRevealDecoder =
 
 scheduleDecoder : D.Decoder Schedule
 scheduleDecoder =
-    D.map5 Schedule
+    D.map6 Schedule
         (D.field "level_before" D.int)
         (D.field "level_after" D.int)
         (D.field "due" D.int)
         (D.field "amendable" D.bool)
         (D.field "self_grade" D.bool)
+        -- Absent on a schedule written before the milestone existed: an
+        -- answer that says nothing about patching did not patch anything.
+        (D.map (Maybe.withDefault False) (D.maybe (D.field "patched" D.bool)))
+
+
+{-| Why this position is in front of you, for a player who was in the
+game it came from: how bad the mistake was, and whose game it was.
+Asked **before** the answer, so it carries nothing derived from one.
+-}
+type alias Why =
+    { who : String
+    , opponent : String
+    , grade : String
+    }
+
+
+whyDecoder : D.Decoder Why
+whyDecoder =
+    D.map3 Why
+        (D.field "who" D.string)
+        (D.field "opponent" D.string)
+        (D.field "grade" D.string)
 
 
 memoryDecoder : D.Decoder Memory

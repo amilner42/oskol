@@ -18,6 +18,35 @@ defmodule Oskol.Release do
   end
 
   @doc """
+  Put every mistake back in the queue worst first -- the one-off behind
+  `mix oskol.puzzles.reposition`, for a release that has no mix:
+
+      bin/oskol eval 'Oskol.Release.reposition_puzzles(dry_run: true)'
+      bin/oskol eval 'Oskol.Release.reposition_puzzles(dry_run: false)'
+
+  Reads and writes nothing on a dry run, and is a no-op the second time:
+  a card already in its place is left alone. Only the order new mistakes
+  are introduced in changes; nothing anybody has learned is touched.
+  """
+  def reposition_puzzles(opts \\ []) do
+    write? = Keyword.get(opts, :dry_run, true) == false
+    limit = Keyword.get(opts, :limit, 10_000)
+    Application.load(@app)
+
+    {:ok, totals, _} =
+      Ecto.Migrator.with_repo(Oskol.Repo, fn _repo ->
+        Oskol.Practice.reposition(limit, write?)
+      end)
+
+    IO.puts(
+      "#{totals.accounts} decks, #{totals.cards} mistakes read, #{totals.moved} " <>
+        if(write?, do: "moved", else: "would move (dry run)")
+    )
+
+    totals
+  end
+
+  @doc """
   Look over (or, with `dry_run: false`, rewrite) the backgammon logs from
   before the between-games READY (`Oskol.Game.ReadyUpPatch`). The boot-time
   migration already ran it once; this is for reading what it did, or would

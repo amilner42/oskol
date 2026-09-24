@@ -585,7 +585,7 @@ defmodule Oskol.DeckSyncTest do
       assert session(user.id) == []
 
       # ...and KEEP GOING is what gets past that.
-      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _, _, _} =
+      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _, _, _, _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert start_new.(user.id, 10) == 10
@@ -593,6 +593,134 @@ defmodule Oskol.DeckSyncTest do
       assert length(more) == 10
       assert Enum.all?(more, &(&1 not in today))
     end
+  end
+
+  # ---------- Putting the queue back in order ----------
+
+  describe "mix oskol.puzzles.reposition" do
+    test "puts the worst mistakes first, writes nothing on a dry run, and is a no-op twice" do
+      user = an_account("arie@oskol.test")
+
+      # A very bad move from a year ago, and a dubious one from today.
+      old_game = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(old_game, ["p1"])
+      backdate(old_game, -365, :day)
+      grade(old_game, "very_bad")
+
+      new_game = a_room([seat("p1", guest: "g2", user: user.id)])
+      mistakes(new_game, ["p1"])
+      grade(new_game, "doubtful")
+
+      assert {:ok, 2} = Practice.sync(user.id)
+      [worst] = Enum.map(sources_of(old_game), & &1.puzzle_id)
+      [lesser] = Enum.map(sources_of(new_game), & &1.puzzle_id)
+
+      # Today's rule wrote them, so there is nothing to move.
+      assert Practice.reposition(100, false).moved == 0
+      assert cards(user.id) == [worst, lesser]
+
+      # A deck written under the old rule: newest game first, whatever the
+      # mistake was. The dubious one from today jumps the very bad one.
+      from(i in Retain.Item, where: i.key == ^worst) |> Repo.update_all(set: [position: 0])
+      from(i in Retain.Item, where: i.key == ^lesser) |> Repo.update_all(set: [position: -1])
+      assert cards(user.id) == [lesser, worst]
+
+      dry = Practice.reposition(100, false)
+      assert %{accounts: 1, cards: 2, moved: 2} = dry
+      # A dry run changes nothing at all.
+      assert cards(user.id) == [lesser, worst]
+
+      assert %{moved: 2} = Practice.reposition(100, true)
+      assert cards(user.id) == [worst, lesser]
+
+      # Twice is a no-op: a card already in its place is left alone.
+      assert %{moved: 0} = Practice.reposition(100, true)
+      assert cards(user.id) == [worst, lesser]
+    end
+
+    test "a card in rotation keeps its level, its due date and its log" do
+      user = an_account("arie@oskol.test")
+      game_id = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(game_id, ["p1"])
+      assert {:ok, 1} = Practice.sync(user.id)
+      [key] = Enum.map(sources_of(game_id), & &1.puzzle_id)
+
+      {:ok, _} = Retain.start(user.id, [key])
+      {:ok, %{level_after: level}} = Retain.review(user.id, key, :pass)
+      before = Repo.one(from(i in Retain.Item, where: i.key == ^key))
+
+      from(i in Retain.Item, where: i.key == ^key) |> Repo.update_all(set: [position: 0])
+      assert %{moved: 1} = Practice.reposition(100, true)
+
+      after_ = Repo.one(from(i in Retain.Item, where: i.key == ^key))
+      assert after_.level == level
+      assert after_.due == before.due
+      assert after_.reps == before.reps
+      # The only thing that moved is where a new card would be introduced.
+      assert after_.position == before.position
+    end
+  end
+
+  describe "the deck counted by severity" do
+    test "a mistake counts in its worst band, and patched is the fourth rung" do
+      user = an_account("arie@oskol.test")
+
+      very_bad = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(very_bad, ["p1"])
+      grade(very_bad, "very_bad")
+
+      dubious = a_room([seat("p1", guest: "g2", user: user.id)])
+      mistakes(dubious, ["p1"])
+      grade(dubious, "doubtful")
+
+      assert {:ok, 2} = Practice.sync(user.id)
+      [worst] = Enum.map(sources_of(very_bad), & &1.puzzle_id)
+
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity} =
+        Oskol.Gleam.Caps.Practice.build()
+
+      # Nothing answered yet: every mistake is still to fix.
+      assert Enum.sort(severity.(user.id, 4)) ==
+               Enum.sort([{:severity, "doubtful", 1, 0}, {:severity, "very_bad", 1, 0}])
+
+      # Three right in a row is not patched...
+      {:ok, _} = Retain.start(user.id, [worst])
+
+      Enum.each(1..3, fn _ ->
+        {:ok, _} = Retain.review(user.id, worst, :pass)
+      end)
+
+      assert {:severity, "very_bad", 1, 0} in severity.(user.id, 4)
+
+      # ...the fourth is.
+      {:ok, %{level_after: 4}} = Retain.review(user.id, worst, :pass)
+      assert {:severity, "very_bad", 1, 1} in severity.(user.id, 4)
+
+      # The same position reached in two games is one mistake, in the
+      # worse of the two bands.
+      same = a_room([seat("p1", guest: "g3", user: user.id)])
+      same_mistake(same, dubious)
+      grade(same, "bad")
+      assert {:ok, 0} = Practice.sync(user.id)
+      counted = severity.(user.id, 4)
+      assert {:severity, "bad", 1, 0} in counted
+      assert Enum.all?(counted, fn {:severity, band, _, _} -> band != "doubtful" end)
+      assert Enum.sum(Enum.map(counted, fn {:severity, _, total, _} -> total end)) == 2
+    end
+
+    test "an account with no deck is counted as nothing, not as an error" do
+      user = an_account("arie@oskol.test")
+
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity} =
+        Oskol.Gleam.Caps.Practice.build()
+
+      assert severity.(user.id, 4) == []
+    end
+  end
+
+  defp grade(game_id, grade) do
+    from(s in Puzzles.Source, where: s.game_id == ^game_id)
+    |> Repo.update_all(set: [grade: grade])
   end
 
   # ---------- Making the same mistake again ----------

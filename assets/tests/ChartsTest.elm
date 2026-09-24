@@ -1,7 +1,7 @@
 module ChartsTest exposing (suite)
 
-{-| The home's three pictures: the PR line, the practice ladder and the
-30-day strip.
+{-| The home's pictures: the PR line, the practice ladder, the 30-day
+strip, today's ring and the deck in one bar.
 
 The rolling PR is pinned against a weighted mean worked out by hand on a
 five-game sample with deliberately unequal decision counts, because the
@@ -26,6 +26,8 @@ suite =
         , prDrawing
         , ladder
         , days
+        , ring
+        , mastery
         ]
 
 
@@ -319,4 +321,114 @@ days =
                         [ Query.findAll [ tag "rect" ] >> Query.count (Expect.equal 30)
                         , Query.has [ attr "aria-label" "No practice in the last 30 days." ]
                         ]
+        ]
+
+
+
+-- TODAY'S RING
+
+
+ring : Test
+ring =
+    describe "today's ring"
+        [ test "a day with nothing answered draws no arc, and says so" <|
+            \_ ->
+                Charts.ring { done = 0, target = 10 }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        -- the track, and nothing over it
+                        [ Query.findAll [ tag "circle" ] >> Query.count (Expect.equal 1)
+                        , Query.has [ attr "aria-label" "0 of today's 10 answered." ]
+                        , Query.find [ tag "text" ] >> Query.has [ text "0" ]
+                        ]
+        , test "a day part way through fills its share of the ring" <|
+            \_ ->
+                Charts.ring { done = 4, target = 10 }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.findAll [ tag "circle" ] >> Query.count (Expect.equal 2)
+                        , Query.has [ attr "data-fraction" "0.4" ]
+                        , Query.has [ attr "aria-label" "4 of today's 10 answered." ]
+                        , Query.find [ tag "text" ] >> Query.has [ text "4" ]
+                        ]
+        , test "the day's ten done fills the ring and says so plainly" <|
+            \_ ->
+                Charts.ring { done = 10, target = 10 }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.has [ attr "data-fraction" "1" ]
+                        , Query.has [ attr "aria-label" "Today's 10: done." ]
+                        , Query.find [ tag "text" ] >> Query.has [ text "10" ]
+                        ]
+        , test "past the goal the ring stays full and the count stays true" <|
+            \_ ->
+                -- KEEP GOING is uncapped, so a day can run past its ten.
+                Charts.ring { done = 13, target = 10 }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.has [ attr "data-fraction" "1" ]
+                        , Query.find [ tag "text" ] >> Query.has [ text "13" ]
+                        ]
+        , test "no goal draws an empty ring rather than dividing by it" <|
+            \_ ->
+                Charts.ring { done = 0, target = 0 }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.findAll [ tag "circle" ] >> Query.count (Expect.equal 1)
+                        , Query.has [ attr "aria-label" "No goal for today." ]
+                        ]
+        ]
+
+
+
+-- A BAND, AND HOW MUCH OF IT IS PATCHED
+
+
+mastery : Test
+mastery =
+    describe "a band's patched share"
+        [ test "the patched part is drawn over the whole band, in proportion" <|
+            \_ ->
+                -- 23 of 61 over 320 wide is 120.66, rounded to 120.66.
+                Charts.patched { total = 61, patched = 23, sentence = "Very bad · 23 of 61 patched" }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.find [ tag "rect", attr "data-part" "to-fix" ]
+                            >> Query.has [ attr "width" "320" ]
+                        , Query.find [ tag "rect", attr "data-part" "patched" ]
+                            >> Query.has [ attr "width" "120.66" ]
+                        -- The line in words is printed beside it, so the
+                        -- bar itself is not read out a second time.
+                        , Query.has [ attr "aria-hidden" "true" ]
+                        , Query.find [ tag "title" ] >> Query.has [ text "Very bad · 23 of 61 patched" ]
+                        , Query.has [ attr "data-total" "61", attr "data-patched" "23" ]
+                        ]
+        , test "a band with none patched draws the bar and nothing over it" <|
+            \_ ->
+                Charts.patched { total = 12, patched = 0, sentence = "Bad · 0 of 12 patched" }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.findAll [ tag "rect" ] >> Query.count (Expect.equal 1)
+                        , Query.hasNot [ attr "data-part" "patched" ]
+                        ]
+        , test "a band entirely patched is full" <|
+            \_ ->
+                Charts.patched { total = 12, patched = 12, sentence = "Bad · 12 of 12 patched" }
+                    |> Query.fromHtml
+                    |> Query.find [ tag "rect", attr "data-part" "patched" ]
+                    |> Query.has [ attr "width" "320" ]
+        , test "a band with no mistakes in it draws an empty bar, not a full one" <|
+            \_ ->
+                Charts.patched { total = 0, patched = 0, sentence = "Dubious · 0 of 0 patched" }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.findAll [ tag "rect" ] >> Query.count (Expect.equal 1)
+                        , Query.hasNot [ attr "data-part" "patched" ]
+                        ]
+        , test "more patched than made is clamped: a bar never draws past its band" <|
+            \_ ->
+                Charts.patched { total = 10, patched = 40, sentence = "Bad · 40 of 10 patched" }
+                    |> Query.fromHtml
+                    |> Query.find [ tag "rect", attr "data-part" "patched" ]
+                    |> Query.has [ attr "width" "320" ]
         ]

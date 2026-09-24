@@ -12,8 +12,8 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import oskol/caps/practice.{
-  type Ask, type Card, Active, Card, CardNotStarted, Graded, PracticeCaps,
-  Session, Summary, UnknownCard, UnknownTimezone,
+  type Ask, type Card, type Severity, Active, Card, CardNotStarted, Day, Graded,
+  PracticeCaps, Session, Severity, Summary, UnknownCard, UnknownTimezone,
 } as _
 import oskol/caps/puzzles.{DeckSource, PuzzlesCaps}
 import oskol/core/ctx.{type Ctx, Ctx}
@@ -92,7 +92,56 @@ fn with_deck(ctx: Ctx, due: Int, fresh: Int) -> Ctx {
           ),
         ]
       },
+      day: fn(_uid) { Day(answered: 0, new_remaining: 3) },
+      severity: fn(_uid, _level) { [] },
     ),
+  )
+}
+
+/// The same deck, with this many answers recorded in the player's own day
+/// and this much of the day's new budget left.
+fn with_day(ctx: Ctx, done: Int, new_remaining: Int) -> Ctx {
+  Ctx(
+    ..ctx,
+    practice: PracticeCaps(..ctx.practice, day: fn(uid) {
+      case uid {
+        "u1" -> Day(answered: done, new_remaining: new_remaining)
+        _ -> panic as "practice.day asked for another account"
+      }
+    }),
+  )
+}
+
+/// The same deck with nothing due: a day that has been worked through.
+fn with_nothing_due(ctx: Ctx) -> Ctx {
+  Ctx(
+    ..ctx,
+    practice: PracticeCaps(..ctx.practice, summary: fn(_uid, _group) {
+      [
+        Summary(
+          group: [],
+          count: 42,
+          new_count: 20,
+          active_count: 42,
+          suspended_count: 0,
+          due_count: 0,
+          mean_level: 4.0,
+        ),
+      ]
+    }),
+  )
+}
+
+/// The deck counted by band, as the cap answers it.
+fn with_severity(ctx: Ctx, rows: List(Severity)) -> Ctx {
+  Ctx(
+    ..ctx,
+    practice: PracticeCaps(..ctx.practice, severity: fn(_uid, level) {
+      case level {
+        4 -> rows
+        _ -> panic as "practice.severity asked with another patched level"
+      }
+    }),
   )
 }
 
@@ -118,6 +167,7 @@ fn with_guest_mistakes(ctx: Ctx, sources: List(#(String, Seat))) -> Ctx {
           game_id: "room1",
           game_number: 1,
           kind: "move",
+          grade: "bad",
           turn: index + 1,
           question_json: question_json(Move),
           ended_ms: 1_790_000_000_000 - index,
@@ -163,15 +213,87 @@ pub fn an_account_is_told_what_is_due_what_is_left_today_and_how_big_the_deck_is
   let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
   // Tomorrow brings the day's budget: the deck has 20 never seen, which is
-  // more than a day gives.
+  // more than a day's three.
   assert string.contains(
     body,
-    "\"counts\":{\"due\":9,\"new_today\":7,\"new_tomorrow\":10,\"deck\":42}",
+    "\"counts\":{\"due\":9,\"new_today\":7,\"new_tomorrow\":3,\"deck\":42}",
   )
   // An account's mistakes are its deck: the guest's count is not sent.
   assert string.contains(body, "\"mistakes\":null")
   // This endpoint is never one game's mistakes.
   assert string.contains(body, "\"game\":null")
+}
+
+// ---------- The day's ring ----------
+
+/// The target is the day's actual work: what is due (9, from the deck's
+/// summary) plus the new ones the day still allows.
+pub fn a_day_with_nothing_answered_yet_is_all_work_and_no_progress_test() {
+  let ctx = with_day(with_deck(fakes.ctx(), 1, 1), 0, 3)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+
+  assert string.contains(body, "\"today\":{\"done\":0,\"target\":12}")
+}
+
+/// Answering does not shrink the target under the player: what they have
+/// answered is counted into it, so the ring only ever fills.
+pub fn answers_recorded_today_fill_the_ring_test() {
+  let ctx = with_day(with_deck(fakes.ctx(), 1, 1), 4, 3)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+
+  assert string.contains(body, "\"today\":{\"done\":4,\"target\":16}")
+}
+
+/// A day with nothing due and no budget left is done, however much of it
+/// was worked: the ring is full rather than pointing at a number nobody
+/// can reach.
+pub fn a_finished_day_is_done_rather_than_short_test() {
+  let ctx = with_nothing_due(with_day(with_deck(fakes.ctx(), 0, 0), 13, 0))
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+
+  assert string.contains(body, "\"today\":{\"done\":13,\"target\":13}")
+}
+
+// ---------- The deck by severity ----------
+
+/// Worst first, every band named, and the rung that means patched sent
+/// with them so the page keeps no second copy of it.
+pub fn the_session_counts_the_deck_by_severity_test() {
+  let ctx =
+    with_severity(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), [
+      Severity(grade: "doubtful", total: 96, patched: 12),
+      Severity(grade: "very_bad", total: 61, patched: 23),
+    ])
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+
+  assert string.contains(
+    body,
+    "\"severity\":[{\"grade\":\"very_bad\",\"total\":61,\"patched\":23},"
+      <> "{\"grade\":\"bad\",\"total\":0,\"patched\":0},"
+      <> "{\"grade\":\"doubtful\",\"total\":96,\"patched\":12}]",
+  )
+  assert string.contains(body, "\"patched_level\":4")
+}
+
+/// A guest has no deck, so there is no day of theirs to count -- and
+/// `answered_today` still panics on this ctx, so a handler that reached for
+/// it would fail here rather than invent a ring.
+pub fn a_guest_gets_no_ring_and_no_bands_test() {
+  let ctx =
+    with_guest_mistakes(fakes.ctx(), [
+      #("p1", guest_seat("g1")),
+      #("p2", guest_seat("g1")),
+    ])
+  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"))
+
+  assert string.contains(body, "\"today\":null")
+  assert string.contains(body, "\"severity\":null")
+}
+
+pub fn nobody_gets_no_ring_test() {
+  let assert Ok(body) = practice.practice_json(fakes.ctx(), fakes.no_guest())
+
+  assert string.contains(body, "\"today\":null")
 }
 
 pub fn tomorrow_brings_what_is_left_when_that_is_less_than_a_day_test() {
@@ -244,6 +366,8 @@ pub fn a_puzzle_is_asked_in_its_own_words_test() {
           )
         },
         summary: fn(_, _) { [] },
+        day: fn(_) { Day(answered: 0, new_remaining: 3) },
+        severity: fn(_, _) { [] },
       ),
     )
   let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
@@ -315,6 +439,7 @@ pub fn a_guest_is_told_how_many_mistakes_from_how_many_games_test() {
               },
               game_number: 1,
               kind: "move",
+              grade: "bad",
               turn: index + 1,
               question_json: question_json(Move),
               ended_ms: 1_790_000_000_000 - index,
@@ -366,7 +491,7 @@ pub fn a_timezone_is_written_once_for_the_account_test() {
         put_user: fn(uid, tz, per_day) {
           assert uid == "u1"
           assert tz == "America/Vancouver"
-          assert per_day == 10
+          assert per_day == 3
           Ok(Nil)
         },
       ),

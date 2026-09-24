@@ -1,9 +1,10 @@
 /**
  * Screenshots of the practice home and the end of a run, for eyeballing:
  * the home as a stranger, as a guest with mistakes and as an account
- * (done for today), and the end screen for a guest (the sign-in ask) and
- * for an account (KEEP GOING), at 390x844, 320x568, 844x390 and a
- * desktop.
+ * (done for today), a session mid-run (the counter, the marks, why this
+ * position is here, the day's ring), and the end screen for a guest (the
+ * sign-in ask) and for an account (KEEP GOING), plus the same account's
+ * home with a deck in it, at 390x844, 320x568, 844x390 and a desktop.
  *
  * The room is arranged by `test-puzzle/setup.exs` (a finished game graded
  * against a stubbed engine), the first seat trimmed to three mistakes so
@@ -69,8 +70,33 @@ async function stageATurn(page) {
   }
 }
 
-async function runToEnd(page) {
-  for (let n = 1; n <= KEPT; n++) {
+/** One puzzle of a run, answered, left on its reveal. */
+async function answerOne(page) {
+  await page.waitForSelector('#pz-reveal', { state: 'detached' });
+  await page.waitForSelector('#pz-board .bg-stack');
+  await page.waitForSelector('#pz-bands, #bg-action-play, [data-move-source]', { timeout: 10000 });
+  if (await page.locator('#pz-bands').count()) {
+    await page.click('#pz-band-0');
+  } else {
+    await stageATurn(page);
+    await page.click('#bg-action-play');
+  }
+  await page.waitForSelector('#pz-next');
+}
+
+/** NEXT, wherever it leads (the next puzzle, or the end screen). */
+async function next(page) {
+  const was = new URL(page.url()).pathname;
+  await page.click('#pz-next');
+  await page.waitForFunction(
+    (w) => new URL(location.href).pathname !== w || document.querySelector('#pz-end'),
+    was,
+    { timeout: 10000 }
+  );
+}
+
+async function runToEnd(page, left = KEPT) {
+  for (let n = 1; n <= left; n++) {
     await page.waitForSelector('#pz-reveal', { state: 'detached' });
     await page.waitForSelector('#pz-board .bg-stack');
     await page.waitForSelector('#pz-bands, #bg-action-play, [data-move-source]', { timeout: 10000 });
@@ -147,10 +173,26 @@ async function shotAtEverySize(page, name, ready) {
     await shotAtEverySize(page, '04-hub-account', '#hub-practice');
     await page.setViewportSize({ width: 390, height: 844 });
     await page.click('#hub-practice');
-    await runToEnd(page);
-    await shotAtEverySize(page, '05-end-account', '#pz-done');
+
+    // Mid-run: the strip over the board -- where the session is, the
+    // marks so far, why this one is here, and the day's ring.
+    await answerOne(page);
+    await next(page);
+    await page.waitForSelector('#pz-progress');
+    await shotAtEverySize(page, '05-session-mid-run', '#pz-progress');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await answerOne(page);
+    await next(page);
+    await runToEnd(page, KEPT - 2);
+    await shotAtEverySize(page, '06-end-account', '#pz-done');
     await page.goto(`${BASE}/puzzles`);
-    await shotAtEverySize(page, '06-hub-account-done', '#hub-keep-going');
+    await shotAtEverySize(page, '07-hub-account-done', '#hub-keep-going');
+
+    // The same account's home: the PUZZLES section with the day's ring,
+    // the worst band in words, and a bar per band. `review-home` has no
+    // deck to draw, so the section is shot here, where there is one.
+    await page.goto(`${BASE}/`);
+    await shotAtEverySize(page, '08-home-practice', '#home-practice');
     await context.close();
     log(`screenshots in ${OUT}`);
   } finally {

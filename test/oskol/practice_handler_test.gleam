@@ -93,8 +93,23 @@ pub fn every_page_is_the_front_of_the_queue_test() {
   assert deck.daily_ask().offset == 0
 }
 
-pub fn the_day_gives_ten_new_cards_test() {
-  assert deck.new_per_day == 10
+/// Three new positions a day, worst first. The whole shape of practice
+/// rests on this number: a pace a player keeps, against a queue that
+/// grows faster than it is patched.
+pub fn the_day_gives_three_new_mistakes_test() {
+  assert deck.new_per_day == 3
+}
+
+/// Patched is level 4: four right in a row, three weeks until it comes
+/// back. One definition, which the page is told rather than keeping.
+pub fn patched_is_the_fourth_rung_test() {
+  assert deck.patched_level == 4
+}
+
+/// Worst first, and every band named even when the deck holds none of
+/// them: the page draws three lines and they must not move about.
+pub fn the_bands_are_named_worst_first_test() {
+  assert deck.bands == ["very_bad", "bad", "doubtful"]
 }
 
 pub fn a_session_hands_back_what_the_deck_answered_test() {

@@ -626,10 +626,12 @@ src/oskol/caps/practice.gleam    the puzzle deck: what a player is drilling, wha
                                  nothing above this file knows that
 lib/oskol/gleam/caps/practice.ex its real IO, over retain: times cross as Unix ms, a
                                  card's content as JSON text, tags sorted
-src/oskol/practice/deck.gleam    the deck's own rules: due before new, ten new a day,
-                                 KEEP GOING uncapped, and the sentence each refusal
-                                 gives the player (a puzzle not in the deck is the
-                                 only 404; a snooze needs a card in rotation)
+src/oskol/practice/deck.gleam    the deck's own rules: due before new, three new a
+                                 day worst first (`new_per_day`), what counts as
+                                 patched (`patched_level`, the fourth rung), the three
+                                 bands, KEEP GOING uncapped, and the sentence each
+                                 refusal gives the player (a puzzle not in the deck is
+                                 the only 404; a snooze needs a card in rotation)
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
 lib/oskol_web/controllers/api/home_controller.ex      /papi/me/home and the
                                  recent rooms it pages
@@ -653,8 +655,10 @@ assets/src/Page/HomeBoard.elm    the guest home's board: the table edge to edge,
 assets/src/Page/Home.elm         "/" for an account: the bar (the name, PLAY, JOIN,
                                  PUZZLES, the boards), then form first (two numbers, the
                                  streak, the sentence, the line), live games with your
-                                 move first, practice (what is due, PRACTICE, the ladder
-                                 and the 30 days) and recent matches with MORE -- a line
+                                 move first, PUZZLES (the worst band in words, the
+                                 day's ring, FIX N TODAY, a line and a bar per band,
+                                 the ladder behind `detail`, the 30 days) and recent
+                                 matches with MORE -- a line
                                  per room, a match opening in place to list its games.
                                  Everything from one answer; `Main` picks between this
                                  and the board by the session
@@ -951,8 +955,17 @@ GET  /papi/puzzles/:id/mine            (a seat in the source game, either side)
                                          name; `opponent` the other seat's, always;
                                          `date` the day the game ended (its review
                                          row's), never the day the source was written
+GET  /papi/puzzles/:id/why             (a seat in the source game, either side)
+                                         {ok, who, opponent, grade}; 404 otherwise.
+                                         Why this position is in front of you, asked
+                                         **before** the answer: the band and whose
+                                         game it was, and nothing derived from the
+                                         answer -- no move played, no equity, no
+                                         result. The session's quiet line over the
+                                         board; a shared link is a 404 and says
+                                         nothing
 GET  /papi/games/:slug/rooms/:id/puzzles?game=n  (a seat) {ok, puzzles: [{id, kind,
-                                         prompt, due}], cursor, counts, game}
+                                         prompt, due}], cursor, counts, today, game}
                                          -- 404 without a seat; 409 `puzzles_pending`
                                          while the game's review is done but its
                                          puzzles are not yet written (the page
@@ -977,15 +990,25 @@ GET  /papi/practice                    {ok, puzzles: [{id, kind, prompt, due}],
                                          cursor: null, counts: {due,
                                          new_today, new_tomorrow, deck} | null,
                                          mistakes: {puzzles, games} | null,
-                                         game: null}
+                                         today: {done, target} | null,
+                                         severity: [{grade, total,
+                                           patched}] | null,
+                                         patched_level, game: null}
                                        -- an account's deck (due, then new;
                                        new_tomorrow is the day's budget or
                                        the cards never seen, whichever is
                                        fewer), a guest's own mistakes
                                        (unscheduled, counts null, no writes;
                                        `mistakes` counts all of them, from
-                                       how many games), or nothing. Never
-                                       paged: every fetch is the front of
+                                       how many games), or nothing. `today`
+                                       is the day's ring -- answers recorded
+                                       in the caller's own local day, against
+                                       the day's own work (what is answered
+                                       plus what is due plus the new ones the
+                                       day allows). `severity` is the
+                                       mistakes by band, worst first, with
+                                       how many are patched. Both an
+                                       account's only. Never paged: every fetch is the front of
                                        the queue, and "Done for today" is a
                                        fetch that comes back empty
 GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
@@ -1110,7 +1133,9 @@ gets `{ok: true, signed_in: false}` and keeps the home they have.
  live:     [ /papi/me/games' entries, unchanged ],
  form:     {games, recent, career, streak, sentence,
             series: [{game_id, game_number, pr, error, decisions, ended_at}]},
- practice: {due, deck, ladder: [n0..n7], days: [30 bools]},
+ practice: {due, deck, ladder: [n0..n7], days: [30 bools],
+            today: {done, target}, patched_level,
+            severity: [{grade, total, patched}]},
  recent:   [{id, slug, format, opponent, score: {yours, theirs},
              over, won: bool|null, pr, decisions, ended_at, path,
              games: [{game_number, path, result: {won, points, kind} | null,
@@ -1179,10 +1204,15 @@ and recent matches.
   on both sides. A cursor only narrows what the caller already reaches:
   the account is the session's, never the cursor's.
 - `practice` is the deck as the practice home reads it (`due`, `deck`)
-  plus two pictures Retain does not answer on its own and the cap reads
-  off its rows: `ladder`, the cards at each of the eight levels, and
+  plus the pictures Retain does not answer on its own and the cap reads
+  off its rows: `ladder`, the mistakes at each of the eight levels;
   `days`, whether the deck was practised on each of the last 30 local
-  days (an attempt counts, a deferral does not).
+  days (an attempt counts, a deferral does not); `today: {done, target}`,
+  the day's ring; and `severity`, the mistakes by band with how many are
+  patched. The page leads with the worst band in words ("You have made 61
+  very bad moves. You have patched 23."), the day's ring, one button
+  (FIX 3 TODAY), and one line and bar per band; the ladder is behind a
+  `detail` toggle.
 - Decisions: `src/oskol/handlers/home.gleam`. Reading never creates a
   deck, and never queues a review.
 
@@ -1553,8 +1583,17 @@ path builds one and nothing re-asks the engine to recover one.
 with nobody pressing anything: `src/oskol/practice/sync.gleam` (`sync_deck`)
 reads the sources on the seats that account owns and no deck holds yet,
 enrols them (`deck.enroll` -> retain, tags `{deck: "mistakes", kind}`,
-content the stored question, position newest game first) and stamps
-`puzzle_sources.deck_synced_at`. The holder rule decides whose a mistake is,
+content the stored question, position **worst first and the newest game
+first within a band**) and stamps `puzzle_sources.deck_synced_at`. A
+position is `sync.position_of(grade, ended_ms)`: a band's block of a
+hundred million plus time counted backwards in minutes from 2020, which
+is what fits three bands and sixty years into the 32-bit column. A card
+reached in two games takes the worse of them. `mix
+oskol.puzzles.reposition` (dry run unless `--write`,
+`Oskol.Release.reposition_puzzles/1` the release twin) is the one-off
+that gives cards written under the old rule the place today's rule would
+give them: a no-op the second time, and it touches nothing but
+`position`. The holder rule decides whose a mistake is,
 as everywhere: the query narrows by an id, `rooms/seat.holder` answers.
 Three callers, all off every hot path: the review job, where a game's
 `store` has just succeeded (`sync_game`, in `handlers/reviews`); the sign-in
@@ -1599,8 +1638,12 @@ they happened to play must not undo.
 
 **`GET /papi/practice`** is one page for three callers
 (`src/oskol/handlers/practice.gleam`). Signed in: the deck, everything due
-before anything new (`new: :after_reviews`), twenty at a time, and
-`counts: {due, new_today, deck}`. A guest: the mistakes on the seats their
+before anything new (`new: :after_reviews`), twenty at a time,
+`counts: {due, new_today, deck}`, `today: {done, target}` -- the day's
+ring, on the `practice.day` cap, counted in the deck's own timezone by
+exactly what the 30-day strip counts as practice -- and `severity`, the
+mistakes by band with how many are patched (`practice.severity`, which
+takes `deck.patched_level` and never decides it). A guest: the mistakes on the seats their
 cookie holds and no account owns, newest game first, unscheduled,
 `counts: null`, and **nothing written** -- only an account has a deck.
 Nobody: an empty list, not an error. Reading never starts a card or spends a
@@ -1632,10 +1675,34 @@ tomorrow") and SOONER / GOT IT / KNEW IT / NEVER, the graded one
 preselected when `amendable` (SOONER after a miss, GOT IT otherwise),
 none when `self_grade`, absent when neither; NEVER says the card is out
 of the deck. SHARE is the table's `shareInvite` port on the clean URL.
-NEXT is the shell's: `Main.run` (`{ids, at, verdicts}`) is the practice
-run, kept across `pushUrl`s because every page is rebuilt on one; the
-page is told `hasNext` (true anywhere in a run: the next puzzle, or the
-run's end) and answers `WantsNext`, and Main pushes the next id.
+NEXT is the shell's: `Main.run` (`{ids, at, verdicts, schedules, next}`)
+is the practice run, kept across `pushUrl`s because every page is rebuilt
+on one; the page is told `hasNext` (true anywhere in a run: the next
+puzzle, or the run's end) and answers `WantsNext`, and Main pushes the
+next id. **In a run the page is also told where it is** (`progress =
+{at, marks}`, the run's verdicts in order) and where the day stands
+(`today`), and draws both over the board: "4 of 10" with a bar filled to
+the same fraction, a mark per puzzle in the verdict's own colours, and
+the day's ring beside them (`Ui.Charts.ring`). It fills its own mark as
+the answer lands and counts the day up by one -- once per mistake,
+because only a first answer is recorded. Under the marks it says **why
+this one is here** ("A very bad move, from your game vs Charlie"), from
+`GET /papi/puzzles/:id/why`, which is asked only in a session and carries
+nothing derived from the answer: the band and the opponent, never the
+move played, what it cost or how the game ended. A puzzle opened from a
+link is not a session and shows none of it.
+
+**The reveal names the milestone.** A schedule carries `patched`, true
+when that answer took the mistake to `deck.patched_level` from below, and
+the level line then reads "Patched. Four right in a row — back in 21
+days" in the best move's green (`.pz-level.is-patched`). One line, no
+badge, no animation.
+
+**The words are one module.** Every sentence practice is said in lives in
+`assets/src/Ui/Mistakes.elm` and is pinned in `MistakesTest`: the unit a
+player reads about is **a mistake they made**, what they do with it is
+**fix** it, and one they have stopped making is **patched**. Nothing a
+player reads says card, deck or flashcard.
 
 **The home and a run** (`/puzzles`, `assets/src/Page/Puzzles.elm`; PUZZLES
 on the home menu where TACTICS / SOON was, ANALYSIS / SOON stays). One
@@ -1653,17 +1720,25 @@ the page POSTs the browser's zone
 (`Intl.DateTimeFormat().resolvedOptions().timeZone`, a boot flag `tz`) to
 `/papi/practice/tz` once per visit, and never for a guest.
 
-A page that starts a run answers `Out = StartRun (List String)`: Main
-sets `run = {ids, at = 0, verdicts = [], next}` and pushes the first id.
+A page that starts a run answers `Out = StartRun (List String) (Maybe
+Today)`: Main sets `run = {ids, at = 0, answers = [], next}`, takes the
+day's ring from the answer that page already had, and pushes the first
+id.
 `next` is the page the run was started from (the practice home, the
 table, the replay), and is where a guest who signs in at the run's end
 goes on to. The puzzle page
-reports every reveal (`Out = Answered Verdict`); Main keeps it on the run
-by puzzle id (an answer given again replaces, never counts twice). At the
-last id `WantsNext` is answered with the score (`Page.Puzzle.endRun
-{right, close, total}`: a pass is right, a hold close, a miss or an
-unknown neither; the total is the run's length) and the page ends the run
-on its own card, the board gone: "7 of 10 right" (and "2 close"), then
+reports every reveal, and every override after it, as `Out = Answered
+{verdict, schedule, grade}`; Main keeps it on the run by puzzle id (an
+answer given again replaces, never counts twice; NEVER reports no
+schedule, the mistake being out of the deck). At the
+last id `WantsNext` is answered with the score and those answers
+(`Page.Puzzle.endRun {right, close, total} [answers]`: a pass is right,
+a hold close, a miss or an unknown neither; the total is the run's
+length) and the page ends the run
+on its own card, the board gone: "7 of 10 right" (and "2 close"), what
+the run **patched** ("You patched 2 very bad moves and 1 bad move." --
+counted by band off the answers whose schedule says `patched`; nothing
+when it crossed nobody over the rung, and nothing for a guest), then
 for an account a refetch of `/papi/practice` -- empty is "Done for today.
 4 new tomorrow." (just "Done for today." when tomorrow brings none) and
 KEEP GOING, which runs what it brought or says the deck has nothing more
@@ -1738,6 +1813,8 @@ mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
                       # OSKOL_DEV_DATABASE names another dev database (a branch trying an
                       # operator task on seeded rooms, beside the main checkout's oskol_dev)
+mix oskol.puzzles.reposition   # put every mistake back in the queue worst first
+                      # (dry run unless --write; a no-op the second time)
 mix oskol.seed        # local backgammon rooms at codes 000001.. parked in positions worth
                       # testing (bar, bearing off, a dance, cube decisions), P1 and P2 seated
                       # but held by nobody, P1 to act; prints each room's invite link, and

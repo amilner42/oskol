@@ -30,7 +30,7 @@ import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import oskol/caps/practice.{type Card, type Session as DeckSession}
+import oskol/caps/practice.{type Card, type Session as DeckSession, type Summary}
 import oskol/caps/puzzles.{type DeckSource} as _
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
@@ -116,7 +116,32 @@ fn account_session(ctx: Ctx, uid: String) -> String {
   let found = deck.session(ctx, uid)
   let entries =
     list.append(cards(found.reviews, True), cards(found.fresh, False))
-  body(entries, Some(counts(ctx, uid, found)), None)
+  // One read of the deck's totals, for both the counts the page prints
+  // and the day's ring: two reads could not disagree by much, but they
+  // could disagree, and the ring is drawn beside the number it is made of.
+  let summary =
+    ctx.practice.summary(uid, []) |> list.first |> option.from_result
+  body(
+    entries,
+    Some(counts(summary, found)),
+    None,
+    Some(deck.today_json(deck.today(ctx, uid, due_of(summary)))),
+    // The three lines the practice home leads with: how many mistakes of
+    // each severity this player has made, and how many they have patched.
+    Some(
+      json.preprocessed_array(list.map(
+        deck.severity(ctx, uid),
+        deck.severity_json,
+      )),
+    ),
+  )
+}
+
+fn due_of(summary: Option(Summary)) -> Int {
+  case summary {
+    Some(row) -> row.due_count
+    None -> 0
+  }
 }
 
 fn cards(items: List(Card), due: Bool) -> List(Json) {
@@ -138,11 +163,7 @@ fn kind_of(card: Card) -> String {
 /// today's new budget is left, how many new ones tomorrow will bring (the
 /// day's budget, or the cards never seen when there are fewer of those),
 /// and how big the deck is altogether.
-fn counts(ctx: Ctx, uid: String, found: DeckSession) -> Json {
-  let summary =
-    ctx.practice.summary(uid, [])
-    |> list.first
-    |> option.from_result
+fn counts(summary: Option(Summary), found: DeckSession) -> Json {
   json.object([
     #(
       "due",
@@ -191,6 +212,11 @@ fn guest_session(ctx: Ctx, guest_id: String) -> String {
     }),
     None,
     Some(mistakes(mine)),
+    // No deck, so no day of theirs to count and nothing patched: a guest
+    // is never shown a goal they are not being held to, or progress
+    // against mistakes nothing is keeping for them.
+    None,
+    None,
   )
 }
 
@@ -231,6 +257,8 @@ fn body(
   entries: List(Json),
   counts: Option(Json),
   mistakes: Option(Json),
+  today: Option(Json),
+  severity: Option(Json),
 ) -> String {
   envelope.ok([
     #("puzzles", json.preprocessed_array(entries)),
@@ -242,6 +270,13 @@ fn body(
     // A guest's: how many mistakes are theirs and from how many games.
     // Null for an account (`counts` says it) and for nobody.
     #("mistakes", option.unwrap(mistakes, json.null())),
+    // The day's ring: what this account has answered today against the
+    // day's work. An account's and only an account's, like `counts`.
+    #("today", option.unwrap(today, json.null())),
+    // The deck by how bad the mistake was, worst band first, with how
+    // much of each is patched, and the rung that means patched.
+    #("severity", option.unwrap(severity, json.null())),
+    #("patched_level", json.int(deck.patched_level)),
     // This endpoint is never one game's mistakes; the per-game list is its
     // own route and names the game it answered for.
     #("game", json.null()),
@@ -249,7 +284,7 @@ fn body(
 }
 
 fn empty() -> String {
-  body([], None, None)
+  body([], None, None, None, None)
 }
 
 /// One puzzle as a session lists it: what it is and what it asks. The

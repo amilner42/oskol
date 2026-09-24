@@ -92,6 +92,10 @@ pub type DeckSource {
     game_number: Int,
     /// "move", "double" or "take".
     kind: String,
+    /// How bad it was, in the site's own bands: "very_bad", "bad" or
+    /// "doubtful". New cards are introduced worst first, and a deck is
+    /// counted by band, so this rides along with the mistake.
+    grade: String,
     /// Which turn of its game, counting from 1. Two mistakes of one game
     /// are drilled in the order they were made.
     turn: Int,

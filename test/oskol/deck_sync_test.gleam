@@ -32,6 +32,18 @@ fn source(id: Int, puzzle_id: String, owner: Seat, ended_ms: Int) -> DeckSource 
   turned(id, puzzle_id, owner, ended_ms, 1)
 }
 
+/// A mistake of a given severity: how bad it was decides which band it is
+/// introduced in, and only then how recent it is.
+fn graded(
+  id: Int,
+  puzzle_id: String,
+  owner: Seat,
+  ended_ms: Int,
+  grade: String,
+) -> DeckSource {
+  DeckSource(..turned(id, puzzle_id, owner, ended_ms, 1), grade: grade)
+}
+
 fn turned(
   id: Int,
   puzzle_id: String,
@@ -45,6 +57,7 @@ fn turned(
     game_id: "room" <> int.to_string(id),
     game_number: 1,
     kind: "move",
+    grade: "very_bad",
     turn: turn,
     question_json: json.to_string(puzzle.question_json(question())),
     ended_ms: ended_ms,
@@ -186,7 +199,7 @@ pub fn nobody_is_never_synced_test() {
 
 // ---------- The order they are introduced in ----------
 
-pub fn the_newest_game_comes_first_test() {
+pub fn the_newest_game_comes_first_within_a_band_test() {
   forget()
   let ctx =
     with_deck(fakes.ctx(), [
@@ -197,22 +210,72 @@ pub fn the_newest_game_comes_first_test() {
 
   assert sync.sync_deck(ctx, "arie", []) == Ok(3)
   assert positions()
+    == [#("new", -3_536_053), #("middle", -2_036_053), #("old", -369_386)]
+}
+
+/// The whole point of the ordering: a very bad move you made a year ago
+/// is worth more of your attention than a dubious one from this morning.
+pub fn the_worst_mistake_comes_before_a_newer_lesser_one_test() {
+  forget()
+  let ctx =
+    with_deck(fakes.ctx(), [
+      graded(
+        1,
+        "dubious-today",
+        owned("p1", "arie"),
+        1_790_000_000_000,
+        "doubtful",
+      ),
+      graded(2, "bad-today", owned("p1", "arie"), 1_790_000_000_000, "bad"),
+      graded(
+        3,
+        "very-bad-ages-ago",
+        owned("p1", "arie"),
+        1_600_000_000_000,
+        "very_bad",
+      ),
+    ])
+
+  assert sync.sync_deck(ctx, "arie", []) == Ok(3)
+  assert positions()
     == [
-      #("new", -212_163_200),
-      #("middle", -122_163_200),
-      #("old", -22_163_200),
+      #("very-bad-ages-ago", -369_386),
+      #("bad-today", 96_463_947),
+      #("dubious-today", 196_463_947),
     ]
+}
+
+/// A grade nothing recognises sorts after every band rather than jumping
+/// the queue: a row from before the bands must not outrank a very bad move.
+pub fn an_unknown_grade_goes_last_test() {
+  forget()
+  let ctx =
+    with_deck(fakes.ctx(), [
+      graded(1, "unknown", owned("p1", "arie"), 1_790_000_000_000, ""),
+      graded(2, "dubious", owned("p1", "arie"), 1_600_000_000_000, "doubtful"),
+    ])
+
+  assert sync.sync_deck(ctx, "arie", []) == Ok(2)
+  assert list.map(positions(), fn(entry) { entry.0 }) == ["dubious", "unknown"]
 }
 
 pub fn a_position_fits_the_column_it_is_stored_in_test() {
   // A 32-bit column: negated Unix milliseconds would not fit, and this is
   // what the sync stores instead. Both ends of the site's lifetime.
-  let now = sync.position_of(1_790_000_000_000)
-  let far = sync.position_of(3_000_000_000_000)
+  // The widest thing the column has to hold: the last band, at the far
+  // end of the site's lifetime, and the first band at the near end.
+  let now = sync.position_of("very_bad", 1_790_000_000_000)
+  let far = sync.position_of("very_bad", 3_000_000_000_000)
+  let early = sync.position_of("very_bad", 1_000_000_000_000)
+  let late = sync.position_of("doubtful", 1_000_000_000_000)
   assert now > -2_147_483_648 && now < 2_147_483_647
   assert far > -2_147_483_648 && far < 2_147_483_647
-  // Newer is lower, which is what "newest first" means to the deck.
+  assert early > -2_147_483_648 && early < 2_147_483_647
+  assert late > -2_147_483_648 && late < 2_147_483_647
+  // Newer is lower, which is what "newest first" means inside a band...
   assert far < now
+  // ...and no span of time can carry a card out of its own band.
+  assert early < late
 }
 
 pub fn one_card_per_puzzle_however_many_games_reached_it_test() {
@@ -225,7 +288,7 @@ pub fn one_card_per_puzzle_however_many_games_reached_it_test() {
 
   assert sync.sync_deck(ctx, "arie", []) == Ok(1)
   // The newest of the two decides where it sits in the queue...
-  assert positions() == [#("same", -212_163_200)]
+  assert positions() == [#("same", -3_536_053)]
   // ...and both rows are stamped, because the deck does hold them.
   assert list.sort(recorded("stamped"), string.compare) == ["1", "2"]
 }
@@ -251,7 +314,7 @@ pub fn filling_a_deck_never_names_a_timezone_test() {
   // An empty zone is "leave whatever this deck has alone": a sync has no
   // opinion about where its owner is, and saying UTC would undo the one
   // request that does.
-  assert recorded("opened") == ["arie//10"]
+  assert recorded("opened") == ["arie//3"]
 }
 
 // ---------- Idempotence, and giving up ----------

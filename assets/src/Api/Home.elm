@@ -43,6 +43,7 @@ zero PR is a flawless player rather than an unrated one.
 
 import Api exposing (Error)
 import Api.Catalog as Catalog exposing (MyGame)
+import Api.Practice as Practice
 import Json.Decode as D exposing (Decoder)
 import Session exposing (Session)
 
@@ -95,14 +96,18 @@ type alias Point =
 
 
 {-| The deck: what is due, how big it is, the cards at each of the eight
-levels, and whether each of the last thirty days was practised (oldest
-first).
+levels, whether each of the last thirty days was practised (oldest
+first), where today stands against the day's work, and the mistakes
+counted by how bad they were with how many of each are patched.
 -}
 type alias Practice =
     { due : Int
     , deck : Int
     , ladder : List Int
     , days : List Bool
+    , today : Practice.Today
+    , severity : List Practice.Band
+    , patchedLevel : Int
     }
 
 
@@ -268,11 +273,17 @@ pointDecoder =
 
 practiceDecoder : Decoder Practice
 practiceDecoder =
-    D.map4 Practice
+    D.map7 Practice
         (D.field "due" D.int)
         (D.field "deck" D.int)
         (optional "ladder" [] (D.list D.int))
         (optional "days" [] (D.list D.bool))
+        -- The same objects `/papi/practice` carries, and the same
+        -- decoders: an answer from before the ring existed reads as a day
+        -- with nothing in it rather than failing the whole page.
+        (optional "today" { done = 0, target = 0 } Practice.todayDecoder)
+        (optional "severity" [] (D.list Practice.bandDecoder))
+        (optional "patched_level" 0 D.int)
 
 
 roomDecoder : Decoder Room

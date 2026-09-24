@@ -35,12 +35,12 @@ suite =
 
 accountJson : String
 accountJson =
-    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true},{"id":"bbbbbbbb","kind":"double","prompt":"White to play. Double?","due":false}],"cursor":null,"counts":{"due":12,"new_today":4,"new_tomorrow":10,"deck":231},"mistakes":null,"game":null}"""
+    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true},{"id":"bbbbbbbb","kind":"double","prompt":"White to play. Double?","due":false}],"cursor":null,"counts":{"due":12,"new_today":3,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":2,"target":5},"severity":[{"grade":"very_bad","total":61,"patched":23},{"grade":"bad","total":118,"patched":40},{"grade":"doubtful","total":96,"patched":12}],"patched_level":4,"game":null}"""
 
 
 doneJson : String
 doneJson =
-    """{"ok":true,"puzzles":[],"cursor":null,"counts":{"due":0,"new_today":0,"new_tomorrow":4,"deck":231},"mistakes":null,"game":null}"""
+    """{"ok":true,"puzzles":[],"cursor":null,"counts":{"due":0,"new_today":0,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":5,"target":5},"severity":[{"grade":"very_bad","total":61,"patched":61},{"grade":"bad","total":118,"patched":40},{"grade":"doubtful","total":96,"patched":12}],"patched_level":4,"game":null}"""
 
 
 emptyDeckJson : String
@@ -96,7 +96,7 @@ decoding =
             \_ ->
                 parse accountJson
                     |> Result.map (\p -> ( List.map .id p.puzzles, p.counts, p.mistakes ))
-                    |> Expect.equal (Ok ( [ "aaaaaaaa", "bbbbbbbb" ], Just { due = 12, newToday = 4, newTomorrow = 10, deck = 231 }, Nothing ))
+                    |> Expect.equal (Ok ( [ "aaaaaaaa", "bbbbbbbb" ], Just { due = 12, newToday = 3, newTomorrow = 3, deck = 231 }, Nothing ))
         , test "a guest's: the list and what is theirs" <|
             \_ ->
                 parse guestJson
@@ -105,7 +105,7 @@ decoding =
         , test "nobody's: nothing, and not an error" <|
             \_ ->
                 parse nobodyJson
-                    |> Expect.equal (Ok { puzzles = [], counts = Nothing, mistakes = Nothing })
+                    |> Expect.equal (Ok { puzzles = [], counts = Nothing, mistakes = Nothing, today = Nothing, severity = [], patchedLevel = 0 })
         , test "a count that is not a number is refused, not defaulted" <|
             \_ ->
                 parse """{"ok":true,"puzzles":[],"counts":{"due":"twelve","new_today":4,"new_tomorrow":10,"deck":231},"mistakes":null}"""
@@ -152,29 +152,46 @@ isGuest state =
 anAccount : Test
 anAccount =
     describe "an account with a deck"
-        [ test "reads its counts in one line, and is offered PRACTICE" <|
+        [ test "leads with the worst of what they have made, and one button to fix" <|
             \_ ->
                 rendered (loaded accountJson)
                     |> Expect.all
-                        [ Query.find [ id "hub-headline" ] >> Query.has [ text "12 due · 4 new today · 231 in your deck" ]
-                        , Query.find [ id "hub-practice" ] >> Query.has [ text "PRACTICE" ]
+                        [ Query.find [ id "hub-headline" ]
+                            >> Query.has [ text "You have made 61 very bad moves. You have patched 23." ]
+                        , Query.find [ id "hub-counts" ] >> Query.has [ text "2 of today's 5 answered." ]
+                        , Query.find [ id "hub-practice" ] >> Query.has [ text "FIX 3 TODAY" ]
                         , Query.hasNot [ id "hub-try-one" ]
                         , Query.hasNot [ id "hub-unsaved" ]
                         ]
+        , test "one line and one bar per band, worst first, and what patched means" <|
+            \_ ->
+                rendered (loaded accountJson)
+                    |> Query.find [ id "hub-bands" ]
+                    |> Expect.all
+                        [ Query.has [ text "Very bad · 23 of 61 patched" ]
+                        , Query.has [ text "Bad · 40 of 118 patched" ]
+                        , Query.has [ text "Dubious · 12 of 96 patched" ]
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-total" "61") ]
+                            >> Query.count (Expect.equal 1)
+                        , Query.find [ id "hub-patched-note" ]
+                            >> Query.has [ text "Patched: right four times running." ]
+                        ]
         , test "PRACTICE hands the shell the run, in the deck's order" <|
             \_ ->
+                -- The run is handed the day the page was told, so the
+                -- ring opens where the home left it rather than at zero.
                 out PressedPractice (loaded accountJson)
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ])
-        , test "the words are the wire's numbers" <|
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2, target = 5 }))
+        , test "the fallback head, for an answer that carries no bands" <|
             \_ ->
                 Hub.countsLine { due = 1, newToday = 0, newTomorrow = 3, deck = 9 }
-                    |> Expect.equal "1 due · 9 in your deck"
+                    |> Expect.equal "1 due · 9 of your mistakes"
         , test "nothing due and nothing new is done for today, with KEEP GOING" <|
             \_ ->
                 rendered (loaded doneJson)
                     |> Expect.all
                         [ Query.find [ id "hub-headline" ] >> Query.has [ text "Done for today." ]
-                        , Query.find [ id "hub-counts" ] >> Query.has [ text "4 new tomorrow · 231 in your deck" ]
+                        , Query.find [ id "hub-counts" ] >> Query.has [ text "3 new tomorrow · 231 of your mistakes" ]
                         , Query.find [ id "hub-keep-going" ] >> Query.has [ text "KEEP GOING" ]
                         , Query.hasNot [ id "hub-practice" ]
                         ]
@@ -183,7 +200,7 @@ anAccount =
                 loaded doneJson
                     |> send PressedKeepGoing
                     |> out (GotMore (parse accountJson))
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2, target = 5 }))
         , test "and a line when it brought nothing" <|
             \_ ->
                 loaded doneJson
@@ -191,7 +208,7 @@ anAccount =
                     |> send (GotMore (parse doneJson))
                     |> rendered
                     |> Query.find [ id "hub-note" ]
-                    |> Query.has [ text "every puzzle in your deck" ]
+                    |> Query.has [ text "every mistake of yours" ]
         , test "an account with an empty deck is offered what a stranger is" <|
             \_ ->
                 rendered (loaded emptyDeckJson)
@@ -222,7 +239,7 @@ aGuest =
         , test "PRACTICE runs their mistakes" <|
             \_ ->
                 out PressedPractice (loaded guestJson)
-                    |> Expect.equal (StartRun [ "cccccccc", "dddddddd" ])
+                    |> Expect.equal (StartRun [ "cccccccc", "dddddddd" ] Nothing)
         , test "one of each is singular" <|
             \_ ->
                 Hub.mistakesLine { puzzles = 1, games = 1 }

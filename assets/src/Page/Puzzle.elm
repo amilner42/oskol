@@ -5,7 +5,9 @@ module Page.Puzzle exposing
     , Loadable(..)
     , Model
     , Msg(..)
+    , Answer
     , Out(..)
+    , Progress
     , Score
     , attemptBody
     , backIn
@@ -13,7 +15,9 @@ module Page.Puzzle exposing
     , init
     , levelLine
     , memoryLine
+    , patchedLine
     , preselected
+    , runProgress
     , runScore
     , subscriptions
     , title
@@ -64,7 +68,7 @@ result card's PRACTICE was pressed at).
 -}
 
 import Api
-import Api.Practice as Practice exposing (Practice)
+import Api.Practice as Practice exposing (Practice, Today)
 import Dict
 import Games.Backgammon.Puzzle as Puzzle exposing (Candidate, Puzzle, Reveal, Schedule, Verdict(..))
 import Games.Backgammon.Replay as Replay
@@ -82,6 +86,8 @@ import Route
 import Session exposing (Session)
 import Task
 import Time
+import Ui.Charts as Charts
+import Ui.Mistakes as Mistakes
 import Ui.Shell
 import Ui.SignIn as SignIn
 
@@ -108,10 +114,28 @@ type Attempt
     | Refused String
 
 
+{-| Where this puzzle sits in the run the shell is keeping: which one it
+is, and what happened at each one so far, in order. `Nothing` is a
+puzzle opened from a link, which is not in a session and says nothing
+about one.
+
+The marks are the shell's (`Main.run`) at the moment the page opened;
+this page adds its own as it is answered, which is the only one it can
+change.
+-}
+type alias Progress =
+    { at : Int
+    , marks : List (Maybe Verdict)
+    }
+
+
 type alias Model =
     { session : Session
     , id : String
     , hasNext : Bool -- the shell has somewhere after this one: a run's next puzzle, or its end
+    , progress : Maybe Progress -- where this one sits in a run, and the marks so far
+    , today : Maybe Today -- the day's ring, as the run was handed it; an account's only
+    , counted : Bool -- this page's own answer has been counted into the ring
     , origin : String -- scheme, host and port, for the link SHARE copies
     , puzzle : Loadable Puzzle
     , path : List String -- the nodes stepped to, oldest first
@@ -126,6 +150,7 @@ type alias Model =
     , outcome : Maybe String -- the override the player pressed, once it went through
     , outcomeSending : Bool
     , outcomeError : Maybe String -- why the last override did not go through
+    , why : Maybe Puzzle.Why -- why this one is here, asked before the answer
     , memory : Maybe Puzzle.Memory
     , shareLabel : Maybe String
     , share : Maybe String -- the ?s= this page was opened with: a story token
@@ -148,6 +173,7 @@ type alias Score =
 
 type alias End =
     { score : Score
+    , answers : List Answer -- what the run did, one entry per mistake it answered
     , after : After
     }
 
@@ -188,6 +214,7 @@ type Msg
     | ToggleBefore
     | PressedOutcome String
     | GotOutcome String (Result Api.Error (Maybe Schedule))
+    | GotWhy (Result Api.Error Puzzle.Why)
     | GotMemory (Result Api.Error Puzzle.Memory)
     | Share
     | ShareStory
@@ -203,25 +230,50 @@ type Msg
     | NoOp
 
 
-{-| What the shell does for the page: nothing; note a verdict on the run's
-score; go to the next puzzle of the run it is keeping (or, at the last,
+{-| What one answer did, as the run keeps it: how it was graded, where
+the mistake now stands (an account whose deck holds it; nothing for a
+guest, and nothing for one put out of the deck), and how bad the mistake
+was, so the end of the run can say what it patched.
+-}
+type alias Answer =
+    { verdict : Verdict
+    , schedule : Maybe Schedule
+    , grade : String
+    }
+
+
+{-| What the shell does for the page: nothing; keep this answer on the
+run; go to the next puzzle of the run it is keeping (or, at the last,
 hand back the score); start a run of these; take note of a sign-in; go
 somewhere.
 -}
 type Out
     = NoOut
-    | Answered Verdict
+    | Answered Answer
     | WantsNext
-    | StartRun (List String)
+    | StartRun (List String) (Maybe Today)
     | SignedIn (Maybe Session.User)
     | Go String
 
 
-init : Session -> { id : String, hasNext : Bool, origin : String, share : Maybe String } -> ( Model, Cmd Msg )
+init :
+    Session
+    ->
+        { id : String
+        , hasNext : Bool
+        , progress : Maybe Progress
+        , today : Maybe Today
+        , origin : String
+        , share : Maybe String
+        }
+    -> ( Model, Cmd Msg )
 init session config =
     ( { session = session
       , id = config.id
       , hasNext = config.hasNext
+      , progress = config.progress
+      , today = config.today
+      , counted = False
       , origin = config.origin
       , puzzle = Loading
       , path = []
@@ -236,6 +288,7 @@ init session config =
       , outcome = Nothing
       , outcomeSending = False
       , outcomeError = Nothing
+      , why = Nothing
       , memory = Nothing
       , shareLabel = Nothing
       , share = config.share
@@ -246,6 +299,18 @@ init session config =
       }
     , Cmd.batch
         [ Api.get session (base config.id) Puzzle.decoder GotPuzzle
+
+        -- Why this position is in front of you, in a session: how bad the
+        -- mistake was and whose game it came from. Nothing derived from
+        -- the answer is in that reply, which is what lets it be asked
+        -- before one. A puzzle opened from a link is not a session and
+        -- asks nothing.
+        , case config.progress of
+            Just _ ->
+                Api.get session (base config.id ++ "/why") Puzzle.whyDecoder GotWhy
+
+            Nothing ->
+                Cmd.none
 
         -- The key is minted here and nowhere else: a retried POST reuses
         -- it, so the server sees one answer however many times it is sent.
@@ -344,7 +409,8 @@ update msg model =
         GotReveal (Ok reveal) ->
             let
                 revealed =
-                    { model | attempt = Revealed reveal, showing = Nothing, before = False }
+                    marked reveal.verdict
+                        { model | attempt = Revealed reveal, showing = Nothing, before = False }
             in
             ( revealed
             , Cmd.batch
@@ -355,8 +421,13 @@ update msg model =
                 -- would put the move that was played within reach.
                 , Api.get model.session (base model.id ++ "/mine") Puzzle.memoryDecoder GotMemory
                 ]
-              -- The shell keeps the run's score.
-            , Answered reveal.verdict
+              -- The shell keeps the run's score, and what this answer did
+              -- to the mistake, for the line at the end of the run.
+            , Answered
+                { verdict = reveal.verdict
+                , schedule = reveal.schedule
+                , grade = gradeOfMine model
+                }
             )
 
         GotReveal (Err err) ->
@@ -388,7 +459,8 @@ update msg model =
                     )
 
         GotOutcome outcome (Ok schedule) ->
-            stay
+            amended outcome
+                schedule
                 { model
                     | outcomeSending = False
                     , outcomeError = Nothing
@@ -401,13 +473,20 @@ update msg model =
                             ( other, _ ) ->
                                 other
                 }
-                Cmd.none
 
         GotOutcome _ (Err err) ->
             -- A 409 (nothing to amend any more) or a lost connection: the
             -- line keeps saying what the server last said, and why the
             -- press changed nothing is said under it.
             stay { model | outcomeSending = False, outcomeError = Just (Api.errorMessage err) } Cmd.none
+
+        GotWhy (Ok why) ->
+            stay { model | why = Just why } Cmd.none
+
+        -- A 404 is the usual answer on a shared link: not a player of that
+        -- game, so there is nothing to say about why it is here.
+        GotWhy (Err _) ->
+            stay model Cmd.none
 
         GotMemory (Ok memory) ->
             stay { model | memory = Just memory } Cmd.none
@@ -505,7 +584,7 @@ update msg model =
                     stay (afterEnd (NothingMore practice) model) Cmd.none
 
                 entries ->
-                    ( afterEnd (Left practice False) model, Cmd.none, StartRun (List.map .id entries) )
+                    ( afterEnd (Left practice False) model, Cmd.none, StartRun (List.map .id entries) practice.today )
 
         GotMore (Err err) ->
             stay (afterEnd (Unreachable (Api.errorMessage err)) model) Cmd.none
@@ -520,7 +599,7 @@ update msg model =
                                     stay model Cmd.none
 
                                 entries ->
-                                    ( model, Cmd.none, StartRun (List.map .id entries) )
+                                    ( model, Cmd.none, StartRun (List.map .id entries) practice.today )
 
                         _ ->
                             stay model Cmd.none
@@ -566,11 +645,11 @@ and where the run was started from (`next`), which is where a guest who
 signs in here goes on to. An account is asked what its deck has left; a
 guest is asked to sign in.
 -}
-endRun : Score -> String -> Model -> ( Model, Cmd Msg )
-endRun score next model =
+endRun : Score -> List Answer -> String -> Model -> ( Model, Cmd Msg )
+endRun score answers next model =
     case model.session.user of
         Just _ ->
-            ( { model | ended = Just { score = score, after = Refetching } }
+            ( { model | ended = Just { score = score, answers = answers, after = Refetching } }
             , Practice.fetch model.session GotLeft
             )
 
@@ -579,7 +658,7 @@ endRun score next model =
                 ( signIn, cmd ) =
                     SignIn.init { next = next, email = "" }
             in
-            ( { model | ended = Just { score = score, after = AskSignIn signIn } }
+            ( { model | ended = Just { score = score, answers = answers, after = AskSignIn signIn } }
             , Cmd.map EndSignInMsg cmd
             )
 
@@ -602,6 +681,90 @@ leftOf result =
 stay : Model -> Cmd Msg -> ( Model, Cmd Msg, Out )
 stay model cmd =
     ( model, cmd, NoOut )
+
+
+{-| The answer, on this page's own mark and on the day's ring. A puzzle
+answered a second time (back, then PLAY again) replaces its mark and is
+**not** counted again: only the first answer at a card is recorded, so
+counting a retry would make the ring say more happened today than did.
+-}
+marked : Verdict -> Model -> Model
+marked verdict model =
+    case model.progress of
+        Nothing ->
+            model
+
+        Just progress ->
+            let
+                first =
+                    markAt progress == Nothing
+            in
+            { model
+                | progress = Just { progress | marks = setAt progress.at (Just verdict) progress.marks }
+                , counted = model.counted || first
+                , today =
+                    if first && not model.counted then
+                        Maybe.map (\today -> { today | done = today.done + 1 }) model.today
+
+                    else
+                        model.today
+            }
+
+
+{-| The override the player pressed, once it went through: the shell is
+told where the card stands now, so the end card's deck line is about
+what they settled on and not about the engine's first word.
+
+NEVER takes the card out of the deck, so it stands nowhere and counts
+for nothing in that line -- whatever schedule the attempt still carries.
+-}
+amended : String -> Maybe Schedule -> Model -> ( Model, Cmd Msg, Out )
+amended outcome schedule model =
+    case model.attempt of
+        Revealed reveal ->
+            ( model
+            , Cmd.none
+            , Answered
+                { verdict = reveal.verdict
+                , schedule =
+                    if outcome == "never" then
+                        Nothing
+
+                    else
+                        schedule
+                , grade = gradeOfMine model
+                }
+            )
+
+        _ ->
+            ( model, Cmd.none, NoOut )
+
+
+{-| How bad this mistake was, where the player is one of the two who made
+it. "" on a shared link, where the page is told nothing about whose
+mistake it is.
+-}
+gradeOfMine : Model -> String
+gradeOfMine model =
+    model.why |> Maybe.map .grade |> Maybe.withDefault ""
+
+
+markAt : Progress -> Maybe Verdict
+markAt progress =
+    progress.marks |> List.drop progress.at |> List.head |> Maybe.withDefault Nothing
+
+
+setAt : Int -> a -> List a -> List a
+setAt index value items =
+    List.indexedMap
+        (\i item ->
+            if i == index then
+                value
+
+            else
+                item
+        )
+        items
 
 
 {-| What the board asked for: a step (or two), a step back, the turn
@@ -789,6 +952,7 @@ viewEnd model end =
             :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-1", attribute "style" "color: var(--ink)" ]
                 [ text (runScore end.score) ]
             :: closeLine end.score
+            :: viewPatched end.answers
             :: viewAfter model end.after
         )
 
@@ -804,6 +968,43 @@ doneLine counts =
 
     else
         "Done for today."
+
+
+{-| What the run patched, under the score: "You patched 2 very bad
+moves." Nothing when it crossed nobody over the rung -- the score has
+already said how it went -- and nothing for a guest, whose mistakes
+nothing is keeping.
+-}
+viewPatched : List Answer -> Html Msg
+viewPatched answers =
+    case patchedLine answers of
+        Just line ->
+            p [ id "pz-patched", class "q-note text-[13px] leading-snug mb-4" ] [ text line ]
+
+        Nothing ->
+            text ""
+
+
+{-| The sentence, from the answers the run collected: the grade of every
+mistake whose schedule says this answer patched it.
+-}
+patchedLine : List Answer -> Maybe String
+patchedLine answers =
+    answers
+        |> List.filterMap
+            (\answer ->
+                case answer.schedule of
+                    Just schedule ->
+                        if schedule.patched && answer.grade /= "" then
+                            Just answer.grade
+
+                        else
+                            Nothing
+
+                    Nothing ->
+                        Nothing
+            )
+        |> Mistakes.patchedRun
 
 
 {-| "7 of 10 right".
@@ -827,7 +1028,7 @@ viewAfter : Model -> After -> List (Html Msg)
 viewAfter _ after =
     case after of
         Refetching ->
-            [ p [ class "pixel text-[9px]", attribute "style" "color: var(--pencil)" ] [ text "ASKING YOUR DECK…" ] ]
+            [ p [ class "pixel text-[9px]", attribute "style" "color: var(--pencil)" ] [ text "COUNTING WHAT IS LEFT…" ] ]
 
         Unreachable reason ->
             [ p [ class "text-base", attribute "style" "color: var(--ink)" ] [ text reason ]
@@ -839,7 +1040,7 @@ viewAfter _ after =
                 ( [], Just counts ) ->
                     [ p [ id "pz-done", class "text-[18px] font-bold leading-snug", attribute "style" "color: var(--ink)" ]
                         [ text (doneLine counts) ]
-                    , p [ class "q-note text-[13px] mb-5" ] [ text (String.fromInt counts.deck ++ " in your deck") ]
+                    , p [ class "q-note text-[13px] mb-5" ] [ text (String.fromInt counts.deck ++ " of your mistakes") ]
                     , button
                         [ type_ "button", id "pz-keep-going", class "q-btn plain w-full px-6 py-3.5 text-[15px]", disabled busy, onClick PressedKeepGoing ]
                         [ text
@@ -869,9 +1070,9 @@ viewAfter _ after =
             [ p [ id "pz-done", class "text-[18px] font-bold leading-snug", attribute "style" "color: var(--ink)" ]
                 [ text "Done for today." ]
             , p [ class "q-note text-[13px] mb-3" ]
-                [ text (String.fromInt (Maybe.map .deck practice.counts |> Maybe.withDefault 0) ++ " in your deck") ]
+                [ text (String.fromInt (Maybe.map .deck practice.counts |> Maybe.withDefault 0) ++ " of your mistakes") ]
             , p [ id "pz-nothing-more", class "q-note text-[13px] leading-snug" ]
-                [ text "That's every puzzle in your deck for now. The ones you get wrong come back on their day." ]
+                [ text "That's every mistake of yours for now. The ones you get wrong come back on their day." ]
             , a [ href (Route.href Route.puzzles), class "inline-block font-semibold mt-4", attribute "style" "color: var(--pen)" ] [ text "Back to puzzles →" ]
             ]
 
@@ -893,6 +1094,120 @@ skip model =
 
     else
         text ""
+
+
+{-| Where this session is, above the board: "4 of 10" with a bar that
+fills to the same fraction the words name, the marks so far, and the
+day's ring beside them.
+
+Only in a run, and only on the puzzle itself: a puzzle opened from a
+link is not a session and says nothing about one.
+
+The bar and the counter are the **position** in the run, not the answers
+given, so the picture can never disagree with the sentence beside it;
+which of them were answered, and how, is what the marks say.
+
+-}
+viewProgress : Model -> Html Msg
+viewProgress model =
+    case model.progress of
+        Nothing ->
+            text ""
+
+        Just progress ->
+            let
+                total =
+                    List.length progress.marks
+
+                place =
+                    min total (progress.at + 1)
+
+                filled =
+                    if total <= 0 then
+                        0
+
+                    else
+                        100 * toFloat place / toFloat total
+            in
+            div [ class "pz-progress", id "pz-progress" ]
+                [ div [ class "pz-progress-bar" ]
+                    [ p [ class "pz-progress-count pixel text-[8px]", id "pz-progress-count" ]
+                        [ text (runProgress progress) ]
+                    , div
+                        [ class "pz-progress-track"
+                        , attribute "role" "progressbar"
+                        , attribute "aria-valuenow" (String.fromInt place)
+                        , attribute "aria-valuemin" "0"
+                        , attribute "aria-valuemax" (String.fromInt total)
+                        , attribute "aria-label" (runProgress progress ++ " in this session")
+                        ]
+                        [ div
+                            [ class "pz-progress-fill"
+                            , attribute "style" ("width: " ++ String.fromInt (round filled) ++ "%")
+                            ]
+                            []
+                        ]
+                    , div [ class "pz-marks", id "pz-marks" ]
+                        (List.indexedMap (runMark progress.at) progress.marks)
+                    , viewWhy model
+                    ]
+                , case model.today of
+                    Just today ->
+                        Charts.ring today
+
+                    Nothing ->
+                        text ""
+                ]
+
+
+{-| Why this position is in front of you: "A very bad move, from your
+game vs Charlie". Only for the player who was in the game it came from --
+on a shared link the server says nothing, and neither does this.
+
+It is the mistake's severity and whose game it was, and nothing else: it
+is drawn before the answer, so nothing that could hint at one is in it.
+-}
+viewWhy : Model -> Html Msg
+viewWhy model =
+    case model.why of
+        Just why ->
+            p [ class "pz-why", id "pz-why" ]
+                [ text (Mistakes.whyLine { grade = why.grade, opponent = why.opponent }) ]
+
+        Nothing ->
+            text ""
+
+
+{-| "4 of 10": which one of the session this is.
+-}
+runProgress : Progress -> String
+runProgress progress =
+    String.fromInt (min (List.length progress.marks) (progress.at + 1))
+        ++ " of "
+        ++ String.fromInt (List.length progress.marks)
+
+
+{-| One mark per puzzle of the run, in order, in the verdict's own
+colours: right, close, missed, or not answered yet. The one being played
+is named so the player can see where they are.
+-}
+runMark : Int -> Int -> Maybe Verdict -> Html Msg
+runMark at index verdict =
+    let
+        name =
+            case verdict of
+                Just v ->
+                    Puzzle.verdictName v
+
+                Nothing ->
+                    "blank"
+    in
+    span
+        [ classList [ ( "pz-mark", True ), ( "is-" ++ name, True ), ( "is-here", index == at ) ]
+        , attribute "data-mark" name
+        , attribute "aria-hidden" "true"
+        ]
+        []
 
 
 viewHead : Html Msg
@@ -990,6 +1305,7 @@ viewPuzzle model puzzle =
                     Board.viewStill NoOp (still model puzzle puzzle.question.board [])
     in
     [ viewHead
+    , viewProgress model
     , div [ class "pz-ask" ]
         [ h1 [ class "pz-prompt", id "pz-prompt" ] [ text puzzle.prompt ]
         , p [ class "pz-score", id "pz-score" ] [ text (scoreLine puzzle) ]
@@ -1571,7 +1887,7 @@ viewSchedule model reveal =
 
                 line =
                     if model.outcome == Just "never" then
-                        "Out of your deck: it will not come back."
+                        "Set aside: it will not come back."
 
                     else if not schedule.amendable && not schedule.selfGrade then
                         "Already scheduled."
@@ -1596,7 +1912,13 @@ viewSchedule model reveal =
                         ]
                         [ text label ]
             in
-            [ div [ class "pz-level", id "pz-level" ]
+            [ div
+                [ classList
+                    [ ( "pz-level", True )
+                    , ( "is-patched", patchedNow model schedule )
+                    ]
+                , id "pz-level"
+                ]
                 [ span [ class "pz-level-line", id "pz-level-line" ] [ text line ]
                 , if offered then
                     div [ class "pz-outcomes", id "pz-outcomes" ]
@@ -1643,15 +1965,31 @@ once. An attempt that did not count is kept out of this line by
 -}
 levelLine : Int -> Schedule -> String
 levelLine now schedule =
-    let
-        levels =
-            if schedule.levelBefore == schedule.levelAfter then
-                "Level " ++ String.fromInt schedule.levelAfter
+    if schedule.patched then
+        -- The moment the whole thing exists for: this mistake is one the
+        -- player has stopped making. Said plainly, in the same type as
+        -- everything else.
+        Mistakes.milestone schedule.levelAfter ++ " — " ++ backIn now schedule.due
 
-            else
-                "Level " ++ String.fromInt schedule.levelBefore ++ " → " ++ String.fromInt schedule.levelAfter
-    in
-    levels ++ " · " ++ backIn now schedule.due
+    else
+        let
+            levels =
+                if schedule.levelBefore == schedule.levelAfter then
+                    "Level " ++ String.fromInt schedule.levelAfter
+
+                else
+                    "Level " ++ String.fromInt schedule.levelBefore ++ " → " ++ String.fromInt schedule.levelAfter
+        in
+        levels ++ " · " ++ backIn now schedule.due
+
+
+{-| Whether the line being drawn is the milestone, for the one flourish
+it gets: the best-move green. Not while the player has overridden the
+grade to something else.
+-}
+patchedNow : Model -> Schedule -> Bool
+patchedNow model schedule =
+    schedule.patched && model.outcome /= Just "never"
 
 
 {-| When the card is due again, in days from now: "back tomorrow", "back

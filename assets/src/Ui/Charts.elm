@@ -1,7 +1,17 @@
-module Ui.Charts exposing (days, ladder, prLine, rolling, windowPr)
+module Ui.Charts exposing
+    ( days
+    , ladder
+    , patched
+    , prLine
+    , ring
+    , ringSentence
+    , rolling
+    , windowPr
+    )
 
-{-| The three pictures the signed-in home is allowed: your PR over time,
-your practice deck as a ladder, and the last thirty days.
+{-| The pictures the signed-in home is allowed: your PR over time, your
+mistakes as a ladder, the last thirty days, today's ring, and one bar per
+band of mistake showing how much of it you have patched.
 
 They are the only drawings on that page -- everything else is type and
 white space -- so they are deliberately small and quiet: no axes, no
@@ -566,6 +576,219 @@ daysSentence thirty =
 
     else
         "Practised on " ++ plural hit "day" ++ " of the last 30."
+
+
+
+-- TODAY'S RING
+
+
+{-| The day's goal: a ring that fills as the day's answers land, with the
+count in the middle. The streak is the days; this is today.
+
+It is drawn at a fixed 44 by 44 rather than to the width it is given,
+because it sits beside words -- "4 of 10" at the top of a session, the
+due line on the home -- and a picture that grew with its column would
+tower over them.
+
+A day past the goal is full and green and keeps its real count: KEEP
+GOING is uncapped, so 13 of 10 is a thing that happens and the number
+must not lie about it. A target of nothing draws an empty ring rather
+than dividing by it.
+
+-}
+ring : { done : Int, target : Int } -> Html msg
+ring today =
+    let
+        complete =
+            today.target > 0 && today.done >= today.target
+
+        fraction =
+            if today.target <= 0 then
+                0
+
+            else
+                min 1 (toFloat today.done / toFloat today.target)
+
+        colour =
+            if complete then
+                ringDone
+
+            else
+                "var(--ink)"
+
+        arc =
+            if fraction <= 0 then
+                []
+
+            else
+                [ Svg.circle
+                    [ SvgAttr.cx "22"
+                    , SvgAttr.cy "22"
+                    , SvgAttr.r (num ringRadius)
+                    , SvgAttr.fill "none"
+                    , SvgAttr.stroke colour
+                    , SvgAttr.strokeWidth "4"
+                    , SvgAttr.strokeLinecap "round"
+                    , SvgAttr.strokeDasharray
+                        (num (fraction * ringLength) ++ " " ++ num ringLength)
+                    , SvgAttr.transform "rotate(-90 22 22)"
+                    , attribute "data-fraction" (num (toFloat (round (fraction * 100)) / 100))
+                    ]
+                    []
+                ]
+    in
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 44 44"
+        , SvgAttr.width "44"
+        , SvgAttr.height "44"
+        , SvgAttr.class "chart-ring quiet block shrink-0"
+        , attribute "role" "img"
+        , attribute "aria-label" (ringSentence today)
+        , attribute "data-done" (String.fromInt today.done)
+        , attribute "data-target" (String.fromInt today.target)
+        ]
+        (Svg.title [] [ Svg.text (ringSentence today) ]
+            :: Svg.circle
+                [ SvgAttr.cx "22"
+                , SvgAttr.cy "22"
+                , SvgAttr.r (num ringRadius)
+                , SvgAttr.fill "none"
+                , SvgAttr.stroke "var(--pencil)"
+                , SvgAttr.strokeOpacity "0.3"
+                , SvgAttr.strokeWidth "4"
+                ]
+                []
+            :: arc
+            ++ [ Svg.text_
+                    [ SvgAttr.x "22"
+                    , SvgAttr.y "26"
+                    , SvgAttr.textAnchor "middle"
+                    , SvgAttr.fontSize "14"
+                    , SvgAttr.fontWeight "700"
+                    , SvgAttr.fill colour
+                    ]
+                    [ Svg.text (String.fromInt today.done) ]
+               ]
+        )
+
+
+{-| `.g-best`'s green, as the ladder's top rung uses it: the one colour
+on this page that means "there, done".
+-}
+ringDone : String
+ringDone =
+    "#1f7a45"
+
+
+ringRadius : Float
+ringRadius =
+    18
+
+
+ringLength : Float
+ringLength =
+    2 * pi * ringRadius
+
+
+{-| What the ring says out loud, and what the page may print beside it.
+-}
+ringSentence : { done : Int, target : Int } -> String
+ringSentence today =
+    if today.target <= 0 then
+        "No goal for today."
+
+    else if today.done >= today.target then
+        "Today's " ++ String.fromInt today.target ++ ": done."
+
+    else
+        String.fromInt today.done
+            ++ " of today's "
+            ++ String.fromInt today.target
+            ++ " answered."
+
+
+
+-- A BAND, AND HOW MUCH OF IT IS PATCHED
+
+
+{-| One band of mistakes as a bar: the share of them the player has
+stopped making, in the same green the best move is drawn in, over what is
+still to fix.
+
+**The one picture here that is not read out.** Every other one carries
+its own sentence because nothing else says what it says; this one is
+always drawn under its line in words (`Ui.Mistakes.line`, which is handed
+in and kept on the `<title>` for a hover), so a reader who is told both
+hears the same thing twice. It is `aria-hidden` and the words beside it
+are what is read.
+
+`patched` beyond `total` is clamped: a bar can never draw wider than the
+mistakes it is about.
+
+-}
+patched : { total : Int, patched : Int, sentence : String } -> Html msg
+patched band =
+    let
+        total =
+            max 0 band.total
+
+        done =
+            clamp 0 total band.patched
+
+        width =
+            if total <= 0 then
+                0
+
+            else
+                barW * toFloat done / toFloat total
+    in
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 320 10"
+        , SvgAttr.class "chart-patched quiet w-full h-auto block"
+        , attribute "aria-hidden" "true"
+        , attribute "data-total" (String.fromInt total)
+        , attribute "data-patched" (String.fromInt done)
+        ]
+        (Svg.title [] [ Svg.text band.sentence ]
+            :: Svg.rect
+            [ SvgAttr.x "0"
+            , SvgAttr.y "0"
+            , SvgAttr.width (num barW)
+            , SvgAttr.height "10"
+            , SvgAttr.rx "2"
+            , SvgAttr.fill barRest
+            , attribute "data-part" "to-fix"
+            ]
+            []
+            :: (if width <= 0 then
+                    []
+
+                else
+                    [ Svg.rect
+                        [ SvgAttr.x "0"
+                        , SvgAttr.y "0"
+                        , SvgAttr.width (num width)
+                        , SvgAttr.height "10"
+                        , SvgAttr.rx "2"
+                        , SvgAttr.fill ringDone
+                        , attribute "data-part" "patched"
+                        ]
+                        []
+                    ]
+               )
+        )
+
+
+barW : Float
+barW =
+    320
+
+
+{-| Paper, for a mistake still to fix.
+-}
+barRest : String
+barRest =
+    "rgb(222,217,203)"
 
 
 

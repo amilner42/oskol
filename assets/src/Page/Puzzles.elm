@@ -16,9 +16,11 @@ module Page.Puzzles exposing
 {-| `/puzzles` -- the practice home. One page for three visitors, because
 `GET /papi/practice` is one answer for three callers:
 
-  - an **account** with a deck: "12 due · 4 new today · 231 in your deck"
-    and PRACTICE, which runs what the deck put first. Nothing due and
-    nothing new is "Done for today", with KEEP GOING to start more.
+  - an **account** with mistakes: "You have made 61 very bad moves. You
+    have patched 23.", where today stands, and one button -- FIX 3 TODAY
+    -- which runs what the deck put first, worst mistakes before lesser
+    ones. Under it, one bar per band. Nothing left today is "Done for
+    today", with KEEP GOING to start more.
   - a **guest** with games behind them: "23 mistakes from your 4 games",
     a line that nothing is saved until they sign in, and the same
     PRACTICE. The sign-in itself is asked at the end of the run, once
@@ -42,6 +44,8 @@ import Html.Attributes as Attr exposing (class, id)
 import Html.Events exposing (onClick)
 import Route
 import Session exposing (Session)
+import Ui.Charts as Charts
+import Ui.Mistakes as Mistakes
 import Ui.Notebook as Notebook
 import Ui.SignIn as SignIn
 
@@ -78,7 +82,7 @@ type Busy
 {-| The three visitors, read off the server's answer.
 -}
 type State
-    = Account Practice.Counts (List Practice.Entry)
+    = Account Practice (List Practice.Entry)
     | Guest Practice.Mistakes (List Practice.Entry)
     | Stranger
 
@@ -101,7 +105,7 @@ somewhere, or take note of a sign-in.
 -}
 type Out
     = NoOut
-    | StartRun (List String)
+    | StartRun (List String) (Maybe Practice.Today)
     | Go String
     | SignedIn (Maybe Session.User)
 
@@ -138,7 +142,7 @@ state practice =
     case ( practice.counts, practice.mistakes ) of
         ( Just counts, _ ) ->
             if counts.deck > 0 then
-                Account counts practice.puzzles
+                Account practice practice.puzzles
 
             else
                 Stranger
@@ -280,12 +284,12 @@ start practice model =
             ( model, Cmd.none, NoOut )
 
         entries ->
-            ( model, Cmd.none, StartRun (List.map .id entries) )
+            ( model, Cmd.none, StartRun (List.map .id entries) practice.today )
 
 
 nothingMoreLine : String
 nothingMoreLine =
-    "That's every puzzle in your deck for now. The ones you get wrong come back on their day."
+    "That's every mistake of yours for now. The ones you get wrong come back on their day."
 
 
 
@@ -313,8 +317,8 @@ view model =
 body : Model -> State -> List (Html Msg)
 body model visitor =
     case visitor of
-        Account counts entries ->
-            account model counts entries
+        Account practice entries ->
+            account model practice entries
 
         Guest mistakes entries ->
             guest model mistakes entries
@@ -323,11 +327,21 @@ body model visitor =
             stranger model
 
 
-{-| An account: what the deck holds, and PRACTICE; or, with nothing due
-and nothing new, "Done for today" and KEEP GOING.
+{-| An account: the worst of what they have made, what today asks of
+them, and one button; or, with nothing left today, "Done for today" and
+KEEP GOING. The bands sit under it.
+
+Two lines and one button on purpose. The old head was "12 due · 4 new
+today · 231 in your deck" -- three numbers, none of which is a reason to
+press anything. The reason is that you have made 61 very bad moves and
+patched 23 of them.
 -}
-account : Model -> Practice.Counts -> List Practice.Entry -> List (Html Msg)
-account model counts entries =
+account : Model -> Practice.Practice -> List Practice.Entry -> List (Html Msg)
+account model practice entries =
+    let
+        counts =
+            Maybe.withDefault { due = 0, newToday = 0, newTomorrow = 0, deck = 0 } practice.counts
+    in
     case entries of
         [] ->
             [ headline "Done for today."
@@ -349,12 +363,91 @@ account model counts entries =
                     )
                 ]
             , note model
+            , bands practice
             ]
 
         _ ->
-            [ headline (countsLine counts)
-            , practiceButton (List.length entries)
+            [ headline (worstLine practice)
+            , Html.p [ id "hub-counts", class "q-note text-[13px] mb-5" ]
+                [ Html.text (todayLine practice) ]
+            , fixButton practice (List.length entries)
+            , bands practice
             ]
+
+
+{-| The lead: the worst band, and how much of it is patched. A deck the
+server sent no bands for (an older answer) falls back to what is due, so
+the page still says something true.
+-}
+worstLine : Practice.Practice -> String
+worstLine practice =
+    case Mistakes.lead practice.severity of
+        Just sentence ->
+            sentence
+
+        Nothing ->
+            countsLine (Maybe.withDefault { due = 0, newToday = 0, newTomorrow = 0, deck = 0 } practice.counts)
+
+
+{-| Under it, in the quiet type: where today stands.
+-}
+todayLine : Practice.Practice -> String
+todayLine practice =
+    case practice.today of
+        Just today ->
+            Charts.ringSentence today
+
+        Nothing ->
+            ""
+
+
+{-| One band per line, with the share patched as a bar, and what patched
+means said once underneath.
+-}
+bands : Practice.Practice -> Html Msg
+bands practice =
+    case List.filter (\entry -> entry.total > 0) practice.severity of
+        [] ->
+            Html.text ""
+
+        _ ->
+            Html.div [ id "hub-bands", class "mt-6 space-y-3" ]
+                (List.map band practice.severity
+                    ++ [ Html.p [ id "hub-patched-note", class "q-note text-[12px]" ]
+                            [ Html.text (Mistakes.patchedNote practice.patchedLevel) ]
+                       ]
+                )
+
+
+band : Practice.Band -> Html Msg
+band entry =
+    Html.div [ Attr.attribute "data-band" entry.grade ]
+        [ Html.p [ class "text-[13px] mb-1", Notebook.style "color: var(--ink)" ]
+            [ Html.text (Mistakes.line entry) ]
+        , Charts.patched { total = entry.total, patched = entry.patched, sentence = Mistakes.line entry }
+        ]
+
+
+{-| The one button: the verb, and what today asks of you.
+-}
+fixButton : Practice.Practice -> Int -> Html Msg
+fixButton practice count =
+    Html.button
+        [ Attr.type_ "button"
+        , id "hub-practice"
+        , class "q-btn w-full px-6 py-3.5 text-[15px]"
+        , Attr.disabled (count == 0)
+        , onClick PressedPractice
+        ]
+        [ Html.text
+            (case practice.today of
+                Just today ->
+                    Mistakes.fixLabel today
+
+                Nothing ->
+                    "PRACTICE"
+            )
+        ]
 
 
 {-| A guest with games behind them: what is theirs, that it is not kept
@@ -414,8 +507,9 @@ practiceButton count =
         [ Html.text "PRACTICE" ]
 
 
-{-| "12 due · 4 new today · 231 in your deck". The middle figure is the
-day's budget of new cards still to come; once it is spent (the ten, or
+{-| "12 due · 3 new today · 231 of your mistakes". The fallback head,
+for an answer that carries no bands. The middle figure is the day's
+budget of new mistakes still to come; once it is spent (the three, or
 KEEP GOING, both count) it goes, rather than reading as "nothing new" --
 KEEP GOING is always there.
 -}
@@ -429,13 +523,13 @@ countsLine counts =
 
               else
                 Nothing
-            , Just (String.fromInt counts.deck ++ " in your deck")
+            , Just (String.fromInt counts.deck ++ " of your mistakes")
             ]
         )
 
 
-{-| "4 new tomorrow · 231 in your deck", or only the deck when tomorrow
-brings nothing new.
+{-| "3 new tomorrow · 231 of your mistakes", or only the count when
+tomorrow brings nothing new.
 -}
 tomorrowLine : Practice.Counts -> String
 tomorrowLine counts =
@@ -446,7 +540,7 @@ tomorrowLine counts =
           else
             []
          )
-            ++ [ String.fromInt counts.deck ++ " in your deck" ]
+            ++ [ String.fromInt counts.deck ++ " of your mistakes" ]
         )
 
 
