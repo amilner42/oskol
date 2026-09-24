@@ -27,10 +27,18 @@ them is pinned in `MistakesTest`.
 -}
 
 
-{-| A band as the server counts it: how bad, how many, how many patched.
+{-| A band as the server counts it, in its three states: how bad, how
+many, how many are in progress, how many are patched. What is neither is
+untouched.
+
+**Three states, not two.** Patched is four right answers over twelve days
+at the very earliest, so a player halfway through fifty of their mistakes
+would read "0 patched" for weeks. What they are working on is progress
+and is said out loud.
+
 -}
 type alias Band =
-    { grade : String, total : Int, patched : Int }
+    { grade : String, total : Int, inProgress : Int, patched : Int }
 
 
 {-| The site's own grades, in the words a player reads. "Dubious" rather
@@ -75,9 +83,17 @@ moves n grade =
 
 
 {-| What the practice home leads with: the worst band the player actually
-has, and how much of it they have fixed.
+has, and where they are with it.
 
+    "You have made 61 very bad moves. You are fixing 30 and have patched 12."
+    "You have made 61 very bad moves. You are fixing 30 of them."
     "You have made 61 very bad moves. You have patched 23."
+    "You have made 61 very bad moves. You have not started on them yet."
+
+The second sentence is the whole point of the three states: the work in
+flight is said first, and "patched" appears only once there is one, so a
+player five days into a deck does not read a line that says nothing is
+happening.
 
 Nothing when there is no mistake of any band: the page has its own words
 for a player with nothing to fix yet.
@@ -90,25 +106,46 @@ lead bands =
             Nothing
 
         worst :: _ ->
-            Just
-                ("You have made "
-                    ++ moves worst.total worst.grade
-                    ++ ". You have patched "
-                    ++ String.fromInt worst.patched
-                    ++ "."
-                )
+            Just ("You have made " ++ moves worst.total worst.grade ++ ". " ++ progress worst)
 
 
-{-| One band's own line: "Very bad · 23 of 61 patched".
+{-| The second sentence: what is happening to that band.
+-}
+progress : Band -> String
+progress band =
+    case ( max 0 band.inProgress, max 0 band.patched ) of
+        ( 0, 0 ) ->
+            "You have not started on them yet."
+
+        ( 0, patched ) ->
+            "You have patched " ++ String.fromInt patched ++ "."
+
+        ( going, 0 ) ->
+            "You are fixing " ++ String.fromInt going ++ " of them."
+
+        ( going, patched ) ->
+            "You are fixing "
+                ++ String.fromInt going
+                ++ " and have patched "
+                ++ String.fromInt patched
+                ++ "."
+
+
+{-| One band's own line, in the order the bar is drawn in: what is being
+worked on, what is patched, and how many there are in all.
+
+    "Very bad · 30 in progress · 12 patched · of 61"
+
 -}
 line : Band -> String
 line band =
     bandName band.grade
         ++ " · "
-        ++ String.fromInt band.patched
-        ++ " of "
-        ++ String.fromInt band.total
-        ++ " patched"
+        ++ String.fromInt (max 0 band.inProgress)
+        ++ " in progress · "
+        ++ String.fromInt (max 0 band.patched)
+        ++ " patched · of "
+        ++ String.fromInt (max 0 band.total)
 
 
 {-| What patched means, said once and quietly under the bars. The number

@@ -798,14 +798,20 @@ practice model home =
             ]
 
 
-{-| One band: its line in words, and the share of it patched as a bar.
+{-| One band: its line in words, and its three states as a bar -- in
+progress, patched, and what has not been started.
 -}
 band : Practice.Band -> Html Msg
 band entry =
     Html.div [ Attr.attribute "data-band" entry.grade ]
         [ Html.p [ class "text-[13px] mb-1", style "color: var(--ink)" ]
             [ Html.text (Mistakes.line entry) ]
-        , Charts.patched { total = entry.total, patched = entry.patched, sentence = Mistakes.line entry }
+        , Charts.patched
+            { total = entry.total
+            , inProgress = entry.inProgress
+            , patched = entry.patched
+            , sentence = Mistakes.line entry
+            }
         ]
 
 

@@ -381,45 +381,94 @@ ring =
 
 
 
--- A BAND, AND HOW MUCH OF IT IS PATCHED
+-- A BAND, AND THE THREE STATES ITS MISTAKES ARE IN
 
 
 mastery : Test
 mastery =
-    describe "a band's patched share"
-        [ test "the patched part is drawn over the whole band, in proportion" <|
+    describe "a band in its three states"
+        [ test "in progress and patched are drawn side by side, in proportion" <|
             \_ ->
-                -- 23 of 61 over 320 wide is 120.66, rounded to 120.66.
-                Charts.patched { total = 61, patched = 23, sentence = "Very bad · 23 of 61 patched" }
+                -- Of 61: 30 in progress is 157.38 wide, and the 23
+                -- patched start where those end and run 120.66.
+                Charts.patched
+                    { total = 61
+                    , inProgress = 30
+                    , patched = 23
+                    , sentence = "Very bad · 30 in progress · 23 patched · of 61"
+                    }
                     |> Query.fromHtml
                     |> Expect.all
                         [ Query.find [ tag "rect", attr "data-part" "to-fix" ]
                             >> Query.has [ attr "width" "320" ]
+                        , Query.find [ tag "rect", attr "data-part" "in-progress" ]
+                            >> Query.has [ attr "x" "0", attr "width" "157.38" ]
                         , Query.find [ tag "rect", attr "data-part" "patched" ]
-                            >> Query.has [ attr "width" "120.66" ]
+                            >> Query.has [ attr "x" "157.38", attr "width" "120.66" ]
+
                         -- The line in words is printed beside it, so the
                         -- bar itself is not read out a second time.
                         , Query.has [ attr "aria-hidden" "true" ]
-                        , Query.find [ tag "title" ] >> Query.has [ text "Very bad · 23 of 61 patched" ]
-                        , Query.has [ attr "data-total" "61", attr "data-patched" "23" ]
+                        , Query.find [ tag "title" ]
+                            >> Query.has [ text "Very bad · 30 in progress · 23 patched · of 61" ]
+                        , Query.has
+                            [ attr "data-total" "61"
+                            , attr "data-in-progress" "30"
+                            , attr "data-patched" "23"
+                            ]
                         ]
-        , test "a band with none patched draws the bar and nothing over it" <|
+        , -- The deck the human hit: nothing patched for weeks, and half
+          -- the band in rotation. The bar must not be empty.
+          test "a band with nothing patched still shows the work under way" <|
             \_ ->
-                Charts.patched { total = 12, patched = 0, sentence = "Bad · 0 of 12 patched" }
+                Charts.patched
+                    { total = 111
+                    , inProgress = 50
+                    , patched = 0
+                    , sentence = "Very bad · 50 in progress · 0 patched · of 111"
+                    }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.find [ tag "rect", attr "data-part" "in-progress" ]
+                            >> Query.has [ attr "x" "0", attr "width" "144.14" ]
+                        , Query.hasNot [ attr "data-part" "patched" ]
+                        ]
+        , test "a band nobody has touched draws the bar and nothing over it" <|
+            \_ ->
+                Charts.patched
+                    { total = 12
+                    , inProgress = 0
+                    , patched = 0
+                    , sentence = "Bad · 0 in progress · 0 patched · of 12"
+                    }
                     |> Query.fromHtml
                     |> Expect.all
                         [ Query.findAll [ tag "rect" ] >> Query.count (Expect.equal 1)
                         , Query.hasNot [ attr "data-part" "patched" ]
+                        , Query.hasNot [ attr "data-part" "in-progress" ]
                         ]
-        , test "a band entirely patched is full" <|
+        , test "a band entirely patched is full, and in progress is gone" <|
             \_ ->
-                Charts.patched { total = 12, patched = 12, sentence = "Bad · 12 of 12 patched" }
+                Charts.patched
+                    { total = 12
+                    , inProgress = 0
+                    , patched = 12
+                    , sentence = "Bad · 0 in progress · 12 patched · of 12"
+                    }
                     |> Query.fromHtml
-                    |> Query.find [ tag "rect", attr "data-part" "patched" ]
-                    |> Query.has [ attr "width" "320" ]
+                    |> Expect.all
+                        [ Query.find [ tag "rect", attr "data-part" "patched" ]
+                            >> Query.has [ attr "x" "0", attr "width" "320" ]
+                        , Query.hasNot [ attr "data-part" "in-progress" ]
+                        ]
         , test "a band with no mistakes in it draws an empty bar, not a full one" <|
             \_ ->
-                Charts.patched { total = 0, patched = 0, sentence = "Dubious · 0 of 0 patched" }
+                Charts.patched
+                    { total = 0
+                    , inProgress = 0
+                    , patched = 0
+                    , sentence = "Dubious · 0 in progress · 0 patched · of 0"
+                    }
                     |> Query.fromHtml
                     |> Expect.all
                         [ Query.findAll [ tag "rect" ] >> Query.count (Expect.equal 1)
@@ -427,8 +476,31 @@ mastery =
                         ]
         , test "more patched than made is clamped: a bar never draws past its band" <|
             \_ ->
-                Charts.patched { total = 10, patched = 40, sentence = "Bad · 40 of 10 patched" }
+                Charts.patched
+                    { total = 10
+                    , inProgress = 0
+                    , patched = 40
+                    , sentence = "Bad · 0 in progress · 40 patched · of 10"
+                    }
                     |> Query.fromHtml
                     |> Query.find [ tag "rect", attr "data-part" "patched" ]
                     |> Query.has [ attr "width" "320" ]
+        , -- Nonsense the server cannot send, drawn as something rather
+          -- than as a bar running off its own end: patched keeps its
+          -- share and what is in progress takes what is left.
+          test "and the two together never pass the end of the band" <|
+            \_ ->
+                Charts.patched
+                    { total = 10
+                    , inProgress = 9
+                    , patched = 8
+                    , sentence = "Bad · 9 in progress · 8 patched · of 10"
+                    }
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.find [ tag "rect", attr "data-part" "in-progress" ]
+                            >> Query.has [ attr "x" "0", attr "width" "64" ]
+                        , Query.find [ tag "rect", attr "data-part" "patched" ]
+                            >> Query.has [ attr "x" "64", attr "width" "256" ]
+                        ]
         ]

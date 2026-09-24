@@ -4,7 +4,10 @@
  * (done for today), a session mid-run (the counter, the marks, why this
  * position is here, the day's ring), and the end screen for a guest (the
  * sign-in ask) and for an account (KEEP GOING), plus the same account's
- * home with a deck in it, at 390x844, 320x568, 844x390 and a desktop.
+ * home with a deck in it, and last the hub and that home again over a
+ * deck shaped like the one on the human's phone (111 mistakes, 50 in
+ * rotation, none patched: what the three-state bars are drawn for), at
+ * 390x844, 320x568, 844x390 and a desktop.
  *
  * The room is arranged by `test-puzzle/setup.exs` (a finished game graded
  * against a stubbed engine), the first seat trimmed to three mistakes so
@@ -47,6 +50,18 @@ function arrange() {
   `;
   execFileSync('mix', ['run', '-e', trim], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   return setup;
+}
+
+/**
+ * One account's deck, made to look like the human's: 111 mistakes, 61
+ * never started, 50 in progress, 0 patched. Replaces what is there, so
+ * it runs after every other shot.
+ */
+function shapeDeck(email) {
+  const out = execFileSync('mix', ['run', '-e', 'Code.eval_file("playwright/review-puzzles-hub/shape.exs")'], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, SHAPE_EMAIL: email },
+  });
+  return JSON.parse(resultLine(out));
 }
 
 async function mailFor(request, email) {
@@ -193,6 +208,15 @@ async function shotAtEverySize(page, name, ready) {
     // deck to draw, so the section is shot here, where there is one.
     await page.goto(`${BASE}/`);
     await shotAtEverySize(page, '08-home-practice', '#home-practice');
+
+    // Last, because it replaces this account's deck: a deck shaped like
+    // the one on the human's phone -- 111 mistakes, 50 in rotation, none
+    // patched -- which is the state the three-state bars exist for.
+    log(`shaping the deck: ${JSON.stringify(shapeDeck(email))}`);
+    await page.goto(`${BASE}/puzzles`);
+    await shotAtEverySize(page, '09-hub-in-progress', '#hub-bands');
+    await page.goto(`${BASE}/`);
+    await shotAtEverySize(page, '10-home-in-progress', '#home-bands');
     await context.close();
     log(`screenshots in ${OUT}`);
   } finally {

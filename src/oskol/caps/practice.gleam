@@ -222,11 +222,12 @@ pub type PracticeCaps {
     /// is drawn from. A deck that is not there yet has done nothing and
     /// has its whole budget left.
     day: fn(String) -> Day,
-    /// The deck counted by how bad the mistake was, and how much of each
-    /// band is patched -- at or above the level given, which is the
-    /// caller's rule and never this layer's. One row per band the deck
-    /// actually holds, in no particular order. A card with several
-    /// sources counts once, in the worst band any of them named.
+    /// The deck counted by how bad the mistake was: how many of each band
+    /// are patched -- at or above the level given, which is the caller's
+    /// rule and never this layer's -- and how many are in progress, which
+    /// is started and not patched yet. One row per band the deck actually
+    /// holds, in no particular order. A card with several sources counts
+    /// once, in the worst band any of them named.
     severity: fn(String, Int) -> List(Severity),
   )
 }
@@ -241,10 +242,15 @@ pub type Day {
   Day(answered: Int, new_remaining: Int)
 }
 
-/// One band of a deck: how many cards were mistakes of that grade, and how
-/// many of them are patched.
+/// One band of a deck: how many cards were mistakes of that grade, how
+/// many of them the player is working on, and how many are patched.
+///
+/// The three states are exclusive and `in_progress + patched <= total`:
+/// a card is untouched until it is started, in progress while it is
+/// being answered, and patched once it is at the rung that says so.
+/// **Field order is the Elixir tuple's** (`lib/oskol/gleam/caps/practice.ex`).
 pub type Severity {
-  Severity(grade: String, total: Int, patched: Int)
+  Severity(grade: String, total: Int, in_progress: Int, patched: Int)
 }
 
 pub fn stub() -> PracticeCaps {

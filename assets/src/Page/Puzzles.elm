@@ -401,8 +401,9 @@ todayLine practice =
             ""
 
 
-{-| One band per line, with the share patched as a bar, and what patched
-means said once underneath.
+{-| One band per line, with its three states as a bar -- what is in
+progress, what is patched, what is untouched -- and what patched means
+said once underneath.
 -}
 bands : Practice.Practice -> Html Msg
 bands practice =
@@ -424,7 +425,12 @@ band entry =
     Html.div [ Attr.attribute "data-band" entry.grade ]
         [ Html.p [ class "text-[13px] mb-1", Notebook.style "color: var(--ink)" ]
             [ Html.text (Mistakes.line entry) ]
-        , Charts.patched { total = entry.total, patched = entry.patched, sentence = Mistakes.line entry }
+        , Charts.patched
+            { total = entry.total
+            , inProgress = entry.inProgress
+            , patched = entry.patched
+            , sentence = Mistakes.line entry
+            }
         ]
 
 

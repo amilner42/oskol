@@ -627,11 +627,15 @@ src/oskol/caps/practice.gleam    the puzzle deck: what a player is drilling, wha
 lib/oskol/gleam/caps/practice.ex its real IO, over retain: times cross as Unix ms, a
                                  card's content as JSON text, tags sorted
 src/oskol/practice/deck.gleam    the deck's own rules: due before new, three new a
-                                 day worst first (`new_per_day`), what counts as
-                                 patched (`patched_level`, the fourth rung), the three
-                                 bands, KEEP GOING uncapped, and the sentence each
-                                 refusal gives the player (a puzzle not in the deck is
-                                 the only 404; a snooze needs a card in rotation)
+                                 day worst first (`new_per_day`), the day's goal
+                                 capped at ten answers (`goal_per_day`: the ring's
+                                 ceiling, never a limit on what may be answered),
+                                 what counts as patched (`patched_level`, the fourth
+                                 rung), the three bands each in three states
+                                 (untouched, in progress, patched), KEEP GOING
+                                 uncapped, and the sentence each refusal gives the
+                                 player (a puzzle not in the deck is the only 404; a
+                                 snooze needs a card in rotation)
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
 lib/oskol_web/controllers/api/home_controller.ex      /papi/me/home and the
                                  recent rooms it pages
@@ -992,7 +996,7 @@ GET  /papi/practice                    {ok, puzzles: [{id, kind, prompt, due}],
                                          mistakes: {puzzles, games} | null,
                                          today: {done, target} | null,
                                          severity: [{grade, total,
-                                           patched}] | null,
+                                           in_progress, patched}] | null,
                                          patched_level, game: null}
                                        -- an account's deck (due, then new;
                                        new_tomorrow is the day's budget or
@@ -1005,9 +1009,14 @@ GET  /papi/practice                    {ok, puzzles: [{id, kind, prompt, due}],
                                        in the caller's own local day, against
                                        the day's own work (what is answered
                                        plus what is due plus the new ones the
-                                       day allows). `severity` is the
-                                       mistakes by band, worst first, with
-                                       how many are patched. Both an
+                                       day allows), capped at ten
+                                       (`deck.goal_per_day`): a backlog asks
+                                       for ten, not for the backlog.
+                                       `severity` is the mistakes by band,
+                                       worst first, each in three states --
+                                       untouched, in progress (started,
+                                       below the patched rung) and patched.
+                                       Both an
                                        account's only. Never paged: every fetch is the front of
                                        the queue, and "Done for today" is a
                                        fetch that comes back empty
@@ -1135,7 +1144,7 @@ gets `{ok: true, signed_in: false}` and keeps the home they have.
             series: [{game_id, game_number, pr, error, decisions, ended_at}]},
  practice: {due, deck, ladder: [n0..n7], days: [30 bools],
             today: {done, target}, patched_level,
-            severity: [{grade, total, patched}]},
+            severity: [{grade, total, in_progress, patched}]},
  recent:   [{id, slug, format, opponent, score: {yours, theirs},
              over, won: bool|null, pr, decisions, ended_at, path,
              games: [{game_number, path, result: {won, points, kind} | null,
@@ -1208,11 +1217,13 @@ and recent matches.
   off its rows: `ladder`, the mistakes at each of the eight levels;
   `days`, whether the deck was practised on each of the last 30 local
   days (an attempt counts, a deferral does not); `today: {done, target}`,
-  the day's ring; and `severity`, the mistakes by band with how many are
-  patched. The page leads with the worst band in words ("You have made 61
-  very bad moves. You have patched 23."), the day's ring, one button
-  (FIX 3 TODAY), and one line and bar per band; the ladder is behind a
-  `detail` toggle.
+  the day's ring, its target capped at ten; and `severity`, the mistakes
+  by band in three states -- untouched, in progress, patched. The page
+  leads with the worst band in words ("You have made 61 very bad moves.
+  You are fixing 30 and have patched 23."), the day's ring, one button
+  (FIX 10 TODAY), and one line and bar per band -- the bar filled in the
+  highlighter yellow for what is in progress and the best move's green
+  for what is patched; the ladder is behind a `detail` toggle.
 - Decisions: `src/oskol/handlers/home.gleam`. Reading never creates a
   deck, and never queues a review.
 
@@ -1641,9 +1652,11 @@ they happened to play must not undo.
 before anything new (`new: :after_reviews`), twenty at a time,
 `counts: {due, new_today, deck}`, `today: {done, target}` -- the day's
 ring, on the `practice.day` cap, counted in the deck's own timezone by
-exactly what the 30-day strip counts as practice -- and `severity`, the
-mistakes by band with how many are patched (`practice.severity`, which
-takes `deck.patched_level` and never decides it). A guest: the mistakes on the seats their
+exactly what the 30-day strip counts as practice, and asking for at most
+`deck.goal_per_day` (ten) answers however big the backlog -- and
+`severity`, the mistakes by band in their three states, untouched, in
+progress and patched (`practice.severity`, which takes
+`deck.patched_level` and never decides it). A guest: the mistakes on the seats their
 cookie holds and no account owns, newest game first, unscheduled,
 `counts: null`, and **nothing written** -- only an account has a deck.
 Nobody: an empty list, not an error. Reading never starts a card or spends a
@@ -1703,6 +1716,17 @@ badge, no animation.
 player reads about is **a mistake they made**, what they do with it is
 **fix** it, and one they have stopped making is **patched**. Nothing a
 player reads says card, deck or flashcard.
+
+**A mistake is in one of three states**, and the pages say so: untouched,
+**in progress** (started, below `deck.patched_level`) or patched. A band
+reads "Very bad · 30 in progress · 23 patched · of 61" over a bar filled
+in those two colours, and the head sentence is "You have made 61 very bad
+moves." plus what is happening -- "You are fixing 30 and have patched 23.",
+"You are fixing 30 of them." with nothing patched yet, "You have patched
+23." with nothing in flight, "You have not started on them yet." with
+neither. Patched is four right answers, twelve days at the earliest, so a
+page that knew only patched from not-patched would tell a player working
+through fifty mistakes that nothing was happening.
 
 **The home and a run** (`/puzzles`, `assets/src/Page/Puzzles.elm`; PUZZLES
 on the home menu where TACTICS / SOON was, ANALYSIS / SOON stays). One

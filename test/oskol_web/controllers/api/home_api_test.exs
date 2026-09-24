@@ -251,9 +251,9 @@ defmodule OskolWeb.Api.HomeApiTest do
                "today" => %{"done" => 0, "target" => 0},
                # Three bands, every one of them empty.
                "severity" => [
-                 %{"grade" => "very_bad", "total" => 0, "patched" => 0},
-                 %{"grade" => "bad", "total" => 0, "patched" => 0},
-                 %{"grade" => "doubtful", "total" => 0, "patched" => 0}
+                 %{"grade" => "very_bad", "total" => 0, "in_progress" => 0, "patched" => 0},
+                 %{"grade" => "bad", "total" => 0, "in_progress" => 0, "patched" => 0},
+                 %{"grade" => "doubtful", "total" => 0, "in_progress" => 0, "patched" => 0}
                ],
                "patched_level" => 4
              }

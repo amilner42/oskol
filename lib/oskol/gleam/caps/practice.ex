@@ -7,7 +7,7 @@ defmodule Oskol.Gleam.Caps.Practice do
       start_new, review, amend, defer_until, defer_tomorrow, master,
       suspend, resume, summary, ladder, days, day, severity)
       Day(answered, new_remaining)
-      Severity(grade, total, patched)
+      Severity(grade, total, in_progress, patched)
       Item(key, tags, content_json, position)
       Card(key, tags, content_json, level, due_ms, reps, lapses, status)
       Session(reviews, fresh, new_remaining_today)
@@ -174,14 +174,19 @@ defmodule Oskol.Gleam.Caps.Practice do
     end
   end
 
-  # The deck counted by how bad the mistake was, and how much of each band
-  # the player has patched.
+  # The deck counted by how bad the mistake was: how many of each band the
+  # player has patched, and how many they are working on.
   #
   # A card is one puzzle, and a puzzle can have been reached in several
   # games: the worst of those rows is the band the card counts in, which
   # is what the ranking in the fragment is for. The band names are the
   # grades `puzzle_sources` already stores, and `src/oskol/practice/deck`
   # holds the same three: they must agree.
+  #
+  # In progress is Retain's own "started, and not there yet": an item is
+  # `:new` until `started_at` is set (Retain.Item.status/1), so the three
+  # states are untouched, started-and-below-the-rung, and at-or-above it.
+  # They do not overlap, and they add up to the band's total.
   #
   # `patched_level` is the caller's rule and is never decided here.
   defp severity(uid, patched_level) when is_integer(patched_level) do
@@ -195,9 +200,10 @@ defmodule Oskol.Gleam.Caps.Practice do
             join: s in Oskol.Puzzles.Source,
             on: s.puzzle_id == i.key,
             where: i.user_id == ^user.id,
-            group_by: [i.id, i.level],
+            group_by: [i.id, i.level, i.started_at],
             select: %{
               level: i.level,
+              started: fragment("case when ? is null then 0 else 1 end", i.started_at),
               rank:
                 max(
                   fragment(
@@ -213,14 +219,22 @@ defmodule Oskol.Gleam.Caps.Practice do
           select: {
             w.rank,
             count(w.rank),
+            sum(
+              fragment(
+                "case when ? = 1 and ? < ? then 1 else 0 end",
+                w.started,
+                w.level,
+                ^patched_level
+              )
+            ),
             sum(fragment("case when ? >= ? then 1 else 0 end", w.level, ^patched_level))
           }
         )
         |> Oskol.Repo.all()
-        |> Enum.flat_map(fn {rank, total, patched} ->
+        |> Enum.flat_map(fn {rank, total, in_progress, patched} ->
           case band(rank) do
             nil -> []
-            name -> [{:severity, name, total, patched || 0}]
+            name -> [{:severity, name, total, in_progress || 0, patched || 0}]
           end
         end)
     end
