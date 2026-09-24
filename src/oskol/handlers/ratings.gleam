@@ -155,7 +155,7 @@ fn career(ctx: Ctx, account_id: String) -> Option(Float) {
   case account_id {
     "" -> None
     user_id ->
-      ctx.analysis.graded_for(user_id, home.career_cap, None)
+      ctx.analysis.graded_for(user_id, home.career_cap)
       |> home.counted
       |> home.window_pr(home.min_career_games)
   }

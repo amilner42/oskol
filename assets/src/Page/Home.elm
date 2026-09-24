@@ -6,6 +6,7 @@ module Page.Home exposing
     , init
     , prBand
     , resultLine
+    , scoreLine
     , subscriptions
     , title
     , update
@@ -59,6 +60,7 @@ import Json.Decode as D
 import Page.GameLanding as GameLanding
 import Route
 import Session exposing (Session)
+import Set exposing (Set)
 import Task
 import Time
 import Ui.Charts as Charts
@@ -84,6 +86,10 @@ type alias Model =
     , pageError : Maybe String
     , starting : Bool -- PRACTICE is in flight: the deck is being fetched
     , practiceNote : Maybe String
+
+    -- The rooms opened up to show their games. A room is a match, so this
+    -- is a set and not one id: reading two matches is a thing to do.
+    , expanded : Set String
 
     -- The reader's own zone and the year they are in, so a date is theirs
     -- and drops the year when it is this one. `Time.utc` until the task
@@ -117,6 +123,7 @@ type Msg
     | GotDeck (Result Api.Error Practice.Practice)
     | PressedMore
     | GotMore (Result Api.Error Home.Page)
+    | ToggledRoom String
     | CreateMsg GameLanding.Msg
 
 
@@ -147,6 +154,7 @@ init session =
       , pageError = Nothing
       , starting = False
       , practiceNote = Nothing
+      , expanded = Set.empty
       , zone = Time.utc
       , year = 0
       , fetchedAt = 0
@@ -334,7 +342,7 @@ update msg model =
                         , state =
                             Ready
                                 { home
-                                    | recent = home.recent ++ page.games
+                                    | recent = home.recent ++ page.rooms
                                     , more = page.more
                                     , next = page.next
                                 }
@@ -348,6 +356,21 @@ update msg model =
 
         GotMore (Err err) ->
             ( { model | paging = False, pageError = Just (Api.errorMessage err) }, Cmd.none, NoOut )
+
+        -- A match opens where it is, without moving anything above it and
+        -- without asking the server: its games came down with it.
+        ToggledRoom roomId ->
+            ( { model
+                | expanded =
+                    if Set.member roomId model.expanded then
+                        Set.remove roomId model.expanded
+
+                    else
+                        Set.insert roomId model.expanded
+              }
+            , Cmd.none
+            , NoOut
+            )
 
         CreateMsg createMsg ->
             let
@@ -513,16 +536,19 @@ failed message =
 -- THE SECTIONS
 
 
-{-| The brief's order, top to bottom: live games, form, practice, recent.
-On a desktop the same four in two columns, which a two-column grid in this
-order gives for nothing -- live and practice down the left, form and
-recent down the right -- so a phone and a desktop read the same page.
+{-| Top to bottom: form, live games, practice, recent matches. The form
+and the streak come first because they are the two hooks -- how you are
+playing now, and how long you have kept showing up -- and they are what
+the page is for. On a desktop the same four in two columns, which a
+two-column grid in this order gives for nothing -- form and practice down
+the left, live and recent down the right -- so a phone and a desktop read
+the same page.
 -}
 sections : Model -> Home.Home -> Html Msg
 sections model home =
     Html.div [ class "hm-cols grid gap-10 sm:gap-12 lg:grid-cols-2 lg:gap-x-14 items-start" ]
-        [ live model home
-        , form home
+        [ form home
+        , live model home
         , practice model home
         , recent model home
         ]
@@ -557,10 +583,12 @@ live model home =
 -- FORM
 
 
-{-| Two numbers and the line under them, then the line drawn through every
-graded game. Under three of them there is no rating to print, so the
-sentence says what to do instead and there are no numbers and no chart:
-a figure that swings from 3.0 to 14.0 teaches nothing.
+{-| Two numbers, the streak beside them and the line under them, then the
+line drawn through every graded game. Under three graded games there is no
+rating to print, so the sentence says what to do instead and there are no
+numbers and no chart: a figure that swings from 3.0 to 14.0 teaches
+nothing. The streak stands on its own and is shown either way, because a
+player with two games can already be on their second day.
 -}
 form : Home.Home -> Html Msg
 form home =
@@ -570,6 +598,7 @@ form home =
                 [ Html.div [ class "flex items-end gap-8 sm:gap-10 mb-2" ]
                     [ figure "home-form-recent" "Recent (last 20)" recentPr "text-[40px] sm:text-[52px]"
                     , figure "home-form-career" "Career" careerPr "text-[24px] sm:text-[30px]"
+                    , streak home.form.streak
                     ]
                 , sentence home.form.sentence
                 , Html.div [ class "mt-5 max-w-md" ]
@@ -577,7 +606,49 @@ form home =
                 ]
 
             _ ->
-                [ sentence home.form.sentence ]
+                [ case streakDays home.form.streak of
+                    Nothing ->
+                        Html.text ""
+
+                    Just _ ->
+                        Html.div [ class "flex items-end mb-2" ] [ streak home.form.streak ]
+                , sentence home.form.sentence
+                ]
+
+
+{-| Days running, beside the two ratings and in the same quiet type. A
+player with no streak is shown nothing at all: a zero is a scolding, and
+this is a hook, not a scoreboard.
+-}
+streak : Int -> Html Msg
+streak days =
+    case streakDays days of
+        Nothing ->
+            Html.text ""
+
+        Just n ->
+            numberFigure "home-form-streak"
+                "streak"
+                "data-days"
+                (String.fromInt n)
+                (String.fromInt n
+                    ++ (if n == 1 then
+                            " day"
+
+                        else
+                            " days"
+                       )
+                )
+                "text-[24px] sm:text-[30px]"
+
+
+streakDays : Int -> Maybe Int
+streakDays days =
+    if days > 0 then
+        Just days
+
+    else
+        Nothing
 
 
 point : Home.Point -> { pr : Float, decisions : Int }
@@ -587,13 +658,21 @@ point p =
 
 figure : String -> String -> Float -> String -> Html Msg
 figure elementId label value size =
+    numberFigure elementId label "data-pr" (oneDecimal value) (oneDecimal value) size
+
+
+{-| The same figure, printed as words and carrying the plain number for a
+test to read: "3 days" over "streak".
+-}
+numberFigure : String -> String -> String -> String -> String -> String -> Html Msg
+numberFigure elementId label attribute value shown size =
     Html.p [ id elementId, class "min-w-0" ]
         [ Html.span
             [ class ("block font-bold leading-none tabular-nums " ++ size)
             , style "color: var(--ink)"
-            , Attr.attribute "data-pr" (oneDecimal value)
+            , Attr.attribute attribute value
             ]
-            [ Html.text (oneDecimal value) ]
+            [ Html.text shown ]
         , Html.span [ class "block q-note text-[12px] mt-2" ] [ Html.text label ]
         ]
 
@@ -663,19 +742,23 @@ caption text =
 
 
 
--- RECENT GAMES
+-- RECENT MATCHES
 
 
+{-| One line per **room**: a match, an unlimited session or a single game.
+A match to seven was nine loose lines here once, saying nothing about the
+match it was; now it is one line that says so and opens to show its games.
+-}
 recent : Model -> Home.Home -> Html Msg
 recent model home =
-    section "home-recent" "RECENT GAMES" <|
+    section "home-recent" "RECENT MATCHES" <|
         case home.recent of
             [] ->
                 [ quiet "Your finished games appear here once the engine has graded them." ]
 
-            games ->
+            rooms ->
                 [ Html.ul [ id "home-recent-list", class "hm-games" ]
-                    (List.map (recentRow model) games)
+                    (List.map (recentRow model) rooms)
                 , case model.pageError of
                     Just message ->
                         Html.p [ id "home-more-error", class "q-note text-[13px] mt-3" ] [ Html.text message ]
@@ -692,7 +775,7 @@ recent model home =
                         ]
                         [ Html.text
                             (if model.paging then
-                                "LOADING…"
+                                "LOADING\u{2026}"
 
                              else
                                 "MORE"
@@ -704,32 +787,172 @@ recent model home =
                 ]
 
 
-{-| One game, the whole row a link to its replay: who it was against, how
-it went, the rating for that game in its band's colour, and the day.
+{-| One room: who it was against, what was being played, how it stands,
+the rating over the whole of it in its band's colour, and the day it
+ended.
+
+A room with more than one game opens in place -- a button, because it
+moves nothing and goes nowhere -- and a room with one game is the link to
+that game's replay, as every line here used to be.
 -}
-recentRow : Model -> Home.Game -> Html Msg
-recentRow model game =
+recentRow : Model -> Home.Room -> Html Msg
+recentRow model room =
+    let
+        open =
+            Set.member room.id model.expanded
+
+        many =
+            List.length room.games > 1
+    in
+    Html.li []
+        (if many then
+            Html.button
+                [ Attr.type_ "button"
+                , id ("home-room-" ++ room.id)
+                , class "hm-game block w-full text-left py-2.5"
+                , Attr.attribute "aria-expanded"
+                    (if open then
+                        "true"
+
+                     else
+                        "false"
+                    )
+                , onClick (ToggledRoom room.id)
+                ]
+                (rowLine model room many open)
+                :: (if open then
+                        [ roomGames room ]
+
+                    else
+                        []
+                   )
+
+         else
+            [ Html.a
+                [ href room.path
+                , id ("home-room-" ++ room.id)
+                , class "hm-game block py-2.5"
+                ]
+                (rowLine model room many open)
+            ]
+        )
+
+
+{-| The line itself, and under it what was being played. The format goes
+on its own line rather than into the row, so it has the whole width to
+say "Match to 7 \u{00B7} 9 games" on a 320px screen instead of "Match \u{2026}".
+-}
+rowLine : Model -> Home.Room -> Bool -> Bool -> List (Html Msg)
+rowLine model room many open =
+    [ Html.span [ class "flex items-baseline gap-3" ]
+        [ Html.span
+            [ class "min-w-0 flex-1 font-semibold text-[15px] truncate"
+            , style "color: var(--ink)"
+            ]
+            [ Html.text (Maybe.withDefault "\u{2014}" room.opponent) ]
+        , Html.span [ class "q-note text-[13px] whitespace-nowrap" ] [ Html.text (scoreLine room) ]
+        , Html.span
+            [ class ("hm-pr tabular-nums text-[12px] font-bold " ++ prBand room.pr)
+            , Attr.attribute "data-pr" (oneDecimal room.pr)
+            ]
+            [ Html.text (oneDecimal room.pr) ]
+        , Html.span [ class "q-note text-[12px] whitespace-nowrap w-[4.6rem] text-right" ]
+            [ Html.text (dateLine model.zone model.year room.endedAt) ]
+        , if many then
+            Html.span
+                [ class
+                    ("hero-chevron-down w-3 h-3 shrink-0 opacity-50 hm-caret"
+                        ++ (if open then
+                                " is-open"
+
+                            else
+                                ""
+                           )
+                    )
+                , Attr.attribute "aria-hidden" "true"
+                ]
+                []
+
+          else
+            Html.text ""
+        ]
+    , Html.span [ class "block q-note text-[12px] truncate mt-0.5" ]
+        [ Html.text (formatLine room) ]
+    ]
+
+
+{-| The games of a match, one level in: which game, how it went, and its
+own rating. Each is the link to that game's replay.
+-}
+roomGames : Home.Room -> Html Msg
+roomGames room =
+    Html.ul
+        [ id ("home-room-" ++ room.id ++ "-games")
+        , class "hm-inner ml-1 pl-3 pb-1"
+        ]
+        (List.map (gameRow room) room.games)
+
+
+gameRow : Home.Room -> Home.Game -> Html Msg
+gameRow room game =
     Html.li []
         [ Html.a
             [ href game.path
-            , id ("home-game-" ++ game.gameId ++ "-" ++ String.fromInt game.gameNumber)
-            , class "hm-game flex items-baseline gap-3 py-2.5"
+            , id ("home-game-" ++ room.id ++ "-" ++ String.fromInt game.gameNumber)
+            , class "hm-game flex items-baseline gap-3 py-2"
             ]
             [ Html.span
-                [ class "min-w-0 flex-1 font-semibold text-[15px] truncate"
-                , style "color: var(--ink)"
-                ]
-                [ Html.text (Maybe.withDefault "—" game.opponent) ]
-            , Html.span [ class "q-note text-[13px] whitespace-nowrap" ] [ Html.text (resultLine game.result) ]
+                [ class "min-w-0 flex-1 text-[13px]", style "color: var(--ink)" ]
+                [ Html.text ("Game " ++ String.fromInt game.gameNumber) ]
+            , Html.span [ class "q-note text-[12px] whitespace-nowrap" ]
+                [ Html.text (resultLine game.result) ]
             , Html.span
-                [ class ("hm-pr tabular-nums text-[12px] font-bold " ++ prBand game.pr)
+                [ class ("hm-pr tabular-nums text-[11px] font-bold " ++ prBand game.pr)
                 , Attr.attribute "data-pr" (oneDecimal game.pr)
                 ]
                 [ Html.text (oneDecimal game.pr) ]
-            , Html.span [ class "q-note text-[12px] whitespace-nowrap w-[4.6rem] text-right" ]
-                [ Html.text (dateLine model.zone model.year game.endedAt) ]
             ]
         ]
+
+
+{-| What was being played, and how much of it is here: "Match to 7 \u{00B7} 9
+games", "Single game".
+-}
+formatLine : Home.Room -> String
+formatLine room =
+    case List.length room.games of
+        1 ->
+            room.format
+
+        n ->
+            room.format ++ " \u{00B7} " ++ String.fromInt n ++ " games"
+
+
+{-| How the room stands, from this player's side: "won 7-4" for a match
+that is over, "7-4" for one still being played or one nothing recorded a
+winner for, and a finished single game's own result line as it has always
+read ("won 2 \u{00B7} gammon").
+-}
+scoreLine : Home.Room -> String
+scoreLine room =
+    case ( room.over, room.games ) of
+        ( True, [ only ] ) ->
+            resultLine only.result
+
+        _ ->
+            let
+                score =
+                    String.fromInt room.score.yours ++ "-" ++ String.fromInt room.score.theirs
+            in
+            case ( room.over, room.won ) of
+                ( True, Just True ) ->
+                    "won " ++ score
+
+                ( True, Just False ) ->
+                    "lost " ++ score
+
+                _ ->
+                    score
 
 
 {-| How the game went, for this seat: "won 2", "lost 1", and the kind
@@ -741,7 +964,7 @@ resultLine result =
         -- No record row says how it ended: the game is still worth its
         -- rating, and the result column simply has nothing in it.
         Nothing ->
-            "—"
+            "\u{2014}"
 
         Just outcome ->
             (if outcome.won then
@@ -753,10 +976,10 @@ resultLine result =
                 ++ String.fromInt outcome.points
                 ++ (case outcome.kind of
                         "gammon" ->
-                            " · gammon"
+                            " \u{00B7} gammon"
 
                         "backgammon" ->
-                            " · backgammon"
+                            " \u{00B7} backgammon"
 
                         _ ->
                             ""

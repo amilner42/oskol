@@ -632,11 +632,14 @@ src/oskol/practice/deck.gleam    the deck's own rules: due before new, ten new a
                                  only 404; a snooze needs a card in rotation)
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
 lib/oskol_web/controllers/api/home_controller.ex      /papi/me/home and the
-                                 graded games it pages
+                                 recent rooms it pages
 src/oskol/handlers/home.gleam    the signed-in home: the live games, the two
-                                 PR windows and the sentence, the deck's
-                                 ladder and days, the recent games and their
-                                 cursor
+                                 PR windows, the streak and the sentence, the
+                                 deck's ladder and days, the recent rooms (a
+                                 match folded into one entry) and their cursor
+src/oskol/caps/activity.gleam    was this player here today: the local days a
+                                 puzzle was answered or a game of theirs
+                                 finished, which the streak is counted over
 assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
 assets/src/Route.elm             the three client routes, mirroring the server's
 assets/src/Api.elm               the /papi envelope + CSRF header
@@ -648,14 +651,16 @@ assets/src/Page/GameLanding.elm  "/" the guest's home page (CREATE GAME's dialog
 assets/src/Page/HomeBoard.elm    the guest home's board: the table edge to edge, the
                                  2x2 menu in its right band
 assets/src/Page/Home.elm         "/" for an account: the bar (the name, PLAY, JOIN,
-                                 PUZZLES, the boards), live games with your move first,
-                                 form (two numbers, the sentence, the line), practice
-                                 (what is due, PRACTICE, the ladder and the 30 days) and
-                                 the last graded games with MORE, each a link to its
-                                 replay. Everything from one answer; `Main` picks between
-                                 this and the board by the session
-assets/src/Api/Home.elm          /papi/me/home and /papi/me/games/graded, and the one
-                                 line a browser with no account gets
+                                 PUZZLES, the boards), then form first (two numbers, the
+                                 streak, the sentence, the line), live games with your
+                                 move first, practice (what is due, PRACTICE, the ladder
+                                 and the 30 days) and recent matches with MORE -- a line
+                                 per room, a match opening in place to list its games.
+                                 Everything from one answer; `Main` picks between this
+                                 and the board by the session
+assets/src/Api/Home.elm          /papi/me/home and /papi/me/games/graded (a room an
+                                 entry, its graded games inside), and the one line a
+                                 browser with no account gets
 assets/src/Ui/LiveGames.elm      one row per game you can pick back up, drawn the same
                                  on both homes
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it;
@@ -783,8 +788,8 @@ arrive at any of them cold, and moving between them afterwards is a
 
 - `/` the home page, which is two pages: a guest gets the board and its
   four buttons (`Page.GameLanding`), an account gets its own home --
-  live games, form, practice, recent games (`Page.Home`, from
-  `GET /papi/me/home`). `Main` picks by the session and picks again when
+  form and its streak, live games, practice, recent matches (`Page.Home`,
+  from `GET /papi/me/home`). `Main` picks by the session and picks again when
   `/papi/me` lands, so a browser that turns out to be signed in ends up on
   its own home with no reload, and one that logs out is handed the board
   back. The server serves the same shell either way.
@@ -1013,8 +1018,10 @@ GET  /papi/me/home                     {ok, signed_in: false} for a guest;
                                        whole signed-in home in one answer
                                        (see "The home" below)
 GET  /papi/me/games/graded?before=<cursor>
-                                       {ok, games, more, next} -- the next ten
-                                       graded games. `before` is the previous
+                                       {ok, rooms, more, next} -- the next ten
+                                       recent rooms (a match, a session or a
+                                       single game, with its graded games
+                                       inside). `before` is the previous
                                        answer's `next` and nothing else; a
                                        mangled one is a 422, never the first
                                        page again
@@ -1101,14 +1108,19 @@ gets `{ok: true, signed_in: false}` and keeps the home they have.
 ```
 {ok, signed_in: true,
  live:     [ /papi/me/games' entries, unchanged ],
- form:     {games, recent, career, sentence,
+ form:     {games, recent, career, streak, sentence,
             series: [{game_id, game_number, pr, error, decisions, ended_at}]},
  practice: {due, deck, ladder: [n0..n7], days: [30 bools]},
- recent:   [{game_id, game_number, slug, path, opponent,
-             result: {won, points, kind} | null,
-             pr, error, decisions, ended_at}],
+ recent:   [{id, slug, format, opponent, score: {yours, theirs},
+             over, won: bool|null, pr, decisions, ended_at, path,
+             games: [{game_number, path, result: {won, points, kind} | null,
+                      pr, decisions, ended_at}]}],
  more, next}
 ```
+
+The page draws them in that order too: form (the two hooks, how you are
+playing and how long you have kept showing up), then live games, practice
+and recent matches.
 
 - **A rating is decision-weighted.** A window's PR is the equity lost
   across its games over the decisions it was lost over, times 500 — the
@@ -1127,16 +1139,45 @@ gets `{ok: true, signed_in: false}` and keeps the home they have.
   `home.series_cap`; every other list is newest first. `error` and
   `decisions` ride along so the client can draw the rolling window exactly
   rather than re-deriving it from a rounded PR.
-- **One query** behind form and recent: `analysis.graded_for`
-  (`Oskol.Reviews.graded_for/3`) joins the review rows to the seats an
-  account owns through the `games_players_gin` containment, and projects
-  each answer down to the seats' totals in the database, as
-  `rating_summaries` does. `recent`'s first ten ride in the home answer;
-  the rest come ten at a time from `/papi/me/games/graded?before=`, whose
-  cursor is `<ended_at_ms>:<game_number>:<game_id>` and is compared as one
-  row against the same three expressions the order is on, truncated to the
-  millisecond on both sides. A cursor only narrows what the caller already
-  reaches: the account is the session's, never the cursor's.
+- **A recent entry is a room, not a game.** A match to 7 is one line --
+  the format in the game's own words ("Match to 7", "Unlimited", "Single
+  game", from the registry as `landing.invite_head` reads it), the score
+  from this player's side, the rating over the whole match, the date --
+  that opens in place to list its games; a single-game room is a line
+  that opens its replay. The score is added up from the graded games'
+  result lines, so a half-graded room shows the half it knows; **who won
+  comes from the room's own `winners` row**, never from that score, or a
+  match whose last game is not graded yet would be handed to the wrong
+  player. A room's PR is decision-weighted like every other window here,
+  so it is *not* the mean of its games' PRs. Paging counts rooms, so no
+  page boundary can fall inside a match.
+- **`streak`** is consecutive local days this account was active -- a
+  puzzle answered **or** a game of theirs that finished -- by Retain's own
+  rule (`Retain.streak`): today counts as soon as they are active and
+  until then the streak is yesterday's, so it never reads 0 all morning; a
+  whole day missed ends it. The two sources are unioned in one cap
+  (`activity.days`, `lib/oskol/gleam/caps/activity.ex`): Retain's reviews
+  for the puzzles and `game_records` for the games, in the deck's own
+  timezone. `game_records` and not `game_reviews`, so a game the engine
+  never answered for still counts as a day someone played. The run itself
+  is counted in Gleam (`home.days_running`), bounded by
+  `home.streak_window`. 0 is drawn as nothing, never as a zero.
+- **Two queries over the same rows**, counted two ways: `analysis.graded_for`
+  (`Oskol.Reviews.graded_for/2`) for the form, in games, because a rating
+  is made of games; `analysis.graded_rooms_for`
+  (`Oskol.Reviews.graded_rooms_for/3`) for the recent list, in rooms. Both
+  join the review rows to the seats an account owns through the
+  `games_players_gin` containment and project each answer down to the
+  seats' totals in the database, as `rating_summaries` does. Reaching into
+  a stored answer is the expensive half of both (it decompresses whole to
+  give up two numbers), so the form's query asks for nothing it does not
+  rate -- no opponent, no record line -- which is what pays for the second
+  one. `recent`'s first ten rooms ride in the home answer; the rest come
+  ten at a time from `/papi/me/games/graded?before=`, whose cursor is
+  `<ended_at_ms>:<room_id>` and is compared as one row against the same
+  two expressions the rooms are ordered on, truncated to the millisecond
+  on both sides. A cursor only narrows what the caller already reaches:
+  the account is the session's, never the cursor's.
 - `practice` is the deck as the practice home reads it (`due`, `deck`)
   plus two pictures Retain does not answer on its own and the cap reads
   off its rows: `ladder`, the cards at each of the eight levels, and
@@ -1712,12 +1753,14 @@ node playwright/test-accounts/test.js           # signing in: the code from LIVE
                                                # link (asks first), an owned seat nobody
                                                # can claim, log out; mail read from
                                                # /dev/last-login; phone screenshots
-node playwright/test-home/test.js               # the signed-in home: the bar, live games,
-                                               # the form's numbers and line, the practice
-                                               # line, ten recent games then MORE, a tap
-                                               # into a replay (it arranges its account)
-node playwright/review-home/test.js             # screenshots of the signed-in home: full,
-                                               # empty, CREATE GAME, the boards (4 sizes)
+node playwright/test-home/test.js               # the signed-in home: the bar, the form's
+                                               # numbers, streak and line, live games, the
+                                               # practice line, ten recent rooms then MORE,
+                                               # a match opening to its games, a tap into a
+                                               # replay (it arranges its account)
+node playwright/review-home/test.js             # screenshots of the signed-in home: full, a
+                                               # match opened, empty, CREATE GAME, the
+                                               # boards (4 sizes)
 node playwright/test-backgammon-smoke/test.js   # backgammon: stage, undo, play, with a clock
 node playwright/test-backgammon-dance/test.js   # backgammon: a danced turn (it arranges the
                                                # room itself), the roll animation, the delay
@@ -1863,10 +1906,12 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
   dropdowns, their defaults, the summary, inline validation), the theme
   picker, and the invite's three answers.
 - `HomeTest`: the signed-in home on `/papi/me/home` as the handler writes
-  it — each section, each empty state, the form printing no numbers under
-  three graded games, MORE appending the next page and then going, the
-  grade band a rating is coloured by, and a guest's answer handing the
-  shell `SignedOut` rather than drawing an empty home.
+  it — each section and the order they come in (form first), each empty
+  state, the form printing no numbers under three graded games, the streak
+  in days and nothing at zero, a match drawn as one line that opens to its
+  games, MORE appending the next page of rooms and then going, the grade
+  band a rating is coloured by, and a guest's answer handing the shell
+  `SignedOut` rather than drawing an empty home.
 - `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
   (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
   node is fetched and merged, PLAY posts exactly the path with the key (and

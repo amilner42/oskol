@@ -9,6 +9,7 @@ import gleam/option.{type Option, Some}
 import gleam/order
 import gleam/result
 import gleam/string
+import oskol/caps/activity as activity_caps
 import oskol/caps/analysis as analysis_caps
 import oskol/caps/auth as auth_caps
 import oskol/caps/copy as copy_caps
@@ -26,6 +27,7 @@ import oskol/rooms/room.{type Room, Room}
 
 pub fn ctx() -> Ctx {
   Ctx(
+    activity: activity_caps.stub(),
     analysis: analysis_caps.stub(),
     auth: auth_caps.stub(),
     copy: copy_caps.stub(),
@@ -208,7 +210,7 @@ pub fn signed_in_guest(id: String, user_id: String) -> Session {
 pub fn with_graded(
   ctx: Ctx,
   uid: String,
-  rows: List(analysis_caps.GradedGame),
+  rows: List(analysis_caps.RatedGame),
 ) -> Ctx {
   with_graded_accounts(ctx, [#(uid, rows)])
 }
@@ -220,47 +222,129 @@ pub fn with_graded(
 /// look right.
 pub fn with_graded_accounts(
   ctx: Ctx,
-  accounts: List(#(String, List(analysis_caps.GradedGame))),
+  accounts: List(#(String, List(analysis_caps.RatedGame))),
 ) -> Ctx {
   Ctx(
     ..ctx,
     analysis: analysis_caps.AnalysisCaps(
       ..ctx.analysis,
-      graded_for: fn(asked, limit, before) {
+      graded_for: fn(asked, limit) {
         case list.key_find(accounts, asked) {
           Error(_) -> panic as "analysis.graded_for asked for another account"
-          Ok(rows) ->
-            rows
-            |> list.filter(fn(row) {
-              case before {
-                option.None -> True
-                Some(cursor) -> after_cursor(row, cursor)
-              }
-            })
-            |> list.take(limit)
+          Ok(rows) -> list.take(rows, limit)
         }
       },
     ),
   )
 }
 
-/// Ordered as the query orders it: the answer's moment, then the game
-/// number, then the room, each newest-first. A row is "after" the cursor
+/// Analysis caps that answer one account's graded games **by room**, as the
+/// recent list reads them.
+///
+/// The stub pages for real: it folds the rows into rooms, orders the rooms
+/// by their newest answer as the query does, steps over every room at or
+/// before the cursor, and takes that many *rooms* -- so a handler that
+/// counted games, ignored the marker it was given or leaned on the order
+/// the test happened to write the rows in fails here. It panics for any
+/// other account.
+pub fn with_graded_rooms(
+  ctx: Ctx,
+  uid: String,
+  rows: List(analysis_caps.GradedRoomGame),
+) -> Ctx {
+  Ctx(
+    ..ctx,
+    analysis: analysis_caps.AnalysisCaps(
+      ..ctx.analysis,
+      graded_rooms_for: fn(asked, rooms, before) {
+        case asked == uid {
+          False ->
+            panic as "analysis.graded_rooms_for asked for another account"
+          True ->
+            room_runs(rows)
+            |> list.filter(fn(run) {
+              case before {
+                option.None -> True
+                Some(cursor) -> after_room_cursor(run, cursor)
+              }
+            })
+            |> list.take(rooms)
+            |> list.flat_map(fn(run) { run.2 })
+        }
+      },
+    ),
+  )
+}
+
+/// The rows folded into rooms the way the query hands them over: one run
+/// per room keyed by its newest answer, the rooms newest first, and each
+/// room's games newest first inside.
+fn room_runs(
+  rows: List(analysis_caps.GradedRoomGame),
+) -> List(#(String, Int, List(analysis_caps.GradedRoomGame))) {
+  let empty: List(#(String, Int, List(analysis_caps.GradedRoomGame))) = []
+  list.fold(rows, empty, fn(acc, row) {
+    let id = row.game.game_id
+    case list.find(acc, fn(run) { run.0 == id }) {
+      Ok(_) ->
+        list.map(acc, fn(run) {
+          case run.0 == id {
+            True -> #(run.0, int.max(run.1, row.game.ended_at_ms), [
+              row,
+              ..run.2
+            ])
+            False -> run
+          }
+        })
+      Error(_) -> [#(id, row.game.ended_at_ms, [row]), ..acc]
+    }
+  })
+  |> list.map(fn(run) {
+    #(
+      run.0,
+      run.1,
+      list.sort(run.2, fn(a, b) {
+        int.compare(b.game.game_number, a.game.game_number)
+      }),
+    )
+  })
+  |> list.sort(fn(a, b) {
+    case int.compare(b.1, a.1) {
+      order.Eq -> string.compare(b.0, a.0)
+      other -> other
+    }
+  })
+}
+
+/// Ordered as the query orders the rooms: the newest answer in the room,
+/// then the room's own id, both newest-first. A room is "after" the cursor
 /// when it is further down that list.
-fn after_cursor(
-  row: analysis_caps.GradedGame,
+fn after_room_cursor(
+  run: #(String, Int, List(analysis_caps.GradedRoomGame)),
   cursor: analysis_caps.Cursor,
 ) -> Bool {
-  case int.compare(row.ended_at_ms, cursor.ended_at_ms) {
+  case int.compare(run.1, cursor.ended_at_ms) {
     order.Lt -> True
     order.Gt -> False
-    order.Eq ->
-      case int.compare(row.game_number, cursor.game_number) {
-        order.Lt -> True
-        order.Gt -> False
-        order.Eq -> string.compare(row.game_id, cursor.game_id) == order.Lt
-      }
+    order.Eq -> string.compare(run.0, cursor.room_id) == order.Lt
   }
+}
+
+/// Activity caps: which of the last days this account was here, oldest
+/// first and ending today. Any other account panics.
+pub fn with_active_days(ctx: Ctx, uid: String, days: List(Bool)) -> Ctx {
+  Ctx(
+    ..ctx,
+    activity: activity_caps.ActivityCaps(days: fn(asked, window) {
+      case asked == uid {
+        False -> panic as "activity.days asked for another account"
+        // The window the handler asks for is what bounds the read, so a
+        // shorter answer than it asked for is what a quiet account gets:
+        // the last `window` days, ending today.
+        True -> list.reverse(list.take(list.reverse(days), window))
+      }
+    }),
+  )
 }
 
 /// Practice caps for a page that only reads a deck: what is due, how big

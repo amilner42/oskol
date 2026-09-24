@@ -101,7 +101,11 @@ defmodule Oskol.RatingsTest do
 
     assert [%{response: nil}] = Reviews.rating_summaries(game_id)
 
-    {:analysis_caps, _, _, ratings, _, _, _, _, _, _, _, _, _, _} =
+    # Positional on purpose: a Gleam record is a tagged tuple, so a cap
+    # added or moved without its twin being moved too fails here rather
+    # than at runtime on a page.
+    {:analysis_caps, _log, _stored, ratings, _summaries, _report, _save, _backfill_turns,
+     _enqueue, _review, _report_turn, _charge, _replace, _graded_for, _graded_rooms_for} =
       Oskol.Gleam.Caps.Analysis.build()
 
     assert [{:stored, 1, :pending, 1, :none, false, false, 1}] = ratings.(game_id)
