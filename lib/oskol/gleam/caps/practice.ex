@@ -5,7 +5,9 @@ defmodule Oskol.Gleam.Caps.Practice do
 
       PracticeCaps(put_user, put_items, cards, relapse, queue, start,
       start_new, review, amend, defer_until, defer_tomorrow, master,
-      suspend, resume, summary, ladder, days)
+      suspend, resume, summary, ladder, days, day, severity)
+      Day(answered, new_remaining)
+      Severity(grade, total, patched)
       Item(key, tags, content_json, position)
       Card(key, tags, content_json, level, due_ms, reps, lapses, status)
       Session(reviews, fresh, new_remaining_today)
@@ -51,7 +53,7 @@ defmodule Oskol.Gleam.Caps.Practice do
   def build do
     {:practice_caps, &put_user/3, &put_items/2, &cards/2, &relapse/3, &queue/2, &start/2,
      &start_new/2, &review/3, &amend/4, &defer_until/3, &defer_tomorrow/2, &master/2, &suspend/2,
-     &resume/2, &summary/2, &ladder/1, &days/2}
+     &resume/2, &summary/2, &ladder/1, &days/2, &day/1, &severity/2}
   end
 
   # ---------- The two pictures the home draws ----------
@@ -121,6 +123,113 @@ defmodule Oskol.Gleam.Caps.Practice do
         for offset <- 0..(n - 1), do: MapSet.member?(practised, Date.add(first, offset))
     end
   end
+
+  # Where this deck's day stands: what it has answered, and how much of
+  # today's new-card budget is left.
+  #
+  # `answered` makes the same two exclusions `days/2` makes -- a card put
+  # off is not practice, and a correction sits on the day of the answer it
+  # corrects, which is already counted -- so the ring is the strip's last
+  # square counted rather than lit, and neither can say the other is
+  # wrong. Both readings are bounded by the start of the player's own day.
+  #
+  # `new_remaining` is retain's own budget arithmetic (`new_per_day` minus
+  # whatever was started today, by any path), done here because the
+  # library only hands it back from a queue, and a page that merely draws
+  # a ring must not run one.
+  defp day(uid) do
+    case Retain.fetch_user(uid) do
+      # No deck: nothing answered and nothing to answer. What the budget
+      # would be is the caller's rule, not this layer's, and an account
+      # with no deck has no mistakes waiting either way.
+      {:error, :not_found} ->
+        {:day, 0, 0}
+
+      {:ok, user} ->
+        today = Retain.Clock.local_date(DateTime.utc_now(), user.tz)
+        since = Retain.Clock.start_of_day(today, user.tz)
+        until = Retain.Clock.start_of_day(Date.add(today, 1), user.tz)
+
+        answered =
+          from(r in Retain.Review,
+            join: i in Retain.Item,
+            on: i.id == r.item_id,
+            where:
+              i.user_id == ^user.id and is_nil(r.supersedes_id) and
+                r.outcome != ^:defer and r.at >= ^since,
+            select: count(r.id)
+          )
+          |> Oskol.Repo.one()
+          |> Kernel.||(0)
+
+        started =
+          from(i in Retain.Item,
+            where: i.user_id == ^user.id and i.started_at >= ^since and i.started_at < ^until,
+            select: count(i.id)
+          )
+          |> Oskol.Repo.one()
+          |> Kernel.||(0)
+
+        {:day, answered, max(user.new_per_day - started, 0)}
+    end
+  end
+
+  # The deck counted by how bad the mistake was, and how much of each band
+  # the player has patched.
+  #
+  # A card is one puzzle, and a puzzle can have been reached in several
+  # games: the worst of those rows is the band the card counts in, which
+  # is what the ranking in the fragment is for. The band names are the
+  # grades `puzzle_sources` already stores, and `src/oskol/practice/deck`
+  # holds the same three: they must agree.
+  #
+  # `patched_level` is the caller's rule and is never decided here.
+  defp severity(uid, patched_level) when is_integer(patched_level) do
+    case Retain.fetch_user(uid) do
+      {:error, :not_found} ->
+        []
+
+      {:ok, user} ->
+        worst =
+          from(i in Retain.Item,
+            join: s in Oskol.Puzzles.Source,
+            on: s.puzzle_id == i.key,
+            where: i.user_id == ^user.id,
+            group_by: [i.id, i.level],
+            select: %{
+              level: i.level,
+              rank:
+                max(
+                  fragment(
+                    "case ? when 'very_bad' then 3 when 'bad' then 2 when 'doubtful' then 1 else 0 end",
+                    s.grade
+                  )
+                )
+            }
+          )
+
+        from(w in subquery(worst),
+          group_by: w.rank,
+          select: {
+            w.rank,
+            count(w.rank),
+            sum(fragment("case when ? >= ? then 1 else 0 end", w.level, ^patched_level))
+          }
+        )
+        |> Oskol.Repo.all()
+        |> Enum.flat_map(fn {rank, total, patched} ->
+          case band(rank) do
+            nil -> []
+            name -> [{:severity, name, total, patched || 0}]
+          end
+        end)
+    end
+  end
+
+  defp band(3), do: "very_bad"
+  defp band(2), do: "bad"
+  defp band(1), do: "doubtful"
+  defp band(_), do: nil
 
   def default_tz, do: @default_tz
 

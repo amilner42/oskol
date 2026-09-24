@@ -188,6 +188,9 @@ mistakes ids =
             { puzzles = List.map (\id -> { id = id, kind = "move", prompt = "White to play 6-4. What's your play?", due = False }) ids
             , counts = Nothing
             , mistakes = Nothing
+            , today = Nothing
+            , severity = []
+            , patchedLevel = 0
             }
         )
 

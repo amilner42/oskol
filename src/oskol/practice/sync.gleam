@@ -58,19 +58,40 @@ pub const kind_tag_key = "kind"
 /// holding one database connection for all of it.
 pub const sweep_batch = 60
 
-/// New cards are introduced newest game first, and the deck orders them by
-/// `position`, lowest first -- so a position is time counted *backwards*
-/// from a fixed moment.
+/// New cards are introduced **worst first**, and the newest game first
+/// within a band, and the deck orders them by `position`, lowest first.
 ///
-/// It is seconds and not milliseconds, and from 2020 and not from 1970,
-/// because the column is a 32-bit integer: negated Unix milliseconds would
-/// overflow it by six orders of magnitude, and negated Unix seconds would
-/// run out in 2038. Counted this way it holds until well past 2080, and a
-/// second is a finer grain than two games ever need.
+/// So a position is a band's block plus time counted *backwards* from a
+/// fixed moment: every very bad move comes before every bad one, and
+/// inside a band the mistake you made most recently comes first.
+///
+/// The grain is minutes, and the epoch 2020 rather than 1970, because the
+/// column is a 32-bit integer and three bands have to fit in it side by
+/// side. Sixty years of minutes is about 32 million, which is why a band
+/// is worth a hundred million: no amount of play can carry a card out of
+/// its own band, and the three of them together use a tenth of the range.
+/// A minute is a finer grain than two games ever need.
 pub const position_epoch_s = 1_577_836_800
 
-pub fn position_of(ended_ms: Int) -> Int {
-  position_epoch_s - ended_ms / 1000
+/// The room one band has to itself, in the same units as the time below
+/// it. Wider than any playable span of time, so bands never overlap.
+pub const band_span = 100_000_000
+
+pub fn position_of(grade: String, ended_ms: Int) -> Int {
+  band_rank(grade) * band_span + { position_epoch_s - ended_ms / 1000 } / 60
+}
+
+/// Worst first: the site's own bands, in the order `practice/deck` names
+/// them. A grade this does not know (a row from before the bands, or one
+/// written by something else) sorts after all three rather than jumping
+/// the queue.
+pub fn band_rank(grade: String) -> Int {
+  case grade {
+    "very_bad" -> 0
+    "bad" -> 1
+    "doubtful" -> 2
+    _ -> 3
+  }
 }
 
 /// Put every mistake this account owns and has not been given into its
@@ -174,16 +195,17 @@ fn meta(source: DeckSource) -> String {
   )
 }
 
-/// The cards these mistakes become, newest game first and one per puzzle.
+/// The cards these mistakes become, worst first and one per puzzle.
 ///
 /// Two seats can reach the same position in two games -- that is the whole
 /// point of keying a puzzle on its question -- and one deck holds one card
-/// for it. The newest of them wins the position, so a card's place in the
-/// queue is the last time the player got it wrong; both rows are stamped
+/// for it. The **worst** of them wins the position, and the newest within
+/// that band, so a card's place in the queue is how bad the mistake was
+/// and then the last time the player made it; both rows are stamped
 /// either way, because the deck does hold them.
 fn items(sources: List(DeckSource)) -> List(Item) {
   sources
-  |> list.sort(newest_first)
+  |> list.sort(worst_first)
   |> list.fold(#([], set.new()), fn(acc, source) {
     let #(items, seen) = acc
     case set.contains(seen, source.puzzle_id) {
@@ -194,12 +216,16 @@ fn items(sources: List(DeckSource)) -> List(Item) {
   |> fn(acc) { list.reverse(acc.0) }
 }
 
-/// Newest game first, and within a game the order the mistakes were made
-/// in. Two cards of one game share a position, so the order they are
-/// offered in is the order they go in.
-fn newest_first(a: DeckSource, b: DeckSource) -> order.Order {
-  case int.compare(b.ended_ms, a.ended_ms) {
-    order.Eq -> int.compare(a.turn, b.turn)
+/// Worst band first, then the newest game, then within a game the order
+/// the mistakes were made in. Two cards of one game and one band share a
+/// position, so the order they are offered in is the order they go in.
+fn worst_first(a: DeckSource, b: DeckSource) -> order.Order {
+  case int.compare(band_rank(a.grade), band_rank(b.grade)) {
+    order.Eq ->
+      case int.compare(b.ended_ms, a.ended_ms) {
+        order.Eq -> int.compare(a.turn, b.turn)
+        other -> other
+      }
     other -> other
   }
 }
@@ -212,7 +238,7 @@ fn item(source: DeckSource) -> Item {
     // The question itself, which is immutable: a card can then be listed,
     // and its sentence written, without going back to the puzzle row.
     content_json: source.question_json,
-    position: Some(position_of(source.ended_ms)),
+    position: Some(position_of(source.grade, source.ended_ms)),
   )
 }
 

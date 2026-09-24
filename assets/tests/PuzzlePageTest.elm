@@ -43,7 +43,9 @@ suite =
         , cube
         , schedule
         , next
+        , runProgress
         , runEnd
+        , deckLine
         , memory
         , sharing
         , story
@@ -88,7 +90,7 @@ page : { hasNext : Bool } -> String -> Page.Model
 page config name =
     let
         ( model, _ ) =
-            Page.init Session.empty { id = "fix", hasNext = config.hasNext, origin = "http://oskol.test", share = Nothing }
+            Page.init Session.empty { id = "fix", hasNext = config.hasNext, progress = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
 
         loaded =
             case D.decodeString Puzzle.decoder (question name) of
@@ -117,6 +119,34 @@ out msg model =
             Page.update msg model
     in
     o
+
+
+{-| A schedule as the wire carries one: where the mistake stood, where
+it stands now, and whether this answer is the one that patched it.
+-}
+scheduleJson : Int -> Int -> Bool -> String
+scheduleJson before after patched =
+    """{"level_before":"""
+        ++ String.fromInt before
+        ++ ""","level_after":"""
+        ++ String.fromInt after
+        ++ ""","due":1800000000000,"amendable":true,"self_grade":false,"patched":"""
+        ++ (if patched then
+                "true"
+
+            else
+                "false"
+           )
+        ++ "}"
+
+
+{-| A page at the reveal, with this schedule spliced into it.
+-}
+withReveal : String -> String -> Page.Model
+withReveal name stands =
+    revealed
+        (String.replace "\"schedule\":null" ("\"schedule\":" ++ stands) (reveal name))
+        (page { hasNext = False } "move")
 
 
 revealed : String -> Page.Model -> Page.Model
@@ -247,7 +277,7 @@ staging =
                             Ok p ->
                                 let
                                     ( fresh, _ ) =
-                                        Page.init Session.empty { id = "fix", hasNext = False, origin = "", share = Nothing }
+                                        Page.init Session.empty { id = "fix", hasNext = False, progress = Nothing, today = Nothing, origin = "", share = Nothing }
                                 in
                                 rendered (step (GotPuzzle (Ok p)) fresh) |> Query.find [ id "pz-score" ]
 
@@ -407,7 +437,7 @@ posting =
             \_ ->
                 let
                     ( fresh, _ ) =
-                        Page.init Session.empty { id = "fix", hasNext = False, origin = "", share = Nothing }
+                        Page.init Session.empty { id = "fix", hasNext = False, progress = Nothing, today = Nothing, origin = "", share = Nothing }
 
                     model =
                         case D.decodeString Puzzle.decoder (question "move") of
@@ -711,7 +741,24 @@ schedule =
                         , \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Level 2 → 3 · back in 7 days" ]
                         , \q -> q |> Query.find [ id "pz-outcome-got-it" ] |> Query.has [ attribute (Html.Attributes.attribute "aria-pressed" "true") ]
                         ]
-        , test "NEVER: out of the deck, and the buttons go" <|
+        , test "the milestone: a mistake patched, said plainly and in the green" <|
+            \_ ->
+                -- The rung that means patched is the server's, and it says
+                -- so on the schedule; the page only reads the flag.
+                rendered (withReveal "move_pass" (scheduleJson 3 4 True))
+                    |> Expect.all
+                        [ Query.find [ id "pz-level-line" ]
+                            >> Query.has [ text "Patched. Four right in a row" ]
+                        , Query.find [ id "pz-level" ] >> Query.has [ class "is-patched" ]
+                        ]
+        , test "an answer that did not cross the rung keeps the level line" <|
+            \_ ->
+                rendered (withReveal "move_pass" (scheduleJson 1 2 False))
+                    |> Expect.all
+                        [ Query.find [ id "pz-level-line" ] >> Query.has [ text "Level 1 → 2" ]
+                        , Query.find [ id "pz-level" ] >> Query.hasNot [ class "is-patched" ]
+                        ]
+        , test "NEVER: set aside, and the buttons go" <|
             \_ ->
                 let
                     pressed =
@@ -719,7 +766,7 @@ schedule =
                 in
                 rendered pressed
                     |> Expect.all
-                        [ \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Out of your deck" ]
+                        [ \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Set aside: it will not come back." ]
                         , hasNot [ id "pz-outcomes" ]
                         ]
         , test "when it comes back, in words" <|
@@ -776,7 +823,7 @@ next =
             \_ ->
                 let
                     missing config =
-                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, origin = "http://oskol.test", share = Nothing }
+                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, progress = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
                             |> Tuple.first
                             |> step (GotPuzzle (Err (Api.ApiError { code = "not_found", message = "no" })))
                 in
@@ -820,7 +867,7 @@ ended : Session.Session -> Page.Model
 ended session =
     let
         ( model, _ ) =
-            Page.init session { id = "fix", hasNext = True, origin = "http://oskol.test", share = Nothing }
+            Page.init session { id = "fix", hasNext = True, progress = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
 
         loaded =
             case D.decodeString Puzzle.decoder (question "move") of
@@ -839,7 +886,7 @@ ended session =
     answered
         |> step (BoardOut (Puzzle.Stepped path))
         |> revealed (reveal "move_pass")
-        |> Page.endRun { right = 7, close = 2, total = 10 } "/puzzles"
+        |> Page.endRun { right = 7, close = 2, total = 10 } [] "/puzzles"
         |> Tuple.first
 
 
@@ -860,7 +907,7 @@ runEnd =
                 in
                 case decodeReveal (reveal "move_hold") of
                     Ok r ->
-                        out (GotReveal (Ok r)) staged |> Expect.equal (Page.Answered Hold)
+                        out (GotReveal (Ok r)) staged |> Expect.equal (Page.Answered { verdict = Hold, schedule = Nothing, grade = "" })
 
                     Err e ->
                         Expect.fail e
@@ -905,7 +952,7 @@ runEnd =
                     model =
                         ended Session.empty
                             |> (\m -> { m | ended = Nothing })
-                            |> Page.endRun { right = 1, close = 0, total = 1 } "/backgammon/abc123"
+                            |> Page.endRun { right = 1, close = 0, total = 1 } [] "/backgammon/abc123"
                             |> Tuple.first
                 in
                 case model.ended of
@@ -942,7 +989,7 @@ runEnd =
                 in
                 Expect.all
                     [ \_ -> rendered model |> hasNot [ id "signin" ]
-                    , \_ -> rendered model |> has [ text "ASKING YOUR DECK…" ]
+                    , \_ -> rendered model |> has [ text "COUNTING WHAT IS LEFT…" ]
                     , \_ ->
                         model
                             |> step (GotLeft (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":4,"deck":231}""")))
@@ -961,7 +1008,7 @@ runEnd =
                         ended account |> step (GotLeft (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":4,"deck":231}""")))
                 in
                 Expect.all
-                    [ \_ -> done |> step PressedKeepGoing |> out (GotMore (practice moreJson)) |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                    [ \_ -> done |> step PressedKeepGoing |> out (GotMore (practice moreJson)) |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ] Nothing)
                     , \_ -> done |> step PressedKeepGoing |> rendered |> Query.find [ id "pz-keep-going" ] |> Query.has [ attribute (Html.Attributes.disabled True) ]
                     , \_ ->
                         let
@@ -970,7 +1017,7 @@ runEnd =
                         in
                         Expect.all
                             [ \_ -> rendered left |> Query.find [ id "pz-more-due" ] |> Query.has [ text "2 more to go." ]
-                            , \_ -> out PressedContinueRun left |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                            , \_ -> out PressedContinueRun left |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ] Nothing)
                             ]
                             ()
                     ]
@@ -1153,7 +1200,7 @@ story =
         opened share =
             let
                 ( model, _ ) =
-                    Page.init Session.empty { id = "fix", hasNext = False, origin = "http://oskol.test", share = share }
+                    Page.init Session.empty { id = "fix", hasNext = False, progress = Nothing, today = Nothing, origin = "http://oskol.test", share = share }
 
                 loaded =
                     case D.decodeString Puzzle.decoder (question "move") of
@@ -1201,4 +1248,260 @@ story =
                 [ "move_pass", "move_fail", "double_fail", "take_pass" ]
                     |> List.map (\n -> decodeReveal (reveal n) |> Result.map .story)
                     |> Expect.equal (List.repeat 4 (Ok Nothing))
+        ]
+
+
+
+-- PROGRESS THROUGH A SESSION
+
+
+{-| The page as the shell opens it inside a run: this one is `at`, the
+marks are what happened at each puzzle of the run so far, and the day is
+what the page that started the run was told.
+-}
+inRun : Int -> List (Maybe Verdict) -> Maybe Practice.Today -> Page.Model
+inRun at marks today =
+    let
+        ( model, _ ) =
+            Page.init Session.empty
+                { id = "fix"
+                , hasNext = True
+                , progress = Just { at = at, marks = marks }
+                , today = today
+                , origin = "http://oskol.test"
+                , share = Nothing
+                }
+
+        loaded =
+            case D.decodeString Puzzle.decoder (question "move") of
+                Ok p ->
+                    GotPuzzle (Ok p)
+
+                Err e ->
+                    GotPuzzle (Err (Api.DecodeError (D.errorToString e)))
+    in
+    model |> step loaded |> step (GotKey "key-0123")
+
+
+blanks : Int -> List (Maybe Verdict)
+blanks n =
+    List.repeat n Nothing
+
+
+runProgress : Test
+runProgress =
+    describe "progress through a session"
+        [ test "the first of ten: 1 of 10, a tenth of the bar, ten blank marks" <|
+            \_ ->
+                rendered (inRun 0 (blanks 10) Nothing)
+                    |> Query.find [ id "pz-progress" ]
+                    |> Expect.all
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "1 of 10" ]
+                        , Query.has [ attribute (Html.Attributes.attribute "aria-valuenow" "1") ]
+                        , Query.has [ attribute (Html.Attributes.attribute "style" "width: 10%") ]
+                        , Query.findAll [ class "pz-mark" ] >> Query.count (Expect.equal 10)
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
+                            >> Query.count (Expect.equal 10)
+                        ]
+        , test "mid-run: the count, the bar and the marks all say the same thing" <|
+            \_ ->
+                rendered (inRun 3 [ Just Pass, Just Fail, Just Hold, Nothing, Nothing ] Nothing)
+                    |> Query.find [ id "pz-progress" ]
+                    |> Expect.all
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "4 of 5" ]
+                        , Query.has [ attribute (Html.Attributes.attribute "style" "width: 80%") ]
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "pass") ]
+                            >> Query.count (Expect.equal 1)
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "fail") ]
+                            >> Query.count (Expect.equal 1)
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "hold") ]
+                            >> Query.count (Expect.equal 1)
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
+                            >> Query.count (Expect.equal 2)
+
+                        -- which one is being played, marked as such
+                        , Query.findAll [ class "is-here" ] >> Query.count (Expect.equal 1)
+                        ]
+        , test "the last one answered: 5 of 5, a full bar, no blanks" <|
+            \_ ->
+                rendered (inRun 4 [ Just Pass, Just Pass, Just Hold, Just Fail, Just Pass ] Nothing)
+                    |> Query.find [ id "pz-progress" ]
+                    |> Expect.all
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 of 5" ]
+                        , Query.has [ attribute (Html.Attributes.attribute "style" "width: 100%") ]
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
+                            >> Query.count (Expect.equal 0)
+                        ]
+        , test "a puzzle opened from a link is not a session, and says nothing about one" <|
+            \_ ->
+                rendered (page { hasNext = False } "move")
+                    |> Expect.all
+                        [ Query.hasNot [ id "pz-progress" ]
+                        , Query.hasNot [ class "chart-ring" ]
+                        ]
+        , test "answering fills this puzzle's own mark, in the verdict's colours" <|
+            \_ ->
+                let
+                    model =
+                        inRun 1 [ Just Pass, Nothing, Nothing ] Nothing
+
+                    ( path, _ ) =
+                        aTurn model
+                in
+                model
+                    |> step (BoardOut (Puzzle.Stepped path))
+                    |> revealed (reveal "move_fail")
+                    |> rendered
+                    |> Query.find [ id "pz-marks" ]
+                    |> Expect.all
+                        [ Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "fail") ]
+                            >> Query.count (Expect.equal 1)
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
+                            >> Query.count (Expect.equal 1)
+                        ]
+        , test "the day's ring is drawn in a run, and moves as the answer lands" <|
+            \_ ->
+                let
+                    model =
+                        inRun 1 [ Just Pass, Nothing ] (Just { done = 4, target = 10 })
+
+                    ( path, _ ) =
+                        aTurn model
+                in
+                Expect.all
+                    [ \_ ->
+                        rendered model
+                            |> Query.find [ id "pz-progress" ]
+                            |> Query.has [ attribute (Html.Attributes.attribute "data-done" "4") ]
+                    , \_ ->
+                        model
+                            |> step (BoardOut (Puzzle.Stepped path))
+                            |> revealed (reveal "move_pass")
+                            |> rendered
+                            |> Query.find [ id "pz-progress" ]
+                            |> Query.has [ attribute (Html.Attributes.attribute "data-done" "5") ]
+                    ]
+                    ()
+        , test "answering the same puzzle twice moves the ring once" <|
+            \_ ->
+                -- Only the first answer at a card is recorded, so a retry
+                -- must not make the day look busier than it was.
+                let
+                    model =
+                        inRun 0 [ Nothing ] (Just { done = 4, target = 10 })
+
+                    ( path, _ ) =
+                        aTurn model
+                in
+                model
+                    |> step (BoardOut (Puzzle.Stepped path))
+                    |> revealed (reveal "move_pass")
+                    |> revealed (reveal "move_fail")
+                    |> rendered
+                    |> Query.find [ id "pz-progress" ]
+                    |> Query.has [ attribute (Html.Attributes.attribute "data-done" "5") ]
+        , test "the session says why this position is here, before the answer" <|
+            \_ ->
+                let
+                    model =
+                        inRun 0 (blanks 3) Nothing
+                            |> step (GotWhy (Ok { who = "you", opponent = "Charlie", grade = "very_bad" }))
+                in
+                rendered model
+                    |> Query.find [ id "pz-why" ]
+                    |> Query.has [ text "A very bad move, from your game vs Charlie" ]
+        , test "a shared link is told nothing about whose mistake it is, and says nothing" <|
+            \_ ->
+                -- The server answers a 404 to everyone who was not in the
+                -- game; the page asks at all only inside a session.
+                rendered (inRun 0 (blanks 3) Nothing |> step (GotWhy (Err Api.NetworkError)))
+                    |> Query.hasNot [ id "pz-why" ]
+        , test "a guest in a run gets the bar and the marks, and no ring" <|
+            \_ ->
+                rendered (inRun 0 (blanks 4) Nothing)
+                    |> Expect.all
+                        [ Query.has [ id "pz-progress" ]
+                        , Query.hasNot [ class "chart-ring" ]
+                        ]
+        ]
+
+
+
+-- WHAT THE RUN PATCHED
+
+
+{-| One answer as the run keeps it: how it was graded, where the mistake
+now stands, and how bad it was.
+-}
+answer : String -> Bool -> Page.Answer
+answer grade patched =
+    { verdict = Pass
+    , grade = grade
+    , schedule =
+        Just
+            { levelBefore =
+                if patched then
+                    3
+
+                else
+                    1
+            , levelAfter =
+                if patched then
+                    4
+
+                else
+                    2
+            , due = 1800000000000
+            , amendable = True
+            , selfGrade = False
+            , patched = patched
+            }
+    }
+
+
+deckLine : Test
+deckLine =
+    describe "what the run patched"
+        [ test "the mistakes it crossed the rung on, counted by band, worst first" <|
+            \_ ->
+                Page.patchedLine
+                    [ answer "very_bad" True
+                    , answer "doubtful" True
+                    , answer "bad" False
+                    , answer "very_bad" True
+                    , answer "bad" True
+                    ]
+                    |> Expect.equal (Just "You patched 2 very bad moves, 1 bad move and 1 dubious move.")
+        , test "one band alone" <|
+            \_ ->
+                Page.patchedLine [ answer "very_bad" True, answer "bad" False ]
+                    |> Expect.equal (Just "You patched 1 very bad move.")
+        , test "a run that patched nothing says nothing: the score has said it" <|
+            \_ ->
+                Page.patchedLine [ answer "very_bad" False, answer "bad" False ]
+                    |> Expect.equal Nothing
+        , test "a guest's run keeps no schedules, so there is nothing to say" <|
+            \_ ->
+                Page.patchedLine [ { verdict = Pass, schedule = Nothing, grade = "" } ]
+                    |> Expect.equal Nothing
+        , test "the end card prints the line, and a run that patched nothing has none" <|
+            \_ ->
+                Expect.all
+                    [ \_ ->
+                        ended Session.empty
+                            |> (\m -> { m | ended = Nothing })
+                            |> Page.endRun { right = 1, close = 0, total = 2 } [ answer "very_bad" True ] "/puzzles"
+                            |> Tuple.first
+                            |> rendered
+                            |> Query.find [ id "pz-patched" ]
+                            |> Query.has [ text "You patched 1 very bad move." ]
+                    , \_ ->
+                        ended Session.empty
+                            |> (\m -> { m | ended = Nothing })
+                            |> Page.endRun { right = 1, close = 0, total = 2 } [] "/puzzles"
+                            |> Tuple.first
+                            |> rendered
+                            |> Query.hasNot [ id "pz-patched" ]
+                    ]
+                    ()
         ]

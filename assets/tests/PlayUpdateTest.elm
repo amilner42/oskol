@@ -283,7 +283,7 @@ mistakesOnCards =
             { id = id, kind = "move", prompt = "White to play 6-4. What's your play?", due = False }
 
         answer ids =
-            { puzzles = List.map entry ids, counts = Nothing, mistakes = Nothing }
+            { puzzles = List.map entry ids, counts = Nothing, mistakes = Nothing, today = Nothing, severity = [], patchedLevel = 0 }
 
         stillWriting =
             Api.ApiError { code = "puzzles_pending", message = "This game's mistakes are still being written. Try again in a moment." }
@@ -339,7 +339,7 @@ mistakesOnCards =
                             |> Expect.all
                                 [ \m -> Dict.get 1 m.mistakes |> Expect.equal (Just [ "aaaaaaaa", "bbbbbbbb" ])
                                 , \m -> Dict.member 1 m.mistakeAsks |> Expect.equal False
-                                , \m -> outOf (BackgammonMsg (Backgammon.PracticeGame 1)) m |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                                , \m -> outOf (BackgammonMsg (Backgammon.PracticeGame 1)) m |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] Nothing)
 
                                 -- a game not answered for starts nothing
                                 , \m -> outOf (BackgammonMsg (Backgammon.PracticeGame 2)) m |> Expect.equal NoOut

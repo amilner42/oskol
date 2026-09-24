@@ -139,6 +139,7 @@ type alias Model =
     , ratingsPolls : Int -- asks made while a grade is on its way; 0 is not waiting for one
     , signIn : Maybe SignIn.Model -- a result card's sign-in, once opened
     , mistakes : Dict Int (List String) -- each graded game's mistakes for this seat, by game number: the puzzle ids a card's PRACTICE runs
+    , today : Maybe Practice.Today -- the day's ring as the mistakes list last reported it, for the run it starts
     , mistakeAsks : Dict Int Int -- asks made for a game's mistakes still unanswered (the puzzles land a moment after the grade)
     }
 
@@ -177,6 +178,7 @@ init session config =
       , ratingsPolls = 0
       , signIn = Nothing
       , mistakes = Dict.empty
+      , today = Nothing
       , mistakeAsks = Dict.empty
       }
     , Cmd.batch
@@ -304,7 +306,7 @@ type Out
     | SignedIn (Maybe Session.User)
       -- PRACTICE THIS GAME'S N MISTAKES: the shell runs these puzzles, and
       -- brings the player back here at the end.
-    | StartRun (List String)
+    | StartRun (List String) (Maybe Practice.Today)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg, Out )
@@ -379,7 +381,7 @@ update msg model =
                 Backgammon.Practice number ->
                     case Dict.get number updated.mistakes of
                         Just ids ->
-                            ( updated, Cmd.none, StartRun ids )
+                            ( updated, Cmd.none, StartRun ids updated.today )
 
                         Nothing ->
                             stay updated Cmd.none
@@ -532,6 +534,16 @@ update msg model =
                 { model
                     | mistakes = Dict.insert number (List.map .id practice.puzzles) model.mistakes
                     , mistakeAsks = Dict.remove number model.mistakeAsks
+
+                    -- An account's day, as the same answer carried it: the
+                    -- run this card starts opens with the ring already right.
+                    , today =
+                        case practice.today of
+                            Just today ->
+                                Just today
+
+                            Nothing ->
+                                model.today
                 }
                 Cmd.none
 

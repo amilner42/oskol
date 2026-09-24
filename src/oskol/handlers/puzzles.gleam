@@ -940,6 +940,14 @@ pub fn schedule_json(
       #("due", json.int(due_ms)),
       #("amendable", json.bool(amendable)),
       #("self_grade", json.bool(self_grade)),
+      // This answer is the one that patched the mistake: it crossed the
+      // rung where a mistake counts as stopped. The rule is the deck's
+      // (`deck.patched_level`) and is decided here so the page keeps no
+      // second copy of it.
+      #(
+        "patched",
+        json.bool(after >= deck.patched_level && before < deck.patched_level),
+      ),
     ]),
   )
 }
@@ -1116,11 +1124,45 @@ fn chosen_outcome(wanted: Override, verdict: String) -> Outcome {
 /// Held by the one holder rule, either seat: the person who made the mistake
 /// and the person it was made against are both in this game, and both are
 /// shown it. Anybody else gets the same 404 a puzzle nobody played gets.
-pub fn mine_json(
+/// Why this position is in front of you: how bad the mistake was, and
+/// whose game it came from. Asked **before** the answer, which is why it
+/// carries neither the move that was played nor what it cost nor how the
+/// game ended -- nothing here is derived from the puzzle's answer, and a
+/// reader who has not answered yet learns only that they once played
+/// this badly against somebody.
+///
+/// A 404 for anybody who was not in the game, which is every shared link:
+/// a puzzle names nobody by default and that does not change.
+pub fn why_json(
   ctx: Ctx,
   session: Session,
   id: String,
 ) -> Result(String, ApiError) {
+  use found <- result.try(mine_source(ctx, session, id))
+  let #(room, player_id) = found
+  Ok(
+    envelope.ok([
+      #(
+        "who",
+        json.string(case room.source.player_id == player_id {
+          True -> "you"
+          False -> name_of(room, room.source.player_id)
+        }),
+      ),
+      #("opponent", json.string(opponent_of(room, player_id))),
+      #("grade", json.string(room.source.grade)),
+    ]),
+  )
+}
+
+/// The room this puzzle came from that the caller held a seat in, and
+/// which seat that was. `mine_json` and `why_json` ask the same question
+/// of the same rows; only what they answer with differs.
+fn mine_source(
+  ctx: Ctx,
+  session: Session,
+  id: String,
+) -> Result(#(caps.SourceRoom, String), ApiError) {
   let nothing = error.NotFound(no_memory_message)
   // A visitor with neither a guest cookie nor an account holds no seat
   // anywhere, and asking the rows would only prove it.
@@ -1128,21 +1170,27 @@ pub fn mine_json(
     None, None -> Error(nothing)
     _, _ -> Ok(Nil)
   })
-  use found <- result.try(
-    ctx.puzzles.mine(
-      id,
-      option.unwrap(session.guest_id, ""),
-      option.unwrap(session.user_id, ""),
-    )
-    |> list.filter_map(fn(room) {
-      case seat.held_by(seats_of(room), session) {
-        Some(player_id) -> Ok(#(room, player_id))
-        None -> Error(Nil)
-      }
-    })
-    |> list.first
-    |> result.replace_error(nothing),
+  ctx.puzzles.mine(
+    id,
+    option.unwrap(session.guest_id, ""),
+    option.unwrap(session.user_id, ""),
   )
+  |> list.filter_map(fn(room) {
+    case seat.held_by(seats_of(room), session) {
+      Some(player_id) -> Ok(#(room, player_id))
+      None -> Error(Nil)
+    }
+  })
+  |> list.first
+  |> result.replace_error(nothing)
+}
+
+pub fn mine_json(
+  ctx: Ctx,
+  session: Session,
+  id: String,
+) -> Result(String, ApiError) {
+  use found <- result.try(mine_source(ctx, session, id))
   let #(room, player_id) = found
   let source = room.source
   let mine = source.player_id == player_id
@@ -1356,6 +1404,15 @@ pub fn game_puzzles_json(
       ),
       #("cursor", json.null()),
       #("counts", json.null()),
+      // The day's ring, so a run started from a finished game's card opens
+      // with the same count the home and a deck session show rather than
+      // having one appear at the first answer. An account's only: a guest
+      // has no deck and no day of theirs to count.
+      #("today", case session.user_id {
+        Some(uid) ->
+          deck.today_json(deck.today(ctx, uid, deck.due_count(ctx, uid)))
+        None -> json.null()
+      }),
       #("game", json.int(number)),
     ]),
   )

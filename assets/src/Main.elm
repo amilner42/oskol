@@ -41,6 +41,7 @@ import Browser.Navigation as Nav
 import Html exposing (Html)
 import Html.Attributes
 import Json.Decode as D
+import Api.Practice exposing (Today)
 import Games.Backgammon.Puzzle exposing (Verdict(..))
 import Page.GameLanding
 import Page.Home
@@ -87,6 +88,11 @@ type alias Model =
     -- started from. The practice home, a result card and the replay start
     -- one; a puzzle opened from a link has no next.
     , run : Maybe Run
+
+    -- The day's ring, as the page that started the run was told it, and
+    -- as this shell has counted it since: one more with every card
+    -- answered for the first time in this run. An account's only.
+    , today : Maybe Today
     , joinOpen : Bool
     , joinCode : String
     , joinError : Maybe String
@@ -107,7 +113,7 @@ type Page
 type alias Run =
     { ids : List String
     , at : Int
-    , verdicts : List ( String, Verdict ) -- by puzzle id; an answer given again replaces the first
+    , answers : List ( String, Page.Puzzle.Answer ) -- by puzzle id; an answer given again replaces the first
     , next : String -- the page the run was started from: where a guest who signs in at its end goes on to
     }
 
@@ -152,6 +158,7 @@ init flags url key =
                     D.decodeValue (D.field "tz" D.string) flags
                         |> Result.withDefault ""
                 , run = Nothing
+                , today = Nothing
                 , joinOpen = False
                 , joinCode = ""
                 , joinError = Nothing
@@ -338,6 +345,20 @@ routeTo url oldModel =
                 -- In a run there is always somewhere after this one: the
                 -- next puzzle, or the run's end.
                 , hasNext = run /= Nothing
+
+                -- Where this one sits in the session, and what happened at
+                -- each one before it: the page draws the bar and the marks
+                -- from this and adds its own answer to them.
+                , progress = Maybe.map progressOf run
+                , today =
+                    case run of
+                        Just _ ->
+                            model.today
+
+                        -- Not a session: a puzzle from a link says nothing
+                        -- about anybody's day.
+                        Nothing ->
+                            Nothing
                 , origin = model.origin
                 , share = share
                 }
@@ -394,32 +415,87 @@ nextInRun run =
 
 
 {-| A run of these puzzles, from the first, started from the page at
-`next`. An empty list starts nothing.
+`next`, which was told where the day stands as it fetched them. An empty
+list starts nothing.
 -}
-startRun : String -> List String -> Model -> ( Model, Cmd Msg )
-startRun next ids model =
+startRun : String -> List String -> Maybe Today -> Model -> ( Model, Cmd Msg )
+startRun next ids today model =
     case ids of
         [] ->
             ( model, Cmd.none )
 
         first :: _ ->
-            ( { model | run = Just { ids = ids, at = 0, verdicts = [], next = next } }
+            ( { model
+                | run = Just { ids = ids, at = 0, answers = [], next = next }
+                , today = today
+              }
             , Nav.pushUrl model.key (Route.href (Route.puzzle first))
             )
 
 
-{-| The verdict on the open puzzle, kept on the run. Answering the same
-puzzle again (back, then PLAY) replaces the first verdict rather than
-counting twice.
+{-| The answer at the open puzzle, kept on the run: how it was graded,
+where the mistake now stands, and how bad it was. Answering the same
+puzzle again (back, then PLAY, or the override after the reveal)
+replaces the first rather than counting twice.
 -}
-answered : Verdict -> Run -> Run
-answered verdict run =
-    case run.ids |> List.drop run.at |> List.head of
+answered : Page.Puzzle.Answer -> Run -> Run
+answered answer run =
+    case openId run of
         Just id ->
-            { run | verdicts = ( id, verdict ) :: List.filter (\( other, _ ) -> other /= id) run.verdicts }
+            { run
+                | answers =
+                    ( id, answer ) :: List.filter (\( other, _ ) -> other /= id) run.answers
+            }
 
         Nothing ->
             run
+
+
+openId : Run -> Maybe String
+openId run =
+    run.ids |> List.drop run.at |> List.head
+
+
+{-| The day's ring after that answer: one more, but only for a card this
+run had not answered before. A retry is not a second answer -- only the
+first at a card is recorded -- so counting it would make the ring say
+more happened today than did.
+-}
+counted : Run -> Maybe Today -> Maybe Today
+counted run today =
+    case openId run of
+        Just id ->
+            if List.any (\( other, _ ) -> other == id) run.answers then
+                today
+
+            else
+                Maybe.map (\day -> { day | done = day.done + 1 }) today
+
+        Nothing ->
+            today
+
+
+{-| The run as the open puzzle's page reads it: which one it is, and
+what happened at each of them so far, in the run's own order.
+-}
+progressOf : Run -> Page.Puzzle.Progress
+progressOf run =
+    { at = run.at
+    , marks = List.map (\id -> answerAt id run |> Maybe.map .verdict) run.ids
+    }
+
+
+answerAt : String -> Run -> Maybe Page.Puzzle.Answer
+answerAt id run =
+    run.answers |> List.filter (\( other, _ ) -> other == id) |> List.head |> Maybe.map Tuple.second
+
+
+{-| What the run did, in the order it was worked: one entry per mistake
+it answered, for the score and for what it patched.
+-}
+answers : Run -> List Page.Puzzle.Answer
+answers run =
+    List.filterMap (\id -> answerAt id run) run.ids
 
 
 {-| A pass is right, a hold is close, a miss or an unknown is neither;
@@ -429,7 +505,7 @@ score : Run -> Page.Puzzle.Score
 score run =
     let
         count verdict =
-            run.verdicts |> List.filter (\( _, v ) -> v == verdict) |> List.length
+            run.answers |> List.filter (\( _, answer ) -> answer.verdict == verdict) |> List.length
     in
     { right = count Pass, close = count Hold, total = List.length run.ids }
 
@@ -529,8 +605,8 @@ update msg model =
                     , more (Page.Play.storePref { key = "backgammon_theme", value = name })
                     )
 
-                Page.Home.StartRun ids ->
-                    startRun (Route.href Route.library) ids withPage |> Tuple.mapSecond more
+                Page.Home.StartRun ids today ->
+                    startRun (Route.href Route.library) ids today withPage |> Tuple.mapSecond more
 
                 -- This browser turns out to have no account (logged out
                 -- here or in another tab): the guest home is what `/` is.
@@ -572,8 +648,8 @@ update msg model =
 
                 -- PRACTICE THIS GAME'S N MISTAKES: the run ends back at
                 -- this table.
-                Page.Play.StartRun ids ->
-                    startRun (Route.href (Route.play newPageModel.gameSlug newPageModel.gameId)) ids { model | page = Play newPageModel }
+                Page.Play.StartRun ids today ->
+                    startRun (Route.href (Route.play newPageModel.gameSlug newPageModel.gameId)) ids today { model | page = Play newPageModel }
                         |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map PlayMsg cmd, more ])
 
                 _ ->
@@ -637,25 +713,31 @@ update msg model =
                 Page.Puzzle.NoOut ->
                     ( withPage, Cmd.map PuzzleMsg cmd )
 
-                Page.Puzzle.Answered verdict ->
-                    ( { withPage | run = Maybe.map (answered verdict) model.run }, Cmd.map PuzzleMsg cmd )
+                Page.Puzzle.Answered answer ->
+                    ( { withPage
+                        | run = Maybe.map (answered answer) model.run
+                        , today = model.run |> Maybe.map (\run -> counted run model.today) |> Maybe.withDefault model.today
+                      }
+                    , Cmd.map PuzzleMsg cmd
+                    )
 
                 Page.Puzzle.WantsNext ->
                     case ( nextInRun model.run, model.run ) of
                         ( Just next, _ ) ->
                             ( withPage, more (Nav.pushUrl model.key (Route.href (Route.puzzle next))) )
 
-                        -- The last of the run: the page ends it, with the score.
+                        -- The last of the run: the page ends it, with the
+                        -- score and what it did to the deck.
                         ( Nothing, Just run ) ->
-                            Page.Puzzle.endRun (score run) run.next newPageModel
+                            Page.Puzzle.endRun (score run) (answers run) run.next newPageModel
                                 |> wrap model Puzzle PuzzleMsg
                                 |> Tuple.mapSecond more
 
                         ( Nothing, Nothing ) ->
                             ( withPage, Cmd.map PuzzleMsg cmd )
 
-                Page.Puzzle.StartRun ids ->
-                    startRun (Route.href Route.puzzles) ids withPage |> Tuple.mapSecond more
+                Page.Puzzle.StartRun ids today ->
+                    startRun (Route.href Route.puzzles) ids today withPage |> Tuple.mapSecond more
 
                 Page.Puzzle.SignedIn user ->
                     signedIn user withPage |> Tuple.mapSecond more
@@ -678,8 +760,8 @@ update msg model =
                 Page.Puzzles.NoOut ->
                     ( withPage, Cmd.map PuzzlesMsg cmd )
 
-                Page.Puzzles.StartRun ids ->
-                    startRun (Route.href Route.puzzles) ids withPage |> Tuple.mapSecond more
+                Page.Puzzles.StartRun ids today ->
+                    startRun (Route.href Route.puzzles) ids today withPage |> Tuple.mapSecond more
 
                 Page.Puzzles.Go path ->
                     ( withPage, more (Nav.pushUrl model.key path) )

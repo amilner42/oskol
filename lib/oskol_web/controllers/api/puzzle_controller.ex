@@ -9,6 +9,8 @@ defmodule OskolWeb.Api.PuzzleController do
       POST /papi/puzzles/:id/attempts                grade it and reveal it
       POST /papi/puzzles/:id/attempts/:key/outcome   the player's override
       GET  /papi/puzzles/:id/mine                    the memory line
+      GET  /papi/puzzles/:id/why                     why this one is here,
+                                                     before the answer
       POST /papi/puzzles/:id/shares                  a share-with-my-story link
       GET  /papi/games/:slug/rooms/:id/puzzles?game= one game's mistakes
 
@@ -67,6 +69,10 @@ defmodule OskolWeb.Api.PuzzleController do
         param(params, "outcome")
       )
     )
+  end
+
+  def why(conn, %{"id" => id}) do
+    send_json(conn, :oskol@handlers@puzzles.why_json(ctx(), session(conn), id))
   end
 
   def mine(conn, %{"id" => id}) do

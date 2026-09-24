@@ -26,7 +26,7 @@ defmodule Oskol.PracticeTest do
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
     {:practice_caps, put_user, put_items, cards, relapse, queue, start, start_new, review, amend,
-     defer_until, defer_tomorrow, master, suspend, resume, summary, ladder, days} =
+     defer_until, defer_tomorrow, master, suspend, resume, summary, ladder, days, day, severity} =
       Practice.build()
 
     caps = %{
@@ -46,7 +46,9 @@ defmodule Oskol.PracticeTest do
       resume: resume,
       summary: summary,
       ladder: ladder,
-      days: days
+      days: days,
+      day: day,
+      severity: severity
     }
 
     uid = "acct-#{System.unique_integer([:positive])}"
@@ -118,6 +120,71 @@ defmodule Oskol.PracticeTest do
     assert 1 = caps.start.(other, ["c"])
     {:ok, _} = caps.defer_tomorrow.(other, "c")
     assert Enum.count(caps.days.(other, 30), & &1) == 0
+  end
+
+  test "today's ring counts the answers of this deck's own day", %{caps: caps, uid: uid} do
+    # A deck that is not there has answered nothing and has no budget to
+    # spend; what the budget would be is the caller's rule, not this
+    # layer's.
+    assert caps.day.("acct-nobody-#{System.unique_integer([:positive])}") == {:day, 0, 0}
+    assert answered(caps, uid) == 0
+
+    {:ok, 3} = caps.put_items.(uid, [item("a"), item("b"), item("c")])
+    assert 3 = caps.start.(uid, ["a", "b", "c"])
+    {:ok, _} = caps.review.(uid, "a", :pass)
+    {:ok, _} = caps.review.(uid, "b", :again)
+    assert answered(caps, uid) == 2
+
+    # A correction supersedes the row it names and sits on that row's day:
+    # it is the same answer, counted once, exactly as the strip counts it.
+    {:ok, {:graded, _, _, _, id}} = caps.review.(uid, "c", :pass)
+    {:ok, _} = caps.amend.(uid, "c", id, :fail)
+    assert answered(caps, uid) == 3
+
+    # Putting a card off is not an answer.
+    {:ok, _} = caps.defer_tomorrow.(uid, "a")
+    assert answered(caps, uid) == 3
+
+    # Yesterday's answers belong to yesterday: the ring is today's alone,
+    # and the strip agrees with it.
+    yesterday = DateTime.add(DateTime.utc_now(), -2, :day)
+
+    Repo.update_all(
+      from(r in Retain.Review,
+        where:
+          r.item_id in subquery(
+            from(i in Retain.Item,
+              join: u in Retain.User,
+              on: u.id == i.user_id,
+              where: u.uid == ^uid and i.key == "b",
+              select: i.id
+            )
+          )
+      ),
+      set: [at: DateTime.truncate(yesterday, :second)]
+    )
+
+    assert answered(caps, uid) == 2
+    assert Enum.count(caps.days.(uid, 30), & &1) == 2
+
+    # One account's day is not another's.
+    other = "acct-#{System.unique_integer([:positive])}"
+    {:ok, nil} = caps.put_user.(other, "America/Vancouver", 10)
+    assert answered(caps, other) == 0
+  end
+
+  defp answered(caps, uid) do
+    {:day, answered, _new_remaining} = caps.day.(uid)
+    answered
+  end
+
+  test "the day's remaining budget is what is left of the new cards", %{caps: caps, uid: uid} do
+    # The deck was opened with ten a day in this test's setup.
+    assert {:day, 0, 10} = caps.day.(uid)
+
+    {:ok, 3} = caps.put_items.(uid, [item("a"), item("b"), item("c")])
+    assert 2 = caps.start.(uid, ["a", "b"])
+    assert {:day, 0, 8} = caps.day.(uid)
   end
 
   test "put_user opens a deck and is idempotent", %{caps: caps, uid: uid} do

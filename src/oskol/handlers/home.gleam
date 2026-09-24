@@ -47,6 +47,7 @@ import oskol/core/envelope
 import oskol/core/error.{type ApiError}
 import oskol/core/session.{type Session}
 import oskol/handlers/landing
+import oskol/practice/deck
 import oskol/reviews/report.{type Totals}
 import oskol/rooms/room
 
@@ -602,7 +603,9 @@ fn game_json(game: Game) -> Json {
 
 // ---------- Practice ----------
 
-/// What is due, how big the deck is, the ladder, and the days practised.
+/// What is due, how big the deck is, the ladder, the days practised,
+/// where today stands, and the mistakes by band with how many are
+/// patched.
 /// Reading a deck never creates one: a player who has never practised has
 /// an empty deck, not a new one.
 fn practice_json(ctx: Ctx, uid: String) -> Json {
@@ -624,6 +627,23 @@ fn practice_json(ctx: Ctx, uid: String) -> Json {
     ),
     #("ladder", json.array(ctx.practice.ladder(uid), json.int)),
     #("days", json.array(ctx.practice.days(uid, practice_days), json.bool)),
+    // The day's ring: answers recorded in this account's own local day,
+    // against the day's work. The same object `/papi/practice` carries.
+    #(
+      "today",
+      deck.today_json(
+        deck.today(ctx, uid, case summary {
+          Ok(row) -> row.due_count
+          Error(_) -> 0
+        }),
+      ),
+    ),
+    // The deck by how bad the mistake was, worst band first, and how much
+    // of each band is patched: the three lines the section leads with.
+    #("severity", json.array(deck.severity(ctx, uid), deck.severity_json)),
+    // What "patched" means, so the page can say it in words without
+    // keeping a second copy of the number.
+    #("patched_level", json.int(deck.patched_level)),
   ])
 }
 

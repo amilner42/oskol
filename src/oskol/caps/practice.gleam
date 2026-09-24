@@ -218,7 +218,33 @@ pub type PracticeCaps {
     /// home draws. An attempt counts; putting a card off does not. A deck
     /// that is not there yet is all False.
     days: fn(String, Int) -> List(Bool),
+    /// Where this deck's day stands, in its own timezone: what the ring
+    /// is drawn from. A deck that is not there yet has done nothing and
+    /// has its whole budget left.
+    day: fn(String) -> Day,
+    /// The deck counted by how bad the mistake was, and how much of each
+    /// band is patched -- at or above the level given, which is the
+    /// caller's rule and never this layer's. One row per band the deck
+    /// actually holds, in no particular order. A card with several
+    /// sources counts once, in the worst band any of them named.
+    severity: fn(String, Int) -> List(Severity),
   )
+}
+
+/// A deck's day: answers recorded in its own local day, and how many new
+/// cards the day's budget still allows.
+///
+/// `answered` counts exactly what `days` counts as practice -- an attempt,
+/// not a card put off, and not a correction, which sits on the day of the
+/// answer it corrects -- so the ring and the strip can never disagree.
+pub type Day {
+  Day(answered: Int, new_remaining: Int)
+}
+
+/// One band of a deck: how many cards were mistakes of that grade, and how
+/// many of them are patched.
+pub type Severity {
+  Severity(grade: String, total: Int, patched: Int)
 }
 
 pub fn stub() -> PracticeCaps {
@@ -240,5 +266,7 @@ pub fn stub() -> PracticeCaps {
     summary: fn(_, _) { panic as "stub practice.summary" },
     ladder: fn(_) { panic as "stub practice.ladder" },
     days: fn(_, _) { panic as "stub practice.days" },
+    day: fn(_) { panic as "stub practice.day" },
+    severity: fn(_, _) { panic as "stub practice.severity" },
   )
 }

@@ -64,6 +64,7 @@ import Set exposing (Set)
 import Task
 import Time
 import Ui.Charts as Charts
+import Ui.Mistakes as Mistakes
 import Ui.Identity as Identity
 import Ui.LiveGames as LiveGames
 import Ui.Notebook as Notebook exposing (style)
@@ -86,6 +87,7 @@ type alias Model =
     , pageError : Maybe String
     , starting : Bool -- PRACTICE is in flight: the deck is being fetched
     , practiceNote : Maybe String
+    , ladderOpen : Bool -- the deck's rungs, under the one bar that sums them up
 
     -- The rooms opened up to show their games. A room is a match, so this
     -- is a set and not one id: reading two matches is a thing to do.
@@ -120,6 +122,7 @@ type Msg
     | LoggedOut (Result Api.Error ())
     | PressedPuzzles
     | PressedPractice
+    | ToggledLadder
     | GotDeck (Result Api.Error Practice.Practice)
     | PressedMore
     | GotMore (Result Api.Error Home.Page)
@@ -134,7 +137,7 @@ type Out
     | Go String
     | TookSeat { name : String, path : String }
     | ChoseTheme String
-    | StartRun (List String)
+    | StartRun (List String) (Maybe Practice.Today)
       -- The answer says this browser has no account: the guest home is the
       -- one it should be looking at.
     | SignedOut
@@ -154,6 +157,7 @@ init session =
       , pageError = Nothing
       , starting = False
       , practiceNote = Nothing
+      , ladderOpen = False
       , expanded = Set.empty
       , zone = Time.utc
       , year = 0
@@ -295,6 +299,9 @@ update msg model =
         -- PRACTICE starts a run the way the practice home does: the deck
         -- says which puzzles come first, and the run outlives this page,
         -- so the shell keeps it.
+        ToggledLadder ->
+            ( { model | ladderOpen = not model.ladderOpen }, Cmd.none, NoOut )
+
         PressedPractice ->
             if model.starting then
                 ( model, Cmd.none, NoOut )
@@ -311,7 +318,7 @@ update msg model =
                     ( { model | starting = False, practiceNote = Just nothingDueLine }, Cmd.none, NoOut )
 
                 entries ->
-                    ( { model | starting = False }, Cmd.none, StartRun (List.map .id entries) )
+                    ( { model | starting = False }, Cmd.none, StartRun (List.map .id entries) deck.today )
 
         GotDeck (Err err) ->
             ( { model | starting = False, practiceNote = Just (Api.errorMessage err) }, Cmd.none, NoOut )
@@ -687,24 +694,45 @@ sentence text =
 -- PRACTICE
 
 
+{-| The worst of what you have made, what today asks of you, and one bar
+per band showing how much of each you have patched.
+
+This used to be "N due" and a ladder of eight bars. The ladder answered
+nothing a player asks: the question is "how much of my worst play have I
+actually fixed?", and that is a sentence and three bars. The rungs stay
+behind a `detail` toggle -- closed by default, one tap, nothing lost --
+because on a phone this section is a column and a second picture that is
+only occasionally wanted costs every visit a screenful.
+
+-}
 practice : Model -> Home.Home -> Html Msg
 practice model home =
-    section "home-practice" "PRACTICE" <|
+    section "home-practice" "PUZZLES" <|
         if home.practice.deck <= 0 then
             [ quiet "Your mistakes become puzzles here after your first graded game." ]
 
         else
-            [ Html.div [ class "flex items-center gap-4 mb-6" ]
-                [ Html.p
-                    [ id "home-due"
-                    , class "text-[20px] sm:text-[22px] font-bold leading-none"
-                    , style "color: var(--ink)"
-                    ]
-                    [ Html.text (String.fromInt home.practice.due ++ " due") ]
+            [ -- The sentence gets the whole width: at 320 a three-across
+              -- row squeezes it into a column of one word.
+              case Mistakes.lead home.practice.severity of
+                Just worst ->
+                    Html.p
+                        [ id "home-worst"
+                        , class "text-[15px] font-semibold leading-snug mb-3"
+                        , style "color: var(--ink)"
+                        ]
+                        [ Html.text worst ]
+
+                Nothing ->
+                    Html.text ""
+            , Html.div [ class "flex items-center gap-3 mb-5" ]
+                [ Charts.ring home.practice.today
+                , Html.p [ id "home-today", class "q-note text-[12px] flex-1 min-w-0" ]
+                    [ Html.text (Charts.ringSentence home.practice.today) ]
                 , Html.button
                     [ Attr.type_ "button"
                     , id "home-practice-start"
-                    , class "q-btn rounded-lg px-5 py-2.5 text-[13px]"
+                    , class "q-btn rounded-lg px-4 py-2.5 text-[13px] shrink-0"
                     , Attr.disabled model.starting
                     , onClick PressedPractice
                     ]
@@ -713,20 +741,54 @@ practice model home =
                             "STARTING…"
 
                          else
-                            "PRACTICE"
+                            Mistakes.fixLabel home.practice.today
                         )
                     ]
                 ]
             , case model.practiceNote of
                 Just note ->
-                    Html.p [ id "home-practice-note", class "q-note text-[13px] leading-snug -mt-4 mb-5" ] [ Html.text note ]
+                    Html.p [ id "home-practice-note", class "q-note text-[13px] leading-snug -mt-3 mb-5" ] [ Html.text note ]
 
                 Nothing ->
                     Html.text ""
             , Html.div [ class "max-w-md space-y-5" ]
-                [ Html.div []
-                    [ Charts.ladder home.practice.ladder
-                    , caption "your deck"
+                [ Html.div [ id "home-bands", class "space-y-3" ]
+                    (List.map band home.practice.severity
+                        ++ [ Html.p [ id "home-patched-note", class "q-note text-[12px]" ]
+                                [ Html.text (Mistakes.patchedNote home.practice.patchedLevel) ]
+                           ]
+                    )
+                , Html.div []
+                    [ Html.button
+                        [ Attr.type_ "button"
+                        , id "home-ladder-toggle"
+                        , class "q-note text-[12px] underline underline-offset-2"
+                        , Attr.attribute "aria-expanded"
+                            (if model.ladderOpen then
+                                "true"
+
+                             else
+                                "false"
+                            )
+                        , Attr.attribute "aria-controls" "home-ladder"
+                        , onClick ToggledLadder
+                        ]
+                        [ Html.text
+                            (if model.ladderOpen then
+                                "hide detail"
+
+                             else
+                                "detail"
+                            )
+                        ]
+                    , if model.ladderOpen then
+                        Html.div [ id "home-ladder", class "mt-2" ]
+                            [ Charts.ladder home.practice.ladder
+                            , caption "every mistake, by how well you know it"
+                            ]
+
+                      else
+                        Html.text ""
                     ]
 
                 -- The strip carries its own "30 days" inside the picture,
@@ -734,6 +796,17 @@ practice model home =
                 , Charts.days home.practice.days
                 ]
             ]
+
+
+{-| One band: its line in words, and the share of it patched as a bar.
+-}
+band : Practice.Band -> Html Msg
+band entry =
+    Html.div [ Attr.attribute "data-band" entry.grade ]
+        [ Html.p [ class "text-[13px] mb-1", style "color: var(--ink)" ]
+            [ Html.text (Mistakes.line entry) ]
+        , Charts.patched { total = entry.total, patched = entry.patched, sentence = Mistakes.line entry }
+        ]
 
 
 caption : String -> Html Msg

@@ -71,7 +71,12 @@ fullJson =
          "series":[{"game_id":"g1","game_number":1,"pr":9.0,"error":5.4,"decisions":30,"ended_at":1790000000000},
                    {"game_id":"g2","game_number":1,"pr":7.5,"error":4.5,"decisions":30,"ended_at":1790100000000},
                    {"game_id":"g3","game_number":1,"pr":4.0,"error":2.4,"decisions":30,"ended_at":1790200000000}]},
- "practice":{"due":12,"deck":231,"ladder":[40,30,20,10,5,4,3,2],
+ "practice":{"due":12,"deck":114,"today":{"done":4,"target":9},
+             "severity":[{"grade":"very_bad","total":61,"patched":23},
+                         {"grade":"bad","total":118,"patched":40},
+                         {"grade":"doubtful","total":96,"patched":12}],
+             "patched_level":4,
+             "ladder":[40,30,20,10,5,4,3,2],
              "days":[false,false,false,false,false,false,false,false,false,false,
                      false,false,false,false,false,false,false,false,false,false,
                      false,false,false,false,false,false,false,false,true,true]},
@@ -443,21 +448,53 @@ form =
 practice : Test
 practice =
     describe "practice"
-        [ test "says what is due and draws the deck" <|
+        [ test "leads with the worst of what they have made, and the verb to fix it" <|
             \_ ->
                 render (loaded fullJson)
                     |> Query.find [ id "home-practice" ]
                     |> Expect.all
-                        [ Query.find [ id "home-due" ] >> Query.has [ text "12 due" ]
-                        , Query.has [ id "home-practice-start" ]
+                        [ Query.find [ id "home-worst" ]
+                            >> Query.has [ text "You have made 61 very bad moves. You have patched 23." ]
+                        , Query.find [ id "home-practice-start" ] >> Query.has [ text "FIX 5 TODAY" ]
 
+                        -- One line and one bar per band, worst first.
+                        , Query.find [ id "home-bands" ]
+                            >> Query.has [ text "Very bad · 23 of 61 patched" ]
+                        , Query.find [ id "home-bands" ]
+                            >> Query.has [ text "Bad · 40 of 118 patched" ]
+                        , Query.find [ id "home-bands" ]
+                            >> Query.has [ text "Dubious · 12 of 96 patched" ]
+                        , Query.find [ id "home-patched-note" ]
+                            >> Query.has [ text "Patched: right four times running." ]
 
-                        -- The ladder over all 114 cards, and the strip
-                        -- with the two days practised in it.
-                        , Query.has [ attribute (Html.Attributes.attribute "data-cards" "114") ]
+                        -- The day's ring, and the strip with the two days
+                        -- practised in it.
+                        , Query.has [ attribute (Html.Attributes.attribute "data-done" "4") ]
+                        , Query.find [ id "home-today" ] >> Query.has [ text "4 of today's 9 answered." ]
                         , Query.has [ attribute (Html.Attributes.attribute "data-practised" "2") ]
-                        , Query.has [ text "your deck" ]
+
+                        -- The rungs are the detail, behind a toggle: the
+                        -- bands above are what the section leads with.
+                        , Query.hasNot [ attribute (Html.Attributes.attribute "data-cards" "114") ]
+                        , Query.has [ id "home-ladder-toggle" ]
                         ]
+        , test "the detail toggle opens the ladder, and closes it again" <|
+            \_ ->
+                let
+                    open =
+                        loaded fullJson |> send ToggledLadder
+                in
+                Expect.all
+                    [ \_ ->
+                        render open
+                            |> Query.find [ id "home-practice" ]
+                            |> Query.has [ attribute (Html.Attributes.attribute "data-cards" "114") ]
+                    , \_ ->
+                        render (send ToggledLadder open)
+                            |> Query.find [ id "home-practice" ]
+                            |> Query.hasNot [ attribute (Html.Attributes.attribute "data-cards" "114") ]
+                    ]
+                    ()
         , test "an empty deck says what fills it, and offers nothing to run" <|
             \_ ->
                 render (loaded emptyJson)
@@ -472,7 +509,7 @@ practice =
                 loaded fullJson
                     |> send PressedPractice
                     |> out (GotDeck (Api.parseBody Practice.practiceDecoder deckJson))
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ])
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] Nothing)
         , test "a deck with nothing in it right now starts no run, and says so" <|
             \_ ->
                 let

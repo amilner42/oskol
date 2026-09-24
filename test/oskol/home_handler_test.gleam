@@ -17,10 +17,12 @@ import oskol/caps/analysis.{
   type GradedGame, type GradedRoomGame, type RatedGame, GradedGame,
   GradedRoomGame, RatedGame,
 }
+import oskol/caps/practice
 import oskol/core/ctx.{type Ctx}
 import oskol/core/error
 import oskol/fakes
 import oskol/handlers/home
+import oskol/practice/deck
 
 const uid = "user-1"
 
@@ -217,7 +219,18 @@ fn ctx_of(rows: List(GradedGame), rooms: List(GradedRoomGame)) -> Ctx {
   |> fakes.with_graded(uid, list.map(rows, rated_of))
   |> fakes.with_graded_rooms(uid, rooms)
   |> fakes.with_active_days(uid, [])
-  |> fakes.with_deck(3, 12, [5, 4, 3, 0, 0, 0, 0, 0], practised_days())
+  |> fakes.with_deck(
+    3,
+    12,
+    [5, 4, 3, 0, 0, 0, 0, 0],
+    practised_days(),
+    practice.Day(answered: 4, new_remaining: 2),
+    [
+      practice.Severity(grade: "very_bad", total: 61, patched: 23),
+      practice.Severity(grade: "bad", total: 118, patched: 40),
+      practice.Severity(grade: "doubtful", total: 96, patched: 12),
+    ],
+  )
 }
 
 fn practised_days() -> List(Bool) {
@@ -314,6 +327,61 @@ pub fn the_live_games_and_the_deck_are_still_there_with_no_graded_games_test() {
   let assert [5, 4, 3, 0, 0, 0, 0, 0] =
     field(body, ["practice", "ladder"], decode.list(decode.int))
   let assert 30 = count(body, ["practice", "days"])
+}
+
+/// The day's ring, beside the strip: the streak is the days, this is
+/// today. The target is the day's actual work -- what has been answered,
+/// what is still due, and the new ones the day still allows -- so it does
+/// not shrink under the player as they answer.
+pub fn the_practice_block_carries_the_days_ring_test() {
+  let body = home([])
+  let assert 4 = field(body, ["practice", "today", "done"], decode.int)
+  // 4 answered + 3 due + 2 new the budget still allows.
+  let assert 9 = field(body, ["practice", "today", "target"], decode.int)
+}
+
+/// The three lines the practice section leads with: the deck by how bad
+/// the mistake was, worst first, and how much of each band is patched.
+pub fn the_practice_block_counts_the_deck_by_severity_test() {
+  let body = home([])
+  let assert "very_bad" =
+    at(body, ["practice", "severity"], 0, decode.at(["grade"], decode.string))
+  let assert 61 =
+    at(body, ["practice", "severity"], 0, decode.at(["total"], decode.int))
+  let assert 23 =
+    at(body, ["practice", "severity"], 0, decode.at(["patched"], decode.int))
+  let assert "bad" =
+    at(body, ["practice", "severity"], 1, decode.at(["grade"], decode.string))
+  let assert "doubtful" =
+    at(body, ["practice", "severity"], 2, decode.at(["grade"], decode.string))
+  // What "patched" means, so the page never keeps a second copy of it.
+  let assert 4 = field(body, ["practice", "patched_level"], decode.int)
+  let assert True = deck.patched_level == 4
+}
+
+/// A deck the cap knows nothing about still reads as three bands: a line
+/// that vanished would shift the two beside it.
+pub fn a_deck_with_no_bands_still_names_all_three_test() {
+  let body =
+    home.home_json(
+      fakes.ctx()
+        |> fakes.with_active_rooms([])
+        |> fakes.with_graded(uid, [])
+        |> fakes.with_graded_rooms(uid, [])
+        |> fakes.with_active_days(uid, [])
+        |> fakes.with_deck(
+          0,
+          0,
+          [],
+          list.repeat(False, 30),
+          practice.Day(answered: 0, new_remaining: 0),
+          [],
+        ),
+      fakes.signed_in("guest-1", uid),
+    )
+  let assert 3 = count(body, ["practice", "severity"])
+  let assert 0 =
+    at(body, ["practice", "severity"], 0, decode.at(["total"], decode.int))
 }
 
 // ---------- The three-game minimum ----------
@@ -682,7 +750,14 @@ fn streak_of(days: List(Bool)) -> Int {
     |> fakes.with_graded(uid, [])
     |> fakes.with_graded_rooms(uid, [])
     |> fakes.with_active_days(uid, days)
-    |> fakes.with_deck(0, 0, [], list.repeat(False, 30))
+    |> fakes.with_deck(
+      0,
+      0,
+      [],
+      list.repeat(False, 30),
+      practice.Day(answered: 0, new_remaining: 0),
+      [],
+    )
   field(
     home.home_json(ctx, fakes.signed_in("guest-1", uid)),
     ["form", "streak"],
