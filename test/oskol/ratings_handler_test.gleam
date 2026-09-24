@@ -9,7 +9,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import oskol/caps/analysis.{
-  type GradedGame, type Stored, AnalysisCaps, Done, Failed, GradedGame, Pending,
+  type RatedGame, type Stored, AnalysisCaps, Done, Failed, Pending, RatedGame,
   Stored,
 }
 import oskol/caps/records as records_caps
@@ -277,18 +277,12 @@ fn totals(error: Float, decisions: Int) -> json.Json {
 }
 
 /// A graded game of this account's, somewhere on the site: its own seat's
-/// totals is all the career reads.
-fn graded(number: Int, error: Float, decisions: Int) -> GradedGame {
-  GradedGame(
+/// totals is all the career reads, and all the query carries.
+fn graded(number: Int, error: Float, decisions: Int) -> RatedGame {
+  RatedGame(
     game_id: "000042",
     game_number: number,
-    slug: "backgammon",
     seat: 0,
-    player_id: "p1",
-    opponent: Some("Bob"),
-    winner: Some("p1"),
-    points: 1,
-    kind: "single",
     response_json: json.to_string(
       json.object([
         #("turns", json.preprocessed_array([])),
@@ -301,8 +295,8 @@ fn graded(number: Int, error: Float, decisions: Int) -> GradedGame {
 
 /// A graded game whose stored answer carries a rating but no totals (a row
 /// written before they were stored): there is nothing in it to add up.
-fn ratingless(number: Int) -> GradedGame {
-  GradedGame(
+fn ratingless(number: Int) -> RatedGame {
+  RatedGame(
     ..graded(number, 1.0, 10),
     response_json: json.to_string(
       json.object([
@@ -317,14 +311,14 @@ fn ratingless(number: Int) -> GradedGame {
 }
 
 /// Five ordinary games, of `n` decisions each, losing `error` in every one.
-fn history(count: Int, error: Float, decisions: Int) -> List(GradedGame) {
+fn history(count: Int, error: Float, decisions: Int) -> List(RatedGame) {
   list.range(1, count)
   |> list.map(fn(number) { graded(number, error, decisions) })
 }
 
 /// A room whose first seat belongs to `alice`, with that account's graded
 /// games behind it, and whose second seat belongs to nobody.
-fn owned(rows: List(GradedGame), stored: List(Stored)) -> Ctx {
+fn owned(rows: List(RatedGame), stored: List(Stored)) -> Ctx {
   seated("backgammon", stored, "alice", "")
   |> fakes.with_graded_accounts([#("alice", rows)])
 }

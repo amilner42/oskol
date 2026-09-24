@@ -16,6 +16,7 @@
 ////   * This record and its field order are shared surface: Elixir's
 ////     CtxBuilder mirrors it.
 
+import oskol/caps/activity.{type ActivityCaps}
 import oskol/caps/analysis.{type AnalysisCaps}
 import oskol/caps/auth.{type AuthCaps}
 import oskol/caps/copy.{type CopyCaps}
@@ -30,6 +31,7 @@ import oskol/puzzles/tree.{type Tree}
 
 pub type Ctx {
   Ctx(
+    activity: ActivityCaps,
     analysis: AnalysisCaps,
     auth: AuthCaps,
     copy: CopyCaps,

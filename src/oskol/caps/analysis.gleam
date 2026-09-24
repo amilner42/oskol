@@ -78,17 +78,38 @@ pub type Save {
   )
 }
 
-/// Where a page of graded games stopped, so the next one carries on from
-/// exactly there: the moment the engine's answer was stored, and the game
-/// it was for. The two ids break the tie when several answers land in the
-/// same millisecond, which is what a finished match does.
+/// Where a page of graded **rooms** stopped, so the next one carries on
+/// from exactly there: the moment the newest of that room's answers was
+/// stored, and the room it was for. The id breaks the tie when two rooms'
+/// last answers land in the same millisecond. A marker names a room and
+/// never a game inside one, so a page can never stop in the middle of a
+/// match.
 pub type Cursor {
-  Cursor(ended_at_ms: Int, game_number: Int, game_id: String)
+  Cursor(ended_at_ms: Int, room_id: String)
 }
 
-/// One graded game of one account's, as the home reads it: which game it
-/// was, which seat of it is theirs, who was across the board, how it ended
-/// for them, and the engine's answer projected down to the seats' totals.
+/// One graded game of one account's, as a **rating** counts it: which game
+/// it was, which seat of it is theirs, and the engine's answer projected
+/// down to the seats' totals. Nothing else -- a rating has no use for who
+/// was across the board or how the game ended, and asking for those means
+/// two more joins per game on the query that reads a whole career.
+pub type RatedGame {
+  RatedGame(
+    game_id: String,
+    game_number: Int,
+    /// The account's seat, counting from 0.
+    seat: Int,
+    response_json: String,
+    /// When the engine's answer was stored, in Unix milliseconds. The
+    /// order the list comes in.
+    ended_at_ms: Int,
+  )
+}
+
+/// One graded game of one account's, as the recent list **shows** it:
+/// which game it was, which seat of it is theirs, who was across the
+/// board, how it ended for them, and the engine's answer projected down to
+/// the seats' totals.
 ///
 /// `response_json` is not the whole answer -- that is hundreds of kilobytes
 /// a game -- but the same projection `ratings` takes: every seat's totals
@@ -122,6 +143,30 @@ pub type GradedGame {
     /// When the engine's answer was stored, in Unix milliseconds. The
     /// order the list comes in, and half of its cursor.
     ended_at_ms: Int,
+  )
+}
+
+/// One graded game with the little the page needs to know about the **room**
+/// it was played in. A match is the unit a player remembers, so the recent
+/// list is one entry per room and this is a row of it: the room's format as
+/// it was stored, whether the room is over, and who its row says won it.
+///
+/// The room's own fields repeat on every game of it -- one flat list, one
+/// query -- and the handler folds the rows back into rooms.
+pub type GradedRoomGame {
+  GradedRoomGame(
+    /// The format id out of the room's config ("match7", "unlimited",
+    /// "single"), as stored. What that is in words is the handler's call.
+    format: String,
+    /// The room is finished: the match (or session, or single game) is over
+    /// and the score below it is the final one.
+    over: Bool,
+    /// The player ids the room's row says won it -- empty while it is not
+    /// over. This, and not the score added up from the graded games, is
+    /// what says who won: a match whose last game the engine has not
+    /// answered for yet would otherwise be reported to the wrong player.
+    winners: List(String),
+    game: GradedGame,
   )
 }
 
@@ -176,14 +221,23 @@ pub type AnalysisCaps {
     /// old answer again. Only the backfill calls this.
     replace: fn(String, Int, Save) -> Nil,
     /// The graded games of one **account**, newest answer first: (user id,
-    /// how many, where the previous page stopped). One query over the
-    /// review rows joined to the seats an account owns, so the home reads
-    /// a player's whole form without waking a room or touching a log.
+    /// how many). One query over the review rows joined to the seats an
+    /// account owns, so the home reads a player's whole form without waking
+    /// a room or touching a log. This one counts in games, because a rating
+    /// is made of games: it is what the form and the career number are read
+    /// over, and it carries only what a rating is made of.
     ///
-    /// The account is the caller's own, never a parameter a client chose:
-    /// the cursor only says where to carry on, and the rows it can reach
-    /// are the same ones either way.
-    graded_for: fn(String, Int, Option(Cursor)) -> List(GradedGame),
+    /// The account is the caller's own, never a parameter a client chose.
+    graded_for: fn(String, Int) -> List(RatedGame),
+    /// The same rows counted in **rooms**: (user id, how many rooms, where
+    /// the previous page stopped). Every graded game of the newest N rooms
+    /// this account holds a seat in, the rooms newest answer first and each
+    /// room's games together, newest game first inside.
+    ///
+    /// The recent list is one entry per room, so the limit is rooms and not
+    /// games: ten rooms is ten lines whether they are ten single games or
+    /// ten matches to seven, and no page boundary falls inside a match.
+    graded_rooms_for: fn(String, Int, Option(Cursor)) -> List(GradedRoomGame),
   )
 }
 
@@ -201,6 +255,7 @@ pub fn stub() -> AnalysisCaps {
     report_turn: fn(_, _, _) { panic as "stub analysis.report_turn" },
     charge: fn(_, _, _, _) { panic as "stub analysis.charge" },
     replace: fn(_, _, _) { panic as "stub analysis.replace" },
-    graded_for: fn(_, _, _) { panic as "stub analysis.graded_for" },
+    graded_for: fn(_, _) { panic as "stub analysis.graded_for" },
+    graded_rooms_for: fn(_, _, _) { panic as "stub analysis.graded_rooms_for" },
   )
 }

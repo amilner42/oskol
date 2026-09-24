@@ -1,13 +1,15 @@
 # An account with a history, for the signed-in home's smoke: a browser
-# signed into it, and two dozen graded games behind it so the form has
-# numbers, the line has a slope and there is a page of games behind the
-# first ten.
+# signed into it, two dozen graded single games behind it so the form has
+# numbers, the line has a slope and there is a page of rooms behind the
+# first ten, and one match to seven -- nine games in one room -- which is
+# what the recent list is a list of.
 #
 #   mix run -e 'Code.eval_file("playwright/test-home/setup.exs")'
 #
 # Prints one line of JSON: the guest id that browser holds (the cookie the
-# smoke sets to become that account), the username, and the replay path of
-# the newest graded game.
+# smoke sets to become that account), the username, how many rooms and how
+# many games are behind it, the match's room id, and the replay path of the
+# newest single game.
 #
 # The games are rows, not play: what the home reads is `game_reviews` and
 # `game_records` joined to an owned seat, and this writes exactly those.
@@ -74,12 +76,15 @@ totals = fn error, decisions ->
   }
 end
 
-# A room this account sits in, opposite a stranger, finished.
-room = fn game_id, opponent ->
+# A room this account sits in, opposite a stranger, finished. `winners` is
+# the row's own record of who won it, which is what the recent list reads
+# to say "won" or "lost" -- so it has to be the same player the record's
+# game_over line names, or the fixture would say two different things.
+room = fn game_id, opponent, format, winners ->
   Repo.insert!(%Persistence.Game{
     id: game_id,
     slug: "backgammon",
-    config: %{"format" => "single", "clock" => "none"},
+    config: %{"format" => format, "clock" => "none"},
     seed: 42,
     players: [
       %{
@@ -96,7 +101,7 @@ room = fn game_id, opponent ->
       }
     ],
     status: "finished",
-    winners: [],
+    winners: winners,
     inserted_at: DateTime.utc_now(),
     updated_at: DateTime.utc_now()
   })
@@ -120,7 +125,9 @@ newest =
   |> Enum.map(fn {error, n} ->
     game_id = "hs" <> String.pad_leading(Integer.to_string(n), 4, "0")
     opponent = Enum.at(["Bob", "Carol", "Dave"], rem(n, 3))
-    :ok = room.(game_id, opponent)
+    # Every other game won, so both results show. `p1` is this account.
+    winner = if rem(n, 2) == 0, do: "p1", else: "p2"
+    :ok = room.(game_id, opponent, "single", [winner])
 
     :ok =
       Reviews.save(
@@ -133,9 +140,6 @@ newest =
         nil,
         decisions
       )
-
-    # Every other game won, so both results show. `p1` is this account.
-    winner = if rem(n, 2) == 0, do: "p1", else: "p2"
 
     :ok =
       Reviews.save_records(
@@ -169,8 +173,72 @@ newest =
 Repo.query!("""
 UPDATE game_reviews
 SET inserted_at = now() - (interval '1 day' * (24 - CAST(substring(game_id from 3) AS int)))
-WHERE game_id LIKE 'hs%'
+WHERE game_id LIKE 'hs0%'
 """)
+
+# A match to seven, in one room: four games lost by a point and five won
+# for seven points, so the line reads "won 7-4" over nine games. This is
+# the thing the recent list exists to show, and the thing a list of loose
+# games said nothing about.
+match_id = "hsm001"
+match_games = 9
+:ok = room.(match_id, "Bob", "match7", ["p1"])
+
+match_results = [
+  {1, false, 1},
+  {2, false, 1},
+  {3, false, 1},
+  {4, false, 1},
+  {5, true, 1},
+  {6, true, 1},
+  {7, true, 1},
+  {8, true, 2},
+  {9, true, 2}
+]
+
+for {{number, won, points}, index} <- Enum.with_index(match_results) do
+  # It gets better as it goes, as the single games do.
+  error = (9.0 - index * 0.6) * decisions / 500
+
+  :ok =
+    Reviews.save(
+      match_id,
+      number,
+      "done",
+      1,
+      %{"players" => [totals.(error, decisions), totals.(0.48, decisions)], "turns" => []},
+      nil,
+      nil,
+      decisions
+    )
+
+  winner = if won, do: "p1", else: "p2"
+
+  :ok =
+    Reviews.save_records(
+      match_id,
+      [
+        {number,
+         [
+           %{"kind" => "turn", "player" => winner},
+           %{
+             "kind" => "game_over",
+             "number" => number,
+             "winner" => winner,
+             "result" => "single",
+             "points" => points,
+             "cube" => 1,
+             "scores" => %{}
+           }
+         ]}
+      ],
+      1,
+      1
+    )
+end
+
+# Played today, so the match is the first line of the list.
+Repo.query!("UPDATE game_reviews SET inserted_at = now() WHERE game_id = $1", [match_id])
 
 # A second account with nothing behind it at all: the home a player sees
 # the day they sign up, which is a state worth looking at as often as the
@@ -204,7 +272,10 @@ IO.puts(
     empty_username: "NewHere",
     email: email,
     username: username,
-    games: length(errors),
+    games: length(errors) + match_games,
+    rooms: length(errors) + 1,
+    match_id: match_id,
+    match_games: match_games,
     newest_replay: "/backgammon/#{newest}/replay?game=1"
   })
 )

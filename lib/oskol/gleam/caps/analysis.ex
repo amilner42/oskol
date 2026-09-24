@@ -4,14 +4,17 @@ defmodule Oskol.Gleam.Caps.Analysis do
   order in lockstep:
 
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
-      enqueue, review, report_turn, charge, replace, graded_for)
+      enqueue, review, report_turn, charge, replace, graded_for,
+      graded_rooms_for)
+      RatedGame(game_id, game_number, seat, response_json, ended_at_ms)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
       Stored(game_number, status, attempts, response_json, answered, rendered, turns)
       Save(status, attempts, response_json, error, report_json, turns)
       GradedGame(game_id, game_number, slug, seat, player_id, opponent, winner,
       points, kind, response_json, ended_at_ms)
-      Cursor(ended_at_ms, game_number, game_id)
+      GradedRoomGame(format, over, winners, game)
+      Cursor(ended_at_ms, room_id)
       Status: :pending | :done | :failed
 
   `response` and `report` are hundreds of kilobytes each. `summaries`
@@ -32,26 +35,42 @@ defmodule Oskol.Gleam.Caps.Analysis do
   def build(opts \\ []) do
     {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
      &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
-     &charge/4, &replace/3, &graded_for/3}
+     &charge/4, &replace/3, &graded_for/2, &graded_rooms_for/3}
   end
 
-  # One account's graded games, newest answer first. The row already
-  # carries only the seats' totals out of the engine's answer; everything
-  # this hands over is small, whatever the answers behind it weigh.
-  defp graded_for(user_id, limit, before) do
+  # One account's graded games, newest answer first, as a rating counts
+  # them. The row already carries only the seats' totals out of the
+  # engine's answer; everything this hands over is small, whatever the
+  # answers behind it weigh.
+  defp graded_for(user_id, limit) do
     user_id
-    |> Reviews.graded_for(limit, cursor(before))
+    |> Reviews.graded_for(limit)
     |> Enum.map(fn row ->
-      {:graded_game, row.game_id, row.game_number, row.slug, row.seat, row.player_id,
-       opt(row.opponent), opt(row.winner), row.points, row.kind, Jason.encode!(row.totals),
+      {:rated_game, row.game_id, row.game_number, row.seat, Jason.encode!(row.totals),
        DateTime.to_unix(row.ended_at, :millisecond)}
     end)
   end
 
+  # The same rows counted in rooms, each carrying what the page needs to
+  # know about the room it belongs to.
+  defp graded_rooms_for(user_id, rooms, before) do
+    user_id
+    |> Reviews.graded_rooms_for(rooms, cursor(before))
+    |> Enum.map(fn row ->
+      {:graded_room_game, row.format, row.over, row.winners, graded_game(row)}
+    end)
+  end
+
+  defp graded_game(row) do
+    {:graded_game, row.game_id, row.game_number, row.slug, row.seat, row.player_id,
+     opt(row.opponent), opt(row.winner), row.points, row.kind, Jason.encode!(row.totals),
+     DateTime.to_unix(row.ended_at, :millisecond)}
+  end
+
   defp cursor(:none), do: nil
 
-  defp cursor({:some, {:cursor, ended_at_ms, game_number, game_id}}) do
-    {DateTime.from_unix!(ended_at_ms, :millisecond), game_number, game_id}
+  defp cursor({:some, {:cursor, ended_at_ms, room_id}}) do
+    {DateTime.from_unix!(ended_at_ms, :millisecond), room_id}
   end
 
   defp log(game_id) do

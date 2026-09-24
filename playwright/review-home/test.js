@@ -5,10 +5,12 @@
  *   node playwright/review-home/test.js
  *
  * It runs `playwright/test-home/setup.exs`, which makes two accounts -- one
- * with two dozen graded games behind it, one that signed up a minute ago --
- * and takes:
+ * with two dozen graded single games and a match to seven behind it, one
+ * that signed up a minute ago -- and takes:
  *
- *   01-home     a player with a history: live games, form, practice, recent
+ *   01-home     a player with a history: form and streak, live games,
+ *               practice, recent matches
+ *   01b-match   the match to seven opened up, its nine games under it
  *   02-empty    the same page the day the account was made
  *   03-create   PLAY's dialog over it (no name asked: the account has one)
  *   04-boards   the board picker open
@@ -66,6 +68,12 @@ async function main() {
   try {
     const full = await home(browser, fixture.guest_id);
     await shots(full.page, '01-home');
+
+    // A match opened in place: the thing this list exists to show.
+    await full.page.click(`#home-room-${fixture.match_id}`);
+    await full.page.waitForSelector(`#home-room-${fixture.match_id}-games`);
+    await shots(full.page, '01b-match');
+    await full.page.click(`#home-room-${fixture.match_id}`);
 
     await full.page.click('#home-play');
     await full.page.waitForSelector('#create-modal #create-as');

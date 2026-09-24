@@ -2247,11 +2247,22 @@ a.rp-match-row:hover { color: var(--ink); }
    is replaced by content of another size. */
 .hm-skeleton { min-height: 60vh; }
 
-/* The recent games: a list of lines, a hairline between them, and no box
+/* The recent matches: a list of lines, a hairline between them, and no box
    around any of it. */
 .hm-games > li + li { border-top: 1px solid rgba(35, 36, 58, 0.1); }
 .hm-game { transition: background 0.12s; border-radius: 8px; margin: 0 -8px; padding-left: 8px; padding-right: 8px; }
 .hm-game:hover, .hm-game:focus-visible { background: var(--paper-2); outline: none; }
+
+/* A match opened up: its games, one level in. A hairline down the left is
+   the whole of the indent -- no card inside a card, and the same type as
+   the line that opened it. */
+.hm-inner { border-left: 1px solid rgba(35, 36, 58, 0.12); }
+.hm-inner > li + li { border-top: 1px solid rgba(35, 36, 58, 0.06); }
+
+/* The caret on a match: down while it is closed, turned over once it is
+   open. */
+.hm-caret { transition: transform 0.18s ease; }
+.hm-caret.is-open { transform: rotate(180deg); }
 
 /* A game's rating, in its grade's colour (`.g-best`, `.g-ok`,
    `.g-very_bad` above): the colour is the whole of the verdict, so the

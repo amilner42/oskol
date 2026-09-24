@@ -7,6 +7,8 @@ module Api.Home exposing
     , Point
     , Practice
     , Result_
+    , Room
+    , Score
     , answerDecoder
     , fetch
     , graded
@@ -16,12 +18,17 @@ module Api.Home exposing
 {-| The signed-in home's own answer, and the page of graded games under it.
 
     GET /papi/me/home                    everything the page draws
-    GET /papi/me/games/graded?before=    the next ten graded games
+    GET /papi/me/games/graded?before=    the next ten recent rooms
 
 The home is **one** request by design (`src/oskol/handlers/home.gleam`):
-the live games, the form, the practice deck and the first ten graded games
-arrive together, from rows, with no room woken and no engine time spent.
-MORE is the only thing that asks again.
+the live games, the form, the practice deck and the first ten recent
+rooms arrive together, from rows, with no room woken and no engine time
+spent. MORE is the only thing that asks again.
+
+The recent list is one entry per **room** -- a match, an unlimited
+session or a single game -- with the games of it the engine has graded
+inside, because a match to seven is one thing a player remembers playing
+and not nine loose lines.
 
 A browser with no account is told exactly that -- `{ok: true, signed_in:
 false}` and nothing else -- so the answer is a choice of two, not a record
@@ -51,21 +58,26 @@ type alias Home =
     { live : List MyGame
     , form : Form
     , practice : Practice
-    , recent : List Game
+    , recent : List Room
     , more : Bool
     , next : Maybe String
     }
 
 
-{-| The two numbers and the line under them. `recent` and `career` are
-`Nothing` until there are three graded games (the server's floor, not
-this page's), and `sentence` says so in words either way. `series` is
-**oldest first**: the order the line is drawn in.
+{-| The two numbers, the streak beside them and the line under them.
+`recent` and `career` are `Nothing` until there are three graded games
+(the server's floor, not this page's), and `sentence` says so in words
+either way. `series` is **oldest first**: the order the line is drawn in.
+
+`streak` is consecutive days this player was here -- a puzzle answered or
+a game of theirs finished -- in their own local day. Zero is a player with
+no streak, and the page prints nothing rather than a zero.
 -}
 type alias Form =
     { games : Int
     , recent : Maybe Float
     , career : Maybe Float
+    , streak : Int
     , sentence : String
     , series : List Point
     }
@@ -94,14 +106,47 @@ type alias Practice =
     }
 
 
-{-| One graded game as the list shows it. `path` is its replay.
+{-| One room as the recent list shows it: a match, an unlimited session
+or a single game.
+
+`score` is this account's points first, added up over the games the
+engine has graded, so a room half-graded shows the half it knows.
+`won` is not read off that score but off the room's own row: it is
+`Nothing` while the room is still being played, and `Nothing` rather
+than a guess where nothing recorded a winner. `pr` is the rating over
+the whole room, decision-weighted, so it is *not* the mean of the games'
+own ratings. `path` is the replay of the first graded game of it, which
+is where a single-game row goes straight to.
+-}
+type alias Room =
+    { id : String
+    , slug : String
+    , format : String
+    , opponent : Maybe String
+    , score : Score
+    , over : Bool
+    , won : Maybe Bool
+    , pr : Float
+    , decisions : Int
+    , endedAt : Int
+    , path : String
+    , games : List Game
+    }
+
+
+type alias Score =
+    { yours : Int
+    , theirs : Int
+    }
+
+
+{-| One graded game inside a room. The room names the opponent, so a game
+says only which game it was, how it went, what it was rated and where its
+replay is.
 -}
 type alias Game =
-    { gameId : String
-    , gameNumber : Int
-    , slug : String
+    { gameNumber : Int
     , path : String
-    , opponent : Maybe String
     , result : Maybe Result_
     , pr : Float
     , endedAt : Int
@@ -118,10 +163,10 @@ type alias Result_ =
     }
 
 
-{-| A page of graded games, after the first ten.
+{-| A page of recent rooms, after the first ten.
 -}
 type alias Page =
-    { games : List Game
+    { rooms : List Room
     , more : Bool
     , next : Maybe String
     }
@@ -171,7 +216,7 @@ homeDecoder =
         (optional "live" [] (D.list Catalog.myGameDecoder))
         (D.field "form" formDecoder)
         (D.field "practice" practiceDecoder)
-        (optional "recent" [] (D.list gameDecoder))
+        (optional "recent" [] (D.list roomDecoder))
         (optional "more" False D.bool)
         (optional "next" Nothing (D.nullable D.string))
 
@@ -179,7 +224,7 @@ homeDecoder =
 pageDecoder : Decoder Page
 pageDecoder =
     D.map3 Page
-        (optional "games" [] (D.list gameDecoder))
+        (optional "rooms" [] (D.list roomDecoder))
         (optional "more" False D.bool)
         (optional "next" Nothing (D.nullable D.string))
 
@@ -205,10 +250,11 @@ optional key fallback decoder =
 
 formDecoder : Decoder Form
 formDecoder =
-    D.map5 Form
+    D.map6 Form
         (D.field "games" D.int)
         (D.field "recent" (D.nullable D.float))
         (D.field "career" (D.nullable D.float))
+        (optional "streak" 0 D.int)
         (D.field "sentence" D.string)
         (optional "series" [] (D.list pointDecoder))
 
@@ -229,14 +275,40 @@ practiceDecoder =
         (optional "days" [] (D.list D.bool))
 
 
+roomDecoder : Decoder Room
+roomDecoder =
+    D.map8 Room
+        (D.field "id" D.string)
+        (D.field "slug" D.string)
+        (D.field "format" D.string)
+        (D.field "opponent" (D.nullable D.string))
+        (D.field "score" scoreDecoder)
+        (D.field "over" D.bool)
+        (D.field "won" (D.nullable D.bool))
+        (D.field "pr" D.float)
+        |> andMap (D.field "decisions" D.int)
+        |> andMap (D.field "ended_at" D.int)
+        |> andMap (D.field "path" D.string)
+        |> andMap (D.field "games" (D.list gameDecoder))
+
+
+andMap : Decoder a -> Decoder (a -> b) -> Decoder b
+andMap =
+    D.map2 (|>)
+
+
+scoreDecoder : Decoder Score
+scoreDecoder =
+    D.map2 Score
+        (D.field "yours" D.int)
+        (D.field "theirs" D.int)
+
+
 gameDecoder : Decoder Game
 gameDecoder =
-    D.map8 Game
-        (D.field "game_id" D.string)
+    D.map5 Game
         (D.field "game_number" D.int)
-        (D.field "slug" D.string)
         (D.field "path" D.string)
-        (D.field "opponent" (D.nullable D.string))
         (D.field "result" (D.nullable resultDecoder))
         (D.field "pr" D.float)
         (D.field "ended_at" D.int)

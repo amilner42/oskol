@@ -50,8 +50,9 @@ suite =
 
 
 {-| A player with everything: two live games (the second one theirs to
-move), three graded games, a deck with cards at three levels and two days
-practised, and more games behind the first page.
+move), three rooms of graded games -- a match to seven and two single
+games -- a streak, a deck with cards at three levels and two days
+practised, and more rooms behind the first page.
 -}
 fullJson : String
 fullJson =
@@ -65,7 +66,7 @@ fullJson =
    {"slug":"backgammon","id":"bbbbbb","path":"/backgammon/bbbbbb","status":"playing",
     "opponent":"Carol","format":"Single game","clock":null,"your_move":true,
     "time":null,"idle_s":3600}],
- "form":{"games":3,"recent":6.2,"career":7.8,
+ "form":{"games":3,"recent":6.2,"career":7.8,"streak":4,
          "sentence":"Recent 6.2, better than your career 7.8.",
          "series":[{"game_id":"g1","game_number":1,"pr":9.0,"error":5.4,"decisions":30,"ended_at":1790000000000},
                    {"game_id":"g2","game_number":1,"pr":7.5,"error":4.5,"decisions":30,"ended_at":1790100000000},
@@ -75,16 +76,37 @@ fullJson =
                      false,false,false,false,false,false,false,false,false,false,
                      false,false,false,false,false,false,false,false,true,true]},
  "recent":[
-   {"game_id":"g3","game_number":1,"slug":"backgammon","path":"/backgammon/g3/replay?game=1",
-    "opponent":"Dave","result":{"won":true,"points":2,"kind":"gammon"},
-    "pr":4.0,"error":2.4,"decisions":30,"ended_at":1790200000000},
-   {"game_id":"g2","game_number":1,"slug":"backgammon","path":"/backgammon/g2/replay?game=1",
-    "opponent":"Carol","result":{"won":false,"points":1,"kind":"single"},
-    "pr":7.5,"error":4.5,"decisions":30,"ended_at":1790100000000},
-   {"game_id":"g1","game_number":1,"slug":"backgammon","path":"/backgammon/g1/replay?game=1",
-    "opponent":"Bob","result":null,
-    "pr":18.0,"error":10.8,"decisions":30,"ended_at":1790000000000}],
- "more":true,"next":"1790000000000:1:g1"}
+   {"id":"m1","slug":"backgammon","format":"Match to 7","opponent":"Dave",
+    "score":{"yours":7,"theirs":4},"over":true,"won":true,
+    "pr":4.0,"decisions":90,"ended_at":1790200000000,
+    "path":"/backgammon/m1/replay?game=1",
+    "games":[
+      {"game_number":3,"path":"/backgammon/m1/replay?game=3",
+       "result":{"won":true,"points":2,"kind":"gammon"},
+       "pr":3.0,"decisions":30,"ended_at":1790200000000},
+      {"game_number":2,"path":"/backgammon/m1/replay?game=2",
+       "result":{"won":false,"points":1,"kind":"single"},
+       "pr":12.0,"decisions":30,"ended_at":1790190000000},
+      {"game_number":1,"path":"/backgammon/m1/replay?game=1",
+       "result":{"won":true,"points":2,"kind":"gammon"},
+       "pr":6.0,"decisions":30,"ended_at":1790180000000}]},
+   {"id":"g2","slug":"backgammon","format":"Single game","opponent":"Carol",
+    "score":{"yours":0,"theirs":1},"over":true,"won":false,
+    "pr":7.5,"decisions":30,"ended_at":1790100000000,
+    "path":"/backgammon/g2/replay?game=1",
+    "games":[
+      {"game_number":1,"path":"/backgammon/g2/replay?game=1",
+       "result":{"won":false,"points":1,"kind":"single"},
+       "pr":7.5,"decisions":30,"ended_at":1790100000000}]},
+   {"id":"g1","slug":"backgammon","format":"Single game","opponent":"Bob",
+    "score":{"yours":0,"theirs":0},"over":true,"won":null,
+    "pr":18.0,"decisions":30,"ended_at":1790000000000,
+    "path":"/backgammon/g1/replay?game=1",
+    "games":[
+      {"game_number":1,"path":"/backgammon/g1/replay?game=1",
+       "result":null,
+       "pr":18.0,"decisions":30,"ended_at":1790000000000}]}],
+ "more":true,"next":"1790000000000:g1"}
 """
 
 
@@ -95,7 +117,7 @@ youngJson =
     """
 {"ok":true,"signed_in":true,
  "live":[],
- "form":{"games":2,"recent":null,"career":null,
+ "form":{"games":2,"recent":null,"career":null,"streak":2,
          "sentence":"Play 3 games and your PR appears here.",
          "series":[{"game_id":"g1","game_number":1,"pr":9.0,"error":5.4,"decisions":30,"ended_at":1790000000000},
                    {"game_id":"g2","game_number":1,"pr":7.5,"error":4.5,"decisions":30,"ended_at":1790100000000}]},
@@ -111,7 +133,7 @@ emptyJson =
     """
 {"ok":true,"signed_in":true,
  "live":[],
- "form":{"games":0,"recent":null,"career":null,
+ "form":{"games":0,"recent":null,"career":null,"streak":0,
          "sentence":"Play 3 games and your PR appears here.","series":[]},
  "practice":{"due":0,"deck":0,"ladder":[0,0,0,0,0,0,0,0],"days":[]},
  "recent":[],"more":false,"next":null}
@@ -123,19 +145,32 @@ guestJson =
     """{"ok":true,"signed_in":false}"""
 
 
-{-| The page after the first: two more games, and the end of the list.
+{-| The page after the first: two more rooms, and the end of the list.
 -}
 nextPageJson : String
 nextPageJson =
     """
 {"ok":true,
- "games":[
-   {"game_id":"f2","game_number":1,"slug":"backgammon","path":"/backgammon/f2/replay?game=1",
-    "opponent":"Erin","result":{"won":true,"points":3,"kind":"backgammon"},
-    "pr":3.1,"error":1.86,"decisions":30,"ended_at":1789900000000},
-   {"game_id":"f1","game_number":1,"slug":"backgammon","path":"/backgammon/f1/replay?game=1",
-    "opponent":"Frank","result":{"won":false,"points":1,"kind":"single"},
-    "pr":11.0,"error":6.6,"decisions":30,"ended_at":1789800000000}],
+ "rooms":[
+   {"id":"f2","slug":"backgammon","format":"Single game","opponent":"Erin",
+    "score":{"yours":3,"theirs":0},"over":true,"won":true,
+    "pr":3.1,"decisions":30,"ended_at":1789900000000,
+    "path":"/backgammon/f2/replay?game=1",
+    "games":[
+      {"game_number":1,"path":"/backgammon/f2/replay?game=1",
+       "result":{"won":true,"points":3,"kind":"backgammon"},
+       "pr":3.1,"decisions":30,"ended_at":1789900000000}]},
+   {"id":"f1","slug":"backgammon","format":"Unlimited","opponent":"Frank",
+    "score":{"yours":1,"theirs":2},"over":false,"won":null,
+    "pr":11.0,"decisions":60,"ended_at":1789800000000,
+    "path":"/backgammon/f1/replay?game=1",
+    "games":[
+      {"game_number":2,"path":"/backgammon/f1/replay?game=2",
+       "result":{"won":false,"points":2,"kind":"gammon"},
+       "pr":11.0,"decisions":30,"ended_at":1789800000000},
+      {"game_number":1,"path":"/backgammon/f1/replay?game=1",
+       "result":{"won":true,"points":1,"kind":"single"},
+       "pr":11.0,"decisions":30,"ended_at":1789700000000}]}],
  "more":false,"next":null}
 """
 
@@ -206,8 +241,18 @@ decoding =
                             , \h -> Expect.equal [ 40, 30, 20, 10, 5, 4, 3, 2 ] h.practice.ladder
                             , \h -> Expect.equal 30 (List.length h.practice.days)
                             , \h -> Expect.equal 3 (List.length h.recent)
+                            , \h -> Expect.equal 4 h.form.streak
+                            , \h ->
+                                Expect.equal [ 3, 1, 1 ]
+                                    (List.map (List.length << .games) h.recent)
+                            , \h ->
+                                Expect.equal [ Just True, Just False, Nothing ]
+                                    (List.map .won h.recent)
+                            , \h ->
+                                Expect.equal [ { yours = 7, theirs = 4 } ]
+                                    (List.map .score (List.take 1 h.recent))
                             , \h -> Expect.equal True h.more
-                            , \h -> Expect.equal (Just "1790000000000:1:g1") h.next
+                            , \h -> Expect.equal (Just "1790000000000:g1") h.next
                             ]
                             home
 
@@ -355,6 +400,39 @@ form =
                         , Query.hasNot [ id "home-form-career" ]
                         , Query.findAll [ Selector.tag "svg" ] >> Query.count (Expect.equal 0)
                         ]
+        , test "the streak stands beside the two numbers, in days" <|
+            \_ ->
+                render (loaded fullJson)
+                    |> Query.find [ id "home-form-streak" ]
+                    |> Query.has
+                        [ text "4 days"
+                        , text "streak"
+                        , attribute (Html.Attributes.attribute "data-days" "4")
+                        ]
+        , test "a streak is shown before there is a rating to show" <|
+            \_ ->
+                -- Two graded games is under the form's floor, and the
+                -- player is still on their second day.
+                render (loaded youngJson)
+                    |> Query.find [ id "home-form-streak" ]
+                    |> Query.has [ text "2 days" ]
+        , test "no streak is nothing at all, never a zero" <|
+            \_ ->
+                render (loaded emptyJson)
+                    |> Query.hasNot [ id "home-form-streak" ]
+        , test "form and the streak are the first thing on the page" <|
+            \_ ->
+                -- The two hooks come before anything else: the order is
+                -- form, live games, practice, recent matches.
+                render (loaded fullJson)
+                    |> Query.find [ Selector.class "hm-cols" ]
+                    |> Query.children []
+                    |> Expect.all
+                        [ Query.index 0 >> Query.has [ id "home-form" ]
+                        , Query.index 1 >> Query.has [ id "home-live" ]
+                        , Query.index 2 >> Query.has [ id "home-practice" ]
+                        , Query.index 3 >> Query.has [ id "home-recent" ]
+                        ]
         ]
 
 
@@ -425,8 +503,8 @@ emptyDeckJson =
 
 recentGames : Test
 recentGames =
-    describe "recent games"
-        [ test "one line per game, each a link to its replay" <|
+    describe "recent matches"
+        [ test "one line per room: the opponent, what it was, how it went" <|
             \_ ->
                 render (loaded fullJson)
                     |> Query.find [ id "home-recent-list" ]
@@ -436,26 +514,60 @@ recentGames =
                         , Query.index 0
                             >> Query.has
                                 [ text "Dave"
-                                , text "won 2 · gammon"
+                                , text "Match to 7 · 3 games"
+                                , text "won 7-4"
                                 , text "4.0"
-                                , attribute (Html.Attributes.href "/backgammon/g3/replay?game=1")
                                 ]
-                        , Query.index 1 >> Query.has [ text "Carol", text "lost 1" ]
+                        , Query.index 1 >> Query.has [ text "Carol", text "lost 1", text "Single game" ]
                         ]
-        , test "a game with no record row shows no result rather than a guess" <|
+        , test "a single game is a link straight to its replay" <|
             \_ ->
                 render (loaded fullJson)
-                    |> Query.find [ id "home-game-g1-1" ]
+                    |> Query.find [ id "home-room-g2" ]
+                    |> Query.has [ attribute (Html.Attributes.href "/backgammon/g2/replay?game=1") ]
+        , test "a match is closed until it is pressed, and then lists its games" <|
+            \_ ->
+                let
+                    closed =
+                        loaded fullJson
+                in
+                Expect.all
+                    [ \model -> render model |> Query.hasNot [ id "home-room-m1-games" ]
+                    , \model ->
+                        render (send (ToggledRoom "m1") model)
+                            |> Query.find [ id "home-room-m1-games" ]
+                            |> Query.children []
+                            |> Expect.all
+                                [ Query.count (Expect.equal 3)
+                                , Query.index 0
+                                    >> Query.has
+                                        [ text "Game 3"
+                                        , text "won 2 · gammon"
+                                        , attribute (Html.Attributes.href "/backgammon/m1/replay?game=3")
+                                        ]
+                                , Query.index 1 >> Query.has [ text "Game 2", text "lost 1" ]
+                                ]
+
+                    -- Pressed again it closes, and nothing else moved.
+                    , \model ->
+                        render (send (ToggledRoom "m1") (send (ToggledRoom "m1") model))
+                            |> Query.hasNot [ id "home-room-m1-games" ]
+                    ]
+                    closed
+        , test "a room with no record row shows no result rather than a guess" <|
+            \_ ->
+                render (loaded fullJson)
+                    |> Query.find [ id "home-room-g1" ]
                     |> Query.has [ text "—" ]
         , test "each rating carries its grade's colour" <|
             \_ ->
                 render (loaded fullJson)
                     |> Expect.all
-                        [ Query.find [ id "home-game-g3-1" ] >> Query.has [ Selector.class "g-best" ]
-                        , Query.find [ id "home-game-g2-1" ] >> Query.has [ Selector.class "g-ok" ]
-                        , Query.find [ id "home-game-g1-1" ] >> Query.has [ Selector.class "g-very_bad" ]
+                        [ Query.find [ id "home-room-m1" ] >> Query.has [ Selector.class "g-best" ]
+                        , Query.find [ id "home-room-g2" ] >> Query.has [ Selector.class "g-ok" ]
+                        , Query.find [ id "home-room-g1" ] >> Query.has [ Selector.class "g-very_bad" ]
                         ]
-        , test "MORE appends the next page and then goes" <|
+        , test "MORE appends the next page of rooms and then goes" <|
             \_ ->
                 let
                     after =
@@ -468,7 +580,10 @@ recentGames =
                         [ Query.find [ id "home-recent-list" ]
                             >> Query.children []
                             >> Query.count (Expect.equal 5)
-                        , Query.find [ id "home-game-f1-1" ] >> Query.has [ text "Frank" ]
+                        , Query.find [ id "home-room-f1" ] >> Query.has [ text "Frank", text "Unlimited" ]
+
+                        -- Still being played: the score, and no verdict on it.
+                        , Query.find [ id "home-room-f1" ] >> Query.has [ text "1-2" ]
                         , Query.hasNot [ id "home-more" ]
                         ]
         , test "with no more behind them there is nothing to press" <|
@@ -484,7 +599,6 @@ recentGames =
                         , Query.hasNot [ id "home-recent-list" ]
                         ]
         ]
-
 
 
 -- A GUEST
@@ -531,6 +645,54 @@ numbers =
                     , Page.resultLine (Just { won = False, points = 1, kind = "single" })
                     , Page.resultLine (Just { won = True, points = 3, kind = "backgammon" })
                     , Page.resultLine Nothing
+                    ]
+        , test "a room's line says how it stands, from this player's side" <|
+            \_ ->
+                let
+                    room over won yours theirs games =
+                        { id = "r"
+                        , slug = "backgammon"
+                        , format = "Match to 7"
+                        , opponent = Just "Bob"
+                        , score = { yours = yours, theirs = theirs }
+                        , over = over
+                        , won = won
+                        , pr = 5.0
+                        , decisions = 30
+                        , endedAt = 0
+                        , path = "/backgammon/r/replay?game=1"
+                        , games = games
+                        }
+
+                    game result =
+                        { gameNumber = 1
+                        , path = "/backgammon/r/replay?game=1"
+                        , result = result
+                        , pr = 5.0
+                        , endedAt = 0
+                        }
+                in
+                Expect.equal
+                    [ "won 7-4", "lost 4-7", "3-2", "7-7", "won 2 · gammon", "—" ]
+                    [ Page.scoreLine (room True (Just True) 7 4 [ game Nothing, game Nothing ])
+                    , Page.scoreLine (room True (Just False) 4 7 [ game Nothing, game Nothing ])
+
+                    -- Still being played: where it stands, and no verdict.
+                    , Page.scoreLine (room False Nothing 3 2 [ game Nothing, game Nothing ])
+
+                    -- Over, but nothing recorded a winner: the score alone.
+                    , Page.scoreLine (room True Nothing 7 7 [ game Nothing, game Nothing ])
+
+                    -- One game, finished: the game's own line, as it has
+                    -- always read.
+                    , Page.scoreLine
+                        (room True
+                            (Just True)
+                            2
+                            0
+                            [ game (Just { won = True, points = 2, kind = "gammon" }) ]
+                        )
+                    , Page.scoreLine (room True Nothing 0 0 [ game Nothing ])
                     ]
         , test "a date drops the year while it is this one, and keeps it otherwise" <|
             \_ ->

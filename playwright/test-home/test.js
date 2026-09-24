@@ -11,14 +11,16 @@
  *     second browser joins it.
  *  3. Back at `/`: LIVE GAMES lists the room, whose move it is, and one tap
  *     opens it.
- *  4. Form: Recent and Career, Recent the better of the two (the fixture's
- *     games improve), the sentence, and the line drawn over 24 games.
+ *  4. Form, at the top of the page: Recent and Career, Recent the better
+ *     of the two (the fixture's games improve), the streak beside them,
+ *     the sentence, and the line drawn over every graded game.
  *  5. Practice: an account that has never practised is told what fills the
  *     deck. (A deck with cards in it is drawn in `assets/tests/HomeTest.elm`
  *     on a real answer; filling one here means extracting puzzles from a
  *     played game, which the puzzle smokes already do.)
- *  6. Recent games: ten, then MORE brings the other fourteen and goes. A
- *     tap on the newest opens its replay.
+ *  6. Recent matches: ten rooms, then MORE brings the rest and goes. The
+ *     match to seven is one line that opens to show its nine games, and a
+ *     single game's line opens its replay.
  *  7. A guest at `/` still gets the board: the home this page replaces is
  *     only replaced for an account.
  *
@@ -111,7 +113,11 @@ async function run(browser, errors, fixture) {
     if (!sentence.includes('better than your career')) throw new Error(`the sentence: "${sentence}"`);
     const drawn = await a.page.getAttribute('#home-form svg[data-games]', 'data-games');
     if (Number(drawn) !== fixture.games) throw new Error(`the line should draw all ${fixture.games} games, not ${drawn}`);
-    log(`form: recent ${recent}, career ${career}, ${drawn} games on the line`);
+    // The streak: every game of the fixture finished today, so the player
+    // has been here at least a day.
+    const streak = Number(await a.page.getAttribute('#home-form-streak [data-days]', 'data-days'));
+    if (!(streak >= 1)) throw new Error(`the streak should count today: ${streak}`);
+    log(`form: recent ${recent}, career ${career}, ${drawn} games on the line, ${streak}-day streak`);
 
     // 5. Practice, for an account that has never practised.
     const practice = (await a.page.textContent('#home-practice')).trim();
@@ -119,10 +125,34 @@ async function run(browser, errors, fixture) {
       throw new Error(`the empty deck should say what fills it: "${practice}"`);
     }
 
-    // 6. Recent games: ten, then MORE.
+    // 6. Recent matches: ten rooms, then MORE.
     const rows = async () => (await a.page.$$('#home-recent-list > li')).length;
-    if ((await rows()) !== 10) throw new Error(`the home carries ten games, not ${await rows()}`);
+    if ((await rows()) !== 10) throw new Error(`the home carries ten rooms, not ${await rows()}`);
+
+    // The match is one line, and it says so: the format, the score and how
+    // many games are behind it.
+    const matchRow = `#home-room-${fixture.match_id}`;
+    const match = (await a.page.textContent(matchRow)).trim();
+    if (!match.includes('Match to 7')) throw new Error(`the match line should name the format: "${match}"`);
+    if (!match.includes('won 7-4')) throw new Error(`the match line should carry the score: "${match}"`);
+    if (!match.includes(`${fixture.match_games} games`)) {
+      throw new Error(`the match line should say how many games: "${match}"`);
+    }
     await shots(a.page, '01-home');
+
+    // Pressed, it opens in place: its games, each a link to its own replay.
+    if (await a.page.$(`#home-room-${fixture.match_id}-games`)) {
+      throw new Error('a match should be closed until it is pressed');
+    }
+    await a.page.click(matchRow);
+    await a.page.waitForSelector(`#home-room-${fixture.match_id}-games`);
+    const inner = await a.page.$$(`#home-room-${fixture.match_id}-games > li`);
+    if (inner.length !== fixture.match_games) {
+      throw new Error(`the match should open to ${fixture.match_games} games, not ${inner.length}`);
+    }
+    if ((await rows()) !== 10) throw new Error('opening a match should not add lines to the list');
+    await shots(a.page, '01b-home-match-open');
+    log(`recent: the match is one line of ${fixture.match_games} games, and opens in place`);
 
     // Ten at a time, and MORE goes when the server says there is no more:
     // 24 games is three pages, so it takes more than one press.
@@ -136,10 +166,10 @@ async function run(browser, errors, fixture) {
       );
       if (++presses > 5) throw new Error('MORE never ran out');
     }
-    if ((await rows()) !== fixture.games) {
-      throw new Error(`MORE should leave all ${fixture.games} games, not ${await rows()}`);
+    if ((await rows()) !== fixture.rooms) {
+      throw new Error(`MORE should leave all ${fixture.rooms} rooms, not ${await rows()}`);
     }
-    log(`recent: ten games, then ${presses} presses of MORE brought the other ${fixture.games - 10} and it went`);
+    log(`recent: ten rooms, then ${presses} presses of MORE brought the other ${fixture.rooms - 10} and it went`);
 
     // A tap on a game opens its replay.
     await a.page.click(`a[href="${fixture.newest_replay}"]`);
