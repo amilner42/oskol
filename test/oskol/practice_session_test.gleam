@@ -132,6 +132,27 @@ fn with_nothing_due(ctx: Ctx) -> Ctx {
   )
 }
 
+/// The same deck with this many cards due: what the day's goal is made
+/// of, before the ceiling on it.
+fn with_due(ctx: Ctx, due: Int) -> Ctx {
+  Ctx(
+    ..ctx,
+    practice: PracticeCaps(..ctx.practice, summary: fn(_uid, _group) {
+      [
+        Summary(
+          group: [],
+          count: 42,
+          new_count: 20,
+          active_count: 42,
+          suspended_count: 0,
+          due_count: due,
+          mean_level: 1.5,
+        ),
+      ]
+    }),
+  )
+}
+
 /// The deck counted by band, as the cap answers it.
 fn with_severity(ctx: Ctx, rows: List(Severity)) -> Ctx {
   Ctx(
@@ -226,53 +247,92 @@ pub fn an_account_is_told_what_is_due_what_is_left_today_and_how_big_the_deck_is
 
 // ---------- The day's ring ----------
 
-/// The target is the day's actual work: what is due (9, from the deck's
-/// summary) plus the new ones the day still allows.
-pub fn a_day_with_nothing_answered_yet_is_all_work_and_no_progress_test() {
-  let ctx = with_day(with_deck(fakes.ctx(), 1, 1), 0, 3)
+/// The target is the day's actual work, up to ten: two due and three new
+/// is five, and nothing is rounded up to fill a ring.
+pub fn a_day_asks_for_what_it_actually_holds_test() {
+  let ctx = with_due(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), 2)
   let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
-  assert string.contains(body, "\"today\":{\"done\":0,\"target\":12}")
+  assert string.contains(body, "\"today\":{\"done\":0,\"target\":5}")
+}
+
+/// A backlog is not the day's goal. Twenty-three due asks for ten, which
+/// is a thing a person finishes; the other thirteen are still there, in
+/// order, for whoever keeps going.
+pub fn a_backlog_still_asks_for_ten_test() {
+  let ctx = with_due(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), 23)
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+
+  assert string.contains(body, "\"today\":{\"done\":0,\"target\":10}")
 }
 
 /// Answering does not shrink the target under the player: what they have
 /// answered is counted into it, so the ring only ever fills.
 pub fn answers_recorded_today_fill_the_ring_test() {
-  let ctx = with_day(with_deck(fakes.ctx(), 1, 1), 4, 3)
+  let ctx = with_due(with_day(with_deck(fakes.ctx(), 1, 1), 4, 3), 2)
   let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
-  assert string.contains(body, "\"today\":{\"done\":4,\"target\":16}")
+  assert string.contains(body, "\"today\":{\"done\":4,\"target\":9}")
 }
 
 /// A day with nothing due and no budget left is done, however much of it
-/// was worked: the ring is full rather than pointing at a number nobody
-/// can reach.
+/// was worked: the goal is the ceiling, and KEEP GOING past it leaves the
+/// ring full rather than pointing at a number that has already gone by.
 pub fn a_finished_day_is_done_rather_than_short_test() {
   let ctx = with_nothing_due(with_day(with_deck(fakes.ctx(), 0, 0), 13, 0))
   let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
-  assert string.contains(body, "\"today\":{\"done\":13,\"target\":13}")
+  assert string.contains(body, "\"today\":{\"done\":13,\"target\":10}")
+}
+
+/// Nothing due, nothing new, nothing answered: no goal at all, rather
+/// than a goal of ten a deck cannot fill.
+pub fn a_day_with_no_work_has_no_goal_test() {
+  let ctx = with_nothing_due(with_day(with_deck(fakes.ctx(), 0, 0), 0, 0))
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+
+  assert string.contains(body, "\"today\":{\"done\":0,\"target\":0}")
 }
 
 // ---------- The deck by severity ----------
 
-/// Worst first, every band named, and the rung that means patched sent
-/// with them so the page keeps no second copy of it.
+/// Worst first, every band named in its three states, and the rung that
+/// means patched sent with them so the page keeps no second copy of it.
 pub fn the_session_counts_the_deck_by_severity_test() {
   let ctx =
     with_severity(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), [
-      Severity(grade: "doubtful", total: 96, patched: 12),
-      Severity(grade: "very_bad", total: 61, patched: 23),
+      Severity(grade: "doubtful", total: 96, in_progress: 8, patched: 12),
+      Severity(grade: "very_bad", total: 61, in_progress: 30, patched: 23),
     ])
   let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
 
   assert string.contains(
     body,
-    "\"severity\":[{\"grade\":\"very_bad\",\"total\":61,\"patched\":23},"
-      <> "{\"grade\":\"bad\",\"total\":0,\"patched\":0},"
-      <> "{\"grade\":\"doubtful\",\"total\":96,\"patched\":12}]",
+    "\"severity\":[{\"grade\":\"very_bad\",\"total\":61,\"in_progress\":30,\"patched\":23},"
+      <> "{\"grade\":\"bad\",\"total\":0,\"in_progress\":0,\"patched\":0},"
+      <> "{\"grade\":\"doubtful\",\"total\":96,\"in_progress\":8,\"patched\":12}]",
   )
   assert string.contains(body, "\"patched_level\":4")
+}
+
+/// The human's own deck: nothing patched yet and fifty mistakes being
+/// worked on. The band a player has not started is all zeros beside the
+/// total, and a band with everything patched has nothing in progress --
+/// three states that never overlap.
+pub fn a_deck_being_worked_on_says_so_before_anything_is_patched_test() {
+  let ctx =
+    with_severity(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), [
+      Severity(grade: "very_bad", total: 111, in_progress: 50, patched: 0),
+      Severity(grade: "bad", total: 12, in_progress: 0, patched: 12),
+    ])
+  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+
+  assert string.contains(
+    body,
+    "\"severity\":[{\"grade\":\"very_bad\",\"total\":111,\"in_progress\":50,\"patched\":0},"
+      <> "{\"grade\":\"bad\",\"total\":12,\"in_progress\":0,\"patched\":12},"
+      <> "{\"grade\":\"doubtful\",\"total\":0,\"in_progress\":0,\"patched\":0}]",
+  )
 }
 
 /// A guest has no deck, so there is no day of theirs to count -- and

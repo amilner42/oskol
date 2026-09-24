@@ -78,12 +78,15 @@ type alias Today =
     }
 
 
-{-| One band of mistakes: how bad, how many the player has made, and how
-many of them they have patched (stopped making).
+{-| One band of mistakes in its three states: how bad, how many the
+player has made, how many they are working on (started, not there yet)
+and how many they have patched (stopped making). What is neither is
+untouched, so `inProgress + patched <= total`.
 -}
 type alias Band =
     { grade : String
     , total : Int
+    , inProgress : Int
     , patched : Int
     }
 
@@ -222,9 +225,13 @@ todayDecoder =
 
 bandDecoder : Decoder Band
 bandDecoder =
-    D.map3 Band
+    D.map4 Band
         (D.field "grade" D.string)
         (D.field "total" D.int)
+        -- An answer from before the three states is a deck with nothing
+        -- in progress, which is what it used to say; a value that is
+        -- there and malformed is still an error.
+        (D.map (Maybe.withDefault 0) (optional "in_progress" D.int))
         (D.field "patched" D.int)
 
 

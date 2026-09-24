@@ -35,12 +35,12 @@ suite =
 
 accountJson : String
 accountJson =
-    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true},{"id":"bbbbbbbb","kind":"double","prompt":"White to play. Double?","due":false}],"cursor":null,"counts":{"due":12,"new_today":3,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":2,"target":5},"severity":[{"grade":"very_bad","total":61,"patched":23},{"grade":"bad","total":118,"patched":40},{"grade":"doubtful","total":96,"patched":12}],"patched_level":4,"game":null}"""
+    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true},{"id":"bbbbbbbb","kind":"double","prompt":"White to play. Double?","due":false}],"cursor":null,"counts":{"due":12,"new_today":3,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":2,"target":5},"severity":[{"grade":"very_bad","total":61,"in_progress":30,"patched":23},{"grade":"bad","total":118,"in_progress":44,"patched":40},{"grade":"doubtful","total":96,"in_progress":9,"patched":12}],"patched_level":4,"game":null}"""
 
 
 doneJson : String
 doneJson =
-    """{"ok":true,"puzzles":[],"cursor":null,"counts":{"due":0,"new_today":0,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":5,"target":5},"severity":[{"grade":"very_bad","total":61,"patched":61},{"grade":"bad","total":118,"patched":40},{"grade":"doubtful","total":96,"patched":12}],"patched_level":4,"game":null}"""
+    """{"ok":true,"puzzles":[],"cursor":null,"counts":{"due":0,"new_today":0,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":5,"target":5},"severity":[{"grade":"very_bad","total":61,"in_progress":0,"patched":61},{"grade":"bad","total":118,"in_progress":44,"patched":40},{"grade":"doubtful","total":96,"in_progress":9,"patched":12}],"patched_level":4,"game":null}"""
 
 
 emptyDeckJson : String
@@ -157,7 +157,7 @@ anAccount =
                 rendered (loaded accountJson)
                     |> Expect.all
                         [ Query.find [ id "hub-headline" ]
-                            >> Query.has [ text "You have made 61 very bad moves. You have patched 23." ]
+                            >> Query.has [ text "You have made 61 very bad moves. You are fixing 30 and have patched 23." ]
                         , Query.find [ id "hub-counts" ] >> Query.has [ text "2 of today's 5 answered." ]
                         , Query.find [ id "hub-practice" ] >> Query.has [ text "FIX 3 TODAY" ]
                         , Query.hasNot [ id "hub-try-one" ]
@@ -168,9 +168,9 @@ anAccount =
                 rendered (loaded accountJson)
                     |> Query.find [ id "hub-bands" ]
                     |> Expect.all
-                        [ Query.has [ text "Very bad · 23 of 61 patched" ]
-                        , Query.has [ text "Bad · 40 of 118 patched" ]
-                        , Query.has [ text "Dubious · 12 of 96 patched" ]
+                        [ Query.has [ text "Very bad · 30 in progress · 23 patched · of 61" ]
+                        , Query.has [ text "Bad · 44 in progress · 40 patched · of 118" ]
+                        , Query.has [ text "Dubious · 9 in progress · 12 patched · of 96" ]
                         , Query.findAll [ attribute (Html.Attributes.attribute "data-total" "61") ]
                             >> Query.count (Expect.equal 1)
                         , Query.find [ id "hub-patched-note" ]

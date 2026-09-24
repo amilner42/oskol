@@ -679,22 +679,29 @@ defmodule Oskol.DeckSyncTest do
       {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity} =
         Oskol.Gleam.Caps.Practice.build()
 
-      # Nothing answered yet: every mistake is still to fix.
+      # Nothing started yet: every mistake is untouched -- neither in
+      # progress nor patched.
       assert Enum.sort(severity.(user.id, 4)) ==
-               Enum.sort([{:severity, "doubtful", 1, 0}, {:severity, "very_bad", 1, 0}])
+               Enum.sort([
+                 {:severity, "doubtful", 1, 0, 0},
+                 {:severity, "very_bad", 1, 0, 0}
+               ])
 
-      # Three right in a row is not patched...
+      # Started and answered nothing: in progress, which is the state the
+      # page needs to be able to say anything for weeks.
       {:ok, _} = Retain.start(user.id, [worst])
+      assert {:severity, "very_bad", 1, 1, 0} in severity.(user.id, 4)
 
+      # Three right in a row is still in progress, not patched...
       Enum.each(1..3, fn _ ->
         {:ok, _} = Retain.review(user.id, worst, :pass)
       end)
 
-      assert {:severity, "very_bad", 1, 0} in severity.(user.id, 4)
+      assert {:severity, "very_bad", 1, 1, 0} in severity.(user.id, 4)
 
-      # ...the fourth is.
+      # ...the fourth is patched, and leaves in progress as it goes.
       {:ok, %{level_after: 4}} = Retain.review(user.id, worst, :pass)
-      assert {:severity, "very_bad", 1, 1} in severity.(user.id, 4)
+      assert {:severity, "very_bad", 1, 0, 1} in severity.(user.id, 4)
 
       # The same position reached in two games is one mistake, in the
       # worse of the two bands.
@@ -703,9 +710,14 @@ defmodule Oskol.DeckSyncTest do
       grade(same, "bad")
       assert {:ok, 0} = Practice.sync(user.id)
       counted = severity.(user.id, 4)
-      assert {:severity, "bad", 1, 0} in counted
-      assert Enum.all?(counted, fn {:severity, band, _, _} -> band != "doubtful" end)
-      assert Enum.sum(Enum.map(counted, fn {:severity, _, total, _} -> total end)) == 2
+      assert {:severity, "bad", 1, 0, 0} in counted
+      assert Enum.all?(counted, fn {:severity, band, _, _, _} -> band != "doubtful" end)
+      assert Enum.sum(Enum.map(counted, fn {:severity, _, total, _, _} -> total end)) == 2
+
+      # The three states are exclusive and add up to the band.
+      assert Enum.all?(counted, fn {:severity, _, total, going, patched} ->
+               going + patched <= total
+             end)
     end
 
     test "an account with no deck is counted as nothing, not as an error" do

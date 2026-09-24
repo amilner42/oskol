@@ -278,12 +278,15 @@ async function run(browser, setup, errors) {
     await alice.goto(`${BASE}/puzzles`);
     await alice.waitForSelector('#hub-practice');
     const counts = (await alice.textContent('#hub-headline')).trim();
-    must(/^You have made \d+ (very bad|bad|dubious) moves?\. You have patched \d+\.$/.test(counts),
+    // The head names the worst band and then what is happening to it:
+    // nothing started, work in flight, patched, or both.
+    must(/^You have made \d+ (very bad|bad|dubious) moves?\. (You are fixing \d+ of them\.|You are fixing \d+ and have patched \d+\.|You have patched \d+\.|You have not started on them yet\.)$/.test(counts),
       `an account is led with the worst of what it has made: "${counts}"`);
     const fix = (await alice.textContent('#hub-practice')).trim();
     must(fix === 'FIX 3 TODAY', `and one button, in the verb: "${fix}"`);
     const bandLine = (await alice.textContent('#hub-bands')).trim();
-    must(/Very bad · \d+ of \d+ patched/.test(bandLine), `the bands are counted: "${bandLine.split('\n')[0]}"`);
+    must(/Very bad · \d+ in progress · \d+ patched · of \d+/.test(bandLine),
+      `the bands are counted in their three states: "${bandLine.split('\n')[0]}"`);
     must(/Patched: right four times running\./.test(bandLine), 'and what patched means is said once');
     await sleep(300);
     must(posts.length === 2, `the timezone goes once per load of the page, never per fetch (${posts.length} for 2 loads)`);

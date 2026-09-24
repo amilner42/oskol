@@ -8,6 +8,7 @@
 //// and turns the cap's refusals into the sentence a player reads. Everything
 //// it needs arrives through the Ctx, so it is pure and tested on stubs.
 
+import gleam/int
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{None}
@@ -30,6 +31,22 @@ import oskol/core/error.{type ApiError}
 /// queue that grows faster than it is patched. KEEP GOING is still
 /// uncapped for whoever wants more.
 pub const new_per_day = 3
+
+/// The most answers a day's goal ever asks for: the ceiling on the ring's
+/// target, and on the number the button names.
+///
+/// It is not `new_per_day` and means something else. `new_per_day` is how
+/// many **new** mistakes enter rotation in a day (three); this is how many
+/// **answers** the day asks for in all, due ones included (ten). A player
+/// who comes back to a backlog of twenty-three due is told to fix ten
+/// today, not twenty-three: a goal you can finish is the point of having
+/// one, and a chore is what the ring was drawn to stop being.
+///
+/// It caps the goal and nothing else. Nothing about the schedule changes:
+/// everything due is still offered, in order, and KEEP GOING still goes
+/// past it -- this is the ceiling on what the day *asks*, never on what a
+/// player may answer.
+pub const goal_per_day = 10
 
 /// The rung at which a mistake counts as **patched**.
 ///
@@ -169,18 +186,20 @@ pub type Today {
   Today(done: Int, target: Int)
 }
 
-/// The target is **the day's actual work**, not a fixed number: what has
+/// The target is **the day's actual work, up to `goal_per_day`**: what has
 /// been answered, plus everything still due, plus whatever new cards the
-/// day still allows. Twelve due and three new is a target of fifteen, and
-/// a day with nothing due and nothing new is already done.
+/// day still allows, and never more than ten. Two due and three new is a
+/// target of five; twenty-three due is a target of ten; a day with nothing
+/// due and nothing new is already done.
 ///
-/// It is counted this way rather than as "due now" so that it does not
-/// shrink under the player as they answer: every answer moves `done` up
-/// and leaves the target where it was. KEEP GOING goes past it, and then
-/// `done` simply exceeds the target, which is the truth.
+/// The work is counted this way rather than as "due now" so that it does
+/// not shrink under the player as they answer: every answer moves `done`
+/// up and leaves the target where it was. KEEP GOING goes past it, and
+/// then `done` simply exceeds the target, which is the truth.
 pub fn today(ctx: Ctx, uid: String, due: Int) -> Today {
   let day = ctx.practice.day(uid)
-  Today(done: day.answered, target: day.answered + due + day.new_remaining)
+  let work = day.answered + due + day.new_remaining
+  Today(done: day.answered, target: int.min(work, goal_per_day))
 }
 
 /// How many cards are due right now, for callers that have not already
@@ -208,12 +227,18 @@ pub fn today_json(today: Today) -> Json {
 /// every band named even when it is empty: the page's three lines are the
 /// three bands, and a band that has gone quiet must read "0 of 0" rather
 /// than disappear and shift the two beside it.
+///
+/// Each band comes in three states -- untouched, in progress, patched --
+/// because patched is level 4, which is four right answers over twelve
+/// days at the very earliest. A player halfway through fifty of their
+/// mistakes is working, and a page that can only say "0 patched" tells
+/// them nothing is happening.
 pub fn severity(ctx: Ctx, uid: String) -> List(Severity) {
   let rows = ctx.practice.severity(uid, patched_level)
   list.map(bands, fn(band) {
     case list.find(rows, fn(row) { row.grade == band }) {
       Ok(row) -> row
-      Error(Nil) -> Severity(grade: band, total: 0, patched: 0)
+      Error(Nil) -> Severity(grade: band, total: 0, in_progress: 0, patched: 0)
     }
   })
 }
@@ -222,6 +247,7 @@ pub fn severity_json(band: Severity) -> Json {
   json.object([
     #("grade", json.string(band.grade)),
     #("total", json.int(band.total)),
+    #("in_progress", json.int(band.in_progress)),
     #("patched", json.int(band.patched)),
   ])
 }

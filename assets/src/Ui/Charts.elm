@@ -708,12 +708,20 @@ ringSentence today =
 
 
 
--- A BAND, AND HOW MUCH OF IT IS PATCHED
+-- A BAND, AND THE THREE STATES ITS MISTAKES ARE IN
 
 
-{-| One band of mistakes as a bar: the share of them the player has
-stopped making, in the same green the best move is drawn in, over what is
-still to fix.
+{-| One band of mistakes as a bar, in the three states a mistake can be
+in: the ones being worked on in the highlighter yellow the doubtful band
+is marked in, then the ones patched in the same green the best move is
+drawn in, over the paper of the ones not started.
+
+**Two colours, because patched takes weeks.** Level 4 is four right
+answers, and the earliest a card reaches it is twelve days after the
+first: a bar that only knew patched from not-patched would sit empty
+while a player was working through fifty mistakes. In progress is drawn
+first, patched beside it, in the order `Ui.Mistakes.line` says them, so
+a card being fixed is visibly somewhere.
 
 **The one picture here that is not read out.** Every other one carries
 its own sentence because nothing else says what it says; this one is
@@ -722,11 +730,11 @@ in and kept on the `<title>` for a hover), so a reader who is told both
 hears the same thing twice. It is `aria-hidden` and the words beside it
 are what is read.
 
-`patched` beyond `total` is clamped: a bar can never draw wider than the
-mistakes it is about.
+The two states are clamped against the band: neither can draw wider than
+the mistakes it is about, and together they never pass its end.
 
 -}
-patched : { total : Int, patched : Int, sentence : String } -> Html msg
+patched : { total : Int, inProgress : Int, patched : Int, sentence : String } -> Html msg
 patched band =
     let
         total =
@@ -735,47 +743,54 @@ patched band =
         done =
             clamp 0 total band.patched
 
-        width =
+        going =
+            clamp 0 (total - done) band.inProgress
+
+        width n =
             if total <= 0 then
                 0
 
             else
-                barW * toFloat done / toFloat total
+                barW * toFloat n / toFloat total
+
+        part name fill x n =
+            if n <= 0 then
+                []
+
+            else
+                [ Svg.rect
+                    [ SvgAttr.x (num (width x))
+                    , SvgAttr.y "0"
+                    , SvgAttr.width (num (width n))
+                    , SvgAttr.height "10"
+                    , SvgAttr.rx "2"
+                    , SvgAttr.fill fill
+                    , attribute "data-part" name
+                    ]
+                    []
+                ]
     in
     Svg.svg
         [ SvgAttr.viewBox "0 0 320 10"
         , SvgAttr.class "chart-patched quiet w-full h-auto block"
         , attribute "aria-hidden" "true"
         , attribute "data-total" (String.fromInt total)
+        , attribute "data-in-progress" (String.fromInt going)
         , attribute "data-patched" (String.fromInt done)
         ]
         (Svg.title [] [ Svg.text band.sentence ]
             :: Svg.rect
-            [ SvgAttr.x "0"
-            , SvgAttr.y "0"
-            , SvgAttr.width (num barW)
-            , SvgAttr.height "10"
-            , SvgAttr.rx "2"
-            , SvgAttr.fill barRest
-            , attribute "data-part" "to-fix"
-            ]
-            []
-            :: (if width <= 0 then
-                    []
-
-                else
-                    [ Svg.rect
-                        [ SvgAttr.x "0"
-                        , SvgAttr.y "0"
-                        , SvgAttr.width (num width)
-                        , SvgAttr.height "10"
-                        , SvgAttr.rx "2"
-                        , SvgAttr.fill ringDone
-                        , attribute "data-part" "patched"
-                        ]
-                        []
-                    ]
-               )
+                [ SvgAttr.x "0"
+                , SvgAttr.y "0"
+                , SvgAttr.width (num barW)
+                , SvgAttr.height "10"
+                , SvgAttr.rx "2"
+                , SvgAttr.fill barRest
+                , attribute "data-part" "to-fix"
+                ]
+                []
+            :: part "in-progress" barGoing 0 going
+            ++ part "patched" ringDone going done
         )
 
 
@@ -789,6 +804,14 @@ barW =
 barRest : String
 barRest =
     "rgb(222,217,203)"
+
+
+{-| The highlighter yellow `.g-doubtful` is marked in: work under way,
+which is not yet the green that means done.
+-}
+barGoing : String
+barGoing =
+    "#d9a100"
 
 
 

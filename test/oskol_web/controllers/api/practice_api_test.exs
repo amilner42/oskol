@@ -71,6 +71,26 @@ defmodule OskolWeb.Api.PracticeApiTest do
       assert Retain.fetch_user(user.id) == {:error, :not_found}
     end
 
+    test "a backlog asks for the day's ten, not for the backlog", %{conn: conn} do
+      # The ring's ceiling, end to end: twenty-three cards due, and the
+      # day's goal is ten. The schedule is untouched -- everything due is
+      # still in the session -- and only what the day *asks* is capped.
+      {conn, user} = signed_in(conn, "arie@oskol.test")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC")
+
+      keys = Enum.map(1..23, &"puzzle-#{&1}")
+
+      {:ok, _} =
+        Retain.put_items(user.id, Enum.map(keys, &%{key: &1, tags: %{}, content: %{}}))
+
+      {:ok, _} = Retain.start(user.id, keys)
+
+      body = conn |> get(~p"/papi/practice") |> json_response(200)
+
+      assert body["counts"]["due"] == 23
+      assert body["today"] == %{"done" => 0, "target" => 10}
+    end
+
     test "a session is never paged, whatever the query string says", %{conn: conn} do
       # There is no offset any more: the due set is live, so every fetch is
       # the front of the queue. A left-over `?offset=` from an old client

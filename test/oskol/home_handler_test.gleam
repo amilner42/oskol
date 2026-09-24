@@ -226,9 +226,19 @@ fn ctx_of(rows: List(GradedGame), rooms: List(GradedRoomGame)) -> Ctx {
     practised_days(),
     practice.Day(answered: 4, new_remaining: 2),
     [
-      practice.Severity(grade: "very_bad", total: 61, patched: 23),
-      practice.Severity(grade: "bad", total: 118, patched: 40),
-      practice.Severity(grade: "doubtful", total: 96, patched: 12),
+      practice.Severity(
+        grade: "very_bad",
+        total: 61,
+        in_progress: 30,
+        patched: 23,
+      ),
+      practice.Severity(grade: "bad", total: 118, in_progress: 44, patched: 40),
+      practice.Severity(
+        grade: "doubtful",
+        total: 96,
+        in_progress: 9,
+        patched: 12,
+      ),
     ],
   )
 }
@@ -341,13 +351,21 @@ pub fn the_practice_block_carries_the_days_ring_test() {
 }
 
 /// The three lines the practice section leads with: the deck by how bad
-/// the mistake was, worst first, and how much of each band is patched.
+/// the mistake was, worst first, each band in its three states -- made,
+/// being worked on, patched.
 pub fn the_practice_block_counts_the_deck_by_severity_test() {
   let body = home([])
   let assert "very_bad" =
     at(body, ["practice", "severity"], 0, decode.at(["grade"], decode.string))
   let assert 61 =
     at(body, ["practice", "severity"], 0, decode.at(["total"], decode.int))
+  let assert 30 =
+    at(
+      body,
+      ["practice", "severity"],
+      0,
+      decode.at(["in_progress"], decode.int),
+    )
   let assert 23 =
     at(body, ["practice", "severity"], 0, decode.at(["patched"], decode.int))
   let assert "bad" =
@@ -382,6 +400,13 @@ pub fn a_deck_with_no_bands_still_names_all_three_test() {
   let assert 3 = count(body, ["practice", "severity"])
   let assert 0 =
     at(body, ["practice", "severity"], 0, decode.at(["total"], decode.int))
+  let assert 0 =
+    at(
+      body,
+      ["practice", "severity"],
+      0,
+      decode.at(["in_progress"], decode.int),
+    )
 }
 
 // ---------- The three-game minimum ----------

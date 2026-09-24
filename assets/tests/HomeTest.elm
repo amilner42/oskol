@@ -72,9 +72,9 @@ fullJson =
                    {"game_id":"g2","game_number":1,"pr":7.5,"error":4.5,"decisions":30,"ended_at":1790100000000},
                    {"game_id":"g3","game_number":1,"pr":4.0,"error":2.4,"decisions":30,"ended_at":1790200000000}]},
  "practice":{"due":12,"deck":114,"today":{"done":4,"target":9},
-             "severity":[{"grade":"very_bad","total":61,"patched":23},
-                         {"grade":"bad","total":118,"patched":40},
-                         {"grade":"doubtful","total":96,"patched":12}],
+             "severity":[{"grade":"very_bad","total":61,"in_progress":30,"patched":23},
+                         {"grade":"bad","total":118,"in_progress":44,"patched":40},
+                         {"grade":"doubtful","total":96,"in_progress":9,"patched":12}],
              "patched_level":4,
              "ladder":[40,30,20,10,5,4,3,2],
              "days":[false,false,false,false,false,false,false,false,false,false,
@@ -454,16 +454,16 @@ practice =
                     |> Query.find [ id "home-practice" ]
                     |> Expect.all
                         [ Query.find [ id "home-worst" ]
-                            >> Query.has [ text "You have made 61 very bad moves. You have patched 23." ]
+                            >> Query.has [ text "You have made 61 very bad moves. You are fixing 30 and have patched 23." ]
                         , Query.find [ id "home-practice-start" ] >> Query.has [ text "FIX 5 TODAY" ]
 
                         -- One line and one bar per band, worst first.
                         , Query.find [ id "home-bands" ]
-                            >> Query.has [ text "Very bad · 23 of 61 patched" ]
+                            >> Query.has [ text "Very bad · 30 in progress · 23 patched · of 61" ]
                         , Query.find [ id "home-bands" ]
-                            >> Query.has [ text "Bad · 40 of 118 patched" ]
+                            >> Query.has [ text "Bad · 44 in progress · 40 patched · of 118" ]
                         , Query.find [ id "home-bands" ]
-                            >> Query.has [ text "Dubious · 12 of 96 patched" ]
+                            >> Query.has [ text "Dubious · 9 in progress · 12 patched · of 96" ]
                         , Query.find [ id "home-patched-note" ]
                             >> Query.has [ text "Patched: right four times running." ]
 
