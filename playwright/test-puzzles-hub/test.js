@@ -294,25 +294,46 @@ async function run(browser, setup, errors) {
     must(/fixed( yet)? today$/.test(today), `the day is a count and nothing else: "${today}"`);
     must(!/ of /.test(today), 'with no denominator to fall short of');
     must(!(await alice.locator('#hub-keep-going').count()), 'and no quota to keep going with');
-    // The tiers she is not on are quiet rows.
+    // The tiers she is not on are quiet rows -- one per band she has
+    // made a mistake in, less the one already in front. This room's
+    // mistakes may all be of one band, and then there are none.
+    const bands = (await (await alice.request.get(`${BASE}/papi/practice`)).json()).severity;
+    const others = bands.filter((b) => b.total > 0 && b.grade !== tier).length;
     const rows = await alice.locator('#hub-tier-rows [data-tier]').count();
-    must(rows >= 1, `the other tiers are quiet rows (${rows})`);
+    must(rows === others, `the tiers she is not on are quiet rows (${rows} of ${others})`);
+    must(!(await alice.locator(`#hub-tier-row-${tier}`).count()), 'and the tier in front is not also a row');
     const patchedNote = (await alice.textContent('#hub-patched-note')).trim();
     must(/Patched: right four times running\./.test(patchedNote), 'and what patched means is said once');
     await sleep(300);
     must(posts.length === 2, `the timezone goes once per load of the page, never per fetch (${posts.length} for 2 loads)`);
 
-    // FIX ONE runs that tier. The day's three new are what it holds,
-    // and the strip says the tier and the day as it goes.
+    // ---- 3b. one mistake is a whole session ----
+    // FIX ONE, answer one, stop. That has to read as finished.
     await alice.click('#hub-fix-one');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
-    await runWatchingProgress(alice, NEW_PER_DAY, NEW_PER_DAY, mark);
+    await alice.waitForSelector('#pz-board .bg-stack');
+    await answer(alice);
+    await alice.waitForSelector('#pz-reveal');
+    must(await alice.locator('#pz-done').count(), "every reveal in a run offers I'M DONE");
+    await alice.click('#pz-done');
     await alice.waitForSelector('#pz-end');
-    // The run is over because it ran out; the card is the summary and
-    // the way back, and offers nothing to start.
-    must(await alice.locator('#pz-home').count(), 'the end card is the summary and the way back');
+    const oneScore = (await alice.textContent('#pz-score')).trim();
+    must(/^One /.test(oneScore), `stopping after one reads as a whole session: "${oneScore}"`);
+    must(!/ of /.test(oneScore), 'and never as a fraction of a run nobody promised');
+    must(await alice.locator('#pz-home').count(), 'the summary offers the way back');
     must(!(await alice.locator('#pz-keep-going').count()), 'and nothing to keep going with');
-    must(!(await alice.locator('#pz-more-due').count()), 'and nothing counting what is left');
+    const oneToday = (await alice.textContent('#pz-today')).trim();
+    must(oneToday === '1 fixed today', `the day counts the one: "${oneToday}"`);
+
+    // ---- 3c. the rest of the day's new ones, watching the strip ----
+    await alice.goto(`${BASE}/puzzles`);
+    await alice.waitForSelector('#hub-fix-one');
+    await alice.click('#hub-fix-one');
+    await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
+    const rest = NEW_PER_DAY - 1;
+    await runWatchingProgress(alice, rest, rest, mark);
+    await alice.waitForSelector('#pz-end');
+    must(!(await alice.locator('#pz-more-due').count()), 'the end card counts nothing that is left');
     const endToday = (await alice.textContent('#pz-today')).trim();
     must(endToday === `${NEW_PER_DAY} fixed today`, `the day's count, under the score: "${endToday}"`);
     // Read back from the server, so the count is not the client's own
@@ -326,39 +347,20 @@ async function run(browser, setup, errors) {
       'a first answer patches nothing, and the end card claims nothing');
     must(!(await alice.locator('#signin-email').count()), 'an account is not asked to sign in');
 
-    // ---- 3b. one mistake is a whole session ----
-    // Her day's new ones are spent, so the tier she ran is now in good
-    // shape: the hub says so and offers the next one down.
+    // ---- 3d. the day's new ones spent: the tier is in good shape ----
     await alice.goto(`${BASE}/puzzles`);
     await alice.waitForSelector('#hub-tier');
-    const good = await alice.locator('#hub-tier-good').count();
-    if (good) {
-      const line = (await alice.textContent('#hub-tier-good')).trim();
-      must(/in good shape\.$|good shape\.$/.test(line), `a tier with nothing left today says so warmly: "${line}"`);
-    }
-    // Whichever tier is offered, take one mistake and stop.
-    const one = (await alice.locator('#hub-fix-one').count())
-      ? '#hub-fix-one'
-      : ((await alice.locator('#hub-tier-next').count()) ? '#hub-tier-next' : null);
-    if (one === '#hub-tier-next') {
-      await alice.click('#hub-tier-next');
-      await alice.waitForSelector('#hub-fix-one');
-    }
-    if (one) {
-      await alice.click('#hub-fix-one');
-      await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
-      await alice.waitForSelector('#pz-board .bg-stack');
-      await answer(alice);
-      await alice.waitForSelector('#pz-reveal');
-      await alice.waitForSelector('#pz-done');
-      await alice.click('#pz-done');
-      await alice.waitForSelector('#pz-end');
-      const oneScore = (await alice.textContent('#pz-score')).trim();
-      must(/^One /.test(oneScore), `stopping after one reads as a whole session: "${oneScore}"`);
-      must(!/quit|gave up|0 of/i.test(oneScore), 'and never as quitting');
+    must(await alice.locator('#hub-tier-good').count(), 'a tier with nothing left today says so');
+    const goodLine = (await alice.textContent('#hub-tier-good')).trim();
+    must(/good shape\.$/.test(goodLine), `warmly, and by its mark: "${goodLine}"`);
+    must(!(await alice.locator('#hub-fix-one').count()), 'and offers no run it cannot serve');
+    const nextOffer = await alice.locator('#hub-tier-next').count();
+    if (nextOffer) {
+      const offer = (await alice.textContent('#hub-tier-next')).trim();
+      must(/^WORK ON /.test(offer), `the next tier down is the only thing to press: "${offer}"`);
     } else {
-      log('every tier in good shape: nothing to press, which is the other half of the moment');
-      must(!(await alice.locator('#hub-fix-one').count()), 'all clear: nothing to press');
+      must(!(await alice.locator('#puzzles-hub button').count()),
+        'every tier in good shape: one warm line, and nothing to press');
     }
 
     // ---- 4. phones ----

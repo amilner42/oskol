@@ -947,7 +947,9 @@ runEnd =
         , test "the words" <|
             \_ -> Page.runScore { right = 0, close = 0, total = 3 } |> Expect.equal "0 of 3 right"
         , -- Stopping after one mistake is what the page invites, so it
-          -- has to read as a finished thing to have done.
+          -- has to read as a finished thing to have done. The score's
+          -- total is what was *answered*, so a run stopped at its first
+          -- of twenty is one, and not one of twenty.
           test "a run of exactly one reads as a whole session, not as quitting" <|
             \_ ->
                 let

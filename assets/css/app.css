@@ -2379,6 +2379,16 @@ button.tier-row:active { background: var(--paper-2); transform: translateY(1px);
 .tier-row-name { flex: 1; min-width: 0; }
 .tier-row-left { color: var(--pencil); font-size: 12px; white-space: nowrap; }
 
+/* At 320 the number is the headline and must not break across two
+   lines ("61 left to / fix"), so the mark gives back the room. */
+@media (max-width: 359px) {
+  .tier-card { padding: 18px 14px; }
+  .tier-head { gap: 10px; }
+  .tier-mark { font-size: 23px; padding-top: 3px; }
+  .tier-left { font-size: 22px; }
+  .tier-good { font-size: 15px; }
+}
+
 @media (min-width: 640px) {
   .tier-card { padding: 26px 24px; }
   .tier-mark { font-size: 38px; }

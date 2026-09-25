@@ -501,8 +501,13 @@ answers run =
     List.filterMap (\id -> answerAt id run) run.ids
 
 
-{-| A pass is right, a hold is close, a miss or an unknown is neither;
-the total is the run's length, answered or not.
+{-| What the run did: a pass is right, a hold is close, a miss or an
+unknown is neither -- and the total is **how many were answered**.
+
+Not the length of the list it was given. A run is open-ended -- I'M DONE
+ends it wherever the player is -- so a total taken from the ids would
+say "0 of 3 right" to someone who fixed one and stopped, which is
+exactly the reading the page exists to stop.
 -}
 score : Run -> Page.Puzzle.Score
 score run =
@@ -510,7 +515,7 @@ score run =
         count verdict =
             run.answers |> List.filter (\( _, answer ) -> answer.verdict == verdict) |> List.length
     in
-    { right = count Pass, close = count Hold, total = List.length run.ids }
+    { right = count Pass, close = count Hold, total = List.length (answers run) }
 
 
 {-| The game page asks for two things the shell owns: the URL to go to, and

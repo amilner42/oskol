@@ -4,9 +4,10 @@
  * The one-deck hub in each of its three states, over a deck shaped like
  * the one on the human's phone (111 mistakes, 50 in rotation, none
  * patched): leading with ?? and FIX ONE; ?? in good shape with ?
- * offered; everything in good shape with nothing to press. Then a
- * session mid-run (the tier's mark, the day's count, the marks so far,
- * why this position is here) and the summary after exactly one mistake.
+ * offered; everything in good shape with nothing to press. Then the
+ * summary after exactly one mistake (a run that answered one and no
+ * more) and a session mid-run (the tier's mark, the day's count, the
+ * marks so far, why this position is here).
  * Plus the hub as a stranger and as a guest, the end screen a guest is
  * asked to sign in on, and the same account's home. All at 390x844,
  * 320x568, 844x390 and a desktop.
@@ -198,21 +199,26 @@ async function shotAtEverySize(page, name, ready) {
     await page.goto(`${BASE}/puzzles`);
     await shotAtEverySize(page, '04-hub-lead', '#hub-fix-one');
 
-    // 2. A session mid-run: the tier's mark and the day's count over the
+    // 2. The summary after exactly one mistake: stopping has to read as
+    //    a finished thing to have done, so the shot is of a run that
+    //    answered one and no more.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.click('#hub-fix-one');
+    await answerOne(page);
+    await page.click('#pz-done');
+    await page.waitForSelector('#pz-end');
+    await shotAtEverySize(page, '05-end-one-mistake', '#pz-score');
+
+    // 3. A session mid-run: the tier's mark and the day's count over the
     //    board, the marks so far, and why this position is here.
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${BASE}/puzzles`);
+    await page.waitForSelector('#hub-fix-one');
     await page.click('#hub-fix-one');
     await answerOne(page);
     await next(page);
     await page.waitForSelector('#pz-progress');
-    await shotAtEverySize(page, '05-session-mid-run', '#pz-progress');
-
-    // 3. The summary after exactly one mistake: stopping has to read as
-    //    a finished thing to have done.
-    await page.setViewportSize({ width: 390, height: 844 });
-    await answerOne(page);
-    await page.click('#pz-done');
-    await shotAtEverySize(page, '06-end-one-mistake', '#pz-score');
+    await shotAtEverySize(page, '06-session-mid-run', '#pz-progress');
 
     // 4. ?? in good shape, with ? offered instead.
     log(`shaping the deck: ${JSON.stringify(shapeDeck(email, 'good_shape'))}`);

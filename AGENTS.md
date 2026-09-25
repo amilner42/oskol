@@ -1826,7 +1826,10 @@ reports no schedule, the mistake being out of the deck).
 
 `WantsEnd` is answered with the score and those answers
 (`Page.Puzzle.endRun {right, close, total} [answers]`: a pass is right, a
-hold close, a miss or an unknown neither) and the page ends the run on
+hold close, a miss or an unknown neither, and the total is **how many
+were answered**, never the length of the list the run was given -- a run
+has no length, and "0 of 3 right" to someone who fixed one and stopped
+is the reading this page exists to stop) and the page ends the run on
 its own card, the board gone. **Leaving after one mistake is a finished
 thing to have done**, so a run of one gets its own sentence ("One fixed.
 That is how it is done.", "One faced, and close. That counts.", "One
