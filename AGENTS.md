@@ -642,7 +642,7 @@ lib/oskol_web/controllers/api/home_controller.ex      /papi/me/home and the
                                  recent rooms it pages
 src/oskol/handlers/home.gleam    the signed-in home: the live games, the two
                                  PR windows, the streak and the sentence, the
-                                 deck's ladder and days, the recent rooms (a
+                                 deck's tiers, the recent rooms (a
                                  match folded into one entry) and their cursor
 src/oskol/caps/activity.gleam    was this player here today: the local days a
                                  puzzle was answered or a game of theirs
@@ -661,8 +661,7 @@ assets/src/Page/Home.elm         "/" for an account: the bar (the name, PLAY, JO
                                  PUZZLES, the boards), then form first (two numbers, the
                                  streak, the sentence, the line), live games with your
                                  move first, PUZZLES (one tier's card -- `Ui.Tiers` --
-                                 with "3 fixed today" under it, the ladder behind
-                                 `detail`, the 30 days) and recent
+                                 ) and recent
                                  matches with MORE -- a line
                                  per room, a match opening in place to list its games.
                                  Everything from one answer; `Main` picks between this
@@ -1251,7 +1250,10 @@ and recent matches.
   left to fix", "23 patched", the bar -- highlighter yellow for what is
   in progress, the best move's green for what is patched -- and FIX ONE,
   with the other tiers as quiet rows and "3 fixed today" under it. The
-  ladder and the 30 days are behind a `detail` toggle.
+  Nothing else sits under the tiers: the rungs, the thirty-day strip and
+  the lines explaining them were removed on 2026-09-25 -- the card answers
+  "what should I fix next?" and anything under it answered a question
+  nobody asked.
 - Decisions: `src/oskol/handlers/home.gleam`. Reading never creates a
   deck, and never queues a review.
 

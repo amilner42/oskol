@@ -88,7 +88,6 @@ type alias Model =
     , pageError : Maybe String
     , starting : Bool -- PRACTICE is in flight: the deck is being fetched
     , practiceNote : Maybe String
-    , ladderOpen : Bool -- the deck's rungs, under the one bar that sums them up
     , tier : Maybe String -- the tier of mistakes the player tapped, if they tapped one
 
     -- The rooms opened up to show their games. A room is a match, so this
@@ -125,7 +124,6 @@ type Msg
     | PressedPuzzles
     | PressedFixOne String
     | PickedTier String
-    | ToggledLadder
     | GotBand String (Result Api.Error Practice.Practice)
     | PressedMore
     | GotMore (Result Api.Error Home.Page)
@@ -160,7 +158,6 @@ init session =
       , pageError = Nothing
       , starting = False
       , practiceNote = Nothing
-      , ladderOpen = False
       , tier = Nothing
       , expanded = Set.empty
       , zone = Time.utc
@@ -299,9 +296,6 @@ update msg model =
 
         PressedPuzzles ->
             ( model, Cmd.none, Go (Route.href Route.puzzles) )
-
-        ToggledLadder ->
-            ( { model | ladderOpen = not model.ladderOpen }, Cmd.none, NoOut )
 
         -- FIX ONE starts a run the way the practice home does: that one
         -- tier's queue, and the run outlives this page, so the shell
@@ -711,11 +705,10 @@ it, and the day's count. The same card the practice home shows
 (`Ui.Tiers`), so the two pages are one product.
 
 This used to be "N due" and a ladder of eight bars, then a sentence and
-three bars and a ring. The question is "what should I fix next?", and
-the answer is a mark, a number and a button. The rungs and the thirty
-days stay behind a `detail` toggle -- closed by default, one tap,
-nothing lost -- because on a phone this section is a column and a second
-picture that is only occasionally wanted costs every visit a screenful.
+three bars and a ring, and for a day it also carried a rung chart, a
+thirty-day strip and two lines of explanation under them. The question
+is "what should I fix next?", and the answer is a mark, a number and a
+button; everything under that answered a question nobody had asked.
 
 -}
 practice : Model -> Home.Home -> Html Msg
@@ -737,59 +730,13 @@ practice model home =
                     , prefix = "home"
                     }
                 ]
-            , Html.p [ id "home-today", class "q-note text-[12px] mt-4" ]
-                [ Html.text (Mistakes.fixedToday home.practice.today.done) ]
             , case model.practiceNote of
                 Just note ->
                     Html.p [ id "home-practice-note", class "q-note text-[13px] leading-snug mt-2" ] [ Html.text note ]
 
                 Nothing ->
                     Html.text ""
-            , Html.div [ class "max-w-md space-y-5 mt-6" ]
-                [ Html.div []
-                    [ Html.button
-                        [ Attr.type_ "button"
-                        , id "home-ladder-toggle"
-                        , class "q-note text-[12px] underline underline-offset-2"
-                        , Attr.attribute "aria-expanded"
-                            (if model.ladderOpen then
-                                "true"
-
-                             else
-                                "false"
-                            )
-                        , Attr.attribute "aria-controls" "home-ladder"
-                        , onClick ToggledLadder
-                        ]
-                        [ Html.text
-                            (if model.ladderOpen then
-                                "hide detail"
-
-                             else
-                                "detail"
-                            )
-                        ]
-                    , if model.ladderOpen then
-                        Html.div [ id "home-ladder", class "mt-2" ]
-                            [ Charts.ladder home.practice.ladder
-                            , caption "every mistake, by how well you know it"
-                            ]
-
-                      else
-                        Html.text ""
-                    ]
-
-                -- The strip carries its own "30 days" inside the picture,
-                -- so a caption under it would say it twice.
-                , Charts.days home.practice.days
-                ]
             ]
-
-
-caption : String -> Html Msg
-caption text =
-    Html.p [ class "q-note text-[12px] mt-1" ] [ Html.text text ]
-
 
 
 -- RECENT MATCHES

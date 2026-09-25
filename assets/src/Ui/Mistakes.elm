@@ -14,7 +14,6 @@ module Ui.Mistakes exposing
     , moves
     , nextTierLabel
     , patchedAside
-    , patchedNote
     , patchedRun
     , runSummary
     , tierName
@@ -261,14 +260,6 @@ line band =
         ++ String.fromInt (max 0 band.patched)
         ++ " patched · of "
         ++ String.fromInt (max 0 band.total)
-
-
-{-| What patched means, said once and quietly under the bars. The number
-is the server's (`deck.patched_level`), so this cannot drift from it.
--}
-patchedNote : Int -> String
-patchedNote level =
-    "Patched: right " ++ times level ++ " running."
 
 
 {-| The moment the whole thing exists for, on the reveal's level line.
