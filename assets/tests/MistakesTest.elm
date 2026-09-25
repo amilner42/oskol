@@ -182,11 +182,7 @@ runEnd =
 patched : Test
 patched =
     describe "patched"
-        [ test "what it means, said once and quietly" <|
-            \_ ->
-                Mistakes.patchedNote 4
-                    |> Expect.equal "Patched: right four times running."
-        , test "the milestone, on the reveal" <|
+        [ test "the milestone, on the reveal" <|
             \_ ->
                 Mistakes.milestone 4
                     |> Expect.equal "Patched. Four right in a row"
@@ -234,7 +230,6 @@ noJargon =
                         (String.join " "
                             ([ Mistakes.bandName "very_bad"
                              , Mistakes.line (band "bad" 3 1 1)
-                             , Mistakes.patchedNote 4
                              , Mistakes.milestone 4
                              , Mistakes.fixedToday 3
                              , Mistakes.tierName "very_bad"

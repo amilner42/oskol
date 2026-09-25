@@ -90,13 +90,7 @@ view config =
 
         Just band ->
             Html.div [ id (config.prefix ++ "-tiers"), class "tier-deck" ]
-                (card config band
-                    :: rows config band
-                    ++ [ Html.p
-                            [ id (config.prefix ++ "-patched-note"), class "q-note text-[12px] mt-4" ]
-                            [ Html.text (Mistakes.patchedNote config.patchedLevel) ]
-                       ]
-                )
+                (card config band :: rows config band)
 
 
 

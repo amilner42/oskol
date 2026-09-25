@@ -375,8 +375,6 @@ account model practice entries =
     case Ui.Tiers.shown tiers of
         Just _ ->
             [ Ui.Tiers.view tiers
-            , Html.p [ id "hub-today", class "q-note text-[13px] mt-4" ]
-                [ Html.text (todayLine practice) ]
             , note model
             ]
 
@@ -387,8 +385,6 @@ account model practice entries =
         Nothing ->
             [ headline (deckLine practice)
             , practiceButton (List.length entries)
-            , Html.p [ id "hub-today", class "q-note text-[13px] mt-4" ]
-                [ Html.text (todayLine practice) ]
             , note model
             ]
 
@@ -400,20 +396,6 @@ deckLine : Practice.Practice -> String
 deckLine practice =
     String.fromInt (Maybe.withDefault 0 (Maybe.map .deck practice.counts))
         ++ " of your mistakes"
-
-
-{-| Under the card, in the quiet type: "3 fixed today". A count and
-nothing else -- there is no day's target any more, so there is nothing
-to be behind on.
--}
-todayLine : Practice.Practice -> String
-todayLine practice =
-    case practice.today of
-        Just today ->
-            Mistakes.fixedToday today.done
-
-        Nothing ->
-            ""
 
 
 {-| A guest with games behind them: what is theirs, that it is not kept

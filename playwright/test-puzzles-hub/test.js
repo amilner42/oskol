@@ -290,10 +290,8 @@ async function run(browser, setup, errors) {
     must(/^\d+ left to fix$/.test(left), `and by what is left to fix: "${left}"`);
     const fix = (await alice.textContent('#hub-fix-one')).trim();
     must(fix === 'FIX ONE', `one button, and it asks for one: "${fix}"`);
-    const today = (await alice.textContent('#hub-today')).trim();
-    must(/fixed( yet)? today$/.test(today), `the day is a count and nothing else: "${today}"`);
-    must(!/ of /.test(today), 'with no denominator to fall short of');
     must(!(await alice.locator('#hub-keep-going').count()), 'and no quota to keep going with');
+    must(!(await alice.locator('#hub-today').count()), 'nothing under the tiers but the tiers');
     // The tiers she is not on are quiet rows -- one per band she has
     // made a mistake in, less the one already in front. This room's
     // mistakes may all be of one band, and then there are none.
@@ -302,8 +300,6 @@ async function run(browser, setup, errors) {
     const rows = await alice.locator('#hub-tier-rows [data-tier]').count();
     must(rows === others, `the tiers she is not on are quiet rows (${rows} of ${others})`);
     must(!(await alice.locator(`#hub-tier-row-${tier}`).count()), 'and the tier in front is not also a row');
-    const patchedNote = (await alice.textContent('#hub-patched-note')).trim();
-    must(/Patched: right four times running\./.test(patchedNote), 'and what patched means is said once');
     await sleep(300);
     must(posts.length === 2, `the timezone goes once per load of the page, never per fetch (${posts.length} for 2 loads)`);
 

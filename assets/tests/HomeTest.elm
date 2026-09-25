@@ -464,34 +464,7 @@ practice =
                         -- The other tiers are quiet rows, not a second card.
                         , Query.find [ id "home-tier-row-bad" ] >> Query.has [ text "78 left" ]
                         , Query.find [ id "home-tier-row-doubtful" ] >> Query.has [ text "84 left" ]
-                        , Query.find [ id "home-patched-note" ]
-                            >> Query.has [ text "Patched: right four times running." ]
-
-                        -- The day is a count and nothing else.
-                        , Query.find [ id "home-today" ] >> Query.has [ text "4 fixed today" ]
-                        , Query.has [ attribute (Html.Attributes.attribute "data-practised" "2") ]
-
-                        -- The rungs are the detail, behind a toggle.
-                        , Query.hasNot [ attribute (Html.Attributes.attribute "data-cards" "114") ]
-                        , Query.has [ id "home-ladder-toggle" ]
                         ]
-        , test "the detail toggle opens the ladder, and closes it again" <|
-            \_ ->
-                let
-                    open =
-                        loaded fullJson |> send ToggledLadder
-                in
-                Expect.all
-                    [ \_ ->
-                        render open
-                            |> Query.find [ id "home-practice" ]
-                            |> Query.has [ attribute (Html.Attributes.attribute "data-cards" "114") ]
-                    , \_ ->
-                        render (send ToggledLadder open)
-                            |> Query.find [ id "home-practice" ]
-                            |> Query.hasNot [ attribute (Html.Attributes.attribute "data-cards" "114") ]
-                    ]
-                    ()
         , test "tapping a quiet row moves the card onto that tier" <|
             \_ ->
                 render (loaded fullJson |> send (PickedTier "bad"))

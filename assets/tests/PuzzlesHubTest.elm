@@ -195,7 +195,6 @@ anAccount =
                         , Query.find [ id "hub-tier-left" ] >> Query.has [ text "38 left to fix" ]
                         , Query.find [ id "hub-tier-patched" ] >> Query.has [ text "23 patched" ]
                         , Query.find [ id "hub-fix-one" ] >> Query.has [ text "FIX ONE" ]
-                        , Query.find [ id "hub-today" ] >> Query.has [ text "2 fixed today" ]
                         , Query.hasNot [ id "hub-try-one" ]
                         , Query.hasNot [ id "hub-unsaved" ]
 
@@ -238,11 +237,6 @@ anAccount =
                                 ]
                     ]
                     ()
-        , test "what patched means, said once under the card" <|
-            \_ ->
-                rendered (loaded accountJson)
-                    |> Query.find [ id "hub-patched-note" ]
-                    |> Query.has [ text "Patched: right four times running." ]
         , test "FIX ONE asks for that tier's queue, and runs it as that tier" <|
             \_ ->
                 let
@@ -329,7 +323,6 @@ anAccount =
                         [ Query.hasNot [ id "hub-tier" ]
                         , Query.find [ id "hub-headline" ] >> Query.has [ text "231 of your mistakes" ]
                         , Query.find [ id "hub-practice" ] >> Query.has [ text "PRACTICE" ]
-                        , Query.find [ id "hub-today" ] >> Query.has [ text "5 fixed today" ]
                         ]
         , test "an account with an empty deck is offered what a stranger is" <|
             \_ ->
