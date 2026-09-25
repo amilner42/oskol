@@ -65,22 +65,23 @@ async function playRun(page, { onReveal = async () => {}, max = 40 } = {}) {
 }
 
 /**
- * NEXT, until the page has moved on: to the next puzzle's URL, or to the
- * end screen on this one. The reveal keeps filling in after NEXT appears
- * (the memory line lands a request later, and pushes NEXT down), so a
- * click aimed a frame earlier can land beside it; a click that moved
- * nothing is made again.
+ * On, until the page has moved: ANOTHER to the next mistake's URL, or,
+ * where the run has no other, I'M DONE to the end screen on this one.
+ * The reveal keeps filling in after the buttons appear (the memory line
+ * lands a request later and pushes them down), so a click aimed a frame
+ * earlier can land beside one; a click that moved nothing is made again.
  */
 async function pressNext(page) {
   const was = new URL(page.url()).pathname;
   const moved = (from) => new URL(location.href).pathname !== from || !!document.querySelector('#pz-end');
   for (let i = 0; i < 4; i++) {
-    await page.waitForSelector('#pz-next', { timeout: 5000 });
-    await page.click('#pz-next');
+    await page.waitForSelector('#pz-next, #pz-done', { timeout: 5000 });
+    const on = (await page.locator('#pz-next').count()) ? '#pz-next' : '#pz-done';
+    await page.click(on);
     const ok = await page.waitForFunction(moved, was, { timeout: 3000 }).then(() => true, () => false);
     if (ok) return;
   }
-  throw new Error(`NEXT moved nothing at ${page.url()}`);
+  throw new Error(`neither ANOTHER nor I'M DONE moved anything at ${page.url()}`);
 }
 
 module.exports = { mailFor, stageATurn, playRun, pressNext, sleep };

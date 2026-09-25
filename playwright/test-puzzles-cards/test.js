@@ -211,10 +211,10 @@ async function run(browser, setup, errors) {
     must(levels === answeredB, `every reveal carries the level line: the outcomes reach the deck (${levels})`);
     await a.waitForSelector('#pz-end');
     must(!(await a.locator('#pz-signin-ask').count()), 'an account is not asked to sign in');
-    // The end asks the deck what is left ("ASKING YOUR DECK…") before it
-    // says: wait for the answer rather than read the screen mid-fetch.
-    await a.waitForSelector('#pz-done, #pz-more-due, #pz-home, #pz-nothing-more', { timeout: 15000 });
-    must(!(await a.locator('#pz-signin-ask').count()), 'and ends on the deck\'s own screen');
+    // The end is the summary and the way back: nothing is fetched, and
+    // nothing on it starts more.
+    await a.waitForSelector('#pz-home', { timeout: 15000 });
+    must(!(await a.locator('#pz-signin-ask').count()), 'and ends on the summary');
 
     // ---- 5. Bob's count is Bob's ----
     const b = await open('bob', await seatedContext(browser, bob.guest, { viewport: { width: 390, height: 844 } }));

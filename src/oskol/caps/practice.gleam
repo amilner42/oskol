@@ -228,7 +228,21 @@ pub type PracticeCaps {
     /// is started and not patched yet. One row per band the deck actually
     /// holds, in no particular order. A card with several sources counts
     /// once, in the worst band any of them named.
+    ///
+    /// The same row carries what the band has to *do*: how many of it are
+    /// due right now and how many have never been started. One query
+    /// answers both the picture and "does this tier still have work",
+    /// because a page that asked twice could be told two things.
     severity: fn(String, Int) -> List(Severity),
+    /// One band's queue: the mistakes of that grade, due ones first and
+    /// then ones never seen, worst first inside the band.
+    ///
+    /// The band is not a tag on the card -- it is the worst grade any
+    /// game that reached the position was graded at, which lives in
+    /// `puzzle_sources` -- so this cannot be `queue` with a tag. The
+    /// day's new-card budget still applies: `new_per_day` is what the
+    /// queue may introduce, and a band is a slice of the same day.
+    band_queue: fn(String, String, Int) -> Session,
   )
 }
 
@@ -243,14 +257,29 @@ pub type Day {
 }
 
 /// One band of a deck: how many cards were mistakes of that grade, how
-/// many of them the player is working on, and how many are patched.
+/// many of them the player is working on, how many are patched, and what
+/// the band has to do right now.
 ///
 /// The three states are exclusive and `in_progress + patched <= total`:
 /// a card is untouched until it is started, in progress while it is
 /// being answered, and patched once it is at the rung that says so.
+///
+/// `due` and `fresh` are what makes a tier the one to lead with: `due`
+/// is in rotation and due now, `fresh` has never been started and is not
+/// suspended. They cut across the three states (a due card is in
+/// progress or patched; a fresh one is untouched) and are read in the
+/// same query, so the hub cannot be told the band is empty and busy at
+/// once.
 /// **Field order is the Elixir tuple's** (`lib/oskol/gleam/caps/practice.ex`).
 pub type Severity {
-  Severity(grade: String, total: Int, in_progress: Int, patched: Int)
+  Severity(
+    grade: String,
+    total: Int,
+    in_progress: Int,
+    patched: Int,
+    due: Int,
+    fresh: Int,
+  )
 }
 
 pub fn stub() -> PracticeCaps {
@@ -274,5 +303,6 @@ pub fn stub() -> PracticeCaps {
     days: fn(_, _) { panic as "stub practice.days" },
     day: fn(_) { panic as "stub practice.day" },
     severity: fn(_, _) { panic as "stub practice.severity" },
+    band_queue: fn(_, _, _) { panic as "stub practice.band_queue" },
   )
 }

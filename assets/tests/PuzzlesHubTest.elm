@@ -1,9 +1,12 @@
 module PuzzlesHubTest exposing (suite)
 
 {-| The practice home on the server's three answers: an account's deck,
-a guest's mistakes, and nobody's empty list. What each shows, what
-PRACTICE hands the shell, what TRY ONE does with a puzzle and with an
-empty pool, and what KEEP GOING does when there is nothing more.
+a guest's mistakes, and nobody's empty list.
+
+For an account that is the one-deck card: which tier is in front, what
+it says when the tier still has work and when it is in good shape, the
+quiet rows and what tapping one does, and what FIX ONE hands the shell.
+Plus what TRY ONE does with a puzzle and with an empty pool.
 -}
 
 import Api
@@ -33,14 +36,34 @@ suite =
 -- THE SERVER'S ANSWERS
 
 
+{-| Very bad has work (five due), so it leads and FIX ONE is offered.
+-}
 accountJson : String
 accountJson =
-    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true},{"id":"bbbbbbbb","kind":"double","prompt":"White to play. Double?","due":false}],"cursor":null,"counts":{"due":12,"new_today":3,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":2,"target":5},"severity":[{"grade":"very_bad","total":61,"in_progress":30,"patched":23},{"grade":"bad","total":118,"in_progress":44,"patched":40},{"grade":"doubtful","total":96,"in_progress":9,"patched":12}],"patched_level":4,"game":null}"""
+    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true},{"id":"bbbbbbbb","kind":"double","prompt":"White to play. Double?","due":false}],"cursor":null,"counts":{"due":12,"new_today":3,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":2},"severity":[{"grade":"very_bad","total":61,"in_progress":30,"patched":23,"due":5,"new_left":3},{"grade":"bad","total":118,"in_progress":44,"patched":40,"due":7,"new_left":0},{"grade":"doubtful","total":96,"in_progress":9,"patched":12,"due":0,"new_left":0}],"lead":"very_bad","patched_level":4,"game":null}"""
 
 
-doneJson : String
-doneJson =
-    """{"ok":true,"puzzles":[],"cursor":null,"counts":{"due":0,"new_today":0,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":5,"target":5},"severity":[{"grade":"very_bad","total":61,"in_progress":0,"patched":61},{"grade":"bad","total":118,"in_progress":44,"patched":40},{"grade":"doubtful","total":96,"in_progress":9,"patched":12}],"patched_level":4,"game":null}"""
+{-| Very bad is in good shape -- nothing due, nothing new left today --
+while bad still has seven due, so the card says so and offers bad.
+-}
+goodShapeJson : String
+goodShapeJson =
+    """{"ok":true,"puzzles":[],"cursor":null,"counts":{"due":7,"new_today":0,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":5},"severity":[{"grade":"very_bad","total":61,"in_progress":30,"patched":23,"due":0,"new_left":0},{"grade":"bad","total":118,"in_progress":44,"patched":40,"due":7,"new_left":0},{"grade":"doubtful","total":96,"in_progress":9,"patched":12,"due":0,"new_left":0}],"lead":"bad","patched_level":4,"game":null}"""
+
+
+{-| Nothing anywhere is due and the day's new ones are done: one warm
+line, and nothing to press.
+-}
+allClearJson : String
+allClearJson =
+    """{"ok":true,"puzzles":[],"cursor":null,"counts":{"due":0,"new_today":0,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":5},"severity":[{"grade":"very_bad","total":61,"in_progress":0,"patched":61,"due":0,"new_left":0},{"grade":"bad","total":118,"in_progress":44,"patched":40,"due":0,"new_left":0},{"grade":"doubtful","total":96,"in_progress":9,"patched":12,"due":0,"new_left":0}],"lead":"very_bad","patched_level":4,"game":null}"""
+
+
+{-| An account with a deck and no band behind any card of it.
+-}
+bandlessJson : String
+bandlessJson =
+    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true}],"cursor":null,"counts":{"due":1,"new_today":3,"new_tomorrow":3,"deck":231},"mistakes":null,"today":{"done":5},"severity":[{"grade":"very_bad","total":0,"in_progress":0,"patched":0,"due":0,"new_left":0},{"grade":"bad","total":0,"in_progress":0,"patched":0,"due":0,"new_left":0},{"grade":"doubtful","total":0,"in_progress":0,"patched":0,"due":0,"new_left":0}],"lead":null,"patched_level":4,"game":null}"""
 
 
 emptyDeckJson : String
@@ -97,6 +120,16 @@ decoding =
                 parse accountJson
                     |> Result.map (\p -> ( List.map .id p.puzzles, p.counts, p.mistakes ))
                     |> Expect.equal (Ok ( [ "aaaaaaaa", "bbbbbbbb" ], Just { due = 12, newToday = 3, newTomorrow = 3, deck = 231 }, Nothing ))
+        , test "and which tier to lead with, with each tier's work" <|
+            \_ ->
+                parse accountJson
+                    |> Result.map (\p -> ( p.lead, List.map (\b -> ( b.grade, b.due, b.newLeft )) p.severity ))
+                    |> Expect.equal
+                        (Ok
+                            ( Just "very_bad"
+                            , [ ( "very_bad", 5, 3 ), ( "bad", 7, 0 ), ( "doubtful", 0, 0 ) ]
+                            )
+                        )
         , test "a guest's: the list and what is theirs" <|
             \_ ->
                 parse guestJson
@@ -105,7 +138,7 @@ decoding =
         , test "nobody's: nothing, and not an error" <|
             \_ ->
                 parse nobodyJson
-                    |> Expect.equal (Ok { puzzles = [], counts = Nothing, mistakes = Nothing, today = Nothing, severity = [], patchedLevel = 0 })
+                    |> Expect.equal (Ok { puzzles = [], counts = Nothing, mistakes = Nothing, today = Nothing, severity = [], lead = Nothing, patchedLevel = 0 })
         , test "a count that is not a number is refused, not defaulted" <|
             \_ ->
                 parse """{"ok":true,"puzzles":[],"counts":{"due":"twelve","new_today":4,"new_tomorrow":10,"deck":231},"mistakes":null}"""
@@ -152,70 +185,159 @@ isGuest state =
 anAccount : Test
 anAccount =
     describe "an account with a deck"
-        [ test "leads with the worst of what they have made, and one button to fix" <|
+        [ test "one tier in front: its mark, what is left to fix, one button" <|
             \_ ->
                 rendered (loaded accountJson)
                     |> Expect.all
-                        [ Query.find [ id "hub-headline" ]
-                            >> Query.has [ text "You have made 61 very bad moves. You are fixing 30 and have patched 23." ]
-                        , Query.find [ id "hub-counts" ] >> Query.has [ text "2 of today's 5 answered." ]
-                        , Query.find [ id "hub-practice" ] >> Query.has [ text "FIX 3 TODAY" ]
+                        [ Query.find [ id "hub-tier" ]
+                            >> Query.has [ attribute (Html.Attributes.attribute "data-tier" "very_bad") ]
+                        , Query.find [ id "hub-tier" ] >> Query.has [ text "??", text "Very bad moves" ]
+                        , Query.find [ id "hub-tier-left" ] >> Query.has [ text "38 left to fix" ]
+                        , Query.find [ id "hub-tier-patched" ] >> Query.has [ text "23 patched" ]
+                        , Query.find [ id "hub-fix-one" ] >> Query.has [ text "FIX ONE" ]
+                        , Query.find [ id "hub-today" ] >> Query.has [ text "2 fixed today" ]
                         , Query.hasNot [ id "hub-try-one" ]
                         , Query.hasNot [ id "hub-unsaved" ]
-                        ]
-        , test "one line and one bar per band, worst first, and what patched means" <|
-            \_ ->
-                rendered (loaded accountJson)
-                    |> Query.find [ id "hub-bands" ]
-                    |> Expect.all
-                        [ Query.has [ text "Very bad · 30 in progress · 23 patched · of 61" ]
-                        , Query.has [ text "Bad · 44 in progress · 40 patched · of 118" ]
-                        , Query.has [ text "Dubious · 9 in progress · 12 patched · of 96" ]
+
+                        -- One bar, not three: the other tiers are rows.
                         , Query.findAll [ attribute (Html.Attributes.attribute "data-total" "61") ]
                             >> Query.count (Expect.equal 1)
-                        , Query.find [ id "hub-patched-note" ]
-                            >> Query.has [ text "Patched: right four times running." ]
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-total" "118") ]
+                            >> Query.count (Expect.equal 0)
                         ]
-        , test "PRACTICE hands the shell the run, in the deck's order" <|
+        , test "the other tiers are quiet rows, with what is left in each" <|
             \_ ->
-                -- The run is handed the day the page was told, so the
-                -- ring opens where the home left it rather than at zero.
-                out PressedPractice (loaded accountJson)
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2, target = 5 }))
-        , test "the fallback head, for an answer that carries no bands" <|
-            \_ ->
-                Hub.countsLine { due = 1, newToday = 0, newTomorrow = 3, deck = 9 }
-                    |> Expect.equal "1 due · 9 of your mistakes"
-        , test "nothing due and nothing new is done for today, with KEEP GOING" <|
-            \_ ->
-                rendered (loaded doneJson)
+                rendered (loaded accountJson)
+                    |> Query.find [ id "hub-tier-rows" ]
                     |> Expect.all
-                        [ Query.find [ id "hub-headline" ] >> Query.has [ text "Done for today." ]
-                        , Query.find [ id "hub-counts" ] >> Query.has [ text "3 new tomorrow · 231 of your mistakes" ]
-                        , Query.find [ id "hub-keep-going" ] >> Query.has [ text "KEEP GOING" ]
-                        , Query.hasNot [ id "hub-practice" ]
+                        [ Query.find [ id "hub-tier-row-bad" ] >> Query.has [ text "?", text "Bad moves", text "78 left" ]
+                        , Query.find [ id "hub-tier-row-doubtful" ] >> Query.has [ text "?!", text "Dubious moves", text "84 left" ]
+
+                        -- The tier already in front is not also a row.
+                        , Query.hasNot [ id "hub-tier-row-very_bad" ]
                         ]
-        , test "KEEP GOING's answer is the run when it brought puzzles" <|
+        , test "tapping a quiet row moves the card onto that tier" <|
             \_ ->
-                loaded doneJson
-                    |> send PressedKeepGoing
-                    |> out (GotMore (parse accountJson))
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2, target = 5 }))
-        , test "and a line when it brought nothing" <|
+                let
+                    model =
+                        loaded accountJson
+                in
+                Expect.all
+                    [ \_ ->
+                        rendered model
+                            |> Query.find [ id "hub-tier-row-bad" ]
+                            |> Event.simulate Event.click
+                            |> Event.expect (PickedTier "bad")
+                    , \_ ->
+                        rendered (send (PickedTier "bad") model)
+                            |> Expect.all
+                                [ Query.find [ id "hub-tier" ]
+                                    >> Query.has [ attribute (Html.Attributes.attribute "data-tier" "bad") ]
+                                , Query.find [ id "hub-tier-left" ] >> Query.has [ text "78 left to fix" ]
+                                , Query.find [ id "hub-tier-row-very_bad" ] >> Query.has [ text "38 left" ]
+                                ]
+                    ]
+                    ()
+        , test "what patched means, said once under the card" <|
             \_ ->
-                loaded doneJson
-                    |> send PressedKeepGoing
-                    |> send (GotMore (parse doneJson))
+                rendered (loaded accountJson)
+                    |> Query.find [ id "hub-patched-note" ]
+                    |> Query.has [ text "Patched: right four times running." ]
+        , test "FIX ONE asks for that tier's queue, and runs it as that tier" <|
+            \_ ->
+                let
+                    model =
+                        loaded accountJson
+                in
+                Expect.all
+                    [ \_ ->
+                        rendered model
+                            |> Query.find [ id "hub-fix-one" ]
+                            |> Event.simulate Event.click
+                            |> Event.expect (PressedFixOne "very_bad")
+                    , -- The run is handed the day the page was told, so
+                      -- the count opens where the hub left it.
+                      \_ ->
+                        model
+                            |> send (PressedFixOne "very_bad")
+                            |> out (GotBand "very_bad" (parse accountJson))
+                            |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad"))
+                    ]
+                    ()
+        , test "a tier whose queue came back empty says so rather than starting nothing" <|
+            \_ ->
+                loaded accountJson
+                    |> send (PressedFixOne "very_bad")
+                    |> send (GotBand "very_bad" (parse goodShapeJson))
                     |> rendered
                     |> Query.find [ id "hub-note" ]
                     |> Query.has [ text "every mistake of yours" ]
+        , test "a tier in good shape says so warmly and offers the next one down" <|
+            \_ ->
+                rendered (loaded goodShapeJson)
+                    |> Expect.all
+                        [ Query.find [ id "hub-tier" ]
+                            >> Query.has [ attribute (Html.Attributes.attribute "data-tier" "very_bad") ]
+                        , Query.find [ id "hub-tier-good" ]
+                            >> Query.has [ text "Nice — your ?? moves are in good shape." ]
+                        , Query.find [ id "hub-tier-why" ] >> Query.has [ text "More of them tomorrow." ]
+                        , Query.find [ id "hub-tier-next" ] >> Query.has [ text "WORK ON ? BAD MOVES" ]
+                        , Query.hasNot [ id "hub-fix-one" ]
+                        , Query.hasNot [ id "hub-tier-left" ]
+                        ]
+        , test "and that offer moves the card onto the tier that has the work" <|
+            \_ ->
+                let
+                    model =
+                        loaded goodShapeJson
+                in
+                Expect.all
+                    [ \_ ->
+                        rendered model
+                            |> Query.find [ id "hub-tier-next" ]
+                            |> Event.simulate Event.click
+                            |> Event.expect (PickedTier "bad")
+                    , \_ ->
+                        rendered (send (PickedTier "bad") model)
+                            |> Expect.all
+                                [ Query.find [ id "hub-tier-left" ] >> Query.has [ text "78 left to fix" ]
+                                , Query.find [ id "hub-fix-one" ] >> Query.has [ text "FIX ONE" ]
+                                ]
+                    ]
+                    ()
+        , test "every tier in good shape: one warm line, and nothing to press" <|
+            \_ ->
+                rendered (loaded allClearJson)
+                    |> Expect.all
+                        [ Query.find [ id "hub-tier-good" ]
+                            >> Query.has [ text "Nice work — every one of your mistakes is in good shape." ]
+                        , Query.hasNot [ id "hub-fix-one" ]
+                        , Query.hasNot [ id "hub-tier-next" ]
+                        , Query.findAll [ Test.Html.Selector.tag "button" ] >> Query.count (Expect.equal 0)
+
+                        -- The rows are still a record of where things
+                        -- stand; they are simply not buttons.
+                        , Query.find [ id "hub-tier-row-bad" ] >> Query.has [ text "78 left" ]
+                        ]
+        , -- A deck with cards in it and no band behind any of them: an
+          -- old row, or a game whose sources went. The card has nothing
+          -- to name, so the deck is offered whole rather than blank.
+          test "a deck no band can be read off is offered whole, not as an empty card" <|
+            \_ ->
+                rendered (loaded bandlessJson)
+                    |> Expect.all
+                        [ Query.hasNot [ id "hub-tier" ]
+                        , Query.find [ id "hub-headline" ] >> Query.has [ text "231 of your mistakes" ]
+                        , Query.find [ id "hub-practice" ] >> Query.has [ text "PRACTICE" ]
+                        , Query.find [ id "hub-today" ] >> Query.has [ text "5 fixed today" ]
+                        ]
         , test "an account with an empty deck is offered what a stranger is" <|
             \_ ->
                 rendered (loaded emptyDeckJson)
                     |> Expect.all
                         [ Query.has [ id "hub-try-one" ]
-                        , Query.hasNot [ id "hub-practice" ]
-                        , Query.hasNot [ id "hub-keep-going" ]
+                        , Query.hasNot [ id "hub-fix-one" ]
+                        , Query.hasNot [ id "hub-tier" ]
                         ]
         ]
 
@@ -239,7 +361,7 @@ aGuest =
         , test "PRACTICE runs their mistakes" <|
             \_ ->
                 out PressedPractice (loaded guestJson)
-                    |> Expect.equal (StartRun [ "cccccccc", "dddddddd" ] Nothing)
+                    |> Expect.equal (StartRun [ "cccccccc", "dddddddd" ] Nothing Nothing)
         , test "one of each is singular" <|
             \_ ->
                 Hub.mistakesLine { puzzles = 1, games = 1 }

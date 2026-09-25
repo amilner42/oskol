@@ -231,13 +231,24 @@ fn ctx_of(rows: List(GradedGame), rooms: List(GradedRoomGame)) -> Ctx {
         total: 61,
         in_progress: 30,
         patched: 23,
+        due: 3,
+        fresh: 8,
       ),
-      practice.Severity(grade: "bad", total: 118, in_progress: 44, patched: 40),
+      practice.Severity(
+        grade: "bad",
+        total: 118,
+        in_progress: 44,
+        patched: 40,
+        due: 0,
+        fresh: 34,
+      ),
       practice.Severity(
         grade: "doubtful",
         total: 96,
         in_progress: 9,
         patched: 12,
+        due: 0,
+        fresh: 75,
       ),
     ],
   )
@@ -339,15 +350,13 @@ pub fn the_live_games_and_the_deck_are_still_there_with_no_graded_games_test() {
   let assert 30 = count(body, ["practice", "days"])
 }
 
-/// The day's ring, beside the strip: the streak is the days, this is
-/// today. The target is the day's actual work -- what has been answered,
-/// what is still due, and the new ones the day still allows -- so it does
-/// not shrink under the player as they answer.
-pub fn the_practice_block_carries_the_days_ring_test() {
+/// The day's count, beside the strip: the streak is the days, this is
+/// today. A plain count of what has been answered, with nothing to
+/// measure it against -- there is no target, and so no quota.
+pub fn the_practice_block_counts_the_day_test() {
   let body = home([])
   let assert 4 = field(body, ["practice", "today", "done"], decode.int)
-  // 4 answered + 3 due + 2 new the budget still allows.
-  let assert 9 = field(body, ["practice", "today", "target"], decode.int)
+  let assert False = string.contains(body, "target")
 }
 
 /// The three lines the practice section leads with: the deck by how bad
@@ -375,6 +384,19 @@ pub fn the_practice_block_counts_the_deck_by_severity_test() {
   // What "patched" means, so the page never keeps a second copy of it.
   let assert 4 = field(body, ["practice", "patched_level"], decode.int)
   let assert True = deck.patched_level == 4
+}
+
+/// What each band still has to do today, and the one tier the section
+/// puts in front. Very bad has three due, so it leads; its new ones are
+/// capped at the two the day's budget still allows, not the eight it
+/// holds.
+pub fn the_practice_block_names_the_tier_to_lead_with_test() {
+  let body = home([])
+  let assert 3 =
+    at(body, ["practice", "severity"], 0, decode.at(["due"], decode.int))
+  let assert 2 =
+    at(body, ["practice", "severity"], 0, decode.at(["new_left"], decode.int))
+  let assert "very_bad" = field(body, ["practice", "lead"], decode.string)
 }
 
 /// A deck the cap knows nothing about still reads as three bands: a line

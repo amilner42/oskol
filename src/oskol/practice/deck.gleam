@@ -11,7 +11,7 @@
 import gleam/int
 import gleam/json.{type Json}
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/string
 import oskol/caps/practice.{
   type Ask, type Graded, type Item, type Outcome, type PracticeError,
@@ -31,22 +31,6 @@ import oskol/core/error.{type ApiError}
 /// queue that grows faster than it is patched. KEEP GOING is still
 /// uncapped for whoever wants more.
 pub const new_per_day = 3
-
-/// The most answers a day's goal ever asks for: the ceiling on the ring's
-/// target, and on the number the button names.
-///
-/// It is not `new_per_day` and means something else. `new_per_day` is how
-/// many **new** mistakes enter rotation in a day (three); this is how many
-/// **answers** the day asks for in all, due ones included (ten). A player
-/// who comes back to a backlog of twenty-three due is told to fix ten
-/// today, not twenty-three: a goal you can finish is the point of having
-/// one, and a chore is what the ring was drawn to stop being.
-///
-/// It caps the goal and nothing else. Nothing about the schedule changes:
-/// everything due is still offered, in order, and KEEP GOING still goes
-/// past it -- this is the ceiling on what the day *asks*, never on what a
-/// player may answer.
-pub const goal_per_day = 10
 
 /// The rung at which a mistake counts as **patched**.
 ///
@@ -147,6 +131,16 @@ pub fn session(ctx: Ctx, uid: String) -> Session {
   ctx.practice.queue(uid, daily_ask())
 }
 
+/// One tier's worth: the mistakes of that grade alone, due first and
+/// then ones never seen, worst first inside the band. What FIX ONE runs.
+///
+/// A page at a time, and always from the front, for the same reason
+/// `daily_ask` is: the due set is live, so an offset would skip exactly
+/// as many as the player had just answered.
+pub fn band_session(ctx: Ctx, uid: String, band: String) -> Session {
+  ctx.practice.band_queue(uid, band, page)
+}
+
 /// Grade an answer. The caller has already decided this attempt counts (the
 /// first answer at a due puzzle, and no retry): the deck only records it.
 pub fn answer(
@@ -179,46 +173,26 @@ pub fn keep_going(ctx: Ctx, uid: String) -> Int {
 // ---------- Today ----------
 
 /// The day's work: how many answers this account has recorded in its own
-/// local day, and how many there are to give. The ring on the home and at
-/// the top of a session; the streak's twin -- the streak is the days, this
-/// is today.
-pub type Today {
-  Today(done: Int, target: Int)
-}
-
-/// The target is **the day's actual work, up to `goal_per_day`**: what has
-/// been answered, plus everything still due, plus whatever new cards the
-/// day still allows, and never more than ten. Two due and three new is a
-/// target of five; twenty-three due is a target of ten; a day with nothing
-/// due and nothing new is already done.
+/// local day. A plain count, with nothing to measure it against.
 ///
-/// The work is counted this way rather than as "due now" so that it does
-/// not shrink under the player as they answer: every answer moves `done`
-/// up and leaves the target where it was. KEEP GOING goes past it, and
-/// then `done` simply exceeds the target, which is the truth.
-pub fn today(ctx: Ctx, uid: String, due: Int) -> Today {
-  let day = ctx.practice.day(uid)
-  let work = day.answered + due + day.new_remaining
-  Today(done: day.answered, target: int.min(work, goal_per_day))
+/// **There is no target.** A day used to ask for ten and draw a ring
+/// round how much of them was done, which read as a quota and put a
+/// player off starting at all. Practice asks for one mistake at a time
+/// now, so the day says only what has happened: "3 fixed today". The
+/// streak is the days; this is today.
+pub type Today {
+  Today(done: Int)
 }
 
-/// How many cards are due right now, for callers that have not already
-/// read the deck's summary for something else.
-pub fn due_count(ctx: Ctx, uid: String) -> Int {
-  case ctx.practice.summary(uid, []) |> list.first {
-    Ok(row) -> row.due_count
-    Error(Nil) -> 0
-  }
+pub fn today(ctx: Ctx, uid: String) -> Today {
+  Today(done: ctx.practice.day(uid).answered)
 }
 
 /// One shape, on every endpoint that carries it (`/papi/practice`, a
 /// game's own list, and the home's practice block), so the client has one
-/// decoder and the ring cannot mean two things.
+/// decoder and the count cannot mean two things.
 pub fn today_json(today: Today) -> Json {
-  json.object([
-    #("done", json.int(today.done)),
-    #("target", json.int(today.target)),
-  ])
+  json.object([#("done", json.int(today.done))])
 }
 
 // ---------- How much of the deck is patched ----------
@@ -238,7 +212,15 @@ pub fn severity(ctx: Ctx, uid: String) -> List(Severity) {
   list.map(bands, fn(band) {
     case list.find(rows, fn(row) { row.grade == band }) {
       Ok(row) -> row
-      Error(Nil) -> Severity(grade: band, total: 0, in_progress: 0, patched: 0)
+      Error(Nil) ->
+        Severity(
+          grade: band,
+          total: 0,
+          in_progress: 0,
+          patched: 0,
+          due: 0,
+          fresh: 0,
+        )
     }
   })
 }
@@ -249,8 +231,64 @@ pub fn severity_json(band: Severity) -> Json {
     #("total", json.int(band.total)),
     #("in_progress", json.int(band.in_progress)),
     #("patched", json.int(band.patched)),
+    // What the tier has to do right now: what is due, and how many of the
+    // ones it has never shown the day still allows.
+    #("due", json.int(band.due)),
+    #("new_left", json.int(band.fresh)),
   ])
 }
+
+// ---------- Which tier is in front of you ----------
+
+/// The deck as the practice hub reads it: one tier per band, worst
+/// first, each knowing whether it still has work today.
+///
+/// A tier **has work** when something of it is due, or when it has a
+/// mistake the player has never seen and the day's budget of new ones
+/// has not been spent. The budget is the deck's, not the band's -- three
+/// new a day across the whole deck -- so it is folded in here, once,
+/// rather than by each page that asks.
+pub fn tiers(ctx: Ctx, uid: String) -> List(Severity) {
+  let budget = ctx.practice.day(uid).new_remaining
+  list.map(severity(ctx, uid), fn(band) {
+    Severity(..band, fresh: int.min(band.fresh, int.max(budget, 0)))
+  })
+}
+
+/// Does this tier still have something to fix today?
+pub fn has_work(band: Severity) -> Bool {
+  band.due > 0 || band.fresh > 0
+}
+
+/// How many of a tier are still to fix: everything that is not patched.
+/// The number the hub leads with, because it is what is left of the
+/// worst of your play -- not what is due, which changes hour to hour.
+pub fn left(band: Severity) -> Int {
+  int.max(band.total - band.patched, 0)
+}
+
+/// The tier to put in front of the player: the **worst band that still
+/// has work**. When none of them has any, the worst band they have made
+/// a mistake in at all, so the page can say that one is in good shape
+/// rather than go blank. Nothing at all when the deck is empty.
+pub fn lead(bands: List(Severity)) -> option.Option(String) {
+  let with_work = list.filter(bands, has_work)
+  let any = list.filter(bands, fn(band) { band.total > 0 })
+  case list.first(with_work), list.first(any) {
+    Ok(band), _ -> Some(band.grade)
+    _, Ok(band) -> Some(band.grade)
+    _, _ -> None
+  }
+}
+
+/// Is this one of the three bands a deck is counted in? A band the
+/// client asked for that is not is a refusal, never a queue of
+/// everything: a page must not be able to widen its own question.
+pub fn known_band(grade: String) -> Bool {
+  list.contains(bands, grade)
+}
+
+pub const unknown_band_message = "That is not one of your mistake tiers."
 
 // ---------- Where the player is ----------
 

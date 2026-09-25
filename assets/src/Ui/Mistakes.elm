@@ -1,13 +1,23 @@
 module Ui.Mistakes exposing
-    ( bandName
+    ( Band
+    , allClearLine
+    , bandName
     , bandWord
-    , fixLabel
-    , lead
+    , fixedToday
+    , goodShapeLine
+    , goodShapeWhy
+    , hasWork
+    , leftToFix
     , line
+    , mark
     , milestone
     , moves
+    , nextTierLabel
+    , patchedAside
     , patchedNote
     , patchedRun
+    , runSummary
+    , tierName
     , whyLine
     )
 
@@ -38,7 +48,16 @@ and is said out loud.
 
 -}
 type alias Band =
-    { grade : String, total : Int, inProgress : Int, patched : Int }
+    { grade : String, total : Int, inProgress : Int, patched : Int, due : Int, newLeft : Int }
+
+
+{-| Does this tier still have something to fix today? The server has
+already capped `newLeft` at the day's budget, so this is a read and not
+a rule.
+-}
+hasWork : Band -> Bool
+hasWork band =
+    band.due > 0 || band.newLeft > 0
 
 
 {-| The site's own grades, in the words a player reads. "Dubious" rather
@@ -82,53 +101,149 @@ moves n grade =
            )
 
 
-{-| What the practice home leads with: the worst band the player actually
-has, and where they are with it.
+{-| The annotators' mark for a tier, which is what the replay already
+draws beside every move: `??`, `?`, `?!`. A tier is named by its mark
+first and its words second, so the hub reads as the game does.
 
-    "You have made 61 very bad moves. You are fixing 30 and have patched 12."
-    "You have made 61 very bad moves. You are fixing 30 of them."
-    "You have made 61 very bad moves. You have patched 23."
-    "You have made 61 very bad moves. You have not started on them yet."
-
-The second sentence is the whole point of the three states: the work in
-flight is said first, and "patched" appears only once there is one, so a
-player five days into a deck does not read a line that says nothing is
-happening.
-
-Nothing when there is no mistake of any band: the page has its own words
-for a player with nothing to fix yet.
+It is `Games.Backgammon.Words.gradeMark`, kept here as well because
+every other practice word is here and a page should reach for one
+module, not two. The two agree by test (`MistakesTest`).
 
 -}
-lead : List Band -> Maybe String
-lead bands =
-    case List.filter (\band -> band.total > 0) bands of
-        [] ->
+mark : String -> String
+mark grade =
+    case grade of
+        "very_bad" ->
+            "??"
+
+        "bad" ->
+            "?"
+
+        "doubtful" ->
+            "?!"
+
+        _ ->
+            ""
+
+
+{-| A tier's name under its mark: "Very bad moves".
+-}
+tierName : String -> String
+tierName grade =
+    bandName grade ++ " moves"
+
+
+{-| The one number the hub leads with: how many of this tier are still
+to fix. Everything not patched -- what is *due* changes hour to hour and
+is not what anyone is trying to get to zero.
+
+    "31 left to fix"
+
+-}
+leftToFix : Band -> String
+leftToFix band =
+    String.fromInt (max 0 (band.total - max 0 band.patched)) ++ " left to fix"
+
+
+{-| Quieter, beside it: "23 patched". Nothing at all when none is, so a
+player on their first day is not shown a zero.
+-}
+patchedAside : Band -> Maybe String
+patchedAside band =
+    case max 0 band.patched of
+        0 ->
             Nothing
 
-        worst :: _ ->
-            Just ("You have made " ++ moves worst.total worst.grade ++ ". " ++ progress worst)
+        n ->
+            Just (String.fromInt n ++ " patched")
 
 
-{-| The second sentence: what is happening to that band.
+{-| A tier with nothing due and no new ones left today. The moment the
+whole page is arranged around: said warmly, in the mark the player
+already knows the tier by.
+
+    "Nice -- your ?? moves are in good shape."
+
 -}
-progress : Band -> String
-progress band =
-    case ( max 0 band.inProgress, max 0 band.patched ) of
-        ( 0, 0 ) ->
-            "You have not started on them yet."
+goodShapeLine : String -> String
+goodShapeLine grade =
+    "Nice — your " ++ mark grade ++ " moves are in good shape."
 
-        ( 0, patched ) ->
-            "You have patched " ++ String.fromInt patched ++ "."
 
-        ( going, 0 ) ->
-            "You are fixing " ++ String.fromInt going ++ " of them."
+{-| Under it, the honest reason, which is one of two: every mistake of
+that tier has been started, or the day's new ones are done and more come
+tomorrow.
+-}
+goodShapeWhy : Band -> String
+goodShapeWhy band =
+    if max 0 band.total - max 0 band.inProgress - max 0 band.patched > 0 then
+        "Nothing due. More of them tomorrow."
 
-        ( going, patched ) ->
-            "You are fixing "
-                ++ String.fromInt going
-                ++ " and have patched "
-                ++ String.fromInt patched
-                ++ "."
+    else
+        "Nothing due, and you have started every one."
+
+
+{-| Every tier in good shape: one line, and nothing to press.
+-}
+allClearLine : String
+allClearLine =
+    "Nice work — every one of your mistakes is in good shape."
+
+
+{-| The offer under a tier that is in good shape: the next tier down, by
+its mark and its words.
+
+    "WORK ON ? BAD MOVES"
+
+-}
+nextTierLabel : String -> String
+nextTierLabel grade =
+    String.toUpper ("Work on " ++ mark grade ++ " " ++ bandWord grade ++ " moves")
+
+
+{-| The day, wherever it used to be a ring: a plain count of what has
+been answered, and nothing to measure it against.
+
+    "3 fixed today"
+    "1 fixed today"
+    "Nothing fixed yet today"
+
+-}
+fixedToday : Int -> String
+fixedToday done =
+    case max 0 done of
+        0 ->
+            "Nothing fixed yet today"
+
+        n ->
+            String.fromInt n ++ " fixed today"
+
+
+{-| The end of a run, over the marks. A run has no fixed length, so the
+words are about what was done and never about what was not.
+
+**One is a whole session.** Stopping after a single mistake is the thing
+the page invites, so it must not read as quitting: it gets its own
+sentence, warm and finished.
+
+-}
+runSummary : { right : Int, close : Int, total : Int } -> String
+runSummary score =
+    if score.total <= 0 then
+        "Nothing answered."
+
+    else if score.total == 1 then
+        if score.right == 1 then
+            "One fixed. That is how it is done."
+
+        else if score.close == 1 then
+            "One faced, and close. That counts."
+
+        else
+            "One faced. It comes back tomorrow."
+
+    else
+        String.fromInt score.right ++ " of " ++ String.fromInt score.total ++ " right"
 
 
 {-| One band's own line, in the order the bar is drawn in: what is being
@@ -162,19 +277,6 @@ The rest of that line says when it comes back.
 milestone : Int -> String
 milestone level =
     "Patched. " ++ String.toUpper (String.left 1 (word level)) ++ String.dropLeft 1 (word level) ++ " right in a row"
-
-
-{-| The button on the practice home: what today still asks of you, in one
-verb. Everything due and the new mistakes the day allows are one number
-here; a day that is finished says so and the way on is KEEP GOING.
--}
-fixLabel : { done : Int, target : Int } -> String
-fixLabel today =
-    if today.target - today.done <= 0 then
-        "DONE FOR TODAY"
-
-    else
-        "FIX " ++ String.fromInt (today.target - today.done) ++ " TODAY"
 
 
 {-| Above the board in a session: why this position is in front of you.

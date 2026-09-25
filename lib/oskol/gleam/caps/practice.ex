@@ -5,9 +5,9 @@ defmodule Oskol.Gleam.Caps.Practice do
 
       PracticeCaps(put_user, put_items, cards, relapse, queue, start,
       start_new, review, amend, defer_until, defer_tomorrow, master,
-      suspend, resume, summary, ladder, days, day, severity)
+      suspend, resume, summary, ladder, days, day, severity, band_queue)
       Day(answered, new_remaining)
-      Severity(grade, total, in_progress, patched)
+      Severity(grade, total, in_progress, patched, due, fresh)
       Item(key, tags, content_json, position)
       Card(key, tags, content_json, level, due_ms, reps, lapses, status)
       Session(reviews, fresh, new_remaining_today)
@@ -53,7 +53,7 @@ defmodule Oskol.Gleam.Caps.Practice do
   def build do
     {:practice_caps, &put_user/3, &put_items/2, &cards/2, &relapse/3, &queue/2, &start/2,
      &start_new/2, &review/3, &amend/4, &defer_until/3, &defer_tomorrow/2, &master/2, &suspend/2,
-     &resume/2, &summary/2, &ladder/1, &days/2, &day/1, &severity/2}
+     &resume/2, &summary/2, &ladder/1, &days/2, &day/1, &severity/2, &band_queue/3}
   end
 
   # ---------- The two pictures the home draws ----------
@@ -129,14 +129,15 @@ defmodule Oskol.Gleam.Caps.Practice do
   #
   # `answered` makes the same two exclusions `days/2` makes -- a card put
   # off is not practice, and a correction sits on the day of the answer it
-  # corrects, which is already counted -- so the ring is the strip's last
-  # square counted rather than lit, and neither can say the other is
-  # wrong. Both readings are bounded by the start of the player's own day.
+  # corrects, which is already counted -- so "3 fixed today" is the
+  # strip's last square counted rather than lit, and neither can say the
+  # other is wrong. Both readings are bounded by the start of the
+  # player's own day.
   #
   # `new_remaining` is retain's own budget arithmetic (`new_per_day` minus
   # whatever was started today, by any path), done here because the
-  # library only hands it back from a queue, and a page that merely draws
-  # a ring must not run one.
+  # library only hands it back from a queue, and a page that merely prints
+  # a count must not run one.
   defp day(uid) do
     case Retain.fetch_user(uid) do
       # No deck: nothing answered and nothing to answer. What the budget
@@ -146,9 +147,8 @@ defmodule Oskol.Gleam.Caps.Practice do
         {:day, 0, 0}
 
       {:ok, user} ->
-        today = Retain.Clock.local_date(DateTime.utc_now(), user.tz)
-        since = Retain.Clock.start_of_day(today, user.tz)
-        until = Retain.Clock.start_of_day(Date.add(today, 1), user.tz)
+        now = DateTime.utc_now()
+        since = Retain.Clock.start_of_day(Retain.Clock.local_date(now, user.tz), user.tz)
 
         answered =
           from(r in Retain.Review,
@@ -162,15 +162,7 @@ defmodule Oskol.Gleam.Caps.Practice do
           |> Oskol.Repo.one()
           |> Kernel.||(0)
 
-        started =
-          from(i in Retain.Item,
-            where: i.user_id == ^user.id and i.started_at >= ^since and i.started_at < ^until,
-            select: count(i.id)
-          )
-          |> Oskol.Repo.one()
-          |> Kernel.||(0)
-
-        {:day, answered, max(user.new_per_day - started, 0)}
+        {:day, answered, new_remaining(user, now)}
     end
   end
 
@@ -188,6 +180,15 @@ defmodule Oskol.Gleam.Caps.Practice do
   # states are untouched, started-and-below-the-rung, and at-or-above it.
   # They do not overlap, and they add up to the band's total.
   #
+  # The same row carries what the band has to *do*: `due` (in rotation,
+  # not paused, due at or before now) and `fresh` (never started, not
+  # paused). They are read here rather than in a second query because
+  # the hub draws the picture and chooses the tier from one answer, and
+  # two answers could disagree about a card someone answered between
+  # them. The cutoff is `now`, the same one `queue/2` and `summary/2`
+  # use, so "this tier has work" can never offer a card that cannot yet
+  # be reviewed.
+  #
   # `patched_level` is the caller's rule and is never decided here.
   defp severity(uid, patched_level) when is_integer(patched_level) do
     case Retain.fetch_user(uid) do
@@ -195,15 +196,31 @@ defmodule Oskol.Gleam.Caps.Practice do
         []
 
       {:ok, user} ->
+        now = DateTime.utc_now()
+
         worst =
           from(i in Retain.Item,
             join: s in Oskol.Puzzles.Source,
             on: s.puzzle_id == i.key,
             where: i.user_id == ^user.id,
-            group_by: [i.id, i.level, i.started_at],
+            group_by: [i.id, i.level, i.started_at, i.suspended, i.due],
             select: %{
               level: i.level,
               started: fragment("case when ? is null then 0 else 1 end", i.started_at),
+              due:
+                fragment(
+                  "case when ? is not null and not ? and ? <= ? then 1 else 0 end",
+                  i.started_at,
+                  i.suspended,
+                  i.due,
+                  ^now
+                ),
+              fresh:
+                fragment(
+                  "case when ? is null and not ? then 1 else 0 end",
+                  i.started_at,
+                  i.suspended
+                ),
               rank:
                 max(
                   fragment(
@@ -227,18 +244,128 @@ defmodule Oskol.Gleam.Caps.Practice do
                 ^patched_level
               )
             ),
-            sum(fragment("case when ? >= ? then 1 else 0 end", w.level, ^patched_level))
+            sum(fragment("case when ? >= ? then 1 else 0 end", w.level, ^patched_level)),
+            sum(w.due),
+            sum(w.fresh)
           }
         )
         |> Oskol.Repo.all()
-        |> Enum.flat_map(fn {rank, total, in_progress, patched} ->
+        |> Enum.flat_map(fn {rank, total, in_progress, patched, due, fresh} ->
           case band(rank) do
-            nil -> []
-            name -> [{:severity, name, total, in_progress || 0, patched || 0}]
+            nil ->
+              []
+
+            name ->
+              [{:severity, name, total, in_progress || 0, patched || 0, due || 0, fresh || 0}]
           end
         end)
     end
   end
+
+  # One band's queue: the mistakes of that grade alone, due first and
+  # then ones never seen.
+  #
+  # A band is not a tag on the card. It is the worst grade any game that
+  # reached the position was graded at, which lives in `puzzle_sources`,
+  # so this cannot be `Retain.queue/2` with `tags:` -- it is the same
+  # ordering over the same rows with that join in front of it. Kept in
+  # lockstep with `Retain.due/2` (level, then due, then id) and
+  # `new_items_query` (position, then creation): a player who switches
+  # tiers must not be offered the cards in a different order than the
+  # whole-deck queue would have.
+  #
+  # The day's new-card budget is the deck's, not the band's: three new a
+  # day across everything, so a tier can only introduce what is left of
+  # it.
+  defp band_queue(uid, band, limit) when is_binary(band) and is_integer(limit) do
+    case {Retain.fetch_user(uid), rank(band)} do
+      {{:error, :not_found}, _} ->
+        {:session, [], [], 0}
+
+      # Not one of the three. The handler refuses these before they get
+      # here; this is the boundary saying the same thing rather than
+      # returning the whole deck.
+      {_, nil} ->
+        {:session, [], [], 0}
+
+      {{:ok, user}, wanted} ->
+        now = DateTime.utc_now()
+        remaining = new_remaining(user, now)
+
+        reviews =
+          user
+          |> in_band(wanted)
+          |> where([i], not i.suspended and not is_nil(i.started_at) and i.due <= ^now)
+          |> order_by([i], asc: i.level, asc: i.due, asc: i.id)
+          |> limit(^limit)
+          |> Oskol.Repo.all()
+
+        # Held back until nothing of this tier is due, as the whole
+        # deck's queue holds them back until nothing at all is.
+        fresh =
+          if reviews == [] and remaining > 0 do
+            user
+            |> in_band(wanted)
+            |> where([i], not i.suspended and is_nil(i.started_at))
+            |> order_by([i], asc_nulls_last: i.position, asc: i.inserted_at, asc: i.id)
+            |> limit(^min(limit, remaining))
+            |> Oskol.Repo.all()
+          else
+            []
+          end
+
+        {:session, Enum.map(reviews, &card/1), Enum.map(fresh, &card/1), remaining}
+    end
+  end
+
+  # This account's cards whose worst source is exactly this band. The
+  # subquery is the one `severity/2` ranks with, so a card can only ever
+  # be in the tier the hub counted it in.
+  defp in_band(user, wanted) do
+    worst =
+      from(i in Retain.Item,
+        join: s in Oskol.Puzzles.Source,
+        on: s.puzzle_id == i.key,
+        where: i.user_id == ^user.id,
+        group_by: i.id,
+        having:
+          max(
+            fragment(
+              "case ? when 'very_bad' then 3 when 'bad' then 2 when 'doubtful' then 1 else 0 end",
+              s.grade
+            )
+          ) == ^wanted,
+        select: %{id: i.id}
+      )
+
+    from(i in Retain.Item,
+      join: w in subquery(worst),
+      on: w.id == i.id
+    )
+  end
+
+  # Retain's own budget arithmetic, which it only hands back from a
+  # queue: `new_per_day` minus whatever was started today by any path.
+  defp new_remaining(user, now) do
+    today = Retain.Clock.local_date(now, user.tz)
+    from_at = Retain.Clock.start_of_day(today, user.tz)
+    until_at = Retain.Clock.start_of_day(Date.add(today, 1), user.tz)
+
+    started =
+      from(i in Retain.Item,
+        where: i.user_id == ^user.id and i.started_at >= ^from_at and i.started_at < ^until_at,
+        select: count(i.id)
+      )
+      |> Oskol.Repo.one()
+      |> Kernel.||(0)
+
+    max(user.new_per_day - started, 0)
+  end
+
+  defp rank("very_bad"), do: 3
+  defp rank("bad"), do: 2
+  defp rank("doubtful"), do: 1
+  defp rank(_), do: nil
 
   defp band(3), do: "very_bad"
   defp band(2), do: "bad"

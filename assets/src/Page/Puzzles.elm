@@ -3,7 +3,6 @@ module Page.Puzzles exposing
     , Msg(..)
     , Out(..)
     , State(..)
-    , countsLine
     , init
     , mistakesLine
     , state
@@ -16,11 +15,11 @@ module Page.Puzzles exposing
 {-| `/puzzles` -- the practice home. One page for three visitors, because
 `GET /papi/practice` is one answer for three callers:
 
-  - an **account** with mistakes: "You have made 61 very bad moves. You
-    have patched 23.", where today stands, and one button -- FIX 3 TODAY
-    -- which runs what the deck put first, worst mistakes before lesser
-    ones. Under it, one bar per band. Nothing left today is "Done for
-    today", with KEEP GOING to start more.
+  - an **account** with mistakes: one tier of them, named by the mark
+    the replay draws -- `??`, `?`, `?!` -- with "31 left to fix", its
+    own bar and one button, FIX ONE. The other tiers are quiet rows
+    under it. A tier with nothing due and no new ones left today says
+    so warmly and offers the next tier down instead (`Ui.Tiers`).
   - a **guest** with games behind them: "23 mistakes from your 4 games",
     a line that nothing is saved until they sign in, and the same
     PRACTICE. The sign-in itself is asked at the end of the run, once
@@ -30,10 +29,11 @@ module Page.Puzzles exposing
     puzzle whose answer stands clear, or an honest line while the pool
     has none.
 
-PRACTICE hands the shell the list (`StartRun`): the run outlives this
-page, so it is the shell's (`Main.run`). Signed in, the page also sends
-the browser's timezone once, so "due today" and "back tomorrow" are the
-player's day and not UTC's.
+FIX ONE asks for that tier's own queue (`GET /papi/practice?band=`) and
+hands the shell the list (`StartRun`): the run outlives this page, so it
+is the shell's (`Main.run`), and it carries the tier so ANOTHER stays in
+it. Signed in, the page also sends the browser's timezone once, so "due
+today" and "back tomorrow" are the player's day and not UTC's.
 
 -}
 
@@ -44,10 +44,10 @@ import Html.Attributes as Attr exposing (class, id)
 import Html.Events exposing (onClick)
 import Route
 import Session exposing (Session)
-import Ui.Charts as Charts
 import Ui.Mistakes as Mistakes
 import Ui.Notebook as Notebook
 import Ui.SignIn as SignIn
+import Ui.Tiers
 
 
 
@@ -62,6 +62,7 @@ type alias Model =
     , busy : Busy
     , signIn : Maybe SignIn.Model -- the early sign-in, once opened
     , note : Maybe String -- what the last press came back with, when it was not a puzzle
+    , tier : Maybe String -- the tier the player tapped, if they tapped one
     }
 
 
@@ -76,7 +77,7 @@ type Loadable
 type Busy
     = Idle
     | Trying
-    | KeepingGoing
+    | Fixing
 
 
 {-| The three visitors, read off the server's answer.
@@ -90,8 +91,9 @@ type State
 type Msg
     = GotPractice (Result Api.Error Practice)
     | PressedPractice
-    | PressedKeepGoing
-    | GotMore (Result Api.Error Practice)
+    | PressedFixOne String
+    | PickedTier String
+    | GotBand String (Result Api.Error Practice)
     | PressedTryOne
     | GotRandom (Result Api.Error Practice.Random)
     | TimezoneSent (Result Api.Error ())
@@ -105,7 +107,7 @@ somewhere, or take note of a sign-in.
 -}
 type Out
     = NoOut
-    | StartRun (List String) (Maybe Practice.Today)
+    | StartRun (List String) (Maybe Practice.Today) (Maybe String)
     | Go String
     | SignedIn (Maybe Session.User)
 
@@ -119,6 +121,7 @@ init session config =
       , busy = Idle
       , signIn = Nothing
       , note = Nothing
+      , tier = Nothing
       }
     , Practice.fetch session GotPractice
     )
@@ -194,26 +197,44 @@ update msg model =
                 _ ->
                     ( model, Cmd.none, NoOut )
 
-        PressedKeepGoing ->
+        -- FIX ONE: that tier's own queue, then a run of it. The hub is
+        -- fetched without a tier, so its `puzzles` are the whole deck's
+        -- front and are not what this tier's run is made of.
+        PressedFixOne grade ->
             if model.busy == Idle then
-                ( { model | busy = KeepingGoing, note = Nothing }, Practice.more model.session GotMore, NoOut )
+                ( { model | busy = Fixing, note = Nothing }
+                , Practice.fetchBand model.session grade (GotBand grade)
+                , NoOut
+                )
 
             else
                 ( model, Cmd.none, NoOut )
 
-        GotMore (Ok practice) ->
+        GotBand grade (Ok practice) ->
             case practice.puzzles of
+                -- The tier said it had work and the queue came back
+                -- empty: something was answered between the two calls.
+                -- The page says so and shows the fresh answer.
                 [] ->
                     ( { model | busy = Idle, practice = Loaded practice, note = Just nothingMoreLine }
                     , Cmd.none
                     , NoOut
                     )
 
-                _ ->
-                    start practice { model | busy = Idle, practice = Loaded practice }
+                entries ->
+                    ( { model | busy = Idle }
+                    , Cmd.none
+                    , StartRun (List.map .id entries) practice.today (Just grade)
+                    )
 
-        GotMore (Err err) ->
+        GotBand _ (Err err) ->
             ( { model | busy = Idle, note = Just (Api.errorMessage err) }, Cmd.none, NoOut )
+
+        -- A quiet row, or the offer under a tier in good shape: which
+        -- tier the card is about. Nothing is fetched -- every tier's
+        -- numbers came with the page.
+        PickedTier grade ->
+            ( { model | tier = Just grade, note = Nothing }, Cmd.none, NoOut )
 
         PressedTryOne ->
             if model.busy == Idle then
@@ -274,7 +295,8 @@ update msg model =
             ( model, Cmd.none, NoOut )
 
 
-{-| PRACTICE: the list the server put first, as a run. An empty list is
+{-| PRACTICE: the list the server put first, as a run. A guest's whole
+pile of mistakes, which is not a tier of anything. An empty list is
 nothing to start, and the page already says so.
 -}
 start : Practice -> Model -> ( Model, Cmd Msg, Out )
@@ -284,7 +306,7 @@ start practice model =
             ( model, Cmd.none, NoOut )
 
         entries ->
-            ( model, Cmd.none, StartRun (List.map .id entries) practice.today )
+            ( model, Cmd.none, StartRun (List.map .id entries) practice.today Nothing )
 
 
 nothingMoreLine : String
@@ -327,133 +349,71 @@ body model visitor =
             stranger model
 
 
-{-| An account: the worst of what they have made, what today asks of
-them, and one button; or, with nothing left today, "Done for today" and
-KEEP GOING. The bands sit under it.
+{-| An account: one tier of their mistakes, the others quiet under it,
+and the day's count.
 
-Two lines and one button on purpose. The old head was "12 due · 4 new
-today · 231 in your deck" -- three numbers, none of which is a reason to
-press anything. The reason is that you have made 61 very bad moves and
-patched 23 of them.
+One thing to do, on purpose. The head was "You have made 61 very bad
+moves. You are fixing 30 and have patched 12.", three bars and FIX 10
+TODAY -- true, and too much to read before you have fixed anything. The
+card is a mark, a number and a button; the rest is a row each.
+
 -}
 account : Model -> Practice.Practice -> List Practice.Entry -> List (Html Msg)
 account model practice entries =
     let
-        counts =
-            Maybe.withDefault { due = 0, newToday = 0, newTomorrow = 0, deck = 0 } practice.counts
+        tiers =
+            { bands = practice.severity
+            , lead = practice.lead
+            , selected = model.tier
+            , patchedLevel = practice.patchedLevel
+            , busy = model.busy /= Idle
+            , onFix = PressedFixOne
+            , onSelect = PickedTier
+            , prefix = "hub"
+            }
     in
-    case entries of
-        [] ->
-            [ headline "Done for today."
-            , Html.p [ id "hub-counts", class "text-base mb-5", Notebook.style "color: var(--ink)" ]
-                [ Html.text (tomorrowLine counts) ]
-            , Html.button
-                [ Attr.type_ "button"
-                , id "hub-keep-going"
-                , class "q-btn plain w-full px-6 py-3.5 text-[15px]"
-                , Attr.disabled (model.busy /= Idle)
-                , onClick PressedKeepGoing
-                ]
-                [ Html.text
-                    (if model.busy == KeepingGoing then
-                        "STARTING…"
-
-                     else
-                        "KEEP GOING"
-                    )
-                ]
-            , note model
-            , bands practice
-            ]
-
-        _ ->
-            [ headline (worstLine practice)
-            , Html.p [ id "hub-counts", class "q-note text-[13px] mb-5" ]
+    case Ui.Tiers.shown tiers of
+        Just _ ->
+            [ Ui.Tiers.view tiers
+            , Html.p [ id "hub-today", class "q-note text-[13px] mt-4" ]
                 [ Html.text (todayLine practice) ]
-            , fixButton practice (List.length entries)
-            , bands practice
+            , note model
+            ]
+
+        -- A deck with cards in it and no band behind any of them: an old
+        -- row, or a game whose sources went. There is nothing to put a
+        -- tier's name to, so the deck is offered whole rather than as a
+        -- card with nothing on it.
+        Nothing ->
+            [ headline (deckLine practice)
+            , practiceButton (List.length entries)
+            , Html.p [ id "hub-today", class "q-note text-[13px] mt-4" ]
+                [ Html.text (todayLine practice) ]
+            , note model
             ]
 
 
-{-| The lead: the worst band, and how much of it is patched. A deck the
-server sent no bands for (an older answer) falls back to what is due, so
-the page still says something true.
+{-| "231 of your mistakes": the fallback head, for a deck no band can be
+read off.
 -}
-worstLine : Practice.Practice -> String
-worstLine practice =
-    case Mistakes.lead practice.severity of
-        Just sentence ->
-            sentence
-
-        Nothing ->
-            countsLine (Maybe.withDefault { due = 0, newToday = 0, newTomorrow = 0, deck = 0 } practice.counts)
+deckLine : Practice.Practice -> String
+deckLine practice =
+    String.fromInt (Maybe.withDefault 0 (Maybe.map .deck practice.counts))
+        ++ " of your mistakes"
 
 
-{-| Under it, in the quiet type: where today stands.
+{-| Under the card, in the quiet type: "3 fixed today". A count and
+nothing else -- there is no day's target any more, so there is nothing
+to be behind on.
 -}
 todayLine : Practice.Practice -> String
 todayLine practice =
     case practice.today of
         Just today ->
-            Charts.ringSentence today
+            Mistakes.fixedToday today.done
 
         Nothing ->
             ""
-
-
-{-| One band per line, with its three states as a bar -- what is in
-progress, what is patched, what is untouched -- and what patched means
-said once underneath.
--}
-bands : Practice.Practice -> Html Msg
-bands practice =
-    case List.filter (\entry -> entry.total > 0) practice.severity of
-        [] ->
-            Html.text ""
-
-        _ ->
-            Html.div [ id "hub-bands", class "mt-6 space-y-3" ]
-                (List.map band practice.severity
-                    ++ [ Html.p [ id "hub-patched-note", class "q-note text-[12px]" ]
-                            [ Html.text (Mistakes.patchedNote practice.patchedLevel) ]
-                       ]
-                )
-
-
-band : Practice.Band -> Html Msg
-band entry =
-    Html.div [ Attr.attribute "data-band" entry.grade ]
-        [ Html.p [ class "text-[13px] mb-1", Notebook.style "color: var(--ink)" ]
-            [ Html.text (Mistakes.line entry) ]
-        , Charts.patched
-            { total = entry.total
-            , inProgress = entry.inProgress
-            , patched = entry.patched
-            , sentence = Mistakes.line entry
-            }
-        ]
-
-
-{-| The one button: the verb, and what today asks of you.
--}
-fixButton : Practice.Practice -> Int -> Html Msg
-fixButton practice count =
-    Html.button
-        [ Attr.type_ "button"
-        , id "hub-practice"
-        , class "q-btn w-full px-6 py-3.5 text-[15px]"
-        , Attr.disabled (count == 0)
-        , onClick PressedPractice
-        ]
-        [ Html.text
-            (case practice.today of
-                Just today ->
-                    Mistakes.fixLabel today
-
-                Nothing ->
-                    "PRACTICE"
-            )
-        ]
 
 
 {-| A guest with games behind them: what is theirs, that it is not kept
@@ -511,43 +471,6 @@ practiceButton count =
         , onClick PressedPractice
         ]
         [ Html.text "PRACTICE" ]
-
-
-{-| "12 due · 3 new today · 231 of your mistakes". The fallback head,
-for an answer that carries no bands. The middle figure is the day's
-budget of new mistakes still to come; once it is spent (the three, or
-KEEP GOING, both count) it goes, rather than reading as "nothing new" --
-KEEP GOING is always there.
--}
-countsLine : Practice.Counts -> String
-countsLine counts =
-    String.join " · "
-        (List.filterMap identity
-            [ Just (String.fromInt counts.due ++ " due")
-            , if counts.newToday > 0 then
-                Just (String.fromInt counts.newToday ++ " new today")
-
-              else
-                Nothing
-            , Just (String.fromInt counts.deck ++ " of your mistakes")
-            ]
-        )
-
-
-{-| "3 new tomorrow · 231 of your mistakes", or only the count when
-tomorrow brings nothing new.
--}
-tomorrowLine : Practice.Counts -> String
-tomorrowLine counts =
-    String.join " · "
-        ((if counts.newTomorrow > 0 then
-            [ String.fromInt counts.newTomorrow ++ " new tomorrow" ]
-
-          else
-            []
-         )
-            ++ [ String.fromInt counts.deck ++ " of your mistakes" ]
-        )
 
 
 {-| "23 mistakes from your 4 games".

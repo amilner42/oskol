@@ -90,7 +90,7 @@ page : { hasNext : Bool } -> String -> Page.Model
 page config name =
     let
         ( model, _ ) =
-            Page.init Session.empty { id = "fix", hasNext = config.hasNext, progress = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
+            Page.init Session.empty { id = "fix", hasNext = config.hasNext, inRun = config.hasNext, progress = Nothing, tier = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
 
         loaded =
             case D.decodeString Puzzle.decoder (question name) of
@@ -277,7 +277,7 @@ staging =
                             Ok p ->
                                 let
                                     ( fresh, _ ) =
-                                        Page.init Session.empty { id = "fix", hasNext = False, progress = Nothing, today = Nothing, origin = "", share = Nothing }
+                                        Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, today = Nothing, origin = "", share = Nothing }
                                 in
                                 rendered (step (GotPuzzle (Ok p)) fresh) |> Query.find [ id "pz-score" ]
 
@@ -437,7 +437,7 @@ posting =
             \_ ->
                 let
                     ( fresh, _ ) =
-                        Page.init Session.empty { id = "fix", hasNext = False, progress = Nothing, today = Nothing, origin = "", share = Nothing }
+                        Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, today = Nothing, origin = "", share = Nothing }
 
                     model =
                         case D.decodeString Puzzle.decoder (question "move") of
@@ -803,27 +803,66 @@ next =
             in
             model |> step (BoardOut (Puzzle.Stepped path)) |> revealed (reveal "move_pass")
     in
-    describe "NEXT"
-        [ test "is there when the shell has a next puzzle, and asks the shell for it" <|
+    describe "ANOTHER and I'M DONE"
+        [ test "ANOTHER is there when the run has another, and asks the shell for it" <|
             \_ ->
                 let
                     model =
                         after { hasNext = True }
                 in
                 Expect.all
-                    [ \_ -> rendered model |> has [ id "pz-next" ]
+                    [ \_ -> rendered model |> Query.find [ id "pz-next" ] |> Query.has [ text "ANOTHER" ]
                     , \_ -> out Next model |> Expect.equal Page.WantsNext
                     ]
                     ()
-        , test "is absent on a puzzle opened on its own" <|
-            \_ -> rendered (after { hasNext = False }) |> hasNot [ id "pz-next" ]
+        , -- The run is open-ended, so stopping has to be offered every
+          -- time and never read as quitting.
+          test "I'M DONE is offered beside it, and ends the run" <|
+            \_ ->
+                let
+                    model =
+                        after { hasNext = True }
+                in
+                Expect.all
+                    [ \_ -> rendered model |> Query.find [ id "pz-done" ] |> Query.has [ text "I'M DONE" ]
+                    , \_ -> out PressedDone model |> Expect.equal Page.WantsEnd
+                    ]
+                    ()
+        , test "the last of a run offers only I'M DONE: there is no other" <|
+            \_ ->
+                let
+                    last =
+                        Page.init Session.empty
+                            { id = "fix"
+                            , hasNext = False
+                            , inRun = True
+                            , progress = Nothing
+                            , tier = Just "very_bad"
+                            , today = Nothing
+                            , origin = "http://oskol.test"
+                            , share = Nothing
+                            }
+                            |> Tuple.first
+                            |> step (GotPuzzle (Err (Api.ApiError { code = "not_found", message = "no" })))
+                in
+                rendered last
+                    |> Expect.all
+                        [ hasNot [ id "pz-next" ]
+                        , has [ id "pz-done" ]
+                        ]
+        , test "neither is on a puzzle opened on its own" <|
+            \_ ->
+                rendered (after { hasNext = False })
+                    |> Expect.all [ hasNot [ id "pz-next" ], hasNot [ id "pz-done" ] ]
         , test "and never before the reveal" <|
-            \_ -> rendered (page { hasNext = True } "move") |> hasNot [ id "pz-next" ]
+            \_ ->
+                rendered (page { hasNext = True } "move")
+                    |> Expect.all [ hasNot [ id "pz-next" ], hasNot [ id "pz-done" ] ]
         , test "but a puzzle of a run that did not load still offers it, so the run is not stranded" <|
             \_ ->
                 let
                     missing config =
-                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, progress = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
+                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, inRun = config.hasNext, progress = Nothing, tier = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
                             |> Tuple.first
                             |> step (GotPuzzle (Err (Api.ApiError { code = "not_found", message = "no" })))
                 in
@@ -840,21 +879,6 @@ next =
 -- THE END OF A RUN
 
 
-practiceJson : String -> String
-practiceJson counts =
-    """{"ok":true,"puzzles":[],"cursor":null,"counts":""" ++ counts ++ ""","mistakes":null,"game":null}"""
-
-
-moreJson : String
-moreJson =
-    """{"ok":true,"puzzles":[{"id":"aaaaaaaa","kind":"move","prompt":"White to play 6-4. What's your play?","due":true},{"id":"bbbbbbbb","kind":"move","prompt":"White to play 3-1. What's your play?","due":true}],"cursor":null,"counts":{"due":2,"new_today":0,"new_tomorrow":0,"deck":12},"mistakes":null,"game":null}"""
-
-
-practice : String -> Result Api.Error Practice.Practice
-practice =
-    Api.parseBody Practice.practiceDecoder
-
-
 account : Session.Session
 account =
     Session.withUser (Just { email = "arie@example.com", name = Just "arie" }) Session.empty
@@ -867,7 +891,7 @@ ended : Session.Session -> Page.Model
 ended session =
     let
         ( model, _ ) =
-            Page.init session { id = "fix", hasNext = True, progress = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
+            Page.init session { id = "fix", hasNext = True, inRun = True, progress = Nothing, tier = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
 
         loaded =
             case D.decodeString Puzzle.decoder (question "move") of
@@ -922,6 +946,24 @@ runEnd =
                         ]
         , test "the words" <|
             \_ -> Page.runScore { right = 0, close = 0, total = 3 } |> Expect.equal "0 of 3 right"
+        , -- Stopping after one mistake is what the page invites, so it
+          -- has to read as a finished thing to have done. The score's
+          -- total is what was *answered*, so a run stopped at its first
+          -- of twenty is one, and not one of twenty.
+          test "a run of exactly one reads as a whole session, not as quitting" <|
+            \_ ->
+                let
+                    one =
+                        ended account
+                            |> (\m -> { m | ended = Nothing })
+                            |> Page.endRun { right = 1, close = 0, total = 1 } [] "/puzzles"
+                            |> Tuple.first
+                in
+                rendered one
+                    |> Expect.all
+                        [ \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "One fixed. That is how it is done." ]
+                        , hasNot [ id "pz-close" ]
+                        ]
         , test "a guest is asked to sign in, in the one component, going on to the practice home" <|
             \_ ->
                 let
@@ -931,7 +973,6 @@ runEnd =
                 Expect.all
                     [ \_ -> rendered model |> has [ id "pz-signin-ask" ]
                     , \_ -> rendered model |> has [ id "signin", id "signin-email" ]
-                    , \_ -> rendered model |> hasNot [ id "pz-keep-going" ]
                     , \_ ->
                         case model.ended of
                             Just { after } ->
@@ -981,74 +1022,17 @@ runEnd =
                             |> Expect.equal (Page.Go "/puzzles")
                     ]
                     ()
-        , test "an account asks its deck what is left; nothing is done for today, with KEEP GOING" <|
+        , -- The run is over because the player said so. Nothing on the
+          -- card starts more: the hub is where the next tier is picked.
+          test "an account's end is the summary and the way back, and nothing to keep going with" <|
             \_ ->
-                let
-                    model =
-                        ended account
-                in
-                Expect.all
-                    [ \_ -> rendered model |> hasNot [ id "signin" ]
-                    , \_ -> rendered model |> has [ text "COUNTING WHAT IS LEFT…" ]
-                    , \_ ->
-                        model
-                            |> step (GotLeft (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":4,"deck":231}""")))
-                            |> rendered
-                            |> Expect.all
-                                [ \q -> q |> Query.find [ id "pz-done" ] |> Query.has [ text "Done for today. 4 new tomorrow." ]
-                                , has [ id "pz-keep-going" ]
-                                , hasNot [ id "pz-nothing-more" ]
-                                ]
-                    ]
-                    ()
-        , test "KEEP GOING starts what it brought, and CONTINUE what was already left" <|
-            \_ ->
-                let
-                    done =
-                        ended account |> step (GotLeft (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":4,"deck":231}""")))
-                in
-                Expect.all
-                    [ \_ -> done |> step PressedKeepGoing |> out (GotMore (practice moreJson)) |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ] Nothing)
-                    , \_ -> done |> step PressedKeepGoing |> rendered |> Query.find [ id "pz-keep-going" ] |> Query.has [ attribute (Html.Attributes.disabled True) ]
-                    , \_ ->
-                        let
-                            left =
-                                ended account |> step (GotLeft (practice moreJson))
-                        in
-                        Expect.all
-                            [ \_ -> rendered left |> Query.find [ id "pz-more-due" ] |> Query.has [ text "2 more to go." ]
-                            , \_ -> out PressedContinueRun left |> Expect.equal (Page.StartRun [ "aaaaaaaa", "bbbbbbbb" ] Nothing)
-                            ]
-                            ()
-                    ]
-                    ()
-        , test "a deck with nothing more to start says so, once KEEP GOING has asked" <|
-            \_ ->
-                let
-                    nothingNew =
-                        ended account
-                            |> step (GotLeft (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":0,"deck":12}""")))
-                in
-                Expect.all
-                    [ \_ ->
-                        rendered nothingNew
-                            |> Expect.all
-                                [ \q -> q |> Query.find [ id "pz-done" ] |> Query.has [ text "Done for today." ]
-                                , \q -> q |> Query.find [ id "pz-done" ] |> Query.hasNot [ text "tomorrow" ]
-                                , has [ id "pz-keep-going" ]
-                                , hasNot [ id "pz-nothing-more" ]
-                                ]
-                    , \_ ->
-                        nothingNew
-                            |> step PressedKeepGoing
-                            |> step (GotMore (practice (practiceJson """{"due":0,"new_today":0,"new_tomorrow":0,"deck":12}""")))
-                            |> rendered
-                            |> Expect.all
-                                [ has [ id "pz-nothing-more" ]
-                                , hasNot [ id "pz-keep-going" ]
-                                ]
-                    ]
-                    ()
+                rendered (ended account)
+                    |> Expect.all
+                        [ hasNot [ id "signin" ]
+                        , hasNot [ id "pz-keep-going" ]
+                        , hasNot [ id "pz-more-due" ]
+                        , has [ id "pz-home" ]
+                        ]
         ]
 
 
@@ -1200,7 +1184,7 @@ story =
         opened share =
             let
                 ( model, _ ) =
-                    Page.init Session.empty { id = "fix", hasNext = False, progress = Nothing, today = Nothing, origin = "http://oskol.test", share = share }
+                    Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, today = Nothing, origin = "http://oskol.test", share = share }
 
                 loaded =
                     case D.decodeString Puzzle.decoder (question "move") of
@@ -1261,12 +1245,19 @@ what the page that started the run was told.
 -}
 inRun : Int -> List (Maybe Verdict) -> Maybe Practice.Today -> Page.Model
 inRun at marks today =
+    inRunOf Nothing at marks today
+
+
+inRunOf : Maybe String -> Int -> List (Maybe Verdict) -> Maybe Practice.Today -> Page.Model
+inRunOf tier at marks today =
     let
         ( model, _ ) =
             Page.init Session.empty
                 { id = "fix"
                 , hasNext = True
+                , inRun = True
                 , progress = Just { at = at, marks = marks }
+                , tier = tier
                 , today = today
                 , origin = "http://oskol.test"
                 , share = Nothing
@@ -1291,53 +1282,53 @@ blanks n =
 runProgress : Test
 runProgress =
     describe "progress through a session"
-        [ test "the first of ten: 1 of 10, a tenth of the bar, ten blank marks" <|
+        [ -- A run has no length: it goes on until I'M DONE. So there is
+          -- no "4 of 10" and no bar filling towards a finish line that
+          -- does not exist.
+          test "the head is the tier's mark and the day's count, with no total" <|
             \_ ->
-                rendered (inRun 0 (blanks 10) Nothing)
+                rendered (inRunOf (Just "very_bad") 0 (blanks 10) (Just { done = 3 }))
                     |> Query.find [ id "pz-progress" ]
                     |> Expect.all
-                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "1 of 10" ]
-                        , Query.has [ attribute (Html.Attributes.attribute "aria-valuenow" "1") ]
-                        , Query.has [ attribute (Html.Attributes.attribute "style" "width: 10%") ]
-                        , Query.findAll [ class "pz-mark" ] >> Query.count (Expect.equal 10)
-                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
-                            >> Query.count (Expect.equal 10)
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "?? · 3 fixed today" ]
+                        , Query.hasNot [ class "pz-progress-track" ]
+                        , Query.hasNot [ attribute (Html.Attributes.attribute "role" "progressbar") ]
                         ]
-        , test "mid-run: the count, the bar and the marks all say the same thing" <|
+        , test "only what has happened so far is marked, never the whole list" <|
             \_ ->
                 rendered (inRun 3 [ Just Pass, Just Fail, Just Hold, Nothing, Nothing ] Nothing)
                     |> Query.find [ id "pz-progress" ]
                     |> Expect.all
-                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "4 of 5" ]
-                        , Query.has [ attribute (Html.Attributes.attribute "style" "width: 80%") ]
+                        [ Query.findAll [ class "pz-mark" ] >> Query.count (Expect.equal 4)
                         , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "pass") ]
                             >> Query.count (Expect.equal 1)
                         , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "fail") ]
                             >> Query.count (Expect.equal 1)
                         , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "hold") ]
                             >> Query.count (Expect.equal 1)
-                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
-                            >> Query.count (Expect.equal 2)
 
-                        -- which one is being played, marked as such
+                        -- the one being played, and no mark for the
+                        -- mistakes that may never be reached
+                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
+                            >> Query.count (Expect.equal 1)
                         , Query.findAll [ class "is-here" ] >> Query.count (Expect.equal 1)
                         ]
-        , test "the last one answered: 5 of 5, a full bar, no blanks" <|
+        , test "a run of one game's mistakes has no tier, so it is the count alone" <|
             \_ ->
-                rendered (inRun 4 [ Just Pass, Just Pass, Just Hold, Just Fail, Just Pass ] Nothing)
-                    |> Query.find [ id "pz-progress" ]
-                    |> Expect.all
-                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 of 5" ]
-                        , Query.has [ attribute (Html.Attributes.attribute "style" "width: 100%") ]
-                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
-                            >> Query.count (Expect.equal 0)
-                        ]
+                rendered (inRun 0 (blanks 3) (Just { done = 1 }))
+                    |> Query.find [ id "pz-progress-count" ]
+                    |> Query.has [ text "1 fixed today" ]
+        , test "a guest in a run has no day of theirs, so it is the mark alone" <|
+            \_ ->
+                rendered (inRunOf (Just "bad") 0 (blanks 3) Nothing)
+                    |> Query.find [ id "pz-progress-count" ]
+                    |> Query.has [ text "?" ]
         , test "a puzzle opened from a link is not a session, and says nothing about one" <|
             \_ ->
                 rendered (page { hasNext = False } "move")
                     |> Expect.all
                         [ Query.hasNot [ id "pz-progress" ]
-                        , Query.hasNot [ class "chart-ring" ]
+                        , Query.hasNot [ id "pz-done" ]
                         ]
         , test "answering fills this puzzle's own mark, in the verdict's colours" <|
             \_ ->
@@ -1353,17 +1344,13 @@ runProgress =
                     |> revealed (reveal "move_fail")
                     |> rendered
                     |> Query.find [ id "pz-marks" ]
-                    |> Expect.all
-                        [ Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "fail") ]
-                            >> Query.count (Expect.equal 1)
-                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
-                            >> Query.count (Expect.equal 1)
-                        ]
-        , test "the day's ring is drawn in a run, and moves as the answer lands" <|
+                    |> Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "fail") ]
+                    |> Query.count (Expect.equal 1)
+        , test "the day's count moves as the answer lands" <|
             \_ ->
                 let
                     model =
-                        inRun 1 [ Just Pass, Nothing ] (Just { done = 4, target = 10 })
+                        inRunOf (Just "very_bad") 1 [ Just Pass, Nothing ] (Just { done = 4 })
 
                     ( path, _ ) =
                         aTurn model
@@ -1371,24 +1358,24 @@ runProgress =
                 Expect.all
                     [ \_ ->
                         rendered model
-                            |> Query.find [ id "pz-progress" ]
-                            |> Query.has [ attribute (Html.Attributes.attribute "data-done" "4") ]
+                            |> Query.find [ id "pz-progress-count" ]
+                            |> Query.has [ text "?? · 4 fixed today" ]
                     , \_ ->
                         model
                             |> step (BoardOut (Puzzle.Stepped path))
                             |> revealed (reveal "move_pass")
                             |> rendered
-                            |> Query.find [ id "pz-progress" ]
-                            |> Query.has [ attribute (Html.Attributes.attribute "data-done" "5") ]
+                            |> Query.find [ id "pz-progress-count" ]
+                            |> Query.has [ text "?? · 5 fixed today" ]
                     ]
                     ()
-        , test "answering the same puzzle twice moves the ring once" <|
+        , test "answering the same puzzle twice moves the count once" <|
             \_ ->
                 -- Only the first answer at a card is recorded, so a retry
                 -- must not make the day look busier than it was.
                 let
                     model =
-                        inRun 0 [ Nothing ] (Just { done = 4, target = 10 })
+                        inRun 0 [ Nothing ] (Just { done = 4 })
 
                     ( path, _ ) =
                         aTurn model
@@ -1398,31 +1385,8 @@ runProgress =
                     |> revealed (reveal "move_pass")
                     |> revealed (reveal "move_fail")
                     |> rendered
-                    |> Query.find [ id "pz-progress" ]
-                    |> Query.has [ attribute (Html.Attributes.attribute "data-done" "5") ]
-        , test "the session says why this position is here, before the answer" <|
-            \_ ->
-                let
-                    model =
-                        inRun 0 (blanks 3) Nothing
-                            |> step (GotWhy (Ok { who = "you", opponent = "Charlie", grade = "very_bad" }))
-                in
-                rendered model
-                    |> Query.find [ id "pz-why" ]
-                    |> Query.has [ text "A very bad move, from your game vs Charlie" ]
-        , test "a shared link is told nothing about whose mistake it is, and says nothing" <|
-            \_ ->
-                -- The server answers a 404 to everyone who was not in the
-                -- game; the page asks at all only inside a session.
-                rendered (inRun 0 (blanks 3) Nothing |> step (GotWhy (Err Api.NetworkError)))
-                    |> Query.hasNot [ id "pz-why" ]
-        , test "a guest in a run gets the bar and the marks, and no ring" <|
-            \_ ->
-                rendered (inRun 0 (blanks 4) Nothing)
-                    |> Expect.all
-                        [ Query.has [ id "pz-progress" ]
-                        , Query.hasNot [ class "chart-ring" ]
-                        ]
+                    |> Query.find [ id "pz-progress-count" ]
+                    |> Query.has [ text "5 fixed today" ]
         ]
 
 

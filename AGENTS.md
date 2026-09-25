@@ -627,15 +627,16 @@ src/oskol/caps/practice.gleam    the puzzle deck: what a player is drilling, wha
 lib/oskol/gleam/caps/practice.ex its real IO, over retain: times cross as Unix ms, a
                                  card's content as JSON text, tags sorted
 src/oskol/practice/deck.gleam    the deck's own rules: due before new, three new a
-                                 day worst first (`new_per_day`), the day's goal
-                                 capped at ten answers (`goal_per_day`: the ring's
-                                 ceiling, never a limit on what may be answered),
-                                 what counts as patched (`patched_level`, the fourth
-                                 rung), the three bands each in three states
-                                 (untouched, in progress, patched), KEEP GOING
-                                 uncapped, and the sentence each refusal gives the
-                                 player (a puzzle not in the deck is the only 404; a
-                                 snooze needs a card in rotation)
+                                 day worst first (`new_per_day`), what counts as
+                                 patched (`patched_level`, the fourth rung), the
+                                 three bands each in three states (untouched, in
+                                 progress, patched) with what each still has to do
+                                 today, which tier to lead with (`tiers`, `lead`,
+                                 `has_work`, `left`), the day as a plain count
+                                 (`today`: no target, and so no quota), one tier's
+                                 own queue (`band_session`), and the sentence each
+                                 refusal gives the player (a puzzle not in the deck
+                                 is the only 404; a snooze needs a card in rotation)
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
 lib/oskol_web/controllers/api/home_controller.ex      /papi/me/home and the
                                  recent rooms it pages
@@ -659,9 +660,9 @@ assets/src/Page/HomeBoard.elm    the guest home's board: the table edge to edge,
 assets/src/Page/Home.elm         "/" for an account: the bar (the name, PLAY, JOIN,
                                  PUZZLES, the boards), then form first (two numbers, the
                                  streak, the sentence, the line), live games with your
-                                 move first, PUZZLES (the worst band in words, the
-                                 day's ring, FIX N TODAY, a line and a bar per band,
-                                 the ladder behind `detail`, the 30 days) and recent
+                                 move first, PUZZLES (one tier's card -- `Ui.Tiers` --
+                                 with "3 fixed today" under it, the ladder behind
+                                 `detail`, the 30 days) and recent
                                  matches with MORE -- a line
                                  per room, a match opening in place to list its games.
                                  Everything from one answer; `Main` picks between this
@@ -692,16 +693,28 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  phone (`onePanel`: under 640 wide, or
                                  under 480 tall sideways) the panel has no scroll of its
                                  own and the page scrolls
-assets/src/Page/Puzzles.elm      "/puzzles" the practice home: an account's counts and
-                                 PRACTICE (or "Done for today" and KEEP GOING), a guest's
-                                 "23 mistakes from your 4 games", a stranger's TRY ONE
-assets/src/Api/Practice.elm      /papi/practice, /more, /tz and /papi/puzzles/random
+assets/src/Page/Puzzles.elm      "/puzzles" the practice home: for an account the
+                                 one-tier card (`Ui.Tiers`) and "3 fixed today", a
+                                 guest's "23 mistakes from your 4 games", a
+                                 stranger's TRY ONE
+assets/src/Ui/Tiers.elm          one deck in front of you, on the hub and on the home:
+                                 the worst tier the player has made a mistake in, by
+                                 the replay's own mark (?? ? ?!), "31 left to fix" with
+                                 "23 patched" quieter beside it, its bar and FIX ONE;
+                                 the other tiers as quiet rows you may tap. A tier with
+                                 nothing due and no new ones left today says so warmly
+                                 and offers the next tier down instead; with no tier
+                                 anywhere in work, one line and nothing to press
+assets/src/Api/Practice.elm      /papi/practice (with `?band=`), /tz and /papi/puzzles/random
 assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over the board
                                  (Games/Backgammon/Puzzle.elm's `Table`, the page owning
                                  the path and the lazy fetches), PLAY or the two cube
                                  scale, the reveal in the replay's words, the level line
-                                 and its four buttons, the memory line, SHARE, NEXT, and
-                                 the end of a run: the score, then KEEP GOING or the sign-in
+                                 and its four buttons, the memory line, SHARE, and --
+                                 in a run -- ANOTHER and I'M DONE after every reveal;
+                                 the end of a run is the summary (one mistake fixed is
+                                 a whole session and says so), "N fixed today", and the
+                                 way back, or the sign-in for a guest
 assets/src/Games/Backgammon/Puzzle.elm  the puzzle wire: the question and tree decoders,
                                  the board on a tree node, and the reveal's decoders
                                  (verdict, candidates, cube band, schedule, memory)
@@ -990,13 +1003,15 @@ GET  /papi/me                          {ok, guest_name, user: {email, name} | nu
 POST /papi/me/name                     {name} -> {ok, user}  (a signed-in browser
                                        renames its account; 422 "That name is
                                        taken." when another account has it)
-GET  /papi/practice                    {ok, puzzles: [{id, kind, prompt, due}],
+GET  /papi/practice[?band=<grade>]     {ok, puzzles: [{id, kind, prompt, due}],
                                          cursor: null, counts: {due,
                                          new_today, new_tomorrow, deck} | null,
                                          mistakes: {puzzles, games} | null,
-                                         today: {done, target} | null,
+                                         today: {done} | null,
                                          severity: [{grade, total,
-                                           in_progress, patched}] | null,
+                                           in_progress, patched, due,
+                                           new_left}] | null,
+                                         lead: "<grade>" | null,
                                          patched_level, game: null}
                                        -- an account's deck (due, then new;
                                        new_tomorrow is the day's budget or
@@ -1005,21 +1020,30 @@ GET  /papi/practice                    {ok, puzzles: [{id, kind, prompt, due}],
                                        (unscheduled, counts null, no writes;
                                        `mistakes` counts all of them, from
                                        how many games), or nothing. `today`
-                                       is the day's ring -- answers recorded
-                                       in the caller's own local day, against
-                                       the day's own work (what is answered
-                                       plus what is due plus the new ones the
-                                       day allows), capped at ten
-                                       (`deck.goal_per_day`): a backlog asks
-                                       for ten, not for the backlog.
+                                       is a plain count of the answers
+                                       recorded in the caller's own local
+                                       day: **no target, and so no quota**.
                                        `severity` is the mistakes by band,
                                        worst first, each in three states --
                                        untouched, in progress (started,
-                                       below the patched rung) and patched.
-                                       Both an
-                                       account's only. Never paged: every fetch is the front of
-                                       the queue, and "Done for today" is a
-                                       fetch that comes back empty
+                                       below the patched rung) and patched --
+                                       plus what that band still has to do
+                                       today: `due` now, and `new_left`,
+                                       the ones it has never shown that the
+                                       day's budget of new mistakes still
+                                       allows (the budget is the deck's, not
+                                       the band's). `lead` is the worst band
+                                       with work, else the worst the player
+                                       has made a mistake in at all, else
+                                       null -- one choice, so the hub and the
+                                       home cannot make it two ways. All an
+                                       account's only. `?band=` narrows the
+                                       puzzles to that one tier, due first and
+                                       then ones never seen, worst first
+                                       inside it: what FIX ONE runs. A band
+                                       that is not one of the three is a 422,
+                                       never the whole deck. Never paged:
+                                       every fetch is the front of the queue
 GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
                                        random complete puzzle whose answer
                                        stands clear (a checker play whose
@@ -1028,8 +1052,11 @@ GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
                                        0.08); 404 with a sentence while the
                                        pool has none. Reads nothing about
                                        the caller and writes nothing
-POST /papi/practice/more               KEEP GOING: ten more new ones into
-                                       rotation, then the same session
+POST /papi/practice/more               ten more new ones into rotation, then the
+                                       same session. Nothing in the client
+                                       presses it any more: the day has no
+                                       target to escape, and `new_per_day` is
+                                       the only cap left
 POST /papi/practice/tz                 {tz} -> {ok, tz}  (an IANA name, on the
                                        account's deck; Etc/UTC until set)
 POST /papi/practice/bury               {id} -> {ok, id, level, due}  (back at
@@ -1216,14 +1243,15 @@ and recent matches.
   plus the pictures Retain does not answer on its own and the cap reads
   off its rows: `ladder`, the mistakes at each of the eight levels;
   `days`, whether the deck was practised on each of the last 30 local
-  days (an attempt counts, a deferral does not); `today: {done, target}`,
-  the day's ring, its target capped at ten; and `severity`, the mistakes
-  by band in three states -- untouched, in progress, patched. The page
-  leads with the worst band in words ("You have made 61 very bad moves.
-  You are fixing 30 and have patched 23."), the day's ring, one button
-  (FIX 10 TODAY), and one line and bar per band -- the bar filled in the
-  highlighter yellow for what is in progress and the best move's green
-  for what is patched; the ladder is behind a `detail` toggle.
+  days (an attempt counts, a deferral does not); `today: {done}`, a plain
+  count of the day's answers; and `severity`, the mistakes by band in
+  three states -- untouched, in progress, patched -- with what each band
+  still has to do today, plus `lead`, the tier to put in front. The page
+  draws the same one-tier card the hub does (`Ui.Tiers`): the mark, "31
+  left to fix", "23 patched", the bar -- highlighter yellow for what is
+  in progress, the best move's green for what is patched -- and FIX ONE,
+  with the other tiers as quiet rows and "3 fixed today" under it. The
+  ladder and the 30 days are behind a `detail` toggle.
 - Decisions: `src/oskol/handlers/home.gleam`. Reading never creates a
   deck, and never queues a review.
 
@@ -1650,18 +1678,26 @@ they happened to play must not undo.
 **`GET /papi/practice`** is one page for three callers
 (`src/oskol/handlers/practice.gleam`). Signed in: the deck, everything due
 before anything new (`new: :after_reviews`), twenty at a time,
-`counts: {due, new_today, deck}`, `today: {done, target}` -- the day's
-ring, on the `practice.day` cap, counted in the deck's own timezone by
-exactly what the 30-day strip counts as practice, and asking for at most
-`deck.goal_per_day` (ten) answers however big the backlog -- and
-`severity`, the mistakes by band in their three states, untouched, in
-progress and patched (`practice.severity`, which takes
-`deck.patched_level` and never decides it). A guest: the mistakes on the seats their
+`counts: {due, new_today, deck}`, `today: {done}` -- a plain count of the
+day's answers, on the `practice.day` cap, counted in the deck's own
+timezone by exactly what the 30-day strip counts as practice, with **no
+target**: a quota was what put a player off starting -- `severity`, the
+mistakes by band in their three states (untouched, in progress, patched)
+with what each still has to do today (`due` now, `new_left` capped at the
+day's budget of new mistakes), and `lead`, the worst band with work
+(`practice.severity`, which takes `deck.patched_level` and never decides
+it; `deck.tiers` folds in the budget and `deck.lead` chooses). `?band=`
+narrows the puzzles to one tier (`practice.band_queue`, the same
+orderings `Retain.due` and its new-card query use, with the
+`puzzle_sources` join in front): due first, then ones never seen, worst
+first inside the band, and never the whole deck for a band that is not
+one of the three. A guest: the mistakes on the seats their
 cookie holds and no account owns, newest game first, unscheduled,
 `counts: null`, and **nothing written** -- only an account has a deck.
 Nobody: an empty list, not an error. Reading never starts a card or spends a
-day's budget. `POST /papi/practice/more` is KEEP GOING: ten more into
-rotation over the day's budget, then the same session.
+day's budget. `POST /papi/practice/more` puts ten more into rotation over
+the day's budget and answers the same session; nothing in the client
+presses it any more, because there is no day's target to escape.
 
 **A session is never paged.** Every fetch is the front of the queue and
 `cursor` is always null. The due set is live -- answering a card takes it
@@ -1730,51 +1766,89 @@ through fifty mistakes that nothing was happening.
 
 **The home and a run** (`/puzzles`, `assets/src/Page/Puzzles.elm`; PUZZLES
 on the home menu where TACTICS / SOON was, ANALYSIS / SOON stays). One
-page on `GET /papi/practice`'s one answer: an account with a deck reads
-"12 due · 4 new today · 231 in your deck" and PRACTICE, or, with nothing
-due and nothing new, "Done for today", "4 new tomorrow · 231 in your
-deck" and KEEP GOING (`POST /papi/practice/more`, then the session it
-answers is the run); a guest with games reads "23 mistakes from your 4
-games", that progress is not saved, and the same PRACTICE; a stranger
-(and an account whose deck is empty) two lines on what this is and TRY
-ONE (`GET /papi/puzzles/random`, a 404's sentence shown under the button
-while the pool has none). A quiet "Sign in" line opens `Ui.SignIn`
-(next `/puzzles`) for whoever wants it before the run asks. Signed in,
-the page POSTs the browser's zone
+page on `GET /papi/practice`'s one answer.
+
+**One deck in front of you** (`assets/src/Ui/Tiers.elm`, the same card on
+the hub and in the home's practice section). An account is shown **one
+tier** of their mistakes -- the worst band they have made a mistake in at
+all, unless they tap another -- named by the mark the replay already
+draws (`??` very bad, `?` bad, `?!` dubious): the mark big, the tier's
+name, "31 left to fix" (everything not patched; what is *due* changes
+hour to hour and is not what anyone is trying to get to zero) with "23
+patched" quieter beside it, its own bar, and one button, **FIX ONE**.
+The other tiers sit under it as quiet rows (mark, name, "12 left") that
+may be tapped, never pushed; a tier with nothing in it is not drawn.
+When the tier in front has nothing due and no new ones left today it
+says so warmly -- "Nice — your ?? moves are in good shape." over
+"Nothing due. More of them tomorrow." (or "…and you have started every
+one.") -- and offers the next tier down as its own button, "WORK ON ?
+BAD MOVES", which moves the card onto it. When **no** tier has work
+there is one line, "Nice work — every one of your mistakes is in good
+shape.", the rows are text rather than buttons, and there is nothing to
+press. A player with no mistakes at all keeps the empty state.
+
+**There is no day's target.** `goal_per_day` and FIX N TODAY are gone:
+the day is a plain count, "3 fixed today", in the quiet type wherever the
+ring used to be (the hub, the session, the home, the end of a run).
+`new_per_day` (three) stays and is the only cap left -- it governs how
+many new mistakes a day the queue introduces, and so what `new_left`
+can be.
+
+A guest with games reads "23 mistakes from your 4 games", that progress
+is not saved, and PRACTICE (their whole pile, which is no tier of
+anything); a stranger (and an account whose deck is empty) two lines on
+what this is and TRY ONE (`GET /papi/puzzles/random`, a 404's sentence
+shown under the button while the pool has none). A quiet "Sign in" line
+opens `Ui.SignIn` (next `/puzzles`) for whoever wants it before the run
+asks. Signed in, the page POSTs the browser's zone
 (`Intl.DateTimeFormat().resolvedOptions().timeZone`, a boot flag `tz`) to
 `/papi/practice/tz` once per visit, and never for a guest.
 
-A page that starts a run answers `Out = StartRun (List String) (Maybe
-Today)`: Main sets `run = {ids, at = 0, answers = [], next}`, takes the
-day's ring from the answer that page already had, and pushes the first
-id.
-`next` is the page the run was started from (the practice home, the
-table, the replay), and is where a guest who signs in at the run's end
-goes on to. The puzzle page
-reports every reveal, and every override after it, as `Out = Answered
-{verdict, schedule, grade}`; Main keeps it on the run by puzzle id (an
-answer given again replaces, never counts twice; NEVER reports no
-schedule, the mistake being out of the deck). At the
-last id `WantsNext` is answered with the score and those answers
-(`Page.Puzzle.endRun {right, close, total} [answers]`: a pass is right,
-a hold close, a miss or an unknown neither; the total is the run's
-length) and the page ends the run
-on its own card, the board gone: "7 of 10 right" (and "2 close"), what
-the run **patched** ("You patched 2 very bad moves and 1 bad move." --
-counted by band off the answers whose schedule says `patched`; nothing
-when it crossed nobody over the rung, and nothing for a guest), then
-for an account a refetch of `/papi/practice` -- empty is "Done for today.
-4 new tomorrow." (just "Done for today." when tomorrow brings none) and
-KEEP GOING, which runs what it brought or says the deck has nothing more
-to start; more due is "N more to go." and CONTINUE -- and for a guest
-"Sign in and we'll keep this: these come back until you stop making
+FIX ONE fetches that tier's queue (`GET /papi/practice?band=<grade>`) and
+starts a run of it. A page that starts a run answers `Out = StartRun
+(List String) (Maybe Today) (Maybe String)`: Main sets `run = {ids, at =
+0, answers = [], next, tier}`, takes the day's count from the answer that
+page already had, and pushes the first id. `next` is the page the run was
+started from (the practice home, the table, the replay), and is where a
+guest who signs in at the run's end goes on to.
+
+**A run is open-ended.** After every reveal the page offers **ANOTHER**
+(`#pz-next`, the next mistake of the same tier; drawn only where there
+really is one) and **I'M DONE** (`#pz-done`, `Out = WantsEnd`, drawn
+wherever this is a run at all). Over the board the strip is the tier's
+mark and the day's count -- "?? · 3 fixed today" -- with a mark for each
+mistake answered so far and the "why this position is here" line; there
+is no bar and no "4 of 10", because a run has no length to be a fraction
+of. The puzzle page reports every reveal, and every override after it, as
+`Out = Answered {verdict, schedule, grade}`; Main keeps it on the run by
+puzzle id (an answer given again replaces, never counts twice; NEVER
+reports no schedule, the mistake being out of the deck).
+
+`WantsEnd` is answered with the score and those answers
+(`Page.Puzzle.endRun {right, close, total} [answers]`: a pass is right, a
+hold close, a miss or an unknown neither, and the total is **how many
+were answered**, never the length of the list the run was given -- a run
+has no length, and "0 of 3 right" to someone who fixed one and stopped
+is the reading this page exists to stop) and the page ends the run on
+its own card, the board gone. **Leaving after one mistake is a finished
+thing to have done**, so a run of one gets its own sentence ("One fixed.
+That is how it is done.", "One faced, and close. That counts.", "One
+faced. It comes back tomorrow."); more than one is "7 of 10 right" and
+"2 close". Under it, what the run **patched** ("You patched 2 very bad
+moves and 1 bad move." -- counted by band off the answers whose schedule
+says `patched`; nothing when it crossed nobody over the rung, and nothing
+for a guest), "N fixed today", and then for an account the way back to
+`/puzzles` and **nothing else** -- the run is over because the player said
+so, and a card offering a fresh quota would take that back -- and for a
+guest "Sign in and we'll keep this: these come back until you stop making
 them." over `Ui.SignIn` (next `/puzzles`; the stamp and the deck sync are
-the server's, and CONTINUE lands on the home with a deck). The page's
-other `Out`s for this: `StartRun`, `SignedIn (Maybe User)`, `Go path`.
-Decisions on the server: `handlers/practice` (counts, a guest's
-`mistakes`) and `handlers/puzzles_hub` (TRY ONE's clear-answer rule, on
-the `puzzles.sample` cap: up to 40 complete puzzles in the database's
-random order, the first that qualifies).
+the server's, and CONTINUE lands on the home with a deck). Ending a run
+fetches nothing. The page's other `Out`s for this: `StartRun`, `SignedIn
+(Maybe User)`, `Go path`. Decisions on the server: `handlers/practice`
+(counts, the tiers, a guest's `mistakes`) and `handlers/puzzles_hub`
+(TRY ONE's clear-answer rule, on the `puzzles.sample` cap: up to 40
+complete puzzles in the database's random order, the first that
+qualifies).
 
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
 (no new column: retain already keeps a learner's timezone, and it is the
@@ -1884,11 +1958,15 @@ node playwright/review-puzzle/test.js           # screenshots of the puzzle page
 node playwright/test-puzzles-hub/test.js        # the practice home and a run: setup.exs's game, the
                                                # first seat trimmed to 12 mistakes; a stranger's TRY
                                                # ONE, a guest's run of 12 to the score and the sign-in
-                                               # ask, sign in there, the account's counts and its
-                                               # timezone sent once, a run of 10 to "Done for today.
-                                               # 2 new tomorrow.", KEEP GOING's 2; phones
-node playwright/review-puzzles-hub/test.js      # screenshots of the practice home (stranger, guest,
-                                               # account, done for today) and both end screens
+                                               # ask, sign in there, the one-tier card and its
+                                               # timezone sent once, FIX ONE's run of the day's 3
+                                               # watching the strip, the summary and the way back,
+                                               # then one mistake and I'M DONE; phones
+node playwright/review-puzzles-hub/test.js      # screenshots: the hub leading with ??, ?? in good
+                                               # shape with ? offered, everything in good shape, a
+                                               # session mid-run, the summary after one mistake
+                                               # (shape.exs's SHAPE_STATE arranges each), plus the
+                                               # stranger's and guest's hub and the home's section
 node playwright/test-spa-landing/test.js        # the home board and CREATE GAME's dialog, old
                                                # links redirect, a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
@@ -2011,21 +2089,34 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
   state, the form printing no numbers under three graded games, the streak
   in days and nothing at zero, a match drawn as one line that opens to its
   games, MORE appending the next page of rooms and then going, the grade
-  band a rating is coloured by, and a guest's answer handing the shell
-  `SignedOut` rather than drawing an empty home.
+  band a rating is coloured by, a guest's answer handing the shell
+  `SignedOut` rather than drawing an empty home, and the practice section
+  as the one-tier card (its mark, what is left to fix, FIX ONE with its
+  tier, the quiet rows and tapping one, "4 fixed today" with no
+  denominator).
+- `MistakesTest`: every word practice is said in, pinned -- the tiers by
+  mark and name, "31 left to fix" and "23 patched", what a tier in good
+  shape says and why, the all-clear line, the next tier's button, "3
+  fixed today", and a run of one reading as a finished thing.
 - `PuzzlePageTest`: the page on the generated fixtures: the reveal decodes
   (a fifth verdict word fails it), a tap walks and UNDO walks back, a lazy
   node is fetched and merged, PLAY posts exactly the path with the key (and
   waits for the key), the verdict and "you" in the table, the cube scale
   with the engine's band, the level line in its three states and after an
-  override, NEXT only from the shell, the memory line on 200 and not on 404;
-  the end of a run: every verdict reported, the score card for a guest (the
-  sign-in, going on to `/puzzles`) and for an account (done for today, KEEP
-  GOING and CONTINUE start what the deck answers).
-- `PuzzlesHubTest`: the practice home on the wire's three answers (the
-  counts line, a guest's mistakes line, a stranger's TRY ONE and the empty
-  pool's sentence), PRACTICE and KEEP GOING as `StartRun`, and a decoder
-  that refuses a malformed count rather than defaulting it.
+  override, ANOTHER and I'M DONE only from the shell (ANOTHER only where
+  there is another), the memory line on 200 and not on 404; the session
+  strip (the tier's mark and the day's count, no total, a mark only for
+  what has been reached); the end of a run: every verdict reported, a run
+  of one reading as a whole session, the card for a guest (the sign-in,
+  going on to `/puzzles`) and for an account (the summary and the way
+  back, and nothing to keep going with).
+- `PuzzlesHubTest`: the practice home on the wire's answers -- the
+  one-tier card in each of its states (a tier with work, a tier in good
+  shape offering the next down, everything in good shape with nothing to
+  press, an empty deck), the quiet rows and tapping one, FIX ONE as
+  `StartRun` with its tier, a guest's mistakes line, a stranger's TRY ONE
+  and the empty pool's sentence, and a decoder that refuses a malformed
+  count rather than defaulting it.
 - `ReplayTest`: the replay on the real record and analysis of seed 000011
   (`ReplayFixtures`): decoders, the board at every step, stepping, keys,
   swipes, game switching, and the analysis filling in without moving the

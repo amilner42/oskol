@@ -1404,13 +1404,12 @@ pub fn game_puzzles_json(
       ),
       #("cursor", json.null()),
       #("counts", json.null()),
-      // The day's ring, so a run started from a finished game's card opens
-      // with the same count the home and a deck session show rather than
-      // having one appear at the first answer. An account's only: a guest
-      // has no deck and no day of theirs to count.
+      // The day's count, so a run started from a finished game's card
+      // opens with the same number the home and a deck session show
+      // rather than having one appear at the first answer. An account's
+      // only: a guest has no deck and no day of theirs to count.
       #("today", case session.user_id {
-        Some(uid) ->
-          deck.today_json(deck.today(ctx, uid, deck.due_count(ctx, uid)))
+        Some(uid) -> deck.today_json(deck.today(ctx, uid))
         None -> json.null()
       }),
       #("game", json.int(number)),

@@ -68,7 +68,7 @@ result card's PRACTICE was pressed at).
 -}
 
 import Api
-import Api.Practice as Practice exposing (Practice, Today)
+import Api.Practice exposing (Today)
 import Dict
 import Games.Backgammon.Puzzle as Puzzle exposing (Candidate, Puzzle, Reveal, Schedule, Verdict(..))
 import Games.Backgammon.Replay as Replay
@@ -132,9 +132,11 @@ type alias Progress =
 type alias Model =
     { session : Session
     , id : String
-    , hasNext : Bool -- the shell has somewhere after this one: a run's next puzzle, or its end
+    , hasNext : Bool -- the run has another mistake after this one
+    , inRun : Bool -- this page is part of a run, so I'M DONE can end it
     , progress : Maybe Progress -- where this one sits in a run, and the marks so far
-    , today : Maybe Today -- the day's ring, as the run was handed it; an account's only
+    , tier : Maybe String -- the tier of mistakes this run is of, if it is of one
+    , today : Maybe Today -- the day's count, as the run was handed it; an account's only
     , counted : Bool -- this page's own answer has been counted into the ring
     , origin : String -- scheme, host and port, for the link SHARE copies
     , puzzle : Loadable Puzzle
@@ -179,18 +181,18 @@ type alias End =
 
 
 {-| What the end screen offers under the score.
+
+**Nothing to press but the way back.** A run ends because the player
+pressed I'M DONE, or because the tier ran out: either way they have
+said they are finished, and a card that answered with "2 more to go" or
+a fresh quota would take the moment back. The hub is where the next
+tier is chosen.
 -}
 type After
     = -- a guest: the sign-in, going on to where the run was started from
       AskSignIn SignIn.Model
-      -- an account: asking the deck what is left
-    | Refetching
-      -- an account: what is left, and whether KEEP GOING is in flight
-    | Left Practice Bool
-      -- an account: KEEP GOING brought nothing, so the deck has nothing
-      -- more to start today
-    | NothingMore Practice
-    | Unreachable String
+      -- an account: the way back to the hub, and nothing else
+    | BackToPuzzles
 
 
 {-| The two share buttons report through one port, so the page remembers
@@ -212,6 +214,7 @@ type Msg
     | RevealedAt Time.Posix
     | Show (Maybe Int)
     | ToggleBefore
+    | PressedDone
     | PressedOutcome String
     | GotOutcome String (Result Api.Error (Maybe Schedule))
     | GotWhy (Result Api.Error Puzzle.Why)
@@ -222,10 +225,6 @@ type Msg
     | ShareReported String
     | ShareLabelCleared
     | Next
-    | GotLeft (Result Api.Error Practice)
-    | PressedKeepGoing
-    | GotMore (Result Api.Error Practice)
-    | PressedContinueRun
     | EndSignInMsg SignIn.Msg
     | NoOp
 
@@ -251,7 +250,8 @@ type Out
     = NoOut
     | Answered Answer
     | WantsNext
-    | StartRun (List String) (Maybe Today)
+    | WantsEnd
+    | StartRun (List String) (Maybe Today) (Maybe String)
     | SignedIn (Maybe Session.User)
     | Go String
 
@@ -261,7 +261,9 @@ init :
     ->
         { id : String
         , hasNext : Bool
+        , inRun : Bool
         , progress : Maybe Progress
+        , tier : Maybe String
         , today : Maybe Today
         , origin : String
         , share : Maybe String
@@ -271,7 +273,9 @@ init session config =
     ( { session = session
       , id = config.id
       , hasNext = config.hasNext
+      , inRun = config.inRun
       , progress = config.progress
+      , tier = config.tier
       , today = config.today
       , counted = False
       , origin = config.origin
@@ -560,52 +564,10 @@ update msg model =
         Next ->
             ( model, Cmd.none, WantsNext )
 
-        GotLeft result ->
-            stay (afterEnd (leftOf result) model) Cmd.none
-
-        PressedKeepGoing ->
-            case model.ended of
-                Just { after } ->
-                    case after of
-                        Left practice False ->
-                            stay (afterEnd (Left practice True) model) (Practice.more model.session GotMore)
-
-                        _ ->
-                            stay model Cmd.none
-
-                Nothing ->
-                    stay model Cmd.none
-
-        -- KEEP GOING's answer is the session that results: run it, or say
-        -- there was nothing more to start.
-        GotMore (Ok practice) ->
-            case practice.puzzles of
-                [] ->
-                    stay (afterEnd (NothingMore practice) model) Cmd.none
-
-                entries ->
-                    ( afterEnd (Left practice False) model, Cmd.none, StartRun (List.map .id entries) practice.today )
-
-        GotMore (Err err) ->
-            stay (afterEnd (Unreachable (Api.errorMessage err)) model) Cmd.none
-
-        PressedContinueRun ->
-            case model.ended of
-                Just { after } ->
-                    case after of
-                        Left practice _ ->
-                            case practice.puzzles of
-                                [] ->
-                                    stay model Cmd.none
-
-                                entries ->
-                                    ( model, Cmd.none, StartRun (List.map .id entries) practice.today )
-
-                        _ ->
-                            stay model Cmd.none
-
-                Nothing ->
-                    stay model Cmd.none
+        -- I'M DONE: the run stops here and the shell hands back the
+        -- score, however few this was. One is a whole session.
+        PressedDone ->
+            ( model, Cmd.none, WantsEnd )
 
         EndSignInMsg signInMsg ->
             case model.ended of
@@ -648,9 +610,11 @@ guest is asked to sign in.
 endRun : Score -> List Answer -> String -> Model -> ( Model, Cmd Msg )
 endRun score answers next model =
     case model.session.user of
+        -- Nothing is asked of the server: what the run did is what the
+        -- run knows, and the day's count came with it.
         Just _ ->
-            ( { model | ended = Just { score = score, answers = answers, after = Refetching } }
-            , Practice.fetch model.session GotLeft
+            ( { model | ended = Just { score = score, answers = answers, after = BackToPuzzles } }
+            , Cmd.none
             )
 
         Nothing ->
@@ -666,16 +630,6 @@ endRun score answers next model =
 afterEnd : After -> Model -> Model
 afterEnd after model =
     { model | ended = Maybe.map (\end -> { end | after = after }) model.ended }
-
-
-leftOf : Result Api.Error Practice -> After
-leftOf result =
-    case result of
-        Ok practice ->
-            Left practice False
-
-        Err err ->
-            Unreachable (Api.errorMessage err)
 
 
 stay : Model -> Cmd Msg -> ( Model, Cmd Msg, Out )
@@ -948,26 +902,28 @@ left, for a guest the sign-in.
 viewEnd : Model -> End -> Html Msg
 viewEnd model end =
     div [ class "pz-end mx-auto w-full max-w-md q-card sheet p-6 sm:p-8 mt-4", id "pz-end" ]
-        (p [ class "pixel q-eyebrow text-[9px] mb-3" ] [ text "RUN OVER" ]
+        (p [ class "pixel q-eyebrow text-[9px] mb-3" ] [ text "DONE" ]
             :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-1", attribute "style" "color: var(--ink)" ]
                 [ text (runScore end.score) ]
             :: closeLine end.score
             :: viewPatched end.answers
+            :: viewToday model
             :: viewAfter model end.after
         )
 
 
-{-| "Done for today. 4 new tomorrow." -- and just the first sentence when
-tomorrow brings nothing new; what the player got wrong still comes back
-on its day.
+{-| The day, under the score: "3 fixed today". The same words the hub
+and the session use, and the same plain count.
 -}
-doneLine : Practice.Counts -> String
-doneLine counts =
-    if counts.newTomorrow > 0 then
-        "Done for today. " ++ String.fromInt counts.newTomorrow ++ " new tomorrow."
+viewToday : Model -> Html Msg
+viewToday model =
+    case model.today of
+        Just today ->
+            p [ id "pz-today", class "q-note text-[13px] mb-4" ]
+                [ text (Mistakes.fixedToday today.done) ]
 
-    else
-        "Done for today."
+        Nothing ->
+            text ""
 
 
 {-| What the run patched, under the score: "You patched 2 very bad
@@ -1007,16 +963,17 @@ patchedLine answers =
         |> Mistakes.patchedRun
 
 
-{-| "7 of 10 right".
+{-| "7 of 10 right" -- or, for the run of one this page is built to
+invite, a sentence that says so warmly.
 -}
 runScore : Score -> String
 runScore score =
-    String.fromInt score.right ++ " of " ++ String.fromInt score.total ++ " right"
+    Mistakes.runSummary score
 
 
 closeLine : Score -> Html Msg
 closeLine score =
-    if score.close > 0 then
+    if score.close > 0 && score.total > 1 then
         p [ id "pz-close", class "q-note text-[13px] mb-4" ]
             [ text (String.fromInt score.close ++ " close") ]
 
@@ -1027,53 +984,14 @@ closeLine score =
 viewAfter : Model -> After -> List (Html Msg)
 viewAfter _ after =
     case after of
-        Refetching ->
-            [ p [ class "pixel text-[9px]", attribute "style" "color: var(--pencil)" ] [ text "COUNTING WHAT IS LEFT…" ] ]
-
-        Unreachable reason ->
-            [ p [ class "text-base", attribute "style" "color: var(--ink)" ] [ text reason ]
-            , a [ href (Route.href Route.puzzles), class "inline-block font-semibold mt-3", attribute "style" "color: var(--pen)" ] [ text "Back to puzzles →" ]
-            ]
-
-        Left practice busy ->
-            case ( practice.puzzles, practice.counts ) of
-                ( [], Just counts ) ->
-                    [ p [ id "pz-done", class "text-[18px] font-bold leading-snug", attribute "style" "color: var(--ink)" ]
-                        [ text (doneLine counts) ]
-                    , p [ class "q-note text-[13px] mb-5" ] [ text (String.fromInt counts.deck ++ " of your mistakes") ]
-                    , button
-                        [ type_ "button", id "pz-keep-going", class "q-btn plain w-full px-6 py-3.5 text-[15px]", disabled busy, onClick PressedKeepGoing ]
-                        [ text
-                            (if busy then
-                                "STARTING…"
-
-                             else
-                                "KEEP GOING"
-                            )
-                        ]
-                    ]
-
-                ( [], Nothing ) ->
-                    -- Signed in, but the server saw no deck: the practice
-                    -- home says what there is.
-                    [ a [ href (Route.href Route.puzzles), id "pz-home", class "inline-block font-semibold", attribute "style" "color: var(--pen)" ] [ text "Back to puzzles →" ] ]
-
-                ( entries, _ ) ->
-                    [ p [ id "pz-more-due", class "text-[18px] font-bold leading-snug mb-5", attribute "style" "color: var(--ink)" ]
-                        [ text (String.fromInt (List.length entries) ++ " more to go.") ]
-                    , button
-                        [ type_ "button", id "pz-continue", class "q-btn w-full px-6 py-3.5 text-[15px]", onClick PressedContinueRun ]
-                        [ text "CONTINUE" ]
-                    ]
-
-        NothingMore practice ->
-            [ p [ id "pz-done", class "text-[18px] font-bold leading-snug", attribute "style" "color: var(--ink)" ]
-                [ text "Done for today." ]
-            , p [ class "q-note text-[13px] mb-3" ]
-                [ text (String.fromInt (Maybe.map .deck practice.counts |> Maybe.withDefault 0) ++ " of your mistakes") ]
-            , p [ id "pz-nothing-more", class "q-note text-[13px] leading-snug" ]
-                [ text "That's every mistake of yours for now. The ones you get wrong come back on their day." ]
-            , a [ href (Route.href Route.puzzles), class "inline-block font-semibold mt-4", attribute "style" "color: var(--pen)" ] [ text "Back to puzzles →" ]
+        BackToPuzzles ->
+            [ a
+                [ href (Route.href Route.puzzles)
+                , id "pz-home"
+                , class "inline-block font-semibold"
+                , attribute "style" "color: var(--pen)"
+                ]
+                [ text "Back to puzzles →" ]
             ]
 
         AskSignIn signIn ->
@@ -1090,22 +1008,27 @@ skip : Model -> Html Msg
 skip model =
     if model.hasNext then
         button [ class "q-btn pz-action mt-2", id "pz-next", onClick Next ]
-            [ text "NEXT", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
+            [ text "ANOTHER", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
+
+    else if model.inRun then
+        button [ class "q-btn plain pz-action mt-2", id "pz-done", onClick PressedDone ]
+            [ text "I'M DONE" ]
 
     else
         text ""
 
 
-{-| Where this session is, above the board: "4 of 10" with a bar that
-fills to the same fraction the words name, the marks so far, and the
-day's ring beside them.
+{-| Where this session is, above the board: the tier's mark, the day's
+count, the marks so far, and why this position is here.
 
 Only in a run, and only on the puzzle itself: a puzzle opened from a
 link is not a session and says nothing about one.
 
-The bar and the counter are the **position** in the run, not the answers
-given, so the picture can never disagree with the sentence beside it;
-which of them were answered, and how, is what the marks say.
+**No bar, and no "4 of 10".** A run has no length -- it goes on until
+I'M DONE -- so a counter out of a total would promise a finish line
+that does not exist. What is drawn instead is what has actually
+happened: how many were fixed today, and a mark for each one answered
+so far.
 
 -}
 viewProgress : Model -> Html Msg
@@ -1115,48 +1038,17 @@ viewProgress model =
             text ""
 
         Just progress ->
-            let
-                total =
-                    List.length progress.marks
-
-                place =
-                    min total (progress.at + 1)
-
-                filled =
-                    if total <= 0 then
-                        0
-
-                    else
-                        100 * toFloat place / toFloat total
-            in
             div [ class "pz-progress", id "pz-progress" ]
                 [ div [ class "pz-progress-bar" ]
                     [ p [ class "pz-progress-count pixel text-[8px]", id "pz-progress-count" ]
-                        [ text (runProgress progress) ]
-                    , div
-                        [ class "pz-progress-track"
-                        , attribute "role" "progressbar"
-                        , attribute "aria-valuenow" (String.fromInt place)
-                        , attribute "aria-valuemin" "0"
-                        , attribute "aria-valuemax" (String.fromInt total)
-                        , attribute "aria-label" (runProgress progress ++ " in this session")
-                        ]
-                        [ div
-                            [ class "pz-progress-fill"
-                            , attribute "style" ("width: " ++ String.fromInt (round filled) ++ "%")
-                            ]
-                            []
-                        ]
+                        [ text (runProgress model) ]
                     , div [ class "pz-marks", id "pz-marks" ]
-                        (List.indexedMap (runMark progress.at) progress.marks)
+                        (progress.marks
+                            |> List.take (progress.at + 1)
+                            |> List.indexedMap (runMark progress.at)
+                        )
                     , viewWhy model
                     ]
-                , case model.today of
-                    Just today ->
-                        Charts.ring today
-
-                    Nothing ->
-                        text ""
                 ]
 
 
@@ -1178,13 +1070,18 @@ viewWhy model =
             text ""
 
 
-{-| "4 of 10": which one of the session this is.
+{-| "?? · 3 fixed today": which tier this run is of, and what the day
+has had. The mark alone for a guest, who has no day counted; the count
+alone for a run of one game's mistakes, which is not a tier.
 -}
-runProgress : Progress -> String
-runProgress progress =
-    String.fromInt (min (List.length progress.marks) (progress.at + 1))
-        ++ " of "
-        ++ String.fromInt (List.length progress.marks)
+runProgress : Model -> String
+runProgress model =
+    [ Maybe.map Mistakes.mark model.tier
+    , Maybe.map (\today -> Mistakes.fixedToday today.done) model.today
+    ]
+        |> List.filterMap identity
+        |> List.filter (\part -> part /= "")
+        |> String.join " · "
 
 
 {-| One mark per puzzle of the run, in order, in the verdict's own
@@ -1543,9 +1440,21 @@ viewControls model puzzle =
                         , text (Maybe.withDefault "SHARE" model.shareLabel)
                         ]
                  )
+                    -- A run is open-ended: after every reveal, one more
+                    -- or stop. Stopping is a finished thing to have
+                    -- done, so I'M DONE is always offered and never
+                    -- reads as giving up.
                     :: (if model.hasNext then
                             [ button [ class "q-btn pz-action", id "pz-next", onClick Next ]
-                                [ text "NEXT", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
+                                [ text "ANOTHER", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
+                            ]
+
+                        else
+                            []
+                       )
+                    ++ (if model.inRun then
+                            [ button [ class "q-btn plain pz-action", id "pz-done", onClick PressedDone ]
+                                [ text "I'M DONE" ]
                             ]
 
                         else

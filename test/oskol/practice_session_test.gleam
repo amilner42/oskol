@@ -20,6 +20,7 @@ import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/core/error
 import oskol/fakes
 import oskol/handlers/practice
+import oskol/practice/deck
 import oskol/puzzles.{type Question, Centered, Double, Move, Question} as puzzle
 import oskol/rooms/seat.{type Seat, Seat}
 
@@ -112,26 +113,6 @@ fn with_day(ctx: Ctx, done: Int, new_remaining: Int) -> Ctx {
   )
 }
 
-/// The same deck with nothing due: a day that has been worked through.
-fn with_nothing_due(ctx: Ctx) -> Ctx {
-  Ctx(
-    ..ctx,
-    practice: PracticeCaps(..ctx.practice, summary: fn(_uid, _group) {
-      [
-        Summary(
-          group: [],
-          count: 42,
-          new_count: 20,
-          active_count: 42,
-          suspended_count: 0,
-          due_count: 0,
-          mean_level: 4.0,
-        ),
-      ]
-    }),
-  )
-}
-
 /// The same deck with this many cards due: what the day's goal is made
 /// of, before the ceiling on it.
 fn with_due(ctx: Ctx, due: Int) -> Ctx {
@@ -149,6 +130,27 @@ fn with_due(ctx: Ctx, due: Int) -> Ctx {
           mean_level: 1.5,
         ),
       ]
+    }),
+  )
+}
+
+/// One band's queue, as the cap answers it: the band asked for is
+/// handed back in the keys, so a handler that asked for the wrong one
+/// fails here rather than quietly serving the whole deck.
+fn with_band_queue(ctx: Ctx) -> Ctx {
+  Ctx(
+    ..ctx,
+    practice: PracticeCaps(..ctx.practice, band_queue: fn(uid, band, limit) {
+      case uid {
+        "u1" -> Nil
+        _ -> panic as "practice.band_queue asked for another account"
+      }
+      assert limit == deck.page
+      Session(
+        reviews: [card(band <> "-due1", Move)],
+        fresh: [card(band <> "-new1", Move)],
+        new_remaining_today: 3,
+      )
     }),
   )
 }
@@ -213,7 +215,8 @@ pub fn an_account_gets_everything_due_before_anything_new_test() {
   // Anything due at all, and the day's new cards wait their turn: that is
   // what the deck is asked for, and the page hands back what it answered.
   let ctx = with_deck(fakes.ctx(), 2, 3)
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
   assert ids(body) == ["due1", "due2"]
   assert string.contains(body, "\"due\":true")
@@ -222,7 +225,8 @@ pub fn an_account_gets_everything_due_before_anything_new_test() {
 
 pub fn a_new_card_says_it_is_not_due_test() {
   let ctx = with_deck(fakes.ctx(), 0, 2)
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
   assert ids(body) == ["new1", "new2"]
   assert string.contains(body, "\"due\":false")
@@ -231,7 +235,8 @@ pub fn a_new_card_says_it_is_not_due_test() {
 
 pub fn an_account_is_told_what_is_due_what_is_left_today_and_how_big_the_deck_is_test() {
   let ctx = with_deck(fakes.ctx(), 1, 1)
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
   // Tomorrow brings the day's budget: the deck has 20 never seen, which is
   // more than a day's three.
@@ -245,74 +250,67 @@ pub fn an_account_is_told_what_is_due_what_is_left_today_and_how_big_the_deck_is
   assert string.contains(body, "\"game\":null")
 }
 
-// ---------- The day's ring ----------
+// ---------- The day's count ----------
 
-/// The target is the day's actual work, up to ten: two due and three new
-/// is five, and nothing is rounded up to fill a ring.
-pub fn a_day_asks_for_what_it_actually_holds_test() {
-  let ctx = with_due(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), 2)
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
-
-  assert string.contains(body, "\"today\":{\"done\":0,\"target\":5}")
-}
-
-/// A backlog is not the day's goal. Twenty-three due asks for ten, which
-/// is a thing a person finishes; the other thirteen are still there, in
-/// order, for whoever keeps going.
-pub fn a_backlog_still_asks_for_ten_test() {
-  let ctx = with_due(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), 23)
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
-
-  assert string.contains(body, "\"today\":{\"done\":0,\"target\":10}")
-}
-
-/// Answering does not shrink the target under the player: what they have
-/// answered is counted into it, so the ring only ever fills.
-pub fn answers_recorded_today_fill_the_ring_test() {
+/// The day is a plain count of what has been answered, and nothing else.
+/// There is no target on the wire, so nothing can draw a ring round it
+/// or call a day short.
+pub fn the_day_is_a_plain_count_test() {
   let ctx = with_due(with_day(with_deck(fakes.ctx(), 1, 1), 4, 3), 2)
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
-  assert string.contains(body, "\"today\":{\"done\":4,\"target\":9}")
+  assert string.contains(body, "\"today\":{\"done\":4}")
+  assert !string.contains(body, "target")
 }
 
-/// A day with nothing due and no budget left is done, however much of it
-/// was worked: the goal is the ceiling, and KEEP GOING past it leaves the
-/// ring full rather than pointing at a number that has already gone by.
-pub fn a_finished_day_is_done_rather_than_short_test() {
-  let ctx = with_nothing_due(with_day(with_deck(fakes.ctx(), 0, 0), 13, 0))
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+/// A backlog is not a quota. Twenty-three due asks for nothing in
+/// particular: the day still reads what has actually been answered.
+pub fn a_backlog_does_not_become_a_target_test() {
+  let ctx = with_due(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), 23)
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
-  assert string.contains(body, "\"today\":{\"done\":13,\"target\":10}")
+  assert string.contains(body, "\"today\":{\"done\":0}")
 }
 
-/// Nothing due, nothing new, nothing answered: no goal at all, rather
-/// than a goal of ten a deck cannot fill.
-pub fn a_day_with_no_work_has_no_goal_test() {
-  let ctx = with_nothing_due(with_day(with_deck(fakes.ctx(), 0, 0), 0, 0))
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+// ---------- The deck by severity, and the tier to lead with ----------
 
-  assert string.contains(body, "\"today\":{\"done\":0,\"target\":0}")
-}
-
-// ---------- The deck by severity ----------
-
-/// Worst first, every band named in its three states, and the rung that
-/// means patched sent with them so the page keeps no second copy of it.
+/// Worst first, every band named in its three states with what it still
+/// has to do, and the rung that means patched sent with them so the page
+/// keeps no second copy of it.
 pub fn the_session_counts_the_deck_by_severity_test() {
   let ctx =
-    with_severity(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), [
-      Severity(grade: "doubtful", total: 96, in_progress: 8, patched: 12),
-      Severity(grade: "very_bad", total: 61, in_progress: 30, patched: 23),
+    with_severity(with_due(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), 5), [
+      Severity(
+        grade: "doubtful",
+        total: 96,
+        in_progress: 8,
+        patched: 12,
+        due: 0,
+        fresh: 70,
+      ),
+      Severity(
+        grade: "very_bad",
+        total: 61,
+        in_progress: 30,
+        patched: 23,
+        due: 5,
+        fresh: 8,
+      ),
     ])
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
   assert string.contains(
     body,
-    "\"severity\":[{\"grade\":\"very_bad\",\"total\":61,\"in_progress\":30,\"patched\":23},"
-      <> "{\"grade\":\"bad\",\"total\":0,\"in_progress\":0,\"patched\":0},"
-      <> "{\"grade\":\"doubtful\",\"total\":96,\"in_progress\":8,\"patched\":12}]",
+    "\"severity\":[{\"grade\":\"very_bad\",\"total\":61,\"in_progress\":30,\"patched\":23,\"due\":5,\"new_left\":3},"
+      <> "{\"grade\":\"bad\",\"total\":0,\"in_progress\":0,\"patched\":0,\"due\":0,\"new_left\":0},"
+      <> "{\"grade\":\"doubtful\",\"total\":96,\"in_progress\":8,\"patched\":12,\"due\":0,\"new_left\":3}]",
   )
   assert string.contains(body, "\"patched_level\":4")
+  // The worst band with work is the one the page puts in front.
+  assert string.contains(body, "\"lead\":\"very_bad\"")
 }
 
 /// The human's own deck: nothing patched yet and fifty mistakes being
@@ -321,18 +319,91 @@ pub fn the_session_counts_the_deck_by_severity_test() {
 /// three states that never overlap.
 pub fn a_deck_being_worked_on_says_so_before_anything_is_patched_test() {
   let ctx =
-    with_severity(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), [
-      Severity(grade: "very_bad", total: 111, in_progress: 50, patched: 0),
-      Severity(grade: "bad", total: 12, in_progress: 0, patched: 12),
+    with_severity(with_due(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3), 4), [
+      Severity(
+        grade: "very_bad",
+        total: 111,
+        in_progress: 50,
+        patched: 0,
+        due: 4,
+        fresh: 61,
+      ),
+      Severity(
+        grade: "bad",
+        total: 12,
+        in_progress: 0,
+        patched: 12,
+        due: 0,
+        fresh: 0,
+      ),
     ])
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
   assert string.contains(
     body,
-    "\"severity\":[{\"grade\":\"very_bad\",\"total\":111,\"in_progress\":50,\"patched\":0},"
-      <> "{\"grade\":\"bad\",\"total\":12,\"in_progress\":0,\"patched\":12},"
-      <> "{\"grade\":\"doubtful\",\"total\":0,\"in_progress\":0,\"patched\":0}]",
+    "\"severity\":[{\"grade\":\"very_bad\",\"total\":111,\"in_progress\":50,\"patched\":0,\"due\":4,\"new_left\":3},"
+      <> "{\"grade\":\"bad\",\"total\":12,\"in_progress\":0,\"patched\":12,\"due\":0,\"new_left\":0},"
+      <> "{\"grade\":\"doubtful\",\"total\":0,\"in_progress\":0,\"patched\":0,\"due\":0,\"new_left\":0}]",
   )
+}
+
+/// A day whose budget of new mistakes is spent leaves a band that has
+/// only untouched ones with nothing to offer: `new_left` is the deck's
+/// budget, not the band's pile, so the hub cannot promise three new
+/// very bad moves twice in one day.
+pub fn a_spent_day_leaves_a_band_of_untouched_mistakes_with_no_work_test() {
+  let ctx =
+    with_severity(with_due(with_day(with_deck(fakes.ctx(), 0, 0), 3, 0), 2), [
+      Severity(
+        grade: "very_bad",
+        total: 40,
+        in_progress: 0,
+        patched: 0,
+        due: 0,
+        fresh: 40,
+      ),
+      Severity(
+        grade: "bad",
+        total: 9,
+        in_progress: 2,
+        patched: 0,
+        due: 2,
+        fresh: 7,
+      ),
+    ])
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
+
+  assert string.contains(
+    body,
+    "{\"grade\":\"very_bad\",\"total\":40,\"in_progress\":0,\"patched\":0,\"due\":0,\"new_left\":0}",
+  )
+  // Very bad has nothing left today, so the bad tier is what is offered.
+  assert string.contains(body, "\"lead\":\"bad\"")
+}
+
+// ---------- One tier's own queue ----------
+
+/// FIX ONE asks for one band, and gets that band's cards: the whole
+/// deck's queue is never reached for.
+pub fn a_band_session_asks_the_deck_for_that_band_test() {
+  let ctx = with_band_queue(with_day(with_deck(fakes.ctx(), 9, 9), 0, 3))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "bad")
+
+  // The band queue's own cards, not the nine-and-nine the whole deck
+  // would have answered with.
+  assert ids(body) == ["bad-due1", "bad-new1"]
+}
+
+/// A band nobody has is refused rather than widened into the whole deck:
+/// a page must not be able to ask for more than it named.
+pub fn an_unknown_band_is_refused_test() {
+  let ctx = with_band_queue(with_day(with_deck(fakes.ctx(), 1, 1), 0, 3))
+
+  assert practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "brilliant")
+    == Error(error.validation_failed("That is not one of your mistake tiers."))
 }
 
 /// A guest has no deck, so there is no day of theirs to count -- and
@@ -344,14 +415,15 @@ pub fn a_guest_gets_no_ring_and_no_bands_test() {
       #("p1", guest_seat("g1")),
       #("p2", guest_seat("g1")),
     ])
-  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"))
+  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"), "")
 
   assert string.contains(body, "\"today\":null")
   assert string.contains(body, "\"severity\":null")
 }
 
 pub fn nobody_gets_no_ring_test() {
-  let assert Ok(body) = practice.practice_json(fakes.ctx(), fakes.no_guest())
+  let assert Ok(body) =
+    practice.practice_json(fakes.ctx(), fakes.no_guest(), "")
 
   assert string.contains(body, "\"today\":null")
 }
@@ -377,7 +449,8 @@ pub fn tomorrow_brings_what_is_left_when_that_is_less_than_a_day_test() {
         },
       ),
     )
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
   assert string.contains(body, "\"new_tomorrow\":2")
 }
 
@@ -388,13 +461,13 @@ pub fn a_session_is_never_paged_test() {
   // had just answered. "Done for today" is a fetch that comes back empty.
   let full = with_deck(fakes.ctx(), 20, 0)
   let assert Ok(body) =
-    practice.practice_json(full, fakes.signed_in("g1", "u1"))
+    practice.practice_json(full, fakes.signed_in("g1", "u1"), "")
   assert list.length(ids(body)) == 20
   assert string.contains(body, "\"cursor\":null")
 
   let short = with_deck(fakes.ctx(), 3, 2)
   let assert Ok(rest) =
-    practice.practice_json(short, fakes.signed_in("g1", "u1"))
+    practice.practice_json(short, fakes.signed_in("g1", "u1"), "")
   assert string.contains(rest, "\"cursor\":null")
 }
 
@@ -403,12 +476,13 @@ pub fn new_cards_wait_until_nothing_is_due_test() {
   // day's new ones are not offered yet -- they arrive on the fetch after
   // it, which is why a session must keep asking rather than paging.
   let ctx = with_deck(fakes.ctx(), 1, 10)
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
   assert ids(body) == ["due1"]
 
   let cleared = with_deck(fakes.ctx(), 0, 10)
   let assert Ok(after) =
-    practice.practice_json(cleared, fakes.signed_in("g1", "u1"))
+    practice.practice_json(cleared, fakes.signed_in("g1", "u1"), "")
   assert list.length(ids(after)) == 10
 }
 
@@ -430,7 +504,8 @@ pub fn a_puzzle_is_asked_in_its_own_words_test() {
         severity: fn(_, _) { [] },
       ),
     )
-  let assert Ok(body) = practice.practice_json(ctx, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.practice_json(ctx, fakes.signed_in("g1", "u1"), "")
 
   assert string.contains(body, "White to play 6-4. What's your play?")
   assert string.contains(body, "White to play. Double?")
@@ -465,7 +540,7 @@ pub fn a_guest_gets_the_mistakes_on_the_seats_their_cookie_holds_test() {
       #("theirs", owned_seat("u1")),
       #("stranger", guest_seat("g2")),
     ])
-  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"))
+  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"), "")
 
   assert ids(body) == ["mine"]
   // No schedule and no counts: only an account has a deck.
@@ -509,7 +584,7 @@ pub fn a_guest_is_told_how_many_mistakes_from_how_many_games_test() {
         )
       }),
     )
-  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"))
+  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"), "")
   assert list.length(ids(body)) == 20
   assert string.contains(body, "\"mistakes\":{\"puzzles\":23,\"games\":2}")
 }
@@ -520,7 +595,7 @@ pub fn a_guest_sees_one_card_per_puzzle_test() {
       #("same", guest_seat("g1")),
       #("same", guest_seat("g1")),
     ])
-  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"))
+  let assert Ok(body) = practice.practice_json(ctx, fakes.guest("g1"), "")
   assert ids(body) == ["same"]
 }
 
@@ -533,7 +608,8 @@ pub fn keep_going_writes_nothing_for_a_guest_test() {
 
 pub fn nobody_gets_an_empty_session_and_not_an_error_test() {
   // Nothing is asked of anything: a stranger has no seat and no deck.
-  let assert Ok(body) = practice.practice_json(fakes.ctx(), fakes.no_guest())
+  let assert Ok(body) =
+    practice.practice_json(fakes.ctx(), fakes.no_guest(), "")
   assert ids(body) == []
   assert string.contains(body, "\"counts\":null")
   assert string.contains(body, "\"mistakes\":null")

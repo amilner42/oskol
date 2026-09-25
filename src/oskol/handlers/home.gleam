@@ -605,11 +605,12 @@ fn game_json(game: Game) -> Json {
 
 /// What is due, how big the deck is, the ladder, the days practised,
 /// where today stands, and the mistakes by band with how many are
-/// patched.
+/// patched and which tier to lead with.
 /// Reading a deck never creates one: a player who has never practised has
 /// an empty deck, not a new one.
 fn practice_json(ctx: Ctx, uid: String) -> Json {
   let summary = ctx.practice.summary(uid, []) |> list.first
+  let tiers = deck.tiers(ctx, uid)
   json.object([
     #(
       "due",
@@ -627,20 +628,19 @@ fn practice_json(ctx: Ctx, uid: String) -> Json {
     ),
     #("ladder", json.array(ctx.practice.ladder(uid), json.int)),
     #("days", json.array(ctx.practice.days(uid, practice_days), json.bool)),
-    // The day's ring: answers recorded in this account's own local day,
-    // against the day's work. The same object `/papi/practice` carries.
-    #(
-      "today",
-      deck.today_json(
-        deck.today(ctx, uid, case summary {
-          Ok(row) -> row.due_count
-          Error(_) -> 0
-        }),
-      ),
-    ),
-    // The deck by how bad the mistake was, worst band first, and how much
-    // of each band is patched: the three lines the section leads with.
-    #("severity", json.array(deck.severity(ctx, uid), deck.severity_json)),
+    // The day's count: answers recorded in this account's own local day,
+    // with nothing to measure them against. The same object
+    // `/papi/practice` carries.
+    #("today", deck.today_json(deck.today(ctx, uid))),
+    // The deck by how bad the mistake was, worst band first: how much of
+    // each band is patched and what each still has to do today, plus the
+    // one tier to lead with. The practice hub's own answer, so the two
+    // pages cannot choose differently.
+    #("severity", json.array(tiers, deck.severity_json)),
+    #("lead", case deck.lead(tiers) {
+      Some(grade) -> json.string(grade)
+      None -> json.null()
+    }),
     // What "patched" means, so the page can say it in words without
     // keeping a second copy of the number.
     #("patched_level", json.int(deck.patched_level)),
