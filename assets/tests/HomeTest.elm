@@ -71,11 +71,11 @@ fullJson =
          "series":[{"game_id":"g1","game_number":1,"pr":9.0,"error":5.4,"decisions":30,"ended_at":1790000000000},
                    {"game_id":"g2","game_number":1,"pr":7.5,"error":4.5,"decisions":30,"ended_at":1790100000000},
                    {"game_id":"g3","game_number":1,"pr":4.0,"error":2.4,"decisions":30,"ended_at":1790200000000}]},
- "practice":{"due":12,"deck":114,"today":{"done":4,"target":9},
-             "severity":[{"grade":"very_bad","total":61,"in_progress":30,"patched":23},
-                         {"grade":"bad","total":118,"in_progress":44,"patched":40},
-                         {"grade":"doubtful","total":96,"in_progress":9,"patched":12}],
-             "patched_level":4,
+ "practice":{"due":12,"deck":114,"today":{"done":4},
+             "severity":[{"grade":"very_bad","total":61,"in_progress":30,"patched":23,"due":5,"new_left":3},
+                         {"grade":"bad","total":118,"in_progress":44,"patched":40,"due":0,"new_left":0},
+                         {"grade":"doubtful","total":96,"in_progress":9,"patched":12,"due":7,"new_left":0}],
+             "lead":"very_bad","patched_level":4,
              "ladder":[40,30,20,10,5,4,3,2],
              "days":[false,false,false,false,false,false,false,false,false,false,
                      false,false,false,false,false,false,false,false,false,false,
@@ -448,33 +448,30 @@ form =
 practice : Test
 practice =
     describe "practice"
-        [ test "leads with the worst of what they have made, and the verb to fix it" <|
+        [ test "leads with one tier: its mark, what is left to fix, and one button" <|
             \_ ->
                 render (loaded fullJson)
                     |> Query.find [ id "home-practice" ]
                     |> Expect.all
-                        [ Query.find [ id "home-worst" ]
-                            >> Query.has [ text "You have made 61 very bad moves. You are fixing 30 and have patched 23." ]
-                        , Query.find [ id "home-practice-start" ] >> Query.has [ text "FIX 5 TODAY" ]
+                        [ Query.find [ id "home-tier" ]
+                            >> Query.has [ attribute (Html.Attributes.attribute "data-tier" "very_bad") ]
+                        , Query.find [ id "home-tier" ] >> Query.has [ text "??" ]
+                        , Query.find [ id "home-tier" ] >> Query.has [ text "Very bad moves" ]
+                        , Query.find [ id "home-tier-left" ] >> Query.has [ text "38 left to fix" ]
+                        , Query.find [ id "home-tier-patched" ] >> Query.has [ text "23 patched" ]
+                        , Query.find [ id "home-fix-one" ] >> Query.has [ text "FIX ONE" ]
 
-                        -- One line and one bar per band, worst first.
-                        , Query.find [ id "home-bands" ]
-                            >> Query.has [ text "Very bad · 30 in progress · 23 patched · of 61" ]
-                        , Query.find [ id "home-bands" ]
-                            >> Query.has [ text "Bad · 44 in progress · 40 patched · of 118" ]
-                        , Query.find [ id "home-bands" ]
-                            >> Query.has [ text "Dubious · 9 in progress · 12 patched · of 96" ]
+                        -- The other tiers are quiet rows, not a second card.
+                        , Query.find [ id "home-tier-row-bad" ] >> Query.has [ text "78 left" ]
+                        , Query.find [ id "home-tier-row-doubtful" ] >> Query.has [ text "84 left" ]
                         , Query.find [ id "home-patched-note" ]
                             >> Query.has [ text "Patched: right four times running." ]
 
-                        -- The day's ring, and the strip with the two days
-                        -- practised in it.
-                        , Query.has [ attribute (Html.Attributes.attribute "data-done" "4") ]
-                        , Query.find [ id "home-today" ] >> Query.has [ text "4 of today's 9 answered." ]
+                        -- The day is a count and nothing else.
+                        , Query.find [ id "home-today" ] >> Query.has [ text "4 fixed today" ]
                         , Query.has [ attribute (Html.Attributes.attribute "data-practised" "2") ]
 
-                        -- The rungs are the detail, behind a toggle: the
-                        -- bands above are what the section leads with.
+                        -- The rungs are the detail, behind a toggle.
                         , Query.hasNot [ attribute (Html.Attributes.attribute "data-cards" "114") ]
                         , Query.has [ id "home-ladder-toggle" ]
                         ]
@@ -495,28 +492,37 @@ practice =
                             |> Query.hasNot [ attribute (Html.Attributes.attribute "data-cards" "114") ]
                     ]
                     ()
+        , test "tapping a quiet row moves the card onto that tier" <|
+            \_ ->
+                render (loaded fullJson |> send (PickedTier "bad"))
+                    |> Query.find [ id "home-practice" ]
+                    |> Expect.all
+                        [ Query.find [ id "home-tier" ]
+                            >> Query.has [ attribute (Html.Attributes.attribute "data-tier" "bad") ]
+                        , Query.find [ id "home-tier-row-very_bad" ] >> Query.has [ text "38 left" ]
+                        ]
         , test "an empty deck says what fills it, and offers nothing to run" <|
             \_ ->
                 render (loaded emptyJson)
                     |> Query.find [ id "home-practice" ]
                     |> Expect.all
                         [ Query.has [ text "Your mistakes become puzzles here after your first graded game." ]
-                        , Query.hasNot [ id "home-practice-start" ]
+                        , Query.hasNot [ id "home-fix-one" ]
                         , Query.findAll [ Selector.tag "svg" ] >> Query.count (Expect.equal 0)
                         ]
-        , test "PRACTICE hands the shell the deck's puzzles, in order" <|
+        , test "FIX ONE hands the shell that tier's puzzles, and the tier" <|
             \_ ->
                 loaded fullJson
-                    |> send PressedPractice
-                    |> out (GotDeck (Api.parseBody Practice.practiceDecoder deckJson))
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] Nothing)
-        , test "a deck with nothing in it right now starts no run, and says so" <|
+                    |> send (PressedFixOne "very_bad")
+                    |> out (GotBand "very_bad" (Api.parseBody Practice.practiceDecoder deckJson))
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] Nothing (Just "very_bad"))
+        , test "a tier with nothing in it right now starts no run, and says so" <|
             \_ ->
                 let
                     model =
                         loaded fullJson
-                            |> send PressedPractice
-                            |> send (GotDeck (Api.parseBody Practice.practiceDecoder emptyDeckJson))
+                            |> send (PressedFixOne "very_bad")
+                            |> send (GotBand "very_bad" (Api.parseBody Practice.practiceDecoder emptyDeckJson))
                 in
                 render model
                     |> Query.find [ id "home-practice-note" ]

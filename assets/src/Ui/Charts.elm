@@ -3,15 +3,13 @@ module Ui.Charts exposing
     , ladder
     , patched
     , prLine
-    , ring
-    , ringSentence
     , rolling
     , windowPr
     )
 
 {-| The pictures the signed-in home is allowed: your PR over time, your
-mistakes as a ladder, the last thirty days, today's ring, and one bar per
-band of mistake showing how much of it you have patched.
+mistakes as a ladder, the last thirty days, and one bar per band of
+mistake showing how much of it you have patched.
 
 They are the only drawings on that page -- everything else is type and
 white space -- so they are deliberately small and quiet: no axes, no
@@ -579,136 +577,15 @@ daysSentence thirty =
 
 
 
--- TODAY'S RING
-
-
-{-| The day's goal: a ring that fills as the day's answers land, with the
-count in the middle. The streak is the days; this is today.
-
-It is drawn at a fixed 44 by 44 rather than to the width it is given,
-because it sits beside words -- "4 of 10" at the top of a session, the
-due line on the home -- and a picture that grew with its column would
-tower over them.
-
-A day past the goal is full and green and keeps its real count: KEEP
-GOING is uncapped, so 13 of 10 is a thing that happens and the number
-must not lie about it. A target of nothing draws an empty ring rather
-than dividing by it.
-
--}
-ring : { done : Int, target : Int } -> Html msg
-ring today =
-    let
-        complete =
-            today.target > 0 && today.done >= today.target
-
-        fraction =
-            if today.target <= 0 then
-                0
-
-            else
-                min 1 (toFloat today.done / toFloat today.target)
-
-        colour =
-            if complete then
-                ringDone
-
-            else
-                "var(--ink)"
-
-        arc =
-            if fraction <= 0 then
-                []
-
-            else
-                [ Svg.circle
-                    [ SvgAttr.cx "22"
-                    , SvgAttr.cy "22"
-                    , SvgAttr.r (num ringRadius)
-                    , SvgAttr.fill "none"
-                    , SvgAttr.stroke colour
-                    , SvgAttr.strokeWidth "4"
-                    , SvgAttr.strokeLinecap "round"
-                    , SvgAttr.strokeDasharray
-                        (num (fraction * ringLength) ++ " " ++ num ringLength)
-                    , SvgAttr.transform "rotate(-90 22 22)"
-                    , attribute "data-fraction" (num (toFloat (round (fraction * 100)) / 100))
-                    ]
-                    []
-                ]
-    in
-    Svg.svg
-        [ SvgAttr.viewBox "0 0 44 44"
-        , SvgAttr.width "44"
-        , SvgAttr.height "44"
-        , SvgAttr.class "chart-ring quiet block shrink-0"
-        , attribute "role" "img"
-        , attribute "aria-label" (ringSentence today)
-        , attribute "data-done" (String.fromInt today.done)
-        , attribute "data-target" (String.fromInt today.target)
-        ]
-        (Svg.title [] [ Svg.text (ringSentence today) ]
-            :: Svg.circle
-                [ SvgAttr.cx "22"
-                , SvgAttr.cy "22"
-                , SvgAttr.r (num ringRadius)
-                , SvgAttr.fill "none"
-                , SvgAttr.stroke "var(--pencil)"
-                , SvgAttr.strokeOpacity "0.3"
-                , SvgAttr.strokeWidth "4"
-                ]
-                []
-            :: arc
-            ++ [ Svg.text_
-                    [ SvgAttr.x "22"
-                    , SvgAttr.y "26"
-                    , SvgAttr.textAnchor "middle"
-                    , SvgAttr.fontSize "14"
-                    , SvgAttr.fontWeight "700"
-                    , SvgAttr.fill colour
-                    ]
-                    [ Svg.text (String.fromInt today.done) ]
-               ]
-        )
+-- A BAND, AND THE THREE STATES ITS MISTAKES ARE IN
 
 
 {-| `.g-best`'s green, as the ladder's top rung uses it: the one colour
 on this page that means "there, done".
 -}
-ringDone : String
-ringDone =
+patchedGreen : String
+patchedGreen =
     "#1f7a45"
-
-
-ringRadius : Float
-ringRadius =
-    18
-
-
-ringLength : Float
-ringLength =
-    2 * pi * ringRadius
-
-
-{-| What the ring says out loud, and what the page may print beside it.
--}
-ringSentence : { done : Int, target : Int } -> String
-ringSentence today =
-    if today.target <= 0 then
-        "No goal for today."
-
-    else if today.done >= today.target then
-        "Today's " ++ String.fromInt today.target ++ ": done."
-
-    else
-        String.fromInt today.done
-            ++ " of today's "
-            ++ String.fromInt today.target
-            ++ " answered."
-
-
-
--- A BAND, AND THE THREE STATES ITS MISTAKES ARE IN
 
 
 {-| One band of mistakes as a bar, in the three states a mistake can be
@@ -790,7 +667,7 @@ patched band =
                 ]
                 []
             :: part "in-progress" barGoing 0 going
-            ++ part "patched" ringDone going done
+            ++ part "patched" patchedGreen going done
         )
 
 

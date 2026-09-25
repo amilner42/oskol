@@ -26,7 +26,8 @@ defmodule Oskol.PracticeTest do
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
     {:practice_caps, put_user, put_items, cards, relapse, queue, start, start_new, review, amend,
-     defer_until, defer_tomorrow, master, suspend, resume, summary, ladder, days, day, severity} =
+     defer_until, defer_tomorrow, master, suspend, resume, summary, ladder, days, day, severity,
+     band_queue} =
       Practice.build()
 
     caps = %{
@@ -48,7 +49,8 @@ defmodule Oskol.PracticeTest do
       ladder: ladder,
       days: days,
       day: day,
-      severity: severity
+      severity: severity,
+      band_queue: band_queue
     }
 
     uid = "acct-#{System.unique_integer([:positive])}"

@@ -1,7 +1,7 @@
 module ChartsTest exposing (suite)
 
 {-| The home's pictures: the PR line, the practice ladder, the 30-day
-strip, today's ring and the deck in one bar.
+strip and the deck in one bar.
 
 The rolling PR is pinned against a weighted mean worked out by hand on a
 five-game sample with deliberately unequal decision counts, because the
@@ -26,7 +26,6 @@ suite =
         , prDrawing
         , ladder
         , days
-        , ring
         , mastery
         ]
 
@@ -320,62 +319,6 @@ days =
                     |> Expect.all
                         [ Query.findAll [ tag "rect" ] >> Query.count (Expect.equal 30)
                         , Query.has [ attr "aria-label" "No practice in the last 30 days." ]
-                        ]
-        ]
-
-
-
--- TODAY'S RING
-
-
-ring : Test
-ring =
-    describe "today's ring"
-        [ test "a day with nothing answered draws no arc, and says so" <|
-            \_ ->
-                Charts.ring { done = 0, target = 10 }
-                    |> Query.fromHtml
-                    |> Expect.all
-                        -- the track, and nothing over it
-                        [ Query.findAll [ tag "circle" ] >> Query.count (Expect.equal 1)
-                        , Query.has [ attr "aria-label" "0 of today's 10 answered." ]
-                        , Query.find [ tag "text" ] >> Query.has [ text "0" ]
-                        ]
-        , test "a day part way through fills its share of the ring" <|
-            \_ ->
-                Charts.ring { done = 4, target = 10 }
-                    |> Query.fromHtml
-                    |> Expect.all
-                        [ Query.findAll [ tag "circle" ] >> Query.count (Expect.equal 2)
-                        , Query.has [ attr "data-fraction" "0.4" ]
-                        , Query.has [ attr "aria-label" "4 of today's 10 answered." ]
-                        , Query.find [ tag "text" ] >> Query.has [ text "4" ]
-                        ]
-        , test "the day's ten done fills the ring and says so plainly" <|
-            \_ ->
-                Charts.ring { done = 10, target = 10 }
-                    |> Query.fromHtml
-                    |> Expect.all
-                        [ Query.has [ attr "data-fraction" "1" ]
-                        , Query.has [ attr "aria-label" "Today's 10: done." ]
-                        , Query.find [ tag "text" ] >> Query.has [ text "10" ]
-                        ]
-        , test "past the goal the ring stays full and the count stays true" <|
-            \_ ->
-                -- KEEP GOING is uncapped, so a day can run past its ten.
-                Charts.ring { done = 13, target = 10 }
-                    |> Query.fromHtml
-                    |> Expect.all
-                        [ Query.has [ attr "data-fraction" "1" ]
-                        , Query.find [ tag "text" ] >> Query.has [ text "13" ]
-                        ]
-        , test "no goal draws an empty ring rather than dividing by it" <|
-            \_ ->
-                Charts.ring { done = 0, target = 0 }
-                    |> Query.fromHtml
-                    |> Expect.all
-                        [ Query.findAll [ tag "circle" ] >> Query.count (Expect.equal 1)
-                        , Query.has [ attr "aria-label" "No goal for today." ]
                         ]
         ]
 

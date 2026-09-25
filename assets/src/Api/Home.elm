@@ -97,8 +97,9 @@ type alias Point =
 
 {-| The deck: what is due, how big it is, the cards at each of the eight
 levels, whether each of the last thirty days was practised (oldest
-first), where today stands against the day's work, and the mistakes
-counted by how bad they were with how many of each are patched.
+first), how many answers today has had, the mistakes counted by how bad
+they were with how many of each are patched and what each still has to
+do, and the one tier to lead with.
 -}
 type alias Practice =
     { due : Int
@@ -107,6 +108,7 @@ type alias Practice =
     , days : List Bool
     , today : Practice.Today
     , severity : List Practice.Band
+    , lead : Maybe String
     , patchedLevel : Int
     }
 
@@ -279,11 +281,15 @@ practiceDecoder =
         (optional "ladder" [] (D.list D.int))
         (optional "days" [] (D.list D.bool))
         -- The same objects `/papi/practice` carries, and the same
-        -- decoders: an answer from before the ring existed reads as a day
-        -- with nothing in it rather than failing the whole page.
-        (optional "today" { done = 0, target = 0 } Practice.todayDecoder)
+        -- decoders: an answer from before the day was counted reads as a
+        -- day with nothing in it rather than failing the whole page.
+        (optional "today" { done = 0 } Practice.todayDecoder)
         (optional "severity" [] (D.list Practice.bandDecoder))
-        (optional "patched_level" 0 D.int)
+        -- Which tier to lead with. Absent or null is "none": the page
+        -- then has no tier with work to offer, which is exactly what an
+        -- answer from before this said.
+        (optional "lead" Nothing (D.nullable D.string))
+        |> andMap (optional "patched_level" 0 D.int)
 
 
 roomDecoder : Decoder Room

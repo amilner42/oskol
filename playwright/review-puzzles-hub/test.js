@@ -1,13 +1,15 @@
 /**
- * Screenshots of the practice home and the end of a run, for eyeballing:
- * the home as a stranger, as a guest with mistakes and as an account
- * (done for today), a session mid-run (the counter, the marks, why this
- * position is here, the day's ring), and the end screen for a guest (the
- * sign-in ask) and for an account (KEEP GOING), plus the same account's
- * home with a deck in it, and last the hub and that home again over a
- * deck shaped like the one on the human's phone (111 mistakes, 50 in
- * rotation, none patched: what the three-state bars are drawn for), at
- * 390x844, 320x568, 844x390 and a desktop.
+ * Screenshots of the practice home and a run, for eyeballing.
+ *
+ * The one-deck hub in each of its three states, over a deck shaped like
+ * the one on the human's phone (111 mistakes, 50 in rotation, none
+ * patched): leading with ?? and FIX ONE; ?? in good shape with ?
+ * offered; everything in good shape with nothing to press. Then a
+ * session mid-run (the tier's mark, the day's count, the marks so far,
+ * why this position is here) and the summary after exactly one mistake.
+ * Plus the hub as a stranger and as a guest, the end screen a guest is
+ * asked to sign in on, and the same account's home. All at 390x844,
+ * 320x568, 844x390 and a desktop.
  *
  * The room is arranged by `test-puzzle/setup.exs` (a finished game graded
  * against a stubbed engine), the first seat trimmed to three mistakes so
@@ -57,9 +59,11 @@ function arrange() {
  * never started, 50 in progress, 0 patched. Replaces what is there, so
  * it runs after every other shot.
  */
-function shapeDeck(email) {
+function shapeDeck(email, state) {
   const out = execFileSync('mix', ['run', '-e', 'Code.eval_file("playwright/review-puzzles-hub/shape.exs")'], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, SHAPE_EMAIL: email },
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    env: { ...process.env, SHAPE_EMAIL: email, SHAPE_STATE: state },
   });
   return JSON.parse(resultLine(out));
 }
@@ -96,13 +100,13 @@ async function answerOne(page) {
     await stageATurn(page);
     await page.click('#bg-action-play');
   }
-  await page.waitForSelector('#pz-next');
+  await page.waitForSelector('#pz-next, #pz-done');
 }
 
-/** NEXT, wherever it leads (the next puzzle, or the end screen). */
+/** ANOTHER where there is one, else I'M DONE: on, wherever it leads. */
 async function next(page) {
   const was = new URL(page.url()).pathname;
-  await page.click('#pz-next');
+  await page.click((await page.locator('#pz-next').count()) ? '#pz-next' : '#pz-done');
   await page.waitForFunction(
     (w) => new URL(location.href).pathname !== w || document.querySelector('#pz-end'),
     was,
@@ -121,9 +125,9 @@ async function runToEnd(page, left = KEPT) {
       await stageATurn(page);
       await page.click('#bg-action-play');
     }
-    await page.waitForSelector('#pz-next');
+    await page.waitForSelector('#pz-next, #pz-done');
     const was = new URL(page.url()).pathname;
-    await page.click('#pz-next');
+    await page.click((await page.locator('#pz-next').count()) ? '#pz-next' : '#pz-done');
     await page.waitForFunction(
       (w) => new URL(location.href).pathname !== w || document.querySelector('#pz-end'),
       was,
@@ -184,39 +188,48 @@ async function shotAtEverySize(page, name, ready) {
       if (deck === 0) await sleep(500);
     }
     if (deck === 0) execFileSync('mix', ['oskol.puzzles.sync', '--write'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    await page.goto(`${BASE}/puzzles`);
-    await shotAtEverySize(page, '04-hub-account', '#hub-practice');
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.click('#hub-practice');
+    // The deck, shaped like the one on the human's phone: 111 mistakes,
+    // 50 in rotation, none patched. Everything below is that deck in
+    // each of the hub's three states.
+    log(`shaping the deck: ${JSON.stringify(shapeDeck(email, 'lead'))}`);
 
-    // Mid-run: the strip over the board -- where the session is, the
-    // marks so far, why this one is here, and the day's ring.
+    // 1. Leading with ??: the mark, what is left to fix, FIX ONE, and
+    //    the other tiers as quiet rows.
+    await page.goto(`${BASE}/puzzles`);
+    await shotAtEverySize(page, '04-hub-lead', '#hub-fix-one');
+
+    // 2. A session mid-run: the tier's mark and the day's count over the
+    //    board, the marks so far, and why this position is here.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.click('#hub-fix-one');
     await answerOne(page);
     await next(page);
     await page.waitForSelector('#pz-progress');
     await shotAtEverySize(page, '05-session-mid-run', '#pz-progress');
+
+    // 3. The summary after exactly one mistake: stopping has to read as
+    //    a finished thing to have done.
     await page.setViewportSize({ width: 390, height: 844 });
     await answerOne(page);
-    await next(page);
-    await runToEnd(page, KEPT - 2);
-    await shotAtEverySize(page, '06-end-account', '#pz-done');
-    await page.goto(`${BASE}/puzzles`);
-    await shotAtEverySize(page, '07-hub-account-done', '#hub-keep-going');
+    await page.click('#pz-done');
+    await shotAtEverySize(page, '06-end-one-mistake', '#pz-score');
 
-    // The same account's home: the PUZZLES section with the day's ring,
-    // the worst band in words, and a bar per band. `review-home` has no
-    // deck to draw, so the section is shot here, where there is one.
-    await page.goto(`${BASE}/`);
-    await shotAtEverySize(page, '08-home-practice', '#home-practice');
-
-    // Last, because it replaces this account's deck: a deck shaped like
-    // the one on the human's phone -- 111 mistakes, 50 in rotation, none
-    // patched -- which is the state the three-state bars exist for.
-    log(`shaping the deck: ${JSON.stringify(shapeDeck(email))}`);
+    // 4. ?? in good shape, with ? offered instead.
+    log(`shaping the deck: ${JSON.stringify(shapeDeck(email, 'good_shape'))}`);
     await page.goto(`${BASE}/puzzles`);
-    await shotAtEverySize(page, '09-hub-in-progress', '#hub-bands');
+    await shotAtEverySize(page, '07-hub-good-shape', '#hub-tier-next');
+
+    // 5. Everything in good shape: one warm line, nothing to press.
+    log(`shaping the deck: ${JSON.stringify(shapeDeck(email, 'all_clear'))}`);
+    await page.goto(`${BASE}/puzzles`);
+    await shotAtEverySize(page, '08-hub-all-clear', '#hub-tier-good');
+
+    // The same account's home: the PUZZLES section, which is the same
+    // card. `review-home` has no deck to draw, so it is shot here.
+    log(`shaping the deck: ${JSON.stringify(shapeDeck(email, 'lead'))}`);
     await page.goto(`${BASE}/`);
-    await shotAtEverySize(page, '10-home-in-progress', '#home-bands');
+    await shotAtEverySize(page, '09-home-practice', '#home-tier');
+
     await context.close();
     log(`screenshots in ${OUT}`);
   } finally {

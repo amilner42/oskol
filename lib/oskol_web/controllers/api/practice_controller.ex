@@ -3,6 +3,7 @@ defmodule OskolWeb.Api.PracticeController do
   A practice session, as JSON:
 
       GET  /papi/practice           what to put in front of the player next
+      GET  /papi/practice?band=<g>  one tier's own queue: FIX ONE
       POST /papi/practice/more      KEEP GOING: more new ones, then the session
       POST /papi/practice/tz        {tz} -- where this browser is
       POST /papi/practice/bury      {id} -- back tomorrow, level kept
@@ -16,8 +17,11 @@ defmodule OskolWeb.Api.PracticeController do
 
   alias Oskol.Gleam.CtxBuilder
 
-  def index(conn, _params) do
-    send_json(conn, :oskol@handlers@practice.practice_json(ctx(), session(conn)))
+  def index(conn, params) do
+    send_json(
+      conn,
+      :oskol@handlers@practice.practice_json(ctx(), session(conn), param(params, "band"))
+    )
   end
 
   def more(conn, _params) do

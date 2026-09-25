@@ -23,19 +23,28 @@ suite : Test
 suite =
     describe "the words practice is said in"
         [ bands
-        , lead
+        , tiers
         , today
+        , runEnd
         , patched
         , why
         , noJargon
         ]
 
 
-{-| A band in its three states: made, in progress, patched.
+{-| A band in its three states, with nothing to do today.
 -}
-band : String -> Int -> Int -> Int -> { grade : String, total : Int, inProgress : Int, patched : Int }
+band : String -> Int -> Int -> Int -> Mistakes.Band
 band grade total going done =
-    { grade = grade, total = total, inProgress = going, patched = done }
+    { grade = grade, total = total, inProgress = going, patched = done, due = 0, newLeft = 0 }
+
+
+{-| The same band, with work: so many due, and so many new ones the day
+still allows.
+-}
+working : String -> Int -> Int -> Int -> Int -> Int -> Mistakes.Band
+working grade total going done due newLeft =
+    { grade = grade, total = total, inProgress = going, patched = done, due = due, newLeft = newLeft }
 
 
 bands : Test
@@ -75,67 +84,98 @@ bands =
         ]
 
 
-lead : Test
-lead =
-    describe "what the practice home leads with"
-        [ test "the worst band, what is being fixed in it and what is patched" <|
+tiers : Test
+tiers =
+    describe "one tier in front of you"
+        [ test "a tier is named by the mark the replay already draws" <|
             \_ ->
-                Mistakes.lead [ band "very_bad" 61 30 23, band "bad" 118 44 40 ]
-                    |> Expect.equal (Just "You have made 61 very bad moves. You are fixing 30 and have patched 23.")
-        , -- The deck the human hit on their phone: fifty in rotation and
-          -- weeks before the first one is patched. The line must say that
-          -- something is happening.
-          test "nothing patched yet, but fifty in progress: the work is the sentence" <|
+                List.map Mistakes.mark [ "very_bad", "bad", "doubtful" ]
+                    |> Expect.equal [ "??", "?", "?!" ]
+        , test "and under the mark, in words" <|
             \_ ->
-                Mistakes.lead [ band "very_bad" 111 50 0 ]
-                    |> Expect.equal (Just "You have made 111 very bad moves. You are fixing 50 of them.")
-        , test "a band nobody has started reads as not started, not as failure" <|
+                List.map Mistakes.tierName [ "very_bad", "bad", "doubtful" ]
+                    |> Expect.equal [ "Very bad moves", "Bad moves", "Dubious moves" ]
+        , test "the one number: everything not patched, not what is due" <|
             \_ ->
-                Mistakes.lead [ band "very_bad" 61 0 0 ]
-                    |> Expect.equal (Just "You have made 61 very bad moves. You have not started on them yet.")
-        , test "and a band with nothing left in flight is just what is patched" <|
+                Mistakes.leftToFix (working "very_bad" 61 30 23 5 3)
+                    |> Expect.equal "38 left to fix"
+        , test "a tier with everything patched is nothing left to fix" <|
             \_ ->
-                Mistakes.lead [ band "very_bad" 61 0 23 ]
-                    |> Expect.equal (Just "You have made 61 very bad moves. You have patched 23.")
-        , test "the worst band the player actually has, not the worst there is" <|
+                Mistakes.leftToFix (band "bad" 12 0 12)
+                    |> Expect.equal "0 left to fix"
+        , test "what is patched, quieter beside it" <|
             \_ ->
-                Mistakes.lead [ band "very_bad" 0 0 0, band "bad" 12 4 3 ]
-                    |> Expect.equal (Just "You have made 12 bad moves. You are fixing 4 and have patched 3.")
-        , test "nothing at all when no band holds anything" <|
+                Mistakes.patchedAside (band "very_bad" 61 30 23)
+                    |> Expect.equal (Just "23 patched")
+        , test "and nothing at all on a first day, rather than a zero" <|
             \_ ->
-                Mistakes.lead [ band "very_bad" 0 0 0, band "bad" 0 0 0 ]
+                Mistakes.patchedAside (band "very_bad" 61 30 0)
                     |> Expect.equal Nothing
-        , test "and nothing when the answer carried no bands" <|
-            \_ -> Mistakes.lead [] |> Expect.equal Nothing
+        , test "work is anything due, or a new one the day still allows" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.hasWork (working "very_bad" 61 30 23 5 0) |> Expect.equal True
+                    , \_ -> Mistakes.hasWork (working "very_bad" 61 30 23 0 3) |> Expect.equal True
+                    , \_ -> Mistakes.hasWork (working "very_bad" 61 30 23 0 0) |> Expect.equal False
+                    ]
+                    ()
+        , test "a tier in good shape is said warmly, by its mark" <|
+            \_ ->
+                Mistakes.goodShapeLine "very_bad"
+                    |> Expect.equal "Nice — your ?? moves are in good shape."
+        , test "and honestly: more tomorrow while any are untouched" <|
+            \_ ->
+                Mistakes.goodShapeWhy (band "very_bad" 61 30 23)
+                    |> Expect.equal "Nothing due. More of them tomorrow."
+        , test "or that every one of them has been started" <|
+            \_ ->
+                Mistakes.goodShapeWhy (band "very_bad" 61 38 23)
+                    |> Expect.equal "Nothing due, and you have started every one."
+        , test "every tier in good shape: one line, and nothing to press" <|
+            \_ ->
+                Mistakes.allClearLine
+                    |> Expect.equal "Nice work — every one of your mistakes is in good shape."
+        , test "the next tier down, offered by its mark and its words" <|
+            \_ ->
+                Mistakes.nextTierLabel "bad"
+                    |> Expect.equal "WORK ON ? BAD MOVES"
         ]
 
 
 today : Test
 today =
-    describe "the one button"
-        [ test "what today still asks of you, as a verb" <|
+    describe "the day, wherever the ring used to be"
+        [ test "a plain count, with nothing to measure it against" <|
+            \_ -> Mistakes.fixedToday 3 |> Expect.equal "3 fixed today"
+        , test "one is one, not a fraction of anything" <|
+            \_ -> Mistakes.fixedToday 1 |> Expect.equal "1 fixed today"
+        , test "a day not started yet says so without a goal" <|
+            \_ -> Mistakes.fixedToday 0 |> Expect.equal "Nothing fixed yet today"
+        ]
+
+
+{-| The end of a run. The page invites stopping after one mistake, so
+one mistake has to read as a finished thing to have done.
+-}
+runEnd : Test
+runEnd =
+    describe "what a run ends on"
+        [ test "one fixed is a whole session, and says so" <|
             \_ ->
-                Mistakes.fixLabel { done = 2, target = 5 }
-                    |> Expect.equal "FIX 3 TODAY"
-        , test "a day worked through says so" <|
+                Mistakes.runSummary { right = 1, close = 0, total = 1 }
+                    |> Expect.equal "One fixed. That is how it is done."
+        , test "one close still counts" <|
             \_ ->
-                Mistakes.fixLabel { done = 5, target = 5 }
-                    |> Expect.equal "DONE FOR TODAY"
-        , test "and a day gone past its goal is still done, not negative" <|
+                Mistakes.runSummary { right = 0, close = 1, total = 1 }
+                    |> Expect.equal "One faced, and close. That counts."
+        , test "one missed says when it comes back, not that you failed" <|
             \_ ->
-                Mistakes.fixLabel { done = 9, target = 5 }
-                    |> Expect.equal "DONE FOR TODAY"
-        , -- The goal is capped at ten (`deck.goal_per_day`), so a backlog
-          -- of twenty-three asks for ten. The words follow the number
-          -- they are given; the cap itself is the server's.
-          test "a backlog asks for the day's ten, not for the backlog" <|
+                Mistakes.runSummary { right = 0, close = 0, total = 1 }
+                    |> Expect.equal "One faced. It comes back tomorrow."
+        , test "more than one is the score of what was answered" <|
             \_ ->
-                Mistakes.fixLabel { done = 0, target = 10 }
-                    |> Expect.equal "FIX 10 TODAY"
-        , test "and a day with no work at all is done before it starts" <|
-            \_ ->
-                Mistakes.fixLabel { done = 0, target = 0 }
-                    |> Expect.equal "DONE FOR TODAY"
+                Mistakes.runSummary { right = 7, close = 2, total = 10 }
+                    |> Expect.equal "7 of 10 right"
         ]
 
 
@@ -196,11 +236,18 @@ noJargon =
                              , Mistakes.line (band "bad" 3 1 1)
                              , Mistakes.patchedNote 4
                              , Mistakes.milestone 4
-                             , Mistakes.fixLabel { done = 0, target = 3 }
+                             , Mistakes.fixedToday 3
+                             , Mistakes.tierName "very_bad"
+                             , Mistakes.leftToFix (band "very_bad" 61 30 23)
+                             , Mistakes.goodShapeLine "very_bad"
+                             , Mistakes.goodShapeWhy (band "very_bad" 61 30 23)
+                             , Mistakes.allClearLine
+                             , Mistakes.nextTierLabel "bad"
+                             , Mistakes.runSummary { right = 1, close = 0, total = 1 }
                              , Mistakes.whyLine { grade = "bad", opponent = "Charlie" }
                              ]
                                 ++ List.filterMap identity
-                                    [ Mistakes.lead [ band "very_bad" 61 30 23 ]
+                                    [ Mistakes.patchedAside (band "very_bad" 61 30 23)
                                     , Mistakes.patchedRun [ "very_bad" ]
                                     ]
                             )

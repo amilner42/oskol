@@ -1,6 +1,7 @@
 //// A practice session: what to put in front of the player next.
 ////
-////   GET  /papi/practice              the session
+////   GET  /papi/practice            the session
+////   GET  /papi/practice?band=<g>   one tier's session: FIX ONE
 ////   POST /papi/practice/more       KEEP GOING: more new ones, then the session
 ////   POST /papi/practice/tz         {tz} -- where this browser is
 ////   POST /papi/practice/bury       {id} -- back tomorrow, level kept
@@ -43,11 +44,31 @@ import oskol/rooms/seat
 
 /// The session: what to put in front of the player right now. There is no
 /// page after it -- when they have answered these, they ask again.
-pub fn practice_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
+///
+/// `band` names one tier of mistakes ("very_bad", "bad", "doubtful") and
+/// is what FIX ONE asks for: that tier's own queue, due first and then
+/// ones never seen. Empty means the whole deck, which is what the page
+/// opens with. A band that is not one of the three is refused rather
+/// than widened into everything.
+pub fn practice_json(
+  ctx: Ctx,
+  session: Session,
+  band: String,
+) -> Result(String, ApiError) {
+  use band <- result.try(checked_band(band))
   case session.user_id, session.guest_id {
-    Some(uid), _ -> Ok(account_session(ctx, uid))
+    Some(uid), _ -> Ok(account_session(ctx, uid, band))
+    // A guest has no deck and so no tiers: their mistakes are all there
+    // is, and a band asked for on their behalf names nothing to narrow.
     None, Some(guest_id) -> Ok(guest_session(ctx, guest_id))
     None, None -> Ok(empty())
+  }
+}
+
+fn checked_band(band: String) -> Result(String, ApiError) {
+  case band == "" || deck.known_band(band) {
+    True -> Ok(band)
+    False -> Error(error.validation_failed(deck.unknown_band_message))
   }
 }
 
@@ -63,9 +84,9 @@ pub fn more_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
       let _ = deck.keep_going(ctx, uid)
       // From the front again: the cards that were just started are due
       // now, so they are exactly what the next page is.
-      Ok(account_session(ctx, uid))
+      Ok(account_session(ctx, uid, ""))
     }
-    None -> practice_json(ctx, session)
+    None -> practice_json(ctx, session, "")
   }
 }
 
@@ -112,36 +133,30 @@ fn signed_in(session: Session) -> Result(String, ApiError) {
 
 // ---------- An account's session ----------
 
-fn account_session(ctx: Ctx, uid: String) -> String {
-  let found = deck.session(ctx, uid)
+fn account_session(ctx: Ctx, uid: String, band: String) -> String {
+  let found = case band {
+    "" -> deck.session(ctx, uid)
+    _ -> deck.band_session(ctx, uid, band)
+  }
   let entries =
     list.append(cards(found.reviews, True), cards(found.fresh, False))
   // One read of the deck's totals, for both the counts the page prints
-  // and the day's ring: two reads could not disagree by much, but they
-  // could disagree, and the ring is drawn beside the number it is made of.
+  // and the day's count: two reads could not disagree by much, but they
+  // could disagree, and both are printed on the same card.
   let summary =
     ctx.practice.summary(uid, []) |> list.first |> option.from_result
+  let tiers = deck.tiers(ctx, uid)
   body(
     entries,
     Some(counts(summary, found)),
     None,
-    Some(deck.today_json(deck.today(ctx, uid, due_of(summary)))),
-    // The three lines the practice home leads with: how many mistakes of
-    // each severity this player has made, and how many they have patched.
-    Some(
-      json.preprocessed_array(list.map(
-        deck.severity(ctx, uid),
-        deck.severity_json,
-      )),
-    ),
+    Some(deck.today_json(deck.today(ctx, uid))),
+    // The tiers the practice hub leads with: how many mistakes of each
+    // severity this player has made, how many are patched, and what each
+    // still has to do today.
+    Some(json.preprocessed_array(list.map(tiers, deck.severity_json))),
+    deck.lead(tiers),
   )
-}
-
-fn due_of(summary: Option(Summary)) -> Int {
-  case summary {
-    Some(row) -> row.due_count
-    None -> 0
-  }
 }
 
 fn cards(items: List(Card), due: Bool) -> List(Json) {
@@ -213,8 +228,9 @@ fn guest_session(ctx: Ctx, guest_id: String) -> String {
     None,
     Some(mistakes(mine)),
     // No deck, so no day of theirs to count and nothing patched: a guest
-    // is never shown a goal they are not being held to, or progress
-    // against mistakes nothing is keeping for them.
+    // is never shown progress against mistakes nothing is keeping for
+    // them, and so has no tier to lead with either.
+    None,
     None,
     None,
   )
@@ -259,6 +275,7 @@ fn body(
   mistakes: Option(Json),
   today: Option(Json),
   severity: Option(Json),
+  lead: Option(String),
 ) -> String {
   envelope.ok([
     #("puzzles", json.preprocessed_array(entries)),
@@ -270,12 +287,20 @@ fn body(
     // A guest's: how many mistakes are theirs and from how many games.
     // Null for an account (`counts` says it) and for nobody.
     #("mistakes", option.unwrap(mistakes, json.null())),
-    // The day's ring: what this account has answered today against the
-    // day's work. An account's and only an account's, like `counts`.
+    // The day's count: what this account has answered today, with
+    // nothing to measure it against. An account's only, like `counts`.
     #("today", option.unwrap(today, json.null())),
     // The deck by how bad the mistake was, worst band first, with how
     // much of each is patched, and the rung that means patched.
     #("severity", option.unwrap(severity, json.null())),
+    // The one tier to put in front of the player: the worst that still
+    // has work, else the worst they have made a mistake in at all. The
+    // choice is made here so that the hub and the home cannot make it
+    // two different ways.
+    #("lead", case lead {
+      Some(grade) -> json.string(grade)
+      None -> json.null()
+    }),
     #("patched_level", json.int(deck.patched_level)),
     // This endpoint is never one game's mistakes; the per-game list is its
     // own route and names the game it answered for.
@@ -284,7 +309,7 @@ fn body(
 }
 
 fn empty() -> String {
-  body([], None, None, None, None)
+  body([], None, None, None, None, None)
 }
 
 /// One puzzle as a session lists it: what it is and what it asks. The

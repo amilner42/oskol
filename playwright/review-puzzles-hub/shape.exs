@@ -5,6 +5,17 @@
 #
 #   SHAPE_EMAIL=someone@oskol.test mix run -e 'Code.eval_file("playwright/review-puzzles-hub/shape.exs")'
 #
+# SHAPE_STATE picks which of the hub's three states the deck is left in:
+#
+#   lead        (default) every started card is due, so the worst tier
+#               has work and the hub leads with it and FIX ONE
+#   good_shape  the very bad tier's cards are pushed out, so it is in
+#               good shape and the bad tier is what is offered instead
+#   all_clear   nothing anywhere is due: one warm line, nothing to press
+#
+# Every card is started here, so the day's budget of new mistakes is
+# spent whatever the state: what is due is the only work there can be.
+#
 # It replaces that account's deck rather than adding to it, so the numbers
 # on the shot are exactly the ones named here. Each made-up mistake is a
 # copy of a real one of theirs, so every page still renders a real
@@ -103,11 +114,32 @@ started =
 
 {:ok, _} = Retain.start(user.id, started)
 
+# Push a tier's started cards out of today, which is the only difference
+# between the three states: a card not due and a day with no new ones
+# left is a tier with nothing to do.
+state = System.get_env("SHAPE_STATE") || "lead"
+later = DateTime.add(DateTime.utc_now(), 3, :day)
+
+quiet =
+  case state do
+    "lead" -> []
+    "good_shape" -> ["very_bad"]
+    "all_clear" -> ["very_bad", "bad", "doubtful"]
+    other -> raise "SHAPE_STATE #{other} is not one of lead, good_shape, all_clear"
+  end
+
+Enum.each(quiet, fn grade ->
+  keys = Enum.filter(started, &String.starts_with?(&1, "shape-#{grade}-"))
+  from(i in Retain.Item, where: i.user_id == ^deck.id and i.key in ^keys)
+  |> Repo.update_all(set: [due: later])
+end)
+
 IO.puts(
   Jason.encode!(%{
     total: length(rows),
     in_progress: length(started),
     untouched: length(rows) - length(started),
-    patched: 0
+    patched: 0,
+    state: state
   })
 )

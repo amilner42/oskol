@@ -283,7 +283,7 @@ mistakesOnCards =
             { id = id, kind = "move", prompt = "White to play 6-4. What's your play?", due = False }
 
         answer ids =
-            { puzzles = List.map entry ids, counts = Nothing, mistakes = Nothing, today = Nothing, severity = [], patchedLevel = 0 }
+            { puzzles = List.map entry ids, counts = Nothing, mistakes = Nothing, today = Nothing, severity = [], lead = Nothing, patchedLevel = 0 }
 
         stillWriting =
             Api.ApiError { code = "puzzles_pending", message = "This game's mistakes are still being written. Try again in a moment." }

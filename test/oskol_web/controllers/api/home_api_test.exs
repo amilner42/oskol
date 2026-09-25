@@ -246,15 +246,38 @@ defmodule OskolWeb.Api.HomeApiTest do
                "deck" => 0,
                "ladder" => List.duplicate(0, 8),
                "days" => List.duplicate(false, 30),
-               # The day's ring: nothing answered and nothing to answer,
-               # and no deck opened to find that out.
-               "today" => %{"done" => 0, "target" => 0},
-               # Three bands, every one of them empty.
+               # The day: a plain count, and no deck opened to find it.
+               "today" => %{"done" => 0},
+               # Three bands, every one of them empty and with nothing
+               # to do.
                "severity" => [
-                 %{"grade" => "very_bad", "total" => 0, "in_progress" => 0, "patched" => 0},
-                 %{"grade" => "bad", "total" => 0, "in_progress" => 0, "patched" => 0},
-                 %{"grade" => "doubtful", "total" => 0, "in_progress" => 0, "patched" => 0}
+                 %{
+                   "grade" => "very_bad",
+                   "total" => 0,
+                   "in_progress" => 0,
+                   "patched" => 0,
+                   "due" => 0,
+                   "new_left" => 0
+                 },
+                 %{
+                   "grade" => "bad",
+                   "total" => 0,
+                   "in_progress" => 0,
+                   "patched" => 0,
+                   "due" => 0,
+                   "new_left" => 0
+                 },
+                 %{
+                   "grade" => "doubtful",
+                   "total" => 0,
+                   "in_progress" => 0,
+                   "patched" => 0,
+                   "due" => 0,
+                   "new_left" => 0
+                 }
                ],
+               # No mistake of any band: no tier to lead with.
+               "lead" => nil,
                "patched_level" => 4
              }
 

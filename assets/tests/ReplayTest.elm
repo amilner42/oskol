@@ -190,6 +190,7 @@ mistakes ids =
             , mistakes = Nothing
             , today = Nothing
             , severity = []
+            , lead = Nothing
             , patchedLevel = 0
             }
         )

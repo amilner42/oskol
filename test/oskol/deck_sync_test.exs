@@ -585,7 +585,7 @@ defmodule Oskol.DeckSyncTest do
       assert session(user.id) == []
 
       # ...and KEEP GOING is what gets past that.
-      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _, _, _, _, _} =
+      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _, _, _, _, _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert start_new.(user.id, 10) == 10
@@ -676,32 +676,35 @@ defmodule Oskol.DeckSyncTest do
       assert {:ok, 2} = Practice.sync(user.id)
       [worst] = Enum.map(sources_of(very_bad), & &1.puzzle_id)
 
-      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity} =
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       # Nothing started yet: every mistake is untouched -- neither in
-      # progress nor patched.
+      # progress nor patched -- and each band has one the day could
+      # introduce and nothing due.
       assert Enum.sort(severity.(user.id, 4)) ==
                Enum.sort([
-                 {:severity, "doubtful", 1, 0, 0},
-                 {:severity, "very_bad", 1, 0, 0}
+                 {:severity, "doubtful", 1, 0, 0, 0, 1},
+                 {:severity, "very_bad", 1, 0, 0, 0, 1}
                ])
 
       # Started and answered nothing: in progress, which is the state the
-      # page needs to be able to say anything for weeks.
+      # page needs to be able to say anything for weeks. A started card is
+      # due now and is no longer one of the band's fresh ones.
       {:ok, _} = Retain.start(user.id, [worst])
-      assert {:severity, "very_bad", 1, 1, 0} in severity.(user.id, 4)
+      assert {:severity, "very_bad", 1, 1, 0, 1, 0} in severity.(user.id, 4)
 
-      # Three right in a row is still in progress, not patched...
+      # Three right in a row is still in progress, not patched -- and it
+      # is not due again for days, so the band has no work left.
       Enum.each(1..3, fn _ ->
         {:ok, _} = Retain.review(user.id, worst, :pass)
       end)
 
-      assert {:severity, "very_bad", 1, 1, 0} in severity.(user.id, 4)
+      assert {:severity, "very_bad", 1, 1, 0, 0, 0} in severity.(user.id, 4)
 
       # ...the fourth is patched, and leaves in progress as it goes.
       {:ok, %{level_after: 4}} = Retain.review(user.id, worst, :pass)
-      assert {:severity, "very_bad", 1, 0, 1} in severity.(user.id, 4)
+      assert {:severity, "very_bad", 1, 0, 1, 0, 0} in severity.(user.id, 4)
 
       # The same position reached in two games is one mistake, in the
       # worse of the two bands.
@@ -710,20 +713,99 @@ defmodule Oskol.DeckSyncTest do
       grade(same, "bad")
       assert {:ok, 0} = Practice.sync(user.id)
       counted = severity.(user.id, 4)
-      assert {:severity, "bad", 1, 0, 0} in counted
-      assert Enum.all?(counted, fn {:severity, band, _, _, _} -> band != "doubtful" end)
-      assert Enum.sum(Enum.map(counted, fn {:severity, _, total, _, _} -> total end)) == 2
+      assert {:severity, "bad", 1, 0, 0, 0, 1} in counted
+      assert Enum.all?(counted, fn {:severity, band, _, _, _, _, _} -> band != "doubtful" end)
+      assert Enum.sum(Enum.map(counted, fn {:severity, _, total, _, _, _, _} -> total end)) == 2
 
-      # The three states are exclusive and add up to the band.
-      assert Enum.all?(counted, fn {:severity, _, total, going, patched} ->
-               going + patched <= total
+      # The three states are exclusive and add up to the band, and so do
+      # the two that say what is left to do.
+      assert Enum.all?(counted, fn {:severity, _, total, going, patched, due, fresh} ->
+               going + patched <= total and due <= total and fresh <= total
              end)
+    end
+
+    test "a suspended mistake is counted, but is neither due nor one to introduce" do
+      user = an_account("arie@oskol.test")
+      game_id = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(game_id, ["p1"])
+      grade(game_id, "very_bad")
+      assert {:ok, 1} = Practice.sync(user.id)
+      [key] = Enum.map(sources_of(game_id), & &1.puzzle_id)
+
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _} =
+        Oskol.Gleam.Caps.Practice.build()
+
+      assert {:severity, "very_bad", 1, 0, 0, 0, 1} in severity.(user.id, 4)
+
+      # NEVER: the mistake is still one the player made, so the total
+      # keeps it -- but nothing is going to offer it, so the tier must
+      # not read as having work.
+      {:ok, %{suspended: 1}} = Retain.suspend(user.id, [key])
+      assert {:severity, "very_bad", 1, 0, 0, 0, 0} in severity.(user.id, 4)
+    end
+
+    test "one tier's queue is that tier's mistakes, due before new" do
+      user = an_account("arie@oskol.test")
+
+      very_bad = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(very_bad, ["p1"])
+      grade(very_bad, "very_bad")
+
+      dubious = a_room([seat("p1", guest: "g2", user: user.id)])
+      mistakes(dubious, ["p1"])
+      grade(dubious, "doubtful")
+
+      assert {:ok, 2} = Practice.sync(user.id)
+      [worst] = Enum.map(sources_of(very_bad), & &1.puzzle_id)
+      [mild] = Enum.map(sources_of(dubious), & &1.puzzle_id)
+
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, band_queue} =
+        Oskol.Gleam.Caps.Practice.build()
+
+      # Nothing started: each tier offers its own, as a new card.
+      assert {:session, [], [{:card, ^worst, _, _, _, _, _, _, _}], _} =
+               band_queue.(user.id, "very_bad", 20)
+
+      assert {:session, [], [{:card, ^mild, _, _, _, _, _, _, _}], _} =
+               band_queue.(user.id, "doubtful", 20)
+
+      # A band with nothing in it is an empty session, not everything.
+      assert {:session, [], [], _} = band_queue.(user.id, "bad", 20)
+
+      # Started, so due: the tier's due card comes before any new one, and
+      # the other tier is untouched by it.
+      {:ok, _} = Retain.start(user.id, [worst])
+
+      assert {:session, [{:card, ^worst, _, _, _, _, _, _, _}], [], _} =
+               band_queue.(user.id, "very_bad", 20)
+
+      assert {:session, [], [{:card, ^mild, _, _, _, _, _, _, _}], _} =
+               band_queue.(user.id, "doubtful", 20)
+    end
+
+    test "a band nobody has, and a band that is not a band, are both empty" do
+      user = an_account("arie@oskol.test")
+
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, band_queue} =
+        Oskol.Gleam.Caps.Practice.build()
+
+      # No deck at all.
+      assert band_queue.(user.id, "very_bad", 20) == {:session, [], [], 0}
+
+      game_id = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(game_id, ["p1"])
+      grade(game_id, "very_bad")
+      assert {:ok, 1} = Practice.sync(user.id)
+
+      # A name that is not one of the three bands takes nothing with it:
+      # the whole deck is never what a bad band falls back to.
+      assert {:session, [], [], _} = band_queue.(user.id, "brilliant", 20)
     end
 
     test "an account with no deck is counted as nothing, not as an error" do
       user = an_account("arie@oskol.test")
 
-      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity} =
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert severity.(user.id, 4) == []

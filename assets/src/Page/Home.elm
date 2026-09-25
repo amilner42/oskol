@@ -68,6 +68,7 @@ import Ui.Mistakes as Mistakes
 import Ui.Identity as Identity
 import Ui.LiveGames as LiveGames
 import Ui.Notebook as Notebook exposing (style)
+import Ui.Tiers
 
 
 
@@ -88,6 +89,7 @@ type alias Model =
     , starting : Bool -- PRACTICE is in flight: the deck is being fetched
     , practiceNote : Maybe String
     , ladderOpen : Bool -- the deck's rungs, under the one bar that sums them up
+    , tier : Maybe String -- the tier of mistakes the player tapped, if they tapped one
 
     -- The rooms opened up to show their games. A room is a match, so this
     -- is a set and not one id: reading two matches is a thing to do.
@@ -121,9 +123,10 @@ type Msg
     | PressedLogOut
     | LoggedOut (Result Api.Error ())
     | PressedPuzzles
-    | PressedPractice
+    | PressedFixOne String
+    | PickedTier String
     | ToggledLadder
-    | GotDeck (Result Api.Error Practice.Practice)
+    | GotBand String (Result Api.Error Practice.Practice)
     | PressedMore
     | GotMore (Result Api.Error Home.Page)
     | ToggledRoom String
@@ -137,7 +140,7 @@ type Out
     | Go String
     | TookSeat { name : String, path : String }
     | ChoseTheme String
-    | StartRun (List String) (Maybe Practice.Today)
+    | StartRun (List String) (Maybe Practice.Today) (Maybe String)
       -- The answer says this browser has no account: the guest home is the
       -- one it should be looking at.
     | SignedOut
@@ -158,6 +161,7 @@ init session =
       , starting = False
       , practiceNote = Nothing
       , ladderOpen = False
+      , tier = Nothing
       , expanded = Set.empty
       , zone = Time.utc
       , year = 0
@@ -296,31 +300,39 @@ update msg model =
         PressedPuzzles ->
             ( model, Cmd.none, Go (Route.href Route.puzzles) )
 
-        -- PRACTICE starts a run the way the practice home does: the deck
-        -- says which puzzles come first, and the run outlives this page,
-        -- so the shell keeps it.
         ToggledLadder ->
             ( { model | ladderOpen = not model.ladderOpen }, Cmd.none, NoOut )
 
-        PressedPractice ->
+        -- FIX ONE starts a run the way the practice home does: that one
+        -- tier's queue, and the run outlives this page, so the shell
+        -- keeps it -- with the tier, so ANOTHER stays in it.
+        PressedFixOne grade ->
             if model.starting then
                 ( model, Cmd.none, NoOut )
 
             else
                 ( { model | starting = True, practiceNote = Nothing }
-                , Practice.fetch model.session GotDeck
+                , Practice.fetchBand model.session grade (GotBand grade)
                 , NoOut
                 )
 
-        GotDeck (Ok deck) ->
+        -- Which tier the card is about. Every tier's numbers came with
+        -- the page, so nothing is fetched.
+        PickedTier grade ->
+            ( { model | tier = Just grade, practiceNote = Nothing }, Cmd.none, NoOut )
+
+        GotBand grade (Ok deck) ->
             case deck.puzzles of
                 [] ->
                     ( { model | starting = False, practiceNote = Just nothingDueLine }, Cmd.none, NoOut )
 
                 entries ->
-                    ( { model | starting = False }, Cmd.none, StartRun (List.map .id entries) deck.today )
+                    ( { model | starting = False }
+                    , Cmd.none
+                    , StartRun (List.map .id entries) deck.today (Just grade)
+                    )
 
-        GotDeck (Err err) ->
+        GotBand _ (Err err) ->
             ( { model | starting = False, practiceNote = Just (Api.errorMessage err) }, Cmd.none, NoOut )
 
         PressedMore ->
@@ -694,15 +706,16 @@ sentence text =
 -- PRACTICE
 
 
-{-| The worst of what you have made, what today asks of you, and one bar
-per band showing how much of each you have patched.
+{-| One tier of your mistakes in front of you, the others quiet under
+it, and the day's count. The same card the practice home shows
+(`Ui.Tiers`), so the two pages are one product.
 
-This used to be "N due" and a ladder of eight bars. The ladder answered
-nothing a player asks: the question is "how much of my worst play have I
-actually fixed?", and that is a sentence and three bars. The rungs stay
-behind a `detail` toggle -- closed by default, one tap, nothing lost --
-because on a phone this section is a column and a second picture that is
-only occasionally wanted costs every visit a screenful.
+This used to be "N due" and a ladder of eight bars, then a sentence and
+three bars and a ring. The question is "what should I fix next?", and
+the answer is a mark, a number and a button. The rungs and the thirty
+days stay behind a `detail` toggle -- closed by default, one tap,
+nothing lost -- because on a phone this section is a column and a second
+picture that is only occasionally wanted costs every visit a screenful.
 
 -}
 practice : Model -> Home.Home -> Html Msg
@@ -712,53 +725,28 @@ practice model home =
             [ quiet "Your mistakes become puzzles here after your first graded game." ]
 
         else
-            [ -- The sentence gets the whole width: at 320 a three-across
-              -- row squeezes it into a column of one word.
-              case Mistakes.lead home.practice.severity of
-                Just worst ->
-                    Html.p
-                        [ id "home-worst"
-                        , class "text-[15px] font-semibold leading-snug mb-3"
-                        , style "color: var(--ink)"
-                        ]
-                        [ Html.text worst ]
-
-                Nothing ->
-                    Html.text ""
-            , Html.div [ class "flex items-center gap-3 mb-5" ]
-                [ Charts.ring home.practice.today
-                , Html.p [ id "home-today", class "q-note text-[12px] flex-1 min-w-0" ]
-                    [ Html.text (Charts.ringSentence home.practice.today) ]
-                , Html.button
-                    [ Attr.type_ "button"
-                    , id "home-practice-start"
-                    , class "q-btn rounded-lg px-4 py-2.5 text-[13px] shrink-0"
-                    , Attr.disabled model.starting
-                    , onClick PressedPractice
-                    ]
-                    [ Html.text
-                        (if model.starting then
-                            "STARTING…"
-
-                         else
-                            Mistakes.fixLabel home.practice.today
-                        )
-                    ]
+            [ Html.div [ class "max-w-md" ]
+                [ Ui.Tiers.view
+                    { bands = home.practice.severity
+                    , lead = home.practice.lead
+                    , selected = model.tier
+                    , patchedLevel = home.practice.patchedLevel
+                    , busy = model.starting
+                    , onFix = PressedFixOne
+                    , onSelect = PickedTier
+                    , prefix = "home"
+                    }
                 ]
+            , Html.p [ id "home-today", class "q-note text-[12px] mt-4" ]
+                [ Html.text (Mistakes.fixedToday home.practice.today.done) ]
             , case model.practiceNote of
                 Just note ->
-                    Html.p [ id "home-practice-note", class "q-note text-[13px] leading-snug -mt-3 mb-5" ] [ Html.text note ]
+                    Html.p [ id "home-practice-note", class "q-note text-[13px] leading-snug mt-2" ] [ Html.text note ]
 
                 Nothing ->
                     Html.text ""
-            , Html.div [ class "max-w-md space-y-5" ]
-                [ Html.div [ id "home-bands", class "space-y-3" ]
-                    (List.map band home.practice.severity
-                        ++ [ Html.p [ id "home-patched-note", class "q-note text-[12px]" ]
-                                [ Html.text (Mistakes.patchedNote home.practice.patchedLevel) ]
-                           ]
-                    )
-                , Html.div []
+            , Html.div [ class "max-w-md space-y-5 mt-6" ]
+                [ Html.div []
                     [ Html.button
                         [ Attr.type_ "button"
                         , id "home-ladder-toggle"
@@ -796,23 +784,6 @@ practice model home =
                 , Charts.days home.practice.days
                 ]
             ]
-
-
-{-| One band: its line in words, and its three states as a bar -- in
-progress, patched, and what has not been started.
--}
-band : Practice.Band -> Html Msg
-band entry =
-    Html.div [ Attr.attribute "data-band" entry.grade ]
-        [ Html.p [ class "text-[13px] mb-1", style "color: var(--ink)" ]
-            [ Html.text (Mistakes.line entry) ]
-        , Charts.patched
-            { total = entry.total
-            , inProgress = entry.inProgress
-            , patched = entry.patched
-            , sentence = Mistakes.line entry
-            }
-        ]
 
 
 caption : String -> Html Msg

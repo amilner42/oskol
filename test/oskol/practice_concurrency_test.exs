@@ -34,7 +34,7 @@ defmodule Oskol.PracticeConcurrencyTest do
     # to take their row locks in different orders -- introduction order and the caller's key
     # order -- so each could hold the row the other wanted next, and Postgres killed one.
     {:practice_caps, put_user, put_items, _, _, _, start, _, _, _, _, _, master, _, _, _, _, _, _,
-     _} =
+     _, _} =
       Practice.build()
 
     uid = "#{@prefix}#{System.unique_integer([:positive])}"

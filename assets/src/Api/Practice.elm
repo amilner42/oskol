@@ -7,8 +7,8 @@ module Api.Practice exposing
     , Random
     , Today
     , fetch
+    , fetchBand
     , gameMistakes
-    , more
     , practiceDecoder
     , random
     , randomDecoder
@@ -23,8 +23,8 @@ endpoint of its own (`/papi/puzzles/random`).
 
     GET  /papi/practice          {puzzles, counts | null, mistakes | null,
                                   today | null, severity | null,
-                                  patched_level}
-    POST /papi/practice/more     KEEP GOING: ten more into rotation, then the session
+                                  lead | null, patched_level}
+    GET  /papi/practice?band=g   the same, the puzzles being one tier's
     POST /papi/practice/tz       {tz}: where this browser is
     GET  /papi/puzzles/random    TRY ONE: a puzzle whose answer stands clear
     GET  /papi/games/:slug/rooms/:id/puzzles?game=n
@@ -68,26 +68,33 @@ type alias Counts =
     }
 
 
-{-| The day's goal: how many answers this account has recorded in its own
-local day, and how many the pace asks for. An account's only -- a guest
-has no deck, so no day of theirs is counted and no ring is shown.
+{-| The day: how many answers this account has recorded in its own local
+day. A plain count -- there is no target and no quota, so there is
+nothing to fall short of. An account's only; a guest has no deck, so no
+day of theirs is counted.
 -}
 type alias Today =
     { done : Int
-    , target : Int
     }
 
 
-{-| One band of mistakes in its three states: how bad, how many the
+{-| One tier of mistakes in its three states: how bad, how many the
 player has made, how many they are working on (started, not there yet)
 and how many they have patched (stopped making). What is neither is
 untouched, so `inProgress + patched <= total`.
+
+`due` and `newLeft` are what the tier still has to do **today**: what is
+due now, and how many mistakes it has never shown that the day's budget
+of new ones still allows. A tier with neither is in good shape, which is
+a thing the page says out loud.
 -}
 type alias Band =
     { grade : String
     , total : Int
     , inProgress : Int
     , patched : Int
+    , due : Int
+    , newLeft : Int
     }
 
 
@@ -109,6 +116,7 @@ type alias Practice =
     , mistakes : Maybe Mistakes
     , today : Maybe Today
     , severity : List Band
+    , lead : Maybe String
     , patchedLevel : Int
     }
 
@@ -125,6 +133,15 @@ type alias Random =
 fetch : Session -> (Result Error Practice -> msg) -> Cmd msg
 fetch session toMsg =
     Api.get session "/papi/practice" practiceDecoder toMsg
+
+
+{-| FIX ONE: one tier's own queue, due before new and worst first inside
+the tier. The grade is one of the server's three; anything else is a 422
+rather than the whole deck.
+-}
+fetchBand : Session -> String -> (Result Error Practice -> msg) -> Cmd msg
+fetchBand session grade toMsg =
+    Api.get session ("/papi/practice?band=" ++ grade) practiceDecoder toMsg
 
 
 {-| One finished game's mistakes, the caller's own seat's, in order: what
@@ -149,13 +166,6 @@ stillWriting err =
     Api.errorCode err == "puzzles_pending"
 
 
-{-| KEEP GOING. The answer is the session that results, so one call does.
--}
-more : Session -> (Result Error Practice -> msg) -> Cmd msg
-more session toMsg =
-    Api.post session "/papi/practice/more" (E.object []) practiceDecoder toMsg
-
-
 {-| Where this browser is, for "due today" and "back tomorrow". Signed in
 only: the server refuses it for a guest, who has no deck to keep a day for.
 -}
@@ -171,12 +181,13 @@ random session toMsg =
 
 practiceDecoder : Decoder Practice
 practiceDecoder =
-    D.map6 Practice
+    D.map7 Practice
         (D.field "puzzles" (D.list entryDecoder))
         (optional "counts" countsDecoder)
         (optional "mistakes" mistakesDecoder)
         (optional "today" todayDecoder)
         (D.map (Maybe.withDefault []) (optional "severity" (D.list bandDecoder)))
+        (optional "lead" D.string)
         (D.map (Maybe.withDefault 0) (optional "patched_level" D.int))
 
 
@@ -218,14 +229,13 @@ countsDecoder =
 
 todayDecoder : Decoder Today
 todayDecoder =
-    D.map2 Today
+    D.map Today
         (D.field "done" D.int)
-        (D.field "target" D.int)
 
 
 bandDecoder : Decoder Band
 bandDecoder =
-    D.map4 Band
+    D.map6 Band
         (D.field "grade" D.string)
         (D.field "total" D.int)
         -- An answer from before the three states is a deck with nothing
@@ -233,6 +243,12 @@ bandDecoder =
         -- there and malformed is still an error.
         (D.map (Maybe.withDefault 0) (optional "in_progress" D.int))
         (D.field "patched" D.int)
+        -- The same for an answer from before the tiers knew what they
+        -- had to do: nothing due and nothing new reads as in good
+        -- shape, which is the safe way round -- it offers no run that
+        -- the server would answer empty.
+        (D.map (Maybe.withDefault 0) (optional "due" D.int))
+        (D.map (Maybe.withDefault 0) (optional "new_left" D.int))
 
 
 mistakesDecoder : Decoder Mistakes

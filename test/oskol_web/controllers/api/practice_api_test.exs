@@ -71,10 +71,9 @@ defmodule OskolWeb.Api.PracticeApiTest do
       assert Retain.fetch_user(user.id) == {:error, :not_found}
     end
 
-    test "a backlog asks for the day's ten, not for the backlog", %{conn: conn} do
-      # The ring's ceiling, end to end: twenty-three cards due, and the
-      # day's goal is ten. The schedule is untouched -- everything due is
-      # still in the session -- and only what the day *asks* is capped.
+    test "a backlog is a backlog, and never a target", %{conn: conn} do
+      # Twenty-three cards due. The day says only what has been answered:
+      # there is no target on the wire, so nothing can be behind on one.
       {conn, user} = signed_in(conn, "arie@oskol.test")
       {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC")
 
@@ -88,7 +87,25 @@ defmodule OskolWeb.Api.PracticeApiTest do
       body = conn |> get(~p"/papi/practice") |> json_response(200)
 
       assert body["counts"]["due"] == 23
-      assert body["today"] == %{"done" => 0, "target" => 10}
+      assert body["today"] == %{"done" => 0}
+    end
+
+    test "a band asks for one tier, and a band that is not one is refused", %{conn: conn} do
+      # The cards themselves are nobody's band (no `puzzle_sources` row),
+      # so the queue is empty either way; what this pins is that the
+      # whitelist is the server's and a made-up band cannot widen it.
+      {conn, user} = signed_in(conn, "arie@oskol.test")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC")
+
+      for band <- ["very_bad", "bad", "doubtful"] do
+        body = conn |> get("/papi/practice?band=" <> band) |> json_response(200)
+        assert body["puzzles"] == []
+      end
+
+      body = conn |> get("/papi/practice?band=brilliant") |> json_response(422)
+      assert body["ok"] == false
+      assert body["error"]["code"] == "validation_failed"
+      assert body["error"]["message"] == "That is not one of your mistake tiers."
     end
 
     test "a session is never paged, whatever the query string says", %{conn: conn} do
