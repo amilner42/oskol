@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# The suite as several partitions side by side, each its own BEAM and its own
+# database. Most of the wall clock is two sync files (the review pipeline and
+# the puzzle backfill) that cannot go async: they drive named singletons, the
+# global Req stub and application env on purpose. Partitions sidestep that --
+# nothing is shared to begin with -- where `async: true` would mean unpicking
+# it.
+#
+# Partitions split by FILE, so a single slow file is the floor no matter how
+# many you ask for. Four is the useful number today; more only helps once the
+# two heavy files are split up.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+partitions="${1:-4}"
+
+# config/test.exs and test/test_helper.exs both read this to divide the
+# machine -- the connection pool and ExUnit's max_cases -- between the
+# partitions rather than letting each size itself for the whole box.
+export MIX_TEST_PARTITIONS="$partitions"
+
+logs="$(mktemp -d)"
+trap 'rm -rf "$logs"' EXIT
+
+# Once, up front: four `mix` processes racing on the build lock and on
+# `ecto.create` is a slower and more interesting start than we need.
+MIX_ENV=test mix compile
+for i in $(seq 1 "$partitions"); do
+  MIX_TEST_PARTITION=$i mix ecto.create --quiet
+  MIX_TEST_PARTITION=$i mix ecto.migrate --quiet
+done
+
+started=$(date +%s)
+pids=()
+for i in $(seq 1 "$partitions"); do
+  MIX_TEST_PARTITION=$i mix test --partitions "$partitions" --no-compile \
+    > "$logs/p$i.log" 2>&1 &
+  pids+=("$!")
+done
+
+status=0
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+elapsed=$(( $(date +%s) - started ))
+
+total=0
+for i in $(seq 1 "$partitions"); do
+  echo "----- partition $i -----"
+  cat "$logs/p$i.log"
+
+  # A partition that dies before ExUnit runs -- exhausting Postgres'
+  # max_connections is the way this happens -- prints no summary line at all.
+  # Its share of the suite silently did not run, which every other signal
+  # here would report as success. Refuse to be that suite.
+  summary=$(grep -oE '[0-9]+ tests?, [0-9]+ failures?' "$logs/p$i.log" | tail -1 || true)
+  if [[ -z "$summary" ]]; then
+    echo "partition $i ran no tests -- its share of the suite was skipped, not passed" >&2
+    status=1
+  else
+    total=$(( total + $(echo "$summary" | grep -oE '^[0-9]+') ))
+  fi
+done
+
+echo
+echo "$partitions partitions, ${elapsed}s, $total tests"
+exit "$status"

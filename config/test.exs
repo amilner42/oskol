@@ -1,5 +1,10 @@
 import Config
 
+# How many partitions `bin/test-par` is running (1 for a plain `mix test`).
+# The pool below and ExUnit's max_cases in test/test_helper.exs both divide
+# by it, so total concurrency across partitions stays what one run would use.
+test_partitions = String.to_integer(System.get_env("MIX_TEST_PARTITIONS") || "1")
+
 # Same credential story as dev.exs: local trust auth or the CI container.
 config :oskol, Oskol.Repo,
   username: System.get_env("PGUSER") || "postgres",
@@ -7,7 +12,14 @@ config :oskol, Oskol.Repo,
   hostname: System.get_env("PGHOST") || "localhost",
   database: "oskol_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+  # One checkout per test running at once, so the pool wants to be as wide as
+  # ExUnit is concurrent. `bin/test-par` runs several partitions against one
+  # Postgres, and max_connections (100 out of the box) is a ceiling they
+  # share: partitions that each size a pool for the whole machine exhaust it,
+  # and the ones that lose the race die with "too many clients already" --
+  # some before creating their database, so their share of the suite never
+  # runs and the totals still read green. Divide the machine instead.
+  pool_size: max(div(System.schedulers_online() * 2, test_partitions), 6)
 
 # Rooms finish games by the hundred in tests and there is no engine: the
 # review queue stays off unless a test turns it on, and every engine call

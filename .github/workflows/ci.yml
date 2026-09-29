@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   test:
-    name: compile, Gleam, Elm, Elixir
+    name: compile, Gleam, Elm
     # Keep runner migrations deliberate; Ubuntu 26 compatibility belongs in
     # its own reviewed change rather than arriving through ubuntu-latest.
     runs-on: ubuntu-24.04
@@ -87,12 +87,69 @@ jobs:
         run: cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null
       - name: Elm tests
         run: cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm
+      - name: Formatting
+        run: mix format --check-formatted && gleam format --check src test
+
+  # The Elixir suite was the longest step in the job above (~3m of its ~7m)
+  # and nothing else there waits on it, so it runs as four partitions here
+  # instead. ExUnit splits the files; each partition gets its own database
+  # (config/test.exs keys the name on MIX_TEST_PARTITION), so nothing is
+  # shared and the tests that must not be async stay exactly as they are.
+  #
+  # Only MIX_TEST_PARTITION is set. `bin/test-par` also sets
+  # MIX_TEST_PARTITIONS, which makes each partition take a share of one
+  # machine's connections and schedulers -- right when four of them run on a
+  # laptop, wrong here, where every partition has a runner and a Postgres to
+  # itself and should use all of it.
+  elixir:
+    name: Elixir tests (${{ matrix.partition }}/4)
+    runs-on: ubuntu-24.04
+    strategy:
+      # One partition failing should not cancel the rest: the useful answer
+      # is everything that is broken, not the first thing.
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.1.1"
+          elixir-version: "1.19.2"
+          gleam-version: "1.13.0"
+
+      - name: Cache mix deps and build
+        uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+            build
+          key: mix-${{ runner.os }}-${{ hashFiles('mix.lock', 'manifest.toml') }}
+          restore-keys: mix-${{ runner.os }}-
+
+      - name: Hex, rebar and the mix_gleam archive
+        run: mix local.hex 2.5.1 --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
+      - run: mix deps.get
       - name: Elixir tests
         # Including the slow ones a laptop skips: whole matches played out
         # at random, and clocks that have to run out in real time.
-        run: mix test --include slow
-      - name: Formatting
-        run: mix format --check-formatted && gleam format --check src test
+        env:
+          MIX_TEST_PARTITION: ${{ matrix.partition }}
+        run: mix test --partitions 4 --include slow
 
   # Runs alongside the suites, not after them: the two are independent,
   # and CI is green when both are. A red answer comes in the time of the
