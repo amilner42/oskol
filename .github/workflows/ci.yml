@@ -151,12 +151,48 @@ jobs:
           MIX_TEST_PARTITION: ${{ matrix.partition }}
         run: mix test --partitions 4 --include slow
 
-  # Runs alongside the suites, not after them: the two are independent,
-  # and CI is green when both are. A red answer comes in the time of the
-  # slower job, not the sum.
+  # Runs alongside the suites, not after them: the jobs are independent,
+  # and CI is green when all are. A red answer comes in the time of the
+  # slowest job, not the sum.
+  #
+  # The smokes used to be steps of one job sharing one server. Sharing was
+  # never the point -- it was that a matrix costs a whole setup per shard
+  # (containers, the browser, a database, the asset build: ~1m50s of the
+  # job's 4m20s). Three shards pay that three times over and still answer
+  # in half the time, and on a public repository the runner minutes are
+  # free. Each shard brings up its own server against its own database.
+  #
+  # Grouped by measured duration rather than by subject, so they finish
+  # together: replay alone is 44s of the 148s all eight take.
   browser:
-    name: Playwright smokes
+    name: Playwright smokes (${{ matrix.shard }})
     runs-on: ubuntu-24.04
+    strategy:
+      # One shard failing should not cancel the others: the useful answer is
+      # every smoke that is broken, not the first one.
+      fail-fast: false
+      matrix:
+        include:
+          # Arranges its own finished match (mix run setup.exs); the
+          # analysis is stubbed in the browser, so no engine is needed.
+          - shard: replay
+            smokes: >-
+              playwright/test-backgammon-replay/test.js
+              playwright/test-guest-prefill/test.js
+          # test-accounts signs in by email; the mail is read from
+          # /dev/last-login.
+          - shard: board
+            smokes: >-
+              playwright/test-backgammon-board/test.js
+              playwright/test-accounts/test.js
+              playwright/test-backgammon-smoke/test.js
+          # test-backgammon-dance arranges its own danced room
+          # (mix run setup.exs).
+          - shard: dance
+            smokes: >-
+              playwright/test-backgammon-dance/test.js
+              playwright/test-backgammon-landscape/test.js
+              playwright/test-spa-landing/test.js
     services:
       postgres:
         image: postgres:17
@@ -194,6 +230,11 @@ jobs:
           restore-keys: mix-${{ runner.os }}-
 
       - run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
       - name: Hex, rebar and the mix_gleam archive
         run: mix local.hex 2.5.1 --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
@@ -209,21 +250,17 @@ jobs:
             sleep 1
           done
           curl -sf -o /dev/null http://localhost:4400/ || (cat server.log && exit 1)
-      # The same smokes bin/check --browser runs, in the same order. They
-      # share one server, so they are steps rather than a matrix; a matrix
-      # across runners is dev-fast-loop's.
-      - run: node playwright/test-spa-landing/test.js
-      - run: node playwright/test-backgammon-smoke/test.js
-      - run: node playwright/test-backgammon-board/test.js
-      - run: node playwright/test-backgammon-landscape/test.js
-      # Arranges its own danced room (mix run setup.exs).
-      - run: node playwright/test-backgammon-dance/test.js
-      # Arranges its own finished match (mix run setup.exs); the analysis is
-      # stubbed in the browser, so no engine is needed.
-      - run: node playwright/test-backgammon-replay/test.js
-      - run: node playwright/test-guest-prefill/test.js
-      # Signing in by email; the mail is read from /dev/last-login.
-      - run: node playwright/test-accounts/test.js
+      # Which smokes this shard runs is decided in the matrix above. Note
+      # `bin/check --browser` runs four more that CI never has -- home,
+      # puzzle, puzzles-cards and puzzles-hub -- so a green CI is a weaker
+      # statement than a green local check.
+      - name: Smokes
+        run: |
+          for smoke in ${{ matrix.smokes }}; do
+            echo "::group::$smoke"
+            node "$smoke"
+            echo "::endgroup::"
+          done
       - name: Server log
         if: failure()
         run: cat server.log
