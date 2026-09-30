@@ -87,6 +87,8 @@ import Session exposing (Session)
 import Task
 import Time
 import Ui.Charts as Charts
+import Api.Decks
+import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
 import Ui.Shell
 import Ui.SignIn as SignIn
@@ -136,6 +138,7 @@ type alias Model =
     , inRun : Bool -- this page is part of a run, so I'M DONE can end it
     , progress : Maybe Progress -- where this one sits in a run, and the marks so far
     , tier : Maybe String -- the tier of mistakes this run is of, if it is of one
+    , deck : Maybe Api.Decks.Named -- the set this run is of (the openings...), if it is of one
     , today : Maybe Today -- the day's count, as the run was handed it; an account's only
     , counted : Bool -- this page's own answer has been counted into the ring
     , origin : String -- scheme, host and port, for the link SHARE copies
@@ -264,6 +267,7 @@ init :
         , inRun : Bool
         , progress : Maybe Progress
         , tier : Maybe String
+        , deck : Maybe Api.Decks.Named
         , today : Maybe Today
         , origin : String
         , share : Maybe String
@@ -276,6 +280,7 @@ init session config =
       , inRun = config.inRun
       , progress = config.progress
       , tier = config.tier
+      , deck = config.deck
       , today = config.today
       , counted = False
       , origin = config.origin
@@ -309,11 +314,11 @@ init session config =
         -- the answer is in that reply, which is what lets it be asked
         -- before one. A puzzle opened from a link is not a session and
         -- asks nothing.
-        , case config.progress of
-            Just _ ->
+        , case ( config.progress, config.deck ) of
+            ( Just _, Nothing ) ->
                 Api.get session (base config.id ++ "/why") Puzzle.whyDecoder GotWhy
 
-            Nothing ->
+            _ ->
                 Cmd.none
 
         -- The key is minted here and nowhere else: a retried POST reuses
@@ -457,7 +462,7 @@ update msg model =
                 stay { model | outcomeSending = True, outcomeError = Nothing }
                     (Api.post model.session
                         (base model.id ++ "/attempts/" ++ model.key ++ "/outcome")
-                        (E.object [ ( "outcome", E.string outcome ) ])
+                        (E.object (( "outcome", E.string outcome ) :: deckField model))
                         (D.field "schedule" (D.nullable Puzzle.scheduleDecoder))
                         (GotOutcome outcome)
                     )
@@ -814,6 +819,7 @@ attemptBody model =
                                          , ( "key", E.string model.key )
                                          ]
                                             ++ shareField model
+                                            ++ deckField model
                                         )
                                     )
 
@@ -827,13 +833,26 @@ attemptBody model =
                     Nothing
 
                 ( _, _, Just band ) ->
-                    Just (E.object ([ ( "band", E.int band ), ( "key", E.string model.key ) ] ++ shareField model))
+                    Just (E.object ([ ( "band", E.int band ), ( "key", E.string model.key ) ] ++ shareField model ++ deckField model))
 
                 _ ->
                     Nothing
 
         _ ->
             Nothing
+
+
+{-| The set this run is of, for the attempt and its override: the answer
+counts on that set's ladder rather than the player's mistakes'.
+-}
+deckField : Model -> List ( String, E.Value )
+deckField model =
+    case model.deck of
+        Just deck ->
+            [ ( "deck", E.string deck.id ) ]
+
+        Nothing ->
+            []
 
 
 {-| The story token the page was opened with, for the attempt: the story
@@ -904,9 +923,9 @@ viewEnd model end =
     div [ class "pz-end mx-auto w-full max-w-md q-card sheet p-6 sm:p-8 mt-4", id "pz-end" ]
         (p [ class "pixel q-eyebrow text-[9px] mb-3" ] [ text "DONE" ]
             :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-1", attribute "style" "color: var(--ink)" ]
-                [ text (runScore end.score) ]
+                [ text (runScoreIn model end.score) ]
             :: closeLine end.score
-            :: viewPatched end.answers
+            :: viewPatched model end.answers
             :: viewToday model
             :: viewAfter model end.after
         )
@@ -920,7 +939,7 @@ viewToday model =
     case model.today of
         Just today ->
             p [ id "pz-today", class "q-note text-[13px] mb-4" ]
-                [ text (Mistakes.fixedToday today.done) ]
+                [ text (dayLine model today.done) ]
 
         Nothing ->
             text ""
@@ -931,9 +950,9 @@ moves." Nothing when it crossed nobody over the rung -- the score has
 already said how it went -- and nothing for a guest, whose mistakes
 nothing is keeping.
 -}
-viewPatched : List Answer -> Html Msg
-viewPatched answers =
-    case patchedLine answers of
+viewPatched : Model -> List Answer -> Html Msg
+viewPatched model answers =
+    case patchedLineIn model answers of
         Just line ->
             p [ id "pz-patched", class "q-note text-[13px] leading-snug mb-4" ] [ text line ]
 
@@ -946,21 +965,32 @@ mistake whose schedule says this answer patched it.
 -}
 patchedLine : List Answer -> Maybe String
 patchedLine answers =
-    answers
-        |> List.filterMap
-            (\answer ->
-                case answer.schedule of
-                    Just schedule ->
-                        if schedule.patched && answer.grade /= "" then
-                            Just answer.grade
-
-                        else
-                            Nothing
-
-                    Nothing ->
-                        Nothing
-            )
+    crossed answers
+        |> List.map .grade
+        |> List.filter (\grade -> grade /= "")
         |> Mistakes.patchedRun
+
+
+{-| The same, in the words of what the run was of: a set is made of no
+mistake, so there is no band to count by, only how many were learned.
+-}
+patchedLineIn : Model -> List Answer -> Maybe String
+patchedLineIn model answers =
+    case model.deck of
+        Just _ ->
+            Decks.learnedRun (List.length (crossed answers))
+
+        Nothing ->
+            patchedLine answers
+
+
+{-| The answers whose schedule says this answer took them over the rung.
+-}
+crossed : List Answer -> List Answer
+crossed answers =
+    List.filter
+        (\answer -> answer.schedule |> Maybe.map .patched |> Maybe.withDefault False)
+        answers
 
 
 {-| "7 of 10 right" -- or, for the run of one this page is built to
@@ -969,6 +999,30 @@ invite, a sentence that says so warmly.
 runScore : Score -> String
 runScore score =
     Mistakes.runSummary score
+
+
+{-| The score in the words of what the run was of: a set's, or mistakes'.
+-}
+runScoreIn : Model -> Score -> String
+runScoreIn model score =
+    case model.deck of
+        Just _ ->
+            Decks.runSummary score
+
+        Nothing ->
+            runScore score
+
+
+{-| The day's count, in the words of what the run is of.
+-}
+dayLine : Model -> Int -> String
+dayLine model done =
+    case model.deck of
+        Just _ ->
+            Decks.doneToday done
+
+        Nothing ->
+            Mistakes.fixedToday done
 
 
 closeLine : Score -> Html Msg
@@ -982,7 +1036,7 @@ closeLine score =
 
 
 viewAfter : Model -> After -> List (Html Msg)
-viewAfter _ after =
+viewAfter model after =
     case after of
         BackToPuzzles ->
             [ a
@@ -996,7 +1050,15 @@ viewAfter _ after =
 
         AskSignIn signIn ->
             [ p [ id "pz-signin-ask", class "text-[16px] font-semibold leading-snug mb-4", attribute "style" "color: var(--ink)" ]
-                [ text "Sign in and we'll keep this: these come back until you stop making them." ]
+                [ text
+                    (case model.deck of
+                        Just _ ->
+                            Decks.endSignIn
+
+                        Nothing ->
+                            "Sign in and we'll keep this: these come back until you stop making them."
+                    )
+                ]
             , Html.map EndSignInMsg (SignIn.view signIn)
             ]
 
@@ -1076,8 +1138,13 @@ alone for a run of one game's mistakes, which is not a tier.
 -}
 runProgress : Model -> String
 runProgress model =
-    [ Maybe.map Mistakes.mark model.tier
-    , Maybe.map (\today -> Mistakes.fixedToday today.done) model.today
+    [ case model.deck of
+        Just deck ->
+            Just deck.name
+
+        Nothing ->
+            Maybe.map Mistakes.mark model.tier
+    , Maybe.map (\today -> dayLine model today.done) model.today
     ]
         |> List.filterMap identity
         |> List.filter (\part -> part /= "")

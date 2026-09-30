@@ -14,6 +14,7 @@ module Api.Practice exposing
     , randomDecoder
     , sendTimezone
     , bandDecoder
+    , entryDecoder
     , stillWriting
     , todayDecoder
     )

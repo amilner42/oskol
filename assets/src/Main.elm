@@ -32,6 +32,7 @@ the same flow a shared link takes. Nothing about the room is revealed beyond
 
 -}
 
+import Api.Decks
 import Api
 import Api.Auth as Auth
 import Api.Catalog as Catalog
@@ -133,6 +134,7 @@ type alias Run =
     , answers : List ( String, Page.Puzzle.Answer ) -- by puzzle id; an answer given again replaces the first
     , next : String -- the page the run was started from: where a guest who signs in at its end goes on to
     , tier : Maybe String -- the tier of mistakes this run is of, when it is of one
+    , deck : Maybe Api.Decks.Named -- the set this run is of (the openings...), when it is of one
     }
 
 
@@ -435,6 +437,7 @@ openRoute url oldModel =
                 -- from this and adds its own answer to them.
                 , progress = Maybe.map progressOf run
                 , tier = run |> Maybe.andThen .tier
+                , deck = run |> Maybe.andThen .deck
                 , today =
                     case run of
                         Just _ ->
@@ -505,13 +508,21 @@ list starts nothing.
 -}
 startRun : String -> List String -> Maybe Today -> Maybe String -> Model -> ( Model, Cmd Msg )
 startRun next ids today tier model =
+    startRunOf next ids today tier Nothing model
+
+
+{-| The same, of one of the sets on offer rather than of mistakes: the
+answers count on that set's ladder, and the page says its name.
+-}
+startRunOf : String -> List String -> Maybe Today -> Maybe String -> Maybe Api.Decks.Named -> Model -> ( Model, Cmd Msg )
+startRunOf next ids today tier deck model =
     case ids of
         [] ->
             ( model, Cmd.none )
 
         first :: _ ->
             ( { model
-                | run = Just { ids = ids, at = 0, answers = [], next = next, tier = tier }
+                | run = Just { ids = ids, at = 0, answers = [], next = next, tier = tier, deck = deck }
                 , today = today
               }
             , Nav.pushUrl model.key (Route.href (Route.puzzle first))
@@ -882,6 +893,9 @@ update msg model =
 
                 Page.Puzzles.StartRun ids today tier ->
                     startRun (Route.href Route.puzzles) ids today tier withPage |> Tuple.mapSecond more
+
+                Page.Puzzles.StartDeckRun ids today deck ->
+                    startRunOf (Route.href Route.puzzles) ids today Nothing (Just deck) withPage |> Tuple.mapSecond more
 
                 Page.Puzzles.Go path ->
                     ( withPage, more (Nav.pushUrl model.key path) )
