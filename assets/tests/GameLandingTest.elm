@@ -62,7 +62,7 @@ accounts =
                     |> home
                     |> Query.find [ id "guest-note" ]
                     |> Expect.all
-                        [ Query.has [ id "signin-email", text "Want to get better for free?", text "PR over time" ]
+                        [ Query.has [ id "signin-email", text "Want to get better for free?", text "Progress stats" ]
                         , Query.hasNot [ id "signup-cta" ]
                         ]
         , test "signed in, the list is just their games: no pitch at all" <|
@@ -924,7 +924,7 @@ resume =
             \_ ->
                 home withGamesOpen
                     |> Query.find [ id "guest-note" ]
-                    |> Query.has [ text "logged in as a guest on this device", text "Want to get better for free?", text "Every device", text "4-ply analysis", text "Openings", text "Mistake practice", text "PR over time", text "Secure account", id "signup-cta" ]
+                    |> Query.has [ text "logged in as a guest on this device", text "Want to get better for free?", text "Every device", text "4-ply analysis", text "Openings", text "Mistake practice", text "Progress stats", text "Secure account", id "signup-cta" ]
         ]
 
 

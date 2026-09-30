@@ -1877,7 +1877,7 @@ pitch _ button =
             , chip "hero-magnifying-glass" "4-ply analysis"
             , chip "hero-flag" "Openings"
             , chip "hero-light-bulb" "Mistake practice"
-            , chip "hero-arrow-trending-up" "PR over time"
+            , chip "hero-arrow-trending-up" "Progress stats"
             , chip "hero-lock-closed" "Secure account"
             ]
         ]
