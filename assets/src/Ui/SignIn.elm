@@ -351,8 +351,6 @@ asking model busy =
                     "EMAIL ME A SIGN-IN LINK"
                 )
             ]
-        , Html.p [ class "q-note text-[12.5px] text-center leading-snug" ]
-            [ Html.text "A link and a six-digit code. No password, nothing to remember." ]
         ]
     ]
 
