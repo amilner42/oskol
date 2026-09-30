@@ -583,9 +583,17 @@
 .pitch { border-top: 1px solid rgba(35, 36, 58, 0.12); }
 .pitch-line { color: var(--ink); text-wrap: balance; letter-spacing: -0.01em; }
 .pitch-chip { color: var(--ink); background: #fff; border: 1.5px solid var(--ink); }
-.signup { background: var(--ink); color: #fff; cursor: pointer; box-shadow: 0 3px 0 0 rgba(35, 36, 58, 0.35); transition: transform 0.08s, box-shadow 0.08s, filter 0.15s; }
-.signup:hover { filter: brightness(1.12); }
-.signup:active { transform: translateY(2px); box-shadow: 0 1px 0 0 rgba(35, 36, 58, 0.35); }
+/* Sign up under LIVE GAMES: the page's one "go" yellow, as PLAY NOW wears it. */
+.signup {
+  background: var(--highlighter); color: var(--ink); cursor: pointer;
+  border: 1.5px solid var(--ink); box-shadow: 3px 3px 0 0 var(--ink);
+  width: calc(100% - 3px); font-size: 16px !important;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.signup:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 0 var(--ink); filter: brightness(1.03); }
+.signup:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 0 var(--ink); }
+.signup:focus-visible { outline: 2px solid var(--pen); outline-offset: 4px; }
 
 /* Signing in (Ui.SignIn): the field, the six digits spaced like the
    mail prints them, the quiet links, and the win. */
