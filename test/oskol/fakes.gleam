@@ -17,6 +17,7 @@ import oskol/caps/guests as guests_caps
 import oskol/caps/ids as ids_caps
 import oskol/caps/persistence as persistence_caps
 import oskol/caps/practice as practice_caps
+import oskol/caps/decks as decks_caps
 import oskol/caps/puzzles as puzzles_caps
 import oskol/caps/records as records_caps
 import oskol/caps/rooms as rooms_caps
@@ -38,6 +39,7 @@ pub fn ctx() -> Ctx {
     puzzles: puzzles_caps.stub(),
     records: records_caps.stub(),
     rooms: rooms_caps.stub(),
+    decks: decks_caps.stub(),
   )
 }
 

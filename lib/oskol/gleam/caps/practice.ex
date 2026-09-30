@@ -50,10 +50,22 @@ defmodule Oskol.Gleam.Caps.Practice do
   # site already runs its days on.
   @default_tz "Etc/UTC"
 
-  def build do
-    {:practice_caps, &put_user/3, &put_items/2, &cards/2, &relapse/3, &queue/2, &start/2,
-     &start_new/2, &review/3, &amend/4, &defer_until/3, &defer_tomorrow/2, &master/2, &suspend/2,
-     &resume/2, &summary/2, &ladder/1, &days/2, &day/1, &severity/2, &band_queue/3}
+  @doc """
+  The caps over one retain **scope**. An account has one learner per scope:
+  the default one is its mistakes, and every universal deck
+  (`src/oskol/practice/decks.gleam`) is a scope of its own, so each deck
+  keeps its own ladder, its own queue and its own day's budget of new
+  positions, and nothing one deck does can move another.
+  """
+  def build(scope \\ Retain.Config.default_scope()) when is_binary(scope) do
+    s = scope
+
+    {:practice_caps, &put_user(s, &1, &2, &3), &put_items(s, &1, &2), &cards(s, &1, &2),
+     &relapse(s, &1, &2, &3), &queue(s, &1, &2), &start(s, &1, &2), &start_new(s, &1, &2),
+     &review(s, &1, &2, &3), &amend(s, &1, &2, &3, &4), &defer_until(s, &1, &2, &3),
+     &defer_tomorrow(s, &1, &2), &master(s, &1, &2), &suspend(s, &1, &2), &resume(s, &1, &2),
+     &summary(s, &1, &2), &ladder(s, &1), &days(s, &1, &2), &day(s, &1), &severity(s, &1, &2),
+     &band_queue(s, &1, &2, &3)}
   end
 
   # ---------- The two pictures the home draws ----------
@@ -68,11 +80,11 @@ defmodule Oskol.Gleam.Caps.Practice do
 
   # Cards per level, lowest first: every card in the deck, whatever its
   # status, so the bars add up to the deck size printed beside them.
-  defp ladder(uid) do
+  defp ladder(scope, uid) do
     levels = length(Retain.Config.intervals())
 
     counts =
-      case Retain.fetch_user(uid) do
+      case Retain.fetch_user(uid, scope: scope) do
         {:error, :not_found} ->
           %{}
 
@@ -94,8 +106,8 @@ defmodule Oskol.Gleam.Caps.Practice do
   # tomorrow is not practice, and a correction sits on the day of the
   # answer it corrects -- the same two exclusions `Retain.streak/2` makes,
   # so the strip and a streak can never disagree.
-  defp days(uid, n) when is_integer(n) and n > 0 do
-    case Retain.fetch_user(uid) do
+  defp days(scope, uid, n) when is_integer(n) and n > 0 do
+    case Retain.fetch_user(uid, scope: scope) do
       {:error, :not_found} ->
         List.duplicate(false, n)
 
@@ -138,8 +150,8 @@ defmodule Oskol.Gleam.Caps.Practice do
   # whatever was started today, by any path), done here because the
   # library only hands it back from a queue, and a page that merely prints
   # a count must not run one.
-  defp day(uid) do
-    case Retain.fetch_user(uid) do
+  defp day(scope, uid) do
+    case Retain.fetch_user(uid, scope: scope) do
       # No deck: nothing answered and nothing to answer. What the budget
       # would be is the caller's rule, not this layer's, and an account
       # with no deck has no mistakes waiting either way.
@@ -190,8 +202,8 @@ defmodule Oskol.Gleam.Caps.Practice do
   # be reviewed.
   #
   # `patched_level` is the caller's rule and is never decided here.
-  defp severity(uid, patched_level) when is_integer(patched_level) do
-    case Retain.fetch_user(uid) do
+  defp severity(scope, uid, patched_level) when is_integer(patched_level) do
+    case Retain.fetch_user(uid, scope: scope) do
       {:error, :not_found} ->
         []
 
@@ -277,8 +289,8 @@ defmodule Oskol.Gleam.Caps.Practice do
   # The day's new-card budget is the deck's, not the band's: three new a
   # day across everything, so a tier can only introduce what is left of
   # it.
-  defp band_queue(uid, band, limit) when is_binary(band) and is_integer(limit) do
-    case {Retain.fetch_user(uid), rank(band)} do
+  defp band_queue(scope, uid, band, limit) when is_binary(band) and is_integer(limit) do
+    case {Retain.fetch_user(uid, scope: scope), rank(band)} do
       {{:error, :not_found}, _} ->
         {:session, [], [], 0}
 
@@ -380,19 +392,19 @@ defmodule Oskol.Gleam.Caps.Practice do
   # Retain has nothing to create a deck from without one, so a deck that is
   # not there yet is created on the default and a deck that is there keeps
   # what it has.
-  defp put_user(uid, "", new_per_day) do
+  defp put_user(scope, uid, "", new_per_day) do
     unavailable(fn ->
-      case Retain.put_user(uid, new_per_day: new_per_day) do
+      case Retain.put_user(uid, scope: scope, new_per_day: new_per_day) do
         {:ok, _} -> {:ok, nil}
-        {:error, %Ecto.Changeset{action: :insert}} -> put_user(uid, @default_tz, new_per_day)
+        {:error, %Ecto.Changeset{action: :insert}} -> put_user(scope, uid, @default_tz, new_per_day)
         {:error, %Ecto.Changeset{}} -> {:error, :unknown_timezone}
       end
     end)
   end
 
-  defp put_user(uid, tz, new_per_day) do
+  defp put_user(scope, uid, tz, new_per_day) do
     unavailable(fn ->
-      case Retain.put_user(uid, tz: tz, new_per_day: new_per_day) do
+      case Retain.put_user(uid, scope: scope, tz: tz, new_per_day: new_per_day) do
         {:ok, _} -> {:ok, nil}
         # The only thing a caller can get wrong here.
         {:error, %Ecto.Changeset{}} -> {:error, :unknown_timezone}
@@ -400,10 +412,10 @@ defmodule Oskol.Gleam.Caps.Practice do
     end)
   end
 
-  defp put_items(uid, items) do
+  defp put_items(scope, uid, items) do
     unavailable(fn ->
       with {:ok, rows} <- item_rows(items),
-           {:ok, %{inserted: inserted}} <- Retain.put_items(uid, rows) do
+           {:ok, %{inserted: inserted}} <- Retain.put_items(uid, rows, scope: scope) do
         {:ok, inserted}
       else
         # A card's content is stored opaquely, but it has to be a JSON object to be stored at
@@ -418,8 +430,8 @@ defmodule Oskol.Gleam.Caps.Practice do
   # per key: this is asked of every sync, and a first sync offers a whole
   # game's mistakes at once. It reads Retain's own table, which is the one
   # place allowed to -- this file is the seam the library is swapped behind.
-  defp cards(uid, keys) do
-    case Retain.fetch_user(uid) do
+  defp cards(scope, uid, keys) do
+    case Retain.fetch_user(uid, scope: scope) do
       {:ok, user} ->
         import Ecto.Query
 
@@ -439,9 +451,9 @@ defmodule Oskol.Gleam.Caps.Practice do
 
   # The player made this mistake again, in a game. A miss like any other,
   # with a note in the log saying where it came from.
-  defp relapse(uid, key, meta_json) do
+  defp relapse(scope, uid, key, meta_json) do
     unavailable(fn ->
-      uid |> Retain.review(key, :again, meta: Jason.decode!(meta_json)) |> graded()
+      uid |> Retain.review(key, :again, meta: Jason.decode!(meta_json), scope: scope) |> graded()
     end)
   end
 
@@ -463,7 +475,7 @@ defmodule Oskol.Gleam.Caps.Practice do
     end
   end
 
-  defp queue(uid, {:ask, tags, limit, offset, new_after_reviews, new_limit}) do
+  defp queue(scope, uid, {:ask, tags, limit, offset, new_after_reviews, new_limit}) do
     opts =
       [
         tags: Map.new(tags),
@@ -478,7 +490,7 @@ defmodule Oskol.Gleam.Caps.Practice do
       ]
       |> put_opt(:new_limit, unopt(new_limit))
 
-    case Retain.queue(uid, opts) do
+    case Retain.queue(uid, Keyword.put(opts, :scope, scope)) do
       {:ok, %{reviews: reviews, new: fresh, new_remaining_today: remaining}} ->
         {:session, Enum.map(reviews, &card/1), Enum.map(fresh, &card/1), remaining}
 
@@ -491,55 +503,55 @@ defmodule Oskol.Gleam.Caps.Practice do
     end
   end
 
-  defp start(uid, keys) do
-    started(Retain.start(uid, keys))
+  defp start(scope, uid, keys) do
+    started(Retain.start(uid, keys, scope: scope))
   end
 
-  defp start_new(uid, count) do
-    started(Retain.start(uid, count))
+  defp start_new(scope, uid, count) do
+    started(Retain.start(uid, count, scope: scope))
   end
 
   defp started({:ok, %{started: started}}), do: started
   # KEEP GOING pressed by an account whose deck is not there yet.
   defp started({:error, :not_found}), do: 0
 
-  defp review(uid, key, outcome) do
-    uid |> Retain.review(key, outcome(outcome)) |> graded()
+  defp review(scope, uid, key, outcome) do
+    uid |> Retain.review(key, outcome(outcome), scope: scope) |> graded()
   end
 
-  defp amend(uid, key, review_id, outcome) do
-    uid |> Retain.amend(key, review_id, outcome(outcome)) |> graded()
+  defp amend(scope, uid, key, review_id, outcome) do
+    uid |> Retain.amend(key, review_id, outcome(outcome), scope: scope) |> graded()
   end
 
-  defp defer_until(uid, key, until_ms) do
-    uid |> Retain.defer(key, DateTime.from_unix!(until_ms, :millisecond)) |> graded()
+  defp defer_until(scope, uid, key, until_ms) do
+    uid |> Retain.defer(key, DateTime.from_unix!(until_ms, :millisecond), scope: scope) |> graded()
   end
 
   # The start of this deck's own tomorrow: the clock and the timezone are
   # both here, and "due today" is already read the same way.
-  defp defer_tomorrow(uid, key) do
-    case Retain.fetch_user(uid) do
+  defp defer_tomorrow(scope, uid, key) do
+    case Retain.fetch_user(uid, scope: scope) do
       {:ok, user} ->
         until = Retain.Clock.start_of_tomorrow(DateTime.utc_now(), user.tz)
-        uid |> Retain.defer(key, until) |> graded()
+        uid |> Retain.defer(key, until, scope: scope) |> graded()
 
       {:error, :not_found} ->
         {:error, :unknown_card}
     end
   end
 
-  defp master(uid, keys) do
-    {:ok, %{mastered: mastered}} = Retain.master(uid, keys)
+  defp master(scope, uid, keys) do
+    {:ok, %{mastered: mastered}} = Retain.master(uid, keys, scope: scope)
     mastered
   end
 
-  defp suspend(uid, keys) do
-    {:ok, %{suspended: suspended}} = Retain.suspend(uid, keys)
+  defp suspend(scope, uid, keys) do
+    {:ok, %{suspended: suspended}} = Retain.suspend(uid, keys, scope: scope)
     suspended
   end
 
-  defp resume(uid, keys) do
-    {:ok, %{resumed: resumed}} = Retain.resume(uid, keys)
+  defp resume(scope, uid, keys) do
+    {:ok, %{resumed: resumed}} = Retain.resume(uid, keys, scope: scope)
     resumed
   end
 
@@ -554,14 +566,14 @@ defmodule Oskol.Gleam.Caps.Practice do
       {:error, {:deck_unavailable, Exception.message(e)}}
   end
 
-  defp summary(uid, group_by) do
+  defp summary(scope, uid, group_by) do
     # A deck that is not there yet has nothing to total up, exactly as it
     # has nothing to queue. Asking must not create one.
     # The headline has to count the same cards `queue/2` can return. A
     # "due today" count beside an immediate-only queue invites a player to
     # expect cards that cannot yet be reviewed.
     rows =
-      case Retain.summary(uid, group_by: group_by, before: DateTime.utc_now()) do
+      case Retain.summary(uid, scope: scope, group_by: group_by, before: DateTime.utc_now()) do
         {:ok, rows} -> rows
         {:error, :not_found} -> []
       end

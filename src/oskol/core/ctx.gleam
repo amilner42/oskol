@@ -20,6 +20,7 @@ import oskol/caps/activity.{type ActivityCaps}
 import oskol/caps/analysis.{type AnalysisCaps}
 import oskol/caps/auth.{type AuthCaps}
 import oskol/caps/copy.{type CopyCaps}
+import oskol/caps/decks.{type DeckCaps}
 import oskol/caps/guests.{type GuestsCaps}
 import oskol/caps/ids.{type IdsCaps}
 import oskol/caps/persistence.{type PersistenceCaps}
@@ -44,5 +45,7 @@ pub type Ctx {
     puzzles: PuzzlesCaps(Tree),
     records: RecordsCaps,
     rooms: RoomsCaps,
+    /// Last, so the tuple indexes of everything before it stay put.
+    decks: DeckCaps,
   )
 }
