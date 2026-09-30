@@ -706,6 +706,51 @@ defmodule Oskol.Reviews do
   # ---------- The engine ----------
 
   @doc """
+  Ask the engine whether it is there: `GET /health`, down the same road a
+  review takes — same base URL, same IPv6 setting, same connect timeout — so
+  what this answers is what a review would meet, not something adjacent.
+
+  `{:ok, ms}` when it answers 200, `{:error, reason}` otherwise. The receive
+  timeout is seconds rather than the review's twenty minutes: a health check
+  that waits is a health check nobody reads. A stopped Fly machine starts on
+  the first request and may spend a few of those seconds waking, which reads
+  as down and then up, correctly — it was not there when asked.
+
+  Never raises.
+  """
+  def health(receive_timeout \\ 5_000) do
+    config = Application.get_env(:oskol, :analysis, [])
+    url = String.trim_trailing(Keyword.get(config, :url, "http://localhost:18082"), "/")
+
+    options =
+      [
+        url: url <> "/health",
+        receive_timeout: receive_timeout,
+        connect_options: [
+          timeout: 5_000,
+          transport_opts: if(Keyword.get(config, :inet6, false), do: [inet6: true], else: [])
+        ],
+        retry: false
+      ]
+      |> Keyword.merge(Keyword.get(config, :req_options, []))
+
+    started = System.monotonic_time(:millisecond)
+
+    case Req.get(options) do
+      {:ok, %Req.Response{status: 200}} ->
+        {:ok, System.monotonic_time(:millisecond) - started}
+
+      {:ok, %Req.Response{status: status}} ->
+        {:error, "HTTP #{status}"}
+
+      {:error, exception} ->
+        {:error, Exception.message(exception)}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  @doc """
   POST a review request (JSON text) to the engine. `{:ok, body}` on a 200,
   `{:error, reason}` otherwise — a status and the engine's detail, a
   timeout, a refused connection. Never raises.
