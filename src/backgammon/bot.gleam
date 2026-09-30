@@ -18,7 +18,17 @@
 //// about a third of a second beside seconds of checker play.
 ////
 //// Sage never resigns and never takes a move back -- except that an engine
-//// it cannot reach at all ends in an offer to resign (`give_up_after`),
+//// it cannot reach at all leaves the game where it stands: the ask fails,
+//// nothing is played, and Sage plays on when the engine comes back.
+////
+//// **It never resigns for want of an engine.** An engine we cannot reach is
+//// our problem, not a position, and a resignation is a *result* -- it ends
+//// the game, awards the points, and is written down as a rating and a
+//// review. This used to offer one, reasoning that a dead engine should
+//// leave a game the human can finish rather than a board that never moves.
+//// That handed a player a win they had not played for (2026-09-30; the room
+//// had to be deleted from production by hand). A board that has not moved is
+//// recoverable and a result is not, so the game waits.
 //// because a human owed a move deserves a game they can finish rather than a
 //// board that never moves.
 
@@ -41,15 +51,17 @@ pub const route = "/backgammon/review"
 /// of thinking again. The platform counts the failures and rides them in;
 /// what to do about them is a rule of the game, not of the platform, which
 /// is why Elixir never learns the word "resign".
-pub const give_up_after = 3
-
 /// What a bot seat does now. `attempts` is how many asks have already failed
 /// for this decision.
 pub fn decide(
   s: GameState,
   player_id: String,
   ask: game.Ask,
-  attempts: Int,
+  // The contract offers how many asks have already failed. Backgammon has no
+  // use for it: a failure is a failure however many came before, and what it
+  // must never become is a resignation. The platform decides how long to go
+  // on asking (`Oskol.Game.Bot`).
+  _attempts: Int,
 ) -> Result(List(Json), String) {
   use color <- result.try(state.color_of(s, player_id))
 
@@ -69,15 +81,13 @@ pub fn decide(
             True -> Ok([simple("ready")])
             False -> Ok([])
           }
-        state.Doubled(by) if by != color ->
-          answer_double(s, color, ask, attempts)
+        state.Doubled(by) if by != color -> answer_double(s, color, ask)
         state.Rolling(_) ->
           case state.can_roll(s, player_id) {
-            True -> roll_or_double(s, player_id, color, ask, attempts)
+            True -> roll_or_double(s, player_id, color, ask)
             False -> Ok([])
           }
-        state.Moving(mover, _) if mover == color ->
-          play_turn(s, color, ask, attempts)
+        state.Moving(mover, _) if mover == color -> play_turn(s, color, ask)
         // Somebody else's move, or a match that is over: nothing to do.
         _ -> Ok([])
       }
@@ -105,14 +115,12 @@ fn roll_or_double(
   player_id: String,
   color: Color,
   ask: game.Ask,
-  attempts: Int,
 ) -> Result(List(Json), String) {
   let position = analysis.position(s, color)
 
   case state.can_double(s, player_id) && analysis.engine_can_double(position) {
     False -> Ok([simple("roll")])
     True -> {
-      use <- unless_given_up(attempts)
       use answered <- result.try(ask(
         route,
         body(s, color, position, None, None),
@@ -132,12 +140,10 @@ fn answer_double(
   s: GameState,
   color: Color,
   ask: game.Ask,
-  attempts: Int,
 ) -> Result(List(Json), String) {
   let doubler = board.opponent(color)
   let position = analysis.position(s, doubler)
 
-  use <- unless_given_up(attempts)
   use answered <- result.try(ask(route, body(s, doubler, position, None, None)))
   use cube <- result.try(cube_call(answered))
   case cube {
@@ -155,14 +161,12 @@ fn play_turn(
   s: GameState,
   color: Color,
   ask: game.Ask,
-  attempts: Int,
 ) -> Result(List(Json), String) {
   let dice = state.turn_dice(s)
 
   case state.no_moves(s), board.sequences(s.turn_board, color, dice) {
     True, _ | _, [] -> Ok([simple("play")])
     False, [fallback, ..] as sequences -> {
-      use <- unless_given_up(attempts)
       use answered <- result.try(ask(
         route,
         body(
@@ -224,16 +228,6 @@ fn played(turn_board: Board, color: Color, sequence: List(Move)) -> Board {
 /// The engine has stopped answering. Rather than a board that never moves,
 /// the human is offered the game: accept and it is theirs, decline and Sage
 /// keeps trying.
-fn unless_given_up(
-  attempts: Int,
-  next: fn() -> Result(List(Json), String),
-) -> Result(List(Json), String) {
-  case attempts >= give_up_after {
-    True -> Ok([action("resign", [#("stakes", json.string("single"))])])
-    False -> next()
-  }
-}
-
 // ---------- Actions ----------
 
 fn simple(name: String) -> Json {

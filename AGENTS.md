@@ -1223,10 +1223,17 @@ starts one supervised task per bot seat whose turn it is with no think in
 flight (`Oskol.Game.Bot`, under `Oskol.Game.BotSupervisor`). The task asks
 the game (`GameKit.think/4`) and applies each action through the ordinary
 `player_action`; the room never waits on the engine, which takes seconds. A
-think that comes back empty is tried again at 5 s, 20 s and 60 s
-(`config :oskol, :bot`), and the fourth call gives up -- Gleam answers with a
-resignation offered to the human, so a dead engine ends in a game they can
-finish rather than a board that never moves. A stale think is harmless:
+think that comes back empty is tried again at 5 s, 20 s and then every 60 s
+(`config :oskol, :bot`), up to `stop_trying_after` asks -- about half an hour,
+and the room goes idle before that anyway. **Sage never resigns for want of an
+engine.** It used to: the fourth call gave up and Gleam answered with a
+resignation, on the reasoning that a dead engine should leave a game the human
+can finish rather than a board that never moves. That handed a player a win
+they had not played for and the room had to be deleted from production by hand
+(`bg-bot-never-resigns`). An engine we cannot reach is our problem, not a
+position, and a resignation is a *result* -- points, a rating, a review, all
+written down. A board that has not moved is recovered by the engine coming
+back; a result is not. So the game waits, and the platform keeps asking. A stale think is harmless:
 `apply` refuses what is no longer legal and the next broadcast thinks again.
 A think that played nothing while the game stood still is a bug, not a turn,
 so that seat is left alone until the game moves rather than asked again at
