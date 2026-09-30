@@ -17,7 +17,7 @@ defmodule OskolWeb.GameCopy do
     "backgammon" => %{
       title: "Play backgammon online with a friend",
       description:
-        "Backgammon for two with the doubling cube, free, no account needed. A single game, a match to 3, 5 or 7, or unlimited play; send a link and roll.",
+        "Backgammon for two with the doubling cube, free, no account needed. A single game, a match to 3, 5, 7, 11, 15 or 21, or unlimited play; send a link and roll.",
       intro:
         "The race game with the doubling cube, from a link. Free, no account needed, plays on a phone.",
       rules: [
@@ -33,7 +33,7 @@ defmodule OskolWeb.GameCopy do
         {"Is the dice fair?",
          "Every game is dealt from a seeded random generator on the server, and the whole game can be replayed from that seed. Nothing is chosen client-side."},
         {"Can we play a match?",
-         "Yes: to 3, 5 or 7 points with the Crawford rule, or unlimited play with the Jacoby rule."}
+         "Yes: to 3, 5, 7, 11, 15 or 21 points with the Crawford rule, or unlimited play with the Jacoby rule."}
       ]
     }
   }

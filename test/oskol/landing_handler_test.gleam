@@ -273,9 +273,13 @@ pub fn a_game_page_carries_its_copy_its_formats_and_the_clocks_test() {
   assert string.contains(body, "\"default_clock\":")
   // The game's own clocks are preset ids; the presets themselves come with
   // the page, so the picker can name them.
-  // Backgammon offers no clock, or 3, 5 or 10 minutes (each with its 12 s
-  // delay); the older presets stay defined for old rooms but are not offered.
-  assert string.contains(body, "\"clocks\":[\"none\",\"bg3\",\"bg5\",\"bg10\"]")
+  // Backgammon offers no clock, or a bank of 3 to 60 minutes (each with its
+  // 12 s delay); the older presets stay defined for old rooms but are not
+  // offered.
+  assert string.contains(
+    body,
+    "\"clocks\":[\"none\",\"bg3\",\"bg5\",\"bg10\",\"bg15\",\"bg30\",\"bg60\"]",
+  )
   assert string.contains(body, "\"clock_presets\":[{\"id\":\"none\"")
   // Formats: a mode is all the creator tunes besides the clock.
   assert string.contains(body, "\"formats\":[{\"id\":\"single\"")
