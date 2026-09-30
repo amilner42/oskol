@@ -66,7 +66,7 @@ legal_plays = fn board, [a, b] ->
 
     case children do
       [] ->
-        [{:backgammon@analysis.encode(node_board, :white), Enum.reverse(path) |> Enum.join(" ")}]
+        [{:backgammon@engine_board.encode(node_board, :white), Enum.reverse(path) |> Enum.join(" ")}]
 
       _ ->
         Enum.flat_map(children, fn {:child, _die, from, to, next} ->
