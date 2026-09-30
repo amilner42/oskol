@@ -286,8 +286,13 @@ fn answer(
 /// Rather than mix them, the whole game is asked again: one call, and the
 /// grades are dropped when the answer is written.
 ///
-/// A grade that will not read (an engine that changed its shape under a
-/// cached answer) is simply not a hit.
+/// **Every doubt about a grade resolves to a miss.** One that will not read,
+/// or that answers for a turn other than the one it was found under, is
+/// simply not a hit: a cache exists to save the engine time and must never
+/// be the reason a game cannot be reviewed at all. The question a grade is
+/// stored under already carries the turn's index, so an answer that echoes a
+/// different one is an engine that did not understand the question -- which
+/// is exactly the case where the whole game wants asking afresh.
 fn cached(
   ctx: Ctx,
   game_id: String,
@@ -300,13 +305,15 @@ fn cached(
     })
   let hits =
     ctx.analysis.grades(game_id, g.number, bodies)
-    |> list.filter_map(fn(stored) {
+    |> list.index_map(fn(stored, index) { #(index, stored) })
+    |> list.filter_map(fn(pair) {
+      let #(index, stored) = pair
       case stored {
         None -> Error(Nil)
         Some(body) ->
           case report.graded_turns(body) {
-            Ok([one]) -> Ok(one)
-            // A grade is one turn's. Anything else is not one.
+            // One turn's grade, and that turn is the one it was asked for.
+            Ok([one]) if one.index == index -> Ok(one)
             Ok(_) | Error(_) -> Error(Nil)
           }
       }

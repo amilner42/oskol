@@ -1542,3 +1542,26 @@ fn turn_of(answer: String) -> String {
     |> result.map(list.map(_, oskol_raw_text))
   turn
 }
+
+pub fn a_grade_that_answers_for_another_turn_is_a_miss_test() {
+  let log = finished_log(9)
+  let turns = turn_count(log, 1)
+  let ctx = with_analysis(log, [], fn(body) { Ok(misses_answer(body)) })
+  let stored = with_grades(log, 1, fn(_) { True })
+  // Every grade reads perfectly well and answers for turn 0 -- an engine
+  // that did not understand which turn it was being asked about. Only the
+  // one that really is turn 0 stands; the rest are misses, and the game is
+  // still reviewed rather than failed over a bad cache.
+  let _ =
+    put_grades(
+      "grades",
+      list.map(stored, fn(grade) { #(grade.0, one_turn_answer(0)) }),
+    )
+  assert reviews.run(ctx, "123456") == None
+  let assert [request] = recorded("requests")
+  let asked =
+    json.parse(request, decode.at(["turns"], decode.list(decode.dynamic)))
+    |> result.map(list.length)
+  assert asked == Ok(turns - 1)
+  assert recorded("saves") == ["1:done:1:body:page", "1:pending:1:none:none"]
+}

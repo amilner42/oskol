@@ -165,7 +165,10 @@ Req.Test.stub(Oskol.Reviews, fn conn ->
   turns =
     request["turns"]
     |> Enum.with_index()
-    |> Enum.map(fn {turn, i} ->
+    # A turn may say where it sits in its own game; the engine echoes that
+    # back rather than the turn's place in the request, and so does this.
+    |> Enum.map(fn {turn, at} ->
+      i = turn["index"] || at
       %{"index" => i, "cube" => nil, "move" => grade_turn.(turn, i), "luck" => %{"luck" => 0.02}}
     end)
 
