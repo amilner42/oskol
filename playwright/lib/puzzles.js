@@ -23,11 +23,15 @@ async function mailFor(request, email) {
 /** Stage the whole roll: a tap on a source point plays it with the next
  * die, as at the table, until PLAY is offered. */
 async function stageATurn(page) {
-  // The legal moves are marked once the tree is in (a lazy one arrives a
-  // level at a time): wait for the first source rather than read a board
-  // that has not been told them yet.
-  await page.waitForSelector('#bg-action-play, .bg-point.source, [data-move-source]', { timeout: 10000 });
   for (let i = 0; i < 6; i++) {
+    // The legal moves are marked once the tree is in (a lazy one arrives a
+    // level at a time), and every tap plays a checker and re-renders the
+    // board into the same wait. Waiting here rather than only before the
+    // loop is what makes this hold on a slow machine: the sleep below gives
+    // the re-render a chance to start, and this gives it as long as it needs
+    // to finish. Reading the board on a fixed delay instead cost a CI runner
+    // a false "no checker to move" (2026-09-29).
+    await page.waitForSelector('#bg-action-play, .bg-point.source, [data-move-source]', { timeout: 10000 });
     if (await page.locator('#bg-action-play').count()) return;
     // A point marks itself `source`; the bar and the tray mark themselves
     // `data-move-source` (a checker entering from the bar has no point).
