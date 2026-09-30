@@ -1814,9 +1814,9 @@ resumeModal : Model -> Html Msg
 resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
         -- Wider than the others: a row carries a name, the match, how long ago
-        -- and two clocks, and 24rem crushed them. A phone is narrower than
+        -- and two clocks, and 24rem crushed them (32rem is the fit). A phone is narrower than
         -- either, so there it is the screen's width as before.
-        dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume, width = "max-w-xl" }
+        dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume, width = "max-w-lg" }
             [ Html.ul [ id "resume-list", class "space-y-2" ]
                 (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now } ClosedGame) model.myGames)
             , guestNote model
@@ -1877,7 +1877,10 @@ pitch _ button =
             , chip "hero-magnifying-glass" "4-ply analysis"
             , chip "hero-flag" "Openings"
             , chip "hero-light-bulb" "Mistake practice"
-            , chip "hero-arrow-trending-up" "Progress stats"
+            , chip "hero-arrow-trending-up" "Track progress"
+            , chip "hero-clock" "Match history"
+            , chip "hero-play" "Game replays"
+            , chip "hero-fire" "Daily streak"
             , chip "hero-lock-closed" "Secure account"
             ]
         ]
