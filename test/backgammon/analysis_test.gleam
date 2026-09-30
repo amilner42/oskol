@@ -158,7 +158,7 @@ pub fn a_long_matchs_away_scores_reach_the_engine_test() {
   // has to arrive as 21 away and not as anything a table's own length
   // clipped it to.
   let s = match_state("match21")
-  let p = analysis.position(s, White)
+  let p = engine_board.position(s, White)
   assert #(p.away1, p.away2) == #(21, 21)
   // A 2-cube nineteen away is alive; the same cube two away is dead (see
   // `a_dead_cube_is_not_a_double_the_engine_takes_test`). The rule is the
@@ -170,9 +170,9 @@ pub fn a_long_matchs_away_scores_reach_the_engine_test() {
       cube_owner: Some(White),
       scores: dict.from_list([#("p1", 2), #("p2", 0)]),
     )
-  let p = analysis.position(deep, White)
+  let p = engine_board.position(deep, White)
   assert #(p.away1, p.away2) == #(19, 21)
-  assert analysis.engine_can_double(p)
+  assert engine_board.engine_can_double(p)
 }
 
 pub fn the_crawford_game_is_flagged_and_has_no_cube_test() {
