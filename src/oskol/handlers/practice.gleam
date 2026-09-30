@@ -38,6 +38,7 @@ import oskol/core/envelope
 import oskol/core/error.{type ApiError}
 import oskol/core/session.{type Session, Session}
 import oskol/practice/deck
+import oskol/practice/decks
 import oskol/practice/sync
 import oskol/puzzles
 import oskol/rooms/seat
@@ -99,6 +100,8 @@ pub fn timezone_json(
 ) -> Result(String, ApiError) {
   use uid <- result.try(signed_in(session))
   use Nil <- result.try(deck.set_timezone(ctx, uid, tz))
+  // Every deck they have added counts its day in the same place.
+  decks.set_timezone(ctx, uid, tz)
   Ok(envelope.ok([#("tz", json.string(tz))]))
 }
 

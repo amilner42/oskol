@@ -56,6 +56,7 @@ import oskol/core/raw
 import oskol/core/session.{type Session}
 import oskol/handlers/shares
 import oskol/practice/deck
+import oskol/practice/decks
 import oskol/puzzles.{
   type Answer, type Candidate, type Question, CubeAnswer, Move as MoveKind,
   MoveAnswer, Mover, Opponent, Question, Take,
@@ -423,6 +424,50 @@ pub fn tree_node_json(
 /// scale, and the key that makes a retry the same attempt.
 pub type Attempted {
   Attempted(moves: List(#(String, String, Int)), band: Option(Int), key: String)
+}
+
+/// The same answer, counted against a named deck: "" is the player's own
+/// mistakes, anything else one of the universal decks (`practice/decks`),
+/// whose ladder then stands where the mistakes' does. Only the schedule
+/// moves elsewhere -- the grade, the reveal and the attempt row are the
+/// puzzle's, whichever deck it was reached from.
+pub fn attempt_in_json(
+  ctx: Ctx,
+  session: Session,
+  id: String,
+  attempted: Attempted,
+  share: String,
+  now_ms: Int,
+  deck_id: String,
+) -> Result(String, ApiError) {
+  use ctx <- result.try(in_deck(ctx, deck_id))
+  attempt_json(ctx, session, id, attempted, share, now_ms)
+}
+
+/// The override after the reveal, against the deck the answer was counted
+/// in (see `attempt_in_json`).
+pub fn outcome_in_json(
+  ctx: Ctx,
+  session: Session,
+  id: String,
+  key: String,
+  outcome: String,
+  deck_id: String,
+) -> Result(String, ApiError) {
+  use ctx <- result.try(in_deck(ctx, deck_id))
+  outcome_json(ctx, session, id, key, outcome)
+}
+
+fn in_deck(ctx: Ctx, deck_id: String) -> Result(Ctx, ApiError) {
+  case deck_id {
+    "" -> Ok(ctx)
+    _ ->
+      decks.find(deck_id)
+      |> result.map(decks.in_deck(ctx, _))
+      |> result.replace_error(error.validation_failed(
+        decks.unknown_deck_message,
+      ))
+  }
 }
 
 /// `share` is the `?s=` the page was opened with, or "": the story it

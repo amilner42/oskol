@@ -41,7 +41,7 @@ defmodule OskolWeb.Api.PuzzleController do
   def attempt(conn, %{"id" => id} = params) do
     send_json(
       conn,
-      :oskol@handlers@puzzles.attempt_json(
+      :oskol@handlers@puzzles.attempt_in_json(
         ctx(),
         session(conn),
         id,
@@ -49,7 +49,10 @@ defmodule OskolWeb.Api.PuzzleController do
         # The `?s=` the page was opened with, if any: the story it opens
         # rides on this answer and nowhere earlier.
         param(params, "s"),
-        System.system_time(:millisecond)
+        System.system_time(:millisecond),
+        # The universal deck this answer is counted in; "" is the player's
+        # own mistakes.
+        param(params, "deck")
       )
     )
   end
@@ -61,12 +64,13 @@ defmodule OskolWeb.Api.PuzzleController do
   def outcome(conn, %{"id" => id, "key" => key} = params) do
     send_json(
       conn,
-      :oskol@handlers@puzzles.outcome_json(
+      :oskol@handlers@puzzles.outcome_in_json(
         ctx(),
         session(conn),
         id,
         key,
-        param(params, "outcome")
+        param(params, "outcome"),
+        param(params, "deck")
       )
     )
   end

@@ -43,6 +43,20 @@ pub fn ctx() -> Ctx {
   )
 }
 
+/// A player who has added none of the universal decks: every deck's ladder
+/// answers that it holds nothing, and anything that would write to one
+/// still panics.
+pub fn no_decks(ctx: Ctx) -> Ctx {
+  Ctx(
+    ..ctx,
+    decks: decks_caps.DeckCaps(..ctx.decks, practice: fn(_scope) {
+      practice_caps.PracticeCaps(..practice_caps.stub(), summary: fn(_, _) {
+        []
+      })
+    }),
+  )
+}
+
 /// A stand-in for a live room process.
 pub fn room() -> Room {
   Room(process: dynamic.string("a room"))

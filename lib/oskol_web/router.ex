@@ -45,6 +45,9 @@ defmodule OskolWeb.Router do
     post "/practice/more", PracticeController, :more
     post "/practice/tz", PracticeController, :tz
     post "/practice/bury", PracticeController, :bury
+    get "/decks", DecksController, :index
+    get "/decks/:id", DecksController, :show
+    post "/decks/:id/join", DecksController, :join
 
     get "/library", LandingController, :library
     get "/codes/:code", LandingController, :code
