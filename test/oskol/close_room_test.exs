@@ -75,6 +75,33 @@ defmodule Oskol.CloseRoomTest do
     :ok
   end
 
+  # Stop a room and wait until nothing answers to its code any more.
+  #
+  # `Registry` forgets a dead process on its own monitor, a beat behind the
+  # exit itself, so a lookup taken the instant after the DOWN can still hand
+  # back the pid that has just gone -- and every call to it exits.
+  defp kill_room(game_id) do
+    {:ok, pid} = GameSupervisor.find_game(game_id)
+    ref = Process.monitor(pid)
+    :ok = DynamicSupervisor.terminate_child(GameSupervisor, pid)
+    assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1000
+    wait_until(fn -> GameSupervisor.find_game(game_id) == :error end)
+  end
+
+  defp wait_until(check, tries \\ 400) do
+    cond do
+      check.() ->
+        :ok
+
+      tries == 0 ->
+        flunk("the room never went away")
+
+      true ->
+        Process.sleep(5)
+        wait_until(check, tries - 1)
+    end
+  end
+
   defp phase(game_id) do
     state = Game.get_server_state(game_id)
     if state.instance, do: GameKit.summary(state.instance)["phase"], else: "lobby"
@@ -121,10 +148,7 @@ defmodule Oskol.CloseRoomTest do
 
       # The room is cold. A stranger pressing this must not be the thing
       # that rebuilds somebody else's lobby from its log.
-      {:ok, pid} = GameSupervisor.find_game(game_id)
-      ref = Process.monitor(pid)
-      :ok = DynamicSupervisor.terminate_child(GameSupervisor, pid)
-      assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1000
+      kill_room(game_id)
 
       stranger = GameFixtures.unique_guest_id()
       body = conn |> close(stranger, game_id) |> json_response(422)
@@ -200,11 +224,7 @@ defmodule Oskol.CloseRoomTest do
       :ok = resign_game(game_id, p1, p2)
       {:ok, _, _} = Game.player_action(game_id, p2, %{"name" => "close"})
       Persister.flush()
-
-      {:ok, pid} = GameSupervisor.find_game(game_id)
-      ref = Process.monitor(pid)
-      :ok = DynamicSupervisor.terminate_child(GameSupervisor, pid)
-      assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1000
+      kill_room(game_id)
 
       # The close is a step in the log like any other, so a room rebuilt
       # from it comes back over rather than offering READY in a room whose
