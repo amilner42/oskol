@@ -924,7 +924,7 @@ resume =
             \_ ->
                 home withGamesOpen
                     |> Query.find [ id "guest-note" ]
-                    |> Query.has [ text "logged in as a guest on this device", text "Want to get better for free?", text "Every device", text "4-ply analysis", text "Openings", text "Mistake practice", text "Track progress", text "Match history", text "Game replays", text "Daily streak", text "Secure account", id "signup-cta" ]
+                    |> Query.has [ text "logged in as a guest on this device", text "Want to get better for free?", text "Mistake practice", text "Game analysis", text "Track progress", text "Every device", id "signup-cta" ]
         ]
 
 

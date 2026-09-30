@@ -1872,16 +1872,13 @@ pitch _ button =
         , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
             [ Html.text "Want to get better for free?" ]
         , button
-        , Html.ul [ class "flex flex-wrap justify-center gap-2" ]
-            [ chip "hero-device-phone-mobile" "Every device"
-            , chip "hero-magnifying-glass" "4-ply analysis"
-            , chip "hero-flag" "Openings"
-            , chip "hero-light-bulb" "Mistake practice"
+        -- Two by two at every width: four promises read as one square block,
+        -- never three and a straggler.
+        , Html.ul [ class "grid grid-cols-[repeat(2,max-content)] justify-center gap-2" ]
+            [ chip "hero-light-bulb" "Mistake practice"
+            , chip "hero-magnifying-glass" "Game analysis"
             , chip "hero-arrow-trending-up" "Track progress"
-            , chip "hero-clock" "Match history"
-            , chip "hero-play" "Game replays"
-            , chip "hero-fire" "Daily streak"
-            , chip "hero-lock-closed" "Secure account"
+            , chip "hero-device-phone-mobile" "Every device"
             ]
         ]
 
