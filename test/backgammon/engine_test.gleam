@@ -120,7 +120,7 @@ pub fn a_finished_position_keeps_every_projected_die_high_first_test() {
   let s =
     state.GameState(
       ..new_game(1, "single"),
-      phase: state.Finished(board.White),
+      phase: state.Finished(Some(board.White)),
       last_roll: [2, 6],
     )
   let projected = backgammon.game().scene(s, scene.Spectator)
@@ -252,7 +252,7 @@ pub fn random_single_games_terminate_test() {
         seed,
         4000,
         invariant,
-        conformance.Options(exclude: resign_actions),
+        conformance.Options(exclude: conceding),
       )
     assert report.finished
     let assert state.Finished(_) = report.state.phase
@@ -269,10 +269,10 @@ pub fn random_matches_terminate_and_score_test() {
         seed,
         30_000,
         invariant,
-        conformance.Options(exclude: resign_actions),
+        conformance.Options(exclude: conceding),
       )
     assert report.finished
-    let assert state.Finished(winner) = report.state.phase
+    let assert state.Finished(Some(winner)) = report.state.phase
     assert state.score_of(report.state, state.player_of(report.state, winner))
       >= 5
   })
@@ -294,6 +294,7 @@ pub fn replay_is_deterministic_test() {
     == conformance.fingerprint(backgammon.game(), report.state, seats())
 }
 
-/// Random play never resigns: an offer needs an answer, and a random one
-/// would end every game early.
-const resign_actions = ["resign", "accept_resign", "decline_resign"]
+/// Random play never gives a game up: an offer needs an answer, and a
+/// random resignation -- or a random `close`, which ends an unlimited
+/// session after its first game -- would end every playout early.
+const conceding = ["resign", "accept_resign", "decline_resign", "close"]

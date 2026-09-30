@@ -128,6 +128,8 @@ type Msg
     | PressedMore
     | GotMore (Result Api.Error Home.Page)
     | ToggledRoom String
+    | ClosedGame Catalog.MyGame
+    | GameClosed (Result Api.Error ())
     | CreateMsg GameLanding.Msg
 
 
@@ -217,6 +219,19 @@ subscriptions model =
         ]
 
 
+{-| The home with one live game gone: what the ✕ leaves behind until the
+answer that confirms it lands.
+-}
+withoutRoom : String -> State -> State
+withoutRoom gameId state =
+    case state of
+        Ready home ->
+            Ready { home | live = List.filter (\game -> game.id /= gameId) home.live }
+
+        other ->
+            other
+
+
 clockRunning : Catalog.MyGame -> Bool
 clockRunning game =
     case game.time of
@@ -248,6 +263,19 @@ update msg model =
 
         GotHome (Err err) ->
             ( { model | state = Failed (Api.errorMessage err) }, Cmd.none, NoOut )
+
+        -- The ✕ on a lobby nobody joined. The row goes at once, and the
+        -- whole home is read again once the server has answered -- LIVE
+        -- GAMES is one section of one answer, and a refused close puts the
+        -- row back with it.
+        ClosedGame game ->
+            ( { model | state = withoutRoom game.id model.state }
+            , Catalog.closeRoom model.session game.slug game.id GameClosed
+            , NoOut
+            )
+
+        GameClosed _ ->
+            ( model, Home.fetch model.session GotHome, NoOut )
 
         -- Asking again also forgets when the last answer's clocks were
         -- read: charging a running clock from an answer two minutes old
@@ -588,7 +616,7 @@ live model home =
 
             games ->
                 [ Html.ul [ id "home-live-list", class "space-y-2" ]
-                    (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now }) games)
+                    (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now } ClosedGame) games)
                 ]
 
 

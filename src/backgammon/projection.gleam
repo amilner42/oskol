@@ -88,8 +88,11 @@ pub fn build(state: GameState, viewer: Viewer) -> Scene {
         #("last_roll", json.array(canonical_dice(state.last_roll), json.int)),
         #("target", json.int(state.config.target)),
         #("game_number", json.int(state.game_number)),
+        // Null while a game is on, and null again for a session ended with
+        // the score level: there is no winner to name.
         #("winner_id", case state.phase {
-          state.Finished(color) -> json.string(state.player_of(state, color))
+          state.Finished(Some(color)) ->
+            json.string(state.player_of(state, color))
           _ -> json.null()
         }),
         // The record of this game only (a finished match: its last game),

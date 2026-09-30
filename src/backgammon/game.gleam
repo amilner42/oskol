@@ -173,6 +173,7 @@ pub fn decode_action(incoming: action.Incoming) -> Result(Action, String) {
     "accept_resign" -> Ok(engine.AcceptResign)
     "decline_resign" -> Ok(engine.DeclineResign)
     "ready" -> Ok(engine.Ready)
+    "close" -> Ok(engine.Close)
     "move" -> {
       use from <- result.try(loc_param(incoming.params, "from"))
       use to <- result.try(loc_param(incoming.params, "to"))
@@ -218,7 +219,11 @@ fn loc_param(params, name: String) -> Result(board.Loc, String) {
 
 pub fn outcome(state: GameState) -> game.Outcome {
   case state.phase {
-    state.Finished(color) -> game.Finished([state.player_of(state, color)])
+    state.Finished(Some(color)) ->
+      game.Finished([state.player_of(state, color)])
+    // A session ended level: over, with nobody ahead. `Finished([])` is
+    // gamekit's draw, and it is what `games.winners` stores.
+    state.Finished(None) -> game.Finished([])
     _ -> game.Ongoing
   }
 }

@@ -467,3 +467,131 @@ pub fn any_other_refusal_is_shown_as_it_is_test() {
   assert rooms.join(ctx, fakes.no_guest(), "123456", "Bob")
     == Error(rooms.Refused("Error: boom"))
 }
+
+// ---------- Closing a lobby ----------
+
+/// A row for a lobby Alice (guest g1) made and nobody has joined.
+fn a_lobby_row(status: String) -> room.ActiveRoom {
+  room.ActiveRoom(
+    slug: backgammon,
+    game_id: "123456",
+    status: status,
+    format: "single",
+    clock: "none",
+    seats: [#("p1", "Alice", "g1", "")],
+    to_act: [],
+    clocks: [],
+    clock_s: 0,
+    idle_s: 90,
+  )
+}
+
+/// The row, plus a room that answers a lookup and a close.
+fn closing(
+  ctx: Ctx,
+  row: room.ActiveRoom,
+  answer: Result(Nil, errors.RoomError),
+) -> Ctx {
+  let ctx = fakes.with_row(ctx, Some(row))
+  Ctx(
+    ..ctx,
+    rooms: rooms_caps.RoomsCaps(
+      ..ctx.rooms,
+      find: fn(_) { Some(fakes.room()) },
+      close: fn(_, _, _) { answer },
+    ),
+  )
+}
+
+pub fn closing_a_lobby_ends_it_test() {
+  let ctx = closing(fakes.ctx(), a_lobby_row("waiting"), Ok(Nil))
+
+  assert rooms.close(ctx, fakes.guest("g1"), "123456") == Ok(Nil)
+}
+
+pub fn closing_a_room_with_no_row_says_it_is_over_test() {
+  // Nothing is woken to find that out: the rooms capabilities all panic.
+  let ctx = fakes.with_row(fakes.ctx(), None)
+
+  assert rooms.close(ctx, fakes.guest("g1"), "123456")
+    == Error(rooms.Gone(rooms.gone_message))
+}
+
+pub fn a_stranger_is_refused_without_waking_a_cold_room_test() {
+  // No live room, so the row alone answers. `resume` -- which would
+  // rebuild somebody else's lobby from its log -- panics if reached.
+  let ctx = fakes.with_row(fakes.ctx(), Some(a_lobby_row("waiting")))
+  let ctx =
+    Ctx(..ctx, rooms: rooms_caps.RoomsCaps(..ctx.rooms, find: fn(_) { None }))
+
+  assert rooms.close(ctx, fakes.guest("stranger"), "123456")
+    == Error(rooms.Refused("You are not at this table"))
+}
+
+pub fn a_live_room_answers_for_itself_test() {
+  // The row is written behind the room, so a lobby made a moment ago may
+  // not carry its seat yet. A room that is already live is asked instead:
+  // that wakes nothing, and its memory is the newer copy.
+  let ctx =
+    closing(
+      fakes.ctx(),
+      room.ActiveRoom(..a_lobby_row("waiting"), seats: []),
+      Ok(Nil),
+    )
+
+  assert rooms.close(ctx, fakes.guest("g1"), "123456") == Ok(Nil)
+}
+
+pub fn a_room_with_a_game_in_it_is_refused_without_waking_it_test() {
+  let ctx = fakes.with_row(fakes.ctx(), Some(a_lobby_row("playing")))
+
+  assert rooms.close(ctx, fakes.guest("g1"), "123456")
+    == Error(rooms.Refused("That game already started"))
+}
+
+pub fn closing_a_closed_room_again_is_the_same_yes_test() {
+  // A second press, or a retry of a request that timed out after the write
+  // landed: the same answer, and nothing woken to give it.
+  let ctx = fakes.with_row(fakes.ctx(), Some(a_lobby_row("closed")))
+
+  assert rooms.close(ctx, fakes.guest("g1"), "123456") == Ok(Nil)
+}
+
+pub fn closing_a_room_the_row_still_has_but_no_process_will_start_test() {
+  let ctx = fakes.with_row(fakes.ctx(), Some(a_lobby_row("waiting")))
+  let ctx =
+    Ctx(
+      ..ctx,
+      rooms: rooms_caps.RoomsCaps(
+        ..ctx.rooms,
+        find: fn(_) { None },
+        resume: fn(_) { None },
+      ),
+    )
+
+  assert rooms.close(ctx, fakes.guest("g1"), "123456")
+    == Error(rooms.Gone(rooms.gone_message))
+}
+
+pub fn a_room_that_stopped_mid_close_is_gone_rather_than_closed_test() {
+  // Nothing was written, so the caller is told the room is over rather
+  // than that the close landed.
+  let ctx =
+    closing(fakes.ctx(), a_lobby_row("waiting"), Error(errors.UnknownGame))
+
+  assert rooms.close(ctx, fakes.guest("g1"), "123456")
+    == Error(rooms.Gone(rooms.gone_message))
+}
+
+pub fn the_room_has_the_last_word_on_a_close_test() {
+  // The row said waiting; the room has started since. Its answer stands.
+  let ctx =
+    closing(
+      fakes.ctx(),
+      a_lobby_row("waiting"),
+      Error(errors.GameAlreadyStarted),
+    )
+
+  assert rooms.close(ctx, fakes.guest("g1"), "123456")
+    == Error(rooms.Refused("That game already started"))
+}

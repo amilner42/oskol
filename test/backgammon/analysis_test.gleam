@@ -523,8 +523,9 @@ pub fn every_played_board_is_legal_in_a_match_to_5_test() {
 }
 
 pub fn every_played_board_is_legal_in_unlimited_play_test() {
-  // 3000 steps of unlimited play is several games, each its own list
-  random_games("unlimited", [1], ["resign"])
+  // 3000 steps of unlimited play is several games, each its own list --
+  // and `close` is excluded, or the first game would be the last.
+  random_games("unlimited", [1], ["resign", "close"])
 }
 
 pub fn resignations_in_random_play_keep_the_turns_legal_test() {
@@ -1190,7 +1191,9 @@ pub fn commits_match_the_review_over_random_seeded_games_test() {
         seed,
         clock.NoClock,
         600,
-        random_except(["resign", "accept_resign", "decline_resign", "undo"]),
+        random_except([
+          "resign", "accept_resign", "decline_resign", "undo", "close",
+        ]),
       )
     assert assert_commits_are_the_review(log, True) > 5
   })

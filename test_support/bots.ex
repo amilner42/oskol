@@ -16,11 +16,13 @@ defmodule Oskol.Bots do
   `max_steps` have been played. Returns `{:finished, steps}`,
   `{:cut_off, steps}` or `{:stuck, steps}` (no legal action while unfinished).
 
-  Options: `exclude:` action names never chosen (default `["resign"]`, since
-  a random resignation ends every game early and proves nothing).
+  Options: `exclude:` action names never chosen (default `["resign",
+  "close"]`, since a random resignation ends every game early and a random
+  `close` ends unlimited play after its first game; neither proves
+  anything).
   """
   def play(game_id, seed, max_steps, opts \\ []) do
-    exclude = Keyword.get(opts, :exclude, ["resign"])
+    exclude = Keyword.get(opts, :exclude, ["resign", "close"])
     :rand.seed(:exsss, {seed, seed * 7 + 1, seed * 13 + 2})
     loop(game_id, max_steps, 0, exclude)
   end

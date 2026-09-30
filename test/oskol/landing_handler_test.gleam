@@ -216,6 +216,20 @@ pub fn a_lobby_has_no_opponent_no_clock_and_nobody_to_act_test() {
   assert string.contains(body, "\"clock\":null")
   assert string.contains(body, "\"your_move\":false")
   assert string.contains(body, "\"time\":null")
+  // A lobby is the one room the list itself can end: nobody joined, so
+  // there is no game to leave and nothing to lose.
+  assert string.contains(body, "\"closable\":true")
+}
+
+pub fn only_a_lobby_is_closable_from_the_list_test() {
+  // A room with a game in it is ended at the table -- by resigning, or,
+  // between the games of unlimited play, by ending the session -- so the
+  // list is told no and draws nothing to press.
+  let ctx = reading() |> fakes.with_active_rooms([open_room()])
+  let body = landing.my_games_json(ctx, fakes.guest("g1"))
+
+  assert string.contains(body, "\"status\":\"playing\"")
+  assert string.contains(body, "\"closable\":false")
 }
 
 pub fn a_visitor_with_no_guest_holds_no_seat_anywhere_test() {

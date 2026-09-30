@@ -8,8 +8,9 @@ defmodule Oskol.Game.Persister do
   order). A failed write logs loudly and is dropped — the room keeps playing
   from memory; what was already written still rehydrates to that point.
 
-  `flush/0` is for tests: it round-trips the queue so every earlier cast has
-  been written (or dropped) before it returns.
+  `flush/0` round-trips the queue so every earlier cast has been written (or
+  dropped) before it returns: tests read rows back with it, and so does the
+  one request whose answer a client immediately re-reads the rows for.
   """
   use GenServer
   require Logger
@@ -73,6 +74,15 @@ defmodule Oskol.Game.Persister do
   end
 
   @doc """
+  A lobby was closed. Cast like every other room write so it lands behind
+  whatever that room already queued; the request that asked for it waits on
+  `flush/0`, because the page it answers reads the list this row leaves.
+  """
+  def game_closed(game_id) do
+    GenServer.cast(__MODULE__, {:write, :game_closed, {game_id}})
+  end
+
+  @doc """
   A browser signed in: hand its seats to the account and move them to its
   fresh guest id (`Oskol.Auth.adopt_seats/3`, one transaction with the
   guest row).
@@ -98,7 +108,11 @@ defmodule Oskol.Game.Persister do
     :exit, {:timeout, _} -> :pending
   end
 
-  @doc "Wait until every write cast before this call has been handled."
+  @doc """
+  Wait until every write cast before this call has been handled. Tests use
+  it to read what a room has just written; so does a request whose answer
+  the client reads the rows back for (closing a lobby).
+  """
   def flush do
     GenServer.call(__MODULE__, :flush, :timer.seconds(30))
   end
@@ -193,4 +207,7 @@ defmodule Oskol.Game.Persister do
 
   defp do_write(:game_finished, {game_id, winners}),
     do: Persistence.mark_finished(game_id, winners)
+
+  defp do_write(:game_closed, {game_id}),
+    do: Persistence.mark_closed(game_id)
 end

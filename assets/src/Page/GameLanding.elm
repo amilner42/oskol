@@ -122,6 +122,8 @@ type Msg
     | ToggledThemes
     | PickedTheme String
     | GotMyGames (Result Api.Error (List MyGame))
+    | ClosedGame MyGame
+    | GameClosed (Result Api.Error ())
     | ListArrived Time.Posix
     | Tick Time.Posix
     | OpenedResume
@@ -370,6 +372,19 @@ update msg model =
         -- The home page draws the same without it.
         GotMyGames (Err _) ->
             ( model, Cmd.none, NoOut )
+
+        -- The ✕ on a lobby nobody joined. The row goes at once -- the
+        -- player asked for it gone and the answer carries nothing to wait
+        -- for -- and the list is read again when the server has answered,
+        -- which is what puts it back if the close was refused.
+        ClosedGame game ->
+            ( { model | myGames = List.filter (\g -> g.id /= game.id) model.myGames }
+            , Catalog.closeRoom model.session game.slug game.id GameClosed
+            , NoOut
+            )
+
+        GameClosed _ ->
+            ( model, Catalog.fetchMyGames model.session GotMyGames, NoOut )
 
         ListArrived posix ->
             ( { model | fetchedAt = Time.posixToMillis posix, now = Time.posixToMillis posix }, Cmd.none, NoOut )
@@ -1165,7 +1180,7 @@ resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
         dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
             [ Html.ul [ id "resume-list", class "space-y-2" ]
-                (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now }) model.myGames)
+                (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now } ClosedGame) model.myGames)
             , guestNote model
             ]
 

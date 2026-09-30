@@ -195,6 +195,34 @@ defmodule Oskol.Game.GameServer do
     GenServer.call(via_tuple(game_id), {:request_rematch, player_id})
   end
 
+  @doc """
+  Close a lobby nobody joined: the room writes itself off and stops.
+
+  Only a seat here may (the holder rule, as every other door asks it), and
+  only while the room has no game in it. A room that has started is not
+  closed from outside: a game in play is left by resigning, and unlimited
+  play is ended between games by the `close` action, which the engine
+  decides on and the log records like any other step.
+
+  This is the authoritative check. The handler has already refused whoever
+  the row says holds no seat here, so that a stranger's press never rebuilds
+  a cold room from its log; the room's own memory is the copy that can have
+  moved since that row was read. Checking and writing here are one call, and
+  the room is the only writer of its own row, so nothing can start the game
+  between the two.
+
+  The write itself is the ordinary write-behind, one `UPDATE` like every
+  other room write: no transaction and no row lock go anywhere near the
+  single process that writes for every room. What waits for it is the
+  request (`Oskol.Game.Persister.flush/0`), because the page it answers
+  reads the list this row leaves.
+  """
+  def close(game_id, guest_id \\ nil, user_id \\ nil)
+
+  def close(game_id, guest_id, user_id) do
+    GenServer.call(via_tuple(game_id), {:close, GameServerState.session(guest_id, user_id)})
+  end
+
   # ---------- Server ----------
 
   @impl true
@@ -564,6 +592,27 @@ defmodule Oskol.Game.GameServer do
     new_state = %GameServerState{state | connections: connections}
     broadcast(new_state, [])
     {:reply, :ok, new_state, @timeout}
+  end
+
+  def handle_call({:close, session}, _from, %GameServerState{} = state) do
+    cond do
+      GameServerState.find_player_id_for(state, session) == nil ->
+        # A stranger, a spectator, and the bot's seat (which nobody holds)
+        # all land here: the one holder rule, and nothing else, opens a room.
+        {:reply, {:error, :no_seat}, state, @timeout}
+
+      GameServerState.started?(state) ->
+        {:reply, {:error, :game_already_started}, state, @timeout}
+
+      true ->
+        Logger.info("Lobby #{state.game_id} closed by its player")
+        Persister.game_closed(state.game_id)
+        # Any other tab of this browser is sitting in the same lobby; tell
+        # it the room is gone rather than leaving it waiting on a room that
+        # no longer exists.
+        Phoenix.PubSub.broadcast(Oskol.PubSub, topic(state.game_id), :room_closed)
+        {:stop, :normal, :ok, state}
+    end
   end
 
   def handle_call(:get_state, _from, %GameServerState{} = state) do

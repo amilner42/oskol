@@ -702,7 +702,9 @@ assets/src/Api/Home.elm          /papi/me/home and /papi/me/games/graded (a room
                                  entry, its graded games inside), and the one line a
                                  browser with no account gets
 assets/src/Ui/LiveGames.elm      one row per game you can pick back up, drawn the same
-                                 on both homes
+                                 on both homes; the row is the whole link, so
+                                 the x that ends a closable one is a button
+                                 beside it, never inside it
 assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it;
                                  asks /puzzles?game=n for each game /ratings reports
                                  graded (a seat only) and feeds both result cards'
@@ -942,6 +944,14 @@ POST /papi/games/:slug                 {format, name, clock, opponent}
                                        running when this answers
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
+POST /papi/games/:slug/rooms/:id/close {} -> {ok, closed: true}  (a seat
+                                       only, and only while the room has no
+                                       game in it: a lobby nobody joined.
+                                       422 "You are not at this table" for
+                                       anyone else, 422 "That game already
+                                       started" once there is a game, 404
+                                       for a room no row remembers; a second
+                                       press is the same yes)
 GET  /papi/games/:slug/rooms/:id/reviews  (open) the index, and only the index
                                        {ok, players, games: [{game_number,
                                            status, turns}]}  -- a few hundred
@@ -1101,11 +1111,16 @@ GET  /papi/me/prefs                    {ok, prefs}
 POST /papi/me/prefs                    {key, value} -> {ok, prefs}
 GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
                                          opponent, format, clock, your_move,
+                                         closable,
                                          time: {mine_ms, theirs_ms, running,
                                          free_ms, age_s} | null, idle_s}]}
                                        -- the unfinished rooms the caller's
                                        guest holds a seat in, newest activity
-                                       first, from the rows alone
+                                       first, from the rows alone.
+                                       `closable` is whether the list itself
+                                       may end this room (a lobby): the
+                                       server's call, never a format the
+                                       client reads
 GET  /papi/me/home                     {ok, signed_in: false} for a guest;
                                        else {ok, signed_in: true, live, form,
                                        practice, recent, more, next} -- the
@@ -1164,7 +1179,9 @@ seconds since the room was touched. The client (`Page/GameLanding.elm`)
 shows them in a dialog over the home board when the list arrives with
 anything in it, and keeps a "REJOIN N GAMES" button at the right end of the
 player's own bar for as long as there are any. Nothing prunes games (they
-are kept, finished or not), so nothing bounds the list yet.
+are kept, finished or not), so nothing bounds the list yet -- but a lobby
+nobody joined can be closed from its own row (`closable`; see "A room that
+will not end itself is ended by a player" under Persistence).
 
 `/papi/auth/*` is signing in, and every one of them is a POST on purpose: a
 GET never signs anyone in. A token and its code are sha256 at rest, never
@@ -2099,6 +2116,11 @@ node playwright/test-spa-landing/test.js        # the home board and CREATE GAME
 node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
                                                # the lobby and the theme picker, and the dialog
                                                # with the bot picked (desktop + phone)
+node playwright/review-close/test.js            # screenshots of the two ways a room is ended:
+                                               # the x on a LIVE GAMES row, END THIS GAME in
+                                               # the lobby, END SESSION beside READY between
+                                               # games, and the card a level session ends on
+                                               # (three widths; it arranges the rooms itself)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
 node playwright/review-bot/test.js              # screenshots of a game against Sage: the table,
                                                # a turn played, and Sage thinking about the answer
@@ -2304,6 +2326,45 @@ offsets (timeline shifted to "now", so downtime charges nobody) and the room
 carries on; the guest holding each seat round-trips, so every player's
 browser still holds its seat. The
 hour-idle shutdown is therefore graceful.
+
+**A room that will not end itself is ended by a player.** Nothing prunes
+rooms, so a lobby a friend never opens and an unlimited session nobody
+presses READY in both sit in LIVE GAMES for ever. Two ways out, and they
+are different shutdowns because a waiting room has no instance and a
+between-games room has one:
+
+- **A lobby** is closed from outside the game -- there is no game in it --
+  by `POST /papi/games/:slug/rooms/:id/close` (the × on its LIVE GAMES row,
+  `Ui.LiveGames`; END THIS GAME on the lobby page). `handlers/rooms.close`
+  reads the row first (`persistence.room`), because a lookup rehydrates and
+  a stranger's press must never be what rebuilds somebody else's room; a
+  room that is already live is asked directly, since that wakes nothing and
+  its memory is newer than the write-behind row. `GameServer.close/3` is the
+  authoritative check -- the holder rule, and no game started -- and then
+  writes and stops. The row takes its **own status, `closed`**: no game was
+  played, so it is not `finished` and belongs in no recent list, no rating
+  and no replay; `seated_rooms` lists `waiting` and `playing`, and
+  `Oskol.Game.Rehydrator` refuses a closed row, so the code opens nothing
+  ever again and the invite link says the game is gone. A second press, or a
+  retry of a request that timed out after the write landed, is the same yes.
+- **An unlimited session** is ended from inside, by the game: `close` is a
+  backgammon action, legal between games and only in unlimited play
+  (`state.can_close`; a match to a target ends when somebody reaches it, and
+  a game in play is left by resigning). Either player, alone -- the
+  alternative is one of them never pressing READY, which strands the room
+  anyway. The score stands and whoever is ahead has won; level on points is
+  `Finished([])`, which is why `state.Phase.Finished` carries an
+  `Option(Color)`. Because it is an action it is a step in the log, so a
+  room rebuilt from that log comes back over rather than offering READY, and
+  `persist_finish` writes `finished` with `games.winners` exactly as a
+  match's last game does -- the home's recent list needs no new shape. The
+  table draws it from the legal actions like every other button
+  (`bg-action-close`, beside READY): the client never reads a format.
+  Closing changes nothing about analysis: every game was graded as it ended.
+  One consequence worth knowing: between the games of unlimited play both
+  seats now have a legal action (`close`), so the snapshot's `to_act` --
+  and LIVE GAMES' "Your move" -- names a player who has already pressed
+  READY. That is true: the room is waiting on them to do something.
 
 **`games.state` mirrors the game.** With every step the room also writes
 `gamekit/host.summary_json`: `to_act` (whose turn it is by the game's own

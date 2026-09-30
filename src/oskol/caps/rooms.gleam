@@ -58,6 +58,13 @@ pub type RoomsCaps {
     /// spectator already sees. A room still in its lobby is
     /// `GameNotStarted`. Reading it changes nothing and attaches nothing.
     game: fn(String) -> Result(Instance, RoomError),
+    /// Close a lobby nobody joined: (game_id, guest id, user id). The room
+    /// writes itself off and stops, and its code opens nothing afterwards.
+    /// A caller holding no seat here is `NoSeat` (a stranger, a spectator
+    /// and a bot's seat alike: the holder rule answers nobody for all
+    /// three); a room whose game has started is `GameAlreadyStarted` --
+    /// there is a game in it, and a game is left at the table.
+    close: fn(String, Option(String), Option(String)) -> Result(Nil, RoomError),
   )
 }
 
@@ -75,5 +82,6 @@ pub fn stub() -> RoomsCaps {
     claim: fn(_, _, _, _) { panic as "stub rooms.claim" },
     seated_game: fn(_, _, _) { panic as "stub rooms.seated_game" },
     game: fn(_) { panic as "stub rooms.game" },
+    close: fn(_, _, _) { panic as "stub rooms.close" },
   )
 }

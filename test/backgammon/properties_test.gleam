@@ -91,7 +91,7 @@ pub fn a_random_walk_of_moves_uses_every_playable_die_and_commits_test() {
     assert played.state.turn_board == played.state.board
     case board.borne_off(played.state.board, White) == 15 {
       True -> {
-        let assert state.Finished(White) = played.state.phase
+        let assert state.Finished(Some(White)) = played.state.phase
         Nil
       }
       False -> {
@@ -178,12 +178,13 @@ fn never_leak(seeds: List(Int)) {
         seed,
         4000,
         nothing_leaks,
-        conformance.Options(exclude: resign_actions),
+        conformance.Options(exclude: conceding),
       )
     assert report.finished
   })
 }
 
-/// Random play never resigns: an offer needs an answer, and a random one
-/// would end every game early.
-const resign_actions = ["resign", "accept_resign", "decline_resign"]
+/// Random play never gives a game up: an offer needs an answer, and a
+/// random resignation -- or a random `close`, which ends an unlimited
+/// session after its first game -- would end every playout early.
+const conceding = ["resign", "accept_resign", "decline_resign", "close"]

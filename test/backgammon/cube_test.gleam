@@ -425,7 +425,7 @@ pub fn an_accepted_resignation_can_end_the_match_test() {
   let #(s, events) = apply(s, "p1", engine.AcceptResign)
   assert has_custom(events, "match_over")
   assert state.score_of(s, "p1") == 5
-  let assert state.Finished(White) = s.phase
+  let assert state.Finished(Some(White)) = s.phase
   assert backgammon.outcome(s) == game.Finished(["p1"])
   assert engine.legal(s, "p1") == [] && engine.legal(s, "p2") == []
   assert engine.apply(s, "p2", engine.Resign(Single))
@@ -646,7 +646,7 @@ pub fn the_match_ends_when_points_overshoot_the_target_test() {
   let #(s, events) = bear_off_and_play(s)
   assert has_custom(events, "match_over")
   assert state.score_of(s, "p1") == 4
-  let assert state.Finished(White) = s.phase
+  let assert state.Finished(Some(White)) = s.phase
 }
 
 // ---------- Crawford ----------
@@ -732,19 +732,22 @@ pub fn a_long_match_reaches_crawford_one_away_from_its_target_test() {
   let #(s, events) = bear_off_and_play(s)
   assert has_custom(events, "match_over")
   assert state.score_of(s, "p1") == 22
-  let assert state.Finished(White) = s.phase
+  let assert state.Finished(Some(White)) = s.phase
   assert engine.legal(s, "p1") == [] && engine.legal(s, "p2") == []
 }
 
 pub fn unlimited_play_never_finishes_by_itself_test() {
+  // `close` is the one thing that ends unlimited play, and a player has to
+  // press it: random play must not, or "by itself" would mean nothing.
   let assert Ok(report) =
-    conformance.random_playout(
+    conformance.random_playout_with(
       backgammon.game(),
       "unlimited",
       seats(),
       77,
       2500,
       fn(_) { Ok(Nil) },
+      conformance.Options(exclude: ["close"]),
     )
   assert report.finished == False
   assert report.state.game_number > 1
@@ -765,7 +768,7 @@ pub fn matches_with_the_cube_still_terminate_and_replay_test() {
         fn(_) { Ok(Nil) },
       )
     assert report.finished
-    let assert state.Finished(winner) = report.state.phase
+    let assert state.Finished(Some(winner)) = report.state.phase
     assert state.score_of(report.state, state.player_of(report.state, winner))
       >= 3
     let assert Ok(replayed) =

@@ -128,6 +128,19 @@ defmodule Oskol.Persistence do
     update_game(game_id, status: "finished", winners: winners)
   end
 
+  @doc """
+  A lobby nobody ever joined, closed by the player who made it.
+
+  Its own status, not `finished`: no game was played, so the room owes no
+  analysis, belongs in no recent list, counts towards no rating, and has
+  nothing to replay. It only has to stop being a game anyone is offered —
+  `seated_rooms` lists `waiting` and `playing`, and the rehydrator refuses
+  a closed row, so the code opens nothing ever again.
+  """
+  def mark_closed(game_id) do
+    update_game(game_id, status: "closed")
+  end
+
   def append_action(game_id, index, kind, player_id, payload, at_ms, state) do
     Repo.insert!(
       %GameAction{

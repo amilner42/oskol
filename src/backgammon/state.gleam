@@ -26,8 +26,10 @@ pub type Phase {
   /// opening roll and all -- when the second player says `ready`. `last` is
   /// how the game ended; `ready` who has said so, in the order they did.
   BetweenGames(last: GameEnd, ready: List(PlayerId))
-  /// The match is over.
-  Finished(winner: Color)
+  /// The match is over. `winner` is `None` only where the play stopped with
+  /// the score level: a match to a target always has somebody who reached
+  /// it, but unlimited play ended between games (`close`) can stand level.
+  Finished(winner: Option(Color))
 }
 
 /// `target` 0 means unlimited play: games keep coming and the score just
@@ -464,6 +466,50 @@ pub fn ready(
       }
     Finished(_) -> Error("The match is over")
     _ -> Error("The game is still on")
+  }
+}
+
+/// May this player end the session here?
+///
+/// Only unlimited play, and only between games. A match to a target has a
+/// finish line of its own and is never closable; a game in play is left by
+/// resigning, which costs the resigner the game. Between the games of
+/// unlimited play there is no finish line and nothing at stake, so either
+/// player may say that was the last one.
+pub fn can_close(state: GameState, player_id: PlayerId) -> Bool {
+  case state.phase, color_of(state, player_id) {
+    BetweenGames(_, _), Ok(_) -> unlimited(state)
+    _, _ -> False
+  }
+}
+
+/// End the session: the score stands and whoever is ahead has won. Level on
+/// points is nobody's win, which is why `Finished` carries an option.
+///
+/// Either player, alone. The alternative to this is one of them never
+/// pressing READY, which strands the room anyway, so an offer the other
+/// could decline would only add a second way into the same dead end.
+pub fn close(state: GameState, player_id: PlayerId) -> Result(GameState, String) {
+  use _ <- result.try(color_of(state, player_id))
+  case state.phase {
+    BetweenGames(_, _) ->
+      case unlimited(state) {
+        True -> Ok(GameState(..state, phase: Finished(leader(state))))
+        False -> Error("A match ends when somebody reaches the target")
+      }
+    Finished(_) -> Error("The match is over")
+    _ -> Error("The game is still on")
+  }
+}
+
+/// Who is ahead on points, if anybody: the winner of a session that stops
+/// here. Level is `None`.
+pub fn leader(state: GameState) -> Option(Color) {
+  let best =
+    list.fold(state.order, 0, fn(top, id) { int.max(top, score_of(state, id)) })
+  case list.filter(state.order, fn(id) { score_of(state, id) == best }) {
+    [only] -> option.from_result(color_of(state, only))
+    _ -> None
   }
 }
 
@@ -937,7 +983,7 @@ fn finish_game(
       ..state.record
     ])
   let state = case match_over {
-    True -> GameState(..state, phase: Finished(winner))
+    True -> GameState(..state, phase: Finished(Some(winner)))
     False ->
       GameState(
         ..state,
