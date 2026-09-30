@@ -1745,14 +1745,14 @@ opponentId opponent =
 -}
 createDialog : List (Html Msg) -> Html Msg
 createDialog content =
-    dialog { id = "create-modal", closeId = "close-create", label = "Create a game", heading = "CREATE GAME", onClose = ClosedCreate } content
+    dialog { id = "create-modal", closeId = "close-create", label = "Create a game", heading = "CREATE GAME", onClose = ClosedCreate, width = "max-w-sm" } content
 
 
 {-| A dialog's frame: the dimmed board behind it (a tap on it closes the
 dialog), the card with its heading and close button. The layer scrolls when
 the card is taller than the screen, as on a phone held sideways.
 -}
-dialog : { id : String, closeId : String, label : String, heading : String, onClose : Msg } -> List (Html Msg) -> Html Msg
+dialog : { id : String, closeId : String, label : String, heading : String, onClose : Msg, width : String } -> List (Html Msg) -> Html Msg
 dialog config content =
     Html.div [ id config.id, class "fixed inset-0 z-50 overflow-y-auto flex items-start justify-center px-4 pt-[10vh] sm:pt-[14vh] pb-4" ]
         [ Html.div
@@ -1763,7 +1763,7 @@ dialog config content =
             ]
             []
         , Html.div
-            [ class "q-card sheet relative w-full max-w-sm p-5 sm:p-6"
+            [ class ("q-card sheet relative w-full " ++ config.width ++ " p-5 sm:p-6")
             , Html.Attributes.attribute "role" "dialog"
             , Html.Attributes.attribute "aria-modal" "true"
             , Html.Attributes.attribute "aria-label" config.label
@@ -1795,7 +1795,7 @@ signInModal : Model -> Html Msg
 signInModal model =
     case ( model.signInOpen, model.signIn ) of
         ( True, Just signIn ) ->
-            dialog { id = "signin-modal", closeId = "close-signin", label = "Sign in", heading = "SIGN IN", onClose = ClosedSignIn }
+            dialog { id = "signin-modal", closeId = "close-signin", label = "Sign in", heading = "SIGN IN", onClose = ClosedSignIn, width = "max-w-sm" }
                 [ Html.p [ class "q-note text-[14px] text-center mb-4" ]
                     [ Html.text "Your games and your PR, on every device." ]
                 , Html.map SignInMsg (SignIn.view signIn)
@@ -1813,7 +1813,10 @@ brings it back.
 resumeModal : Model -> Html Msg
 resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
-        dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
+        -- Wider than the others: a row carries a name, the match, how long ago
+        -- and two clocks, and 24rem crushed them. A phone is narrower than
+        -- either, so there it is the screen's width as before.
+        dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume, width = "max-w-xl" }
             [ Html.ul [ id "resume-list", class "space-y-2" ]
                 (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now } ClosedGame) model.myGames)
             , guestNote model
