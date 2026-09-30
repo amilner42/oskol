@@ -12,15 +12,30 @@ identity bar, beside their name and clock, so no column of the board is
 spent on either. Every action (roll, double, take, drop, play, undo)
 lives in the board's centre band, and each player's clock in their bar.
 
-Turn the phone and the board takes the screen: in landscape the layout is
+Turn the phone and the board takes the screen. In landscape the layout is
 driven by height instead of width (`.bg-page` in app.css derives every
 board dimension from `100dvh`; a desktop window gets the same treatment,
-so a big monitor gets a big board), and the chrome -- the header and both
-identity bars, clocks and all -- moves into a column beside the board
-rather than above and below it. The class hooks that landscape needs
-(`bg-page`, `bg-main`, `bg-stack`, `bg-header`, `bg-grid`, `bg-points`,
-`bg-band`, `bg-bar`, `is-me`) are the only reason this view names them;
-the arrangement itself is entirely CSS.
+so a big monitor gets a big board), and there are two of them, with
+`#bg-focus-toggle` between:
+
+  - **expanded**, focus mode, which is what a turned phone gets unless this
+    browser has said otherwise. The board spans the screen -- a backgammon
+    board is nearly square and a sideways phone is not, so the width a
+    full-height felt cannot use becomes the board's own rails -- and almost
+    nothing else is drawn. What stays is what a turn cannot be played
+    without: the clock, the score, the bear-off tray, the centre band, and
+    PRACTICE THIS GAME'S N MISTAKES on the card between games.
+  - **compressed**, which is the layout a sideways phone has always had:
+    the whole table in a column beside the board. Everything focus mode
+    puts away is here, one tap from it.
+
+`model.expanded` is the only state in this module for it; the choice is
+kept by `Page.Play` in this browser's `localStorage` and never reaches the
+room or the server. The class hooks the two layouts need (`bg-page`,
+`bg-main`, `bg-stack`, `bg-header`, `bg-grid`, `bg-points`, `bg-band`,
+`bg-bar`, `bar-name`, `bg-match-tag`, `bg-crawford`, `is-me`,
+`is-expanded`) are the only reason this view names them; the arrangement
+itself is entirely CSS.
 
 Moving is one touch. A tap on a checker of mine that can move (its whole
 point, or the bar) plays it with the next die: the first unused die,
@@ -61,6 +76,7 @@ type alias Model =
     , stale : Bool -- the game moved on while a past turn was on the board
     , still : Bool -- a board drawn for the replay (`viewStill`): no live game behind it, so no way back to one
     , turnMark : Bool -- a still board that says whose turn it is: the mover's bar is drawn as the live game's to-move bar (`viewEdit`, `viewStillTurn`)
+    , expanded : Bool -- sideways on a phone: focus mode, the board taking the screen (see `is-expanded` in app.css)
     }
 
 
@@ -98,6 +114,7 @@ type Msg
     | SaveMsg Ui.SignIn.Msg
     | PracticeGame Int -- a result card's PRACTICE THIS GAME'S N MISTAKES, by game number
     | Edit String EditEvent -- a pointer on one of an editor board's places (`viewEdit`)
+    | ToggleExpanded -- sideways on a phone: between focus mode and the fuller layout
     | Ignore
 
 
@@ -110,6 +127,7 @@ type Out
     | CloseSave -- put the between-games sign-in sheet away
     | ForSave Ui.SignIn.Msg -- the sign-in on a result card, for the page to run
     | Practice Int -- start a run of this finished game's mistakes (the page holds the ids)
+    | ChoseLandscape Bool -- focus mode on or off: this browser's own, never the room's and never the server's
 
 
 init : Model
@@ -127,6 +145,10 @@ init =
     , stale = False
     , still = False
     , turnMark = False
+
+    -- Focus mode is what a turned phone does unless this browser has said
+    -- otherwise; `Page.Play` reads that from the prefs it boots with.
+    , expanded = True
     }
 
 
@@ -136,7 +158,7 @@ replay the tumble on every tap.
 -}
 reset : Model -> Model
 reset model =
-    { init | roll = model.roll, swaps = model.swaps, matchOpen = model.matchOpen, viewing = model.viewing, stale = model.stale }
+    { init | roll = model.roll, swaps = model.swaps, matchOpen = model.matchOpen, viewing = model.viewing, stale = model.stale, expanded = model.expanded }
 
 
 {-| Watch the channel for dice landing. A `dice_rolled` event is this client
@@ -260,8 +282,11 @@ update msg model =
             ( reset model, Send (Protocol.encodeAction "bear_off" [ ( "first_die", E.string (String.fromInt firstDie) ) ]) )
 
         Simple name ->
-            -- a turn played or a roll asked for: the next roll starts unrotated
-            ( { init | roll = model.roll, matchOpen = model.matchOpen, viewing = model.viewing, stale = model.stale }, Send (Protocol.encodeAction name []) )
+            -- a turn played or a roll asked for: the next roll starts
+            -- unrotated, which is the one thing `reset` keeps and this does
+            -- not. The layout is kept, like every other thing about this
+            -- screen rather than about this turn.
+            ( { init | roll = model.roll, matchOpen = model.matchOpen, viewing = model.viewing, stale = model.stale, expanded = model.expanded }, Send (Protocol.encodeAction name []) )
 
         Rematch ->
             ( model, WantRematch )
@@ -291,6 +316,13 @@ update msg model =
 
         Edit _ _ ->
             ( model, NoOut )
+
+        ToggleExpanded ->
+            -- Sideways on a phone the board can take the whole screen
+            -- (focus mode) or share it with the rest of the table. It is
+            -- this browser's own choice about this browser's own screen:
+            -- nothing goes to the room and nothing goes to the server.
+            ( { model | expanded = not model.expanded }, ChoseLandscape (not model.expanded) )
 
         Ignore ->
             ( model, NoOut )
@@ -682,7 +714,11 @@ view arrived =
     -- `is-between` while the between-games card is up: the layouts that
     -- size the board from the screen's height (a phone on its side, a
     -- desktop window) give the band the card's room, in app.css.
-    div [ classList [ ( "bg-page " ++ themeClass live.theme ++ " paper h-under-bar overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ), ( "is-between", betweenGames live /= Nothing ) ] ]
+    -- `is-expanded` is focus mode, and only a sideways phone reads it: the
+    -- board takes the whole screen, the site's bar included, and everything
+    -- but the clock, the score and the band goes (app.css again; this view
+    -- only names the class).
+    div [ classList [ ( "bg-page " ++ themeClass live.theme ++ " paper h-under-bar overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ), ( "is-between", betweenGames live /= Nothing ), ( "is-expanded", live.model.expanded ) ] ]
         [ viewHeader live
         , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid content-center" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
@@ -820,7 +856,7 @@ viewHeader ctx =
             -- The match: the bird and the board picker are the site's
             -- bar's, over the page. The badge is the piece that gives way
             -- on the narrowest phone, clipping rather than running on.
-            [ span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 min-w-0 truncate", style "border" "2px solid var(--ink)", style "background" "#fff" ]
+            [ span [ class "bg-match-tag pixel text-[7px] sm:text-[9px] px-1.5 py-1 min-w-0 truncate", style "border" "2px solid var(--ink)", style "background" "#fff" ]
                 [ text
                     (matchLabel
                         ++ (if target > 1 then
@@ -832,7 +868,7 @@ viewHeader ctx =
                     )
                 ]
             , if crawford then
-                span [ class "pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap shrink-0", style "border" "2px solid var(--bg-accent)", style "color" "var(--bg-accent)" ] [ text "CRAWFORD" ]
+                span [ class "bg-crawford pixel text-[7px] sm:text-[8px] px-1.5 py-1 whitespace-nowrap shrink-0", style "border" "2px solid var(--bg-accent)", style "color" "var(--bg-accent)" ] [ text "CRAWFORD" ]
 
               else
                 text ""
@@ -866,9 +902,33 @@ viewActions ctx =
 
             else
                 []
+
+        -- Focus mode's own plate. It is drawn at every size because the row
+        -- it lives in is, and app.css shows it on a sideways phone alone --
+        -- the only screen where the two layouts differ. In focus mode it is
+        -- the one thing left on the board's right rail, which is what makes
+        -- the mode a choice rather than a trap.
+        focus =
+            [ Ui.Scrub.plate
+                { id = "bg-focus-toggle"
+                , label =
+                    if ctx.model.expanded then
+                        "Leave focus mode: the rest of the table"
+
+                    else
+                        "Focus mode: the board takes the screen"
+                , icon =
+                    if ctx.model.expanded then
+                        "hero-arrows-pointing-in"
+
+                    else
+                        "hero-arrows-pointing-out"
+                , onPress = Just ToggleExpanded
+                }
+            ]
     in
     div [ class "bg-actions w-full max-w-5xl lg:max-w-none flex items-center justify-center", Html.Attributes.id "bg-actions" ]
-        [ viewScrub ctx (match ++ resign) ]
+        [ viewScrub ctx (match ++ resign ++ focus) ]
 
 
 {-| A board in miniature, painted by the very tokens the real one uses: the
@@ -969,7 +1029,7 @@ viewPlayerBar ctx player isMe tray =
                 , span
                     [ classList [ ( "bar-turn pixel text-[8px] shrink-0", True ), ( "blink", active ), ( "invisible", not active ) ] ]
                     [ text "▶" ]
-                , div [ class "flex-1" ] []
+                , div [ class "bar-gap flex-1" ] []
                 , tray
                 , span [ class "bar-pips pixel text-[7px] sm:text-[8px] whitespace-nowrap", title "Pip count" ]
                     [ text (String.fromInt (Protocol.counter "pips" p) ++ " PIPS") ]

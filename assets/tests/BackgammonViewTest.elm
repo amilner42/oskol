@@ -56,6 +56,25 @@ suite =
             , test "rematch is reported to the app, not sent as an action" <|
                 \_ ->
                     View.update Rematch View.init |> Tuple.second |> Expect.equal WantRematch
+            , test "a turned phone starts in focus mode" <|
+                \_ ->
+                    View.init.expanded |> Expect.equal True
+            , test "the focus toggle flips the layout and tells the app, and sends nothing to the room" <|
+                \_ ->
+                    View.update ToggleExpanded View.init
+                        |> Expect.equal ( { viewInit | expanded = False }, ChoseLandscape False )
+            , test "and back again" <|
+                \_ ->
+                    View.update ToggleExpanded { viewInit | expanded = False }
+                        |> Expect.equal ( View.init, ChoseLandscape True )
+            , test "the layout survives the state a new position clears" <|
+                -- `reset` wipes the panels between positions. The mode is not
+                -- one of them: it is about this screen, not this turn.
+                \_ ->
+                    View.update (Simple "play") { viewInit | expanded = False, resigning = True }
+                        |> Tuple.first
+                        |> .expanded
+                        |> Expect.equal False
             ]
         , describe "destination-first tap resolution"
             (let
@@ -345,20 +364,20 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }
+                            ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }
-                        |> Expect.equal ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }, Nothing )
+                    View.autoRoll [ schema "roll" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }
+                        |> Expect.equal ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }
+                    View.autoRoll [ schema "move" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -1203,7 +1222,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model swaps =
-                    { swaps = swaps, autoRolled = False, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }
+                    { swaps = swaps, autoRolled = False, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False, expanded = True }
 
                 rendered swaps u =
                     View.view (ctx "p1" (twoDice u) (model swaps)) |> Query.fromHtml
@@ -2427,6 +2446,14 @@ withUsedDie dieId update =
 asSpectator : Protocol.Scene -> Protocol.Scene
 asSpectator scene =
     { scene | viewer = Nothing }
+
+
+{-| The board's own starting state, named so a test can change one field of
+it without the record-update syntax reading as a shadowed `init`.
+-}
+viewInit : View.Model
+viewInit =
+    View.init
 
 
 {-| The roll a client was only told about: whatever is on the board got

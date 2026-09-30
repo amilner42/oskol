@@ -343,7 +343,20 @@ assets/src/Games/Backgammon/View.elm  the backgammon board (and the two
                                  player bars: name, presence dot, match PR
                                  with the account's career under it);
                                  `viewStill` draws one position, `viewPlay` the
-                                 same slab with its taps switched on
+                                 same slab with its taps switched on. Sideways
+                                 on a phone the table has two layouts, and
+                                 `#bg-focus-toggle` between them: expanded
+                                 (focus mode, the default) gives the board the
+                                 whole screen, the site's bar included, and
+                                 draws only the clock, the score, the tray, the
+                                 band and the practice door between games, on
+                                 the board's own rails; compressed is the
+                                 layout a sideways phone always had.
+                                 `model.expanded` is the state; `Page.Play`
+                                 keeps the choice in this browser's
+                                 localStorage (`backgammon_landscape`) and the
+                                 visit's session, nowhere else. The table only:
+                                 the replay, puzzles and analysis are unchanged
 assets/src/View/Clock.elm        clock display
 assets/css/app.css               the multicade/notebook design system (paper, pixel,
                                  pix, btn-arcade, tile, bg-board...)

@@ -1,25 +1,40 @@
 /**
- * Backgammon on a phone held sideways: the board fits the screen exactly.
+ * Backgammon on a phone held sideways, both ways round.
  *
- * Landscape is meant to be the nicest way to play a wide rectangular board,
- * so this script holds the layout to that promise on two phone shapes
- * (844x390 and a shorter 740x360):
+ * A turned phone has two layouts and a toggle (`#bg-focus-toggle`) between
+ * them: **expanded**, which is focus mode and the default, and
+ * **compressed**, which is the layout a sideways phone has always had. This
+ * script plays a real game on two phone shapes (844x390 and a shorter
+ * 740x360) and holds both of them to their own promise:
  *
- * 1. The board's rendered height is <= the viewport height, it starts at
- *    the top of the screen and ends at the bottom of it (it really does
- *    fill the height, not just fit inside it), and it is no wider than the
- *    screen either.
- * 2. Nothing scrolls: the document is exactly as tall as the viewport.
- * 3. The chrome is beside the board, not on it: the header and both
- *    identity bars (names, pips, score, clock) never overlap the board,
- *    and so can never cover a point, the dice or the centre band.
- * 4. Live play in landscape on a clock: the held clock and its delay pip
- *    read in the identity bar beside the board, and a real turn with its
- *    dice is screenshotted.
- * 5. A danced turn in landscape (the room is arranged the way
+ * 1. Whichever mode: the board's rendered height is <= the viewport height,
+ *    it starts at the top of the screen and ends at the bottom of it (it
+ *    really does fill the height, not just fit inside it), it is no wider
+ *    than the screen, and the toggle is on screen and big enough to hit --
+ *    a mode you cannot leave is a trap.
+ * 2. Nothing scrolls, in either mode: the document is exactly as tall as
+ *    the viewport.
+ * 3. Expanded: the board IS the screen, and the little chrome it keeps --
+ *    the clock, the score, the tray -- is ON the board and never on the
+ *    play. Until focus mode the promise here was "the chrome is beside the
+ *    board, not on it", which was one way of saying the thing that actually
+ *    matters: that nothing may cover a point, a checker, the dice, the cube
+ *    or the centre band. Expanded deliberately puts what it keeps over the
+ *    board's frame, so the claim is made directly instead -- every piece of
+ *    chrome is inside the board's own box and none of it intersects the
+ *    playing surface, neither `.bg-grid` (the felt and the bar as one box)
+ *    nor any individual point, checker, die, cube, bar or band. What it
+ *    puts away (pips, presence, the wordmark, the match label, the board
+ *    picker, the flag) is asserted absent, and asserted back in compressed.
+ * 4. Compressed: the old promise, unchanged -- the header and both identity
+ *    bars never overlap the board.
+ * 5. Live play in landscape on a clock: the held clock and its delay pip
+ *    read on the identity plate, clear of the play, and a real turn with
+ *    its dice is screenshotted.
+ * 6. A danced turn in landscape (the room is arranged the way
  *    test-backgammon-dance does it): "NO LEGAL MOVES / TURN PASSES" and
  *    the dice that did it are both on the board, inside it.
- * 6. Portrait phone and desktop screenshots of the very same game, to show
+ * 7. Portrait phone and desktop screenshots of the very same game, to show
  *    that neither changed.
  *
  * Run with the server up:  node playwright/test-backgammon-landscape/test.js
@@ -53,7 +68,35 @@ async function box(page, selector) {
 const overlaps = (a, b) =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-/** Every claim the ticket makes, on one page at one size. */
+/** Is `a` wholly within `b` (a pixel of slack for sub-pixel layout)? */
+const within = (a, b) =>
+  a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1;
+
+/**
+ * The chrome, and the play it may never cover.
+ *
+ * `.bg-grid` is the felt and the bar as one box -- everything a player acts
+ * on lives inside it -- so it is the one box that settles the claim; the
+ * list beside it is the same claim spelled out piece by piece, so that a
+ * part of the board moving out of the grid one day cannot quietly take the
+ * guarantee with it.
+ */
+const CHROME = ['.bg-header', '.player-bar:not(.is-me)', '.player-bar.is-me', '#bg-actions'];
+const PLAY = ['.bg-grid', '.bg-point', '.checker', '.die', '.cube', '.bg-bar', '.bg-band'];
+
+/** Every box on the page for these selectors, named by the one that found it. */
+async function boxes(page, selectors) {
+  const found = [];
+  for (const selector of selectors) {
+    for (const el of await page.locator(selector).all()) {
+      const b = await el.boundingBox();
+      if (b && b.width > 0 && b.height > 0) found.push({ selector, box: b });
+    }
+  }
+  return found;
+}
+
+/** What both modes owe, whichever one the page is in. */
 async function assertFits(page, phone, who) {
   await page.waitForSelector('.bg-board', { timeout: 20000 });
   await sleep(300); // let the roll animation settle before measuring
@@ -100,37 +143,12 @@ async function assertFits(page, phone, who) {
   );
   must(scroll.innerHeight === phone.height, `${label}: the viewport is the phone's (${scroll.innerHeight})`);
 
-  // The chrome sits beside the board, never over it: the header, the two
-  // bars, and the row of actions (the arrows, the match, the flag).
-  for (const selector of ['.bg-header', '.player-bar:not(.is-me)', '.player-bar.is-me', '#bg-actions']) {
-    const chrome = await page.locator(selector).first().boundingBox();
-    if (!chrome) continue;
-    must(!overlaps(chrome, board), `${label}: ${selector} does not overlap the board`);
-    must(
-      chrome.x + chrome.width <= phone.width + 1 && chrome.y + chrome.height <= phone.height + 1,
-      `${label}: ${selector} is on screen`
-    );
-  }
-  // MATCH opens the games so far as a sheet over the board, on screen, and
-  // its ✕ shuts it.
-  if (await page.locator('#bg-match-toggle').count()) {
-    await page.click('#bg-match-toggle');
-    const sheet = await box(page, '#bg-match-sheet .bg-match');
-    must(
-      sheet.height >= 60 && sheet.y >= 0 && sheet.y + sheet.height <= phone.height + 1 && sheet.x + sheet.width <= phone.width + 1,
-      `${label}: MATCH opens the games as a sheet on screen`
-    );
-    await page.click('#bg-match-close');
-    await page.waitForSelector('#bg-match-sheet', { state: 'detached', timeout: 3000 });
-  }
-
   // The parts a player must see are inside the board they are playing on.
   const points = await page.locator('.bg-point').count();
   must(points === 24, `${label}: all 24 points are rendered`);
   const strays = [];
   for (const selector of ['.bg-point', '.bg-bar', '.cube', '.bg-band']) {
-    const els = await page.locator(selector).all();
-    for (const el of els) {
+    for (const el of await page.locator(selector).all()) {
       const b = await el.boundingBox();
       if (!b) continue;
       const inside =
@@ -148,14 +166,179 @@ async function assertFits(page, phone, who) {
     }`
   );
   // The bear-off trays live in the identity bars, one each, inside them.
-  for (const who of ['.player-bar:not(.is-me)', '.player-bar.is-me']) {
-    const bar = await box(page, who);
-    const tray = await box(page, `${who} .bg-tray`);
+  for (const side of ['.player-bar:not(.is-me)', '.player-bar.is-me']) {
+    const bar = await box(page, side);
+    const tray = await box(page, `${side} .bg-tray`);
     must(
-      tray.x >= bar.x - 1 && tray.x + tray.width <= bar.x + bar.width + 1 && tray.y >= bar.y - 1 && tray.y + tray.height <= bar.y + bar.height + 1,
-      `${label}: the tray sits inside ${who}`
+      tray.x >= bar.x - 1 &&
+        tray.x + tray.width <= bar.x + bar.width + 1 &&
+        tray.y >= bar.y - 1 &&
+        tray.y + tray.height <= bar.y + bar.height + 1,
+      `${label}: the tray sits inside ${side}`
     );
   }
+  // ...and the viewer's own tray answers a tap, which in focus mode it does
+  // only by exception: the plates there are `pointer-events: none` so that
+  // nothing on a rail can eat a tap meant for the board, and the tray is the
+  // one thing on them that is a tap target (a checker bearing off is tapped
+  // into it).
+  const trayTakesTaps = await page.evaluate(
+    () => getComputedStyle(document.querySelector('.player-bar.is-me .bg-tray')).pointerEvents
+  );
+  must(trayTakesTaps !== 'none', `${label}: the viewer's own tray answers a tap (${trayTakesTaps})`);
+
+  // The way between the modes is on screen in both, or a mode is a trap.
+  const toggle = await box(page, '#bg-focus-toggle');
+  must(
+    toggle.x >= -1 &&
+      toggle.y >= -1 &&
+      toggle.x + toggle.width <= phone.width + 1 &&
+      toggle.y + toggle.height <= phone.height + 1,
+    `${label}: the focus toggle is on screen`
+  );
+  must(
+    toggle.width >= 20 && toggle.height >= 20,
+    `${label}: the focus toggle is big enough to hit (${Math.round(toggle.width)}x${Math.round(toggle.height)})`
+  );
+}
+
+/**
+ * Focus mode: the board IS the screen, and the little chrome it keeps is on
+ * the board's own frame.
+ *
+ * Until focus mode the promise here was "the chrome is beside the board, not
+ * on it", which was one way of saying the thing that actually matters -- that
+ * nothing may cover a point, a checker, the dice, the cube or the centre
+ * band. Focus mode deliberately puts what it keeps over the board's frame,
+ * so the claim is made directly instead: every piece of chrome is inside the
+ * board's own box and none of it intersects the playing surface, neither
+ * `.bg-grid` (the felt and the bar as one box, which is the box that settles
+ * it) nor any individual point, checker, die, cube, bar or band. Compressed
+ * mode still makes the old promise, below.
+ */
+async function assertExpanded(page, phone, who) {
+  const board = await box(page, '.bg-board');
+  const label = `${who} @ ${phone.width}x${phone.height}, expanded`;
+
+  must(
+    await page.evaluate(() => document.querySelector('.bg-page').classList.contains('is-expanded')),
+    `${label}: the page is in focus mode`
+  );
+  must(
+    board.width >= phone.width - 1,
+    `${label}: the board is as wide as the screen (${Math.round(board.width)} of ${phone.width})`
+  );
+
+  const chrome = await boxes(page, CHROME);
+  must(chrome.length >= 3, `${label}: the chrome is on the page (${chrome.length} plates)`);
+  const play = await boxes(page, PLAY);
+  must(play.length > 24, `${label}: the playing surface is on the page (${play.length} parts)`);
+  for (const c of chrome) {
+    must(within(c.box, board), `${label}: ${c.selector} is on the board's own frame`);
+    must(
+      c.box.x >= -1 &&
+        c.box.y >= -1 &&
+        c.box.x + c.box.width <= phone.width + 1 &&
+        c.box.y + c.box.height <= phone.height + 1,
+      `${label}: ${c.selector} is on screen`
+    );
+    const covered = play.filter((s) => overlaps(c.box, s.box)).map((s) => s.selector);
+    must(
+      covered.length === 0,
+      `${label}: ${c.selector} covers nothing that is played on${
+        covered.length ? ` (covers: ${[...new Set(covered)].join(', ')})` : ''
+      }`
+    );
+  }
+
+  // What focus mode keeps, because a turn cannot be played without it...
+  for (const [selector, what] of [
+    ['.player-bar.is-me .score-chip', 'the score'],
+    ['.player-bar.is-me .bg-tray', 'the bear-off tray'],
+    ['.bg-band', 'the centre band'],
+  ]) {
+    must(await page.locator(selector).first().isVisible(), `${label}: ${what} is on screen`);
+  }
+  // ...the clock above all, which is the whole reason focus mode hides
+  // nothing behind a tap. A game played without one has no chip to show.
+  const clock = page.locator('.player-bar.is-me .clock-chip');
+  must(
+    (await clock.count()) === 0 || (await clock.first().isVisible()),
+    `${label}: the clock reads on the plate${(await clock.count()) === 0 ? ' (this game has none)' : ''}`
+  );
+  // ...and what it puts away, because compressed mode is one tap from here.
+  for (const [selector, what] of [
+    ['.bar-pips', 'the pip counts'],
+    ['.bar-dot', 'the presence dots'],
+    ['.oskol-mark', 'the wordmark'],
+    ['.bg-match-tag', 'the match label'],
+    ['#bg-theme-button', 'the board picker'],
+    ['#bg-resign-open', 'the resign flag'],
+  ]) {
+    must(!(await page.locator(selector).first().isVisible()), `${label}: ${what} is not drawn`);
+  }
+}
+
+/**
+ * Compressed: the layout a sideways phone has always had, and the promise it
+ * has always made -- the chrome is beside the board, never on it, and so can
+ * never cover a point, the dice or the centre band.
+ */
+async function assertCompressed(page, phone, who) {
+  const board = await box(page, '.bg-board');
+  const label = `${who} @ ${phone.width}x${phone.height}, compressed`;
+
+  must(
+    !(await page.evaluate(() => document.querySelector('.bg-page').classList.contains('is-expanded'))),
+    `${label}: the page is not in focus mode`
+  );
+  for (const selector of CHROME) {
+    const chrome = await page.locator(selector).first().boundingBox();
+    if (!chrome) continue;
+    must(!overlaps(chrome, board), `${label}: ${selector} does not overlap the board`);
+    must(
+      chrome.x + chrome.width <= phone.width + 1 && chrome.y + chrome.height <= phone.height + 1,
+      `${label}: ${selector} is on screen`
+    );
+  }
+  // What focus mode put away is here, which is what makes it a mode rather
+  // than a loss.
+  for (const [selector, what] of [
+    ['.bar-pips', 'the pip counts'],
+    ['.oskol-mark', 'the wordmark'],
+    ['.bg-match-tag', 'the match label'],
+    ['#bg-resign-open', 'the resign flag'],
+  ]) {
+    must(await page.locator(selector).first().isVisible(), `${label}: ${what} is back`);
+  }
+  // MATCH opens the games so far as a sheet over the board, on screen, and
+  // its ✕ shuts it.
+  if (await page.locator('#bg-match-toggle').isVisible()) {
+    await page.click('#bg-match-toggle');
+    const sheet = await box(page, '#bg-match-sheet .bg-match');
+    must(
+      sheet.height >= 60 &&
+        sheet.y >= 0 &&
+        sheet.y + sheet.height <= phone.height + 1 &&
+        sheet.x + sheet.width <= phone.width + 1,
+      `${label}: MATCH opens the games as a sheet on screen`
+    );
+    await page.click('#bg-match-close');
+    await page.waitForSelector('#bg-match-sheet', { state: 'detached', timeout: 3000 });
+  }
+}
+
+/** Both modes on one page, ending back in the one it started in. */
+async function assertBothModes(page, phone, who) {
+  await assertFits(page, phone, who);
+  await assertExpanded(page, phone, who);
+  await page.click('#bg-focus-toggle');
+  await sleep(400);
+  await assertFits(page, phone, who);
+  await assertCompressed(page, phone, who);
+  await page.click('#bg-focus-toggle');
+  await sleep(400);
+  await assertExpanded(page, phone, who);
 }
 
 /** Play until this page has dice of its own on the board (or give up). */
@@ -238,19 +421,22 @@ async function main() {
     const urls = [p1.url(), p2.url()];
     log(`game ${gameId}: two seats, both in landscape`);
 
-    // The clock lives in the identity bars here (the desktop rail is not
-    // on a phone): the held clock and its delay pip have to be readable,
-    // beside the board rather than over it.
+    // The clock is the reason focus mode hides nothing behind a tap: the
+    // held clock and its delay pip have to be readable while a player
+    // thinks. Here they are on the board's own rail, which is the one place
+    // focus mode has for them -- on the board, clear of the play.
     for (const page of [p1, p2]) await page.waitForSelector('.bg-board', { timeout: 20000 });
     const held = (await p1.locator('.delay-pip').count()) ? p1 : p2;
     const heldPhone = held === p1 ? PHONES[0] : PHONES[1];
     const pip = held.locator('.delay-pip').first();
     await pip.waitFor({ timeout: 15000 });
     must(/^\+\d+$/.test((await pip.textContent()).trim()), `the mover's clock is held (${(await pip.textContent()).trim()})`);
-    must(await held.locator('.player-bar .clock-chip .tabular-nums').first().isVisible(), 'the clock reads in the identity bar');
+    must(await held.locator('.player-bar .clock-chip .tabular-nums').first().isVisible(), 'the clock reads on the identity plate');
     const pipBox = await pip.boundingBox();
     const heldBoard = await box(held, '.bg-board');
-    must(pipBox && !overlaps(pipBox, heldBoard), 'the delay pip is beside the board, not on it');
+    const heldFelt = await box(held, '.bg-grid');
+    must(pipBox && within(pipBox, heldBoard), 'the delay pip is on the board');
+    must(pipBox && !overlaps(pipBox, heldFelt), 'the delay pip is clear of the play');
     must(
       pipBox.x + pipBox.width <= heldPhone.width + 1 && pipBox.y + pipBox.height <= heldPhone.height + 1,
       'the delay pip is on screen'
@@ -261,11 +447,28 @@ async function main() {
     await reachDice([p1, p2]);
     await sleep(1200); // the tumble finishes
     for (const [i, page] of [p1, p2].entries()) {
-      await assertFits(page, PHONES[i], `seat ${i + 1}`);
+      await assertBothModes(page, PHONES[i], `seat ${i + 1}`);
       await page.screenshot({ path: `${SHOTS}/01-play-${PHONES[i].name}.png` });
     }
 
     // One seat, one connection: every page from here on reopens a seat
+    // The mode is this browser's, and it is kept: a player who chose the
+    // fuller layout must not be handed focus mode back by every reload, or
+    // by every time they put the phone down. Nothing stored is focus mode.
+    const isExpanded = (page) => page.evaluate(() => document.querySelector('.bg-page').classList.contains('is-expanded'));
+    await p1.click('#bg-focus-toggle');
+    await sleep(300);
+    await p1.reload();
+    await p1.waitForSelector('.bg-board', { timeout: 20000 });
+    await sleep(600);
+    must((await isExpanded(p1)) === false, 'the compressed layout survives a reload');
+    await p1.click('#bg-focus-toggle');
+    await sleep(300);
+    await p1.reload();
+    await p1.waitForSelector('.bg-board', { timeout: 20000 });
+    await sleep(600);
+    must(await isExpanded(p1), 'and so does focus mode');
+
     // these two are holding, and a seat opened twice says so over the
     // screenshot. Close them first.
     for (const page of [p1, p2]) await page.close();
@@ -279,7 +482,7 @@ async function main() {
     const sq = await squatContext.newPage();
     watch(sq, 'squat');
     await sq.goto(urls[0]);
-    await assertFits(sq, squat, 'a squarish screen');
+    await assertBothModes(sq, squat, 'a squarish screen');
     await sq.screenshot({ path: `${SHOTS}/05-squat-landscape.png` });
     await squatContext.close();
 
@@ -320,6 +523,7 @@ async function main() {
     await dp.waitForSelector('#bg-no-moves', { timeout: 20000 });
     await sleep(400);
     await assertFits(dp, PHONES[0], 'the dancer');
+    await assertExpanded(dp, PHONES[0], 'the dancer');
 
     const boardBox = await box(dp, '.bg-board');
     const message = await box(dp, '#bg-no-moves');
