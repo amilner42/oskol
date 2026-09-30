@@ -9,7 +9,7 @@ defmodule Oskol.Game.ClockTest do
   test "clock presets are offered, a game says which, and none is the default" do
     assert [%{"id" => "none"} | _] = GameKit.clock_presets()
     {:ok, info} = GameKit.game_info("backgammon")
-    assert info["clocks"] == ["none", "bg3", "bg5", "bg10"]
+    assert info["clocks"] == ["none", "bg3", "bg5", "bg10", "bg15", "bg30", "bg60"]
     assert info["default_clock"] == "none"
     %{game_id: game_id} = lobby()
     assert Game.get_server_state(game_id).setup.clock == "none"

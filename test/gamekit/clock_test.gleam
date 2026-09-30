@@ -186,7 +186,7 @@ pub fn backgammons_presets_are_a_bank_each_and_the_games_delay_test() {
   let delay = 12_000
   let a = "a"
   let labels =
-    ["bg3", "bg5", "bg10"]
+    ["bg3", "bg5", "bg10", "bg15", "bg30", "bg60"]
     |> list.map(fn(id) {
       let assert Ok(preset) = clock.preset(id)
       #(
@@ -199,5 +199,8 @@ pub fn backgammons_presets_are_a_bank_each_and_the_games_delay_test() {
       #("3 min", "3 min, 12 s delay every turn"),
       #("5 min", "5 min, 12 s delay every turn"),
       #("10 min", "10 min, 12 s delay every turn"),
+      #("15 min", "15 min, 12 s delay every turn"),
+      #("30 min", "30 min, 12 s delay every turn"),
+      #("60 min", "60 min, 12 s delay every turn"),
     ]
 }

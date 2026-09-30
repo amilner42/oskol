@@ -57,7 +57,10 @@ pub fn registry_lists_the_games_test() {
   assert host.game_exists("poker") == False
   assert host.game_exists("checkers") == False
   assert host.format_ids("backgammon")
-    == ["single", "match3", "match5", "match7", "unlimited"]
+    == [
+      "single", "match3", "match5", "match7", "match11", "match15", "match21",
+      "unlimited",
+    ]
   assert string.contains(host.games_json(), "\"slug\":\"backgammon\"")
 }
 

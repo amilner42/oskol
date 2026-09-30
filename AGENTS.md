@@ -370,8 +370,8 @@ needed, phone-friendly, free. The game is the real thing, by the book, and every
 game is graded by the analysis engine once it is over: play a friend from
 a link, then learn from the game.
 **Backgammon** is the classic race game with the doubling cube: single games,
-matches to 3, 5 or 7 with the Crawford rule, or unlimited play with the
-Jacoby rule. A roll that can play nothing is a state, not a skipped turn:
+matches to 3, 5, 7, 11, 15 or 21 with the Crawford rule, or unlimited play
+with the Jacoby rule. A roll that can play nothing is a state, not a skipped turn:
 the dice stand for both players under "no legal moves" until the mover
 passes, and every time control gives each turn its first 12 seconds free.
 Between the games of a match (or of unlimited play) the finished game's

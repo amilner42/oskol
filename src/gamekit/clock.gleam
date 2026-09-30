@@ -54,6 +54,29 @@ pub fn presets() -> List(Preset) {
       "10 min each, 12 s delay every move",
       Fischer(600_000, 0),
     ),
+    // Tournament backgammon gives each player about two minutes of reserve
+    // per point of the match, so the longer matches need banks the three
+    // above cannot cover: 15 min is a 7-pointer, 30 min an 11 or a 15, and
+    // 60 min a 21 with room to think. A bank this size is only a clock in
+    // the sense that a match cannot run all night.
+    Preset(
+      "bg15",
+      "15 min",
+      "15 min each, 12 s delay every move",
+      Fischer(900_000, 0),
+    ),
+    Preset(
+      "bg30",
+      "30 min",
+      "30 min each, 12 s delay every move",
+      Fischer(1_800_000, 0),
+    ),
+    Preset(
+      "bg60",
+      "60 min",
+      "60 min each, 12 s delay every move",
+      Fischer(3_600_000, 0),
+    ),
     Preset("blitz", "Blitz", "3 min + 2 s per move", Fischer(180_000, 2000)),
     Preset("rapid", "Rapid", "10 min + 5 s per move", Fischer(600_000, 5000)),
     Preset(

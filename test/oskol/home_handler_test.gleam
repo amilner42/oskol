@@ -665,12 +665,13 @@ pub fn a_finished_room_with_no_winner_recorded_says_nothing_test() {
   let assert True = first_room(body, ["over"], decode.bool)
 }
 
-/// A format the game no longer lists is still backgammon, and says so
-/// rather than printing a stored id at a player.
+/// A format the game no longer lists -- poker's "cash", from before the
+/// pivot -- is still backgammon, and says so rather than printing a stored
+/// id at a player.
 pub fn a_format_the_game_no_longer_lists_reads_as_the_game_test() {
   let body =
     home_of(
-      room_rows("match11", True, ["p1"], [
+      room_rows("cash", True, ["p1"], [
         played("oooooo", 1, 0.2, 10, 1000, True, 1),
       ]),
     )
