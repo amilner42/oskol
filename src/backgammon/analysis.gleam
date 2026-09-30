@@ -14,7 +14,10 @@
 //// the engine generates for a played move say so -- a hit shows up as +1
 //// at index 0. The service's README and doc (2026-09) say index 0 is
 //// negative; they are wrong, and a `played` board signed that way is
-//// never in the engine's legal list, so the whole review 422s.
+//// never in the engine's legal list, so the whole review 422s. (The
+//// single-position routes `/moves` and `/cube` validate the board the wrong
+//// way round and reject a positive index 0 outright, which is why
+//// `backgammon/bot` asks its questions through `/review` instead.)
 ////
 //// The turns come from replaying the room's seed and action log through
 //// the same gamekit calls the rehydrator uses (`gamekit/replay`), split at
@@ -379,7 +382,10 @@ fn with_dice(p: Pending, s: GameState) -> Pending {
   Pending(..p, dice: dice)
 }
 
-fn seat_index(s: GameState, player_id: String) -> Int {
+/// Which seat this player sits in: 0 is the first seat (White). The engine
+/// names the player on roll by seat index, and a turn asked one at a time
+/// (`backgammon/bot`) needs the same number a whole review's turn carries.
+pub fn seat_index(s: GameState, player_id: String) -> Int {
   s.order
   |> list.index_map(fn(id, i) { #(id, i) })
   |> list.find(fn(entry) { entry.0 == player_id })

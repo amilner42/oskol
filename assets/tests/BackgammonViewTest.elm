@@ -2506,6 +2506,8 @@ ctx playerId update model =
     , gamePrs = \_ -> []
     , save = View.NoSave
     , accounts = Just [ "p1" ]
+    , bots = []
+    , thinking = []
     , mistakes = \_ -> Nothing
     , finished =
         case update.outcome of

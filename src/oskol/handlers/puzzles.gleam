@@ -1219,7 +1219,7 @@ pub fn mine_json(
 
 fn seats_of(room: caps.SourceRoom) -> List(seat.Seat) {
   list.map(room.seats, fn(s) {
-    seat.Seat(
+    seat.of_row(
       player_id: s.0,
       guest_id: unless_empty(s.2),
       user_id: unless_empty(s.3),
@@ -1360,7 +1360,7 @@ pub fn game_puzzles_json(
   use player_id <- result.try(
     seat.held_by(
       list.map(setup.seats, fn(s) {
-        seat.Seat(
+        seat.of_row(
           player_id: s.0,
           guest_id: unless_empty(s.2),
           user_id: unless_empty(s.3),

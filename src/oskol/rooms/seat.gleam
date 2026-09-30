@@ -33,13 +33,37 @@ import gleam/string
 import oskol/core/session.{type Session}
 
 /// One seat, as the holder rule needs to see it: its player id, the guest
-/// that took it, and the account that owns it if one does.
+/// that took it, the account that owns it if one does, and whether a bot
+/// is sitting there.
 ///
 /// (The room's own `rooms/room.Seat` is a different thing -- a seat that was
 /// just taken, on its way back to a caller. This one is a seat sitting at a
 /// table being asked who may open it.)
 pub type Seat {
-  Seat(player_id: String, guest_id: Option(String), user_id: Option(String))
+  Seat(
+    player_id: String,
+    guest_id: Option(String),
+    user_id: Option(String),
+    /// A bot plays this seat. It has no guest and no account, so nobody
+    /// holds it, and -- unlike an empty seat -- there is nobody away for
+    /// somebody else to stand in for either.
+    bot: Bool,
+  )
+}
+
+/// A seat as a stored row describes it: the guest and the account.
+///
+/// The only question a row-read seat is ever asked is `holder` -- which seat
+/// at this table is the caller's -- and a bot seat holds neither a guest nor
+/// an account, so it answers no to that however it was built. Only a live
+/// room has to tell a bot seat from an empty one (`claimable`), and a live
+/// room knows.
+pub fn of_row(
+  player_id player_id: String,
+  guest_id guest_id: Option(String),
+  user_id user_id: Option(String),
+) -> Seat {
+  Seat(player_id: player_id, guest_id: guest_id, user_id: user_id, bot: False)
 }
 
 /// Does this session hold that seat?
@@ -53,9 +77,15 @@ pub type Seat {
 /// An empty id on either side holds nothing: a seat taken by tooling (no
 /// guest at all) is nobody's until somebody claims it.
 pub fn holder(seat: Seat, session: Session) -> Bool {
-  case seat.user_id {
-    Some(owner) -> same_secret(session.user_id, owner)
-    None -> same_secret(session.guest_id, seat.guest_id |> option.unwrap(""))
+  case seat.bot, seat.user_id {
+    // A bot seat is nobody's, and it is said here rather than left to follow
+    // from its having no ids: this is the rule every door asks, and a seat
+    // that plays itself must not open to a visitor whatever else a room
+    // happens to have written on it.
+    True, _ -> False
+    False, Some(owner) -> same_secret(session.user_id, owner)
+    False, None ->
+      same_secret(session.guest_id, seat.guest_id |> option.unwrap(""))
   }
 }
 
@@ -74,11 +104,14 @@ pub fn owned(seat: Seat) -> Bool {
 
 /// May a seat whose player is away be taken back from the invite link?
 ///
-/// Only an unowned one. An owned seat belongs to its account for good: the
-/// invite page says so and offers nothing, and the room refuses the claim
-/// even if something asks for it anyway.
+/// Only an unowned one with a person behind it. An owned seat belongs to its
+/// account for good: the invite page says so and offers nothing, and the
+/// room refuses the claim even if something asks for it anyway. A bot seat
+/// is not a seat anyone left -- there is nobody to stand in for -- so it is
+/// not on offer either, and a bot is never away, so the invite never names
+/// it in the first place.
 pub fn claimable(seat: Seat) -> Bool {
-  !owned(seat)
+  !owned(seat) && !seat.bot
 }
 
 /// An id against an id, without stopping at the first character that

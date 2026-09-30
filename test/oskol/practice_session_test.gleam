@@ -22,7 +22,7 @@ import oskol/fakes
 import oskol/handlers/practice
 import oskol/practice/deck
 import oskol/puzzles.{type Question, Centered, Double, Move, Question} as puzzle
-import oskol/rooms/seat.{type Seat, Seat}
+import oskol/rooms/seat.{type Seat}
 
 // ---------- A little deck, and a little pile of a guest's mistakes ----------
 
@@ -202,11 +202,11 @@ fn with_guest_mistakes(ctx: Ctx, sources: List(#(String, Seat))) -> Ctx {
 }
 
 fn guest_seat(guest_id: String) -> Seat {
-  Seat(player_id: "p1", guest_id: Some(guest_id), user_id: None)
+  seat.of_row(player_id: "p1", guest_id: Some(guest_id), user_id: None)
 }
 
 fn owned_seat(user_id: String) -> Seat {
-  Seat(player_id: "p1", guest_id: Some("g1"), user_id: Some(user_id))
+  seat.of_row(player_id: "p1", guest_id: Some("g1"), user_id: Some(user_id))
 }
 
 // ---------- An account ----------

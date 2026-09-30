@@ -286,10 +286,11 @@ created =
                     { format = "cash"
                     , name = "Alice"
                     , clock = "poker"
+                    , opponent = "friend"
                     }
                     |> E.encode 0
                     |> Expect.equal
-                        """{"format":"cash","name":"Alice","clock":"poker"}"""
+                        """{"format":"cash","name":"Alice","clock":"poker","opponent":"friend"}"""
         , test "decodes the room and the URL that opens the seat" <|
             \_ ->
                 Api.parseBody Catalog.createdDecoder

@@ -385,8 +385,13 @@ Oskol used to host poker, go and chess too; they were removed in the pivot
 (`OskolWeb.RemovedGameController`), and `/papi/games/<slug>` for them is a
 404 like any slug that names no game.
 
-The first player picks everything (mode, clock), shares a link, and
-the game starts the moment the second player types a name. **A seat is held
+The first player picks everything (opponent, mode, clock). Against **a
+friend** they share a link and the game starts the moment the second player
+types a name; against **the bot** (Sage, the analysis engine playing live)
+the table fills itself and the game is going before the page has finished
+loading. A bot seat holds no guest and no account, so nobody holds it and no
+room code opens it, and it is never away, so the invite link has nothing to
+offer. **A seat is held
 by the guest cookie that took it** (`OskolWeb.Plugs.GuestId`: opaque,
 HttpOnly, year-long), and no URL anywhere carries a secret: a player's link
 is the plain room URL. A seat whose holder is away can be claimed from the
@@ -462,8 +467,18 @@ Game(
   timeout:       fn(state, PlayerId) -> Timeout(action),    // Forfeit, or Act(action) taken for them
   record:        fn(state) -> Option(Json),                 // the whole public record, or game.no_record
   committed:     fn(state, action, state) -> Option(Json),  // what this step committed, or game.no_committed
+  bot:           fn(state, PlayerId, Ask, Int) -> Result(List(Json), String),  // what a bot seat does now
 )
 ```
+
+`bot` is what a seat nobody is sitting at does: the actions to take, in
+order, as the same `{"name", "params"}` objects a browser sends. `Ask` is the
+analysis engine as a closure (`fn(route, body) -> Result(body, String)`), so
+the brain stays pure and the platform owns the socket, the timeout and the
+retries. The `Int` is how many asks have already come back empty for this
+decision, and what to do once that is too many is the game's call -- which is
+why Elixir never learns the word "resign". `game.no_bot` is the default for a
+game nothing plays for you.
 
 `record` is what `GET /papi/games/:slug/rooms/:id/record` serves to anyone
 with the room: everything a replay or an analysis needs, too big to ride in every update.
@@ -558,7 +573,7 @@ src/gamekit/        framework: rng, scene, event, action, game, clock, instance
 src/backgammon/     Backgammon: board (rules + move generation), state (turns,
                     dice, cube, match play), engine, projection, game,
                     analysis (the analysis engine's board, a game's turns, and
-                    the one turn a step just committed)
+                    the one turn a step just committed), bot (Sage)
 src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     decisions live in Gleam" below): core (ctx, session,
                     error, envelope), caps (the IO a handler may do),
@@ -572,6 +587,8 @@ test/oskol/         handler and rule tests on stub capabilities (fakes.gleam)
 test/backgammon/    board rules, engine, cube, oracle, properties, turns
 lib/oskol/game_kit.ex           the only Elixir -> Gleam bridge
 lib/oskol/game/game_server.ex   generic room: setup, auto-start, actions, clocks, rematch
+lib/oskol/game/bot.ex           a bot seat's turn: a supervised task asks the game
+                                what to do and applies it, never the room
 lib/oskol/persistence.ex        games + game_actions tables (seed + action log per room)
 lib/oskol/guests.ex             silent guest identity: guests table (name + prefs)
 lib/oskol/auth.ex               accounts: users + login_tokens, the rows a sign-in spends
@@ -623,9 +640,10 @@ priv/static/images/invite-board.png  the picture an invite link unfurls with: th
                                  `puzzles/picture.invite_svg`
 lib/oskol/game/ready_up_patch.ex  one-off: old match logs get the READYs the engine now waits for
 lib/oskol_web/channels/game_channel.ex   generic channel ("action", "rematch" in; "update" out)
-src/oskol/rooms/seat.gleam       who holds a seat (the guest, or the account that
-                                 owns it), whether it may be claimed, and what an
-                                 attach means: the same client back, or a takeover
+src/oskol/rooms/seat.gleam       who holds a seat (the guest, the account that
+                                 owns it, or a bot and therefore nobody), whether
+                                 it may be claimed, and what an attach means: the
+                                 same client back, or a takeover
 src/oskol/rooms/code.gleam       the shape of a room code, and how a typed one is read
 lib/oskol_web/controllers/spa_controller.ex    "/" and "/:slug": the SPA shell
                                  plus the title, description, canonical, og
@@ -916,8 +934,12 @@ the page's CSRF token in `x-csrf-token`.
 ```
 GET  /papi/library                     {ok, games, coming_soon, guest_name}
 GET  /papi/games/:slug                 {ok, game, formats, clock_presets, copy, guest_name}
-POST /papi/games/:slug                 {format, name, clock}
+POST /papi/games/:slug                 {format, name, clock, opponent}
                                          -> {ok, id, path, player_id}
+                                       `opponent` is `friend` (the link, and
+                                       anything else) or `bot`; a bot game is
+                                       forced to no clock and is already
+                                       running when this answers
 GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
 POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
 GET  /papi/games/:slug/rooms/:id/reviews  (open) the index, and only the index
@@ -1159,6 +1181,48 @@ day are retired in a supervised bounded sweep at boot and then daily. A failed
 pass only logs and retries on the next schedule. There is no switch:
 signing in is always on, and prod sends real mail through Postmark. Decisions:
 `src/oskol/handlers/auth.gleam`.
+
+**Playing the bot.** `opponent: "bot"` seats the creator and then Sage
+(`rooms.seat_bot` -> `GameServer.join_bot`), which fills the table and starts
+the game through the same `do_start` a second browser would. The name is
+`rooms/name.bot_name`, and a creator called Sage is refused in one sentence:
+the room refuses a name already at the table, so the bot could not sit down
+beside them. The clock is forced to `none` whatever was sent -- the bot would
+lose on time for its engine being slow, and a clock on one side of a table
+needs per-seat controls gamekit has no idea about.
+
+Who drives it: the room, after every state change and after a rehydrate,
+starts one supervised task per bot seat whose turn it is with no think in
+flight (`Oskol.Game.Bot`, under `Oskol.Game.BotSupervisor`). The task asks
+the game (`GameKit.think/4`) and applies each action through the ordinary
+`player_action`; the room never waits on the engine, which takes seconds. A
+think that comes back empty is tried again at 5 s, 20 s and 60 s
+(`config :oskol, :bot`), and the fourth call gives up -- Gleam answers with a
+resignation offered to the human, so a dead engine ends in a game they can
+finish rather than a board that never moves. A stale think is harmless:
+`apply` refuses what is no longer legal and the next broadcast thinks again.
+A think that played nothing while the game stood still is a bug, not a turn,
+so that seat is left alone until the game moves rather than asked again at
+once. A rematch counts a bot seat as already ready, so one REMATCH is enough.
+
+The brain is `src/backgammon/bot.gleam`, pure, on `backgammon/analysis`.
+Every ask goes to `POST /backgammon/review` with a single turn -- not to
+`/moves` and `/cube`, whose board validator rejects a positive `board[0]`
+and so 422s every position with an opposing checker on the bar. Rolling: the
+cube is asked about only where `engine_can_double` says the engine would
+grade one; doubled, `should_take` from the doubler's side answers. Moving:
+the best play's board is found among `board.sequences`, emitted as
+`move`s and a `play`; a dance is a `play`. Between games, `ready`, with no
+engine. A resignation offered to it is accepted when the stakes are at least
+`board.win_kind` as the board stands. It never resigns of its own accord and
+never takes a move back. The suite's engine is the pure Gleam fake
+`bot.fake_answer`, behind a `Req.Test` stub on the Elixir side, so both
+layers play the same opponent and nothing touches the network.
+
+At the table the player bar shows Sage with a chip badge (`Ui.Identity`) and
+its presence dot pulses while a think is in flight -- the wire's
+`players[].bot` and `players[].thinking`. Reviews, ratings and puzzles need
+nothing: the bot's moves are ordinary logged actions.
 
 `/papi/me/prefs` is the visitor's own display taste — today the backgammon
 board's colours, under `backgammon_theme`. Gleam owns the whitelist
@@ -2033,8 +2097,14 @@ node playwright/review-puzzles-hub/test.js      # screenshots: the hub leading w
 node playwright/test-spa-landing/test.js        # the home board and CREATE GAME's dialog, old
                                                # links redirect, a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
-                                               # the lobby and the theme picker (desktop + phone)
+                                               # the lobby and the theme picker, and the dialog
+                                               # with the bot picked (desktop + phone)
 node playwright/review-games/test.js            # screenshots of games in play (desktop + phone)
+node playwright/review-bot/test.js              # screenshots of a game against Sage: the table,
+                                               # a turn played, and Sage thinking about the answer
+                                               # (three widths). Needs an engine -- the point is
+                                               # what a real think looks like -- so start the fly
+                                               # proxy first
 node playwright/review-replay-mobile/test.js    # screenshots of the replay's verdict, CUBE and
                                                # overview on two phones, sideways, and a desktop
 ```
@@ -2337,14 +2407,15 @@ unique, `last_login_at`) and `login_tokens` (a sign-in in flight: `email`,
 address and nothing else — no password, so nothing to reset or leak.
 
 **A seat can be owned.** Each entry in `games.players` is `{id, name,
-guest_id, user_id}`, and `user_id` is the account it belongs to (absent on
-a row written before accounts: that seat is simply unowned). Who may open
+guest_id, user_id, bot}`, and `user_id` is the account it belongs to (absent
+on a row written before accounts: that seat is simply unowned; `bot` is
+absent on every row written before the bot, and false is right for them). Who may open
 it is one rule, in Gleam — `src/oskol/rooms/seat.gleam`'s `holder`: an
 owned seat answers to its account and ignores the guest on it, an unowned
 one answers to its guest. Every door asks it (`GameServerState.find_player_id_for/2`,
 which the channel's attach, a claim, the record's viewer and `/papi/me/games`
-all go through), and `claimable` is false for an owned seat, so no room code
-opens one. The owner rides through the room's memory, `players_json`,
+all go through), and `claimable` is false for an owned seat and for a bot seat, so no room
+code opens either. The owner rides through the room's memory, `players_json`,
 `restore_seats` and `seed_seat`, so a rehydrate and a rematch both keep it.
 
 **The stamp.** Signing in hands the account every seat its browser's guest
@@ -2375,4 +2446,5 @@ guest id, so that browser keeps playing it as a guest seat. There is
 nothing to backfill: every seat starts unowned.
 
 ## Future
-- Bots derived from `legal` for solo play and balance reports.
+- A bot for a game that is not backgammon: `Game.bot` is the seam, and
+  `game.no_bot` is what every other game would start from.

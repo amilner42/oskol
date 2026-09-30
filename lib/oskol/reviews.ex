@@ -870,6 +870,50 @@ defmodule Oskol.Reviews do
   end
 
   @doc """
+  Ask the engine one question and hand the answer back as it came: the route
+  under the same base URL a review takes, a JSON body in, the response body
+  out. `{:ok, body}` on a 200, `{:error, sentence}` otherwise. Never raises.
+
+  This is what a bot seat thinks through (`Oskol.Game.Bot`), and the receive
+  timeout is seconds rather than a review's twenty minutes: nobody at a table
+  waits that long, and a think that came back empty is tried again.
+  """
+  def ask(route, body, receive_timeout) when is_binary(route) and is_binary(body) do
+    config = Application.get_env(:oskol, :analysis, [])
+    url = String.trim_trailing(Keyword.get(config, :url, "http://localhost:18082"), "/")
+
+    options =
+      [
+        url: url <> route,
+        body: body,
+        headers: [{"content-type", "application/json"}],
+        receive_timeout: receive_timeout,
+        connect_options: [
+          timeout: 15_000,
+          transport_opts: if(Keyword.get(config, :inet6, false), do: [inet6: true], else: [])
+        ],
+        # The caller owns retries: it is counting the failures for the game.
+        retry: false,
+        # The body is read in Gleam, which wants the text.
+        decode_body: false
+      ]
+      |> Keyword.merge(Keyword.get(config, :req_options, []))
+
+    case Req.post(options) do
+      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
+        {:ok, body}
+
+      {:ok, %Req.Response{status: status, body: body}} ->
+        {:error, "HTTP #{status}: #{String.slice(to_string(body), 0, 500)}"}
+
+      {:error, exception} ->
+        {:error, Exception.message(exception)}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  @doc """
   POST a review request (JSON text) to the engine. `{:ok, body}` on a 200,
   `{:error, reason}` otherwise — a status and the engine's detail, a
   timeout, a refused connection. Never raises.

@@ -17,6 +17,9 @@ pub type RoomError {
   SeatConnected
   /// The seat belongs to an account: no code opens it, and nobody claims it.
   SeatOwned
+  /// A bot plays that seat. Nobody walked away from it, so there is nobody
+  /// to stand in for.
+  SeatIsBot
   NoSeat
   AlreadySeated
   PlayerNotFound
@@ -41,6 +44,7 @@ pub fn message(error: RoomError) -> String {
     GameAlreadyStarted -> "That game already started"
     SeatConnected -> "That player is back at the table"
     SeatOwned -> "That seat belongs to an account. Only they can open it."
+    SeatIsBot -> "That seat is the bot's."
     NoSeat -> "You are not at this table"
     AlreadySeated -> "You are already at this table"
     PlayerNotFound -> "That player is not at this table"

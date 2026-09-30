@@ -22,7 +22,7 @@ import oskol/core/ctx.{type Ctx, Ctx}
 import oskol/fakes
 import oskol/practice/sync
 import oskol/puzzles.{type Question, Centered, Move, Question} as puzzle
-import oskol/rooms/seat.{type Seat, Seat}
+import oskol/rooms/seat.{type Seat}
 
 // ---------- The little world these tests run in ----------
 
@@ -94,11 +94,15 @@ fn question() -> Question {
 }
 
 fn owned(player_id: String, user_id: String) -> Seat {
-  Seat(player_id: player_id, guest_id: Some("a-guest"), user_id: Some(user_id))
+  seat.of_row(
+    player_id: player_id,
+    guest_id: Some("a-guest"),
+    user_id: Some(user_id),
+  )
 }
 
 fn unowned(player_id: String) -> Seat {
-  Seat(player_id: player_id, guest_id: Some("a-guest"), user_id: None)
+  seat.of_row(player_id: player_id, guest_id: Some("a-guest"), user_id: None)
 }
 
 /// A deck that takes everything it is offered and a store that answers with

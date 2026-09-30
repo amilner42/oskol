@@ -28,6 +28,7 @@ suite =
         [ names
         , homeBoard
         , createDialog
+        , opponents
         , picking
         , submitting
         , boardPicker
@@ -347,6 +348,85 @@ createDialog =
                     |> send GameLanding.Started
                     |> home
                     |> Query.hasNot [ id "create-modal" ]
+        ]
+
+
+-- THE OPPONENT
+
+
+opponents : Test
+opponents =
+    describe "choosing an opponent"
+        [ test "the dialog offers a friend or the bot, a friend chosen" <|
+            \_ ->
+                home opened
+                    |> Query.find [ id "create-modal" ]
+                    |> Expect.all
+                        [ Query.has [ text "OPPONENT" ]
+                        , Query.find [ id "create-opponent-friend" ]
+                            >> Query.has
+                                [ text "A FRIEND"
+                                , text "send a link"
+                                , attribute (Html.Attributes.attribute "aria-pressed" "true")
+                                ]
+                        , Query.find [ id "create-opponent-bot" ]
+                            >> Query.has
+                                [ text "THE BOT"
+                                , text "Sage, 4-ply"
+                                , attribute (Html.Attributes.attribute "aria-pressed" "false")
+                                ]
+                        ]
+        , test "the bot tile picks the bot" <|
+            \_ ->
+                home opened
+                    |> Query.find [ id "create-opponent-bot" ]
+                    |> Event.simulate Event.click
+                    |> Event.expect (GameLanding.PickedOpponent GameLanding.TheBot)
+        , test "with the bot picked, the clock goes and MODE keeps the row" <|
+            \_ ->
+                home (send (GameLanding.PickedOpponent GameLanding.TheBot) opened)
+                    |> Query.find [ id "create-modal" ]
+                    |> Expect.all
+                        [ Query.has [ id "create-mode" ]
+                        , Query.hasNot [ id "create-clock" ]
+                        , Query.findAll [ tag "select" ] >> Query.count (Expect.equal 1)
+                        ]
+        , test "the summary says who you are playing, and that there is no clock" <|
+            \_ ->
+                opened
+                    |> send (GameLanding.PickedFormat "match7")
+                    |> send (GameLanding.PickedOpponent GameLanding.TheBot)
+                    |> home
+                    |> Query.find [ id "create-summary" ]
+                    |> Query.has [ text "Match to 7 against Sage. No clock." ]
+        , test "the button and the footnote say the game starts now" <|
+            \_ ->
+                home (send (GameLanding.PickedOpponent GameLanding.TheBot) opened)
+                    |> Query.find [ id "create-modal" ]
+                    |> Expect.all
+                        [ Query.find [ id "create-game" ] >> Query.has [ text "PLAY SAGE" ]
+                        , Query.has [ text "Starts now. Sage takes a few seconds a move." ]
+                        ]
+        , test "a clock picked before the bot was does not ride along" <|
+            \_ ->
+                opened
+                    |> send (GameLanding.PickedClock "bg10")
+                    |> send (GameLanding.PickedOpponent GameLanding.TheBot)
+                    |> home
+                    |> Query.find [ id "create-summary" ]
+                    |> Query.has [ text "No clock." ]
+        , test "going back to a friend brings the clock and the link back" <|
+            \_ ->
+                opened
+                    |> send (GameLanding.PickedOpponent GameLanding.TheBot)
+                    |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                    |> home
+                    |> Query.find [ id "create-modal" ]
+                    |> Expect.all
+                        [ Query.has [ id "create-clock" ]
+                        , Query.find [ id "create-game" ] >> Query.has [ text "START GAME" ]
+                        , Query.has [ text "You get a link to send. The game starts when your friend opens it." ]
+                        ]
         ]
 
 

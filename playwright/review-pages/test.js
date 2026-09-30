@@ -10,7 +10,7 @@ const fs = require('fs'); fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   const browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.PW_CHROMIUM, args: ['--no-sandbox'] });
-  for (const [name, vp] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 844 }]]) {
+  for (const [name, vp] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 844 }], ['narrow', { width: 320, height: 720 }]]) {
     const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 1 });
   // External fonts are blocked in sandboxes and would stall the load event.
   await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
@@ -19,6 +19,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.screenshot({ path: `${OUT}/${name}-01-home.png` });
     await openCreateDialog(page); await sleep(1200);
     await page.screenshot({ path: `${OUT}/${name}-02-create-dialog.png`, fullPage: true });
+    // The same dialog with the bot picked: the clock goes, MODE takes the
+    // row, and the button and footnote say the game starts now.
+    await page.click('#create-opponent-bot'); await sleep(600);
+    await page.screenshot({ path: `${OUT}/${name}-02b-create-dialog-bot.png`, fullPage: true });
+    await page.click('#create-opponent-friend'); await sleep(300);
     // The lobby: create a backgammon game, which lands on /backgammon/<id>: a
     // seat is the guest who took it, so the URL carries no secret.
     await createGame(page, { name: 'Alice', mode: 'match5' }); await sleep(600);

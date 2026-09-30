@@ -107,20 +107,46 @@ pub fn create_json(
   format: String,
   name: String,
   clock_id: String,
+  opponent_id: String,
 ) -> Result(String, ApiError) {
   use info <- result.try(find_info(slug))
 
+  let opponent = opponent(opponent_id)
   let setup =
-    Setup(format: format, clock: case clock_id {
-      "" -> info.default_clock
-      chosen -> chosen
+    Setup(format: format, clock: case opponent, clock_id {
+      // A bot game has no clock, whatever was sent. The bot spends whatever
+      // its engine spends and would lose on time for a machine being slow,
+      // and a clock on one side of a table only is a thing gamekit has no
+      // idea how to keep.
+      rooms.TheBot, _ -> "none"
+      _, "" -> info.default_clock
+      _, chosen -> chosen
     })
 
-  case rooms.create(ctx, session, slug, setup, seat_name(ctx, session, name)) {
+  case
+    rooms.create(
+      ctx,
+      session,
+      slug,
+      setup,
+      seat_name(ctx, session, name),
+      opponent,
+    )
+  {
     Ok(seated) -> Ok(seat_taken(slug, seated))
     Error(rooms.Rejected(message)) -> Error(error.validation_failed(message))
     Error(rooms.Unavailable(reason)) ->
       Error(error.Internal(errors.message(reason)))
+  }
+}
+
+/// Who the creator asked to play. Anything but the bot is a friend with a
+/// link, which is what the site did before there was anything else to ask
+/// for, so an old client and a blank field both land there.
+fn opponent(id: String) -> rooms.Opponent {
+  case id {
+    "bot" -> rooms.TheBot
+    _ -> rooms.AFriend
   }
 }
 
@@ -519,7 +545,7 @@ fn active_room_json(room: ActiveRoom, session: Session) -> Json {
 /// A seat as the holder rule reads it: the row's empty strings are "no
 /// guest" and "no account".
 fn as_seat(entry: #(String, String, String, String)) -> seat.Seat {
-  seat.Seat(
+  seat.of_row(
     player_id: entry.0,
     guest_id: some_unless_empty(entry.2),
     user_id: some_unless_empty(entry.3),

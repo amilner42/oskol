@@ -81,6 +81,8 @@ defmodule Oskol.Game do
   defdelegate join_game(game_id, player_name, player_pid, guest_id, user_id, username),
     to: GameServer
 
+  defdelegate join_bot(game_id, player_name), to: GameServer
+
   defdelegate attach(game_id, guest_id, player_pid), to: GameServer
   defdelegate attach(game_id, guest_id, player_pid, client), to: GameServer
   defdelegate attach(game_id, guest_id, player_pid, client, user_id), to: GameServer

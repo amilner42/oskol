@@ -284,6 +284,74 @@ defmodule Oskol.RehydrationTest do
              GameServerState.validate_setup(state, %{clock: "hourglass"}, retired_clocks: true)
   end
 
+  test "a bot seat survives a rehydrate and picks its turn back up" do
+    # The engine is the pure Gleam fake behind a Req.Test stub, shared
+    # because a think runs in a task of its own.
+    Req.Test.set_req_test_to_shared()
+
+    Req.Test.stub(Oskol.Reviews, fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn, length: 10_000_000)
+
+      case :backgammon@bot.fake_answer(conn.request_path, body) do
+        {:ok, answer} -> Plug.Conn.send_resp(conn, 200, answer)
+        {:error, reason} -> Plug.Conn.send_resp(conn, 422, reason)
+      end
+    end)
+
+    game_id = unique_game_id()
+    {:ok, _} = Game.start_game(game_id, "backgammon")
+    {:ok, _} = Game.configure(game_id, %{format: "single", clock: "none", seed: 11})
+    guest = unique_guest_id()
+    {:ok, human, _} = Game.join_game(game_id, "Alice", nil, guest)
+    {:ok, sage, _} = Game.join_bot(game_id, "Sage")
+
+    # A few turns in, then the room goes the way a deploy takes it.
+    play_human(game_id, human, 8)
+    Persister.flush()
+    kill_room(game_id)
+
+    assert {:ok, _pid} = Game.lookup_game(game_id)
+    state = Game.get_server_state(game_id)
+
+    # The seat comes back a bot seat: at the table, held by nobody, and not
+    # claimable however it is asked for.
+    assert state.connections[sage].bot
+    assert state.connections[sage].connected
+    assert GameServerState.find_player_id_by_guest(state, guest) == human
+    assert {:error, :seat_is_bot} = Game.claim_seat(game_id, sage, self(), unique_guest_id())
+
+    # And it plays on: the game finishes without anyone touching Sage's seat.
+    assert play_human(game_id, human, 3_000) == :finished
+  end
+
+  # The person's side, played at random. Sage plays itself.
+  defp play_human(game_id, human, budget, steps \\ 0) do
+    state = Game.get_server_state(game_id)
+
+    cond do
+      GameKit.finished?(state.instance) ->
+        :finished
+
+      steps >= budget ->
+        :enough
+
+      human in GameKit.to_act(state.instance) ->
+        action =
+          state.instance
+          |> GameKit.legal(human)
+          |> Enum.reject(&(&1["name"] == "resign"))
+          |> Enum.random()
+          |> Oskol.Bots.action()
+
+        {:ok, _, _} = Game.player_action(game_id, human, action)
+        play_human(game_id, human, budget, steps + 1)
+
+      true ->
+        Process.sleep(2)
+        play_human(game_id, human, budget, steps + 1)
+    end
+  end
+
   defp remaining(game_id, viewer) do
     state = Game.get_server_state(game_id)
 

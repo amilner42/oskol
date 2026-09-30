@@ -344,6 +344,20 @@ fn creating(ctx: Ctx, expected: room.Setup) -> Ctx {
   )
 }
 
+/// The bot sits down when it is asked for, and refuses to be asked for
+/// anything but its own name.
+fn with_a_bot_seat(ctx: Ctx) -> Ctx {
+  Ctx(
+    ..ctx,
+    rooms: rooms_caps.RoomsCaps(..ctx.rooms, seat_bot: fn(_, name) {
+      case name {
+        "Sage" -> Ok(Seat(player_id: "p2", started: True))
+        other -> Error(errors.Other("seated the bot as " <> other))
+      }
+    }),
+  )
+}
+
 pub fn creating_a_game_answers_with_its_code_and_the_seat_url_test() {
   let ctx =
     reading()
@@ -356,6 +370,7 @@ pub fn creating_a_game_answers_with_its_code_and_the_seat_url_test() {
       "single",
       "Alice",
       "bg3",
+      "",
     )
     == Ok(
       "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456\",\"player_id\":\"p1\"}",
@@ -375,6 +390,7 @@ pub fn the_creators_mode_and_clock_reach_the_room_test() {
       "match5",
       "Alice",
       "bg10",
+      "",
     )
 }
 
@@ -392,6 +408,48 @@ pub fn no_clock_asked_for_means_the_games_default_test() {
       "single",
       "Alice",
       "",
+      "",
+    )
+}
+
+pub fn a_bot_game_is_played_with_no_clock_whatever_was_sent_test() {
+  // The stub refuses any setup but this one, so the clock the room was
+  // configured with is the clock this test names.
+  let ctx =
+    reading()
+    |> creating(room.Setup(format: "match7", clock: "none"))
+    |> with_a_bot_seat
+
+  let assert Ok(body) =
+    landing.create_json(
+      ctx,
+      fakes.no_guest(),
+      "backgammon",
+      "match7",
+      "Alice",
+      "bg10",
+      "bot",
+    )
+  assert body
+    == "{\"ok\":true,\"id\":\"123456\",\"path\":\"/backgammon/123456\",\"player_id\":\"p1\"}"
+}
+
+pub fn an_opponent_nobody_named_is_a_friend_with_a_link_test() {
+  // What every client sent before there was anything to ask, and what a
+  // client that has not caught up still sends.
+  let ctx =
+    reading()
+    |> creating(room.Setup(format: "single", clock: "bg3"))
+
+  let assert Ok(_) =
+    landing.create_json(
+      ctx,
+      fakes.no_guest(),
+      "backgammon",
+      "single",
+      "Alice",
+      "bg3",
+      "whatever",
     )
 }
 
@@ -408,6 +466,7 @@ pub fn creating_a_game_needs_a_name_test() {
       "single",
       " ",
       "none",
+      "",
     )
 
   assert envelope.error(err)
@@ -435,6 +494,7 @@ pub fn creating_a_game_in_a_mode_it_has_not_got_is_refused_test() {
       "nope",
       "Alice",
       "none",
+      "",
     )
 
   assert error.code(err) == "validation_failed"
@@ -450,6 +510,7 @@ pub fn creating_a_game_of_a_game_that_does_not_exist_is_not_found_test() {
       "x",
       "Alice",
       "none",
+      "",
     )
 
   assert error.status(err) == 404

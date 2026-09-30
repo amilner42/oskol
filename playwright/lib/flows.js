@@ -66,18 +66,24 @@ async function openCreateDialog(page, path = '/', { dismissResume: shouldDismiss
  * option values (`match3`, `bg3`); anything left out stays on the dialog's
  * default. Resolves once the creator is in the lobby with the link to
  * share.
+ *
+ * `opponent: 'bot'` picks Sage instead: the table fills itself, so there is
+ * no link and no lobby -- it resolves on the board, and `inviteUrl` is null.
  */
-async function createGame(page, { name = 'Alice', mode, clock } = {}) {
+async function createGame(page, { name = 'Alice', mode, clock, opponent } = {}) {
   await openCreateDialog(page);
   if (await page.$('#create-name')) await page.fill('#create-name', name);
+  if (opponent === 'bot') await page.click('#create-opponent-bot');
   if (mode) await page.selectOption('#create-mode', mode);
-  if (clock) await page.selectOption('#create-clock', clock);
+  // The bot's dialog has no clock picker: nobody is on one.
+  if (clock && opponent !== 'bot') await page.selectOption('#create-clock', clock);
   await page.click('#create-game');
   await page.waitForURL(SEAT);
-  await page.waitForSelector('#share-link');
+  await page.waitForSelector(opponent === 'bot' ? '.bg-board .checker' : '#share-link');
   const url = page.url();
   const gameId = url.match(SEAT)[1];
-  const inviteUrl = (await page.textContent('#share-link')).trim();
+  const inviteUrl =
+    opponent === 'bot' ? null : (await page.textContent('#share-link')).trim();
   return { gameId, url, inviteUrl };
 }
 

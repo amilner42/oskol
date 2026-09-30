@@ -1,6 +1,7 @@
 module Page.GameLanding exposing
     ( Model
     , Msg(..)
+    , Opponent(..)
     , Out(..)
     , cleanName
     , createModal
@@ -47,7 +48,7 @@ import Html exposing (Html)
 import Json.Decode as D
 import Task
 import Time
-import Html.Attributes exposing (class, href, id)
+import Html.Attributes exposing (class, classList, href, id)
 import Html.Events exposing (onClick, onSubmit)
 import Games.Backgammon.View
 import Page.HomeBoard
@@ -70,6 +71,14 @@ type Step
     | Reconnect
 
 
+{-| Who the creator wants across the table. A friend gets the link this page
+has always handed out; the bot sits down at once and the game starts.
+-}
+type Opponent
+    = AFriend
+    | TheBot
+
+
 type alias Model =
     { session : Session
     , slug : String
@@ -79,6 +88,7 @@ type alias Model =
     , step : Step
     , format : String
     , clock : String
+    , opponent : Opponent
     , playerName : String
     , error : Maybe String
     , inviterName : Maybe String
@@ -102,6 +112,7 @@ type Msg
     | GotRoom (Result Api.Error Catalog.Room)
     | PickedFormat String
     | PickedClock String
+    | PickedOpponent Opponent
     | NameChanged String
     | Submitted
     | ReclaimedSeat String
@@ -165,6 +176,7 @@ init session slug gameId =
                     PlayerName
             , format = ""
             , clock = "none"
+            , opponent = AFriend
             , playerName = Maybe.withDefault "" session.guestName
             , error = Nothing
             , inviterName = Nothing
@@ -425,6 +437,9 @@ update msg model =
         PickedClock clockId ->
             ( { model | clock = clockId, error = Nothing }, Cmd.none, NoOut )
 
+        PickedOpponent opponent ->
+            ( { model | opponent = opponent, error = Nothing }, Cmd.none, NoOut )
+
         NameChanged name ->
             ( { model | playerName = name }, Cmd.none, NoOut )
 
@@ -485,6 +500,7 @@ submit model =
                         { format = model.format
                         , name = name
                         , clock = model.clock
+                        , opponent = opponentId model.opponent
                         }
                         Seated
                     , NoOut
@@ -808,7 +824,7 @@ homeYou model =
                     , Html.Attributes.attribute "aria-haspopup" "menu"
                     , onClick ToggledAccount
                     ]
-                    [ identityIcon True
+                    [ Identity.badge Identity.Account
                     , Html.span [ class "font-bold text-sm sm:text-base truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ]
                     , icon "hero-chevron-up" "w-3.5 h-3.5 opacity-70"
                     ]
@@ -844,7 +860,7 @@ homeYou model =
                     , Html.Attributes.attribute "aria-haspopup" "menu"
                     , onClick ToggledAccount
                     ]
-                    [ identityIcon False
+                    [ Identity.badge Identity.Guest
                     , Html.span [ class "font-bold text-sm sm:text-base truncate" ] [ Html.text (homeName model) ]
                     , icon "hero-chevron-up" "w-3.5 h-3.5 opacity-70"
                     ]
@@ -863,11 +879,6 @@ homeYou model =
                   else
                     Html.text ""
                 ]
-
-
-identityIcon : Bool -> Html Msg
-identityIcon =
-    Identity.badge
 
 
 {-| The ways into the site, in the board's right band: creating a game
@@ -933,10 +944,21 @@ createModal model =
                                                 , onInput = NameChanged
                                                 }
                                             ]
-                               , Html.div [ class "grid grid-cols-2 gap-3" ]
-                                    [ select "MODE" "create-mode" PickedFormat model.format (List.map (\f -> ( f.id, f.name )) page.formats)
-                                    , select "CLOCK" "create-clock" PickedClock model.clock (Catalog.offeredClocks page.game page.clocks |> List.map (\c -> ( c.id, clockLabel c )))
-                                    ]
+                               , opponentPicker model
+                               , case model.opponent of
+                                    -- No clock against the bot: it spends
+                                    -- whatever its engine spends, and a clock
+                                    -- on one side of a table is not a thing.
+                                    -- MODE takes the row rather than sitting
+                                    -- in half of it with a gap beside it.
+                                    TheBot ->
+                                        select "MODE" "create-mode" PickedFormat model.format (List.map (\f -> ( f.id, f.name )) page.formats)
+
+                                    AFriend ->
+                                        Html.div [ class "grid grid-cols-2 gap-3" ]
+                                            [ select "MODE" "create-mode" PickedFormat model.format (List.map (\f -> ( f.id, f.name )) page.formats)
+                                            , select "CLOCK" "create-clock" PickedClock model.clock (Catalog.offeredClocks page.game page.clocks |> List.map (\c -> ( c.id, clockLabel c )))
+                                            ]
                                , Html.p [ id "create-summary", class "q-note text-[13px] leading-snug -mt-1" ]
                                     [ Html.text (createSummary model page) ]
                                , Html.button
@@ -944,8 +966,25 @@ createModal model =
                                     , id "create-game"
                                     , class "btn-arcade sky pixel w-full text-[11px] px-4 py-3.5"
                                     ]
-                                    [ Html.text "START GAME" ]
-                               , Html.p [ class "q-note text-xs text-center" ] [ Html.text "You get a link to send. The game starts when your friend opens it." ]
+                                    [ Html.text
+                                        (case model.opponent of
+                                            TheBot ->
+                                                "PLAY SAGE"
+
+                                            AFriend ->
+                                                "START GAME"
+                                        )
+                                    ]
+                               , Html.p [ class "q-note text-xs text-center" ]
+                                    [ Html.text
+                                        (case model.opponent of
+                                            TheBot ->
+                                                "Starts now. Sage takes a few seconds a move."
+
+                                            AFriend ->
+                                                "You get a link to send. The game starts when your friend opens it."
+                                        )
+                                    ]
                                ]
                         )
                 ]
@@ -965,6 +1004,61 @@ createModal model =
 
         _ ->
             Html.text ""
+
+
+{-| Who to play: a friend from a link, as this page has always offered, or
+the bot. Two tiles rather than a third dropdown, because this is the choice
+that changes what the rest of the dialog is for -- and because a player who
+came here to play right now should be able to see that they can.
+-}
+opponentPicker : Model -> Html Msg
+opponentPicker model =
+    Html.div []
+        [ Html.span [ class "pixel q-eyebrow text-[8px] block mb-1.5" ] [ Html.text "OPPONENT" ]
+        , Html.div [ class "grid grid-cols-2 gap-3" ]
+            [ opponentTile model AFriend "create-opponent-friend" "A FRIEND" "send a link"
+            , opponentTile model TheBot "create-opponent-bot" "THE BOT" "Sage, 4-ply"
+            ]
+        ]
+
+
+opponentTile : Model -> Opponent -> String -> String -> String -> Html Msg
+opponentTile model which tileId label note =
+    let
+        chosen =
+            model.opponent == which
+    in
+    Html.button
+        [ Html.Attributes.type_ "button"
+        , id tileId
+        , onClick (PickedOpponent which)
+        , Html.Attributes.attribute "aria-pressed"
+            (if chosen then
+                "true"
+
+             else
+                "false"
+            )
+        , classList
+            [ ( "q-opt block w-full text-left px-3 py-2.5", True )
+            , ( "q-opt-on", chosen )
+            ]
+        ]
+        [ Html.span [ class "pixel text-[9px] block leading-relaxed" ] [ Html.text label ]
+        , Html.span [ class "q-note block text-[12px] mt-1" ] [ Html.text note ]
+        ]
+
+
+{-| The id the API reads: `opponent` on POST /papi/games/:slug.
+-}
+opponentId : Opponent -> String
+opponentId opponent =
+    case opponent of
+        TheBot ->
+            "bot"
+
+        AFriend ->
+            "friend"
 
 
 {-| CREATE GAME's frame, on the shared dialog.
@@ -1170,6 +1264,24 @@ clockLabel preset =
 -}
 createSummary : Model -> GamePage -> String
 createSummary model page =
+    case model.opponent of
+        TheBot ->
+            -- Against the bot the mode is the only choice left, and what the
+            -- player wants to read back is who they are about to play.
+            String.trim
+                ((currentFormat model page
+                    |> Maybe.map (\f -> f.name ++ " against Sage.")
+                    |> Maybe.withDefault ""
+                 )
+                    ++ " No clock."
+                )
+
+        AFriend ->
+            friendSummary model page
+
+
+friendSummary : Model -> GamePage -> String
+friendSummary model page =
     let
         mode =
             currentFormat model page

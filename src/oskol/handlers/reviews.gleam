@@ -871,7 +871,7 @@ fn stored_seat(
   })
   let seats =
     list.map(setup.seats, fn(s) {
-      seat.Seat(
+      seat.of_row(
         player_id: s.0,
         guest_id: some_unless_empty(s.2),
         user_id: some_unless_empty(s.3),

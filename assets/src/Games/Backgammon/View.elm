@@ -524,6 +524,8 @@ type alias Ctx =
         -> List ( String, Float ) -- each player's PR in a finished game (by number), once graded; [] until then
     , save : Save -- the sign-in a result card offers a guest
     , accounts : Maybe (List String) -- the seats an account owns; Nothing where that is not known (no badge at all)
+    , bots : List String -- the seats a bot plays, for the badge that says so
+    , thinking : List String -- and the ones working a move out right now
     , mistakes :
         Int
         -> Maybe Int -- how many mistakes of a finished game (by number) are this seat's to practice: Nothing until the analysis is done and they are counted, and always for a spectator
@@ -1022,7 +1024,7 @@ viewPlayerBar ctx player isMe tray =
                 [ div [ class ("swatch shrink-0 " ++ color), title (ctx.nameOf p.id ++ " plays " ++ color) ] []
                 , case ctx.accounts of
                     Just owned ->
-                        Identity.badge (List.member p.id owned)
+                        Identity.badge (whoIs ctx owned p.id)
 
                     Nothing ->
                         text ""
@@ -1046,6 +1048,22 @@ viewPlayerBar ctx player isMe tray =
 
         Nothing ->
             text ""
+
+
+{-| Who is behind a seat, for the badge beside the name. A bot holds no
+account, so the two can never both be true; asking about it first says so
+plainly rather than leaving it to that.
+-}
+whoIs : Ctx -> List String -> String -> Identity.Who
+whoIs ctx owned playerId =
+    if List.member playerId ctx.bots then
+        Identity.Bot
+
+    else if List.member playerId owned then
+        Identity.Account
+
+    else
+        Identity.Guest
 
 
 {-| How present a player is, as their dot shows it.
@@ -1110,22 +1128,33 @@ viewPresenceDot ctx playerId =
             text ""
 
         Just presence ->
+            let
+                -- A bot at work is present, not absent: the dot keeps its
+                -- steady green and pulses, so seconds of an engine reading a
+                -- position read as thought rather than as a frozen table.
+                thinking =
+                    presence == Here && List.member playerId ctx.thinking
+            in
             span
                 [ classList
                     [ ( "bar-dot shrink-0", True )
                     , ( "on", presence == Here )
+                    , ( "thinking", thinking )
                     , ( "lost", presence == JustGone )
                     , ( "off", presence == Gone )
                     ]
                 , title
-                    (case presence of
-                        Here ->
+                    (case ( presence, thinking ) of
+                        ( Here, True ) ->
+                            "Thinking"
+
+                        ( Here, False ) ->
                             "Connected"
 
-                        JustGone ->
+                        ( JustGone, _ ) ->
                             "Connection lost a moment ago"
 
-                        Gone ->
+                        ( Gone, _ ) ->
                             "Connection lost"
                     )
                 ]
@@ -3118,6 +3147,11 @@ slab s taps =
             , save = NoSave
             , mistakes = \_ -> Nothing
             , accounts = s.accounts
+
+            -- A replayed position is nobody's connection and nobody's turn:
+            -- no badge for a bot, nothing pulsing.
+            , bots = []
+            , thinking = []
             }
 
         me =

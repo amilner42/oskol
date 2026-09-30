@@ -5,7 +5,7 @@
 
 import gleam/option.{None, Some}
 import oskol/core/session.{type Session, Session}
-import oskol/rooms/seat.{type Seat, Seat}
+import oskol/rooms/seat.{type Seat}
 
 fn guest(id: String) -> Session {
   Session(guest_id: Some(id), user_id: None)
@@ -16,11 +16,11 @@ fn signed_in(id: String, user_id: String) -> Session {
 }
 
 fn unowned(guest_id: String) -> Seat {
-  Seat(player_id: "p1", guest_id: Some(guest_id), user_id: None)
+  seat.of_row(player_id: "p1", guest_id: Some(guest_id), user_id: None)
 }
 
 fn owned(guest_id: String, user_id: String) -> Seat {
-  Seat(player_id: "p1", guest_id: Some(guest_id), user_id: Some(user_id))
+  seat.of_row(player_id: "p1", guest_id: Some(guest_id), user_id: Some(user_id))
 }
 
 // ---------- An unowned seat: the guest that took it, and nobody else ----------
@@ -45,13 +45,58 @@ pub fn an_account_does_not_reach_a_seat_it_does_not_own_test() {
 }
 
 pub fn a_seat_nobody_took_is_nobodys_test() {
-  let empty = Seat(player_id: "p1", guest_id: None, user_id: None)
+  let empty = seat.of_row(player_id: "p1", guest_id: None, user_id: None)
 
   assert !seat.holder(empty, guest("g1"))
   assert !seat.holder(empty, session.anonymous())
   // A seeded room writes "" rather than nothing; it is the same seat.
-  let blank = Seat(player_id: "p1", guest_id: Some(""), user_id: None)
+  let blank = seat.of_row(player_id: "p1", guest_id: Some(""), user_id: None)
   assert !seat.holder(blank, Session(guest_id: Some(""), user_id: None))
+}
+
+// ---------- A bot seat: nobody's, and nobody's to take ----------
+
+pub fn a_bot_seat_is_held_by_nobody_test() {
+  let sage =
+    seat.Seat(player_id: "p2", guest_id: None, user_id: None, bot: True)
+
+  assert !seat.holder(sage, guest("g1"))
+  assert !seat.holder(sage, signed_in("g1", "u1"))
+  assert !seat.holder(sage, session.anonymous())
+}
+
+pub fn a_bot_seat_cannot_be_claimed_test() {
+  let sage =
+    seat.Seat(player_id: "p2", guest_id: None, user_id: None, bot: True)
+
+  // An empty seat may be taken back from the invite link; the bot's may
+  // not. Nobody walked away from it, so there is nobody to stand in for.
+  assert seat.claimable(seat.of_row(
+    player_id: "p2",
+    guest_id: None,
+    user_id: None,
+  ))
+  assert !seat.claimable(sage)
+}
+
+pub fn a_bot_seat_is_never_stamped_by_a_sign_in_test() {
+  let seats = [
+    seat.of_row(player_id: "p1", guest_id: Some("g1"), user_id: None),
+    seat.Seat(player_id: "p2", guest_id: None, user_id: None, bot: True),
+  ]
+  let #(stamped, count) = seat.stamp(seats, "g1", "g2", "u1")
+
+  assert count == 1
+  assert stamped
+    == [
+      seat.Seat(
+        player_id: "p1",
+        guest_id: Some("g2"),
+        user_id: Some("u1"),
+        bot: False,
+      ),
+      seat.Seat(player_id: "p2", guest_id: None, user_id: None, bot: True),
+    ]
 }
 
 // ---------- An owned seat: the account, and the guest ignored ----------
@@ -95,8 +140,8 @@ pub fn an_owned_seat_may_never_be_claimed_test() {
 
 pub fn held_by_answers_in_seat_order_test() {
   let seats = [
-    Seat(player_id: "p1", guest_id: Some("g1"), user_id: None),
-    Seat(player_id: "p2", guest_id: Some("g2"), user_id: Some("u1")),
+    seat.of_row(player_id: "p1", guest_id: Some("g1"), user_id: None),
+    seat.of_row(player_id: "p2", guest_id: Some("g2"), user_id: Some("u1")),
   ]
 
   assert seat.held_by(seats, guest("g1")) == Some("p1")
@@ -111,8 +156,8 @@ pub fn a_browser_whose_account_owns_a_seat_holds_that_one_not_its_guests_test() 
   // One browser, two seats at one table, would be a table nobody could
   // play: the room refuses the second, and this is the rule it refuses by.
   let seats = [
-    Seat(player_id: "p1", guest_id: Some("g1"), user_id: Some("u1")),
-    Seat(player_id: "p2", guest_id: Some("g1"), user_id: None),
+    seat.of_row(player_id: "p1", guest_id: Some("g1"), user_id: Some("u1")),
+    seat.of_row(player_id: "p2", guest_id: Some("g1"), user_id: None),
   ]
 
   assert seat.held_by(seats, signed_in("g1", "u1")) == Some("p1")

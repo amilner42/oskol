@@ -60,6 +60,8 @@ pub opaque type Instance {
     /// going, whoever has something to do (a READY between the games of a
     /// match). Nobody once it is over or a clock ran out.
     to_act: fn() -> List(PlayerId),
+    /// A bot seat's decision (`Game.bot`), with the engine as a closure.
+    bot: fn(PlayerId, game.Ask, Int) -> Result(List(json.Json), String),
   )
 }
 
@@ -311,6 +313,14 @@ pub fn erase(running: Running(state, action)) -> Instance {
         None, charged -> charged
       }
     },
+    bot: fn(player_id, ask, attempts) {
+      // A clock that has run out ends the game; there is nothing left to
+      // think about, and `legal` says so too.
+      case running.clocks.timed_out {
+        Some(_) -> Ok([])
+        None -> running.definition.bot(running.state, player_id, ask, attempts)
+      }
+    },
   )
 }
 
@@ -376,6 +386,17 @@ pub fn clocks(instance: Instance) -> Clocks {
 
 pub fn to_act(instance: Instance) -> List(PlayerId) {
   instance.to_act()
+}
+
+/// What a bot seat should do now, as raw actions in the order they are to be
+/// taken. `attempts` is how many asks have already failed for this decision.
+pub fn bot(
+  instance: Instance,
+  player_id: PlayerId,
+  ask: game.Ask,
+  attempts: Int,
+) -> Result(List(json.Json), String) {
+  instance.bot(player_id, ask, attempts)
 }
 
 pub fn apply(

@@ -203,7 +203,8 @@ defmodule Oskol.Gleam.Caps.Puzzles do
   defp deck_source(row) do
     {:deck_source, row.id, row.puzzle_id, row.game_id, row.game_number, row.kind, row.grade || "",
      row.turn, Jason.encode!(row.question), DateTime.to_unix(row.ended_at, :millisecond),
-     {:seat, row.player_id, opt(blank_to_nil(row.guest_id)), opt(blank_to_nil(row.user_id))}}
+     {:seat, row.player_id, opt(blank_to_nil(row.guest_id)), opt(blank_to_nil(row.user_id)),
+      false}}
   end
 
   defp blank_to_nil(""), do: nil

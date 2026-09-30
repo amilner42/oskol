@@ -157,6 +157,36 @@ defmodule Oskol.GameKit do
     |> Map.put("at", System.system_time(:millisecond))
   end
 
+  # ---------- Bots ----------
+
+  @doc """
+  Whose turn it is, by the game's own account: the same answer the row's
+  snapshot carries. What the room asks before it wakes a bot seat.
+  """
+  @spec to_act(instance) :: [player_id]
+  def to_act(instance), do: :gamekit@host.to_act(instance)
+
+  @doc """
+  What a bot seat does now: the actions to apply, in order, as the same maps
+  a browser sends. `ask` is the analysis engine as a closure -- a route and a
+  JSON body in, the answer's body out -- and it is called from wherever this
+  runs, never from a room. `attempts` is how many asks have already come back
+  empty for this decision; what to do once that is too many is the game's
+  call, not ours.
+  """
+  @spec think(
+          instance,
+          player_id,
+          (String.t(), String.t() -> {:ok, String.t()} | {:error, String.t()}),
+          non_neg_integer()
+        ) :: {:ok, [map()]} | {:error, String.t()}
+  def think(instance, player_id, ask, attempts) do
+    case :gamekit@host.think(instance, player_id, ask, attempts) do
+      {:ok, json} -> {:ok, Jason.decode!(json)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @spec slug(instance) :: String.t()
   def slug(instance), do: :gamekit@host.slug(instance)
 

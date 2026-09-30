@@ -1059,6 +1059,8 @@ view model =
                                     , gamePrs = \n -> Dict.get n model.gamePrs |> Maybe.withDefault []
                                     , save = saveOffer model payload
                                     , accounts = Just (payload.players |> List.filter .account |> List.map .id)
+                                    , bots = payload.players |> List.filter .bot |> List.map .id
+                                    , thinking = payload.players |> List.filter .thinking |> List.map .id
                                     , mistakes = \n -> Dict.get n model.mistakes |> Maybe.map List.length
                                     }
                                 )

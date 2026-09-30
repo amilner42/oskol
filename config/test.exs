@@ -45,6 +45,15 @@ config :oskol, :analysis,
   url: "http://analysis.test",
   req_options: [plug: {Req.Test, Oskol.Reviews}]
 
+# The bot plays the same engine as everything else in the suite: a Req.Test
+# stub over the pure Gleam fake. The backoff is milliseconds so the test that
+# watches an engine give up is not a test that waits a minute and a half.
+config :oskol, :bot,
+  move_level: "1ply",
+  cube_level: "1ply",
+  retry_ms: [10, 20, 30],
+  ask_timeout_ms: 1_000
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :oskol, OskolWeb.Endpoint,

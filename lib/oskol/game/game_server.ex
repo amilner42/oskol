@@ -15,6 +15,7 @@ defmodule Oskol.Game.GameServer do
   use GenServer, restart: :temporary
   require Logger
 
+  alias Oskol.Game.Bot
   alias Oskol.Game.GameServerState
   alias Oskol.Game.Persister
   alias Oskol.GameKit
@@ -63,6 +64,18 @@ defmodule Oskol.Game.GameServer do
       via_tuple(game_id),
       {:join_game, player_name, player_pid, guest_id, user_id, username}
     )
+  end
+
+  @doc """
+  Sit a bot down at a free seat, filling the table and starting the game.
+
+  It holds no guest and no account, so `src/oskol/rooms/seat.gleam` says
+  nobody holds that seat and nothing claims it, and it is never away, so the
+  invite link has nothing to offer. There is no process behind it either:
+  what drives it is `Oskol.Game.Bot`, off this one.
+  """
+  def join_bot(game_id, player_name) do
+    GenServer.call(via_tuple(game_id), {:join_bot, player_name})
   end
 
   @doc """
@@ -199,7 +212,11 @@ defmodule Oskol.Game.GameServer do
 
     case restore_state(GameServerState.new(game_id, slug), game, actions) do
       {:ok, state} ->
-        {:ok, state, @timeout}
+        # A deploy or an idle stop can land in the middle of a bot's turn, and
+        # the think that was running went with the old process. Start it again
+        # once the room is up, not in `init`, so nothing waits on the engine
+        # for a room to answer its first call.
+        {:ok, state, {:continue, :bots}}
 
       {:error, reason} ->
         Logger.error("Could not rehydrate game #{game_id}: #{inspect(reason)}")
@@ -256,6 +273,7 @@ defmodule Oskol.Game.GameServer do
           username: username,
           guest_id: guest_id,
           user_id: user_id,
+          bot: false,
           pid: player_pid,
           client: player_pid,
           connected: player_pid != nil,
@@ -284,6 +302,63 @@ defmodule Oskol.Game.GameServer do
             new_state
           end
 
+        new_state = Bot.think(new_state)
+        broadcast(new_state, [])
+        {:reply, {:ok, player_id, new_state}, new_state, @timeout}
+    end
+  end
+
+  def handle_call({:join_bot, player_name}, _from, %GameServerState{} = state) do
+    cond do
+      GameServerState.full?(state) ->
+        {:reply, {:error, :game_full}, state, @timeout}
+
+      GameServerState.name_taken?(state, player_name) ->
+        {:reply, {:error, :name_taken}, state, @timeout}
+
+      GameServerState.started?(state) ->
+        {:reply, {:error, :game_already_started}, state, @timeout}
+
+      true ->
+        player_id = generate_player_id()
+
+        connection = %{
+          name: player_name,
+          username: nil,
+          guest_id: nil,
+          user_id: nil,
+          bot: true,
+          pid: nil,
+          client: nil,
+          # A bot is always at the table. Nothing watches a process for it,
+          # so nothing can mark it away, and the invite link therefore never
+          # offers its seat to a visitor with the code.
+          connected: true,
+          monitor_ref: nil
+        }
+
+        new_state =
+          %GameServerState{
+            state
+            | connections: Map.put(state.connections, player_id, connection),
+              seat_order: state.seat_order ++ [player_id]
+          }
+          |> GameServerState.touch()
+          |> GameServerState.update_lobby_status()
+
+        Persister.players_updated(new_state.game_id, players_json(new_state))
+
+        new_state =
+          if GameServerState.full?(new_state) do
+            case do_start(new_state, nil, nil) do
+              {:ok, started} -> started
+              {:error, _} -> new_state
+            end
+          else
+            new_state
+          end
+
+        new_state = Bot.think(new_state)
         broadcast(new_state, [])
         {:reply, {:ok, player_id, new_state}, new_state, @timeout}
     end
@@ -319,10 +394,13 @@ defmodule Oskol.Game.GameServer do
         {:reply, {:error, :player_not_found}, state, @timeout}
 
       not :oskol@rooms@seat.claimable(GameServerState.seat_record(player_id, conn)) ->
-        # An owned seat is its account's for good. That account reaches it by
-        # attaching, from any browser it is signed in on; no claim and no
-        # room code hands it to anybody else.
-        {:reply, {:error, :seat_owned}, state, @timeout}
+        # An owned seat is its account's for good, and a bot seat is nobody's
+        # to stand in for. Neither is a claim away: the one rule is
+        # `src/oskol/rooms/seat.gleam`'s `claimable`, and the two reasons are
+        # only so the sentence a caller is shown is the true one.
+        if Map.get(conn, :bot, false),
+          do: {:reply, {:error, :seat_is_bot}, state, @timeout},
+          else: {:reply, {:error, :seat_owned}, state, @timeout}
 
       conn.connected ->
         # A seat with a live player is locked: only the guest holding it
@@ -366,7 +444,7 @@ defmodule Oskol.Game.GameServer do
   # with the old ids, names and guests, so each player's browser holds the
   # same seat in it.
   def handle_call(
-        {:seed_seat, player_id, name, guest_id, user_id, username},
+        {:seed_seat, player_id, name, guest_id, user_id, username, bot},
         _from,
         %GameServerState{} = state
       ) do
@@ -375,9 +453,12 @@ defmodule Oskol.Game.GameServer do
       username: username,
       guest_id: guest_id,
       user_id: user_id,
+      bot: bot,
       pid: nil,
       client: nil,
-      connected: false,
+      # A person has to open the new room before their seat is live; the bot
+      # is simply there, as it was in the room this one is a rematch of.
+      connected: bot,
       monitor_ref: nil
     }
 
@@ -397,6 +478,7 @@ defmodule Oskol.Game.GameServer do
   def handle_call({:start_game, seed, control}, _from, %GameServerState{} = state) do
     case do_start(state, seed, control) do
       {:ok, new_state} ->
+        new_state = Bot.think(new_state)
         broadcast(new_state, [])
         {:reply, {:ok, new_state}, new_state, @timeout}
 
@@ -408,6 +490,7 @@ defmodule Oskol.Game.GameServer do
   def handle_call({:player_action, player_id, action}, _from, %GameServerState{} = state) do
     case apply_action(state, player_id, action) do
       {:ok, new_state, events} ->
+        new_state = Bot.think(new_state)
         broadcast(new_state, events)
         grade_turn(new_state, events)
         {:reply, {:ok, new_state, events}, new_state, @timeout}
@@ -429,7 +512,13 @@ defmodule Oskol.Game.GameServer do
         {:reply, {:ok, state.rematch_game_id}, state, @timeout}
 
       true ->
-        ready = MapSet.put(state.rematch_ready, player_id)
+        # A bot has nothing to press. Counting its seat as ready is what makes
+        # one REMATCH enough at a table where the other player is Sage.
+        ready =
+          state.rematch_ready
+          |> MapSet.put(player_id)
+          |> MapSet.union(MapSet.new(GameServerState.bot_seats(state)))
+
         new_state = %GameServerState{state | rematch_ready: ready} |> GameServerState.touch()
 
         if MapSet.size(ready) == map_size(state.connections) do
@@ -485,6 +574,7 @@ defmodule Oskol.Game.GameServer do
   def handle_cast({:player_action, player_id, action}, %GameServerState{} = state) do
     case apply_action(state, player_id, action) do
       {:ok, new_state, events} ->
+        new_state = Bot.think(new_state)
         broadcast(new_state, events)
         grade_turn(new_state, events)
         {:noreply, new_state, @timeout}
@@ -501,25 +591,39 @@ defmodule Oskol.Game.GameServer do
   end
 
   @impl true
+  def handle_continue(:bots, %GameServerState{} = state) do
+    state = Bot.think(state)
+    broadcast(state, [])
+    {:noreply, state, @timeout}
+  end
+
+  # A bot seat's think, come back with what it made of the turn.
+  @impl true
+  def handle_info({ref, outcome}, %GameServerState{} = state) when is_reference(ref) do
+    case Bot.finished(state, ref, outcome) do
+      {:ok, state} ->
+        Process.demonitor(ref, [:flush])
+        # The seat is free to think again, and usually will not: the turn it
+        # just played is somebody else's now. What this catches is the turn
+        # that moved on while it was thinking.
+        state = Bot.think(state)
+        broadcast(state, [])
+        {:noreply, state, @timeout}
+
+      :none ->
+        {:noreply, state, @timeout}
+    end
+  end
+
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %GameServerState{} = state) do
-    player_id =
-      Enum.find_value(state.connections, fn {id, conn} ->
-        if conn.monitor_ref == ref, do: id, else: nil
-      end)
+    case Bot.finished(state, ref, :crashed) do
+      {:ok, state} ->
+        state = Bot.think(state)
+        broadcast(state, [])
+        {:noreply, state, @timeout}
 
-    if player_id do
-      Logger.info("Player #{player_id} disconnected from game: #{state.game_id}")
-      updated = %{state.connections[player_id] | connected: false}
-
-      new_state =
-        %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
-        |> GameServerState.touch()
-        |> GameServerState.update_lobby_status()
-
-      broadcast(new_state, [])
-      {:noreply, new_state, @timeout}
-    else
-      {:noreply, state, @timeout}
+      :none ->
+        handle_player_down(ref, state)
     end
   end
 
@@ -542,6 +646,7 @@ defmodule Oskol.Game.GameServer do
           persist_entry(state, "expire", nil, nil, now, instance)
           persist_finish(new_state)
           request_review(new_state, events)
+          new_state = Bot.think(new_state)
           broadcast(new_state, events)
           grade_turn(new_state, events)
           {:noreply, new_state, @timeout}
@@ -555,6 +660,28 @@ defmodule Oskol.Game.GameServer do
   def handle_info(:timeout, %GameServerState{} = state) do
     Logger.info("Game #{state.game_id} timed out after 1 hour of inactivity")
     {:stop, :normal, state}
+  end
+
+  defp handle_player_down(ref, %GameServerState{} = state) do
+    player_id =
+      Enum.find_value(state.connections, fn {id, conn} ->
+        if conn.monitor_ref == ref, do: id, else: nil
+      end)
+
+    if player_id do
+      Logger.info("Player #{player_id} disconnected from game: #{state.game_id}")
+      updated = %{state.connections[player_id] | connected: false}
+
+      new_state =
+        %GameServerState{state | connections: Map.put(state.connections, player_id, updated)}
+        |> GameServerState.touch()
+        |> GameServerState.update_lobby_status()
+
+      broadcast(new_state, [])
+      {:noreply, new_state, @timeout}
+    else
+      {:noreply, state, @timeout}
+    end
   end
 
   # ---------- Private ----------
@@ -736,7 +863,10 @@ defmodule Oskol.Game.GameServer do
         "id" => id,
         "name" => conn.name,
         "guest_id" => conn.guest_id,
-        "user_id" => conn.user_id
+        "user_id" => conn.user_id,
+        # So a bot seat survives a rehydrate: a room rebuilt from its row has
+        # to know which seat plays itself, or nobody would move.
+        "bot" => Map.get(conn, :bot, false)
       }
     end)
   end
@@ -761,7 +891,7 @@ defmodule Oskol.Game.GameServer do
       )
 
     connections =
-      Enum.reduce(seats, state.connections, fn {:seat, id, guest, user}, connections ->
+      Enum.reduce(seats, state.connections, fn {:seat, id, guest, user, _bot}, connections ->
         Map.update!(connections, id, fn conn ->
           owner = Interop.unopt(user)
 
@@ -800,7 +930,8 @@ defmodule Oskol.Game.GameServer do
           {:ok, ^id, _} =
             GenServer.call(
               via_tuple(rematch_id),
-              {:seed_seat, id, conn.name, conn.guest_id, conn.user_id, conn.username}
+              {:seed_seat, id, conn.name, conn.guest_id, conn.user_id, conn.username,
+               Map.get(conn, :bot, false)}
             )
         end)
 
@@ -911,6 +1042,7 @@ defmodule Oskol.Game.GameServer do
     Enum.reduce(players, {%{}, []}, fn player, {connections, order} ->
       connection = %{
         name: player["name"],
+        bot: player["bot"] == true,
         # Looked up once, on the way back: an owned seat plays under the
         # account's name as it is now.
         # Resolved by the caller before the room came up: a room does no IO.
@@ -925,7 +1057,8 @@ defmodule Oskol.Game.GameServer do
         user_id: player["user_id"],
         pid: nil,
         client: nil,
-        connected: false,
+        # Everyone is away until their browser comes back; the bot never was.
+        connected: player["bot"] == true,
         monitor_ref: nil
       }
 

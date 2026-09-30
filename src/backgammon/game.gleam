@@ -2,6 +2,7 @@
 
 import backgammon/analysis
 import backgammon/board
+import backgammon/bot
 import backgammon/engine.{type Action}
 import backgammon/projection
 import backgammon/state.{type GameState}
@@ -29,6 +30,7 @@ pub fn game() -> Game(GameState, Action) {
     // A played turn is backgammon's unit of analysis, so it is also what
     // the platform may grade before the game is over.
     committed: analysis.committed_json,
+    bot: bot.decide,
   )
 }
 

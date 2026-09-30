@@ -34,6 +34,11 @@ pub type RoomsCaps {
     /// signed in, in which case the seat is the account's from the start.
     join: fn(String, String, Option(String), Option(String)) ->
       Result(Seat, RoomError),
+    /// Sit a bot down at a table: (game_id, display name). It holds no guest
+    /// and no account, so nobody holds that seat and no code opens it, and
+    /// it is never away, so the invite link has nothing to offer. Filling
+    /// the table starts the game, exactly as a second person would.
+    seat_bot: fn(String, String) -> Result(Seat, RoomError),
     /// Take back a seat whose player is away: (game_id, player_id, guest
     /// id, user id). The seat passes to that browser, so whoever held it
     /// before no longer does, and to their account if they have one. A seat
@@ -66,6 +71,7 @@ pub fn stub() -> RoomsCaps {
     subscribe: fn(_) { panic as "stub rooms.subscribe" },
     configure: fn(_, _) { panic as "stub rooms.configure" },
     join: fn(_, _, _, _) { panic as "stub rooms.join" },
+    seat_bot: fn(_, _) { panic as "stub rooms.seat_bot" },
     claim: fn(_, _, _, _) { panic as "stub rooms.claim" },
     seated_game: fn(_, _, _) { panic as "stub rooms.seated_game" },
     game: fn(_) { panic as "stub rooms.game" },

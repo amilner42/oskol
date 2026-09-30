@@ -170,7 +170,12 @@ defmodule OskolWeb.GameChannel do
         # name typed at the door.
         name: GameServerState.display_name(conn),
         connected: conn.connected,
-        account: conn.user_id != nil
+        account: conn.user_id != nil,
+        # `bot`: a bot plays this seat, for the badge that says so. `thinking`:
+        # it is working one out right now, which is what keeps the table from
+        # looking frozen while the engine takes its seconds.
+        bot: Map.get(conn, :bot, false),
+        thinking: GameServerState.thinking?(state, id)
       }
     end)
   end

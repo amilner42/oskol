@@ -32,6 +32,10 @@ defmodule Oskol.Game.GameServerState do
           username: String.t() | nil,
           guest_id: String.t() | nil,
           user_id: String.t() | nil,
+          # A bot plays this seat: it holds no guest and no account, it is
+          # never away, and nothing can claim it
+          # (`src/oskol/rooms/seat.gleam`).
+          bot: boolean(),
           pid: pid() | nil,
           # The client behind `pid`: the socket's transport, which survives
           # the channel rejoining. It is what tells a reconnect from a
@@ -65,6 +69,8 @@ defmodule Oskol.Game.GameServerState do
           setup: setup(),
           clock_timer: reference() | nil,
           rematch_ready: MapSet.t(player_id()),
+          bot_thinking: %{player_id() => {reference(), non_neg_integer()}},
+          bot_stalled: %{player_id() => non_neg_integer()},
           rematch_game_id: String.t() | nil,
           action_count: non_neg_integer(),
           clock_base: integer() | nil
@@ -83,6 +89,16 @@ defmodule Oskol.Game.GameServerState do
             clock_timer: nil,
             rematch_ready: MapSet.new(),
             rematch_game_id: nil,
+            # The bot seats with a think in flight, by the monitor watching
+            # the task doing it. A seat thinks about one turn at a time: the
+            # entry stands until the task has applied everything it decided,
+            # so a broadcast between the bot's own actions does not start a
+            # second think on the same turn (`Oskol.Game.Bot`).
+            bot_thinking: %{},
+            # A bot seat whose last think played nothing, and the log length
+            # it played nothing at: it is left alone until the game moves,
+            # rather than asked again the moment its task exits.
+            bot_stalled: %{},
             # How many log entries (actions + expiries) the instance has
             # applied, and the `now` the instance started at: together they
             # let the write-behind log record each entry's index and offset.
@@ -247,7 +263,25 @@ defmodule Oskol.Game.GameServerState do
   @doc "One seat as the Gleam `rooms/seat.Seat` record."
   def seat_record(player_id, conn) do
     {:seat, player_id, Oskol.Gleam.Interop.opt(blank_to_nil(conn.guest_id)),
-     Oskol.Gleam.Interop.opt(blank_to_nil(Map.get(conn, :user_id)))}
+     Oskol.Gleam.Interop.opt(blank_to_nil(Map.get(conn, :user_id))), Map.get(conn, :bot, false)}
+  end
+
+  @doc "The seats a bot plays here, in seat order."
+  @spec bot_seats(t()) :: [player_id()]
+  def bot_seats(%__MODULE__{} = state) do
+    for id <- state.seat_order,
+        conn = state.connections[id],
+        conn != nil and Map.get(conn, :bot, false),
+        do: id
+  end
+
+  @doc """
+  Is this bot seat thinking right now? What the player bar's pulsing dot is
+  drawn from, and what stops a second think starting on the same turn.
+  """
+  @spec thinking?(t(), player_id()) :: boolean()
+  def thinking?(%__MODULE__{bot_thinking: thinking}, player_id) do
+    Map.has_key?(thinking, player_id)
   end
 
   @doc "Whether an account owns this seat: it is then nobody else's, ever."

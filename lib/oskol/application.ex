@@ -42,6 +42,9 @@ defmodule Oskol.Application do
         # game is. It answers nobody: rooms cast and carry on.
         {Task.Supervisor, name: Oskol.Reviews.GraderSupervisor},
         {Oskol.Reviews.Grader, []},
+        # A bot seat's thinking: seconds on the analysis engine, off the room
+        # that is serving live play.
+        {Task.Supervisor, name: Oskol.Game.BotSupervisor},
         Oskol.Game.GameSupervisor,
         # Start a worker by calling: Oskol.Worker.start_link(arg)
         # {Oskol.Worker, arg},

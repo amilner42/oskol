@@ -2209,6 +2209,22 @@ a.rp-match-row:hover { color: var(--ink); }
 .identity-icon { display: inline-flex; flex: none; line-height: 0; }
 .identity-icon.is-guest { opacity: 0.6; }
 .identity-icon.is-account { color: #3fb96f; }
+/* The bot is a chip, not a person: it takes the colour of whatever bar it
+   sits on, like the guest's outline, so a name is never louder -- or, on the
+   table's dark walnut, invisible -- for having a machine behind it. */
+.identity-icon.is-bot { opacity: 0.75; }
+
+/* Sage thinking: the presence dot keeps the steady green of a player who is
+   there -- it is -- and pulses so nine seconds of an engine reading a
+   position does not look like a table that has stopped. */
+.bar-dot.thinking { animation: bar-dot-think 1.2s ease-in-out infinite; }
+@keyframes bar-dot-think {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.72); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bar-dot.thinking { animation: none; opacity: 0.6; }
+}
 
 /* The puzzle page sideways: the question sits under the header in the
    column beside the board, then the answers (or SHARE / NEXT), then the
