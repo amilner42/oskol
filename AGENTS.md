@@ -376,7 +376,10 @@ the dice stand for both players under "no legal moves" until the mover
 passes, and every time control gives each turn its first 12 seconds free.
 Between the games of a match (or of unlimited play) the finished game's
 position stays up, nobody is on the clock, and the next game starts when
-both players have pressed READY. Every game can be played with an optional
+both players have pressed READY. Unlimited play has no finish line of its
+own, so beside READY either player may END SESSION: the score stands and
+whoever is ahead has won. A match ends when somebody reaches the target and
+is never closable, and a game on the board is left by resigning. Every game can be played with an optional
 time control.
 
 Oskol used to host poker, go and chess too; they were removed in the pivot
@@ -705,7 +708,8 @@ assets/src/Ui/LiveGames.elm      one row per game you can pick back up, drawn th
                                  on both homes; the row is the whole link, so
                                  the x that ends a closable one is a button
                                  beside it, never inside it
-assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it;
+assets/src/Page/Play.elm         "/:slug/:id" the table, and the lobby before it
+                                 (END THIS GAME, for a room nobody joined);
                                  asks /puzzles?game=n for each game /ratings reports
                                  graded (a seat only) and feeds both result cards'
                                  PRACTICE THIS GAME'S N MISTAKES and save offer
