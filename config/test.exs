@@ -26,6 +26,11 @@ config :oskol, Oskol.Repo,
 # goes to a Req.Test stub, never the network.
 config :oskol, Oskol.Reviews.Queue, enabled: false
 
+# Same for the per-turn grader: rooms commit turns by the hundred here, and
+# a turn graded is an engine call. A test that wants it turns it on and waits
+# with `Oskol.Reviews.Grader.await_idle/1`.
+config :oskol, Oskol.Reviews.Grader, enabled: false
+
 # Puzzle pictures are rasterised by a binary tests never depend on: this
 # stub writes a fixed PNG for any SVG (test_support/fake_rsvg_convert).
 config :oskol, :rsvg,

@@ -29,6 +29,11 @@ pub opaque type Running(state, action) {
     seats: List(Seat),
     state: state,
     clocks: Clocks,
+    /// What the step that produced this state committed (`Game.committed`),
+    /// carried here so the host can read it off the value it already holds
+    /// rather than keeping the previous state to ask about. None for a
+    /// freshly begun game and for a step that committed nothing.
+    committed: Option(json.Json),
   )
 }
 
@@ -46,6 +51,10 @@ pub opaque type Instance {
     outcome: fn() -> Outcome,
     /// The game's public record, if it keeps one (`Game.record`).
     record: fn() -> Option(json.Json),
+    /// What the step that produced this instance committed
+    /// (`Game.committed`). None on a freshly started game, and on a step
+    /// that committed nothing.
+    committed: Option(json.Json),
     /// Whose turn it is: the players the game charges (`Game.clocks`, with
     /// or without a clock set), or, when it charges nobody but is still
     /// going, whoever has something to do (a READY between the games of a
@@ -83,7 +92,7 @@ pub fn begin(
     clock.new(control, ids)
     |> clock.with_turn_delay(definition.info.turn_delay_ms)
     |> clock.set_running(running_for(definition, state), now, None)
-  Ok(Running(definition, seats, state, clocks))
+  Ok(Running(definition, seats, state, clocks, None))
 }
 
 /// Apply a raw action for a player at `now`.
@@ -140,7 +149,12 @@ pub fn step_taken(
           Some(player_id),
         )
       Ok(#(
-        Running(..running, state: next_state, clocks: next_clocks),
+        Running(
+          ..running,
+          state: next_state,
+          clocks: next_clocks,
+          committed: definition.committed(running.state, decoded, next_state),
+        ),
         events,
         Some(decoded),
       ))
@@ -197,7 +211,7 @@ fn on_timeout(
   let definition = running.definition
   let forfeit = fn() {
     let assert Some(#(_, stopped)) = clock.expire(running.clocks, now)
-    #(Running(..running, clocks: stopped), [])
+    #(Running(..running, clocks: stopped, committed: None), [])
   }
   case definition.timeout(running.state, loser) {
     game.Forfeit -> forfeit()
@@ -213,7 +227,19 @@ fn on_timeout(
               now,
               Some(loser),
             )
-          #(Running(..running, state: next_state, clocks: next_clocks), events)
+          #(
+            Running(
+              ..running,
+              state: next_state,
+              clocks: next_clocks,
+              committed: definition.committed(
+                running.state,
+                auto_action,
+                next_state,
+              ),
+            ),
+            events,
+          )
         }
         // The game had no action for them: fall back to a forfeit
         Error(_) -> forfeit()
@@ -228,6 +254,11 @@ pub fn running_state(running: Running(state, action)) -> state {
 
 pub fn running_clocks(running: Running(state, action)) -> Clocks {
   running.clocks
+}
+
+/// What the step that produced this state committed (`Game.committed`).
+pub fn running_committed(running: Running(state, action)) -> Option(json.Json) {
+  running.committed
 }
 
 /// The outcome, a clock that ran out included.
@@ -269,6 +300,7 @@ pub fn erase(running: Running(state, action)) -> Instance {
     scene: fn(viewer) { running.definition.scene(running.state, viewer) },
     outcome: fn() { running_outcome(running) },
     record: fn() { running.definition.record(running.state) },
+    committed: running.committed,
     to_act: fn() {
       case
         running.clocks.timed_out,
@@ -370,6 +402,14 @@ pub fn outcome(instance: Instance) -> Outcome {
 /// The game's public record, if it keeps one: every seat may read it.
 pub fn record(instance: Instance) -> Option(json.Json) {
   instance.record()
+}
+
+/// What the step that produced this instance committed, if anything
+/// (`Game.committed`). A rehydrated room's steps commit as the live ones
+/// did, so a caller acting on this must know which of the two it is in:
+/// replaying a log would otherwise commit every turn of it again.
+pub fn committed(instance: Instance) -> Option(json.Json) {
+  instance.committed
 }
 
 pub fn finished(instance: Instance) -> Bool {

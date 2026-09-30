@@ -17,6 +17,7 @@ import gamekit/instance
 import gamekit/replay
 import gamekit/rng.{type Rng}
 import gleam/dict.{type Dict}
+import gleam/dynamic/decode
 import gleam/int
 import gleam/json
 import gleam/list
@@ -289,7 +290,7 @@ const eager = ["double", "take", "play", "move", "roll"]
 pub fn the_opening_turn_is_the_first_mover_on_the_opening_roll_test() {
   let #(log, _) =
     drive("match5", 11, clock.NoClock, 400, prefer(["play", "move"]))
-  let assert Ok([first, ..]) = analysis.games(log)
+  let assert Ok([first, ..]) = analysis.games(backgammon.game(), log)
   assert first.number == 1
   let assert [turn, ..] = first.turns
   assert turn.position.board == opening
@@ -306,7 +307,7 @@ pub fn doubles_and_takes_carry_the_cube_from_the_movers_side_test() {
   // to 5: 1 -> 2 -> 4 are live cubes, and the double to 16 on an 8-cube
   // is dead (the doubler needed 5), so the engine never sees it offered.
   let #(log, _) = drive("match5", 11, clock.NoClock, 400, prefer(eager))
-  let assert Ok([g, ..]) = analysis.games(log)
+  let assert Ok([g, ..]) = analysis.games(backgammon.game(), log)
   let assert [t0, t1, t2, t3, t4, ..] = g.turns
   assert t0.double == None
   assert t1.player != t0.player
@@ -332,7 +333,7 @@ pub fn a_passed_double_ends_the_game_with_no_dice_test() {
       400,
       prefer(["double", "drop", "ready", "play", "move", "roll"]),
     )
-  let assert Ok([g1, g2, ..]) = analysis.games(log)
+  let assert Ok([g1, g2, ..]) = analysis.games(backgammon.game(), log)
   assert g1.finished
   let assert [_opening, passed] = g1.turns
   assert passed.double == Some(Passed)
@@ -358,7 +359,7 @@ pub fn a_match_game_is_over_the_moment_it_is_won_test() {
       prefer(["double", "drop", "play", "move", "roll"]),
     )
   let assert state.BetweenGames(..) = final.phase
-  let assert Ok([g1]) = analysis.games(log)
+  let assert Ok([g1]) = analysis.games(backgammon.game(), log)
   assert g1.finished
   assert g1.number == 1
   let assert [_opening, passed] = g1.turns
@@ -383,7 +384,7 @@ pub fn a_match_game_is_over_the_moment_it_is_won_test() {
         }
       },
     )
-  let assert Ok([g1]) = analysis.games(log)
+  let assert Ok([g1]) = analysis.games(backgammon.game(), log)
   assert g1.finished
 }
 
@@ -392,7 +393,7 @@ pub fn a_resignation_keeps_only_complete_turns_test() {
   // never played, so there is nothing of it to grade.
   let #(log, _) =
     drive("single", 11, clock.NoClock, 10, prefer(["resign", "accept_resign"]))
-  let assert Ok([g]) = analysis.games(log)
+  let assert Ok([g]) = analysis.games(backgammon.game(), log)
   assert g.finished
   assert g.turns == []
 }
@@ -400,7 +401,7 @@ pub fn a_resignation_keeps_only_complete_turns_test() {
 pub fn a_game_still_being_played_is_listed_unfinished_test() {
   let #(log, _) =
     drive("single", 11, clock.NoClock, 12, prefer(["play", "move", "roll"]))
-  let assert Ok([g]) = analysis.games(log)
+  let assert Ok([g]) = analysis.games(backgammon.game(), log)
   assert !g.finished
   assert g.turns != []
 }
@@ -417,7 +418,7 @@ pub fn a_clock_that_ran_out_ends_the_game_where_it_stood_test() {
         _ -> None
       }
     })
-  let assert Ok([g]) = analysis.games(log)
+  let assert Ok([g]) = analysis.games(backgammon.game(), log)
   assert !g.finished
   let late = case to_act(log) {
     Some(id) -> id
@@ -429,7 +430,7 @@ pub fn a_clock_that_ran_out_ends_the_game_where_it_stood_test() {
       ..log,
       entries: list.append(log.entries, [replay.Act(late, roll, 3_600_000)]),
     )
-  let assert Ok([g]) = analysis.games(late_log)
+  let assert Ok([g]) = analysis.games(backgammon.game(), late_log)
   assert g.finished
   assert list.length(g.turns) == 1
   // An expiry the room resolved on its own tick reads the same way
@@ -438,7 +439,7 @@ pub fn a_clock_that_ran_out_ends_the_game_where_it_stood_test() {
       ..log,
       entries: list.append(log.entries, [replay.Expire(3_600_000)]),
     )
-  let assert Ok([g]) = analysis.games(ticked)
+  let assert Ok([g]) = analysis.games(backgammon.game(), ticked)
   assert g.finished
   assert list.length(g.turns) == 1
 }
@@ -464,12 +465,12 @@ pub fn a_log_the_game_rejects_fails_the_replay_test() {
       ..log,
       entries: list.append(log.entries, [replay.Act("p1", bogus, 5000)]),
     )
-  let assert Error(_) = analysis.games(log)
+  let assert Error(_) = analysis.games(backgammon.game(), log)
 }
 
 pub fn the_request_is_the_engines_shape_test() {
   let #(log, _) = drive("match5", 11, clock.NoClock, 400, prefer(eager))
-  let assert Ok([g, ..]) = analysis.games(log)
+  let assert Ok([g, ..]) = analysis.games(backgammon.game(), log)
   let text = json.to_string(analysis.request_json(g))
   assert string.starts_with(text, "{\"jacoby\":false,")
   assert string.contains(
@@ -486,7 +487,7 @@ fn random_games(format: String, seeds: List(Int), excluded) {
   list.each(seeds, fn(seed) {
     let #(log, final) =
       drive(format, seed, clock.NoClock, 3000, random_except(excluded))
-    let assert Ok(games) = analysis.games(log)
+    let assert Ok(games) = analysis.games(backgammon.game(), log)
     check_games(games, final)
   })
 }
@@ -502,7 +503,7 @@ pub fn a_dance_is_sent_as_the_board_it_began_on_test() {
     list.flat_map([1, 2, 3, 4], fn(seed) {
       let #(log, _) =
         drive("single", seed, clock.NoClock, 3000, random_except(["resign"]))
-      let assert Ok(games) = analysis.games(log)
+      let assert Ok(games) = analysis.games(backgammon.game(), log)
       list.flat_map(games, fn(g) { list.filter(g.turns, analysis.danced) })
     })
   assert dances != []
@@ -602,7 +603,7 @@ pub fn a_turn_names_its_lines_of_the_record_test() {
   // record's first line, and the next turn's double, take and roll are the
   // three lines after it.
   let #(log, final) = drive("match5", 11, clock.NoClock, 400, prefer(eager))
-  let assert Ok([g, ..]) = analysis.games(log)
+  let assert Ok([g, ..]) = analysis.games(backgammon.game(), log)
   let assert [t0, t1, ..] = g.turns
   assert #(t0.entry, t0.double_entry, t0.answer_entry) == #(Some(0), None, None)
   assert #(t1.double_entry, t1.answer_entry, t1.entry)
@@ -624,7 +625,7 @@ pub fn a_passed_double_names_the_double_and_the_drop_test() {
       400,
       prefer(["double", "drop", "ready", "play", "move", "roll"]),
     )
-  let assert Ok([g1, g2, ..]) = analysis.games(log)
+  let assert Ok([g1, g2, ..]) = analysis.games(backgammon.game(), log)
   let assert [_opening, passed] = g1.turns
   assert #(passed.entry, passed.double_entry, passed.answer_entry)
     == #(None, Some(1), Some(2))
@@ -650,7 +651,7 @@ pub fn a_match_tells_the_engine_the_score_and_crawford_test() {
       2000,
       prefer(["double", "drop", "ready", "play", "move", "roll"]),
     )
-  let assert Ok(games) = analysis.games(log)
+  let assert Ok(games) = analysis.games(backgammon.game(), log)
   // The running score after each finished game, oldest first.
   let results =
     record.results(state.record(final))
@@ -724,7 +725,7 @@ pub fn unlimited_play_is_a_money_game_with_jacoby_test() {
       1500,
       prefer(["double", "take", "play", "move", "roll"]),
     )
-  let assert Ok(games) = analysis.games(log)
+  let assert Ok(games) = analysis.games(backgammon.game(), log)
   assert games != []
   list.each(games, fn(g) {
     // Gammons only count once the cube is turned: the engine is told so
@@ -741,7 +742,7 @@ pub fn unlimited_play_is_a_money_game_with_jacoby_test() {
   // A single game is neither: one point each, and no Jacoby to apply
   let #(single, _) =
     drive("single", 11, clock.NoClock, 400, prefer(["play", "move", "roll"]))
-  let assert Ok([g, ..]) = analysis.games(single)
+  let assert Ok([g, ..]) = analysis.games(backgammon.game(), single)
   assert !g.jacoby
   let assert [turn, ..] = g.turns
   assert #(turn.position.away1, turn.position.away2) == #(1, 1)
@@ -1080,4 +1081,132 @@ fn compare_boards(a: List(Int), b: List(Int)) -> order.Order {
     [], _ -> order.Lt
     _, [] -> order.Gt
   }
+}
+
+// ---------- A turn as it is committed ----------
+//
+// A turn graded while the game is still going is a cache of the question the
+// end-of-game review would have asked, and the cache is found by that
+// question. So the two have to build the same one: `committed`, off the state
+// the action lands on, and the fold over the whole log, turn for turn and
+// byte for byte in the body each produces.
+
+/// Every turn of every game, folded out of the log one commit at a time,
+/// as `#(game number, index in that game, the turn, the body sent for it)`.
+fn commits(log: replay.Log) -> List(#(Int, Int, analysis.Turn, String)) {
+  let assert Ok(#(found, _)) =
+    replay.fold(backgammon.game(), log, fn(_) { [] }, fn(found, t) {
+      case t.action {
+        None -> found
+        Some(action) ->
+          case
+            analysis.committed(t.before, action, t.after),
+            analysis.committed_json(t.before, action, t.after)
+          {
+            Some(turn), Some(payload) -> {
+              let #(number, index, body) = carried(payload)
+              [#(number, index, turn, body), ..found]
+            }
+            // Either both or neither: one is built out of the other.
+            None, None -> found
+            _, _ -> panic as "a commit with half an answer"
+          }
+      }
+    })
+  list.reverse(found)
+}
+
+/// What the platform carries off the room for one committed turn.
+fn carried(payload: json.Json) -> #(Int, Int, String) {
+  let decoder = {
+    use number <- decode.field("game_number", decode.int)
+    use index <- decode.field("index", decode.int)
+    use body <- decode.field("body", decode.string)
+    decode.success(#(number, index, body))
+  }
+  let assert Ok(carried) = json.parse(json.to_string(payload), decoder)
+  carried
+}
+
+/// Every turn the review would ask about, as `#(game number, index, turn)`.
+fn replayed_turns(log: replay.Log) -> List(#(Int, Int, analysis.Turn)) {
+  let assert Ok(games) = analysis.games(backgammon.game(), log)
+  list.flat_map(games, fn(g) {
+    list.index_map(g.turns, fn(turn, index) { #(g.number, index, turn) })
+  })
+}
+
+/// A commit cannot know where the entry sat in the room's action log -- the
+/// game never sees the log -- and nothing sent to the engine carries it.
+fn without_log_index(turn: analysis.Turn) -> analysis.Turn {
+  analysis.Turn(..turn, log_index: 0)
+}
+
+/// Hold the two against each other over one log: same turns, same order,
+/// same place in the game, and the same request body for each.
+fn assert_commits_are_the_review(log: replay.Log, jacoby: Bool) -> Int {
+  let expected = replayed_turns(log)
+  let found = commits(log)
+  assert list.length(found) == list.length(expected)
+  assert list.map(found, fn(c) { #(c.0, c.1, without_log_index(c.2)) })
+    == list.map(expected, fn(e) { #(e.0, e.1, without_log_index(e.2)) })
+  // And byte for byte the question the job will look the grade up by.
+  list.each(list.zip(found, expected), fn(pair) {
+    let #(#(_, _, _, body), #(_, index, turn)) = pair
+    assert body
+      == json.to_string(analysis.one_turn_request(turn, index, jacoby))
+  })
+  list.length(found)
+}
+
+pub fn a_committed_turn_is_the_turn_the_review_asks_about_test() {
+  // A whole match, cubes offered and taken at every chance: the cube is the
+  // one thing a commit has to reconstruct, since a take turns it before the
+  // mover rolls.
+  let #(log, _) = drive("match5", 11, clock.NoClock, 400, prefer(eager))
+  assert assert_commits_are_the_review(log, False) > 10
+}
+
+pub fn a_passed_double_is_committed_as_the_review_reads_it_test() {
+  let #(log, _) =
+    drive(
+      "match5",
+      11,
+      clock.NoClock,
+      400,
+      prefer(["double", "drop", "ready", "play", "move", "roll"]),
+    )
+  assert assert_commits_are_the_review(log, False) > 2
+}
+
+pub fn commits_match_the_review_over_random_seeded_games_test() {
+  // Jacoby on, so a turn's request carries it; no resignation, because a
+  // game cut off mid-turn leaves the review a turn nobody committed (it
+  // keeps an answered double), which is a cache miss and not a mismatch.
+  list.each([3, 5, 7, 11, 13], fn(seed) {
+    let #(log, _) =
+      drive(
+        "unlimited",
+        seed,
+        clock.NoClock,
+        600,
+        random_except(["resign", "accept_resign", "decline_resign", "undo"]),
+      )
+    assert assert_commits_are_the_review(log, True) > 5
+  })
+}
+
+pub fn a_turn_with_nothing_committed_commits_nothing_test() {
+  // Rolling, staging and answering a double are half a turn; only `play`
+  // and `drop` finish one, and `undo` never unmakes one.
+  let #(log, _) = drive("single", 11, clock.NoClock, 6, prefer(["move"]))
+  let assert Ok(#(_, running)) =
+    replay.fold(backgammon.game(), log, fn(_) { Nil }, fn(_, _) { Nil })
+  let s = instance.running_state(running)
+  let assert state.Moving(_, _) = s.phase
+  assert analysis.committed(s, engine.Roll, s) == None
+  assert analysis.committed(s, engine.Undo, s) == None
+  assert analysis.committed(s, engine.Double, s) == None
+  assert analysis.committed(s, engine.Take, s) == None
+  assert analysis.committed(s, engine.Drop, s) == None
 }

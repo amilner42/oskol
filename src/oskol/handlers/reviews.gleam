@@ -26,6 +26,7 @@
 //// HTTP.
 
 import backgammon/analysis
+import backgammon/game as backgammon
 import gamekit/event.{type Event}
 import gamekit/game.{Seat}
 import gamekit/host
@@ -49,7 +50,7 @@ import oskol/core/session.{type Session}
 import oskol/handlers/record
 import oskol/practice/sync
 import oskol/puzzles/extract
-import oskol/reviews/report
+import oskol/reviews/report.{type Graded, Graded}
 import oskol/rooms/seat
 
 /// The only game with an engine.
@@ -180,9 +181,8 @@ fn attempt_review(
     // Charge before IO so task crashes cannot reset the attempt budget.
     Save(Pending, attempts, None, None, None, turns),
   )
-  let body = json.to_string(analysis.request_json(g))
   let outcome =
-    ctx.analysis.review(body)
+    answer(ctx, game_id, g)
     // Stored only once it renders: a done review is one the page can read
     // back without doing any of this again.
     |> result.try(fn(response) {
@@ -196,6 +196,9 @@ fn attempt_review(
         g.number,
         Save(Done, attempts, Some(response), None, Some(page), turns),
       )
+      // The game's answer is written; the grades its turns were cached
+      // under are spent, and a room nobody finishes is the sweep's.
+      ctx.analysis.forget_grades(game_id, g.number)
       // The only moment the board each decision was made *on* exists: the
       // stored answer keeps the boards moves lead to, never the one they
       // start from. Puzzles are written here or they are not written.
@@ -213,6 +216,105 @@ fn attempt_review(
         False -> Error(Nil)
       }
     }
+  }
+}
+
+// ---------- Asking the engine for what is not already graded ----------
+
+/// One game's whole answer from the engine, out of the grades already
+/// stored for its turns and one call for the rest.
+///
+/// The cache is a cache and nothing else. A turn it cannot answer for is
+/// asked about, in one request with the others it cannot answer for; a game
+/// with nothing stored is the batch review it has always been, same body,
+/// same call, same retries, so an engine that was down all game is reviewed
+/// at the end exactly as before. A grade only ever stands where the
+/// engine's own answer for that turn would have stood, and the game's
+/// totals are worked out from the turns rather than taken from either side
+/// (`report.assemble`).
+fn answer(
+  ctx: Ctx,
+  game_id: String,
+  g: analysis.GameTurns,
+) -> Result(String, String) {
+  let asked = list.index_map(g.turns, fn(turn, index) { #(index, turn) })
+  case cached(ctx, game_id, g, asked) {
+    // Nothing usable stored: the batch review, untouched.
+    [] -> ctx.analysis.review(json.to_string(analysis.request_json(g)))
+    hits -> {
+      let graded = list.map(hits, fn(hit) { hit.index })
+      let missing = list.filter(asked, fn(a) { !list.contains(graded, a.0) })
+      // At the depth the grades were given at, not the engine's default of
+      // today: a review is all of one depth or it is not one review. The
+      // hits agree on it already (`cached`), so this is theirs.
+      let depth = case hits {
+        [Graded(levels: Some(levels), ..), ..] -> #(
+          Some(levels.moves),
+          Some(levels.cube),
+        )
+        _ -> #(None, None)
+      }
+      use fresh <- result.try(case missing {
+        [] -> Ok([])
+        _ -> {
+          use body <- result.try(
+            ctx.analysis.review(
+              json.to_string(analysis.turns_request(
+                missing,
+                g.jacoby,
+                depth.0,
+                depth.1,
+              )),
+            ),
+          )
+          report.graded_turns(body)
+        }
+      })
+      list.append(hits, fresh)
+      |> list.sort(fn(a, b) { int.compare(a.index, b.index) })
+      |> report.assemble
+      |> result.map(json.to_string)
+    }
+  }
+}
+
+/// The grades stored for this game's turns, and only where they all agree on
+/// the depth they were graded at.
+///
+/// An engine replaced in the middle of a game would otherwise leave a review
+/// half at one depth and half at another, which is not a review of anything.
+/// Rather than mix them, the whole game is asked again: one call, and the
+/// grades are dropped when the answer is written.
+///
+/// A grade that will not read (an engine that changed its shape under a
+/// cached answer) is simply not a hit.
+fn cached(
+  ctx: Ctx,
+  game_id: String,
+  g: analysis.GameTurns,
+  asked: List(#(Int, analysis.Turn)),
+) -> List(Graded) {
+  let bodies =
+    list.map(asked, fn(a) {
+      json.to_string(analysis.one_turn_request(a.1, a.0, g.jacoby))
+    })
+  let hits =
+    ctx.analysis.grades(game_id, g.number, bodies)
+    |> list.filter_map(fn(stored) {
+      case stored {
+        None -> Error(Nil)
+        Some(body) ->
+          case report.graded_turns(body) {
+            Ok([one]) -> Ok(one)
+            // A grade is one turn's. Anything else is not one.
+            Ok(_) | Error(_) -> Error(Nil)
+          }
+      }
+    })
+  let depths = list.unique(list.map(hits, fn(hit) { hit.levels }))
+  case depths {
+    [_] -> hits
+    _ -> []
   }
 }
 
@@ -804,13 +906,16 @@ fn replayed(
   log: GameLog,
 ) -> Result(#(List(analysis.GameTurns), Option(Json)), String) {
   use entries <- result.try(list.try_map(log.entries, entry_of))
-  analysis.games_with_record(replay.Log(
-    format_id: log.format,
-    seats: list.map(log.seats, fn(s) { Seat(id: s.0, name: s.1) }),
-    seed: log.seed,
-    control: host.clock_control(log.clock),
-    entries: entries,
-  ))
+  analysis.games_with_record(
+    backgammon.game(),
+    replay.Log(
+      format_id: log.format,
+      seats: list.map(log.seats, fn(s) { Seat(id: s.0, name: s.1) }),
+      seed: log.seed,
+      control: host.clock_control(log.clock),
+      entries: entries,
+    ),
+  )
 }
 
 fn entry_of(e: caps.LogEntry) -> Result(replay.Entry, String) {

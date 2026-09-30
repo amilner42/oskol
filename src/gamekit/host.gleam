@@ -109,6 +109,20 @@ pub fn expire(
   }
 }
 
+/// What the step that produced this instance committed, as the game's own
+/// JSON (`Game.committed`). `Error(Nil)` when it committed nothing, which
+/// is every step of a game that has no such unit of play.
+///
+/// The value belongs to the instance and not to a moment, so reading it
+/// twice reads the same step twice: a caller acting on it must act once,
+/// on the instance a step just returned.
+pub fn committed_json(instance: Instance) -> Result(String, Nil) {
+  case instance.committed(instance) {
+    Some(payload) -> Ok(json.to_string(payload))
+    None -> Error(Nil)
+  }
+}
+
 /// Milliseconds until the next possible clock expiry, if a clock is running.
 pub fn next_deadline(instance: Instance, now: Int) -> Result(Int, Nil) {
   case instance.next_deadline(instance, now) {

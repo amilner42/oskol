@@ -220,6 +220,24 @@ pub type AnalysisCaps {
     /// -- which the live sweep would take as an invitation to extract the
     /// old answer again. Only the backfill calls this.
     replace: fn(String, Int, Save) -> Nil,
+    /// The grades already stored for a game's turns: (game_id, game_number,
+    /// one request body per turn, in turn order). The answer is one entry
+    /// per body, in the same order: the engine's reply where that exact
+    /// question has been asked and answered already, None where it has not.
+    ///
+    /// The bodies are the key. A grade is found by the question it answers
+    /// and by nothing else, so a turn can only ever be served a grade of
+    /// itself, and a stale one cannot be dressed up as a fresh one.
+    ///
+    /// This cap is **not** on the request path: the context a handler is
+    /// given holds `no_grades`, which panics. Nothing a player can reach
+    /// may count, list or hint at the grades of a game still being played,
+    /// and the only way to be sure of that is for the capability not to be
+    /// there.
+    grades: fn(String, Int, List(String)) -> List(Option(String)),
+    /// Drop a game's stored grades: (game_id, game_number). Called once the
+    /// game's whole answer is written, when they are spent.
+    forget_grades: fn(String, Int) -> Nil,
     /// The graded games of one **account**, newest answer first: (user id,
     /// how many). One query over the review rows joined to the seats an
     /// account owns, so the home reads a player's whole form without waking
@@ -241,6 +259,14 @@ pub type AnalysisCaps {
   )
 }
 
+/// The `grades` cap for every context that is not the review job's: it
+/// panics. A handler that reads it is a loud 500 and not a quiet leak, which
+/// is the point -- nothing a player can reach may know that a game still
+/// being played has been graded at all.
+pub fn no_grades() -> fn(String, Int, List(String)) -> List(Option(String)) {
+  fn(_, _, _) { panic as "analysis.grades is the review job's alone" }
+}
+
 pub fn stub() -> AnalysisCaps {
   AnalysisCaps(
     log: fn(_) { panic as "stub analysis.log" },
@@ -255,6 +281,8 @@ pub fn stub() -> AnalysisCaps {
     report_turn: fn(_, _, _) { panic as "stub analysis.report_turn" },
     charge: fn(_, _, _, _) { panic as "stub analysis.charge" },
     replace: fn(_, _, _) { panic as "stub analysis.replace" },
+    grades: no_grades(),
+    forget_grades: fn(_, _) { panic as "stub analysis.forget_grades" },
     graded_for: fn(_, _) { panic as "stub analysis.graded_for" },
     graded_rooms_for: fn(_, _, _) { panic as "stub analysis.graded_rooms_for" },
   )

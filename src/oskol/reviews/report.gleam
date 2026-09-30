@@ -20,6 +20,7 @@ import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import oskol/core/raw
 
 // ---------- The engine's review ----------
 
@@ -42,6 +43,11 @@ pub type Levels {
 pub type TurnReview {
   TurnReview(
     index: Int,
+    /// The seat on roll, as the engine numbers them. Kept because the
+    /// seats' totals are worked out from the turns when a review is
+    /// assembled out of them (`totals_of`), and every verdict of a turn is
+    /// charged to one seat or the other.
+    player: Int,
     cube: Option(CubeReview),
     move: Option(MoveReview),
     luck: Option(Float),
@@ -213,6 +219,260 @@ fn opening_decoder() -> Decoder(#(Option(Int), Option(CubeReview))) {
   decode.success(#(seat, cube))
 }
 
+// ---------- A review assembled from its turns ----------
+
+/// One turn's answer as it is stored on its own, before there is a review to
+/// put it in: the engine's own object for that turn, verbatim, the depths it
+/// was graded at, and what it cost.
+///
+/// `turn` is text because an assembled review hands the engine's answer
+/// straight back rather than rebuilding it: every number a page shows about
+/// a turn is the engine's, whether the turn was graded as it was played or
+/// with the rest of the game at the end.
+pub type Graded {
+  Graded(
+    /// Where the turn sits in its game, as the engine echoed it back.
+    index: Int,
+    turn: String,
+    /// The whole `levels` object the engine sent, kept verbatim so an
+    /// assembled answer says exactly what a whole-game one would, and
+    /// decoded beside it so a caller can ask for the rest of the game at
+    /// the same depth.
+    levels: Option(Levels),
+    levels_json: Option(String),
+    timing_ms: Option(Int),
+    /// The same turn decoded, for the seats' totals.
+    review: TurnReview,
+  )
+}
+
+/// The turns of an engine response, each on its own. What a one-turn grade
+/// is read as when it is stored, and what a request for the turns a game is
+/// missing is read as when it comes back.
+pub fn graded_turns(body: String) -> Result(List(Graded), String) {
+  let shape = {
+    use turns <- decode.field("turns", decode.list(decode.dynamic))
+    use levels <- decode.optional_field(
+      "levels",
+      None,
+      decode.optional(decode.dynamic),
+    )
+    use timing <- decode.optional_field(
+      "timing_ms",
+      None,
+      decode.optional(number()),
+    )
+    decode.success(#(turns, levels, timing))
+  }
+  use #(turns, levels, timing) <- result.try(
+    json.parse(body, shape)
+    |> result.replace_error("A graded turn did not read as a review"),
+  )
+  let named = case levels {
+    Some(data) -> decode.run(data, levels_decoder()) |> option.from_result
+    None -> None
+  }
+  // The engine times a request, not a turn, so the parts of one request
+  // share its time. Nothing reads it but the total a page prints.
+  let each = case timing, list.length(turns) {
+    Some(ms), count if count > 0 -> Some(float.round(ms) / count)
+    _, _ -> None
+  }
+  list.try_map(turns, fn(data) {
+    use review <- result.try(
+      decode.run(data, turn_decoder())
+      |> result.replace_error("A graded turn did not read as a graded turn"),
+    )
+    Ok(Graded(
+      index: review.index,
+      turn: raw.text(data),
+      levels: named,
+      levels_json: option.map(levels, raw.text),
+      timing_ms: each,
+      review: review,
+    ))
+  })
+}
+
+/// One game's review built out of the engine's answers for its turns, in the
+/// shape a whole-game answer has.
+///
+/// Every turn is the engine's own answer for it, verbatim and in order; the
+/// seats' totals are worked out here (`totals_of`), since they are the one
+/// part of a review that is about the game rather than about a turn. The
+/// engine time is what the parts cost between them, and `assembled` says
+/// where the answer came from, so a stored response is never mistaken for
+/// one the engine gave whole.
+///
+/// `Error` when the parts are not this game's turns in order: the caller has
+/// mixed up a cache, and a review built on that would grade the wrong
+/// positions.
+pub fn assemble(parts: List(Graded)) -> Result(Json, String) {
+  use _ <- result.try(
+    case
+      list.index_map(parts, fn(part, index) { part.index == index })
+      |> list.all(fn(right) { right })
+    {
+      True -> Ok(Nil)
+      False -> Error("The graded turns are not this game's turns in order")
+    },
+  )
+  let timing =
+    list.fold(parts, 0, fn(total, part) {
+      total + option.unwrap(part.timing_ms, 0)
+    })
+  let levels =
+    list.find_map(parts, fn(part) { option.to_result(part.levels_json, Nil) })
+  let totals = totals_of(list.map(parts, fn(part) { part.review }))
+  Ok(
+    json.object([
+      #("assembled", json.bool(True)),
+      #("levels", case levels {
+        Ok(text) -> raw.json(text)
+        Error(_) -> json.null()
+      }),
+      #("timing_ms", json.int(timing)),
+      #("players", json.array(totals, totals_to_json)),
+      #("turns", json.array(parts, fn(part) { raw.json(part.turn) })),
+    ]),
+  )
+}
+
+/// The seats' totals over a game's graded turns, the engine's own way
+/// (`review_game` in the engine's app/review.py, which is the spec): a
+/// turn's cube verdicts charged to the doubler and to the taker, its luck
+/// and its move to the mover, a forced move counted but not graded; then,
+/// per seat, the error summed and XG's Performance Rating -- equity lost per
+/// unforced decision, times 500.
+///
+/// This is the one number in an assembled review that is not the engine's
+/// own answer, so it has to agree with it exactly, down to the order the
+/// floats are added in. `report_test` holds it to every stored response the
+/// suite keeps: `totals_of(turns) == players`.
+pub fn totals_of(turns: List(TurnReview)) -> List(Totals) {
+  let #(first, second) =
+    list.fold(turns, #(no_totals(), no_totals()), fn(seats, turn) {
+      let #(me, them) = case turn.player {
+        0 -> #(seats.0, seats.1)
+        _ -> #(seats.1, seats.0)
+      }
+      let #(me, them) = charge(me, them, turn)
+      case turn.player {
+        0 -> #(me, them)
+        _ -> #(them, me)
+      }
+    })
+  [rated(first), rated(second)]
+}
+
+/// One turn charged to the mover and, where a double was answered, to the
+/// other seat.
+fn charge(me: Totals, them: Totals, turn: TurnReview) -> #(Totals, Totals) {
+  let #(me, them) = case turn.cube {
+    None -> #(me, them)
+    Some(cube) -> #(
+      Totals(
+        ..me,
+        cube_decisions: me.cube_decisions + 1,
+        cube_error: me.cube_error +. cube.doubler.error,
+        mistakes: counted(me.mistakes, cube.doubler.mistake),
+      ),
+      case cube.taker {
+        None -> them
+        Some(taker) ->
+          Totals(
+            ..them,
+            cube_decisions: them.cube_decisions + 1,
+            cube_error: them.cube_error +. taker.error,
+            mistakes: counted(them.mistakes, taker.mistake),
+          )
+      },
+    )
+  }
+  let me = case turn.luck {
+    Some(luck) -> Totals(..me, luck: me.luck +. luck)
+    None -> me
+  }
+  let me = case turn.move {
+    // A dance is not a decision and the engine counts it as neither.
+    None | Some(Danced) -> me
+    Some(Moved(forced: True, ..)) -> Totals(..me, forced: me.forced + 1)
+    Some(Moved(error: error, grade: grade, ..)) ->
+      Totals(
+        ..me,
+        move_decisions: me.move_decisions + 1,
+        move_error: me.move_error +. error,
+        grades: counted(me.grades, Some(grade)),
+      )
+  }
+  #(me, them)
+}
+
+fn counted(bucket: Dict(String, Int), name: Option(String)) -> Dict(String, Int) {
+  case name {
+    None -> bucket
+    Some(name) ->
+      dict.insert(
+        bucket,
+        name,
+        1 + { dict.get(bucket, name) |> result.unwrap(0) },
+      )
+  }
+}
+
+/// A seat's error and rating, once every turn has been charged to it.
+fn rated(t: Totals) -> Totals {
+  let error = t.move_error +. t.cube_error
+  let decisions = t.move_decisions + t.cube_decisions
+  Totals(..t, error: error, pr: case decisions {
+    0 -> 0.0
+    _ -> error /. int.to_float(decisions) *. 500.0
+  })
+}
+
+fn no_totals() -> Totals {
+  Totals(
+    move_decisions: 0,
+    forced: 0,
+    move_error: 0.0,
+    grades: dict.new(),
+    cube_decisions: 0,
+    cube_error: 0.0,
+    mistakes: dict.new(),
+    luck: 0.0,
+    error: 0.0,
+    pr: 0.0,
+  )
+}
+
+/// A seat's totals in the engine's own shape, so everything that reads a
+/// stored response -- this module's own decoder, the ratings query, the
+/// recent list -- reads an assembled one the same way.
+fn totals_to_json(t: Totals) -> Json {
+  json.object([
+    #(
+      "moves",
+      json.object([
+        #("decisions", json.int(t.move_decisions)),
+        #("forced", json.int(t.forced)),
+        #("error", json.float(t.move_error)),
+        #("grades", json.dict(t.grades, fn(name) { name }, json.int)),
+      ]),
+    ),
+    #(
+      "cube",
+      json.object([
+        #("decisions", json.int(t.cube_decisions)),
+        #("error", json.float(t.cube_error)),
+        #("mistakes", json.dict(t.mistakes, fn(name) { name }, json.int)),
+      ]),
+    ),
+    #("luck", json.float(t.luck)),
+    #("error", json.float(t.error)),
+    #("pr", json.float(t.pr)),
+  ])
+}
+
 // ---------- Performance rating ----------
 
 /// A "no double" the engine graded where the mover could not have doubled.
@@ -278,25 +538,7 @@ fn review_decoder() -> Decoder(Review) {
   use levels <- decode.optional_field(
     "levels",
     None,
-    decode.one_of(
-      {
-        // The engine has called the move level both "move" and "moves".
-        use moves <- decode.field(
-          "move",
-          decode.one_of(decode.string, [decode.at(["moves"], decode.string)]),
-        )
-        use cube <- decode.field("cube", decode.string)
-        decode.success(Some(Levels(moves, cube)))
-      },
-      [
-        {
-          use moves <- decode.field("moves", decode.string)
-          use cube <- decode.field("cube", decode.string)
-          decode.success(Some(Levels(moves, cube)))
-        },
-        decode.success(None),
-      ],
-    ),
+    decode.one_of(levels_decoder() |> decode.map(Some), [decode.success(None)]),
   )
   // Whatever shape a later engine gives it, a total that is not a number is
   // simply not shown.
@@ -316,8 +558,36 @@ fn review_decoder() -> Decoder(Review) {
   }
 }
 
+/// The depths the engine searched at. It has called the move level both
+/// "move" and "moves".
+fn levels_decoder() -> Decoder(Levels) {
+  decode.one_of(
+    {
+      use moves <- decode.field(
+        "move",
+        decode.one_of(decode.string, [decode.at(["moves"], decode.string)]),
+      )
+      use cube <- decode.field("cube", decode.string)
+      decode.success(Levels(moves, cube))
+    },
+    [
+      {
+        use moves <- decode.field("moves", decode.string)
+        use cube <- decode.field("cube", decode.string)
+        decode.success(Levels(moves, cube))
+      },
+    ],
+  )
+}
+
 fn turn_decoder() -> Decoder(TurnReview) {
   use index <- decode.field("index", decode.int)
+  // The engine names the seat on roll on every turn it grades. Optional
+  // here for the same reason everything else is: a response is read for
+  // what a page needs, and one written before this decoder must not stop
+  // reading. Only an assembled review's totals depend on it, and those are
+  // built from answers the engine gave today.
+  use player <- decode.optional_field("player", 0, decode.int)
   use cube <- decode.optional_field(
     "cube",
     None,
@@ -333,7 +603,7 @@ fn turn_decoder() -> Decoder(TurnReview) {
     None,
     decode.optional(decode.at(["luck"], number())),
   )
-  decode.success(TurnReview(index, cube, move, luck))
+  decode.success(TurnReview(index, player, cube, move, luck))
 }
 
 fn cube_decoder() -> Decoder(CubeReview) {
