@@ -529,6 +529,51 @@ defmodule Oskol.Reviews do
     |> Repo.all()
   end
 
+  @doc """
+  Reviews that came back done with nothing in them, newest first: the shape
+  a review takes when the replay produced no turn for a game that had one.
+
+  What `close` did to an unlimited session between 2026-09-30 and its fix
+  (the Aveline doc `bg-session-close-wiped-reviews`): ending the session
+  read as a second game ending, the empty half of that overwrote the real
+  answer, and the row was left `done` with `turns: 0`.
+
+  A game that really had nothing to grade -- a resignation on the opening
+  roll -- reads the same, and asking about one again costs a moment of
+  engine time and comes back empty. That is the right trade for a sweep
+  whose job is to miss nothing.
+
+  `room` narrows to one room id.
+  """
+  def empty(limit, room \\ nil) when is_integer(limit) and limit > 0 do
+    query =
+      from(r in Review,
+        where: r.status == "done" and r.turns == 0,
+        order_by: [desc: r.updated_at],
+        limit: ^limit,
+        select: %{game_id: r.game_id, game_number: r.game_number, updated_at: r.updated_at}
+      )
+
+    query
+    |> then(fn q -> if room, do: where(q, [r], r.game_id == ^room), else: q end)
+    |> Repo.all()
+  end
+
+  @doc """
+  Put one game's review back to pending with a full set of attempts and mark
+  its room owed, so the queue builds it again. What a player's retry does to
+  a failed game (`handlers/reviews.retry_json`), for an operator doing
+  several.
+
+  The answer and the page go with it, deliberately: what is there is the
+  wrong answer, and `save/8` clears what it is not passed.
+  """
+  def rebuild(game_id, game_number) do
+    save(game_id, game_number, "pending", 0, nil, nil, nil, nil)
+    mark_analysis_owed(game_id)
+    :ok
+  end
+
   @doc "Fill in one legacy review's turn count without changing any other field."
   def backfill_turns(game_id, game_number, turns) when is_integer(turns) and turns >= 0 do
     from(r in Review, where: r.game_id == ^game_id and r.game_number == ^game_number)
