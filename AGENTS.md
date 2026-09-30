@@ -1360,7 +1360,12 @@ game or a room talks to it.
   it over a seeded log equals `analysis.games` turn for turn, which
   `analysis_test` holds it to. The engine needs one field for this: an
   optional `index` on a `Turn`, since luck on the opening roll is measured
-  differently and a lone turn would otherwise be graded as one.
+  differently and a lone turn would otherwise be graded as one. The engine
+  answers under the index it was given and falls back to the turn's place in
+  the request only when it was given none, which is what lets one request ask
+  about a gappy set of misses. Anything standing in for the engine owes the
+  same -- the Playwright setup scripts stub one -- because an answer filed
+  under the wrong turn is a review of the wrong positions.
   Bounded, because a dropped turn is only a miss: 4 requests in flight, 100
   waiting (oldest dropped, the count logged), and a 60 s circuit after a
   failure so a sleeping desktop is not asked once a turn by every live room.
