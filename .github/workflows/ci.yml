@@ -16,6 +16,34 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # One check for the ruleset to require, so the shape of the jobs below is
+  # ours to change. main's "Protect main" ruleset used to name two jobs
+  # directly; partitioning the Elixir suite and sharding the smokes renamed
+  # both, and a required check that no longer reports is a pull request that
+  # waits for it forever. Requiring this instead means the partition and
+  # shard counts are a workflow decision, not a branch-protection one.
+  #
+  # if: always() so a failed dependency still produces a red answer here
+  # rather than a skipped one, which a ruleset reads as "not reported yet".
+  # A matrix job's result is success only when every leg succeeded.
+  ci:
+    name: CI
+    needs: [test, elixir, browser]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every suite green
+        run: |
+          printf 'compile/Gleam/Elm: %s\nElixir:            %s\nsmokes:            %s\n' \
+            '${{ needs.test.result }}' \
+            '${{ needs.elixir.result }}' \
+            '${{ needs.browser.result }}'
+          for result in '${{ needs.test.result }}' \
+                        '${{ needs.elixir.result }}' \
+                        '${{ needs.browser.result }}'; do
+            [[ "$result" == success ]] || exit 1
+          done
+
   test:
     name: compile, Gleam, Elm
     # Keep runner migrations deliberate; Ubuntu 26 compatibility belongs in
