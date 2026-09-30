@@ -107,6 +107,14 @@ defmodule Oskol.CloseRoomTest do
     if state.instance, do: GameKit.summary(state.instance)["phase"], else: "lobby"
   end
 
+  # Each seat's points, from the snapshot the room writes with every step.
+  defp scores(game_id) do
+    state = Game.get_server_state(game_id)
+
+    GameKit.summary(state.instance)["players"]
+    |> Map.new(fn player -> {player["id"], player["counters"]["score"]} end)
+  end
+
   describe "closing a lobby" do
     test "leaves the list, stops the room and never comes back", %{conn: conn} do
       %{game_id: game_id, g1: alice} = GameFixtures.lobby("match5")
@@ -338,16 +346,20 @@ defmodule Oskol.CloseRoomTest do
       # takes it: its brain has nothing to do once it has said it is ready.
       Process.sleep(50)
       assert phase(game_id) == "between_games"
+      assert row(game_id).status == "playing"
+
+      scores = scores(game_id)
+      leader = if scores[human] > scores[sage], do: human, else: sage
+      assert scores[leader] > 0
 
       {:ok, state, _} = Game.player_action(game_id, human, %{"name" => "close"})
-      {:finished, winners} = GameKit.outcome(state.instance)
 
       # Whoever was ahead, which against Sage is usually Sage. A bot seat
       # holds no account, so nothing about ratings or a deck follows it;
       # what the row carries is a seat id like any other.
-      assert winners in [[human], [sage], []]
+      assert GameKit.outcome(state.instance) == {:finished, [leader]}
       assert row(game_id).status == "finished"
-      assert row(game_id).winners == winners
+      assert row(game_id).winners == [leader]
     end
 
     test "the bot's seat is nobody's, so no browser closes the room through it", %{conn: conn} do
