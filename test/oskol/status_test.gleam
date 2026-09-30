@@ -10,6 +10,7 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/option.{Some}
+
 import gleam/string
 import oskol/puzzles.{type Question, Centered, Move, Mover, Opponent, Question}
 import oskol/status
@@ -37,7 +38,7 @@ fn a_question() -> Question {
 // ---------- Asking ----------
 
 pub fn the_request_describes_the_stored_position_test() {
-  let body = status.request(a_question())
+  let assert Ok(body) = status.request(a_question())
 
   assert string.contains(body, "\"board\":[1,-2,0")
   assert string.contains(body, "\"dice\":[6,3]")
@@ -50,36 +51,65 @@ pub fn the_request_describes_the_stored_position_test() {
 pub fn the_cube_owner_is_written_in_the_engines_words_test() {
   // `puzzles` names the owner from the solver's side and the engine from
   // the seat's; a request that sent "mover" would be answered as centered.
-  let owner = fn(o) { status.request(Question(..a_question(), cube_owner: o)) }
+  let owner = fn(o) {
+    let assert Ok(body) =
+      status.request(Question(..a_question(), cube_owner: o))
+    body
+  }
 
   assert string.contains(owner(Mover), "\"cube_owner\":\"player\"")
   assert string.contains(owner(Opponent), "\"cube_owner\":\"opponent\"")
   assert string.contains(owner(Centered), "\"cube_owner\":\"centered\"")
 }
 
-pub fn the_turn_is_asked_not_graded_test() {
-  let body = status.request(a_question())
+pub fn a_rolled_turn_carries_a_play_test() {
+  // The engine's own contract, and what production caught: the review route
+  // grades a play, so a turn whose dice were rolled and whose `played` is
+  // null is a 422 ("dice were rolled but no move was played"). What the page
+  // draws is the answer's `top`, which is the engine's ranking of every play
+  // whatever it was sent.
+  let assert Ok(body) = status.request(a_question())
 
-  // Nothing has been played: the page is asking what to play. A request
-  // that named a played board would be asking how bad it was.
-  assert string.contains(body, "\"played\":null")
-  assert string.contains(body, "\"doubled\":false")
-  // A turn sent on its own is read as an opening roll unless it says where
-  // it sits, and the board is the mover's own, so they are the first seat.
-  assert string.contains(body, "\"index\":1")
-  assert string.contains(body, "\"player\":0")
+  assert !string.contains(body, "\"played\":null")
+  assert string.contains(body, "\"played\":[")
+  assert string.contains(body, "\"dice\":[6,3]")
+}
+
+pub fn the_play_it_carries_is_a_legal_one_test() {
+  // 6-3 off this board: 26 ints, the same checkers, and not the board it
+  // started on -- a played board that had not moved would be a dance, which
+  // is a different answer.
+  let assert Ok(body) = status.request(a_question())
+  let assert Ok(#(_, after)) = string.split_once(body, "\"played\":")
+  let assert Ok(#(played, _)) = string.split_once(after, "]")
+
+  assert string.contains(played, ",")
+  assert played != "[1,-2,0,0,0,0,5,0,3,0,0,0,-5,5,0,0,0,-3,0,-5,0,0,0,0,-2,1"
+}
+
+pub fn a_question_with_no_roll_is_not_asked_test() {
+  // A move question always has one; a stored row that does not is a row to
+  // skip, not an engine to call down.
+  assert status.request(Question(..a_question(), dice: option.None))
+    == Error("a move question with no roll")
+}
+
+pub fn a_board_that_is_not_a_board_is_not_asked_test() {
+  assert status.request(Question(..a_question(), board: [1, 2, 3]))
+    == Error("a stored board that is not the engine's 26 ints")
 }
 
 pub fn luck_is_not_asked_for_test() {
   // It is a number about a roll that already happened, and asking costs
   // another analysis of a position nobody is waiting on.
-  assert string.contains(status.request(a_question()), "\"include_luck\":false")
+  let assert Ok(body) = status.request(a_question())
+  assert string.contains(body, "\"include_luck\":false")
 }
 
 // ---------- Reading ----------
 
 fn an_answer(plays: String) -> String {
-  "{\"levels\":{\"moves\":\"4ply\",\"cube\":\"4ply\"},\"timing_ms\":2571,"
+  "{\"levels\":{\"move\":\"4ply\",\"cube\":\"4ply\",\"luck\":null},\"timing_ms\":2571,"
   <> "\"turns\":[{\"index\":1,\"player\":0,\"move\":"
   <> plays
   <> "}]}"
@@ -184,4 +214,49 @@ pub fn the_read_is_json_the_page_can_take_test() {
   }
 
   assert json.parse(read, shape) == Ok(#("4ply", 2571, 1))
+}
+
+pub fn the_depth_is_read_off_the_key_the_engine_writes_test() {
+  // `move`, not `moves`: the page said nothing about its depth for a while
+  // because this was wrong, and the engine's own answer is the only place to
+  // learn it. An older engine wrote `move: {moves: ...}`; `reviews/report`
+  // reads both, so this does too.
+  let play = a_play("13/7 8/7", "0.152", "0.0", "0.584")
+  let with_levels = fn(levels) {
+    "{\"levels\":"
+    <> levels
+    <> ",\"turns\":[{\"move\":{\"best\":"
+    <> play
+    <> "}}]}"
+  }
+
+  let assert Ok(now) =
+    status.read(with_levels("{\"move\":\"4ply\",\"cube\":\"4ply\"}"))
+  assert string.contains(now, "\"level\":\"4ply\"")
+
+  let assert Ok(older) =
+    status.read(with_levels("{\"move\":{\"moves\":\"3ply\"},\"cube\":\"3ply\"}"))
+  assert string.contains(older, "\"level\":\"3ply\"")
+}
+
+pub fn only_as_many_plays_as_the_page_asked_to_list_test() {
+  // The engine puts the play the turn carried into `top`, so `top` comes
+  // back longer than `top_moves` -- and that play is an arbitrary legal one
+  // this module chose, which must not be printed as a recommendation.
+  let play = fn(n, eq) { a_play(n, eq, "0.0", "0.5") }
+  let body =
+    "{\"turns\":[{\"move\":{\"best\":"
+    <> play("a", "0.4")
+    <> ",\"top\":["
+    <> play("a", "0.4")
+    <> ","
+    <> play("b", "0.3")
+    <> ","
+    <> play("c", "0.2")
+    <> ","
+    <> play("throwaway", "-0.9")
+    <> "]}}]}"
+
+  let assert Ok(read) = status.read(body)
+  assert !string.contains(read, "throwaway")
 }
