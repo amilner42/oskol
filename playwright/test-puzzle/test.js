@@ -32,7 +32,7 @@
  */
 const playwright = require('playwright');
 const { execFileSync } = require('child_process');
-const { BASE, resultLine, seatedContext } = require('../lib/flows');
+const { BASE, barItem, resultLine, seatedContext } = require('../lib/flows');
 
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -217,13 +217,11 @@ async function run(browser, setup, errors) {
     const alice = await open('alice', aliceContext);
     const email = `puzzle-${Date.now()}@oskol.test`;
     await alice.goto(`${BASE}/`);
-    await alice.waitForSelector('#account-button');
-    // The resume dialog (LIVE GAMES) may be up over the board: it lists no
-    // finished game, so the account menu is the way in.
-    if (await alice.locator('#resume-modal').count()) await alice.keyboard.press('Escape');
-    await alice.click('#account-button');
-    await alice.click('#signin-menu');
-    await alice.waitForSelector('#signin-email');
+    // The guest home's bar (☰'s menu on a phone): Sign in, which opens the
+    // one component.
+    await alice.waitForSelector('#signin-button', { state: 'attached' });
+    await barItem(alice, 'signin');
+    await alice.waitForSelector('#signin-modal #signin-email');
     await alice.fill('#signin-email', email);
     await alice.click('#signin-send');
     await alice.waitForSelector('#signin-code');

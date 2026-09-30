@@ -352,8 +352,8 @@ liveGames =
 
                         -- Carol's is the caller's move, and second in the
                         -- answer: it comes first on the page.
-                        , Query.index 0 >> Query.has [ id "resume-bbbbbb", text "vs Carol", text "Your move" ]
-                        , Query.index 1 >> Query.has [ id "resume-aaaaaa", text "vs Bob", text "Their move" ]
+                        , Query.index 0 >> Query.has [ id "resume-bbbbbb", text "Carol", text "Your move" ]
+                        , Query.index 1 >> Query.has [ id "resume-aaaaaa", text "Bob", text "Their move" ]
                         ]
         , test "one tap into a game is the room's own URL" <|
             \_ ->

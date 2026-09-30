@@ -67,13 +67,10 @@ row clocks onClose game =
                 _ ->
                     game.opponent
 
-        ( against, initial ) =
-            case opponent of
-                Just name ->
-                    ( "vs " ++ name, String.left 1 (String.toUpper name) )
-
-                Nothing ->
-                    ( "Waiting for a player", "·" )
+        -- The opponent's name and nothing else: the row is a game against
+        -- them, so "vs" and a circle with their initial said it twice.
+        against =
+            Maybe.withDefault "Waiting for a player" opponent
 
         ( status, tone ) =
             case opponent of
@@ -96,8 +93,7 @@ row clocks onClose game =
             , id ("resume-" ++ game.id)
             , class ("resume-row flex-1 min-w-0 flex items-center gap-3 px-3.5 py-3 " ++ tone)
             ]
-            [ Html.span [ class "resume-avatar shrink-0 w-10 h-10 rounded-full inline-flex items-center justify-center text-[15px] font-semibold" ] [ Html.text initial ]
-            , Html.span [ class "min-w-0 flex-1" ]
+            [ Html.span [ class "min-w-0 flex-1" ]
                 [ Html.span [ class "block font-semibold text-[15px] leading-tight truncate", style "color: var(--ink)" ] [ Html.text against ]
                 , Html.span [ class "block q-note text-[12px] leading-tight truncate mt-1" ] [ Html.text detail ]
                 ]

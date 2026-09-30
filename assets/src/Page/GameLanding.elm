@@ -2,6 +2,7 @@ module Page.GameLanding exposing
     ( Model
     , Msg(..)
     , Opponent(..)
+    , PickMenu(..)
     , Out(..)
     , cleanName
     , createModal
@@ -20,9 +21,12 @@ module Page.GameLanding exposing
 
 {-| `/` (and `/:slug`) — the game's start page.
 
-Without a room in the URL it is the home page: the board edge to edge
-(`Page.HomeBoard`) with CREATE GAME, whose dialog picks a mode, its settings
-and a clock, takes a name and gets a link. With `?game=` it is
+Without a room in the URL it is the guest's home page (`home`): OSKOL over
+"Play backgammon.", a big board playing a game by itself, and one sentence
+that is the whole of the choice -- "Play [a single game] against [Sage]
+with no clock" -- over one yellow PLAY NOW. Against Sage that starts the
+game there and then; against a friend it asks for a name and takes the
+seat, and the table is where the link is. With `?game=` it is
 the invite that link opens, and what it offers depends on the table (see
 `Api.Catalog.Room`): a free seat, a seat whose player is away, or nothing at
 all. A seat whose player is away is offered to whoever asks: a seat is
@@ -46,12 +50,14 @@ import Dict
 import Api.Catalog as Catalog exposing (ClockPreset, Format, GamePage, MyGame, RoomSeat)
 import Html exposing (Html)
 import Json.Decode as D
+import Process
 import Task
 import Time
 import Html.Attributes exposing (class, classList, href, id)
 import Html.Events exposing (onClick, onSubmit)
+import Svg
+import Svg.Attributes as SvgAttr
 import Games.Backgammon.View
-import Page.HomeBoard
 import Route
 import Session exposing (Session)
 import Ui.Identity as Identity
@@ -79,6 +85,14 @@ type Opponent
     | TheBot
 
 
+{-| Which word of the home page's sentence has its menu open.
+-}
+type PickMenu
+    = GameMenu
+    | WhoMenu
+    | ClockMenu
+
+
 type alias Model =
     { session : Session
     , slug : String
@@ -104,6 +118,11 @@ type alias Model =
     , now : Int -- the clock the list's running times are read against
     , signIn : Maybe SignIn.Model -- signing in, open in LIVE GAMES or under an owned seat
     , accountOpen : Bool -- the account's menu on the player's own bar is showing
+    , menu : Maybe PickMenu -- the home sentence's word whose menu is open
+    , friendAsk : Bool -- PLAY NOW against a friend: the name it is asking for
+    , navOpen : Bool -- on a phone, the bar's ☰ menu: all the wide bar carries but the themes
+    , tumbling : Bool -- PLAY NOW's dice are still in the air: the table waits for them
+    , seatWaiting : Maybe String -- the seat the server made while they were
     }
 
 
@@ -137,6 +156,13 @@ type Msg
     | PressedPuzzles
     | PressedLogOut
     | LoggedOut (Result Api.Error ())
+    | ToggledMenu PickMenu
+    | ClosedMenu
+    | RolledDice
+    | ClosedFriendAsk
+    | ToggledNav
+    | PressedNavJoin
+    | DiceLanded
     | NoOp
 
 
@@ -159,6 +185,8 @@ type Out
     | SignedOut
       -- Go on to a page of the site (after a sign-in, where it was asked from).
     | Go String
+      -- Open the shell's code prompt (JOIN, from the phone bar's menu).
+    | OpenJoin
 
 
 init : Session -> String -> Maybe String -> ( Model, Cmd Msg, Out )
@@ -176,9 +204,16 @@ init session slug gameId =
 
                 else
                     PlayerName
-            , format = ""
+            , format = "single"
             , clock = "none"
-            , opponent = AFriend
+            , opponent =
+                -- The home page's sentence starts on Sage: the one game that
+                -- can start this second.
+                if gameId == Nothing then
+                    TheBot
+
+                else
+                    AFriend
             , playerName = Maybe.withDefault "" session.guestName
             , error = Nothing
             , inviterName = Nothing
@@ -194,6 +229,11 @@ init session slug gameId =
             , now = 0
             , signIn = Nothing
             , accountOpen = False
+            , menu = Nothing
+            , friendAsk = False
+            , navOpen = False
+            , tumbling = False
+            , seatWaiting = Nothing
             }
     in
     case gameId of
@@ -212,7 +252,6 @@ init session slug gameId =
             , Cmd.batch
                 [ Catalog.fetchGame session slug GotGame
                 , Catalog.fetchMyGames session GotMyGames
-                , Notebook.focus NoOp "create-name"
                 ]
             , NoOut
             )
@@ -235,7 +274,8 @@ createOnly session slug =
         ( model, _, _ ) =
             init session slug Nothing
     in
-    ( model, Catalog.fetchGame session slug GotGame )
+    -- CREATE GAME's dialog still opens on a friend, as it always has.
+    ( { model | opponent = AFriend }, Catalog.fetchGame session slug GotGame )
 
 
 title : Model -> String
@@ -316,13 +356,13 @@ update msg model =
             ( { model | accountOpen = not model.accountOpen }, Cmd.none, NoOut )
 
         PressedPuzzles ->
-            ( model, Cmd.none, Go (Route.href Route.puzzles) )
+            ( { model | navOpen = False }, Cmd.none, Go (Route.href Route.puzzles) )
 
         -- The guest's bar menu: the same sign-in, in a dialog of its own.
         PressedSignInMenu ->
             let
                 ( opened, cmd, out ) =
-                    update OpenedSignIn { model | accountOpen = False, resumeOpen = False, signInOpen = True }
+                    update OpenedSignIn { model | accountOpen = False, resumeOpen = False, navOpen = False, signInOpen = True }
             in
             ( opened, cmd, out )
 
@@ -330,7 +370,7 @@ update msg model =
             ( { model | signInOpen = False, signIn = Nothing }, Cmd.none, NoOut )
 
         PressedLogOut ->
-            ( { model | accountOpen = False }, Auth.logout model.session LoggedOut, NoOut )
+            ( { model | accountOpen = False, navOpen = False }, Auth.logout model.session LoggedOut, NoOut )
 
         -- The page stays: the bar goes back to the guest's name, and the
         -- list to the games this browser holds as a guest.
@@ -356,15 +396,11 @@ update msg model =
         ToggledThemes ->
             ( { model | themesOpen = not model.themesOpen }, Cmd.none, NoOut )
 
-        -- The games waiting for this browser: the list opens over the
-        -- board when there are any, once, and the bar keeps offering it.
-        -- Not over something the player already opened (CREATE GAME's
-        -- dialog, the board picker): the bar's button is there for later.
+        -- The games waiting for this browser: the nav offers them ("2 live
+        -- games") and the list opens only when that is pressed. Nothing
+        -- pops up over the page a player came to play on.
         GotMyGames (Ok games) ->
-            -- Not while the bar's sign-in dialog is up: the list that
-            -- arrives after that sign-in would open LIVE GAMES underneath,
-            -- with the same sign-in (and its win) inside it a second time.
-            ( { model | myGames = games, resumeOpen = not (List.isEmpty games) && not model.started && not model.themesOpen && not model.signInOpen }
+            ( { model | myGames = games, resumeOpen = model.resumeOpen && not (List.isEmpty games) }
             , Task.perform ListArrived Time.now
             , NoOut
             )
@@ -393,7 +429,7 @@ update msg model =
             ( { model | now = Time.posixToMillis posix }, Cmd.none, NoOut )
 
         OpenedResume ->
-            ( { model | resumeOpen = True }, Cmd.none, NoOut )
+            ( { model | resumeOpen = True, navOpen = False }, Cmd.none, NoOut )
 
         ClosedResume ->
             ( { model | resumeOpen = False }, Cmd.none, NoOut )
@@ -447,13 +483,43 @@ update msg model =
             ( { model | step = PlayerName }, Cmd.none, NoOut )
 
         PickedFormat formatId ->
-            ( { model | format = formatId, error = Nothing }, Cmd.none, NoOut )
+            ( { model | format = formatId, error = Nothing, menu = Nothing }, Cmd.none, NoOut )
 
         PickedClock clockId ->
-            ( { model | clock = clockId, error = Nothing }, Cmd.none, NoOut )
+            ( { model | clock = clockId, error = Nothing, menu = Nothing }, Cmd.none, NoOut )
 
         PickedOpponent opponent ->
-            ( { model | opponent = opponent, error = Nothing }, Cmd.none, NoOut )
+            ( { model | opponent = opponent, error = Nothing, menu = Nothing }, Cmd.none, NoOut )
+
+        ToggledMenu which ->
+            ( { model
+                | menu =
+                    if model.menu == Just which then
+                        Nothing
+
+                    else
+                        Just which
+                , themesOpen = False
+                , accountOpen = False
+              }
+            , Cmd.none
+            , NoOut
+            )
+
+        ClosedMenu ->
+            ( { model | menu = Nothing }, Cmd.none, NoOut )
+
+        RolledDice ->
+            roll model
+
+        ClosedFriendAsk ->
+            ( { model | friendAsk = False, error = Nothing }, Cmd.none, NoOut )
+
+        ToggledNav ->
+            ( { model | navOpen = not model.navOpen, menu = Nothing, themesOpen = False, accountOpen = False }, Cmd.none, NoOut )
+
+        PressedNavJoin ->
+            ( { model | navOpen = False }, Cmd.none, OpenJoin )
 
         NameChanged name ->
             ( { model | playerName = name }, Cmd.none, NoOut )
@@ -472,14 +538,31 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none, NoOut )
 
+        -- The dice get their throw: a game made faster than they land waits
+        -- for them (`DiceLanded`), so the button is never a blink.
         Seated (Ok created) ->
-            ( { model | busy = False }
-            , Cmd.none
-            , TookSeat { name = model.playerName, path = created.path }
-            )
+            if model.tumbling then
+                ( { model | seatWaiting = Just created.path }, Cmd.none, NoOut )
+
+            else
+                ( { model | busy = False }
+                , Cmd.none
+                , TookSeat { name = model.playerName, path = created.path }
+                )
+
+        DiceLanded ->
+            case model.seatWaiting of
+                Just path ->
+                    ( { model | tumbling = False, seatWaiting = Nothing, busy = False }
+                    , Cmd.none
+                    , TookSeat { name = model.playerName, path = path }
+                    )
+
+                Nothing ->
+                    ( { model | tumbling = False }, Cmd.none, NoOut )
 
         Seated (Err err) ->
-            ( { model | busy = False, error = Just (Api.errorMessage err) }, Cmd.none, NoOut )
+            ( { model | busy = False, tumbling = False, error = Just (Api.errorMessage err) }, Cmd.none, NoOut )
 
         NoOp ->
             ( model, Cmd.none, NoOut )
@@ -491,6 +574,113 @@ that, and is not asked for a name.
 username : Model -> Maybe String
 username model =
     model.session.user |> Maybe.andThen .name
+
+
+{-| PLAY NOW. Against Sage the game is made there and then, under the
+name this browser last played under (an account plays under its own); the
+dice tumble while it is. Against a friend the friend will read the name
+("Arie wants to play"), so a guest is asked for it first; an account is not.
+-}
+roll : Model -> ( Model, Cmd Msg, Out )
+roll model =
+    if model.busy then
+        ( model, Cmd.none, NoOut )
+
+    else
+        case ( model.opponent, username model ) of
+            ( TheBot, _ ) ->
+                throw (create (sageName model) { model | menu = Nothing })
+
+            ( AFriend, Just name ) ->
+                throw (create name { model | menu = Nothing })
+
+            -- "Guest" is what Sage was played under for want of a name,
+            -- not a name anyone chose: the friend's dialog does not offer it.
+            ( AFriend, Nothing ) ->
+                ( { model
+                    | friendAsk = True
+                    , menu = Nothing
+                    , error = Nothing
+                    , playerName =
+                        if model.playerName == "Guest" then
+                            ""
+
+                        else
+                            model.playerName
+                  }
+                , Notebook.focus NoOp "friend-name"
+                , NoOut
+                )
+
+
+{-| The dice leave the button and tumble for at least `tumbleMs`, however
+fast the server is: the throw is the fun of the button, and a page that
+jumps to the table mid-air throws it away.
+-}
+throw : ( Model, Cmd Msg, Out ) -> ( Model, Cmd Msg, Out )
+throw ( model, cmd, out ) =
+    ( { model | tumbling = True, seatWaiting = Nothing }
+    , Cmd.batch [ cmd, Process.sleep tumbleMs |> Task.perform (\_ -> DiceLanded) ]
+    , out
+    )
+
+
+tumbleMs : Float
+tumbleMs =
+    -- one throw of `.lh-die`'s `lh-tumble` (1.05 s, the second die 0.07 s behind)
+    1150
+
+
+{-| The name a game against Sage is played under: the account's, else the
+one this browser last played under, else "Guest". Never "Sage", which the
+room refuses beside the bot.
+-}
+sageName : Model -> String
+sageName model =
+    case username model of
+        Just name ->
+            name
+
+        Nothing ->
+            case cleanName model.playerName of
+                Ok name ->
+                    if String.toLower name == "sage" then
+                        "Guest"
+
+                    else
+                        name
+
+                Err _ ->
+                    "Guest"
+
+
+create : String -> Model -> ( Model, Cmd Msg, Out )
+create name model =
+    ( { model
+        | busy = True
+        , error = Nothing
+        , playerName =
+            if username model == Nothing then
+                name
+
+            else
+                model.playerName
+      }
+    , Catalog.createGame model.session
+        model.slug
+        { format = model.format
+        , name = name
+        , clock =
+            if model.opponent == TheBot then
+                "none"
+
+            else
+                model.clock
+        , opponent = opponentId model.opponent
+        }
+        Seated
+    , NoOut
+    )
 
 
 submit : Model -> ( Model, Cmd Msg, Out )
@@ -658,25 +848,570 @@ view model =
             Html.div [] (formPage model)
 
 
-{-| The home page: the board with its menu (CREATE GAME, the shell's JOIN
-GAME passed in as `join`, PUZZLES, and the one marked soon), the theme
-picker in its top bar, and CREATE GAME's dialog over it when it is open.
+{-| The guest's home page. A bar (the bird home; the live games, PUZZLES,
+the board picker, the shell's JOIN passed in as `join`, and SIGN IN), OSKOL
+over "Play backgammon.", the board playing a game by itself, and the one
+sentence and one button that start a game.
+
+Nothing on it moves when a choice changes: the sentence keeps its height
+(one line wide, two on a phone, broken after the game), its menus float
+over the page, and PLAY NOW keeps the width of its longer label.
+
 -}
 home : { join : Html msg, toMsg : Msg -> msg } -> Model -> List (Html msg)
 home { join, toMsg } model =
-    [ Page.HomeBoard.view
-        { you = Html.map toMsg (homeYou model)
-        , actions = List.map (Html.map toMsg) (homeActions model)
-        , join = join
-        , more = Html.map toMsg puzzlesButton :: homeSoon
-        , theme = homeTheme model
-        , picker = Html.map toMsg (themePicker model)
-        , note = Html.map toMsg (gamesNote model)
-        }
+    [ Html.div [ class "lh", id "landing" ]
+        [ homeBar join toMsg model
+        , Html.map toMsg (homeStage model)
+
+        -- Under the bar's ☰ menu and over the page: a tap beside the menu
+        -- closes it. Outside the bar, whose backdrop blur would otherwise
+        -- shrink a fixed layer to the bar's own height.
+        , if model.navOpen then
+            Html.map toMsg (Html.div [ class "lh-nav-scrim", onClick ToggledNav, Html.Attributes.attribute "aria-hidden" "true" ] [])
+
+          else
+            Html.text ""
+        ]
     , Html.map toMsg (createModal model)
     , Html.map toMsg (resumeModal model)
     , Html.map toMsg (signInModal model)
+    , Html.map toMsg (friendModal model)
     ]
+
+
+homeBar : Html msg -> (Msg -> msg) -> Model -> Html msg
+homeBar join toMsg model =
+    Html.header [ class "lh-bar" ]
+        [ Html.a [ href "/", class "lh-mark", Html.Attributes.attribute "aria-label" "Oskol home" ] [ birdMark ]
+        , Html.span [ class "lh-spacer" ] []
+        , Html.map toMsg (liveGamesButton model)
+        , Html.map toMsg
+            (Html.button [ Html.Attributes.type_ "button", id "puzzles", class "lh-navlink", onClick PressedPuzzles ]
+                [ Html.text "Puzzles" ]
+            )
+        , Html.map toMsg (Html.div [ class "lh-themes" ] [ themePicker model ])
+        , join
+        , Html.map toMsg (homeAccount model)
+        , Html.map toMsg (navMenu model)
+        ]
+
+
+{-| A phone's bar is the bird, the themes (they stay: they are the fun one,
+and seen they get pressed) and ☰, which only a phone shows. Everything else
+the wide bar carries is in its menu -- the live games (and a dot on ☰ when
+there are any), signing in or the account, Puzzles, JOIN.
+-}
+navMenu : Model -> Html Msg
+navMenu model =
+    Html.div [ class "lh-more" ]
+        [ Html.button
+            [ Html.Attributes.type_ "button"
+            , id "nav-more"
+            , class "lh-btn lh-burger"
+            , Html.Attributes.attribute "aria-label" "Menu"
+            , Html.Attributes.attribute "aria-haspopup" "menu"
+            , Html.Attributes.attribute "aria-expanded"
+                (if model.navOpen then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , onClick ToggledNav
+            ]
+            [ Svg.svg [ SvgAttr.viewBox "0 0 24 24", SvgAttr.width "20", SvgAttr.height "20", SvgAttr.fill "none", SvgAttr.stroke "currentColor", SvgAttr.strokeWidth "2", SvgAttr.strokeLinecap "round", Html.Attributes.attribute "aria-hidden" "true" ]
+                [ Svg.path [ SvgAttr.d "M4 7h16M4 12h16M4 17h16" ] [] ]
+            , if List.isEmpty model.myGames then
+                Html.text ""
+
+              else
+                Html.span [ class "lh-burger-dot", Html.Attributes.attribute "aria-hidden" "true" ] []
+            ]
+        , if model.navOpen then
+            Html.div []
+                [ Html.div [ id "nav-menu", class "lh-menu lh-nav-menu", Html.Attributes.attribute "role" "menu" ]
+                    ((case List.length model.myGames of
+                        0 ->
+                            []
+
+                        n ->
+                            [ navItem "nav-live"
+                                OpenedResume
+                                [ Html.span [ class "lh-nav-icon" ] [ Html.span [ class "lh-live-dot", Html.Attributes.attribute "aria-hidden" "true" ] [] ]
+                                , Html.text
+                                    (String.fromInt n
+                                        ++ (if n == 1 then
+                                                " live game"
+
+                                            else
+                                                " live games"
+                                           )
+                                    )
+                                ]
+                            , menuRule
+                            ]
+                     )
+                        ++ [ navItem "nav-puzzles" PressedPuzzles [ navIcon "hero-puzzle-piece", Html.text "Puzzles" ]
+                           , navItem "nav-join-game" PressedNavJoin [ navIcon "hero-hashtag", Html.text "Join a game" ]
+                           , menuRule
+                           ]
+                        ++ (case model.session.user of
+                                Nothing ->
+                                    [ navItem "nav-signin" PressedSignInMenu [ navIcon "hero-user-circle", Html.text "Sign in" ] ]
+
+                                Just user ->
+                                    [ Html.p [ class "lh-nav-who" ] [ Identity.badge Identity.Account, Html.span [ class "truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ] ]
+                                    , navItem "nav-logout" PressedLogOut [ navIcon "hero-arrow-right-start-on-rectangle", Html.text "Log out" ]
+                                    ]
+                           )
+                    )
+                ]
+
+          else
+            Html.text ""
+        ]
+
+
+{-| The bird, alone: the wordmark is the page's title. -}
+birdMark : Html msg
+birdMark =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 24 24"
+        , SvgAttr.width "24"
+        , SvgAttr.height "24"
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "2"
+        , SvgAttr.strokeLinecap "round"
+        , SvgAttr.strokeLinejoin "round"
+        , Html.Attributes.attribute "aria-hidden" "true"
+        ]
+        [ Svg.path [ SvgAttr.d "M16 7h.01" ] []
+        , Svg.path [ SvgAttr.d "M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20" ] []
+        , Svg.path [ SvgAttr.d "m20 7 2 .5-2 .5" ] []
+        , Svg.path [ SvgAttr.d "M10 18v3" ] []
+        , Svg.path [ SvgAttr.d "M14 17.75V21" ] []
+        , Svg.path [ SvgAttr.d "M7 18a6 6 0 0 0 3.84-10.61" ] []
+        ]
+
+
+{-| "2 live games" in the bar, when there are any: the list of them. -}
+liveGamesButton : Model -> Html Msg
+liveGamesButton model =
+    case List.length model.myGames of
+        0 ->
+            Html.text ""
+
+        n ->
+            let
+                label =
+                    String.fromInt n
+                        ++ (if n == 1 then
+                                " live game"
+
+                            else
+                                " live games"
+                           )
+            in
+            -- On a phone the pill is the dot and the number: the words go
+            -- where there is room for them, and stay for a screen reader.
+            Html.button
+                [ Html.Attributes.type_ "button"
+                , id "resume-games"
+                , class "lh-live"
+                , Html.Attributes.attribute "aria-label" label
+                , onClick OpenedResume
+                ]
+                [ Html.span [ class "lh-live-dot", Html.Attributes.attribute "aria-hidden" "true" ] []
+                , Html.span [ class "lh-live-long" ] [ Html.text label ]
+                , Html.span [ class "lh-live-short", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text (String.fromInt n) ]
+                ]
+
+
+{-| The bar's right end: SIGN IN for a guest; the account, with LOG OUT
+behind it, for a browser signed in (it can land here at `/backgammon`).
+-}
+homeAccount : Model -> Html Msg
+homeAccount model =
+    case model.session.user of
+        Nothing ->
+            Html.button [ Html.Attributes.type_ "button", id "signin-button", class "lh-btn", onClick PressedSignInMenu ]
+                [ Html.text "Sign in" ]
+
+        Just user ->
+            Html.div [ class "relative lh-account-wrap" ]
+                [ Html.button
+                    [ Html.Attributes.type_ "button"
+                    , id "account-button"
+                    , class "lh-btn lh-account"
+                    , Html.Attributes.attribute "aria-expanded"
+                        (if model.accountOpen then
+                            "true"
+
+                         else
+                            "false"
+                        )
+                    , Html.Attributes.attribute "aria-haspopup" "menu"
+                    , onClick ToggledAccount
+                    ]
+                    [ Identity.badge Identity.Account
+                    , Html.span [ class "truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ]
+                    ]
+                , if model.accountOpen then
+                    Html.div [ id "account-menu", class "lh-menu lh-account-menu", Html.Attributes.attribute "role" "menu" ]
+                        [ Html.button
+                            [ Html.Attributes.type_ "button"
+                            , id "logout"
+                            , Html.Attributes.attribute "role" "menuitem"
+                            , onClick PressedLogOut
+                            ]
+                            [ Html.text "Log out" ]
+                        ]
+
+                  else
+                    Html.text ""
+                ]
+
+
+{-| OSKOL, the line under it, the board, and the way in. -}
+homeStage : Model -> Html Msg
+homeStage model =
+    Html.main_ [ class "lh-stage" ]
+        [ Html.div [ class "lh-head" ]
+            [ Html.h1 [ class "lh-title" ] [ Html.text "OSKOL" ]
+            , Html.p [ class "lh-tagline" ] [ Html.text "Play backgammon." ]
+            ]
+        , Html.div [ class ("lh-board " ++ Games.Backgammon.View.themeClass (homeTheme model)) ]
+            [ Html.node "oskol-demo-board" [ class "lh-demo" ] [] ]
+        , Html.div [ class "lh-dock" ]
+            [ -- Under the open menu and over everything else: a tap beside the
+              -- menu closes it. Inside the dock, so it shares the menu's layer.
+              if model.menu /= Nothing then
+                Html.div [ class "lh-scrim", onClick ClosedMenu, Html.Attributes.attribute "aria-hidden" "true" ] []
+
+              else
+                Html.text ""
+            , sentence model
+            , rollButton model
+            , case ( model.error, model.friendAsk ) of
+                ( Just message, False ) ->
+                    Html.p [ id "form-error", class "lh-error", Html.Attributes.attribute "role" "alert" ] [ Html.text message ]
+
+                _ ->
+                    Html.text ""
+            ]
+        ]
+
+
+{-| "Play [a single game] against [Sage] with no clock": each word in
+brackets a menu. Against Sage the clock is plain words (the bot plays
+without one); against a friend it is a menu too.
+-}
+sentence : Model -> Html Msg
+sentence model =
+    let
+        friend =
+            model.opponent == AFriend
+    in
+    Html.p [ id "sentence", class "lh-sentence" ]
+        [ Html.text "Play "
+        , pick model GameMenu "pick-game" [ Html.text (formatWords model model.format) ] (gameOptions model)
+        , Html.br [ class "lh-br" ] []
+        , Html.text " "
+        , Html.span [ class "lh-line2" ]
+            [ Html.text "against "
+            , pick model
+                WhoMenu
+                "pick-who"
+                (if friend then
+                    [ friendIcon, Html.text "a friend" ]
+
+                 else
+                    [ botIcon, Html.text "Sage" ]
+                )
+                [ menuOptionWith "pick-who-bot" [ botIcon, Html.text "Sage, our bot" ] (not friend) (PickedOpponent TheBot)
+                , menuOptionWith "pick-who-friend" [ friendIcon, Html.text "a friend" ] friend (PickedOpponent AFriend)
+                ]
+            , Html.text " with "
+            , if friend then
+                pick model ClockMenu "pick-clock" [ Html.text (clockWords model model.clock) ] (clockOptions model)
+
+              else
+                Html.span [ id "sage-clock" ] [ Html.text "no clock" ]
+            ]
+        ]
+
+
+{-| One word of the sentence and, when it is open, its menu floating
+above it.
+-}
+pick : Model -> PickMenu -> String -> List (Html Msg) -> List (Html Msg) -> Html Msg
+pick model which pickId words options =
+    let
+        open =
+            model.menu == Just which
+    in
+    Html.span [ class "lh-pick-wrap" ]
+        [ Html.button
+            [ Html.Attributes.type_ "button"
+            , id pickId
+            , class "lh-pick"
+            , Html.Attributes.attribute "aria-haspopup" "listbox"
+            , Html.Attributes.attribute "aria-expanded"
+                (if open then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , onClick (ToggledMenu which)
+            ]
+            words
+        , if open then
+            Html.span [ class "lh-menu lh-pick-menu", id (pickId ++ "-menu"), Html.Attributes.attribute "role" "listbox" ] options
+
+          else
+            Html.text ""
+        ]
+
+
+{-| A menu item's icon: a Heroicon in the item's ink, in a fixed-width slot
+so every label starts at the same place.
+-}
+navIcon : String -> Html Msg
+navIcon name =
+    Html.span [ class "lh-nav-icon" ] [ icon name "w-5 h-5" ]
+
+
+navItem : String -> Msg -> List (Html Msg) -> Html Msg
+navItem itemId msg content =
+    Html.button [ Html.Attributes.type_ "button", id itemId, Html.Attributes.attribute "role" "menuitem", onClick msg ] content
+
+
+{-| Who is across the table, drawn beside the name so the sentence says it
+at a glance: Sage is the robot on the board's own chip (Lucide "bot"), a
+friend is two people (Lucide "users").
+-}
+botIcon : Html msg
+botIcon =
+    lineIcon "lh-who-icon"
+        [ Svg.path [ SvgAttr.d "M12 8V4H8" ] []
+        , Svg.rect [ SvgAttr.width "16", SvgAttr.height "12", SvgAttr.x "4", SvgAttr.y "8", SvgAttr.rx "2" ] []
+        , Svg.path [ SvgAttr.d "M2 14h2" ] []
+        , Svg.path [ SvgAttr.d "M20 14h2" ] []
+        , Svg.path [ SvgAttr.d "M15 13v2" ] []
+        , Svg.path [ SvgAttr.d "M9 13v2" ] []
+        ]
+
+
+friendIcon : Html msg
+friendIcon =
+    lineIcon "lh-who-icon"
+        [ Svg.path [ SvgAttr.d "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" ] []
+        , Svg.circle [ SvgAttr.cx "9", SvgAttr.cy "7", SvgAttr.r "4" ] []
+        , Svg.path [ SvgAttr.d "M22 21v-2a4 4 0 0 0-3-3.87" ] []
+        , Svg.path [ SvgAttr.d "M16 3.13a4 4 0 0 1 0 7.75" ] []
+        ]
+
+
+lineIcon : String -> List (Svg.Svg msg) -> Html msg
+lineIcon cls paths =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 24 24"
+        , SvgAttr.class cls
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "2"
+        , SvgAttr.strokeLinecap "round"
+        , SvgAttr.strokeLinejoin "round"
+        , Html.Attributes.attribute "aria-hidden" "true"
+        ]
+        paths
+
+
+menuOption : String -> String -> Bool -> Msg -> Html Msg
+menuOption optionId label selected msg =
+    menuOptionWith optionId [ Html.text label ] selected msg
+
+
+menuOptionWith : String -> List (Html Msg) -> Bool -> Msg -> Html Msg
+menuOptionWith optionId content selected msg =
+    Html.button
+        [ Html.Attributes.type_ "button"
+        , id optionId
+        , Html.Attributes.attribute "role" "option"
+        , Html.Attributes.attribute "aria-selected"
+            (if selected then
+                "true"
+
+             else
+                "false"
+            )
+        , onClick msg
+        ]
+        [ Html.span [ class "lh-option" ] content ]
+
+
+menuRule : Html msg
+menuRule =
+    Html.hr [] []
+
+
+{-| The game's formats as the sentence says them, single game first, the
+matches between rules, then unlimited: the order the server lists them.
+-}
+gameOptions : Model -> List (Html Msg)
+gameOptions model =
+    let
+        formats =
+            model.page |> Maybe.map .formats |> Maybe.withDefault []
+
+        option f =
+            menuOption ("pick-game-" ++ f.id) (formatWords model f.id) (f.id == model.format) (PickedFormat f.id)
+
+        isMatch f =
+            String.startsWith "match" f.id
+    in
+    List.map option (List.filter (\f -> f.id == "single") formats)
+        ++ [ menuRule ]
+        ++ List.map option (List.filter isMatch formats)
+        ++ [ menuRule ]
+        ++ List.map option (List.filter (\f -> f.id /= "single" && not (isMatch f)) formats)
+
+
+clockOptions : Model -> List (Html Msg)
+clockOptions model =
+    case model.page of
+        Just page ->
+            Catalog.offeredClocks page.game page.clocks
+                |> List.map (\c -> menuOption ("pick-clock-" ++ c.id) (clockWords model c.id) (c.id == model.clock) (PickedClock c.id))
+
+        Nothing ->
+            []
+
+
+{-| A format in the sentence's words: "a single game", "a match to 5",
+"an unlimited match".
+-}
+formatWords : Model -> String -> String
+formatWords model formatId =
+    case formatId of
+        "single" ->
+            "a single game"
+
+        "unlimited" ->
+            "an unlimited match"
+
+        _ ->
+            model.page
+                |> Maybe.andThen (\page -> List.head (List.filter (\f -> f.id == formatId) page.formats))
+                |> Maybe.map (\f -> "a " ++ String.toLower f.name)
+                |> Maybe.withDefault ("a " ++ String.replace "match" "match to " formatId)
+
+
+{-| A clock in the sentence's words: "no clock", "a 5 min clock". -}
+clockWords : Model -> String -> String
+clockWords model clockId =
+    if clockId == "none" then
+        "no clock"
+
+    else
+        model.page
+            |> Maybe.andThen (\page -> List.head (List.filter (\c -> c.id == clockId) page.clocks))
+            |> Maybe.map (\c -> "a " ++ c.name ++ " clock")
+            |> Maybe.withDefault "a clock"
+
+
+{-| PLAY NOW, and against a friend GET A LINK: the label is stacked over a
+hidden copy of the other, so the button never changes width. The dice
+tumble while the game is being made.
+-}
+rollButton : Model -> Html Msg
+rollButton model =
+    let
+        label =
+            if model.opponent == AFriend then
+                "Get a link"
+
+            else
+                "Play now"
+
+        die n rot =
+            Html.span [ class ("lh-die d" ++ String.fromInt n), style ("--rot: " ++ rot) ]
+                (List.repeat 9 (Html.i [] []))
+    in
+    Html.button
+        [ Html.Attributes.type_ "button"
+        , id "roll-dice"
+        , classList [ ( "lh-roll", True ), ( "is-rolling", model.busy || model.tumbling ) ]
+        , Html.Attributes.attribute "aria-busy"
+            (if model.busy then
+                "true"
+
+             else
+                "false"
+            )
+        , onClick RolledDice
+        ]
+        [ Html.span [ class "lh-stack" ]
+            [ Html.span [] [ Html.text label ]
+            , Html.span [ class "lh-sizer", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text "Play now" ]
+            , Html.span [ class "lh-sizer", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text "Get a link" ]
+            ]
+        , Html.span [ class "lh-dice", Html.Attributes.attribute "aria-hidden" "true" ] [ die 4 "-6deg", die 1 "9deg" ]
+        ]
+
+
+{-| GET A LINK for a guest: the name the friend will read, then the table,
+where the link is.
+-}
+friendModal : Model -> Html Msg
+friendModal model =
+    if model.friendAsk then
+        Html.div [ id "friend-modal", class "lh-dlg" ]
+            [ Html.div [ class "lh-dlg-back", onClick ClosedFriendAsk, Html.Attributes.attribute "aria-hidden" "true" ] []
+            , Html.form
+                [ class "lh-dlg-card"
+                , Html.Attributes.attribute "role" "dialog"
+                , Html.Attributes.attribute "aria-modal" "true"
+                , Html.Attributes.attribute "aria-labelledby" "friend-title"
+                , onSubmit Submitted
+                ]
+                [ Html.button [ Html.Attributes.type_ "button", id "close-friend", class "lh-dlg-x", onClick ClosedFriendAsk, Html.Attributes.attribute "aria-label" "Close" ] [ Html.text "✕" ]
+                , Html.h2 [ id "friend-title", class "lh-dlg-title" ] [ Html.text "Invite a friend" ]
+                , Html.p [ class "lh-dlg-sub" ]
+                    [ Html.text (capitalise (formatWords model model.format) ++ " with " ++ clockWords model model.clock ++ ". You get a link to send; the game starts when they open it.") ]
+                , Html.label [ class "lh-field" ]
+                    [ Html.span [] [ Html.text "Your name" ]
+                    , Html.input
+                        [ id "friend-name"
+                        , Html.Attributes.value model.playerName
+                        , Html.Attributes.placeholder "e.g. Alice"
+                        , Html.Attributes.maxlength maxNameLength
+                        , Html.Attributes.attribute "autocomplete" "nickname"
+                        , Html.Events.onInput NameChanged
+                        ]
+                        []
+                    ]
+                , case model.error of
+                    Just message ->
+                        Html.p [ id "form-error", class "lh-dlg-error", Html.Attributes.attribute "role" "alert" ] [ Html.text message ]
+
+                    Nothing ->
+                        Html.text ""
+                , Html.button [ Html.Attributes.type_ "submit", id "friend-go", class "lh-go", Html.Attributes.disabled model.busy ]
+                    [ Html.text "Get the link" ]
+                ]
+            ]
+
+    else
+        Html.text ""
+
+
+capitalise : String -> String
+capitalise text =
+    String.toUpper (String.left 1 text) ++ String.dropLeft 1 text
 
 
 {-| Escape closes the list of games, as a tap beside it does; and while
@@ -684,28 +1419,60 @@ it is open with a clock running in it, the seconds tick.
 -}
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    if model.resumeOpen then
-        Sub.batch
-            [ Browser.Events.onKeyDown
-                (D.field "key" D.string
-                    |> D.andThen
-                        (\key ->
-                            if key == "Escape" then
-                                D.succeed ClosedResume
-
-                            else
-                                D.fail "ignored key"
-                        )
-                )
-            , if List.any clockRunning model.myGames then
-                Time.every 1000 Tick
-
-              else
-                Sub.none
-            ]
+    if not model.resumeOpen && model.menu == Nothing && not model.friendAsk && not model.navOpen then
+        Sub.none
 
     else
-        Sub.none
+        subscriptionsWhileOpen model
+
+
+subscriptionsWhileOpen : Model -> Sub Msg
+subscriptionsWhileOpen model =
+    Sub.batch
+        [ if model.resumeOpen then
+            Sub.batch
+                [ onEscape ClosedResume
+                , if List.any clockRunning model.myGames then
+                    Time.every 1000 Tick
+
+                  else
+                    Sub.none
+                ]
+
+          else
+            Sub.none
+        , case ( model.menu, model.friendAsk ) of
+            _ ->
+                if model.navOpen then
+                    onEscape ToggledNav
+
+                else
+                    Sub.none
+        , case ( model.menu, model.friendAsk ) of
+            ( Just _, _ ) ->
+                onEscape ClosedMenu
+
+            ( Nothing, True ) ->
+                onEscape ClosedFriendAsk
+
+            _ ->
+                Sub.none
+        ]
+
+
+onEscape : Msg -> Sub Msg
+onEscape msg =
+    Browser.Events.onKeyDown
+        (D.field "key" D.string
+            |> D.andThen
+                (\key ->
+                    if key == "Escape" then
+                        D.succeed msg
+
+                    else
+                        D.fail "ignored key"
+                )
+        )
 
 
 clockRunning : MyGame -> Bool
@@ -750,7 +1517,7 @@ themePicker model =
                  else
                     "false"
                 )
-            , Html.Attributes.title "Board colours"
+            , Html.Attributes.title "Themes"
             , onClick ToggledThemes
             ]
             [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ]
@@ -806,108 +1573,6 @@ isHome model =
     -- The board needs none of the page's data (only CREATE GAME's dialog
     -- does), so it draws at once rather than after a flash of the form page.
     model.step == Create && model.gameId == Nothing
-
-
-homeName : Model -> String
-homeName model =
-    if String.isEmpty (String.trim model.playerName) then
-        "YOU"
-
-    else
-        model.playerName
-
-
-{-| Who the player's own bar says this is: the name they last played under,
-or, signed in, the account, which is a button with one thing in its menu.
--}
-homeYou : Model -> Html Msg
-homeYou model =
-    case model.session.user of
-        Just user ->
-            Html.div [ class "relative min-w-0" ]
-                [ Html.button
-                    [ Html.Attributes.type_ "button"
-                    , id "account-button"
-                    , class "home-account flex items-center gap-1 min-w-0 px-1.5 py-0.5 -mx-1.5"
-                    , Html.Attributes.attribute "aria-expanded"
-                        (if model.accountOpen then
-                            "true"
-
-                         else
-                            "false"
-                        )
-                    , Html.Attributes.attribute "aria-haspopup" "menu"
-                    , onClick ToggledAccount
-                    ]
-                    [ Identity.badge Identity.Account
-                    , Html.span [ class "font-bold text-sm sm:text-base truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ]
-                    , icon "hero-chevron-up" "w-3.5 h-3.5 opacity-70"
-                    ]
-                , if model.accountOpen then
-                    Html.div [ id "account-menu", class "home-account-menu", Html.Attributes.attribute "role" "menu" ]
-                        [ Html.button
-                            [ Html.Attributes.type_ "button"
-                            , id "logout"
-                            , Html.Attributes.attribute "role" "menuitem"
-                            , class "pixel text-[9px] px-3 py-2.5"
-                            , onClick PressedLogOut
-                            ]
-                            [ Html.text "LOG OUT" ]
-                        ]
-
-                  else
-                    Html.text ""
-                ]
-
-        Nothing ->
-            Html.div [ class "relative min-w-0" ]
-                [ Html.button
-                    [ Html.Attributes.type_ "button"
-                    , id "account-button"
-                    , class "home-account flex items-center gap-1 min-w-0 px-1.5 py-0.5 -mx-1.5"
-                    , Html.Attributes.attribute "aria-expanded"
-                        (if model.accountOpen then
-                            "true"
-
-                         else
-                            "false"
-                        )
-                    , Html.Attributes.attribute "aria-haspopup" "menu"
-                    , onClick ToggledAccount
-                    ]
-                    [ Identity.badge Identity.Guest
-                    , Html.span [ class "font-bold text-sm sm:text-base truncate" ] [ Html.text (homeName model) ]
-                    , icon "hero-chevron-up" "w-3.5 h-3.5 opacity-70"
-                    ]
-                , if model.accountOpen then
-                    Html.div [ id "account-menu", class "home-account-menu", Html.Attributes.attribute "role" "menu" ]
-                        [ Html.button
-                            [ Html.Attributes.type_ "button"
-                            , id "signin-menu"
-                            , Html.Attributes.attribute "role" "menuitem"
-                            , class "pixel text-[9px] px-3 py-2.5"
-                            , onClick PressedSignInMenu
-                            ]
-                            [ Html.text "SIGN IN" ]
-                        ]
-
-                  else
-                    Html.text ""
-                ]
-
-
-{-| The ways into the site, in the board's right band: creating a game
-here; joining one is the shell's (the code prompt), so it is passed in.
--}
-homeActions : Model -> List (Html Msg)
-homeActions _ =
-    [ Html.button
-        [ class "btn-arcade home-create pixel text-[9px] sm:text-[11px] px-3 py-3 sm:px-5 text-center leading-relaxed"
-        , id "start-game"
-        , onClick Started
-        ]
-        [ Html.text "CREATE GAME" ]
-    ]
 
 
 {-| CREATE GAME's dialog over the board: a name, and the few choices as
@@ -1080,14 +1745,14 @@ opponentId opponent =
 -}
 createDialog : List (Html Msg) -> Html Msg
 createDialog content =
-    dialog { id = "create-modal", closeId = "close-create", label = "Create a game", heading = "CREATE GAME", onClose = ClosedCreate } content
+    dialog { id = "create-modal", closeId = "close-create", label = "Create a game", heading = "CREATE GAME", onClose = ClosedCreate, width = "max-w-sm" } content
 
 
 {-| A dialog's frame: the dimmed board behind it (a tap on it closes the
 dialog), the card with its heading and close button. The layer scrolls when
 the card is taller than the screen, as on a phone held sideways.
 -}
-dialog : { id : String, closeId : String, label : String, heading : String, onClose : Msg } -> List (Html Msg) -> Html Msg
+dialog : { id : String, closeId : String, label : String, heading : String, onClose : Msg, width : String } -> List (Html Msg) -> Html Msg
 dialog config content =
     Html.div [ id config.id, class "fixed inset-0 z-50 overflow-y-auto flex items-start justify-center px-4 pt-[10vh] sm:pt-[14vh] pb-4" ]
         [ Html.div
@@ -1098,7 +1763,7 @@ dialog config content =
             ]
             []
         , Html.div
-            [ class "q-card sheet relative w-full max-w-sm p-5 sm:p-6"
+            [ class ("q-card sheet relative w-full " ++ config.width ++ " p-5 sm:p-6")
             , Html.Attributes.attribute "role" "dialog"
             , Html.Attributes.attribute "aria-modal" "true"
             , Html.Attributes.attribute "aria-label" config.label
@@ -1123,36 +1788,6 @@ dialog config content =
 -- YOUR GAMES
 
 
-{-| The right end of the player's own bar: the games waiting for them, as
-a button that opens the list ("REJOIN 2 GAMES"), or the pip count a game
-would show there.
--}
-gamesNote : Model -> Html Msg
-gamesNote model =
-    case List.length model.myGames of
-        0 ->
-            Page.HomeBoard.pips
-
-        n ->
-            Html.button
-                [ Html.Attributes.type_ "button"
-                , id "resume-games"
-                , class "home-games pixel text-[7px] sm:text-[8px] whitespace-nowrap px-2 py-1"
-                , onClick OpenedResume
-                ]
-                [ Html.text
-                    ("REJOIN "
-                        ++ String.fromInt n
-                        ++ (if n == 1 then
-                                " GAME"
-
-                            else
-                                " GAMES"
-                           )
-                    )
-                ]
-
-
 {-| The sign-in the guest's bar menu opens: one line on what it is for, and
 the same component every other entry uses.
 -}
@@ -1160,7 +1795,7 @@ signInModal : Model -> Html Msg
 signInModal model =
     case ( model.signInOpen, model.signIn ) of
         ( True, Just signIn ) ->
-            dialog { id = "signin-modal", closeId = "close-signin", label = "Sign in", heading = "SIGN IN", onClose = ClosedSignIn }
+            dialog { id = "signin-modal", closeId = "close-signin", label = "Sign in", heading = "SIGN IN", onClose = ClosedSignIn, width = "max-w-sm" }
                 [ Html.p [ class "q-note text-[14px] text-center mb-4" ]
                     [ Html.text "Your games and your PR, on every device." ]
                 , Html.map SignInMsg (SignIn.view signIn)
@@ -1178,7 +1813,10 @@ brings it back.
 resumeModal : Model -> Html Msg
 resumeModal model =
     if model.resumeOpen && not (List.isEmpty model.myGames) then
-        dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume }
+        -- Wider than the others: a row carries a name, the match, how long ago
+        -- and two clocks, and 24rem crushed them (32rem is the fit). A phone is narrower than
+        -- either, so there it is the screen's width as before.
+        dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume, width = "max-w-lg" }
             [ Html.ul [ id "resume-list", class "space-y-2" ]
                 (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now } ClosedGame) model.myGames)
             , guestNote model
@@ -1223,24 +1861,24 @@ guestNote model =
                 )
 
 
-{-| The panel under the list: one line on what holds these games, the line
-that sells it, the button, and the six things an account is for.
+{-| The panel under the list: one line on what holds these games, the
+button, and the six things an account is for.
 -}
 pitch : Model -> Html Msg -> Html Msg
 pitch _ button =
     Html.div [ id "guest-note", class "pitch mt-6 pt-5 flex flex-col gap-4" ]
         [ Html.p [ class "q-note text-[13px] text-center" ]
             [ Html.text "You are logged in as a guest on this device." ]
-        , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
-            [ Html.text "Want to get better for free?" ]
         , button
-        , Html.ul [ class "flex flex-wrap justify-center gap-2" ]
-            [ chip "hero-device-phone-mobile" "Every device"
-            , chip "hero-magnifying-glass" "4-ply analysis"
-            , chip "hero-flag" "Openings"
-            , chip "hero-light-bulb" "Mistake practice"
-            , chip "hero-arrow-trending-up" "PR over time"
-            , chip "hero-lock-closed" "Secure account"
+        -- Six on a wide screen, three to a row; a phone keeps the first four,
+        -- two to a row -- less to read where there is less room.
+        , Html.ul [ class "grid grid-cols-[repeat(2,max-content)] sm:grid-cols-[repeat(3,max-content)] justify-center gap-2" ]
+            [ chip "hero-light-bulb" "Mistake practice"
+            , chip "hero-magnifying-glass" "Game analysis"
+            , chip "hero-arrow-trending-up" "Track progress"
+            , chip "hero-book-open" "Opening guide"
+            , wideChip "hero-clock" "Match history"
+            , wideChip "hero-device-phone-mobile" "Every device"
             ]
         ]
 
@@ -1248,8 +1886,19 @@ pitch _ button =
 {-| One thing an account is for, as a chip: a Heroicon and a few words.
 -}
 chip : String -> String -> Html Msg
-chip iconName label =
-    Html.li [ class "pitch-chip inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5 text-[12.5px] font-semibold" ]
+chip =
+    chipWith ""
+
+
+{-| A chip only a wide screen shows. -}
+wideChip : String -> String -> Html Msg
+wideChip =
+    chipWith "max-sm:hidden"
+
+
+chipWith : String -> String -> String -> Html Msg
+chipWith extra iconName label =
+    Html.li [ class ("pitch-chip inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5 text-[12.5px] font-semibold " ++ extra) ]
         [ icon iconName "w-4 h-4", Html.text label ]
 
 
@@ -1325,37 +1974,6 @@ lowerFirst text =
     String.toLower (String.left 1 text) ++ String.dropLeft 1 text
 
 
-{-| Practicing your own mistakes: the second row's first entry, where
-TACTICS was promised. It opens the practice home, which says what there
-is to practice.
--}
-puzzlesButton : Html Msg
-puzzlesButton =
-    Html.button
-        [ class "btn-arcade plain home-puzzles pixel text-[9px] sm:text-[11px] px-3 py-3 sm:px-5 text-center leading-relaxed"
-        , id "puzzles"
-        , onClick PressedPuzzles
-        ]
-        [ Html.text "PUZZLES" ]
-
-
-{-| The ways in that are on their way.
--}
-homeSoon : List (Html msg)
-homeSoon =
-    [ soonButton "ANALYSIS"
-    ]
-
-
-{-| A way in that is not open yet: the same button as the live ones,
-dimmed, with SOON in its corner, and nothing to press.
--}
-soonButton : String -> Html msg
-soonButton label =
-    Html.span [ class "btn-arcade plain home-soon relative pixel text-[9px] sm:text-[11px] px-3 py-3 sm:px-5 text-center leading-relaxed", Html.Attributes.attribute "aria-disabled" "true" ]
-        [ Html.text label
-        , Html.span [ class "home-soon-badge pixel" ] [ Html.text "SOON" ]
-        ]
 
 
 formPage : Model -> List (Html Msg)

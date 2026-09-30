@@ -1,7 +1,7 @@
 /**
  * Smoke test for backgammon, with a 3 minute clock and the game's 12 s delay.
  *
- * 1. / -> CREATE GAME -> the dialog: Match to 3, 3 min; the second player
+ * 1. / -> the sentence: a match to 3 against a friend, 3 min; the second player
  *    joins by the invite link (playwright/lib/flows.js does both)
  * 2. The player to move sees selectable points; a tap plays a die
  * 3. Clocks render; the first 12 s of a turn are free

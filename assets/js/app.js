@@ -115,6 +115,7 @@ if (process.env.NODE_ENV === "development") {
 // Everything below this line is what Elm cannot do itself: the Phoenix
 // channel, and the platform's share sheet / clipboard.
 import { Elm } from "../src/Main.elm";
+import "./demo_board.js";
 
 const meta = (name) => document.querySelector(`meta[name='${name}']`)?.getAttribute("content") || null;
 

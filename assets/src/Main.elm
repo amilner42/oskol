@@ -560,6 +560,11 @@ landing model ( pageModel, cmd, out ) =
         Page.GameLanding.Go path ->
             ( withPage, Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.pushUrl model.key path ] )
 
+        Page.GameLanding.OpenJoin ->
+            ( { withPage | joinOpen = True, joinCode = "", joinError = Nothing }
+            , Cmd.batch [ Cmd.map GameLandingMsg cmd, Notebook.focus NoOp Shell.joinCodeInputId ]
+            )
+
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
@@ -949,7 +954,7 @@ view model =
                     -- The home page is the board, edge to edge: its own chrome.
                     Shell.bare (shellConfig model)
                         (Page.GameLanding.home
-                            { join = Shell.joinButton (shellConfig model), toMsg = GameLandingMsg }
+                            { join = Shell.navJoin (shellConfig model), toMsg = GameLandingMsg }
                             pageModel
                         )
 

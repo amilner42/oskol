@@ -3,7 +3,8 @@
  * dev endpoint (GET /dev/last-login) instead of a mailbox.
  *
  *  1. A creates a game, B joins it (two browsers, two guests).
- *  2. A goes home: LIVE GAMES opens with the offer, "Sign up".
+ *  2. A goes home: nothing opens by itself; the bar's "1 live game" opens
+ *     LIVE GAMES with the offer, "Sign up".
  *     A types an email, gets "Check your email", types the six digits from
  *     the mail: the win, "1 game saved", CONTINUE.
  *  3. A opens the table: still seated (the seat is the account's now, and
@@ -14,8 +15,8 @@
  *     from the mail. The page asks first: /papi/me is still a guest until
  *     the button is pressed (a GET signs nobody in). Pressed: the win.
  *  6. C's LIVE GAMES lists the room; C opens it and is seated.
- *  7. A logs out from the home bar's menu; A's table refuses it and sends
- *     it to the invite.
+ *  7. A logs out from the home bar's menu, and `/` is the guest home again
+ *     (Sign in in the bar); A's table refuses it and sends it to the invite.
  *
  * Screenshots at 390x844, 320x640 and 844x390 of the offer, the code step,
  * the win and the owned invite.
@@ -25,7 +26,7 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
-const { BASE, createGame, joinByLink, openSeat } = require('../lib/flows');
+const { BASE, barItem, openHome, createGame, joinByLink, openSeat } = require('../lib/flows');
 
 const SHOTS = 'playwright/screenshots/test-accounts';
 const SIZES = [
@@ -107,8 +108,13 @@ async function run(browser, errors) {
     await aTable.goto(game.url);
     await aTable.waitForSelector('.bg-board .checker');
 
-    // 2. Home: LIVE GAMES, the offer, the email, the code, the win.
-    await a.page.goto(`${BASE}/`);
+    // 2. Home: the live games pill, LIVE GAMES, the offer, the email, the
+    // code, the win. The list never opens by itself.
+    if ((await openHome(a.page)) !== 'guest') throw new Error('a guest was not shown the guest home');
+    // (On a phone the pill is in ☰'s menu, and ☰ wears a dot.)
+    await a.page.waitForSelector('#resume-games', { state: 'attached' });
+    if (await a.page.$('#resume-modal')) throw new Error('LIVE GAMES opened by itself');
+    await barItem(a.page, 'live');
     await a.page.waitForSelector('#resume-modal #resume-list');
     const offer = (await a.page.textContent('#signup-cta')).trim();
     if (offer !== 'Sign up') throw new Error(`the offer should say Sign up: "${offer}"`);
@@ -213,8 +219,14 @@ async function run(browser, errors) {
     await a2.waitForSelector(`#home-live-list #resume-${game.gameId}`);
     await a2.click('#account-button');
     await a2.click('#logout');
-    // The bar is the guest's again: the guest mark, and SIGN IN behind the caret.
-    await a2.waitForSelector('#account-button [data-identity="guest"]');
+    // `/` is the guest home again: Sign in in the bar, no account.
+    // (A phone's bar is the bird and ☰: Sign in is in ☰'s menu.)
+    await a2.waitForSelector('.lh-bar #signin-button', { state: 'attached' });
+    await a2.click('#nav-more');
+    await a2.waitForSelector('#nav-menu #nav-signin');
+    if (await a2.$('#nav-logout')) throw new Error('logged out, ☰ still offers LOG OUT');
+    await a2.keyboard.press('Escape');
+    if (await a2.$('#account-button')) throw new Error('logged out, the bar still shows an account');
     const gone = await me(a2);
     if (gone.user !== null) throw new Error('logged out, /papi/me still names the account');
     await a2.goto(game.url);

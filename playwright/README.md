@@ -7,10 +7,11 @@ smokes for you.
 
 ```
 playwright/
-├── lib/flows.js            open CREATE GAME's dialog, create a game, join by link
-│                         or code, open a seat
+├── lib/flows.js            open a home, create a game (the guest home's sentence
+│                         or an account's PLAY), join by link or code, open a seat
 ├── test-backgammon-smoke/   creates a game, stages a move, plays, with a clock
-├── review-pages/            screenshots of the home board, CREATE GAME and the lobby
+├── review-pages/            screenshots of the guest home, its sentence, the friend
+│                         dialog, sign-in, the lobby and LIVE GAMES
 ├── review-games/            screenshots of games in play (desktop + phone)
 └── screenshots/             output of the review scripts
 ```
@@ -28,10 +29,13 @@ are for eyeballing; look at `playwright/screenshots/`.
 
 Create `playwright/test-<name>/test.js`. Get into a game through
 `playwright/lib/flows.js` rather than clicking through the pages yourself:
-`createGame(page, {name, mode, clock})` goes to `/`, presses CREATE
-GAME, fills the dialog by id and resolves with `{gameId, url, inviteUrl}`
-(`openCreateDialog(page)` stops at the open dialog, for a smoke that wants
-to look at it);
+`createGame(page, {name, mode, clock, opponent})` goes to `/` and, for a
+guest, says it in the home page's sentence (`pickWord(page, word,
+optionId)` picks one word) and presses PLAY NOW / GET A LINK, typing the
+name into the friend dialog; for an account it fills PLAY's dialog. It
+resolves with `{gameId, url, inviteUrl}`. `openHome(page)` waits for `/` to
+settle and answers `'guest'` or `'account'`, and `openCreateDialog(page)`
+stops at an account's open dialog;
 `joinByLink(page, inviteUrl, name)` and `joinByCode(page, code, name)` take
 the second seat; `openSeat(page, url)` reopens one, and
 `seatedContext(browser, guestId)` makes a browser that already holds one.

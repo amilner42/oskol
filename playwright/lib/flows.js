@@ -6,6 +6,7 @@
  *
  *   const { createGame, joinByLink } = require('../lib/flows');
  *   const game = await createGame(p1, { name: 'Alice', mode: 'match3', clock: 'bg3' });
+ *   (a guest says it in the home page's sentence; an account uses PLAY's dialog)
  *   await joinByLink(p2, game.inviteUrl, 'Bob');
  *
  * BASE_URL (or PORT) picks the server, as in every script here.
@@ -18,72 +19,95 @@ const BASE = process.env.BASE_URL || `http://localhost:${process.env.PORT || 440
 const SEAT = /\/backgammon\/([^/?#]+)/;
 
 /**
- * `/` (or a game's own page) -> CREATE GAME -> the dialog, filled in by
- * nobody. For a smoke that wants to look at the dialog itself (what a name
- * is prefilled with, what the summary reads); a smoke that only wants a
- * game calls `createGame`.
+ * The list of live games, if it is open. The guest home no longer opens it by
+ * itself (the bar's "N live games" does), so this only closes one a smoke
+ * opened; it is kept for the scripts that call it.
  */
 async function dismissResume(page) {
-  await page.waitForSelector('#resume-modal');
+  if (!(await page.$('#resume-modal'))) return;
   await page.click('#close-resume');
   await page.waitForSelector('#resume-modal', { state: 'detached' });
 }
 
-async function openCreateDialog(page, path = '/', { dismissResume: shouldDismissResume = false } = {}) {
-  const gamesResponse = shouldDismissResume
-    ? page.waitForResponse((response) => {
-        const url = new URL(response.url());
-        return response.request().method() === 'GET' && url.pathname === '/papi/me/games';
-      })
-    : null;
-
-  // `/` is two pages -- the guest's board and an account's own home -- and
-  // which one it is is settled only once /papi/me has answered, so wait for
-  // that answer before reading the page. Set up before the visit: it may be
-  // back before the first paint.
+/**
+ * Visit `path` and wait until `/` has settled which home it is: the guest's
+ * (the sentence and PLAY NOW) or an account's (PLAY). `/papi/me` decides,
+ * so wait for its answer, set up before the visit since it may come back
+ * before the first paint.
+ */
+async function openHome(page, path = '/') {
   const me = page.waitForResponse((response) => new URL(response.url()).pathname === '/papi/me');
-
   await page.goto(`${BASE}${path}`);
   await me;
-
-  if (gamesResponse) {
-    const games = await (await gamesResponse).json();
-    if (games.games && games.games.length > 0) await dismissResume(page);
-  }
-
-  // CREATE GAME on the board, PLAY on an account's home. The dialog behind
-  // them is the same one.
-  await page.waitForSelector('#start-game, #home-play');
-  const signedIn = (await page.$('#home-play')) !== null;
-  await page.click(signedIn ? '#home-play' : '#start-game');
-  // The dialog waits for the game's data, so wait for the dialog. Signed
-  // in there is no name to type: the account plays under its username.
-  await page.waitForSelector(signedIn ? '#create-modal #create-as' : '#create-modal #create-name');
+  await page.waitForSelector('#roll-dice, #home-play');
+  return (await page.$('#home-play')) !== null ? 'account' : 'guest';
 }
 
 /**
- * `/` -> CREATE GAME -> the dialog -> START GAME. `mode` and `clock` are
- * option values (`match3`, `bg3`); anything left out stays on the dialog's
- * default. Resolves once the creator is in the lobby with the link to
- * share.
+ * An account's home -> PLAY -> CREATE GAME's dialog, filled in by nobody.
+ * Only the signed-in home has the dialog; the guest home is the sentence.
+ */
+async function openCreateDialog(page, path = '/') {
+  const home = await openHome(page, path);
+  if (home !== 'account') throw new Error('openCreateDialog: the guest home has no dialog; use createGame');
+  await page.click('#home-play');
+  await page.waitForSelector('#create-modal #create-as');
+}
+
+/**
+ * One word of the guest home's sentence: open its menu, pick the option.
+ * The options exist once the game's data has come, so wait for the one.
+ */
+async function pickWord(page, word, optionId) {
+  await page.click(`#pick-${word}`);
+  await page.waitForSelector(`#pick-${word}-menu #${optionId}`);
+  await page.click(`#${optionId}`);
+  await page.waitForSelector(`#pick-${word}-menu`, { state: 'detached' });
+}
+
+/**
+ * A new game from `/`. `mode` and `clock` are the game's ids (`match3`,
+ * `bg3`); anything left out stays on the default (a single game, no clock).
+ * A guest says it in the sentence -- "Play [a match to 3] against [a friend]
+ * with [a 3 min clock]" -- and presses GET A LINK, which asks the friend's
+ * name for them; an account uses PLAY's dialog, as before. Resolves once the
+ * creator is in the lobby with the link to share.
  *
  * `opponent: 'bot'` picks Sage instead: the table fills itself, so there is
  * no link and no lobby -- it resolves on the board, and `inviteUrl` is null.
+ * A guest plays Sage under the name the browser last played under, or
+ * "Guest": there is no name to type.
  */
 async function createGame(page, { name = 'Alice', mode, clock, opponent } = {}) {
-  await openCreateDialog(page);
-  if (await page.$('#create-name')) await page.fill('#create-name', name);
-  if (opponent === 'bot') await page.click('#create-opponent-bot');
-  if (mode) await page.selectOption('#create-mode', mode);
-  // The bot's dialog has no clock picker: nobody is on one.
-  if (clock && opponent !== 'bot') await page.selectOption('#create-clock', clock);
-  await page.click('#create-game');
+  const home = await openHome(page);
+  const bot = opponent === 'bot';
+  if (home === 'account') {
+    await page.click('#home-play');
+    await page.waitForSelector('#create-modal #create-as');
+    if (bot) await page.click('#create-opponent-bot');
+    if (mode) await page.selectOption('#create-mode', mode);
+    if (clock && !bot) await page.selectOption('#create-clock', clock);
+    await page.click('#create-game');
+  } else {
+    if (bot) {
+      if ((await page.textContent('#pick-who')).trim() !== 'Sage') await pickWord(page, 'who', 'pick-who-bot');
+    } else {
+      await pickWord(page, 'who', 'pick-who-friend');
+    }
+    if (mode) await pickWord(page, 'game', `pick-game-${mode}`);
+    if (clock && !bot) await pickWord(page, 'clock', `pick-clock-${clock}`);
+    await page.click('#roll-dice');
+    if (!bot) {
+      await page.waitForSelector('#friend-modal #friend-name');
+      await page.fill('#friend-name', name);
+      await page.click('#friend-go');
+    }
+  }
   await page.waitForURL(SEAT);
-  await page.waitForSelector(opponent === 'bot' ? '.bg-board .checker' : '#share-link');
+  await page.waitForSelector(bot ? '.bg-board .checker' : '#share-link');
   const url = page.url();
   const gameId = url.match(SEAT)[1];
-  const inviteUrl =
-    opponent === 'bot' ? null : (await page.textContent('#share-link')).trim();
+  const inviteUrl = bot ? null : (await page.textContent('#share-link')).trim();
   return { gameId, url, inviteUrl };
 }
 
@@ -93,15 +117,43 @@ async function joinByLink(page, inviteUrl, name = 'Bob') {
   return takeSeat(page, name);
 }
 
-/** JOIN GAME on the home page: six characters, then the same invite. */
+/**
+ * One of the guest home's bar items, wherever the screen puts it: on a wide
+ * screen it is in the bar; on a phone the bar is the bird, the themes and
+ * ☰, and the item is in ☰'s menu. `item` is 'live' (the live games), 'signin',
+ * 'puzzles', 'join' or 'themes'.
+ */
+const BAR = {
+  live: ['#resume-games', '#nav-live'],
+  signin: ['#signin-button', '#nav-signin'],
+  puzzles: ['#puzzles', '#nav-puzzles'],
+  join: ['#home-join', '#nav-join-game'],
+  themes: ['#bg-theme-button', '#bg-theme-button'], // in the bar at every size
+};
+async function barItem(page, item) {
+  const [wide, phone] = BAR[item];
+  if (await page.isVisible(wide)) return page.click(wide);
+  await page.click('#nav-more');
+  await page.waitForSelector(`#nav-menu ${phone}`);
+  return page.click(phone);
+}
+
+/**
+ * JOIN on the home page: six characters, then the same invite. The guest
+ * home's bar has the code field itself on a wide screen (the sixth
+ * character goes on its own); a phone has JOIN in ☰'s menu, and an
+ * account's home a JOIN button; both open the prompt.
+ */
 async function joinByCode(page, code, name = 'Bob') {
-  await page.goto(`${BASE}/`);
-  // JOIN GAME on the board, JOIN on an account's home: the same prompt.
-  await page.waitForSelector('#join-game-board, #home-join');
-  await page.click((await page.$('#home-join')) ? '#home-join' : '#join-game-board');
-  await page.waitForSelector('#join-modal #join-code-input');
-  // The sixth character submits on its own.
-  await page.fill('#join-code-input', code);
+  await openHome(page);
+  if (await page.isVisible('#nav-join-code')) {
+    await page.fill('#nav-join-code', code);
+  } else {
+    await barItem(page, 'join');
+    await page.waitForSelector('#join-modal #join-code-input');
+    // The sixth character submits on its own.
+    await page.fill('#join-code-input', code);
+  }
   return takeSeat(page, name);
 }
 
@@ -160,4 +212,4 @@ function resultLine(out) {
   return line;
 }
 
-module.exports = { resultLine, BASE, dismissResume, openCreateDialog, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };
+module.exports = { resultLine, BASE, dismissResume, barItem, openHome, openCreateDialog, pickWord, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };
