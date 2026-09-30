@@ -462,10 +462,19 @@ fn step(acc: Acc, t: replay.Transition(GameState, engine.Action)) -> Acc {
   // A game ends the moment it is won: into the pause before the next game
   // of a match (which waits for both players to be ready), or the end of
   // the match. The next game begins when its number turns over.
+  // Only an open game can end. Ending an unlimited session
+  // (`state.close_session`) takes the room from BetweenGames -- where the
+  // game just played is already closed -- to Finished, and without this
+  // guard that reads as a second game ending: `close` would push another
+  // GameTurns under the same number with no turns in it, and the review
+  // written from that would overwrite the real one.
   let ended =
-    { between(after) && !between(before) }
-    || { is_over(after) && !is_over(before) }
-    || { after.game_number != before.game_number && acc.open }
+    acc.open
+    && {
+      { between(after) && !between(before) }
+      || { is_over(after) && !is_over(before) }
+      || { after.game_number != before.game_number }
+    }
   let acc = case ended {
     True -> {
       let closed = close(acc, True, t.index)
