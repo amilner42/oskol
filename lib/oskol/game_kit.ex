@@ -119,6 +119,24 @@ defmodule Oskol.GameKit do
     :gamekit@host.legal_json(instance, player_id) |> Jason.decode!()
   end
 
+  @doc """
+  What the step that produced this instance committed, as the game's own
+  JSON, or `:none` when it committed nothing.
+
+  A unit of play the platform may work on before the game is over --
+  backgammon's is a played turn. It belongs to the instance and not to a
+  moment, so a caller acting on it must act once, on the instance a step just
+  returned: rehydrating a room steps through its whole log and every one of
+  those steps commits again.
+  """
+  @spec committed(instance) :: {:ok, String.t()} | :none
+  def committed(instance) do
+    case :gamekit@host.committed_json(instance) do
+      {:ok, payload} -> {:ok, payload}
+      {:error, nil} -> :none
+    end
+  end
+
   @spec finished?(instance) :: boolean()
   def finished?(instance), do: :gamekit@host.finished(instance)
 

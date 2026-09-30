@@ -85,11 +85,32 @@ pub type Game(state, action) {
     /// (served on request, never in every update): `None` for a game that
     /// keeps none (`no_record`). It must hold only what every seat may see.
     record: fn(state) -> Option(Json),
+    /// What this step committed, as public JSON: a unit of play the
+    /// platform may start working on before the game is over. `None` for a
+    /// step that committed nothing, and for a game that has no such unit
+    /// (`no_committed`).
+    ///
+    /// Read from the state before the action, the action, and the state
+    /// after, because a commit is a transition and not a state: backgammon's
+    /// is a played turn, which the board the turn began on and the board it
+    /// left both describe. Like `record` it must hold only what every seat
+    /// has already seen -- it travels off the room, and nothing a player
+    /// could not see may leave with it.
+    committed: fn(state, action, state) -> Option(Json),
   )
 }
 
 /// For a game that keeps no record beyond its scene.
 pub fn no_record(_state: state) -> Option(Json) {
+  None
+}
+
+/// For a game with no unit of play worth working on before it ends.
+pub fn no_committed(
+  _before: state,
+  _action: action,
+  _after: state,
+) -> Option(Json) {
   None
 }
 

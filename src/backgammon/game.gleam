@@ -1,5 +1,6 @@
 //// Backgammon: the gamekit contract entry.
 
+import backgammon/analysis
 import backgammon/board
 import backgammon/engine.{type Action}
 import backgammon/projection
@@ -25,6 +26,9 @@ pub fn game() -> Game(GameState, Action) {
     clocks: engine.on_the_clock,
     timeout: fn(_, _) { game.Forfeit },
     record: fn(s) { Some(projection.record_json(s)) },
+    // A played turn is backgammon's unit of analysis, so it is also what
+    // the platform may grade before the game is over.
+    committed: analysis.committed_json,
   )
 }
 

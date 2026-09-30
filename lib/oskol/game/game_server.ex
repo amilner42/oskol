@@ -409,6 +409,7 @@ defmodule Oskol.Game.GameServer do
     case apply_action(state, player_id, action) do
       {:ok, new_state, events} ->
         broadcast(new_state, events)
+        grade_turn(new_state, events)
         {:reply, {:ok, new_state, events}, new_state, @timeout}
 
       {:error, reason} ->
@@ -485,6 +486,7 @@ defmodule Oskol.Game.GameServer do
     case apply_action(state, player_id, action) do
       {:ok, new_state, events} ->
         broadcast(new_state, events)
+        grade_turn(new_state, events)
         {:noreply, new_state, @timeout}
 
       {:error, reason} ->
@@ -541,6 +543,7 @@ defmodule Oskol.Game.GameServer do
           persist_finish(new_state)
           request_review(new_state, events)
           broadcast(new_state, events)
+          grade_turn(new_state, events)
           {:noreply, new_state, @timeout}
 
         _ ->
@@ -699,6 +702,29 @@ defmodule Oskol.Game.GameServer do
       # survives; `Oskol.Reviews.Queue` sweeps it on boot.
       Oskol.Game.Persister.analysis_owed(state.game_id)
       Oskol.Reviews.Queue.enqueue(state.game_id)
+    end
+  end
+
+  # A turn the step just committed may be graded now, while the game goes on,
+  # so the report is ready when it ends. Whether that step committed anything
+  # is the game's own answer (`GameKit.committed/1`); the grading is
+  # `Oskol.Reviews.Grader`, which answers nobody and writes to a table only
+  # the end-of-game job reads.
+  #
+  # After the broadcast, never before: both players have their update first,
+  # and nothing about a grade is ever part of it. Never on the step that ended
+  # the game either -- the review job grades that turn itself, along with
+  # every turn the grader missed. And only from a step the room actually took:
+  # `replay_entry` rebuilds a room by stepping through its whole log, and a
+  # rehydrate must not grade a match all over again.
+  defp grade_turn(%GameServerState{} = state, events) do
+    if :oskol@handlers@reviews.game_ended(state.slug, events) do
+      :ok
+    else
+      case GameKit.committed(state.instance) do
+        {:ok, payload} -> Oskol.Reviews.Grader.grade(state.game_id, payload)
+        :none -> :ok
+      end
     end
   end
 

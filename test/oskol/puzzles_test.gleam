@@ -198,7 +198,7 @@ fn graded(
   move: Option(report.MoveReview),
   cube: Option(report.CubeReview),
 ) -> report.TurnReview {
-  report.TurnReview(index: 0, cube: cube, move: move, luck: None)
+  report.TurnReview(index: 0, player: 0, cube: cube, move: move, luck: None)
 }
 
 fn game(number: Int, turns: List(analysis.Turn)) -> analysis.GameTurns {

@@ -38,6 +38,10 @@ defmodule Oskol.Application do
         # Post-game reviews: rooms cast here when a game ends and carry on.
         {Task.Supervisor, name: Oskol.Reviews.TaskSupervisor},
         {Oskol.Reviews.Queue, []},
+        # Turns graded as they are played, so the report is ready when the
+        # game is. It answers nobody: rooms cast and carry on.
+        {Task.Supervisor, name: Oskol.Reviews.GraderSupervisor},
+        {Oskol.Reviews.Grader, []},
         Oskol.Game.GameSupervisor,
         # Start a worker by calling: Oskol.Worker.start_link(arg)
         # {Oskol.Worker, arg},
