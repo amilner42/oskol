@@ -214,21 +214,30 @@ defmodule Oskol.Game.BotRoomTest do
   end
 
   describe "an engine that never answers" do
-    test "ends in an offer to resign rather than a board that never moves" do
+    test "leaves the board where it stands, and never offers a resignation" do
       Req.Test.stub(Oskol.Reviews, fn conn ->
         Plug.Conn.send_resp(conn, 500, "the desktop is asleep")
       end)
 
       %{game_id: game_id, human: human} = table()
 
-      # Every ask comes back empty, so after the backoff (milliseconds here)
-      # the game gives up in its own words: the person is offered the game,
-      # and can take it or decline and let Sage keep trying.
+      # Sage used to give up here and offer the person the game. That ended a
+      # real game on an infrastructure failure -- a resignation is a result,
+      # written down as a score, a rating and a review -- and one such game
+      # had to be deleted from production by hand. An engine we cannot reach
+      # is our problem, not a position.
       offered = fn state ->
         Enum.any?(GameKit.legal(state.instance, human), &(&1["name"] == "accept_resign"))
       end
 
-      assert play_until(game_id, human, offered) == :reached
+      # `play_until` walks 3,000 steps before it gives up, and a step with
+      # nothing to do is 10 ms. Starting near the end bounds this to about a
+      # second, which is far past a ladder measured in milliseconds here.
+      assert play_until(game_id, human, offered, 2_900) == :never
+
+      # And the game is still there to be played, rather than over.
+      state = Game.get_server_state(game_id)
+      refute GameKit.finished?(state.instance)
     end
   end
 end
