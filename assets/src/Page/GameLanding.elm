@@ -1861,16 +1861,14 @@ guestNote model =
                 )
 
 
-{-| The panel under the list: one line on what holds these games, the line
-that sells it, the button, and the six things an account is for.
+{-| The panel under the list: one line on what holds these games, the
+button, and the six things an account is for.
 -}
 pitch : Model -> Html Msg -> Html Msg
 pitch _ button =
     Html.div [ id "guest-note", class "pitch mt-6 pt-5 flex flex-col gap-4" ]
         [ Html.p [ class "q-note text-[13px] text-center" ]
             [ Html.text "You are logged in as a guest on this device." ]
-        , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
-            [ Html.text "Want to get better for free?" ]
         , button
         -- Six on a wide screen, three to a row; a phone keeps the first four,
         -- two to a row -- less to read where there is less room.
