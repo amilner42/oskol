@@ -1872,15 +1872,15 @@ pitch _ button =
         , Html.p [ class "pitch-line text-[20px] font-bold leading-tight text-center" ]
             [ Html.text "Want to get better for free?" ]
         , button
-        -- Six, so they fill rows with nothing left over at both widths:
-        -- two to a row on a phone, three on a wide screen.
+        -- Six on a wide screen, three to a row; a phone keeps the first four,
+        -- two to a row -- less to read where there is less room.
         , Html.ul [ class "grid grid-cols-[repeat(2,max-content)] sm:grid-cols-[repeat(3,max-content)] justify-center gap-2" ]
             [ chip "hero-light-bulb" "Mistake practice"
             , chip "hero-magnifying-glass" "Game analysis"
             , chip "hero-arrow-trending-up" "Track progress"
             , chip "hero-book-open" "Opening guide"
-            , chip "hero-clock" "Match history"
-            , chip "hero-device-phone-mobile" "Every device"
+            , wideChip "hero-clock" "Match history"
+            , wideChip "hero-device-phone-mobile" "Every device"
             ]
         ]
 
@@ -1888,8 +1888,19 @@ pitch _ button =
 {-| One thing an account is for, as a chip: a Heroicon and a few words.
 -}
 chip : String -> String -> Html Msg
-chip iconName label =
-    Html.li [ class "pitch-chip inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5 text-[12.5px] font-semibold" ]
+chip =
+    chipWith ""
+
+
+{-| A chip only a wide screen shows. -}
+wideChip : String -> String -> Html Msg
+wideChip =
+    chipWith "max-sm:hidden"
+
+
+chipWith : String -> String -> String -> Html Msg
+chipWith extra iconName label =
+    Html.li [ class ("pitch-chip inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-3 py-1.5 text-[12.5px] font-semibold " ++ extra) ]
         [ icon iconName "w-4 h-4", Html.text label ]
 
 
