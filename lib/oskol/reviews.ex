@@ -999,7 +999,13 @@ defmodule Oskol.Reviews do
   # rather than left lying for the next caller.
   defp posted(options) do
     timeout = Keyword.fetch!(options, :receive_timeout)
-    task = Task.Supervisor.async_nolink(Oskol.Reviews.TaskSupervisor, fn -> Req.post(options) end)
+
+    # Linked, deliberately. The caller owns this request: a queue task killed
+    # mid-review must take its request down with it (the recovery tests kill
+    # one on purpose), and a request that outlived the job that wanted it
+    # would be work nobody is waiting for. Linking also carries `$callers`,
+    # which is how the test stub is found.
+    task = Task.async(fn -> Req.post(options) end)
 
     # Req owns the timeout and answers first whenever it can; this is only the
     # backstop for a task that never answers at all, so it is the request's own
