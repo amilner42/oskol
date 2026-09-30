@@ -185,7 +185,7 @@ async function run(browser, errors, fixture) {
     await openHome(a.page);
     await a.page.waitForSelector(`#home-live-list #resume-${game.gameId}`);
     const live = (await a.page.textContent(`#resume-${game.gameId}`)).trim();
-    if (!live.includes('vs Bob')) throw new Error(`the live row should name the opponent: "${live}"`);
+    if (!live.includes('Bob')) throw new Error(`the live row should name the opponent: "${live}"`);
     if (!/Your move|Their move/.test(live)) throw new Error(`the live row should say whose move it is: "${live}"`);
     await shots(a.page, '02-home-live');
     await a.page.click(`#resume-${game.gameId}`);

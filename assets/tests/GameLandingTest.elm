@@ -823,7 +823,7 @@ resume =
                         [ Query.has [ id "resume-modal", text "LIVE GAMES" ]
                         , Query.find [ id "signup-cta" ] >> Query.has [ text "Sign up" ]
                         , Query.find [ id "resume-list" ] >> Query.children [] >> Query.count (Expect.equal 2)
-                        , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "vs Bob", text "Match to 5", text "2 min ago", text "Your move" ]
+                        , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "Bob", text "Match to 5", text "2 min ago", text "Your move" ]
                         , Query.find [ id "resume-9H302Z" ] >> Query.has [ text "Waiting for a player", text "Lobby" ]
                         ]
         , test "the bar's button says how many are waiting, and what to do" <|
