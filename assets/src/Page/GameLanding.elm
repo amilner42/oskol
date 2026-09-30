@@ -1878,8 +1878,8 @@ pitch _ button =
             [ chip "hero-light-bulb" "Mistake practice"
             , chip "hero-magnifying-glass" "Game analysis"
             , chip "hero-arrow-trending-up" "Track progress"
-            , chip "hero-play" "Game replays"
-            , chip "hero-fire" "Daily streak"
+            , chip "hero-book-open" "Opening guide"
+            , chip "hero-clock" "Match history"
             , chip "hero-device-phone-mobile" "Every device"
             ]
         ]
