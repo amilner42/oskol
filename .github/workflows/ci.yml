@@ -16,8 +16,36 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # One check for the ruleset to require, so the shape of the jobs below is
+  # ours to change. main's "Protect main" ruleset used to name two jobs
+  # directly; partitioning the Elixir suite and sharding the smokes renamed
+  # both, and a required check that no longer reports is a pull request that
+  # waits for it forever. Requiring this instead means the partition and
+  # shard counts are a workflow decision, not a branch-protection one.
+  #
+  # if: always() so a failed dependency still produces a red answer here
+  # rather than a skipped one, which a ruleset reads as "not reported yet".
+  # A matrix job's result is success only when every leg succeeded.
+  ci:
+    name: CI
+    needs: [test, elixir, browser]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Every suite green
+        run: |
+          printf 'compile/Gleam/Elm: %s\nElixir:            %s\nsmokes:            %s\n' \
+            '${{ needs.test.result }}' \
+            '${{ needs.elixir.result }}' \
+            '${{ needs.browser.result }}'
+          for result in '${{ needs.test.result }}' \
+                        '${{ needs.elixir.result }}' \
+                        '${{ needs.browser.result }}'; do
+            [[ "$result" == success ]] || exit 1
+          done
+
   test:
-    name: compile, Gleam, Elm, Elixir
+    name: compile, Gleam, Elm
     # Keep runner migrations deliberate; Ubuntu 26 compatibility belongs in
     # its own reviewed change rather than arriving through ubuntu-latest.
     runs-on: ubuntu-24.04
@@ -87,19 +115,131 @@ jobs:
         run: cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null
       - name: Elm tests
         run: cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm
-      - name: Elixir tests
-        # Including the slow ones a laptop skips: whole matches played out
-        # at random, and clocks that have to run out in real time.
-        run: mix test --include slow
       - name: Formatting
         run: mix format --check-formatted && gleam format --check src test
 
-  # Runs alongside the suites, not after them: the two are independent,
-  # and CI is green when both are. A red answer comes in the time of the
-  # slower job, not the sum.
-  browser:
-    name: Playwright smokes
+  # The Elixir suite was the longest step in the job above (~3m of its ~7m)
+  # and nothing else there waits on it, so it runs as four partitions here
+  # instead. ExUnit splits the files; each partition gets its own database
+  # (config/test.exs keys the name on MIX_TEST_PARTITION), so nothing is
+  # shared and the tests that must not be async stay exactly as they are.
+  #
+  # Only MIX_TEST_PARTITION is set. `bin/test-par` also sets
+  # MIX_TEST_PARTITIONS, which makes each partition take a share of one
+  # machine's connections and schedulers -- right when four of them run on a
+  # laptop, wrong here, where every partition has a runner and a Postgres to
+  # itself and should use all of it.
+  elixir:
+    name: Elixir tests (${{ matrix.partition }}/4)
     runs-on: ubuntu-24.04
+    strategy:
+      # One partition failing should not cancel the rest: the useful answer
+      # is everything that is broken, not the first thing.
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.1.1"
+          elixir-version: "1.19.2"
+          gleam-version: "1.13.0"
+
+      - name: Cache mix deps and build
+        uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+            build
+          key: mix-${{ runner.os }}-${{ hashFiles('mix.lock', 'manifest.toml') }}
+          restore-keys: mix-${{ runner.os }}-
+
+      - name: Hex, rebar and the mix_gleam archive
+        run: mix local.hex 2.5.1 --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
+      - run: mix deps.get
+      - name: Elixir tests
+        # Including the slow ones a laptop skips: whole matches played out
+        # at random, and clocks that have to run out in real time.
+        env:
+          MIX_TEST_PARTITION: ${{ matrix.partition }}
+        run: mix test --partitions 4 --include slow
+
+  # Runs alongside the suites, not after them: the jobs are independent,
+  # and CI is green when all are. A red answer comes in the time of the
+  # slowest job, not the sum.
+  #
+  # The smokes used to be steps of one job sharing one server, and only
+  # eight of the twelve `bin/check --browser` runs -- so home, puzzle,
+  # puzzles-cards and puzzles-hub were guarded locally and nowhere else.
+  # All twelve run here now, in four shards, each bringing up its own server
+  # against its own database. Sharing a server was never the point; the cost
+  # was a whole setup per shard (containers, the browser, a database, the
+  # asset build), and on a public repository those runner minutes are free.
+  #
+  # Shards are grouped by measured duration so they finish together, not by
+  # subject. Every smoke's cost is in the matrix below; setup is about two
+  # minutes a shard and dwarfs all of it, which is why four is the number and
+  # not twelve.
+  browser:
+    name: Playwright smokes (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    strategy:
+      # One shard failing should not cancel the others: the useful answer is
+      # every smoke that is broken, not the first one.
+      fail-fast: false
+      matrix:
+        include:
+          # Measured on the run that first included all twelve (seconds of
+          # smoke time, setup excluded): replay 44, puzzles-cards 39,
+          # puzzles-hub 35, board 28, dance 27, landscape 17, accounts 12,
+          # spa-landing 11, smoke 7, home 4, puzzle 2, guest-prefill 2.
+          # Longest first into the least-loaded shard: 57/58/56/57s against
+          # the 79s the worst shard cost when the four new ones were spread
+          # blind. Re-measure if a smoke grows.
+          #
+          # replay and puzzle arrange their own rooms (mix run setup.exs);
+          # replay's analysis is stubbed in the browser, so no engine is
+          # needed.
+          - shard: replay
+            smokes: >-
+              playwright/test-backgammon-replay/test.js
+              playwright/test-spa-landing/test.js
+              playwright/test-puzzle/test.js
+          # accounts signs in by email; the mail is read from /dev/last-login.
+          - shard: cards
+            smokes: >-
+              playwright/test-puzzles-cards/test.js
+              playwright/test-accounts/test.js
+              playwright/test-backgammon-smoke/test.js
+          # home arranges its own account (setup.exs) and makes the live game
+          # in the browser.
+          - shard: hub
+            smokes: >-
+              playwright/test-puzzles-hub/test.js
+              playwright/test-backgammon-landscape/test.js
+              playwright/test-home/test.js
+          # dance arranges its own danced room (mix run setup.exs); landscape
+          # does too, and is in the shard above.
+          - shard: board
+            smokes: >-
+              playwright/test-backgammon-board/test.js
+              playwright/test-backgammon-dance/test.js
+              playwright/test-guest-prefill/test.js
     services:
       postgres:
         image: postgres:17
@@ -137,6 +277,11 @@ jobs:
           restore-keys: mix-${{ runner.os }}-
 
       - run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
       - name: Hex, rebar and the mix_gleam archive
         run: mix local.hex 2.5.1 --force && mix local.rebar --force && mix archive.install hex mix_gleam 0.6.2 --force
@@ -152,21 +297,15 @@ jobs:
             sleep 1
           done
           curl -sf -o /dev/null http://localhost:4400/ || (cat server.log && exit 1)
-      # The same smokes bin/check --browser runs, in the same order. They
-      # share one server, so they are steps rather than a matrix; a matrix
-      # across runners is dev-fast-loop's.
-      - run: node playwright/test-spa-landing/test.js
-      - run: node playwright/test-backgammon-smoke/test.js
-      - run: node playwright/test-backgammon-board/test.js
-      - run: node playwright/test-backgammon-landscape/test.js
-      # Arranges its own danced room (mix run setup.exs).
-      - run: node playwright/test-backgammon-dance/test.js
-      # Arranges its own finished match (mix run setup.exs); the analysis is
-      # stubbed in the browser, so no engine is needed.
-      - run: node playwright/test-backgammon-replay/test.js
-      - run: node playwright/test-guest-prefill/test.js
-      # Signing in by email; the mail is read from /dev/last-login.
-      - run: node playwright/test-accounts/test.js
+      # Which smokes this shard runs is decided in the matrix above; between
+      # them the four shards run every smoke `bin/check --browser` does.
+      - name: Smokes
+        run: |
+          for smoke in ${{ matrix.smokes }}; do
+            echo "::group::$smoke"
+            node "$smoke"
+            echo "::endgroup::"
+          done
       - name: Server log
         if: failure()
         run: cat server.log
