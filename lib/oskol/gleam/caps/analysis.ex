@@ -4,8 +4,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
   order in lockstep:
 
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
-      enqueue, review, report_turn, charge, replace, graded_for,
-      graded_rooms_for)
+      enqueue, review, report_turn, charge, replace, grades, forget_grades,
+      graded_for, graded_rooms_for)
       RatedGame(game_id, game_number, seat, response_json, ended_at_ms)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
@@ -31,11 +31,38 @@ defmodule Oskol.Gleam.Caps.Analysis do
   @doc """
   The caps. `:review` injects the engine call (an operator task wrapping it
   to time it, a test standing in for it); the default POSTs to the engine.
+
+  `:grades` is the warm cache of turns graded while the game was still being
+  played, and it is **off by default**: the context a request handler is
+  given holds the panicking stub, so nothing a player can reach can count,
+  list or hint at the grades of a game on the board. The review queue passes
+  `grades: true` for its own job, which is the only reader there is.
   """
   def build(opts \\ []) do
+    grades =
+      if Keyword.get(opts, :grades, false),
+        do: &grades/3,
+        else: :oskol@caps@analysis.no_grades()
+
     {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
      &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
-     &charge/4, &replace/3, &graded_for/2, &graded_rooms_for/3}
+     &charge/4, &replace/3, grades, &forget_grades/2, &graded_for/2, &graded_rooms_for/3}
+  end
+
+  # The grades stored for a game's turns, in the order the bodies were asked
+  # about: the engine's reply where that exact question is answered already.
+  # The body is the key, hashed here (`Reviews.turn_key/1`) over the bytes
+  # Gleam built, so nothing between the two can reorder a key.
+  defp grades(game_id, number, bodies) do
+    game_id
+    |> Reviews.turn_grades(number, bodies)
+    |> Enum.map(&opt(&1, fn response -> Jason.encode!(response) end))
+  end
+
+  # Spent the moment the game's own answer is written.
+  defp forget_grades(game_id, number) do
+    :ok = Reviews.forget_turn_grades(game_id, number)
+    nil
   end
 
   # One account's graded games, newest answer first, as a rating counts

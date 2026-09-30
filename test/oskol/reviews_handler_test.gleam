@@ -6,7 +6,6 @@
 import backgammon/analysis as bg_analysis
 import backgammon/board
 import backgammon/engine as bg_engine
-import backgammon/engine_board
 import backgammon/game as backgammon
 import backgammon/record
 import gamekit/clock
@@ -186,6 +185,17 @@ fn put_records(key: String, value: List(#(Int, String))) -> Dynamic
 @external(erlang, "erlang", "get")
 fn get_records(key: String) -> List(#(Int, String))
 
+/// The cache of graded turns, keyed as the table is: the game number and the
+/// exact request body that was asked.
+pub type Grade =
+  #(#(Int, String), String)
+
+@external(erlang, "erlang", "put")
+fn put_grades(key: String, value: List(Grade)) -> Dynamic
+
+@external(erlang, "erlang", "get")
+fn get_grades(key: String) -> List(Grade)
+
 fn record_call(key: String, value: String) -> Nil {
   let _ = put(key, [value, ..recorded(key)])
   Nil
@@ -229,6 +239,8 @@ fn with_analysis(
   forget("extractions")
   forget("extraction_failures")
   forget("pictures")
+  forget("forgotten")
+  let _ = put_grades("grades", [])
   let _ = put_ints("extracted", [])
   let _ = put_rows("rows", stored)
   let _ = put_records("records", [])
@@ -321,6 +333,19 @@ fn with_analysis(
         Nil
       },
       enqueue: fn(id) { record_call("enqueued", id) },
+      // The warm cache of turns graded while the game was still on. Empty
+      // unless a test put something in it (`with_grades`), which is the
+      // engine being down all game: every turn misses and the job asks for
+      // the whole game exactly as it always did.
+      grades: fn(_, number, bodies) {
+        let stored = get_grades("grades")
+        list.map(bodies, fn(body) {
+          list.key_find(stored, #(number, body)) |> option.from_result
+        })
+      },
+      forget_grades: fn(_, number) {
+        record_call("forgotten", int.to_string(number))
+      },
       review: fn(body) {
         record_call("requests", body)
         answer(body)
@@ -925,7 +950,7 @@ pub fn a_turn_names_its_record_lines_and_its_moves_positions_test() {
   )
   let assert [first, ..] = g.turns
   let assert Some(played) = first.played
-  let assert Ok(#(white, black)) = engine_board.decode(played, board.White)
+  let assert Ok(#(white, black)) = bg_analysis.decode(played, board.White)
   assert string.contains(
     body,
     "\"position\":"
@@ -937,7 +962,7 @@ pub fn a_turn_names_its_record_lines_and_its_moves_positions_test() {
     )
       <> ",\"landed\":"
       <> json.to_string(json.array(
-      engine_board.landings(first.position.board, played, board.White),
+      bg_analysis.landings(first.position.board, played, board.White),
       json.int,
     )),
   )
@@ -1280,7 +1305,7 @@ pub fn the_opening_rolls_no_double_is_no_decision_in_the_pr_test() {
   // A match game, where the cube is live (a single game has none)
   let turns = game_number(played_log("match5", 4, 3000), 1).turns
   let assert [first, ..] = turns
-  let assert True = engine_board.engine_can_double(first.position)
+  let assert True = bg_analysis.engine_can_double(first.position)
   // After Crawford the trailer "should" double at once, so the engine
   // charges whoever opens behind a missed double on the opening roll.
   let body = answer_with_cubes(turns, [#(0, "0.07")])
@@ -1313,7 +1338,7 @@ pub fn a_double_that_could_have_been_offered_still_counts_test() {
   let assert Ok(#(third, at)) =
     list.index_map(turns, fn(t, i) { #(t, i) })
     |> list.drop(1)
-    |> list.find(fn(p) { engine_board.engine_can_double({ p.0 }.position) })
+    |> list.find(fn(p) { bg_analysis.engine_can_double({ p.0 }.position) })
   let body = answer_with_cubes(turns, [#(at, "0.08")])
   let assert Ok(player) =
     list.first(list.drop(page_players(body, turns), third.player))
@@ -1342,4 +1367,201 @@ pub fn the_match_pr_reads_the_opening_from_the_slim_row_test() {
   // A game with no turn to read (stripped to {}) keeps the engine's numbers
   let bare = "{\"players\":[" <> totals <> "," <> totals <> "],\"turns\":[{}]}"
   assert report.player_prs(bare) == Ok([8.75, 8.75])
+}
+
+// ---------- The warm cache of turns graded as they were played ----------
+//
+// Grading a turn while the game is still on is a cache of the question the
+// review would have asked at the end, and nothing else. `reviews.run` keeps
+// its shape: it replays, builds the turns, and asks the engine only for the
+// ones the cache cannot answer for.
+
+/// Put the answers the grader would have stored for a game's turns into the
+/// cache: `which` says of each turn's index whether it was graded.
+fn with_grades(log: GameLog, number: Int, which: fn(Int) -> Bool) -> List(Grade) {
+  let assert Ok(games) = reviews.games(log)
+  let assert Ok(g) = list.find(games, fn(g) { g.number == number })
+  let stored =
+    g.turns
+    |> list.index_map(fn(turn, index) { #(index, turn) })
+    |> list.filter(fn(pair) { which(pair.0) })
+    |> list.map(fn(pair) {
+      let body =
+        json.to_string(bg_analysis.one_turn_request(pair.1, pair.0, g.jacoby))
+      #(#(number, body), one_turn_answer(pair.0))
+    })
+  let _ = put_grades("grades", stored)
+  stored
+}
+
+/// What the grader stored for one turn: the engine's answer to a one-turn
+/// request, which is that turn's own object and the totals of it alone.
+fn one_turn_answer(index: Int) -> String {
+  let assert Ok(turns) =
+    json.parse(
+      engine_answer(index + 1),
+      decode.at(["turns"], decode.list(decode.dynamic)),
+    )
+  let assert [turn, ..] = list.drop(turns, index)
+  let turn = oskol_raw_text(turn)
+  "{\"levels\":{\"moves\":\"2ply\",\"cube\":\"3ply\"},\"timing_ms\":900,\"turns\":["
+  <> turn
+  <> "],\"players\":["
+  <> lone_totals
+  <> ","
+  <> lone_totals
+  <> "]}"
+}
+
+const lone_totals = "{\"moves\":{\"decisions\":1,\"forced\":0,\"error\":0.05,\"grades\":{\"doubtful\":1}},\"cube\":{\"decisions\":0,\"error\":0.0,\"mistakes\":{}},\"luck\":0.25,\"error\":0.05,\"pr\":25.0}"
+
+@external(erlang, "oskol_json_ffi", "encode")
+fn oskol_raw_text(value: Dynamic) -> String
+
+pub fn every_turn_graded_already_spends_no_engine_time_test() {
+  let log = finished_log(9)
+  let turns = turn_count(log, 1)
+  let ctx = with_analysis(log, [], fn(_) { panic as "the engine is not asked" })
+  let _ = with_grades(log, 1, fn(_) { True })
+  assert reviews.run(ctx, "123456") == None
+  assert recorded("requests") == []
+  // And the row is written as any other done review, page and all.
+  assert recorded("saves")
+    == [
+      "1:done:1:body:page",
+      "1:pending:1:none:none",
+    ]
+  // The grades are spent the moment the answer is written.
+  assert recorded("forgotten") == ["1"]
+  let assert [#(row, Some(page)), ..] = get_rows("rows")
+  assert row.turns == turns
+  assert string.contains(page, "\"turns\":[")
+}
+
+pub fn only_the_turns_the_cache_cannot_answer_for_are_asked_test() {
+  let log = finished_log(9)
+  let turns = turn_count(log, 1)
+  let ctx = with_analysis(log, [], fn(body) { Ok(misses_answer(body)) })
+  // Every turn but the last two, which is what a live game leaves: the
+  // winning turn is never graded, and one was dropped on the way.
+  let _ = with_grades(log, 1, fn(index) { index < turns - 2 })
+  assert reviews.run(ctx, "123456") == None
+  let assert [request] = recorded("requests")
+  // One request, for exactly the two that were missing, each saying where
+  // it sits in the game -- without which the engine would grade the first
+  // of them as an opening roll.
+  assert string.contains(request, "\"index\":" <> int.to_string(turns - 2))
+  assert string.contains(request, "\"index\":" <> int.to_string(turns - 1))
+  assert !string.contains(request, "\"index\":0,")
+  // At the depth the stored grades were given at, not whatever the engine
+  // defaults to today: a review is all of one depth or it is not one.
+  assert string.contains(request, "\"move_level\":\"2ply\"")
+  assert string.contains(request, "\"cube_level\":\"3ply\"")
+  assert recorded("saves") == ["1:done:1:body:page", "1:pending:1:none:none"]
+}
+
+pub fn a_cache_from_another_engine_is_not_mixed_in_test() {
+  let log = finished_log(9)
+  let ctx = with_analysis(log, [], fn(body) { Ok(batch_answer(body)) })
+  let stored = with_grades(log, 1, fn(_) { True })
+  // One turn graded at another depth: an engine replaced mid-game. Rather
+  // than half a review at each, the whole game is asked again.
+  let _ =
+    put_grades(
+      "grades",
+      list.index_map(stored, fn(grade, index) {
+        case index {
+          0 -> #(grade.0, string.replace(grade.1, "2ply", "4ply"))
+          _ -> grade
+        }
+      }),
+    )
+  assert reviews.run(ctx, "123456") == None
+  let assert [request] = recorded("requests")
+  // The whole game, and at the engine's own default depth.
+  assert !string.contains(request, "\"move_level\"")
+  assert !string.contains(request, "\"index\"")
+}
+
+pub fn an_assembled_review_reads_as_the_engines_own_test() {
+  let log = finished_log(9)
+  let turns = turn_count(log, 1)
+  let ctx = with_analysis(log, [], fn(_) { panic as "the engine is not asked" })
+  let _ = with_grades(log, 1, fn(_) { True })
+  assert reviews.run(ctx, "123456") == None
+  let assert [#(_, Some(page)), ..] = get_rows("rows")
+  let assert [#(row, _), ..] = get_rows("rows")
+  let assert Some(body) = row.response_json
+  // The shape a stored answer has, so everything that reads one -- the
+  // ratings query, the recent list, the report -- reads this one too.
+  let assert Ok(review) = report.parse(body)
+  assert list.length(review.turns) == turns
+  assert list.length(review.players) == 2
+  assert review.levels == Some(report.Levels("2ply", "3ply"))
+  // Every part timed, added up.
+  assert review.timing_ms == Some(900 * turns)
+  // And it says where it came from.
+  assert string.contains(body, "\"assembled\":true")
+  // The seats' totals are worked out from the turns, and they are the
+  // engine's own arithmetic.
+  assert report.totals_of(review.turns) == review.players
+  assert string.contains(page, "\"pr\":")
+}
+
+/// The engine's answer to a request for some of a game's turns: one graded
+/// turn per turn asked for, at the index it said.
+fn misses_answer(body: String) -> String {
+  let assert Ok(indexes) =
+    json.parse(
+      body,
+      decode.at(["turns"], decode.list(decode.at(["index"], decode.int))),
+    )
+  "{\"levels\":{\"moves\":\"2ply\",\"cube\":\"3ply\"},\"timing_ms\":1800,\"turns\":["
+  <> string.join(
+    list.map(indexes, fn(index) { turn_of(one_turn_answer(index)) }),
+    ",",
+  )
+  <> "],\"players\":["
+  <> lone_totals
+  <> ","
+  <> lone_totals
+  <> "]}"
+}
+
+/// The engine's answer to a whole-game request, as it always was.
+fn batch_answer(body: String) -> String {
+  let assert Ok(count) =
+    json.parse(body, decode.at(["turns"], decode.list(decode.dynamic)))
+    |> result.map(list.length)
+  engine_answer(count)
+}
+
+fn turn_of(answer: String) -> String {
+  let assert Ok([turn]) =
+    json.parse(answer, decode.at(["turns"], decode.list(decode.dynamic)))
+    |> result.map(list.map(_, oskol_raw_text))
+  turn
+}
+
+pub fn a_grade_that_answers_for_another_turn_is_a_miss_test() {
+  let log = finished_log(9)
+  let turns = turn_count(log, 1)
+  let ctx = with_analysis(log, [], fn(body) { Ok(misses_answer(body)) })
+  let stored = with_grades(log, 1, fn(_) { True })
+  // Every grade reads perfectly well and answers for turn 0 -- an engine
+  // that did not understand which turn it was being asked about. Only the
+  // one that really is turn 0 stands; the rest are misses, and the game is
+  // still reviewed rather than failed over a bad cache.
+  let _ =
+    put_grades(
+      "grades",
+      list.map(stored, fn(grade) { #(grade.0, one_turn_answer(0)) }),
+    )
+  assert reviews.run(ctx, "123456") == None
+  let assert [request] = recorded("requests")
+  let asked =
+    json.parse(request, decode.at(["turns"], decode.list(decode.dynamic)))
+    |> result.map(list.length)
+  assert asked == Ok(turns - 1)
+  assert recorded("saves") == ["1:done:1:body:page", "1:pending:1:none:none"]
 }

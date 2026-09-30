@@ -19,7 +19,7 @@
 //// so a later engine cannot silently change what a link says; a change of
 //// shape is a migration, as it is for a rendered review.
 
-import backgammon/engine_board
+import backgammon/analysis
 import gleam/bit_array
 import gleam/dynamic/decode.{type Decoder}
 import gleam/int
@@ -576,7 +576,7 @@ pub fn answer_from_json(text: String) -> Result(Answer, String) {
 /// `Move` and to nothing else.
 pub fn question_of(
   kind: Kind,
-  position: engine_board.Position,
+  position: analysis.Position,
   dice: Option(#(Int, Int)),
   jacoby: Bool,
 ) -> Question {

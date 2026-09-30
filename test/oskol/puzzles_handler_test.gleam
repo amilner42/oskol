@@ -6,8 +6,8 @@
 //// memory line, what a retry does, what an override replaces -- is checked
 //// without a repo.
 
+import backgammon/analysis
 import backgammon/board.{type Board, Black, Point, White}
-import backgammon/engine_board
 import backgammon/positions
 import gleam/dict
 import gleam/dynamic.{type Dynamic}
@@ -109,7 +109,7 @@ fn hit_board() -> Board {
 fn move_question() -> Question {
   Question(
     kind: Move,
-    board: engine_board.encode(hit_board(), White),
+    board: analysis.encode(hit_board(), White),
     dice: Some(#(6, 4)),
     cube_value: 1,
     cube_owner: puzzles.Centered,
@@ -130,7 +130,7 @@ fn move_outcomes() -> List(List(Int)) {
   let t = built()
   t.nodes
   |> list.filter(fn(n) { n.children == [] })
-  |> list.map(fn(n) { engine_board.encode(n.board, White) })
+  |> list.map(fn(n) { analysis.encode(n.board, White) })
 }
 
 fn built() -> tree.Tree {
@@ -177,7 +177,7 @@ fn old_move_answer() -> Answer {
 fn cube_question(kind: Kind) -> Question {
   Question(
     kind: kind,
-    board: engine_board.encode(hit_board(), White),
+    board: analysis.encode(hit_board(), White),
     dice: None,
     cube_value: 1,
     cube_owner: puzzles.Mover,
@@ -1684,7 +1684,7 @@ fn lazy_ctx() -> Ctx {
   let question =
     Question(
       ..move_question(),
-      board: engine_board.encode(spread, White),
+      board: analysis.encode(spread, White),
       dice: Some(#(1, 1)),
     )
   let base = ctx_with([stored("big", question, move_answer())])

@@ -10,7 +10,7 @@
 //// with a single turn, not to `/moves` and `/cube`. The single-position
 //// routes validate the board with `board[0] <= 0`, but bgsage's own format
 //// counts the opponent's bar as a plain positive number at index 0 (see
-//// `backgammon/engine_board`), so those routes 422 every position with an
+//// `backgammon/analysis`), so those routes 422 every position with an
 //// opposing checker on the bar -- several times a game. The review route has
 //// no such check and is the one Oskol already grades finished games through.
 //// The cost is that a turn asked with dice also gets a cube analysis it
@@ -22,8 +22,8 @@
 //// because a human owed a move deserves a game they can finish rather than a
 //// board that never moves.
 
+import backgammon/analysis.{type Position}
 import backgammon/board.{type Board, type Color, type Move, Bar, Off, Point}
-import backgammon/engine_board.{type Position}
 import backgammon/state.{type GameState}
 import gamekit/game
 import gleam/dict
@@ -107,11 +107,9 @@ fn roll_or_double(
   ask: game.Ask,
   attempts: Int,
 ) -> Result(List(Json), String) {
-  let position = engine_board.position(s, color)
+  let position = analysis.position(s, color)
 
-  case
-    state.can_double(s, player_id) && engine_board.engine_can_double(position)
-  {
+  case state.can_double(s, player_id) && analysis.engine_can_double(position) {
     False -> Ok([simple("roll")])
     True -> {
       use <- unless_given_up(attempts)
@@ -137,7 +135,7 @@ fn answer_double(
   attempts: Int,
 ) -> Result(List(Json), String) {
   let doubler = board.opponent(color)
-  let position = engine_board.position(s, doubler)
+  let position = analysis.position(s, doubler)
 
   use <- unless_given_up(attempts)
   use answered <- result.try(ask(route, body(s, doubler, position, None, None)))
@@ -170,9 +168,9 @@ fn play_turn(
         body(
           s,
           color,
-          engine_board.position(s, color),
+          analysis.position(s, color),
           faces(s),
-          Some(engine_board.encode(played(s.turn_board, color, fallback), color)),
+          Some(analysis.encode(played(s.turn_board, color, fallback), color)),
         ),
       ))
       use best <- result.try(best_play(answered))
@@ -207,7 +205,7 @@ fn matching(
   target: List(Int),
 ) -> List(Move) {
   list.find(sequences, fn(sequence) {
-    engine_board.encode(played(turn_board, color, sequence), color) == target
+    analysis.encode(played(turn_board, color, sequence), color) == target
   })
   |> result.unwrap(case sequences {
     [first, ..] -> first
@@ -280,7 +278,7 @@ fn body(
           json.object([
             #(
               "player",
-              json.int(engine_board.seat_index(s, state.player_of(s, mover))),
+              json.int(analysis.seat_index(s, state.player_of(s, mover))),
             ),
             // A turn sent on its own is read as a game's opening roll unless
             // it says where it sits. Only luck cares, and luck is off, but a
@@ -407,7 +405,7 @@ fn fake_turn(cells: List(Int), dice: Option(List(Int))) -> String {
                 #(
                   "board",
                   json.array(
-                    engine_board.encode(played(from, mover, first), mover),
+                    analysis.encode(played(from, mover, first), mover),
                     json.int,
                   ),
                 ),
@@ -453,7 +451,7 @@ fn expand(faces: List(Int)) -> List(Int) {
   }
 }
 
-/// The engine's 26 ints back as a board, read as White's: `engine_board.encode`
+/// The engine's 26 ints back as a board, read as White's: `analysis.encode`
 /// leaves White's point numbers alone, so White is the mover the round trip
 /// is exact for. Checker ids are made up -- an engine board has none, and
 /// nothing about a fake answer depends on which checker moved.

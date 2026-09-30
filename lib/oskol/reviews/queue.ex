@@ -126,7 +126,13 @@ defmodule Oskol.Reviews.Queue do
     # outlive this job: this job read the log before that game existed.
     seen = Oskol.Reviews.analysis_owed_at(game_id)
 
-    case :oskol@handlers@reviews.run(Oskol.Gleam.CtxBuilder.build(), game_id) do
+    # The one context in the application with the `grades` cap: the grades a
+    # game's turns were given while it was being played are this job's to
+    # read and nothing else's, and a request-path context holds a stub that
+    # panics rather than a capability nobody should hold.
+    ctx = Oskol.Gleam.CtxBuilder.build(grades: true)
+
+    case :oskol@handlers@reviews.run(ctx, game_id) do
       {:some, ms} ->
         # A retry keeps the note: the work is not done until it is done.
         {:retry, ms}

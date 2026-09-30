@@ -38,6 +38,10 @@ defmodule Oskol.Application do
         # Post-game reviews: rooms cast here when a game ends and carry on.
         {Task.Supervisor, name: Oskol.Reviews.TaskSupervisor},
         {Oskol.Reviews.Queue, []},
+        # Turns graded as they are played, so the report is ready when the
+        # game is. It answers nobody: rooms cast and carry on.
+        {Task.Supervisor, name: Oskol.Reviews.GraderSupervisor},
+        {Oskol.Reviews.Grader, []},
         # A bot seat's thinking: seconds on the analysis engine, off the room
         # that is serving live play.
         {Task.Supervisor, name: Oskol.Game.BotSupervisor},

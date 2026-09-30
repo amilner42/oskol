@@ -61,7 +61,7 @@ legal_plays = fn board, [a, b] ->
 
     case children do
       [] ->
-        [{:backgammon@engine_board.encode(node_board, :white), Enum.reverse(path) |> Enum.join(" ")}]
+        [{:backgammon@analysis.encode(node_board, :white), Enum.reverse(path) |> Enum.join(" ")}]
 
       _ ->
         Enum.flat_map(children, fn {:child, _die, from, to, next} ->
@@ -165,7 +165,10 @@ Req.Test.stub(Oskol.Reviews, fn conn ->
   turns =
     request["turns"]
     |> Enum.with_index()
-    |> Enum.map(fn {turn, i} ->
+    # A turn may say where it sits in its own game; the engine echoes that
+    # back rather than the turn's place in the request, and so does this.
+    |> Enum.map(fn {turn, at} ->
+      i = turn["index"] || at
       %{"index" => i, "cube" => nil, "move" => grade_turn.(turn, i), "luck" => %{"luck" => 0.02}}
     end)
 

@@ -52,6 +52,28 @@ defmodule Oskol.Reviews do
     end
   end
 
+  defmodule TurnGrade do
+    @moduledoc """
+    One turn already graded, waiting for the game it belongs to to end.
+
+    Keyed by the sha256 of the request the engine was asked, so the row is
+    found by the question it answers and by nothing else. A cache: the only
+    reader is the end-of-game review job, and losing every row of it costs
+    one batch review.
+    """
+    use Ecto.Schema
+
+    @primary_key false
+    schema "turn_grades" do
+      field(:game_id, :string, primary_key: true)
+      field(:game_number, :integer, primary_key: true)
+      field(:turn_key, :string, primary_key: true)
+      field(:response, :map)
+
+      timestamps(type: :utc_datetime_usec, updated_at: false)
+    end
+  end
+
   defmodule Record do
     @moduledoc "One finished game of a room, as its record lists it."
     use Ecto.Schema
@@ -513,6 +535,103 @@ defmodule Oskol.Reviews do
     |> Repo.update_all(set: [turns: turns])
 
     :ok
+  end
+
+  # ---------- Turns graded before the game ended ----------
+
+  @doc """
+  The sha256 of one review request body, in hex: the key a grade of that turn
+  is stored and found under.
+
+  Both sides of the cache hash the bytes Gleam built and nothing else, so
+  nothing between here and there can reorder a key and turn a hit into a miss.
+  """
+  def turn_key(body) when is_binary(body) do
+    :crypto.hash(:sha256, body) |> Base.encode16(case: :lower)
+  end
+
+  @doc """
+  The grades stored for these request bodies, in the order they were asked:
+  the engine's reply where that exact question has been answered already, nil
+  where it has not.
+
+  One query for the whole game, not one per turn: a match is sixty turns and
+  a review is not worth sixty round trips.
+  """
+  def turn_grades(game_id, game_number, bodies) when is_list(bodies) do
+    keys = Enum.map(bodies, &turn_key/1)
+
+    found =
+      from(t in TurnGrade,
+        where:
+          t.game_id == ^game_id and t.game_number == ^game_number and
+            t.turn_key in ^Enum.uniq(keys),
+        select: {t.turn_key, t.response}
+      )
+      |> Repo.all()
+      |> Map.new()
+
+    Enum.map(keys, &Map.get(found, &1))
+  end
+
+  @doc """
+  Store one turn's grade, unless that question already has an answer.
+
+  Never an update: a stored grade is the engine's answer to a question that
+  cannot change, so a second cast about the same turn has nothing to say.
+  """
+  def save_turn_grade(game_id, game_number, body, response)
+      when is_binary(body) and is_map(response) do
+    Repo.insert_all(
+      TurnGrade,
+      [
+        %{
+          game_id: game_id,
+          game_number: game_number,
+          turn_key: turn_key(body),
+          response: response,
+          inserted_at: DateTime.utc_now()
+        }
+      ],
+      on_conflict: :nothing,
+      conflict_target: [:game_id, :game_number, :turn_key]
+    )
+
+    :ok
+  end
+
+  @doc "Is this exact question already answered? What the Grader asks before spending engine time."
+  def turn_graded?(game_id, game_number, body) when is_binary(body) do
+    from(t in TurnGrade,
+      where:
+        t.game_id == ^game_id and t.game_number == ^game_number and
+          t.turn_key == ^turn_key(body)
+    )
+    |> Repo.exists?()
+  end
+
+  @doc """
+  Drop a game's grades: they are spent the moment its own answer is written.
+  """
+  def forget_turn_grades(game_id, game_number) do
+    from(t in TurnGrade, where: t.game_id == ^game_id and t.game_number == ^game_number)
+    |> Repo.delete_all()
+
+    :ok
+  end
+
+  @doc """
+  Drop grades older than `days`, and say how many.
+
+  What is left over is a room nobody finished: its turns were graded and no
+  job will ever come to spend them. Nothing here is durable, so the only
+  question is how long a cache miss stays possible, and a week is longer than
+  any game.
+  """
+  def sweep_turn_grades(days) when is_integer(days) and days > 0 do
+    cutoff = DateTime.add(DateTime.utc_now(), -days * 24 * 60 * 60, :second)
+    {count, _} = Repo.delete_all(from(t in TurnGrade, where: t.inserted_at < ^cutoff))
+    count
   end
 
   # ---------- The record ----------

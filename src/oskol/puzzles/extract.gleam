@@ -25,7 +25,6 @@
 //// backfill (`puzzles-backfill`) can find, count and re-ask them.
 
 import backgammon/analysis.{type GameTurns, type Turn, Took}
-import backgammon/engine_board
 import gleam/int
 import gleam/json
 import gleam/list
@@ -354,7 +353,7 @@ fn cube_puzzles(
 fn gradeable(cube: report.CubeReview, turn: Turn, number: Int) -> Bool {
   !{
     cube.action == "no_double"
-    && { number == 1 || !engine_board.engine_can_double(turn.position) }
+    && { number == 1 || !analysis.engine_can_double(turn.position) }
   }
 }
 

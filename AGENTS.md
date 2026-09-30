@@ -466,6 +466,7 @@ Game(
   clocks:        fn(state) -> List(PlayerId),               // who is on the clock right now
   timeout:       fn(state, PlayerId) -> Timeout(action),    // Forfeit, or Act(action) taken for them
   record:        fn(state) -> Option(Json),                 // the whole public record, or game.no_record
+  committed:     fn(state, action, state) -> Option(Json),  // what this step committed, or game.no_committed
   bot:           fn(state, PlayerId, Ask, Int) -> Result(List(Json), String),  // what a bot seat does now
 )
 ```
@@ -484,6 +485,16 @@ with the room: everything a replay or an analysis needs, too big to ride in ever
 Backgammon's is every game of the match with every turn (notation, the
 position and cube it left, where the moved checkers `landed`); its scene
 carries only the game on the board plus one result line per finished game.
+
+`committed` is a unit of play the platform may start working on before the
+game is over. It reads a transition (the state before the action, the action,
+the state after) because a commit is not a state; it is carried on the
+`Instance` the step returned and read with `Oskol.GameKit.committed/1`. Like
+`record` it may hold only what every seat has already seen, because it travels
+off the room. Backgammon's is a played turn, as the analysis engine takes it
+(`backgammon/analysis.committed_json`), which is what lets a turn be graded
+while the game goes on; `game.no_committed` is the answer for a game with no
+such unit.
 
 A format is a name and a config the game reads (`game.config_get`): all
 the creator tunes is the format and the clock. `Info.clocks` lists the
@@ -561,8 +572,8 @@ src/gamekit/        framework: rng, scene, event, action, game, clock, instance
                     text (agent/test rendering), conformance, fixture
 src/backgammon/     Backgammon: board (rules + move generation), state (turns,
                     dice, cube, match play), engine, projection, game,
-                    engine_board (a position as the analysis engine takes it),
-                    analysis (a finished game's turns), bot (Sage)
+                    analysis (the analysis engine's board, a game's turns, and
+                    the one turn a step just committed), bot (Sage)
 src/oskol/          the platform's own decisions, in Gleam (see "Platform
                     decisions live in Gleam" below): core (ctx, session,
                     error, envelope), caps (the IO a handler may do),
@@ -587,9 +598,11 @@ lib/oskol/mailer.ex             Swoosh: Postmark in prod, /dev/mailbox in dev
 lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every visit
 lib/oskol/game/persister.ex     write-behind: rooms cast, one process writes in order
 lib/oskol/game/rehydrator.ex    rebuild a room from the log on lookup (deploys, idle stops)
-lib/oskol/reviews.ex            game_reviews + game_records tables, the log a review
-                                reads, the engine's HTTP
+lib/oskol/reviews.ex            game_reviews + game_records + turn_grades tables, the
+                                log a review reads, the engine's HTTP
 src/oskol/core/raw.gleam        stored JSON back onto the wire without rebuilding it
+lib/oskol/reviews/grader.ex     grades a turn as it is committed into turn_grades, the
+                                warm cache the end-of-game job reads; answers nobody
 lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off the room,
                                 deck syncs the same way ({:deck, user_id}), and one
                                 batch of owed puzzle pictures a sweep (:pictures)
@@ -1192,7 +1205,7 @@ A think that played nothing while the game stood still is a bug, not a turn,
 so that seat is left alone until the game moves rather than asked again at
 once. A rematch counts a bot seat as already ready, so one REMATCH is enough.
 
-The brain is `src/backgammon/bot.gleam`, pure, on `backgammon/engine_board`.
+The brain is `src/backgammon/bot.gleam`, pure, on `backgammon/analysis`.
 Every ask goes to `POST /backgammon/review` with a single turn -- not to
 `/moves` and `/cube`, whose board validator rejects a positive `board[0]`
 and so 422s every position with an opposing checker on the bar. Rolling: the
@@ -1379,6 +1392,52 @@ game or a room talks to it.
   settled or rewind its checkpoint. Legacy rows establish this marker once.
   Index/detail reads fetch record numbers only; moving checkers or playing
   turns in the next game does not cause a new backfill.
+- **A turn is graded as it is played, into a cache the job reads.** A
+  57-turn game is about a minute of waiting after the last move; spread over
+  the game it is nothing, and only the last turn is left. When a step commits
+  a turn the room casts it to `Oskol.Reviews.Grader` (after the broadcast,
+  never before, and never on the step that ended the game -- the job grades
+  that turn itself), which POSTs a one-turn `/backgammon/review` and stores
+  the reply in `turn_grades`, keyed by the sha256 of the request body. The
+  body is built once, in Gleam (`analysis.one_turn_request`), and crosses as
+  text, so the job builds the same bytes again to find the answer: a grade is
+  found by the question it answers and by nothing else.
+  `reviews.run` keeps its shape -- replay, build the turns, then look each one
+  up and ask the engine, in one request, only for the misses
+  (`reviews.answer`, `report.assemble`). Every turn cached is no engine time;
+  the engine down all game means every turn misses and it is the batch review
+  it always was, same body, same retries, same boot sweep. Old games need
+  nothing. The assembled answer keeps the engine's shape (`report.parse`, the
+  ratings SQL and the puzzle extractor read it unchanged) plus `assembled:
+  true`; its `turns` are the engine's own objects verbatim and its `players`
+  are worked out in Gleam (`report.totals_of`, the engine's `review_game`
+  arithmetic, held to every stored answer the suite keeps in
+  `test/oskol/report_test.gleam`). `game_reviews` is still written once, by
+  the job, so a shared link cannot change its mind.
+  **Nothing about a grade reaches a player.** The Grader answers nobody,
+  messages no room and publishes nothing; the `grades` capability is in the
+  queue job's context alone and every other context holds a stub that panics
+  (`analysis.no_grades`), so a handler that reached for it would be a loud
+  500. A game on the board is absent from `/reviews`, not pending. What makes
+  the cache hit at all is that `analysis.committed`, off the state an action
+  lands on, builds exactly the turn the end-of-game replay builds -- folding
+  it over a seeded log equals `analysis.games` turn for turn, which
+  `analysis_test` holds it to. The engine needs one field for this: an
+  optional `index` on a `Turn`, since luck on the opening roll is measured
+  differently and a lone turn would otherwise be graded as one. The engine
+  answers under the index it was given and falls back to the turn's place in
+  the request only when it was given none, which is what lets one request ask
+  about a gappy set of misses. Anything standing in for the engine owes the
+  same -- the Playwright setup scripts stub one -- because an answer filed
+  under the wrong turn is a review of the wrong positions.
+  Bounded, because a dropped turn is only a miss: 4 requests in flight, 100
+  waiting (oldest dropped, the count logged), and a 60 s circuit after a
+  failure so a sleeping desktop is not asked once a turn by every live room.
+  Grades are dropped when the game's answer is written, and a sweep drops
+  what a room nobody finished left behind after a week. An engine upgraded
+  mid-game would leave half a review at each depth: the misses are asked for
+  at the depth the grades were given at, and grades that disagree among
+  themselves are all thrown away for one fresh batch.
 - `game_reviews` holds one row per (game_id, game_number): status
   (`pending`, `done`, `failed`), attempts, the engine's response verbatim,
   the rendered `report`, and that game's `turns`. `report` is what
@@ -1433,8 +1492,9 @@ game or a room talks to it.
   `fly proxy 18082:80 oskol-analysis.flycast -a oskol-analysis` (stop it
   after), or run it locally in the oskol-analysis checkout:
   `.venv/bin/uvicorn app.main:app --port 18082`. Tests never hit the
-  network: the queue is off (`config :oskol, Oskol.Reviews.Queue`) unless
-  a test turns it on, and requests go to a `Req.Test` stub.
+  network: the queue and the per-turn grader are both off
+  (`config :oskol, Oskol.Reviews.Queue` and `Oskol.Reviews.Grader`) unless a
+  test turns them on, and requests go to a `Req.Test` stub.
 
 ## Puzzles (backgammon)
 
