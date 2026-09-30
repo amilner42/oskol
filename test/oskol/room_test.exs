@@ -58,9 +58,11 @@ defmodule Oskol.Game.RoomTest do
       @format format["id"]
 
       # Whole matches played out at random through the room: the suite's
-      # most valuable test and its slowest by far (a minute for the three
-      # match formats). CI runs it on every push; a laptop runs it with
-      # `bin/check --all` or `mix test --include slow`.
+      # most valuable test and its slowest by far -- a minute went on the
+      # match formats when there were three of them, and the long ones (11,
+      # 15, 21) each run to the 1500-step cap rather than to a winner. CI
+      # runs it on every push; a laptop runs it with `bin/check --all` or
+      # `mix test --include slow`.
       @tag :slow
       test "#{@slug} #{@format}: no legal action is ever rejected and the game ends or is cut off" do
         %{game_id: game_id, p1: p1, p2: p2, state: started} = room(@slug, @format)

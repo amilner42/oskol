@@ -269,28 +269,36 @@ createDialog =
                         , Query.find [ id "create-game" ] >> Query.has [ text "START GAME" ]
                         , Query.has [ id "close-create" ]
                         ]
-        , test "the mode dropdown lists every format, the first chosen" <|
+        , -- The picker is the wire's own list, in the wire's own order: the
+          -- long match lengths and the long clocks arrived with no change
+          -- here, and this is what says so.
+          test "the mode dropdown lists every format, the first chosen" <|
             \_ ->
                 home opened
                     |> Query.find [ id "create-mode" ]
                     |> Query.findAll [ tag "option" ]
                     |> Expect.all
-                        [ Query.count (Expect.equal 5)
+                        [ Query.count (Expect.equal 8)
                         , Query.index 0 >> Query.has [ text "Single game", selected True ]
                         , Query.index 2 >> Query.has [ text "Match to 5", value "match5", selected False ]
-                        , Query.index 4 >> Query.has [ text "Unlimited", value "unlimited" ]
+                        , Query.index 4 >> Query.has [ text "Match to 11", value "match11", selected False ]
+                        , Query.index 6 >> Query.has [ text "Match to 21", value "match21", selected False ]
+                        , Query.index 7 >> Query.has [ text "Unlimited", value "unlimited" ]
                         ]
-        , test "the clock dropdown is the four the game offers, each with its delay" <|
+        , test "the clock dropdown is the seven the game offers, each with its delay" <|
             \_ ->
                 home opened
                     |> Query.find [ id "create-clock" ]
                     |> Query.findAll [ tag "option" ]
                     |> Expect.all
-                        [ Query.count (Expect.equal 4)
+                        [ Query.count (Expect.equal 7)
                         , Query.index 0 >> Query.has [ text "No clock", value "none", selected True ]
                         , Query.index 1 >> Query.has [ text "3 min + 12 s delay", value "bg3" ]
                         , Query.index 2 >> Query.has [ text "5 min + 12 s delay", value "bg5" ]
                         , Query.index 3 >> Query.has [ text "10 min + 12 s delay", value "bg10" ]
+                        , Query.index 4 >> Query.has [ text "15 min + 12 s delay", value "bg15" ]
+                        , Query.index 5 >> Query.has [ text "30 min + 12 s delay", value "bg30" ]
+                        , Query.index 6 >> Query.has [ text "60 min + 12 s delay", value "bg60" ]
                         ]
         , test "a clock the game does not offer is not in it" <|
             \_ ->
@@ -869,18 +877,24 @@ gameJson =
     """
     {"ok":true,
      "game":{"slug":"backgammon","name":"Backgammon","description":"The classic race game.",
-             "default_clock":"none","clocks":["none","bg3","bg5","bg10"],"formats":[]},
+             "default_clock":"none","clocks":["none","bg3","bg5","bg10","bg15","bg30","bg60"],"formats":[]},
      "formats":[
        {"id":"single","name":"Single game","description":"One game, no cube"},
        {"id":"match3","name":"Match to 3","description":"Cube and Crawford rule"},
        {"id":"match5","name":"Match to 5","description":"Cube and Crawford rule"},
        {"id":"match7","name":"Match to 7","description":"Cube and Crawford rule"},
+       {"id":"match11","name":"Match to 11","description":"Cube and Crawford rule"},
+       {"id":"match15","name":"Match to 15","description":"Cube and Crawford rule"},
+       {"id":"match21","name":"Match to 21","description":"Cube and Crawford rule"},
        {"id":"unlimited","name":"Unlimited","description":"Keep playing, cube and Jacoby rule"}],
      "clock_presets":[
        {"id":"none","name":"No clock","description":"Take your time"},
        {"id":"bg3","name":"3 min","description":"3 min each, 12 s delay every move"},
        {"id":"bg5","name":"5 min","description":"5 min each, 12 s delay every move"},
        {"id":"bg10","name":"10 min","description":"10 min each, 12 s delay every move"},
+       {"id":"bg15","name":"15 min","description":"15 min each, 12 s delay every move"},
+       {"id":"bg30","name":"30 min","description":"30 min each, 12 s delay every move"},
+       {"id":"bg60","name":"60 min","description":"60 min each, 12 s delay every move"},
        {"id":"blitz","name":"Blitz","description":"3 min + 2 s per move"}],
      "copy":{"title":"Play backgammon online with a friend",
              "description":"Backgammon from a link.","intro":"From a link.",

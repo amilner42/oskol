@@ -41,6 +41,36 @@ pub fn info() -> game.Info {
       format("match3", "Match to 3", "Cube and Crawford rule", 3, True, False),
       format("match5", "Match to 5", "Cube and Crawford rule", 5, True, False),
       format("match7", "Match to 7", "Cube and Crawford rule", 7, True, False),
+      // Tournament match lengths are odd, and most odd numbers up to 25 are
+      // played somewhere; these are the ones a player recognises. 11 is the
+      // standard long match, 15 a main-event length, 21 a championship one.
+      // The ladder steps by about 1.4x on purpose: 13 and 17 also occur, but
+      // they play like their neighbours here, and every length offered costs
+      // the suite a golden replay and a match played out at random.
+      format(
+        "match11",
+        "Match to 11",
+        "Cube and Crawford rule",
+        11,
+        True,
+        False,
+      ),
+      format(
+        "match15",
+        "Match to 15",
+        "Cube and Crawford rule",
+        15,
+        True,
+        False,
+      ),
+      format(
+        "match21",
+        "Match to 21",
+        "Cube and Crawford rule",
+        21,
+        True,
+        False,
+      ),
       format(
         "unlimited",
         "Unlimited",
@@ -53,7 +83,7 @@ pub fn info() -> game.Info {
     // Minutes plus the 12 s delay below: backgammon's clocks. Rooms made
     // under the older presets (blitz, rapid, delay, per_move) still carry and
     // replay them; they are just no longer offered.
-    clocks: ["none", "bg3", "bg5", "bg10"],
+    clocks: ["none", "bg3", "bg5", "bg10", "bg15", "bg30", "bg60"],
     default_clock: "none",
     // Live backgammon runs on a delay, not a bare clock: the first twelve
     // seconds of every turn are free under every control offered here, so

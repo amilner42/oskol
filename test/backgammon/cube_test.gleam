@@ -102,8 +102,13 @@ pub fn formats_configure_target_cube_and_jacoby_test() {
   let unlimited = new_game(1, "unlimited")
   assert unlimited.config == state.Config(target: 0, cube: True, jacoby: True)
   assert state.unlimited(unlimited)
+  let match21 = new_game(1, "match21")
+  assert match21.config == state.Config(target: 21, cube: True, jacoby: False)
   assert list.map(backgammon.info().formats, fn(f) { f.id })
-    == ["single", "match3", "match5", "match7", "unlimited"]
+    == [
+      "single", "match3", "match5", "match7", "match11", "match15", "match21",
+      "unlimited",
+    ]
 }
 
 // ---------- Offering and answering ----------
@@ -696,6 +701,39 @@ pub fn the_crawford_game_forbids_doubling_then_it_resumes_test() {
   let #(s2, _) = apply(s2, "p2", engine.MoveChecker(Point(24), Off))
   let #(s2, _) = apply(s2, "p2", engine.Play)
   assert s2.crawford == False
+}
+
+pub fn a_long_match_reaches_crawford_one_away_from_its_target_test() {
+  // Nothing in the state hard-codes a match length, but Crawford is the
+  // rule a long match is actually played under, and the score it fires at
+  // is read off the target rather than counted from three. Match to 21:
+  // White sits 18-0 and wins two, which is one away.
+  let b =
+    setup([#(White, Off, 14), #(White, Point(1), 1), #(Black, Point(19), 15)])
+  let s = new_game(11, "match21")
+  let s =
+    state.GameState(
+      ..s,
+      board: b,
+      phase: state.Moving(White, [1, 2]),
+      scores: dict.from_list([#("p1", 18), #("p2", 0)]),
+    )
+  let #(s, _) = bear_off_and_play(s)
+  assert state.score_of(s, "p1") == 20
+  let #(s, _) = both_ready(s)
+  assert s.crawford && s.game_number == 2
+  let s = state.GameState(..s, phase: state.Rolling(Black))
+  assert engine.apply(s, "p2", engine.Double)
+    == Error("No doubling in the Crawford game")
+  // And a gammon in that Crawford game carries the score past 21 rather
+  // than stopping on it: a target is what ends a match, not a ceiling the
+  // score is clipped to.
+  let s = state.GameState(..s, board: b, phase: state.Moving(White, [1, 2]))
+  let #(s, events) = bear_off_and_play(s)
+  assert has_custom(events, "match_over")
+  assert state.score_of(s, "p1") == 22
+  let assert state.Finished(White) = s.phase
+  assert engine.legal(s, "p1") == [] && engine.legal(s, "p2") == []
 }
 
 pub fn unlimited_play_never_finishes_by_itself_test() {
