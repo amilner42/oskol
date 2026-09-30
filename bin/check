@@ -1,18 +1,29 @@
 #!/usr/bin/env bash
 # Every suite, in order, one command. Stops at the first failure.
 #
+#   bin/check --changed  only the suites your diff touches, against
+#                        origin/main plus the working tree. An Elm-only
+#                        change is about a second; a lib/ change is the
+#                        Elixir suite and nothing else. What you run while
+#                        you work.
 #   bin/check            compile, Gleam tests, Elm typecheck + tests, Elixir
 #                        tests -- without the handful tagged `slow` (whole
 #                        matches played out, clocks that must run out in real
-#                        time), which is about four minutes of the five
+#                        time)
 #   bin/check --all      the same, with the slow tests and a clean production
-#                        release/source-set assertion. What CI runs.
+#                        release/source-set assertion. What you run before you
+#                        push.
 #   bin/check --browser  --all, then the Playwright smokes against a server
 #                        this script starts and stops (on PORT, 4400 by
 #                        default -- give it another when 4400 is taken)
 #
-# The default is what you run while you work; --all is what you run before
-# you push, and CI runs everything regardless.
+# The Elixir suite runs through bin/test-par: four partitions, four databases,
+# four VMs. It is the biggest thing here (48s serial, 20s partitioned), which
+# is why even the full check is now about forty seconds.
+#
+# CI runs everything regardless, and catches what a local pass structurally
+# cannot: the advisory audits, whose answer changes without your code
+# changing, and a build on a machine that is not yours.
 #
 # Elm tests read a generated fixture corpus, so it is regenerated first
 # (the committed golden replays are left alone; the Gleam suite guards them).
@@ -20,6 +31,51 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+skip() { printf '\033[2m-- %s\033[0m\n' "$1"; }
+
+mode="${1:-}"
+
+# Which suites this run owes. Everything, unless --changed narrows it.
+gleam=1
+elm=1
+elixir=1
+
+if [[ "$mode" == "--changed" ]]; then
+  # Against the branch point, plus whatever is still in the working tree --
+  # the question is "what have I changed", not "what is committed".
+  base="$(git merge-base HEAD origin/main 2>/dev/null \
+       || git merge-base HEAD main 2>/dev/null \
+       || git rev-parse HEAD)"
+  changed="$( { git diff --name-only "$base"
+                git diff --name-only
+                git ls-files --others --exclude-standard; } | sort -u )"
+
+  gleam=0
+  elm=0
+  elixir=0
+
+  # Gleam compiles into the Elixir app, so touching src/ owes both suites.
+  # The reverse is not true: lib/ cannot change what a Gleam test sees.
+  if grep -qE '^(src/|test/.*\.gleam$|gleam\.toml$|manifest\.toml$)' <<<"$changed"; then
+    gleam=1
+    elixir=1
+  fi
+  if grep -qE '^assets/' <<<"$changed"; then
+    elm=1
+  fi
+  # config/ and the lockfile decide what the suite runs against, so they count
+  # as Elixir even when no .ex file moved -- a lockfile line is what turned
+  # the advisory audit red on 2026-09-29.
+  if grep -qE '^(lib/|test_support/|priv/|config/|test/.*\.exs$|mix\.exs$|mix\.lock$)' <<<"$changed"; then
+    elixir=1
+  fi
+
+  if [[ -z "$changed" ]]; then
+    skip "nothing changed against $(git rev-parse --short "$base")"
+  elif (( ! gleam && ! elm && ! elixir )); then
+    skip "no suite owns these files; compile and formatting only"
+  fi
+fi
 
 step "mix compile"
 mix compile
@@ -28,32 +84,44 @@ step "mix format (CI checks it; catch it here first)"
 mix format --check-formatted
 gleam format --check src test
 
-step "Gleam unit, rules, property and golden tests"
-bin/test-gleam
-
-step "fixture payloads for elm-test"
-mix oskol.fixtures payloads >/dev/null
-
-step "Elm typecheck"
-(cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null)
-
-step "Elm tests"
-(cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm)
-
-step "Elixir tests"
-# The mix test alias also creates/migrates the test database.
-if [[ "${1:-}" == "--all" || "${1:-}" == "--browser" ]]; then
-  mix test --include slow
+if (( gleam )); then
+  step "Gleam unit, rules, property and golden tests"
+  bin/test-gleam
 else
-  mix test
+  skip "Gleam suite (no src/ or *.gleam change)"
 fi
 
-if [[ "${1:-}" == "--all" || "${1:-}" == "--browser" ]]; then
+if (( elm )); then
+  step "fixture payloads for elm-test"
+  mix oskol.fixtures payloads >/dev/null
+
+  step "Elm typecheck"
+  (cd assets && ../node_modules/.bin/elm make src/Main.elm --output=/dev/null)
+
+  step "Elm tests"
+  (cd assets && ../node_modules/.bin/elm-test --compiler ../node_modules/.bin/elm)
+else
+  skip "Elm typecheck and tests (no assets/ change)"
+fi
+
+if (( elixir )); then
+  step "Elixir tests"
+  # bin/test-par creates and migrates each partition's database itself.
+  if [[ "$mode" == "--all" || "$mode" == "--browser" ]]; then
+    bin/test-par 4 --include slow
+  else
+    bin/test-par 4
+  fi
+else
+  skip "Elixir suite (no lib/, test/, config/ or mix change)"
+fi
+
+if [[ "$mode" == "--all" || "$mode" == "--browser" ]]; then
   step "production release source set"
   bin/check-prod-release
 fi
 
-if [[ "${1:-}" == "--browser" ]]; then
+if [[ "$mode" == "--browser" ]]; then
   step "dev database"
   mix ecto.create --quiet && mix ecto.migrate --quiet
 

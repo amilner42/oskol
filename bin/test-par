@@ -12,7 +12,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-partitions="${1:-4}"
+# `bin/test-par [N] [mix test args...]` -- the count first when you give one,
+# then anything `mix test` takes (`--include slow`, a file, `--only`).
+if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+  partitions="$1"
+  shift
+else
+  partitions=4
+fi
 
 # config/test.exs and test/test_helper.exs both read this to divide the
 # machine -- the connection pool and ExUnit's max_cases -- between the
@@ -33,7 +40,7 @@ done
 started=$(date +%s)
 pids=()
 for i in $(seq 1 "$partitions"); do
-  MIX_TEST_PARTITION=$i mix test --partitions "$partitions" --no-compile \
+  MIX_TEST_PARTITION=$i mix test --partitions "$partitions" --no-compile "$@" \
     > "$logs/p$i.log" 2>&1 &
   pids+=("$!")
 done
