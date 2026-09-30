@@ -48,9 +48,26 @@ defmodule OskolWeb.StatusTest do
     Req.Test.stub(Oskol.Reviews, fn conn ->
       case conn.request_path do
         "/health" -> health.(conn)
-        "/backgammon/review" -> review.(conn)
+        "/backgammon/review" -> conn |> as_the_engine_would() |> review.()
       end
     end)
+  end
+
+  # The engine's own contract, held here so a stub cannot be kinder than the
+  # thing it stands in for. `/status` shipped sending `played: null` on a
+  # turn that had dice, and every test passed: the stub answered whatever it
+  # was sent, and production answered 422 "dice were rolled but no move was
+  # played". A stub that accepts what the engine refuses teaches nothing.
+  defp as_the_engine_would(conn) do
+    {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+    for turn <- Jason.decode!(body)["turns"] do
+      if turn["dice"] != nil and turn["played"] == nil do
+        flunk("the engine 422s a turn whose dice were rolled and whose played is null")
+      end
+    end
+
+    conn
   end
 
   defp an_answer(notation \\ "13/7 8/7") do
