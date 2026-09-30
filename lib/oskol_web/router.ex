@@ -118,6 +118,13 @@ defmodule OskolWeb.Router do
     get "/puzzles", SpaController, :puzzles
     get "/puzzles/:id", SpaController, :puzzle
 
+    # Is the analysis engine answering? A plain page, declared before
+    # "/:slug" so "status" is a reserved word like "login" and "puzzles".
+    # The engine runs on a machine whose power we do not control, and
+    # nothing else in the product says when it is down: a game plays, and
+    # only the review after it waits.
+    get "/status", StatusController, :show
+
     # Games Oskol no longer hosts (see RemovedGameController): every old
     # link to one of them, start page, invite or table, goes home.
     get "/poker", RemovedGameController, :home
