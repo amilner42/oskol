@@ -52,6 +52,8 @@ config :oskol, :bot,
   move_level: "1ply",
   cube_level: "1ply",
   retry_ms: [10, 20, 30],
+  # Few enough that a test watching an engine stay down is over in a moment.
+  stop_trying_after: 5,
   ask_timeout_ms: 1_000
 
 # We don't run a server during test. If one is required,

@@ -303,23 +303,23 @@ pub fn an_engine_that_does_not_answer_is_a_failure_at_first_test() {
   assert bot.decide(s, sage, dead_engine, 0) == Error("connection refused")
 }
 
-pub fn an_engine_that_never_answers_offers_the_human_the_game_test() {
+pub fn an_engine_that_never_answers_never_ends_the_game_test() {
   let s = sage_to_move("single", board.initial(), [3, 1])
 
-  // The platform counts the failures; the game decides what they mean, and
-  // it does not ask again.
-  assert bot.decide(s, sage, no_engine, bot.give_up_after)
-    == Ok([
-      json.object([
-        #("name", json.string("resign")),
-        #("params", json.object([#("stakes", json.string("single"))])),
-      ]),
-    ])
+  // However many asks have already failed, a failure is still a failure and
+  // nothing is played. It must never become a resignation: an engine we
+  // cannot reach is our problem, not a position, and a resignation is a
+  // result -- points, a rating, a review, all of it written down. A board
+  // that has not moved can be recovered by the engine coming back; a result
+  // cannot be taken back. (2026-09-30: it was, by hand, in production.)
+  assert bot.decide(s, sage, dead_engine, 0) == Error("connection refused")
+  assert bot.decide(s, sage, dead_engine, 3) == Error("connection refused")
+  assert bot.decide(s, sage, dead_engine, 99) == Error("connection refused")
 }
 
-pub fn giving_up_never_happens_where_no_engine_was_needed_test() {
+pub fn a_run_of_failures_never_touches_a_turn_that_needs_no_engine_test() {
   // Between games there is nothing to ask, so a run of failures elsewhere
-  // does not turn READY into a resignation.
+  // leaves READY exactly as it was.
   let s = a_game("match3")
   let over =
     state.GameState(
@@ -336,8 +336,7 @@ pub fn giving_up_never_happens_where_no_engine_was_needed_test() {
       ),
     )
 
-  assert bot.decide(over, sage, no_engine, bot.give_up_after)
-    == Ok([action("ready")])
+  assert bot.decide(over, sage, no_engine, 99) == Ok([action("ready")])
 }
 
 // ---------- The fake engine ----------

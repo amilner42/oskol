@@ -30,6 +30,9 @@ defmodule Oskol.Game.Bot do
     # The engine is a desktop in a house. A think that comes back empty is
     # tried again on this ladder, and the game gives up after the last rung.
     retry_ms: [5_000, 20_000, 60_000],
+    # Then the last rung over and over, until this many asks have failed --
+    # about half an hour, and the room goes idle before that anyway.
+    stop_trying_after: 40,
     ask_timeout_ms: 30_000
   ]
 
@@ -130,10 +133,31 @@ defmodule Oskol.Game.Bot do
           "Bot seat #{player_id} in game #{game_id} got nothing from the engine (attempt #{attempt + 1}): #{reason}"
         )
 
-        case Enum.at(config(:retry_ms), attempt) do
-          nil -> :nothing
+        case pause_after(attempt) do
+          :stop -> :nothing
           pause -> retry(game_id, player_id, attempt, pause)
         end
+    end
+  end
+
+  # The ladder, and then its last rung over and over.
+  #
+  # An engine that comes back should find Sage still waiting to play. Before
+  # this the ladder simply ran out, and the game was asked what a dead engine
+  # meant -- it answered with a resignation, which ended a real game on an
+  # infrastructure failure and had to be undone by hand in production. The
+  # game no longer answers that (`backgammon/bot` never resigns for want of
+  # an engine), so something has to keep asking, and this is it.
+  #
+  # Bounded all the same: a think that outlived the game it was for would be
+  # asking about a position nobody is looking at. The room's own idle
+  # shutdown takes the task with it long before this in any case.
+  defp pause_after(attempt) do
+    ladder = config(:retry_ms)
+
+    case attempt + 1 >= config(:stop_trying_after) do
+      true -> :stop
+      false -> Enum.at(ladder, attempt) || List.last(ladder)
     end
   end
 
