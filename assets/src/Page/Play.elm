@@ -142,6 +142,7 @@ type alias Model =
     , today : Maybe Practice.Today -- the day's ring as the mistakes list last reported it, for the run it starts
     , mistakeAsks : Dict Int Int -- asks made for a game's mistakes still unanswered (the puzzles land a moment after the grade)
     , closing : Bool -- the lobby's END THIS GAME is in flight
+    , closeRefused : Maybe String -- why the room refused to be closed, under the button
     }
 
 
@@ -182,6 +183,7 @@ init session config =
       , today = Nothing
       , mistakeAsks = Dict.empty
       , closing = False
+      , closeRefused = Nothing
       }
     , Cmd.batch
         -- One tick late, deliberately: a port message sent while the program
@@ -455,7 +457,7 @@ update msg model =
         -- ending itself, and the seat asking for it is the one that made
         -- it; the server is still the one that decides.
         CloseLobby ->
-            stay { model | closing = True }
+            stay { model | closing = True, closeRefused = Nothing }
                 (Catalog.closeRoom model.session model.gameSlug model.gameId LobbyClosed)
 
         LobbyClosed (Ok ()) ->
@@ -463,7 +465,10 @@ update msg model =
             ( { model | closing = False }, Cmd.none, Navigate "/" )
 
         LobbyClosed (Err err) ->
-            stay { model | closing = False, error = Just (Api.errorMessage err) } Cmd.none
+            -- Under the button, not over the page: a refusal (the opponent
+            -- joined in that same moment, say) leaves a lobby that is still
+            -- perfectly good, and "THIS GAME IS GONE" would be a lie.
+            stay { model | closing = False, closeRefused = Just (Api.errorMessage err) } Cmd.none
 
         ShareInvite ->
             stay model (shareInvite (inviteUrl model))
@@ -1212,6 +1217,17 @@ waiting model lobby =
                 , onClick CloseLobby
                 ]
                 [ Html.text "END THIS GAME" ]
+            , case model.closeRefused of
+                Just message ->
+                    Html.span
+                        [ id "close-lobby-error"
+                        , class "block text-sm mt-2"
+                        , Notebook.style "color: var(--red)"
+                        ]
+                        [ Html.text message ]
+
+                Nothing ->
+                    Html.text ""
             ]
         ]
 
