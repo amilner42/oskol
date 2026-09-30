@@ -2295,6 +2295,17 @@ button.tier-row:active { background: var(--paper-2); transform: translateY(1px);
   .tier-left { font-size: 30px; }
 }
 
+/* ---------- The sets on offer (LEARN, on the practice home) ----------
+   Page/Puzzles.elm's second card: a row per set (the openings, the
+   replies to them), each its own name, line, standing and button. The
+   rows are kept apart by the same dashed rule the reveal's level line
+   uses, so two buttons never read as one stack. */
+.deck-row + .deck-row {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--pencil);
+}
+
 /* ---------- <oskol-demo-board>: the guest home's demo board ----------
    assets/js/demo_board.js. A decorative board in real 3D, tilted back on
    the desk, playing a short demo game on a loop. Every colour comes from
