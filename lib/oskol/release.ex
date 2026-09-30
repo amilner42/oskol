@@ -108,6 +108,54 @@ defmodule Oskol.Release do
   end
 
   @doc """
+  Build again the reviews that came back empty, from a release: the games
+  whose row says `done` with nothing in it go back to pending and their
+  rooms are queued.
+
+      bin/oskol eval 'Oskol.Release.rebuild_reviews(dry_run: true)'
+      bin/oskol eval 'Oskol.Release.rebuild_reviews(dry_run: false)'
+      bin/oskol eval 'Oskol.Release.rebuild_reviews(dry_run: false, room: "EGKR03")'
+
+  Written for one bug (`bg-session-close-wiped-reviews`) and safe to run
+  again: a game whose review is already there is not listed.
+
+  **Run it after the fix is deployed**, or the replay writes the same
+  nothing back. A bare `eval` VM runs no queue; the live machine's queue
+  picks the rooms up from their owed markers within the minute.
+  """
+  def rebuild_reviews(opts \\ []) do
+    write? = Keyword.get(opts, :dry_run, true) == false
+    say = Keyword.get(opts, :say, &IO.puts/1)
+    Application.load(@app)
+
+    {:ok, result, _} =
+      Ecto.Migrator.with_repo(Oskol.Repo, fn _repo ->
+        found =
+          Oskol.Reviews.empty(
+            Keyword.get(opts, :limit, 100),
+            Keyword.get(opts, :room)
+          )
+
+        Enum.each(found, fn row ->
+          say.("#{row.game_id} game #{row.game_number} (empty since #{row.updated_at})")
+        end)
+
+        if write? do
+          Enum.each(found, &Oskol.Reviews.rebuild(&1.game_id, &1.game_number))
+        end
+
+        %{found: length(found), queued: if(write?, do: length(found), else: 0)}
+      end)
+
+    say.(
+      "#{result.found} empty reviews, #{result.queued} queued" <>
+        if(write?, do: "", else: " (dry run)")
+    )
+
+    result
+  end
+
+  @doc """
   The puzzles backfill, from a release: re-ask the engine about every game
   graded before it sent every legal result, replace the answer and the
   page, write the puzzles complete and sync the decks.
