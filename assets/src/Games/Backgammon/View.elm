@@ -1991,6 +1991,13 @@ viewSaveSheet signIn =
 {-| READY for a player who has not pressed it (and, beside it, word that
 the opponent already has); once pressed, who is still to press it. A
 spectator reads who is ready.
+
+END SESSION sits beside it wherever the room offers it, and whether it does
+is the server's answer and nothing this page works out: unlimited play has
+no finish line, so between its games either player may say that was the
+last one, while a match ends when somebody reaches the target. The client
+reads `close` out of the legal actions like every other button here.
+
 -}
 viewReadyUp : Ctx -> BetweenGames -> List (Html Msg)
 viewReadyUp ctx between =
@@ -2013,31 +2020,40 @@ viewReadyUp ctx between =
 
         theyAreReady =
             List.any (\id -> id /= ctx.playerId) between.ready
+
+        -- Quiet and plain beside READY: ending the session is the exit, not
+        -- the thing the band is for.
+        endSession =
+            List.filterMap identity [ actionButton ctx "close" "plain" ]
     in
     case actionButton ctx "ready" "sky" of
         Just ready ->
-            ready
+            (ready
                 :: (if theyAreReady then
                         [ status (opponentName ++ " IS READY") ]
 
                     else
                         []
                    )
+            )
+                ++ endSession
 
         Nothing ->
-            if seated && List.member ctx.playerId between.ready then
+            (if seated && List.member ctx.playerId between.ready then
                 [ status ("WAITING FOR " ++ opponentName) ]
 
-            else if seated then
+             else if seated then
                 []
 
-            else
+             else
                 case between.ready of
                     id :: _ ->
                         [ status (String.toUpper (ctx.nameOf id) ++ " IS READY") ]
 
                     [] ->
                         [ status "NEXT GAME SOON" ]
+            )
+                ++ endSession
 
 
 {-| The roll on the board: the mover's dice in the mover's colour, and the
@@ -3755,8 +3771,18 @@ viewGameOver ctx winners =
         iWon =
             List.member ctx.playerId winners
 
-        winnerName =
-            winners |> List.head |> Maybe.map ctx.nameOf |> Maybe.withDefault "Nobody"
+        -- No winner at all: a session ended between games with the score
+        -- level. Every other way a room ends names somebody.
+        headline =
+            case ( iWon, List.head winners ) of
+                ( True, _ ) ->
+                    "YOU WIN!"
+
+                ( False, Just id ) ->
+                    String.toUpper (ctx.nameOf id) ++ " WINS"
+
+                ( False, Nothing ) ->
+                    "ALL SQUARE"
 
         meReady =
             List.member ctx.playerId ctx.rematchReady
@@ -3776,14 +3802,7 @@ viewGameOver ctx winners =
             [ div [ class "bg-card bg-white p-6 sm:p-8 max-w-md w-full text-center flex flex-col gap-4" ]
                 [ span [ class "pixel text-[10px]", style "color" "var(--bg-accent)" ] [ text "GAME OVER" ]
                 , span [ class "pixel text-base sm:text-lg leading-relaxed" ]
-                    [ text
-                        (if iWon then
-                            "YOU WIN!"
-
-                         else
-                            String.toUpper winnerName ++ " WINS"
-                        )
-                    ]
+                    [ text headline ]
                 , span [ class "pixel text-[9px]", style "color" "var(--pencil)" ] [ text scoreline ]
                 , viewPractice ctx (Protocol.sceneData D.int "game_number" ctx.scene |> Maybe.withDefault 1)
                 , case ctx.save of

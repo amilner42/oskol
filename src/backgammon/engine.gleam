@@ -32,6 +32,9 @@ pub type Action {
   DeclineResign
   /// Between the games of a match: ready for the next one.
   Ready
+  /// Between the games of unlimited play: that was the last one. The score
+  /// stands and whoever is ahead has won.
+  Close
 }
 
 pub const dice_zone = "dice"
@@ -129,6 +132,32 @@ pub fn apply(
         True -> Ok(#(next, [readied, ..new_game_events(next)]))
         False -> Ok(#(next, [readied]))
       }
+    }
+    Close -> {
+      use next <- result.try(state.close(state, player_id))
+      // `session_closed` says who stopped it and how it stood; the phase
+      // change is what every client already reads as "this room is over",
+      // the same event a match's last game sends.
+      Ok(
+        #(next, [
+          custom("session_closed", [
+            #("player_id", json.string(player_id)),
+            #("winner", case state.leader(next) {
+              Some(color) -> json.string(state.player_of(next, color))
+              None -> json.null()
+            }),
+            #(
+              "scores",
+              json.object(
+                list.map(next.order, fn(id) {
+                  #(id, json.int(state.score_of(next, id)))
+                }),
+              ),
+            ),
+          ]),
+          event.PhaseChanged("game_over"),
+        ]),
+      )
     }
     Roll -> {
       use #(next, dice) <- result.try(state.roll(state, player_id))
@@ -344,12 +373,20 @@ pub fn legal(state: GameState, player_id: String) -> List(Schema) {
       }
     None ->
       case state.phase {
-        // Between games the only thing to do is say you are ready.
-        state.BetweenGames(_, _) ->
-          case state.can_ready(state, player_id) {
+        // Between games there are two things to do: say you are ready for
+        // the next game, or -- in unlimited play, which has no finish line
+        // of its own -- say that was the last one.
+        state.BetweenGames(_, _) -> {
+          let ready = case state.can_ready(state, player_id) {
             True -> [action.simple("ready", "Ready")]
             False -> []
           }
+          let close = case state.can_close(state, player_id) {
+            True -> [action.simple("close", "End session")]
+            False -> []
+          }
+          list.append(ready, close)
+        }
         _ -> legal_in_play(state, player_id)
       }
   }

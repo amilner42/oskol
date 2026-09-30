@@ -15,6 +15,7 @@ module Api.Catalog exposing
     , RoomSeat
     , RoomState(..)
     , claimSeat
+    , closeRoom
     , clockPresetDecoder
     , clocksInGameOrder
     , copyFor
@@ -185,6 +186,7 @@ type alias MyGame =
     , format : String
     , clock : Maybe String
     , yourMove : Bool
+    , closable : Bool
     , time : Maybe MyGameTime
     , idleS : Int
     }
@@ -256,6 +258,20 @@ joinRoom session slug gameId name toMsg =
         (roomPath slug gameId)
         (E.object [ ( "name", E.string name ) ])
         createdDecoder
+        toMsg
+
+
+{-| Ending a room nobody joined. The seat is the browser's own, by the
+cookie or the account on it, so the call carries nothing but the room: the
+server decides whether this caller may close it and whether there is a game
+in it. The answer has nothing in it worth reading.
+-}
+closeRoom : Session -> String -> String -> (Result Error () -> msg) -> Cmd msg
+closeRoom session slug gameId toMsg =
+    Api.post session
+        (roomPath slug gameId ++ "/close")
+        (E.object [])
+        (D.succeed ())
         toMsg
 
 
@@ -595,7 +611,11 @@ myGameDecoder =
         (D.oneOf [ D.field "your_move" D.bool, D.succeed False ])
         |> D.andThen
             (\partial ->
-                D.map2 partial
+                D.map3 partial
+                    -- Whether this room may be ended from the list is the
+                    -- server's call, never a format the client reads: an
+                    -- answer that does not say assumes not.
+                    (D.oneOf [ D.field "closable" D.bool, D.succeed False ])
                     (D.oneOf [ D.field "time" (D.nullable timeDecoder), D.succeed Nothing ])
                     (D.oneOf [ D.field "idle_s" D.int, D.succeed 0 ])
             )

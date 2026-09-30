@@ -7,6 +7,7 @@ defmodule OskolWeb.Api.LandingController do
       POST /papi/games/:slug                create a room and take the first seat
       GET  /papi/games/:slug/rooms/:id     what that invite link offers
       POST /papi/games/:slug/rooms/:id     join by name, or take a seat back
+      POST /papi/games/:slug/rooms/:id/close  close a lobby nobody joined (a seat)
       GET  /papi/games/:slug/rooms/:id/reviews  the index of a room's reviews (open)
       GET  /papi/games/:slug/rooms/:id/reviews/:game_number  one game's analysis (open)
       POST /papi/games/:slug/rooms/:id/reviews/retry  try a failed review again (a seat)
@@ -102,6 +103,13 @@ defmodule OskolWeb.Api.LandingController do
         param(params, "name")
       )
     )
+  end
+
+  # Close a lobby nobody joined: from the × on its LIVE GAMES row, or from
+  # the lobby page. A seat here only, and only while the room has no game in
+  # it — the game itself owns every other way a room ends.
+  def close_room(conn, %{"id" => game_id}) do
+    send_json(conn, :oskol@handlers@landing.close_json(ctx(), session(conn), game_id))
   end
 
   # Display preferences (a board's colours): the visitor's own taste, kept

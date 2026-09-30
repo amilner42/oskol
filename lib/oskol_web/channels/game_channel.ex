@@ -117,6 +117,18 @@ defmodule OskolWeb.GameChannel do
   # so this one says so and stops rather than lingering as a second live
   # view of it. The same browser coming back never gets here -- the room
   # tells a reconnect from a takeover (`src/oskol/rooms/seat.gleam`).
+  # The lobby was closed, by this browser in another tab or by the opponent
+  # after claiming the seat. There is no room left to wait in, so the tab is
+  # told and stops; the client shows the same "this game is gone" it shows
+  # for a room that has ended any other way.
+  def handle_info(:room_closed, socket) do
+    push(socket, "error", %{
+      message: "That game was closed. Start a new one and send a fresh link."
+    })
+
+    {:stop, :normal, socket}
+  end
+
   def handle_info(:seat_taken_over, socket) do
     Logger.info("Seat #{socket.assigns.player_id} taken over in #{socket.assigns.game_id}")
     push(socket, "error", %{message: "This seat was opened somewhere else"})

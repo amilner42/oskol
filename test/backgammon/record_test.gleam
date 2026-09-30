@@ -761,7 +761,7 @@ pub fn a_hundred_turns_of_record_stay_small_test() {
           seed,
           4000,
           fn(_) { Ok(Nil) },
-          conformance.Options(exclude: ["resign"]),
+          conformance.Options(exclude: ["resign", "close"]),
         )
       list.filter(report.state.record, fn(e) {
         case e {
@@ -791,7 +791,7 @@ pub fn a_replayed_match_carries_the_same_record_test() {
       21,
       30_000,
       fn(_) { Ok(Nil) },
-      conformance.Options(exclude: ["resign"]),
+      conformance.Options(exclude: ["resign", "close"]),
     )
   assert report.finished
   let assert Ok(replayed) =

@@ -18,8 +18,9 @@ import gleam/result
 
 /// Actions random play never picks when building fixtures: conceding early
 /// would make every fixture trivially short (backgammon's resignation is an
-/// offer, so its answers are excluded with it).
-pub const excluded = ["resign", "accept_resign", "decline_resign"]
+/// offer, so its answers are excluded with it), and `close` ends an
+/// unlimited session after its first game, which is not a session.
+pub const excluded = ["resign", "accept_resign", "decline_resign", "close"]
 
 /// A compact replay: the action log and the final fingerprint. Small enough
 /// to commit for every format and seed; Gleam golden tests replay it.

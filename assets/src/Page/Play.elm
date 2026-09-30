@@ -141,6 +141,8 @@ type alias Model =
     , mistakes : Dict Int (List String) -- each graded game's mistakes for this seat, by game number: the puzzle ids a card's PRACTICE runs
     , today : Maybe Practice.Today -- the day's ring as the mistakes list last reported it, for the run it starts
     , mistakeAsks : Dict Int Int -- asks made for a game's mistakes still unanswered (the puzzles land a moment after the grade)
+    , closing : Bool -- the lobby's END THIS GAME is in flight
+    , closeRefused : Maybe String -- why the room refused to be closed, under the button
     }
 
 
@@ -180,6 +182,8 @@ init session config =
       , mistakes = Dict.empty
       , today = Nothing
       , mistakeAsks = Dict.empty
+      , closing = False
+      , closeRefused = Nothing
       }
     , Cmd.batch
         -- One tick late, deliberately: a port message sent while the program
@@ -286,6 +290,8 @@ type Msg
     | PollRatings
     | PrefSaved (Result Api.Error (Dict String String))
     | SignInMsg SignIn.Msg
+    | CloseLobby
+    | LobbyClosed (Result Api.Error ())
     | AskMistakes Int
     | GotMistakes Int (Result Api.Error Practice.Practice)
     | NoOp
@@ -446,6 +452,23 @@ update msg model =
 
         RequestRematch ->
             stay model (sendToChannel Protocol.encodeRematch)
+
+        -- END THIS GAME, in the lobby. A room nobody joined has no way of
+        -- ending itself, and the seat asking for it is the one that made
+        -- it; the server is still the one that decides.
+        CloseLobby ->
+            stay { model | closing = True, closeRefused = Nothing }
+                (Catalog.closeRoom model.session model.gameSlug model.gameId LobbyClosed)
+
+        LobbyClosed (Ok ()) ->
+            -- Home, where the list this room was cluttering is.
+            ( { model | closing = False }, Cmd.none, Navigate "/" )
+
+        LobbyClosed (Err err) ->
+            -- Under the button, not over the page: a refusal (the opponent
+            -- joined in that same moment, say) leaves a lobby that is still
+            -- perfectly good, and "THIS GAME IS GONE" would be a lie.
+            stay { model | closing = False, closeRefused = Just (Api.errorMessage err) } Cmd.none
 
         ShareInvite ->
             stay model (shareInvite (inviteUrl model))
@@ -1179,6 +1202,33 @@ waiting model lobby =
             ]
         , Html.p [ class "text-center text-sm", Notebook.style "color: var(--pencil)" ]
             [ Html.text "Waiting for your opponent to open the link or enter the code… the game starts the moment they join." ]
+
+        -- Nobody has joined, so there is no game to leave and nothing to
+        -- lose: a room the friend never opens sits in LIVE GAMES for ever
+        -- unless the player who made it says it is over. Quiet, under
+        -- everything else, and never where a started game can reach it.
+        , Html.p [ class "text-center" ]
+            [ Html.button
+                [ Html.Attributes.type_ "button"
+                , id "close-lobby"
+                , class "pixel text-[9px] underline underline-offset-4"
+                , Html.Attributes.disabled model.closing
+                , Notebook.style "color: var(--pencil)"
+                , onClick CloseLobby
+                ]
+                [ Html.text "END THIS GAME" ]
+            , case model.closeRefused of
+                Just message ->
+                    Html.span
+                        [ id "close-lobby-error"
+                        , class "block text-sm mt-2"
+                        , Notebook.style "color: var(--red)"
+                        ]
+                        [ Html.text message ]
+
+                Nothing ->
+                    Html.text ""
+            ]
         ]
 
 

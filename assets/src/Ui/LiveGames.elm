@@ -8,14 +8,20 @@ list is shown: the guest home's LIVE GAMES dialog over the board
 There are two homes now, and a game waiting is the thing both of them open
 with, so the row lives here rather than twice: who it is against, what and
 how long ago underneath, and on the right whose move it is with the clocks
-under that when there are any. The whole row is the link, so it carries no
-message and no model -- only the two moments the clocks are read against.
+under that when there are any.
+
+The whole row is the link. A room that may be ended from the list (the
+server says which: `closable`) therefore gets a ✕ *beside* the link rather
+than inside it -- a link containing a button is neither -- so the list item
+is the two of them side by side and the link keeps the whole row it had.
+That ✕ is the only message this module sends.
 
 -}
 
 import Api.Catalog as Catalog exposing (MyGame)
 import Html exposing (Html)
 import Html.Attributes exposing (attribute, class, href, id)
+import Html.Events exposing (onClick)
 import Ui.Notebook exposing (style)
 
 
@@ -47,8 +53,11 @@ mine game =
     game.yourMove && game.status /= "waiting"
 
 
-row : Clocks -> MyGame -> Html msg
-row clocks game =
+{-| One row. `onClose` is what the ✕ sends; it is drawn only for a room the
+server called closable, which today is a lobby nobody ever joined.
+-}
+row : Clocks -> (MyGame -> msg) -> MyGame -> Html msg
+row clocks onClose game =
     let
         opponent =
             case game.status of
@@ -81,11 +90,11 @@ row clocks game =
         detail =
             game.format ++ " · " ++ ago game.idleS
     in
-    Html.li []
+    Html.li [ class "flex items-stretch gap-1.5" ]
         [ Html.a
             [ href game.path
             , id ("resume-" ++ game.id)
-            , class ("resume-row flex items-center gap-3 px-3.5 py-3 " ++ tone)
+            , class ("resume-row flex-1 min-w-0 flex items-center gap-3 px-3.5 py-3 " ++ tone)
             ]
             [ Html.span [ class "resume-avatar shrink-0 w-10 h-10 rounded-full inline-flex items-center justify-center text-[15px] font-semibold" ] [ Html.text initial ]
             , Html.span [ class "min-w-0 flex-1" ]
@@ -96,9 +105,38 @@ row clocks game =
                 (Html.span [ class ("resume-pill text-[11px] font-semibold leading-none px-2 py-1 rounded-full " ++ tone) ] [ Html.text status ]
                     :: (clockLine clocks game |> Maybe.map List.singleton |> Maybe.withDefault [])
                 )
-            , Html.span [ class "resume-chevron shrink-0 text-lg leading-none", attribute "aria-hidden" "true" ] [ Html.text "›" ]
+            -- A closable row hands its right end to the ✕ beside it: two
+            -- marks at one end of a narrow row is one too many, and the row
+            -- is no less a link for having no chevron on it.
+            , if game.closable then
+                Html.text ""
+
+              else
+                Html.span [ class "resume-chevron shrink-0 text-lg leading-none", attribute "aria-hidden" "true" ] [ Html.text "›" ]
             ]
+        , closeButton onClose game
         ]
+
+
+{-| The ✕ that ends a room the list can end. Quiet until it is wanted: a
+plate the width of a thumb, the line only showing on hover or focus, and
+its label saying what it does out loud for anyone not reading the glyph.
+-}
+closeButton : (MyGame -> msg) -> MyGame -> Html msg
+closeButton onClose game =
+    if game.closable then
+        Html.button
+            [ Html.Attributes.type_ "button"
+            , id ("close-" ++ game.id)
+            , class "resume-close shrink-0 w-9 flex items-center justify-center text-base leading-none"
+            , attribute "aria-label" "Close this game"
+            , attribute "title" "Close this game"
+            , onClick (onClose game)
+            ]
+            [ Html.text "✕" ]
+
+    else
+        Html.text ""
 
 
 {-| The two clocks, the running one counting down: mine then theirs. The

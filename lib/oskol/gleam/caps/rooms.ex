@@ -94,7 +94,30 @@ defmodule Oskol.Gleam.Caps.Rooms do
          {:error, reason} ->
            {:error, room_error(reason)}
        end
-     end, &seated_game/3, &game/1}
+     end, &seated_game/3, &game/1, &close/3}
+  end
+
+  # Close a lobby: the room checks the caller against the holder rule,
+  # writes itself off and stops.
+  #
+  # The write is the room's ordinary write-behind, so it lands behind
+  # anything that room had queued; this call then waits for it, because the
+  # page that asked reads `/papi/me/games` back the moment it answers and
+  # would otherwise be handed the room it has just closed.
+  defp close(game_id, guest_id, user_id) do
+    case GameServer.close(game_id, unopt(guest_id), unopt(user_id)) do
+      :ok ->
+        Oskol.Game.Persister.flush()
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, room_error(reason)}
+    end
+  catch
+    # The room stopped between the lookup and this call (the idle hour is
+    # the way that happens). Nothing was written, so the handler says the
+    # room is gone rather than claiming a close that did not happen.
+    :exit, _ -> {:error, :unknown_game}
   end
 
   # The running game at a room, for anyone: a record and a replay are what

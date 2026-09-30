@@ -308,7 +308,7 @@ pub fn ready_is_never_legal_in_a_single_game_test() {
       "match_over",
       "phase:game_over",
     ]
-  let assert state.Finished(White) = s.phase
+  let assert state.Finished(Some(White)) = s.phase
   assert names(s, "p1") == [] && names(s, "p2") == []
   assert engine.apply(s, "p1", engine.Ready) == Error("The match is over")
 }
@@ -318,7 +318,7 @@ pub fn ready_is_not_legal_once_the_match_is_won_test() {
   let s = state.GameState(..s, scores: dict.from_list([#("p1", 3), #("p2", 4)]))
   let #(s, events) = white_wins(s)
   assert list.contains(kinds(events), "match_over")
-  let assert state.Finished(White) = s.phase
+  let assert state.Finished(Some(White)) = s.phase
   assert backgammon.outcome(s) == game.Finished(["p1"])
   assert names(s, "p1") == [] && names(s, "p2") == []
   assert engine.apply(s, "p2", engine.Ready) == Error("The match is over")
@@ -509,4 +509,98 @@ pub fn a_paused_match_replays_from_its_seed_and_log_test() {
     conformance.replay(backgammon.game(), "match5", seats(), 21, half)
   let assert state.BetweenGames(_, ["p2"]) = h.phase
   assert names(h, "p1") == ["ready"]
+}
+
+// ---------- Ending a session ----------
+//
+// Unlimited play has no finish line: a match to a target ends when somebody
+// reaches it, an unlimited session only ends when somebody stops pressing
+// READY, which strands the room. So between its games either player may say
+// that was the last one, the score stands, and whoever is ahead has won.
+
+pub fn unlimited_play_offers_an_end_between_games_test() {
+  let s = game_at(20, "unlimited")
+  let #(s, _) = white_wins(s)
+  // Either player, alone, and beside READY rather than instead of it.
+  assert names(s, "p1") == ["ready", "close"]
+  assert names(s, "p2") == ["ready", "close"]
+  assert state.can_close(s, "p1") && state.can_close(s, "p2")
+  // Having said you are ready does not take it away: the room is stranded
+  // exactly when the other player never answers.
+  let #(s, _) = ready(s, "p1")
+  assert names(s, "p1") == ["close"]
+}
+
+pub fn a_match_is_never_closable_test() {
+  let s = game_at(21, "match5")
+  let #(s, _) = white_wins(s)
+  let assert state.BetweenGames(_, _) = s.phase
+  list.each(["p1", "p2"], fn(id) {
+    assert names(s, id) == ["ready"]
+    assert state.can_close(s, id) == False
+    assert engine.apply(s, id, engine.Close)
+      == Error("A match ends when somebody reaches the target")
+  })
+}
+
+pub fn a_game_in_play_is_never_closable_test() {
+  // Rolling, moving and answering a double: a game on the board is left by
+  // resigning, which costs the resigner the game.
+  let rolling = game_at(22, "unlimited")
+  let moving = about_to_win(rolling, white_gammon_board(), White)
+  let #(doubled, _) =
+    apply(
+      state.GameState(..rolling, phase: state.Rolling(White)),
+      "p1",
+      engine.Double,
+    )
+  list.each([rolling, moving, doubled], fn(s) {
+    list.each(["p1", "p2"], fn(id) {
+      assert names(s, id) |> list.contains("close") == False
+      assert state.can_close(s, id) == False
+      assert engine.apply(s, id, engine.Close) == Error("The game is still on")
+    })
+  })
+}
+
+pub fn closing_a_session_makes_the_leader_the_winner_test() {
+  let s = game_at(23, "unlimited")
+  let #(s, _) = white_wins(s)
+  assert state.score_of(s, "p1") == 1 && state.score_of(s, "p2") == 0
+  // The player behind may end it too: either player, alone.
+  let #(s, events) = apply(s, "p2", engine.Close)
+  assert kinds(events) == ["session_closed", "phase:game_over"]
+  assert payload_of(events, "session_closed")
+    == "{\"player_id\":\"p2\",\"winner\":\"p1\",\"scores\":{\"p1\":1,\"p2\":0}}"
+  let assert state.Finished(Some(White)) = s.phase
+  // Written to games.winners exactly as a match's last game writes it.
+  assert backgammon.outcome(s) == game.Finished(["p1"])
+  assert backgammon.game().scene(s, scene.Spectator).phase == "game_over"
+  assert string.contains(scene_data(s, scene.Spectator), "\"winner_id\":\"p1\"")
+  // Nothing is left to do, and nobody is on the clock.
+  assert names(s, "p1") == [] && names(s, "p2") == []
+  assert engine.apply(s, "p1", engine.Ready) == Error("The match is over")
+  assert engine.apply(s, "p1", engine.Close) == Error("The match is over")
+  assert state.charged(s) == []
+}
+
+pub fn a_level_session_closes_with_no_winner_test() {
+  let s = game_at(24, "unlimited")
+  let #(s, _) = white_wins(s)
+  // One each: the score a session can honestly stop on.
+  let s = state.GameState(..s, scores: dict.from_list([#("p1", 1), #("p2", 1)]))
+  let #(s, events) = apply(s, "p1", engine.Close)
+  assert payload_of(events, "session_closed")
+    == "{\"player_id\":\"p1\",\"winner\":null,\"scores\":{\"p1\":1,\"p2\":1}}"
+  let assert state.Finished(None) = s.phase
+  // No winner, not a winner nobody can name: `games.winners` is empty.
+  assert backgammon.outcome(s) == game.Finished([])
+  assert string.contains(scene_data(s, scene.Spectator), "\"winner_id\":null")
+}
+
+pub fn only_a_seat_can_close_a_session_test() {
+  let s = game_at(25, "unlimited")
+  let #(s, _) = white_wins(s)
+  assert engine.apply(s, "ghost", engine.Close) == Error("Player not found")
+  assert state.can_close(s, "ghost") == False
 }

@@ -14,7 +14,8 @@ defmodule Oskol.Game.Rehydrator do
   link still opens their seat. Waiting rooms come back as lobbies; finished
   games come back too, read-only in effect (the engine rejects further
   actions), so an old link shows the final position and still offers a
-  rematch.
+  rematch. A lobby that was closed comes back as nothing at all: no game was
+  played there and its player said it was over.
   """
   require Logger
 
@@ -24,6 +25,12 @@ defmodule Oskol.Game.Rehydrator do
   def resume(game_id) do
     case Oskol.Persistence.fetch(game_id) do
       :not_found ->
+        :not_found
+
+      # A lobby its player closed. The room is over for good, so nothing
+      # brings it back: the code opens nothing, the invite says the game is
+      # gone, and the row is the only trace left.
+      {:ok, %{status: "closed"}, _actions} ->
         :not_found
 
       {:ok, game, actions} ->

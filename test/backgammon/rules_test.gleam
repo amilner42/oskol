@@ -404,7 +404,7 @@ pub fn bearing_off_the_last_checker_wins_with_the_right_kind_test() {
   let #(s, events) = apply(s, "p1", engine.Play)
   assert has_custom(events, "game_won")
   assert has_custom(events, "match_over")
-  let assert state.Finished(White) = s.phase
+  let assert state.Finished(Some(White)) = s.phase
   assert backgammon.outcome(s) == game.Finished(["p1"])
   assert state.score_of(s, "p1") == 2
   assert engine.legal(s, "p1") == [] && engine.legal(s, "p2") == []
@@ -452,7 +452,7 @@ pub fn match_play_continues_with_a_fresh_board_until_the_target_test() {
   }
   let s = again(s)
   assert state.score_of(s, "p1") == 5
-  let assert state.Finished(White) = s.phase
+  let assert state.Finished(Some(White)) = s.phase
 }
 
 pub fn dice_tokens_show_what_has_been_used_test() {
@@ -556,7 +556,7 @@ pub fn black_bears_off_and_wins_a_gammon_too_test() {
   let #(s, _) = apply(s, "p2", engine.MoveChecker(Point(24), Off))
   let #(s, events) = apply(s, "p2", engine.Play)
   assert has_custom(events, "game_won")
-  let assert state.Finished(Black) = s.phase
+  let assert state.Finished(Some(Black)) = s.phase
   assert state.score_of(s, "p2") == 2
   assert backgammon.outcome(s) == game.Finished(["p2"])
 }

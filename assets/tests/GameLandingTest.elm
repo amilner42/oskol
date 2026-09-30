@@ -817,6 +817,7 @@ playing =
     , format = "Match to 5"
     , clock = Just "5 min"
     , yourMove = True
+    , closable = False
     , time = Just { mineMs = 171000, theirsMs = 180000, running = Catalog.Mine, freeMs = 0, ageS = 150 }
     , idleS = 150
     }
@@ -832,6 +833,7 @@ lobby =
     , format = "Single game"
     , clock = Nothing
     , yourMove = False
+    , closable = True
     , time = Nothing
     , idleS = 30
     }

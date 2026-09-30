@@ -66,6 +66,30 @@ pub fn of_row(
   Seat(player_id: player_id, guest_id: guest_id, user_id: user_id, bot: False)
 }
 
+/// A stored room's seat list as the holder rule reads it: `#(player_id,
+/// name, guest id, account id)` in seat order, where an empty id is no id
+/// at all. Every caller that authorises against a row rather than against a
+/// live room goes through this, so the rule is asked the same question.
+///
+/// A bot's seat carries neither id, so it holds nobody here without the row
+/// having to say which seat is a bot's.
+pub fn of_rows(entries: List(#(String, String, String, String))) -> List(Seat) {
+  list.map(entries, fn(entry) {
+    of_row(
+      player_id: entry.0,
+      guest_id: some_unless_empty(entry.2),
+      user_id: some_unless_empty(entry.3),
+    )
+  })
+}
+
+fn some_unless_empty(value: String) -> Option(String) {
+  case value {
+    "" -> None
+    value -> Some(value)
+  }
+}
+
 /// Does this session hold that seat?
 ///
 ///   * an **owned** seat (it has a `user_id`) is held by that account and

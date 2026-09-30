@@ -649,6 +649,25 @@
 .resume-pill.yours { background: var(--highlighter); color: var(--ink); }
 .resume-pill.theirs { background: rgba(35, 36, 58, 0.07); color: var(--pencil); }
 .resume-pill.lobby { background: transparent; color: var(--pencil); border: 1px dashed rgba(35, 36, 58, 0.3); }
+/* Ending a room the list can end: a plate beside the row, not inside it.
+   Quiet until it is wanted -- the list is read for what to play, not for
+   what to throw away -- and the site's red only once it is under a
+   finger. */
+.resume-close {
+  border-radius: 16px;
+  background: transparent;
+  border: 1.5px dashed rgba(35, 36, 58, 0.18);
+  color: var(--pencil);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+.resume-close:hover, .resume-close:focus-visible {
+  background: #fff;
+  border-color: var(--red);
+  border-style: solid;
+  color: var(--red);
+  outline: none;
+}
 .resume-clock { color: var(--pencil); font-variant-numeric: tabular-nums; }
 .resume-clock .clock-mine { color: var(--ink); font-weight: 600; }
 /* Your own clock, running: it breathes, slowly, to say the time going is

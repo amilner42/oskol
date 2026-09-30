@@ -356,6 +356,25 @@ pub fn claim_json(
   |> seat_result(slug)
 }
 
+// ---------- POST /papi/games/:slug/rooms/:id/close ----------
+
+/// Close a lobby nobody joined, from the LIVE GAMES row or from the lobby
+/// page itself. The answer carries nothing: the client drops the room from
+/// its list and goes home.
+pub fn close_json(
+  ctx: Ctx,
+  session: Session,
+  game_id: String,
+) -> Result(String, ApiError) {
+  case rooms.close(ctx, session, game_id) {
+    Ok(Nil) -> Ok(envelope.ok([#("closed", json.bool(True))]))
+    Error(rooms.Refused(message)) -> Error(error.validation_failed(message))
+    Error(rooms.Reroute) ->
+      Error(error.validation_failed(errors.message(errors.GameFull)))
+    Error(rooms.Gone(message)) -> Error(error.NotFound(message))
+  }
+}
+
 fn seat_result(
   result: Result(Seated, rooms.JoinError),
   slug: String,
@@ -493,7 +512,7 @@ pub fn my_games(ctx: Ctx, session: Session) -> List(Json) {
   // games it can no longer open.
   rooms
   |> list.filter(fn(room) {
-    seat.held_by(list.map(room.seats, as_seat), session) != None
+    seat.held_by(seat.of_rows(room.seats), session) != None
   })
   |> list.map(fn(r) { active_room_json(r, session) })
 }
@@ -511,7 +530,7 @@ fn active_room_json(room: ActiveRoom, session: Session) -> Json {
   // Which seat here is the caller's is the one holder rule, the same one
   // the room attaches on (`rooms/seat.holder`).
   let my_id =
-    seat.held_by(list.map(room.seats, as_seat), session)
+    seat.held_by(seat.of_rows(room.seats), session)
     |> option.unwrap("")
   let opponent =
     list.find(room.seats, fn(entry) { entry.0 != my_id })
@@ -537,26 +556,20 @@ fn active_room_json(room: ActiveRoom, session: Session) -> Json {
     #("format", json.string(format)),
     #("clock", nullable(clock)),
     #("your_move", json.bool(my_id != "" && list.contains(room.to_act, my_id))),
+    #("closable", json.bool(closable(room))),
     #("time", time_json(room.clocks, room.clock_s, my_id)),
     #("idle_s", json.int(room.idle_s)),
   ])
 }
 
-/// A seat as the holder rule reads it: the row's empty strings are "no
-/// guest" and "no account".
-fn as_seat(entry: #(String, String, String, String)) -> seat.Seat {
-  seat.of_row(
-    player_id: entry.0,
-    guest_id: some_unless_empty(entry.2),
-    user_id: some_unless_empty(entry.3),
-  )
-}
-
-fn some_unless_empty(value: String) -> Option(String) {
-  case value {
-    "" -> None
-    value -> Some(value)
-  }
+/// May this row be closed from the list it is drawn in? A lobby may: it
+/// has no game in it and no way of ending itself, so the × beside it is
+/// the only way out. A room with a game in it is never closed from a list
+/// -- the table is where a game is left, whether by resigning or, between
+/// the games of unlimited play, by ending the session -- so the client is
+/// told no and offers nothing.
+fn closable(room: ActiveRoom) -> Bool {
+  room.status == "waiting"
 }
 
 fn time_json(

@@ -13,6 +13,7 @@ import oskol/rooms/errors.{type RoomError}
 import oskol/rooms/invite.{type InviteStep}
 import oskol/rooms/name as display_name
 import oskol/rooms/room.{type Room, type Seated, type Setup, type Table, Seated}
+import oskol/rooms/seat
 
 /// How many codes to try before giving up. A function, not a constant, so
 /// the Elixir facade can read it instead of keeping its own copy.
@@ -252,6 +253,102 @@ pub fn claim(
     }
   }
 }
+
+// ---------- Closing a lobby ----------
+
+/// Close a room nobody joined. A lobby a friend never opens has no way of
+/// ending on its own: nothing prunes rooms, so it sits in LIVE GAMES for
+/// ever unless the player who made it says it is over.
+///
+/// Only a lobby. A room with a game in it is the table's business: a game
+/// in play is left by resigning, and unlimited play is ended between games
+/// by the `close` action, which the game itself decides on (a match to a
+/// target is never closable -- it ends when somebody reaches it).
+///
+/// Nothing a stranger presses may rebuild a room from its log. A lookup
+/// rehydrates, so the row answers first: it says whether there is a room at
+/// all, whether it has a game in it (in which case nothing needs waking),
+/// and -- for a cold lobby -- whether this browser holds a seat there.
+///
+/// A room that is already live is asked directly, because asking it wakes
+/// nothing and its memory is the newer copy: the row is written behind, so
+/// a lobby made a moment ago may not carry its seat yet. Either way the
+/// room's own check is the one that decides.
+pub fn close(
+  ctx: Ctx,
+  session: Session,
+  game_id: String,
+) -> Result(Nil, JoinError) {
+  case ctx.persistence.room(game_id) {
+    None -> Error(Gone(gone_message))
+    Some(row) ->
+      case row.status {
+        "waiting" ->
+          case ctx.rooms.find(game_id) {
+            Some(_) -> shut(ctx, session, game_id)
+            None ->
+              case held_in(row, session) {
+                False -> Error(Refused(errors.message(errors.NoSeat)))
+                True ->
+                  case ctx.rooms.resume(game_id) {
+                    None -> Error(Gone(gone_message))
+                    Some(_) -> shut(ctx, session, game_id)
+                  }
+              }
+          }
+        // Closed already: a second press, or a retry of a request that
+        // timed out after the write landed, is the same yes. Nothing is
+        // woken to say so -- the rehydrator would refuse the row anyway.
+        status if status == closed_status -> only_a_seat(row, session, Ok(Nil))
+        // There is a game in it, or there was. A game is left at the table
+        // -- by resigning, or between the games of unlimited play by
+        // ending the session -- and a room that is over is over.
+        _ ->
+          only_a_seat(
+            row,
+            session,
+            Error(Refused(errors.message(errors.GameAlreadyStarted))),
+          )
+      }
+  }
+}
+
+fn shut(ctx: Ctx, session: Session, game_id: String) -> Result(Nil, JoinError) {
+  case ctx.rooms.close(game_id, session.guest_id, session.user_id) {
+    Ok(Nil) -> Ok(Nil)
+    // The room stopped between the lookup and the close: nothing was
+    // written, and there is nothing to fix by pressing again.
+    Error(errors.UnknownGame) -> Error(Gone(gone_message))
+    Error(reason) -> Error(Refused(errors.message(reason)))
+  }
+}
+
+/// Does this browser hold a seat in the room as the row has it? A bot's
+/// seat carries neither a guest nor an account, so it answers nobody --
+/// which is what keeps a browser with no cookie of its own from matching it.
+fn held_in(row: room.ActiveRoom, session: Session) -> Bool {
+  seat.held_by(seat.of_rows(row.seats), session) != None
+}
+
+/// The verdict, but only for a seat: wherever the row alone decides,
+/// somebody who holds no seat there reads the one sentence a stranger
+/// reads anywhere else, and learns nothing about the room.
+fn only_a_seat(
+  row: room.ActiveRoom,
+  session: Session,
+  verdict: Result(Nil, JoinError),
+) -> Result(Nil, JoinError) {
+  case held_in(row, session) {
+    True -> verdict
+    False -> Error(Refused(errors.message(errors.NoSeat)))
+  }
+}
+
+/// The status a closed lobby's row carries. Its own, not `finished`: no
+/// game was played there, so it belongs in no recent list, no rating and no
+/// replay -- and the rehydrator refuses it, so the code opens nothing ever
+/// again. `Oskol.Persistence.mark_closed/1` writes it.
+pub const closed_status = "closed"
 
 /// A reclaimed seat keeps the name it was taken under; the room knows it,
 /// and it is not ours to change.

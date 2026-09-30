@@ -33,8 +33,10 @@ defmodule Oskol.Gleam.Caps.Persistence do
   end
 
   # One row, whoever asks, as the same record: an invite link's head reads
-  # it. A hiccup is nothing -- the link gets the game page's own head --
-  # but it is logged, so a bug here cannot quietly turn every invite plain.
+  # it, and so does the check that says whether a caller holds a seat in a
+  # room before anything wakes it. A hiccup is nothing -- the link gets the
+  # game page's own head, and a close is refused rather than allowed -- but
+  # it is logged, so a bug here cannot quietly turn every invite plain.
   defp room(game_id) do
     case Oskol.Persistence.room(game_id) do
       nil ->
@@ -47,11 +49,11 @@ defmodule Oskol.Gleam.Caps.Persistence do
   rescue
     # Only the test sandbox raises this. Not a production condition.
     e in DBConnection.OwnershipError ->
-      Logger.debug("invite head skipped: #{Exception.message(e)}")
+      Logger.debug("room row read skipped: #{Exception.message(e)}")
       :none
 
     e ->
-      Logger.error("INVITE HEAD FAILED (#{game_id}): #{Exception.message(e)}")
+      Logger.error("ROOM ROW READ FAILED (#{game_id}): #{Exception.message(e)}")
       :none
   end
 

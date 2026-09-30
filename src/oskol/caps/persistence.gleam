@@ -17,10 +17,12 @@ pub type PersistenceCaps {
     /// them are really this caller's. A database hiccup is an empty list,
     /// never a broken page.
     seated_rooms: fn(Option(String), Option(String)) -> List(ActiveRoom),
-    /// One room as its row holds it, whoever asks: what an invite link's
-    /// head is built from, so a crawler wakes nothing and the inviter is
-    /// the seat's name, not a live connection's. A missing row, or a
-    /// database hiccup, is None.
+    /// One room as its row holds it, whoever asks, without waking it: what
+    /// an invite link's head is built from, so a crawler wakes nothing and
+    /// the inviter is the seat's name, not a live connection's -- and what
+    /// says whether a caller holds a seat there before anything rebuilds a
+    /// cold room from its log. A missing row, or a database hiccup, is
+    /// None, so a hiccup refuses rather than admits.
     room: fn(String) -> Option(ActiveRoom),
   )
 }
