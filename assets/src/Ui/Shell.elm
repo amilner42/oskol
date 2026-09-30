@@ -1,4 +1,4 @@
-module Ui.Shell exposing (Config, bare, bird, mark, joinButton, joinCodeInputId, quietJoinButton, view)
+module Ui.Shell exposing (Config, bare, bird, mark, joinButton, joinCodeInputId, navJoin, quietJoinButton, view)
 
 {-| The chrome every landing page sits in: the OSKOL wordmark, the JOIN GAME
 prompt behind it, and the footer.
@@ -80,6 +80,41 @@ joinButton config =
         , onClick config.onOpenJoin
         ]
         [ Html.text "JOIN GAME" ]
+
+
+{-| JOIN in the guest home's bar: on a wide screen the code field itself,
+typed into in place (the same code and the same lookup as the prompt: the
+sixth character goes); on a phone a button that opens the prompt.
+-}
+navJoin : Config msg -> Html msg
+navJoin config =
+    Html.div [ class "lh-join-wrap" ]
+        [ Html.form [ onSubmit config.onJoinSubmit, class "lh-join", id "nav-join" ]
+            [ Html.input
+                [ type_ "text"
+                , id "nav-join-code"
+                , Html.Attributes.name "code"
+                , value config.joinCode
+                , Html.Attributes.maxlength 6
+                , attribute "autocapitalize" "characters"
+                , attribute "autocomplete" "off"
+                , attribute "autocorrect" "off"
+                , attribute "spellcheck" "false"
+                , attribute "aria-label" "Game code"
+                , Html.Attributes.placeholder "Code"
+                , onInput config.onJoinCodeInput
+                ]
+                []
+            , Html.button [ type_ "submit", id "nav-join-submit" ] [ Html.text "Join" ]
+            ]
+        , case ( config.joinError, config.joinOpen ) of
+            ( Just message, False ) ->
+                Html.p [ id "nav-join-error", class "lh-join-error", attribute "role" "alert" ] [ Html.text message ]
+
+            _ ->
+                Html.text ""
+        , Html.button [ type_ "button", id "home-join", class "lh-btn lh-join-open", onClick config.onOpenJoin ] [ Html.text "Join" ]
+        ]
 
 
 {-| The same control in the quiet notebook, for the signed-in home's bar

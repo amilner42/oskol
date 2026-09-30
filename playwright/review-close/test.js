@@ -6,7 +6,7 @@
  *   node playwright/review-close/test.js
  */
 const playwright = require('playwright');
-const { BASE, createGame, joinByLink } = require('../lib/flows');
+const { openHome, createGame, joinByLink } = require('../lib/flows');
 const OUT = process.argv[2] || 'playwright/screenshots/review-close';
 const fs = require('fs');
 fs.mkdirSync(OUT, { recursive: true });
@@ -39,8 +39,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(600);
     await a.screenshot({ path: `${OUT}/${name}-01-lobby.png`, fullPage: true });
 
-    // The same room on the home board: the row is the link, the ✕ beside it.
-    await a.goto(`${BASE}/`);
+    // The same room from the home page's "1 live game" pill: the row is the
+    // link, the ✕ beside it.
+    await openHome(a);
+    await a.waitForSelector('#resume-games');
+    await a.click('#resume-games');
     await a.waitForSelector('#resume-modal #close-' + game.gameId);
     await sleep(600);
     await a.screenshot({ path: `${OUT}/${name}-02-live-games.png` });

@@ -949,7 +949,7 @@ view model =
                     -- The home page is the board, edge to edge: its own chrome.
                     Shell.bare (shellConfig model)
                         (Page.GameLanding.home
-                            { join = Shell.joinButton (shellConfig model), toMsg = GameLandingMsg }
+                            { join = Shell.navJoin (shellConfig model), toMsg = GameLandingMsg }
                             pageModel
                         )
 

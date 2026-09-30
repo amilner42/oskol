@@ -686,12 +686,17 @@ assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
 assets/src/Route.elm             the three client routes, mirroring the server's
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
-assets/src/Page/GameLanding.elm  "/" the guest's home page (CREATE GAME's dialog, the
-                                 theme picker) and "/:slug?game=" what an invite offers.
-                                 `createOnly`, `createModal` and `themePicker` are what
-                                 the signed-in home starts a game and picks a board with
-assets/src/Page/HomeBoard.elm    the guest home's board: the table edge to edge, the
-                                 2x2 menu in its right band
+assets/src/Page/GameLanding.elm  "/" the guest's home page (`home`: the bar -- bird,
+                                 N live games, Puzzles, the boards, JOIN, Sign in --
+                                 OSKOL, "Play backgammon.", the demo board, and the one
+                                 sentence "Play [a single game] against [Sage] with no
+                                 clock" over ROLL DICE; a friend's name dialog) and
+                                 "/:slug?game=" what an invite offers. `createOnly`,
+                                 `createModal` and `themePicker` are what the signed-in
+                                 home starts a game and picks a board with
+assets/js/demo_board.js          <oskol-demo-board>: the guest home's board, a CSS-3D
+                                 board in the page's theme playing a demo game on a loop;
+                                 decorative, talks to nothing, sizes itself to its box
 assets/src/Page/Home.elm         "/" for an account: the bar (the name, PLAY, JOIN,
                                  PUZZLES, the boards), then form first (two numbers, the
                                  streak, the sentence, the line), live games with your
@@ -844,8 +849,9 @@ All three are Elm routes, and all three are server routes: a visitor may
 arrive at any of them cold, and moving between them afterwards is a
 `pushUrl`, not a page load.
 
-- `/` the home page, which is two pages: a guest gets the board and its
-  four buttons (`Page.GameLanding`), an account gets its own home --
+- `/` the home page, which is two pages: a guest gets OSKOL, a board
+  playing by itself and one sentence over ROLL DICE (`Page.GameLanding`;
+  see "The guest home" below), an account gets its own home --
   form and its streak, live games, practice, recent matches (`Page.Home`,
   from `GET /papi/me/home`). `Main` picks by the session and picks again when
   `/papi/me` lands, so a browser that turns out to be signed in ends up on
@@ -1179,10 +1185,10 @@ entry names the opponent (null in a lobby), the format and clock by name,
 whether it is the caller's turn (`your_move`, from the row's `state`), the
 two clocks as the snapshot last read them with how long ago that was
 (`time`, so the client can charge the running one and count it down), and
-seconds since the room was touched. The client (`Page/GameLanding.elm`)
-shows them in a dialog over the home board when the list arrives with
-anything in it, and keeps a "REJOIN N GAMES" button at the right end of the
-player's own bar for as long as there are any. Nothing prunes games (they
+seconds since the room was touched. The guest home (`Page/GameLanding.elm`)
+offers them as "N live games" in its bar for as long as there are any, and
+the list opens only when that is pressed: nothing pops up over the page a
+player came to play on. Nothing prunes games (they
 are kept, finished or not), so nothing bounds the list yet -- but a lobby
 nobody joined can be closed from its own row (`closable`; see "A room that
 will not end itself is ended by a player" under Persistence).
@@ -1254,10 +1260,35 @@ their own. The client also keeps the pick in `localStorage` (the `storePref`
 port), which is what paints the board before the round trip and all a
 visitor whose guest cookie is gone has.
 
+## The guest home
+
+`/` for a browser with no account (`Page.GameLanding.home`), and
+`/backgammon` for anyone. Paper, one bar (the bird home; "N live games"
+when there are any; Puzzles; the board picker; JOIN -- the code field
+itself on a wide screen, a button opening the prompt on a phone; Sign in),
+OSKOL in Bungee Shade (self-hosted), "Play backgammon.", a board playing a
+demo game by itself (`<oskol-demo-board>`, `assets/js/demo_board.js`, in
+the board theme the visitor picked), and one sentence over one button:
+"Play [a single game] against [Sage] with no clock", each bracket a menu
+of the game's real formats ("a match to 7", "an unlimited match"), and
+against a friend the clock a menu too ("a 5 min clock"). ROLL DICE
+against Sage makes the bot game there and then, under the name this
+browser last played under or "Guest" (never "Sage", which the room
+refuses); against a friend it reads GET A LINK, asks a guest the name the
+friend will read, and takes the seat: the lobby is where the link is.
+
+**Nothing moves when a choice changes.** The sentence keeps its height
+(one line wide; on a phone always two, broken after the game), its menus
+float over the page (a sheet at the bottom on a phone), the button keeps
+the width of its longer label, and the board takes whatever height is
+left, sitting on the bottom of its box so the sentence is always the same
+distance from it as from the button. The page fits one screen at every
+size; nothing is below the fold.
+
 ## The home
 
 A signed-in player has games waiting, a rating and a deck; the guest home
-(a board and four buttons) shows none of it. `GET /papi/me/home` is the
+(OSKOL, a board and one sentence) shows none of it. `GET /papi/me/home` is the
 whole signed-in home in **one** answer, and every part of it comes from
 rows: nothing wakes a room, replays a log or spends engine time. A guest
 gets `{ok: true, signed_in: false}` and keeps the home they have.
@@ -2115,11 +2146,12 @@ node playwright/review-puzzles-hub/test.js      # screenshots: the hub leading w
                                                # session mid-run, the summary after one mistake
                                                # (shape.exs's SHAPE_STATE arranges each), plus the
                                                # stranger's and guest's hub and the home's section
-node playwright/test-spa-landing/test.js        # the home board and CREATE GAME's dialog, old
-                                               # links redirect, a full create -> play click-through
-node playwright/review-pages/test.js            # screenshots of the home board, CREATE GAME,
-                                               # the lobby and the theme picker, and the dialog
-                                               # with the bot picked (desktop + phone)
+node playwright/test-spa-landing/test.js        # the guest home: the sentence and its menus,
+                                               # ROLL DICE against Sage and a friend, old links
+                                               # redirect, a full create -> play click-through
+node playwright/review-pages/test.js            # screenshots of the guest home, its menus, the
+                                               # friend's dialog, the lobby and the theme picker
+                                               # (desktop + phone)
 node playwright/review-close/test.js            # screenshots of the two ways a room is ended:
                                                # the x on a LIVE GAMES row, END THIS GAME in
                                                # the lobby, END SESSION beside READY between
@@ -2239,10 +2271,14 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
 - `RouteTest`, `SessionTest`, `CatalogTest`: the client's routes round-trip,
   the boot flags, and the `/papi` envelope and decoders (which are lax about
   keys they do not need and strict about the ones they do).
-- `GameLandingTest`: the guest home on decoded responses — the board and
-  its four menu entries, CREATE GAME's dialog (the mode and clock
-  dropdowns, their defaults, the summary, inline validation), the theme
-  picker, and the invite's three answers.
+- `GameLandingTest`: the guest home on decoded responses — OSKOL, the
+  board, the sentence and its three menus (in the sentence's words), ROLL
+  DICE against Sage at once (under the remembered name, else "Guest",
+  never "Sage") and against a friend after the name dialog, the live
+  games behind the bar's pill, SIGN IN; CREATE GAME's dialog as the
+  signed-in home opens it (the mode and clock dropdowns, their defaults,
+  the summary, inline validation); the theme picker; and the invite's
+  three answers.
 - `HomeTest`: the signed-in home on `/papi/me/home` as the handler writes
   it — each section and the order they come in (form first), each empty
   state, the form printing no numbers under three graded games, the streak
@@ -2298,8 +2334,9 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
 
 **Browser (`bin/check --browser`)**: Playwright smokes create real games and
 play them; review scripts take screenshots for eyeballing. The ways into a
-game live once, in `playwright/lib/flows.js`: `createGame` (`/` -> CREATE
-GAME -> the dialog, by element id), `joinByLink`, `joinByCode` and
+game live once, in `playwright/lib/flows.js`: `createGame` (a guest says it
+in the home's sentence and presses ROLL DICE; an account uses PLAY's
+dialog; by element id), `joinByLink`, `joinByCode` and
 `openSeat`, and `seatedContext` for a browser that already holds a seat. A
 smoke uses those rather than clicking through the home page itself, so a
 change to the home page or the invite touches that one file. Two players
@@ -2430,7 +2467,7 @@ from the invite link, like anyone else's.
 
 **Signing in is the win after the value, never a gate.** It is offered
 where a player already has something to keep — under LIVE GAMES on the
-home board ("Save these 3 games"), on the table's result cards, the
+guest home ("Save these 3 games"), on the table's result cards, the
 game-over card and the between-games card of a match or of unlimited play
 alike ("Save this game and your PR"; between games the open sign-in is a
 sheet over the board, so READY stays in the band), at the end of a

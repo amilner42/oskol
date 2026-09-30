@@ -101,7 +101,7 @@ async function run(browser, errors, fixture) {
     for (const control of ['#home-play', '#home-join', '#home-puzzles', '#bg-theme-button']) {
       if (!(await a.page.$(control))) throw new Error(`the bar is missing ${control}`);
     }
-    if (await a.page.$('.bg-page.home-board')) throw new Error('the signed-in home has no board');
+    if (await a.page.$('.lh-board, #roll-dice')) throw new Error('the signed-in home has no demo board and no sentence');
     log(`the bar names ${fixture.username} and offers PLAY, JOIN, PUZZLES and the boards`);
 
     // 4 (before there is a live game, so the form is what is on screen).
@@ -193,12 +193,14 @@ async function run(browser, errors, fixture) {
     if (a.page.url().includes('?game=')) throw new Error('one tap from LIVE GAMES did not open the seat');
     log('live games: the room, whose move it is, and one tap in');
 
-    // 7. A guest still gets the board.
+    // 7. A guest still gets the guest home: the board, the sentence and
+    // ROLL DICE.
     const guest = await open('guest');
     await guest.page.goto(`${BASE}/`);
-    await guest.page.waitForSelector('#start-game');
+    await guest.page.waitForSelector('#roll-dice');
+    await guest.page.waitForSelector('.lh-board');
     if (await guest.page.$('#home-bar')) throw new Error('a guest was given the account home');
-    log('a guest still gets the board; HOME OK');
+    log('a guest still gets the guest home; HOME OK');
   } catch (e) {
     for (const context of contexts) {
       await Promise.all(

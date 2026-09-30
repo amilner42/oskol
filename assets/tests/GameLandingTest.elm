@@ -1,8 +1,10 @@
 module GameLandingTest exposing (suite)
 
-{-| The home page and the invite: the name check, the board with its menu,
-CREATE GAME's dialog (its dropdowns, the defaults, the summary, the inline
-errors), the board picker, and the invite's three states.
+{-| The guest home and the invite: the name check; the home's title, board,
+sentence and ROLL DICE (the menus, Sage at once, a friend's name first);
+CREATE GAME's dialog as the signed-in home opens it (its dropdowns, the
+defaults, the summary, the inline errors); the board picker; the live games
+behind the bar's pill; and the invite's three states.
 -}
 
 import Api
@@ -47,7 +49,7 @@ accounts =
     describe "signing in"
         [ test "the button says Sign up, and presses" <|
             \_ ->
-                home withGames
+                home withGamesOpen
                     |> Query.find [ id "signup-cta" ]
                     |> Expect.all
                         [ Query.has [ text "Sign up" ]
@@ -55,7 +57,7 @@ accounts =
                         ]
         , test "pressed, the sign-in opens in the panel, under the same promise" <|
             \_ ->
-                withGames
+                withGamesOpen
                     |> send GameLanding.OpenedSignIn
                     |> home
                     |> Query.find [ id "guest-note" ]
@@ -65,31 +67,30 @@ accounts =
                         ]
         , test "signed in, the list is just their games: no pitch at all" <|
             \_ ->
-                home (signedInAs "her@example.com" withGames)
+                home (signedInAs "her@example.com" withGamesOpen)
                     |> Expect.all
                         [ Query.has [ id "resume-list" ]
                         , Query.hasNot [ id "guest-note" ]
                         ]
-        , test "signed in, the bar is the account, with LOG OUT behind it" <|
+        , test "signed in, the bar is the account, with Log out behind it" <|
             \_ ->
                 signedInAs "her@example.com" withGames
                     |> Expect.all
-                        [ home >> Query.find [ class "is-me" ] >> Query.has [ text "arie1", attribute (Html.Attributes.attribute "data-identity" "account") ]
+                        [ home >> Query.find [ id "account-button" ] >> Query.has [ text "arie1", attribute (Html.Attributes.attribute "data-identity" "account") ]
                         -- the username, never the email: the bar is on screen for anyone
                         , home >> Query.hasNot [ text "her@example.com" ]
+                        , home >> Query.hasNot [ id "signin-button" ]
                         , home >> Query.find [ id "account-button" ] >> Event.simulate Event.click >> Event.expect GameLanding.ToggledAccount
                         , home >> Query.hasNot [ id "logout" ]
-                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "logout" ] >> Query.has [ text "LOG OUT" ]
+                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "logout" ] >> Query.has [ text "Log out" ]
                         , send GameLanding.ToggledAccount >> home >> Query.find [ id "logout" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedLogOut
                         ]
-        , test "a guest's bar is their name, with the guest mark, and SIGN IN behind it" <|
+        , test "a guest's bar says Sign in, which opens the sign-in" <|
             \_ ->
                 withGames
                     |> Expect.all
-                        [ home >> Query.find [ class "is-me" ] >> Query.has [ text "Alice", attribute (Html.Attributes.attribute "data-identity" "guest") ]
-                        , home >> Query.hasNot [ id "signin-menu" ]
-                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "signin-menu" ] >> Query.has [ text "SIGN IN" ]
-                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "signin-menu" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedSignInMenu
+                        [ home >> Query.find [ id "signin-button" ] >> Query.has [ text "Sign in" ]
+                        , home >> Query.find [ id "signin-button" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedSignInMenu
                         , send GameLanding.PressedSignInMenu >> home >> Query.find [ id "signin-modal" ] >> Query.has [ id "signin-email" ]
                         -- the games list arriving after that sign-in must not open
                         -- LIVE GAMES underneath it (one win, not two)
@@ -172,26 +173,129 @@ names =
 homeBoard : Test
 homeBoard =
     describe "the home page"
-        [ test "is the board, in the default colours" <|
+        [ test "is OSKOL, the line under it, the board and the way in" <|
             \_ ->
                 home loadedModel
-                    |> Query.has [ class "bg-page", class "home-board", class "bg-theme-midnight" ]
+                    |> Expect.all
+                        [ Query.find [ class "lh-title" ] >> Query.has [ text "OSKOL" ]
+                        , Query.find [ class "lh-tagline" ] >> Query.has [ text "Play backgammon." ]
+                        , Query.has [ tag "oskol-demo-board" ]
+                        , Query.has [ id "sentence" ]
+                        , Query.has [ id "roll-dice" ]
+                        ]
+        , test "the board is in the default colours" <|
+            \_ -> home loadedModel |> Query.find [ class "lh-board" ] |> Query.has [ class "bg-theme-midnight" ]
         , test "draws at once, before the game's data has come" <|
             \_ ->
                 home (page { guestName = Nothing } "backgammon" Nothing)
-                    |> Query.has [ class "home-board", id "start-game" ]
-        , test "its menu is four entries: create, join, puzzles, and one on its way" <|
+                    |> Expect.all [ Query.has [ id "roll-dice" ], Query.find [ id "sentence" ] >> Query.has [ text "a single game" ] ]
+        , test "the sentence starts on a single game against Sage with no clock" <|
             \_ ->
                 home loadedModel
-                    |> Query.find [ class "home-menu" ]
-                    |> Query.children []
+                    |> Query.find [ id "sentence" ]
                     |> Expect.all
-                        [ Query.count (Expect.equal 4)
-                        , Query.index 0 >> Query.has [ id "start-game", text "CREATE GAME" ]
-                        , Query.index 1 >> Query.has [ id "join-game-board", text "JOIN GAME" ]
-                        , Query.index 2 >> Query.has [ tag "button", id "puzzles", text "PUZZLES" ]
-                        , Query.index 2 >> Query.hasNot [ text "SOON" ]
-                        , Query.index 3 >> Query.has [ text "ANALYSIS", text "SOON", disabled ]
+                        [ Query.find [ id "pick-game" ] >> Query.has [ text "a single game" ]
+                        , Query.find [ id "pick-who" ] >> Query.has [ text "Sage" ]
+                        , Query.find [ id "sage-clock" ] >> Query.has [ text "no clock" ]
+                        , Query.hasNot [ id "pick-clock" ]
+                        ]
+        , test "and the button rolls the dice" <|
+            \_ -> home loadedModel |> Query.find [ id "roll-dice" ] |> Query.has [ text "Roll dice" ]
+        , test "a word of the sentence opens its menu" <|
+            \_ ->
+                home loadedModel
+                    |> Query.find [ id "pick-game" ]
+                    |> Event.simulate Event.click
+                    |> Event.expect (GameLanding.ToggledMenu GameLanding.GameMenu)
+        , test "the game's menu is every format, in the sentence's words, the current one marked" <|
+            \_ ->
+                home (send (GameLanding.ToggledMenu GameLanding.GameMenu) loadedModel)
+                    |> Query.find [ id "pick-game-menu" ]
+                    |> Expect.all
+                        [ Query.findAll [ attribute (Html.Attributes.attribute "role" "option") ] >> Query.count (Expect.equal 8)
+                        , Query.find [ id "pick-game-single" ] >> Query.has [ text "a single game", attribute (Html.Attributes.attribute "aria-selected" "true") ]
+                        , Query.find [ id "pick-game-match21" ] >> Query.has [ text "a match to 21" ]
+                        , Query.find [ id "pick-game-unlimited" ] >> Query.has [ text "an unlimited match" ]
+                        ]
+        , test "picking a game says it in the sentence and closes the menu" <|
+            \_ ->
+                loadedModel
+                    |> send (GameLanding.ToggledMenu GameLanding.GameMenu)
+                    |> send (GameLanding.PickedFormat "match7")
+                    |> home
+                    |> Expect.all
+                        [ Query.find [ id "pick-game" ] >> Query.has [ text "a match to 7" ]
+                        , Query.hasNot [ id "pick-game-menu" ]
+                        ]
+        , test "against a friend the clock is a menu too, and the button gets a link" <|
+            \_ ->
+                loadedModel
+                    |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                    |> home
+                    |> Expect.all
+                        [ Query.find [ id "pick-who" ] >> Query.has [ text "a friend" ]
+                        , Query.find [ id "pick-clock" ] >> Query.has [ text "no clock" ]
+                        , Query.hasNot [ id "sage-clock" ]
+                        , Query.find [ id "roll-dice" ] >> Query.has [ text "Get a link" ]
+                        ]
+        , test "the clock's menu is the seven the game offers, in words" <|
+            \_ ->
+                loadedModel
+                    |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                    |> send (GameLanding.ToggledMenu GameLanding.ClockMenu)
+                    |> home
+                    |> Query.find [ id "pick-clock-menu" ]
+                    |> Expect.all
+                        [ Query.findAll [ attribute (Html.Attributes.attribute "role" "option") ] >> Query.count (Expect.equal 7)
+                        , Query.find [ id "pick-clock-bg5" ] >> Query.has [ text "a 5 min clock" ]
+                        , Query.hasNot [ text "Blitz" ]
+                        ]
+        , test "Escape closes an open menu" <|
+            \_ -> Expect.notEqual Sub.none (GameLanding.subscriptions (send (GameLanding.ToggledMenu GameLanding.WhoMenu) loadedModel))
+        , test "against Sage, ROLL DICE makes the game at once, under the remembered name" <|
+            \_ ->
+                send GameLanding.RolledDice loadedModel
+                    |> Expect.all [ .busy >> Expect.equal True, .friendAsk >> Expect.equal False, .playerName >> Expect.equal "Alice" ]
+        , test "a visitor with no name plays Sage as Guest" <|
+            \_ -> send GameLanding.RolledDice blankModel |> .playerName |> Expect.equal "Guest"
+        , test "and \"Guest\" is not offered back as a name to a friend" <|
+            \_ ->
+                page { guestName = Just "Guest" } "backgammon" Nothing
+                    |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                    |> send GameLanding.RolledDice
+                    |> .playerName
+                    |> Expect.equal ""
+        , test "and never as Sage, which the room refuses beside the bot" <|
+            \_ ->
+                page { guestName = Just "sage" } "backgammon" Nothing
+                    |> send GameLanding.RolledDice
+                    |> .playerName
+                    |> Expect.equal "Guest"
+        , test "the dice tumble while the game is made" <|
+            \_ -> home (send GameLanding.RolledDice loadedModel) |> Query.find [ id "roll-dice" ] |> Query.has [ class "is-rolling" ]
+        , test "the game made is the seat to go to" <|
+            \_ ->
+                GameLanding.update (GameLanding.Seated (Ok { id = "123456", path = "/backgammon/123456" })) (send GameLanding.RolledDice loadedModel)
+                    |> (\( _, _, out ) -> out)
+                    |> Expect.equal (GameLanding.TookSeat { name = "Alice", path = "/backgammon/123456" })
+        , test "against a friend, a guest is asked for the name the friend will read" <|
+            \_ ->
+                loadedModel
+                    |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                    |> send GameLanding.RolledDice
+                    |> Expect.all
+                        [ .busy >> Expect.equal False
+                        , home >> Query.find [ id "friend-modal" ] >> Query.has [ id "friend-name", text "Invite a friend", id "friend-go" ]
+                        ]
+        , test "the name dialog submits, and a blank name is refused in it" <|
+            \_ ->
+                blankModel
+                    |> send (GameLanding.PickedOpponent GameLanding.AFriend)
+                    |> send GameLanding.RolledDice
+                    |> Expect.all
+                        [ home >> Query.find [ id "friend-modal" ] >> Query.find [ tag "form" ] >> Event.simulate Event.submit >> Event.expect GameLanding.Submitted
+                        , send GameLanding.Submitted >> home >> Query.find [ id "friend-modal" ] >> Query.has [ id "form-error", text "Pick a display name first" ]
+                        , send (GameLanding.NameChanged "Bob") >> send GameLanding.Submitted >> .busy >> Expect.equal True
                         ]
         , test "PUZZLES opens the practice home" <|
             \_ ->
@@ -204,27 +308,14 @@ homeBoard =
                 GameLanding.update GameLanding.PressedPuzzles loadedModel
                     |> (\( _, _, out ) -> out)
                     |> Expect.equal (GameLanding.Go "/puzzles")
-        , test "the one on its way is not a button: three to press, nothing more" <|
-            \_ ->
-                home loadedModel
-                    |> Query.find [ class "home-menu" ]
-                    |> Query.findAll [ tag "button" ]
-                    |> Query.count (Expect.equal 3)
-        , test "JOIN GAME is the shell's code prompt" <|
-            \_ ->
-                home loadedModel
-                    |> Query.find [ id "join-game-board" ]
-                    |> Event.simulate Event.click
-                    |> Event.expect GameLanding.NoOp
-        , test "the bar at the foot is the remembered name" <|
-            \_ -> home loadedModel |> Query.find [ class "is-me" ] |> Query.has [ text "Alice" ]
-        , test "or YOU for a visitor the site has never seen" <|
-            \_ -> home blankModel |> Query.find [ class "is-me" ] |> Query.has [ text "YOU" ]
+        , test "JOIN is the shell's code field in the bar" <|
+            \_ -> home loadedModel |> Query.has [ id "nav-join-code", id "home-join" ]
         , test "the board wears the colours this visitor picked" <|
             \_ ->
                 pageWith { guestName = Nothing, prefs = [ ( "backgammon_theme", "sand" ) ] }
                     |> home
-                    |> Query.has [ class "home-board", class "bg-theme-sand" ]
+                    |> Query.find [ class "lh-board" ]
+                    |> Query.has [ class "bg-theme-sand" ]
         , test "the name field prefills the remembered guest name" <|
             \_ -> Expect.equal "Alice" loadedModel.playerName
         , test "a fresh visitor starts with an empty field" <|
@@ -242,25 +333,16 @@ homeBoard =
 createDialog : Test
 createDialog =
     describe "CREATE GAME's dialog"
-        [ test "is closed until CREATE GAME is pressed" <|
-            \_ -> home loadedModel |> Query.hasNot [ id "create-modal" ]
-        , test "CREATE GAME opens it" <|
+        [ test "is closed until the signed-in home's PLAY opens it" <|
+            \_ -> dialog (createLoaded (Just "Alice")) |> Query.hasNot [ id "create-modal" ]
+        , test "once opened it is a dialog" <|
             \_ ->
-                home loadedModel
-                    |> Query.find [ id "start-game" ]
-                    |> Event.simulate Event.click
-                    |> Event.expect GameLanding.Started
-        , test "once opened it is a dialog over the board" <|
-            \_ ->
-                home opened
-                    |> Expect.all
-                        [ Query.has [ class "home-board" ]
-                        , Query.find [ id "create-modal" ]
-                            >> Query.has [ attribute (Html.Attributes.attribute "role" "dialog"), text "CREATE GAME" ]
-                        ]
+                dialog opened
+                    |> Query.find [ id "create-modal" ]
+                    |> Query.has [ attribute (Html.Attributes.attribute "role" "dialog"), text "CREATE GAME" ]
         , test "it holds the name, the mode, the clock and START GAME" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-modal" ]
                     |> Expect.all
                         [ Query.has [ id "create-name", text "YOUR NAME" ]
@@ -275,7 +357,7 @@ createDialog =
           -- here, and this is what says so.
           test "the mode dropdown lists every format, the first chosen" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-mode" ]
                     |> Query.findAll [ tag "option" ]
                     |> Expect.all
@@ -288,7 +370,7 @@ createDialog =
                         ]
         , test "the clock dropdown is the seven the game offers, each with its delay" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-clock" ]
                     |> Query.findAll [ tag "option" ]
                     |> Expect.all
@@ -303,50 +385,47 @@ createDialog =
                         ]
         , test "a clock the game does not offer is not in it" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-clock" ]
                     |> Query.hasNot [ text "Blitz" ]
         , test "the summary says what the dropdowns add up to" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-summary" ]
                     |> Query.has [ text "Single game: one game, no cube. No clock." ]
         , test "the close button closes it" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "close-create" ]
                     |> Event.simulate Event.click
                     |> Event.expect GameLanding.ClosedCreate
-        , test "closed, it is gone and the board stays" <|
+        , test "closed, it is gone" <|
             \_ ->
-                home (send GameLanding.ClosedCreate opened)
-                    |> Expect.all
-                        [ Query.hasNot [ id "create-modal" ]
-                        , Query.has [ id "start-game" ]
-                        ]
+                dialog (send GameLanding.ClosedCreate opened)
+                    |> Query.hasNot [ id "create-modal" ]
         , test "if the game's data never came, it says so instead of opening nothing" <|
             \_ ->
-                page { guestName = Nothing } "backgammon" Nothing
+                createPage Nothing
                     |> send (GameLanding.GotGame (Err (Api.ApiError { code = "server_error", message = "Something went wrong" })))
                     |> send GameLanding.Started
                     |> send (GameLanding.GotGame (Err (Api.ApiError { code = "server_error", message = "Something went wrong" })))
-                    |> home
+                    |> dialog
                     |> Query.find [ id "create-modal" ]
                     |> Query.has [ id "form-error", text "Something went wrong" ]
         , test "and CREATE GAME asks for it again" <|
             \_ ->
-                page { guestName = Nothing } "backgammon" Nothing
+                createPage Nothing
                     |> send (GameLanding.GotGame (Err (Api.ApiError { code = "server_error", message = "Something went wrong" })))
                     |> send GameLanding.Started
                     |> send (GameLanding.GotGame (Api.parseBody Catalog.gamePageDecoder gameJson))
-                    |> home
+                    |> dialog
                     |> Query.find [ id "create-modal" ]
                     |> Query.has [ id "create-mode" ]
         , test "it waits for the game's data: opened early it shows nothing yet" <|
             \_ ->
-                page { guestName = Nothing } "backgammon" Nothing
+                createPage Nothing
                     |> send GameLanding.Started
-                    |> home
+                    |> dialog
                     |> Query.hasNot [ id "create-modal" ]
         ]
 
@@ -359,7 +438,7 @@ opponents =
     describe "choosing an opponent"
         [ test "the dialog offers a friend or the bot, a friend chosen" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-modal" ]
                     |> Expect.all
                         [ Query.has [ text "OPPONENT" ]
@@ -378,13 +457,13 @@ opponents =
                         ]
         , test "the bot tile picks the bot" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-opponent-bot" ]
                     |> Event.simulate Event.click
                     |> Event.expect (GameLanding.PickedOpponent GameLanding.TheBot)
         , test "with the bot picked, the clock goes and MODE keeps the row" <|
             \_ ->
-                home (send (GameLanding.PickedOpponent GameLanding.TheBot) opened)
+                dialog (send (GameLanding.PickedOpponent GameLanding.TheBot) opened)
                     |> Query.find [ id "create-modal" ]
                     |> Expect.all
                         [ Query.has [ id "create-mode" ]
@@ -396,12 +475,12 @@ opponents =
                 opened
                     |> send (GameLanding.PickedFormat "match7")
                     |> send (GameLanding.PickedOpponent GameLanding.TheBot)
-                    |> home
+                    |> dialog
                     |> Query.find [ id "create-summary" ]
                     |> Query.has [ text "Match to 7 against Sage. No clock." ]
         , test "the button and the footnote say the game starts now" <|
             \_ ->
-                home (send (GameLanding.PickedOpponent GameLanding.TheBot) opened)
+                dialog (send (GameLanding.PickedOpponent GameLanding.TheBot) opened)
                     |> Query.find [ id "create-modal" ]
                     |> Expect.all
                         [ Query.find [ id "create-game" ] >> Query.has [ text "PLAY SAGE" ]
@@ -412,7 +491,7 @@ opponents =
                 opened
                     |> send (GameLanding.PickedClock "bg10")
                     |> send (GameLanding.PickedOpponent GameLanding.TheBot)
-                    |> home
+                    |> dialog
                     |> Query.find [ id "create-summary" ]
                     |> Query.has [ text "No clock." ]
         , test "going back to a friend brings the clock and the link back" <|
@@ -420,7 +499,7 @@ opponents =
                 opened
                     |> send (GameLanding.PickedOpponent GameLanding.TheBot)
                     |> send (GameLanding.PickedOpponent GameLanding.AFriend)
-                    |> home
+                    |> dialog
                     |> Query.find [ id "create-modal" ]
                     |> Expect.all
                         [ Query.has [ id "create-clock" ]
@@ -435,13 +514,13 @@ picking =
     describe "picking"
         [ test "a mode is picked from its dropdown" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-mode" ]
                     |> Event.simulate (Event.input "match5")
                     |> Event.expect (GameLanding.PickedFormat "match5")
         , test "picking a mode selects it and says so in the summary" <|
             \_ ->
-                home (send (GameLanding.PickedFormat "match5") opened)
+                dialog (send (GameLanding.PickedFormat "match5") opened)
                     |> Expect.all
                         [ Query.find [ id "create-mode" ]
                             >> Query.find [ value "match5" ]
@@ -451,13 +530,13 @@ picking =
                         ]
         , test "the clock dropdown sends the clock picked" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-clock" ]
                     |> Event.simulate (Event.input "bg10")
                     |> Event.expect (GameLanding.PickedClock "bg10")
         , test "a clock picked is selected, and the summary spells it out" <|
             \_ ->
-                home (send (GameLanding.PickedClock "bg3") opened)
+                dialog (send (GameLanding.PickedClock "bg3") opened)
                     |> Expect.all
                         [ Query.find [ id "create-clock" ]
                             >> Query.find [ value "bg3" ]
@@ -467,7 +546,7 @@ picking =
                         ]
         , test "the dialog offers a mode and a clock, and nothing else" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.findAll [ tag "select" ]
                     |> Query.count (Expect.equal 2)
         ]
@@ -478,7 +557,7 @@ submitting =
     describe "submitting"
         [ test "START GAME submits the dialog's form" <|
             \_ ->
-                home opened
+                dialog opened
                     |> Query.find [ id "create-modal" ]
                     |> Query.find [ tag "form" ]
                     |> Event.simulate Event.submit
@@ -500,39 +579,39 @@ submitting =
                     |> Expect.equal (GameLanding.TookSeat { name = "Alice", path = "/backgammon/123456?t=secret" })
         , test "a blank name is refused inline, in the dialog" <|
             \_ ->
-                blankModel
+                blankCreate
                     |> send GameLanding.Started
                     |> send GameLanding.Submitted
-                    |> home
+                    |> dialog
                     |> Query.find [ id "create-modal" ]
                     |> Query.find [ id "form-error" ]
                     |> Query.has [ text "Pick a display name first" ]
         , test "a blank name does not reach the server" <|
             \_ ->
-                blankModel
+                blankCreate
                     |> send GameLanding.Started
                     |> send GameLanding.Submitted
                     |> .busy
                     |> Expect.equal False
         , test "a name that is fine leaves the dialog without an error" <|
             \_ ->
-                blankModel
+                blankCreate
                     |> send GameLanding.Started
                     |> send (GameLanding.NameChanged "Alice")
                     |> send GameLanding.Submitted
-                    |> home
+                    |> dialog
                     |> Query.hasNot [ id "form-error" ]
         , test "picking anything clears the error" <|
             \_ ->
-                blankModel
+                blankCreate
                     |> send GameLanding.Started
                     |> send GameLanding.Submitted
                     |> send (GameLanding.PickedFormat "match3")
-                    |> home
+                    |> dialog
                     |> Query.hasNot [ id "form-error" ]
         , test "a server error comes back as the same line in the dialog" <|
             \_ ->
-                blankModel
+                blankCreate
                     |> send GameLanding.Started
                     |> send
                         (GameLanding.Seated
@@ -544,7 +623,7 @@ submitting =
                                 )
                             )
                         )
-                    |> home
+                    |> dialog
                     |> Query.find [ id "create-modal" ]
                     |> Query.find [ id "form-error" ]
                     |> Query.has [ text "That name is already taken" ]
@@ -590,8 +669,8 @@ boardPicker =
                     |> send (GameLanding.PickedTheme "sand")
                     |> home
                     |> Expect.all
-                        [ Query.find [ class "home-board" ] >> Query.has [ class "bg-theme-sand" ]
-                        , Query.find [ class "home-board" ] >> Query.hasNot [ class "bg-theme-midnight" ]
+                        [ Query.find [ class "lh-board" ] >> Query.has [ class "bg-theme-sand" ]
+                        , Query.find [ class "lh-board" ] >> Query.hasNot [ class "bg-theme-midnight" ]
                         , Query.hasNot [ id "bg-theme-list" ]
                         ]
         , test "and tells the shell to keep it" <|
@@ -641,8 +720,8 @@ invites =
             \_ ->
                 invite Catalog.Open
                     |> Expect.all
-                        [ Query.hasNot [ class "home-board" ]
-                        , Query.hasNot [ id "start-game" ]
+                        [ Query.hasNot [ class "lh" ]
+                        , Query.hasNot [ id "roll-dice" ]
                         ]
         , test "the home page is only the page with no room in the URL" <|
             \_ ->
@@ -670,9 +749,11 @@ loadedModel =
 resume : Test
 resume =
     describe "the games you can resume"
-        [ test "arriving with games open, the list is over the board, one row each, a link to the seat" <|
+        [ test "arriving with games opens nothing: the bar offers them" <|
+            \_ -> home withGames |> Expect.all [ Query.hasNot [ id "resume-modal" ], Query.has [ id "resume-games" ] ]
+        , test "the bar's button opens the list, one row each, a link to the seat" <|
             \_ ->
-                home withGames
+                home withGamesOpen
                     |> Expect.all
                         [ Query.has [ id "resume-modal", text "LIVE GAMES" ]
                         , Query.find [ id "signup-cta" ] >> Query.has [ text "Sign up" ]
@@ -682,20 +763,20 @@ resume =
                         ]
         , test "the bar's button says how many are waiting, and what to do" <|
             \_ ->
-                home withGames
+                home withGamesOpen
                     |> Query.find [ id "resume-games" ]
-                    |> Query.has [ text "REJOIN 2 GAMES" ]
+                    |> Query.has [ text "2 live games" ]
         , test "closing it leaves the board and the bar's button" <|
             \_ ->
-                home (send GameLanding.ClosedResume withGames)
+                home (send GameLanding.ClosedResume withGamesOpen)
                     |> Expect.all
                         [ Query.hasNot [ id "resume-modal" ]
-                        , Query.has [ id "start-game" ]
+                        , Query.has [ id "roll-dice" ]
                         , Query.has [ id "resume-games" ]
                         ]
         , test "the ✕ closes it" <|
             \_ ->
-                home withGames
+                home withGamesOpen
                     |> Query.find [ id "close-resume" ]
                     |> Event.simulate Event.click
                     |> Event.expect GameLanding.ClosedResume
@@ -711,30 +792,29 @@ resume =
                     [ \m -> Expect.notEqual Sub.none (GameLanding.subscriptions m)
                     , \m -> Expect.equal Sub.none (GameLanding.subscriptions (send GameLanding.ClosedResume m))
                     ]
-                    withGames
-        , test "a visitor with nothing to resume sees neither the list nor the button, and the bar shows pips" <|
+                    withGamesOpen
+        , test "a visitor with nothing to resume sees neither the list nor the button" <|
             \_ ->
                 home (send (GameLanding.GotMyGames (Ok [])) loadedModel)
                     |> Expect.all
                         [ Query.hasNot [ id "resume-modal" ]
                         , Query.hasNot [ id "resume-games" ]
-                        , Query.has [ class "bar-pips" ]
                         ]
         , test "the list failing to come changes nothing" <|
             \_ ->
                 home (send (GameLanding.GotMyGames (Err Api.NetworkError)) loadedModel)
                     |> Query.hasNot [ id "resume-modal" ]
-        , test "one game is REJOIN 1 GAME, and their move is quiet" <|
+        , test "one game is 1 live game, and their move is quiet" <|
             \_ ->
-                home (send (GameLanding.GotMyGames (Ok [ { playing | yourMove = False } ])) loadedModel)
+                home (send GameLanding.OpenedResume (send (GameLanding.GotMyGames (Ok [ { playing | yourMove = False } ])) loadedModel))
                     |> Expect.all
-                        [ Query.find [ id "resume-games" ] >> Query.has [ text "REJOIN 1 GAME" ]
+                        [ Query.find [ id "resume-games" ] >> Query.has [ text "1 live game" ]
                         , Query.find [ id "resume-123456" ] >> Query.has [ text "Their move" ]
                         ]
         , test "the clocks show as of the row, the running side charged for the time since" <|
             \_ ->
                 -- 171 s left, running, read 150 s ago: 21 s show; the other side is whole.
-                home withGames
+                home withGamesOpen
                     |> Query.find [ id "resume-123456" ]
                     |> Query.has [ text "0:21", text "3:00" ]
         , test "my running clock breathes; theirs does not" <|
@@ -744,13 +824,14 @@ resume =
                     , \m ->
                         m
                             |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 171000, theirsMs = 180000, running = Catalog.Theirs, freeMs = 0, ageS = 150 } } ]))
+                            |> send GameLanding.OpenedResume
                             |> home
                             |> Query.hasNot [ class "clock-live" ]
                     ]
-                    withGames
+                    withGamesOpen
         , test "and the seconds tick while the list is open" <|
             \_ ->
-                withGames
+                withGamesOpen
                     |> send (GameLanding.ListArrived (Time.millisToPosix 1000000))
                     |> send (GameLanding.Tick (Time.millisToPosix 1010000))
                     |> home
@@ -760,6 +841,7 @@ resume =
             \_ ->
                 loadedModel
                     |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 180000, theirsMs = 180000, running = Catalog.Mine, freeMs = 12000, ageS = 5 } } ]))
+                    |> send GameLanding.OpenedResume
                     |> home
                     |> Query.find [ id "resume-123456" ]
                     |> Query.findAll [ class "clock-mine", class "clock-live" ]
@@ -768,42 +850,16 @@ resume =
             \_ ->
                 loadedModel
                     |> send (GameLanding.GotMyGames (Ok [ { playing | time = Just { mineMs = 180000, theirsMs = 180000, running = Catalog.Mine, freeMs = 12000, ageS = 5 } } ]))
+                    |> send GameLanding.OpenedResume
                     |> home
                     |> Query.find [ id "resume-123456" ]
                     |> Query.find [ class "clock-live" ]
                     |> Query.has [ text "3:00" ]
-        , test "nor over the board picker" <|
-            \_ ->
-                loadedModel
-                    |> send GameLanding.ToggledThemes
-                    |> send (GameLanding.GotMyGames (Ok [ playing ]))
-                    |> home
-                    |> Expect.all
-                        [ Query.hasNot [ id "resume-modal" ]
-                        , Query.has [ id "bg-theme-list" ]
-                        , Query.has [ id "resume-games" ]
-                        ]
-        , test "the list does not open over CREATE GAME's dialog" <|
-            \_ ->
-                opened
-                    |> send (GameLanding.GotMyGames (Ok [ playing ]))
-                    |> home
-                    |> Expect.all
-                        [ Query.hasNot [ id "resume-modal" ]
-                        , Query.has [ id "create-modal" ]
-                        , Query.has [ id "resume-games" ]
-                        ]
         , test "the pitch under the list names what an account is for, and the games it would keep" <|
             \_ ->
-                home withGames
+                home withGamesOpen
                     |> Query.find [ id "guest-note" ]
                     |> Query.has [ text "logged in as a guest on this device", text "Want to get better for free?", text "Every device", text "4-ply analysis", text "Openings", text "Mistake practice", text "PR over time", text "Secure account", id "signup-cta" ]
-        , test "the menu is still its four entries: the button lives in the bar, not the band" <|
-            \_ ->
-                home withGames
-                    |> Query.find [ class "home-menu" ]
-                    |> Query.children []
-                    |> Query.count (Expect.equal 4)
         ]
 
 
@@ -846,11 +902,40 @@ withGames =
     send (GameLanding.GotMyGames (Ok [ playing, lobby ])) loadedModel
 
 
-{-| The home page with CREATE GAME pressed.
+{-| The same, with the bar's "2 live games" pressed. -}
+withGamesOpen : GameLanding.Model
+withGamesOpen =
+    send GameLanding.OpenedResume withGames
+
+
+{-| CREATE GAME's dialog opened, as the signed-in home opens it
+(`GameLanding.createOnly`, then `Started`).
 -}
 opened : GameLanding.Model
 opened =
-    send GameLanding.Started loadedModel
+    send GameLanding.Started (createLoaded (Just "Alice"))
+
+
+createPage : Maybe String -> GameLanding.Model
+createPage guestName =
+    GameLanding.createOnly (session guestName []) "backgammon" |> Tuple.first
+
+
+createLoaded : Maybe String -> GameLanding.Model
+createLoaded guestName =
+    createPage guestName |> send (GameLanding.GotGame (Api.parseBody Catalog.gamePageDecoder gameJson))
+
+
+{-| The dialog for a visitor the site has never seen: an empty name field.
+-}
+blankCreate : GameLanding.Model
+blankCreate =
+    createLoaded Nothing
+
+
+dialog : GameLanding.Model -> Query.Single GameLanding.Msg
+dialog model =
+    Html.div [] [ GameLanding.createModal model ] |> Query.fromHtml
 
 
 {-| The same page for a visitor the site has never seen: an empty name field.
@@ -921,7 +1006,7 @@ render model =
 -}
 home : GameLanding.Model -> Query.Single GameLanding.Msg
 home model =
-    Html.div [] (GameLanding.home { join = Shell.joinButton shell, toMsg = identity } model)
+    Html.div [] (GameLanding.home { join = Shell.navJoin shell, toMsg = identity } model)
         |> Query.fromHtml
 
 
