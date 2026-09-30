@@ -2459,9 +2459,18 @@ oskol-demo-board {
   color: var(--ink);
 }
 .lh button, .lh input { font-family: inherit; color: inherit; }
-/* the themes panel brings its own dark ground and its own ink */
-.lh .bg-theme-option { color: rgba(255, 255, 255, 0.72); }
-.lh .bg-theme-option:hover, .lh .bg-theme-option.on { color: #fff; }
+/* The themes panel on paper: a solid white sheet like the page's other
+   menus (the table's dark glass let the page show through), names in
+   pencil, the chosen board ringed in ink. */
+.lh .bg-theme-list {
+  background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none;
+  border: 1px solid var(--hair); box-shadow: 0 18px 40px -16px rgba(35, 36, 58, 0.45);
+}
+.lh .bg-theme-option { color: var(--pencil); }
+.lh .bg-theme-option:hover, .lh .bg-theme-option.on { color: var(--ink); }
+.lh .bg-theme-chip { box-shadow: inset 0 0 0 1px rgba(35, 36, 58, 0.14), 0 2px 6px rgba(35, 36, 58, 0.18); }
+.lh .bg-theme-option:hover .bg-theme-chip { box-shadow: inset 0 0 0 1px rgba(35, 36, 58, 0.2), 0 10px 20px -8px rgba(35, 36, 58, 0.4); }
+.lh .bg-theme-option.on .bg-theme-chip { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--ink), 0 8px 18px -8px rgba(35, 36, 58, 0.45); }
 
 /* the bar */
 .lh-bar {
@@ -2658,7 +2667,9 @@ oskol-demo-board {
   /* the bar: the bird, the themes and ☰ -- the rest is in ☰ */
   #puzzles, .lh-join-wrap, #resume-games, #signin-button, .lh-account-wrap { display: none; }
   .lh-more { display: block; }
-  .lh .bg-theme-list { position: fixed; top: 68px; left: 12px; right: 12px; width: auto; }
+  /* the themes on a phone: three to a row, so the whole choice fits the screen at a glance */
+  .lh .bg-theme-list { position: fixed; top: 68px; left: 12px; right: 12px; width: auto; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; }
+  .lh .bg-theme-option { font-size: 10.5px; gap: 5px; }
   .lh-board { aspect-ratio: 1.53; }
   .lh-title { font-size: clamp(36px, 12.5vw, 56px); }
   .lh-tagline { font-size: 16.5px; }
