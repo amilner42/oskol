@@ -264,6 +264,7 @@ pub fn claim(
 /// in play is left by resigning, and unlimited play is ended between games
 /// by the `close` action, which the game itself decides on (a match to a
 /// target is never closable -- it ends when somebody reaches it).
+///
 /// Nothing a stranger presses may rebuild a room from its log. A lookup
 /// rehydrates, so the row answers first: it says whether there is a room at
 /// all, whether it has a game in it (in which case nothing needs waking),
@@ -298,14 +299,14 @@ pub fn close(
         // Closed already: a second press, or a retry of a request that
         // timed out after the write landed, is the same yes. Nothing is
         // woken to say so -- the rehydrator would refuse the row anyway.
-        status if status == closed_status ->
-          answer(held_in(row, session), Ok(Nil))
+        status if status == closed_status -> only_a_seat(row, session, Ok(Nil))
         // There is a game in it, or there was. A game is left at the table
         // -- by resigning, or between the games of unlimited play by
         // ending the session -- and a room that is over is over.
         _ ->
-          answer(
-            held_in(row, session),
+          only_a_seat(
+            row,
+            session,
             Error(Refused(errors.message(errors.GameAlreadyStarted))),
           )
       }
@@ -329,10 +330,15 @@ fn held_in(row: room.ActiveRoom, session: Session) -> Bool {
   seat.held_by(seat.of_rows(row.seats), session) != None
 }
 
-/// One sentence for a stranger wherever the row alone decides, so nothing
-/// about a room they hold no seat in reaches them.
-fn answer(held: Bool, verdict: Result(Nil, JoinError)) -> Result(Nil, JoinError) {
-  case held {
+/// The verdict, but only for a seat: wherever the row alone decides,
+/// somebody who holds no seat there reads the one sentence a stranger
+/// reads anywhere else, and learns nothing about the room.
+fn only_a_seat(
+  row: room.ActiveRoom,
+  session: Session,
+  verdict: Result(Nil, JoinError),
+) -> Result(Nil, JoinError) {
+  case held_in(row, session) {
     True -> verdict
     False -> Error(Refused(errors.message(errors.NoSeat)))
   }
