@@ -5,6 +5,7 @@
 import backgammon/analysis.{Passed, Took}
 import backgammon/board.{Bar, Black, Off, Point, White}
 import backgammon/engine
+import backgammon/engine_board
 import backgammon/game as backgammon
 import backgammon/positions
 import backgammon/record
@@ -34,8 +35,8 @@ const opening = [
 // ---------- The board ----------
 
 pub fn the_opening_position_is_the_engines_for_either_mover_test() {
-  assert analysis.encode(board.initial(), White) == opening
-  assert analysis.encode(board.initial(), Black) == opening
+  assert engine_board.encode(board.initial(), White) == opening
+  assert engine_board.encode(board.initial(), Black) == opening
 }
 
 pub fn the_bar_is_25_for_the_mover_and_0_for_the_opponent_test() {
@@ -46,7 +47,7 @@ pub fn the_bar_is_25_for_the_mover_and_0_for_the_opponent_test() {
       #(Black, Bar, 2),
       #(Black, Point(19), 13),
     ])
-  let white = analysis.encode(b, White)
+  let white = engine_board.encode(b, White)
   assert list.length(white) == 26
   assert at(white, 25) == 1
   // Both bars are counts: bgsage's format, whatever the service doc says
@@ -54,7 +55,7 @@ pub fn the_bar_is_25_for_the_mover_and_0_for_the_opponent_test() {
   assert at(white, 6) == 14
   // Black's 19-point is White's 19-point seen from White: index 19
   assert at(white, 19) == -13
-  let black = analysis.encode(b, Black)
+  let black = engine_board.encode(b, Black)
   assert at(black, 25) == 2
   assert at(black, 0) == 1
   // Black moves 1 -> 24, so their 19-point is their own 6-point
@@ -71,7 +72,7 @@ pub fn black_points_count_from_blacks_side_test() {
       #(Black, Point(24), 14),
       #(White, Point(3), 15),
     ])
-  let black = analysis.encode(b, Black)
+  let black = engine_board.encode(b, Black)
   assert at(black, 24) == 1
   assert at(black, 1) == 14
   assert at(black, 22) == -15
@@ -86,7 +87,7 @@ pub fn borne_off_checkers_are_not_stored_test() {
       #(Black, Point(24), 3),
       #(Black, Off, 12),
     ])
-  let white = analysis.encode(b, White)
+  let white = engine_board.encode(b, White)
   assert int.sum(list.filter(white, fn(n) { n > 0 })) == 3
   assert int.sum(list.filter(white, fn(n) { n < 0 })) == -3
   assert at(white, 1) == 2
@@ -94,7 +95,7 @@ pub fn borne_off_checkers_are_not_stored_test() {
   // Black's 24-point is their own 1-point: index 1 from Black's side,
   // index 24 from White's.
   assert at(white, 24) == -3
-  let black = analysis.encode(b, Black)
+  let black = engine_board.encode(b, Black)
   assert at(black, 1) == 3
   assert at(black, 24) == -2
 }
@@ -108,20 +109,20 @@ fn match_state(format: String) -> state.GameState {
 }
 
 pub fn a_centred_cube_and_a_money_game_test() {
-  let p = analysis.position(match_state("unlimited"), White)
+  let p = engine_board.position(match_state("unlimited"), White)
   assert p.board == opening
   assert p.cube_value == 1
   assert p.cube_owner == "centered"
   assert #(p.away1, p.away2) == #(0, 0)
   assert p.crawford == False
-  assert analysis.engine_can_double(p)
+  assert engine_board.engine_can_double(p)
 }
 
 pub fn a_single_game_is_one_point_each_test() {
-  let p = analysis.position(match_state("single"), Black)
+  let p = engine_board.position(match_state("single"), Black)
   assert #(p.away1, p.away2) == #(1, 1)
   // Double-match-point: nothing to double for
-  assert !analysis.engine_can_double(p)
+  assert !engine_board.engine_can_double(p)
 }
 
 pub fn the_cube_owner_is_relative_to_the_mover_test() {
@@ -131,13 +132,13 @@ pub fn the_cube_owner_is_relative_to_the_mover_test() {
       cube_value: 2,
       cube_owner: Some(White),
     )
-  let white = analysis.position(s, White)
-  let black = analysis.position(s, Black)
+  let white = engine_board.position(s, White)
+  let black = engine_board.position(s, Black)
   assert white.cube_value == 2
   assert white.cube_owner == "player"
   assert black.cube_owner == "opponent"
-  assert analysis.engine_can_double(white)
-  assert !analysis.engine_can_double(black)
+  assert engine_board.engine_can_double(white)
+  assert !engine_board.engine_can_double(black)
 }
 
 pub fn away_scores_are_the_movers_first_test() {
@@ -146,8 +147,8 @@ pub fn away_scores_are_the_movers_first_test() {
       ..match_state("match5"),
       scores: dict.from_list([#("p1", 3), #("p2", 1)]),
     )
-  let white = analysis.position(s, White)
-  let black = analysis.position(s, Black)
+  let white = engine_board.position(s, White)
+  let black = engine_board.position(s, Black)
   assert #(white.away1, white.away2) == #(2, 4)
   assert #(black.away1, black.away2) == #(4, 2)
 }
@@ -159,10 +160,10 @@ pub fn the_crawford_game_is_flagged_and_has_no_cube_test() {
       scores: dict.from_list([#("p1", 4), #("p2", 1)]),
       crawford: True,
     )
-  let p = analysis.position(s, Black)
+  let p = engine_board.position(s, Black)
   assert p.crawford
   assert #(p.away1, p.away2) == #(4, 1)
-  assert !analysis.engine_can_double(p)
+  assert !engine_board.engine_can_double(p)
 }
 
 pub fn a_dead_cube_is_not_a_double_the_engine_takes_test() {
@@ -174,7 +175,7 @@ pub fn a_dead_cube_is_not_a_double_the_engine_takes_test() {
       cube_value: 2,
       cube_owner: Some(White),
     )
-  assert !analysis.engine_can_double(analysis.position(s, White))
+  assert !engine_board.engine_can_double(engine_board.position(s, White))
 }
 
 pub fn the_position_is_the_board_the_turn_began_on_test() {
@@ -182,7 +183,7 @@ pub fn the_position_is_the_board_the_turn_began_on_test() {
   let b = board.initial()
   let s = positions.position(1, b, [3, 1])
   let assert Ok(#(staged, _)) = state.stage(s, "p1", Point(8), Point(5))
-  assert analysis.position(staged, White).board == opening
+  assert engine_board.position(staged, White).board == opening
 }
 
 // ---------- Turns from a log ----------
@@ -549,7 +550,8 @@ fn check_entries(games: List(analysis.GameTurns), final: state.GameState) {
         Some(i), Some(played) -> {
           let assert record.Turn(player: p, position: pos, ..) = line(i)
           assert p == turn.player_id
-          assert analysis.decode(played, color) == Ok(#(pos.white, pos.black))
+          assert engine_board.decode(played, color)
+            == Ok(#(pos.white, pos.black))
         }
         None, None -> Nil
         _, _ -> panic as "a played board without its record line"
@@ -674,7 +676,7 @@ pub fn a_match_tells_the_engine_the_score_and_crawford_test() {
   let assert [crawford] = crawford_games
   let assert Ok(g) = list.find(games, fn(g) { g.number == crawford })
   list.each(g.turns, fn(turn) {
-    assert !analysis.engine_can_double(turn.position)
+    assert !engine_board.engine_can_double(turn.position)
     assert turn.double == None
   })
 }
@@ -731,15 +733,15 @@ pub fn a_board_reads_back_as_the_record_draws_it_test() {
   positions.each_random(200, fn(_seed, b, _dice) {
     let snap = record.snapshot(b, 1, None)
     list.each([White, Black], fn(mover) {
-      assert analysis.decode(analysis.encode(b, mover), mover)
+      assert engine_board.decode(engine_board.encode(b, mover), mover)
         == Ok(#(snap.white, snap.black))
     })
   })
   let snap = record.snapshot(board.initial(), 1, None)
-  assert analysis.decode(opening, White) == Ok(#(snap.white, snap.black))
-  assert analysis.decode(opening, Black) == Ok(#(snap.white, snap.black))
-  assert analysis.decode([0, 1, 2], White) == Error(Nil)
-  assert analysis.decode([], White) == Error(Nil)
+  assert engine_board.decode(opening, White) == Ok(#(snap.white, snap.black))
+  assert engine_board.decode(opening, Black) == Ok(#(snap.white, snap.black))
+  assert engine_board.decode([0, 1, 2], White) == Error(Nil)
+  assert engine_board.decode([], White) == Error(Nil)
 }
 
 pub fn landings_are_the_points_that_gained_the_movers_checkers_test() {
@@ -748,9 +750,9 @@ pub fn landings_are_the_points_that_gained_the_movers_checkers_test() {
     0, -2, 0, 0, 0, 2, 4, 0, 2, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -5, 0, 0, 0, 0,
     2, 0,
   ]
-  assert analysis.landings(opening, made_the_5, White) == [5, 5]
+  assert engine_board.landings(opening, made_the_5, White) == [5, 5]
   // The same boards from Black's side: their 5-point is Oskol's 20
-  assert analysis.landings(opening, made_the_5, Black) == [20, 20]
+  assert engine_board.landings(opening, made_the_5, Black) == [20, 20]
   // A hit: the blot's point turns from theirs to mine, and they go to the bar
   let blot = [
     0, -2, 0, 0, 0, 0, 5, 0, 3, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -4, -1, 0, 0, 0,
@@ -760,7 +762,7 @@ pub fn landings_are_the_points_that_gained_the_movers_checkers_test() {
     1, -2, 0, 0, 0, 0, 5, 0, 3, 0, 0, 0, -5, 5, 0, 0, 0, -3, 0, -4, 1, 0, 0, 0,
     1, 0,
   ]
-  assert analysis.landings(blot, hit, White) == [20]
+  assert engine_board.landings(blot, hit, White) == [20]
   // A checker borne off lands nowhere; one that moves within lands once
   let home = [
     0,
@@ -818,7 +820,7 @@ pub fn landings_are_the_points_that_gained_the_movers_checkers_test() {
     0,
     0,
   ]
-  assert analysis.landings(home, off, White) == [1]
+  assert engine_board.landings(home, off, White) == [1]
 }
 
 fn check_alternation(turns: List(analysis.Turn)) {
@@ -838,7 +840,7 @@ fn check_turn(turn: analysis.Turn) {
   // The engine refuses a double it thinks illegal: we never send one
   case turn.double {
     Some(_) -> {
-      assert analysis.engine_can_double(p)
+      assert engine_board.engine_can_double(p)
     }
     None -> Nil
   }
@@ -1035,12 +1037,12 @@ pub fn the_generator_agrees_with_the_rules_on_random_boards_test() {
               let #(next, _, _) = board.apply_move(acc, mover, m)
               next
             })
-          analysis.encode(after, mover)
+          engine_board.encode(after, mover)
         })
         |> list.unique
         |> list.sort(compare_boards)
       let engine =
-        legal_boards(analysis.encode(b, mover), roll)
+        legal_boards(engine_board.encode(b, mover), roll)
         |> list.sort(compare_boards)
       assert oskol == engine
     })

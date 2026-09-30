@@ -10,8 +10,8 @@
 //// sides of a frozen contract should be tested against one artefact, not
 //// against two people's readings of a document.
 
-import backgammon/analysis
 import backgammon/board.{type Board, Black, Point, White}
+import backgammon/engine_board
 import gleam/dict
 import gleam/int
 import gleam/json
@@ -125,7 +125,7 @@ fn path_to(
     Some(n) ->
       case n.children {
         [] ->
-          case analysis.encode(n.board, White) == target {
+          case engine_board.encode(n.board, White) == target {
             True -> list.reverse(so_far)
             False -> []
           }
@@ -233,7 +233,7 @@ fn move_puzzle(id: String, b: Board, roll: #(Int, Int)) -> Stored {
   let question =
     Question(
       kind: Move,
-      board: analysis.encode(b, White),
+      board: engine_board.encode(b, White),
       dice: Some(roll),
       cube_value: 1,
       cube_owner: Centered,
@@ -280,7 +280,7 @@ fn terminals(b: Board, roll: #(Int, Int)) -> List(List(Int)) {
     Ok(t) ->
       t.nodes
       |> list.filter(fn(n) { n.children == [] })
-      |> list.map(fn(n) { analysis.encode(n.board, White) })
+      |> list.map(fn(n) { engine_board.encode(n.board, White) })
   }
 }
 
@@ -314,7 +314,7 @@ fn cube_puzzle(kind: Kind) -> Stored {
   let question =
     Question(
       kind: kind,
-      board: analysis.encode(hit_board(), White),
+      board: engine_board.encode(hit_board(), White),
       dice: None,
       cube_value: 2,
       cube_owner: Mover,

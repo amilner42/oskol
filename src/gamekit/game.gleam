@@ -60,6 +60,14 @@ pub type Timeout(action) {
   Act(action)
 }
 
+/// The analysis engine as a closure: a route under the engine's base URL and
+/// a JSON request body in, the JSON response body out, or a sentence saying
+/// why nothing came back. A game's `bot` is handed one so the brain stays
+/// pure -- deciding what to ask and what the answer means -- while the
+/// platform owns the socket, the timeout and the retries.
+pub type Ask =
+  fn(String, String) -> Result(String, String)
+
 pub type Game(state, action) {
   Game(
     info: Info,
@@ -85,7 +93,26 @@ pub type Game(state, action) {
     /// (served on request, never in every update): `None` for a game that
     /// keeps none (`no_record`). It must hold only what every seat may see.
     record: fn(state) -> Option(Json),
+    /// What a bot seat does now: the actions to take, in order, as the same
+    /// `{"name", "params"}` objects a browser sends. Called only for a seat
+    /// whose turn it is, off the room, with the engine as a closure.
+    ///
+    /// `attempts` is how many asks have already come back empty for this
+    /// decision, so a game can give up in its own words rather than leave a
+    /// board that never moves -- the platform never learns what giving up
+    /// is called here. An empty list means there is nothing to do.
+    bot: fn(state, PlayerId, Ask, Int) -> Result(List(Json), String),
   )
+}
+
+/// For a game with no bot: a seat nobody drives.
+pub fn no_bot(
+  _state: state,
+  _player_id: PlayerId,
+  _ask: Ask,
+  _attempts: Int,
+) -> Result(List(Json), String) {
+  Ok([])
 }
 
 /// For a game that keeps no record beyond its scene.

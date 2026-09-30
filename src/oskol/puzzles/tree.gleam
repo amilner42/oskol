@@ -265,7 +265,7 @@ fn state_key(b: Board, dice: List(Int)) -> String {
 
 /// What makes two boards the same board: which colour sits where, counted,
 /// with the checkers' own ids forgotten. Cheap on purpose -- it is asked
-/// once per edge explored, and `analysis.encode` walks the whole board
+/// once per edge explored, and `engine_board.encode` walks the whole board
 /// twenty-four times over.
 fn board_key(b: Board) -> String {
   b.checkers

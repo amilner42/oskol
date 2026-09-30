@@ -296,7 +296,7 @@ fn outcome(story: Story) -> String {
 
 fn seats_of(room: caps.SourceRoom) -> List(seat.Seat) {
   list.map(room.seats, fn(s) {
-    seat.Seat(
+    seat.of_row(
       player_id: s.0,
       guest_id: unless_empty(s.2),
       user_id: unless_empty(s.3),

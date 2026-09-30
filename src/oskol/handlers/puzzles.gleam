@@ -35,8 +35,8 @@
 //// grade afterwards, and an override replaces the review rather than
 //// stacking on it.
 
-import backgammon/analysis
 import backgammon/board.{type Board, White}
+import backgammon/engine_board
 import gleam/dynamic/decode
 import gleam/int
 import gleam/json.{type Json}
@@ -537,7 +537,7 @@ fn judge_move(
     [] -> Ok(Nil)
     _ -> Error(refused)
   })
-  let landed_on = analysis.encode(ended.board, White)
+  let landed_on = engine_board.encode(ended.board, White)
   let cost = grade.move_cost(answer, landed_on)
   let verdict = grade.move_verdict(cost)
   let best = grade.best(answer)
@@ -722,7 +722,7 @@ fn position_json(engine_board: List(Int)) -> Json {
 /// reading notation. The mover is White on both boards, because a question
 /// numbers its points from their side.
 fn landings_json(question: Question, landed_on: List(Int)) -> Json {
-  json.array(analysis.landings(question.board, landed_on, White), json.int)
+  json.array(engine_board.landings(question.board, landed_on, White), json.int)
 }
 
 fn probs_json(p: puzzles.Probs) -> Json {
@@ -1219,7 +1219,7 @@ pub fn mine_json(
 
 fn seats_of(room: caps.SourceRoom) -> List(seat.Seat) {
   list.map(room.seats, fn(s) {
-    seat.Seat(
+    seat.of_row(
       player_id: s.0,
       guest_id: unless_empty(s.2),
       user_id: unless_empty(s.3),
@@ -1360,7 +1360,7 @@ pub fn game_puzzles_json(
   use player_id <- result.try(
     seat.held_by(
       list.map(setup.seats, fn(s) {
-        seat.Seat(
+        seat.of_row(
           player_id: s.0,
           guest_id: unless_empty(s.2),
           user_id: unless_empty(s.3),

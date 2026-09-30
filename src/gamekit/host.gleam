@@ -192,6 +192,31 @@ pub fn outcome(instance: Instance) -> Outcome {
   instance.outcome(instance)
 }
 
+// ---------- Bots ----------
+
+/// Whose turn it is, by the game's own account (`summary_json`'s `to_act`).
+/// What the platform asks before it wakes a bot seat.
+pub fn to_act(instance: Instance) -> List(String) {
+  instance.to_act(instance)
+}
+
+/// What a bot seat does now: a JSON array of actions, in the order they are
+/// to be applied, each the same `{"name", "params"}` object a browser sends.
+///
+/// `ask` is the analysis engine, and it is called from wherever this runs --
+/// never inside a room, because an answer can take seconds. `attempts` is
+/// how many asks have already come back empty for this decision; what to do
+/// once that is too many is the game's call, not the platform's.
+pub fn think(
+  instance: Instance,
+  player_id: String,
+  ask: game.Ask,
+  attempts: Int,
+) -> Result(String, String) {
+  instance.bot(instance, player_id, ask, attempts)
+  |> result.map(fn(actions) { json.to_string(json.preprocessed_array(actions)) })
+}
+
 /// A small public snapshot of where the game stands, for the platform to
 /// write down beside the row after every step: whose turn it is, whose
 /// clock is running, whether it is over, and each player's public counters

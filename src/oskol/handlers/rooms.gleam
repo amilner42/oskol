@@ -31,6 +31,13 @@ pub type CreateError {
   Unavailable(reason: RoomError)
 }
 
+/// Who the creator wants across the table: a friend they send the link to,
+/// or the bot, which sits down at once and the game starts.
+pub type Opponent {
+  AFriend
+  TheBot
+}
+
 pub type JoinError {
   /// Show this sentence and stay on the join form.
   Refused(message: String)
@@ -109,36 +116,77 @@ pub fn offer(ctx: Ctx, game_id: String) -> #(InviteStep, Option(Table)) {
 
 // ---------- Taking a seat ----------
 
-/// Create a room, set it up, and seat the creator in it.
+/// Create a room, set it up, and seat the creator in it. Against the bot the
+/// other seat is filled in the same breath, so the answer is a game already
+/// under way rather than a link to send.
 pub fn create(
   ctx: Ctx,
   session: Session,
   slug: String,
   setup: Setup,
   name: String,
+  opponent: Opponent,
 ) -> Result(Seated, CreateError) {
   case display_name.clean(name) {
     Error(message) -> Error(Rejected(message))
     Ok(name) ->
-      case create_room(ctx, slug, attempts()) {
-        Error(reason) -> Error(Unavailable(reason))
-        Ok(game_id) -> {
-          ctx.rooms.subscribe(game_id)
+      case opponent, display_name.is_bot_name(name) {
+        // One table, two names: the room refuses a name it already has, so a
+        // player called Sage would keep the bot from sitting down at all.
+        TheBot, True ->
+          Error(Rejected(
+            display_name.bot_name
+            <> " is the bot's name. Pick another one to play it.",
+          ))
+        _, _ ->
+          case create_room(ctx, slug, attempts()) {
+            Error(reason) -> Error(Unavailable(reason))
+            Ok(game_id) -> {
+              ctx.rooms.subscribe(game_id)
 
-          case ctx.rooms.configure(game_id, setup) {
-            Error(reason) -> Error(Rejected(errors.message(reason)))
-            Ok(Nil) ->
-              case
-                ctx.rooms.join(game_id, name, session.guest_id, session.user_id)
-              {
+              case ctx.rooms.configure(game_id, setup) {
                 Error(reason) -> Error(Rejected(errors.message(reason)))
-                Ok(seat) -> {
-                  identity.remember(ctx, session, name)
-                  Ok(seated(game_id, name, seat))
-                }
+                Ok(Nil) ->
+                  case
+                    ctx.rooms.join(
+                      game_id,
+                      name,
+                      session.guest_id,
+                      session.user_id,
+                    )
+                  {
+                    Error(reason) -> Error(Rejected(errors.message(reason)))
+                    Ok(seat) -> {
+                      identity.remember(ctx, session, name)
+                      sit_opponent(ctx, game_id, name, seat, opponent)
+                    }
+                  }
               }
+            }
           }
-        }
+      }
+  }
+}
+
+/// The other seat, where the creator asked for the bot in it. A room that
+/// will not have the bot is a room with nobody to play: better to say so
+/// than to hand back a table that can never start.
+fn sit_opponent(
+  ctx: Ctx,
+  game_id: String,
+  name: String,
+  seat: room.Seat,
+  opponent: Opponent,
+) -> Result(Seated, CreateError) {
+  case opponent {
+    AFriend -> Ok(seated(game_id, name, seat))
+    TheBot ->
+      case ctx.rooms.seat_bot(game_id, display_name.bot_name) {
+        Error(reason) -> Error(Rejected(errors.message(reason)))
+        // The bot filled the table, so the game started with it: the answer
+        // is that game, under the creator's own seat.
+        Ok(bot) ->
+          Ok(seated(game_id, name, room.Seat(..seat, started: bot.started)))
       }
   }
 }

@@ -1,6 +1,7 @@
 //// Backgammon: the gamekit contract entry.
 
 import backgammon/board
+import backgammon/bot
 import backgammon/engine.{type Action}
 import backgammon/projection
 import backgammon/state.{type GameState}
@@ -25,6 +26,7 @@ pub fn game() -> Game(GameState, Action) {
     clocks: engine.on_the_clock,
     timeout: fn(_, _) { game.Forfeit },
     record: fn(s) { Some(projection.record_json(s)) },
+    bot: bot.decide,
   )
 }
 

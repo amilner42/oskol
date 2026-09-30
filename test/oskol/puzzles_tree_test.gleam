@@ -5,8 +5,8 @@
 //// child the page is offered is a move the rulebook allows, and a node it
 //// is allowed to PLAY on is one where nothing more can be played.
 
-import backgammon/analysis
 import backgammon/board.{type Board, Bar, Black, Off, Point, White}
+import backgammon/engine_board
 import backgammon/positions
 import gleam/dict
 import gleam/int
@@ -56,9 +56,9 @@ fn terminal(node: tree.Node) -> Bool {
 pub fn from_engine_round_trips_test() {
   // The opening position, drawn from White's side, back into a board that
   // is the opening position.
-  let opening = analysis.encode(board.initial(), White)
+  let opening = engine_board.encode(board.initial(), White)
   let assert Ok(b) = tree.from_engine(opening)
-  assert analysis.encode(b, White) == opening
+  assert engine_board.encode(b, White) == opening
   assert board.borne_off(b, White) == 0
   assert board.borne_off(b, Black) == 0
 }
@@ -75,7 +75,7 @@ pub fn from_engine_counts_checkers_off_test() {
       #(Black, Point(22), 5),
       #(Black, Point(24), 5),
     ])
-  let assert Ok(back) = tree.from_engine(analysis.encode(b, White))
+  let assert Ok(back) = tree.from_engine(engine_board.encode(b, White))
   assert board.borne_off(back, White) == 13
   assert board.count(back, White, Point(1)) == 1
   assert board.count(back, Black, Point(20)) == 5

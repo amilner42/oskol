@@ -38,6 +38,9 @@ defmodule Oskol.Application do
         # Post-game reviews: rooms cast here when a game ends and carry on.
         {Task.Supervisor, name: Oskol.Reviews.TaskSupervisor},
         {Oskol.Reviews.Queue, []},
+        # A bot seat's thinking: seconds on the analysis engine, off the room
+        # that is serving live play.
+        {Task.Supervisor, name: Oskol.Game.BotSupervisor},
         Oskol.Game.GameSupervisor,
         # Start a worker by calling: Oskol.Worker.start_link(arg)
         # {Oskol.Worker, arg},

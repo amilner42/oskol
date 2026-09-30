@@ -298,18 +298,18 @@ defmodule Oskol.Persistence do
   def stamp_seats(_, _, _), do: {0, []}
 
   # A row's seat list as the Gleam seat rules read it: `Seat(player_id,
-  # guest_id, user_id)`, an empty or missing id being no id at all.
+  # guest_id, user_id, bot)`, an empty or missing id being no id at all.
   defp to_seats(players) do
     for player <- players, is_map(player), is_binary(player["id"]) do
       {:seat, player["id"], Interop.opt(blank_to_nil(player["guest_id"])),
-       Interop.opt(blank_to_nil(player["user_id"]))}
+       Interop.opt(blank_to_nil(player["user_id"])), player["bot"] == true}
     end
   end
 
   # Those seats written back onto the row's entries, by player id; every
   # other key of an entry (the name) is left as it was.
   defp apply_seats(seats, players) do
-    by_id = Map.new(seats, fn {:seat, id, guest, user} -> {id, {guest, user}} end)
+    by_id = Map.new(seats, fn {:seat, id, guest, user, _bot} -> {id, {guest, user}} end)
 
     Enum.map(players, fn
       %{"id" => id} = player when is_map_key(by_id, id) ->

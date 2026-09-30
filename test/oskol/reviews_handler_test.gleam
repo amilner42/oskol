@@ -6,6 +6,7 @@
 import backgammon/analysis as bg_analysis
 import backgammon/board
 import backgammon/engine as bg_engine
+import backgammon/engine_board
 import backgammon/game as backgammon
 import backgammon/record
 import gamekit/clock
@@ -924,7 +925,7 @@ pub fn a_turn_names_its_record_lines_and_its_moves_positions_test() {
   )
   let assert [first, ..] = g.turns
   let assert Some(played) = first.played
-  let assert Ok(#(white, black)) = bg_analysis.decode(played, board.White)
+  let assert Ok(#(white, black)) = engine_board.decode(played, board.White)
   assert string.contains(
     body,
     "\"position\":"
@@ -936,7 +937,7 @@ pub fn a_turn_names_its_record_lines_and_its_moves_positions_test() {
     )
       <> ",\"landed\":"
       <> json.to_string(json.array(
-      bg_analysis.landings(first.position.board, played, board.White),
+      engine_board.landings(first.position.board, played, board.White),
       json.int,
     )),
   )
@@ -1279,7 +1280,7 @@ pub fn the_opening_rolls_no_double_is_no_decision_in_the_pr_test() {
   // A match game, where the cube is live (a single game has none)
   let turns = game_number(played_log("match5", 4, 3000), 1).turns
   let assert [first, ..] = turns
-  let assert True = bg_analysis.engine_can_double(first.position)
+  let assert True = engine_board.engine_can_double(first.position)
   // After Crawford the trailer "should" double at once, so the engine
   // charges whoever opens behind a missed double on the opening roll.
   let body = answer_with_cubes(turns, [#(0, "0.07")])
@@ -1312,7 +1313,7 @@ pub fn a_double_that_could_have_been_offered_still_counts_test() {
   let assert Ok(#(third, at)) =
     list.index_map(turns, fn(t, i) { #(t, i) })
     |> list.drop(1)
-    |> list.find(fn(p) { bg_analysis.engine_can_double({ p.0 }.position) })
+    |> list.find(fn(p) { engine_board.engine_can_double({ p.0 }.position) })
   let body = answer_with_cubes(turns, [#(at, "0.08")])
   let assert Ok(player) =
     list.first(list.drop(page_players(body, turns), third.player))

@@ -128,6 +128,7 @@ type alias NewGame =
     { format : String
     , name : String
     , clock : String
+    , opponent : String -- "friend" (the link) or "bot"
     }
 
 
@@ -382,6 +383,7 @@ encodeNewGame newGame =
         [ ( "format", E.string newGame.format )
         , ( "name", E.string newGame.name )
         , ( "clock", E.string newGame.clock )
+        , ( "opponent", E.string newGame.opponent )
         ]
 
 

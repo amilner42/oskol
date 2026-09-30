@@ -8,6 +8,19 @@ import gleam/string
 
 pub const max_length = 24
 
+/// The name the bot plays under. It is the analysis engine's own (Open
+/// Sage) and it reads as a person on the player bar, which is the point: the
+/// badge beside it says what it is, the name does not have to.
+pub const bot_name = "Sage"
+
+/// Is this name the bot's? A person sitting down against the bot cannot
+/// also be called Sage -- the table would print one name twice, and the
+/// room, which refuses a name already at the table, would refuse to seat
+/// the bot at all.
+pub fn is_bot_name(name: String) -> Bool {
+  string.lowercase(string.trim(name)) == string.lowercase(bot_name)
+}
+
 /// The name to seat a player under, or the sentence to show them instead.
 pub fn clean(name: String) -> Result(String, String) {
   let name = string.trim(name)

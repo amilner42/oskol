@@ -150,13 +150,32 @@ fn creating(
   )
 }
 
+fn seating_a_bot(ctx: Ctx, seat: Result(room.Seat, errors.RoomError)) -> Ctx {
+  Ctx(
+    ..ctx,
+    rooms: rooms_caps.RoomsCaps(..ctx.rooms, seat_bot: fn(_, name) {
+      case name {
+        "Sage" -> seat
+        other -> panic as { "the bot was seated as " <> other }
+      }
+    }),
+  )
+}
+
 pub fn creating_a_game_seats_its_creator_test() {
   let ctx =
     fakes.ctx()
     |> fakes.with_guests(None)
     |> creating(Ok(Nil), Ok(Seat(player_id: "p1", started: False)))
 
-  assert rooms.create(ctx, fakes.guest("g1"), backgammon, setup(), " Alice ")
+  assert rooms.create(
+      ctx,
+      fakes.guest("g1"),
+      backgammon,
+      setup(),
+      " Alice ",
+      rooms.AFriend,
+    )
     == Ok(Seated(
       game_id: "123456",
       player_id: "p1",
@@ -170,7 +189,14 @@ pub fn creating_a_game_with_no_guest_id_still_seats_test() {
     fakes.ctx()
     |> creating(Ok(Nil), Ok(Seat(player_id: "p1", started: True)))
 
-  assert rooms.create(ctx, fakes.no_guest(), backgammon, setup(), "Alice")
+  assert rooms.create(
+      ctx,
+      fakes.no_guest(),
+      backgammon,
+      setup(),
+      "Alice",
+      rooms.AFriend,
+    )
     == Ok(Seated(
       game_id: "123456",
       player_id: "p1",
@@ -179,9 +205,94 @@ pub fn creating_a_game_with_no_guest_id_still_seats_test() {
     ))
 }
 
+pub fn creating_a_game_against_the_bot_seats_the_bot_too_test() {
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_guests(None)
+    |> creating(Ok(Nil), Ok(Seat(player_id: "p1", started: False)))
+    |> seating_a_bot(Ok(Seat(player_id: "p2", started: True)))
+
+  // The bot fills the table, so what comes back is a game already going.
+  assert rooms.create(
+      ctx,
+      fakes.guest("g1"),
+      backgammon,
+      setup(),
+      "Alice",
+      rooms.TheBot,
+    )
+    == Ok(Seated(
+      game_id: "123456",
+      player_id: "p1",
+      name: "Alice",
+      started: True,
+    ))
+}
+
+pub fn a_bot_game_refuses_a_creator_called_sage_test() {
+  // The room refuses a name already at the table, so a player called Sage
+  // would keep the bot from sitting down at all. Nothing is minted: the
+  // remaining capabilities still panic if they are reached.
+  assert rooms.create(
+      fakes.ctx(),
+      fakes.no_guest(),
+      backgammon,
+      setup(),
+      " sage ",
+      rooms.TheBot,
+    )
+    == Error(rooms.Rejected(
+      "Sage is the bot's name. Pick another one to play it.",
+    ))
+}
+
+pub fn a_friend_game_does_not_mind_a_player_called_sage_test() {
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_guests(None)
+    |> creating(Ok(Nil), Ok(Seat(player_id: "p1", started: False)))
+
+  let assert Ok(seated) =
+    rooms.create(
+      ctx,
+      fakes.guest("g1"),
+      backgammon,
+      setup(),
+      "Sage",
+      rooms.AFriend,
+    )
+  assert seated.name == "Sage"
+}
+
+pub fn a_bot_that_will_not_sit_down_is_said_out_loud_test() {
+  let ctx =
+    fakes.ctx()
+    |> fakes.with_guests(None)
+    |> creating(Ok(Nil), Ok(Seat(player_id: "p1", started: False)))
+    |> seating_a_bot(Error(errors.GameFull))
+
+  // Better a sentence than a table that can never start.
+  assert rooms.create(
+      ctx,
+      fakes.guest("g1"),
+      backgammon,
+      setup(),
+      "Alice",
+      rooms.TheBot,
+    )
+    == Error(rooms.Rejected(errors.message(errors.GameFull)))
+}
+
 // A bad name never mints a code: every other capability still panics.
 pub fn creating_a_game_needs_a_name_test() {
-  assert rooms.create(fakes.ctx(), fakes.no_guest(), backgammon, setup(), "  ")
+  assert rooms.create(
+      fakes.ctx(),
+      fakes.no_guest(),
+      backgammon,
+      setup(),
+      "  ",
+      rooms.AFriend,
+    )
     == Error(rooms.Rejected("Pick a display name first"))
 }
 
@@ -190,21 +301,42 @@ pub fn a_setup_the_game_does_not_offer_is_refused_test() {
     fakes.ctx()
     |> creating(Error(errors.UnknownFormat), Ok(Seat("p1", False)))
 
-  assert rooms.create(ctx, fakes.no_guest(), backgammon, setup(), "Alice")
+  assert rooms.create(
+      ctx,
+      fakes.no_guest(),
+      backgammon,
+      setup(),
+      "Alice",
+      rooms.AFriend,
+    )
     == Error(rooms.Rejected("Unknown game mode"))
 }
 
 pub fn a_seat_the_room_refuses_is_reported_test() {
   let ctx = fakes.ctx() |> creating(Ok(Nil), Error(errors.NameTaken))
 
-  assert rooms.create(ctx, fakes.no_guest(), backgammon, setup(), "Alice")
+  assert rooms.create(
+      ctx,
+      fakes.no_guest(),
+      backgammon,
+      setup(),
+      "Alice",
+      rooms.AFriend,
+    )
     == Error(rooms.Rejected("That name is already taken"))
 }
 
 pub fn no_free_code_is_not_the_visitors_fault_test() {
   let ctx = minting(fakes.ctx(), "123456", True, Ok(Nil))
 
-  assert rooms.create(ctx, fakes.no_guest(), backgammon, setup(), "Alice")
+  assert rooms.create(
+      ctx,
+      fakes.no_guest(),
+      backgammon,
+      setup(),
+      "Alice",
+      rooms.AFriend,
+    )
     == Error(rooms.Unavailable(errors.NoFreeId))
 }
 

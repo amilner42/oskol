@@ -169,6 +169,8 @@ type alias Connection =
     , name : String
     , connected : Bool
     , account : Bool -- an account owns the seat (a yes or no; never which)
+    , bot : Bool -- a bot plays the seat: no guest, no account, never away
+    , thinking : Bool -- and it is working this turn out right now
     }
 
 
@@ -345,11 +347,13 @@ payloadDecoder =
 
 connectionDecoder : Decoder Connection
 connectionDecoder =
-    D.map4 Connection
+    D.map6 Connection
         (D.field "id" D.string)
         (D.field "name" D.string)
         (D.field "connected" D.bool)
         (D.oneOf [ D.field "account" D.bool, D.succeed False ])
+        (D.oneOf [ D.field "bot" D.bool, D.succeed False ])
+        (D.oneOf [ D.field "thinking" D.bool, D.succeed False ])
 
 
 updateDecoder : Decoder Update

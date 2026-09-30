@@ -28,7 +28,7 @@ payload fixture playerId update =
     { game = fixture.game
     , gameId = "fixture"
     , playerId = playerId
-    , players = List.map (\( id, name ) -> { id = id, name = name, connected = True, account = False }) fixture.seats
+    , players = List.map (\( id, name ) -> { id = id, name = name, connected = True, account = False, bot = False, thinking = False }) fixture.seats
     , rematchReady = []
     , rematchGameId = Nothing
     , update = update
@@ -456,7 +456,7 @@ waitingRoom =
     { game = "backgammon"
     , gameId = "g"
     , playerId = Just "p1"
-    , connections = [ { id = "p1", name = "Alice", connected = True, account = False } ]
+    , connections = [ { id = "p1", name = "Alice", connected = True, account = False, bot = False, thinking = False } ]
     , summary = Just "Single game"
     , status = "waiting_for_players"
     }

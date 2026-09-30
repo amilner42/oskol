@@ -21,7 +21,7 @@ defmodule Oskol.Gleam.Caps.Rooms do
   # (`GameFull` -> `:game_full`), so they pass straight through.
   @known ~w(game_full name_taken invalid_name unknown_format unknown_clock
             unknown_setting unknown_choice game_already_started seat_connected
-            seat_owned no_seat already_seated player_not_found game_not_started
+            seat_owned seat_is_bot no_seat already_seated player_not_found game_not_started
             game_not_finished not_enough_players unknown_game no_free_id)a
 
   def build(opts \\ []) do
@@ -58,6 +58,15 @@ defmodule Oskol.Gleam.Caps.Rooms do
               unopt(user_id),
               Oskol.Auth.username(unopt(user_id))
             ) do
+         {:ok, player_id, state} ->
+           {:ok, {:seat, player_id, state.instance != nil}}
+
+         {:error, reason} ->
+           {:error, room_error(reason)}
+       end
+     end,
+     fn game_id, name ->
+       case Game.join_bot(game_id, name) do
          {:ok, player_id, state} ->
            {:ok, {:seat, player_id, state.instance != nil}}
 

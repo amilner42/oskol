@@ -88,6 +88,20 @@ config :tailwind,
     cd: Path.expand("..", __DIR__)
   ]
 
+# Sage, the bot a player can sit down against. How deep it searches is the
+# knob worth having: 4-ply is what a review reads a game at, and a single
+# position at that depth is a couple of seconds and occasionally most of the
+# twelve a backgammon turn gets free. Turning it down makes every bot on the
+# site answer faster and play worse. The ladder is how long to wait before
+# asking an engine that did not answer again; the game gives up after the
+# last rung and offers the human the game rather than a board that never
+# moves.
+config :oskol, :bot,
+  move_level: "4ply",
+  cube_level: "4ply",
+  retry_ms: [5_000, 20_000, 60_000],
+  ask_timeout_ms: :timer.seconds(30)
+
 # Configures Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",

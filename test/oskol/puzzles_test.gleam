@@ -9,6 +9,7 @@
 
 import backgammon/analysis
 import backgammon/board.{type Board, type Color, Bar, Black, Off, Point, White}
+import backgammon/engine_board
 import backgammon/positions
 import gleam/int
 import gleam/json
@@ -65,9 +66,9 @@ fn mirrored() -> Board {
   ])
 }
 
-fn a_position(mover: Color) -> analysis.Position {
-  analysis.Position(
-    board: analysis.encode(a_board(), mover),
+fn a_position(mover: Color) -> engine_board.Position {
+  engine_board.Position(
+    board: engine_board.encode(a_board(), mover),
     cube_value: 1,
     cube_owner: "centered",
     away1: 0,
@@ -80,7 +81,7 @@ fn a_position(mover: Color) -> analysis.Position {
 
 fn a_turn(
   player: Int,
-  position: analysis.Position,
+  position: engine_board.Position,
   dice: Option(#(Int, Int)),
   double: Option(analysis.Answer),
 ) -> analysis.Turn {
@@ -112,7 +113,7 @@ fn seats() -> List(report.Seat) {
 /// A board that is not the one the turn began on, so nothing here looks
 /// like a dance.
 fn moved_board() -> List(Int) {
-  analysis.encode(
+  engine_board.encode(
     positions.setup([
       #(White, Point(24), 2),
       #(White, Point(13), 4),
@@ -312,9 +313,13 @@ pub fn the_same_position_from_either_colour_is_one_puzzle_test() {
   // turned round. Mover-relative, that is one board and one question.
   let white = a_position(White)
   let black =
-    analysis.Position(..white, board: analysis.encode(mirrored(), Black))
+    engine_board.Position(
+      ..white,
+      board: engine_board.encode(mirrored(), Black),
+    )
   // The two boards really are different positions...
-  assert analysis.encode(a_board(), White) != analysis.encode(mirrored(), White)
+  assert engine_board.encode(a_board(), White)
+    != engine_board.encode(mirrored(), White)
   // ...and the same one seen from the side that is on roll.
   assert white.board == black.board
   let one =
@@ -339,7 +344,7 @@ pub fn each_cube_owner_asks_its_own_question_test() {
   let question = fn(owner) {
     puzzle.question_of(
       puzzle.Double,
-      analysis.Position(..a_position(White), cube_owner: owner),
+      engine_board.Position(..a_position(White), cube_owner: owner),
       None,
       False,
     )
@@ -350,7 +355,7 @@ pub fn each_cube_owner_asks_its_own_question_test() {
   assert list.unique(all) == all
   assert puzzle.question_of(
       puzzle.Double,
-      analysis.Position(..a_position(White), cube_owner: "player"),
+      engine_board.Position(..a_position(White), cube_owner: "player"),
       None,
       False,
     ).cube_owner
@@ -371,7 +376,7 @@ pub fn a_question_reads_back_as_it_was_written_test() {
   let q =
     puzzle.question_of(
       puzzle.Move,
-      analysis.Position(
+      engine_board.Position(
         ..a_position(White),
         cube_value: 4,
         cube_owner: "opponent",
@@ -426,8 +431,8 @@ pub fn a_key_and_its_ids_are_the_same_every_time_test() {
 }
 
 pub fn a_board_turns_around_and_back_test() {
-  let b = analysis.encode(a_board(), White)
-  assert puzzle.flip(b) == analysis.encode(a_board(), Black)
+  let b = engine_board.encode(a_board(), White)
+  assert puzzle.flip(b) == engine_board.encode(a_board(), Black)
   assert puzzle.flip(puzzle.flip(b)) == b
 }
 
@@ -498,7 +503,12 @@ pub fn the_opening_no_double_is_suppressed_test() {
 
 pub fn the_crawford_game_asks_no_cube_question_test() {
   let crawford =
-    analysis.Position(..a_position(White), away1: 1, away2: 3, crawford: True)
+    engine_board.Position(
+      ..a_position(White),
+      away1: 1,
+      away2: 3,
+      crawford: True,
+    )
   let turn = a_turn(0, crawford, Some(#(6, 4)), None)
   let #(puzzles, _) =
     run(game(1, [turn, turn]), [
@@ -510,7 +520,7 @@ pub fn the_crawford_game_asks_no_cube_question_test() {
 
 pub fn a_cube_the_mover_does_not_hold_asks_nothing_test() {
   let owned =
-    analysis.Position(
+    engine_board.Position(
       ..a_position(White),
       cube_owner: "opponent",
       cube_value: 2,

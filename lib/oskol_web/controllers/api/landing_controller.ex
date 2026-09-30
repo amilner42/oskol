@@ -43,7 +43,8 @@ defmodule OskolWeb.Api.LandingController do
         slug,
         param(params, "format"),
         param(params, "name"),
-        param(params, "clock")
+        param(params, "clock"),
+        param(params, "opponent")
       )
     )
   end

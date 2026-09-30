@@ -497,7 +497,7 @@ account model =
             , Attr.attribute "aria-haspopup" "menu"
             , onClick ToggledAccount
             ]
-            [ Identity.badge True
+            [ Identity.badge Identity.Account
             , Html.span
                 [ class "font-bold text-[17px] sm:text-[19px] truncate", style "color: var(--ink)" ]
                 [ Html.text (model.session.user |> Maybe.andThen .name |> Maybe.withDefault "Your account") ]

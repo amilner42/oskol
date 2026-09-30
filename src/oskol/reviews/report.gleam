@@ -11,6 +11,7 @@
 
 import backgammon/analysis.{type Turn, Passed, Took}
 import backgammon/board
+import backgammon/engine_board
 import backgammon/record
 import gleam/dict.{type Dict}
 import gleam/dynamic/decode.{type Decoder}
@@ -221,7 +222,7 @@ fn opening_decoder() -> Decoder(#(Option(Int), Option(CubeReview))) {
 /// After Crawford that verdict is a missed double charged to whoever opens
 /// behind, on a decision that never existed. The page shows no verdict
 /// there, and a PR counts no decision there. `number` is the turn's place in
-/// the game, from 1; `can_double` is `analysis.engine_can_double` of it.
+/// the game, from 1; `can_double` is `engine_board.engine_can_double` of it.
 pub fn unofferable(number: Int, cube: CubeReview, can_double: Bool) -> Bool {
   cube.action == "no_double" && { number == 1 || !can_double }
 }
@@ -519,7 +520,11 @@ pub fn to_json(
       case graded.cube {
         Some(cube) ->
           case
-            unofferable(i + 1, cube, analysis.engine_can_double(turn.position))
+            unofferable(
+              i + 1,
+              cube,
+              engine_board.engine_can_double(turn.position),
+            )
           {
             True -> [#(turn.player, cube.doubler)]
             False -> []
@@ -661,7 +666,11 @@ fn turn_json(
       None -> json.null()
       Some(cube) ->
         case
-          unofferable(number, cube, analysis.engine_can_double(turn.position))
+          unofferable(
+            number,
+            cube,
+            engine_board.engine_can_double(turn.position),
+          )
         {
           True -> json.null()
           False ->
@@ -704,14 +713,14 @@ fn candidate_json(c: Candidate, played_rank: Int, turn: Turn) -> Json {
     0 -> board.White
     _ -> board.Black
   }
-  let #(position, landed) = case analysis.decode(c.board, mover) {
+  let #(position, landed) = case engine_board.decode(c.board, mover) {
     Ok(#(white, black)) -> #(
       json.object([
         #("white", record.side_to_json(white)),
         #("black", record.side_to_json(black)),
       ]),
       json.array(
-        analysis.landings(turn.position.board, c.board, mover),
+        engine_board.landings(turn.position.board, c.board, mover),
         json.int,
       ),
     )

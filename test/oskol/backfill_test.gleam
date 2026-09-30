@@ -7,6 +7,7 @@
 
 import backgammon/analysis
 import backgammon/engine as bg_engine
+import backgammon/engine_board
 import backgammon/game as backgammon
 import gamekit/clock
 import gamekit/conformance
@@ -149,7 +150,7 @@ fn a_turn(dice: Option(#(Int, Int)), played: Option(List(Int))) -> analysis.Turn
   analysis.Turn(
     player: 0,
     player_id: "p1",
-    position: analysis.Position(
+    position: engine_board.Position(
       board: [0, 0, 0],
       cube_value: 1,
       cube_owner: "centered",
