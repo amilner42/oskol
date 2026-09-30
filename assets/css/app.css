@@ -1702,13 +1702,18 @@ a.bg-match-door:hover { background: var(--paper-2); }
     margin: 7px 5px 7px max(5px, env(safe-area-inset-left, 0px));
     border-width: 2px;
     border-radius: 8px;
-    background: color-mix(in oklab, #fff 88%, transparent);
+    /* The plate keeps the bar's own colour, not a white one: the text on it
+       is white (set on .player-bar, and right for every one of the sixteen
+       board themes), so a white plate made the name unreadable against it.
+       --bg-frame is what the bar is painted in already; all focus mode does
+       is let the board show through. */
+    background: color-mix(in oklab, var(--bg-frame) 88%, transparent);
     box-shadow: 0 3px 10px rgba(20, 14, 8, 0.4);
     backdrop-filter: blur(3px);
   }
   .bg-page.is-expanded .player-bar.active {
     border-color: var(--bg-sky);
-    background: color-mix(in oklab, var(--bg-sky) 26%, color-mix(in oklab, #fff 90%, transparent));
+    background: color-mix(in oklab, var(--bg-sky) 26%, color-mix(in oklab, var(--bg-frame) 90%, transparent));
   }
   .bg-page.is-expanded .player-bar:not(.is-me) { align-self: start; }
   .bg-page.is-expanded .player-bar.is-me { align-self: end; flex-wrap: wrap-reverse; }
