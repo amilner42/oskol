@@ -70,16 +70,16 @@ defmodule OskolWeb.SpaControllerTest do
       end
     end
 
-    test "the home page is the dark board: its frame is painted before the app boots",
+    test "the home page's first paint is the loading bar the app starts on",
          %{conn: conn} do
       html = conn |> get(~p"/") |> html_response(200)
-      assert html =~ ~r|<div[^>]*id="elm-app"[^>]*style="background: #1d2230"|s
-      refute html =~ ~r|<div[^>]*id="elm-app"[^>]*class="paper|s
+      assert html =~ ~r|<div[^>]*id="elm-app"[^>]*class="paper min-h-screen-safe quiet"|s
+      assert html =~ ~r|class="boot".*class="boot-track".*class="boot-fill"|s
 
-      # An invite is the paper page, as before.
+      # An invite is the plain paper page, with nothing to wait for.
       invite = build_conn() |> get(~p"/backgammon?game=abc123") |> html_response(200)
       assert invite =~ ~r|<div[^>]*id="elm-app"[^>]*class="paper min-h-screen-safe"|s
-      refute invite =~ "#1d2230"
+      refute invite =~ "boot-fill"
     end
 
     test "the CSRF token is on the page for the Elm client to send back", %{conn: conn} do

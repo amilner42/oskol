@@ -358,9 +358,9 @@ asking model busy =
 sent : Model -> Bool -> List (Html Msg)
 sent model busy =
     [ Html.div [ id "signin-sent", class "signin-sent flex flex-col gap-2.5" ]
-        [ Html.p [ class "text-[17px] font-bold leading-tight text-center", style "color: var(--ink)" ]
+        [ Html.p [ class "text-[17px] font-bold leading-tight", style "color: var(--ink)" ]
             [ Html.text "Check your email" ]
-        , Html.p [ class "q-note text-[13px] leading-snug text-center" ]
+        , Html.p [ class "q-note text-[13px] leading-snug" ]
             [ Html.text "We sent a link and a code to "
             , Html.span [ class "font-semibold break-all", style "color: var(--ink)" ] [ Html.text (String.trim model.email) ]
             , Html.text
@@ -392,11 +392,11 @@ sent model busy =
                 ]
             ]
         , if busy then
-            Html.p [ class "q-note text-[13px] text-center" ] [ Html.text "Checking…" ]
+            Html.p [ class "q-note text-[13px]" ] [ Html.text "Checking…" ]
 
           else
             errorLine model
-        , Html.div [ class "flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[13px]" ]
+        , Html.div [ class "flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]" ]
             [ if model.canResend then
                 Html.button
                     [ type_ "button", id "signin-resend", class "signin-link", onClick PressedResend ]
@@ -416,7 +416,7 @@ errorLine : Model -> Html msg
 errorLine model =
     case model.error of
         Just message ->
-            Html.p [ id "signin-error", class "text-[13px] font-semibold text-center", style "color: var(--red)" ]
+            Html.p [ id "signin-error", class "text-[13px] font-semibold", style "color: var(--red)" ]
                 [ Html.text message ]
 
         Nothing ->

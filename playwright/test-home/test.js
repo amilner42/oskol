@@ -95,12 +95,17 @@ async function run(browser, errors, fixture) {
 
     // 1. The bar.
     await openHome(a.page);
-    const name = (await a.page.textContent('#account-button')).trim();
-    if (!name.includes(fixture.username)) throw new Error(`the bar should name the account: "${name}"`);
-    if (name.includes('@')) throw new Error(`the bar must never show the email: "${name}"`);
-    for (const control of ['#home-play', '#home-join', '#home-puzzles', '#bg-theme-button']) {
-      if (!(await a.page.$(control))) throw new Error(`the bar is missing ${control}`);
+    for (const control of ['#bg-theme-button', '#nav-more']) {
+      if (!(await a.page.isVisible(`#home-bar ${control}`))) throw new Error(`the bar is missing ${control}`);
     }
+    await a.page.click('#nav-more');
+    const name = (await a.page.textContent('#nav-menu #nav-who')).trim();
+    if (!name.includes(fixture.username)) throw new Error(`☰ should name the account: "${name}"`);
+    if (name.includes('@')) throw new Error(`☰ must never show the email: "${name}"`);
+    for (const item of ['#home-play', '#nav-puzzles', '#nav-join-game', '#nav-logout']) {
+      if (!(await a.page.$(`#nav-menu ${item}`))) throw new Error(`☰ is missing ${item}`);
+    }
+    await a.page.keyboard.press('Escape');
     if (await a.page.$('.lh-board, #roll-dice')) throw new Error('the signed-in home has no demo board and no sentence');
     log(`the bar names ${fixture.username} and offers PLAY, JOIN, PUZZLES and the boards`);
 

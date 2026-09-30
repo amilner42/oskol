@@ -135,7 +135,6 @@ type alias Model =
     , retrying : List Int -- games whose retry is on its way
     , flipped : Bool -- the board is turned around: the other player is at the bottom
     , matchOpen : Bool -- the match panel (the games, to pick one) is open over the board
-    , themesOpen : Bool -- the board picker's list is showing
     , gamePrs : Dict.Dict Int (List ( String, Float )) -- each graded game's PRs by seat, from /ratings
     , matchPrs : Dict.Dict String Float -- each seat's PR over the match so far
     , careerPrs : Dict.Dict String Float -- each seat's account over every graded game it has played; empty for a guest seat and for an account with too few
@@ -204,7 +203,6 @@ init session config =
             , retrying = []
             , flipped = False
             , matchOpen = False
-            , themesOpen = False
             , gamePrs = Dict.empty
             , matchPrs = Dict.empty
             , careerPrs = Dict.empty
@@ -369,8 +367,6 @@ type Msg
     | Retry Int
     | Flipped -- turn the board around
     | ToggleMatch -- open or close the match panel
-    | ToggleThemes -- open or close the board picker
-    | PickTheme String -- this reader's board colours: display only
     | GotRatings (Result Api.Error Catalog.Ratings)
     | AskMistakes Int
     | GotMistakes Int (Result Api.Error Practice.Practice)
@@ -482,19 +478,6 @@ advance msg model =
 
         ToggleMatch ->
             ( { model | matchOpen = not model.matchOpen }, Cmd.none )
-
-        ToggleThemes ->
-            ( { model | themesOpen = not model.themesOpen }, Cmd.none )
-
-        -- The board changes at once; this browser keeps it, and the guest's
-        -- row keeps it for their other browsers.
-        PickTheme name ->
-            ( { model | themesOpen = False, session = Session.withPref "backgammon_theme" name model.session }
-            , Cmd.batch
-                [ storePref { key = "backgammon_theme", value = name }
-                , Catalog.savePref model.session "backgammon_theme" name (always NoOp)
-                ]
-            )
 
         GotRatings (Ok ratings) ->
             ( { model | gamePrs = ratings.games, matchPrs = ratings.prs, careerPrs = ratings.careers }
@@ -1042,64 +1025,17 @@ viewHead model record =
             else
                 "MATCH TO " ++ String.fromInt r.target
     in
+    -- The match: the bird and the board picker are the site's bar's, over
+    -- the page, and the board wears what that picker chose (`theme`, off
+    -- the session).
     div [ class "rp-head" ]
-        [ Ui.Shell.mark
-        , case record of
+        [ case record of
             Just r ->
                 span [ class "rp-tag pixel text-[7px] sm:text-[8px] truncate" ]
                     [ text (matchLabel r ++ " · " ++ (r.players |> List.map (.id >> Replay.playerNamed r >> String.toUpper) |> String.join " v ")) ]
 
             Nothing ->
                 text ""
-        , viewThemePicker model
-        ]
-
-
-{-| The board picker, as the table and the home page draw it: the chip of
-the board you are looking at and a chevron that turns; the list beneath.
--}
-viewThemePicker : Model -> Html Msg
-viewThemePicker model =
-    let
-        current =
-            theme model
-    in
-    div [ class "bg-themes rp-themes shrink-0" ]
-        [ button
-            [ class "flex items-center gap-1 px-1 py-0.5"
-            , id "bg-theme-button"
-            , attribute "aria-expanded"
-                (if model.themesOpen then
-                    "true"
-
-                 else
-                    "false"
-                )
-            , Html.Attributes.title "Board colours"
-            , onClick ToggleThemes
-            ]
-            [ span [ class ("bg-theme-chip " ++ Board.themeClass current) ] [ Board.themeBoard ]
-            , span [ class "bg-theme-chevron hero-chevron-down w-3.5 h-3.5", attribute "aria-hidden" "true" ] []
-            ]
-        , if model.themesOpen then
-            div [ class "bg-theme-list", id "bg-theme-list" ]
-                (List.map
-                    (\( key, name ) ->
-                        button
-                            [ classList [ ( "bg-theme-option", True ), ( "on", key == current ) ]
-                            , attribute "data-theme-option" key
-                            , Html.Attributes.title name
-                            , onClick (PickTheme key)
-                            ]
-                            [ span [ class ("bg-theme-chip " ++ Board.themeClass key) ] [ Board.themeBoard ]
-                            , span [ class "bg-theme-name" ] [ text name ]
-                            ]
-                    )
-                    Board.themes
-                )
-
-          else
-            text ""
         ]
 
 

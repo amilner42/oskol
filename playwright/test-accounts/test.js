@@ -111,8 +111,8 @@ async function run(browser, errors) {
     // 2. Home: the live games pill, LIVE GAMES, the offer, the email, the
     // code, the win. The list never opens by itself.
     if ((await openHome(a.page)) !== 'guest') throw new Error('a guest was not shown the guest home');
-    // (On a phone the pill is in ☰'s menu, and ☰ wears a dot.)
-    await a.page.waitForSelector('#resume-games', { state: 'attached' });
+    // (The live games are in ☰'s menu, and ☰ wears a dot.)
+    await a.page.waitForSelector('#nav-more .lh-burger-dot');
     if (await a.page.$('#resume-modal')) throw new Error('LIVE GAMES opened by itself');
     await barItem(a.page, 'live');
     await a.page.waitForSelector('#resume-modal #resume-list');
@@ -142,7 +142,9 @@ async function run(browser, errors) {
     // CONTINUE from the win lands on the account's own home.
     await a.page.waitForSelector('#home-bar');
     if ((await a.page.$('#guest-note')) !== null) throw new Error('signed in, LIVE GAMES has no pitch');
-    const bar = (await a.page.textContent('#account-button')).trim();
+    await a.page.click('#nav-more');
+    const bar = (await a.page.textContent('#nav-menu #nav-who')).trim();
+    await a.page.keyboard.press('Escape');
     if (!bar.includes(username)) throw new Error(`the bar should show the username: "${bar}"`);
     if (bar.includes('@')) throw new Error(`the bar must never show the email: "${bar}"`);
     log(`A signed in with the code: "${saved}"`);
@@ -215,18 +217,17 @@ async function run(browser, errors) {
     await a2.goto(`${BASE}/`);
     // Signed in, `/` is the account's own home: its games are a section of
     // the page rather than a dialog over the board.
-    await a2.waitForSelector('#home-bar #account-button');
+    await a2.waitForSelector('#home-bar #nav-more');
     await a2.waitForSelector(`#home-live-list #resume-${game.gameId}`);
-    await a2.click('#account-button');
-    await a2.click('#logout');
-    // `/` is the guest home again: Sign in in the bar, no account.
-    // (A phone's bar is the bird and ☰: Sign in is in ☰'s menu.)
-    await a2.waitForSelector('.lh-bar #signin-button', { state: 'attached' });
+    // The account's bar is the guest's: LOG OUT is in ☰.
+    await barItem(a2, 'logout');
+    // `/` is the guest home again: Sign in in ☰, no account.
+    await a2.waitForSelector('#landing .lh-bar #nav-more');
     await a2.click('#nav-more');
     await a2.waitForSelector('#nav-menu #nav-signin');
     if (await a2.$('#nav-logout')) throw new Error('logged out, ☰ still offers LOG OUT');
     await a2.keyboard.press('Escape');
-    if (await a2.$('#account-button')) throw new Error('logged out, the bar still shows an account');
+    if (await a2.$('#home-bar')) throw new Error('logged out, the account home is still up');
     const gone = await me(a2);
     if (gone.user !== null) throw new Error('logged out, /papi/me still names the account');
     await a2.goto(game.url);

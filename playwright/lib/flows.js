@@ -39,8 +39,8 @@ async function openHome(page, path = '/') {
   const me = page.waitForResponse((response) => new URL(response.url()).pathname === '/papi/me');
   await page.goto(`${BASE}${path}`);
   await me;
-  await page.waitForSelector('#roll-dice, #home-play');
-  return (await page.$('#home-play')) !== null ? 'account' : 'guest';
+  await page.waitForSelector('#roll-dice, #home-bar');
+  return (await page.$('#home-bar')) !== null ? 'account' : 'guest';
 }
 
 /**
@@ -50,7 +50,7 @@ async function openHome(page, path = '/') {
 async function openCreateDialog(page, path = '/') {
   const home = await openHome(page, path);
   if (home !== 'account') throw new Error('openCreateDialog: the guest home has no dialog; use createGame');
-  await page.click('#home-play');
+  await barItem(page, 'play');
   await page.waitForSelector('#create-modal #create-as');
 }
 
@@ -82,7 +82,7 @@ async function createGame(page, { name = 'Alice', mode, clock, opponent } = {}) 
   const home = await openHome(page);
   const bot = opponent === 'bot';
   if (home === 'account') {
-    await page.click('#home-play');
+    await barItem(page, 'play');
     await page.waitForSelector('#create-modal #create-as');
     if (bot) await page.click('#create-opponent-bot');
     if (mode) await page.selectOption('#create-mode', mode);
@@ -118,42 +118,36 @@ async function joinByLink(page, inviteUrl, name = 'Bob') {
 }
 
 /**
- * One of the guest home's bar items, wherever the screen puts it: on a wide
- * screen it is in the bar; on a phone the bar is the bird, the themes and
- * ☰, and the item is in ☰'s menu. `item` is 'live' (the live games), 'signin',
- * 'puzzles', 'join' or 'themes'.
+ * One of the homes' bar items (both homes draw the one bar, the same at
+ * every width): the themes are in the bar itself, everything else in ☰'s
+ * menu. `item` is 'play' (the signed-in home's), 'live' (the live games),
+ * 'signin', 'puzzles', 'join', 'logout' or 'themes'.
  */
-const BAR = {
-  live: ['#resume-games', '#nav-live'],
-  signin: ['#signin-button', '#nav-signin'],
-  puzzles: ['#puzzles', '#nav-puzzles'],
-  join: ['#home-join', '#nav-join-game'],
-  themes: ['#bg-theme-button', '#bg-theme-button'], // in the bar at every size
+const MENU = {
+  play: '#home-play', // the signed-in home's alone
+  live: '#nav-live',
+  signin: '#nav-signin',
+  puzzles: '#nav-puzzles',
+  join: '#nav-join-game',
+  logout: '#nav-logout',
 };
 async function barItem(page, item) {
-  const [wide, phone] = BAR[item];
-  if (await page.isVisible(wide)) return page.click(wide);
+  if (item === 'themes') return page.click('#bg-theme-button');
   await page.click('#nav-more');
-  await page.waitForSelector(`#nav-menu ${phone}`);
-  return page.click(phone);
+  await page.waitForSelector(`#nav-menu ${MENU[item]}`);
+  return page.click(MENU[item]);
 }
 
 /**
- * JOIN on the home page: six characters, then the same invite. The guest
- * home's bar has the code field itself on a wide screen (the sixth
- * character goes on its own); a phone has JOIN in ☰'s menu, and an
- * account's home a JOIN button; both open the prompt.
+ * JOIN on the home page: six characters, then the same invite. JOIN is in
+ * ☰'s menu on either home, and opens the code prompt.
  */
 async function joinByCode(page, code, name = 'Bob') {
   await openHome(page);
-  if (await page.isVisible('#nav-join-code')) {
-    await page.fill('#nav-join-code', code);
-  } else {
-    await barItem(page, 'join');
-    await page.waitForSelector('#join-modal #join-code-input');
-    // The sixth character submits on its own.
-    await page.fill('#join-code-input', code);
-  }
+  await barItem(page, 'join');
+  await page.waitForSelector('#join-modal #join-code-input');
+  // The sixth character submits on its own.
+  await page.fill('#join-code-input', code);
   return takeSeat(page, name);
 }
 

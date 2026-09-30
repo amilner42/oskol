@@ -60,18 +60,24 @@ async function assertFits(page, phone, who) {
 
   const board = await box(page, '.bg-board');
   const label = `${who} @ ${phone.width}x${phone.height}`;
+  // Every page wears the site's bar across the top; the table is what it
+  // leaves, and the board fills that.
+  const bar = await box(page, '.lh-bar');
+  const room = phone.height - (bar.y + bar.height);
+  must(!overlaps(bar, board), `${label}: the site's bar does not overlap the board`);
 
   must(
     board.height <= phone.height + 1,
     `${label}: the board is not taller than the screen (${Math.round(board.height)} <= ${phone.height})`
   );
-  // Exactly the height, not merely under it: the whole point of landscape.
+  // Exactly the height under the bar, not merely under it: the whole point
+  // of landscape.
   // (A screen too narrow to be proportionate to its own height is the one
   // case where width has the last word; `fills: false` says so.)
   if (phone.fills !== false) {
     must(
-      board.height >= phone.height * 0.9,
-      `${label}: the board fills the height (${Math.round(board.height)} of ${phone.height})`
+      board.height >= room * 0.9,
+      `${label}: the board fills the height under the bar (${Math.round(board.height)} of ${Math.round(room)})`
     );
   }
   must(

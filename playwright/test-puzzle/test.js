@@ -86,7 +86,11 @@ async function boardFits(page, what) {
   const b = await page.locator('#pz-board .bg-stack').boundingBox();
   const vp = page.viewportSize();
   must(b.x >= 0 && b.x + b.width <= vp.width + 1, `${what}: the board is within the screen's width`);
-  must(b.y >= -1 && b.y + b.height <= vp.height + 1, `${what}: the board is within the screen's height`);
+  // Whole on screen at once, under the site's bar: the page may scroll (a
+  // small phone's does), so this is the board's height against what the
+  // bar leaves, not where a scroll happens to have put it.
+  const bar = await page.locator('.lh-bar').boundingBox();
+  must(b.height <= vp.height - bar.height + 1, `${what}: the board is within the screen's height, under the bar (${Math.round(b.height)} <= ${vp.height - bar.height})`);
   return b;
 }
 
@@ -217,9 +221,8 @@ async function run(browser, setup, errors) {
     const alice = await open('alice', aliceContext);
     const email = `puzzle-${Date.now()}@oskol.test`;
     await alice.goto(`${BASE}/`);
-    // The guest home's bar (☰'s menu on a phone): Sign in, which opens the
-    // one component.
-    await alice.waitForSelector('#signin-button', { state: 'attached' });
+    // The guest home's ☰: Sign in, which opens the one component.
+    await alice.waitForSelector('#landing #nav-more');
     await barItem(alice, 'signin');
     await alice.waitForSelector('#signin-modal #signin-email');
     await alice.fill('#signin-email', email);

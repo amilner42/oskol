@@ -10,6 +10,10 @@ module Page.GameLanding exposing
     , home
     , init
     , isHome
+    , barModals
+    , closeBar
+    , navBar
+    , refreshGames
     , signingIn
     , subscriptions
     , themePicker
@@ -56,6 +60,8 @@ import Time
 import Html.Attributes exposing (class, classList, href, id)
 import Html.Events exposing (onClick, onSubmit)
 import Svg
+import Ui.Dialog as Dialog
+import Ui.Shell as Shell
 import Svg.Attributes as SvgAttr
 import Games.Backgammon.View
 import Route
@@ -117,7 +123,6 @@ type alias Model =
     , fetchedAt : Int -- when the list came, ms since the epoch: the clocks count from here
     , now : Int -- the clock the list's running times are read against
     , signIn : Maybe SignIn.Model -- signing in, open in LIVE GAMES or under an owned seat
-    , accountOpen : Bool -- the account's menu on the player's own bar is showing
     , menu : Maybe PickMenu -- the home sentence's word whose menu is open
     , friendAsk : Bool -- PLAY NOW against a friend: the name it is asking for
     , navOpen : Bool -- on a phone, the bar's ☰ menu: all the wide bar carries but the themes
@@ -152,7 +157,6 @@ type Msg
     | PrefSaved (Result Api.Error (Dict.Dict String String))
     | OpenedSignIn
     | SignInMsg SignIn.Msg
-    | ToggledAccount
     | PressedPuzzles
     | PressedLogOut
     | LoggedOut (Result Api.Error ())
@@ -228,7 +232,6 @@ init session slug gameId =
             , fetchedAt = 0
             , now = 0
             , signIn = Nothing
-            , accountOpen = False
             , menu = Nothing
             , friendAsk = False
             , navOpen = False
@@ -247,25 +250,17 @@ init session slug gameId =
             , NoOut
             )
 
+        -- The live games are the shell's bar's to fetch (`refreshGames`).
         Nothing ->
-            ( model
-            , Cmd.batch
-                [ Catalog.fetchGame session slug GotGame
-                , Catalog.fetchMyGames session GotMyGames
-                ]
-            , NoOut
-            )
+            ( model, Catalog.fetchGame session slug GotGame, NoOut )
 
 
-{-| CREATE GAME's dialog, and the board picker, on a page that is not this
-one: the signed-in home (`Page.Home`) draws its own sections but starts a
-game and picks a board through this page's model, `createModal` and
-`themePicker`, so there are not two of either to keep in step.
+{-| The site's bar, which the shell keeps (`Main.bar`): this page's model
+for CREATE GAME (on a friend, as the dialog has always opened), the board
+picker, the live games and the sign-in, drawn by `navBar` and `barModals`.
 
 It fetches the game's formats and clock presets and nothing else: the
-games this browser holds are the home's own answer (`/papi/me/home`), so
-asking `/papi/me/games` a second time here would cost a query for a list
-that is already on the page.
+shell asks for the live games on every page (`refreshGames`).
 
 -}
 createOnly : Session -> String -> ( Model, Cmd Msg )
@@ -345,15 +340,13 @@ update msg model =
                                     ( { updated | signIn = Nothing }, Cmd.none, Go path )
 
                                 -- In LIVE GAMES, or the bar's own dialog: back
-                                -- to the page, which is theirs now.
+                                -- to the page, which is theirs now, with
+                                -- neither dialog left over it.
                                 _ ->
-                                    ( { updated | signIn = Nothing, signInOpen = False }, Cmd.none, NoOut )
+                                    ( { updated | signIn = Nothing, signInOpen = False, resumeOpen = False }, Cmd.none, NoOut )
 
                 Nothing ->
                     ( model, Cmd.none, NoOut )
-
-        ToggledAccount ->
-            ( { model | accountOpen = not model.accountOpen }, Cmd.none, NoOut )
 
         PressedPuzzles ->
             ( { model | navOpen = False }, Cmd.none, Go (Route.href Route.puzzles) )
@@ -362,7 +355,7 @@ update msg model =
         PressedSignInMenu ->
             let
                 ( opened, cmd, out ) =
-                    update OpenedSignIn { model | accountOpen = False, resumeOpen = False, navOpen = False, signInOpen = True }
+                    update OpenedSignIn { model | resumeOpen = False, navOpen = False, signInOpen = True }
             in
             ( opened, cmd, out )
 
@@ -370,7 +363,7 @@ update msg model =
             ( { model | signInOpen = False, signIn = Nothing }, Cmd.none, NoOut )
 
         PressedLogOut ->
-            ( { model | accountOpen = False, navOpen = False }, Auth.logout model.session LoggedOut, NoOut )
+            ( { model | navOpen = False }, Auth.logout model.session LoggedOut, NoOut )
 
         -- The page stays: the bar goes back to the guest's name, and the
         -- list to the games this browser holds as a guest.
@@ -385,13 +378,13 @@ update msg model =
                 -- The game's data failed to come: ask again, and the dialog
                 -- says what went wrong if it fails again.
                 ( Nothing, Just _ ) ->
-                    ( { model | started = True, loadError = Nothing }
+                    ( { model | started = True, navOpen = False, loadError = Nothing }
                     , Catalog.fetchGame model.session model.slug GotGame
                     , NoOut
                     )
 
                 _ ->
-                    ( { model | started = True }, Cmd.none, NoOut )
+                    ( { model | started = True, navOpen = False }, Cmd.none, NoOut )
 
         ToggledThemes ->
             ( { model | themesOpen = not model.themesOpen }, Cmd.none, NoOut )
@@ -500,7 +493,6 @@ update msg model =
                     else
                         Just which
                 , themesOpen = False
-                , accountOpen = False
               }
             , Cmd.none
             , NoOut
@@ -516,7 +508,7 @@ update msg model =
             ( { model | friendAsk = False, error = Nothing }, Cmd.none, NoOut )
 
         ToggledNav ->
-            ( { model | navOpen = not model.navOpen, menu = Nothing, themesOpen = False, accountOpen = False }, Cmd.none, NoOut )
+            ( { model | navOpen = not model.navOpen, menu = Nothing, themesOpen = False }, Cmd.none, NoOut )
 
         PressedNavJoin ->
             ( { model | navOpen = False }, Cmd.none, OpenJoin )
@@ -848,59 +840,90 @@ view model =
             Html.div [] (formPage model)
 
 
-{-| The guest's home page. A bar (the bird home; the live games, PUZZLES,
-the board picker, the shell's JOIN passed in as `join`, and SIGN IN), OSKOL
-over "Play backgammon.", the board playing a game by itself, and the one
-sentence and one button that start a game.
+{-| The guest's home page: the shell's bar (`navBar`, on the shell's own
+model, passed in as `bar`), OSKOL over "Play backgammon.", the board
+playing a game by itself, and the one sentence and one button that start a
+game.
 
 Nothing on it moves when a choice changes: the sentence keeps its height
 (one line wide, two on a phone, broken after the game), its menus float
 over the page, and PLAY NOW keeps the width of its longer label.
 
 -}
-home : { join : Html msg, toMsg : Msg -> msg } -> Model -> List (Html msg)
-home { join, toMsg } model =
+home : List (Html msg) -> (Msg -> msg) -> Model -> List (Html msg)
+home bar toMsg model =
     [ Html.div [ class "lh", id "landing" ]
-        [ homeBar join toMsg model
-        , Html.map toMsg (homeStage model)
-
-        -- Under the bar's ☰ menu and over the page: a tap beside the menu
-        -- closes it. Outside the bar, whose backdrop blur would otherwise
-        -- shrink a fixed layer to the bar's own height.
-        , if model.navOpen then
-            Html.map toMsg (Html.div [ class "lh-nav-scrim", onClick ToggledNav, Html.Attributes.attribute "aria-hidden" "true" ] [])
-
-          else
-            Html.text ""
-        ]
-    , Html.map toMsg (createModal model)
-    , Html.map toMsg (resumeModal model)
-    , Html.map toMsg (signInModal model)
+        (bar ++ [ Html.map toMsg (homeStage model) ])
     , Html.map toMsg (friendModal model)
     ]
 
 
-homeBar : Html msg -> (Msg -> msg) -> Model -> Html msg
-homeBar join toMsg model =
+{-| The bar across the top of every page, the same at every width: the bird
+home, the board picker, and ☰ with the rest -- and, while ☰ is open, the
+layer under its menu.
+
+It runs on a model of this page that the shell keeps for it (`Main.bar`),
+so it is one bar with one state wherever it is drawn: its live games, its
+sign-in and CREATE GAME are that model's, drawn by `barModals`.
+
+-}
+navBar : (Msg -> msg) -> Model -> List (Html msg)
+navBar toMsg model =
+    [ Html.map toMsg (homeBar model)
+
+    -- Under the bar's ☰ menu and over the page: a tap beside the menu
+    -- closes it. Outside the bar, whose backdrop blur would otherwise
+    -- shrink a fixed layer to the bar's own height.
+    , if model.navOpen then
+        Html.map toMsg (Html.div [ class "lh-nav-scrim", onClick ToggledNav, Html.Attributes.attribute "aria-hidden" "true" ] [])
+
+      else
+        Html.text ""
+    ]
+
+
+homeBar : Model -> Html Msg
+homeBar model =
     Html.header [ class "lh-bar" ]
-        [ Html.a [ href "/", class "lh-mark", Html.Attributes.attribute "aria-label" "Oskol home" ] [ birdMark ]
+        [ Shell.barMark
         , Html.span [ class "lh-spacer" ] []
-        , Html.map toMsg (liveGamesButton model)
-        , Html.map toMsg
-            (Html.button [ Html.Attributes.type_ "button", id "puzzles", class "lh-navlink", onClick PressedPuzzles ]
-                [ Html.text "Puzzles" ]
-            )
-        , Html.map toMsg (Html.div [ class "lh-themes" ] [ themePicker model ])
-        , join
-        , Html.map toMsg (homeAccount model)
-        , Html.map toMsg (navMenu model)
+        , Html.div [ class "lh-themes" ] [ themePicker model ]
+        , navMenu model
         ]
 
 
-{-| A phone's bar is the bird, the themes (they stay: they are the fun one,
-and seen they get pressed) and ☰, which only a phone shows. Everything else
-the wide bar carries is in its menu -- the live games (and a dot on ☰ when
-there are any), signing in or the account, Puzzles, JOIN.
+{-| What the bar opens, for the shell to draw over whatever page is up:
+CREATE GAME (☰'s PLAY), the live games, and the sign-in.
+-}
+barModals : Model -> List (Html Msg)
+barModals model =
+    [ createModal model, resumeModal model, signInModal model ]
+
+
+{-| The live games again, for the bar: the shell asks on every page change,
+so a game made or finished a page ago is counted.
+-}
+refreshGames : Model -> Cmd Msg
+refreshGames model =
+    Catalog.fetchMyGames model.session GotMyGames
+
+
+{-| A new page: nothing the bar had open stays open over it -- its menu,
+the board picker, CREATE GAME (a game just made is the page now) and the
+live games (one just picked is). A sign-in in progress stays: its win is
+the answer to what was just done.
+-}
+closeBar : Model -> Model
+closeBar model =
+    { model | navOpen = False, themesOpen = False, started = False, busy = False, resumeOpen = False }
+
+
+{-| ☰, at every width: the bar keeps only the bird and the themes (they
+stay: they are the fun one, and seen they get pressed), and this menu holds
+the rest -- PLAY first for an account (it opens CREATE GAME; a guest has
+PLAY NOW under the home's board), the
+live games (and a dot on ☰ when there are any), Puzzles, JOIN, and signing
+in or the account with Log out.
 -}
 navMenu : Model -> Html Msg
 navMenu model =
@@ -931,7 +954,14 @@ navMenu model =
         , if model.navOpen then
             Html.div []
                 [ Html.div [ id "nav-menu", class "lh-menu lh-nav-menu", Html.Attributes.attribute "role" "menu" ]
-                    ((case List.length model.myGames of
+                    ((case model.session.user of
+                        Nothing ->
+                            []
+
+                        Just _ ->
+                            [ navItem "home-play" Started [ navIcon "hero-play", Html.text "Play" ], menuRule ]
+                     )
+                        ++ (case List.length model.myGames of
                         0 ->
                             []
 
@@ -961,7 +991,7 @@ navMenu model =
                                     [ navItem "nav-signin" PressedSignInMenu [ navIcon "hero-user-circle", Html.text "Sign in" ] ]
 
                                 Just user ->
-                                    [ Html.p [ class "lh-nav-who" ] [ Identity.badge Identity.Account, Html.span [ class "truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ] ]
+                                    [ Html.p [ id "nav-who", class "lh-nav-who" ] [ Identity.badge Identity.Account, Html.span [ class "truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ] ]
                                     , navItem "nav-logout" PressedLogOut [ navIcon "hero-arrow-right-start-on-rectangle", Html.text "Log out" ]
                                     ]
                            )
@@ -971,107 +1001,6 @@ navMenu model =
           else
             Html.text ""
         ]
-
-
-{-| The bird, alone: the wordmark is the page's title. -}
-birdMark : Html msg
-birdMark =
-    Svg.svg
-        [ SvgAttr.viewBox "0 0 24 24"
-        , SvgAttr.width "24"
-        , SvgAttr.height "24"
-        , SvgAttr.fill "none"
-        , SvgAttr.stroke "currentColor"
-        , SvgAttr.strokeWidth "2"
-        , SvgAttr.strokeLinecap "round"
-        , SvgAttr.strokeLinejoin "round"
-        , Html.Attributes.attribute "aria-hidden" "true"
-        ]
-        [ Svg.path [ SvgAttr.d "M16 7h.01" ] []
-        , Svg.path [ SvgAttr.d "M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20" ] []
-        , Svg.path [ SvgAttr.d "m20 7 2 .5-2 .5" ] []
-        , Svg.path [ SvgAttr.d "M10 18v3" ] []
-        , Svg.path [ SvgAttr.d "M14 17.75V21" ] []
-        , Svg.path [ SvgAttr.d "M7 18a6 6 0 0 0 3.84-10.61" ] []
-        ]
-
-
-{-| "2 live games" in the bar, when there are any: the list of them. -}
-liveGamesButton : Model -> Html Msg
-liveGamesButton model =
-    case List.length model.myGames of
-        0 ->
-            Html.text ""
-
-        n ->
-            let
-                label =
-                    String.fromInt n
-                        ++ (if n == 1 then
-                                " live game"
-
-                            else
-                                " live games"
-                           )
-            in
-            -- On a phone the pill is the dot and the number: the words go
-            -- where there is room for them, and stay for a screen reader.
-            Html.button
-                [ Html.Attributes.type_ "button"
-                , id "resume-games"
-                , class "lh-live"
-                , Html.Attributes.attribute "aria-label" label
-                , onClick OpenedResume
-                ]
-                [ Html.span [ class "lh-live-dot", Html.Attributes.attribute "aria-hidden" "true" ] []
-                , Html.span [ class "lh-live-long" ] [ Html.text label ]
-                , Html.span [ class "lh-live-short", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text (String.fromInt n) ]
-                ]
-
-
-{-| The bar's right end: SIGN IN for a guest; the account, with LOG OUT
-behind it, for a browser signed in (it can land here at `/backgammon`).
--}
-homeAccount : Model -> Html Msg
-homeAccount model =
-    case model.session.user of
-        Nothing ->
-            Html.button [ Html.Attributes.type_ "button", id "signin-button", class "lh-btn", onClick PressedSignInMenu ]
-                [ Html.text "Sign in" ]
-
-        Just user ->
-            Html.div [ class "relative lh-account-wrap" ]
-                [ Html.button
-                    [ Html.Attributes.type_ "button"
-                    , id "account-button"
-                    , class "lh-btn lh-account"
-                    , Html.Attributes.attribute "aria-expanded"
-                        (if model.accountOpen then
-                            "true"
-
-                         else
-                            "false"
-                        )
-                    , Html.Attributes.attribute "aria-haspopup" "menu"
-                    , onClick ToggledAccount
-                    ]
-                    [ Identity.badge Identity.Account
-                    , Html.span [ class "truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ]
-                    ]
-                , if model.accountOpen then
-                    Html.div [ id "account-menu", class "lh-menu lh-account-menu", Html.Attributes.attribute "role" "menu" ]
-                        [ Html.button
-                            [ Html.Attributes.type_ "button"
-                            , id "logout"
-                            , Html.Attributes.attribute "role" "menuitem"
-                            , onClick PressedLogOut
-                            ]
-                            [ Html.text "Log out" ]
-                        ]
-
-                  else
-                    Html.text ""
-                ]
 
 
 {-| OSKOL, the line under it, the board, and the way in. -}
@@ -1745,43 +1674,7 @@ opponentId opponent =
 -}
 createDialog : List (Html Msg) -> Html Msg
 createDialog content =
-    dialog { id = "create-modal", closeId = "close-create", label = "Create a game", heading = "CREATE GAME", onClose = ClosedCreate, width = "max-w-sm" } content
-
-
-{-| A dialog's frame: the dimmed board behind it (a tap on it closes the
-dialog), the card with its heading and close button. The layer scrolls when
-the card is taller than the screen, as on a phone held sideways.
--}
-dialog : { id : String, closeId : String, label : String, heading : String, onClose : Msg, width : String } -> List (Html Msg) -> Html Msg
-dialog config content =
-    Html.div [ id config.id, class "fixed inset-0 z-50 overflow-y-auto flex items-start justify-center px-4 pt-[10vh] sm:pt-[14vh] pb-4" ]
-        [ Html.div
-            [ class "fixed inset-0"
-            , style "background: rgba(20, 22, 38, 0.55)"
-            , onClick config.onClose
-            , Html.Attributes.attribute "aria-hidden" "true"
-            ]
-            []
-        , Html.div
-            [ class ("q-card sheet relative w-full " ++ config.width ++ " p-5 sm:p-6")
-            , Html.Attributes.attribute "role" "dialog"
-            , Html.Attributes.attribute "aria-modal" "true"
-            , Html.Attributes.attribute "aria-label" config.label
-            ]
-            (Html.div [ class "flex items-center justify-between mb-5" ]
-                [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text config.heading ]
-                , Html.button
-                    [ Html.Attributes.type_ "button"
-                    , id config.closeId
-                    , onClick config.onClose
-                    , Html.Attributes.attribute "aria-label" "Close"
-                    , class "dialog-close w-8 h-8 rounded-full inline-flex items-center justify-center text-sm"
-                    ]
-                    [ Html.text "✕" ]
-                ]
-                :: content
-            )
-        ]
+    Dialog.view { id = "create-modal", closeId = "close-create", label = "Create a game", heading = "CREATE GAME", onClose = ClosedCreate, width = "max-w-sm" } content
 
 
 
@@ -1795,8 +1688,8 @@ signInModal : Model -> Html Msg
 signInModal model =
     case ( model.signInOpen, model.signIn ) of
         ( True, Just signIn ) ->
-            dialog { id = "signin-modal", closeId = "close-signin", label = "Sign in", heading = "SIGN IN", onClose = ClosedSignIn, width = "max-w-sm" }
-                [ Html.p [ class "q-note text-[14px] text-center mb-4" ]
+            Dialog.view { id = "signin-modal", closeId = "close-signin", label = "Sign in", heading = "SIGN IN", onClose = ClosedSignIn, width = "max-w-sm" }
+                [ Html.p [ class "q-note text-sm mb-3" ]
                     [ Html.text "Your games and your PR, on every device." ]
                 , Html.map SignInMsg (SignIn.view signIn)
                 ]
@@ -1816,8 +1709,11 @@ resumeModal model =
         -- Wider than the others: a row carries a name, the match, how long ago
         -- and two clocks, and 24rem crushed them (32rem is the fit). A phone is narrower than
         -- either, so there it is the screen's width as before.
-        dialog { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume, width = "max-w-lg" }
-            [ Html.ul [ id "resume-list", class "space-y-2" ]
+        Dialog.view { id = "resume-modal", closeId = "close-resume", label = "Your live games", heading = "LIVE GAMES", onClose = ClosedResume, width = "max-w-lg" }
+            -- A guest's list scrolls inside itself so the Sign up under it
+            -- stays on screen; an account has nothing under it, so its list
+            -- is as tall as it is and the dialog scrolls (`.is-capped`).
+            [ Html.ul [ id "resume-list", classList [ ( "space-y-2", True ), ( "is-capped", model.session.user == Nothing ) ] ]
                 (List.map (LiveGames.row { fetchedAt = model.fetchedAt, now = model.now } ClosedGame) model.myGames)
             , guestNote model
             ]

@@ -234,7 +234,23 @@ title model =
 -}
 withSession : Session -> Model -> Model
 withSession session model =
-    { model | session = session }
+    case Dict.get backgammonThemeKey session.prefs of
+        -- A board picked in the site's bar while the table is up (the bar
+        -- saves it): the table wears it at once, and no answer that was
+        -- already on its way may put the old one back.
+        Just name ->
+            if Dict.get backgammonThemeKey model.session.prefs /= Just name then
+                { model
+                    | session = session
+                    , prefs = Dict.insert backgammonThemeKey name model.prefs
+                    , picked = backgammonThemeKey :: model.picked
+                }
+
+            else
+                { model | session = session }
+
+        Nothing ->
+            { model | session = session }
 
 
 {-| A result card's offer -- at game over and between the games of a
@@ -304,10 +320,6 @@ value the test suite can drive without a `Browser.Navigation.Key`.
 type Out
     = NoOut
     | Navigate String
-      -- A display preference this viewer just picked: the shell keeps it
-      -- for the rest of the visit, so leaving the table and coming back
-      -- does not undo it.
-    | Remember String String
       -- This browser just signed in (on a result card): the shell re-reads who it is.
     | SignedIn (Maybe Session.User)
       -- PRACTICE THIS GAME'S N MISTAKES: the shell runs these puzzles, and
@@ -391,21 +403,6 @@ update msg model =
 
                         Nothing ->
                             stay updated Cmd.none
-
-                Backgammon.ChoseTheme name ->
-                    -- Three places keep it: the page (instantly), this
-                    -- browser (so the next first paint is right) and the
-                    -- guest's row (so their other browsers follow).
-                    ( { updated
-                        | prefs = Dict.insert backgammonThemeKey name updated.prefs
-                        , picked = backgammonThemeKey :: updated.picked
-                      }
-                    , Cmd.batch
-                        [ storePref { key = backgammonThemeKey, value = name }
-                        , Catalog.savePref model.session backgammonThemeKey name PrefSaved
-                        ]
-                    , Remember backgammonThemeKey name
-                    )
 
         ClockSynced posix ->
             let

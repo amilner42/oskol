@@ -41,6 +41,15 @@
   background-color: oklch(70% 0.18 55); /* orange-500 */
 }
 
+/* Every page wears the site's bar (`GameLanding.navBar`, 60px, sticky at
+   the top). A page that is exactly the screen -- the table, the replay, a
+   puzzle -- is exactly what the bar leaves: --page-h, never 100dvh. */
+:root {
+  --bar-h: 60px;
+  --page-h: calc(100dvh - var(--bar-h));
+}
+.h-under-bar { height: calc(100vh - var(--bar-h)); height: var(--page-h); }
+
 /* Mobile-safe viewport height - accounts for browser chrome (URL bar, etc) */
 .h-screen-safe {
   height: 100vh; /* fallback for older browsers */
@@ -538,14 +547,15 @@
 }
 .resume-chevron { color: var(--pencil); opacity: 0.6; transition: transform 0.14s ease, opacity 0.14s; }
 .resume-row:hover .resume-chevron { transform: translateX(2px); opacity: 1; }
-/* The guest home's LIVE GAMES scrolls past two and a half rows (three and a
-   half on a wide screen): the half row says there is more, and the Sign up
-   under the list stays on the screen instead of below it. */
-#resume-modal #resume-list {
+/* A guest's LIVE GAMES scrolls past two and a half rows (three and a half
+   on a wide screen): the half row says there is more, and the Sign up under
+   the list stays on the screen instead of below it. An account has no Sign
+   up, so its list is uncapped and the dialog itself scrolls. */
+#resume-modal #resume-list.is-capped {
   max-height: 178px; overflow-y: auto; overscroll-behavior: contain;
   padding: 2px 4px 4px 2px; margin: -2px -4px -4px -2px;
 }
-@media (min-width: 721px) and (min-height: 700px) { #resume-modal #resume-list { max-height: 260px; } }
+@media (min-width: 721px) and (min-height: 700px) { #resume-modal #resume-list.is-capped { max-height: 260px; } }
 /* Your move is the live games' green, not the yellow: yellow is the page's
    one call to act (PLAY NOW, Sign up), and two yellows fight. */
 .resume-pill.yours { background: #dcf3e0; color: #1d6a33; box-shadow: inset 0 0 0 1px rgba(29, 106, 51, 0.22); }
@@ -602,9 +612,13 @@
 
 /* Signing in (Ui.SignIn): the field, the six digits spaced like the
    mail prints them, the quiet links, and the win. */
-.signin-field { border-radius: 12px; }
 .signin .q-btn, #login .q-btn { border-radius: 12px; }
-.signin-code { border-radius: 12px; font-size: 24px; font-weight: 700; letter-spacing: 0.4em; padding-left: calc(1rem + 0.4em); }
+/* JOIN GAME and SIGN IN match: square fields, the button's curves. The
+   code's letter-spacing trails its last character, so the padding puts it
+   back in the middle, as .signin-code does. */
+#join-modal .q-btn { border-radius: 12px; }
+#join-modal .q-field { padding-left: calc(1rem + 0.4em); }
+.signin-code { font-size: 24px; font-weight: 700; letter-spacing: 0.4em; padding-left: calc(1rem + 0.4em); }
 .signin-code::placeholder { color: rgba(35, 36, 58, 0.18); }
 .signin-link { color: var(--pencil); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(35, 36, 58, 0.3); transition: color 0.12s; }
 .signin-link:hover { color: var(--ink); }
@@ -1397,7 +1411,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
    its head:
 
      - the board's height is the viewport's, exactly. `--bg-point-h` is
-       what is left of 100dvh (dynamic, so the browser's own chrome is
+       what is left of the page's height (dynamic, so the browser's own chrome is
        already deducted) once the centre band, the frame's top and bottom
        and the air at both edges are taken off, halved for the two rows
        of points. Every other board dimension -- point width, the bar,
@@ -1437,7 +1451,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
        the board is 12 points, the bar and its frame across, with the
        chrome's column to fit beside it. */
     --bg-point-h: min(
-      calc((100dvh - var(--bg-band-h) - 2 * var(--bg-lip) - 2 * var(--bg-edge)) / 2),
+      calc((var(--page-h) - var(--bg-band-h) - 2 * var(--bg-lip) - 2 * var(--bg-edge)) / 2),
       calc((100vw - 10rem) / 2.9)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
@@ -1545,7 +1559,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
    the board is sized by width and capped at a fixed point height; on a
    big monitor that left it small in the middle of the page. From 1024px
    up the point height is derived from the window's height the way the
-   landscape layout above does it -- what is left of 100dvh once the
+   landscape layout above does it -- what is left of the page's height once the
    page's padding, the header, the two identity bars, the centre band and
    the frame are taken off, halved for the two rows of points -- capped by
    the window's width. Point width, the bar, the trays, the
@@ -1568,7 +1582,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
        height wide; 12 points, the bar and the frame across) against the
        window less the page's padding. */
     --bg-point-h: min(
-      calc((100dvh - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop) - var(--bg-scrub-h)) / 2),
+      calc((var(--page-h) - var(--bg-page-py) - var(--bg-header-h) - var(--bg-bars-h) - var(--bg-band-h) - 2 * var(--bg-lip) - var(--bg-drop) - var(--bg-scrub-h)) / 2),
       calc((100vw - 8rem) / 2.9)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
@@ -1628,7 +1642,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
   /* Upright: as tall as the screen can spare once the controls, the note
      and a few lines of the list have their share, and never taller than
      the table's own. */
-  --bg-point-h: clamp(5.5rem, calc((100dvh - 30rem) / 2), 9rem);
+  --bg-point-h: clamp(5.5rem, calc((var(--page-h) - 30rem) / 2), 9rem);
   --bg-slab-w: calc(100vw - 1rem);
   --bg-pw: calc((var(--bg-slab-w) - 2 * var(--bg-frame-w) - var(--bg-bar-w) - 2 * 6px - 10 * 0.125rem) / 12);
   max-width: 100%;
@@ -1649,7 +1663,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
    the replay's specificity so the sideways and desktop rules below still
    size the board from the screen, exactly as they do for the replay. */
 :where(.pz-page) .bg-still { --bg-point-h: 9rem; }
-.rp-page.pz-page { height: auto; min-height: 100dvh; overflow: visible; }
+.rp-page.pz-page { height: auto; min-height: var(--page-h); overflow: visible; }
 /* A puzzle is one position, not a match: the bars' score chips say nothing. */
 .pz-page .score-chip { display: none; }
 /* Where this session is, over the question: the tier's mark and the
@@ -1736,7 +1750,7 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 .pz-action { gap: 6px; padding: 7px 14px; font-family: "Press Start 2P", monospace; font-size: 8px; }
 
 .rp-page {
-  height: 100dvh;
+  height: var(--page-h);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1970,7 +1984,7 @@ a.rp-match-row:hover { color: var(--ink); }
    own. It is
    as tall as what it shows and the page scrolls, the board and the row of
    arrows at its top. The puzzle page shares `.rp-*` and never sets this. */
-.rp-page.is-one { height: auto; min-height: 100dvh; overflow: visible; }
+.rp-page.is-one { height: auto; min-height: var(--page-h); overflow: visible; }
 /* Room to breathe, upright: the header off the board, the board off the
    arrows, the arrows off the panel. */
 .rp-page.is-one { padding: 12px 10px calc(18px + env(safe-area-inset-bottom)); gap: 14px; }
@@ -2016,7 +2030,7 @@ a.rp-match-row:hover { color: var(--ink); }
     /* the whole height, less the page's padding, the two identity bars,
        the band and the frame */
     --bg-point-h: min(
-      calc((100dvh - 12px - 3.9rem - var(--bg-band-h) - 2 * var(--bg-lip)) / 2),
+      calc((var(--page-h) - 12px - 3.9rem - var(--bg-band-h) - 2 * var(--bg-lip)) / 2),
       calc((100vw - 18rem) / 2.9)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
@@ -2042,7 +2056,7 @@ a.rp-match-row:hover { color: var(--ink); }
    stretched to share it, leaving a gap over the panel), and the panel sits
    at that row's top. */
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
-  .rp-page.is-one { height: auto; min-height: 100dvh; overflow: visible; grid-template-rows: auto auto 1fr; gap: 8px 12px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+  .rp-page.is-one { height: auto; min-height: var(--page-h); overflow: visible; grid-template-rows: auto auto 1fr; gap: 8px 12px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
   .rp-page.is-one .rp-board, .rp-page.is-one .rp-side { align-self: start; }
   .rp-page.is-one .rp-tab { padding: 8px 1px; font-size: 7px; }
 }
@@ -2071,7 +2085,7 @@ a.rp-match-row:hover { color: var(--ink); }
     --bg-lip: 6px;
     --bg-band-h: 4rem;
     --bg-point-h: min(
-      calc((100dvh - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
+      calc((var(--page-h) - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
       calc((100vw - 48px - 22rem - 16px - 4rem) / 2.9)
     );
     --bg-pw: calc(var(--bg-point-h) * 0.21);
@@ -2113,7 +2127,7 @@ a.rp-match-row:hover { color: var(--ink); }
    column beside the board, then the answers (or SHARE / NEXT), then the
    reveal, which scrolls. */
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
-  .rp-page.pz-page { grid-template-rows: auto auto auto auto minmax(0, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
+  .rp-page.pz-page { grid-template-rows: auto auto auto auto minmax(0, 1fr); height: var(--page-h); min-height: 0; overflow: hidden; }
   .pz-page .pz-progress { grid-column: 2; grid-row: 2; }
   .pz-page .pz-ask { grid-column: 2; grid-row: 3; }
   .pz-page .rp-controls-wrap { grid-row: 4; }
@@ -2127,7 +2141,7 @@ a.rp-match-row:hover { color: var(--ink); }
   .pz-page .pz-mark { width: 7px; height: 7px; }
 }
 @media (min-width: 1024px) {
-  .rp-page.pz-page { height: 100dvh; min-height: 0; overflow: hidden; grid-template-rows: auto auto auto auto; }
+  .rp-page.pz-page { height: var(--page-h); min-height: 0; overflow: hidden; grid-template-rows: auto auto auto auto; }
   .pz-ask { width: 100%; }
   .pz-page .rp-note { height: auto; flex: 1; min-height: 0; overflow-y: auto; }
 }
@@ -2139,19 +2153,6 @@ a.rp-match-row:hover { color: var(--ink); }
    eyebrows, not by boxes inside boxes -- so what follows is only the few
    things the notebook does not already say.
    --------------------------------------------------------------------- */
-
-/* The account on the bar, and its one-line menu: the board home's control
-   on paper, so the hover is ink rather than white and the menu hangs
-   below the name instead of above it. */
-.hm-account { color: inherit; transition: background 0.12s; }
-.hm-account:hover, .hm-account[aria-expanded="true"] { background: rgba(35, 36, 58, 0.06); }
-.hm-account-menu {
-  position: absolute; left: 0; top: calc(100% + 8px); z-index: 30;
-  background: #fff; color: var(--ink); border: 1.5px solid var(--ink); border-radius: 12px;
-  box-shadow: 3px 3px 0 0 var(--ink); padding: 4px; min-width: 9rem;
-}
-.hm-account-menu button { display: block; width: 100%; text-align: left; border-radius: 8px; }
-.hm-account-menu button:hover { background: var(--paper-2); }
 
 /* The board picker is the board home's (`GameLanding.themePicker`), whose
    control is painted for the dark board; on paper it takes the page's own
@@ -2467,8 +2468,6 @@ oskol-demo-board {
 .lh-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: var(--ink); transition: background 0.2s; }
 .lh-mark:hover { background: rgba(35, 36, 58, 0.06); }
 .lh-spacer { flex: 1; }
-.lh-navlink { height: 38px; padding: 0 10px; border: 0; border-radius: 10px; background: none; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--pencil); transition: color 0.2s, background 0.2s; }
-.lh-navlink:hover { color: var(--ink); background: rgba(35, 36, 58, 0.05); }
 .lh-btn {
   height: 38px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--hair-2);
   background: #fff; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--ink); white-space: nowrap;
@@ -2477,34 +2476,7 @@ oskol-demo-board {
 }
 .lh-btn:hover { border-color: rgba(35, 36, 58, 0.4); box-shadow: 0 4px 12px -6px rgba(35, 36, 58, 0.3); }
 .lh-btn:active { transform: scale(0.97); }
-.lh-account { max-width: 11rem; }
-.lh-live {
-  height: 34px; padding: 0 12px 0 10px; border-radius: 999px; border: 1px solid var(--hair-2); background: #fff;
-  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap;
-  font-size: 13.5px; font-weight: 600; color: var(--ink);
-}
-.lh-live:hover { border-color: rgba(35, 36, 58, 0.4); }
-.lh-live-short { display: none; }
 .lh-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--marker-green); box-shadow: 0 0 0 3px rgba(98, 195, 112, 0.18); }
-.lh-join-wrap { position: relative; display: flex; }
-.lh-join {
-  display: flex; align-items: center; height: 38px;
-  border: 1px solid var(--hair-2); border-radius: 12px; background: #fff;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.lh-join:focus-within { border-color: var(--pen); box-shadow: 0 0 0 3px rgba(47, 95, 208, 0.14); }
-.lh-join input {
-  width: 96px; border: 0; background: transparent; outline: none; padding: 0 4px 0 12px;
-  font-family: "Press Start 2P", ui-monospace, monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
-}
-.lh-join input::placeholder { color: #a3a3ad; letter-spacing: 1px; }
-.lh-join button {
-  height: 30px; margin: 3px; padding: 0 12px; border: 0; border-radius: 9px; cursor: pointer;
-  background: var(--ink); color: #fff !important; font-size: 13px; font-weight: 600;
-}
-.lh-join button:hover { background: #34364f; }
-.lh-join-error { position: absolute; top: calc(100% + 8px); right: 0; margin: 0; white-space: nowrap; padding: 6px 10px; border-radius: 8px; background: var(--ink); color: #fff; font-size: 12.5px; font-weight: 500; }
-.lh-join-open { display: none; }
 .lh-themes .home-themes > button { color: var(--pencil); background: transparent; border: 0; border-radius: 10px; height: 38px; transition: color 0.12s, background 0.2s; }
 .lh-themes .home-themes > button:hover { color: var(--ink); background: rgba(35, 36, 58, 0.05); }
 .lh-themes .home-themes > button .home-palette { transition: transform 0.18s ease; }
@@ -2522,8 +2494,7 @@ oskol-demo-board {
 .lh-menu button:hover, .lh-menu button:focus-visible { background: var(--paper-2); outline: none; }
 .lh-menu button[aria-selected="true"]::after { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
 .lh-menu hr { border: 0; border-top: 1px solid var(--hair); margin: 4px 6px; }
-.lh-account-menu { right: 0; top: calc(100% + 8px); }
-.lh-more { display: none; position: relative; }
+.lh-more { position: relative; } /* ☰, at every width: the bar is the bird, the themes, PLAY and this */
 .lh-burger { position: relative; width: 40px; padding: 0; justify-content: center; }
 .lh-burger-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--marker-green); box-shadow: 0 0 0 2px #fff; }
 .lh-nav-menu button { justify-content: flex-start; gap: 12px; }
@@ -2532,6 +2503,27 @@ oskol-demo-board {
 .lh-nav-who { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px 4px; font-size: 13px; font-weight: 600; color: var(--pencil); max-width: 16rem; }
 .lh-nav-menu { right: 0; top: calc(100% + 8px); min-width: 12rem; }
 .lh-nav-scrim { position: fixed; inset: 0; z-index: 19; }
+/* The signed-in home wears the same bar over a page that scrolls: the
+   frame is only the bar, and it is the frame that sticks. */
+.lh.lh-top { position: sticky; top: 0; z-index: 20; height: auto; min-height: 0; }
+
+/* `/` before it knows which home it is (`Ui.Loading`, and the server's
+   copy in spa.html.heex): the paper and one thin bar. The fill eases to
+   about seven tenths over the second the bar is always up (`Loading.minMs`),
+   then creeps, and never claims to be done. */
+.boot { position: fixed; inset: 0; display: grid; place-items: center; }
+.boot-track { width: min(220px, 56vw); height: 4px; border-radius: 999px; background: rgba(35, 36, 58, 0.1); overflow: hidden; }
+.boot-fill {
+  width: 100%; height: 100%; border-radius: inherit; background: var(--ink);
+  transform-origin: left center; transform: scaleX(0);
+  animation: boot-fill 8s linear forwards;
+}
+@keyframes boot-fill {
+  0% { transform: scaleX(0); animation-timing-function: cubic-bezier(0.3, 0.6, 0.4, 1); }
+  12.5% { transform: scaleX(0.7); animation-timing-function: ease-out; }
+  50% { transform: scaleX(0.88); }
+  100% { transform: scaleX(0.95); }
+}
 
 /* the stage: head, board, dock */
 .lh-stage {
@@ -2642,14 +2634,9 @@ oskol-demo-board {
 .lh-go:disabled { opacity: 0.6; pointer-events: none; }
 
 @media (max-width: 900px) {
-  .lh-join { display: none; }
-  .lh-join-open { display: inline-flex; }
   .lh-bar { gap: 6px; padding: 0 12px; }
 }
 @media (max-width: 720px) {
-  /* the bar: the bird, the themes and ☰ -- the rest is in ☰ */
-  #puzzles, .lh-join-wrap, #resume-games, #signin-button, .lh-account-wrap { display: none; }
-  .lh-more { display: block; }
   /* the themes on a phone: three to a row, so the whole choice fits the screen at a glance */
   .lh .bg-theme-list { position: fixed; top: 68px; left: 12px; right: 12px; width: auto; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; }
   .lh .bg-theme-option { font-size: 10.5px; gap: 5px; }
@@ -2665,14 +2652,9 @@ oskol-demo-board {
   .lh-dlg-card { width: 100%; border-radius: 20px 20px 0 0; padding: 24px 18px calc(20px + env(safe-area-inset-bottom)); }
   /* a menu on a phone is a sheet at the bottom of the screen: never off its edge */
   .lh-pick-menu { position: fixed; left: 12px; right: 12px; bottom: 12px; transform: none; min-width: 0; max-height: calc(100svh - 24px); overflow-y: auto; }
-  .lh-navlink { padding: 0 6px; }
-  .lh-live { padding: 0 10px 0 9px; gap: 6px; }
-  .lh-live-long { display: none; }
-  .lh-live-short { display: inline; }
 }
 @media (max-width: 380px) {
   .lh-sentence { font-size: 16.5px; }
-  .lh-live { padding: 0 8px; font-size: 12.5px; }
   .lh-bar { gap: 2px; padding: 0 8px; }
   .lh-btn { padding: 0 11px; }
 }

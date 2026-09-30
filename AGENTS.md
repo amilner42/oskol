@@ -682,23 +682,33 @@ src/oskol/handlers/home.gleam    the signed-in home: the live games, the two
 src/oskol/caps/activity.gleam    was this player here today: the local days a
                                  puzzle was answered or a game of theirs
                                  finished, which the streak is counted over
-assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME
+assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME, and the
+                                 bar every page wears (`bar`: one GameLanding model
+                                 for the session, `navBar` drawn over every page and
+                                 `barModals` -- CREATE GAME, LIVE GAMES, SIGN IN --
+                                 over whatever page is up; a full-screen page, the
+                                 table, the replay, a puzzle, sizes itself to what
+                                 the bar leaves, `--page-h` in app.css)
 assets/src/Route.elm             the three client routes, mirroring the server's
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
-assets/src/Page/GameLanding.elm  "/" the guest's home page (`home`: the bar -- bird,
-                                 N live games, Puzzles, the boards, JOIN, Sign in --
+assets/src/Page/GameLanding.elm  "/" the guest's home page (`home`: the site's bar,
+                                 `navBar`, passed in -- the bird, the boards and ☰ --
                                  OSKOL, "Play backgammon.", the demo board, and the one
                                  sentence "Play [a single game] against [Sage] with no
                                  clock" over PLAY NOW; a friend's name dialog) and
                                  "/:slug?game=" what an invite offers. `createOnly`,
                                  `createModal` and `themePicker` are what the signed-in
                                  home starts a game and picks a board with
+assets/src/Ui/Loading.elm        `/` before it knows which home it is: the bar with
+                                 only the bird, and a loading bar, until /papi/me
+                                 (and an account's home) answers and at least 1 s
+                                 has passed; the server paints the same markup first
 assets/js/demo_board.js          <oskol-demo-board>: the guest home's board, a CSS-3D
                                  board in the page's theme playing a demo game on a loop;
                                  decorative, talks to nothing, fits itself in its box
-assets/src/Page/Home.elm         "/" for an account: the bar (the name, PLAY, JOIN,
-                                 PUZZLES, the boards), then form first (two numbers, the
+assets/src/Page/Home.elm         "/" for an account, under the site's bar (whose
+                                 ☰ leads with PLAY for an account): form first (two numbers, the
                                  streak, the sentence, the line), live games with your
                                  move first, PUZZLES (one tier's card -- `Ui.Tiers` --
                                  ) and recent
@@ -771,6 +781,9 @@ assets/src/Games/Backgammon/Words.elm   the engine's verdict in words and number
                                  and grade tags. The replay reads it and the puzzle
                                  reveal will; `tooGood` is the twin of Gleam's
                                  `oskol/puzzles.too_good` and moves with it
+assets/src/Ui/Dialog.elm         the one dialog frame both homes open (JOIN GAME, SIGN
+                                 IN, CREATE GAME, LIVE GAMES): a rounded sheet, the
+                                 eyebrow heading and a plain ✕, left-aligned text
 assets/src/Ui/Shell.elm          the OSKOL wordmark, the code prompt (JOIN, on both
                                  homes), the footer
 assets/src/Ui/Scrub.elm          one row of plates (arrows outside, buttons between) under
@@ -856,7 +869,13 @@ arrive at any of them cold, and moving between them afterwards is a
   from `GET /papi/me/home`). `Main` picks by the session and picks again when
   `/papi/me` lands, so a browser that turns out to be signed in ends up on
   its own home with no reload, and one that logs out is handed the board
-  back. The server serves the same shell either way.
+  back. Until then `/` is a loading screen (`Ui.Loading`: the bar with only
+  the bird, which both homes' bars start with, and a thin loading bar), up
+  for at least a second from the page starting to load and until an
+  account's home has its answer, so neither home flashes before the other.
+  The server paints that same screen before the app boots (`spa.html.heex`)
+  and the app's bar picks its animation up where the server's left it. The
+  server serves the same shell either way.
 - `/papi/library`, `/papi/games/:slug` (GET and POST) the landing pages as
   JSON for the Elm client. Public like the pages, session-based guest
   identity, CSRF token in `x-csrf-token`. Envelope: `{"ok": true, ...}` or
@@ -1186,8 +1205,8 @@ whether it is the caller's turn (`your_move`, from the row's `state`), the
 two clocks as the snapshot last read them with how long ago that was
 (`time`, so the client can charge the running one and count it down), and
 seconds since the room was touched. The guest home (`Page/GameLanding.elm`)
-offers them as "N live games" in its bar for as long as there are any, and
-the list opens only when that is pressed: nothing pops up over the page a
+offers them as "N live games" in its bar's ☰ (with a dot on ☰) for as
+long as there are any, and the list opens only when that is pressed: nothing pops up over the page a
 player came to play on. Nothing prunes games (they
 are kept, finished or not), so nothing bounds the list yet -- but a lobby
 nobody joined can be closed from its own row (`closable`; see "A room that
@@ -1263,10 +1282,12 @@ visitor whose guest cookie is gone has.
 ## The guest home
 
 `/` for a browser with no account (`Page.GameLanding.home`), and
-`/backgammon` for anyone. Paper, one bar (the bird home; "N live games"
-when there are any; Puzzles; the themes; JOIN, the code field itself;
-Sign in -- and on a phone just the bird, the themes and ☰, whose menu
-holds the rest, with a dot on ☰ when there are live games),
+`/backgammon` for anyone. Paper, the bar every page on the site wears, the
+same at every width (`GameLanding.navBar`, on the shell's `Main.bar`): the
+bird home, the themes and ☰, whose menu holds the rest -- "N live games"
+when there are any (with a dot on ☰), Puzzles, Join a game (the shell's
+code prompt), and Sign in or the account with Log out; for an account the
+menu leads with Play --
 OSKOL in Bungee Shade (self-hosted), "Play backgammon.", a board playing a
 demo game by itself (`<oskol-demo-board>`, `assets/js/demo_board.js`, in
 the board theme the visitor picked), and one sentence over one button:
@@ -2337,8 +2358,8 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
 **Browser (`bin/check --browser`)**: Playwright smokes create real games and
 play them; review scripts take screenshots for eyeballing. The ways into a
 game live once, in `playwright/lib/flows.js`: `createGame` (a guest says it
-in the home's sentence and presses PLAY NOW; an account uses PLAY's
-dialog; by element id), `joinByLink`, `joinByCode` and
+in the home's sentence and presses PLAY NOW; an account uses ☰'s PLAY
+and its dialog; by element id), `barItem` (anything in ☰), `joinByLink`, `joinByCode` and
 `openSeat`, and `seatedContext` for a browser that already holds a seat. A
 smoke uses those rather than clicking through the home page itself, so a
 change to the home page or the invite touches that one file. Two players
@@ -2476,8 +2497,8 @@ sheet over the board, so READY stays in the band), at the end of a
 practice run, under an invite whose seat belongs to an account
 — always the one component, `Ui.SignIn`, in the same words, and never
 more than a line until pressed; a guest who ignores it loses nothing and
-plays exactly as before. Signed in, the home bar shows the account with
-LOG OUT behind it.
+plays exactly as before. Signed in, the site's bar's ☰ names the account
+with LOG OUT under it.
 
 **An account shows up by its username, never its email.** `users.name`
 is citext and unique (`UniqueUsernames`). A new account is named at its
@@ -2502,7 +2523,7 @@ sign-in stamp; `GameServerState.display_name/1`). So a rename is one row:
 `POST /papi/me/name` writes `users.name`, tells the live rooms holding
 that account's seats (`GameServer.rename/3`, nothing persisted), and every
 game past and present shows the new name at once. A guest's home bar has the
-same caret as an account's, with SIGN IN behind it.
+same ☰ as an account's, with SIGN IN in it.
 
 **Accounts** are `users` (uuid id, `email` citext unique, `name` citext
 unique, `last_login_at`) and `login_tokens` (a sign-in in flight: `email`,

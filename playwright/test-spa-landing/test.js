@@ -38,7 +38,7 @@ async function checkPhoneBar(page, tag, live) {
       .map((e) => e.id || e.className)
   );
   if (shown.length !== 3 || shown[0] !== 'lh-mark' || shown[1] !== 'bg-theme-button' || shown[2] !== 'nav-more')
-    throw new Error(`${tag}: the phone bar shows ${JSON.stringify(shown)}, not the bird, the themes and ☰`);
+    throw new Error(`${tag}: the bar shows ${JSON.stringify(shown)}, not the bird, the themes and ☰`);
   const dot = await page.isVisible('#nav-more .lh-burger-dot');
   if (dot !== live > 0) throw new Error(`${tag}: ☰'s live games dot is ${dot ? 'on' : 'off'} with ${live} live games`);
   await page.click('#nav-more');
@@ -84,15 +84,9 @@ async function shots(browser, viewport, tag, errors) {
     if (checkers !== 30) throw new Error(`the home board shows ${checkers} checkers, not 30`);
     const said = (await page.textContent('#sentence')).replace(/\s+/g, ' ').trim();
     if (!/^Play .+ against .+ with .+$/.test(said)) throw new Error(`the sentence reads "${said}"`);
-    if (viewport.width <= 720) {
-      await checkPhoneBar(page, tag, 0);
-    } else {
-      if ((await page.textContent('#puzzles')).trim() !== 'Puzzles') throw new Error('the bar has no Puzzles');
-      if ((await page.textContent('#signin-button')).trim() !== 'Sign in') throw new Error('the bar has no Sign in');
-      const join = (await page.isVisible('#nav-join-code')) || (await page.isVisible('#home-join'));
-      if (!join) throw new Error('the bar has no way to JOIN by code');
-    }
-    if (await page.locator('#resume-games').count()) throw new Error('a fresh browser has a live games pill');
+    // The bar is the bird, the themes and ☰ at every width, and a fresh
+    // browser's ☰ has no live games in it (checkPhoneBar checks the dot).
+    await checkPhoneBar(page, tag, 0);
     if (!(await page.isVisible('#roll-dice'))) throw new Error('there is no PLAY NOW');
     // PUZZLES is a way in, not a promise: it opens the practice home
     // without a page load, and the home is still a tap away.
@@ -199,15 +193,12 @@ async function clickThrough(browser, errors) {
     // Alice goes home. Her browser holds a seat in an unfinished game: the
     // bar says so, and the list stays shut until she asks for it.
     await openHome(alice);
-    await alice.waitForSelector('#resume-games');
+    await alice.waitForSelector('#nav-more .lh-burger-dot');
     await alice.waitForTimeout(400);
     if (await alice.locator('#resume-modal').count()) throw new Error('the list of live games opened by itself');
-    // What it says on screen (a phone shows just the number), and what it is called.
-    const note = (await alice.getAttribute('#resume-games', 'aria-label')).trim();
-    const shown = (await alice.innerText('#resume-games')).replace(/\s+/g, ' ').trim();
-    if (shown !== '1 live game') throw new Error(`the bar shows "${shown}"`);
-    if (note !== '1 live game') throw new Error(`the bar reads "${note}"`);
-    await alice.click('#resume-games');
+    // ☰ wears a dot, and its menu says how many.
+    await checkPhoneBar(alice, 'desktop', 1);
+    await barItem(alice, 'live');
     await alice.waitForSelector('#resume-modal');
     const row = alice.locator(`#resume-${gameId}`);
     const rowText = (await row.textContent()).replace(/\s+/g, ' ').trim();
@@ -218,10 +209,10 @@ async function clickThrough(browser, errors) {
     if (!/(Your|Their) move/.test(rowText)) throw new Error(`the resume row says nothing about whose move: "${rowText}"`);
     await alice.screenshot({ path: `${SHOTS}/desktop-07-resume.png`, fullPage: true });
 
-    // A tap on the backdrop closes it; the pill opens it again.
+    // A tap on the backdrop closes it; ☰ opens it again.
     await alice.mouse.click(8, 8);
     await alice.waitForSelector('#resume-modal', { state: 'detached' });
-    await alice.click('#resume-games');
+    await barItem(alice, 'live');
     await alice.waitForSelector('#resume-modal');
     await alice.click(`#resume-${gameId}`);
     await alice.waitForSelector('.checker', { timeout: 20000 });
@@ -230,7 +221,7 @@ async function clickThrough(browser, errors) {
     log('home -> live games -> back at the table: RESUME OK');
 
     // The same list on a phone, upright and sideways: it must fit without
-    // the page scrolling sideways, and the pill must stay in the bar. Same
+    // the page scrolling sideways, and ☰ must stay in the bar. Same
     // context, so the same guest holds the seat.
     for (const [tag, viewport] of [
       ['phone-390', { width: 390, height: 844 }],
@@ -241,15 +232,14 @@ async function clickThrough(browser, errors) {
       watch(small, tag, errors);
       await small.setViewportSize(viewport);
       await openHome(small);
-      await small.waitForSelector('#resume-games', { state: 'attached' });
+      await small.waitForSelector('#nav-more .lh-burger-dot');
       const barWide = await small.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
       );
-      if (barWide > 0) throw new Error(`${tag}: the bar with the live games pill makes the page ${barWide}px too wide`);
-      // A phone's bar is the bird, the themes and ☰ (the dot says there are games); a
-      // wider screen keeps the pill in the bar.
-      const pill = viewport.width <= 720 ? '#nav-more' : '#resume-games';
-      if (viewport.width <= 720) await checkPhoneBar(small, tag, 1);
+      if (barWide > 0) throw new Error(`${tag}: the bar makes the page ${barWide}px too wide`);
+      // The bar is the bird, the themes and ☰ (the dot says there are games).
+      const pill = '#nav-more';
+      await checkPhoneBar(small, tag, 1);
       const plate = await small.locator(pill).boundingBox();
       const bar = await small.locator('.lh-bar').boundingBox();
       if (!plate || !bar || plate.y < bar.y || plate.y + plate.height > bar.y + bar.height + 1 ||
@@ -278,7 +268,7 @@ async function clickThrough(browser, errors) {
       await openHome(stranger);
       await stranger.waitForTimeout(600);
       if (await stranger.locator('#resume-modal').count()) throw new Error('a stranger was offered games to resume');
-      if (await stranger.locator('#resume-games').count()) throw new Error('a stranger has a live games pill');
+      if (await stranger.locator('.lh-burger-dot').count()) throw new Error('a stranger has a live games dot');
     } finally {
       await nobody.close();
     }
