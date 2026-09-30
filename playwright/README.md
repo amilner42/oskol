@@ -31,7 +31,7 @@ Create `playwright/test-<name>/test.js`. Get into a game through
 `playwright/lib/flows.js` rather than clicking through the pages yourself:
 `createGame(page, {name, mode, clock, opponent})` goes to `/` and, for a
 guest, says it in the home page's sentence (`pickWord(page, word,
-optionId)` picks one word) and presses ROLL DICE / GET A LINK, typing the
+optionId)` picks one word) and presses PLAY NOW / GET A LINK, typing the
 name into the friend dialog; for an account it fills PLAY's dialog. It
 resolves with `{gameId, url, inviteUrl}`. `openHome(page)` waits for `/` to
 settle and answers `'guest'` or `'account'`, and `openCreateDialog(page)`

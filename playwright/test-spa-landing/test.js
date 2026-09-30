@@ -18,12 +18,43 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
-const { BASE, openHome, pickWord, createGame, joinByLink } = require('../lib/flows');
+const { BASE, barItem, openHome, pickWord, createGame, joinByLink } = require('../lib/flows');
 
 const SHOTS = 'playwright/screenshots/test-spa-landing';
 const PHONE = { width: 390, height: 844 };
 const DESKTOP = { width: 1280, height: 900 };
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
+
+/**
+ * A phone's bar (720px and under) is the bird, the themes and ☰, and nothing else shows;
+ * ☰ carries a dot when this browser has live games, and its menu has every
+ * way in. `live` is how many live games the menu should list (0 for none).
+ * Leaves the menu shut.
+ */
+async function checkPhoneBar(page, tag, live) {
+  const shown = await page.evaluate(() =>
+    [...document.querySelectorAll('.lh-bar a, .lh-bar button, .lh-bar input')]
+      .filter((e) => e.offsetParent !== null && getComputedStyle(e).visibility !== 'hidden')
+      .map((e) => e.id || e.className)
+  );
+  if (shown.length !== 3 || shown[0] !== 'lh-mark' || shown[1] !== 'bg-theme-button' || shown[2] !== 'nav-more')
+    throw new Error(`${tag}: the phone bar shows ${JSON.stringify(shown)}, not the bird, the themes and ☰`);
+  const dot = await page.isVisible('#nav-more .lh-burger-dot');
+  if (dot !== live > 0) throw new Error(`${tag}: ☰'s live games dot is ${dot ? 'on' : 'off'} with ${live} live games`);
+  await page.click('#nav-more');
+  await page.waitForSelector('#nav-menu');
+  const items = await page.$$eval('#nav-menu button', (bs) => bs.map((b) => b.id));
+  const want = [...(live ? ['nav-live'] : []), 'nav-puzzles', 'nav-join-game', 'nav-signin'];
+  if (JSON.stringify(items) !== JSON.stringify(want))
+    throw new Error(`${tag}: ☰'s menu has ${JSON.stringify(items)}, not ${JSON.stringify(want)}`);
+  if (live) {
+    const text = (await page.innerText('#nav-live')).replace(/\s+/g, ' ').trim();
+    const words = `${live} live game${live === 1 ? '' : 's'}`;
+    if (text !== words) throw new Error(`${tag}: ☰'s live games item reads "${text}"`);
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('#nav-menu', { state: 'detached' });
+}
 
 const watch = (page, who, errors) => {
   page.on('pageerror', (e) => errors.push(`${who} pageerror: ${e.message}`));
@@ -53,15 +84,19 @@ async function shots(browser, viewport, tag, errors) {
     if (checkers !== 30) throw new Error(`the home board shows ${checkers} checkers, not 30`);
     const said = (await page.textContent('#sentence')).replace(/\s+/g, ' ').trim();
     if (!/^Play .+ against .+ with .+$/.test(said)) throw new Error(`the sentence reads "${said}"`);
-    if ((await page.textContent('#puzzles')).trim() !== 'Puzzles') throw new Error('the bar has no Puzzles');
-    if ((await page.textContent('#signin-button')).trim() !== 'Sign in') throw new Error('the bar has no Sign in');
-    const join = (await page.isVisible('#nav-join-code')) || (await page.isVisible('#home-join'));
-    if (!join) throw new Error('the bar has no way to JOIN by code');
+    if (viewport.width <= 720) {
+      await checkPhoneBar(page, tag, 0);
+    } else {
+      if ((await page.textContent('#puzzles')).trim() !== 'Puzzles') throw new Error('the bar has no Puzzles');
+      if ((await page.textContent('#signin-button')).trim() !== 'Sign in') throw new Error('the bar has no Sign in');
+      const join = (await page.isVisible('#nav-join-code')) || (await page.isVisible('#home-join'));
+      if (!join) throw new Error('the bar has no way to JOIN by code');
+    }
     if (await page.locator('#resume-games').count()) throw new Error('a fresh browser has a live games pill');
-    if (!(await page.isVisible('#roll-dice'))) throw new Error('there is no ROLL DICE');
+    if (!(await page.isVisible('#roll-dice'))) throw new Error('there is no PLAY NOW');
     // PUZZLES is a way in, not a promise: it opens the practice home
     // without a page load, and the home is still a tap away.
-    await page.click('#puzzles');
+    await barItem(page, 'puzzles');
     await page.waitForSelector('#puzzles-hub');
     if (new URL(page.url()).pathname !== '/puzzles') throw new Error(`PUZZLES landed on ${page.url()}`);
     await page.goBack();
@@ -206,18 +241,22 @@ async function clickThrough(browser, errors) {
       watch(small, tag, errors);
       await small.setViewportSize(viewport);
       await openHome(small);
-      await small.waitForSelector('#resume-games');
+      await small.waitForSelector('#resume-games', { state: 'attached' });
       const barWide = await small.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
       );
       if (barWide > 0) throw new Error(`${tag}: the bar with the live games pill makes the page ${barWide}px too wide`);
-      const plate = await small.locator('#resume-games').boundingBox();
+      // A phone's bar is the bird, the themes and ☰ (the dot says there are games); a
+      // wider screen keeps the pill in the bar.
+      const pill = viewport.width <= 720 ? '#nav-more' : '#resume-games';
+      if (viewport.width <= 720) await checkPhoneBar(small, tag, 1);
+      const plate = await small.locator(pill).boundingBox();
       const bar = await small.locator('.lh-bar').boundingBox();
       if (!plate || !bar || plate.y < bar.y || plate.y + plate.height > bar.y + bar.height + 1 ||
           plate.x < bar.x || plate.x + plate.width > bar.x + bar.width + 1)
-        throw new Error(`${tag}: the live games pill is not inside the bar`);
+        throw new Error(`${tag}: ${pill} is not inside the bar`);
       await small.screenshot({ path: `${SHOTS}/${tag}-08-home-with-games.png` });
-      await small.click('#resume-games');
+      await barItem(small, 'live');
       await small.waitForSelector('#resume-modal');
       await small.waitForTimeout(300);
       await small.screenshot({ path: `${SHOTS}/${tag}-07-resume.png` });

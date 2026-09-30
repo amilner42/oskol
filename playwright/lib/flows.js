@@ -31,7 +31,7 @@ async function dismissResume(page) {
 
 /**
  * Visit `path` and wait until `/` has settled which home it is: the guest's
- * (the sentence and ROLL DICE) or an account's (PLAY). `/papi/me` decides,
+ * (the sentence and PLAY NOW) or an account's (PLAY). `/papi/me` decides,
  * so wait for its answer, set up before the visit since it may come back
  * before the first paint.
  */
@@ -118,17 +118,38 @@ async function joinByLink(page, inviteUrl, name = 'Bob') {
 }
 
 /**
+ * One of the guest home's bar items, wherever the screen puts it: on a wide
+ * screen it is in the bar; on a phone the bar is the bird, the themes and
+ * ☰, and the item is in ☰'s menu. `item` is 'live' (the live games), 'signin',
+ * 'puzzles', 'join' or 'themes'.
+ */
+const BAR = {
+  live: ['#resume-games', '#nav-live'],
+  signin: ['#signin-button', '#nav-signin'],
+  puzzles: ['#puzzles', '#nav-puzzles'],
+  join: ['#home-join', '#nav-join-game'],
+  themes: ['#bg-theme-button', '#bg-theme-button'], // in the bar at every size
+};
+async function barItem(page, item) {
+  const [wide, phone] = BAR[item];
+  if (await page.isVisible(wide)) return page.click(wide);
+  await page.click('#nav-more');
+  await page.waitForSelector(`#nav-menu ${phone}`);
+  return page.click(phone);
+}
+
+/**
  * JOIN on the home page: six characters, then the same invite. The guest
  * home's bar has the code field itself on a wide screen (the sixth
- * character goes on its own); a phone, and an account's home, have a JOIN
- * button that opens the prompt.
+ * character goes on its own); a phone has JOIN in ☰'s menu, and an
+ * account's home a JOIN button; both open the prompt.
  */
 async function joinByCode(page, code, name = 'Bob') {
   await openHome(page);
   if (await page.isVisible('#nav-join-code')) {
     await page.fill('#nav-join-code', code);
   } else {
-    await page.click('#home-join');
+    await barItem(page, 'join');
     await page.waitForSelector('#join-modal #join-code-input');
     // The sixth character submits on its own.
     await page.fill('#join-code-input', code);
@@ -191,4 +212,4 @@ function resultLine(out) {
   return line;
 }
 
-module.exports = { resultLine, BASE, dismissResume, openHome, openCreateDialog, pickWord, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };
+module.exports = { resultLine, BASE, dismissResume, barItem, openHome, openCreateDialog, pickWord, createGame, joinByLink, joinByCode, openSeat, takeSeat, seatedContext, guestId };

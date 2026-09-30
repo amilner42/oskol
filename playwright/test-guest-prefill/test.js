@@ -4,7 +4,7 @@
  * 1. Create a game against a friend as "Alice" (a brand-new guest's friend
  *    dialog starts empty)
  * 2. GET A LINK again in the same browser context: the friend dialog's name
- *    is prefilled "Alice" (guest cookie -> saved name), and ROLL DICE
+ *    is prefilled "Alice" (guest cookie -> saved name), and PLAY NOW
  *    against Sage seats the browser as "Alice" with nothing to type
  * 3. A fresh context (a different visitor) gets an empty field, and plays
  *    Sage as "Guest"

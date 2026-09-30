@@ -2316,8 +2316,7 @@ button.tier-row:active { background: var(--paper-2); transform: translateY(1px);
    the desk, playing a short demo game on a loop. Every colour comes from
    the board theme's tokens (--bg-*), so the page's `.bg-theme-*` class
    repaints it live. The element fills its box; the JS sets --bw (the
-   board's width), --dx/--dy (centring) and `.is-tall` (the board turned a
-   quarter for a box much taller than wide). Everything is scoped under
+   board's width) and --dx/--dy (centring). Everything is scoped under
    the element and `.demo-board`, with `db-` class names, so nothing here
    reaches the rest of the page. */
 oskol-demo-board {
@@ -2434,19 +2433,6 @@ oskol-demo-board {
 .demo-board .db-thinking b:nth-child(3) { animation-delay: .3s; }
 @keyframes db-think { 0%, 100% { opacity: .25; } 40% { opacity: 1; } }
 
-/* a box much taller than wide: the board stands the long way, the mark upright */
-.demo-board.is-tall .db-stage { width: calc(var(--bw) * .71875); height: calc(var(--bw) * .92); }
-.demo-board.is-tall .db-rig {
-  width: calc(var(--bw) * .71875); height: var(--bw);
-  margin-left: calc(var(--bw) * -.359375); margin-top: calc(var(--bw) * -.5);
-}
-.demo-board.is-tall .db-turn {
-  inset: auto; left: 50%; top: 50%; width: var(--bw); height: calc(var(--bw) * .71875);
-  margin-left: calc(var(--bw) * -.5); margin-top: calc(var(--bw) * -.359375);
-  transform: rotate(90deg);
-}
-.demo-board.is-tall .db-mark { transform-box: view-box; transform-origin: 320px 230px; transform: rotate(-90deg); }
-.demo-board.is-tall .db-seat { left: 50%; transform: translate(-50%, -60%) translateZ(26px); }
 
 /* still: no tumble, no pulse, no fades */
 .demo-board.is-reduced *, .demo-board.is-reduced *::before, .demo-board.is-reduced *::after { animation: none !important; transition-duration: .01ms !important; }
@@ -2454,12 +2440,14 @@ oskol-demo-board {
 
 /* ---------- The guest home (`GameLanding.home`): OSKOL, the board, one sentence ----------
    Paper, one bar, the title, a board playing by itself (`oskol-demo-board`),
-   and the sentence over ROLL DICE. Rule of the page: nothing moves when a
+   and the sentence over PLAY NOW. Rule of the page: nothing moves when a
    choice changes. The sentence keeps its height (one line wide, two on a
-   phone, broken after the game), its menus float, the button keeps the width
-   of its longer label, and the board takes whatever height is left, sitting
-   on the bottom of its box so the sentence is always the same distance from
-   it as from the button. */
+   phone, broken after the game), its menus float, and the button keeps the
+   width of its longer label. The board's box has the board's own shape, as
+   wide as the page allows and shrinking when the screen is short, and the
+   whole column -- title, board, sentence, button -- sits in the middle of
+   the screen, so the sentence is as far from the board as from the button
+   and any spare height is shared above and below. */
 .lh {
   --lh-gap: clamp(14px, 2.6svh, 26px);
   --hair: rgba(35, 36, 58, 0.12);
@@ -2471,6 +2459,9 @@ oskol-demo-board {
   color: var(--ink);
 }
 .lh button, .lh input { font-family: inherit; color: inherit; }
+/* the themes panel brings its own dark ground and its own ink */
+.lh .bg-theme-option { color: rgba(255, 255, 255, 0.72); }
+.lh .bg-theme-option:hover, .lh .bg-theme-option.on { color: #fff; }
 
 /* the bar */
 .lh-bar {
@@ -2540,11 +2531,20 @@ oskol-demo-board {
 .lh-menu button[aria-selected="true"]::after { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
 .lh-menu hr { border: 0; border-top: 1px solid var(--hair); margin: 4px 6px; }
 .lh-account-menu { right: 0; top: calc(100% + 8px); }
+.lh-more { display: none; position: relative; }
+.lh-burger { position: relative; width: 40px; padding: 0; justify-content: center; }
+.lh-burger-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--marker-green); box-shadow: 0 0 0 2px #fff; }
+.lh-nav-menu button { justify-content: flex-start; gap: 12px; }
+.lh-nav-icon { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; color: var(--pencil); }
+.lh-nav-menu button:hover .lh-nav-icon { color: var(--ink); }
+.lh-nav-who { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px 4px; font-size: 13px; font-weight: 600; color: var(--pencil); max-width: 16rem; }
+.lh-nav-menu { right: 0; top: calc(100% + 8px); min-width: 12rem; }
+.lh-nav-scrim { position: fixed; inset: 0; z-index: 19; }
 
 /* the stage: head, board, dock */
 .lh-stage {
   flex: 1 1 auto; min-height: 0; position: relative;
-  display: flex; flex-direction: column; align-items: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: clamp(10px, 2.4svh, 30px) 16px clamp(14px, 3svh, 36px);
 }
 .lh-head { flex: none; text-align: center; }
@@ -2554,9 +2554,12 @@ oskol-demo-board {
   font-size: clamp(40px, min(6.4vw, 9svh), 96px);
 }
 .lh-tagline { margin: clamp(10px, 2.2svh, 26px) 0 0; font-size: 20px; color: var(--ink); opacity: 0.78; }
-.lh-board { flex: 1 1 0; min-height: 150px; width: 100%; max-width: 900px; display: flex; margin-top: var(--lh-gap); }
+.lh-board { flex: 0 1 auto; aspect-ratio: 1.62; min-height: 150px; width: 100%; max-width: 900px; display: flex; margin-top: var(--lh-gap); }
 .lh-demo { display: block; flex: 1; min-width: 0; min-height: 0; }
-.lh-dock { flex: none; position: relative; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: var(--lh-gap); padding-top: var(--lh-gap); width: 100%; }
+/* The board's soft shadow on the paper is the space above the sentence; the
+   same space again goes under it, so the sentence sits midway between the
+   board's edge and the button. */
+.lh-dock { --lh-mid: clamp(20px, 2.2vw + 6px, 40px); flex: none; position: relative; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: var(--lh-mid); padding-top: calc(var(--lh-mid) - clamp(12px, 2.1vw, 32px)); width: 100%; }
 
 /* the sentence: "Play [a single game] against [Sage] with no clock" */
 .lh-sentence { margin: 0; font-size: 22px; font-weight: 500; line-height: 1.5; letter-spacing: -0.01em; text-align: center; min-height: 1.5em; color: var(--ink); }
@@ -2568,11 +2571,14 @@ oskol-demo-board {
   text-decoration: underline dotted rgba(35, 36, 58, 0.55); text-decoration-thickness: 2px; text-underline-offset: 6px;
 }
 .lh-pick:hover, .lh-pick[aria-expanded="true"] { text-decoration-style: solid; text-decoration-color: var(--ink); }
+.lh-pick .lh-who-icon { display: inline-block; width: 0.95em; height: 0.95em; margin: 0 0.22em 0 0.06em; vertical-align: -0.1em; }
+.lh-option { display: inline-flex; align-items: center; gap: 8px; }
+.lh-option .lh-who-icon { width: 18px; height: 18px; color: var(--pencil); }
 .lh-pick:focus-visible { outline: 2px solid var(--pen); outline-offset: 3px; border-radius: 4px; }
 .lh-pick-menu { bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%); text-align: left; letter-spacing: 0; }
 .lh-scrim { position: fixed; inset: 0; z-index: 30; }
 
-/* ROLL DICE: the page's one yellow, the dice it throws */
+/* PLAY NOW: the page's one yellow, the dice it throws */
 .lh-roll {
   position: relative; width: 260px; height: 62px; margin: 0; border-radius: 16px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 18px;
@@ -2599,12 +2605,16 @@ oskol-demo-board {
 .lh-die i { width: 74%; aspect-ratio: 1; border-radius: 50%; place-self: center; visibility: hidden; background: var(--ink); }
 .lh-die.d1 i:nth-child(5),
 .lh-die.d4 i:nth-child(1), .lh-die.d4 i:nth-child(3), .lh-die.d4 i:nth-child(7), .lh-die.d4 i:nth-child(9) { visibility: visible; }
-.lh-roll.is-rolling .lh-die { animation: lh-tumble 0.75s cubic-bezier(0.2, 0.7, 0.3, 1) infinite; }
-.lh-roll.is-rolling .lh-die:nth-child(2) { animation-duration: 0.9s; }
+.lh-roll { overflow: visible; }
+/* One whole throw, up out of the button and back, landing as the page moves
+   on (`GameLanding.tumbleMs`); a server slower than that gets another. */
+.lh-roll.is-rolling .lh-die { animation: lh-tumble 1.05s cubic-bezier(0.25, 0.7, 0.3, 1) infinite; }
+.lh-roll.is-rolling .lh-die:nth-child(2) { animation-delay: 0.07s; }
 @keyframes lh-tumble {
   0% { transform: translateY(0) rotate(var(--rot)); }
-  30% { transform: translateY(-18px) rotate(calc(var(--rot) + 200deg)) scale(0.9); }
-  70% { transform: translateY(3px) rotate(calc(var(--rot) + 380deg)) scale(1.06); }
+  35% { transform: translateY(-34px) rotate(calc(var(--rot) + 220deg)) scale(0.92); }
+  72% { transform: translateY(4px) rotate(calc(var(--rot) + 380deg)) scale(1.06); }
+  86% { transform: translateY(-3px) rotate(calc(var(--rot) + 365deg)); }
   100% { transform: translateY(0) rotate(calc(var(--rot) + 360deg)); }
 }
 @media (prefers-reduced-motion: reduce) { .lh-roll.is-rolling .lh-die { animation: none; } }
@@ -2645,6 +2655,11 @@ oskol-demo-board {
   .lh-bar { gap: 6px; padding: 0 12px; }
 }
 @media (max-width: 720px) {
+  /* the bar: the bird, the themes and ☰ -- the rest is in ☰ */
+  #puzzles, .lh-join-wrap, #resume-games, #signin-button, .lh-account-wrap { display: none; }
+  .lh-more { display: block; }
+  .lh .bg-theme-list { position: fixed; top: 68px; left: 12px; right: 12px; width: auto; }
+  .lh-board { aspect-ratio: 1.53; }
   .lh-title { font-size: clamp(36px, 12.5vw, 56px); }
   .lh-tagline { font-size: 16.5px; }
   /* two fixed lines: "Play <game>" / "against <who> with <clock>" */
@@ -2666,14 +2681,12 @@ oskol-demo-board {
   .lh-live { padding: 0 8px; font-size: 12.5px; }
   .lh-bar { gap: 2px; padding: 0 8px; }
   .lh-btn { padding: 0 11px; }
-  /* the boards give way before anything that starts or finds a game */
-  .lh-themes { display: none; }
 }
 /* a phone on its side: the board on the left, the rest on the right */
 @media (max-height: 520px) and (min-width: 600px) {
   .lh { min-height: 0; }
   .lh-stage { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); grid-template-rows: 1fr auto auto 1fr; column-gap: 24px; align-items: center; justify-items: center; }
-  .lh-board { grid-column: 1; grid-row: 1 / -1; height: 100%; margin: 0; }
+  .lh-board { grid-column: 1; grid-row: 1 / -1; height: 100%; aspect-ratio: auto; margin: 0; }
   .lh-head { grid-column: 2; grid-row: 2; }
   .lh-dock { grid-column: 2; grid-row: 3; }
   .lh-title { font-size: 40px; margin-top: 0; }

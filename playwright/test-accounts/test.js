@@ -26,7 +26,7 @@
  */
 const playwright = require('playwright');
 const fs = require('fs');
-const { BASE, openHome, createGame, joinByLink, openSeat } = require('../lib/flows');
+const { BASE, barItem, openHome, createGame, joinByLink, openSeat } = require('../lib/flows');
 
 const SHOTS = 'playwright/screenshots/test-accounts';
 const SIZES = [
@@ -111,9 +111,10 @@ async function run(browser, errors) {
     // 2. Home: the live games pill, LIVE GAMES, the offer, the email, the
     // code, the win. The list never opens by itself.
     if ((await openHome(a.page)) !== 'guest') throw new Error('a guest was not shown the guest home');
-    await a.page.waitForSelector('#resume-games');
+    // (On a phone the pill is in ☰'s menu, and ☰ wears a dot.)
+    await a.page.waitForSelector('#resume-games', { state: 'attached' });
     if (await a.page.$('#resume-modal')) throw new Error('LIVE GAMES opened by itself');
-    await a.page.click('#resume-games');
+    await barItem(a.page, 'live');
     await a.page.waitForSelector('#resume-modal #resume-list');
     const offer = (await a.page.textContent('#signup-cta')).trim();
     if (offer !== 'Sign up') throw new Error(`the offer should say Sign up: "${offer}"`);
@@ -219,7 +220,12 @@ async function run(browser, errors) {
     await a2.click('#account-button');
     await a2.click('#logout');
     // `/` is the guest home again: Sign in in the bar, no account.
-    await a2.waitForSelector('.lh-bar #signin-button');
+    // (A phone's bar is the bird and ☰: Sign in is in ☰'s menu.)
+    await a2.waitForSelector('.lh-bar #signin-button', { state: 'attached' });
+    await a2.click('#nav-more');
+    await a2.waitForSelector('#nav-menu #nav-signin');
+    if (await a2.$('#nav-logout')) throw new Error('logged out, ☰ still offers LOG OUT');
+    await a2.keyboard.press('Escape');
     if (await a2.$('#account-button')) throw new Error('logged out, the bar still shows an account');
     const gone = await me(a2);
     if (gone.user !== null) throw new Error('logged out, /papi/me still names the account');

@@ -32,7 +32,7 @@
  */
 const playwright = require('playwright');
 const { execFileSync } = require('child_process');
-const { BASE, resultLine, seatedContext } = require('../lib/flows');
+const { BASE, barItem, resultLine, seatedContext } = require('../lib/flows');
 
 const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -217,9 +217,10 @@ async function run(browser, setup, errors) {
     const alice = await open('alice', aliceContext);
     const email = `puzzle-${Date.now()}@oskol.test`;
     await alice.goto(`${BASE}/`);
-    // The guest home's bar: Sign in, which opens the one component.
-    await alice.waitForSelector('#signin-button');
-    await alice.click('#signin-button');
+    // The guest home's bar (☰'s menu on a phone): Sign in, which opens the
+    // one component.
+    await alice.waitForSelector('#signin-button', { state: 'attached' });
+    await barItem(alice, 'signin');
     await alice.waitForSelector('#signin-modal #signin-email');
     await alice.fill('#signin-email', email);
     await alice.click('#signin-send');

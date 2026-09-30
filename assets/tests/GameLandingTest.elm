@@ -1,7 +1,7 @@
 module GameLandingTest exposing (suite)
 
 {-| The guest home and the invite: the name check; the home's title, board,
-sentence and ROLL DICE (the menus, Sage at once, a friend's name first);
+sentence and PLAY NOW (the menus, Sage at once, a friend's name first);
 CREATE GAME's dialog as the signed-in home opens it (its dropdowns, the
 defaults, the summary, the inline errors); the board picker; the live games
 behind the bar's pill; and the invite's three states.
@@ -200,7 +200,7 @@ homeBoard =
                         , Query.hasNot [ id "pick-clock" ]
                         ]
         , test "and the button rolls the dice" <|
-            \_ -> home loadedModel |> Query.find [ id "roll-dice" ] |> Query.has [ text "Roll dice" ]
+            \_ -> home loadedModel |> Query.find [ id "roll-dice" ] |> Query.has [ text "Play now" ]
         , test "a word of the sentence opens its menu" <|
             \_ ->
                 home loadedModel
@@ -252,7 +252,7 @@ homeBoard =
                         ]
         , test "Escape closes an open menu" <|
             \_ -> Expect.notEqual Sub.none (GameLanding.subscriptions (send (GameLanding.ToggledMenu GameLanding.WhoMenu) loadedModel))
-        , test "against Sage, ROLL DICE makes the game at once, under the remembered name" <|
+        , test "against Sage, PLAY NOW makes the game at once, under the remembered name" <|
             \_ ->
                 send GameLanding.RolledDice loadedModel
                     |> Expect.all [ .busy >> Expect.equal True, .friendAsk >> Expect.equal False, .playerName >> Expect.equal "Alice" ]
@@ -273,11 +273,29 @@ homeBoard =
                     |> Expect.equal "Guest"
         , test "the dice tumble while the game is made" <|
             \_ -> home (send GameLanding.RolledDice loadedModel) |> Query.find [ id "roll-dice" ] |> Query.has [ class "is-rolling" ]
-        , test "the game made is the seat to go to" <|
+        , test "a game made while the dice are in the air waits for them to land" <|
             \_ ->
                 GameLanding.update (GameLanding.Seated (Ok { id = "123456", path = "/backgammon/123456" })) (send GameLanding.RolledDice loadedModel)
+                    |> (\( model, _, out ) -> ( out, model.tumbling ))
+                    |> Expect.equal ( GameLanding.NoOut, True )
+        , test "and then it is the seat to go to" <|
+            \_ ->
+                loadedModel
+                    |> send GameLanding.RolledDice
+                    |> send (GameLanding.Seated (Ok { id = "123456", path = "/backgammon/123456" }))
+                    |> GameLanding.update GameLanding.DiceLanded
                     |> (\( _, _, out ) -> out)
                     |> Expect.equal (GameLanding.TookSeat { name = "Alice", path = "/backgammon/123456" })
+        , test "a game made after the dice landed goes at once" <|
+            \_ ->
+                loadedModel
+                    |> send GameLanding.RolledDice
+                    |> send GameLanding.DiceLanded
+                    |> GameLanding.update (GameLanding.Seated (Ok { id = "123456", path = "/backgammon/123456" }))
+                    |> (\( _, _, out ) -> out)
+                    |> Expect.equal (GameLanding.TookSeat { name = "Alice", path = "/backgammon/123456" })
+        , test "and the dice keep tumbling until it has" <|
+            \_ -> home (send GameLanding.DiceLanded (send GameLanding.RolledDice loadedModel)) |> Query.find [ id "roll-dice" ] |> Query.has [ class "is-rolling" ]
         , test "against a friend, a guest is asked for the name the friend will read" <|
             \_ ->
                 loadedModel
@@ -310,6 +328,53 @@ homeBoard =
                     |> Expect.equal (GameLanding.Go "/puzzles")
         , test "JOIN is the shell's code field in the bar" <|
             \_ -> home loadedModel |> Query.has [ id "nav-join-code", id "home-join" ]
+        , test "on a phone, everything in the bar is behind ☰, and its menu opens on a tap" <|
+            \_ ->
+                loadedModel
+                    |> Expect.all
+                        [ home >> Query.find [ id "nav-more" ] >> Event.simulate Event.click >> Event.expect GameLanding.ToggledNav
+                        , home >> Query.hasNot [ id "nav-menu" ]
+                        , send GameLanding.ToggledNav
+                            >> home
+                            >> Query.find [ id "nav-menu" ]
+                            >> Expect.all
+                                [ Query.has [ id "nav-puzzles", text "Puzzles" ]
+                                , Query.has [ id "nav-join-game", text "Join a game" ]
+                                , Query.hasNot [ id "nav-themes" ]
+                                , Query.has [ id "nav-signin", text "Sign in" ]
+                                , Query.hasNot [ id "nav-live" ]
+                                ]
+                        ]
+        , test "the menu's JOIN asks the shell for the code prompt, and closes" <|
+            \_ ->
+                GameLanding.update GameLanding.PressedNavJoin (send GameLanding.ToggledNav loadedModel)
+                    |> (\( model, _, out ) -> ( model.navOpen, out ))
+                    |> Expect.equal ( False, GameLanding.OpenJoin )
+        , test "the themes stay in the bar, beside ☰, on a phone too" <|
+            \_ -> home loadedModel |> Query.find [ class "lh-bar" ] |> Query.has [ id "bg-theme-button", id "nav-more" ]
+        , test "who is across the table has its icon: the robot for Sage, two people for a friend" <|
+            \_ ->
+                loadedModel
+                    |> Expect.all
+                        [ home >> Query.find [ id "pick-who" ] >> Expect.all [ Query.has [ text "Sage" ], Query.findAll [ tag "svg" ] >> Query.count (Expect.equal 1) ]
+                        , send (GameLanding.PickedOpponent GameLanding.AFriend) >> home >> Query.find [ id "pick-who" ] >> Expect.all [ Query.has [ text "a friend" ], Query.findAll [ tag "svg" ] >> Query.count (Expect.equal 1) ]
+                        , send (GameLanding.ToggledMenu GameLanding.WhoMenu) >> home >> Query.find [ id "pick-who-menu" ] >> Query.findAll [ tag "svg" ] >> Query.count (Expect.equal 2)
+                        ]
+        , test "with live games, ☰ wears a dot and its menu leads with them" <|
+            \_ ->
+                withGames
+                    |> Expect.all
+                        [ home >> Query.find [ id "nav-more" ] >> Query.has [ class "lh-burger-dot" ]
+                        , send GameLanding.ToggledNav >> home >> Query.find [ id "nav-live" ] >> Query.has [ text "2 live games" ]
+                        , send GameLanding.ToggledNav >> send GameLanding.OpenedResume >> home >> Query.has [ id "resume-modal" ]
+                        ]
+        , test "signed in, the menu is the account and Log out" <|
+            \_ ->
+                signedInAs "her@example.com" loadedModel
+                    |> send GameLanding.ToggledNav
+                    |> home
+                    |> Query.find [ id "nav-menu" ]
+                    |> Expect.all [ Query.has [ text "arie1", id "nav-logout" ], Query.hasNot [ id "nav-signin" ] ]
         , test "the board wears the colours this visitor picked" <|
             \_ ->
                 pageWith { guestName = Nothing, prefs = [ ( "backgammon_theme", "sand" ) ] }

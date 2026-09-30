@@ -690,13 +690,13 @@ assets/src/Page/GameLanding.elm  "/" the guest's home page (`home`: the bar -- b
                                  N live games, Puzzles, the boards, JOIN, Sign in --
                                  OSKOL, "Play backgammon.", the demo board, and the one
                                  sentence "Play [a single game] against [Sage] with no
-                                 clock" over ROLL DICE; a friend's name dialog) and
+                                 clock" over PLAY NOW; a friend's name dialog) and
                                  "/:slug?game=" what an invite offers. `createOnly`,
                                  `createModal` and `themePicker` are what the signed-in
                                  home starts a game and picks a board with
 assets/js/demo_board.js          <oskol-demo-board>: the guest home's board, a CSS-3D
                                  board in the page's theme playing a demo game on a loop;
-                                 decorative, talks to nothing, sizes itself to its box
+                                 decorative, talks to nothing, fits itself in its box
 assets/src/Page/Home.elm         "/" for an account: the bar (the name, PLAY, JOIN,
                                  PUZZLES, the boards), then form first (two numbers, the
                                  streak, the sentence, the line), live games with your
@@ -850,7 +850,7 @@ arrive at any of them cold, and moving between them afterwards is a
 `pushUrl`, not a page load.
 
 - `/` the home page, which is two pages: a guest gets OSKOL, a board
-  playing by itself and one sentence over ROLL DICE (`Page.GameLanding`;
+  playing by itself and one sentence over PLAY NOW (`Page.GameLanding`;
   see "The guest home" below), an account gets its own home --
   form and its streak, live games, practice, recent matches (`Page.Home`,
   from `GET /papi/me/home`). `Main` picks by the session and picks again when
@@ -1264,14 +1264,15 @@ visitor whose guest cookie is gone has.
 
 `/` for a browser with no account (`Page.GameLanding.home`), and
 `/backgammon` for anyone. Paper, one bar (the bird home; "N live games"
-when there are any; Puzzles; the board picker; JOIN -- the code field
-itself on a wide screen, a button opening the prompt on a phone; Sign in),
+when there are any; Puzzles; the themes; JOIN, the code field itself;
+Sign in -- and on a phone just the bird, the themes and ☰, whose menu
+holds the rest, with a dot on ☰ when there are live games),
 OSKOL in Bungee Shade (self-hosted), "Play backgammon.", a board playing a
 demo game by itself (`<oskol-demo-board>`, `assets/js/demo_board.js`, in
 the board theme the visitor picked), and one sentence over one button:
 "Play [a single game] against [Sage] with no clock", each bracket a menu
 of the game's real formats ("a match to 7", "an unlimited match"), and
-against a friend the clock a menu too ("a 5 min clock"). ROLL DICE
+against a friend the clock a menu too ("a 5 min clock"). PLAY NOW
 against Sage makes the bot game there and then, under the name this
 browser last played under or "Guest" (never "Sage", which the room
 refuses); against a friend it reads GET A LINK, asks a guest the name the
@@ -1279,11 +1280,12 @@ friend will read, and takes the seat: the lobby is where the link is.
 
 **Nothing moves when a choice changes.** The sentence keeps its height
 (one line wide; on a phone always two, broken after the game), its menus
-float over the page (a sheet at the bottom on a phone), the button keeps
-the width of its longer label, and the board takes whatever height is
-left, sitting on the bottom of its box so the sentence is always the same
-distance from it as from the button. The page fits one screen at every
-size; nothing is below the fold.
+float over the page (a sheet at the bottom on a phone), and the button
+keeps the width of its longer label. The board always lies the long way
+(it is never turned), its box has its own shape, and the whole column --
+title, board, sentence, button -- sits in the middle of the screen, with
+the sentence midway between the board's edge and the button. The page
+fits one screen at every size; nothing is below the fold.
 
 ## The home
 
@@ -2147,7 +2149,7 @@ node playwright/review-puzzles-hub/test.js      # screenshots: the hub leading w
                                                # (shape.exs's SHAPE_STATE arranges each), plus the
                                                # stranger's and guest's hub and the home's section
 node playwright/test-spa-landing/test.js        # the guest home: the sentence and its menus,
-                                               # ROLL DICE against Sage and a friend, old links
+                                               # PLAY NOW against Sage and a friend, old links
                                                # redirect, a full create -> play click-through
 node playwright/review-pages/test.js            # screenshots of the guest home, its menus, the
                                                # friend's dialog, the lobby and the theme picker
@@ -2335,7 +2337,7 @@ and `PuzzleRevealFixtures.elm` (an attempt's answer per verdict, from
 **Browser (`bin/check --browser`)**: Playwright smokes create real games and
 play them; review scripts take screenshots for eyeballing. The ways into a
 game live once, in `playwright/lib/flows.js`: `createGame` (a guest says it
-in the home's sentence and presses ROLL DICE; an account uses PLAY's
+in the home's sentence and presses PLAY NOW; an account uses PLAY's
 dialog; by element id), `joinByLink`, `joinByCode` and
 `openSeat`, and `seatedContext` for a browser that already holds a seat. A
 smoke uses those rather than clicking through the home page itself, so a

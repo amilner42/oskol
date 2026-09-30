@@ -560,6 +560,11 @@ landing model ( pageModel, cmd, out ) =
         Page.GameLanding.Go path ->
             ( withPage, Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.pushUrl model.key path ] )
 
+        Page.GameLanding.OpenJoin ->
+            ( { withPage | joinOpen = True, joinCode = "", joinError = Nothing }
+            , Cmd.batch [ Cmd.map GameLandingMsg cmd, Notebook.focus NoOp Shell.joinCodeInputId ]
+            )
+
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =

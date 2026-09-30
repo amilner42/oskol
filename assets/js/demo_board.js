@@ -5,9 +5,9 @@
 // tokens a `.bg-theme-*` ancestor sets), so a new theme repaints it with no
 // JS at all.
 //
-// It fills its box (give it one with a size, e.g. flex: 1) and scales the
-// board, the chip and the shadow to fit inside it, centred. A box much
-// taller than wide gets the board turned a quarter to stand the long way.
+// It fills its box and scales the board, the chip and the shadow to fit
+// inside it, centred. The board always lies the long way across: it is
+// never turned, whatever the box's shape.
 //
 // API
 //   attribute `reduced-motion`   force the still version (the OS setting
@@ -47,7 +47,6 @@ const R = 21.5;
 const STEP = 43;
 const LAYERS = 16;
 const TILT = 32;
-const TALL_BELOW = 1.05; // width / height under which the board stands the long way
 
 const px = (p) =>
   p <= 6 ? 336 + (6 - p) * 48 + 24
@@ -426,10 +425,8 @@ class OskolDemoBoard extends HTMLElement {
     const W = this.clientWidth;
     const H = this.clientHeight;
     if (W < 2 || H < 2) return;
-    const tall = W / H < TALL_BELOW;
-    this._root.classList.toggle("is-tall", tall);
     const pad = 0.97;
-    let bw = tall ? Math.min(W / 0.8, H / 1.05) : Math.min(W / 1.2, H / 0.8);
+    let bw = Math.min(W / 1.2, H / 0.8);
     for (let i = 0; i < 3; i++) {
       this._apply(bw, 0, 0);
       const x = this._extent();

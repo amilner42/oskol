@@ -24,7 +24,7 @@ module Page.GameLanding exposing
 Without a room in the URL it is the guest's home page (`home`): OSKOL over
 "Play backgammon.", a big board playing a game by itself, and one sentence
 that is the whole of the choice -- "Play [a single game] against [Sage]
-with no clock" -- over one yellow ROLL DICE. Against Sage that starts the
+with no clock" -- over one yellow PLAY NOW. Against Sage that starts the
 game there and then; against a friend it asks for a name and takes the
 seat, and the table is where the link is. With `?game=` it is
 the invite that link opens, and what it offers depends on the table (see
@@ -50,6 +50,7 @@ import Dict
 import Api.Catalog as Catalog exposing (ClockPreset, Format, GamePage, MyGame, RoomSeat)
 import Html exposing (Html)
 import Json.Decode as D
+import Process
 import Task
 import Time
 import Html.Attributes exposing (class, classList, href, id)
@@ -118,7 +119,10 @@ type alias Model =
     , signIn : Maybe SignIn.Model -- signing in, open in LIVE GAMES or under an owned seat
     , accountOpen : Bool -- the account's menu on the player's own bar is showing
     , menu : Maybe PickMenu -- the home sentence's word whose menu is open
-    , friendAsk : Bool -- ROLL DICE against a friend: the name it is asking for
+    , friendAsk : Bool -- PLAY NOW against a friend: the name it is asking for
+    , navOpen : Bool -- on a phone, the bar's ☰ menu: all the wide bar carries but the themes
+    , tumbling : Bool -- PLAY NOW's dice are still in the air: the table waits for them
+    , seatWaiting : Maybe String -- the seat the server made while they were
     }
 
 
@@ -156,6 +160,9 @@ type Msg
     | ClosedMenu
     | RolledDice
     | ClosedFriendAsk
+    | ToggledNav
+    | PressedNavJoin
+    | DiceLanded
     | NoOp
 
 
@@ -178,6 +185,8 @@ type Out
     | SignedOut
       -- Go on to a page of the site (after a sign-in, where it was asked from).
     | Go String
+      -- Open the shell's code prompt (JOIN, from the phone bar's menu).
+    | OpenJoin
 
 
 init : Session -> String -> Maybe String -> ( Model, Cmd Msg, Out )
@@ -222,6 +231,9 @@ init session slug gameId =
             , accountOpen = False
             , menu = Nothing
             , friendAsk = False
+            , navOpen = False
+            , tumbling = False
+            , seatWaiting = Nothing
             }
     in
     case gameId of
@@ -344,13 +356,13 @@ update msg model =
             ( { model | accountOpen = not model.accountOpen }, Cmd.none, NoOut )
 
         PressedPuzzles ->
-            ( model, Cmd.none, Go (Route.href Route.puzzles) )
+            ( { model | navOpen = False }, Cmd.none, Go (Route.href Route.puzzles) )
 
         -- The guest's bar menu: the same sign-in, in a dialog of its own.
         PressedSignInMenu ->
             let
                 ( opened, cmd, out ) =
-                    update OpenedSignIn { model | accountOpen = False, resumeOpen = False, signInOpen = True }
+                    update OpenedSignIn { model | accountOpen = False, resumeOpen = False, navOpen = False, signInOpen = True }
             in
             ( opened, cmd, out )
 
@@ -358,7 +370,7 @@ update msg model =
             ( { model | signInOpen = False, signIn = Nothing }, Cmd.none, NoOut )
 
         PressedLogOut ->
-            ( { model | accountOpen = False }, Auth.logout model.session LoggedOut, NoOut )
+            ( { model | accountOpen = False, navOpen = False }, Auth.logout model.session LoggedOut, NoOut )
 
         -- The page stays: the bar goes back to the guest's name, and the
         -- list to the games this browser holds as a guest.
@@ -417,7 +429,7 @@ update msg model =
             ( { model | now = Time.posixToMillis posix }, Cmd.none, NoOut )
 
         OpenedResume ->
-            ( { model | resumeOpen = True }, Cmd.none, NoOut )
+            ( { model | resumeOpen = True, navOpen = False }, Cmd.none, NoOut )
 
         ClosedResume ->
             ( { model | resumeOpen = False }, Cmd.none, NoOut )
@@ -503,6 +515,12 @@ update msg model =
         ClosedFriendAsk ->
             ( { model | friendAsk = False, error = Nothing }, Cmd.none, NoOut )
 
+        ToggledNav ->
+            ( { model | navOpen = not model.navOpen, menu = Nothing, themesOpen = False, accountOpen = False }, Cmd.none, NoOut )
+
+        PressedNavJoin ->
+            ( { model | navOpen = False }, Cmd.none, OpenJoin )
+
         NameChanged name ->
             ( { model | playerName = name }, Cmd.none, NoOut )
 
@@ -520,14 +538,31 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none, NoOut )
 
+        -- The dice get their throw: a game made faster than they land waits
+        -- for them (`DiceLanded`), so the button is never a blink.
         Seated (Ok created) ->
-            ( { model | busy = False }
-            , Cmd.none
-            , TookSeat { name = model.playerName, path = created.path }
-            )
+            if model.tumbling then
+                ( { model | seatWaiting = Just created.path }, Cmd.none, NoOut )
+
+            else
+                ( { model | busy = False }
+                , Cmd.none
+                , TookSeat { name = model.playerName, path = created.path }
+                )
+
+        DiceLanded ->
+            case model.seatWaiting of
+                Just path ->
+                    ( { model | tumbling = False, seatWaiting = Nothing, busy = False }
+                    , Cmd.none
+                    , TookSeat { name = model.playerName, path = path }
+                    )
+
+                Nothing ->
+                    ( { model | tumbling = False }, Cmd.none, NoOut )
 
         Seated (Err err) ->
-            ( { model | busy = False, error = Just (Api.errorMessage err) }, Cmd.none, NoOut )
+            ( { model | busy = False, tumbling = False, error = Just (Api.errorMessage err) }, Cmd.none, NoOut )
 
         NoOp ->
             ( model, Cmd.none, NoOut )
@@ -541,7 +576,7 @@ username model =
     model.session.user |> Maybe.andThen .name
 
 
-{-| ROLL DICE. Against Sage the game is made there and then, under the
+{-| PLAY NOW. Against Sage the game is made there and then, under the
 name this browser last played under (an account plays under its own); the
 dice tumble while it is. Against a friend the friend will read the name
 ("Arie wants to play"), so a guest is asked for it first; an account is not.
@@ -554,10 +589,10 @@ roll model =
     else
         case ( model.opponent, username model ) of
             ( TheBot, _ ) ->
-                create (sageName model) { model | menu = Nothing }
+                throw (create (sageName model) { model | menu = Nothing })
 
             ( AFriend, Just name ) ->
-                create name { model | menu = Nothing }
+                throw (create name { model | menu = Nothing })
 
             -- "Guest" is what Sage was played under for want of a name,
             -- not a name anyone chose: the friend's dialog does not offer it.
@@ -576,6 +611,24 @@ roll model =
                 , Notebook.focus NoOp "friend-name"
                 , NoOut
                 )
+
+
+{-| The dice leave the button and tumble for at least `tumbleMs`, however
+fast the server is: the throw is the fun of the button, and a page that
+jumps to the table mid-air throws it away.
+-}
+throw : ( Model, Cmd Msg, Out ) -> ( Model, Cmd Msg, Out )
+throw ( model, cmd, out ) =
+    ( { model | tumbling = True, seatWaiting = Nothing }
+    , Cmd.batch [ cmd, Process.sleep tumbleMs |> Task.perform (\_ -> DiceLanded) ]
+    , out
+    )
+
+
+tumbleMs : Float
+tumbleMs =
+    -- one throw of `.lh-die`'s `lh-tumble` (1.05 s, the second die 0.07 s behind)
+    1150
 
 
 {-| The name a game against Sage is played under: the account's, else the
@@ -802,7 +855,7 @@ sentence and one button that start a game.
 
 Nothing on it moves when a choice changes: the sentence keeps its height
 (one line wide, two on a phone, broken after the game), its menus float
-over the page, and ROLL DICE keeps the width of its longer label.
+over the page, and PLAY NOW keeps the width of its longer label.
 
 -}
 home : { join : Html msg, toMsg : Msg -> msg } -> Model -> List (Html msg)
@@ -810,6 +863,15 @@ home { join, toMsg } model =
     [ Html.div [ class "lh", id "landing" ]
         [ homeBar join toMsg model
         , Html.map toMsg (homeStage model)
+
+        -- Under the bar's ☰ menu and over the page: a tap beside the menu
+        -- closes it. Outside the bar, whose backdrop blur would otherwise
+        -- shrink a fixed layer to the bar's own height.
+        , if model.navOpen then
+            Html.map toMsg (Html.div [ class "lh-nav-scrim", onClick ToggledNav, Html.Attributes.attribute "aria-hidden" "true" ] [])
+
+          else
+            Html.text ""
         ]
     , Html.map toMsg (createModal model)
     , Html.map toMsg (resumeModal model)
@@ -831,6 +893,83 @@ homeBar join toMsg model =
         , Html.map toMsg (Html.div [ class "lh-themes" ] [ themePicker model ])
         , join
         , Html.map toMsg (homeAccount model)
+        , Html.map toMsg (navMenu model)
+        ]
+
+
+{-| A phone's bar is the bird, the themes (they stay: they are the fun one,
+and seen they get pressed) and ☰, which only a phone shows. Everything else
+the wide bar carries is in its menu -- the live games (and a dot on ☰ when
+there are any), signing in or the account, Puzzles, JOIN.
+-}
+navMenu : Model -> Html Msg
+navMenu model =
+    Html.div [ class "lh-more" ]
+        [ Html.button
+            [ Html.Attributes.type_ "button"
+            , id "nav-more"
+            , class "lh-btn lh-burger"
+            , Html.Attributes.attribute "aria-label" "Menu"
+            , Html.Attributes.attribute "aria-haspopup" "menu"
+            , Html.Attributes.attribute "aria-expanded"
+                (if model.navOpen then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , onClick ToggledNav
+            ]
+            [ Svg.svg [ SvgAttr.viewBox "0 0 24 24", SvgAttr.width "20", SvgAttr.height "20", SvgAttr.fill "none", SvgAttr.stroke "currentColor", SvgAttr.strokeWidth "2", SvgAttr.strokeLinecap "round", Html.Attributes.attribute "aria-hidden" "true" ]
+                [ Svg.path [ SvgAttr.d "M4 7h16M4 12h16M4 17h16" ] [] ]
+            , if List.isEmpty model.myGames then
+                Html.text ""
+
+              else
+                Html.span [ class "lh-burger-dot", Html.Attributes.attribute "aria-hidden" "true" ] []
+            ]
+        , if model.navOpen then
+            Html.div []
+                [ Html.div [ id "nav-menu", class "lh-menu lh-nav-menu", Html.Attributes.attribute "role" "menu" ]
+                    ((case List.length model.myGames of
+                        0 ->
+                            []
+
+                        n ->
+                            [ navItem "nav-live"
+                                OpenedResume
+                                [ Html.span [ class "lh-nav-icon" ] [ Html.span [ class "lh-live-dot", Html.Attributes.attribute "aria-hidden" "true" ] [] ]
+                                , Html.text
+                                    (String.fromInt n
+                                        ++ (if n == 1 then
+                                                " live game"
+
+                                            else
+                                                " live games"
+                                           )
+                                    )
+                                ]
+                            , menuRule
+                            ]
+                     )
+                        ++ [ navItem "nav-puzzles" PressedPuzzles [ navIcon "hero-puzzle-piece", Html.text "Puzzles" ]
+                           , navItem "nav-join-game" PressedNavJoin [ navIcon "hero-hashtag", Html.text "Join a game" ]
+                           , menuRule
+                           ]
+                        ++ (case model.session.user of
+                                Nothing ->
+                                    [ navItem "nav-signin" PressedSignInMenu [ navIcon "hero-user-circle", Html.text "Sign in" ] ]
+
+                                Just user ->
+                                    [ Html.p [ class "lh-nav-who" ] [ Identity.badge Identity.Account, Html.span [ class "truncate" ] [ Html.text (Maybe.withDefault "Your account" user.name) ] ]
+                                    , navItem "nav-logout" PressedLogOut [ navIcon "hero-arrow-right-start-on-rectangle", Html.text "Log out" ]
+                                    ]
+                           )
+                    )
+                ]
+
+          else
+            Html.text ""
         ]
 
 
@@ -901,7 +1040,7 @@ homeAccount model =
                 [ Html.text "Sign in" ]
 
         Just user ->
-            Html.div [ class "relative" ]
+            Html.div [ class "relative lh-account-wrap" ]
                 [ Html.button
                     [ Html.Attributes.type_ "button"
                     , id "account-button"
@@ -944,7 +1083,7 @@ homeStage model =
             , Html.p [ class "lh-tagline" ] [ Html.text "Play backgammon." ]
             ]
         , Html.div [ class ("lh-board " ++ Games.Backgammon.View.themeClass (homeTheme model)) ]
-            [ Html.node "oskol-demo-board" [ class "lh-demo", Html.Attributes.attribute "align" "bottom" ] [] ]
+            [ Html.node "oskol-demo-board" [ class "lh-demo" ] [] ]
         , Html.div [ class "lh-dock" ]
             [ -- Under the open menu and over everything else: a tap beside the
               -- menu closes it. Inside the dock, so it shares the menu's layer.
@@ -977,7 +1116,7 @@ sentence model =
     in
     Html.p [ id "sentence", class "lh-sentence" ]
         [ Html.text "Play "
-        , pick model GameMenu "pick-game" (formatWords model model.format) (gameOptions model)
+        , pick model GameMenu "pick-game" [ Html.text (formatWords model model.format) ] (gameOptions model)
         , Html.br [ class "lh-br" ] []
         , Html.text " "
         , Html.span [ class "lh-line2" ]
@@ -986,17 +1125,17 @@ sentence model =
                 WhoMenu
                 "pick-who"
                 (if friend then
-                    "a friend"
+                    [ friendIcon, Html.text "a friend" ]
 
                  else
-                    "Sage"
+                    [ botIcon, Html.text "Sage" ]
                 )
-                [ menuOption "pick-who-bot" "Sage, our bot" (not friend) (PickedOpponent TheBot)
-                , menuOption "pick-who-friend" "a friend" friend (PickedOpponent AFriend)
+                [ menuOptionWith "pick-who-bot" [ botIcon, Html.text "Sage, our bot" ] (not friend) (PickedOpponent TheBot)
+                , menuOptionWith "pick-who-friend" [ friendIcon, Html.text "a friend" ] friend (PickedOpponent AFriend)
                 ]
             , Html.text " with "
             , if friend then
-                pick model ClockMenu "pick-clock" (clockWords model model.clock) (clockOptions model)
+                pick model ClockMenu "pick-clock" [ Html.text (clockWords model model.clock) ] (clockOptions model)
 
               else
                 Html.span [ id "sage-clock" ] [ Html.text "no clock" ]
@@ -1007,7 +1146,7 @@ sentence model =
 {-| One word of the sentence and, when it is open, its menu floating
 above it.
 -}
-pick : Model -> PickMenu -> String -> String -> List (Html Msg) -> Html Msg
+pick : Model -> PickMenu -> String -> List (Html Msg) -> List (Html Msg) -> Html Msg
 pick model which pickId words options =
     let
         open =
@@ -1028,7 +1167,7 @@ pick model which pickId words options =
                 )
             , onClick (ToggledMenu which)
             ]
-            [ Html.text words ]
+            words
         , if open then
             Html.span [ class "lh-menu lh-pick-menu", id (pickId ++ "-menu"), Html.Attributes.attribute "role" "listbox" ] options
 
@@ -1037,8 +1176,67 @@ pick model which pickId words options =
         ]
 
 
+{-| A menu item's icon: a Heroicon in the item's ink, in a fixed-width slot
+so every label starts at the same place.
+-}
+navIcon : String -> Html Msg
+navIcon name =
+    Html.span [ class "lh-nav-icon" ] [ icon name "w-5 h-5" ]
+
+
+navItem : String -> Msg -> List (Html Msg) -> Html Msg
+navItem itemId msg content =
+    Html.button [ Html.Attributes.type_ "button", id itemId, Html.Attributes.attribute "role" "menuitem", onClick msg ] content
+
+
+{-| Who is across the table, drawn beside the name so the sentence says it
+at a glance: Sage is the robot on the board's own chip (Lucide "bot"), a
+friend is two people (Lucide "users").
+-}
+botIcon : Html msg
+botIcon =
+    lineIcon "lh-who-icon"
+        [ Svg.path [ SvgAttr.d "M12 8V4H8" ] []
+        , Svg.rect [ SvgAttr.width "16", SvgAttr.height "12", SvgAttr.x "4", SvgAttr.y "8", SvgAttr.rx "2" ] []
+        , Svg.path [ SvgAttr.d "M2 14h2" ] []
+        , Svg.path [ SvgAttr.d "M20 14h2" ] []
+        , Svg.path [ SvgAttr.d "M15 13v2" ] []
+        , Svg.path [ SvgAttr.d "M9 13v2" ] []
+        ]
+
+
+friendIcon : Html msg
+friendIcon =
+    lineIcon "lh-who-icon"
+        [ Svg.path [ SvgAttr.d "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" ] []
+        , Svg.circle [ SvgAttr.cx "9", SvgAttr.cy "7", SvgAttr.r "4" ] []
+        , Svg.path [ SvgAttr.d "M22 21v-2a4 4 0 0 0-3-3.87" ] []
+        , Svg.path [ SvgAttr.d "M16 3.13a4 4 0 0 1 0 7.75" ] []
+        ]
+
+
+lineIcon : String -> List (Svg.Svg msg) -> Html msg
+lineIcon cls paths =
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 24 24"
+        , SvgAttr.class cls
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke "currentColor"
+        , SvgAttr.strokeWidth "2"
+        , SvgAttr.strokeLinecap "round"
+        , SvgAttr.strokeLinejoin "round"
+        , Html.Attributes.attribute "aria-hidden" "true"
+        ]
+        paths
+
+
 menuOption : String -> String -> Bool -> Msg -> Html Msg
 menuOption optionId label selected msg =
+    menuOptionWith optionId [ Html.text label ] selected msg
+
+
+menuOptionWith : String -> List (Html Msg) -> Bool -> Msg -> Html Msg
+menuOptionWith optionId content selected msg =
     Html.button
         [ Html.Attributes.type_ "button"
         , id optionId
@@ -1052,7 +1250,7 @@ menuOption optionId label selected msg =
             )
         , onClick msg
         ]
-        [ Html.text label ]
+        [ Html.span [ class "lh-option" ] content ]
 
 
 menuRule : Html msg
@@ -1125,7 +1323,7 @@ clockWords model clockId =
             |> Maybe.withDefault "a clock"
 
 
-{-| ROLL DICE, and against a friend GET A LINK: the label is stacked over a
+{-| PLAY NOW, and against a friend GET A LINK: the label is stacked over a
 hidden copy of the other, so the button never changes width. The dice
 tumble while the game is being made.
 -}
@@ -1137,7 +1335,7 @@ rollButton model =
                 "Get a link"
 
             else
-                "Roll dice"
+                "Play now"
 
         die n rot =
             Html.span [ class ("lh-die d" ++ String.fromInt n), style ("--rot: " ++ rot) ]
@@ -1146,7 +1344,7 @@ rollButton model =
     Html.button
         [ Html.Attributes.type_ "button"
         , id "roll-dice"
-        , classList [ ( "lh-roll", True ), ( "is-rolling", model.busy ) ]
+        , classList [ ( "lh-roll", True ), ( "is-rolling", model.busy || model.tumbling ) ]
         , Html.Attributes.attribute "aria-busy"
             (if model.busy then
                 "true"
@@ -1158,7 +1356,7 @@ rollButton model =
         ]
         [ Html.span [ class "lh-stack" ]
             [ Html.span [] [ Html.text label ]
-            , Html.span [ class "lh-sizer", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text "Roll dice" ]
+            , Html.span [ class "lh-sizer", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text "Play now" ]
             , Html.span [ class "lh-sizer", Html.Attributes.attribute "aria-hidden" "true" ] [ Html.text "Get a link" ]
             ]
         , Html.span [ class "lh-dice", Html.Attributes.attribute "aria-hidden" "true" ] [ die 4 "-6deg", die 1 "9deg" ]
@@ -1221,7 +1419,7 @@ it is open with a clock running in it, the seconds tick.
 -}
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    if not model.resumeOpen && model.menu == Nothing && not model.friendAsk then
+    if not model.resumeOpen && model.menu == Nothing && not model.friendAsk && not model.navOpen then
         Sub.none
 
     else
@@ -1243,6 +1441,13 @@ subscriptionsWhileOpen model =
 
           else
             Sub.none
+        , case ( model.menu, model.friendAsk ) of
+            _ ->
+                if model.navOpen then
+                    onEscape ToggledNav
+
+                else
+                    Sub.none
         , case ( model.menu, model.friendAsk ) of
             ( Just _, _ ) ->
                 onEscape ClosedMenu
@@ -1312,7 +1517,7 @@ themePicker model =
                  else
                     "false"
                 )
-            , Html.Attributes.title "Board colours"
+            , Html.Attributes.title "Themes"
             , onClick ToggledThemes
             ]
             [ Html.span [ class ("bg-theme-chip " ++ Games.Backgammon.View.themeClass current) ]

@@ -446,6 +446,10 @@ update msg model =
 
                 GameLanding.SignedOut ->
                     SignedOut
+
+                -- The guest home's phone menu; this page has its own JOIN.
+                GameLanding.OpenJoin ->
+                    NoOut
             )
 
 

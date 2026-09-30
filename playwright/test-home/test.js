@@ -194,7 +194,7 @@ async function run(browser, errors, fixture) {
     log('live games: the room, whose move it is, and one tap in');
 
     // 7. A guest still gets the guest home: the board, the sentence and
-    // ROLL DICE.
+    // PLAY NOW.
     const guest = await open('guest');
     await guest.page.goto(`${BASE}/`);
     await guest.page.waitForSelector('#roll-dice');

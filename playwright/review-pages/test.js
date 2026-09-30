@@ -6,7 +6,7 @@
  *   node playwright/review-pages/test.js
  */
 const playwright = require('playwright');
-const { dismissResume, openHome, pickWord, createGame } = require('../lib/flows');
+const { barItem, dismissResume, openHome, pickWord, createGame } = require('../lib/flows');
 const OUT = process.argv[2] || 'playwright/screenshots/review-pages';
 const fs = require('fs'); fs.mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -30,11 +30,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.click('#roll-dice'); await page.waitForSelector('#friend-modal #friend-name'); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-02c-friend-dialog.png`, fullPage: true });
     await page.click('#close-friend');
-    // Against Sage: no clock to pick, and ROLL DICE starts the game now.
+    // Against Sage: no clock to pick, and PLAY NOW starts the game now.
     await pickWord(page, 'who', 'pick-who-bot'); await sleep(400);
     await page.screenshot({ path: `${OUT}/${name}-02d-sentence-sage.png` });
-    // Sign in, from the bar.
-    await page.click('#signin-button'); await page.waitForSelector('#signin-modal #signin-email'); await sleep(600);
+    // Sign in, from the bar (☰'s menu on a phone).
+    await barItem(page, 'signin'); await page.waitForSelector('#signin-modal #signin-email'); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-02e-signin.png` });
     await page.keyboard.press('Escape'); await sleep(300);
     // The lobby: create a backgammon game, which lands on /backgammon/<id>: a
@@ -44,13 +44,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     // Home again, now holding a seat: "1 live game" in the bar, and the
     // LIVE GAMES dialog behind it. Shoot both, then close it to get at the
     // picker.
-    await openHome(page); await page.waitForSelector('#resume-games'); await sleep(600);
+    // On a phone the bar is the bird and ☰ (with a dot), and the pill is in
+    // ☰'s menu: shoot the menu open too.
+    await openHome(page); await page.waitForSelector('#resume-games', { state: 'attached' }); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-04a-home-with-games.png` });
-    await page.click('#resume-games'); await page.waitForSelector('#resume-modal'); await sleep(600);
+    if (!(await page.isVisible('#resume-games'))) {
+      await page.click('#nav-more'); await page.waitForSelector('#nav-menu'); await sleep(400);
+      await page.screenshot({ path: `${OUT}/${name}-04b-nav-menu.png` });
+      await page.keyboard.press('Escape'); await page.waitForSelector('#nav-menu', { state: 'detached' });
+    }
+    await barItem(page, 'live'); await page.waitForSelector('#resume-modal'); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-04-live-games.png` });
     await dismissResume(page);
     // The theme picker, open on the home page.
-    await page.click('#bg-theme-button'); await page.waitForSelector('#bg-theme-list'); await sleep(600);
+    await barItem(page, 'themes'); await page.waitForSelector('#bg-theme-list'); await sleep(600);
     await page.screenshot({ path: `${OUT}/${name}-05-theme-picker.png` });
     await ctx.close();
   }
