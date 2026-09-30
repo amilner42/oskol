@@ -538,6 +538,14 @@
 }
 .resume-chevron { color: var(--pencil); opacity: 0.6; transition: transform 0.14s ease, opacity 0.14s; }
 .resume-row:hover .resume-chevron { transform: translateX(2px); opacity: 1; }
+/* The guest home's LIVE GAMES scrolls past two and a half rows (three and a
+   half on a wide screen): the half row says there is more, and the Sign up
+   under the list stays on the screen instead of below it. */
+#resume-modal #resume-list {
+  max-height: 178px; overflow-y: auto; overscroll-behavior: contain;
+  padding: 2px 4px 4px 2px; margin: -2px -4px -4px -2px;
+}
+@media (min-width: 721px) and (min-height: 700px) { #resume-modal #resume-list { max-height: 260px; } }
 /* Your move is the live games' green, not the yellow: yellow is the page's
    one call to act (PLAY NOW, Sign up), and two yellows fight. */
 .resume-pill.yours { background: #dcf3e0; color: #1d6a33; box-shadow: inset 0 0 0 1px rgba(29, 106, 51, 0.22); }
