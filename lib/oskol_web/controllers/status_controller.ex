@@ -156,17 +156,26 @@ defmodule OskolWeb.StatusController do
   defp look do
     with {:ok, puzzle} <- a_position(),
          {:ok, question} <- :oskol@puzzles.question_from_json(Jason.encode!(puzzle.question)),
+         {:ok, body} <- askable(question),
          {:ok, svg} <- :oskol@puzzles@picture.checked_svg(question),
-         {:ok, body} <-
-           Reviews.ask(:oskol@status.route(), :oskol@status.request(question), @ask_ms),
-         {:ok, answer} <- :oskol@status.read(body) do
+         {:ok, answered} <- Reviews.ask(:oskol@status.route(), body, @ask_ms),
+         {:ok, answer} <- :oskol@status.read(answered) do
       {:ok, Map.put(Jason.decode!(answer), "svg", svg)}
     else
-      # Not the engine's fault, and not a reason to read down: a site with
-      # no games yet has nothing to draw.
+      # Neither of these is the engine's fault, and neither is a reason to
+      # read down: a site with no games yet has nothing to draw, and a row
+      # the engine cannot be asked about is ours to skip.
       :none -> {:nothing, "no stored position to draw yet"}
+      {:unaskable, why} -> {:nothing, why}
       {:error, reason} when is_binary(reason) -> {:error, reason}
       {:error, reason} -> {:error, inspect(reason)}
+    end
+  end
+
+  defp askable(question) do
+    case :oskol@status.request(question) do
+      {:ok, body} -> {:ok, body}
+      {:error, why} -> {:unaskable, why}
     end
   end
 
