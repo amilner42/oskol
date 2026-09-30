@@ -1213,3 +1213,30 @@ pub fn a_turn_with_nothing_committed_commits_nothing_test() {
   assert analysis.committed(s, engine.Take, s) == None
   assert analysis.committed(s, engine.Drop, s) == None
 }
+
+pub fn closing_a_session_keeps_the_game_it_just_played_test() {
+  // Ending an unlimited session takes the room from BetweenGames -- where
+  // the game just played is already closed -- to Finished. Reading that as
+  // a second game ending pushed another GameTurns under the same number
+  // with no turns in it, and the review written from it overwrote the real
+  // one: a played game read "Nothing to analyse: no turn was completed"
+  // (production, room EGKR03, the day `close` shipped).
+  let #(log, final) =
+    drive(
+      "unlimited",
+      11,
+      clock.NoClock,
+      400,
+      prefer(["double", "drop", "play", "move", "roll", "close"]),
+    )
+
+  let assert state.Finished(_) = final.phase
+  let assert Ok(games) = analysis.games(backgammon.game(), log)
+
+  // One game, not two, and it is the one that was played.
+  assert list.length(games) == 1
+  let assert [g1] = games
+  assert g1.number == 1
+  assert g1.finished
+  assert g1.turns != []
+}
