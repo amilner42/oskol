@@ -615,6 +615,15 @@ src/oskol/handlers/practice.gleam  a practice session: an account's deck, a gues
                                 own mistakes, the browser's timezone, burying one
 src/oskol/handlers/puzzles_hub.gleam  TRY ONE: a random puzzle whose answer stands
                                 clear, for a stranger on the practice home
+src/oskol/practice/decks.gleam  the universal sets (openings, replies): the registry,
+                                each set's retain scope, a player's standing, adding one
+src/oskol/practice/openings.gleam  the 15 openings and 315 replies: positions, the
+                                engine request, and when an answer is trusted
+src/oskol/handlers/decks.gleam  /papi/decks: the sets on offer, a session, adding one
+src/oskol/handlers/decks_build.gleam  building the sets from the engine (the operator's
+                                mix oskol.decks.build): only what is missing is asked
+src/oskol/caps/decks.gleam      a set's members, its write, and the practice caps over
+                                a retain scope (lib/oskol/gleam/caps/decks.ex)
 lib/oskol/practice.ex           those decisions run with the real rows behind them
 lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images tables;
                                 the one write, in one transaction with its marker
@@ -758,6 +767,9 @@ assets/src/Ui/Tiers.elm          one deck in front of you, on the hub and on the
                                  and offers the next tier down instead; with no tier
                                  anywhere in work, one line and nothing to press
 assets/src/Api/Practice.elm      /papi/practice (with `?band=`), /tz and /papi/puzzles/random
+assets/src/Api/Decks.elm         /papi/decks: the sets on offer, a session, adding one
+assets/src/Ui/Decks.elm          every word a set is said in ("11 left to learn · 4
+                                 learned"): learned, never fixed or patched
 assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over the board
                                  (Games/Backgammon/Puzzle.elm's `Table`, the page owning
                                  the path and the lazy fetches), PLAY or the two cube
@@ -1019,7 +1031,7 @@ GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
                                          never the game it came from
 GET  /papi/puzzles/:id/tree?node=      (open) one level of a tree too big to send
                                          whole: {ok, node, tree: Node}
-POST /papi/puzzles/:id/attempts        {moves | band, key, s?} -> {ok, verdict, yours,
+POST /papi/puzzles/:id/attempts        {moves | band, key, s?, deck?} -> {ok, verdict, yours,
                                          best, top, cube, schedule, story}. Open; a
                                          guest and a puzzle outside the caller's deck
                                          get schedule: null and nothing is written.
@@ -1028,7 +1040,7 @@ POST /papi/puzzles/:id/attempts        {moves | band, key, s?} -> {ok, verdict, 
                                          equity_lost, date, result, headline, line}
                                          where it opens one for this puzzle, else
                                          null -- on the reveal and nowhere earlier
-POST /papi/puzzles/:id/attempts/:key/outcome  {outcome: sooner|got_it|knew_it|never}
+POST /papi/puzzles/:id/attempts/:key/outcome  {outcome: sooner|got_it|knew_it|never, deck?}
                                          -> {ok, schedule}. The attempt's own
                                          account only (403); 409 with nothing to
                                          amend
@@ -1118,6 +1130,22 @@ GET  /papi/practice[?band=<grade>]     {ok, puzzles: [{id, kind, prompt, due}],
                                        that is not one of the three is a 422,
                                        never the whole deck. Never paged:
                                        every fetch is the front of the queue
+GET  /papi/decks                       {ok, decks: [{id, name, blurb, size, standing:
+                                         {joined, total, in_progress, patched, left,
+                                         due, new_left} | null}], patched_level} --
+                                       the universal sets with positions built
+                                       (see "Universal sets" under Puzzles);
+                                       `standing` is an account's
+GET  /papi/decks/:id                   {ok, deck, puzzles: [{id, kind, prompt, due}],
+                                         today} -- an account that added it gets
+                                       its queue (due, then new within the set's
+                                       own budget); anybody else walks it in
+                                       order, nothing written. 404 for a set that
+                                       names nothing or has nothing built
+POST /papi/decks/:id/join              {tz} -> the same session, once the set is
+                                       added (an account's; 409 `sign_in` for
+                                       anybody else). Idempotent: adding again
+                                       adds only positions built since
 GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
                                        random complete puzzle whose answer
                                        stands clear (a checker play whose
@@ -2059,6 +2087,61 @@ fetches nothing. The page's other `Out`s for this: `StartRun`, `SignedIn
 complete puzzles in the database's random order, the first that
 qualifies).
 
+## Universal sets (the openings, and what comes next)
+
+A set is practice nobody's mistakes made, offered to everyone: today
+**Openings** (the 15 opening rolls) and **Opening replies** (all 21 rolls
+after each opening played the engine's best way: 315 positions, fewer
+should two openings ever leave one board). What a set *is* -- its id, name,
+line and new-a-day budget -- is the Gleam registry
+(`src/oskol/practice/decks.gleam`, `all()`); **which** positions are in it
+is data, `deck_puzzles(deck, puzzle_id, position)`, pointing at ordinary
+`puzzles` rows (same key, same grading, same page -- an opening that is
+also somebody's mistake is one puzzle in two places).
+
+- **A set is its own retain scope per account** (`decks.scope`,
+  `"deck:<id>"`). Retain keys a learner by (scope, uid) and every call
+  takes `scope:`, so `Oskol.Gleam.Caps.Practice.build/1` is the same caps
+  one scope along and `ctx.decks.practice(scope)` hands them to Gleam.
+  `decks.in_deck(ctx, set)` swaps them in for `ctx.practice`, which is how
+  every mistake rule (the attempt row, the advisory lock, first answer at
+  a due card, SOONER/GOT IT/NEVER) holds for a set unchanged. The
+  mistakes stay the default scope: a set can never spend their three new
+  a day, touch a tier, or appear in `/papi/practice`. The reposition task
+  walks the default scope only.
+- **An answer names its set**: the attempt and the override carry `deck`
+  (`handlers/puzzles.attempt_in_json` / `outcome_in_json`); none is the
+  player's mistakes, a name that is no set is a 422. The run carries it
+  (`Main.Run.deck`), the strip names the set ("Openings · 3 practised
+  today"), and the page asks no `/why` (a set's position came from no
+  game). A set is "learned", never fixed or patched (`Ui.Decks`).
+- **Adding is an account's; playing is anybody's.** `POST /papi/decks/:id/join`
+  enrols every member in the set's scope at its position, with the
+  browser's zone; a guest, a stranger and an account that has not added
+  it walk the set in order with nothing written. `POST /papi/practice/tz`
+  reaches every set the account has added and creates none. The streak
+  counts practice in every scope (`activity.practised`).
+- **Budgets**: Openings five new a day, replies ten. Patched is the same
+  rung (`deck.patched_level`), read off the set's own ladder.
+- **Built by the operator, from the engine, never by a migration.**
+  `mix oskol.decks.build` (dry run unless `--write`;
+  `Oskol.Release.build_decks(dry_run: false)` in a release) builds the
+  openings, then the replies against the openings' best plays **as
+  stored**. Every decision is `handlers/decks_build`: a position already
+  in its set (by question key) is never asked again, a dry run asks
+  nobody, an answer short of every legal play (`openings.answer`) is a
+  failure and not a puzzle, and each batch is written as it lands. Money
+  play, Jacoby, cube centred: unlimited play's own opening. A set with no
+  positions built is not offered, so the page shows nothing until the
+  build has run. Tests build both against `Oskol.CompleteEngine`
+  (test_support), a stub that answers every legal play.
+- **The page**: `/puzzles` draws a second card, LEARN, under the
+  mistakes: a row per set with its line, the account's standing ("11
+  left to learn · 4 learned") and one button -- START (adds it), PRACTICE
+  (its queue), TRY (a walk, for anybody without an account) -- or "Nothing
+  due. More of them tomorrow." A new set is a registry entry, a build for
+  its positions, and nothing else.
+
 `POST /papi/practice/tz {tz}` writes the browser's zone onto the deck itself
 (no new column: retain already keeps a learner's timezone, and it is the
 only thing that reads one). Gleam checks the shape, the zone database checks
@@ -2120,6 +2203,9 @@ mix assets.build      # Elm (via esbuild plugin) + Tailwind
 mix phx.server        # http://localhost:4400 (4000 belongs to other apps on this machine)
                       # OSKOL_DEV_DATABASE names another dev database (a branch trying an
                       # operator task on seeded rooms, beside the main checkout's oskol_dev)
+mix oskol.decks.build          # build the universal sets from the engine: the 15
+                      # openings, then the 315 replies (dry run unless --write;
+                      # a second run asks nothing)
 mix oskol.puzzles.reposition   # put every mistake back in the queue worst first
                       # (dry run unless --write; a no-op the second time)
 mix oskol.seed        # local backgammon rooms at codes 000001.. parked in positions worth
@@ -2176,6 +2262,10 @@ node playwright/review-puzzles-hub/test.js      # screenshots: the hub leading w
                                                # session mid-run, the summary after one mistake
                                                # (shape.exs's SHAPE_STATE arranges each), plus the
                                                # stranger's and guest's hub and the home's section
+playwright/review-decks/run.sh                  # screenshots of the sets on /puzzles, a run
+                                               # through the openings, the reveal and the end
+                                               # card (four sizes); serves its own port and
+                                               # database and builds the sets on a stub engine
 node playwright/test-spa-landing/test.js        # the guest home: the sentence and its menus,
                                                # PLAY NOW against Sage and a friend, old links
                                                # redirect, a full create -> play click-through
