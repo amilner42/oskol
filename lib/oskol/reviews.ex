@@ -944,16 +944,7 @@ defmodule Oskol.Reviews do
       ]
       |> Keyword.merge(Keyword.get(config, :req_options, []))
 
-    case Req.post(options) do
-      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
-        {:ok, body}
-
-      {:ok, %Req.Response{status: status, body: body}} ->
-        {:error, "HTTP #{status}: #{String.slice(to_string(body), 0, 500)}"}
-
-      {:error, exception} ->
-        {:error, Exception.message(exception)}
-    end
+    posted(options)
   rescue
     e -> {:error, Exception.message(e)}
   end
@@ -984,17 +975,50 @@ defmodule Oskol.Reviews do
       ]
       |> Keyword.merge(Keyword.get(config, :req_options, []))
 
-    case Req.post(options) do
-      {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
-        {:ok, body}
-
-      {:ok, %Req.Response{status: status, body: body}} ->
-        {:error, "HTTP #{status}: #{String.slice(to_string(body), 0, 500)}"}
-
-      {:error, exception} ->
-        {:error, Exception.message(exception)}
-    end
+    posted(options)
   rescue
     e -> {:error, Exception.message(e)}
+  end
+
+  # Every request to the engine is made from its own process, and that is the
+  # whole point of this function.
+  #
+  # Finch delivers a reply to whoever asked, as messages. A request that times
+  # out is abandoned by Req, but its reply still arrives and sits in that
+  # process's mailbox. The next request made from the same process reads the
+  # *old* reply and dies on it -- in production, on 2026-09-30,
+  # `no case clause matching: {:status, #Reference<...>, 200}`.
+  #
+  # That is how one slow think ended a game. The bot retries in the process it
+  # first asked in, so attempt 1 timing out poisoned attempt 2, which crashed,
+  # and attempt 3 timed out behind it. Sage gave up and offered a resignation,
+  # and declining it started the same three failures over. The engine answered
+  # 200 to every one of those requests.
+  #
+  # A mailbox goes with its process, so here an abandoned reply is abandoned
+  # rather than left lying for the next caller.
+  defp posted(options) do
+    timeout = Keyword.fetch!(options, :receive_timeout)
+    task = Task.Supervisor.async_nolink(Oskol.Reviews.TaskSupervisor, fn -> Req.post(options) end)
+
+    # Req owns the timeout and answers first whenever it can; this is only the
+    # backstop for a task that never answers at all, so it is the request's own
+    # budget and a little more.
+    case Task.yield(task, timeout + 5_000) || Task.shutdown(task, :brutal_kill) do
+      {:ok, {:ok, %Req.Response{status: 200, body: body}}} when is_binary(body) ->
+        {:ok, body}
+
+      {:ok, {:ok, %Req.Response{status: status, body: body}}} ->
+        {:error, "HTTP #{status}: #{String.slice(to_string(body), 0, 500)}"}
+
+      {:ok, {:error, exception}} ->
+        {:error, Exception.message(exception)}
+
+      {:exit, reason} ->
+        {:error, "the request did not finish: #{inspect(reason)}"}
+
+      nil ->
+        {:error, "timeout"}
+    end
   end
 end

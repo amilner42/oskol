@@ -42,7 +42,7 @@ defmodule Mix.Tasks.Oskol.Reviews.Rebuild do
       dry_run: Keyword.get(opts, :write, false) == false,
       room: Keyword.get(opts, :room),
       limit: Keyword.get(opts, :limit, 100),
-      say: &Mix.shell().info/1
+      say: fn line -> Mix.shell().info(line) end
     )
   end
 end
