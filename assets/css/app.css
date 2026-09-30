@@ -782,14 +782,6 @@ a.q-card:hover, a.q-card:focus-visible {
   --bg-checker-light: #ffffff; --bg-checker-light-ink: var(--ink);
   --bg-checker-dark-ink: #ffffff; --bg-checker-edge: var(--ink);
 }
-/* Ivory & ebony: a chess-set board, black and cream on grey. */
-.bg-theme-ivory {
-  --bg-frame: #2b2b2b; --bg-slot: #1c1c1c; --bg-felt: #e8e4dc;
-  --bg-point-a: #4b4b4b; --bg-point-b: #c3bdb1; --bg-accent: #d8b06a;
-  --bg-checker-light: #f6f1e4; --bg-checker-dark: #16161a;
-  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
-  --bg-checker-edge: var(--ink);
-}
 /* Cherry: red wood, warm and loud. */
 .bg-theme-cherry {
   --bg-frame: #6d2320; --bg-slot: #551a18; --bg-felt: #f3e2d2;
@@ -845,13 +837,6 @@ a.q-card:hover, a.q-card:focus-visible {
   --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
   --bg-checker-edge: var(--ink);
 }
-/* Emerald: a velvet card room, gold on green. */
-.bg-theme-emerald {
-  --bg-frame: #1d3a2e; --bg-slot: #142a21; --bg-felt: #0f5138;
-  --bg-point-a: #0b3a28; --bg-point-b: #64b98f; --bg-accent: #edc35a;
-  --bg-checker-light: #f3f6ee; --bg-checker-dark: #07180f; --bg-checker-edge: #061109;
-  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
-}
 /* Copper: hammered metal gone green at the edges. */
 .bg-theme-copper {
   --bg-frame: #7a4327; --bg-slot: #5c311c; --bg-felt: #e8d9c4;
@@ -860,22 +845,7 @@ a.q-card:hover, a.q-card:focus-visible {
   --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
   --bg-checker-edge: var(--ink);
 }
-/* Arctic: ice and cold light, a board that looks cold to touch. */
-.bg-theme-arctic {
-  --bg-frame: #33505f; --bg-slot: #243b47; --bg-felt: #e9f4f8;
-  --bg-point-a: #4a7f9e; --bg-point-b: #cfe6ef; --bg-accent: #76e4ff;
-  --bg-checker-light: #ffffff; --bg-checker-dark: #16242d;
-  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
-  --bg-checker-edge: var(--ink);
-}
-/* Royal: navy and gold, the board in the good room. */
-.bg-theme-royal {
-  --bg-frame: #1b2450; --bg-slot: #121936; --bg-felt: #22306a;
-  --bg-point-a: #17224f; --bg-point-b: #8e9ad6; --bg-accent: #e8b53f;
-  --bg-checker-light: #f4f1e4; --bg-checker-dark: #0b1130; --bg-checker-edge: #070b20;
-  --bg-checker-light-ink: var(--ink); --bg-checker-dark-ink: #ffffff;
-}
-/* The picker in the header: the board's name, and the list of eight it
+/* The picker in the header: the board's name, and the list of twelve it
    opens. Each row wears its own theme class, so a swatch is painted by the
    very tokens the board would use — there is no second copy of the colours
    anywhere. */
