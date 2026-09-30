@@ -167,6 +167,26 @@ defmodule Oskol.Puzzles do
   end
 
   @doc """
+  One complete puzzle at random whose question is a checker play, or nil:
+  the position `/status` draws to show the engine working.
+
+  Checker plays only. A take is stored turned around (`puzzles.flip`) and a
+  double is graded from the doubler's side, so neither becomes a lone turn
+  for the engine without care -- and neither is a board with dice on it,
+  which is the thing that page is showing. `src/oskol/status.gleam` says
+  the same from the other end.
+  """
+  def sample_move do
+    Repo.one(
+      from(p in Puzzle,
+        where: p.complete and p.kind == "move",
+        order_by: fragment("random()"),
+        limit: 1
+      )
+    )
+  end
+
+  @doc """
   The sources of a puzzle in rooms that list this guest id or this account
   id among their seats, newest game first, with the room's slug and seats.
 
