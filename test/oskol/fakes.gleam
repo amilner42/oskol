@@ -13,11 +13,11 @@ import oskol/caps/activity as activity_caps
 import oskol/caps/analysis as analysis_caps
 import oskol/caps/auth as auth_caps
 import oskol/caps/copy as copy_caps
+import oskol/caps/decks as decks_caps
 import oskol/caps/guests as guests_caps
 import oskol/caps/ids as ids_caps
 import oskol/caps/persistence as persistence_caps
 import oskol/caps/practice as practice_caps
-import oskol/caps/decks as decks_caps
 import oskol/caps/puzzles as puzzles_caps
 import oskol/caps/records as records_caps
 import oskol/caps/rooms as rooms_caps

@@ -395,9 +395,14 @@ defmodule Oskol.Gleam.Caps.Practice do
   defp put_user(scope, uid, "", new_per_day) do
     unavailable(fn ->
       case Retain.put_user(uid, scope: scope, new_per_day: new_per_day) do
-        {:ok, _} -> {:ok, nil}
-        {:error, %Ecto.Changeset{action: :insert}} -> put_user(scope, uid, @default_tz, new_per_day)
-        {:error, %Ecto.Changeset{}} -> {:error, :unknown_timezone}
+        {:ok, _} ->
+          {:ok, nil}
+
+        {:error, %Ecto.Changeset{action: :insert}} ->
+          put_user(scope, uid, @default_tz, new_per_day)
+
+        {:error, %Ecto.Changeset{}} ->
+          {:error, :unknown_timezone}
       end
     end)
   end
@@ -524,7 +529,9 @@ defmodule Oskol.Gleam.Caps.Practice do
   end
 
   defp defer_until(scope, uid, key, until_ms) do
-    uid |> Retain.defer(key, DateTime.from_unix!(until_ms, :millisecond), scope: scope) |> graded()
+    uid
+    |> Retain.defer(key, DateTime.from_unix!(until_ms, :millisecond), scope: scope)
+    |> graded()
   end
 
   # The start of this deck's own tomorrow: the clock and the timezone are

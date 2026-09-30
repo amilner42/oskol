@@ -189,4 +189,29 @@ defmodule Oskol.Release do
 
     totals
   end
+
+  @doc """
+  Build the universal decks (the openings and the replies to them) from a
+  release: ask the engine about every position a deck is missing and write
+  the answers down. Dry run unless told otherwise; a dry run asks nobody.
+
+      bin/oskol eval 'Oskol.Release.build_decks(dry_run: true)'
+      bin/oskol eval 'Oskol.Release.build_decks(dry_run: false)'
+
+  Safe to run again: a position already in its deck is never asked again,
+  and a second run finds nothing to do. The decisions are Gleam's
+  (`src/oskol/handlers/decks_build.gleam`).
+  """
+  def build_decks(opts \\ []) do
+    write? = Keyword.get(opts, :dry_run, true) == false
+    Application.load(@app)
+    # The engine is reached over HTTP, which a bare `eval` VM has not started.
+    {:ok, _} = Application.ensure_all_started(:req)
+
+    {:ok, reports, _} =
+      Ecto.Migrator.with_repo(Oskol.Repo, fn _repo -> Oskol.Decks.build(write?) end)
+
+    IO.puts(Oskol.Decks.describe(reports) <> if(write?, do: "", else: "\n(dry run)"))
+    reports
+  end
 end
