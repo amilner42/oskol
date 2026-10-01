@@ -129,6 +129,14 @@ words =
                     , \_ -> Ui.Decks.doneToday 3 |> Expect.equal "3 practised today"
                     ]
                     ()
+        , test "a set's page: learned at the top of its legend and its ladder, and the sign-in" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Ui.Decks.legendTop |> Expect.equal "learned"
+                    , \_ -> Ui.Decks.ladderLine { patchedLevel = 4, started = [ 3, 7, 0, 0, 2, 2, 0, 0 ] } |> Expect.equal "3 back at the start, 7 at level 1, 4 learned."
+                    , \_ -> Ui.Decks.signInLine |> Expect.equal "Sign in to keep your place in these."
+                    ]
+                    ()
         , test "a set in its three states, which is its grid's legend" <|
             \_ ->
                 Ui.Decks.stateLine { total = 15, untouched = 5, inProgress = 6, patched = 4 }

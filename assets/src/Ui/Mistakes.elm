@@ -7,6 +7,13 @@ module Ui.Mistakes exposing
     , costHeadline
     , costLine
     , dayStreakLine
+    , dueLine
+    , emptyTierLine
+    , ladderLine
+    , ladderWords
+    , legendParts
+    , legendTop
+    , strangerTierLine
     , fixedToday
     , freshLine
     , guestPracticeLine
@@ -738,3 +745,123 @@ oneDecimal value =
                 ""
     in
     sign ++ String.fromInt (n // 10) ++ "." ++ String.fromInt (modBy 10 n)
+
+
+
+-- A DECK'S OWN PAGE
+
+
+{-| The legend under a deck page's grid, a part per paint in the order a
+position climbs them, the last said in the deck's own word ("patched"
+for a mistake, "learned" in a set):
+
+    "to start · level 1 · 2 · 3 · patched"
+
+Each part carries the state it names, so the page can draw the grid's
+own colour beside it.
+
+-}
+legendParts : String -> List ( String, String )
+legendParts top =
+    [ ( "to-start", "to start" )
+    , ( "level-1", "level 1" )
+    , ( "level-2", "2" )
+    , ( "level-3", "3" )
+    , ( "patched", top )
+    ]
+
+
+{-| A mistake at the top of the ladder.
+-}
+legendTop : String
+legendTop =
+    "patched"
+
+
+{-| The ladder in words, over the positions that have been started: how
+many went back to the start, how many sit on each rung below the top,
+and how many are at the top, in the deck's own word. A rung with nobody
+on it is left out; nothing started is nothing said.
+
+    "2 back at the start, 8 at level 1, 5 at level 2, 3 at level 3, 6 patched."
+
+-}
+ladderLine : { patchedLevel : Int, started : List Int } -> String
+ladderLine =
+    ladderWords legendTop
+
+
+{-| The ladder in words with the top said in `top`: what `ladderLine`
+is for a mistake and `Ui.Decks.ladderLine` for a set. `started` is how
+many started positions sit on each rung, lowest first.
+-}
+ladderWords : String -> { patchedLevel : Int, started : List Int } -> String
+ladderWords top ladder =
+    let
+        on rung =
+            ladder.started |> List.drop rung |> List.head |> Maybe.withDefault 0
+
+        atTop =
+            ladder.started |> List.drop (max 1 ladder.patchedLevel) |> List.sum
+
+        parts =
+            (( on 0, " back at the start" )
+                :: (List.range 1 (max 1 ladder.patchedLevel - 1)
+                        |> List.map (\rung -> ( on rung, " at level " ++ String.fromInt rung ))
+                   )
+            )
+                ++ [ ( atTop, " " ++ top ) ]
+                |> List.filter (\( n, _ ) -> n > 0)
+                |> List.map (\( n, words ) -> String.fromInt n ++ words)
+    in
+    case parts of
+        [] ->
+            ""
+
+        _ ->
+            String.join ", " parts ++ "."
+
+
+{-| What is due, on a deck's page: today's work while there is any, else
+when the next one comes back -- in whole days, "tomorrow" at one or
+less -- else, with nothing in rotation, that nothing is due.
+
+    "12 due now · 3 new today"
+    "Nothing due. Next due tomorrow."
+    "Nothing due. Next due in 5 days."
+    "Nothing due."
+
+-}
+dueLine : { due : Int, newLeft : Int, nextInDays : Maybe Int } -> String
+dueLine work =
+    if work.due > 0 || work.newLeft > 0 then
+        workLine { due = work.due, newLeft = work.newLeft }
+
+    else
+        case work.nextInDays of
+            Just days ->
+                if days <= 1 then
+                    "Nothing due. Next due tomorrow."
+
+                else
+                    "Nothing due. Next due in " ++ String.fromInt days ++ " days."
+
+            Nothing ->
+                "Nothing due."
+
+
+{-| A tier's page for a stranger: nothing of theirs is here yet.
+-}
+strangerTierLine : String
+strangerTierLine =
+    "Play a game and your mistakes appear here."
+
+
+{-| A tier's page for an account with none in it yet.
+
+    "No very bad moves yet. They land here as your games are graded."
+
+-}
+emptyTierLine : String -> String
+emptyTierLine grade =
+    "No " ++ bandWord grade ++ " moves yet. They land here as your games are graded."

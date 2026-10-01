@@ -456,6 +456,9 @@ body model catalog =
                         , onPress = Pressed deck
                         , prefix = "hub"
                         , note = model.note
+                        , open = Just (Route.href (Route.practice deck.slug))
+                        , squares = Nothing
+                        , size = Deck.OnHub
                         }
 
                 Nothing ->

@@ -14,6 +14,21 @@
  *   06 a guest with games: their worst tier, PRACTICE, nothing kept
  *   07 a stranger: what this is, TRY ONE, the five as rows
  *   08 a stranger with the openings tapped in front: TRY
+ *   09 (no shot) OPEN on the hub's card sits inside the eyebrow's line
+ *
+ * And each deck's own page (/practice/<slug>):
+ *
+ *   10-14 the shaped account on all five: very bad, bad, dubious, the
+ *         openings, the replies (FIX ONE / PRACTICE)
+ *   15    the very bad moves with today's set done: KEEP GOING
+ *   16    every very bad move started, none due: PRACTICE ANYWAY
+ *   17-18 a fresh account: the openings (START), a tier with nothing yet
+ *   19    a guest on their worst tier: their count, all paper, PRACTICE
+ *   20-21 a stranger: the openings (TRY, the sign-in), a tier (one line)
+ *
+ * A deck page's loading state holds 320px; once drawn, its card and the
+ * whole page are the same box as they land and once the animations are
+ * done, and while a press says STARTING...
  *
  * What is measured, and must be equal:
  *   - #puzzles-hub's height before tapping a row and after tapping back;
@@ -157,8 +172,97 @@ async function shoot(context, name, prepare, checks = {}) {
   log(`${name} shot`);
 }
 
+// ---------- a deck's own page: /practice/<slug> ----------
+
+/** Load a deck's page and hold it still: the loading box is the 320px it
+ * promises, the card is the same box as it lands and once its animations
+ * are over, and the page is the same height. */
+async function landPage(page, slug, what) {
+  // The answer held back a moment, so the loading state is measurable.
+  let release;
+  const held = new Promise((r) => (release = r));
+  await page.route(new RegExp(`/papi/practice/decks/${slug}$`), async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto(`${BASE}/practice/${slug}`);
+  await page.waitForSelector('#practice-loading');
+  const loading = await box(page, '#practice-loading');
+  must(loading.h === 320, `${what}: the loading state holds 320px (${loading.h})`);
+  release();
+  await page.waitForSelector('#practice-card, #practice-empty');
+  await page.unroute(new RegExp(`/papi/practice/decks/${slug}$`));
+  const sel = (await page.locator('#practice-card').count()) ? '#practice-card' : '#practice-empty';
+  const first = await box(page, sel);
+  const pageFirst = await box(page, '#practice-page');
+  await sleep(1800);
+  const settled = await box(page, sel);
+  const pageSettled = await box(page, '#practice-page');
+  must(same(first, settled), `${what}: ${sel} as it lands and once it has settled ${JSON.stringify(settled)}`);
+  must(same(pageFirst, pageSettled), `${what}: the page as it lands and once it has settled (${pageSettled.h}px)`);
+}
+
+/** Press the page's one button with its answer held back: nothing on the
+ * page moves while it says STARTING... */
+async function pressHeldPage(page, what) {
+  if (!(await page.locator('#practice-go:not([disabled])').count())) return;
+  const before = await box(page, '#practice-page');
+  const card = await box(page, '#practice-card');
+  let release;
+  const held = new Promise((r) => (release = r));
+  await page.route(/\/papi\/(practice|decks)/, async (route) => {
+    if (route.request().url().includes('/papi/practice/decks')) return route.continue();
+    await held;
+    await route.abort().catch(() => {});
+  });
+  await page.click('#practice-go');
+  await page.waitForFunction(() => /STARTING/.test(document.querySelector('#practice-go').textContent));
+  const during = await box(page, '#practice-page');
+  const cardDuring = await box(page, '#practice-card');
+  release();
+  await sleep(150);
+  await page.unroute(/\/papi\/(practice|decks)/);
+  must(same(card, cardDuring), `${what}: the card while its press is on the way`);
+  must(same(before, during), `${what}: the page while its press is on the way (${during.h}px)`);
+}
+
+async function shootPage(context, name, slug, checks = {}) {
+  if (ONLY && !ONLY.some((o) => name.startsWith(o))) return;
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  for (const size of SIZES) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await landPage(page, slug, `${name} ${size.name}`);
+    await noSideways(page, `${name} ${size.name}`);
+    await page.mouse.move(0, 0);
+    await page.screenshot({ path: `${OUT}/${name}-${size.name}.png`, fullPage: true });
+    if (checks.press && size.name === 'phone') {
+      await pressHeldPage(page, `${name} ${size.name}`);
+      await page.goto('about:blank');
+    }
+  }
+  if (errors.length) throw new Error(`${name}: ${errors.join('; ')}`);
+  await page.close();
+  log(`${name} shot`);
+}
+
+/** The hub's card with OPEN on it is the height it would be without: the
+ * link sits on the eyebrow's line. */
+async function openHolds(context, what) {
+  if (ONLY && !ONLY.some((o) => '09-hub-open'.startsWith(o))) return;
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto(`${BASE}/puzzles`);
+  await page.waitForSelector('#hub-open');
+  const name = await box(page, '#hub-card .dk-name-row');
+  const open = await box(page, '#hub-open');
+  must(open.h <= name.h && open.y >= name.y && open.y + open.h <= name.y + name.h, `${what}: OPEN sits inside the eyebrow's line (${open.h} in ${name.h})`);
+  await page.close();
+}
+
 (async () => {
-  const setup = process.env.PRACTICE_SETUP ? JSON.parse(process.env.PRACTICE_SETUP) : mix('playwright/review-practice/setup.exs');
+  const setup =process.env.PRACTICE_SETUP ? JSON.parse(process.env.PRACTICE_SETUP) : mix('playwright/review-practice/setup.exs');
   log(`arranged: ${JSON.stringify(setup)}`);
   const shape = (state) => log(`shaped: ${JSON.stringify(mix('playwright/review-practice/shape.exs', { SHAPE_EMAIL: setup.email, SHAPE_STATE: state }))}`);
 
@@ -170,24 +274,45 @@ async function shoot(context, name, prepare, checks = {}) {
   };
   try {
     const account = await context(setup.guest);
-    if (!ONLY || ONLY.some((o) => o.startsWith('01') || o.startsWith('02'))) shape('ladder');
+    shape('ladder');
     await shoot(account, '01-account-fix-one', null, { tap: true, press: true });
     await shoot(account, '02-account-replies-in-front', async (page) => {
       await page.click('#hub-row-opening_replies');
       await page.waitForSelector('#hub-card[data-deck="opening_replies"]');
     });
-    if (!ONLY || ONLY.some((o) => o.startsWith('03'))) shape('keep_going');
+    await openHolds(account, '09-hub-open');
+    // Each deck's own page, for the same account in the same state.
+    await shootPage(account, '10-page-very-bad', 'very-bad', { press: true });
+    await shootPage(account, '11-page-bad', 'bad');
+    await shootPage(account, '12-page-dubious', 'dubious');
+    await shootPage(account, '13-page-openings', 'openings', { press: true });
+    await shootPage(account, '14-page-opening-replies', 'opening-replies');
+    shape('keep_going');
     await shoot(account, '03-account-keep-going', null, { press: true });
-    if (!ONLY || ONLY.some((o) => o.startsWith('04'))) shape('scheduled');
+    await shootPage(account, '15-page-very-bad-keep-going', 'very-bad', { press: true });
+    shape('scheduled');
     await shoot(account, '04-account-practice-anyway', null, { press: true });
+    await shootPage(account, '16-page-very-bad-practice-anyway', 'very-bad', { press: true });
     await account.close();
 
     const fresh = await context(setup.fresh);
     await shoot(fresh, '05-fresh-account', null, { tap: true, press: true });
+    await shootPage(fresh, '17-page-openings-fresh', 'openings', { press: true });
+    await shootPage(fresh, '18-page-very-bad-fresh', 'very-bad');
     await fresh.close();
 
     const guest = await context(setup.bob);
     await shoot(guest, '06-guest', null, { tap: true, press: true });
+    // The guest's own worst tier, whichever it is: the hub's card says.
+    const guestSlug = await (async () => {
+      const p = await guest.newPage();
+      await p.goto(`${BASE}/puzzles`);
+      await p.waitForSelector('#hub-card');
+      const id = await p.getAttribute('#hub-card', 'data-deck');
+      await p.close();
+      return id === 'doubtful' ? 'dubious' : id.replace(/_/g, '-');
+    })();
+    await shootPage(guest, '19-page-tier-guest', guestSlug, { press: true });
     await guest.close();
 
     const stranger = await context(null);
@@ -196,6 +321,8 @@ async function shoot(context, name, prepare, checks = {}) {
       await page.click('#hub-row-openings');
       await page.waitForSelector('#hub-card[data-deck="openings"]');
     });
+    await shootPage(stranger, '20-page-openings-stranger', 'openings', { press: true });
+    await shootPage(stranger, '21-page-very-bad-stranger', 'very-bad');
     await stranger.close();
     log(`screenshots in ${OUT}`);
   } finally {

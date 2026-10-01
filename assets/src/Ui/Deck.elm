@@ -2,11 +2,13 @@ module Ui.Deck exposing
     ( Action(..)
     , CardConfig
     , RowConfig
+    , Size(..)
     , Who(..)
     , action
     , actionLabel
     , card
     , cells
+    , costLines
     , left
     , row
     )
@@ -207,7 +209,19 @@ type alias CardConfig msg =
     , note : Maybe String -- what the last press came back with, said where the quiet line is
     , onPress : Action -> msg
     , prefix : String
+    , open : Maybe String -- the deck's own page, linked from the head (the hub's card)
+    , squares : Maybe (List { level : Int, status : String }) -- each position as it stands, in the deck's order (a deck's page)
+    , size : Size
     }
+
+
+{-| The card on the practice home, or at the size of a deck's own page:
+there the grid is wider, the ring bigger, the grid has its legend under
+it, and what the tier cost is said in a block of its own below the card.
+-}
+type Size
+    = OnHub
+    | OnPage
 
 
 card : CardConfig msg -> Html msg
@@ -221,7 +235,14 @@ card config =
     in
     Html.div
         [ id (config.prefix ++ "-card")
-        , class "dk-card"
+        , class
+            (case config.size of
+                OnHub ->
+                    "dk-card"
+
+                OnPage ->
+                    "dk-card is-page"
+            )
         , Attr.attribute "data-deck" deck.id
         , Attr.attribute "data-kind" (kindName deck)
         , Attr.attribute "data-action" (actionName which)
@@ -229,14 +250,25 @@ card config =
         [ head config
         , Html.div [ class "dk-grid", id (config.prefix ++ "-grid") ]
             [ Charts.grid
-                { cells = cells deck
+                { cells = squaresOf config
                 , columns = columns deck
                 , patchedLevel = config.patchedLevel
                 , sentence = stateSentence config.who deck
                 }
             ]
+        , case config.size of
+            OnPage ->
+                legend config
+
+            OnHub ->
+                Html.text ""
         , stateLine config deck
-        , costLines config deck
+        , case config.size of
+            OnHub ->
+                costLines config deck
+
+            OnPage ->
+                Html.text ""
         , Html.div [ class "dk-action" ]
             [ Html.button
                 [ Attr.type_ "button"
@@ -281,12 +313,12 @@ head config =
             (case deck.kind of
                 Tier ->
                     [ Html.p [ class "dk-mark", Attr.attribute "aria-hidden" "true" ] [ Html.text deck.mark ]
-                    , Html.h2 [ class "dk-name", id (config.prefix ++ "-name") ] [ Html.text deck.name ]
+                    , nameRow config [ Html.h2 [ class "dk-name", id (config.prefix ++ "-name") ] [ Html.text deck.name ] ]
                     ]
 
                 Set ->
                     [ Html.h2 [ class "dk-setname", id (config.prefix ++ "-name") ] [ Html.text deck.name ]
-                    , Html.p [ class "dk-name" ] [ Html.text (Decks.sizeEyebrow deck.size) ]
+                    , nameRow config [ Html.p [ class "dk-name" ] [ Html.text (Decks.sizeEyebrow deck.size) ] ]
                     ]
             )
         , case deck.standing of
@@ -307,6 +339,68 @@ head config =
             Nothing ->
                 Html.text ""
         ]
+
+
+{-| The eyebrow under the mark or the name, with OPEN beside it where the
+card links to the deck's own page. The link sits on the eyebrow's own
+line and is no taller than it, so the head is the same height with it
+or without it.
+-}
+nameRow : CardConfig msg -> List (Html msg) -> Html msg
+nameRow config name =
+    case config.open of
+        Just path ->
+            Html.div [ class "dk-name-row" ]
+                (name
+                    ++ [ Html.a
+                            [ Attr.href path
+                            , id (config.prefix ++ "-open")
+                            , class "dk-open"
+                            , Attr.attribute "aria-label" ("Open " ++ config.deck.name)
+                            ]
+                            [ Html.text "OPEN", Html.span [ class "dk-open-chev", Attr.attribute "aria-hidden" "true" ] [ Html.text "›" ] ]
+                       ]
+                )
+
+        Nothing ->
+            Html.div [ class "dk-name-row" ] name
+
+
+{-| Under the grid on a deck's page: what each colour means, square by
+square -- the grid's own paints, in the order a position climbs them.
+-}
+legend : CardConfig msg -> Html msg
+legend config =
+    let
+        top =
+            case config.deck.kind of
+                Tier ->
+                    Mistakes.legendTop
+
+                Set ->
+                    Decks.legendTop
+
+        swatch ( state, words ) =
+            Html.span [ class ("dk-key is-" ++ state) ]
+                [ Html.span [ class ("dk-swatch is-" ++ state), Attr.attribute "aria-hidden" "true" ] []
+                , Html.text words
+                ]
+    in
+    Html.p [ class "dk-legend", id (config.prefix ++ "-legend") ]
+        (List.map swatch (Mistakes.legendParts top))
+
+
+{-| The squares the grid draws: each position as it stands where the
+caller has them (a deck's page), else worked out from the counts.
+-}
+squaresOf : CardConfig msg -> List { level : Int, status : String }
+squaresOf config =
+    case config.squares of
+        Just (first :: rest) ->
+            first :: rest
+
+        _ ->
+            cells config.deck
 
 
 {-| The ring in words, for the `<title>` a hover shows.

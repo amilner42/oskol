@@ -5,6 +5,10 @@ defmodule OskolWeb.PageControllerTest do
   # covered in `spa_controller_test.exs`.
 
   test "the sitemap lists the library, the game and the practice home", %{conn: conn} do
+    # It asks which sets have something built (none here: see
+    # practice_page_test.exs for the sets).
+    owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Oskol.Repo, shared: true)
+    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
     conn = get(conn, ~p"/sitemap.xml")
     assert response_content_type(conn, :xml) =~ "application/xml"
     body = response(conn, 200)
