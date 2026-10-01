@@ -213,6 +213,14 @@ pub fn queue(ctx: Ctx, deck: Deck, uid: String) -> List(Entry) {
   )
 }
 
+/// PRACTICE ANYWAY through a set: its positions in rotation, soonest due
+/// first (`deck.anyway` in the set's own scope), each one an answer that
+/// moves nothing.
+pub fn anyway(ctx: Ctx, set: Deck, uid: String) -> List(Entry) {
+  deck.anyway(in_deck(ctx, set), uid, "")
+  |> list.map(entry(_, False))
+}
+
 fn entry(card: Card, due: Bool) -> Entry {
   Entry(
     id: card.key,

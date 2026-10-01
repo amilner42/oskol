@@ -154,6 +154,98 @@ defmodule OskolWeb.Api.DecksApiTest do
     assert %{"joined" => false, "total" => 0} = replies["standing"]
   end
 
+  test "the five decks: a set's standing, its page, and KEEP GOING through it", %{conn: conn} do
+    # A stranger: the three tiers (none of theirs) and the two sets.
+    listed = conn |> get(~p"/papi/practice/decks") |> json_response(200)
+
+    assert Enum.map(listed["decks"], & &1["slug"]) ==
+             ["very-bad", "bad", "dubious", "openings", "opening-replies"]
+
+    assert Enum.all?(listed["decks"], &(&1["standing"] == nil))
+    assert %{"lead" => nil, "today" => nil, "streak" => 0} = listed
+
+    # KEEP GOING is an account's, and only through a set it has added.
+    assert %{"error" => %{"code" => "sign_in"}} =
+             conn |> with_csrf() |> post(~p"/papi/decks/openings/more", %{}) |> json_response(409)
+
+    {conn, user} = signed_in(conn, "arie@oskol.test")
+
+    assert %{"error" => %{"code" => "not_joined", "message" => "Add it first."}} =
+             conn |> with_csrf() |> post(~p"/papi/decks/openings/more", %{}) |> json_response(409)
+
+    joined =
+      conn
+      |> with_csrf()
+      |> post(~p"/papi/decks/openings/join", %{"tz" => "Etc/UTC"})
+      |> json_response(200)
+
+    [first | _] = joined["puzzles"]
+    payload = conn |> get(~p"/papi/puzzles/#{first["id"]}") |> json_response(200)
+
+    reveal =
+      conn
+      |> with_csrf()
+      |> post(~p"/papi/puzzles/#{first["id"]}/attempts", %{
+        "moves" => path_through(payload),
+        "key" => "k1",
+        "deck" => "openings"
+      })
+      |> json_response(200)
+
+    # Level 1 holds for a day, as `config :retain, intervals` says.
+    assert %{"schedule" => %{"level_after" => 1, "held_days" => 1}} = reveal
+
+    listed = conn |> get(~p"/papi/practice/decks") |> json_response(200)
+    openings = Enum.find(listed["decks"], &(&1["id"] == "openings"))
+
+    # One answered, none due, and the day's budget has four of its five left.
+    assert %{
+             "kind" => "set",
+             "size" => 15,
+             "joined" => true,
+             "standing" => %{
+               "total" => 15,
+               "untouched" => 14,
+               "in_progress" => 1,
+               "patched" => 0,
+               "due" => 0,
+               "new_left" => 4,
+               "done_today" => 1,
+               "target_today" => 5,
+               "levels" => [14, 1, 0, 0, 0, 0, 0, 0]
+             }
+           } = openings
+
+    assert %{"lead" => "openings", "today" => %{"done" => 1}, "streak" => 1} = listed
+    # Reading added nothing: no mistakes learner, no other set.
+    assert learner(user.id, "default") == nil
+    assert learner(user.id, "deck:opening_replies") == nil
+
+    page = conn |> get(~p"/papi/practice/decks/openings") |> json_response(200)
+    assert length(page["cells"]) == 15
+    assert Enum.count(page["cells"], &(&1["status"] == "active")) == 1
+    assert Enum.all?(page["cells"], &(&1["band"] == ""))
+    assert length(page["days"]) == 30
+    assert List.last(page["days"]) == true
+
+    # KEEP GOING: the set's pace again, over what the day has left.
+    more = conn |> with_csrf() |> post(~p"/papi/decks/openings/more", %{}) |> json_response(200)
+    assert length(more["puzzles"]) == 5
+    assert Enum.all?(more["puzzles"], & &1["due"])
+
+    listed = conn |> get(~p"/papi/practice/decks") |> json_response(200)
+    openings = Enum.find(listed["decks"], &(&1["id"] == "openings"))
+
+    assert %{"untouched" => 9, "due" => 5, "new_left" => 0, "target_today" => 6} =
+             openings["standing"]
+
+    # PRACTICE ANYWAY is ignored while there is a queue.
+    anyway = conn |> get("/papi/decks/openings?all=1") |> json_response(200)
+    assert Enum.map(anyway["puzzles"], & &1["id"]) == Enum.map(more["puzzles"], & &1["id"])
+
+    assert conn |> get(~p"/papi/practice/decks/no-such") |> json_response(404)
+  end
+
   test "a deck that names nothing is refused on an answer", %{conn: conn} do
     [first | _] =
       conn |> get(~p"/papi/decks/openings") |> json_response(200) |> Map.get("puzzles")

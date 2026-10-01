@@ -3,8 +3,9 @@ defmodule OskolWeb.Api.DecksController do
   The universal decks, as JSON:
 
       GET  /papi/decks            every deck on offer, with the caller's standing
-      GET  /papi/decks/:id        a session: what to play next
+      GET  /papi/decks/:id        a session: what to play next (?all=1: PRACTICE ANYWAY)
       POST /papi/decks/:id/join   {tz} -- add the deck, then the session
+      POST /papi/decks/:id/more   KEEP GOING: the set's pace again, then the session
 
   Every decision -- which decks are offered, an account's queue against
   everybody else's walk through the deck, what adding one writes -- belongs
@@ -19,8 +20,15 @@ defmodule OskolWeb.Api.DecksController do
     json_resp(conn, 200, :oskol@handlers@decks.list_json(ctx(), session(conn)))
   end
 
-  def show(conn, %{"id" => id}) do
-    send_json(conn, :oskol@handlers@decks.session_json(ctx(), session(conn), id))
+  def show(conn, %{"id" => id} = params) do
+    send_json(
+      conn,
+      :oskol@handlers@decks.session_all_json(ctx(), session(conn), id, params["all"] == "1")
+    )
+  end
+
+  def more(conn, %{"id" => id}) do
+    send_json(conn, :oskol@handlers@decks.more_json(ctx(), session(conn), id))
   end
 
   def join(conn, %{"id" => id} = params) do

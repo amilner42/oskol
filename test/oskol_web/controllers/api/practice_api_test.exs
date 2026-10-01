@@ -121,6 +121,80 @@ defmodule OskolWeb.Api.PracticeApiTest do
     end
   end
 
+  describe "the five decks" do
+    test "an account with nothing yet reads three empty tiers, and no set is offered unbuilt",
+         %{conn: conn} do
+      {conn, user} = signed_in(conn, "arie@oskol.test")
+
+      body = conn |> get(~p"/papi/practice/decks") |> json_response(200)
+      # No set has been built in this database, so none is offered.
+      assert Enum.map(body["decks"], & &1["id"]) == ["very_bad", "bad", "doubtful"]
+
+      assert Enum.all?(body["decks"], fn d ->
+               d["joined"] == false and d["size"] == 0 and d["cost"] == nil and
+                 d["standing"]["levels"] == [0, 0, 0, 0, 0, 0, 0, 0]
+             end)
+
+      assert %{"lead" => nil, "today" => %{"done" => 0}, "streak" => 0} = body
+
+      page = conn |> get(~p"/papi/practice/decks/dubious") |> json_response(200)
+      assert %{"deck" => %{"id" => "doubtful", "mark" => "?!"}, "cells" => []} = page
+      assert page["days"] == List.duplicate(false, 30)
+
+      # A set nobody built, and a slug that names nothing: the same 404.
+      assert %{"error" => %{"code" => "not_found"}} =
+               conn |> get(~p"/papi/practice/decks/openings") |> json_response(404)
+
+      assert conn |> get(~p"/papi/practice/decks/doubtful") |> json_response(404)
+
+      # Reading opened no deck.
+      assert Retain.fetch_user(user.id) == {:error, :not_found}
+    end
+
+    test "KEEP GOING takes a band, and refuses one that is not", %{conn: conn} do
+      {conn, user} = signed_in(conn, "arie@oskol.test")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC")
+
+      body =
+        conn
+        |> with_csrf()
+        |> post(~p"/papi/practice/more", %{"band" => "bad"})
+        |> json_response(200)
+
+      assert body["puzzles"] == []
+
+      assert %{"error" => %{"code" => "validation_failed"}} =
+               conn
+               |> with_csrf()
+               |> post(~p"/papi/practice/more", %{"band" => "brilliant"})
+               |> json_response(422)
+    end
+
+    test "PRACTICE ANYWAY answers the rotation, soonest due first, once nothing is due",
+         %{conn: conn} do
+      {conn, user} = signed_in(conn, "arie@oskol.test")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC")
+
+      {:ok, _} =
+        Retain.put_items(user.id, Enum.map(["a", "b"], &%{key: &1, tags: %{}, content: %{}}))
+
+      {:ok, _} = Retain.start(user.id, ["a", "b"])
+      # Both back tomorrow; b was answered first, so b is due first.
+      {:ok, _} = Retain.review(user.id, "b", :again)
+      {:ok, _} = Retain.review(user.id, "a", :pass)
+
+      assert conn |> get(~p"/papi/practice") |> json_response(200) |> Map.get("puzzles") == []
+
+      anyway = conn |> get("/papi/practice?all=1") |> json_response(200)
+      assert Enum.map(anyway["puzzles"], & &1["id"]) == ["b", "a"]
+      assert Enum.all?(anyway["puzzles"], &(&1["due"] == false))
+
+      # Nothing moved by reading.
+      {:ok, a} = Retain.fetch_item(user.id, "a")
+      assert a.level == 1
+    end
+  end
+
   describe "POST /papi/practice/tz" do
     test "an account's browser writes its zone once", %{conn: conn} do
       {conn, user} = signed_in(conn, "arie@oskol.test")

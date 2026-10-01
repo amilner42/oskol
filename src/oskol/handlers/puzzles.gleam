@@ -916,7 +916,14 @@ fn move_ladder(
     // Answered again before it is due: the reveal, and nothing else.
     _, False, _ -> {
       let body =
-        schedule_json(card.level, card.level, card.due_ms, False, False)
+        schedule_json(
+          card.level,
+          card.level,
+          card.due_ms,
+          False,
+          False,
+          held(ctx, card.level),
+        )
       settle(ctx, attempt, False, None, body)
       Ok(caps.Scheduled(grade.verdict_name(verdict), body))
     }
@@ -929,7 +936,8 @@ fn move_ladder(
         Ok(graded) -> graded.level_after
         Error(_) -> card.level
       }
-      let body = schedule_json(card.level, level, due, False, True)
+      let body =
+        schedule_json(card.level, level, due, False, True, held(ctx, level))
       settle(ctx, attempt, False, None, body)
       Ok(caps.Scheduled(grade.verdict_name(verdict), body))
     }
@@ -944,6 +952,7 @@ fn move_ladder(
               graded.due_ms,
               True,
               False,
+              held(ctx, graded.level_after),
             )
           settle(ctx, attempt, True, Some(graded.review_id), body)
           Ok(caps.Scheduled(grade.verdict_name(verdict), body))
@@ -975,6 +984,11 @@ fn settle(
   ctx.puzzles.settle_attempt(attempt.id, scheduled, review_id, None, body)
 }
 
+/// How long a card waits at this level, off the ladder the deck runs on.
+fn held(ctx: Ctx, level: Int) -> Int {
+  deck.held_days(ctx.practice.intervals(), level)
+}
+
 /// The schedule as the wire carries it. Public so the fixture task can hand
 /// the client's tests every shape a page has to draw.
 pub fn schedule_json(
@@ -983,6 +997,7 @@ pub fn schedule_json(
   due_ms: Int,
   amendable: Bool,
   self_grade: Bool,
+  held_days: Int,
 ) -> String {
   json.to_string(
     json.object([
@@ -992,6 +1007,11 @@ pub fn schedule_json(
       #("due", json.int(due_ms)),
       #("amendable", json.bool(amendable)),
       #("self_grade", json.bool(self_grade)),
+      // How many days a card waits at `level_after` when an answer holds
+      // it there (`config :retain, intervals`): what GOT IT on an answer
+      // nothing checked would do, said before it is pressed. The page
+      // keeps no copy of the ladder.
+      #("held_days", json.int(held_days)),
       // This answer is the one that patched the mistake: it crossed the
       // rung where a mistake counts as stopped. The rule is the deck's
       // (`deck.patched_level`) and is decided here so the page keeps no
@@ -1092,6 +1112,7 @@ pub fn outcome_json(
           graded.due_ms,
           True,
           False,
+          held(ctx, graded.level_after),
         )
       ctx.puzzles.settle_attempt(
         attempt.id,

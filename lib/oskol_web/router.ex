@@ -45,9 +45,13 @@ defmodule OskolWeb.Router do
     post "/practice/more", PracticeController, :more
     post "/practice/tz", PracticeController, :tz
     post "/practice/bury", PracticeController, :bury
+    # The five decks (three tiers of mistakes, two sets) in one shape.
+    get "/practice/decks", PracticeController, :decks
+    get "/practice/decks/:slug", PracticeController, :deck
     get "/decks", DecksController, :index
     get "/decks/:id", DecksController, :show
     post "/decks/:id/join", DecksController, :join
+    post "/decks/:id/more", DecksController, :more
 
     get "/library", LandingController, :library
     get "/codes/:code", LandingController, :code
