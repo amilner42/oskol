@@ -59,10 +59,17 @@ arrive at any of them cold, and moving between them afterwards is a
   current in the address bar (replaced, not pushed, so back still leaves
   the page), which is what makes a reload land on the same line and a
   link carry a move to a friend; `step` is omitted at the start of a game.
-- `/puzzles` the practice home, PUZZLES on the home menu: what this
-  visitor has to practice and PRACTICE, which starts a run (see [puzzles.md](puzzles.md)). Open to anyone, indexable, in the sitemap; the
+- `/puzzles` the practice home, PUZZLES on the home menu: the five decks
+  (three tiers of the visitor's mistakes, the sets), one in front with the
+  button that starts a run (see [puzzles.md](puzzles.md)). Open to anyone, indexable, in the sitemap; the
   head (`SpaController.puzzles`) is "Puzzles" and the brief's one-liner,
   the same to everyone.
+- `/practice/<slug>` one deck's own page (`very-bad`, `bad`, `dubious`,
+  `openings`, `opening-replies`; see [puzzles.md](puzzles.md#the-five-decks)).
+  The head is `practice.deck_head`'s: a set is indexable, with a canonical,
+  and in the sitemap; a tier is somebody's own mistakes and is `noindex`; a
+  slug that names no deck, a set nobody has built, and a bare `/practice`
+  are a 404. `practice` is a reserved slug (before `/:slug` on both sides).
 - `/puzzles/<id>` one puzzle: the position, "White to play 6-4. What's your
   play?", the board to play it on, then the reveal. Open to anyone with
   the link and indexable; `puzzles` is a reserved slug (before `/:slug` on
@@ -102,7 +109,8 @@ arrive at any of them cold, and moving between them afterwards is a
   that were removed).
 - `/puzzles/<id>.png` a puzzle's link picture (`OskolWeb.Plugs.PuzzlePicture`,
   an endpoint plug, not a route; see [puzzles.md](puzzles.md)).
-- `/sitemap.xml` (`/`, each game's page, `/puzzles`) and `/status` (is the
+- `/sitemap.xml` (`/`, each game's page, `/puzzles`, each built set's
+  `/practice/<slug>`) and `/status` (is the
   analysis engine answering, and is it really the engine:
   `OskolWeb.StatusController`).
 - Dev only (`:dev_routes`): `/dev/mailbox` and `/dev/last-login` (see
@@ -174,8 +182,15 @@ GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
                                          never the game it came from
 GET  /papi/puzzles/:id/tree?node=      (open) one level of a tree too big to send
                                          whole: {ok, node, tree: Node}
-POST /papi/puzzles/:id/attempts        {moves | band, key, s?, deck?} -> {ok, verdict, yours,
-                                         best, top, cube, schedule, story}. Open; a
+POST /papi/puzzles/:id/attempts        {moves | band, key, s?, deck?} -> {ok, verdict, band,
+                                         cost, yours, best, top, cube, schedule,
+                                         story}. `verdict` is pass, fail or unknown
+                                         (hold only on a retried key from before
+                                         0.02 became a miss); `band` the grade the
+                                         answer's cost falls in (best, ok, doubtful,
+                                         bad, very_bad, unknown); `schedule` is
+                                         {level_before, level_after, due, amendable,
+                                         self_grade, held_days, patched}. Open; a
                                          guest and a puzzle outside the caller's deck
                                          get schedule: null and nothing is written.
                                          `s` is the story token the page was opened
@@ -186,7 +201,8 @@ POST /papi/puzzles/:id/attempts        {moves | band, key, s?, deck?} -> {ok, ve
 POST /papi/puzzles/:id/attempts/:key/outcome  {outcome: sooner|got_it|knew_it|never, deck?}
                                          -> {ok, schedule}. The attempt's own
                                          account only (403); 409 with nothing to
-                                         amend
+                                         amend; 422 for got_it on an answer
+                                         graded a miss
 POST /papi/puzzles/:id/shares          {} -> {ok, token, url}  (the seat that
                                        made the mistake, by the holder rule --
                                        guest or account -- mints its story link,
@@ -232,7 +248,8 @@ GET  /papi/me                          {ok, guest_name, user: {email, name} | nu
 POST /papi/me/name                     {name} -> {ok, user}  (a signed-in browser
                                        renames its account; 422 "That name is
                                        taken." when another account has it)
-GET  /papi/practice[?band=<grade>]     {ok, puzzles: [{id, kind, prompt, due}],
+GET  /papi/practice[?band=<grade>][&all=1[&from=<n>]]
+                                       {ok, puzzles: [{id, kind, prompt, due}],
                                          cursor: null, counts: {due,
                                          new_today, new_tomorrow, deck} | null,
                                          mistakes: {puzzles, games} | null,
@@ -269,22 +286,54 @@ GET  /papi/practice[?band=<grade>]     {ok, puzzles: [{id, kind, prompt, due}],
                                        account's only. `?band=` narrows the
                                        puzzles to that one tier, due first and
                                        then ones never seen, worst first
-                                       inside it: what FIX ONE runs. A band
-                                       that is not one of the three is a 422,
-                                       never the whole deck. Never paged:
-                                       every fetch is the front of the queue
+                                       inside it: what FIX ONE runs; a guest's
+                                       `?band=` narrows their mistakes the same
+                                       way. A band that is not one of the three
+                                       is a 422, never the whole deck. `all=1`
+                                       is PRACTICE ANYWAY: only when the queue
+                                       is empty, the cards in rotation soonest
+                                       due first (`due: false`, nothing moves);
+                                       `from=<n>` skips the first n of them.
+                                       Never paged: every fetch is the front of
+                                       the queue
+GET  /papi/practice/decks              {ok, decks: [{id, slug, kind, name, mark,
+                                         blurb, size, pace, joined, standing:
+                                         {total, untouched, in_progress, patched,
+                                         due, new_left, done_today, target_today,
+                                         levels} | null, cost: {games, lost,
+                                         lost_patched, pr, pr_without,
+                                         pr_patched} | null}], lead, today: {done}
+                                         | null, streak, patched_level, cost_all:
+                                         {pr, pr_without, pr_patched} | null,
+                                         mistakes: {puzzles, games} | null}
+                                       -- the five decks (three tiers, the built
+                                       sets) for the hub; `standing` an
+                                       account's, `cost` an account's tier with 3+
+                                       graded games, `mistakes` a guest's. Writes
+                                       nothing ([puzzles.md](puzzles.md#the-five-decks))
+GET  /papi/practice/decks/:slug        {ok, deck, cells: [{id, level, due, status,
+                                         position, band}], days: [30 bools],
+                                         patched_level} -- one deck's page; 404 for
+                                       an unknown slug or an unbuilt set
 GET  /papi/decks                       {ok, decks: [{id, name, blurb, size, standing:
                                          {joined, total, in_progress, patched, left,
                                          due, new_left} | null}], patched_level} --
                                        the universal sets with positions built
                                        (see [puzzles.md](puzzles.md#universal-sets));
                                        `standing` is an account's
-GET  /papi/decks/:id                   {ok, deck, puzzles: [{id, kind, prompt, due}],
+GET  /papi/decks/:id[?all=1[&from=<n>]]  {ok, deck, puzzles: [{id, kind, prompt, due}],
                                          today} -- an account that added it gets
                                        its queue (due, then new within the set's
                                        own budget); anybody else walks it in
-                                       order, nothing written. 404 for a set that
-                                       names nothing or has nothing built
+                                       order, nothing written. `all=1&from=` is
+                                       PRACTICE ANYWAY, as on /papi/practice.
+                                       404 for a set that names nothing or has
+                                       nothing built
+POST /papi/decks/:id/more              KEEP GOING through a set: its own pace
+                                       again of positions never shown, over the
+                                       day's budget, then the session (409
+                                       `sign_in` / `not_joined` for anybody
+                                       who has not added it)
 POST /papi/decks/:id/join              {tz} -> the same session, once the set is
                                        added (an account's; 409 `sign_in` for
                                        anybody else). Idempotent: adding again
@@ -297,10 +346,12 @@ GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
                                        0.08); 404 with a sentence while the
                                        pool has none. Reads nothing about
                                        the caller and writes nothing
-POST /papi/practice/more               ten more new ones into rotation, then the
-                                       same session. Nothing in the client
-                                       presses it: the day has no target, and
-                                       `new_per_day` is the only cap
+POST /papi/practice/more               {band} KEEP GOING: the deck's pace
+                                       (`deck.keep_going_new`, three) of new
+                                       mistakes into rotation over the day's
+                                       budget, of that tier ("" the whole
+                                       deck), then that tier's session; a
+                                       guest's is the session, nothing written
 POST /papi/practice/tz                 {tz} -> {ok, tz}  (an IANA name, on the
                                        account's deck; Etc/UTC until set)
 POST /papi/practice/bury               {id} -> {ok, id, level, due}  (back at

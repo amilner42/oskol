@@ -48,7 +48,16 @@ lib/oskol/reviews/queue.ex      runs post-game reviews one room at a time, off t
 src/oskol/practice/sync.gleam   filling an account's mistakes deck: whose, in what
                                 order, what is stamped, and when to give up
 src/oskol/handlers/practice.gleam  a practice session: an account's deck, a guest's
-                                own mistakes, the browser's timezone, burying one
+                                own mistakes, KEEP GOING and PRACTICE ANYWAY, the
+                                browser's timezone, burying one; the five decks
+                                (/papi/practice/decks), a deck's page, its head
+                                (`deck_head`) and the sitemap's sets (`indexed_slugs`)
+src/oskol/practice/catalog.gleam  the five decks side by side: the three tiers and the
+                                sets, each with its wire id and its page slug
+src/oskol/practice/cost.gleam   what your mistakes cost in PR: the home's window, minus
+                                their `puzzle_sources` rows by band, and minus the
+                                patched ones (the `analysis.mistake_costs` cap,
+                                `Oskol.Reviews.mistake_costs/1`)
 src/oskol/handlers/puzzles_hub.gleam  TRY ONE: a random puzzle whose answer stands
                                 clear, for a stranger on the practice home
 src/oskol/practice/decks.gleam  the universal sets (openings, replies): the registry,
@@ -71,9 +80,9 @@ src/oskol/handlers/puzzles.gleam the puzzle pages: the question, the grade, the
                                  memory line, a game's own mistakes
 src/oskol/puzzles/tree.gleam     every legal way to play a roll, as a DAG of
                                  boards the page walks (no move generator in Elm)
-src/oskol/puzzles/grade.gleam    right, close or wrong: the checker bands and the
-                                 cube answered by its side against the
-                                 engine's five bands
+src/oskol/puzzles/grade.gleam    right or a miss (0.02 lost is a miss), the band an
+                                 answer fell in, and the cube answered by its side
+                                 against the engine's five bands
 src/oskol/puzzles/fixture.gleam  real payloads for the Elm suite (mix oskol.fixtures)
 lib/oskol/puzzles/tree_cache.ex  a puzzle's tree, worked out once (ETS, bounded)
 src/oskol/puzzles/picture.gleam a puzzle's link picture as SVG: the board in the
@@ -102,10 +111,13 @@ lib/oskol/gleam/ctx_builder.ex   builds the Gleam Ctx and Session for a caller
 lib/oskol/gleam/caps/*.ex        the real IO behind src/oskol/caps/*.gleam
 src/oskol/caps/practice.gleam    the puzzle deck: what a player is drilling, what is
                                  due now, how an attempt went, and the correction
-                                 after the reveal. The retain library is behind it and
+                                 after the reveal; the grid's `cells`, today's answers
+                                 by band, KEEP GOING in one band, the ladder's
+                                 `intervals`. The retain library is behind it and
                                  nothing above this file knows that
 lib/oskol/gleam/caps/practice.ex its real IO, over retain: times cross as Unix ms, a
-                                 card's content as JSON text, tags sorted
+                                 card's content as JSON text, tags sorted; a card is
+                                 banded by the account's own sources (`owner/2`)
 src/oskol/practice/deck.gleam    the deck's own rules: due before new, three new a
                                  day worst first (`new_per_day`), what counts as
                                  patched (`patched_level`, the fourth rung), the
@@ -114,7 +126,10 @@ src/oskol/practice/deck.gleam    the deck's own rules: due before new, three new
                                  today, which tier to lead with (`tiers`, `lead`,
                                  `has_work`, `left`), the day as a plain count
                                  (`today`: no target, and so no quota), one tier's
-                                 own queue (`band_session`), and the sentence each
+                                 own queue (`band_session`), KEEP GOING
+                                 (`keep_going`) and PRACTICE ANYWAY (`anyway`), a deck's
+                                 standing from its cells (`standing`, `held_days`),
+                                 and the sentence each
                                  refusal gives the player (a puzzle not in the deck
                                  is the only 404; a snooze needs a card in rotation)
 lib/oskol_web/controllers/api/landing_controller.ex   /papi JSON for the Elm client
@@ -134,7 +149,12 @@ assets/src/Main.elm              SPA shell: routes, page dispatch, JOIN GAME, an
                                  over whatever page is up; a full-screen page, the
                                  table, the replay, a puzzle, sizes itself to what
                                  the bar leaves, `--page-h` in app.css)
-assets/src/Route.elm             the three client routes, mirroring the server's
+assets/src/Run.elm               a practice run, pure, kept by Main: its source (a
+                                 tier, a set, one game), the strip it hands the page,
+                                 asking its queue again past its ids, and the way on
+                                 from the end card (KEEP GOING, PRACTICE ANYWAY); when
+                                 today's set is done (`celebrate`, once a run)
+assets/src/Route.elm             the client routes, mirroring the server's
 assets/src/Api.elm               the /papi envelope + CSRF header
 assets/src/Api/Catalog.elm       the landing pages' data and its decoders
 assets/src/Page/GameLanding.elm  "/" the guest's home page (`home`: the site's bar,
@@ -190,11 +210,26 @@ assets/src/Page/Replay.elm       "/:slug/:id/replay" a room's games played again
                                  phone (`onePanel`: under 640 wide, or
                                  under 480 tall sideways) the panel has no scroll of its
                                  own and the page scrolls
-assets/src/Page/Puzzles.elm      "/puzzles" the practice home: for an account the
-                                 one-tier card (`Ui.Tiers`) and "3 fixed today", a
-                                 guest's "23 mistakes from your 4 games", a
-                                 stranger's TRY ONE
-assets/src/Ui/Tiers.elm          one deck in front of you, on the hub and on the home:
+assets/src/Page/Puzzles.elm      "/puzzles" the practice home: the five decks from
+                                 /papi/practice/decks, one in front (`Ui.Deck.card`)
+                                 and four rows; the streak and the day, what the
+                                 mistakes cost; a guest's "23 mistakes from your 4
+                                 games", a stranger's TRY ONE
+assets/src/Page/Practice.elm     "/practice/<slug>" one deck's page: the card at page
+                                 size, the ladder in words, what is due, the month,
+                                 and for a tier what it cost
+assets/src/Ui/Deck.elm           one deck as the card and as a row: the mark or name,
+                                 the ring, the grid and its legend, the state line,
+                                 the cost lines and the one button (`action`); `Size`
+                                 (`OnHub`, `OnPage`), `open`, `squares`, `begun`
+assets/src/Api/PracticeDecks.elm /papi/practice/decks and its :slug page, KEEP GOING
+                                 and PRACTICE ANYWAY for a tier and a set (strict
+                                 about counts)
+assets/src/Ui/Charts.elm         the home's and the practice pages' pictures: the PR
+                                 line, the ladder, the 30 days, the band bar, the
+                                 mastery `grid`, today's `ring` and the rows' `miniRing`
+assets/src/Ui/Mistakes.elm       every word practice is said in (pinned in MistakesTest)
+assets/src/Ui/Tiers.elm          the home's practice section: one deck in front of you:
                                  the worst tier the player has made a mistake in, by
                                  the replay's own mark (?? ? ?!), "31 left to fix" with
                                  "23 patched" quieter beside it, its bar and FIX ONE;
@@ -209,12 +244,19 @@ assets/src/Ui/Decks.elm          every word a set is said in ("11 left to learn 
 assets/src/Page/Puzzle.elm       "/puzzles/:id" one puzzle: the question over the board
                                  (Games/Backgammon/Puzzle.elm's `Table`, the page owning
                                  the path and the lazy fetches), PLAY or the two cube
-                                 buttons, the reveal in the replay's words, the level line
-                                 and its four buttons, the memory line, SHARE, and --
-                                 in a run -- ANOTHER and I'M DONE after every reveal;
-                                 the end of a run is the summary (one mistake fixed is
-                                 a whole session and says so), "N fixed today", and the
-                                 way back, or the sign-in for a guest
+                                 buttons, the verdict line (RIGHT, or the miss by its
+                                 band), the reveal in the replay's words, the level line
+                                 and its four choices, which select (outlined), explain
+                                 in a fixed line, then APPLY (YES, NEVER for NEVER), the
+                                 memory line, SHARE, and -- in a run -- the strip over
+                                 the board and ANOTHER / I'M DONE after every reveal
+                                 (applying a pending choice first) -- except the one
+                                 that finishes today's set, whose celebration card
+                                 under the reveal holds KEEP GOING beside I'M DONE;
+                                 the end of a run is
+                                 the score (one is a whole session and says so), "N
+                                 practised today", the way on (KEEP GOING, PRACTICE
+                                 ANYWAY) and the way back, or the sign-in for a guest
 assets/src/Games/Backgammon/Puzzle.elm  the puzzle wire: the question and tree decoders,
                                  the board on a tree node, and the reveal's decoders
                                  (verdict, candidates, cube band, schedule, memory)
