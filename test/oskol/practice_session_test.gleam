@@ -634,6 +634,35 @@ pub fn all_answers_the_rotation_soonest_due_first_when_the_queue_is_empty_test()
   assert ids(plain) == []
 }
 
+/// An early answer moves nothing, so a run through PRACTICE ANYWAY asks
+/// for the rotation past what it has already been given: `from` skips
+/// that many of it, soonest due first, rather than the same page again.
+pub fn all_from_skips_what_the_run_has_been_through_test() {
+  let ctx =
+    with_rotation(with_deck(fakes.ctx(), 0, 0), [
+      #("later", "bad", 3000),
+      #("soon", "bad", 1000),
+      #("middle", "bad", 2000),
+    ])
+  let ctx =
+    Ctx(
+      ..ctx,
+      practice: PracticeCaps(..ctx.practice, band_queue: fn(_, _, _) {
+        Session(reviews: [], fresh: [], new_remaining_today: 0)
+      }),
+    )
+  let assert Ok(body) =
+    practice.session_from_json(ctx, fakes.signed_in("g1", "u1"), "bad", True, 1)
+  assert ids(body) == ["middle", "later"]
+  let assert Ok(past) =
+    practice.session_from_json(ctx, fakes.signed_in("g1", "u1"), "bad", True, 3)
+  assert ids(past) == []
+  // From nothing is the front, as without it.
+  let assert Ok(front) =
+    practice.session_from_json(ctx, fakes.signed_in("g1", "u1"), "bad", True, 0)
+  assert ids(front) == ["soon", "middle", "later"]
+}
+
 pub fn all_leaves_out_a_card_nobody_has_started_or_one_put_aside_test() {
   let ctx = with_deck(fakes.ctx(), 0, 0)
   let ctx =

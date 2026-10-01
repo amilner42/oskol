@@ -5,6 +5,7 @@ defmodule OskolWeb.Api.PracticeController do
       GET  /papi/practice           what to put in front of the player next
       GET  /papi/practice?band=<g>  one tier's own queue: FIX ONE
       GET  /papi/practice?all=1     PRACTICE ANYWAY, once the queue is empty
+                                    (&from=<n>: the rotation past its first n)
       POST /papi/practice/more      {band} KEEP GOING: more new ones, then the session
       GET  /papi/practice/decks     the five decks, with the caller's standing
       GET  /papi/practice/decks/:slug  one deck: its cells and its month
@@ -23,11 +24,12 @@ defmodule OskolWeb.Api.PracticeController do
   def index(conn, params) do
     send_json(
       conn,
-      :oskol@handlers@practice.session_json(
+      :oskol@handlers@practice.session_from_json(
         ctx(),
         session(conn),
         param(params, "band"),
-        param(params, "all") == "1"
+        param(params, "all") == "1",
+        count(params, "from")
       )
     )
   end
@@ -69,6 +71,14 @@ defmodule OskolWeb.Api.PracticeController do
   defp ctx, do: CtxBuilder.build()
 
   defp session(conn), do: CtxBuilder.session(conn)
+
+  # A count from the query string; anything that is not one is 0.
+  defp count(params, key) do
+    case Integer.parse(param(params, key)) do
+      {n, ""} when n > 0 -> n
+      _ -> 0
+    end
+  end
 
   defp param(params, key) do
     case Map.get(params, key) do

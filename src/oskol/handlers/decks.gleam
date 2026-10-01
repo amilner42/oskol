@@ -66,8 +66,20 @@ pub fn session_all_json(
   id: String,
   all: Bool,
 ) -> Result(String, ApiError) {
+  session_from_json(ctx, session, id, all, 0)
+}
+
+/// The same, a page further into PRACTICE ANYWAY: `from` skips that many
+/// of the set's rotation, so a run goes on past its first twenty.
+pub fn session_from_json(
+  ctx: Ctx,
+  session: Session,
+  id: String,
+  all: Bool,
+  from: Int,
+) -> Result(String, ApiError) {
   use d <- result.try(offered(ctx, id))
-  Ok(session_body(ctx, session, d, all))
+  Ok(session_body(ctx, session, d, all, from))
 }
 
 pub const not_joined_message = "Add it first."
@@ -92,7 +104,7 @@ pub fn more_json(
     _ -> Error(error.Conflict("not_joined", not_joined_message))
   })
   let _ = caps.start_new(uid, d.new_per_day)
-  Ok(session_body(ctx, session, d, False))
+  Ok(session_body(ctx, session, d, False, 0))
 }
 
 pub fn join_json(
@@ -110,7 +122,7 @@ pub fn join_json(
     decks.enroll(ctx, d, uid, tz)
     |> result.map_error(fn(e) { error.Internal(deck.message(e)) }),
   )
-  Ok(session_body(ctx, session, d, False))
+  Ok(session_body(ctx, session, d, False, 0))
 }
 
 fn offered(ctx: Ctx, id: String) -> Result(Deck, ApiError) {
@@ -126,14 +138,20 @@ fn offered(ctx: Ctx, id: String) -> Result(Deck, ApiError) {
 
 /// An account that has added the deck gets its queue; everybody else walks
 /// the deck in its order, with nothing kept.
-fn session_body(ctx: Ctx, session: Session, d: Deck, all: Bool) -> String {
+fn session_body(
+  ctx: Ctx,
+  session: Session,
+  d: Deck,
+  all: Bool,
+  from: Int,
+) -> String {
   let standing = option.map(session.user_id, decks.standing(ctx, d, _))
   let #(entries, today) = case session.user_id, standing {
     Some(uid), Some(s) ->
       case decks.joined(s) {
         True -> #(
           case decks.queue(ctx, d, uid), all {
-            [], True -> decks.anyway(ctx, d, uid)
+            [], True -> decks.anyway(ctx, d, uid, from)
             queued, _ -> queued
           },
           Some(deck.today_json(deck.today(decks.in_deck(ctx, d), uid))),
