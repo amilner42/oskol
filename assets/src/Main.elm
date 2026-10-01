@@ -49,6 +49,7 @@ import Page.Home
 import Page.Login
 import Page.Play
 import Page.Puzzle
+import Page.Practice
 import Page.Puzzles
 import Page.Replay
 import Route exposing (Route)
@@ -126,6 +127,7 @@ type Page
     | Replay Page.Replay.Model
     | Puzzle Page.Puzzle.Model
     | Puzzles Page.Puzzles.Model
+    | Practice Page.Practice.Model
 
 
 type alias Run =
@@ -148,6 +150,7 @@ type Msg
     | ReplayMsg Page.Replay.Msg
     | PuzzleMsg Page.Puzzle.Msg
     | PuzzlesMsg Page.Puzzles.Msg
+    | PracticeMsg Page.Practice.Msg
     | OpenedJoin
     | ClosedJoin
     | JoinCodeInput String
@@ -268,6 +271,9 @@ withSession session model =
 
                 Puzzles pageModel ->
                     Puzzles (Page.Puzzles.withSession session pageModel)
+
+                Practice pageModel ->
+                    Practice (Page.Practice.withSession session pageModel)
 
                 Replay pageModel ->
                     Replay (Page.Replay.withSession session pageModel)
@@ -411,6 +417,10 @@ openRoute url oldModel =
         Just Route.Puzzles ->
             Page.Puzzles.init model.session { tz = model.tz }
                 |> wrap model Puzzles PuzzlesMsg
+
+        Just (Route.Practice slug) ->
+            Page.Practice.init model.session { tz = model.tz, slug = slug }
+                |> wrap model Practice PracticeMsg
 
         Just (Route.Puzzle id share) ->
             let
@@ -918,6 +928,37 @@ update msg model =
                 Page.Puzzles.SignedIn user ->
                     signedIn user withPage |> Tuple.mapSecond more
 
+        -- A deck's own page: its runs come back to it.
+        ( PracticeMsg pageMsg, Practice pageModel ) ->
+            let
+                ( newPageModel, cmd, out ) =
+                    Page.Practice.update pageMsg pageModel
+
+                withPage =
+                    { model | page = Practice newPageModel }
+
+                more extra =
+                    Cmd.batch [ Cmd.map PracticeMsg cmd, extra ]
+
+                back =
+                    Route.href (Route.practice newPageModel.slug)
+            in
+            case out of
+                Page.Practice.NoOut ->
+                    ( withPage, Cmd.map PracticeMsg cmd )
+
+                Page.Practice.StartRun ids today tier ->
+                    startRun back ids today tier withPage |> Tuple.mapSecond more
+
+                Page.Practice.StartDeckRun ids today deck ->
+                    startRunOf back ids today Nothing (Just deck) withPage |> Tuple.mapSecond more
+
+                Page.Practice.Go path ->
+                    ( withPage, more (Nav.pushUrl model.key path) )
+
+                Page.Practice.SignedIn user ->
+                    signedIn user withPage |> Tuple.mapSecond more
+
         ( OpenedJoin, _ ) ->
             ( { model | joinOpen = True, joinCode = "", joinError = Nothing }
             , Notebook.focus NoOp Shell.joinCodeInputId
@@ -1096,6 +1137,9 @@ page model =
             Puzzles pageModel ->
                 framed model [ Html.map PuzzlesMsg (Page.Puzzles.view pageModel) ]
 
+            Practice pageModel ->
+                framed model [ Html.map PracticeMsg (Page.Practice.view pageModel) ]
+
             Login pageModel ->
                 framed model [ Html.map LoginMsg (Page.Login.view pageModel) ]
 
@@ -1177,6 +1221,9 @@ title model =
 
         Puzzles pageModel ->
             Page.Puzzles.title pageModel
+
+        Practice pageModel ->
+            Page.Practice.title pageModel
 
         Home pageModel ->
             Page.Home.title pageModel

@@ -395,7 +395,19 @@ decoding =
 anAccount : Test
 anAccount =
     describe "an account"
-        [ test "the day: how long it has kept at it, and what today has come to" <|
+        [ test "OPEN on the card goes to the deck's own page, and follows the deck tapped in" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> card accountJson |> Query.find [ id "hub-open" ] |> Query.has [ attribute (Html.Attributes.href "/practice/very-bad") ]
+                    , \_ ->
+                        loaded accountJson
+                            |> send (PickedDeck "opening_replies")
+                            |> rendered
+                            |> Query.find [ id "hub-open" ]
+                            |> Query.has [ attribute (Html.Attributes.href "/practice/opening-replies") ]
+                    ]
+                    ()
+        , test "the day: how long it has kept at it, and what today has come to" <|
             \_ ->
                 loaded accountJson
                     |> rendered

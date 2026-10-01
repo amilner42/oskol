@@ -30,6 +30,7 @@ suite =
         , why
         , choices
         , theHome
+        , aDecksPage
         , noJargon
         ]
 
@@ -302,6 +303,11 @@ noJargon =
                              , Mistakes.guestPracticeLine
                              , Mistakes.rowLeft 23
                              , Mistakes.freshLine
+                             , Mistakes.ladderLine { patchedLevel = 4, started = [ 2, 8, 5, 3, 6, 0, 0, 0 ] }
+                             , Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 3 }
+                             , Mistakes.strangerTierLine
+                             , Mistakes.emptyTierLine "very_bad"
+                             , String.join " " (List.map Tuple.second (Mistakes.legendParts Mistakes.legendTop))
                              ]
                                 ++ List.filterMap identity
                                     [ Mistakes.patchedAside (band "very_bad" 61 30 23)
@@ -377,6 +383,48 @@ theHome =
                     , \_ -> Mistakes.unsavedLine |> Expect.equal "Your progress is not saved until you sign in."
                     , \_ -> Mistakes.rowLeft 23 |> Expect.equal "23 left"
                     , \_ -> Mistakes.rowLeft 0 |> Expect.equal "None yet"
+                    ]
+                    ()
+        ]
+
+
+
+{-| A deck's own page: the legend, the ladder in words, what is due, and
+the two lines a tier with nothing of the visitor's in it says.
+-}
+aDecksPage : Test
+aDecksPage =
+    describe "a deck's own page"
+        [ test "the legend climbs the grid's paints and ends on patched" <|
+            \_ ->
+                Mistakes.legendParts Mistakes.legendTop
+                    |> List.map Tuple.second
+                    |> String.join " · "
+                    |> Expect.equal "to start · level 1 · 2 · 3 · patched"
+        , test "the ladder in words, rungs with nobody on them left out" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.ladderLine { patchedLevel = 4, started = [ 0, 8, 5, 3, 0, 0, 0, 0 ] } |> Expect.equal "8 at level 1, 5 at level 2, 3 at level 3."
+                    , \_ -> Mistakes.ladderLine { patchedLevel = 4, started = [ 2, 8, 0, 3, 4, 1, 0, 1 ] } |> Expect.equal "2 back at the start, 8 at level 1, 3 at level 3, 6 patched."
+                    , \_ -> Mistakes.ladderLine { patchedLevel = 4, started = [ 0, 0, 0, 0, 0, 0, 0, 0 ] } |> Expect.equal ""
+                    , \_ -> Mistakes.ladderLine { patchedLevel = 4, started = [] } |> Expect.equal ""
+                    ]
+                    ()
+        , test "the due line in its three shapes" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.dueLine { due = 12, newLeft = 3, nextInDays = Just 1 } |> Expect.equal "12 due now · 3 new today"
+                    , \_ -> Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 1 } |> Expect.equal "Nothing due. Next due tomorrow."
+                    , \_ -> Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 0 } |> Expect.equal "Nothing due. Next due tomorrow."
+                    , \_ -> Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 5 } |> Expect.equal "Nothing due. Next due in 5 days."
+                    , \_ -> Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Nothing } |> Expect.equal "Nothing due."
+                    ]
+                    ()
+        , test "nothing of yours here: a stranger, and an account with none yet" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.strangerTierLine |> Expect.equal "Play a game and your mistakes appear here."
+                    , \_ -> Mistakes.emptyTierLine "doubtful" |> Expect.equal "No dubious moves yet. They land here as your games are graded."
                     ]
                     ()
         ]

@@ -34,6 +34,7 @@ import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 import oskol/caps/practice.{
   type Card, type Cell, type Day, type Session as DeckSession, type Summary,
   Active, New, Suspended,
@@ -524,6 +525,55 @@ pub fn deck_page_json(
       #("patched_level", json.int(deck.patched_level)),
     ]),
   )
+}
+
+/// What a deck's page (`/practice/<slug>`) says before it has fetched
+/// anything: the title and the description a crawler and a link preview
+/// read, and whether a search engine may keep it. A set is the same page
+/// for everyone and worth finding ("the fifteen openings"), so it is
+/// indexable; a tier is somebody's own mistakes and is not.
+pub type DeckHead {
+  DeckHead(title: String, description: String, indexable: Bool)
+}
+
+/// The head for a slug: a 404 for a slug that is not one of the five, and
+/// for a set nobody has built (its page has nothing in it), exactly as the
+/// page's own `GET /papi/practice/decks/:slug` answers.
+pub fn deck_head(ctx: Ctx, slug: String) -> Result(DeckHead, ApiError) {
+  use found <- result.try(
+    catalog.find_slug(slug)
+    |> result.replace_error(error.NotFound(decks.unknown_deck_message)),
+  )
+  case found.kind, size_of(ctx, found) {
+    catalog.Set(_), 0 -> Error(error.NotFound(decks.unknown_deck_message))
+    catalog.Set(set), _ ->
+      Ok(DeckHead(
+        title: found.name <> " · Practice",
+        description: set.blurb,
+        indexable: True,
+      ))
+    catalog.Mistakes(_), _ ->
+      Ok(DeckHead(
+        title: found.name <> " · Practice",
+        description: "Your "
+          <> string.lowercase(found.name)
+          <> ", and how many you have stopped making.",
+        indexable: False,
+      ))
+  }
+}
+
+/// The deck pages a sitemap lists: the sets with something built, by
+/// slug. A tier is nobody's page but its own player's.
+pub fn indexed_slugs(ctx: Ctx) -> List(String) {
+  offered_decks(ctx)
+  |> list.filter_map(fn(pair) {
+    let #(d, _) = pair
+    case d.kind {
+      catalog.Set(_) -> Ok(d.slug)
+      catalog.Mistakes(_) -> Error(Nil)
+    }
+  })
 }
 
 /// The five, less a set nobody has built yet: a page must not offer a set

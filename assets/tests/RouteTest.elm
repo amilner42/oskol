@@ -79,6 +79,12 @@ suite =
                 \_ -> Expect.notEqual (Just (Play "puzzles" "AB12CD34")) (parse "/puzzles/AB12CD34")
             , test "practicing is its own page, not a game's start page" <|
                 \_ -> Expect.equal (Just Puzzles) (parse "/puzzles")
+            , test "a deck's own page, by its slug" <|
+                \_ -> Expect.equal (Just (Practice "very-bad")) (parse "/practice/very-bad")
+            , test "a deck's page is not a room of a game called practice" <|
+                \_ -> Expect.notEqual (Just (Play "practice" "openings")) (parse "/practice/openings")
+            , test "a deck's page links as its slug" <|
+                \_ -> Expect.equal "/practice/opening-replies" (Route.href (Route.practice "opening-replies"))
             , test "the sitemap belongs to the server" <|
                 \_ -> Expect.equal Nothing (parse "/sitemap.xml")
             , test "so does the dev dashboard" <|
@@ -122,6 +128,8 @@ suite =
                 , GameLanding "backgammon" (Just "AB12CD")
                 , Play "backgammon" "AB12CD"
                 , Puzzles
+                , Practice "very-bad"
+                , Practice "openings"
                 , Puzzle "AB12CD34" Nothing
                 , Puzzle "AB12CD34" (Just "TOKEN0000001")
                 , Replay "backgammon" "AB12CD" (Just 2) Nothing

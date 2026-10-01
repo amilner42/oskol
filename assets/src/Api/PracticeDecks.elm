@@ -169,6 +169,7 @@ type alias Page =
 type alias Cell =
     { id : String
     , level : Int
+    , due : Int -- Unix milliseconds: when it is next due
     , status : String
     , position : Maybe Int
     , band : String
@@ -335,9 +336,10 @@ pageDecoder =
 
 cellDecoder : Decoder Cell
 cellDecoder =
-    D.map5 Cell
+    D.map6 Cell
         (D.field "id" D.string)
         (D.field "level" D.int)
+        (D.field "due" D.int)
         (D.field "status" D.string)
         (D.field "position" (D.nullable D.int))
         (D.field "band" D.string)

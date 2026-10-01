@@ -126,6 +126,11 @@ defmodule OskolWeb.Router do
     get "/puzzles", SpaController, :puzzles
     get "/puzzles/:id", SpaController, :puzzle
 
+    # A deck's own page: /practice/very-bad, /practice/openings... Declared
+    # before "/:slug" so "practice" is a reserved word like "puzzles". A
+    # bare "/practice" names no game, so it is a 404 like "/login".
+    get "/practice/:slug", SpaController, :practice
+
     # Is the analysis engine answering? A plain page, declared before
     # "/:slug" so "status" is a reserved word like "login" and "puzzles".
     # The engine runs on a machine whose power we do not control, and
