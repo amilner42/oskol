@@ -516,7 +516,7 @@ theButton =
                         (StartRun [ "aaaaaaaa", "bbbbbbbb" ]
                             (Just { done = 2 })
                             (Just "very_bad")
-                            { deckToday = Just { done = 2, target = 9 }, anyway = False }
+                            { deckToday = Just { done = 2, target = 9 }, anyway = False, slug = "very-bad" }
                         )
         , test "KEEP GOING hands the run today's set grown by what it started" <|
             \_ ->
@@ -527,7 +527,7 @@ theButton =
                         (StartRun [ "aaaaaaaa", "bbbbbbbb" ]
                             (Just { done = 2 })
                             (Just "very_bad")
-                            { deckToday = Just { done = 5, target = 7 }, anyway = False }
+                            { deckToday = Just { done = 5, target = 7 }, anyway = False, slug = "very-bad" }
                         )
         , test "PRACTICE ANYWAY marks the run as practice only, the ring left full" <|
             \_ ->
@@ -538,7 +538,7 @@ theButton =
                         (StartRun [ "aaaaaaaa", "bbbbbbbb" ]
                             (Just { done = 2 })
                             (Just "very_bad")
-                            { deckToday = Just { done = 0, target = 0 }, anyway = True }
+                            { deckToday = Just { done = 0, target = 0 }, anyway = True, slug = "very-bad" }
                         )
         , test "pressed, the button waits in its slot and says so" <|
             \_ ->
@@ -581,7 +581,7 @@ theButton =
                         (StartDeckRun [ "oooooooo" ]
                             (Just { done = 1 })
                             { id = "openings", name = "Openings" }
-                            { deckToday = Just { done = 0, target = 7 }, anyway = False }
+                            { deckToday = Just { done = 0, target = 7 }, anyway = False, slug = "openings" }
                         )
         , test "a queue that came back empty says so where the quiet line is" <|
             \_ ->
@@ -708,7 +708,7 @@ aGuest =
                     |> send (Pressed (deckOf guestJson "bad") Practice)
                     |> out (GotTierRun (deckOf guestJson "bad") Practice (Api.parseBody Practice.practiceDecoder bandJson))
                     -- A guest has no day, so the run draws no ring.
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "bad") { deckToday = Nothing, anyway = False })
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "bad") { deckToday = Nothing, anyway = False, slug = "bad" })
         , test "a set in front says TRY" <|
             \_ ->
                 loaded guestJson

@@ -267,6 +267,57 @@ app.ports.sendToChannel?.subscribe((data) => {
   }
 });
 
+// ---- Today's set done: the card under a puzzle's reveal ----
+// A beat after the reveal (the verdict is read first) the card is brought
+// into view -- smoothly, and only as far as it takes (`nearest`), which
+// scrolls the page on a phone and the reveal's own column beside the board
+// -- and once its ring is on the screen the page is told, which is what
+// starts its motion. With reduced motion there is no smooth scroll and no
+// beat, and the page draws the final state at once.
+app.ports.celebrateCard?.subscribe((id) => {
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let told = false;
+  const tell = () => {
+    if (told) return;
+    told = true;
+    app.ports.celebrationInView?.send(reduced);
+  };
+  // Never left waiting: a card that somehow never comes into view (a page
+  // scrolled away, a column too short to show its ring) still plays.
+  setTimeout(tell, (reduced ? 0 : 900) + 2500);
+  requestAnimationFrame(() => {
+    const card = document.getElementById(id);
+    if (!card) return tell();
+    setTimeout(() => {
+      card.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
+      const anchor = card.querySelector("[data-cele-anchor]") || card;
+      if (!("IntersectionObserver" in window)) return tell();
+      // Played once the ring is on the screen and the scroll that brought
+      // it there has come to rest, so the arc is filled where it is seen.
+      const still = () => {
+        let last = null;
+        let calm = 0;
+        const step = () => {
+          const at = anchor.getBoundingClientRect().top;
+          calm = last !== null && Math.abs(at - last) < 0.5 ? calm + 1 : 0;
+          last = at;
+          if (calm >= 4) tell();
+          else requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      };
+      const seen = new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          seen.disconnect();
+          if (reduced) tell();
+          else still();
+        }
+      }, { threshold: 0.6 });
+      seen.observe(anchor);
+    }, reduced ? 60 : 900);
+  });
+});
+
 // ---- Invite links: native share on phones, clipboard elsewhere ----
 app.ports.shareInvite?.subscribe(async (url) => {
   const reply = (result) => app.ports.shareResult?.send(result);

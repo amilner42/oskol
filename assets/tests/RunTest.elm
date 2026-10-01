@@ -20,6 +20,7 @@ suite =
     describe "a practice run"
         [ starting
         , answering
+        , celebrating
         , goingOn
         , keepingGoing
         , anyway
@@ -34,13 +35,13 @@ ids prefix n =
 
 tierRun : List String -> Run
 tierRun list =
-    Run.start { ids = list, next = "/puzzles", source = Band "very_bad", anyway = False, deckToday = Just { done = 2, target = 5 } }
+    Run.start { ids = list, next = "/puzzles", source = Band "very_bad", anyway = False, deckToday = Just { done = 2, target = 5 }, slug = Nothing }
         |> Maybe.withDefault emptyRun
 
 
 emptyRun : Run
 emptyRun =
-    { ids = [], at = 0, answers = [], next = "", source = Fixed, anyway = False, served = 0, deckToday = Nothing, gen = 0 }
+    { ids = [], at = 0, answers = [], next = "", source = Fixed, anyway = False, served = 0, deckToday = Nothing, slug = Nothing, gen = 0, celebrated = False }
 
 
 at : Int -> Run -> Run
@@ -90,7 +91,7 @@ starting =
     describe "starting"
         [ test "an empty list starts nothing" <|
             \_ ->
-                Run.start { ids = [], next = "/puzzles", source = Band "bad", anyway = False, deckToday = Nothing }
+                Run.start { ids = [], next = "/puzzles", source = Band "bad", anyway = False, deckToday = Nothing, slug = Nothing }
                     |> Expect.equal Nothing
         , test "a tier's run is that tier's, with the deck's ring" <|
             \_ ->
@@ -102,7 +103,7 @@ starting =
                     |> Expect.equal ( Just "very_bad", Nothing, Just { done = 2, target = 5 } )
         , test "a set's run is named by the set" <|
             \_ ->
-                Run.start { ids = [ "o1" ], next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = False, deckToday = Nothing }
+                Run.start { ids = [ "o1" ], next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = False, deckToday = Nothing, slug = Nothing }
                     |> Maybe.andThen Run.deck
                     |> Expect.equal (Just { id = "openings", name = "Openings" })
         ]
@@ -140,6 +141,93 @@ answering =
         ]
 
 
+{-| Answer the open puzzle and then on to the next, as the shell does,
+with whether that answer finished today's set.
+-}
+answerAndCelebrate : Page.Answer -> Run -> ( Run, Bool )
+answerAndCelebrate given run =
+    let
+        ( answered, counts ) =
+            Run.answer given run
+
+        ( marked, done ) =
+            Run.celebrate counts answered
+    in
+    ( { marked | at = marked.at + 1 }, done )
+
+
+{-| Every answer of a run, in order: which of them finished today's set.
+-}
+celebrations : List Page.Answer -> Run -> List Bool
+celebrations given run =
+    given
+        |> List.foldl
+            (\a ( r, seen ) ->
+                let
+                    ( next, done ) =
+                        answerAndCelebrate a r
+                in
+                ( next, seen ++ [ done ] )
+            )
+            ( run, [] )
+        |> Tuple.second
+
+
+celebrating : Test
+celebrating =
+    describe "today's set done, celebrated"
+        [ test "exactly the counted answer that brings the ring to its target" <|
+            \_ ->
+                -- 2 of today's 5 done: the third answer here is the fifth.
+                celebrations [ pass, miss, pass, pass ] (tierRun (ids "p" 6))
+                    |> Expect.equal [ False, False, True, False ]
+        , test "a miss counts as much as a pass: the set is done either way" <|
+            \_ ->
+                celebrations [ miss, miss, miss ] (tierRun (ids "p" 3))
+                    |> Expect.equal [ False, False, True ]
+        , test "never twice in a run, even once KEEP GOING has grown the target" <|
+            \_ ->
+                let
+                    ( done, _ ) =
+                        List.foldl (\a ( r, _ ) -> answerAndCelebrate a r) ( tierRun (ids "p" 9), False ) [ pass, pass, pass ]
+
+                    grown =
+                        Run.keptGoing [ "q1", "q2", "q3" ] done
+                in
+                ( done.celebrated, celebrations [ pass, pass, pass ] grown )
+                    |> Expect.equal ( True, [ False, False, False ] )
+        , test "an answer that does not count never finishes it: practice only, or one already answered" <|
+            \_ ->
+                Expect.all
+                    [ \_ ->
+                        celebrations [ early, early, early ] (tierRun (ids "p" 3))
+                            |> Expect.equal [ False, False, False ]
+                    , \_ ->
+                        Run.celebrate False ({ emptyRun | deckToday = Just { done = 5, target = 5 } })
+                            |> Tuple.second
+                            |> Expect.equal False
+                    ]
+                    ()
+        , test "PRACTICE ANYWAY never celebrates" <|
+            \_ ->
+                Run.start { ids = ids "r" 3, next = "/puzzles", source = Band "bad", anyway = True, deckToday = Just { done = 2, target = 3 }, slug = Nothing }
+                    |> Maybe.map (celebrations [ pass, pass, pass ])
+                    |> Expect.equal (Just [ False, False, False ])
+        , test "a run with no ring (one game's mistakes, a guest's) never celebrates" <|
+            \_ ->
+                Run.start { ids = ids "g" 3, next = "/backgammon/abc", source = Fixed, anyway = False, deckToday = Nothing, slug = Nothing }
+                    |> Maybe.map (celebrations [ pass, pass, pass ])
+                    |> Expect.equal (Just [ False, False, False ])
+        , test "the card is handed the run's answers with their puzzles, oldest first" <|
+            \_ ->
+                let
+                    ( run, _ ) =
+                        List.foldl (\a ( r, _ ) -> answerAndCelebrate a r) ( tierRun [ "a", "b", "c" ], False ) [ pass, miss ]
+                in
+                Run.answered run |> List.map (\( id, a ) -> ( id, a.verdict )) |> Expect.equal [ ( "a", Pass ), ( "b", Fail ) ]
+        ]
+
+
 goingOn : Test
 goingOn =
     describe "a run never runs out"
@@ -153,14 +241,14 @@ goingOn =
                     |> Expect.equal ( Nothing, True, Just "/papi/practice?band=very_bad" )
         , test "a set asks its own session again" <|
             \_ ->
-                Run.start { ids = [ "o1" ], next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = False, deckToday = Nothing }
+                Run.start { ids = [ "o1" ], next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = False, deckToday = Nothing, slug = Nothing }
                     |> Maybe.andThen Run.queueUrl
                     |> Expect.equal (Just "/papi/decks/openings")
         , test "a game's mistakes are handed over whole: they end at their last" <|
             \_ ->
                 let
                     run =
-                        Run.start { ids = [ "a" ], next = "/backgammon/abc", source = Fixed, anyway = False, deckToday = Nothing }
+                        Run.start { ids = [ "a" ], next = "/backgammon/abc", source = Fixed, anyway = False, deckToday = Nothing, slug = Nothing }
                             |> Maybe.withDefault emptyRun
                 in
                 ( Run.goesOn run, Run.queueUrl run, Run.offersWays run )
@@ -229,7 +317,7 @@ keepingGoing =
             \_ ->
                 let
                     done =
-                        Run.start { ids = [ "a", "b", "c" ], next = "/puzzles", source = Band "bad", anyway = False, deckToday = Just { done = 0, target = 3 } }
+                        Run.start { ids = [ "a", "b", "c" ], next = "/puzzles", source = Band "bad", anyway = False, deckToday = Just { done = 0, target = 3 }, slug = Nothing }
                             |> Maybe.withDefault emptyRun
                             |> answerAll pass
 
@@ -248,7 +336,7 @@ anyway =
             \_ ->
                 let
                     run =
-                        Run.start { ids = ids "r" 20, next = "/puzzles", source = Band "bad", anyway = True, deckToday = Just { done = 3, target = 3 } }
+                        Run.start { ids = ids "r" 20, next = "/puzzles", source = Band "bad", anyway = True, deckToday = Just { done = 3, target = 3 }, slug = Nothing }
                             |> Maybe.withDefault emptyRun
                 in
                 ( Run.queueUrl run, Run.queueUrl (Run.refetched (ids "s" 20) run) )
@@ -306,7 +394,7 @@ anyway =
                     |> Expect.equal False
         , test "a set's rotation, the same" <|
             \_ ->
-                Run.start { ids = ids "r" 20, next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = True, deckToday = Nothing }
+                Run.start { ids = ids "r" 20, next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = True, deckToday = Nothing, slug = Nothing }
                     |> Maybe.andThen Run.queueUrl
                     |> Expect.equal (Just "/papi/decks/openings?all=1&from=20")
         , test "from the end card, it turns the run into practice only from then on" <|
@@ -387,7 +475,7 @@ theWayOn =
                 in
                 ( Run.way run []
                 , Run.way
-                    (Run.start { ids = [ "o" ], next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = False, deckToday = Nothing } |> Maybe.withDefault emptyRun)
+                    (Run.start { ids = [ "o" ], next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = False, deckToday = Nothing, slug = Nothing } |> Maybe.withDefault emptyRun)
                     [ { notAdded | id = "openings", kind = PracticeDecks.Set, joined = False } ]
                 )
                     |> Expect.equal ( NoWay, NoWay )

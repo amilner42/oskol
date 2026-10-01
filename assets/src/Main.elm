@@ -164,6 +164,8 @@ type Msg
     | GotRefetch Int (Result Api.Error (List String))
       -- where the run's deck stands, for the end card's way on
     | GotStanding Int (Result Api.Error PracticeDecks.Catalog)
+      -- the run's deck as it stands now, for the card that says today's set is done
+    | GotCelebration Int (Result Api.Error PracticeDecks.Page)
       -- what KEEP GOING or PRACTICE ANYWAY handed over
     | GotOnward Int Page.Puzzle.Way (Result Api.Error (List String))
     | NoOp
@@ -531,6 +533,7 @@ startRun next ids today tier model =
         , source = tier |> Maybe.map Run.Band |> Maybe.withDefault Run.Fixed
         , anyway = False
         , deckToday = Nothing
+        , slug = Nothing
         }
         today
         model
@@ -566,20 +569,53 @@ puzzleOut out model =
             case model.run of
                 Just run ->
                     let
-                        ( kept, counts ) =
+                        ( answered, counts ) =
                             Run.answer given run
-                    in
-                    ( { model
-                        | run = Just kept
-                        , today =
-                            if counts then
-                                Maybe.map (\day -> { day | done = day.done + 1 }) model.today
 
-                            else
-                                model.today
-                      }
-                    , Cmd.none
-                    )
+                        -- The answer that finishes today's set: the page
+                        -- draws the card under the reveal, and the deck is
+                        -- read for its grid and its lines. Once a run.
+                        ( kept, done ) =
+                            Run.celebrate counts answered
+
+                        counted =
+                            { model
+                                | run = Just kept
+                                , today =
+                                    if counts then
+                                        Maybe.map (\day -> { day | done = day.done + 1 }) model.today
+
+                                    else
+                                        model.today
+                            }
+                    in
+                    case ( model.page, done ) of
+                        ( Puzzle pageModel, True ) ->
+                            let
+                                ( celebrating, cmd ) =
+                                    Page.Puzzle.celebrate
+                                        { target = kept.deckToday |> Maybe.map .target |> Maybe.withDefault 0
+                                        , answered = Run.answered kept
+                                        }
+                                        pageModel
+                            in
+                            ( { counted | page = Puzzle celebrating }
+                            , Cmd.batch
+                                [ Cmd.map PuzzleMsg cmd
+                                , case kept.slug of
+                                    Just slug ->
+                                        PracticeDecks.fetchDeck model.session slug (GotCelebration kept.gen)
+
+                                    Nothing ->
+                                        Cmd.none
+                                ]
+                            )
+
+                        ( Puzzle pageModel, False ) ->
+                            ( { counted | page = Puzzle (Page.Puzzle.withAnswered (Run.answered kept) pageModel) }, Cmd.none )
+
+                        _ ->
+                            ( counted, Cmd.none )
 
                 Nothing ->
                     ( model, Cmd.none )
@@ -944,6 +980,7 @@ update msg model =
                         , source = tier |> Maybe.map Run.Band |> Maybe.withDefault Run.Fixed
                         , anyway = begun.anyway
                         , deckToday = begun.deckToday
+                        , slug = Just begun.slug
                         }
                         today
                         withPage
@@ -956,6 +993,7 @@ update msg model =
                         , source = Run.InSet deck
                         , anyway = begun.anyway
                         , deckToday = begun.deckToday
+                        , slug = Just begun.slug
                         }
                         today
                         withPage
@@ -993,6 +1031,7 @@ update msg model =
                         , source = tier |> Maybe.map Run.Band |> Maybe.withDefault Run.Fixed
                         , anyway = begun.anyway
                         , deckToday = begun.deckToday
+                        , slug = Just begun.slug
                         }
                         today
                         withPage
@@ -1005,6 +1044,7 @@ update msg model =
                         , source = Run.InSet deck
                         , anyway = begun.anyway
                         , deckToday = begun.deckToday
+                        , slug = Just begun.slug
                         }
                         today
                         withPage
@@ -1089,6 +1129,30 @@ update msg model =
                     ( offer (Page.Puzzle.Offered (Run.way run catalog.decks))
                         { model | run = Just (Run.withStanding catalog.decks run) }
                     , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        -- The deck as it stands now: the card's grid and lines, and its
+        -- way on (KEEP GOING, or PRACTICE ANYWAY once nothing is new).
+        ( GotCelebration gen result, Puzzle pageModel ) ->
+            case Run.current gen model.run of
+                Just run ->
+                    let
+                        ( read, way ) =
+                            case result of
+                                Ok deckPage ->
+                                    ( Just deckPage, Run.way run [ deckPage.deck ] )
+
+                                Err _ ->
+                                    ( Nothing, Page.Puzzle.NoWay )
+
+                        ( celebrating, cmd ) =
+                            Page.Puzzle.celebrationRead read pageModel
+                    in
+                    ( { model | page = Puzzle (Page.Puzzle.offering (Page.Puzzle.Offered way) celebrating) }
+                    , Cmd.map PuzzleMsg cmd
                     )
 
                 Nothing ->
