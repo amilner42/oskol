@@ -189,6 +189,24 @@ async function holder(page, pattern) {
       const { after } = await onePuzzle(page, n, first);
       if (!first) first = after;
       if (n === 6) await shootAll(page, '01-mid-run');
+      // The answer that finishes today's set brings the celebration under
+      // the reveal (review-celebration photographs it); its I'M DONE ends
+      // the run on the end card, whose way on is measured as below.
+      if (await page.locator('#pz-today-done').count()) {
+        await page.waitForSelector('#pz-today-done[data-settled="true"]', { timeout: 15000 });
+        standing.hold();
+        await page.click('#pz-done');
+        await page.waitForSelector('#pz-end');
+        await sleep(200);
+        const asking = { card: await box(page, '#pz-end'), band: await box(page, '#pz-way') };
+        must(await page.locator('#pz-way-idle').count(), 'while the shell asks, the button is held back in its slot');
+        standing.release();
+        await page.waitForSelector('#pz-keep-going');
+        await sleep(200);
+        const offered = { card: await box(page, '#pz-end'), band: await box(page, '#pz-way') };
+        must(same(asking, offered), `the end card and its way band are the same box asking and answered (${JSON.stringify(offered)})`);
+        break;
+      }
       // ANOTHER past the last id the run holds asks the queue again: hold
       // that request and photograph the moment.
       refetch.hold();

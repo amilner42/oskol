@@ -1,6 +1,8 @@
-module Page.Puzzle exposing
+port module Page.Puzzle exposing
     ( After(..)
     , Attempt(..)
+    , Celebration
+    , CelebrationDeck(..)
     , DeckToday
     , End
     , Loadable(..)
@@ -17,6 +19,9 @@ module Page.Puzzle exposing
     , dueDate
     , attemptBody
     , backIn
+    , celebrate
+    , celebrationRead
+    , celebrationTiming
     , endRun
     , init
     , levelLine
@@ -31,6 +36,7 @@ module Page.Puzzle exposing
     , title
     , update
     , view
+    , withAnswered
     , withSession
     )
 
@@ -89,7 +95,7 @@ import Games.Backgammon.View as Board
 import Games.Backgammon.Words as Words exposing (chanceCells, cubeChances, cubeLine, gradeTag, signed)
 import Html exposing (Html, a, button, div, h1, p, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, type_)
-import Html.Events exposing (onClick, onFocus)
+import Html.Events exposing (on, onClick, onFocus)
 import Json.Decode as D
 import Json.Encode as E
 import Page.Play exposing (shareInvite, shareResult)
@@ -103,6 +109,8 @@ import Svg
 import Svg.Attributes as SvgA
 import Ui.Charts as Charts
 import Api.Decks
+import Api.PracticeDecks as PracticeDecks
+import Ui.Deck
 import Ui.Decks as Decks
 import Ui.Mistakes as Mistakes
 import Ui.Shell
@@ -200,6 +208,7 @@ type alias Model =
     , sharing : Sharing -- which button the share sheet's answer is for
     , now : Int -- client time (ms) when the reveal landed, for "back in 7 days"
     , ended : Maybe End -- the run is over: the score, and what comes after it
+    , celebration : Maybe Celebration -- this answer finished today's set: the card under the reveal
     , leaving : Bool -- ANOTHER was pressed and the shell is finding the next
     , zone : Time.Zone -- the reader's own, for the day an early answer is due
     }
@@ -254,6 +263,43 @@ type WayState
     | Stopped String
 
 
+{-| The moment today's set is done, under the reveal: the shell decides
+it (`Run.celebrate`, once a run, on the counted answer that brings the
+deck's ring to its target) and hands the page what it needs; the page
+draws it and plays it.
+
+  - `target`: today's set, now done -- "Today's 5 done.";
+  - `answered`: the run's answers with their puzzles, oldest first, which
+    the lines and the grid's stepping squares are counted from (kept up
+    to date by the shell: a choice applied after the card is drawn
+    changes what it says);
+  - `deck`: the deck as the server has it now (its cells for the grid,
+    what it cost, how much of a set is learned), read once when the card
+    appears;
+  - `way`: KEEP GOING or PRACTICE ANYWAY, from where the deck stands;
+  - `ready`: the card is drawn -- once the deck is read, or failing that
+    after a moment, so nothing waits on the network for long;
+  - `playing`: the card is on the screen and its motion runs;
+  - `settled`: its last keyframe has ended (`data-settled`).
+
+-}
+type alias Celebration =
+    { target : Int
+    , answered : List ( String, Answer )
+    , deck : CelebrationDeck
+    , way : WayState
+    , ready : Bool
+    , playing : Bool
+    , settled : Bool
+    }
+
+
+type CelebrationDeck
+    = Reading
+    | Read PracticeDecks.Page
+    | Unread
+
+
 {-| What the end screen offers under the score: a guest the sign-in; an
 account the way back, and -- for a run through a deck -- the way on
 (`End.way`). Never a wall: today's set done, KEEP GOING is one tap.
@@ -300,6 +346,9 @@ type Msg
     | Next
     | PressedWay Way
     | EndSignInMsg SignIn.Msg
+    | CelebrationWaited
+    | CelebrationInView Bool
+    | CelebrationEnded String
     | NoOp
 
 
@@ -385,6 +434,7 @@ init session config =
       , sharing = CleanLink
       , now = 0
       , ended = Nothing
+      , celebration = Nothing
       , leaving = False
       , zone = Time.utc
       }
@@ -707,7 +757,16 @@ update msg model =
         -- KEEP GOING or PRACTICE ANYWAY on the end card: the button says it
         -- is on its way, and the shell does the asking.
         PressedWay way ->
-            case Maybe.andThen .way model.ended of
+            let
+                state =
+                    case model.ended of
+                        Just end ->
+                            end.way
+
+                        Nothing ->
+                            Maybe.map .way model.celebration
+            in
+            case state of
                 Just (Offered offered) ->
                     if offered == way && way /= NoWay then
                         ( offering (Going way) model, Cmd.none, GoOn way )
@@ -716,6 +775,54 @@ update msg model =
                         stay model Cmd.none
 
                 _ ->
+                    stay model Cmd.none
+
+        -- The deck was slow to answer: draw the card with what the run
+        -- knows rather than keep the moment waiting.
+        CelebrationWaited ->
+            case model.celebration of
+                Just c ->
+                    if c.ready then
+                        stay model Cmd.none
+
+                    else
+                        ready { c | deck = Unread } model
+
+                Nothing ->
+                    stay model Cmd.none
+
+        -- The card is on the screen: play it. With reduced motion there is
+        -- nothing to play, and the final state is already drawn.
+        CelebrationInView reduced ->
+            case model.celebration of
+                Just c ->
+                    if c.playing then
+                        stay model Cmd.none
+
+                    else
+                        stay { model | celebration = Just { c | playing = True, settled = c.settled || reduced } }
+                            (if reduced then
+                                Cmd.none
+
+                             else
+                                -- Belt and braces: a tab put in the background
+                                -- mid-flight may never hear its last keyframe end.
+                                Process.sleep (toFloat (celebrationTiming c).total + 1500) |> Task.perform (\_ -> CelebrationEnded settleName)
+                            )
+
+                Nothing ->
+                    stay model Cmd.none
+
+        CelebrationEnded name ->
+            case model.celebration of
+                Just c ->
+                    if name == settleName && c.playing then
+                        stay { model | celebration = Just { c | settled = True } } Cmd.none
+
+                    else
+                        stay model Cmd.none
+
+                Nothing ->
                     stay model Cmd.none
 
         -- I'M DONE: the run stops here and the shell hands back the
@@ -796,8 +903,106 @@ offering state model =
                 AskSignIn _ ->
                     model
 
+        -- The celebration's way on is the same press, under the reveal.
         Nothing ->
-            model
+            { model | celebration = Maybe.map (\c -> { c | way = state }) model.celebration }
+
+
+{-| Today's set is done, on this answer: the card under the reveal. The
+deck is read next (`celebrationRead`); if it is slow, the card is drawn
+without it after a moment.
+-}
+celebrate : { target : Int, answered : List ( String, Answer ) } -> Model -> ( Model, Cmd Msg )
+celebrate config model =
+    case ( model.celebration, model.session.user ) of
+        ( Nothing, Just _ ) ->
+            ( { model
+                | celebration =
+                    Just
+                        { target = config.target
+                        , answered = config.answered
+                        , deck = Reading
+                        , way = Asking
+                        , ready = False
+                        , playing = False
+                        , settled = False
+                        }
+              }
+            , Process.sleep 1500 |> Task.perform (\_ -> CelebrationWaited)
+            )
+
+        -- Once on a page, and never for a guest: a guest has no day.
+        _ ->
+            ( model, Cmd.none )
+
+
+{-| The deck, as the server has it now, for the card: its cells for the
+grid and what the lines say. `Nothing` is a read that failed: the card
+is drawn without the grid.
+-}
+celebrationRead : Maybe PracticeDecks.Page -> Model -> ( Model, Cmd Msg )
+celebrationRead read model =
+    case model.celebration of
+        Just c ->
+            if c.ready then
+                -- Drawn already without it: keep what is on the screen.
+                ( model, Cmd.none )
+
+            else
+                let
+                    ( next, cmd, _ ) =
+                        ready
+                            { c
+                                | deck =
+                                    case read of
+                                        Just page ->
+                                            Read page
+
+                                        Nothing ->
+                                            Unread
+                            }
+                            model
+                in
+                ( next, cmd )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+ready : Celebration -> Model -> ( Model, Cmd Msg, Out )
+ready c model =
+    ( { model | celebration = Just { c | ready = True } }
+    , celebrateCard celebrationId
+    , NoOut
+    )
+
+
+{-| What the run's answers are now, for the card's lines: a choice
+applied after it appeared changes what the run did.
+-}
+withAnswered : List ( String, Answer ) -> Model -> Model
+withAnswered answered model =
+    { model | celebration = Maybe.map (\c -> { c | answered = answered }) model.celebration }
+
+
+celebrationId : String
+celebrationId =
+    "pz-today-done"
+
+
+settleName : String
+settleName =
+    "pz-cele-settle"
+
+
+{-| Bring the card into view (smoothly, a beat after the reveal, so the
+verdict is read first) and say when it is on the screen, and whether the
+reader asked for reduced motion.
+-}
+port celebrateCard : String -> Cmd msg
+
+
+port celebrationInView : (Bool -> msg) -> Sub msg
 
 
 afterEnd : After -> Model -> Model
@@ -1130,8 +1335,20 @@ shareField model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    shareResult ShareReported
+subscriptions model =
+    Sub.batch
+        [ shareResult ShareReported
+        , case model.celebration of
+            Just c ->
+                if c.playing then
+                    Sub.none
+
+                else
+                    celebrationInView CelebrationInView
+
+            Nothing ->
+                Sub.none
+        ]
 
 
 
@@ -2012,7 +2229,15 @@ viewControls model puzzle =
                     -- or stop. Stopping is a finished thing to have
                     -- done, so I'M DONE is always offered and never
                     -- reads as giving up.
-                    :: (if model.hasNext then
+                    :: (if model.celebration /= Nothing then
+                            -- Today's set is done, on this answer: the card
+                            -- under the reveal holds the way on, KEEP GOING
+                            -- beside I'M DONE, and the band keeps SHARE. The
+                            -- band is drawn with the reveal, so it is never
+                            -- seen with these and nothing in it moves.
+                            []
+
+                        else if model.hasNext then
                             [ button
                                 [ classList [ ( "q-btn pz-action", True ), ( "is-busy", model.leaving ) ]
                                 , id "pz-next"
@@ -2031,7 +2256,7 @@ viewControls model puzzle =
                         else
                             []
                        )
-                    ++ (if model.inRun then
+                    ++ (if model.inRun && model.celebration == Nothing then
                             [ button [ class "q-btn plain pz-action", id "pz-done", onClick PressedDone ]
                                 [ text "I'M DONE" ]
                             ]
@@ -2099,6 +2324,7 @@ viewReveal model puzzle reveal =
             ++ viewSchedule model reveal
             ++ viewMemory model
             ++ viewStory reveal
+            ++ [ viewCelebration model ]
         )
 
 
@@ -2378,6 +2604,366 @@ viewCubeReveal model puzzle cube =
     , cubeLine review
     , cubeChances "White" review
     ]
+
+
+-- TODAY'S SET, DONE
+
+
+{-| The card under the reveal, the moment today's set is done. Under the
+reveal and never over it -- the answer is read first -- and appended, so
+nothing above it moves.
+
+  - today's ring at 64 pixels, its arc running from where it stood before
+    this answer to full, then the check drawn in;
+  - "Today's 5 done.", with the highlighter swept under it;
+  - what the run did: "2 stepped up a level · 1 patched";
+  - the deck's grid, the squares this run moved stepping up a shade one
+    after another, oldest first;
+  - for a tier what patching has won back, for a set how much of it is
+    learned;
+  - the way on, KEEP GOING (or PRACTICE ANYWAY) beside I'M DONE, in one
+    band whose height is fixed: never a wall.
+
+The motion is all CSS, run once the card is on the screen
+(`is-playing`); with reduced motion the final state is drawn at once.
+
+-}
+viewCelebration : Model -> Html Msg
+viewCelebration model =
+    case model.celebration of
+        Nothing ->
+            text ""
+
+        Just c ->
+            let
+                timing =
+                    celebrationTiming c
+
+                ms n =
+                    String.fromInt n ++ "ms"
+
+                from =
+                    if c.target <= 0 then
+                        0
+
+                    else
+                        toFloat (100 * (c.target - 1)) / toFloat c.target
+
+                counts =
+                    stepCounts c.answered
+
+                steps =
+                    case model.deck of
+                        Just _ ->
+                            Decks.stepsLine { stepped = counts.stepped, learned = counts.patched }
+
+                        Nothing ->
+                            Mistakes.stepsLine counts
+
+                tail =
+                    case c.deck of
+                        Read page ->
+                            case page.deck.kind of
+                                PracticeDecks.Set ->
+                                    page.deck.standing
+                                        |> Maybe.map (\st -> Decks.learnedOf { learned = st.patched, total = st.total })
+
+                                PracticeDecks.Tier ->
+                                    page.deck.cost
+                                        |> Maybe.andThen
+                                            (\cost ->
+                                                if cost.lostPatched > 0 then
+                                                    Mistakes.wonBackLine { pr = cost.pr, prPatched = cost.prPatched }
+
+                                                else
+                                                    Nothing
+                                            )
+
+                        _ ->
+                            Nothing
+
+                eyebrow =
+                    case model.deck of
+                        Just deck ->
+                            deck.name
+
+                        Nothing ->
+                            Maybe.map Mistakes.tierName model.tier |> Maybe.withDefault ""
+            in
+            div
+                [ classList
+                    [ ( "pz-cele", True )
+                    , ( "is-ready", c.ready )
+                    , ( "is-playing", c.playing )
+                    , ( "is-set", model.deck /= Nothing )
+                    ]
+                , id celebrationId
+                , attribute "role" "status"
+                , attribute "aria-live" "polite"
+                , attribute "data-settled" (boolText c.settled)
+                , attribute "data-playing" (boolText c.playing)
+                , attribute "data-target" (String.fromInt c.target)
+                , attribute "style"
+                    ("--from:"
+                        ++ String.fromFloat from
+                        ++ ";--grid-at:"
+                        ++ ms timing.gridAt
+                        ++ ";--step:"
+                        ++ ms timing.step
+                        ++ ";--tail-at:"
+                        ++ ms timing.tailAt
+                    )
+                , on "animationend" (D.map CelebrationEnded (D.field "animationName" D.string))
+                ]
+                [ div [ class "pz-cele-head" ]
+                    [ span [ class "pz-cele-ring", id "pz-today-ring", attribute "data-cele-anchor" "true" ]
+                        [ Charts.ring
+                            { done = c.target
+                            , target = c.target
+                            , label = Mistakes.todayDone c.target
+                            }
+                        , span [ class "pz-cele-sparks", attribute "aria-hidden" "true" ]
+                            (List.map (\i -> span [ class "pz-cele-spark", attribute "style" ("--n:" ++ String.fromInt i) ] []) (List.range 0 7))
+                        ]
+                    , div [ class "pz-cele-words" ]
+                        [ p [ class "pz-cele-eyebrow pixel", id "pz-today-eyebrow" ] [ text (String.toUpper eyebrow) ]
+                        , p [ class "pz-cele-title", id "pz-today-title" ]
+                            [ span [ class "pz-cele-hl" ] [ text (Mistakes.todayDone c.target) ] ]
+                        , p [ class "pz-cele-steps", id "pz-today-steps" ] [ text steps ]
+                        ]
+                    ]
+                , viewCelebrationGrid model c
+                , p [ class "pz-cele-tail", id "pz-today-tail" ]
+                    [ text (Maybe.withDefault "" tail) ]
+                , viewCelebrationWay model c
+                ]
+
+
+boolText : Bool -> String
+boolText b =
+    if b then
+        "true"
+
+    else
+        "false"
+
+
+{-| How many of this run's answers climbed a rung, and how many of those
+patched (or, in a set, learned) the position.
+-}
+stepCounts : List ( String, Answer ) -> { stepped : Int, patched : Int }
+stepCounts answered =
+    let
+        schedules =
+            List.filterMap (Tuple.second >> .schedule) answered
+    in
+    { stepped = List.length (List.filter (\sc -> sc.levelAfter > sc.levelBefore) schedules)
+    , patched = List.length (List.filter .patched schedules)
+    }
+
+
+{-| The answers that step a square up, oldest first, with the shade the
+square had before: a position never started was paper.
+-}
+stepping : List ( String, Answer ) -> List ( String, { level : Int, status : String } )
+stepping answered =
+    answered
+        |> List.filterMap
+            (\( id, given ) ->
+                given.schedule
+                    |> Maybe.andThen
+                        (\sc ->
+                            if sc.levelAfter > sc.levelBefore then
+                                Just
+                                    ( id
+                                    , if sc.levelBefore <= 0 then
+                                        { level = 0, status = "new" }
+
+                                      else
+                                        { level = sc.levelBefore, status = "active" }
+                                    )
+
+                            else
+                                Nothing
+                        )
+            )
+
+
+{-| When each part of the card moves, in milliseconds from the moment it
+is on the screen: the ring (0.15 s to 0.75 s) and its check (to 1.05 s),
+the grid's squares from 1 s, 120 ms apart -- closer when there are many,
+so the whole sequence is never longer than about 0.7 s -- and last the
+line under the grid, whose end is the card settling.
+-}
+celebrationTiming : Celebration -> { gridAt : Int, step : Int, tailAt : Int, total : Int }
+celebrationTiming c =
+    let
+        n =
+            List.length (stepping c.answered)
+
+        gap =
+            if n <= 1 then
+                120
+
+            else
+                min 120 (720 // (n - 1))
+
+        gridAt =
+            1000
+
+        gridEnd =
+            if n <= 0 then
+                gridAt
+
+            else
+                gridAt + (n - 1) * gap + 320
+
+        tailAt =
+            max 1150 (gridEnd - 120)
+    in
+    { gridAt = gridAt, step = gap, tailAt = tailAt, total = tailAt + 360 }
+
+
+{-| The deck's grid, small, with this run's squares stepping up. Drawn
+only once the deck is read: its box is a function of the deck's size,
+which the read says.
+-}
+viewCelebrationGrid : Model -> Celebration -> Html Msg
+viewCelebrationGrid model c =
+    case c.deck of
+        Read page ->
+            let
+                moving =
+                    stepping c.answered
+
+                order id =
+                    moving
+                        |> List.indexedMap (\k ( other, was ) -> ( k, other, was ))
+                        |> List.filter (\( _, other, _ ) -> other == id)
+                        |> List.head
+
+                cells =
+                    List.map
+                        (\cell ->
+                            let
+                                now =
+                                    { level = cell.level, status = cell.status }
+                            in
+                            case order cell.id of
+                                Just ( k, _, was ) ->
+                                    if was /= now then
+                                        { level = cell.level, status = cell.status, from = Just was, order = k }
+
+                                    else
+                                        { level = cell.level, status = cell.status, from = Nothing, order = 0 }
+
+                                Nothing ->
+                                    { level = cell.level, status = cell.status, from = Nothing, order = 0 }
+                        )
+                        page.cells
+            in
+            div [ class "pz-cele-grid", id "pz-today-grid" ]
+                [ Charts.gridStepping
+                    { cells = cells
+                    , columns = Ui.Deck.columns page.deck
+                    , patchedLevel = page.patchedLevel
+                    , sentence = Mistakes.stepsLine (stepCounts c.answered)
+                    }
+                ]
+
+        _ ->
+            text ""
+
+
+{-| KEEP GOING (or PRACTICE ANYWAY) beside I'M DONE, in a band whose
+height is fixed, with one quiet line under it saying what the first
+does. The first button is laid out while the deck is read and hidden
+where there is no way on; I'M DONE is always there.
+-}
+viewCelebrationWay : Model -> Celebration -> Html Msg
+viewCelebrationWay model c =
+    let
+        shown =
+            case c.way of
+                Offered way ->
+                    Just way
+
+                Going way ->
+                    Just way
+
+                _ ->
+                    Nothing
+
+        going =
+            case c.way of
+                Going _ ->
+                    True
+
+                _ ->
+                    False
+
+        ( buttonId, label, action ) =
+            case shown of
+                Just Anyway ->
+                    ( "pz-anyway", "PRACTICE ANYWAY", "practice-anyway" )
+
+                Just (MoreNew _) ->
+                    ( "pz-keep-going", "KEEP GOING", "keep-going" )
+
+                Just (Continue _) ->
+                    ( "pz-keep-going", "KEEP GOING", "continue" )
+
+                _ ->
+                    ( "pz-way-idle", "KEEP GOING", "" )
+
+        offered =
+            case shown of
+                Just NoWay ->
+                    False
+
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
+        line =
+            case c.way of
+                Stopped why ->
+                    why
+
+                _ ->
+                    case shown of
+                        Just (MoreNew adds) ->
+                            Mistakes.addsLine adds
+
+                        Just Anyway ->
+                            Mistakes.scheduledLine
+
+                        Just (Continue work) ->
+                            Mistakes.workLine work
+
+                        _ ->
+                            ""
+    in
+    div [ class "pz-cele-way", id "pz-today-way", attribute "data-way" action ]
+        [ div [ class "pz-cele-buttons" ]
+            [ button
+                [ classList [ ( "q-btn pz-action pz-cele-go", True ), ( "is-idle", not offered ), ( "is-busy", going ) ]
+                , id buttonId
+                , attribute "data-action" action
+                , disabled (not offered || going)
+                , attribute "aria-busy" (boolText going)
+                , onClick (Maybe.withDefault NoWay shown |> PressedWay)
+                ]
+                [ text label
+                , span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] []
+                ]
+            , button [ class "q-btn plain pz-action", id "pz-done", onClick PressedDone ]
+                [ text "I'M DONE" ]
+            ]
+        , p [ class "pz-cele-way-line", id "pz-today-way-line" ] [ text line ]
+        ]
 
 
 {-| The level line and the four choices, for an account whose deck holds

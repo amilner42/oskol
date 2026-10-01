@@ -31,8 +31,36 @@ suite =
         , choices
         , theHome
         , aRun
+        , celebration
         , aDecksPage
         , noJargon
+        ]
+
+
+{-| The card when today's set is done: its head, what moved, and what the
+way on does.
+-}
+celebration : Test
+celebration =
+    describe "today's set, done"
+        [ test "the head says the number the ring was counting to" <|
+            \_ ->
+                [ Mistakes.todayDone 5, Mistakes.todayDone 1, Mistakes.todayDone 12 ]
+                    |> Expect.equal [ "Today's 5 done.", "Today's 1 done.", "Today's 12 done." ]
+        , test "what moved: the steps up, and the ones patched among them" <|
+            \_ ->
+                [ Mistakes.stepsLine { stepped = 2, patched = 1 }
+                , Mistakes.stepsLine { stepped = 1, patched = 0 }
+                , Mistakes.stepsLine { stepped = 3, patched = 0 }
+                ]
+                    |> Expect.equal [ "2 stepped up a level · 1 patched", "1 stepped up a level", "3 stepped up a level" ]
+        , test "a run of misses is never 'nothing moved': every one is coming back" <|
+            \_ ->
+                Mistakes.stepsLine { stepped = 0, patched = 0 }
+                    |> Expect.equal "Every one of these is back on its way"
+        , test "under KEEP GOING, only what it adds" <|
+            \_ ->
+                Mistakes.addsLine 3 |> Expect.equal "Keep going adds 3 more."
         ]
 
 
@@ -370,6 +398,10 @@ noJargon =
                              , Mistakes.dayStreakLine { streak = 5, done = 3 }
                              , Mistakes.workLine { due = 4, newLeft = 3 }
                              , Mistakes.keepGoingLine { done = 5, adds = 3 }
+                             , Mistakes.todayDone 5
+                             , Mistakes.stepsLine { stepped = 2, patched = 1 }
+                             , Mistakes.stepsLine { stepped = 0, patched = 0 }
+                             , Mistakes.addsLine 3
                              , Mistakes.scheduledLine
                              , Mistakes.unsavedLine
                              , Mistakes.guestPracticeLine

@@ -4,6 +4,7 @@ module Ui.Charts exposing
     , grid
     , gridColumns
     , gridFromCounts
+    , gridStepping
     , ladder
     , miniRing
     , patched
@@ -794,6 +795,117 @@ grid config =
         , attribute "style" ("--cols:" ++ String.fromInt columns ++ ";--rows:" ++ String.fromInt rows)
         ]
         (Svg.title [] [ Svg.text config.sentence ] :: List.indexedMap square config.cells)
+
+
+{-| The same grid with some of its squares stepping up: each stepping
+square is drawn twice, the shade it was under the shade it is now, and
+the one on top carries `grid-step` and its place in the sequence
+(`--k`, oldest first) so the page can bring it in one after another. The
+picture's box is `grid`'s for the same count, so swapping one for the
+other moves nothing. Every other square is drawn exactly as `grid` draws
+it, and with reduced motion the top square is simply there.
+-}
+gridStepping :
+    { cells : List { level : Int, status : String, from : Maybe { level : Int, status : String }, order : Int }
+    , columns : Maybe Int
+    , patchedLevel : Int
+    , sentence : String
+    }
+    -> Html msg
+gridStepping config =
+    let
+        count =
+            List.length config.cells
+
+        columns =
+            gridColumns config.columns count
+
+        rows =
+            max 1 (ceiling (toFloat count / toFloat columns))
+
+        width =
+            toFloat columns * gridPitch - (gridPitch - gridSquare)
+
+        height =
+            toFloat rows * gridPitch - (gridPitch - gridSquare)
+
+        rect index cell extra =
+            let
+                ( fill, edge ) =
+                    gridPaint config.patchedLevel cell
+            in
+            Svg.rect
+                ([ SvgAttr.x (num (toFloat (modBy columns index) * gridPitch))
+                 , SvgAttr.y (num (toFloat (index // columns) * gridPitch))
+                 , SvgAttr.width (num gridSquare)
+                 , SvgAttr.height (num gridSquare)
+                 , SvgAttr.rx "2"
+                 , SvgAttr.fill fill
+                 ]
+                    ++ extra
+                    ++ (case edge of
+                            Just colour ->
+                                [ SvgAttr.stroke colour, SvgAttr.strokeWidth "1" ]
+
+                            Nothing ->
+                                []
+                       )
+                )
+                []
+
+        square index cell =
+            let
+                now =
+                    { level = cell.level, status = cell.status }
+
+                marks =
+                    [ attribute "data-level" (String.fromInt cell.level)
+                    , attribute "data-status" cell.status
+                    ]
+            in
+            case cell.from of
+                Just was ->
+                    [ rect index was [ SvgAttr.class "grid-sq is-was", attribute "data-was" (String.fromInt was.level) ]
+                    , rect index
+                        now
+                        (marks
+                            ++ [ SvgAttr.class "grid-sq grid-step"
+                               , attribute "data-step" (String.fromInt cell.order)
+                               , attribute "style" ("--k:" ++ String.fromInt cell.order)
+                               ]
+                        )
+
+                    -- A ring that spreads from the square as it steps up and
+                    -- fades: the eye goes to the square that changed. Unseen
+                    -- when nothing moves.
+                    , Svg.rect
+                        [ SvgAttr.x (num (toFloat (modBy columns index) * gridPitch))
+                        , SvgAttr.y (num (toFloat (index // columns) * gridPitch))
+                        , SvgAttr.width (num gridSquare)
+                        , SvgAttr.height (num gridSquare)
+                        , SvgAttr.rx "2"
+                        , SvgAttr.fill "none"
+                        , SvgAttr.stroke (Tuple.first (gridPaint config.patchedLevel now))
+                        , SvgAttr.strokeWidth "1.5"
+                        , SvgAttr.class "grid-ping"
+                        , attribute "style" ("--k:" ++ String.fromInt cell.order)
+                        ]
+                        []
+                    ]
+
+                Nothing ->
+                    [ rect index now (marks ++ [ SvgAttr.class "grid-sq" ]) ]
+    in
+    Svg.svg
+        [ SvgAttr.viewBox ("0 0 " ++ num (max width gridSquare) ++ " " ++ num (max height gridSquare))
+        , SvgAttr.class "chart-grid is-stepping block"
+        , attribute "aria-hidden" "true"
+        , attribute "data-count" (String.fromInt count)
+        , attribute "data-columns" (String.fromInt columns)
+        , attribute "data-rows" (String.fromInt rows)
+        , attribute "style" ("--cols:" ++ String.fromInt columns ++ ";--rows:" ++ String.fromInt rows)
+        ]
+        (Svg.title [] [ Svg.text config.sentence ] :: List.concat (List.indexedMap square config.cells))
 
 
 {-| A tier's columns, or the ones asked for: `ceil (sqrt n * 1.6)`, never

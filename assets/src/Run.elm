@@ -3,11 +3,14 @@ module Run exposing
     , Source(..)
     , Start
     , answer
+    , answered
     , answers
+    , celebrate
     , anywayFetched
     , askAgain
     , current
     , deck
+    , deckKey
     , goesOn
     , idsDecoder
     , keepGoing
@@ -78,7 +81,9 @@ type alias Run =
     , anyway : Bool -- PRACTICE ANYWAY: every answer early, practice only, nothing moved
     , served : Int -- how much of the rotation PRACTICE ANYWAY has handed this run (its `from`)
     , deckToday : Maybe DeckToday -- the deck's ring: today's set, as the page that started the run read it
+    , slug : Maybe String -- the deck's page (`/practice/<slug>`), which is where its cells are read
     , gen : Int -- which run this is, so an answer to an older run's request is dropped
+    , celebrated : Bool -- today's set was finished in this run, and the page said so (once)
     }
 
 
@@ -91,6 +96,7 @@ type alias Start =
     , source : Source
     , anyway : Bool
     , deckToday : Maybe DeckToday
+    , slug : Maybe String
     }
 
 
@@ -118,7 +124,9 @@ start config =
                     else
                         0
                 , deckToday = config.deckToday
+                , slug = config.slug
                 , gen = 0
+                , celebrated = False
                 }
 
 
@@ -206,6 +214,32 @@ answer given run =
             ( run, False )
 
 
+{-| Does this answer finish today's set? Only a counted answer (the one
+`answer` said the day counts), only the one that takes the deck's ring
+from one short of its target to the target -- `done` was `target - 1` --
+and only once in a run: KEEP GOING after the celebration grows the
+target, and the run goes on quietly from there. The run comes back
+marked, so a retry, an override or a second tab cannot draw it again.
+
+A run of one game's mistakes has no ring, and PRACTICE ANYWAY counts
+nothing, so neither is ever celebrated; nor is a guest's, whose answers
+are never counted.
+
+-}
+celebrate : Bool -> Run -> ( Run, Bool )
+celebrate counted run =
+    case run.deckToday of
+        Just day ->
+            if counted && not run.celebrated && day.target > 0 && day.done == day.target then
+                ( { run | celebrated = True }, True )
+
+            else
+                ( run, False )
+
+        Nothing ->
+            ( run, False )
+
+
 {-| The run as the open puzzle's page reads it: which one it is, what
 happened at each so far, the deck's ring, and whether it is practice
 only.
@@ -230,6 +264,14 @@ it answered.
 answers : Run -> List Page.Puzzle.Answer
 answers run =
     List.filterMap (\id -> answerAt id run) run.ids
+
+
+{-| The same, with the puzzle each answer was at, oldest first: what the
+celebration lights on the grid.
+-}
+answered : Run -> List ( String, Page.Puzzle.Answer )
+answered run =
+    List.filterMap (\id -> answerAt id run |> Maybe.map (Tuple.pair id)) run.ids
 
 
 {-| A pass is right and anything else is not, and the total is how many
@@ -492,6 +534,15 @@ way run decks =
 
             else
                 NoWay
+
+
+{-| The id of the deck the run is of, as the wire's presses and
+`/papi/practice/decks/:id` speak it: a tier's band, a set's id. Nothing
+for a run of one game's mistakes.
+-}
+deckKey : Run -> Maybe String
+deckKey =
+    deckId
 
 
 deckId : Run -> Maybe String

@@ -110,7 +110,15 @@ decoding =
 words : Test
 words =
     describe "the words"
-        [ test "left first, learned beside it once there is some, all of them at the end" <|
+        [ test "the celebration says how much of a set is learned, and what a run moved in its word" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Ui.Decks.learnedOf { learned = 4, total = 15 } |> Expect.equal "4 of 15 learned."
+                    , \_ -> Ui.Decks.stepsLine { stepped = 2, learned = 1 } |> Expect.equal "2 stepped up a level · 1 learned"
+                    , \_ -> Ui.Decks.stepsLine { stepped = 0, learned = 0 } |> Expect.equal "Every one of these is back on its way"
+                    ]
+                    ()
+        , test "left first, learned beside it once there is some, all of them at the end" <|
             \_ ->
                 Expect.all
                     [ \_ -> Ui.Decks.standingLine (standing 15 0) |> Expect.equal "15 left to learn"

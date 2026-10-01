@@ -3,6 +3,7 @@ module Ui.Decks exposing
     , endSignIn
     , hasWork
     , ladderLine
+    , learnedOf
     , learnedRun
     , legendTop
     , restingLine
@@ -17,6 +18,7 @@ module Ui.Decks exposing
     , startLine
     , stateLine
     , stateParts
+    , stepsLine
     , tryLine
     )
 
@@ -125,6 +127,22 @@ learnedRun n =
 
         _ ->
             Just ("You learned " ++ String.fromInt n ++ " of them.")
+
+
+{-| How much of the set is learned, under the celebration: "4 of 15
+learned." The whole of it, said plainly.
+-}
+learnedOf : { learned : Int, total : Int } -> String
+learnedOf counts =
+    String.fromInt (max 0 counts.learned) ++ " of " ++ String.fromInt (max 0 counts.total) ++ " learned."
+
+
+{-| What a run through a set did, under the celebration: the same line
+the mistakes say, in the set's word. "2 stepped up a level · 1 learned".
+-}
+stepsLine : { stepped : Int, learned : Int } -> String
+stepsLine counts =
+    Mistakes.stepsLineIn "learned" { stepped = counts.stepped, patched = counts.learned }
 
 
 {-| A set in its three states, as the grid is filled in: learned, in

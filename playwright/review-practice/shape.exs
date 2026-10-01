@@ -22,6 +22,12 @@
 #              KEEP GOING.
 #   scheduled  every very bad move has been started and none is due: the
 #              very bad moves lead with PRACTICE ANYWAY.
+#   today_three
+#              today's set is three away everywhere: the very bad moves have
+#              nothing due, two answered today and the day's three new ones
+#              still to come (5 in all); each set has three of its new ones
+#              left and nothing due. FIX ONE's run of three ends on the
+#              celebration (`review-celebration`).
 #
 # It replaces the account's mistakes and sets rather than adding to them,
 # so the numbers on the shot are the ones named here. Each made-up mistake
@@ -38,8 +44,8 @@ alias Oskol.Repo
 email = System.get_env("SHAPE_EMAIL") || raise "SHAPE_EMAIL is not set"
 state = System.get_env("SHAPE_STATE") || "ladder"
 
-unless state in ["ladder", "keep_going", "scheduled"],
-  do: raise("SHAPE_STATE #{state} is not one of ladder, keep_going, scheduled")
+unless state in ["ladder", "keep_going", "scheduled", "today_three"],
+  do: raise("SHAPE_STATE #{state} is not one of ladder, keep_going, scheduled, today_three")
 
 user = Repo.get_by!(Oskol.Auth.User, email: email)
 now = DateTime.utc_now()
@@ -206,7 +212,7 @@ answer_today = fn key, level ->
 end
 
 case state do
-  "ladder" ->
+  s when s in ["ladder", "today_three"] ->
     # Two very bad ones already answered today, at the bottom yellow.
     started
     |> Enum.filter(fn {_, band, level, due?} -> band == "very_bad" and level == 1 and not due? end)
@@ -284,7 +290,9 @@ set_state = fn id, learned, going, due ->
   if state != "ladder" do
     untouched = Enum.drop(keys, learned + going)
 
-    from(i in Retain.Item, where: i.user_id == ^learner.id and i.key in ^Enum.take(untouched, elem(set, 4)))
+    started_today = if state == "today_three", do: elem(set, 4) - 3, else: elem(set, 4)
+
+    from(i in Retain.Item, where: i.user_id == ^learner.id and i.key in ^Enum.take(untouched, started_today))
     |> Repo.update_all(set: [started_at: ago.(60), level: 0, due: later])
   end
 end

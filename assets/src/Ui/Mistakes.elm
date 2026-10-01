@@ -1,5 +1,6 @@
 module Ui.Mistakes exposing
     ( Band
+    , addsLine
     , allClearLine
     , applyLabel
     , backLine
@@ -28,6 +29,10 @@ module Ui.Mistakes exposing
     , scheduledLine
     , stateLine
     , stateParts
+    , stepsLine
+    , stepsLineIn
+    , todayDone
+    , todayEyebrow
     , unsavedLine
     , wonBackLine
     , workLine
@@ -762,6 +767,69 @@ workLine work =
         |> String.join " · "
 
 
+{-| The celebration's head, the moment today's set is done: the same
+words for a tier and a set, said as the thing it is, with the number the
+ring over the board has been counting to.
+
+    "Today's 5 done."
+
+-}
+todayDone : Int -> String
+todayDone target =
+    "Today's " ++ String.fromInt (max 0 target) ++ " done."
+
+
+{-| The eyebrow over it.
+-}
+todayEyebrow : String
+todayEyebrow =
+    "TODAY"
+
+
+{-| What this run's answers did, under the celebration's head: how many
+climbed a rung and how many of those it patched. Never "nothing moved":
+a run of misses is said as what it is, every one of them coming back.
+
+    "2 stepped up a level · 1 patched"
+    "1 stepped up a level"
+    "Every one of these is back on its way"
+
+The sets say it in their own word (`Ui.Decks.stepsLine`).
+
+-}
+stepsLine : { stepped : Int, patched : Int } -> String
+stepsLine counts =
+    steps "patched" counts
+
+
+{-| The same line in another word for the top rung (a set's "learned").
+-}
+stepsLineIn : String -> { stepped : Int, patched : Int } -> String
+stepsLineIn =
+    steps
+
+
+steps : String -> { stepped : Int, patched : Int } -> String
+steps top counts =
+    if counts.stepped <= 0 && counts.patched <= 0 then
+        "Every one of these is back on its way"
+
+    else
+        [ if counts.stepped > 0 then
+            Just (String.fromInt counts.stepped ++ " stepped up a level")
+
+          else
+            Nothing
+        , if counts.patched > 0 then
+            Just (String.fromInt counts.patched ++ " " ++ top)
+
+          else
+            Nothing
+        ]
+            |> List.filterMap identity
+            |> String.join " · "
+
+
 {-| Under KEEP GOING, once today's set is done: said as the moment it
 is, then what the button does. The sets say it in the same words.
 
@@ -780,6 +848,17 @@ keepGoingLine day =
         ++ " Keep going adds "
         ++ String.fromInt (max 0 day.adds)
         ++ " more."
+
+
+{-| Under KEEP GOING on the celebration, where "Today's 5 done." is
+already the card's head: only what the button does.
+
+    "Keep going adds 3 more."
+
+-}
+addsLine : Int -> String
+addsLine adds =
+    "Keep going adds " ++ String.fromInt (max 0 adds) ++ " more."
 
 
 {-| Under PRACTICE ANYWAY: everything has been started and nothing is

@@ -10,6 +10,7 @@ module Ui.Deck exposing
     , begun
     , card
     , cells
+    , columns
     , costLines
     , left
     , row
@@ -74,6 +75,7 @@ PRACTICE ANYWAY -- every answer early, practice only.
 type alias Begun =
     { deckToday : Maybe { done : Int, target : Int }
     , anyway : Bool
+    , slug : String
     }
 
 
@@ -93,6 +95,7 @@ begun deck which started =
                     }
                 )
     , anyway = which == PracticeAnyway
+    , slug = deck.slug
     }
 
 

@@ -1821,6 +1821,113 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 .pz-way-go.is-busy, .pz-action.is-busy { cursor: progress; opacity: 0.75; }
 
 .pz-apply.is-idle { visibility: hidden; }
+
+/* ---- Today's set, done (`Page.Puzzle.viewCelebration`) ----
+   A card appended under the reveal, never over it, so nothing above it
+   moves; it holds the way on, so the band under the board keeps SHARE.
+   It is laid out hidden while the deck is read (`is-ready` shows it),
+   and its motion waits, paused on its first frame, until the page says
+   the card is on the screen (`is-playing`). Every keyframe is opacity or
+   transform -- the ring's arc and check are the dash of an SVG stroke --
+   and all of it lives under prefers-reduced-motion: no-preference, so
+   with reduced motion the final state is simply there. */
+.pz-cele {
+  --cele-green: #1f7a45;
+  container-type: inline-size;
+  visibility: hidden;
+  margin-top: 14px;
+  padding: 16px 16px 14px;
+  border: 2px solid var(--ink);
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 70% at 0% 0%, rgba(255, 217, 61, 0.22), rgba(255, 217, 61, 0) 60%),
+    #fff;
+  box-shadow: 3px 3px 0 0 var(--ink);
+  color: var(--ink);
+}
+.pz-cele.is-ready { visibility: visible; }
+.pz-cele-head { display: flex; align-items: center; gap: 14px; }
+.pz-cele-ring { position: relative; flex: none; width: 64px; height: 64px; }
+.pz-cele-ring .chart-ring { width: 64px; height: 64px; }
+/* Round ends, so a full ring closes with no seam where it began. */
+.pz-cele-ring .ring-arc { stroke-linecap: round; }
+.pz-cele-words { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.pz-cele-eyebrow { margin: 0; font-size: 7px; letter-spacing: 0.08em; color: var(--pencil); line-height: 1.3; }
+.pz-cele-title { margin: 0; font-size: 24px; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; white-space: nowrap; }
+@container (max-width: 270px) { .pz-cele-title { font-size: 20px; } }
+/* The highlighter, swept under the words once the check is in. */
+.pz-cele-hl { position: relative; z-index: 0; display: inline-block; }
+.pz-cele-hl::before {
+  content: ""; position: absolute; z-index: -1;
+  left: -4px; right: -4px; bottom: 0.06em; height: 0.46em;
+  border-radius: 3px 6px 4px 7px;
+  background: var(--highlighter); opacity: 0.85;
+  transform: skewX(-10deg); transform-origin: left center;
+}
+.pz-cele-steps { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.35; color: var(--ink); opacity: 0.78; }
+.pz-cele-grid { margin-top: 14px; }
+.pz-cele-grid .chart-grid { --sq: 17px; }
+@media (min-width: 640px) { .pz-cele-grid .chart-grid { --sq: 18px; } }
+/* What patching won back (a tier), or how much is learned (a set): one
+   line, held whether or not there is anything to say. */
+.pz-cele-tail { margin: 10px 0 0; min-height: 1.35em; font-size: 13px; font-weight: 700; line-height: 1.35; color: var(--cele-green); }
+.pz-cele-way { margin-top: 12px; }
+.pz-cele-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.pz-cele-go { min-width: 13.5em; justify-content: center; }
+.pz-cele-go.is-idle { visibility: hidden; }
+.pz-cele-way-line { margin: 8px 0 0; height: 2.7em; line-height: 1.35em; overflow: hidden; font-size: 12px; color: var(--pencil); }
+.pz-cele .grid-ping { opacity: 0; }
+.pz-cele-sparks { position: absolute; inset: 0; pointer-events: none; }
+.pz-cele-spark {
+  position: absolute; left: calc(50% - 2.5px); top: calc(50% - 2.5px);
+  width: 5px; height: 5px; border-radius: 1px; opacity: 0;
+  background: var(--highlighter);
+  transform: rotate(calc(var(--n) * 45deg + 22.5deg)) translateY(-26px);
+}
+.pz-cele-spark:nth-child(even) { background: var(--cele-green); }
+@media (prefers-reduced-motion: no-preference) {
+  .pz-cele.is-ready { animation: pz-cele-in 340ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .pz-cele .chart-ring .ring-arc { animation: pz-cele-arc 600ms cubic-bezier(0.22, 0.7, 0.3, 1) 150ms both; }
+  .pz-cele .chart-ring .ring-check { stroke-dasharray: 1; animation: dk-check-in 300ms ease-out 750ms both; }
+  .pz-cele-ring .chart-ring { animation: pz-cele-pop 460ms cubic-bezier(0.3, 1.5, 0.5, 1) 760ms both; }
+  .pz-cele-spark { animation: pz-cele-spark 680ms cubic-bezier(0.15, 0.7, 0.3, 1) 800ms both; }
+  .pz-cele-eyebrow { animation: pz-cele-up 360ms ease-out 100ms both; }
+  .pz-cele-title { animation: pz-cele-up 380ms ease-out 160ms both; }
+  .pz-cele-hl::before { animation: pz-cele-sweep 440ms cubic-bezier(0.65, 0, 0.25, 1) 820ms both; }
+  .pz-cele-steps { animation: pz-cele-up 360ms ease-out 300ms both; }
+  .pz-cele-grid { animation: pz-cele-fade 320ms ease-out 640ms both; }
+  .pz-cele .grid-step {
+    transform-box: fill-box; transform-origin: center;
+    animation: pz-cele-step 340ms cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+    animation-delay: calc(var(--grid-at) + var(--k) * var(--step));
+  }
+  .pz-cele-tail { animation: pz-cele-settle 360ms ease-out var(--tail-at) both; }
+  /* The way on is there almost at once: nobody waits to leave. */
+  .pz-cele-way { animation: pz-cele-fade 260ms ease-out 220ms both; }
+  .pz-cele .grid-ping {
+    transform-box: fill-box; transform-origin: center;
+    animation: pz-cele-ping 620ms ease-out both;
+    animation-delay: calc(var(--grid-at) + var(--k) * var(--step) + 120ms);
+  }
+  /* Held on the first frame until the card is on the screen. `!important`
+     because every rule above sets the whole `animation`, which would put
+     the play state back to running. */
+  .pz-cele:not(.is-playing), .pz-cele:not(.is-playing) *, .pz-cele:not(.is-playing) .pz-cele-hl::before { animation-play-state: paused !important; }
+}
+@keyframes pz-cele-in { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes pz-cele-arc { from { stroke-dasharray: var(--from) 100; } to { stroke-dasharray: 100 100; } }
+@keyframes pz-cele-pop { 0% { transform: scale(1); } 45% { transform: scale(1.09); } 100% { transform: scale(1); } }
+@keyframes pz-cele-spark {
+  0% { opacity: 0; transform: rotate(calc(var(--n) * 45deg + 22.5deg)) translateY(-22px) scale(0.6); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(calc(var(--n) * 45deg + 22.5deg)) translateY(-44px) scale(0.3); }
+}
+@keyframes pz-cele-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pz-cele-sweep { from { transform: skewX(-10deg) scaleX(0); } to { transform: skewX(-10deg) scaleX(1); } }
+@keyframes pz-cele-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pz-cele-ping { 0% { opacity: 0.9; transform: scale(1); } 100% { opacity: 0; transform: scale(2.1); } }
+@keyframes pz-cele-step { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: scale(1); } }
+@keyframes pz-cele-settle { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 /* The memory line: the reader's own game, and the way to that moment. */
 .pz-memory { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--paper-2); font-size: 12.5px; }
 .pz-memory-link { color: var(--pen); font-weight: 700; white-space: nowrap; }
@@ -2233,6 +2340,11 @@ a.rp-match-row:hover { color: var(--ink); }
   }
   .pz-ask { width: 100%; }
   .pz-page .rp-note { height: auto; flex: 1; min-height: 0; overflow-y: auto; }
+  /* The column beside the board is exactly the board's height and scrolls
+     inside it: its content (a long reveal, the card that says today's set
+     is done) is never what sizes the row, or the board's box would grow
+     with it and the band under the board be pushed down. */
+  .pz-page .rp-side { contain: size; }
 }
 
 /* ---------------------------------------------------------------------

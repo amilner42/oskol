@@ -463,12 +463,12 @@ theButton =
                 loaded veryBadJson
                     |> out (GotTierRun (theDeck veryBadJson) FixOne (Api.parseBody Practice.practiceDecoder bandJson))
                     -- the run's ring starts where this page's did: 2 of 9
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad") { deckToday = Just { done = 2, target = 9 }, anyway = False })
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad") { deckToday = Just { done = 2, target = 9 }, anyway = False, slug = "very-bad" })
         , test "KEEP GOING here hands the run today's set grown by what it started, as the hub does" <|
             \_ ->
                 loaded keepGoingJson
                     |> out (GotTierRun (theDeck keepGoingJson) KeepGoing (Api.parseBody Practice.practiceDecoder bandJson))
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad") { deckToday = Just { done = 5, target = 7 }, anyway = False })
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad") { deckToday = Just { done = 5, target = 7 }, anyway = False, slug = "very-bad" })
         , test "PRACTICE ANYWAY here marks the run practice only, as the hub does" <|
             \_ ->
                 loaded anywayJson
@@ -489,7 +489,7 @@ theButton =
                 in
                 loaded json
                     |> out (GotSetRun (theDeck json) Ui.Deck.Practice (Api.parseBody Decks.sessionDecoder setSessionJson))
-                    |> Expect.equal (StartDeckRun [ "oooooooo" ] (Just { done = 1 }) { id = "openings", name = "Openings" } { deckToday = Just { done = 1, target = 8 }, anyway = False })
+                    |> Expect.equal (StartDeckRun [ "oooooooo" ] (Just { done = 1 }) { id = "openings", name = "Openings" } { deckToday = Just { done = 1, target = 8 }, anyway = False, slug = "openings" })
         , test "a press waits, in the same slot" <|
             \_ ->
                 loaded veryBadJson
