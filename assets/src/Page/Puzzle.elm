@@ -167,12 +167,11 @@ type alias Model =
     }
 
 
-{-| A run's score, as the shell counted it: a pass is right, a hold is
-close, anything else is neither.
+{-| A run's score, as the shell counted it: a pass is right, anything else
+is not.
 -}
 type alias Score =
     { right : Int
-    , close : Int
     , total : Int
     }
 
@@ -944,9 +943,8 @@ viewEnd : Model -> End -> Html Msg
 viewEnd model end =
     div [ class "pz-end mx-auto w-full max-w-md q-card sheet p-6 sm:p-8 mt-4", id "pz-end" ]
         (p [ class "pixel q-eyebrow text-[9px] mb-3" ] [ text "DONE" ]
-            :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-1", attribute "style" "color: var(--ink)" ]
+            :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-4", attribute "style" "color: var(--ink)" ]
                 [ text (runScoreIn model end.score) ]
-            :: closeLine end.score
             :: viewPatched model end.answers
             :: viewToday model
             :: viewAfter model end.after
@@ -1045,16 +1043,6 @@ dayLine model done =
 
         Nothing ->
             Mistakes.fixedToday done
-
-
-closeLine : Score -> Html Msg
-closeLine score =
-    if score.close > 0 && score.total > 1 then
-        p [ id "pz-close", class "q-note text-[13px] mb-4" ]
-            [ text (String.fromInt score.close ++ " close") ]
-
-    else
-        p [ class "mb-4" ] []
 
 
 viewAfter : Model -> After -> List (Html Msg)
@@ -1174,7 +1162,8 @@ runProgress model =
 
 
 {-| One mark per puzzle of the run, in order, in the verdict's own
-colours: right, close, missed, or not answered yet. The one being played
+colours: right, missed, or not answered yet ("close" only for an attempt
+stored before dubious became a miss). The one being played
 is named so the player can see where they are.
 -}
 runMark : Int -> Int -> Maybe Verdict -> Html Msg
@@ -1612,25 +1601,56 @@ viewReveal model puzzle reveal =
         )
 
 
+{-| Right or a miss, and for a miss the band it fell in, in the replay's
+own mark, name and colour: 0.02 or more given up is a mistake, so there is
+no "close" (a `Hold` is only ever an attempt stored before that).
+-}
 viewVerdict : Reveal -> Html Msg
 viewVerdict reveal =
     let
-        ( word, sentence ) =
-            case reveal.verdict of
-                Pass ->
-                    ( "RIGHT", "That is the play." )
+        mark =
+            Words.gradeMark reveal.band
 
-                Hold ->
-                    ( "CLOSE", "Not far off the best." )
+        ( word, sentence, band ) =
+            case ( reveal.verdict, reveal.cost ) of
+                ( Pass, Just cost ) ->
+                    if cost > 0 then
+                        ( "RIGHT", Words.nearlyBest, "" )
 
-                Fail ->
-                    ( "NOT THIS TIME", "The best play is better." )
+                    else
+                        ( "RIGHT", "That is the play.", "" )
 
-                Unknown ->
-                    ( "UNRANKED", "The engine did not rank this one." )
+                ( Pass, Nothing ) ->
+                    ( "RIGHT", "That is the play.", "" )
+
+                ( Hold, _ ) ->
+                    ( "CLOSE", "Not far off the best.", "" )
+
+                ( Fail, Just cost ) ->
+                    if mark == "" then
+                        ( "NOT THIS TIME", "The best play is better.", "" )
+
+                    else
+                        ( mark ++ " " ++ String.toUpper (Mistakes.bandName reveal.band)
+                        , Words.givesUp cost (reveal.schedule /= Nothing)
+                        , reveal.band
+                        )
+
+                ( Fail, Nothing ) ->
+                    ( "NOT THIS TIME", "The best play is better.", "" )
+
+                ( Unknown, _ ) ->
+                    ( "UNRANKED", "The engine did not rank this one.", "" )
     in
-    div [ class ("pz-verdict is-" ++ Puzzle.verdictName reveal.verdict), id "pz-verdict", attribute "data-verdict" (Puzzle.verdictName reveal.verdict) ]
-        [ span [ class "pz-verdict-word pixel text-[9px]" ] [ text word ]
+    div
+        [ class ("pz-verdict is-" ++ Puzzle.verdictName reveal.verdict)
+        , id "pz-verdict"
+        , attribute "data-verdict" (Puzzle.verdictName reveal.verdict)
+        , attribute "data-band" band
+        ]
+        [ span
+            [ classList [ ( "pz-verdict-word pixel text-[9px]", True ), ( "g-" ++ band, band /= "" ) ] ]
+            [ text word ]
         , span [ class "pz-verdict-why" ] [ text sentence ]
         ]
 

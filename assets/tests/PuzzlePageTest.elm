@@ -222,7 +222,27 @@ decoding =
                             case decodeReveal body of
                                 Ok r ->
                                     Expect.all
-                                        [ \_ -> Puzzle.verdictName r.verdict |> Expect.equal (String.split "_" name |> List.drop 1 |> String.join "_")
+                                        [ \_ ->
+                                            -- named for its verdict, or for a
+                                            -- verdict's case: a dubious answer
+                                            -- is a miss, a coin flip right
+                                            Puzzle.verdictName r.verdict
+                                                |> Expect.equal
+                                                    (case String.split "_" name |> List.drop 1 |> String.join "_" of
+                                                        "dubious" ->
+                                                            "fail"
+
+                                                        "close" ->
+                                                            "pass"
+
+                                                        verdict ->
+                                                            verdict
+                                                    )
+                                        , \_ ->
+                                            [ "best", "ok", "doubtful", "bad", "very_bad", "unknown" ]
+                                                |> List.member r.band
+                                                |> Expect.equal True
+                                        , \_ -> (r.band == "unknown") |> Expect.equal (r.cost == Nothing)
                                         , \_ ->
                                             -- the answer is either a play or a cube, never both, never neither
                                             (r.best /= Nothing) |> Expect.notEqual (r.cube /= Nothing)
@@ -491,6 +511,9 @@ revealing : Test
 revealing =
     let
         after name =
+            afterBody (reveal name)
+
+        afterBody body =
             let
                 model =
                     page { hasNext = False } "move"
@@ -498,14 +521,16 @@ revealing =
                 ( path, _ ) =
                     aTurn model
             in
-            model |> step (BoardOut (Puzzle.Stepped path)) |> revealed (reveal name)
+            model |> step (BoardOut (Puzzle.Stepped path)) |> revealed body
     in
     describe "the reveal"
-        [ test "a hold: the verdict, the words, the candidates with yours marked" <|
+        [ test "a dubious play is a miss, named by its band: the verdict, the words, the candidates with yours marked" <|
             \_ ->
-                rendered (after "move_hold")
+                rendered (after "move_dubious")
                     |> Expect.all
-                        [ \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "hold"), text "CLOSE" ]
+                        [ \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "fail"), attribute (Html.Attributes.attribute "data-band" "doubtful"), text "?! DUBIOUS" ]
+                        , \q -> q |> Query.find [ id "pz-verdict" ] |> Query.find [ class "pz-verdict-word" ] |> Query.has [ class "g-doubtful" ]
+                        , \q -> q |> Query.find [ id "pz-verdict" ] |> Query.has [ text "Gives up 0.07 — a mistake." ]
                         , \q -> q |> Query.find [ id "pz-reveal" ] |> Query.has [ text "You played a dubious move." ]
                         , \q -> q |> Query.findAll [ class "rp-cand" ] |> Query.count (Expect.equal 3)
                         , \q -> q |> Query.findAll [ class "rp-cand", attribute (Html.Attributes.attribute "data-yours" "true") ] |> Query.count (Expect.equal 1)
@@ -518,10 +543,34 @@ revealing =
         , test "a pass and a miss wear their colours" <|
             \_ ->
                 Expect.all
-                    [ \_ -> rendered (after "move_pass") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-pass", text "RIGHT" ]
-                    , \_ -> rendered (after "move_fail") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-fail", text "NOT THIS TIME" ]
+                    [ \_ -> rendered (after "move_pass") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-pass", text "RIGHT", text "That is the play." ]
+                    , \_ -> rendered (after "move_fail") |> Query.find [ id "pz-verdict" ] |> Query.has [ class "is-fail", attribute (Html.Attributes.attribute "data-band" "bad"), text "? BAD", text "Gives up 0.14 — a mistake." ]
+                    , \_ ->
+                        rendered (afterBody (String.replace "\"cost\":0.14" "\"cost\":0.4" (String.replace "\"band\":\"bad\"" "\"band\":\"very_bad\"" (reveal "move_fail"))))
+                            |> Query.find [ id "pz-verdict" ]
+                            |> Query.has [ attribute (Html.Attributes.attribute "data-band" "very_bad"), text "?? VERY BAD", text "Gives up 0.40 — a mistake." ]
                     ]
                     ()
+        , test "a miss on the player's schedule says it comes back" <|
+            \_ ->
+                afterBody (revealWith "move_dubious" "schedule_amendable")
+                    |> rendered
+                    |> Query.find [ id "pz-verdict" ]
+                    |> Query.has [ text "?! DUBIOUS", text "Gives up 0.07 — a mistake, so it comes back." ]
+        , test "right but not the best: within 0.02, not a mistake" <|
+            \_ ->
+                page { hasNext = False } "take"
+                    |> step (PickedBand 1)
+                    |> revealed (reveal "take_close")
+                    |> rendered
+                    |> Query.find [ id "pz-verdict" ]
+                    |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "pass"), text "RIGHT", text "Within 0.02 of the best. Not a mistake." ]
+        , test "an attempt stored as close before dubious became a miss still reads as one" <|
+            \_ ->
+                afterBody (String.replace "\"verdict\":\"fail\"" "\"verdict\":\"hold\"" (reveal "move_dubious"))
+                    |> rendered
+                    |> Query.find [ id "pz-verdict" ]
+                    |> Query.has [ attribute (Html.Attributes.attribute "data-verdict" "hold"), text "CLOSE", text "Not far off the best." ]
         , test "unknown: the engine did not rank this one, the best move is named, nothing is marked yours" <|
             \_ ->
                 rendered (after "move_unknown")
@@ -534,7 +583,7 @@ revealing =
             \_ ->
                 let
                     model =
-                        after "move_hold"
+                        after "move_dubious"
 
                     showing =
                         step (Show (Just 1)) model
@@ -549,7 +598,7 @@ revealing =
             \_ ->
                 let
                     model =
-                        after "move_hold"
+                        after "move_dubious"
 
                     showing =
                         step (Show (Just 1)) model
@@ -567,7 +616,7 @@ revealing =
             \_ ->
                 let
                     model =
-                        after "move_hold"
+                        after "move_dubious"
 
                     before =
                         step ToggleBefore model
@@ -586,7 +635,7 @@ revealing =
             \_ ->
                 let
                     model =
-                        after "move_hold"
+                        after "move_dubious"
                 in
                 (step (BoardOut Puzzle.Undo) model).path |> Expect.equal model.path
         ]
@@ -674,9 +723,9 @@ schedule =
                 |> (\m -> { m | now = 1800000000000 - 7 * 86400000 })
     in
     describe "the level line"
-        [ test "amendable: the line, and the graded button preselected (GOT IT on a hold)" <|
+        [ test "amendable: the line, and the graded button preselected (GOT IT on a pass)" <|
             \_ ->
-                rendered (withSchedule "move_hold" "schedule_amendable")
+                rendered (withSchedule "move_pass" "schedule_amendable")
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Level 2 → 3 · back in 7 days" ]
                         , \q -> q |> Query.findAll [ id "pz-outcomes" ] |> Query.count (Expect.equal 1)
@@ -685,9 +734,19 @@ schedule =
                         ]
         , test "amendable after a miss: SOONER is the graded one" <|
             \_ ->
-                rendered (withSchedule "move_fail" "schedule_amendable")
-                    |> Query.find [ id "pz-outcome-sooner" ]
-                    |> Query.has [ attribute (Html.Attributes.attribute "aria-pressed" "true") ]
+                Expect.all
+                    [ \_ ->
+                        rendered (withSchedule "move_fail" "schedule_amendable")
+                            |> Query.find [ id "pz-outcome-sooner" ]
+                            |> Query.has [ attribute (Html.Attributes.attribute "aria-pressed" "true") ]
+
+                    -- A dubious answer is a miss like any other.
+                    , \_ ->
+                        rendered (withSchedule "move_dubious" "schedule_amendable")
+                            |> Query.find [ id "pz-outcome-sooner" ]
+                            |> Query.has [ attribute (Html.Attributes.attribute "aria-pressed" "true") ]
+                    ]
+                    ()
         , test "self-grade: the buttons, nothing preselected" <|
             \_ ->
                 rendered (withSchedule "move_unknown" "schedule_self_grade")
@@ -710,7 +769,7 @@ schedule =
             \_ ->
                 let
                     model =
-                        withSchedule "move_hold" "schedule_amendable"
+                        withSchedule "move_dubious" "schedule_amendable"
 
                     -- What the override answers: the review replaced, still
                     -- amendable (the server's `schedule_json(_, _, _, True, False)`).
@@ -731,7 +790,7 @@ schedule =
             \_ ->
                 let
                     pressed =
-                        withSchedule "move_hold" "schedule_amendable"
+                        withSchedule "move_pass" "schedule_amendable"
                             |> step (PressedOutcome "knew_it")
                             |> step (GotOutcome "knew_it" (Err (Api.ApiError { code = "nothing_to_amend", message = "There is nothing to change about that answer" })))
                 in
@@ -762,7 +821,7 @@ schedule =
             \_ ->
                 let
                     pressed =
-                        withSchedule "move_hold" "schedule_amendable" |> step (PressedOutcome "never") |> step (GotOutcome "never" (Ok Nothing))
+                        withSchedule "move_dubious" "schedule_amendable" |> step (PressedOutcome "never") |> step (GotOutcome "never" (Ok Nothing))
                 in
                 rendered pressed
                     |> Expect.all
@@ -911,7 +970,7 @@ ended session =
     answered
         |> step (BoardOut (Puzzle.Stepped path))
         |> revealed (reveal "move_pass")
-        |> Page.endRun { right = 7, close = 2, total = 10 } [] "/puzzles"
+        |> Page.endRun { right = 7, total = 10 } [] "/puzzles"
         |> Tuple.first
 
 
@@ -930,23 +989,23 @@ runEnd =
                     staged =
                         model |> step (BoardOut (Puzzle.Stepped path))
                 in
-                case decodeReveal (reveal "move_hold") of
+                case decodeReveal (reveal "move_dubious") of
                     Ok r ->
-                        out (GotReveal (Ok r)) staged |> Expect.equal (Page.Answered { verdict = Hold, schedule = Nothing, grade = "" })
+                        out (GotReveal (Ok r)) staged |> Expect.equal (Page.Answered { verdict = Fail, schedule = Nothing, grade = "" })
 
                     Err e ->
                         Expect.fail e
-        , test "the score takes the board's place: right, and close" <|
+        , test "the score takes the board's place: right, and nothing called close" <|
             \_ ->
                 rendered (ended Session.empty)
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "7 of 10 right" ]
-                        , \q -> q |> Query.find [ id "pz-close" ] |> Query.has [ text "2 close" ]
+                        , hasNot [ text "close" ]
                         , hasNot [ id "pz-board" ]
                         , hasNot [ id "pz-next" ]
                         ]
         , test "the words" <|
-            \_ -> Page.runScore { right = 0, close = 0, total = 3 } |> Expect.equal "0 of 3 right"
+            \_ -> Page.runScore { right = 0, total = 3 } |> Expect.equal "0 of 3 right"
         , -- Stopping after one mistake is what the page invites, so it
           -- has to read as a finished thing to have done. The score's
           -- total is what was *answered*, so a run stopped at its first
@@ -957,13 +1016,12 @@ runEnd =
                     one =
                         ended account
                             |> (\m -> { m | ended = Nothing })
-                            |> Page.endRun { right = 1, close = 0, total = 1 } [] "/puzzles"
+                            |> Page.endRun { right = 1, total = 1 } [] "/puzzles"
                             |> Tuple.first
                 in
                 rendered one
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "One fixed. That is how it is done." ]
-                        , hasNot [ id "pz-close" ]
                         ]
         , test "a guest is asked to sign in, in the one component, going on to the practice home" <|
             \_ ->
@@ -994,7 +1052,7 @@ runEnd =
                     model =
                         ended Session.empty
                             |> (\m -> { m | ended = Nothing })
-                            |> Page.endRun { right = 1, close = 0, total = 1 } [] "/backgammon/abc123"
+                            |> Page.endRun { right = 1, total = 1 } [] "/backgammon/abc123"
                             |> Tuple.first
                 in
                 case model.ended of
@@ -1496,7 +1554,7 @@ deckLine =
                     [ \_ ->
                         ended Session.empty
                             |> (\m -> { m | ended = Nothing })
-                            |> Page.endRun { right = 1, close = 0, total = 2 } [ answer "very_bad" True ] "/puzzles"
+                            |> Page.endRun { right = 1, total = 2 } [ answer "very_bad" True ] "/puzzles"
                             |> Tuple.first
                             |> rendered
                             |> Query.find [ id "pz-patched" ]
@@ -1504,7 +1562,7 @@ deckLine =
                     , \_ ->
                         ended Session.empty
                             |> (\m -> { m | ended = Nothing })
-                            |> Page.endRun { right = 1, close = 0, total = 2 } [] "/puzzles"
+                            |> Page.endRun { right = 1, total = 2 } [] "/puzzles"
                             |> Tuple.first
                             |> rendered
                             |> Query.hasNot [ id "pz-patched" ]

@@ -226,7 +226,7 @@ the page invites, so it must not read as quitting: it gets its own
 sentence, warm and finished.
 
 -}
-runSummary : { right : Int, close : Int, total : Int } -> String
+runSummary : { right : Int, total : Int } -> String
 runSummary score =
     if score.total <= 0 then
         "Nothing answered."
@@ -234,9 +234,6 @@ runSummary score =
     else if score.total == 1 then
         if score.right == 1 then
             "One fixed. That is how it is done."
-
-        else if score.close == 1 then
-            "One faced, and close. That counts."
 
         else
             "One faced. It comes back tomorrow."

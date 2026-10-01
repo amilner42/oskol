@@ -589,6 +589,8 @@ fn judge_move(
   Ok(#(
     verdict,
     [
+      #("band", json.string(grade.band_name(cost))),
+      #("cost", json.nullable(cost, json.float)),
       #("yours", case yours(question, answer, landed_on, cost, best) {
         Some(c) -> c
         None -> json.null()
@@ -711,9 +713,12 @@ fn judge_cube(
     grade.engine_band(question.kind, answer)
     |> option.to_result(error.Internal(not_found_message)),
   )
+  let cost = grade.cube_cost(question.kind, answer, answered)
   Ok(#(
     grade.cube_verdict(answered, engine),
     [
+      #("band", json.string(grade.band_name(cost))),
+      #("cost", json.nullable(cost, json.float)),
       #("yours", json.null()),
       #("best", json.null()),
       #("top", json.array([], fn(_) { json.null() })),
@@ -949,12 +954,14 @@ fn move_ladder(
 
 /// How the deck reads a verdict. A miss goes back to the start rather than
 /// down a rung: the brief promises a puzzle you got wrong tomorrow, whatever
-/// level it had.
+/// level it had. Grading no longer produces `Hold` (0.02 lost is a miss);
+/// it is here for the rows that still carry it. `Unknown` never reaches
+/// this: it is snoozed for the player to grade first.
 fn outcome_of(verdict: Verdict) -> Outcome {
   case verdict {
     Pass -> PassOutcome
     Hold -> Partial
-    _ -> Again
+    Fail | Unknown -> Again
   }
 }
 
@@ -1058,6 +1065,8 @@ pub fn outcome_json(
       )
       Ok(envelope.ok([#("schedule", kept(attempt))]))
     }
+    GotIt if attempt.verdict == "fail" ->
+      Error(error.validation_failed(got_it_after_miss_message))
     _ -> {
       let chosen = chosen_outcome(wanted, attempt.verdict)
       use graded <- result.try(case attempt.review_id {
@@ -1144,7 +1153,9 @@ fn named(outcome: String) -> Result(Override, Nil) {
 /// GOT IT means "as graded". Where the engine graded the play, that is its
 /// own verdict. Where it could not, the player is claiming they got it --
 /// which holds the card's level rather than moving it up, because nothing
-/// checked the claim.
+/// checked the claim. After a miss it is not one of the choices at all
+/// (`outcome_json` refuses it), so a miss is never answered as anything
+/// but a miss by pressing the button that looks like agreeing.
 fn chosen_outcome(wanted: Override, verdict: String) -> Outcome {
   case wanted {
     Sooner -> Again
@@ -1153,12 +1164,13 @@ fn chosen_outcome(wanted: Override, verdict: String) -> Outcome {
     GotIt ->
       case verdict {
         "pass" -> PassOutcome
-        "hold" -> Partial
-        "fail" -> Again
         _ -> Partial
       }
   }
 }
+
+/// GOT IT pressed on an answer the engine graded a miss.
+pub const got_it_after_miss_message = "That one was a miss, so GOT IT is not one of its choices."
 
 // ---------- GET /papi/puzzles/:id/mine ----------
 

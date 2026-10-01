@@ -263,8 +263,9 @@ words =
         , test "a run of one is a whole session, in a set's words" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Ui.Decks.runSummary { right = 1, close = 0, total = 1 } |> Expect.equal "One right. That is how it is done."
-                    , \_ -> Ui.Decks.runSummary { right = 3, close = 1, total = 5 } |> Expect.equal "3 of 5 right"
+                    [ \_ -> Ui.Decks.runSummary { right = 1, total = 1 } |> Expect.equal "One right. That is how it is done."
+                    , \_ -> Ui.Decks.runSummary { right = 3, total = 5 } |> Expect.equal "3 of 5 right"
+                    , \_ -> Ui.Decks.runSummary { right = 0, total = 1 } |> Expect.equal "One played. It comes back tomorrow."
                     , \_ -> Ui.Decks.learnedRun 0 |> Expect.equal Nothing
                     , \_ -> Ui.Decks.learnedRun 2 |> Expect.equal (Just "You learned 2 of them.")
                     , \_ -> Ui.Decks.doneToday 3 |> Expect.equal "3 practised today"
@@ -275,7 +276,7 @@ words =
                 [ Ui.Decks.standingLine (standing 11 4)
                 , Ui.Decks.restingLine
                 , Ui.Decks.endSignIn
-                , Ui.Decks.runSummary { right = 0, close = 0, total = 1 }
+                , Ui.Decks.runSummary { right = 0, total = 1 }
                 , Ui.Decks.doneToday 2
                 ]
                     |> List.filter (\line -> List.any (\word -> String.contains word (String.toLower line)) [ "mistake", "card", "deck", "fix" ])

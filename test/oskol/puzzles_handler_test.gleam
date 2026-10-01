@@ -451,6 +451,11 @@ fn int_at(body: String, path: List(String)) -> Int {
   value
 }
 
+fn float_at(body: String, path: List(String)) -> Float {
+  let assert Ok(value) = json.parse(body, decode.at(path, decode.float))
+  value
+}
+
 fn bool_at(body: String, path: List(String)) -> Bool {
   let assert Ok(value) = json.parse(body, decode.at(path, decode.bool))
   value
@@ -690,15 +695,32 @@ fn band_attempt(
   )
 }
 
-pub fn the_three_verdicts_test() {
+/// Right or a miss, and the band it fell in: a play that gives up 0.05 is
+/// a dubious one, which is a miss -- there is no "close".
+pub fn the_verdicts_and_their_bands_test() {
   reset()
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
   let assert Ok(best) = attempt(ctx, guest("g1"), "p1", path_to(0), "k1")
   assert text_at(best, ["verdict"]) == "pass"
+  assert text_at(best, ["band"]) == "best"
+  assert float_at(best, ["cost"]) == 0.0
   let assert Ok(middle) = attempt(ctx, guest("g1"), "p1", path_to(1), "k2")
-  assert text_at(middle, ["verdict"]) == "hold"
+  assert text_at(middle, ["verdict"]) == "fail"
+  assert text_at(middle, ["band"]) == "doubtful"
+  assert float_at(middle, ["cost"]) == 0.05
   let assert Ok(worst) = attempt(ctx, guest("g1"), "p1", path_to(2), "k3")
   assert text_at(worst, ["verdict"]) == "fail"
+  assert text_at(worst, ["band"]) == "very_bad"
+}
+
+/// A play the answer has never heard of costs nothing anybody knows.
+pub fn an_unknown_play_has_no_band_test() {
+  reset()
+  let ctx = ctx_with([stored("p1", move_question(), old_move_answer())])
+  let assert Ok(body) = attempt(ctx, guest("g1"), "p1", path_to(2), "k1")
+  assert text_at(body, ["verdict"]) == "unknown"
+  assert text_at(body, ["band"]) == "unknown"
+  assert is_null(body, "cost")
 }
 
 /// The reveal: what they played, the best, and the top five -- and never
@@ -767,6 +789,14 @@ pub fn a_cube_answer_is_graded_by_its_side_test() {
   assert text_at(body, ["verdict"]) == "pass"
   assert int_at(body, ["cube", "band"]) == 2
   assert bool_at(body, ["cube", "too_good"]) == False
+  // The right side gave up nothing.
+  assert text_at(body, ["band"]) == "best"
+  assert float_at(body, ["cost"]) == 0.0
+  // Not doubling gives up the whole point: very bad.
+  let assert Ok(timid) = band_attempt(ctx, guest("g1"), "d1", -1, "k0")
+  assert text_at(timid, ["verdict"]) == "fail"
+  assert text_at(timid, ["band"]) == "very_bad"
+  assert float_at(timid, ["cost"]) == 1.0
   // Taking pays the doubler 1.4 where passing pays 1.0, so the responder
   // passes, and passes big: "pass" is right, "take" is wrong.
   let assert Ok(take) = band_attempt(ctx, guest("g1"), "t1", -1, "k2")
@@ -897,13 +927,51 @@ pub fn a_miss_goes_back_to_the_start_test() {
   assert recorded("deck") == ["review:p1:again"]
 }
 
-pub fn a_hold_keeps_its_level_test() {
+/// A dubious answer is a miss like any other: the card does not hold its
+/// level, it goes back to the start and comes back tomorrow.
+pub fn a_dubious_answer_goes_back_to_the_start_test() {
   reset()
   deck_holds("p1", Active, 4, now - day)
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
   let assert Ok(body) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
-  assert int_at(body, ["schedule", "level_after"]) == 4
-  assert recorded("deck") == ["review:p1:partial"]
+  assert text_at(body, ["verdict"]) == "fail"
+  assert text_at(body, ["band"]) == "doubtful"
+  assert float_at(body, ["cost"]) == 0.05
+  assert int_at(body, ["schedule", "level_after"]) == 0
+  assert int_at(body, ["schedule", "due"]) == now + day
+  assert recorded("deck") == ["review:p1:again"]
+}
+
+/// An attempt written before dubious was a miss still says what it said:
+/// a retried key reports its own row, and the row says "hold".
+pub fn a_legacy_hold_retried_still_answers_hold_test() {
+  reset()
+  deck_holds("p1", Active, 4, now - day)
+  let schedule = handler.schedule_json(3, 3, now + day, True, False)
+  let _ =
+    put_attempts("attempts", [
+      puzzles_caps.Attempt(
+        id: 1,
+        puzzle_id: "p1",
+        user_id: "u1",
+        key: "k1",
+        verdict: "hold",
+        outcome: None,
+        scheduled: True,
+        review_id: Some(7),
+        schedule_json: schedule,
+        fresh: True,
+      ),
+    ])
+  let ctx = ctx_with([stored("p1", move_question(), move_answer())])
+  let assert Ok(body) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
+  assert text_at(body, ["verdict"]) == "hold"
+  assert int_at(body, ["schedule", "level_after"]) == 3
+  assert recorded("deck") == []
+  // GOT IT on it is still what it always was: the level held.
+  let assert Ok(_) = override(ctx, account("u1"), "p1", "k1", "got_it")
+  let assert [newest, ..] = recorded("deck")
+  assert newest == "amend:p1:7:partial"
 }
 
 /// A card nobody has seen is introduced by being answered.
@@ -1017,10 +1085,27 @@ pub fn got_it_keeps_the_engines_own_grade_test() {
   reset()
   deck_holds("p1", Active, 2, now - day)
   let ctx = ctx_with([stored("p1", move_question(), move_answer())])
-  let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
+  let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(0), "k1")
   let assert Ok(_) = override(ctx, account("u1"), "p1", "k1", "got_it")
   let assert [newest, ..] = recorded("deck")
-  assert newest == "amend:p1:42:partial"
+  assert newest == "amend:p1:42:pass"
+}
+
+/// GOT IT is not one of a miss's choices: pressing it would be agreeing
+/// the miss was fine. KNEW IT, SOONER and NEVER still are.
+pub fn got_it_after_a_miss_is_refused_test() {
+  reset()
+  deck_holds("p1", Active, 2, now - day)
+  let ctx = ctx_with([stored("p1", move_question(), move_answer())])
+  let assert Ok(_) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
+  assert override(ctx, account("u1"), "p1", "k1", "got_it")
+    == Error(error.validation_failed(handler.got_it_after_miss_message))
+  assert recorded("deck") == ["review:p1:again"]
+  let assert Ok(sooner) = override(ctx, account("u1"), "p1", "k1", "sooner")
+  assert int_at(sooner, ["schedule", "level_after"]) == 0
+  let assert Ok(knew) = override(ctx, account("u1"), "p1", "k1", "knew_it")
+  assert int_at(knew, ["schedule", "level_after"]) == 7
+  let assert Ok(_) = override(ctx, account("u1"), "p1", "k1", "never")
 }
 
 /// An answer the engine could not grade has no review to correct, so the

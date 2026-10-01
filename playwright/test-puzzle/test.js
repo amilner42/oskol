@@ -159,7 +159,10 @@ async function run(browser, setup, errors) {
     await stranger.click('#bg-action-play');
     await stranger.waitForSelector('#pz-reveal');
     const verdict = await stranger.getAttribute('#pz-verdict', 'data-verdict');
-    must(['pass', 'hold', 'fail'].includes(verdict), `the verdict is in: ${verdict}`);
+    // Right or a miss: 0.02 given up is a mistake, so nothing is graded close.
+    must(['pass', 'fail'].includes(verdict), `the verdict is in: ${verdict}`);
+    const word = (await stranger.textContent('#pz-verdict .pz-verdict-word')).trim();
+    must(verdict === 'pass' ? word === 'RIGHT' : /^(\?! DUBIOUS|\? BAD|\?\? VERY BAD)$/.test(word), `a miss is named by its band: "${word}"`);
     must((await stranger.locator('#pz-candidates .rp-cand').count()) >= 2, 'the candidate table is there');
     must((await stranger.locator('#pz-candidates .rp-cand[data-yours="true"]').count()) === 1, 'your move is marked among the candidates');
     must(!(await stranger.locator('#bg-action-play').count()), 'the board is a picture once the answer is in');

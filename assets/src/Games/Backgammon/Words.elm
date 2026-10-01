@@ -10,12 +10,14 @@ module Games.Backgammon.Words exposing
     , doubleWhy
     , gradeMark
     , gradeOf
+    , givesUp
     , gradeTag
     , inWords
     , lost
     , moveInWords
     , noDoubleInWords
     , noDoubleWhy
+    , nearlyBest
     , properDouble
     , signed
     , spoken
@@ -435,6 +437,31 @@ againstBest grade played best =
 
             _ ->
                 " The best move here results in " ++ spoken gains ++ ", at the cost of " ++ spoken costs ++ "."
+
+
+{-| What a puzzle's reveal says of an answer that missed: what it gave up,
+to two places, and -- when the answer is on the player's schedule -- that
+it is coming back. 0.02 or more is a mistake by the same bands the replay
+marks, so the sentence calls it one.
+-}
+givesUp : Float -> Bool -> String
+givesUp cost comesBack =
+    "Gives up "
+        ++ Replay.fixed 2 cost
+        ++ (if comesBack then
+                " — a mistake, so it comes back."
+
+            else
+                " — a mistake."
+           )
+
+
+{-| What a puzzle's reveal says of an answer that was not the best play but
+gave up under 0.02: right, and not a mistake.
+-}
+nearlyBest : String
+nearlyBest =
+    "Within 0.02 of the best. Not a mistake."
 
 
 {-| The site's bands on what a play gives up: XG's, the ones the engine

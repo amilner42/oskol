@@ -1720,6 +1720,12 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 .pz-verdict.is-hold .pz-verdict-word { background: #fff1c9; }
 .pz-verdict.is-fail { color: #b3261e; }
 .pz-verdict.is-fail .pz-verdict-word { background: #fde1df; }
+/* A miss is named by its band, in the replay's own colours (.g-*): a
+   dubious answer reads ?! in amber, a bad one ? in orange, very bad red. */
+.pz-verdict.is-fail[data-band="doubtful"] { color: #8a5d00; }
+.pz-verdict.is-fail[data-band="doubtful"] .pz-verdict-word { background: #fff1c9; }
+.pz-verdict.is-fail[data-band="bad"] { color: #b4430d; }
+.pz-verdict.is-fail[data-band="bad"] .pz-verdict-word { background: #ffe5d4; }
 .pz-verdict.is-unknown { color: var(--pencil); }
 .pz-verdict.is-unknown .pz-verdict-word { background: var(--paper-2); }
 /* "you" beside the move played in the candidate table. */
