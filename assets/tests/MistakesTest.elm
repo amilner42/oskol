@@ -30,7 +30,63 @@ suite =
         , why
         , choices
         , theHome
+        , aRun
         , noJargon
+        ]
+
+
+{-| A run, as it goes on and as it ends: what KNEW IT says, what an early
+answer says, and the words a run of early answers wears.
+-}
+aRun : Test
+aRun =
+    describe "a run"
+        [ -- KNEW IT puts a mistake at the top in one step. Nobody answered
+          -- it seven times, so the line never says they did.
+          test "KNEW IT: marked known, and when it comes back" <|
+            \_ ->
+                Mistakes.knownLine "back in a year"
+                    |> Expect.equal "Marked as known — back in a year"
+        , test "the real milestone still reads as the real milestone" <|
+            \_ ->
+                Mistakes.milestone 4 |> Expect.equal "Patched. Four right in a row"
+        , test "an answer before it was due: practice only, nothing moves, and when it is due" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.earlyLine "9 Oct" |> Expect.equal "Not due until 9 Oct — practice only, nothing moves."
+                    , \_ -> Mistakes.earlyLineUndated |> Expect.equal "Not due yet — practice only, nothing moves."
+                    ]
+                    ()
+        , test "a run of early answers, over the board and at its end" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.practiceOnlyTag |> Expect.equal "Practice only"
+                    , \_ -> Mistakes.practiceOnlyRun |> Expect.equal "Practice only: none of these were due, so nothing moved."
+                    ]
+                    ()
+        , test "the way back names the page the run was started from" <|
+            \_ ->
+                [ Mistakes.backLine { next = "/puzzles", name = Just "Very bad moves" }
+                , Mistakes.backLine { next = "/practice/very-bad", name = Just "Very bad moves" }
+                , Mistakes.backLine { next = "/practice/openings", name = Just "Openings" }
+                , Mistakes.backLine { next = "/practice/openings", name = Nothing }
+                , Mistakes.backLine { next = "/", name = Nothing }
+                , Mistakes.backLine { next = "/backgammon/abc123", name = Nothing }
+                , Mistakes.backLine { next = "/backgammon/abc123/replay?game=2", name = Nothing }
+                ]
+                    |> Expect.equal
+                        [ "Back to puzzles →"
+                        , "Back to very bad moves →"
+                        , "Back to openings →"
+                        , "Back to puzzles →"
+                        , "Back home →"
+                        , "Back to the game →"
+                        , "Back to the replay →"
+                        ]
+        , test "a way on that found nothing more" <|
+            \_ ->
+                Mistakes.everyOnePractised
+                    |> Expect.equal "That's every one of these for now. The ones you get wrong come back on their day."
         ]
 
 
@@ -302,6 +358,12 @@ noJargon =
                              , Mistakes.guestPracticeLine
                              , Mistakes.rowLeft 23
                              , Mistakes.freshLine
+                             , Mistakes.knownLine "back in a year"
+                             , Mistakes.earlyLine "9 Oct"
+                             , Mistakes.earlyLineUndated
+                             , Mistakes.practiceOnlyTag
+                             , Mistakes.practiceOnlyRun
+                             , Mistakes.everyOnePractised
                              ]
                                 ++ List.filterMap identity
                                     [ Mistakes.patchedAside (band "very_bad" 61 30 23)

@@ -13,17 +13,19 @@ Three routes, and they are the server's three routes:
     /:slug/:id   Page.Play — the game, unchanged
     /:slug/:id/replay   Page.Replay — a game played again, with its analysis
 
-A practice run -- the puzzles a session works through, one NEXT at a
-time -- is kept here (`run`) and not in the puzzle page, because it has to
-outlive the page: every `pushUrl` to the next puzzle builds that page
-afresh. The pages that start a run (the practice home, a finished game's
-result card at the table, the replay) hand the shell the list (`StartRun
-ids`, which opens the first) and the shell notes where it was started
-from (`next`); the puzzle page reports each verdict (`Answered`), which
-the run keeps as its score, and says when it wants the next
-(`WantsNext`): the shell opens it, or, at the last, hands the page the
-score and the way back (`Page.Puzzle.endRun`) and the page ends the run
-on its own screen.
+A practice run -- the puzzles a session works through, one ANOTHER at a
+time -- is kept here (`run`, a `Run.Run`) and not in the puzzle page,
+because it has to outlive the page: every `pushUrl` to the next puzzle
+builds that page afresh. The pages that start a run (the practice home, a
+finished game's result card at the table, the signed-in home) hand the
+shell the list (`StartRun ids`, which opens the first) and the shell notes
+where it was started from (`next`) and what it is of (`Run.Source`); the
+puzzle page reports each verdict (`Answered`), which the run keeps as its
+score, and says when it wants the next (`WantsNext`): the shell opens it.
+When the ids run out it asks the run's queue again and goes on (a run
+never ends because a page of twenty did); only an empty answer ends it,
+with the score and the way on (`Page.Puzzle.endRun`, then KEEP GOING or
+PRACTICE ANYWAY once the shell has read where the deck stands).
 
 The JOIN GAME prompt lives here rather than in a page because it is chrome:
 six characters in, and out comes that room's ordinary invite link, which is
@@ -33,6 +35,7 @@ the same flow a shared link takes. Nothing about the room is revealed beyond
 -}
 
 import Api.Decks
+import Api.PracticeDecks as PracticeDecks
 import Api
 import Api.Auth as Auth
 import Api.Catalog as Catalog
@@ -52,10 +55,12 @@ import Page.Puzzle
 import Page.Puzzles
 import Page.Replay
 import Route exposing (Route)
+import Run
 import Session exposing (Session)
 import Process
 import Task
 import Ui.Loading as Loading
+import Ui.Mistakes as Mistakes
 import Ui.Notebook as Notebook
 import Ui.Shell as Shell
 import Url exposing (Url)
@@ -91,7 +96,7 @@ type alias Model =
     -- one is open, the verdict on each answered so far, and where it was
     -- started from. The practice home, a result card and the replay start
     -- one; a puzzle opened from a link has no next.
-    , run : Maybe Run
+    , run : Maybe Run.Run
 
     -- The day's ring, as the page that started the run was told it, and
     -- as this shell has counted it since: one more with every card
@@ -128,16 +133,6 @@ type Page
     | Puzzles Page.Puzzles.Model
 
 
-type alias Run =
-    { ids : List String
-    , at : Int
-    , answers : List ( String, Page.Puzzle.Answer ) -- by puzzle id; an answer given again replaces the first
-    , next : String -- the page the run was started from: where a guest who signs in at its end goes on to
-    , tier : Maybe String -- the tier of mistakes this run is of, when it is of one
-    , deck : Maybe Api.Decks.Named -- the set this run is of (the openings...), when it is of one
-    }
-
-
 type Msg
     = LinkClicked Browser.UrlRequest
     | UrlChanged Url
@@ -157,6 +152,12 @@ type Msg
     | BarMsg Page.GameLanding.Msg
     | MinShown
     | MeGivenUp
+      -- the run's queue, asked again once its ids ran out
+    | GotRefetch (Result Api.Error (List String))
+      -- where the run's deck stands, for the end card's way on
+    | GotStanding (Result Api.Error PracticeDecks.Catalog)
+      -- what KEEP GOING or PRACTICE ANYWAY handed over
+    | GotOnward Page.Puzzle.Way (Result Api.Error (List String))
     | NoOp
 
 
@@ -423,21 +424,26 @@ openRoute url oldModel =
                             (\r ->
                                 indexOf id r.ids |> Maybe.map (\at -> { r | at = at })
                             )
+
+                inRun =
+                    run /= Nothing
             in
             Page.Puzzle.init model.session
                 { id = id
 
                 -- ANOTHER only where there really is another; I'M DONE
                 -- wherever this is a run at all, which is what ends it.
-                , hasNext = nextInRun run /= Nothing
-                , inRun = run /= Nothing
+                -- A run of a deck always has one: past the ids it holds
+                -- it asks the deck again.
+                , hasNext = Maybe.map Run.goesOn run |> Maybe.withDefault False
+                , inRun = inRun
 
                 -- Where this one sits in the session, and what happened at
                 -- each one before it: the page draws the bar and the marks
                 -- from this and adds its own answer to them.
-                , progress = Maybe.map progressOf run
-                , tier = run |> Maybe.andThen .tier
-                , deck = run |> Maybe.andThen .deck
+                , progress = Maybe.map Run.progress run
+                , tier = run |> Maybe.andThen Run.tier
+                , deck = run |> Maybe.andThen Run.deck
                 , today =
                     case run of
                         Just _ ->
@@ -495,20 +501,23 @@ indexOf wanted items =
         |> Maybe.map Tuple.first
 
 
-{-| The puzzle after the open one, if the run has one.
--}
-nextInRun : Maybe Run -> Maybe String
-nextInRun run =
-    run |> Maybe.andThen (\r -> r.ids |> List.drop (r.at + 1) |> List.head)
-
-
 {-| A run of these puzzles, from the first, started from the page at
-`next`, which was told where the day stands as it fetched them. An empty
+`next`, which was told where the day stands as it fetched them. A tier
+names the queue the run asks again once these run out; none is a list
+handed over whole (one game's mistakes), which ends at its last. An empty
 list starts nothing.
 -}
 startRun : String -> List String -> Maybe Today -> Maybe String -> Model -> ( Model, Cmd Msg )
 startRun next ids today tier model =
-    startRunOf next ids today tier Nothing model
+    startRunWith
+        { ids = ids
+        , next = next
+        , source = tier |> Maybe.map Run.Band |> Maybe.withDefault Run.Fixed
+        , anyway = False
+        , deckToday = Nothing
+        }
+        today
+        model
 
 
 {-| The same, of one of the sets on offer rather than of mistakes: the
@@ -516,16 +525,38 @@ answers count on that set's ladder, and the page says its name.
 -}
 startRunOf : String -> List String -> Maybe Today -> Maybe String -> Maybe Api.Decks.Named -> Model -> ( Model, Cmd Msg )
 startRunOf next ids today tier deck model =
-    case ids of
-        [] ->
+    startRunWith
+        { ids = ids
+        , next = next
+        , source =
+            case ( deck, tier ) of
+                ( Just named, _ ) ->
+                    Run.InSet named
+
+                ( Nothing, Just band ) ->
+                    Run.Band band
+
+                ( Nothing, Nothing ) ->
+                    Run.Fixed
+        , anyway = False
+        , deckToday = Nothing
+        }
+        today
+        model
+
+
+{-| A run as the page that started it described it: what it is of,
+whether it is PRACTICE ANYWAY, and the deck's day for the ring.
+-}
+startRunWith : Run.Start -> Maybe Today -> Model -> ( Model, Cmd Msg )
+startRunWith config today model =
+    case Run.start config of
+        Nothing ->
             ( model, Cmd.none )
 
-        first :: _ ->
-            ( { model
-                | run = Just { ids = ids, at = 0, answers = [], next = next, tier = tier, deck = deck }
-                , today = today
-              }
-            , Nav.pushUrl model.key (Route.href (Route.puzzle first))
+        Just run ->
+            ( { model | run = Just run, today = today }
+            , Nav.pushUrl model.key (Route.href (Route.puzzle (Maybe.withDefault "" (List.head config.ids))))
             )
 
 
@@ -540,43 +571,81 @@ puzzleOut out model =
         Page.Puzzle.NoOut ->
             ( model, Cmd.none )
 
-        Page.Puzzle.Answered answer ->
-            ( { model
-                | run = Maybe.map (answered answer) model.run
-                , today = model.run |> Maybe.map (\run -> counted run model.today) |> Maybe.withDefault model.today
-              }
-            , Cmd.none
-            )
+        Page.Puzzle.Answered given ->
+            case model.run of
+                Just run ->
+                    let
+                        ( kept, counts ) =
+                            Run.answer given run
+                    in
+                    ( { model
+                        | run = Just kept
+                        , today =
+                            if counts then
+                                Maybe.map (\day -> { day | done = day.done + 1 }) model.today
 
-        Page.Puzzle.AnsweredThen answer onward ->
+                            else
+                                model.today
+                      }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        Page.Puzzle.AnsweredThen given onward ->
             let
                 ( kept, first ) =
-                    puzzleOut (Page.Puzzle.Answered answer) model
+                    puzzleOut (Page.Puzzle.Answered given) model
 
                 ( went, second ) =
                     puzzleOut onward kept
             in
             ( went, Cmd.batch [ first, second ] )
 
-        -- ANOTHER: the next mistake of the same tier. There is always one,
-        -- or the button was not drawn.
+        -- ANOTHER: the next of the run, or, past the ids it holds, the
+        -- front of its queue again.
         Page.Puzzle.WantsNext ->
-            case nextInRun model.run of
-                Just next ->
-                    ( model, Nav.pushUrl model.key (Route.href (Route.puzzle next)) )
+            case model.run of
+                Just run ->
+                    case Run.nextId run of
+                        Just next ->
+                            ( model, Nav.pushUrl model.key (Route.href (Route.puzzle next)) )
+
+                        Nothing ->
+                            if Run.refetchable run then
+                                ( model, Run.refetch model.session run GotRefetch )
+
+                            else
+                                endHere model
 
                 Nothing ->
                     ( model, Cmd.none )
 
-        -- I'M DONE, or the run simply ran out: the page ends it here, with
-        -- the score of what was actually answered.
+        -- I'M DONE: the page ends the run here, with the score of what
+        -- was actually answered, and the way on.
         Page.Puzzle.WantsEnd ->
-            case ( model.run, model.page ) of
-                ( Just run, Puzzle pageModel ) ->
-                    Page.Puzzle.endRun (score run) (answers run) run.next pageModel
-                        |> wrap model Puzzle PuzzleMsg
+            endHere model
 
-                _ ->
+        Page.Puzzle.GoOn way ->
+            case model.run of
+                Just run ->
+                    ( model
+                    , case way of
+                        Page.Puzzle.Continue _ ->
+                            Run.refetch model.session run (GotOnward way)
+
+                        Page.Puzzle.MoreNew _ ->
+                            Run.keepGoing model.session run (GotOnward way)
+
+                        Page.Puzzle.Anyway ->
+                            Run.practiseAnyway model.session run (GotOnward way)
+
+                        Page.Puzzle.NoWay ->
+                            Cmd.none
+                    )
+
+                Nothing ->
                     ( model, Cmd.none )
 
         Page.Puzzle.StartRun ids today tier ->
@@ -589,87 +658,58 @@ puzzleOut out model =
             ( model, Nav.pushUrl model.key path )
 
 
-{-| The answer at the open puzzle, kept on the run: how it was graded,
-where the mistake now stands, and how bad it was. Answering the same
-puzzle again (back, then PLAY, or the override after the reveal)
-replaces the first rather than counting twice.
+{-| The run is over at the puzzle on screen: its score, and -- for an
+account's run through a deck -- the way on, once the shell has read where
+the deck stands.
 -}
-answered : Page.Puzzle.Answer -> Run -> Run
-answered answer run =
-    case openId run of
-        Just id ->
-            { run
-                | answers =
-                    ( id, answer ) :: List.filter (\( other, _ ) -> other /= id) run.answers
-            }
+endHere : Model -> ( Model, Cmd Msg )
+endHere model =
+    case ( model.run, model.page ) of
+        ( Just run, Puzzle pageModel ) ->
+            let
+                ( ended, cmd ) =
+                    Page.Puzzle.endRun (Run.score run) (Run.answers run) run.next pageModel
 
-        Nothing ->
-            run
-
-
-openId : Run -> Maybe String
-openId run =
-    run.ids |> List.drop run.at |> List.head
-
-
-{-| The day's ring after that answer: one more, but only for a card this
-run had not answered before. A retry is not a second answer -- only the
-first at a card is recorded -- so counting it would make the ring say
-more happened today than did.
--}
-counted : Run -> Maybe Today -> Maybe Today
-counted run today =
-    case openId run of
-        Just id ->
-            if List.any (\( other, _ ) -> other == id) run.answers then
-                today
+                asks =
+                    Run.offersWays run && model.session.user /= Nothing
+            in
+            if asks then
+                ( { model | page = Puzzle (Page.Puzzle.offering Page.Puzzle.Asking ended) }
+                , Cmd.batch [ Cmd.map PuzzleMsg cmd, PracticeDecks.fetchList model.session GotStanding ]
+                )
 
             else
-                Maybe.map (\day -> { day | done = day.done + 1 }) today
+                ( { model | page = Puzzle ended }, Cmd.map PuzzleMsg cmd )
 
-        Nothing ->
-            today
+        _ ->
+            ( model, Cmd.none )
 
 
-{-| The run as the open puzzle's page reads it: which one it is, and
-what happened at each of them so far, in the run's own order.
+{-| The way on, on the end card on screen.
 -}
-progressOf : Run -> Page.Puzzle.Progress
-progressOf run =
-    { at = run.at
-    , marks = List.map (\id -> answerAt id run |> Maybe.map .verdict) run.ids
-    }
+offer : Page.Puzzle.WayState -> Model -> Model
+offer state model =
+    case model.page of
+        Puzzle pageModel ->
+            { model | page = Puzzle (Page.Puzzle.offering state pageModel) }
+
+        _ ->
+            model
 
 
-answerAt : String -> Run -> Maybe Page.Puzzle.Answer
-answerAt id run =
-    run.answers |> List.filter (\( other, _ ) -> other == id) |> List.head |> Maybe.map Tuple.second
-
-
-{-| What the run did, in the order it was worked: one entry per mistake
-it answered, for the score and for what it patched.
+{-| The run took more ids (the queue asked again, KEEP GOING, PRACTICE
+ANYWAY): on to the first it had not reached, or, when there is none, the
+end of today's set.
 -}
-answers : Run -> List Page.Puzzle.Answer
-answers run =
-    List.filterMap (\id -> answerAt id run) run.ids
-
-
-{-| What the run did: a pass is right and anything else is not (0.02 or
-more given up is a miss, so there is no "close") -- and the total is **how
-many were answered**.
-
-Not the length of the list it was given. A run is open-ended -- I'M DONE
-ends it wherever the player is -- so a total taken from the ids would
-say "0 of 3 right" to someone who fixed one and stopped, which is
-exactly the reading the page exists to stop.
--}
-score : Run -> Page.Puzzle.Score
-score run =
-    let
-        count verdict =
-            run.answers |> List.filter (\( _, answer ) -> answer.verdict == verdict) |> List.length
-    in
-    { right = count Pass, total = List.length (answers run) }
+goOn : Run.Run -> Model -> Maybe ( Model, Cmd Msg )
+goOn run model =
+    Run.nextId run
+        |> Maybe.map
+            (\next ->
+                ( { model | run = Just run }
+                , Nav.pushUrl model.key (Route.href (Route.puzzle next))
+                )
+            )
 
 
 {-| The game page asks for two things the shell owns: the URL to go to, and
@@ -906,11 +946,29 @@ update msg model =
                 Page.Puzzles.NoOut ->
                     ( withPage, Cmd.map PuzzlesMsg cmd )
 
-                Page.Puzzles.StartRun ids today tier ->
-                    startRun (Route.href Route.puzzles) ids today tier withPage |> Tuple.mapSecond more
+                Page.Puzzles.StartRun ids today tier begun ->
+                    startRunWith
+                        { ids = ids
+                        , next = Route.href Route.puzzles
+                        , source = tier |> Maybe.map Run.Band |> Maybe.withDefault Run.Fixed
+                        , anyway = begun.anyway
+                        , deckToday = begun.deckToday
+                        }
+                        today
+                        withPage
+                        |> Tuple.mapSecond more
 
-                Page.Puzzles.StartDeckRun ids today deck ->
-                    startRunOf (Route.href Route.puzzles) ids today Nothing (Just deck) withPage |> Tuple.mapSecond more
+                Page.Puzzles.StartDeckRun ids today deck begun ->
+                    startRunWith
+                        { ids = ids
+                        , next = Route.href Route.puzzles
+                        , source = Run.InSet deck
+                        , anyway = begun.anyway
+                        , deckToday = begun.deckToday
+                        }
+                        today
+                        withPage
+                        |> Tuple.mapSecond more
 
                 Page.Puzzles.Go path ->
                     ( withPage, more (Nav.pushUrl model.key path) )
@@ -954,6 +1012,72 @@ update msg model =
 
         ( GotJoinCode (Err _), _ ) ->
             ( { model | joinError = Just "No game with that code" }, Cmd.none )
+
+        -- The queue asked again: on with what it had not put in front of
+        -- the player yet, or, with nothing new, today's set is done. A
+        -- failed ask ends the run where it is rather than leaving ANOTHER
+        -- pressed for ever.
+        ( GotRefetch result, Puzzle _ ) ->
+            case ( model.run, result ) of
+                ( Just run, Ok ids ) ->
+                    let
+                        more =
+                            Run.refetched ids run
+                    in
+                    case goOn more model of
+                        Just going ->
+                            going
+
+                        Nothing ->
+                            endHere { model | run = Just more }
+
+                ( Just _, Err _ ) ->
+                    endHere model
+
+                ( Nothing, _ ) ->
+                    ( model, Cmd.none )
+
+        ( GotStanding (Ok catalog), Puzzle _ ) ->
+            case model.run of
+                Just run ->
+                    ( offer (Page.Puzzle.Offered (Run.way run catalog.decks))
+                        { model | run = Just (Run.withStanding catalog.decks run) }
+                    , Cmd.none
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        ( GotStanding (Err _), Puzzle _ ) ->
+            ( offer (Page.Puzzle.Offered Page.Puzzle.NoWay) model, Cmd.none )
+
+        ( GotOnward way result, Puzzle _ ) ->
+            case ( model.run, result ) of
+                ( Just run, Ok ids ) ->
+                    let
+                        more =
+                            case way of
+                                Page.Puzzle.MoreNew _ ->
+                                    Run.keptGoing ids run
+
+                                Page.Puzzle.Anyway ->
+                                    Run.anywayFetched ids run
+
+                                _ ->
+                                    Run.refetched ids run
+                    in
+                    case goOn more model of
+                        Just going ->
+                            going
+
+                        Nothing ->
+                            ( offer (Page.Puzzle.Stopped Mistakes.everyOnePractised) { model | run = Just more }, Cmd.none )
+
+                ( Just _, Err err ) ->
+                    ( offer (Page.Puzzle.Stopped (Api.errorMessage err)) model, Cmd.none )
+
+                ( Nothing, _ ) ->
+                    ( model, Cmd.none )
 
         _ ->
             ( model, Cmd.none )

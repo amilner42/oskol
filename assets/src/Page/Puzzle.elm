@@ -1,6 +1,7 @@
 module Page.Puzzle exposing
     ( After(..)
     , Attempt(..)
+    , DeckToday
     , End
     , Loadable(..)
     , Model
@@ -9,13 +10,19 @@ module Page.Puzzle exposing
     , Out(..)
     , Progress
     , Score
+    , Way(..)
+    , WayState(..)
     , asksMemory
+    , countsToday
+    , dueDate
     , attemptBody
     , backIn
     , endRun
     , init
     , levelLine
+    , levelLineFor
     , memoryLine
+    , offering
     , patchedLine
     , preselected
     , runProgress
@@ -61,14 +68,15 @@ in the server's words -- which this page shows under the memory line. The
 
 The page is opened from a link most of the time and is complete on its
 own. NEXT appears only when the shell says there is somewhere after this
-one: a practice run is the shell's (`Main`), because it outlives this
-page. The page reports each verdict (`Answered`) and asks for the next
-(`WantsNext`); at the run's last puzzle the shell answers with the score
-(`endRun`) and the page ends the run here: "7 of 10 right", then for an
-account what the deck has left ("Done for today. 4 new tomorrow." and
-KEEP GOING) and for a guest the sign-in, in the one component, going on
-to wherever the run was started from (the practice home, or the table a
-result card's PRACTICE was pressed at).
+one: a practice run is the shell's (`Main`, `Run`), because it outlives
+this page. The page reports each verdict (`Answered`) and asks for the
+next (`WantsNext`); past the ids the run holds the shell asks the deck's
+queue again, and only when that is empty -- or at I'M DONE -- does it
+answer with the score (`endRun`), and the page ends the run here: "7 of
+10 right", then for an account the way on (`offering`: KEEP GOING, or
+PRACTICE ANYWAY once everything is started) and for a guest the sign-in,
+in the one component, going on to wherever the run was started from (the
+practice home, or the table a result card's PRACTICE was pressed at).
 
 -}
 
@@ -91,6 +99,8 @@ import Route
 import Session exposing (Session)
 import Task
 import Time
+import Svg
+import Svg.Attributes as SvgA
 import Ui.Charts as Charts
 import Api.Decks
 import Ui.Decks as Decks
@@ -133,6 +143,24 @@ change.
 type alias Progress =
     { at : Int
     , marks : List (Maybe Verdict)
+
+    -- Today's set of the deck the run is of, as the shell has counted it:
+    -- the ring over the board. Nothing for a run of one game's mistakes,
+    -- which is no deck's.
+    , ring : Maybe DeckToday
+
+    -- The run was started from PRACTICE ANYWAY: every answer in it is
+    -- early, practice only, and moves nothing -- the ring included.
+    , anyway : Bool
+    }
+
+
+{-| One deck's day: how many it has had, out of today's set (what was
+done, plus what is still due, plus the new ones the day still allows).
+-}
+type alias DeckToday =
+    { done : Int
+    , target : Int
     }
 
 
@@ -172,6 +200,8 @@ type alias Model =
     , sharing : Sharing -- which button the share sheet's answer is for
     , now : Int -- client time (ms) when the reveal landed, for "back in 7 days"
     , ended : Maybe End -- the run is over: the score, and what comes after it
+    , leaving : Bool -- ANOTHER was pressed and the shell is finding the next
+    , zone : Time.Zone -- the reader's own, for the day an early answer is due
     }
 
 
@@ -188,22 +218,52 @@ type alias End =
     { score : Score
     , answers : List Answer -- what the run did, one entry per mistake it answered
     , after : After
+    , way : Maybe WayState -- the way on, for an account's run through a deck
     }
 
 
-{-| What the end screen offers under the score.
+{-| The way on from the end of a run, once the shell has read where the
+deck stands. A run is never the last word: today's set done, there is
+always more to do.
 
-**Nothing to press but the way back.** A run ends because the player
-pressed I'M DONE, or because the tier ran out: either way they have
-said they are finished, and a card that answered with "2 more to go" or
-a fresh quota would take the moment back. The hub is where the next
-tier is chosen.
+  - `Continue`: the deck still has work today (I'M DONE was pressed with
+    some left), so KEEP GOING simply goes on with it;
+  - `MoreNew n`: today's set is done and there are mistakes never shown,
+    so KEEP GOING starts `n` more (the deck's own pace);
+  - `Anyway`: everything is started and nothing is due, so PRACTICE
+    ANYWAY goes through them early, practice only;
+  - `NoWay`: nothing to offer (a set not added, a deck with nothing in it).
+
+-}
+type Way
+    = Continue { due : Int, newLeft : Int }
+    | MoreNew Int
+    | Anyway
+    | NoWay
+
+
+{-| Where the way on stands. Its band is laid out from the moment the
+card is drawn, so the answer landing moves nothing.
+-}
+type WayState
+    = Asking
+    | Offered Way
+    | Going Way
+      -- the press found nothing more (every one of these practised), or
+      -- the server said why not
+    | Stopped String
+
+
+{-| What the end screen offers under the score: a guest the sign-in; an
+account the way back, and -- for a run through a deck -- the way on
+(`End.way`). Never a wall: today's set done, KEEP GOING is one tap.
 -}
 type After
     = -- a guest: the sign-in, going on to where the run was started from
       AskSignIn SignIn.Model
-      -- an account: the way back to the hub, and nothing else
-    | BackToPuzzles
+      -- an account: the way back to the page the run was started from (the
+      -- hub, a deck's page, the table, the replay), and the way on (`End.way`)
+    | BackTo String
 
 
 {-| The two share buttons report through one port, so the page remembers
@@ -222,7 +282,7 @@ type Msg
     | PickedBand Int
     | Submit
     | GotReveal (Result Api.Error Reveal)
-    | RevealedAt Time.Posix
+    | RevealedAt ( Time.Posix, Time.Zone )
     | Show (Maybe Int)
     | ToggleBefore
     | PressedDone
@@ -238,6 +298,7 @@ type Msg
     | ShareReported String
     | ShareLabelCleared
     | Next
+    | PressedWay Way
     | EndSignInMsg SignIn.Msg
     | NoOp
 
@@ -267,6 +328,9 @@ type Out
     | WantsNext
     | WantsEnd
     | StartRun (List String) (Maybe Today) (Maybe String)
+      -- KEEP GOING or PRACTICE ANYWAY, pressed on the end card: the shell
+      -- owns the run, so it asks for more and goes on with it
+    | GoOn Way
     | SignedIn (Maybe Session.User)
     | Go String
 
@@ -321,6 +385,8 @@ init session config =
       , sharing = CleanLink
       , now = 0
       , ended = Nothing
+      , leaving = False
+      , zone = Time.utc
       }
     , Cmd.batch
         [ Api.get session (base config.id) Puzzle.decoder GotPuzzle
@@ -434,12 +500,12 @@ update msg model =
         GotReveal (Ok reveal) ->
             let
                 revealed =
-                    marked reveal.verdict
+                    marked reveal
                         { model | attempt = Revealed reveal, graded = reveal.schedule, showing = Nothing, before = False }
             in
             ( revealed
             , Cmd.batch
-                [ Task.perform RevealedAt Time.now
+                [ Task.perform RevealedAt (Task.map2 Tuple.pair Time.now Time.here)
 
                 -- Only now: the memory line is a fact about the player
                 -- and the game, and asking for it before the answer
@@ -468,8 +534,8 @@ update msg model =
         GotReveal (Err err) ->
             stay { model | attempt = Refused (Api.errorMessage err) } Cmd.none
 
-        RevealedAt time ->
-            stay { model | now = Time.posixToMillis time } Cmd.none
+        RevealedAt ( time, zone ) ->
+            stay { model | now = Time.posixToMillis time, zone = zone } Cmd.none
 
         Show rank ->
             stay { model | showing = rank, before = False } Cmd.none
@@ -632,7 +698,25 @@ update msg model =
         -- ANOTHER, and I'M DONE below: a choice selected and not applied
         -- is applied first, so the common path is still one tap.
         Next ->
-            leave WantsNext model
+            if model.leaving then
+                stay model Cmd.none
+
+            else
+                leave WantsNext { model | leaving = True }
+
+        -- KEEP GOING or PRACTICE ANYWAY on the end card: the button says it
+        -- is on its way, and the shell does the asking.
+        PressedWay way ->
+            case Maybe.andThen .way model.ended of
+                Just (Offered offered) ->
+                    if offered == way && way /= NoWay then
+                        ( offering (Going way) model, Cmd.none, GoOn way )
+
+                    else
+                        stay model Cmd.none
+
+                _ ->
+                    stay model Cmd.none
 
         -- I'M DONE: the run stops here and the shell hands back the
         -- score, however few this was. One is a whole session.
@@ -683,7 +767,7 @@ endRun score answers next model =
         -- Nothing is asked of the server: what the run did is what the
         -- run knows, and the day's count came with it.
         Just _ ->
-            ( { model | ended = Just { score = score, answers = answers, after = BackToPuzzles } }
+            ( { model | ended = Just { score = score, answers = answers, after = BackTo next, way = Nothing } }
             , Cmd.none
             )
 
@@ -692,9 +776,28 @@ endRun score answers next model =
                 ( signIn, cmd ) =
                     SignIn.init { next = next, email = "" }
             in
-            ( { model | ended = Just { score = score, answers = answers, after = AskSignIn signIn } }
+            ( { model | ended = Just { score = score, answers = answers, after = AskSignIn signIn, way = Nothing } }
             , Cmd.map EndSignInMsg cmd
             )
+
+
+{-| The way on from the end card, as the shell has found it: asking
+where the deck stands, what it offers, on its way, or stopped. Only an
+account's end card has one; a guest's keeps the sign-in and nothing else.
+-}
+offering : WayState -> Model -> Model
+offering state model =
+    case model.ended of
+        Just end ->
+            case end.after of
+                BackTo _ ->
+                    { model | ended = Just { end | way = Just state } }
+
+                AskSignIn _ ->
+                    model
+
+        Nothing ->
+            model
 
 
 afterEnd : After -> Model -> Model
@@ -712,27 +815,53 @@ answered a second time (back, then PLAY again) replaces its mark and is
 **not** counted again: only the first answer at a card is recorded, so
 counting a retry would make the ring say more happened today than did.
 -}
-marked : Verdict -> Model -> Model
-marked verdict model =
+marked : Reveal -> Model -> Model
+marked reveal model =
     case model.progress of
         Nothing ->
             model
 
         Just progress ->
             let
-                first =
-                    markAt progress == Nothing
-            in
-            { model
-                | progress = Just { progress | marks = setAt progress.at (Just verdict) progress.marks }
-                , counted = model.counted || first
-                , today =
-                    if first && not model.counted then
-                        Maybe.map (\today -> { today | done = today.done + 1 }) model.today
+                counts =
+                    markAt progress == Nothing && not model.counted && countsToday progress.anyway reveal.schedule
+
+                up day =
+                    if counts then
+                        { day | done = day.done + 1 }
 
                     else
-                        model.today
+                        day
+            in
+            { model
+                | progress =
+                    Just
+                        { progress
+                            | marks = setAt progress.at (Just reveal.verdict) progress.marks
+                            , ring = Maybe.map up progress.ring
+                        }
+                , counted = model.counted || counts
+                , today = Maybe.map up model.today
             }
+
+
+{-| Does this answer count toward the day -- the ring, and "3 fixed
+today"? Not one given early: in a run started from PRACTICE ANYWAY, or
+one the server answered with a schedule nothing moved (not graded, not
+asked to be graded). The server counts the day by what moved, so the
+page counts the same.
+-}
+countsToday : Bool -> Maybe Schedule -> Bool
+countsToday anyway schedule =
+    not anyway && not (Maybe.map early schedule |> Maybe.withDefault False)
+
+
+{-| An answer that moved nothing: the mistake was not due, so the
+attempt is a reveal and practice only.
+-}
+early : Schedule -> Bool
+early schedule =
+    not schedule.amendable && not schedule.selfGrade
 
 
 {-| Send a selected choice. `thenOut` is where the page goes once it has
@@ -1017,7 +1146,7 @@ subscriptions _ =
 
 view : Model -> Html Msg
 view model =
-    div [ class "rp-page pz-page paper", id "puzzle" ]
+    div [ classList [ ( "rp-page pz-page paper", True ), ( "has-run", model.progress /= Nothing ), ( "is-ended", model.ended /= Nothing ) ], id "puzzle" ]
         (case ( model.ended, model.puzzle ) of
             ( Just end, _ ) ->
                 [ viewHead, viewEnd model end ]
@@ -1062,10 +1191,140 @@ viewEnd model end =
         (p [ class "pixel q-eyebrow text-[9px] mb-3" ] [ text "DONE" ]
             :: p [ id "pz-score", class "text-[24px] sm:text-[28px] font-bold leading-tight mb-4", attribute "style" "color: var(--ink)" ]
                 [ text (runScoreIn model end.score) ]
+            :: viewPracticeOnly model
             :: viewPatched model end.answers
             :: viewToday model
+            :: viewWay model end
             :: viewAfter model end.after
         )
+
+
+{-| A run through PRACTICE ANYWAY says, once more at its end, that none
+of it moved anything: the score is real, the ladder did not hear of it.
+-}
+viewPracticeOnly : Model -> Html Msg
+viewPracticeOnly model =
+    if Maybe.map .anyway model.progress == Just True then
+        p [ id "pz-practice-only", class "q-note text-[13px] mb-4" ] [ text Mistakes.practiceOnlyRun ]
+
+    else
+        text ""
+
+
+{-| The way on, for an account's run through a deck: one button in a band
+whose height is fixed from the moment the card is drawn -- the line over
+it held to two lines, the button laid out even while the shell is still
+asking where the deck stands -- so nothing moves when the answer lands
+or the button is pressed.
+
+KEEP GOING where the deck still has work today, or where today's set is
+done and there are mistakes never shown (it starts the deck's pace of
+them); PRACTICE ANYWAY where everything is started and nothing is due.
+-}
+viewWay : Model -> End -> Html Msg
+viewWay model end =
+    case end.way of
+        Nothing ->
+            text ""
+
+        Just state ->
+            let
+                shown =
+                    case state of
+                        Asking ->
+                            Nothing
+
+                        Offered way ->
+                            Just way
+
+                        Going way ->
+                            Just way
+
+                        Stopped _ ->
+                            Nothing
+
+                going =
+                    case state of
+                        Going _ ->
+                            True
+
+                        _ ->
+                            False
+
+                line =
+                    case state of
+                        Stopped why ->
+                            why
+
+                        _ ->
+                            Maybe.map (wayLine model) shown |> Maybe.withDefault ""
+
+                ( buttonId, label, action ) =
+                    case shown of
+                        Just Anyway ->
+                            ( "pz-anyway", "PRACTICE ANYWAY", "practice-anyway" )
+
+                        Just (MoreNew _) ->
+                            ( "pz-keep-going", "KEEP GOING", "keep-going" )
+
+                        Just (Continue _) ->
+                            ( "pz-keep-going", "KEEP GOING", "continue" )
+
+                        _ ->
+                            ( "pz-way-idle", "KEEP GOING", "" )
+
+                offered =
+                    case shown of
+                        Just NoWay ->
+                            False
+
+                        Just _ ->
+                            True
+
+                        Nothing ->
+                            False
+            in
+            div [ class "pz-way", id "pz-way", attribute "data-way" action ]
+                [ p [ class "pz-way-line q-note text-[13px]", id "pz-way-line", attribute "aria-live" "polite" ] [ text line ]
+                , button
+                    [ classList [ ( "q-btn pz-action pz-way-go", True ), ( "is-idle", not offered ), ( "is-busy", going ) ]
+                    , id buttonId
+                    , attribute "data-action" action
+                    , disabled (not offered || going)
+                    , attribute "aria-busy"
+                        (if going then
+                            "true"
+
+                         else
+                            "false"
+                        )
+                    , onClick (Maybe.withDefault NoWay shown |> PressedWay)
+                    ]
+                    [ text label
+                    , span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] []
+                    ]
+                ]
+
+
+{-| The line over the way on, in the words of what the run was of.
+-}
+wayLine : Model -> Way -> String
+wayLine model way =
+    case way of
+        Continue work ->
+            Mistakes.workLine work
+
+        MoreNew adds ->
+            Mistakes.keepGoingLine
+                { done = model.progress |> Maybe.andThen .ring |> Maybe.map .done |> Maybe.withDefault 0
+                , adds = adds
+                }
+
+        Anyway ->
+            Mistakes.scheduledLine
+
+        NoWay ->
+            ""
 
 
 {-| The day, under the score: "3 fixed today". The same words the hub
@@ -1165,14 +1424,26 @@ dayLine model done =
 viewAfter : Model -> After -> List (Html Msg)
 viewAfter model after =
     case after of
-        BackToPuzzles ->
+        BackTo next ->
             [ a
-                [ href (Route.href Route.puzzles)
+                [ href next
                 , id "pz-home"
                 , class "inline-block font-semibold"
                 , attribute "style" "color: var(--pen)"
                 ]
-                [ text "Back to puzzles →" ]
+                [ text
+                    (Mistakes.backLine
+                        { next = next
+                        , name =
+                            case model.deck of
+                                Just deck ->
+                                    Just deck.name
+
+                                Nothing ->
+                                    Maybe.map Mistakes.tierName model.tier
+                        }
+                    )
+                ]
             ]
 
         AskSignIn signIn ->
@@ -1207,17 +1478,23 @@ skip model =
         text ""
 
 
-{-| Where this session is, above the board: the tier's mark, the day's
-count, the marks so far, and why this position is here.
+{-| Where this session is, above the board, in one row that never
+changes height: the deck's mark (a tier) or name (a set), today's ring
+for that deck with its count beside it, then a tile per answer so far --
+18 pixels, a check on the green for right, a cross on the red for a
+miss, a dash for one nothing could check -- the one on the board
+outlined in ink. Under the row, one reserved line: the day's count, and
+for a mistake why it is in front of you.
 
 Only in a run, and only on the puzzle itself: a puzzle opened from a
 link is not a session and says nothing about one.
 
-**No bar, and no "4 of 10".** A run has no length -- it goes on until
-I'M DONE -- so a counter out of a total would promise a finish line
-that does not exist. What is drawn instead is what has actually
-happened: how many were fixed today, and a mark for each one answered
-so far.
+**The tiles never wrap.** They sit in a strip that scrolls sideways and
+opens at its newest end (`direction: rtl` on the strip, so the browser
+starts it there with no script), so the twentieth answer leaves the
+board exactly where the first did. **No "4 of 10"**: a run goes on
+until I'M DONE, so there is no total to count against -- the ring is
+today's set, which is a real one.
 
 -}
 viewProgress : Model -> Html Msg
@@ -1227,61 +1504,143 @@ viewProgress model =
             text ""
 
         Just progress ->
-            div [ class "pz-progress", id "pz-progress" ]
-                [ div [ class "pz-progress-bar" ]
-                    [ p [ class "pz-progress-count pixel text-[8px]", id "pz-progress-count" ]
-                        [ text (runProgress model) ]
-                    , div [ class "pz-marks", id "pz-marks" ]
-                        (progress.marks
-                            |> List.take (progress.at + 1)
-                            |> List.indexedMap (runMark progress.at)
-                        )
-                    , viewWhy model
+            div
+                [ classList [ ( "pz-progress", True ), ( "has-why", model.deck == Nothing ), ( "is-anyway", progress.anyway ) ]
+                , id "pz-progress"
+                , attribute "role" "group"
+                , attribute "aria-label" (runProgress model)
+                ]
+                [ div [ class "pz-strip", id "pz-strip" ]
+                    [ span
+                        [ classList [ ( "pz-strip-label", True ), ( "pixel", model.deck == Nothing ) ]
+                        , id "pz-progress-label"
+                        ]
+                        [ text (runLabel model) ]
+                    , viewRing progress
+                    , div [ class "pz-tiles", id "pz-marks" ]
+                        [ div [ class "pz-tiles-in" ]
+                            (progress.marks
+                                |> List.take (progress.at + 1)
+                                |> List.indexedMap (runMark progress.at)
+                            )
+                        ]
                     ]
+                , p [ class "pz-under", id "pz-under" ]
+                    (span [ class "pz-progress-count", id "pz-progress-count" ] [ text (underLine model) ]
+                        :: (case model.why of
+                                Just why ->
+                                    [ span [ class "pz-why-sep", attribute "aria-hidden" "true" ] [ text " · " ]
+                                    , span [ class "pz-why", id "pz-why" ]
+                                        [ text (Mistakes.whyLine { grade = why.grade, opponent = why.opponent }) ]
+                                    ]
+
+                                Nothing ->
+                                    []
+                           )
+                    )
                 ]
 
 
-{-| Why this position is in front of you: "A very bad move, from your
-game vs Charlie". Only for the player who was in the game it came from --
-on a shared link the server says nothing, and neither does this.
-
-It is the mistake's severity and whose game it was, and nothing else: it
-is drawn before the answer, so nothing that could hint at one is in it.
+{-| Today's set for the run's deck: the ring at strip size, a check once
+it is done, and "3/5" beside it in the pixel font, because at 28 pixels a
+fraction inside the ring would be a smudge. Nothing for a run that is of
+no deck (one game's mistakes).
 -}
-viewWhy : Model -> Html Msg
-viewWhy model =
-    case model.why of
-        Just why ->
-            p [ class "pz-why", id "pz-why" ]
-                [ text (Mistakes.whyLine { grade = why.grade, opponent = why.opponent }) ]
+viewRing : Progress -> Html Msg
+viewRing progress =
+    case progress.ring of
+        Just ring ->
+            let
+                -- A deck with nothing in today's set (PRACTICE ANYWAY,
+                -- once everything is scheduled) has nothing left to do
+                -- today: its ring is full, with no "0/0" beside it.
+                empty =
+                    ring.target <= 0
+
+                drawn =
+                    if empty then
+                        { done = 1, target = 1 }
+
+                    else
+                        ring
+            in
+            span
+                [ classList [ ( "pz-strip-ring", True ), ( "is-done", drawn.done >= drawn.target ) ]
+                , id "pz-ring"
+                , attribute "data-done" (String.fromInt ring.done)
+                , attribute "data-target" (String.fromInt ring.target)
+                ]
+                [ Charts.ring { done = drawn.done, target = drawn.target, label = ringLabel ring }
+                , span [ class "pz-ring-count pixel", id "pz-ring-count" ]
+                    [ text
+                        (if empty then
+                            ""
+
+                         else
+                            String.fromInt ring.done ++ "/" ++ String.fromInt ring.target
+                        )
+                    ]
+                ]
 
         Nothing ->
             text ""
 
 
-{-| "?? · 3 fixed today": which tier this run is of, and what the day
-has had. The mark alone for a guest, who has no day counted; the count
-alone for a run of one game's mistakes, which is not a tier.
+ringLabel : DeckToday -> String
+ringLabel ring =
+    if ring.target <= 0 then
+        "Nothing left to do today"
+
+    else
+        String.fromInt ring.done ++ " of today's " ++ String.fromInt ring.target ++ " done"
+
+
+{-| What the run is of, at the head of the strip: the tier's mark (??),
+or the set's name.
+-}
+runLabel : Model -> String
+runLabel model =
+    case model.deck of
+        Just deck ->
+            deck.name
+
+        Nothing ->
+            Maybe.map Mistakes.mark model.tier |> Maybe.withDefault ""
+
+
+{-| The reserved line's own words: the day's count -- or, in a run of
+early answers, that it is practice only, since nothing in it moves the
+day.
+-}
+underLine : Model -> String
+underLine model =
+    if Maybe.map .anyway model.progress == Just True then
+        Mistakes.practiceOnlyTag
+
+    else
+        Maybe.map (\today -> dayLine model today.done) model.today |> Maybe.withDefault ""
+
+
+{-| "?? · 3 of today's 5 done · 3 fixed today": the strip as one
+sentence, for a reader who hears it rather than sees it. The mark alone
+for a guest, who has no day counted.
 -}
 runProgress : Model -> String
 runProgress model =
-    [ case model.deck of
-        Just deck ->
-            Just deck.name
-
-        Nothing ->
-            Maybe.map Mistakes.mark model.tier
-    , Maybe.map (\today -> dayLine model today.done) model.today
+    [ Just (runLabel model)
+    , Maybe.andThen .ring model.progress |> Maybe.map ringLabel
+    , Just (underLine model)
     ]
         |> List.filterMap identity
         |> List.filter (\part -> part /= "")
         |> String.join " · "
 
 
-{-| One mark per puzzle of the run, in order, in the verdict's own
-colours: right, missed, or not answered yet ("close" only for an attempt
-stored before dubious became a miss). The one being played
-is named so the player can see where they are.
+{-| One tile per puzzle of the run reached so far, in order: a check on
+the green for right, a cross on the red for a miss, a dash for an answer
+nothing could check (and the legacy "close" of an attempt stored before
+dubious became a miss). The one on the board is outlined in ink, answered
+or not.
 -}
 runMark : Int -> Int -> Maybe Verdict -> Html Msg
 runMark at index verdict =
@@ -1293,13 +1652,33 @@ runMark at index verdict =
 
                 Nothing ->
                     "blank"
+
+        glyph =
+            case verdict of
+                Just Pass ->
+                    "M4.6 9.4 L7.6 12.4 L13.4 5.8"
+
+                Just Fail ->
+                    "M5.6 5.6 L12.4 12.4 M12.4 5.6 L5.6 12.4"
+
+                Just _ ->
+                    "M5.5 9 L12.5 9"
+
+                Nothing ->
+                    ""
     in
     span
-        [ classList [ ( "pz-mark", True ), ( "is-" ++ name, True ), ( "is-here", index == at ) ]
+        [ classList [ ( "pz-mark", True ), ( "pz-tile", True ), ( "is-" ++ name, True ), ( "is-here", index == at ) ]
         , attribute "data-mark" name
         , attribute "aria-hidden" "true"
         ]
-        []
+        [ if glyph == "" then
+            text ""
+
+          else
+            Svg.svg [ SvgA.viewBox "0 0 18 18", SvgA.class "pz-tile-glyph" ]
+                [ Svg.path [ SvgA.d glyph, SvgA.fill "none", SvgA.strokeWidth "2.4", SvgA.strokeLinecap "round", SvgA.strokeLinejoin "round" ] [] ]
+        ]
 
 
 viewHead : Html Msg
@@ -1640,7 +2019,18 @@ viewControls model puzzle =
                     -- done, so I'M DONE is always offered and never
                     -- reads as giving up.
                     :: (if model.hasNext then
-                            [ button [ class "q-btn pz-action", id "pz-next", onClick Next ]
+                            [ button
+                                [ classList [ ( "q-btn pz-action", True ), ( "is-busy", model.leaving ) ]
+                                , id "pz-next"
+                                , attribute "aria-busy"
+                                    (if model.leaving then
+                                        "true"
+
+                                     else
+                                        "false"
+                                    )
+                                , onClick Next
+                                ]
                                 [ text "ANOTHER", span [ class "hero-arrow-right w-4 h-4", attribute "aria-hidden" "true" ] [] ]
                             ]
 
@@ -2034,10 +2424,17 @@ viewSchedule model reveal =
                         "Set aside: it will not come back."
 
                     else if not offered then
-                        "Already scheduled."
+                        -- Answered before it was due (PRACTICE ANYWAY, or a
+                        -- second go at one already answered today): the
+                        -- ladder did not hear of it, and the line says so.
+                        if schedule.due > model.now && model.now > 0 then
+                            Mistakes.earlyLine (dueDate model.zone schedule.due)
+
+                        else
+                            Mistakes.earlyLineUndated
 
                     else
-                        levelLine model.now schedule
+                        levelLineFor model.outcome model.now schedule
 
                 -- What the selected choice would do: the pending one, else
                 -- the one in force. A refusal takes its place, so the
@@ -2232,7 +2629,20 @@ once. An attempt that did not count is kept out of this line by
 -}
 levelLine : Int -> Schedule -> String
 levelLine now schedule =
-    if schedule.patched then
+    levelLineFor Nothing now schedule
+
+
+{-| The level line after the choice that stands. KNEW IT puts the
+mistake at the top in one step, so the line says it is marked known and
+when it comes back -- never "seven right in a row", which nobody
+answered. Everything else is the plain line.
+-}
+levelLineFor : Maybe String -> Int -> Schedule -> String
+levelLineFor outcome now schedule =
+    if outcome == Just "knew_it" then
+        Mistakes.knownLine (backIn now schedule.due)
+
+    else if schedule.patched then
         -- The moment the whole thing exists for: this mistake is one the
         -- player has stopped making. Said plainly, in the same type as
         -- everything else.
@@ -2257,6 +2667,56 @@ grade to something else.
 patchedNow : Model -> Schedule -> Bool
 patchedNow model schedule =
     schedule.patched && model.outcome /= Just "never"
+
+
+{-| The day an early answer's mistake is due, in the reader's own zone:
+"9 Oct".
+-}
+dueDate : Time.Zone -> Int -> String
+dueDate zone due =
+    let
+        posix =
+            Time.millisToPosix due
+
+        month =
+            case Time.toMonth zone posix of
+                Time.Jan ->
+                    "Jan"
+
+                Time.Feb ->
+                    "Feb"
+
+                Time.Mar ->
+                    "Mar"
+
+                Time.Apr ->
+                    "Apr"
+
+                Time.May ->
+                    "May"
+
+                Time.Jun ->
+                    "Jun"
+
+                Time.Jul ->
+                    "Jul"
+
+                Time.Aug ->
+                    "Aug"
+
+                Time.Sep ->
+                    "Sep"
+
+                Time.Oct ->
+                    "Oct"
+
+                Time.Nov ->
+                    "Nov"
+
+                Time.Dec ->
+                    "Dec"
+    in
+    String.fromInt (Time.toDay zone posix) ++ " " ++ month
 
 
 {-| When the card is due again, in days from now: "back tomorrow", "back
