@@ -448,7 +448,6 @@ costLines config deck =
                         [ Html.text
                             (Mistakes.costLine
                                 { games = cost.games
-                                , lost = cost.lost
                                 , pr = cost.pr
                                 , prWithout = cost.prWithout
                                 }

@@ -577,7 +577,7 @@ costs =
                 card accountJson
                     |> Query.find [ id "hub-cost" ]
                     |> Expect.all
-                        [ Query.has [ text "These cost you 11.3 points over 11 games. Without them your PR would be 4.8, not 8.3." ]
+                        [ Query.has [ text "These cost you 3.5 PR over 11 games. Without them your PR would be 4.8, not 8.3." ]
                         , Query.find [ id "hub-won" ] >> Query.has [ text "Patched so far: 0.6 PR won back." ]
                         ]
         , test "nothing patched yet: the cost, and no won-back line" <|

@@ -292,7 +292,7 @@ noJargon =
                              , Mistakes.neverWhy
                              , Mistakes.stateLine { total = 44, untouched = 12, inProgress = 20, patched = 12 }
                              , Mistakes.guestStateLine 23 "very_bad"
-                             , Mistakes.costLine { games = 11, lost = 11.33, pr = 8.3, prWithout = 4.8 }
+                             , Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 }
                              , Tuple.first (Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 7.7 })
                              , Mistakes.dayStreakLine { streak = 5, done = 3 }
                              , Mistakes.workLine { due = 4, newLeft = 3 }
@@ -335,8 +335,15 @@ theHome =
         , test "what a tier cost, and what patching won back of it" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Mistakes.costLine { games = 11, lost = 11.33, pr = 8.3, prWithout = 4.8 } |> Expect.equal "These cost you 11.3 points over 11 games. Without them your PR would be 4.8, not 8.3."
-                    , \_ -> Mistakes.costLine { games = 1, lost = 0.5, pr = 9, prWithout = 7 } |> Expect.equal "These cost you 0.5 points over 1 game. Without them your PR would be 7.0, not 9.0."
+                    -- Said in PR throughout: the cost is the gap between the two
+                    -- ratings the sentence names (8.3 - 5.1), never the equity
+                    -- the mistakes gave up (4.84 on this account), which is
+                    -- another unit and reads as a contradiction beside them.
+                    [ \_ -> Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 } |> Expect.equal "These cost you 3.2 PR over 6 games. Without them your PR would be 5.1, not 8.3."
+                    , \_ -> Mistakes.costLine { games = 1, pr = 9, prWithout = 7 } |> Expect.equal "These cost you 2.0 PR over 1 game. Without them your PR would be 7.0, not 9.0."
+                    -- The gap is of the printed figures, so it always adds up.
+                    , \_ -> Mistakes.costLine { games = 3, pr = 8.26, prWithout = 5.14 } |> Expect.equal "These cost you 3.2 PR over 3 games. Without them your PR would be 5.1, not 8.3."
+                    , \_ -> Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 } |> String.contains "point" |> Expect.equal False
                     , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 7.7 } |> Expect.equal (Just "Patched so far: 0.6 PR won back.")
                     , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 8.3 } |> Expect.equal Nothing
                     , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 8.28 } |> Expect.equal Nothing

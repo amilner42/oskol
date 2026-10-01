@@ -521,19 +521,23 @@ guestStateLine n grade =
     moves n grade ++ " from your games"
 
 
-{-| What one tier cost, over the graded games it was counted in. The
-first number is equity given up, which is what a PR is made of; the
-second sentence is the same thing as the rating the player knows.
+{-| What one tier cost, over the graded games it was counted in, said in
+PR throughout -- the rating the player knows, and the unit the head line
+speaks -- so the two numbers in the sentence add up. Raw equity is never
+shown: "4.8 points" beside "5.1, not 8.3" reads as a contradiction.
 
-    "These cost you 11.3 points over 11 games. Without them your PR
-    would be 4.8, not 8.3."
+    "These cost you 3.2 PR over 6 games. Without them your PR would be
+    5.1, not 8.3."
+
+The cost is the difference of the two figures as they are printed, so
+the sentence's own arithmetic always holds.
 
 -}
-costLine : { games : Int, lost : Float, pr : Float, prWithout : Float } -> String
+costLine : { games : Int, pr : Float, prWithout : Float } -> String
 costLine cost =
     "These cost you "
-        ++ oneDecimal cost.lost
-        ++ " points over "
+        ++ oneDecimal (gap cost.pr cost.prWithout)
+        ++ " PR over "
         ++ String.fromInt (max 0 cost.games)
         ++ (if cost.games == 1 then
                 " game"
@@ -570,7 +574,7 @@ patched -- what that has won back.
 -}
 costHeadline : { pr : Float, prWithout : Float, prPatched : Float } -> ( String, Maybe String )
 costHeadline cost =
-    ( "Your mistakes are " ++ oneDecimal (cost.pr - cost.prWithout) ++ " of your " ++ oneDecimal cost.pr ++ " PR."
+    ( "Your mistakes are " ++ oneDecimal (gap cost.pr cost.prWithout) ++ " of your " ++ oneDecimal cost.pr ++ " PR."
     , wonBack { pr = cost.pr, prPatched = cost.prPatched }
         |> Maybe.map (\back -> "You have won back " ++ back ++ " so far.")
     )
@@ -583,9 +587,9 @@ wonBack : { pr : Float, prPatched : Float } -> Maybe String
 wonBack cost =
     let
         back =
-            cost.pr - cost.prPatched
+            gap cost.pr cost.prPatched
     in
-    if back <= 0 || oneDecimal back == "0.0" then
+    if back <= 0 then
         Nothing
 
     else
@@ -707,6 +711,15 @@ to do meanwhile.
 freshLine : String
 freshLine =
     "Your mistakes land here as your games are graded. Until then, learn the openings."
+
+
+{-| The difference of two ratings as they are printed, to one decimal:
+8.3 and 5.1 are 3.2 apart however the unrounded figures fall, so a
+sentence that names all three always adds up.
+-}
+gap : Float -> Float -> Float
+gap from to =
+    toFloat (round (from * 10) - round (to * 10)) / 10
 
 
 {-| A rating to one decimal, always: "8" reads as "8.0".
