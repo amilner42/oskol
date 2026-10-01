@@ -9,6 +9,7 @@ module Page.Puzzle exposing
     , Out(..)
     , Progress
     , Score
+    , asksMemory
     , attemptBody
     , backIn
     , endRun
@@ -428,7 +429,17 @@ update msg model =
                 -- Only now: the memory line is a fact about the player
                 -- and the game, and asking for it before the answer
                 -- would put the move that was played within reach.
-                , Api.get model.session (base model.id ++ "/mine") Puzzle.memoryDecoder GotMemory
+                --
+                -- Never in a run through a set (the openings...): a set
+                -- is the same position for everyone, and a game of yours
+                -- that happened to reach it is not why it is in front of
+                -- you. Games are named only where the puzzle is one of
+                -- your mistakes, or opened on its own from a link.
+                , if asksMemory model then
+                    Api.get model.session (base model.id ++ "/mine") Puzzle.memoryDecoder GotMemory
+
+                  else
+                    Cmd.none
                 ]
               -- The shell keeps the run's score, and what this answer did
               -- to the mistake, for the line at the end of the run.
@@ -840,6 +851,17 @@ attemptBody model =
 
         _ ->
             Nothing
+
+
+{-| Does this page ask, after the reveal, whether the player was in a game
+that reached this position (`/mine`: the memory line, and the button that
+shares their own mistake)? Not in a run through a set: there the position
+is the set's, the same for everyone, and no game of theirs is why it is in
+front of them.
+-}
+asksMemory : Model -> Bool
+asksMemory model =
+    model.deck == Nothing
 
 
 {-| The set this run is of, for the attempt and its override: the answer

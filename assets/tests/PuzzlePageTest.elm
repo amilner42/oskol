@@ -1344,6 +1344,17 @@ runProgress =
                             |> Expect.equal (Just "{\"band\":1,\"key\":\"key-0123\"}")
                     ]
                     ()
+        , test "a run through a set never asks after the player's games; a mistake still does" <|
+            \_ ->
+                let
+                    plain =
+                        page { hasNext = False } "move"
+                in
+                Expect.all
+                    [ \_ -> Page.asksMemory { plain | deck = Just { id = "openings", name = "Openings" } } |> Expect.equal False
+                    , \_ -> Page.asksMemory plain |> Expect.equal True
+                    ]
+                    ()
         , test "a run of one game's mistakes has no tier, so it is the count alone" <|
             \_ ->
                 rendered (inRun 0 (blanks 3) (Just { done = 1 }))
