@@ -12,6 +12,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import oskol/caps/activity.{ActivityCaps}
+import oskol/caps/analysis.{AnalysisCaps, MistakeCost, RatedGame}
 import oskol/caps/decks.{DeckCaps}
 import oskol/caps/practice.{
   type Cell, type Day, type PracticeCaps, Active, Card, Cell, Day, New,
@@ -116,6 +117,18 @@ fn account(
       // Three days running, today among them.
       list.append(list.repeat(False, n - 3), [True, True, True])
     }),
+    // No graded games and no mistakes behind them: every cost is null.
+    analysis: AnalysisCaps(
+      ..fakes.ctx().analysis,
+      graded_for: fn(uid, _) {
+        assert uid == "u1"
+        []
+      },
+      mistake_costs: fn(uid) {
+        assert uid == "u1"
+        []
+      },
+    ),
   )
 }
 
@@ -616,4 +629,191 @@ pub fn practice_anyway_through_a_set_only_once_its_queue_is_empty_test() {
     )
   assert ids == ["soon", "late"]
   assert !string.contains(anyway, "\"due\":true")
+}
+
+// ---------- What the mistakes cost ----------
+
+fn totals(error: Float, decisions: Int) -> json.Json {
+  json.object([
+    #(
+      "moves",
+      json.object([
+        #("decisions", json.int(decisions)),
+        #("forced", json.int(0)),
+        #("error", json.float(error)),
+        #("grades", json.object([])),
+      ]),
+    ),
+    #(
+      "cube",
+      json.object([
+        #("decisions", json.int(0)),
+        #("error", json.float(0.0)),
+        #("mistakes", json.object([])),
+      ]),
+    ),
+    #("luck", json.float(0.0)),
+    #("error", json.float(error)),
+    #("pr", json.float(0.0)),
+  ])
+}
+
+fn graded(id: String, error: Float, decisions: Int) {
+  RatedGame(
+    game_id: id,
+    game_number: 1,
+    seat: 0,
+    response_json: json.to_string(
+      json.object([
+        #("turns", json.preprocessed_array([])),
+        #(
+          "players",
+          json.preprocessed_array([totals(error, decisions), totals(1.0, 10)]),
+        ),
+      ]),
+    ),
+    ended_at_ms: 0,
+  )
+}
+
+fn mistake(puzzle: String, band: String, game_id: String, lost: Float) {
+  MistakeCost(
+    puzzle_id: puzzle,
+    band: band,
+    game_id: game_id,
+    game_number: 1,
+    seat: seat.of_row(
+      player_id: "p1",
+      guest_id: Some("g1"),
+      user_id: Some("u1"),
+    ),
+    equity_lost: lost,
+  )
+}
+
+/// An account with three graded games behind it -- 100 decisions, 2.0
+/// lost, PR 10.0 -- and these mistakes in them.
+fn costed(cells: List(Cell)) -> Ctx {
+  let ctx = account(cells, Day(0, 3), [], [], built())
+  Ctx(
+    ..ctx,
+    analysis: AnalysisCaps(
+      ..ctx.analysis,
+      graded_for: fn(uid, _) {
+        assert uid == "u1"
+        [
+          graded("g1", 0.75, 40),
+          graded("g2", 0.625, 30),
+          graded("g3", 0.625, 30),
+        ]
+      },
+      mistake_costs: fn(uid) {
+        assert uid == "u1"
+        [
+          mistake("v1", "very_bad", "g1", 0.375),
+          mistake("v2", "very_bad", "g2", 0.125),
+          // A bad move whose puzzle became a very bad card elsewhere:
+          // costed in its own band, patched by its card wherever it sits.
+          mistake("v2", "bad", "g3", 0.25),
+        ]
+      },
+    ),
+  )
+}
+
+fn cost_of(body: String, path: List(String)) -> String {
+  let assert Ok(value) = json.parse(body, decode.at(path, decode.dynamic))
+  let assert Ok(cost) =
+    decode.run(
+      value,
+      decode.optional({
+        use pr <- decode.field("pr", decode.float)
+        use without <- decode.field("pr_without", decode.float)
+        use patched <- decode.field("pr_patched", decode.float)
+        decode.success(#(pr, without, patched))
+      }),
+    )
+  string.inspect(cost)
+}
+
+pub fn a_tier_carries_what_its_mistakes_cost_and_a_set_does_not_test() {
+  let ctx =
+    costed([
+      cell("v1", "very_bad", 1, now + 9, Active),
+      // Patched: the fourth rung, still in rotation.
+      cell("v2", "very_bad", 4, now + 9, Active),
+    ])
+  let body = practice.decks_json(ctx, signed_in(), now)
+  assert string.contains(
+    body,
+    "\"cost\":{\"games\":2,\"lost\":0.5,\"lost_patched\":0.13,\"pr\":10.0,\"pr_without\":7.5,\"pr_patched\":9.4}",
+  )
+  // (2.0 - 0.25) / 100 * 500, and all of it patched.
+  assert string.contains(
+    body,
+    "\"cost\":{\"games\":1,\"lost\":0.25,\"lost_patched\":0.25,\"pr\":10.0,\"pr_without\":8.8,\"pr_patched\":8.8}",
+  )
+  // Dubious: nothing lost, and the line still has its numbers.
+  assert string.contains(
+    body,
+    "\"cost\":{\"games\":0,\"lost\":0.0,\"lost_patched\":0.0,\"pr\":10.0,\"pr_without\":10.0,\"pr_patched\":10.0}",
+  )
+  // The sets have none.
+  assert string.contains(body, "\"id\":\"openings\"")
+  assert list.length(string.split(body, "\"cost\":null")) == 3
+  // And the headline: every band at once. (2.0 - 0.75) and (2.0 - 0.375).
+  assert cost_of(body, ["cost_all"]) == "Some(#(10.0, 6.3, 8.1))"
+}
+
+pub fn a_card_put_away_is_not_patched_test() {
+  let ctx =
+    costed([
+      cell("v1", "very_bad", 1, now + 9, Active),
+      // NEVER at the top of the ladder: put away, not fixed.
+      cell("v2", "very_bad", 7, now + 9, Suspended),
+    ])
+  let body = practice.decks_json(ctx, signed_in(), now)
+  assert cost_of(body, ["cost_all"]) == "Some(#(10.0, 6.3, 10.0))"
+}
+
+pub fn a_tier_page_carries_its_cost_from_the_whole_deck_test() {
+  let ctx =
+    costed([
+      cell("v1", "very_bad", 1, now + 9, Active),
+      cell("v2", "very_bad", 4, now + 9, Active),
+    ])
+  // The bad tier's own cells are none, but its one row's puzzle is a very
+  // bad card that is patched.
+  let assert Ok(page) = practice.deck_page_json(ctx, signed_in(), "bad", now)
+  assert cost_of(page, ["deck", "cost"]) == "Some(#(10.0, 8.8, 8.8))"
+}
+
+pub fn under_three_graded_games_there_is_no_cost_test() {
+  let ctx =
+    account(
+      [cell("v1", "very_bad", 1, now + 9, Active)],
+      Day(0, 3),
+      [],
+      [],
+      built(),
+    )
+  let body = practice.decks_json(ctx, signed_in(), now)
+  assert cost_of(body, ["cost_all"]) == "None"
+  assert list.length(string.split(body, "\"cost\":null")) == 6
+}
+
+pub fn a_set_page_and_a_guest_read_no_rating_test() {
+  // The analysis caps panic: neither may reach for a rating.
+  let ctx =
+    Ctx(
+      ..account([], Day(0, 0), [], [#("openings", [], Day(0, 5))], built()),
+      analysis: fakes.ctx().analysis,
+    )
+  let assert Ok(page) =
+    practice.deck_page_json(ctx, signed_in(), "openings", now)
+  assert cost_of(page, ["deck", "cost"]) == "None"
+
+  let body = practice.decks_json(guest_ctx(), fakes.guest("g1"), now)
+  assert cost_of(body, ["cost_all"]) == "None"
+  assert list.length(string.split(body, "\"cost\":null")) == 6
 }

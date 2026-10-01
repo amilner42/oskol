@@ -45,6 +45,7 @@ import oskol/core/error.{type ApiError}
 import oskol/core/session.{type Session, Session}
 import oskol/handlers/home
 import oskol/practice/catalog
+import oskol/practice/cost
 import oskol/practice/deck
 import oskol/practice/decks
 import oskol/practice/sync
@@ -441,6 +442,12 @@ type MistakesRead {
 
 pub fn decks_json(ctx: Ctx, session: Session, now_ms: Int) -> String {
   let readings = read_decks(ctx, session, now_ms, offered_decks(ctx))
+  let costing =
+    costing(ctx, session, readings, fn() {
+      readings
+      |> list.filter(fn(r) { is_tier(r.deck) })
+      |> list.flat_map(fn(r) { r.cells })
+    })
   let #(today, streak) = case session.user_id {
     Some(uid) -> #(
       Some(json.object([#("done", json.int(done_today(readings)))])),
@@ -449,7 +456,7 @@ pub fn decks_json(ctx: Ctx, session: Session, now_ms: Int) -> String {
     None -> #(None, 0)
   }
   envelope.ok([
-    #("decks", json.array(readings, reading_json)),
+    #("decks", json.array(readings, reading_json(_, costing))),
     #("lead", case lead(readings) {
       Some(id) -> json.string(id)
       None -> json.null()
@@ -457,6 +464,7 @@ pub fn decks_json(ctx: Ctx, session: Session, now_ms: Int) -> String {
     #("today", option.unwrap(today, json.null())),
     #("streak", json.int(streak)),
     #("patched_level", json.int(deck.patched_level)),
+    #("cost_all", cost.all_json(costing.window, costing.patched)),
   ])
 }
 
@@ -479,6 +487,13 @@ pub fn deck_page_json(
     [reading] -> reading
     _ -> Reading(found, size, False, None, [], 0)
   }
+  let costing =
+    costing(ctx, session, [reading], fn() {
+      case session.user_id {
+        Some(uid) -> ctx.practice.cells(uid)
+        None -> []
+      }
+    })
   let days = case session.user_id {
     Some(uid) ->
       case found.kind {
@@ -491,7 +506,7 @@ pub fn deck_page_json(
   }
   Ok(
     envelope.ok([
-      #("deck", reading_json(reading)),
+      #("deck", reading_json(reading, costing)),
       #("cells", json.array(reading.cells, cell_json)),
       #("days", json.array(days, json.bool)),
       #("patched_level", json.int(deck.patched_level)),
@@ -655,7 +670,42 @@ fn lead(readings: List(Reading)) -> Option(String) {
   |> option.from_result
 }
 
-fn reading_json(r: Reading) -> Json {
+/// What the mistakes cost in PR (`practice/cost`), read once for every
+/// tier on the page: the account's window of graded games and its
+/// mistakes, and which of them it has patched.
+type Costing {
+  Costing(window: Option(cost.Window), patched: List(String))
+}
+
+/// Only an account has a rating, and only a tier has a cost: a guest, a
+/// stranger and a page with no tier on it (a set's) read nothing.
+///
+/// `cells` is every card of the mistakes, not one tier's: a row is costed
+/// in the band it was graded in, and the card its puzzle became may sit in
+/// a worse tier, so "patched" is asked of the whole deck. The list already
+/// holds all three tiers' cells; a tier's page reads them (`all_cells`).
+fn costing(
+  ctx: Ctx,
+  session: Session,
+  readings: List(Reading),
+  all_cells: fn() -> List(Cell),
+) -> Costing {
+  case session.user_id, list.any(readings, fn(r) { is_tier(r.deck) }) {
+    Some(_), True ->
+      Costing(
+        window: cost.read(ctx, session),
+        // Patched is the rung, on a card still in rotation: a mistake the
+        // player said NEVER to was not fixed, only put away.
+        patched: all_cells()
+          |> list.filter(fn(c) { c.status == Active })
+          |> list.map(fn(c) { #(c.key, c.level) })
+          |> cost.patched_ids,
+      )
+    _, _ -> Costing(window: None, patched: [])
+  }
+}
+
+fn reading_json(r: Reading, costing: Costing) -> Json {
   json.object([
     #("id", json.string(r.deck.id)),
     #("slug", json.string(r.deck.slug)),
@@ -668,8 +718,12 @@ fn reading_json(r: Reading) -> Json {
       Some(s) -> deck.standing_json(s)
       None -> json.null()
     }),
-    // What this tier's mistakes cost in PR: puzzles-pr-without fills it.
-    #("cost", json.null()),
+    // What this tier's mistakes cost in PR; a set has none.
+    #("cost", case r.deck.kind {
+      catalog.Mistakes(band) ->
+        cost.tier_json(costing.window, costing.patched, band)
+      catalog.Set(_) -> json.null()
+    }),
   ])
 }
 
