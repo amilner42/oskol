@@ -4,7 +4,10 @@ defmodule OskolWeb.Api.PracticeController do
 
       GET  /papi/practice           what to put in front of the player next
       GET  /papi/practice?band=<g>  one tier's own queue: FIX ONE
-      POST /papi/practice/more      KEEP GOING: more new ones, then the session
+      GET  /papi/practice?all=1     PRACTICE ANYWAY, once the queue is empty
+      POST /papi/practice/more      {band} KEEP GOING: more new ones, then the session
+      GET  /papi/practice/decks     the five decks, with the caller's standing
+      GET  /papi/practice/decks/:slug  one deck: its cells and its month
       POST /papi/practice/tz        {tz} -- where this browser is
       POST /papi/practice/bury      {id} -- back tomorrow, level kept
 
@@ -20,13 +23,34 @@ defmodule OskolWeb.Api.PracticeController do
   def index(conn, params) do
     send_json(
       conn,
-      :oskol@handlers@practice.practice_json(ctx(), session(conn), param(params, "band"))
+      :oskol@handlers@practice.session_json(
+        ctx(),
+        session(conn),
+        param(params, "band"),
+        param(params, "all") == "1"
+      )
     )
   end
 
-  def more(conn, _params) do
-    send_json(conn, :oskol@handlers@practice.more_json(ctx(), session(conn)))
+  def more(conn, params) do
+    send_json(
+      conn,
+      :oskol@handlers@practice.more_json(ctx(), session(conn), param(params, "band"))
+    )
   end
+
+  def decks(conn, _params) do
+    json_resp(conn, 200, :oskol@handlers@practice.decks_json(ctx(), session(conn), now_ms()))
+  end
+
+  def deck(conn, %{"slug" => slug}) do
+    send_json(
+      conn,
+      :oskol@handlers@practice.deck_page_json(ctx(), session(conn), slug, now_ms())
+    )
+  end
+
+  defp now_ms, do: System.system_time(:millisecond)
 
   def tz(conn, params) do
     send_json(

@@ -70,9 +70,11 @@ pub fn reveals() -> List(#(String, String)) {
     // A coin flip: taking and passing are within 0.02 of each other, so
     // either answer passes, the wrong side giving up a hair.
     #("take_close", attempted(close_take(), [], Some(1))),
-    #("schedule_amendable", handler.schedule_json(2, 3, due, True, False)),
-    #("schedule_self_grade", handler.schedule_json(3, 3, due, False, True)),
-    #("schedule_settled", handler.schedule_json(1, 1, due, False, False)),
+    // `held_days` as `config :retain, intervals` has it: 7 days at level
+    // 3, 1 at level 1.
+    #("schedule_amendable", handler.schedule_json(2, 3, due, True, False, 7)),
+    #("schedule_self_grade", handler.schedule_json(3, 3, due, False, True, 7)),
+    #("schedule_settled", handler.schedule_json(1, 1, due, False, False, 1)),
   ]
 }
 

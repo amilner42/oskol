@@ -30,6 +30,7 @@ import oskol/core/error
 import oskol/core/session.{Session}
 import oskol/fakes
 import oskol/handlers/puzzles as handler
+import oskol/practice/deck
 import oskol/puzzles.{
   type Answer, type Kind, type Probs, type Question, Candidate, CubeAnswer,
   Double, DoublePass, Move, MoveAnswer, Outcome as Result_, Probs, Question,
@@ -282,6 +283,8 @@ fn ctx_with(rows: List(puzzles_caps.Stored)) -> Ctx {
     ),
     practice: practice.PracticeCaps(
       ..practice.stub(),
+      // The ladder as `config :retain, intervals` has it.
+      intervals: fn() { [1, 1, 3, 7, 21, 58, 145, 365] },
       cards: fn(uid, keys) {
         list.filter_map(keys, fn(key) {
           list.find(get_cards("cards"), fn(c) { c.0 == held(uid, key) })
@@ -947,7 +950,7 @@ pub fn a_dubious_answer_goes_back_to_the_start_test() {
 pub fn a_legacy_hold_retried_still_answers_hold_test() {
   reset()
   deck_holds("p1", Active, 4, now - day)
-  let schedule = handler.schedule_json(3, 3, now + day, True, False)
+  let schedule = handler.schedule_json(3, 3, now + day, True, False, 7)
   let _ =
     put_attempts("attempts", [
       puzzles_caps.Attempt(
@@ -1038,7 +1041,34 @@ pub fn an_unknown_answer_waits_until_tomorrow_test() {
   assert bool_at(body, ["schedule", "amendable"]) == False
   assert int_at(body, ["schedule", "level_after"]) == 3
   assert int_at(body, ["schedule", "due"]) == now + day
+  // What GOT IT would hold it at, from the ladder the deck runs on: level
+  // 3 waits 7 days. The page keeps no copy of the ladder.
+  assert int_at(body, ["schedule", "held_days"]) == 7
   assert recorded("deck") == ["defer:p1"]
+}
+
+/// `held_days` is the ladder's interval at the level the answer left the
+/// card on, whatever the answer was.
+pub fn every_schedule_says_how_long_its_level_holds_test() {
+  reset()
+  deck_holds("p1", Active, 2, now - day)
+  let ctx = ctx_with([stored("p1", move_question(), move_answer())])
+  let assert Ok(body) = attempt(ctx, account("u1"), "p1", path_to(1), "k1")
+  // A miss: back to level 0, which waits a day.
+  assert int_at(body, ["schedule", "level_after"]) == 0
+  assert int_at(body, ["schedule", "held_days"]) == 1
+}
+
+pub fn held_days_reads_the_ladder_test() {
+  let ladder = [1, 1, 3, 7, 21, 58, 145, 365]
+  assert deck.held_days(ladder, 0) == 1
+  assert deck.held_days(ladder, 2) == 3
+  assert deck.held_days(ladder, 7) == 365
+  // Off either end: the nearest rung.
+  assert deck.held_days(ladder, 9) == 365
+  assert deck.held_days(ladder, -1) == 1
+  // Another ladder says another thing: nothing here is a copy of it.
+  assert deck.held_days([2, 4], 1) == 4
 }
 
 pub fn a_signed_in_answer_needs_a_key_test() {

@@ -2,7 +2,10 @@
 ////
 ////   GET  /papi/practice            the session
 ////   GET  /papi/practice?band=<g>   one tier's session: FIX ONE
-////   POST /papi/practice/more       KEEP GOING: more new ones, then the session
+////   GET  /papi/practice?all=1      PRACTICE ANYWAY, once the queue is empty
+////   POST /papi/practice/more       {band} KEEP GOING: more new ones, then the session
+////   GET  /papi/practice/decks      the five decks (see "The five decks" below)
+////   GET  /papi/practice/decks/:slug  one deck, its cells and its month
 ////   POST /papi/practice/tz         {tz} -- where this browser is
 ////   POST /papi/practice/bury       {id} -- back tomorrow, level kept
 ////
@@ -31,12 +34,17 @@ import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import oskol/caps/practice.{type Card, type Session as DeckSession, type Summary}
+import oskol/caps/practice.{
+  type Card, type Cell, type Day, type Session as DeckSession, type Summary,
+  Active, New, Suspended,
+}
 import oskol/caps/puzzles.{type DeckSource} as _
 import oskol/core/ctx.{type Ctx}
 import oskol/core/envelope
 import oskol/core/error.{type ApiError}
 import oskol/core/session.{type Session, Session}
+import oskol/handlers/home
+import oskol/practice/catalog
 import oskol/practice/deck
 import oskol/practice/decks
 import oskol/practice/sync
@@ -56,12 +64,26 @@ pub fn practice_json(
   session: Session,
   band: String,
 ) -> Result(String, ApiError) {
+  session_json(ctx, session, band, False)
+}
+
+/// The same, with PRACTICE ANYWAY: `all` asks, only when the ordinary queue
+/// has nothing in it, for the positions in rotation soonest due first
+/// (`deck.anyway`), each `due: false` and nothing written. While the queue
+/// has anything at all, `all` is ignored: today's set comes first.
+pub fn session_json(
+  ctx: Ctx,
+  session: Session,
+  band: String,
+  all: Bool,
+) -> Result(String, ApiError) {
   use band <- result.try(checked_band(band))
   case session.user_id, session.guest_id {
-    Some(uid), _ -> Ok(account_session(ctx, uid, band))
-    // A guest has no deck and so no tiers: their mistakes are all there
-    // is, and a band asked for on their behalf names nothing to narrow.
-    None, Some(guest_id) -> Ok(guest_session(ctx, guest_id))
+    Some(uid), _ -> Ok(account_session(ctx, uid, band, all))
+    // A guest has no deck, so nothing is scheduled and nothing is in
+    // rotation: a band narrows their mistakes to that tier and `all` has
+    // nothing to add.
+    None, Some(guest_id) -> Ok(guest_session(ctx, guest_id, band))
     None, None -> Ok(empty())
   }
 }
@@ -73,21 +95,29 @@ fn checked_band(band: String) -> Result(String, ApiError) {
   }
 }
 
-/// KEEP GOING: put ten more new puzzles into rotation and answer the
-/// session that results, so the page needs one call and not two.
+/// KEEP GOING: put the deck's pace again (`deck.keep_going_new`) of new
+/// mistakes into rotation, over the day's budget, and answer the session
+/// that results, so the page needs one call and not two. `band` names the
+/// tier to take them from ("" is the whole deck) and is the session that
+/// comes back.
 ///
 /// Only an account has a rotation to add to. For a guest the page already
-/// holds every mistake they have, so this is the next page of it and
-/// nothing else -- and, as everywhere a guest practices, it writes nothing.
-pub fn more_json(ctx: Ctx, session: Session) -> Result(String, ApiError) {
+/// holds every mistake they have, so this is the same session and nothing
+/// else -- and, as everywhere a guest practices, it writes nothing.
+pub fn more_json(
+  ctx: Ctx,
+  session: Session,
+  band: String,
+) -> Result(String, ApiError) {
+  use band <- result.try(checked_band(band))
   case session.user_id {
     Some(uid) -> {
-      let _ = deck.keep_going(ctx, uid)
+      let _ = deck.keep_going(ctx, uid, band)
       // From the front again: the cards that were just started are due
       // now, so they are exactly what the next page is.
-      Ok(account_session(ctx, uid, ""))
+      Ok(account_session(ctx, uid, band, False))
     }
-    None -> practice_json(ctx, session, "")
+    None -> practice_json(ctx, session, band)
   }
 }
 
@@ -136,13 +166,16 @@ fn signed_in(session: Session) -> Result(String, ApiError) {
 
 // ---------- An account's session ----------
 
-fn account_session(ctx: Ctx, uid: String, band: String) -> String {
+fn account_session(ctx: Ctx, uid: String, band: String, all: Bool) -> String {
   let found = case band {
     "" -> deck.session(ctx, uid)
     _ -> deck.band_session(ctx, uid, band)
   }
-  let entries =
-    list.append(cards(found.reviews, True), cards(found.fresh, False))
+  let entries = case found.reviews, found.fresh, all {
+    [], [], True -> cards(deck.anyway(ctx, uid, band), False)
+    _, _, _ ->
+      list.append(cards(found.reviews, True), cards(found.fresh, False))
+  }
   // One read of the deck's totals, for both the counts the page prints
   // and the day's count: two reads could not disagree by much, but they
   // could disagree, and both are printed on the same card.
@@ -216,14 +249,14 @@ fn counts(summary: Option(Summary), found: DeckSession) -> Json {
 /// rows that came back are really this browser's, which is what keeps an
 /// owned seat out of it -- a browser that logged out, or the next person
 /// on the same laptop, is offered nothing of the account's.
-fn guest_session(ctx: Ctx, guest_id: String) -> String {
-  let mine =
-    ctx.puzzles.guest_sources(guest_id)
-    |> list.filter(fn(source) {
-      seat.holder(source.seat, Session(guest_id: Some(guest_id), user_id: None))
-    })
-    |> dedupe([], [])
-  let page = list.take(mine, deck.page)
+fn guest_session(ctx: Ctx, guest_id: String, band: String) -> String {
+  let mine = guest_mistakes(ctx, guest_id)
+  let page =
+    mine
+    |> list.filter(fn(pair) { band == "" || pair.1 == band })
+    |> list.map(fn(pair) { pair.0 })
+    |> list.take(deck.page)
+  let mine = list.map(mine, fn(pair) { pair.0 })
   body(
     list.map(page, fn(source) {
       entry(source.puzzle_id, source.kind, source.question_json, False)
@@ -237,6 +270,36 @@ fn guest_session(ctx: Ctx, guest_id: String) -> String {
     None,
     None,
   )
+}
+
+/// A guest's own mistakes, one per puzzle, newest game first, each with the
+/// tier it counts in: the worst grade any of their games reached it at,
+/// which is how an account's card is banded too.
+///
+/// The query narrows by the guest id; the holder rule says which of the
+/// rows that came back are really this browser's.
+fn guest_mistakes(ctx: Ctx, guest_id: String) -> List(#(DeckSource, String)) {
+  let held =
+    ctx.puzzles.guest_sources(guest_id)
+    |> list.filter(fn(source) {
+      seat.holder(source.seat, Session(guest_id: Some(guest_id), user_id: None))
+    })
+  held
+  |> dedupe([], [])
+  |> list.map(fn(source) {
+    let band =
+      held
+      |> list.filter(fn(other) { other.puzzle_id == source.puzzle_id })
+      |> list.map(fn(other) { other.grade })
+      |> worst_band
+    #(source, band)
+  })
+}
+
+/// The worst of these grades, in the deck's own bands: "" when none is one.
+fn worst_band(grades: List(String)) -> String {
+  list.find(deck.bands, fn(band) { list.contains(grades, band) })
+  |> result.unwrap("")
 }
 
 /// What the home says a guest has behind them: "23 mistakes from your 4
@@ -335,4 +398,299 @@ fn prompt(question_json: String) -> String {
     // page can open; it is the page that has the whole of it.
     Error(_) -> "What's your play?"
   }
+}
+
+// ---------- The five decks ----------
+//
+//   GET /papi/practice/decks          every deck, with the caller's standing
+//   GET /papi/practice/decks/:slug    one deck, with its cells and its month
+//
+// One shape for the three tiers of a player's mistakes and the two
+// universal sets, so the hub, a deck's page and a run read one answer
+// rather than three that count the same cards three ways. Every number is
+// counted here from the deck's cells (`deck.standing`); nothing is written,
+// nothing is started and no budget is spent by reading.
+
+/// How many days a deck's page draws in its strip.
+pub const month = 30
+
+/// One deck, read for the caller.
+type Reading {
+  Reading(
+    deck: catalog.Deck,
+    /// How many positions: a tier's mistakes (an account's cards of that
+    /// band, a guest's own mistakes of it, a stranger's none) or a set's.
+    size: Int,
+    /// Does this account have it? A tier with cards in it, a set added.
+    joined: Bool,
+    /// An account's; None for a guest and a stranger.
+    standing: Option(deck.Standing),
+    /// The cards the grid draws: an account's own, else none.
+    cells: List(Cell),
+    /// Answers in the scope's own day (`day.answered`): the mistakes'
+    /// for a tier -- the three share it -- or the set's. 0 off an account.
+    answered: Int,
+  )
+}
+
+/// What an account's mistakes say, read once for all three tiers: they are
+/// one learner with one day and one budget.
+type MistakesRead {
+  MistakesRead(cells: List(Cell), day: Day, by_band: List(#(String, Int)))
+}
+
+pub fn decks_json(ctx: Ctx, session: Session, now_ms: Int) -> String {
+  let readings = read_decks(ctx, session, now_ms, offered_decks(ctx))
+  let #(today, streak) = case session.user_id {
+    Some(uid) -> #(
+      Some(json.object([#("done", json.int(done_today(readings)))])),
+      home.days_running(ctx.activity.days(uid, home.streak_window)),
+    )
+    None -> #(None, 0)
+  }
+  envelope.ok([
+    #("decks", json.array(readings, reading_json)),
+    #("lead", case lead(readings) {
+      Some(id) -> json.string(id)
+      None -> json.null()
+    }),
+    #("today", option.unwrap(today, json.null())),
+    #("streak", json.int(streak)),
+    #("patched_level", json.int(deck.patched_level)),
+  ])
+}
+
+pub fn deck_page_json(
+  ctx: Ctx,
+  session: Session,
+  slug: String,
+  now_ms: Int,
+) -> Result(String, ApiError) {
+  use found <- result.try(
+    catalog.find_slug(slug)
+    |> result.replace_error(error.NotFound(decks.unknown_deck_message)),
+  )
+  let size = size_of(ctx, found)
+  use _ <- result.try(case found.kind, size {
+    catalog.Set(_), 0 -> Error(error.NotFound(decks.unknown_deck_message))
+    _, _ -> Ok(Nil)
+  })
+  let reading = case read_decks(ctx, session, now_ms, [#(found, size)]) {
+    [reading] -> reading
+    _ -> Reading(found, size, False, None, [], 0)
+  }
+  let days = case session.user_id {
+    Some(uid) ->
+      case found.kind {
+        // The three tiers are one learner, so a tier's month is the
+        // mistakes' month.
+        catalog.Mistakes(_) -> ctx.practice.days(uid, month)
+        catalog.Set(set) -> decks.practice(ctx, set).days(uid, month)
+      }
+    None -> list.repeat(False, month)
+  }
+  Ok(
+    envelope.ok([
+      #("deck", reading_json(reading)),
+      #("cells", json.array(reading.cells, cell_json)),
+      #("days", json.array(days, json.bool)),
+      #("patched_level", json.int(deck.patched_level)),
+    ]),
+  )
+}
+
+/// The five, less a set nobody has built yet: a page must not offer a set
+/// of puzzles with nothing in it. Each with the size a set's rows give it
+/// (a tier's is the caller's, worked out when it is read).
+fn offered_decks(ctx: Ctx) -> List(#(catalog.Deck, Int)) {
+  catalog.all()
+  |> list.filter_map(fn(d) {
+    case d.kind, size_of(ctx, d) {
+      catalog.Set(_), 0 -> Error(Nil)
+      _, size -> Ok(#(d, size))
+    }
+  })
+}
+
+fn size_of(ctx: Ctx, d: catalog.Deck) -> Int {
+  case d.kind {
+    catalog.Set(set) -> ctx.decks.size(set.id)
+    catalog.Mistakes(_) -> 0
+  }
+}
+
+fn is_tier(d: catalog.Deck) -> Bool {
+  case d.kind {
+    catalog.Mistakes(_) -> True
+    catalog.Set(_) -> False
+  }
+}
+
+fn read_decks(
+  ctx: Ctx,
+  session: Session,
+  now_ms: Int,
+  offered: List(#(catalog.Deck, Int)),
+) -> List(Reading) {
+  case session.user_id, session.guest_id {
+    Some(uid), _ -> account_readings(ctx, uid, now_ms, offered)
+    None, Some(guest_id) -> {
+      // Asked for only when a tier is: a set's page reads nothing of theirs.
+      let mine = case list.any(offered, fn(pair) { is_tier(pair.0) }) {
+        True -> guest_mistakes(ctx, guest_id)
+        False -> []
+      }
+      list.map(offered, fn(pair) {
+        let #(d, size) = pair
+        case d.kind {
+          catalog.Mistakes(band) ->
+            Reading(
+              d,
+              list.count(mine, fn(m) { m.1 == band }),
+              False,
+              None,
+              [],
+              0,
+            )
+          catalog.Set(_) -> Reading(d, size, False, None, [], 0)
+        }
+      })
+    }
+    None, None ->
+      list.map(offered, fn(pair) { Reading(pair.0, pair.1, False, None, [], 0) })
+  }
+}
+
+fn account_readings(
+  ctx: Ctx,
+  uid: String,
+  now_ms: Int,
+  offered: List(#(catalog.Deck, Int)),
+) -> List(Reading) {
+  let rungs = list.length(ctx.practice.intervals())
+  // The mistakes are read only when a tier is asked about, and then once.
+  let mistakes = case list.any(offered, fn(pair) { is_tier(pair.0) }) {
+    True ->
+      Some(MistakesRead(
+        cells: ctx.practice.cells(uid),
+        day: ctx.practice.day(uid),
+        by_band: ctx.practice.answered_today_by_band(uid),
+      ))
+    False -> None
+  }
+  list.map(offered, fn(pair) {
+    let #(d, size) = pair
+    case d.kind, mistakes {
+      catalog.Mistakes(band), Some(read) -> {
+        let cells = list.filter(read.cells, fn(c) { c.band == band })
+        let done = list.key_find(read.by_band, band) |> result.unwrap(0)
+        let standing =
+          deck.standing(cells, read.day.new_remaining, done, now_ms, rungs)
+        Reading(
+          d,
+          standing.total,
+          standing.total > 0,
+          Some(standing),
+          cells,
+          read.day.answered,
+        )
+      }
+      catalog.Set(set), _ -> {
+        let caps = decks.practice(ctx, set)
+        let cells = caps.cells(uid)
+        let day = caps.day(uid)
+        let standing =
+          deck.standing(cells, day.new_remaining, day.answered, now_ms, rungs)
+        Reading(
+          d,
+          size,
+          standing.total > 0,
+          Some(standing),
+          cells,
+          day.answered,
+        )
+      }
+      // Not reached: the mistakes are read whenever a tier is offered.
+      catalog.Mistakes(_), None -> Reading(d, 0, False, None, [], 0)
+    }
+  })
+}
+
+/// Everything this account has answered today, in every deck: the
+/// mistakes' day (one learner for the three tiers, so counted once) and
+/// each set's. Read off the days the readings already hold.
+fn done_today(readings: List(Reading)) -> Int {
+  let sets =
+    readings
+    |> list.filter(fn(r) { !is_tier(r.deck) })
+    |> list.map(fn(r) { r.answered })
+    |> int.sum
+  let mistakes = case list.find(readings, fn(r) { is_tier(r.deck) }) {
+    Ok(r) -> r.answered
+    Error(Nil) -> 0
+  }
+  mistakes + sets
+}
+
+/// The one deck to put in front: the worst tier of mistakes with work
+/// today, else a set the account has added with work (in the registry's
+/// order), else the worst tier with anything in it at all -- so the page
+/// can say it is in good shape rather than go blank -- else nothing. A
+/// guest has no today, so theirs is the worst tier they have mistakes in.
+fn lead(readings: List(Reading)) -> Option(String) {
+  let working = fn(r: Reading) {
+    case r.standing {
+      Some(s) -> deck.standing_has_work(s)
+      None -> False
+    }
+  }
+  let first = fn(keep: fn(Reading) -> Bool) {
+    list.find(readings, keep) |> result.map(fn(r) { r.deck.id })
+  }
+  first(fn(r) { is_tier(r.deck) && working(r) })
+  |> result.lazy_or(fn() {
+    first(fn(r) { !is_tier(r.deck) && r.joined && working(r) })
+  })
+  |> result.lazy_or(fn() { first(fn(r) { is_tier(r.deck) && r.size > 0 }) })
+  |> option.from_result
+}
+
+fn reading_json(r: Reading) -> Json {
+  json.object([
+    #("id", json.string(r.deck.id)),
+    #("slug", json.string(r.deck.slug)),
+    #("kind", json.string(catalog.kind_name(r.deck))),
+    #("name", json.string(r.deck.name)),
+    #("mark", json.string(r.deck.mark)),
+    #("size", json.int(r.size)),
+    #("joined", json.bool(r.joined)),
+    #("standing", case r.standing {
+      Some(s) -> deck.standing_json(s)
+      None -> json.null()
+    }),
+    // What this tier's mistakes cost in PR: puzzles-pr-without fills it.
+    #("cost", json.null()),
+  ])
+}
+
+fn cell_json(c: Cell) -> Json {
+  json.object([
+    #("id", json.string(c.key)),
+    #("level", json.int(c.level)),
+    // Unix milliseconds, as every time on this wire is.
+    #("due", json.int(c.due_ms)),
+    #(
+      "status",
+      json.string(case c.status {
+        New -> "new"
+        Active -> "active"
+        Suspended -> "suspended"
+      }),
+    ),
+    #("position", case c.position {
+      Some(p) -> json.int(p)
+      None -> json.null()
+    }),
+    #("band", json.string(c.band)),
+  ])
 }

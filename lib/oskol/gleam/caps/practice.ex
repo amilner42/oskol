@@ -5,7 +5,9 @@ defmodule Oskol.Gleam.Caps.Practice do
 
       PracticeCaps(put_user, put_items, cards, relapse, queue, start,
       start_new, review, amend, defer_until, defer_tomorrow, master,
-      suspend, resume, summary, ladder, days, day, severity, band_queue)
+      suspend, resume, summary, ladder, days, day, severity, band_queue,
+      cells, answered_today_by_band, start_new_in_band, intervals)
+      Cell(key, band, level, due_ms, status, position)
       Day(answered, new_remaining)
       Severity(grade, total, in_progress, patched, due, fresh)
       Item(key, tags, content_json, position)
@@ -65,8 +67,135 @@ defmodule Oskol.Gleam.Caps.Practice do
      &review(s, &1, &2, &3), &amend(s, &1, &2, &3, &4), &defer_until(s, &1, &2, &3),
      &defer_tomorrow(s, &1, &2), &master(s, &1, &2), &suspend(s, &1, &2), &resume(s, &1, &2),
      &summary(s, &1, &2), &ladder(s, &1), &days(s, &1, &2), &day(s, &1), &severity(s, &1, &2),
-     &band_queue(s, &1, &2, &3)}
+     &band_queue(s, &1, &2, &3), &cells(s, &1), &answered_today_by_band(s, &1),
+     &start_new_in_band(s, &1, &2, &3), &intervals/0}
   end
+
+  # ---------- The five decks: the grid, today by band, more of one band ----------
+
+  # Every card of this learner, for the mastery grid, in the order the
+  # deck introduces them -- the order `new_items_query` and `band_queue/4`
+  # use, so square n is the card a queue would have offered n-th.
+  #
+  # The band is the worst source grade (the ranking `severity/3` uses), and
+  # "" where no `puzzle_sources` row names the key: every card of a
+  # universal set. A left join, so a set scope reads its cards at all.
+  # Only the columns the grid needs: never a card's content.
+  defp cells(scope, uid) do
+    case Retain.fetch_user(uid, scope: scope) do
+      {:error, :not_found} ->
+        []
+
+      {:ok, user} ->
+        from(i in Retain.Item,
+          left_join: s in Oskol.Puzzles.Source,
+          on: s.puzzle_id == i.key and s.owner_user_id == ^owner(scope, user),
+          where: i.user_id == ^user.id,
+          group_by: i.id,
+          order_by: [asc_nulls_last: i.position, asc: i.inserted_at, asc: i.id],
+          select:
+            {i.key, i.level, i.due, i.started_at, i.suspended, i.position,
+             max(
+               fragment(
+                 "case ? when 'very_bad' then 3 when 'bad' then 2 when 'doubtful' then 1 else 0 end",
+                 s.grade
+               )
+             )}
+        )
+        |> Oskol.Repo.all()
+        |> Enum.map(fn {key, level, due, started_at, suspended, position, rank} ->
+          status =
+            cond do
+              suspended -> :suspended
+              is_nil(started_at) -> :new
+              true -> :active
+            end
+
+          {:cell, key, band(rank) || "", level, DateTime.to_unix(due, :millisecond), status,
+           opt(position)}
+        end)
+    end
+  end
+
+  # Today's answers by the band of the card answered. Exactly the rows
+  # `day/2` counts (an attempt in the learner's own day; not a card put
+  # off, not a correction), each ranked by its card's worst source, so the
+  # bands add up to `day.answered`. It starts from today's reviews -- a
+  # handful -- rather than ranking the whole deck.
+  defp answered_today_by_band(scope, uid) do
+    case Retain.fetch_user(uid, scope: scope) do
+      {:error, :not_found} ->
+        []
+
+      {:ok, user} ->
+        now = DateTime.utc_now()
+        since = Retain.Clock.start_of_day(Retain.Clock.local_date(now, user.tz), user.tz)
+
+        per_review =
+          from(r in Retain.Review,
+            join: i in Retain.Item,
+            on: i.id == r.item_id,
+            left_join: s in Oskol.Puzzles.Source,
+            on: s.puzzle_id == i.key and s.owner_user_id == ^owner(scope, user),
+            where:
+              i.user_id == ^user.id and is_nil(r.supersedes_id) and
+                r.outcome != ^:defer and r.at >= ^since,
+            group_by: r.id,
+            select: %{
+              rank:
+                max(
+                  fragment(
+                    "case ? when 'very_bad' then 3 when 'bad' then 2 when 'doubtful' then 1 else 0 end",
+                    s.grade
+                  )
+                )
+            }
+          )
+
+        from(w in subquery(per_review), group_by: w.rank, select: {w.rank, count(w.rank)})
+        |> Oskol.Repo.all()
+        |> Enum.map(fn {rank, n} -> {band(rank) || "", n} end)
+        |> Enum.sort()
+    end
+  end
+
+  # KEEP GOING for one tier: the next `n` cards of the band that have
+  # never been started, in introduction order, started now whatever the
+  # day's budget says -- KEEP GOING is the player asking for more, and the
+  # budget is only the pace for the one who did not ask. "" is the whole
+  # deck, which is `Retain.start/3` with a count.
+  defp start_new_in_band(scope, uid, "", n), do: start_new(scope, uid, n)
+
+  defp start_new_in_band(scope, uid, band, n) when is_integer(n) do
+    case {Retain.fetch_user(uid, scope: scope), rank(band)} do
+      {{:error, :not_found}, _} ->
+        0
+
+      {_, nil} ->
+        0
+
+      {{:ok, _user}, _} when n <= 0 ->
+        0
+
+      {{:ok, user}, wanted} ->
+        keys =
+          user
+          |> in_band(scope, wanted)
+          |> where([i], not i.suspended and is_nil(i.started_at))
+          |> order_by([i], asc_nulls_last: i.position, asc: i.inserted_at, asc: i.id)
+          |> limit(^n)
+          |> select([i], i.key)
+          |> Oskol.Repo.all()
+
+        case keys do
+          [] -> 0
+          _ -> started(Retain.start(uid, keys, scope: scope))
+        end
+    end
+  end
+
+  # The ladder as Retain is configured: the one list, read where it lives.
+  defp intervals, do: Retain.Config.intervals()
 
   # ---------- The two pictures the home draws ----------
   #
@@ -213,7 +342,7 @@ defmodule Oskol.Gleam.Caps.Practice do
         worst =
           from(i in Retain.Item,
             join: s in Oskol.Puzzles.Source,
-            on: s.puzzle_id == i.key,
+            on: s.puzzle_id == i.key and s.owner_user_id == ^owner(scope, user),
             where: i.user_id == ^user.id,
             group_by: [i.id, i.level, i.started_at, i.suspended, i.due],
             select: %{
@@ -306,7 +435,7 @@ defmodule Oskol.Gleam.Caps.Practice do
 
         reviews =
           user
-          |> in_band(wanted)
+          |> in_band(scope, wanted)
           |> where([i], not i.suspended and not is_nil(i.started_at) and i.due <= ^now)
           |> order_by([i], asc: i.level, asc: i.due, asc: i.id)
           |> limit(^limit)
@@ -317,7 +446,7 @@ defmodule Oskol.Gleam.Caps.Practice do
         fresh =
           if reviews == [] and remaining > 0 do
             user
-            |> in_band(wanted)
+            |> in_band(scope, wanted)
             |> where([i], not i.suspended and is_nil(i.started_at))
             |> order_by([i], asc_nulls_last: i.position, asc: i.inserted_at, asc: i.id)
             |> limit(^min(limit, remaining))
@@ -333,11 +462,11 @@ defmodule Oskol.Gleam.Caps.Practice do
   # This account's cards whose worst source is exactly this band. The
   # subquery is the one `severity/2` ranks with, so a card can only ever
   # be in the tier the hub counted it in.
-  defp in_band(user, wanted) do
+  defp in_band(user, scope, wanted) do
     worst =
       from(i in Retain.Item,
         join: s in Oskol.Puzzles.Source,
-        on: s.puzzle_id == i.key,
+        on: s.puzzle_id == i.key and s.owner_user_id == ^owner(scope, user),
         where: i.user_id == ^user.id,
         group_by: i.id,
         having:
@@ -372,6 +501,27 @@ defmodule Oskol.Gleam.Caps.Practice do
       |> Kernel.||(0)
 
     max(user.new_per_day - started, 0)
+  end
+
+  # Whose `puzzle_sources` rows band a card: the learner's own, and only in
+  # the mistakes scope. A position is shared -- the same opening, the same
+  # middlegame reached by two players -- so banding by every account's rows
+  # would let somebody else's very bad move put this player's dubious one in
+  # their ?? tier, and would band a universal set's opening by whoever got
+  # it wrong anywhere. `owner_user_id` is the column the sync already keys
+  # on (`Oskol.Practice.repositions_for/2`). In a set scope, or for a uid
+  # that is not an account id, no row can match: every card bands "".
+  # `severity/3`, `in_band/3`, `cells/2` and `answered_today_by_band/2` all
+  # join through this, so the four can never band one card two ways.
+  @nobody "00000000-0000-0000-0000-000000000000"
+
+  defp owner(scope, user) do
+    with true <- scope == Retain.Config.default_scope(),
+         {:ok, uuid} <- Ecto.UUID.cast(user.uid) do
+      uuid
+    else
+      _ -> @nobody
+    end
   end
 
   defp rank("very_bad"), do: 3

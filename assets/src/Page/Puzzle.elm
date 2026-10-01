@@ -2178,8 +2178,14 @@ outcomeWhy model verdict graded outcome =
                 Mistakes.gotItGraded (levelLine model.now graded)
 
             else
-                -- Nothing checked the answer: it counts, and the level holds.
-                Mistakes.gotItUnchecked graded.levelAfter (backIn 0 (heldFor graded.levelAfter * 86400000))
+                -- Nothing checked the answer: it counts, and the level holds
+                -- for as long as the server's ladder says that level waits.
+                case graded.heldDays of
+                    Just days ->
+                        Mistakes.gotItUnchecked graded.levelAfter (backIn 0 (days * 86400000))
+
+                    Nothing ->
+                        Mistakes.gotItHolds graded.levelAfter
 
         "knew_it" ->
             Mistakes.knewItWhy
@@ -2189,19 +2195,6 @@ outcomeWhy model verdict graded outcome =
 
         _ ->
             ""
-
-
-{-| How long a card waits at a level, in days: the twin of
-`config :retain, intervals` (config/config.exs). Only GOT IT's line on an
-answer nothing checked reads it -- every other "back in" is the server's
-own due date -- and it moves with that config.
--}
-heldFor : Int -> Int
-heldFor level =
-    [ 1, 1, 3, 7, 21, 58, 145, 365 ]
-        |> List.drop (clamp 0 7 level)
-        |> List.head
-        |> Maybe.withDefault 1
 
 
 orElse : Maybe a -> Maybe a -> Maybe a

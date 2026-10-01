@@ -9,6 +9,7 @@ module Ui.Mistakes exposing
     , goodShapeWhy
     , gotItGraded
     , gotItUnchecked
+    , gotItHolds
     , hasWork
     , knewItWhy
     , leftToFix
@@ -310,6 +311,14 @@ back, "back in 3 days".
 gotItUnchecked : Int -> String -> String
 gotItUnchecked level backIn =
     "Counts as right, but nothing checked it: level " ++ String.fromInt level ++ " stays · " ++ backIn ++ "."
+
+
+{-| The same, where the answer did not say how long the level waits (a
+schedule stored before it did): the level holds, and no date is guessed.
+-}
+gotItHolds : Int -> String
+gotItHolds level =
+    "Counts as right, but nothing checked it: level " ++ String.fromInt level ++ " stays."
 
 
 {-| GOT IT after a miss is not one of the choices; a tap on it says why

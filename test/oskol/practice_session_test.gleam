@@ -13,8 +13,9 @@ import gleam/option.{None, Some}
 import gleam/string
 import oskol/caps/decks.{DeckCaps}
 import oskol/caps/practice.{
-  type Ask, type Card, type Severity, Active, Card, CardNotStarted, Day, Graded,
-  PracticeCaps, Session, Severity, Summary, UnknownCard, UnknownTimezone,
+  type Ask, type Card, type Severity, Active, Card, CardNotStarted, Cell, Day,
+  Graded, New, PracticeCaps, Session, Severity, Summary, Suspended, UnknownCard,
+  UnknownTimezone,
 } as _
 import oskol/caps/puzzles.{DeckSource, PuzzlesCaps}
 import oskol/core/ctx.{type Ctx, Ctx}
@@ -520,12 +521,186 @@ pub fn keep_going_starts_more_and_answers_the_session_test() {
     Ctx(
       ..ctx,
       practice: PracticeCaps(..ctx.practice, start_new: fn(_uid, count) {
-        assert count == 10
+        // The deck's own pace again, not a bigger helping.
+        assert count == deck.new_per_day
         count
       }),
     )
-  let assert Ok(body) = practice.more_json(started, fakes.signed_in("g1", "u1"))
+  let assert Ok(body) =
+    practice.more_json(started, fakes.signed_in("g1", "u1"), "")
   assert ids(body) == ["new1", "new2"]
+}
+
+pub fn keep_going_with_a_band_starts_three_of_that_band_test() {
+  let ctx = with_band_queue(with_deck(fakes.ctx(), 0, 0))
+  let started =
+    Ctx(
+      ..ctx,
+      practice: PracticeCaps(
+        ..ctx.practice,
+        start_new: fn(_, _) { panic as "the whole deck was started" },
+        start_new_in_band: fn(uid, band, count) {
+          assert uid == "u1"
+          assert band == "bad"
+          assert count == 3
+          count
+        },
+      ),
+    )
+  let assert Ok(body) =
+    practice.more_json(started, fakes.signed_in("g1", "u1"), "bad")
+  // The band's session comes back, not the whole deck's.
+  assert ids(body) == ["bad-due1", "bad-new1"]
+}
+
+pub fn keep_going_refuses_a_band_that_is_not_one_test() {
+  // Refused before anything is started: every practice cap panics here.
+  assert practice.more_json(
+      fakes.ctx(),
+      fakes.signed_in("g1", "u1"),
+      "brilliant",
+    )
+    == Error(error.validation_failed("That is not one of your mistake tiers."))
+}
+
+// ---------- PRACTICE ANYWAY ----------
+
+/// Cells in rotation, due at these times, and the cards for them.
+fn with_rotation(ctx: Ctx, cells: List(#(String, String, Int))) -> Ctx {
+  Ctx(
+    ..ctx,
+    practice: PracticeCaps(
+      ..ctx.practice,
+      cells: fn(uid) {
+        assert uid == "u1"
+        list.map(cells, fn(c) {
+          Cell(
+            key: c.0,
+            band: c.1,
+            level: 2,
+            due_ms: c.2,
+            status: Active,
+            position: Some(0),
+          )
+        })
+      },
+      cards: fn(_uid, keys) {
+        // In an order of the deck's own: the handler puts them back in
+        // the order it asked for.
+        list.reverse(list.map(keys, card(_, Move)))
+      },
+    ),
+  )
+}
+
+pub fn all_is_ignored_while_the_queue_has_cards_test() {
+  // `cells` panics: today's set comes first, and the anyway list is never
+  // read while it has anything in it.
+  let ctx = with_deck(fakes.ctx(), 1, 0)
+  let assert Ok(body) =
+    practice.session_json(ctx, fakes.signed_in("g1", "u1"), "", True)
+  assert ids(body) == ["due1"]
+}
+
+pub fn all_answers_the_rotation_soonest_due_first_when_the_queue_is_empty_test() {
+  let ctx =
+    with_rotation(with_deck(fakes.ctx(), 0, 0), [
+      #("later", "bad", 3000),
+      #("soon", "bad", 1000),
+      #("other-tier", "very_bad", 500),
+      #("middle", "bad", 2000),
+    ])
+  let ctx =
+    Ctx(
+      ..ctx,
+      practice: PracticeCaps(..ctx.practice, band_queue: fn(_, _, _) {
+        Session(reviews: [], fresh: [], new_remaining_today: 0)
+      }),
+    )
+  let assert Ok(body) =
+    practice.session_json(ctx, fakes.signed_in("g1", "u1"), "bad", True)
+  assert ids(body) == ["soon", "middle", "later"]
+  // None of them is due: each answer is a reveal and nothing moves.
+  assert !string.contains(body, "\"due\":true")
+
+  // The whole deck, every tier.
+  let assert Ok(whole) =
+    practice.session_json(ctx, fakes.signed_in("g1", "u1"), "", True)
+  assert ids(whole) == ["other-tier", "soon", "middle", "later"]
+
+  // Without `all` an empty queue is an empty queue.
+  let assert Ok(plain) =
+    practice.session_json(ctx, fakes.signed_in("g1", "u1"), "bad", False)
+  assert ids(plain) == []
+}
+
+pub fn all_leaves_out_a_card_nobody_has_started_or_one_put_aside_test() {
+  let ctx = with_deck(fakes.ctx(), 0, 0)
+  let ctx =
+    Ctx(
+      ..ctx,
+      practice: PracticeCaps(
+        ..ctx.practice,
+        cells: fn(_) {
+          [
+            Cell("new", "bad", 0, 0, New, Some(1)),
+            Cell("aside", "bad", 3, 0, Suspended, Some(2)),
+            Cell("going", "bad", 1, 9, Active, Some(3)),
+          ]
+        },
+        cards: fn(_, keys) {
+          assert keys == ["going"]
+          list.map(keys, card(_, Move))
+        },
+      ),
+    )
+  let assert Ok(body) =
+    practice.session_json(ctx, fakes.signed_in("g1", "u1"), "", True)
+  assert ids(body) == ["going"]
+}
+
+/// A guest's band narrows their own mistakes to that tier, worst grade
+/// any of their games reached it at, newest game first, nothing written.
+pub fn a_guest_band_narrows_their_mistakes_test() {
+  let ctx =
+    Ctx(
+      ..fakes.ctx(),
+      puzzles: PuzzlesCaps(..fakes.ctx().puzzles, guest_sources: fn(_) {
+        [
+          graded_source("a", "bad", 0),
+          graded_source("b", "very_bad", 1),
+          graded_source("c", "doubtful", 2),
+          // `c` reached again, worse: it counts as bad.
+          graded_source("c", "bad", 3),
+        ]
+      }),
+    )
+  let assert Ok(bad) = practice.practice_json(ctx, fakes.guest("g1"), "bad")
+  assert ids(bad) == ["a", "c"]
+  let assert Ok(worst) =
+    practice.practice_json(ctx, fakes.guest("g1"), "very_bad")
+  assert ids(worst) == ["b"]
+  let assert Ok(dubious) =
+    practice.practice_json(ctx, fakes.guest("g1"), "doubtful")
+  assert ids(dubious) == []
+  // The pile is still all of theirs, whatever the tier.
+  assert string.contains(bad, "\"mistakes\":{\"puzzles\":3,\"games\":1}")
+  assert string.contains(bad, "\"severity\":null")
+}
+
+fn graded_source(id: String, grade: String, index: Int) {
+  DeckSource(
+    source_id: index,
+    puzzle_id: id,
+    game_id: "room1",
+    game_number: 1,
+    kind: "move",
+    grade: grade,
+    turn: index + 1,
+    question_json: question_json(Move),
+    ended_ms: 1_790_000_000_000 - index,
+    seat: guest_seat("g1"),
+  )
 }
 
 // ---------- A guest ----------
@@ -603,7 +778,7 @@ pub fn a_guest_sees_one_card_per_puzzle_test() {
 pub fn keep_going_writes_nothing_for_a_guest_test() {
   // The practice caps all panic, so reaching the deck at all fails here.
   let ctx = with_guest_mistakes(fakes.ctx(), [#("mine", guest_seat("g1"))])
-  let assert Ok(body) = practice.more_json(ctx, fakes.guest("g1"))
+  let assert Ok(body) = practice.more_json(ctx, fakes.guest("g1"), "")
   assert ids(body) == ["mine"]
 }
 
