@@ -76,7 +76,8 @@ and recent matches.
   `games_players_gin` containment and project each answer down to the
   seats' totals in the database, as `rating_summaries` does. Reaching into
   a stored answer is the expensive half of both (it decompresses whole to
-  give up two numbers), so the form's query asks for nothing it does not
+  give up two numbers, so the two parts are taken out once per answer, in
+  the `answer` lateral of the seats join), so the form's query asks for nothing it does not
   rate -- no opponent, no record line -- which is what pays for the second
   one. `recent`'s first ten rooms ride in the home answer; the rest come
   ten at a time from `/papi/me/games/graded?before=`, whose cursor is
@@ -95,7 +96,6 @@ and recent matches.
   draws the same one-tier card the hub does (`Ui.Tiers`): the mark, "31
   left to fix", "23 patched", the bar -- highlighter yellow for what is
   in progress, the best move's green for what is patched -- and FIX ONE,
-  with the other tiers as quiet rows and "3 fixed today" under it, and
-  nothing else: `ladder` and `days` are still sent but no longer drawn.
+  with the other tiers as quiet rows, and nothing else: `ladder` and `days` are still sent but no longer drawn.
 - Decisions: `src/oskol/handlers/home.gleam`. Reading never creates a
   deck, and never queues a review.
