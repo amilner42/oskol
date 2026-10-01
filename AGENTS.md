@@ -2113,8 +2113,11 @@ also somebody's mistake is one puzzle in two places).
   (`handlers/puzzles.attempt_in_json` / `outcome_in_json`); none is the
   player's mistakes, a name that is no set is a 422. The run carries it
   (`Main.Run.deck`), the strip names the set ("Openings · 3 practised
-  today"), and the page asks no `/why` (a set's position came from no
-  game). A set is "learned", never fixed or patched (`Ui.Decks`).
+  today"), and the page names no game: it asks neither `/why` nor `/mine`
+  (`Page.Puzzle.asksMemory`), so no memory line and no "share with my
+  mistake", even where an opening is also a puzzle from the player's own
+  game. Games are named only in a mistakes run and on a puzzle opened from
+  a link. A set is "learned", never fixed or patched (`Ui.Decks`).
 - **Adding is an account's; playing is anybody's.** `POST /papi/decks/:id/join`
   enrols every member in the set's scope at its position, with the
   browser's zone; a guest, a stranger and an account that has not added
