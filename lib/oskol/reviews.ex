@@ -176,18 +176,33 @@ defmodule Oskol.Reviews do
   # laptop, nearly all of it detoasting the stored answer -- so neither
   # asks for a row it will not use.
   #
-  # And the two parts are taken out of each answer once, in `@seats`'s
-  # `answer` lateral, rather than by three `r.response -> ...` expressions
-  # here: each of those decompressed the whole stored value again, which on
+  # And the two parts are taken out of each answer once, in the inner
+  # `answer` subquery, rather than by three `r.response -> ...` expressions:
+  # each of those decompressed the whole stored value again, which on
   # production's answers (64 KB compressed, 208 KB as text, on average) was
   # most of the read -- 96 ms against 37-42 ms for the 58-game account,
-  # measured 2026-10-01.
+  # measured 2026-10-01. OFFSET 0 keeps the planner from folding the parts
+  # back into every expression that reads them.
+  #
+  # It is a scalar subquery in the select list, not a LATERAL in the FROM
+  # clause, on purpose. A lateral is part of the join tree and runs wherever
+  # the planner puts it: in the recent list's query, on the estimates a
+  # small or freshly vacuumed table gives, that was the inner side of a
+  # nested loop rescanned once per room of the page -- every graded game of
+  # the account decompressed ten times over, 1000 answers read for the 30 a
+  # page shows (64 ms against 2.4 ms). The select list is evaluated once
+  # per row the query returns, whatever the join order.
   @totals """
-  jsonb_build_object(
-           'players', answer.players,
-           'turns', jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
-             'player', answer.first_turn -> 'player',
-             'cube', answer.first_turn -> 'cube'))))\
+  (SELECT jsonb_build_object(
+             'players', answer.players,
+             'turns', jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+               'player', answer.first_turn -> 'player',
+               'cube', answer.first_turn -> 'cube'))))
+           FROM (
+             SELECT r.response -> 'players' AS players,
+                    r.response -> 'turns' -> 0 AS first_turn
+             OFFSET 0
+           ) AS answer)\
   """
 
   # The seat-to-account join both queries are built on. The containment
@@ -200,15 +215,7 @@ defmodule Oskol.Reviews do
     JOIN LATERAL unnest(g.players) WITH ORDINALITY AS seat(p, ord)
       ON seat.p ->> 'user_id' = $1
     JOIN game_reviews r
-      ON r.game_id = g.id AND r.status = 'done' AND r.response IS NOT NULL
-    -- What `@totals` reads out of the answer, each part taken once; OFFSET
-    -- 0 keeps the planner from folding them back into every expression
-    -- that reads them.
-    CROSS JOIN LATERAL (
-      SELECT r.response -> 'players' AS players,
-             r.response -> 'turns' -> 0 AS first_turn
-      OFFSET 0
-    ) AS answer\
+      ON r.game_id = g.id AND r.status = 'done' AND r.response IS NOT NULL\
   """
 
   # What the recent list needs on top of the seats: which game of which
