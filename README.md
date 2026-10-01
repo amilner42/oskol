@@ -8,7 +8,7 @@
 
 Oskol is a backgammon site, and means to be the best place on the internet to play backgammon: with a friend from a link, no accounts, on a phone or a desktop. The real game with the doubling cube -- single games, matches with the Crawford rule, unlimited play with the Jacoby rule -- and the analysis engine's verdicts on every game once it is over: play a friend from a link, then learn from the game.
 
-The game is written in Gleam on top of **gamekit**, a tiny framework where a game is one module implementing a small contract (init, decode action, apply, legal actions, scene, outcome, clocks, timeout). The Elixir/Phoenix host and the Elm client speak a fixed protocol of scenes, events and action schemas and never see a checker. See [CLAUDE.md](CLAUDE.md) for the architecture.
+The game is written in Gleam on top of **gamekit**, a tiny framework where a game is one module implementing a small contract (init, decode action, apply, legal actions, scene, outcome, clocks, timeout). The Elixir/Phoenix host and the Elm client speak a fixed protocol of scenes, events and action schemas and never see a checker. See [docs/architecture.md](docs/architecture.md) for the architecture and [AGENTS.md](AGENTS.md) for working on the code.
 
 - `/` the home page
 - `/backgammon` set up a game and share the invite link it gives you
