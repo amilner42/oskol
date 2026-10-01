@@ -613,6 +613,34 @@ defmodule OskolWeb.Api.HomeApiTest do
 
       assert ms < @budget_ms,
              "the home took #{Float.round(ms, 1)} ms with 100 graded games (budget #{@budget_ms} ms)"
+
+      # What the milliseconds stand for, asked of the plan rather than the
+      # clock: the recent list decompresses one stored answer per game it
+      # returns, whatever join order the planner picks. Reading the totals
+      # in a LATERAL beside the seats let them run on the inner side of a
+      # nested loop rescanned once per room of the page -- 1000 answers
+      # read for 30 rows, 64 ms against 2.4 ms -- and which plan won turned
+      # on how big a small table looked that run. So the second pass takes
+      # the cheap joins away, leaving the planner the rescanning loops.
+      {sql, params} = Reviews.graded_rooms_for_sql(user.id, 10)
+
+      for settings <- [
+            [],
+            ["enable_hashjoin = off", "enable_mergejoin = off", "enable_material = off"]
+          ] do
+        {:error, {rows, reads}} =
+          Repo.transaction(fn ->
+            for s <- settings, do: Repo.query!("SET LOCAL " <> s)
+            %{rows: [[[plan]]]} = Repo.query!("EXPLAIN (ANALYZE, FORMAT JSON) " <> sql, params)
+            Repo.rollback({plan["Plan"]["Actual Rows"], subplan_loops(plan["Plan"])})
+          end)
+
+        assert rows == 30
+
+        assert reads == rows,
+               "the recent list's totals subquery ran #{reads} times for #{rows} rows " <>
+                 "(#{inspect(settings)}): the answers are no longer read once per row returned"
+      end
     end
 
     @tag :slow
@@ -655,6 +683,13 @@ defmodule OskolWeb.Api.HomeApiTest do
   end
 
   # Five runs, the middle one, and all of them for the eye.
+  # How many times the plan's subqueries ran (each a stored answer read),
+  # anywhere in the tree.
+  defp subplan_loops(node) do
+    own = if node["Parent Relationship"] == "SubPlan", do: node["Actual Loops"], else: 0
+    own + Enum.sum(Enum.map(node["Plans"] || [], &subplan_loops/1))
+  end
+
   defp median_ms(work) do
     times =
       for _ <- 1..5 do
