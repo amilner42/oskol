@@ -30,8 +30,64 @@ suite =
         , why
         , choices
         , theHome
+        , aRun
         , aDecksPage
         , noJargon
+        ]
+
+
+{-| A run, as it goes on and as it ends: what KNEW IT says, what an early
+answer says, and the words a run of early answers wears.
+-}
+aRun : Test
+aRun =
+    describe "a run"
+        [ -- KNEW IT puts a mistake at the top in one step. Nobody answered
+          -- it seven times, so the line never says they did.
+          test "KNEW IT: marked known, and when it comes back" <|
+            \_ ->
+                Mistakes.knownLine "back in a year"
+                    |> Expect.equal "Marked as known — back in a year"
+        , test "the real milestone still reads as the real milestone" <|
+            \_ ->
+                Mistakes.milestone 4 |> Expect.equal "Patched. Four right in a row"
+        , test "an answer before it was due: practice only, nothing moves, and when it is due" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.earlyLine "9 Oct" |> Expect.equal "Not due until 9 Oct — practice only, nothing moves."
+                    , \_ -> Mistakes.earlyLineUndated |> Expect.equal "Not due yet — practice only, nothing moves."
+                    ]
+                    ()
+        , test "a run of early answers, over the board and at its end" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.practiceOnlyTag |> Expect.equal "Practice only"
+                    , \_ -> Mistakes.practiceOnlyRun |> Expect.equal "Practice only: none of these were due, so nothing moved."
+                    ]
+                    ()
+        , test "the way back names the page the run was started from" <|
+            \_ ->
+                [ Mistakes.backLine { next = "/puzzles", name = Just "Very bad moves" }
+                , Mistakes.backLine { next = "/practice/very-bad", name = Just "Very bad moves" }
+                , Mistakes.backLine { next = "/practice/openings", name = Just "Openings" }
+                , Mistakes.backLine { next = "/practice/openings", name = Nothing }
+                , Mistakes.backLine { next = "/", name = Nothing }
+                , Mistakes.backLine { next = "/backgammon/abc123", name = Nothing }
+                , Mistakes.backLine { next = "/backgammon/abc123/replay?game=2", name = Nothing }
+                ]
+                    |> Expect.equal
+                        [ "Back to puzzles →"
+                        , "Back to very bad moves →"
+                        , "Back to openings →"
+                        , "Back to puzzles →"
+                        , "Back home →"
+                        , "Back to the game →"
+                        , "Back to the replay →"
+                        ]
+        , test "a way on that found nothing more" <|
+            \_ ->
+                Mistakes.everyOnePractised
+                    |> Expect.equal "That's every one of these for now. The ones you get wrong come back on their day."
         ]
 
 
@@ -149,11 +205,27 @@ today : Test
 today =
     describe "the day, wherever the ring used to be"
         [ test "a plain count, with nothing to measure it against" <|
-            \_ -> Mistakes.fixedToday 3 |> Expect.equal "3 fixed today"
+            \_ -> Mistakes.practisedToday 3 |> Expect.equal "3 practised today"
         , test "one is one, not a fraction of anything" <|
-            \_ -> Mistakes.fixedToday 1 |> Expect.equal "1 fixed today"
+            \_ -> Mistakes.practisedToday 1 |> Expect.equal "1 practised today"
         , test "a day not started yet says so without a goal" <|
-            \_ -> Mistakes.fixedToday 0 |> Expect.equal "Nothing fixed yet today"
+            \_ -> Mistakes.practisedToday 0 |> Expect.equal "Nothing practised yet today"
+        , test "with the streak, on the practice home's head line" <|
+            \_ -> Mistakes.dayStreakLine { streak = 5, done = 2 } |> Expect.equal "5 days running · 2 practised today"
+
+        -- A count of answers counts misses too: it never says "fixed",
+        -- which only a mistake over the patched rung has earned.
+        , test "no count of answers says fixed" <|
+            \_ ->
+                [ Mistakes.practisedToday 0
+                , Mistakes.practisedToday 8
+                , Mistakes.dayStreakLine { streak = 0, done = 3 }
+                , Mistakes.dayStreakLine { streak = 5, done = 0 }
+                , Mistakes.runSummary { right = 1, total = 1 }
+                , Mistakes.runSummary { right = 0, total = 12 }
+                ]
+                    |> List.filter (String.contains "fixed")
+                    |> Expect.equal []
         ]
 
 
@@ -166,7 +238,7 @@ runEnd =
         [ test "one fixed is a whole session, and says so" <|
             \_ ->
                 Mistakes.runSummary { right = 1, total = 1 }
-                    |> Expect.equal "One fixed. That is how it is done."
+                    |> Expect.equal "One right. That is how it is done."
         , test "one missed says when it comes back, not that you failed" <|
             \_ ->
                 Mistakes.runSummary { right = 0, total = 1 }
@@ -276,7 +348,7 @@ noJargon =
                             ([ Mistakes.bandName "very_bad"
                              , Mistakes.line (band "bad" 3 1 1)
                              , Mistakes.milestone 4
-                             , Mistakes.fixedToday 3
+                             , Mistakes.practisedToday 3
                              , Mistakes.tierName "very_bad"
                              , Mistakes.leftToFix (band "very_bad" 61 30 23)
                              , Mistakes.goodShapeLine "very_bad"
@@ -303,6 +375,12 @@ noJargon =
                              , Mistakes.guestPracticeLine
                              , Mistakes.rowLeft 23
                              , Mistakes.freshLine
+                             , Mistakes.knownLine "back in a year"
+                             , Mistakes.earlyLine "9 Oct"
+                             , Mistakes.earlyLineUndated
+                             , Mistakes.practiceOnlyTag
+                             , Mistakes.practiceOnlyRun
+                             , Mistakes.everyOnePractised
                              , Mistakes.ladderLine { patchedLevel = 4, started = [ 2, 8, 5, 3, 6, 0, 0, 0 ] }
                              , Mistakes.dueLine { due = 0, newLeft = 0, nextInDays = Just 3 }
                              , Mistakes.strangerTierLine
@@ -365,10 +443,10 @@ theHome =
         , test "the day: the streak left off at zero, the count said in words at zero" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Mistakes.dayStreakLine { streak = 5, done = 3 } |> Expect.equal "5 days running · 3 fixed today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 1, done = 0 } |> Expect.equal "1 day running · nothing fixed yet today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 0 } |> Expect.equal "Nothing fixed yet today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 2 } |> Expect.equal "2 fixed today"
+                    [ \_ -> Mistakes.dayStreakLine { streak = 5, done = 3 } |> Expect.equal "5 days running · 3 practised today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 1, done = 0 } |> Expect.equal "1 day running · nothing practised yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 0 } |> Expect.equal "Nothing practised yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 2 } |> Expect.equal "2 practised today"
                     ]
                     ()
         , test "the line under each button" <|

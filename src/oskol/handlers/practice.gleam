@@ -79,9 +79,22 @@ pub fn session_json(
   band: String,
   all: Bool,
 ) -> Result(String, ApiError) {
+  session_from_json(ctx, session, band, all, 0)
+}
+
+/// The same, a page further into PRACTICE ANYWAY: `from` skips that many
+/// of the rotation (`deck.anyway`), which is how a run goes on past its
+/// first twenty early answers. It means nothing without `all`.
+pub fn session_from_json(
+  ctx: Ctx,
+  session: Session,
+  band: String,
+  all: Bool,
+  from: Int,
+) -> Result(String, ApiError) {
   use band <- result.try(checked_band(band))
   case session.user_id, session.guest_id {
-    Some(uid), _ -> Ok(account_session(ctx, uid, band, all))
+    Some(uid), _ -> Ok(account_session(ctx, uid, band, all, from))
     // A guest has no deck, so nothing is scheduled and nothing is in
     // rotation: a band narrows their mistakes to that tier and `all` has
     // nothing to add.
@@ -117,7 +130,7 @@ pub fn more_json(
       let _ = deck.keep_going(ctx, uid, band)
       // From the front again: the cards that were just started are due
       // now, so they are exactly what the next page is.
-      Ok(account_session(ctx, uid, band, False))
+      Ok(account_session(ctx, uid, band, False, 0))
     }
     None -> practice_json(ctx, session, band)
   }
@@ -168,13 +181,19 @@ fn signed_in(session: Session) -> Result(String, ApiError) {
 
 // ---------- An account's session ----------
 
-fn account_session(ctx: Ctx, uid: String, band: String, all: Bool) -> String {
+fn account_session(
+  ctx: Ctx,
+  uid: String,
+  band: String,
+  all: Bool,
+  from: Int,
+) -> String {
   let found = case band {
     "" -> deck.session(ctx, uid)
     _ -> deck.band_session(ctx, uid, band)
   }
   let entries = case found.reviews, found.fresh, all {
-    [], [], True -> cards(deck.anyway(ctx, uid, band), False)
+    [], [], True -> cards(deck.anyway(ctx, uid, band, from), False)
     _, _, _ ->
       list.append(cards(found.reviews, True), cards(found.fresh, False))
   }

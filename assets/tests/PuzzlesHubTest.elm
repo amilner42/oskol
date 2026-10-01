@@ -412,7 +412,7 @@ anAccount =
                 loaded accountJson
                     |> rendered
                     |> Query.find [ id "hub-day" ]
-                    |> Query.has [ text "5 days running · 2 fixed today" ]
+                    |> Query.has [ text "5 days running · 2 practised today" ]
         , test "the lead in front: its mark, its name, its ring, FIX ONE" <|
             \_ ->
                 card accountJson
@@ -509,8 +509,37 @@ theButton =
             \_ ->
                 loaded accountJson
                     |> send (Pressed (deckOf accountJson "very_bad") FixOne)
-                    |> out (GotTierRun (deckOf accountJson "very_bad") (Api.parseBody Practice.practiceDecoder bandJson))
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad"))
+                    |> out (GotTierRun (deckOf accountJson "very_bad") FixOne (Api.parseBody Practice.practiceDecoder bandJson))
+                    -- The ring over the board starts where the card's was:
+                    -- two done of today's nine (two, four due, three new).
+                    |> Expect.equal
+                        (StartRun [ "aaaaaaaa", "bbbbbbbb" ]
+                            (Just { done = 2 })
+                            (Just "very_bad")
+                            { deckToday = Just { done = 2, target = 9 }, anyway = False }
+                        )
+        , test "KEEP GOING hands the run today's set grown by what it started" <|
+            \_ ->
+                loaded keepGoingJson
+                    |> send (Pressed (deckOf keepGoingJson "very_bad") KeepGoing)
+                    |> out (GotTierRun (deckOf keepGoingJson "very_bad") KeepGoing (Api.parseBody Practice.practiceDecoder bandJson))
+                    |> Expect.equal
+                        (StartRun [ "aaaaaaaa", "bbbbbbbb" ]
+                            (Just { done = 2 })
+                            (Just "very_bad")
+                            { deckToday = Just { done = 5, target = 7 }, anyway = False }
+                        )
+        , test "PRACTICE ANYWAY marks the run as practice only, the ring left full" <|
+            \_ ->
+                loaded scheduledJson
+                    |> send (Pressed (deckOf scheduledJson "very_bad") PracticeAnyway)
+                    |> out (GotTierRun (deckOf scheduledJson "very_bad") PracticeAnyway (Api.parseBody Practice.practiceDecoder bandJson))
+                    |> Expect.equal
+                        (StartRun [ "aaaaaaaa", "bbbbbbbb" ]
+                            (Just { done = 2 })
+                            (Just "very_bad")
+                            { deckToday = Just { done = 0, target = 0 }, anyway = True }
+                        )
         , test "pressed, the button waits in its slot and says so" <|
             \_ ->
                 loaded accountJson
@@ -547,13 +576,18 @@ theButton =
             \_ ->
                 loaded accountJson
                     |> send (Pressed (deckOf accountJson "openings") Practice)
-                    |> out (GotSetRun (deckOf accountJson "openings") (Api.parseBody Decks.sessionDecoder setSessionJson))
-                    |> Expect.equal (StartDeckRun [ "oooooooo" ] (Just { done = 1 }) { id = "openings", name = "Openings" })
+                    |> out (GotSetRun (deckOf accountJson "openings") Practice (Api.parseBody Decks.sessionDecoder setSessionJson))
+                    |> Expect.equal
+                        (StartDeckRun [ "oooooooo" ]
+                            (Just { done = 1 })
+                            { id = "openings", name = "Openings" }
+                            { deckToday = Just { done = 0, target = 7 }, anyway = False }
+                        )
         , test "a queue that came back empty says so where the quiet line is" <|
             \_ ->
                 loaded accountJson
                     |> send (Pressed (deckOf accountJson "very_bad") FixOne)
-                    |> send (GotTierRun (deckOf accountJson "very_bad") (Api.parseBody Practice.practiceDecoder emptyBandJson))
+                    |> send (GotTierRun (deckOf accountJson "very_bad") FixOne (Api.parseBody Practice.practiceDecoder emptyBandJson))
                     |> rendered
                     |> Query.find [ id "hub-quiet" ]
                     |> Query.has [ text "That's every one of these for now." ]
@@ -561,7 +595,7 @@ theButton =
             \_ ->
                 loaded accountJson
                     |> send (Pressed (deckOf accountJson "openings") Practice)
-                    |> send (GotSetRun (deckOf accountJson "openings") (Api.parseBody Decks.sessionDecoder """{"ok":false,"error":{"code":"not_found","message":"There is no such set of puzzles."}}"""))
+                    |> send (GotSetRun (deckOf accountJson "openings") Practice (Api.parseBody Decks.sessionDecoder """{"ok":false,"error":{"code":"not_found","message":"There is no such set of puzzles."}}"""))
                     |> rendered
                     |> Query.find [ id "hub-quiet" ]
                     |> Query.has [ text "There is no such set of puzzles." ]
@@ -630,7 +664,7 @@ aFreshAccount =
                         [ Query.find [ id "hub-fresh" ] >> Query.has [ text Mistakes.freshLine ]
                         , Query.find [ id "hub-card" ] >> Query.has [ dataAttr "data-deck" "openings" ]
                         , Query.find [ id "hub-go" ] >> Query.has [ text "START" ]
-                        , Query.find [ id "hub-day" ] >> Query.has [ text "Nothing fixed yet today" ]
+                        , Query.find [ id "hub-day" ] >> Query.has [ text "Nothing practised yet today" ]
                         ]
         , test "its tiers are quiet rows with nothing to tap" <|
             \_ ->
@@ -672,8 +706,9 @@ aGuest =
             \_ ->
                 loaded guestJson
                     |> send (Pressed (deckOf guestJson "bad") Practice)
-                    |> out (GotTierRun (deckOf guestJson "bad") (Api.parseBody Practice.practiceDecoder bandJson))
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "bad"))
+                    |> out (GotTierRun (deckOf guestJson "bad") Practice (Api.parseBody Practice.practiceDecoder bandJson))
+                    -- A guest has no day, so the run draws no ring.
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "bad") { deckToday = Nothing, anyway = False })
         , test "a set in front says TRY" <|
             \_ ->
                 loaded guestJson

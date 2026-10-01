@@ -30,6 +30,7 @@ import Session
 import Test exposing (Test, describe, test)
 import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, tag, text)
+import Time
 import Ui.SignIn as SignIn
 
 
@@ -758,12 +759,62 @@ schedule =
                         , \q -> q |> Query.findAll [ id "pz-outcomes" ] |> Query.count (Expect.equal 1)
                         , \q -> q |> Query.findAll [ class "pz-outcome", attribute (Html.Attributes.attribute "aria-pressed" "true") ] |> Query.count (Expect.equal 0)
                         ]
-        , test "an early retry says it is already scheduled" <|
+        , test "an early answer says it is practice only, and when the mistake is due" <|
             \_ ->
-                rendered (withSchedule "move_pass" "schedule_settled")
+                -- PRACTICE ANYWAY, or a second go at one already answered:
+                -- the ladder did not hear of it, so no choices either.
+                rendered (withSchedule "move_pass" "schedule_settled" |> (\m -> { m | zone = Time.utc }))
                     |> Expect.all
-                        [ \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Already scheduled." ]
+                        [ \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Not due until 15 Jan — practice only, nothing moves." ]
                         , hasNot [ id "pz-outcomes" ]
+                        ]
+        , test "the day an early answer is due, in the reader's own zone" <|
+            \_ ->
+                -- 2027-01-15 08:00 UTC is still the 15th in UTC, and already
+                -- the 16th sixteen hours east.
+                [ Page.dueDate Time.utc 1800000000000
+                , Page.dueDate (Time.customZone (16 * 60) []) 1800000000000
+                ]
+                    |> Expect.equal [ "15 Jan", "16 Jan" ]
+        , test "KNEW IT says the mistake is marked known, never seven right in a row" <|
+            \_ ->
+                let
+                    model =
+                        withSchedule "move_pass" "schedule_amendable"
+
+                    -- What KNEW IT answers from level 2: the top rung, a year
+                    -- away, and over the patched rung on the way.
+                    known =
+                        D.decodeString Puzzle.scheduleDecoder (reveal "schedule_amendable")
+                            |> Result.map (\s -> { s | levelBefore = 2, levelAfter = 7, patched = True, due = model.now + 365 * 86400000 })
+                            |> Result.toMaybe
+
+                    pressed =
+                        model |> step (PressedOutcome "knew_it") |> step PressedApply |> step (GotOutcome "knew_it" (Ok known))
+                in
+                rendered pressed
+                    |> Query.find [ id "pz-level-line" ]
+                    |> Expect.all
+                        [ Query.has [ text "Marked as known — back in a year" ]
+                        , Query.hasNot [ text "in a row" ]
+                        ]
+        , test "the level line after KNEW IT, and the real milestone otherwise" <|
+            \_ ->
+                let
+                    jump =
+                        { levelBefore = 1, levelAfter = 7, due = 365 * 86400000, amendable = True, selfGrade = False, patched = True, heldDays = Nothing }
+
+                    crossing =
+                        { jump | levelBefore = 3, levelAfter = 4, due = 21 * 86400000 }
+                in
+                [ Page.levelLineFor (Just "knew_it") 0 jump
+                , Page.levelLineFor Nothing 0 crossing
+                , Page.levelLineFor (Just "got_it") 0 crossing
+                ]
+                    |> Expect.equal
+                        [ "Marked as known — back in a year"
+                        , "Patched. Four right in a row — back in 21 days"
+                        , "Patched. Four right in a row — back in 21 days"
                         ]
         , test "a guest: no level line at all" <|
             \_ ->
@@ -1276,7 +1327,7 @@ runEnd =
                 in
                 rendered one
                     |> Expect.all
-                        [ \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "One fixed. That is how it is done." ]
+                        [ \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "One right. That is how it is done." ]
                         ]
         , test "a guest is asked to sign in, in the one component, going on to the practice home" <|
             \_ ->
@@ -1336,17 +1387,158 @@ runEnd =
                             |> Expect.equal (Page.Go "/puzzles")
                     ]
                     ()
-        , -- The run is over because the player said so. Nothing on the
-          -- card starts more: the hub is where the next tier is picked.
-          test "an account's end is the summary and the way back, and nothing to keep going with" <|
+        , -- A run of one game's mistakes is no deck's: the summary and
+          -- the way back, nothing more.
+          test "an account's end with no deck behind it is the summary and the way back" <|
             \_ ->
                 rendered (ended account)
                     |> Expect.all
                         [ hasNot [ id "signin" ]
+                        , hasNot [ id "pz-way" ]
                         , hasNot [ id "pz-keep-going" ]
-                        , hasNot [ id "pz-more-due" ]
                         , has [ id "pz-home" ]
                         ]
+        , test "the way back goes to the page the run was started from, in its words" <|
+            \_ ->
+                let
+                    from path =
+                        ended account
+                            |> (\m -> { m | ended = Nothing, deck = Just { id = "openings", name = "Openings" } })
+                            |> Page.endRun { right = 1, total = 1 } [] path
+                            |> Tuple.first
+                            |> rendered
+                            |> Query.find [ id "pz-home" ]
+                in
+                Expect.all
+                    [ \_ -> from "/practice/openings" |> Query.has [ attribute (Html.Attributes.href "/practice/openings"), text "Back to openings →" ]
+                    , \_ -> from "/puzzles" |> Query.has [ attribute (Html.Attributes.href "/puzzles"), text "Back to puzzles →" ]
+                    ]
+                    ()
+        , wayOn
+        ]
+
+
+{-| The end card's way on: a run is never the last word. -}
+wayOn : Test
+wayOn =
+    let
+        offered state =
+            ended account |> Page.offering state
+
+        inBand q =
+            q |> Query.find [ id "pz-way" ]
+    in
+    describe "the way on from the end card"
+        [ test "while the shell asks where the deck stands, the band is laid out and the button held back" <|
+            \_ ->
+                rendered (offered Page.Asking)
+                    |> inBand
+                    |> Expect.all
+                        [ Query.find [ id "pz-way-line" ] >> Query.has [ text "" ]
+                        , Query.find [ tag "button" ] >> Query.has [ class "is-idle", Test.Html.Selector.disabled True ]
+                        ]
+        , test "today's set done with some never shown: KEEP GOING, and what it adds" <|
+            \_ ->
+                rendered (offered (Page.Offered (Page.MoreNew 3)))
+                    |> inBand
+                    |> Expect.all
+                        [ Query.find [ id "pz-keep-going" ] >> Query.has [ text "KEEP GOING", Test.Html.Selector.disabled False ]
+                        , Query.find [ id "pz-way-line" ] >> Query.has [ text "Keep going adds 3 more." ]
+                        , Query.hasNot [ id "pz-anyway" ]
+                        ]
+        , test "nothing left never shown: PRACTICE ANYWAY, and what that means" <|
+            \_ ->
+                rendered (offered (Page.Offered Page.Anyway))
+                    |> inBand
+                    |> Expect.all
+                        [ Query.find [ id "pz-anyway" ] >> Query.has [ text "PRACTICE ANYWAY" ]
+                        , Query.find [ id "pz-way-line" ] >> Query.has [ text "Everything here is scheduled. Practising early moves nothing." ]
+                        , Query.hasNot [ id "pz-keep-going" ]
+                        ]
+        , test "I'M DONE with some of today left: KEEP GOING goes on with it" <|
+            \_ ->
+                rendered (offered (Page.Offered (Page.Continue { due = 2, newLeft = 1 })))
+                    |> inBand
+                    |> Expect.all
+                        [ Query.find [ id "pz-keep-going" ] >> Query.has [ text "KEEP GOING" ]
+                        , Query.find [ id "pz-way-line" ] >> Query.has [ text "2 due now · 1 new today" ]
+                        ]
+        , test "pressed, the shell is asked to go on, and the button says it is on its way" <|
+            \_ ->
+                let
+                    model =
+                        offered (Page.Offered (Page.MoreNew 3))
+                in
+                Expect.all
+                    [ \_ -> out (PressedWay (Page.MoreNew 3)) model |> Expect.equal (Page.GoOn (Page.MoreNew 3))
+                    , \_ ->
+                        model
+                            |> step (PressedWay (Page.MoreNew 3))
+                            |> rendered
+                            |> Query.find [ id "pz-keep-going" ]
+                            |> Query.has [ class "is-busy", Test.Html.Selector.disabled True ]
+
+                    -- a second press, or a press of a way not on offer, does nothing
+                    , \_ -> model |> step (PressedWay (Page.MoreNew 3)) |> out (PressedWay (Page.MoreNew 3)) |> Expect.equal Page.NoOut
+                    , \_ -> out (PressedWay Page.Anyway) model |> Expect.equal Page.NoOut
+                    ]
+                    ()
+        , test "a press that found nothing more says so in the line, and offers nothing" <|
+            \_ ->
+                rendered (offered (Page.Stopped "That's every one of these for now."))
+                    |> inBand
+                    |> Expect.all
+                        [ Query.find [ id "pz-way-line" ] >> Query.has [ text "That's every one of these for now." ]
+                        , Query.find [ tag "button" ] >> Query.has [ class "is-idle" ]
+                        ]
+        , test "a guest's end card keeps the sign-in and gains nothing" <|
+            \_ ->
+                rendered (ended Session.empty |> Page.offering (Page.Offered (Page.MoreNew 3)))
+                    |> Expect.all
+                        [ hasNot [ id "pz-way" ]
+                        , has [ id "pz-signin-ask" ]
+                        ]
+        , test "the end of a run of early answers says, once more, that nothing moved" <|
+            \_ ->
+                let
+                    anyway =
+                        ended account
+                            |> (\m -> { m | progress = Just { at = 0, marks = [ Just Pass ], ring = Just { done = 3, target = 3 }, anyway = True } })
+                in
+                rendered anyway
+                    |> Query.find [ id "pz-practice-only" ]
+                    |> Query.has [ text "Practice only: none of these were due, so nothing moved." ]
+        , test "ANOTHER after a choice whose apply failed is pressable again" <|
+            \_ ->
+                let
+                    failed =
+                        inRunWith { tier = Just "bad", ring = Just { done = 0, target = 3 }, anyway = False } 0 [ Nothing ] (Just { done = 0 })
+                            |> answerWith "move_pass"
+                            |> step (PressedOutcome "sooner")
+                            |> step Next
+                            |> step (GotOutcome "sooner" (Err Api.NetworkError))
+                in
+                Expect.all
+                    [ \_ -> failed.leaving |> Expect.equal False
+                    , \_ -> rendered failed |> Query.find [ id "pz-next" ] |> Query.hasNot [ class "is-busy" ]
+
+                    -- pressed again, it tries the pending choice again and goes on
+                    , \_ -> failed |> step Next |> .thenOut |> Expect.equal (Just Page.WantsNext)
+                    ]
+                    ()
+        , test "ANOTHER, pressed past the run's last id, waits for the shell rather than doing nothing" <|
+            \_ ->
+                let
+                    model =
+                        inRunWith { tier = Just "bad", ring = Just { done = 0, target = 3 }, anyway = False } 0 [ Nothing ] (Just { done = 0 })
+                            |> answerWith "move_pass"
+                in
+                Expect.all
+                    [ \_ -> out Next model |> Expect.equal Page.WantsNext
+                    , \_ -> model |> step Next |> rendered |> Query.find [ id "pz-next" ] |> Query.has [ class "is-busy" ]
+                    , \_ -> model |> step Next |> out Next |> Expect.equal Page.NoOut
+                    ]
+                    ()
         ]
 
 
@@ -1564,14 +1756,19 @@ inRun at marks today =
 
 inRunOf : Maybe String -> Int -> List (Maybe Verdict) -> Maybe Practice.Today -> Page.Model
 inRunOf tier at marks today =
+    inRunWith { tier = tier, ring = Nothing, anyway = False } at marks today
+
+
+inRunWith : { tier : Maybe String, ring : Maybe Page.DeckToday, anyway : Bool } -> Int -> List (Maybe Verdict) -> Maybe Practice.Today -> Page.Model
+inRunWith config at marks today =
     let
         ( model, _ ) =
             Page.init Session.empty
                 { id = "fix"
                 , hasNext = True
                 , inRun = True
-                , progress = Just { at = at, marks = marks }
-                , tier = tier
+                , progress = Just { at = at, marks = marks, ring = config.ring, anyway = config.anyway }
+                , tier = config.tier
                 , deck = Nothing
                 , today = today
                 , origin = "http://oskol.test"
@@ -1594,40 +1791,104 @@ blanks n =
     List.repeat n Nothing
 
 
+{-| Answer the open puzzle of a run with this reveal.
+-}
+answerWith : String -> Page.Model -> Page.Model
+answerWith name model =
+    answerWithSchedule name "schedule_amendable" model
+
+
+{-| Answer it, the server answering with this schedule (or none: "").
+-}
+answerWithSchedule : String -> String -> Page.Model -> Page.Model
+answerWithSchedule name scheduleName model =
+    let
+        ( path, _ ) =
+            aTurn model
+    in
+    model
+        |> step (BoardOut (Puzzle.Stepped path))
+        |> revealed
+            (if scheduleName == "" then
+                reveal name
+
+             else
+                revealWith name scheduleName
+            )
+
+
+dataAttr : String -> String -> Test.Html.Selector.Selector
+dataAttr name value =
+    attribute (Html.Attributes.attribute name value)
+
+
 runProgress : Test
 runProgress =
-    describe "progress through a session"
+    describe "the strip over the board"
         [ -- A run has no length: it goes on until I'M DONE. So there is
           -- no "4 of 10" and no bar filling towards a finish line that
-          -- does not exist.
-          test "the head is the tier's mark and the day's count, with no total" <|
+          -- does not exist; the ring is today's set, which is real.
+          test "the deck's mark, today's ring with its count, the tiles, the day -- and no total" <|
             \_ ->
-                rendered (inRunOf (Just "very_bad") 0 (blanks 10) (Just { done = 3 }))
+                rendered (inRunWith { tier = Just "very_bad", ring = Just { done = 2, target = 5 }, anyway = False } 0 (blanks 10) (Just { done = 3 }))
                     |> Query.find [ id "pz-progress" ]
                     |> Expect.all
-                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "?? · 3 fixed today" ]
-                        , Query.hasNot [ class "pz-progress-track" ]
+                        [ Query.find [ id "pz-progress-label" ] >> Query.has [ text "??" ]
+                        , Query.find [ id "pz-ring" ] >> Query.has [ dataAttr "data-done" "2", dataAttr "data-target" "5" ]
+                        , Query.find [ id "pz-ring-count" ] >> Query.has [ text "2/5" ]
+                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practised today" ]
+                        , Query.has [ dataAttr "aria-label" "?? · 2 of today's 5 done · 3 practised today" ]
                         , Query.hasNot [ attribute (Html.Attributes.attribute "role" "progressbar") ]
                         ]
-        , test "only what has happened so far is marked, never the whole list" <|
+        , test "the ring draws its check once today's set is done" <|
             \_ ->
-                rendered (inRun 3 [ Just Pass, Just Fail, Just Hold, Nothing, Nothing ] Nothing)
-                    |> Query.find [ id "pz-progress" ]
+                Expect.all
+                    [ \_ ->
+                        rendered (inRunWith { tier = Just "bad", ring = Just { done = 3, target = 3 }, anyway = False } 0 (blanks 1) (Just { done = 3 }))
+                            |> Query.find [ id "pz-ring" ]
+                            |> Query.has [ class "is-done" ]
+                    , \_ ->
+                        rendered (inRunWith { tier = Just "bad", ring = Just { done = 2, target = 3 }, anyway = False } 0 (blanks 1) (Just { done = 2 }))
+                            |> Query.find [ id "pz-ring" ]
+                            |> Query.findAll [ class "is-done" ]
+                            |> Query.count (Expect.equal 0)
+                    , \_ ->
+                        -- nothing in today's set: full, and no "0/0"
+                        rendered (inRunWith { tier = Just "bad", ring = Just { done = 0, target = 0 }, anyway = True } 0 (blanks 1) (Just { done = 0 }))
+                            |> Query.find [ id "pz-ring" ]
+                            |> Expect.all [ Query.has [ class "is-done" ], Query.find [ id "pz-ring-count" ] >> Query.has [ text "" ], Query.hasNot [ text "0/0" ] ]
+                    ]
+                    ()
+        , test "a tile per answer so far, each by its verdict, and the one on the board outlined" <|
+            \_ ->
+                rendered (inRun 3 [ Just Pass, Just Fail, Just Unknown, Nothing, Nothing ] Nothing)
+                    |> Query.find [ id "pz-marks" ]
                     |> Expect.all
-                        [ Query.findAll [ class "pz-mark" ] >> Query.count (Expect.equal 4)
-                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "pass") ]
-                            >> Query.count (Expect.equal 1)
-                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "fail") ]
-                            >> Query.count (Expect.equal 1)
-                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "hold") ]
-                            >> Query.count (Expect.equal 1)
+                        [ Query.findAll [ class "pz-tile" ] >> Query.count (Expect.equal 4)
+                        , Query.find [ dataAttr "data-mark" "pass" ] >> Query.has [ class "pz-tile" ]
 
-                        -- the one being played, and no mark for the
-                        -- mistakes that may never be reached
-                        , Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "blank") ]
-                            >> Query.count (Expect.equal 1)
+                        -- a check on the green, a cross on the red, a dash
+                        -- for one nothing could check: each its own glyph
+                        , Query.find [ dataAttr "data-mark" "pass" ] >> Query.find [ tag "path" ] >> Query.has [ dataAttr "d" "M4.6 9.4 L7.6 12.4 L13.4 5.8" ]
+                        , Query.find [ dataAttr "data-mark" "fail" ] >> Query.find [ tag "path" ] >> Query.has [ dataAttr "d" "M5.6 5.6 L12.4 12.4 M12.4 5.6 L5.6 12.4" ]
+                        , Query.find [ dataAttr "data-mark" "unknown" ] >> Query.find [ tag "path" ] >> Query.has [ dataAttr "d" "M5.5 9 L12.5 9" ]
+
+                        -- the one on the board, not yet answered: outlined,
+                        -- empty; nothing for the ones not reached
+                        , Query.find [ dataAttr "data-mark" "blank" ] >> Query.has [ class "is-here" ]
+                        , Query.find [ dataAttr "data-mark" "blank" ] >> Query.findAll [ tag "svg" ] >> Query.count (Expect.equal 0)
                         , Query.findAll [ class "is-here" ] >> Query.count (Expect.equal 1)
                         ]
+        , test "the tiles are one row in one strip, however many there are" <|
+            \_ ->
+                -- The strip scrolls sideways rather than wrapping (app.css);
+                -- what the page owes it is one row to scroll: every tile a
+                -- child of the one row inside it.
+                rendered (inRun 24 (List.repeat 24 (Just Pass) ++ [ Nothing ]) Nothing)
+                    |> Query.find [ id "pz-marks" ]
+                    |> Query.find [ class "pz-tiles-in" ]
+                    |> Query.children [ class "pz-tile" ]
+                    |> Query.count (Expect.equal 25)
         , test "a run through a set is named by the set, and its day in the set's words" <|
             \_ ->
                 let
@@ -1635,8 +1896,14 @@ runProgress =
                         inRunOf Nothing 0 (blanks 3) (Just { done = 3 })
                 in
                 rendered { model | deck = Just { id = "openings", name = "Openings" } }
-                    |> Query.find [ id "pz-progress-count" ]
-                    |> Query.has [ text "Openings · 3 practised today" ]
+                    |> Expect.all
+                        [ Query.find [ id "pz-progress-label" ] >> Query.has [ text "Openings" ]
+                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practised today" ]
+
+                        -- a set's position came from no game: no why, and
+                        -- so one reserved line rather than two
+                        , Query.find [ id "pz-progress" ] >> Query.hasNot [ class "has-why" ]
+                        ]
         , test "an answer in a set says which set it counts in, and one of a mistake never does" <|
             \_ ->
                 let
@@ -1668,16 +1935,22 @@ runProgress =
                     , \_ -> Page.asksMemory plain |> Expect.equal True
                     ]
                     ()
-        , test "a run of one game's mistakes has no tier, so it is the count alone" <|
+        , test "a run of one game's mistakes is no deck's: no ring, the count alone" <|
             \_ ->
                 rendered (inRun 0 (blanks 3) (Just { done = 1 }))
-                    |> Query.find [ id "pz-progress-count" ]
-                    |> Query.has [ text "1 fixed today" ]
+                    |> Expect.all
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "1 practised today" ]
+                        , Query.hasNot [ id "pz-ring" ]
+                        ]
         , test "a guest in a run has no day of theirs, so it is the mark alone" <|
             \_ ->
                 rendered (inRunOf (Just "bad") 0 (blanks 3) Nothing)
-                    |> Query.find [ id "pz-progress-count" ]
-                    |> Query.has [ text "?" ]
+                    |> Query.find [ id "pz-progress" ]
+                    |> Expect.all
+                        [ Query.find [ id "pz-progress-label" ] >> Query.has [ text "?" ]
+                        , Query.hasNot [ id "pz-ring" ]
+                        , Query.has [ dataAttr "aria-label" "?" ]
+                        ]
         , test "a puzzle opened from a link is not a session, and says nothing about one" <|
             \_ ->
                 rendered (page { hasNext = False } "move")
@@ -1685,63 +1958,112 @@ runProgress =
                         [ Query.hasNot [ id "pz-progress" ]
                         , Query.hasNot [ id "pz-done" ]
                         ]
-        , test "answering fills this puzzle's own mark, in the verdict's colours" <|
+        , test "answering fills this puzzle's own tile, in the verdict's colours" <|
             \_ ->
-                let
-                    model =
-                        inRun 1 [ Just Pass, Nothing, Nothing ] Nothing
-
-                    ( path, _ ) =
-                        aTurn model
-                in
-                model
-                    |> step (BoardOut (Puzzle.Stepped path))
-                    |> revealed (reveal "move_fail")
+                inRun 1 [ Just Pass, Nothing, Nothing ] Nothing
+                    |> answerWith "move_fail"
                     |> rendered
                     |> Query.find [ id "pz-marks" ]
-                    |> Query.findAll [ attribute (Html.Attributes.attribute "data-mark" "fail") ]
-                    |> Query.count (Expect.equal 1)
-        , test "the day's count moves as the answer lands" <|
+                    |> Query.find [ dataAttr "data-mark" "fail" ]
+                    |> Query.has [ class "is-here" ]
+        , test "the ring and the day's count move as the answer lands" <|
             \_ ->
                 let
                     model =
-                        inRunOf (Just "very_bad") 1 [ Just Pass, Nothing ] (Just { done = 4 })
-
-                    ( path, _ ) =
-                        aTurn model
+                        inRunWith { tier = Just "very_bad", ring = Just { done = 2, target = 5 }, anyway = False } 1 [ Just Pass, Nothing ] (Just { done = 4 })
                 in
                 Expect.all
                     [ \_ ->
                         rendered model
                             |> Query.find [ id "pz-progress-count" ]
-                            |> Query.has [ text "?? · 4 fixed today" ]
+                            |> Query.has [ text "4 practised today" ]
                     , \_ ->
                         model
-                            |> step (BoardOut (Puzzle.Stepped path))
-                            |> revealed (reveal "move_pass")
+                            |> answerWith "move_pass"
                             |> rendered
-                            |> Query.find [ id "pz-progress-count" ]
-                            |> Query.has [ text "?? · 5 fixed today" ]
+                            |> Query.find [ id "pz-progress" ]
+                            |> Expect.all
+                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 practised today" ]
+                                , Query.find [ id "pz-ring-count" ] >> Query.has [ text "3/5" ]
+                                ]
                     ]
                     ()
         , test "answering the same puzzle twice moves the count once" <|
             \_ ->
                 -- Only the first answer at a card is recorded, so a retry
                 -- must not make the day look busier than it was.
-                let
-                    model =
-                        inRun 0 [ Nothing ] (Just { done = 4 })
-
-                    ( path, _ ) =
-                        aTurn model
-                in
-                model
-                    |> step (BoardOut (Puzzle.Stepped path))
-                    |> revealed (reveal "move_pass")
+                inRunWith { tier = Nothing, ring = Just { done = 0, target = 3 }, anyway = False } 0 [ Nothing ] (Just { done = 4 })
+                    |> answerWith "move_pass"
                     |> revealed (reveal "move_fail")
                     |> rendered
-                    |> Query.find [ id "pz-progress-count" ]
-                    |> Query.has [ text "5 fixed today" ]
+                    |> Query.find [ id "pz-progress" ]
+                    |> Expect.all
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 practised today" ]
+                        , Query.find [ id "pz-ring-count" ] >> Query.has [ text "1/3" ]
+                        ]
+        , test "a run of early answers says it is practice only, and counts nothing" <|
+            \_ ->
+                inRunWith { tier = Just "very_bad", ring = Just { done = 3, target = 3 }, anyway = True } 0 [ Nothing ] (Just { done = 3 })
+                    |> answerWith "move_pass"
+                    |> rendered
+                    |> Query.find [ id "pz-progress" ]
+                    |> Expect.all
+                        [ Query.has [ class "is-anyway" ]
+                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "Practice only" ]
+
+                        -- the ring stays full, and stays as it was
+                        , Query.find [ id "pz-ring-count" ] >> Query.has [ text "3/3" ]
+                        , Query.find [ id "pz-ring" ] >> Query.has [ class "is-done" ]
+                        ]
+        , test "an answer the server moved nothing for is not counted either" <|
+            \_ ->
+                inRunWith { tier = Just "very_bad", ring = Just { done = 1, target = 3 }, anyway = False } 0 [ Nothing ] (Just { done = 1 })
+                    |> (\model ->
+                            let
+                                ( path, _ ) =
+                                    aTurn model
+                            in
+                            model
+                                |> step (BoardOut (Puzzle.Stepped path))
+                                |> revealed (revealWith "move_pass" "schedule_settled")
+                       )
+                    |> rendered
+                    |> Query.find [ id "pz-ring-count" ]
+                    |> Query.has [ text "1/3" ]
+        , test "which answers count toward the day" <|
+            \_ ->
+                let
+                    settled =
+                        { levelBefore = 1, levelAfter = 1, due = 0, amendable = False, selfGrade = False, patched = False, heldDays = Nothing }
+                in
+                [ Page.countsToday False Nothing
+                , Page.countsToday False (Just { settled | amendable = True })
+                , Page.countsToday False (Just { settled | selfGrade = True })
+                , Page.countsToday False (Just settled)
+                , Page.countsToday True Nothing
+                ]
+                    -- only what the server moved: a self-grade is deferred
+                    -- and an answer with no schedule wrote nothing
+                    |> Expect.equal [ False, True, False, False, False ]
+        , test "a self-graded answer, and one outside the player's practice, count nothing: the number never goes down later" <|
+            \_ ->
+                let
+                    start =
+                        inRunWith { tier = Just "very_bad", ring = Just { done = 3, target = 5 }, anyway = False } 0 [ Nothing ] (Just { done = 3 })
+
+                    shown model =
+                        rendered model
+                            |> Query.find [ id "pz-progress" ]
+                            |> Expect.all
+                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practised today" ]
+                                , Query.find [ id "pz-ring-count" ] >> Query.has [ text "3/5" ]
+                                ]
+                in
+                Expect.all
+                    [ \_ -> shown (answerWithSchedule "move_unknown" "schedule_self_grade" start)
+                    , \_ -> shown (answerWithSchedule "move_pass" "" start)
+                    ]
+                    ()
         ]
 
 

@@ -24,6 +24,7 @@ import Test.Html.Query as Query
 import Test.Html.Selector exposing (attribute, class, id, tag, text)
 import Time
 import Ui.Deck exposing (Action(..))
+import Ui.Deck
 import Ui.Decks as DeckWords
 import Ui.Mistakes as Mistakes
 
@@ -460,8 +461,26 @@ theButton =
         , test "a run started here is a run of this tier" <|
             \_ ->
                 loaded veryBadJson
-                    |> out (GotTierRun (theDeck veryBadJson) (Api.parseBody Practice.practiceDecoder bandJson))
-                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad"))
+                    |> out (GotTierRun (theDeck veryBadJson) FixOne (Api.parseBody Practice.practiceDecoder bandJson))
+                    -- the run's ring starts where this page's did: 2 of 9
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad") { deckToday = Just { done = 2, target = 9 }, anyway = False })
+        , test "KEEP GOING here hands the run today's set grown by what it started, as the hub does" <|
+            \_ ->
+                loaded keepGoingJson
+                    |> out (GotTierRun (theDeck keepGoingJson) KeepGoing (Api.parseBody Practice.practiceDecoder bandJson))
+                    |> Expect.equal (StartRun [ "aaaaaaaa", "bbbbbbbb" ] (Just { done = 2 }) (Just "very_bad") { deckToday = Just { done = 5, target = 7 }, anyway = False })
+        , test "PRACTICE ANYWAY here marks the run practice only, as the hub does" <|
+            \_ ->
+                loaded anywayJson
+                    |> out (GotTierRun (theDeck anywayJson) PracticeAnyway (Api.parseBody Practice.practiceDecoder bandJson))
+                    |> (\o ->
+                            case o of
+                                StartRun _ _ _ begun ->
+                                    Expect.equal True begun.anyway
+
+                                _ ->
+                                    Expect.fail "a run"
+                       )
         , test "a run through a set names the set" <|
             \_ ->
                 let
@@ -469,8 +488,8 @@ theButton =
                         setJson "openings" "Openings" 15 True
                 in
                 loaded json
-                    |> out (GotSetRun (theDeck json) (Api.parseBody Decks.sessionDecoder setSessionJson))
-                    |> Expect.equal (StartDeckRun [ "oooooooo" ] (Just { done = 1 }) { id = "openings", name = "Openings" })
+                    |> out (GotSetRun (theDeck json) Ui.Deck.Practice (Api.parseBody Decks.sessionDecoder setSessionJson))
+                    |> Expect.equal (StartDeckRun [ "oooooooo" ] (Just { done = 1 }) { id = "openings", name = "Openings" } { deckToday = Just { done = 1, target = 8 }, anyway = False })
         , test "a press waits, in the same slot" <|
             \_ ->
                 loaded veryBadJson
@@ -483,7 +502,7 @@ theButton =
             \_ ->
                 loaded veryBadJson
                     |> send (Pressed (theDeck veryBadJson) FixOne)
-                    |> send (GotTierRun (theDeck veryBadJson) (Api.parseBody Practice.practiceDecoder emptyBandJson))
+                    |> send (GotTierRun (theDeck veryBadJson) FixOne (Api.parseBody Practice.practiceDecoder emptyBandJson))
                     |> PracticePage.view
                     |> Query.fromHtml
                     |> Expect.all

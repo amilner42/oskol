@@ -2,11 +2,15 @@ module Ui.Mistakes exposing
     ( Band
     , allClearLine
     , applyLabel
+    , backLine
     , bandName
     , bandWord
     , costHeadline
     , costLine
     , dayStreakLine
+    , earlyLine
+    , earlyLineUndated
+    , everyOnePractised
     , dueLine
     , emptyTierLine
     , ladderLine
@@ -14,7 +18,7 @@ module Ui.Mistakes exposing
     , legendParts
     , legendTop
     , strangerTierLine
-    , fixedToday
+    , practisedToday
     , freshLine
     , guestPracticeLine
     , guestStateLine
@@ -34,6 +38,7 @@ module Ui.Mistakes exposing
     , gotItHolds
     , hasWork
     , knewItWhy
+    , knownLine
     , leftToFix
     , line
     , mark
@@ -44,6 +49,8 @@ module Ui.Mistakes exposing
     , nextTierLabel
     , patchedAside
     , patchedRun
+    , practiceOnlyRun
+    , practiceOnlyTag
     , runSummary
     , soonerWhy
     , tierName
@@ -230,22 +237,25 @@ nextTierLabel grade =
     String.toUpper ("Work on " ++ mark grade ++ " " ++ bandWord grade ++ " moves")
 
 
-{-| The day, wherever it used to be a ring: a plain count of what has
-been answered, and nothing to measure it against.
+{-| The day: a plain count of what has been answered, misses and all,
+and nothing to measure it against. **Practised, never "fixed"**: a miss
+fixes nothing, and a count that said "8 fixed" over six red misses is the
+number that lies. "Fixed" and "patched" are kept for a mistake that has
+actually crossed the patched rung.
 
-    "3 fixed today"
-    "1 fixed today"
-    "Nothing fixed yet today"
+    "3 practised today"
+    "1 practised today"
+    "Nothing practised yet today"
 
 -}
-fixedToday : Int -> String
-fixedToday done =
+practisedToday : Int -> String
+practisedToday done =
     case max 0 done of
         0 ->
-            "Nothing fixed yet today"
+            "Nothing practised yet today"
 
         n ->
-            String.fromInt n ++ " fixed today"
+            String.fromInt n ++ " practised today"
 
 
 {-| The end of a run, over the marks. A run has no fixed length, so the
@@ -263,7 +273,7 @@ runSummary score =
 
     else if score.total == 1 then
         if score.right == 1 then
-            "One fixed. That is how it is done."
+            "One right. That is how it is done."
 
         else
             "One faced. It comes back tomorrow."
@@ -349,6 +359,101 @@ rather than doing nothing.
 missedNote : String
 missedNote =
     "You missed this one."
+
+
+{-| The level line after KNEW IT: the mistake went to the top in one
+step, because the player said they knew it -- not because they answered
+it right seven times, so the line never says they did. The argument is
+when it comes back, "back in a year".
+
+    "Marked as known — back in a year"
+
+-}
+knownLine : String -> String
+knownLine backIn =
+    "Marked as known — " ++ backIn
+
+
+{-| The level line for an answer given before the mistake was due
+(PRACTICE ANYWAY, or a second go at one already answered): the reveal is
+the whole of it, and the ladder does not move. The argument is the day it
+is due, "9 Oct".
+
+    "Not due until 9 Oct — practice only, nothing moves."
+
+-}
+earlyLine : String -> String
+earlyLine date =
+    "Not due until " ++ date ++ " — practice only, nothing moves."
+
+
+{-| The same, where the answer did not say when it is due.
+-}
+earlyLineUndated : String
+earlyLineUndated =
+    "Not due yet — practice only, nothing moves."
+
+
+{-| Over the board in a run started from PRACTICE ANYWAY, where the day's
+count would be: nothing in this run moves anything, the day included.
+-}
+practiceOnlyTag : String
+practiceOnlyTag =
+    "Practice only"
+
+
+{-| Under the score at the end of such a run.
+-}
+practiceOnlyRun : String
+practiceOnlyRun =
+    "Practice only: none of these were due, so nothing moved."
+
+
+{-| The end card's way on, once a press of it found nothing it had not
+already put in front of the player.
+-}
+everyOnePractised : String
+everyOnePractised =
+    "That's every one of these for now. The ones you get wrong come back on their day."
+
+
+{-| The way back from the end of a run, to the page it was started from,
+named for what that page is:
+
+    "Back to puzzles →"            the practice home
+    "Back to very bad moves →"     a deck's own page (its name)
+    "Back to the replay →"         a replay
+    "Back home →"                  the signed-in home
+    "Back to the game →"           the table
+
+-}
+backLine : { next : String, name : Maybe String } -> String
+backLine back =
+    let
+        path =
+            back.next |> String.split "?" |> List.head |> Maybe.withDefault back.next
+    in
+    (if path == "/puzzles" then
+        "Back to puzzles"
+
+     else if String.startsWith "/practice/" path then
+        case back.name of
+            Just name ->
+                "Back to " ++ String.toLower name
+
+            Nothing ->
+                "Back to puzzles"
+
+     else if path == "/" || path == "" then
+        "Back home"
+
+     else if String.endsWith "/replay" path then
+        "Back to the replay"
+
+     else
+        "Back to the game"
+    )
+        ++ " →"
 
 
 knewItWhy : String
@@ -607,16 +712,16 @@ wonBack cost =
 has kept showing up, and what today has come to. The streak is left off
 at zero rather than said as a zero.
 
-    "5 days running · 3 fixed today"
-    "1 day running · nothing fixed yet today"
-    "Nothing fixed yet today"
+    "5 days running · 3 practised today"
+    "1 day running · nothing practised yet today"
+    "Nothing practised yet today"
 
 -}
 dayStreakLine : { streak : Int, done : Int } -> String
 dayStreakLine day =
     let
         today =
-            fixedToday day.done
+            practisedToday day.done
     in
     case max 0 day.streak of
         0 ->

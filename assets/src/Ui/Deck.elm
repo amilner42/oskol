@@ -1,11 +1,13 @@
 module Ui.Deck exposing
     ( Action(..)
+    , Begun
     , CardConfig
     , RowConfig
     , Size(..)
     , Who(..)
     , action
     , actionLabel
+    , begun
     , card
     , cells
     , costLines
@@ -62,6 +64,36 @@ type Who
     = Account
     | Guest
     | Stranger
+
+
+{-| What a run is told of the deck it was started from, whether the hub
+or the deck's own page started it: its day, for the ring over the board
+(today's set grown by what KEEP GOING just started), and whether it is
+PRACTICE ANYWAY -- every answer early, practice only.
+-}
+type alias Begun =
+    { deckToday : Maybe { done : Int, target : Int }
+    , anyway : Bool
+    }
+
+
+begun : Deck -> Action -> Int -> Begun
+begun deck which started =
+    { deckToday =
+        deck.standing
+            |> Maybe.map
+                (\standing ->
+                    { done = standing.doneToday
+                    , target =
+                        if which == KeepGoing then
+                            standing.targetToday + started
+
+                        else
+                            standing.targetToday
+                    }
+                )
+    , anyway = which == PracticeAnyway
+    }
 
 
 {-| The one thing the card's button does. `NoAction` is a deck with

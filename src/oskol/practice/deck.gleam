@@ -183,13 +183,19 @@ pub fn keep_going(ctx: Ctx, uid: String, band: String) -> Int {
 /// due is a reveal and nothing else (the attempt path already says so), so
 /// nothing here is started, moved or written. `band` narrows it to one tier
 /// ("" is the whole deck); a paused card is not in rotation.
-pub fn anyway(ctx: Ctx, uid: String, band: String) -> List(Card) {
+///
+/// `from` skips that many from the front. An early answer moves nothing, so
+/// the order is the same on the next read: a run that has been through the
+/// first page asks for the next one by how far it has got, rather than
+/// being handed the same twenty again and stopping.
+pub fn anyway(ctx: Ctx, uid: String, band: String, from: Int) -> List(Card) {
   let keys =
     ctx.practice.cells(uid)
     |> list.filter(fn(c) {
       c.status == Active && { band == "" || c.band == band }
     })
     |> list.sort(fn(a, b) { int.compare(a.due_ms, b.due_ms) })
+    |> list.drop(int.max(0, from))
     |> list.take(page)
     |> list.map(fn(c) { c.key })
   case keys {

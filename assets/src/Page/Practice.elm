@@ -94,8 +94,8 @@ type Msg
     = GotPage (Result Api.Error Page)
     | GotNow Time.Posix
     | Pressed Deck Action
-    | GotTierRun Deck (Result Api.Error Practice.Practice)
-    | GotSetRun Deck (Result Api.Error Decks.Session)
+    | GotTierRun Deck Action (Result Api.Error Practice.Practice)
+    | GotSetRun Deck Action (Result Api.Error Decks.Session)
     | OpenedSignIn
     | SignInMsg SignIn.Msg
 
@@ -106,8 +106,8 @@ where it comes back to.
 -}
 type Out
     = NoOut
-    | StartRun (List String) (Maybe Practice.Today) (Maybe String)
-    | StartDeckRun (List String) (Maybe Practice.Today) Decks.Named
+    | StartRun (List String) (Maybe Practice.Today) (Maybe String) Deck.Begun
+    | StartDeckRun (List String) (Maybe Practice.Today) Decks.Named Deck.Begun
     | Go String
     | SignedIn (Maybe Session.User)
 
@@ -205,7 +205,7 @@ update msg model =
                     Nothing ->
                         ( model, Cmd.none, NoOut )
 
-        GotTierRun deck (Ok practice) ->
+        GotTierRun deck which (Ok practice) ->
             case practice.puzzles of
                 -- Answered between the two calls (another tab): say so,
                 -- and ask for the page again.
@@ -218,10 +218,10 @@ update msg model =
                 entries ->
                     ( { model | busy = False }
                     , Cmd.none
-                    , StartRun (List.map .id entries) practice.today (Just deck.id)
+                    , StartRun (List.map .id entries) practice.today (Just deck.id) (Deck.begun deck which (List.length entries))
                     )
 
-        GotSetRun deck (Ok session) ->
+        GotSetRun deck which (Ok session) ->
             case session.puzzles of
                 [] ->
                     ( { model | busy = False, note = Just nothingMoreLine }
@@ -232,13 +232,13 @@ update msg model =
                 entries ->
                     ( { model | busy = False }
                     , Cmd.none
-                    , StartDeckRun (List.map .id entries) session.today (PracticeDecks.named deck)
+                    , StartDeckRun (List.map .id entries) session.today (PracticeDecks.named deck) (Deck.begun deck which (List.length entries))
                     )
 
-        GotTierRun _ (Err err) ->
+        GotTierRun _ _ (Err err) ->
             ( { model | busy = False, note = Just (Api.errorMessage err) }, Cmd.none, NoOut )
 
-        GotSetRun _ (Err err) ->
+        GotSetRun _ _ (Err err) ->
             ( { model | busy = False, note = Just (Api.errorMessage err) }, Cmd.none, NoOut )
 
         OpenedSignIn ->
@@ -292,31 +292,31 @@ request : Model -> Deck -> Action -> Maybe (Cmd Msg)
 request model deck which =
     case ( deck.kind, which ) of
         ( Tier, FixOne ) ->
-            Just (Practice.fetchBand model.session deck.id (GotTierRun deck))
+            Just (Practice.fetchBand model.session deck.id (GotTierRun deck which))
 
         ( Tier, Practice ) ->
-            Just (Practice.fetchBand model.session deck.id (GotTierRun deck))
+            Just (Practice.fetchBand model.session deck.id (GotTierRun deck which))
 
         ( Tier, KeepGoing ) ->
-            Just (PracticeDecks.keepGoing model.session deck.id (GotTierRun deck))
+            Just (PracticeDecks.keepGoing model.session deck.id (GotTierRun deck which))
 
         ( Tier, PracticeAnyway ) ->
-            Just (PracticeDecks.practiceAnyway model.session deck.id (GotTierRun deck))
+            Just (PracticeDecks.practiceAnyway model.session deck.id (GotTierRun deck which))
 
         ( Set, Start ) ->
-            Just (Decks.join model.session deck.id model.tz (GotSetRun deck))
+            Just (Decks.join model.session deck.id model.tz (GotSetRun deck which))
 
         ( Set, KeepGoing ) ->
-            Just (PracticeDecks.keepGoingSet model.session deck.id (GotSetRun deck))
+            Just (PracticeDecks.keepGoingSet model.session deck.id (GotSetRun deck which))
 
         ( Set, PracticeAnyway ) ->
-            Just (PracticeDecks.practiceAnywaySet model.session deck.id (GotSetRun deck))
+            Just (PracticeDecks.practiceAnywaySet model.session deck.id (GotSetRun deck which))
 
         ( Set, NoAction ) ->
             Nothing
 
         ( Set, _ ) ->
-            Just (Decks.fetchSession model.session deck.id (GotSetRun deck))
+            Just (Decks.fetchSession model.session deck.id (GotSetRun deck which))
 
         ( Tier, _ ) ->
             Nothing

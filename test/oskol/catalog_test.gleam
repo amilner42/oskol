@@ -670,6 +670,21 @@ pub fn practice_anyway_through_a_set_only_once_its_queue_is_empty_test() {
     )
   assert ids == ["soon", "late"]
   assert !string.contains(anyway, "\"due\":true")
+  // A page further on: the rotation past the first one.
+  let assert Ok(further) =
+    decks_handler.session_from_json(
+      empty_queue,
+      signed_in(),
+      "openings",
+      True,
+      1,
+    )
+  let assert Ok(rest) =
+    json.parse(
+      further,
+      decode.at(["puzzles"], decode.list(decode.at(["id"], decode.string))),
+    )
+  assert rest == ["late"]
 }
 
 // ---------- What the mistakes cost ----------
