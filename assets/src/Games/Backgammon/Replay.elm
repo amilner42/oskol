@@ -25,6 +25,7 @@ module Games.Backgammon.Replay exposing
     , formatEquity
     , formatLuck
     , formatPercent
+    , fixed
     , fixed1
     , Probs
     , formatPr

@@ -33,6 +33,22 @@ suite =
         , responderSentences
         , tooGoodRule
         , theEnginesWords
+        , puzzleVerdicts
+        ]
+
+
+puzzleVerdicts : Test
+puzzleVerdicts =
+    describe "a puzzle answer's verdict"
+        [ test "a miss names what it gave up, to two places" <|
+            \_ ->
+                Words.givesUp 0.04 False |> Expect.equal "Gives up 0.04 — a mistake."
+        , test "a miss on the player's schedule says it comes back" <|
+            \_ ->
+                Words.givesUp 0.137 True |> Expect.equal "Gives up 0.14 — a mistake, so it comes back."
+        , test "right but not the best is not a mistake" <|
+            \_ ->
+                Words.nearlyBest |> Expect.equal "Within 0.02 of the best. Not a mistake."
         ]
 
 

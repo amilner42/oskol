@@ -594,8 +594,9 @@ answers run =
     List.filterMap (\id -> answerAt id run) run.ids
 
 
-{-| What the run did: a pass is right, a hold is close, a miss or an
-unknown is neither -- and the total is **how many were answered**.
+{-| What the run did: a pass is right and anything else is not (0.02 or
+more given up is a miss, so there is no "close") -- and the total is **how
+many were answered**.
 
 Not the length of the list it was given. A run is open-ended -- I'M DONE
 ends it wherever the player is -- so a total taken from the ids would
@@ -608,7 +609,7 @@ score run =
         count verdict =
             run.answers |> List.filter (\( _, answer ) -> answer.verdict == verdict) |> List.length
     in
-    { right = count Pass, close = count Hold, total = List.length (answers run) }
+    { right = count Pass, total = List.length (answers run) }
 
 
 {-| The game page asks for two things the shell owns: the URL to go to, and

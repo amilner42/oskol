@@ -162,20 +162,24 @@ runEnd =
     describe "what a run ends on"
         [ test "one fixed is a whole session, and says so" <|
             \_ ->
-                Mistakes.runSummary { right = 1, close = 0, total = 1 }
+                Mistakes.runSummary { right = 1, total = 1 }
                     |> Expect.equal "One fixed. That is how it is done."
-        , test "one close still counts" <|
-            \_ ->
-                Mistakes.runSummary { right = 0, close = 1, total = 1 }
-                    |> Expect.equal "One faced, and close. That counts."
         , test "one missed says when it comes back, not that you failed" <|
             \_ ->
-                Mistakes.runSummary { right = 0, close = 0, total = 1 }
+                Mistakes.runSummary { right = 0, total = 1 }
                     |> Expect.equal "One faced. It comes back tomorrow."
         , test "more than one is the score of what was answered" <|
             \_ ->
-                Mistakes.runSummary { right = 7, close = 2, total = 10 }
+                Mistakes.runSummary { right = 7, total = 10 }
                     |> Expect.equal "7 of 10 right"
+        , test "nothing a run ends on calls an answer close: 0.02 given up is a miss" <|
+            \_ ->
+                [ Mistakes.runSummary { right = 0, total = 1 }
+                , Mistakes.runSummary { right = 1, total = 1 }
+                , Mistakes.runSummary { right = 3, total = 4 }
+                ]
+                    |> List.filter (String.contains "close")
+                    |> Expect.equal []
         ]
 
 
@@ -238,7 +242,7 @@ noJargon =
                              , Mistakes.goodShapeWhy (band "very_bad" 61 30 23)
                              , Mistakes.allClearLine
                              , Mistakes.nextTierLabel "bad"
-                             , Mistakes.runSummary { right = 1, close = 0, total = 1 }
+                             , Mistakes.runSummary { right = 1, total = 1 }
                              , Mistakes.whyLine { grade = "bad", opponent = "Charlie" }
                              ]
                                 ++ List.filterMap identity

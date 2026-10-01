@@ -83,7 +83,7 @@ doneToday done =
 {-| The end of a run through a set. As with mistakes, one is a whole
 session and says so; more than one is the plain count.
 -}
-runSummary : { right : Int, close : Int, total : Int } -> String
+runSummary : { right : Int, total : Int } -> String
 runSummary score =
     if score.total <= 0 then
         "Nothing answered."
@@ -91,9 +91,6 @@ runSummary score =
     else if score.total == 1 then
         if score.right == 1 then
             "One right. That is how it is done."
-
-        else if score.close == 1 then
-            "One played, and close. That counts."
 
         else
             "One played. It comes back tomorrow."
