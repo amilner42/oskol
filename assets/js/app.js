@@ -143,6 +143,9 @@ const storedPrefs = (() => {
 
 const app = Elm.Main.init({
   flags: {
+    // How long the page has been loading, in ms: `/`'s loading bar started
+    // with the server's first paint, and Elm's carries on from here.
+    bootMs: typeof performance !== "undefined" ? performance.now() : 0,
     csrf: meta("csrf-token") || "",
     // The name this browser last played under, remembered against the
     // silent guest cookie and rendered into the page that served the app.

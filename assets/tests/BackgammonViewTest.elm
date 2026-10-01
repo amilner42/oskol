@@ -56,12 +56,6 @@ suite =
             , test "rematch is reported to the app, not sent as an action" <|
                 \_ ->
                     View.update Rematch View.init |> Tuple.second |> Expect.equal WantRematch
-            , test "picking a board is reported to the app and sends nothing to the room" <|
-                \_ ->
-                    View.update ToggleThemes View.init
-                        |> Tuple.first
-                        |> View.update (PickTheme "midnight")
-                        |> Expect.equal ( View.init, ChoseTheme "midnight" )
             ]
         , describe "destination-first tap resolution"
             (let
@@ -351,20 +345,20 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { swaps = 0, autoRolled = True, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                            ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { swaps = 0, autoRolled = True, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
-                        |> Expect.equal ( { swaps = 0, autoRolled = True, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }, Nothing )
+                    View.autoRoll [ schema "roll" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                        |> Expect.equal ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { swaps = 0, autoRolled = True, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                    View.autoRoll [ schema "move" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -723,9 +717,6 @@ suite =
                         |> List.head
                         |> Maybe.andThen (\f -> Dict.get "p1" f.initial)
 
-                opened =
-                    View.update ToggleThemes View.init |> Tuple.first
-
                 themed name update model =
                     let
                         base =
@@ -755,36 +746,16 @@ suite =
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
-             , test "the list is closed until the control is tapped, then lists every board" <|
+             , test "the table draws no board picker of its own: the site's bar has it" <|
                 \_ ->
                     case firstUpdate of
                         Just u ->
-                            Expect.all
-                                [ \_ ->
-                                    View.view (ctx "p1" u View.init)
-                                        |> Query.fromHtml
-                                        |> Query.hasNot [ id "bg-theme-list" ]
-                                , \_ ->
-                                    View.view (ctx "p1" u opened)
-                                        |> Query.fromHtml
-                                        |> Query.has [ id "bg-theme-list" ]
-                                , \_ ->
-                                    View.view (ctx "p1" u opened)
-                                        |> Query.fromHtml
-                                        |> Query.findAll [ class "bg-theme-option" ]
-                                        |> Query.count (Expect.equal (List.length View.themes))
-                                ]
-                                ()
-
-                        Nothing ->
-                            Expect.fail "no backgammon fixture"
-             , test "a viewer with nothing legal still gets the picker" <|
-                \_ ->
-                    case firstUpdate of
-                        Just u ->
-                            View.view (ctx "p2" { u | legal = [] } View.init)
+                            View.view (ctx "p1" u View.init)
                                 |> Query.fromHtml
-                                |> Query.has [ id "bg-theme-button" ]
+                                |> Expect.all
+                                    [ Query.hasNot [ id "bg-theme-button" ]
+                                    , Query.has [ class "bg-header" ]
+                                    ]
 
                         Nothing ->
                             Expect.fail "no backgammon fixture"
@@ -1232,7 +1203,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model swaps =
-                    { swaps = swaps, autoRolled = False, resigning = False, themesOpen = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                    { swaps = swaps, autoRolled = False, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
 
                 rendered swaps u =
                     View.view (ctx "p1" (twoDice u) (model swaps)) |> Query.fromHtml

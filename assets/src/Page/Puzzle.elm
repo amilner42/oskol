@@ -1109,9 +1109,9 @@ runMark at index verdict =
 
 viewHead : Html Msg
 viewHead =
+    -- The bird is the site's bar's, over the page.
     div [ class "rp-head" ]
-        [ Ui.Shell.mark
-        , span [ class "rp-tag pixel text-[7px] sm:text-[8px]" ] [ text "PUZZLE" ]
+        [ span [ class "rp-tag pixel text-[7px] sm:text-[8px]" ] [ text "PUZZLE" ]
         ]
 
 

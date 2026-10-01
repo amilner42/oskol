@@ -48,7 +48,6 @@ import Svg
 import Svg.Attributes as SvgAttr
 import Ui.Identity as Identity
 import Ui.Scrub
-import Ui.Shell
 import Ui.SignIn
 
 
@@ -56,7 +55,6 @@ type alias Model =
     { swaps : Int -- taps on the dice this roll: odd means the two dice have changed places
     , autoRolled : Bool -- an automatic roll has been sent for the current server state
     , resigning : Bool -- the resign panel is open: which stakes to offer
-    , themesOpen : Bool -- the board-colour list in the header is showing
     , roll : Roll -- the dice on the board, and whether this client saw them land
     , matchOpen : Bool -- the match panel (the games so far) is open as a sheet over the board
     , viewing : Maybe Int -- a past turn of the game on the board (its index in the record, oldest first) is up instead of the live position
@@ -94,8 +92,6 @@ type Msg
     | ToggleMatch -- open or close the match panel
     | ViewTurn Int -- put this turn of the game on the board, read-only
     | ViewLive -- back to the live game
-    | ToggleThemes
-    | PickTheme String
     | OpenedSave -- a result card's "Save this game and your PR"
     | ClosedSave -- the between-games sign-in sheet's close
     | SaveMsg Ui.SignIn.Msg
@@ -108,7 +104,6 @@ type Out
     | Send E.Value
     | SendMany (List E.Value)
     | WantRematch
-    | ChoseTheme String -- this player's board colours: display only, never sent to the room
     | OpenSave -- open the sign-in on a result card
     | CloseSave -- put the between-games sign-in sheet away
     | ForSave Ui.SignIn.Msg -- the sign-in on a result card, for the page to run
@@ -120,7 +115,6 @@ init =
     { swaps = 0
     , autoRolled = False
     , resigning = False
-    , themesOpen = False
 
     -- A client starts by being told where the game is, not by watching it
     -- get there: whatever dice the first payload brings are already on the
@@ -268,14 +262,6 @@ update msg model =
 
         Rematch ->
             ( model, WantRematch )
-
-        ToggleThemes ->
-            ( { model | themesOpen = not model.themesOpen }, NoOut )
-
-        PickTheme name ->
-            -- The board changes under this player and nobody else: the
-            -- theme never enters an action, so nothing is sent to the room.
-            ( { model | themesOpen = False }, ChoseTheme name )
 
         OpenResign ->
             -- The offer is made on the live board: a past turn up on the
@@ -689,7 +675,7 @@ view arrived =
     -- `is-between` while the between-games card is up: the layouts that
     -- size the board from the screen's height (a phone on its side, a
     -- desktop window) give the band the card's room, in app.css.
-    div [ classList [ ( "bg-page " ++ themeClass live.theme ++ " paper h-screen-safe overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ), ( "is-between", betweenGames live /= Nothing ) ] ]
+    div [ classList [ ( "bg-page " ++ themeClass live.theme ++ " paper h-under-bar overflow-hidden flex flex-col items-center px-2 py-2 sm:px-6 sm:py-4 gap-2", True ), ( "is-viewing", live.model.viewing /= Nothing ), ( "is-between", betweenGames live /= Nothing ) ] ]
         [ viewHeader live
         , div [ class "bg-main flex-1 min-h-0 w-full max-w-5xl lg:max-w-none grid content-center" ]
             [ div [ class "bg-stack min-w-0 flex flex-col justify-center" ]
@@ -824,11 +810,10 @@ viewHeader ctx =
     in
     div [ class "bg-header w-full max-w-5xl lg:max-w-none flex items-center justify-between gap-2" ]
         [ div [ class "flex items-center gap-2 sm:gap-3 min-w-0" ]
-            -- The mark, then the match: the badge is the piece that gives
-            -- way on the narrowest phone, clipping rather than running
-            -- under the picker.
-            [ Ui.Shell.mark
-            , span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 min-w-0 truncate", style "border" "2px solid var(--ink)", style "background" "#fff" ]
+            -- The match: the bird and the board picker are the site's
+            -- bar's, over the page. The badge is the piece that gives way
+            -- on the narrowest phone, clipping rather than running on.
+            [ span [ class "pixel text-[7px] sm:text-[9px] px-1.5 py-1 min-w-0 truncate", style "border" "2px solid var(--ink)", style "background" "#fff" ]
                 [ text
                     (matchLabel
                         ++ (if target > 1 then
@@ -845,7 +830,6 @@ viewHeader ctx =
               else
                 text ""
             ]
-        , viewThemePicker ctx
         ]
 
 
@@ -878,61 +862,6 @@ viewActions ctx =
     in
     div [ class "bg-actions w-full max-w-5xl lg:max-w-none flex items-center justify-center", Html.Attributes.id "bg-actions" ]
         [ viewScrub ctx (match ++ resign) ]
-
-
-{-| The board picker: the name of the board you are looking at, and the
-eight to choose from. A tap on the name opens the list (and a second tap
-closes it); a tap on a row takes that board. It is display only -- the pick
-goes to this player's own preferences and never onto the channel -- so it
-is here whatever the state of the game, spectators included.
--}
-viewThemePicker : Ctx -> Html Msg
-viewThemePicker ctx =
-    let
-        current =
-            themes
-                |> List.filter (\( id, _ ) -> id == ctx.theme)
-                |> List.head
-                |> Maybe.withDefault ( defaultTheme, "WALNUT" )
-    in
-    div [ class "bg-themes shrink-0" ]
-        [ button
-            [ class "pixel text-[8px] flex items-center gap-1 px-1 py-0.5"
-            , style "color" "var(--pencil)"
-            , attribute "id" "bg-theme-button"
-            , attribute "aria-expanded"
-                (if ctx.model.themesOpen then
-                    "true"
-
-                 else
-                    "false"
-                )
-            , title "Board colours"
-            , onClick ToggleThemes
-            ]
-            [ span [ class ("bg-theme-chip " ++ themeClass (Tuple.first current)) ] [ themeBoard ]
-            , span [ class "bg-theme-chevron hero-chevron-down w-3.5 h-3.5", attribute "aria-hidden" "true" ] []
-            ]
-        , if ctx.model.themesOpen then
-            div [ class "bg-theme-list", attribute "id" "bg-theme-list" ]
-                (List.map (viewThemeOption ctx.theme) themes)
-
-          else
-            text ""
-        ]
-
-
-viewThemeOption : String -> ( String, String ) -> Html Msg
-viewThemeOption current ( id, label ) =
-    button
-        [ classList [ ( "bg-theme-option", True ), ( "on", id == current ) ]
-        , attribute "data-theme-option" id
-        , title label
-        , onClick (PickTheme id)
-        ]
-        [ span [ class ("bg-theme-chip " ++ themeClass id) ] [ themeBoard ]
-        , span [ class "bg-theme-name" ] [ text label ]
-        ]
 
 
 {-| A board in miniature, painted by the very tokens the real one uses: the

@@ -20,7 +20,7 @@
 const playwright = require('playwright');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { BASE, resultLine, seatedContext } = require('../lib/flows');
+const { BASE, barItem, resultLine, seatedContext } = require('../lib/flows');
 
 const SHOTS = 'playwright/screenshots/review-home';
 const SIZES = [
@@ -75,7 +75,7 @@ async function main() {
     await shots(full.page, '01b-match');
     await full.page.click(`#home-room-${fixture.match_id}`);
 
-    await full.page.click('#home-play');
+    await barItem(full.page, 'play');
     await full.page.waitForSelector('#create-modal #create-as');
     await shots(full.page, '03-create');
     await full.page.click('#close-create');

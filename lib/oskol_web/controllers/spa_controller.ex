@@ -27,8 +27,8 @@ defmodule OskolWeb.SpaController do
     |> assign(:meta_description, site.description)
     |> assign(:canonical, url(~p"/"))
     |> assign(:json_ld, library_json_ld())
-    # The home page is a dark board: paint its frame before the app boots,
-    # so the first paint is not a flash of light paper.
+    # `/` cannot say which home it is until the app asks who this is, so
+    # the first paint is the loading bar the app starts on.
     |> assign(:home, true)
     |> render_spa()
   end

@@ -52,6 +52,9 @@ import Page.Puzzles
 import Page.Replay
 import Route exposing (Route)
 import Session exposing (Session)
+import Process
+import Task
+import Ui.Loading as Loading
 import Ui.Notebook as Notebook
 import Ui.Shell as Shell
 import Url exposing (Url)
@@ -96,6 +99,20 @@ type alias Model =
     , joinOpen : Bool
     , joinCode : String
     , joinError : Maybe String
+
+    -- `/` is two pages and cannot say which until `/papi/me` answers, so
+    -- until then -- and for at least `Loading.minMs` from the page starting
+    -- to load, so it never flickers -- `/` is the loading bar. `bootMs` is
+    -- how long the page had been loading when the app booted, which the
+    -- bar's animation picks up from.
+    , bootMs : Float
+    , meKnown : Bool
+    , minShown : Bool
+
+    -- The bar every page wears (`Page.GameLanding.navBar`): one model for
+    -- the whole session, so its live games, its sign-in, CREATE GAME and
+    -- the board picker are the same wherever it is drawn.
+    , bar : Page.GameLanding.Model
     }
 
 
@@ -135,6 +152,9 @@ type Msg
     | JoinSubmitted
     | GotJoinCode (Result Api.Error Catalog.CodeMatch)
     | GotMe (Result Api.Error Session.Me)
+    | BarMsg Page.GameLanding.Msg
+    | MinShown
+    | MeGivenUp
     | NoOp
 
 
@@ -163,11 +183,60 @@ init flags url key =
                 , joinOpen = False
                 , joinCode = ""
                 , joinError = Nothing
+                , bootMs = bootMs
+                , meKnown = False
+                , minShown = False
+                , bar = bar
                 }
+
+        -- CREATE GAME's model (it opens on a friend, as the dialog always
+        -- has); the live games come with every page (`routeTo`).
+        ( bar, barCmd ) =
+            Page.GameLanding.createOnly session "backgammon"
+
+        bootMs =
+            D.decodeValue (D.field "bootMs" D.float) flags
+                |> Result.withDefault 0
     in
     -- Who this browser is beyond its guest cookie: the account on it, if
     -- any. Until this answers it is a guest.
-    ( model, Cmd.batch [ cmd, Auth.fetchMe session GotMe ] )
+    ( model
+    , Cmd.batch
+        [ cmd
+        , Cmd.map BarMsg barCmd
+        , Auth.fetchMe session GotMe
+        , Process.sleep (max 0 (Loading.minMs - bootMs)) |> Task.perform (\_ -> MinShown)
+
+        -- A `/papi/me` that never answers must not leave `/` loading for
+        -- ever: past this, the page draws as the guest it would have been.
+        , Process.sleep meGivenUpMs |> Task.perform (\_ -> MeGivenUp)
+        ]
+    )
+
+
+meGivenUpMs : Float
+meGivenUpMs =
+    6000
+
+
+{-| `/` while it is still the loading bar: `/papi/me` has not answered,
+the bar has not been up for `Loading.minMs`, or the account's home is
+still waiting for its one answer.
+-}
+booting : Model -> Bool
+booting model =
+    model.route
+        == Just Route.Library
+        && (not model.meKnown
+                || not model.minShown
+                || (case model.page of
+                        Home pageModel ->
+                            Page.Home.loading pageModel
+
+                        _ ->
+                            False
+                   )
+           )
 
 
 {-| The session changed (signed in, logged out, `/papi/me` answered): the
@@ -177,6 +246,7 @@ withSession : Session -> Model -> Model
 withSession session model =
     { model
         | session = session
+        , bar = Page.GameLanding.withSession session model.bar
         , page =
             case model.page of
                 GameLanding pageModel ->
@@ -238,7 +308,7 @@ settle model =
             -- Not out from under an open sign-in: the win it ends on is
             -- the answer to what was just done, and CONTINUE from it is
             -- what clears the way here.
-            if Page.GameLanding.signingIn pageModel then
+            if Page.GameLanding.signingIn pageModel || Page.GameLanding.signingIn model.bar then
                 ( model, Cmd.none )
 
             else
@@ -289,8 +359,20 @@ origin url =
            )
 
 
+{-| A new page: the bar closes whatever it had open and counts the live
+games again, then the page opens.
+-}
 routeTo : Url -> Model -> ( Model, Cmd Msg )
 routeTo url oldModel =
+    let
+        ( model, cmd ) =
+            openRoute url { oldModel | bar = Page.GameLanding.closeBar oldModel.bar }
+    in
+    ( model, Cmd.batch [ cmd, Cmd.map BarMsg (Page.GameLanding.refreshGames model.bar) ] )
+
+
+openRoute : Url -> Model -> ( Model, Cmd Msg )
+openRoute url oldModel =
     let
         route =
             Route.fromUrl url
@@ -522,47 +604,68 @@ score run =
 the name to remember for the next form.
 -}
 landing : Model -> ( Page.GameLanding.Model, Cmd Page.GameLanding.Msg, Page.GameLanding.Out ) -> ( Model, Cmd Msg )
-landing model ( pageModel, cmd, out ) =
+landing model =
+    landingInto (\pageModel -> { model | page = GameLanding pageModel }) GameLandingMsg model
+
+
+{-| The bar answers the shell exactly as the game page does: it is the same
+model, kept as `bar` instead of as the page.
+-}
+barUpdate : Model -> ( Page.GameLanding.Model, Cmd Page.GameLanding.Msg, Page.GameLanding.Out ) -> ( Model, Cmd Msg )
+barUpdate model =
+    landingInto (\barModel -> { model | bar = barModel }) BarMsg model
+
+
+landingInto :
+    (Page.GameLanding.Model -> Model)
+    -> (Page.GameLanding.Msg -> Msg)
+    -> Model
+    -> ( Page.GameLanding.Model, Cmd Page.GameLanding.Msg, Page.GameLanding.Out )
+    -> ( Model, Cmd Msg )
+landingInto store toMsg model ( pageModel, cmd, out ) =
     let
         withPage =
-            { model | page = GameLanding pageModel }
+            store pageModel
     in
     case out of
         Page.GameLanding.NoOut ->
-            ( withPage, Cmd.map GameLandingMsg cmd )
+            ( withPage, Cmd.map toMsg cmd )
 
         Page.GameLanding.Redirect path ->
             ( withPage
-            , Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.replaceUrl model.key path ]
+            , Cmd.batch [ Cmd.map toMsg cmd, Nav.replaceUrl model.key path ]
             )
 
+        -- Every page wears the board picked in the bar: the session carries
+        -- it down to the page on screen (the guest home's demo board, the
+        -- table, the replay), not only to the shell.
         Page.GameLanding.ChoseTheme name ->
-            ( { withPage | session = Session.withPref "backgammon_theme" name model.session }
+            ( withSession (Session.withPref "backgammon_theme" name model.session) withPage
             , Cmd.batch
-                [ Cmd.map GameLandingMsg cmd
+                [ Cmd.map toMsg cmd
                 , Page.Play.storePref { key = "backgammon_theme", value = name }
                 ]
             )
 
         Page.GameLanding.TookSeat seat ->
             ( { withPage | session = Session.withGuestName seat.name model.session }
-            , Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.pushUrl model.key seat.path ]
+            , Cmd.batch [ Cmd.map toMsg cmd, Nav.pushUrl model.key seat.path ]
             )
 
         Page.GameLanding.SignedIn result ->
             signedIn result.user withPage
-                |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map GameLandingMsg cmd, more ])
+                |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map toMsg cmd, more ])
 
         Page.GameLanding.SignedOut ->
             signedIn Nothing withPage
-                |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map GameLandingMsg cmd, more ])
+                |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map toMsg cmd, more ])
 
         Page.GameLanding.Go path ->
-            ( withPage, Cmd.batch [ Cmd.map GameLandingMsg cmd, Nav.pushUrl model.key path ] )
+            ( withPage, Cmd.batch [ Cmd.map toMsg cmd, Nav.pushUrl model.key path ] )
 
         Page.GameLanding.OpenJoin ->
             ( { withPage | joinOpen = True, joinCode = "", joinError = Nothing }
-            , Cmd.batch [ Cmd.map GameLandingMsg cmd, Notebook.focus NoOp Shell.joinCodeInputId ]
+            , Cmd.batch [ Cmd.map toMsg cmd, Notebook.focus NoOp Shell.joinCodeInputId ]
             )
 
 
@@ -584,6 +687,11 @@ update msg model =
 
         ( UrlChanged url, _ ) ->
             routeTo url model
+
+        ( BarMsg barMsg, _ ) ->
+            Page.GameLanding.update barMsg model.bar
+                |> barUpdate model
+                |> andSettle
 
         ( GameLandingMsg pageMsg, GameLanding pageModel ) ->
             Page.GameLanding.update pageMsg pageModel
@@ -608,16 +716,6 @@ update msg model =
                 Page.Home.Go path ->
                     ( withPage, more (Nav.pushUrl model.key path) )
 
-                Page.Home.TookSeat seat ->
-                    ( { withPage | session = Session.withGuestName seat.name model.session }
-                    , more (Nav.pushUrl model.key seat.path)
-                    )
-
-                Page.Home.ChoseTheme name ->
-                    ( { withPage | session = Session.withPref "backgammon_theme" name model.session }
-                    , more (Page.Play.storePref { key = "backgammon_theme", value = name })
-                    )
-
                 Page.Home.StartRun ids today tier ->
                     startRun (Route.href Route.library) ids today tier withPage |> Tuple.mapSecond more
 
@@ -625,6 +723,11 @@ update msg model =
                 -- here or in another tab): the guest home is what `/` is.
                 Page.Home.SignedOut ->
                     signedIn Nothing withPage |> Tuple.mapSecond more
+
+                Page.Home.OpenCreate ->
+                    Page.GameLanding.update Page.GameLanding.Started withPage.bar
+                        |> barUpdate withPage
+                        |> Tuple.mapSecond more
 
         ( LoginMsg pageMsg, Login pageModel ) ->
             let
@@ -643,11 +746,17 @@ update msg model =
                     ( withPage, Cmd.map LoginMsg cmd )
 
         ( GotMe (Ok me), _ ) ->
-            settle (withSession (Session.withMe me model.session) model)
+            settle (withSession (Session.withMe me model.session) { model | meKnown = True })
 
         -- Nothing known beyond the cookie: a guest, signing in off.
         ( GotMe (Err _), _ ) ->
-            ( model, Cmd.none )
+            ( { model | meKnown = True }, Cmd.none )
+
+        ( MinShown, _ ) ->
+            ( { model | minShown = True }, Cmd.none )
+
+        ( MeGivenUp, _ ) ->
+            ( { model | meKnown = True }, Cmd.none )
 
         ( PlayMsg pageMsg, Play pageModel ) ->
             let
@@ -666,16 +775,7 @@ update msg model =
                         |> Tuple.mapSecond (\more -> Cmd.batch [ Cmd.map PlayMsg cmd, more ])
 
                 _ ->
-                    ( { model
-                        | page = Play newPageModel
-                        , session =
-                            case out of
-                                Page.Play.Remember key value ->
-                                    Session.withPref key value model.session
-
-                                _ ->
-                                    model.session
-                      }
+                    ( { model | page = Play newPageModel }
                     , Cmd.batch
                         [ Cmd.map PlayMsg cmd
                         , case out of
@@ -890,6 +990,7 @@ subscriptions model =
 
             _ ->
                 Sub.none
+        , Sub.map BarMsg (Page.GameLanding.subscriptions model.bar)
         , if model.joinOpen then
             Browser.Events.onKeyDown (escape ClosedJoin)
 
@@ -919,19 +1020,49 @@ view : Model -> Document Msg
 view model =
     { title = title model ++ " · Oskol"
     , body =
-        [ case model.page of
+        if booting model then
+            [ Shell.bare (shellConfig model) [ Loading.view model.bootMs ] ]
+
+        else
+            page model :: List.map (Html.map BarMsg) (Page.GameLanding.barModals model.bar)
+    }
+
+
+{-| The bar, for a page that sits under it: in the frame its styles live
+in (`.lh`), sticky at the top.
+-}
+barTop : Model -> List (Html Msg)
+barTop model =
+    [ Html.div
+        [ Html.Attributes.class "lh lh-top"
+        , Html.Attributes.id
+            (case model.page of
+                Home _ ->
+                    "home-bar"
+
+                _ ->
+                    "site-bar"
+            )
+        ]
+        (Page.GameLanding.navBar BarMsg model.bar)
+    ]
+
+
+page : Model -> Html Msg
+page model =
+    case model.page of
             Play pageModel ->
                 if Page.Play.framed pageModel then
                     framed model [ Html.map PlayMsg (Page.Play.view pageModel) ]
 
                 else
-                    Html.map PlayMsg (Page.Play.view pageModel)
+                    underBar model (Html.map PlayMsg (Page.Play.view pageModel))
 
             Replay pageModel ->
-                Html.map ReplayMsg (Page.Replay.view pageModel)
+                underBar model (Html.map ReplayMsg (Page.Replay.view pageModel))
 
             Puzzle pageModel ->
-                Html.map PuzzleMsg (Page.Puzzle.view pageModel)
+                underBar model (Html.map PuzzleMsg (Page.Puzzle.view pageModel))
 
             Puzzles pageModel ->
                 framed model [ Html.map PuzzlesMsg (Page.Puzzles.view pageModel) ]
@@ -940,36 +1071,36 @@ view model =
                 framed model [ Html.map LoginMsg (Page.Login.view pageModel) ]
 
             Home pageModel ->
-                -- Its own chrome, like the board home: the page draws its
-                -- own bar, and the shell brings the paper and the code
-                -- prompt behind JOIN.
+                -- Its own chrome under the bar: the shell brings the paper
+                -- and the code prompt behind JOIN.
                 Shell.bare (shellConfig model)
-                    (Page.Home.view
-                        { join = Shell.quietJoinButton (shellConfig model), toMsg = HomeMsg }
-                        pageModel
-                    )
+                    (barTop model ++ Page.Home.view HomeMsg pageModel)
 
             GameLanding pageModel ->
                 if Page.GameLanding.isHome pageModel then
                     -- The home page is the board, edge to edge: its own chrome.
+                    -- The bar goes inside its full-screen frame, as its first row.
                     Shell.bare (shellConfig model)
-                        (Page.GameLanding.home
-                            { join = Shell.navJoin (shellConfig model), toMsg = GameLandingMsg }
-                            pageModel
-                        )
+                        (Page.GameLanding.home (Page.GameLanding.navBar BarMsg model.bar) GameLandingMsg pageModel)
 
                 else
                     framed model [ Html.map GameLandingMsg (Page.GameLanding.view pageModel) ]
 
             NotFound ->
                 framed model [ notFound ]
-        ]
-    }
+
+
+{-| A page that is the whole screen (the table, the replay, a puzzle) under
+the bar: it sizes itself to what the bar leaves (`--page-h` in app.css).
+-}
+underBar : Model -> Html Msg -> Html Msg
+underBar model content =
+    Html.div [] (barTop model ++ [ content ])
 
 
 framed : Model -> List (Html Msg) -> Html Msg
 framed model content =
-    Shell.view (shellConfig model) content
+    Shell.view (shellConfig model) (barTop model) content
 
 
 shellConfig : Model -> Shell.Config Msg

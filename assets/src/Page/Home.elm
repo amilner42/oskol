@@ -4,6 +4,7 @@ module Page.Home exposing
     , Out(..)
     , dateLine
     , init
+    , loading
     , prBand
     , resultLine
     , scoreLine
@@ -31,16 +32,14 @@ is the only thing that asks the server again.
 
 Two homes means two of everything unless it is deliberately shared, so:
 
-  - **PLAY** is `Page.GameLanding`'s own dialog, on a model this page
-    keeps for that (`GameLanding.createOnly`): the modes, the clocks, the
-    summary and the seat it takes are that page's, not a second copy.
-  - **JOIN** is the shell's code prompt (`Ui.Shell.quietJoinButton`),
-    which `Main` owns, exactly as the board home's JOIN GAME is.
-  - **the board picker** is `GameLanding.themePicker`, on the same model.
+  - **the bar** is every page's, which the shell draws over this one
+    (`GameLanding.navBar` on `Main.bar`): the board picker, and in ☰ PLAY,
+    Puzzles, JOIN and the account.
+  - **PLAY** is that bar's CREATE GAME (`Page.GameLanding`'s own dialog);
+    the PLAY under an empty LIVE GAMES asks the shell to open it
+    (`OpenCreate`), so there is one dialog and not two.
   - **a live game's row** is `Ui.LiveGames.row`, which the board home's
     LIVE GAMES dialog draws too.
-
-Only PUZZLES is this page's own, and it is a route.
 
 The three pictures are `Ui.Charts` and nothing else on the page is drawn:
 white space, the notebook's type, and no card inside a card.
@@ -48,16 +47,12 @@ white space, the notebook's type, and no card inside a card.
 -}
 
 import Api
-import Api.Auth as Auth
 import Api.Catalog as Catalog
 import Api.Home as Home
 import Api.Practice as Practice
-import Browser.Events
 import Html exposing (Html)
 import Html.Attributes as Attr exposing (class, href, id)
 import Html.Events exposing (onClick)
-import Json.Decode as D
-import Page.GameLanding as GameLanding
 import Route
 import Session exposing (Session)
 import Set exposing (Set)
@@ -65,7 +60,6 @@ import Task
 import Time
 import Ui.Charts as Charts
 import Ui.Mistakes as Mistakes
-import Ui.Identity as Identity
 import Ui.LiveGames as LiveGames
 import Ui.Notebook as Notebook exposing (style)
 import Ui.Tiers
@@ -78,12 +72,7 @@ import Ui.Tiers
 type alias Model =
     { session : Session
 
-    -- CREATE GAME's dialog and the board picker, which are
-    -- `Page.GameLanding`'s: this page holds its model and forwards to its
-    -- update rather than keeping a second copy of either.
-    , create : GameLanding.Model
     , state : State
-    , accountOpen : Bool
     , paging : Bool -- MORE is in flight
     , pageError : Maybe String
     , starting : Bool -- PRACTICE is in flight: the deck is being fetched
@@ -118,10 +107,6 @@ type Msg
     | PressedRetry
     | GotClock ( Time.Zone, Time.Posix )
     | Tick Time.Posix
-    | ToggledAccount
-    | PressedLogOut
-    | LoggedOut (Result Api.Error ())
-    | PressedPuzzles
     | PressedFixOne String
     | PickedTier String
     | GotBand String (Result Api.Error Practice.Practice)
@@ -130,7 +115,7 @@ type Msg
     | ToggledRoom String
     | ClosedGame Catalog.MyGame
     | GameClosed (Result Api.Error ())
-    | CreateMsg GameLanding.Msg
+    | PressedPlay
 
 
 {-| What this page needs the shell to do.
@@ -138,24 +123,18 @@ type Msg
 type Out
     = NoOut
     | Go String
-    | TookSeat { name : String, path : String }
-    | ChoseTheme String
     | StartRun (List String) (Maybe Practice.Today) (Maybe String)
       -- The answer says this browser has no account: the guest home is the
       -- one it should be looking at.
     | SignedOut
+      -- PLAY: the bar's CREATE GAME, which the shell keeps.
+    | OpenCreate
 
 
 init : Session -> ( Model, Cmd Msg )
 init session =
-    let
-        ( create, createCmd ) =
-            GameLanding.createOnly session "backgammon"
-    in
     ( { session = session
-      , create = create
       , state = Loading
-      , accountOpen = False
       , paging = False
       , pageError = Nothing
       , starting = False
@@ -169,7 +148,6 @@ init session =
       }
     , Cmd.batch
         [ Home.fetch session GotHome
-        , Cmd.map CreateMsg createCmd
         , Task.perform GotClock (Task.map2 Tuple.pair Time.here Time.now)
         ]
     )
@@ -177,7 +155,7 @@ init session =
 
 withSession : Session -> Model -> Model
 withSession session model =
-    { model | session = session, create = GameLanding.withSession session model.create }
+    { model | session = session }
 
 
 title : Model -> String
@@ -185,8 +163,17 @@ title _ =
     "Home"
 
 
+{-| Still waiting for the home's one answer: the shell keeps the loading
+bar up over `/` until it lands, so the page arrives whole.
+-}
+loading : Model -> Bool
+loading model =
+    model.state == Loading
+
+
 {-| A clock ticks only while one is running in a live game; nothing else
-on this page moves on its own. Escape closes the account menu.
+on this page moves on its own. The bar's menus close on Escape, as they
+do on the guest home.
 -}
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -201,21 +188,6 @@ subscriptions model =
 
             _ ->
                 Sub.none
-        , if model.accountOpen then
-            Browser.Events.onKeyDown
-                (D.field "key" D.string
-                    |> D.andThen
-                        (\key ->
-                            if key == "Escape" then
-                                D.succeed ToggledAccount
-
-                            else
-                                D.fail "ignored key"
-                        )
-                )
-
-          else
-            Sub.none
         ]
 
 
@@ -310,21 +282,6 @@ update msg model =
             , NoOut
             )
 
-        ToggledAccount ->
-            ( { model | accountOpen = not model.accountOpen }, Cmd.none, NoOut )
-
-        PressedLogOut ->
-            ( { model | accountOpen = False }, Auth.logout model.session LoggedOut, NoOut )
-
-        -- Logged out, or the attempt failed: either way this browser is to
-        -- be treated as a guest until `/papi/me` says otherwise, which is
-        -- what the shell asks next.
-        LoggedOut _ ->
-            ( model, Cmd.none, SignedOut )
-
-        PressedPuzzles ->
-            ( model, Cmd.none, Go (Route.href Route.puzzles) )
-
         -- FIX ONE starts a run the way the practice home does: that one
         -- tier's queue, and the run outlives this page, so the shell
         -- keeps it -- with the tier, so ANOTHER stays in it.
@@ -413,44 +370,8 @@ update msg model =
             , NoOut
             )
 
-        CreateMsg createMsg ->
-            let
-                ( create, cmd, out ) =
-                    GameLanding.update createMsg model.create
-            in
-            ( { model | create = create }
-            , Cmd.map CreateMsg cmd
-            , case out of
-                GameLanding.TookSeat seat ->
-                    TookSeat seat
-
-                GameLanding.ChoseTheme name ->
-                    ChoseTheme name
-
-                GameLanding.Go path ->
-                    Go path
-
-                -- The rest cannot arrive from this model: it has no room
-                -- to redirect to and opens no sign-in, because the page it
-                -- is on is only ever drawn for an account. Spelled out
-                -- rather than caught by a wildcard, so a new one of them
-                -- has to be thought about here.
-                GameLanding.NoOut ->
-                    NoOut
-
-                GameLanding.Redirect _ ->
-                    NoOut
-
-                GameLanding.SignedIn _ ->
-                    NoOut
-
-                GameLanding.SignedOut ->
-                    SignedOut
-
-                -- The guest home's phone menu; this page has its own JOIN.
-                GameLanding.OpenJoin ->
-                    NoOut
-            )
+        PressedPlay ->
+            ( model, Cmd.none, OpenCreate )
 
 
 nothingDueLine : String
@@ -462,14 +383,12 @@ nothingDueLine =
 -- VIEW
 
 
-{-| The page, and CREATE GAME's dialog over it. `join` is the shell's, as
-it is for the board home.
+{-| The page under the shell's bar.
 -}
-view : { join : Html msg, toMsg : Msg -> msg } -> Model -> List (Html msg)
-view { join, toMsg } model =
-    [ Html.div [ class "hm w-full max-w-5xl mx-auto px-4 sm:px-6 pb-12 sm:pb-16" ]
-        [ bar join toMsg model
-        , case model.state of
+view : (Msg -> msg) -> Model -> List (Html msg)
+view toMsg model =
+    [ Html.div [ class "hm w-full max-w-5xl mx-auto px-4 sm:px-6 pt-8 sm:pt-10 pb-12 sm:pb-16" ]
+        [ case model.state of
             -- Nothing rather than a spinner: the sections arrive together
             -- and land where they will stay, so there is nothing to jump.
             Loading ->
@@ -481,86 +400,7 @@ view { join, toMsg } model =
             Ready home ->
                 Html.map toMsg (sections model home)
         ]
-    , Html.map (toMsg << CreateMsg) (GameLanding.createModal model.create)
     ]
-
-
-{-| The bar: who this is, and the three things they can start. JOIN comes
-in from the shell, which owns the code prompt, so this row mixes the
-page's own messages with the shell's and maps each piece rather than the
-whole.
-
-On a phone the name and the board picker take the first line and the three
-actions the second, three across; from `sm` up it is one line.
-
--}
-bar : Html msg -> (Msg -> msg) -> Model -> Html msg
-bar join toMsg model =
-    Html.header [ id "home-bar", class "hm-bar pt-4 sm:pt-6 pb-8 sm:pb-10" ]
-        [ Html.div [ class "flex items-center justify-between gap-3" ]
-            [ Html.map toMsg (account model)
-            , Html.map (toMsg << CreateMsg) (GameLanding.themePicker model.create)
-            ]
-        , Html.div [ class "mt-4 grid grid-cols-3 gap-2 sm:flex sm:gap-3" ]
-            [ Html.map toMsg (playButton "home-play" "w-full sm:w-auto")
-            , join
-            , Html.map toMsg puzzlesButton
-            ]
-        ]
-
-
-{-| The account this browser is signed into, and the one thing behind it.
-The badge is the same one every name on the site carries (`Ui.Identity`).
--}
-account : Model -> Html Msg
-account model =
-    Html.div [ class "relative min-w-0" ]
-        [ Html.button
-            [ Attr.type_ "button"
-            , id "account-button"
-            , class "hm-account flex items-center gap-1.5 min-w-0 px-1.5 py-1 -mx-1.5 rounded-lg"
-            , Attr.attribute "aria-expanded"
-                (if model.accountOpen then
-                    "true"
-
-                 else
-                    "false"
-                )
-            , Attr.attribute "aria-haspopup" "menu"
-            , onClick ToggledAccount
-            ]
-            [ Identity.badge Identity.Account
-            , Html.span
-                [ class "font-bold text-[17px] sm:text-[19px] truncate", style "color: var(--ink)" ]
-                [ Html.text (model.session.user |> Maybe.andThen .name |> Maybe.withDefault "Your account") ]
-            , Html.span [ class "hero-chevron-down w-3.5 h-3.5 shrink-0 opacity-60", Attr.attribute "aria-hidden" "true" ] []
-            ]
-        , if model.accountOpen then
-            Html.div [ id "account-menu", class "hm-account-menu", Attr.attribute "role" "menu" ]
-                [ Html.button
-                    [ Attr.type_ "button"
-                    , id "logout"
-                    , Attr.attribute "role" "menuitem"
-                    , class "pixel text-[9px] px-3 py-2.5"
-                    , onClick PressedLogOut
-                    ]
-                    [ Html.text "LOG OUT" ]
-                ]
-
-          else
-            Html.text ""
-        ]
-
-
-puzzlesButton : Html Msg
-puzzlesButton =
-    Html.button
-        [ Attr.type_ "button"
-        , id "home-puzzles"
-        , class "q-btn plain w-full sm:w-auto rounded-lg px-3 sm:px-7 py-2.5 text-[13px] sm:text-sm whitespace-nowrap"
-        , onClick PressedPuzzles
-        ]
-        [ Html.text "PUZZLES" ]
 
 
 failed : String -> Html Msg
@@ -1102,9 +942,7 @@ quiet text =
     Html.p [ class "text-[15px] leading-snug mb-4", style "color: var(--ink)" ] [ Html.text text ]
 
 
-{-| PLAY: `Page.GameLanding`'s own CREATE GAME, pressed through this
-page's copy of its model, so the dialog behind it is that page's and not a
-second one.
+{-| PLAY: the bar's CREATE GAME, which the shell opens (`OpenCreate`).
 -}
 playButton : String -> String -> Html Msg
 playButton elementId extra =
@@ -1112,7 +950,7 @@ playButton elementId extra =
         [ Attr.type_ "button"
         , id elementId
         , class ("q-btn rounded-lg px-3 sm:px-7 py-2.5 text-[13px] sm:text-sm whitespace-nowrap " ++ extra)
-        , onClick (CreateMsg GameLanding.Started)
+        , onClick PressedPlay
         ]
         [ Html.text "PLAY" ]
 

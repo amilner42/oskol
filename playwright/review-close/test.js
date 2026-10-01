@@ -39,11 +39,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(600);
     await a.screenshot({ path: `${OUT}/${name}-01-lobby.png`, fullPage: true });
 
-    // The same room from the home page's "1 live game" pill: the row is the
+    // The same room from the home page's "1 live game" in ☰: the row is the
     // link, the ✕ beside it.
     await openHome(a);
-    // (On a phone the pill is in ☰'s menu.)
-    await a.waitForSelector('#resume-games', { state: 'attached' });
+    await a.waitForSelector('#nav-more .lh-burger-dot');
     await barItem(a, 'live');
     await a.waitForSelector('#resume-modal #close-' + game.gameId);
     await sleep(600);

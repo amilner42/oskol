@@ -1,8 +1,41 @@
 <%!-- Elm's Browser.application takes the body over on boot; this is what a
-      visitor with no JavaScript is left with, and what the app replaces. --%>
+      visitor with no JavaScript is left with, and what the app replaces.
+      `/` paints the loading screen the app starts on (`Ui.Loading`): the
+      homes' bar with only the bird in it, and the loading bar. Same markup,
+      so the first paint is the app's and nothing flashes or moves. --%>
 <div
   id="elm-app"
-  class={if assigns[:home], do: "min-h-screen-safe", else: "paper min-h-screen-safe"}
-  style={if assigns[:home], do: "background: #1d2230"}
+  class={if assigns[:home], do: "paper min-h-screen-safe quiet", else: "paper min-h-screen-safe"}
 >
+  <div :if={assigns[:home]} id="boot-page">
+    <div class="lh lh-top">
+      <header class="lh-bar">
+        <a href="/" class="lh-mark" aria-label="Oskol home">
+          <svg
+            viewBox="0 0 24 24"
+            width="24"
+            height="24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M16 7h.01" />
+            <path d="M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20" />
+            <path d="m20 7 2 .5-2 .5" />
+            <path d="M10 18v3" />
+            <path d="M14 17.75V21" />
+            <path d="M7 18a6 6 0 0 0 3.84-10.61" />
+          </svg>
+        </a>
+      </header>
+    </div>
+    <div class="boot" role="progressbar" aria-label="Loading">
+      <div class="boot-track">
+        <div class="boot-fill"></div>
+      </div>
+    </div>
+  </div>
 </div>

@@ -191,14 +191,14 @@ that left before the tap must not move the board back.
 prefsRace : Test
 prefsRace =
     describe "display preferences"
-        [ test "a board picked here survives a stale answer from the server" <|
+        [ test "a board picked in the site's bar survives a stale answer from the server" <|
             \_ ->
                 let
+                    table =
+                        startAt "backgammon"
+
                     picked =
-                        Play.update
-                            (BackgammonMsg (Backgammon.PickTheme "sand"))
-                            (startAt "backgammon")
-                            |> first3
+                        Play.withSession (Session.withPref "backgammon_theme" "sand" table.session) table
 
                     stale =
                         Play.update (GotPrefs (Ok (Dict.fromList [ ( "backgammon_theme", "walnut" ) ]))) picked

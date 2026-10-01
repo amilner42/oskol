@@ -26,6 +26,7 @@ import Html.Attributes
 import Page.Home as Page exposing (Msg(..), Out(..))
 import Session
 import Test exposing (Test, describe, test)
+import Test.Html.Event as Event
 import Test.Html.Query as Query
 import Test.Html.Selector as Selector exposing (attribute, id, text)
 import Time
@@ -219,7 +220,7 @@ out msg model =
 -}
 render : Page.Model -> Query.Single Msg
 render model =
-    Html.div [] (Page.view { join = Html.text "JOIN", toMsg = identity } model)
+    Html.div [] (Page.view identity model)
         |> Query.fromHtml
 
 
@@ -291,37 +292,22 @@ decoding =
 theBar : Test
 theBar =
     describe "the bar"
-        [ test "names the account and offers the three things to start" <|
+        [ test "is the shell's, not the page's: the page draws none of its own" <|
             \_ ->
                 render (loaded fullJson)
-                    |> Expect.all
-                        [ Query.has [ id "home-bar" ]
-                        , Query.find [ id "account-button" ] >> Query.has [ text "arie1" ]
-                        , Query.has [ id "home-play" ]
-                        , Query.has [ id "home-puzzles" ]
-                        , Query.has [ id "bg-theme-button" ]
-                        , Query.has [ text "JOIN" ]
-                        ]
-        , test "is there before the answer is, and nothing else is" <|
+                    |> Expect.all [ Query.hasNot [ Selector.class "lh-bar" ], Query.hasNot [ id "nav-more" ] ]
+        , test "the page is there before the answer is, and nothing else is" <|
             \_ ->
                 render (Page.init session |> Tuple.first)
                     |> Expect.all
-                        [ Query.has [ id "home-bar" ]
-                        , Query.has [ id "home-loading" ]
+                        [ Query.has [ id "home-loading" ]
                         , Query.hasNot [ id "home-live" ]
                         ]
-        , test "PUZZLES goes to the practice home" <|
+        , test "PLAY under an empty LIVE GAMES asks the shell for the bar's CREATE GAME" <|
             \_ ->
                 loaded fullJson
-                    |> out PressedPuzzles
-                    |> Expect.equal (Go "/puzzles")
-        , test "the account menu opens, and LOG OUT is behind it" <|
-            \_ ->
-                loaded fullJson
-                    |> send ToggledAccount
-                    |> render
-                    |> Query.find [ id "account-menu" ]
-                    |> Query.has [ id "logout" ]
+                    |> out PressedPlay
+                    |> Expect.equal OpenCreate
         , test "a failed answer says so once, with a way to ask again" <|
             \_ ->
                 loaded fullJson
@@ -628,11 +614,6 @@ aGuest =
                 Page.init session
                     |> Tuple.first
                     |> out (GotHome (parse guestJson))
-                    |> Expect.equal SignedOut
-        , test "logging out does the same" <|
-            \_ ->
-                loaded fullJson
-                    |> out (LoggedOut (Ok ()))
                     |> Expect.equal SignedOut
         ]
 

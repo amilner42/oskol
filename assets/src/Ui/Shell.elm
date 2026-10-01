@@ -1,7 +1,7 @@
-module Ui.Shell exposing (Config, bare, bird, mark, joinButton, joinCodeInputId, navJoin, quietJoinButton, view)
+module Ui.Shell exposing (Config, bare, barMark, bird, mark, joinButton, joinCodeInputId, view)
 
-{-| The chrome every landing page sits in: the OSKOL wordmark, the JOIN GAME
-prompt behind it, and the footer.
+{-| The chrome a page sits in: the shell's bar on top (passed in), the JOIN
+GAME prompt behind its ☰, and the footer.
 
 Quiet notebook: the paper and its grid stay, and the pixel font is kept for
 the wordmark and the eyebrows alone. Everything else here — the button, the
@@ -15,6 +15,7 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Route
 import Svg
 import Svg.Attributes as SvgAttr
+import Ui.Dialog as Dialog
 import Ui.Notebook as Notebook exposing (style)
 
 
@@ -34,10 +35,10 @@ joinCodeInputId =
     "join-code-input"
 
 
-view : Config msg -> List (Html msg) -> Html msg
-view config content =
+view : Config msg -> List (Html msg) -> List (Html msg) -> Html msg
+view config bar content =
     Html.div [ class "paper quiet min-h-screen-safe flex flex-col" ]
-        ([ topbar config ]
+        (bar
             ++ (if config.joinOpen then
                     [ joinModal config ]
 
@@ -82,90 +83,6 @@ joinButton config =
         [ Html.text "JOIN GAME" ]
 
 
-{-| JOIN in the guest home's bar: on a wide screen the code field itself,
-typed into in place (the same code and the same lookup as the prompt: the
-sixth character goes); on a phone a button that opens the prompt.
--}
-navJoin : Config msg -> Html msg
-navJoin config =
-    Html.div [ class "lh-join-wrap" ]
-        [ Html.form [ onSubmit config.onJoinSubmit, class "lh-join", id "nav-join" ]
-            [ Html.input
-                [ type_ "text"
-                , id "nav-join-code"
-                , Html.Attributes.name "code"
-                , value config.joinCode
-                , Html.Attributes.maxlength 6
-                , attribute "autocapitalize" "characters"
-                , attribute "autocomplete" "off"
-                , attribute "autocorrect" "off"
-                , attribute "spellcheck" "false"
-                , attribute "aria-label" "Game code"
-                , Html.Attributes.placeholder "Code"
-                , onInput config.onJoinCodeInput
-                ]
-                []
-            , Html.button [ type_ "submit", id "nav-join-submit" ] [ Html.text "Join" ]
-            ]
-        , case ( config.joinError, config.joinOpen ) of
-            ( Just message, False ) ->
-                Html.p [ id "nav-join-error", class "lh-join-error", attribute "role" "alert" ] [ Html.text message ]
-
-            _ ->
-                Html.text ""
-        , Html.button [ type_ "button", id "home-join", class "lh-btn lh-join-open", onClick config.onOpenJoin ] [ Html.text "Join" ]
-        ]
-
-
-{-| The same control in the quiet notebook, for the signed-in home's bar
-(`Page.Home`), which is paper rather than board. The prompt behind it is
-the one prompt: the code, what is typed into it and what is done with it
-all stay here and in `Main`.
--}
-quietJoinButton : Config msg -> Html msg
-quietJoinButton config =
-    Html.button
-        [ type_ "button"
-        , id "home-join"
-        , onClick config.onOpenJoin
-        , class "q-btn plain w-full sm:w-auto rounded-lg px-3 sm:px-7 py-2.5 text-[13px] sm:text-sm whitespace-nowrap"
-        ]
-        [ Html.text "JOIN" ]
-
-
-topbar : Config msg -> Html msg
-topbar config =
-    Html.header
-        [ class "w-full max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5 pb-2 flex items-center justify-between gap-3" ]
-        [ Html.a
-            [ href (Route.href Route.library)
-            , class "inline-flex items-center"
-            , attribute "aria-label" "Oskol home"
-            ]
-            -- Plain pixel type, no plate: the wordmark is the one loud thing
-            -- the page still says, and a box around it makes it a button.
-            [ bird
-            , Html.span
-                -- the pixel face sits low in its line box; leading-none and a
-                -- one-pixel lift put its optical centre on the bird's
-                [ class "pixel text-[15px] sm:text-[18px] block leading-none relative top-[1px]"
-                , style "color: var(--ink)"
-                ]
-                [ Html.text "OSKOL" ]
-            ]
-        , Html.div [ class "flex items-center gap-3" ]
-            [ Html.span [ class "hidden sm:block q-note text-sm leading-none" ] [ Html.text "Have a code?" ]
-            , Html.button
-                [ type_ "button"
-                , id "open-join"
-                , onClick config.onOpenJoin
-                , class "q-btn yellow text-sm whitespace-nowrap px-4 py-2.5"
-                ]
-                [ Html.text "JOIN GAME" ]
-            ]
-        ]
-
-
 {-| The six-character code prompt behind JOIN GAME. Codes are letters and
 digits now, so the field takes both and shows them upper-case; the sixth
 character auto-submits (see `Main.update`, which also folds the lookalikes
@@ -173,71 +90,53 @@ the alphabet leaves out).
 -}
 joinModal : Config msg -> Html msg
 joinModal config =
-    Html.div
-        [ id "join-modal"
-        , class "fixed inset-0 z-50 flex items-start justify-center px-4 pt-[16vh]"
-        ]
-        [ Html.div
-            [ class "absolute inset-0"
-            , style "background: rgba(35, 36, 58, 0.45)"
-            , onClick config.onCloseJoin
-            , attribute "aria-hidden" "true"
-            ]
-            []
-        , Html.div
-            [ class "q-card relative w-full max-w-sm p-5 sm:p-6"
-            , attribute "role" "dialog"
-            , attribute "aria-modal" "true"
-            , attribute "aria-label" "Join a game by code"
-            ]
-            [ Html.div [ class "flex items-center justify-between mb-3" ]
-                [ Html.h2 [ class "pixel q-eyebrow text-[9px]" ] [ Html.text "JOIN GAME" ]
-                , Html.button
-                    [ type_ "button"
-                    , id "close-join"
-                    , onClick config.onCloseJoin
-                    , attribute "aria-label" "Close"
-                    , class "q-note text-base px-2 py-1 hover:text-[color:var(--red)]"
-                    ]
-                    [ Html.text "✕" ]
+    Dialog.view
+        { id = "join-modal"
+        , closeId = "close-join"
+        , label = "Join a game by code"
+        , heading = "JOIN GAME"
+        , onClose = config.onCloseJoin
+        , width = "max-w-sm"
+        }
+        [ Html.p [ class "q-note text-sm mb-3" ]
+            [ Html.text "Type the 6-character code from your friend." ]
+        , Html.form [ onSubmit config.onJoinSubmit, class "flex flex-col gap-2.5" ]
+            ([ Html.input
+                [ type_ "text"
+                , id joinCodeInputId
+                , Html.Attributes.name "code"
+                , value config.joinCode
+                , attribute "inputmode" "text"
+                , attribute "pattern" "[0-9A-Za-z]*"
+                , Html.Attributes.maxlength 6
+                , attribute "autocapitalize" "characters"
+                , attribute "autocomplete" "one-time-code"
+                , Html.Attributes.placeholder "A1B2C3"
+                , class "q-field w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.4em]"
+                , attribute "autocorrect" "off"
+                , attribute "spellcheck" "false"
+                , onInput config.onJoinCodeInput
                 ]
-            , Html.p [ class "q-note text-sm mb-3" ]
-                [ Html.text "Type the 6-character code from your friend." ]
-            , Html.form [ onSubmit config.onJoinSubmit, class "space-y-3" ]
-                ([ Html.input
-                    [ type_ "text"
-                    , id joinCodeInputId
-                    , Html.Attributes.name "code"
-                    , value config.joinCode
-                    , attribute "inputmode" "text"
-                    , attribute "pattern" "[0-9A-Za-z]*"
-                    , Html.Attributes.maxlength 6
-                    , attribute "autocapitalize" "characters"
-                    , attribute "autocomplete" "one-time-code"
-                    , Html.Attributes.placeholder "A1B2C3"
-                    , class "q-field w-full px-4 py-3 text-center text-2xl font-mono tracking-[0.4em]"
-                    , attribute "autocorrect" "off"
-                    , attribute "spellcheck" "false"
-                    , onInput config.onJoinCodeInput
-                    ]
-                    []
-                 ]
-                    ++ (case config.joinError of
-                            Just message ->
-                                [ Html.p
-                                    [ id "join-error"
-                                    , class "text-sm font-semibold leading-relaxed"
-                                    , style "color: var(--red)"
-                                    ]
-                                    [ Html.text message ]
+                []
+             ]
+                ++ (case config.joinError of
+                        Just message ->
+                            [ Html.p
+                                [ id "join-error"
+                                , class "text-sm font-semibold leading-relaxed"
+                                , style "color: var(--red)"
                                 ]
+                                [ Html.text message ]
+                            ]
 
-                            Nothing ->
-                                []
-                       )
-                    ++ [ Notebook.submitCta { id = "join-submit", label = "Join game" } ]
-                )
-            ]
+                        Nothing ->
+                            []
+                   )
+                -- Full width, as SIGN IN's is: the one thing to press.
+                ++ [ Html.button [ type_ "submit", id "join-submit", class "q-btn w-full px-6 py-3 text-[15px]" ]
+                        [ Html.text "JOIN GAME" ]
+                   ]
+            )
         ]
 
 
@@ -274,4 +173,32 @@ bird =
         , Svg.path [ SvgAttr.d "M10 18v3" ] []
         , Svg.path [ SvgAttr.d "M14 17.75V21" ] []
         , Svg.path [ SvgAttr.d "M7 18a6 6 0 0 0 3.84-10.61" ] []
+        ]
+
+
+{-| The bar's left end: the bird, alone (the wordmark is the page's
+title), home. The same on both homes' bar and on the loading screen
+before either, so it never moves when one becomes the other.
+-}
+barMark : Html msg
+barMark =
+    Html.a [ href "/", class "lh-mark", attribute "aria-label" "Oskol home" ]
+        [ Svg.svg
+            [ SvgAttr.viewBox "0 0 24 24"
+            , SvgAttr.width "24"
+            , SvgAttr.height "24"
+            , SvgAttr.fill "none"
+            , SvgAttr.stroke "currentColor"
+            , SvgAttr.strokeWidth "2"
+            , SvgAttr.strokeLinecap "round"
+            , SvgAttr.strokeLinejoin "round"
+            , attribute "aria-hidden" "true"
+            ]
+            [ Svg.path [ SvgAttr.d "M16 7h.01" ] []
+            , Svg.path [ SvgAttr.d "M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20" ] []
+            , Svg.path [ SvgAttr.d "m20 7 2 .5-2 .5" ] []
+            , Svg.path [ SvgAttr.d "M10 18v3" ] []
+            , Svg.path [ SvgAttr.d "M14 17.75V21" ] []
+            , Svg.path [ SvgAttr.d "M7 18a6 6 0 0 0 3.84-10.61" ] []
+            ]
         ]

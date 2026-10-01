@@ -72,25 +72,31 @@ accounts =
                         [ Query.has [ id "resume-list" ]
                         , Query.hasNot [ id "guest-note" ]
                         ]
-        , test "signed in, the bar is the account, with Log out behind it" <|
+        , test "signed in, ☰ names the account, with Log out under it" <|
             \_ ->
-                signedInAs "her@example.com" withGames
+                signedInAs "her@example.com" (send GameLanding.ToggledNav withGames)
                     |> Expect.all
-                        [ home >> Query.find [ id "account-button" ] >> Query.has [ text "arie1", attribute (Html.Attributes.attribute "data-identity" "account") ]
+                        [ home >> Query.find [ id "nav-who" ] >> Query.has [ text "arie1", attribute (Html.Attributes.attribute "data-identity" "account") ]
                         -- the username, never the email: the bar is on screen for anyone
                         , home >> Query.hasNot [ text "her@example.com" ]
-                        , home >> Query.hasNot [ id "signin-button" ]
-                        , home >> Query.find [ id "account-button" ] >> Event.simulate Event.click >> Event.expect GameLanding.ToggledAccount
-                        , home >> Query.hasNot [ id "logout" ]
-                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "logout" ] >> Query.has [ text "Log out" ]
-                        , send GameLanding.ToggledAccount >> home >> Query.find [ id "logout" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedLogOut
+                        , home >> Query.hasNot [ id "nav-signin" ]
+                        , home >> Query.find [ id "nav-logout" ] >> Query.has [ text "Log out" ]
+                        , home >> Query.find [ id "nav-logout" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedLogOut
                         ]
-        , test "a guest's bar says Sign in, which opens the sign-in" <|
+        , test "for an account, ☰ leads with PLAY, which opens CREATE GAME and closes ☰" <|
+            \_ ->
+                signedInAs "her@example.com" (send GameLanding.ToggledNav withGames)
+                    |> Expect.all
+                        [ home >> Query.find [ id "nav-menu" ] >> Query.has [ id "home-play", text "Play" ]
+                        , home >> Query.find [ id "home-play" ] >> Event.simulate Event.click >> Event.expect GameLanding.Started
+                        , send GameLanding.Started >> home >> Query.hasNot [ id "nav-menu" ]
+                        ]
+        , test "a guest's ☰ says Sign in, which opens the sign-in" <|
             \_ ->
                 withGames
                     |> Expect.all
-                        [ home >> Query.find [ id "signin-button" ] >> Query.has [ text "Sign in" ]
-                        , home >> Query.find [ id "signin-button" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedSignInMenu
+                        [ send GameLanding.ToggledNav >> home >> Query.find [ id "nav-signin" ] >> Query.has [ text "Sign in" ]
+                        , send GameLanding.ToggledNav >> home >> Query.find [ id "nav-signin" ] >> Event.simulate Event.click >> Event.expect GameLanding.PressedSignInMenu
                         , send GameLanding.PressedSignInMenu >> home >> Query.find [ id "signin-modal" ] >> Query.has [ id "signin-email" ]
                         -- the games list arriving after that sign-in must not open
                         -- LIVE GAMES underneath it (one win, not two)
@@ -317,8 +323,8 @@ homeBoard =
                         ]
         , test "PUZZLES opens the practice home" <|
             \_ ->
-                home loadedModel
-                    |> Query.find [ id "puzzles" ]
+                home (send GameLanding.ToggledNav loadedModel)
+                    |> Query.find [ id "nav-puzzles" ]
                     |> Event.simulate Event.click
                     |> Event.expect GameLanding.PressedPuzzles
         , test "and the shell is told where to go" <|
@@ -326,9 +332,19 @@ homeBoard =
                 GameLanding.update GameLanding.PressedPuzzles loadedModel
                     |> (\( _, _, out ) -> out)
                     |> Expect.equal (GameLanding.Go "/puzzles")
-        , test "JOIN is the shell's code field in the bar" <|
-            \_ -> home loadedModel |> Query.has [ id "nav-join-code", id "home-join" ]
-        , test "on a phone, everything in the bar is behind ☰, and its menu opens on a tap" <|
+        , test "the bar is the bird, the themes and ☰, and nothing else, at every width" <|
+            \_ ->
+                home loadedModel
+                    |> Query.find [ class "lh-bar" ]
+                    |> Expect.all
+                        [ Query.has [ class "lh-mark", id "bg-theme-button", id "nav-more" ]
+                        , Query.hasNot [ id "nav-puzzles" ]
+                        , Query.hasNot [ id "nav-join-game" ]
+                        , Query.hasNot [ id "nav-signin" ]
+                        ]
+        , test "the guest's ☰ has no PLAY in it: PLAY NOW is under the board" <|
+            \_ -> home (send GameLanding.ToggledNav loadedModel) |> Query.hasNot [ id "home-play" ]
+        , test "everything but the themes is behind ☰, and its menu opens on a tap" <|
             \_ ->
                 loadedModel
                     |> Expect.all
@@ -345,12 +361,22 @@ homeBoard =
                                 , Query.hasNot [ id "nav-live" ]
                                 ]
                         ]
+        , test "a new page closes what the bar had open: the menu, CREATE GAME, the live games" <|
+            \_ ->
+                send GameLanding.Started (send GameLanding.ToggledNav withGamesOpen)
+                    |> GameLanding.closeBar
+                    |> home
+                    |> Expect.all
+                        [ Query.hasNot [ id "nav-menu" ]
+                        , Query.hasNot [ id "create-modal" ]
+                        , Query.hasNot [ id "resume-modal" ]
+                        ]
         , test "the menu's JOIN asks the shell for the code prompt, and closes" <|
             \_ ->
                 GameLanding.update GameLanding.PressedNavJoin (send GameLanding.ToggledNav loadedModel)
                     |> (\( model, _, out ) -> ( model.navOpen, out ))
                     |> Expect.equal ( False, GameLanding.OpenJoin )
-        , test "the themes stay in the bar, beside ☰, on a phone too" <|
+        , test "the themes stay in the bar, beside ☰" <|
             \_ -> home loadedModel |> Query.find [ class "lh-bar" ] |> Query.has [ id "bg-theme-button", id "nav-more" ]
         , test "who is across the table has its icon: the robot for Sage, two people for a friend" <|
             \_ ->
@@ -814,9 +840,15 @@ loadedModel =
 resume : Test
 resume =
     describe "the games you can resume"
-        [ test "arriving with games opens nothing: the bar offers them" <|
-            \_ -> home withGames |> Expect.all [ Query.hasNot [ id "resume-modal" ], Query.has [ id "resume-games" ] ]
-        , test "the bar's button opens the list, one row each, a link to the seat" <|
+        [ test "arriving with games opens nothing: ☰ has a dot, and offers them" <|
+            \_ ->
+                withGames
+                    |> Expect.all
+                        [ home >> Query.hasNot [ id "resume-modal" ]
+                        , home >> Query.find [ id "nav-more" ] >> Query.has [ class "lh-burger-dot" ]
+                        , send GameLanding.ToggledNav >> home >> Query.find [ id "nav-live" ] >> Query.has [ text "2 live games" ]
+                        ]
+        , test "☰'s live games open the list, one row each, a link to the seat" <|
             \_ ->
                 home withGamesOpen
                     |> Expect.all
@@ -826,18 +858,13 @@ resume =
                         , Query.find [ id "resume-123456" ] >> Query.has [ attribute (Html.Attributes.href "/backgammon/123456"), text "Bob", text "Match to 5", text "2 min ago", text "Your move" ]
                         , Query.find [ id "resume-9H302Z" ] >> Query.has [ text "Waiting for a player", text "Lobby" ]
                         ]
-        , test "the bar's button says how many are waiting, and what to do" <|
-            \_ ->
-                home withGamesOpen
-                    |> Query.find [ id "resume-games" ]
-                    |> Query.has [ text "2 live games" ]
-        , test "closing it leaves the board and the bar's button" <|
+        , test "closing it leaves the board, and ☰ its dot" <|
             \_ ->
                 home (send GameLanding.ClosedResume withGamesOpen)
                     |> Expect.all
                         [ Query.hasNot [ id "resume-modal" ]
                         , Query.has [ id "roll-dice" ]
-                        , Query.has [ id "resume-games" ]
+                        , Query.find [ id "nav-more" ] >> Query.has [ class "lh-burger-dot" ]
                         ]
         , test "the ✕ closes it" <|
             \_ ->
@@ -845,10 +872,10 @@ resume =
                     |> Query.find [ id "close-resume" ]
                     |> Event.simulate Event.click
                     |> Event.expect GameLanding.ClosedResume
-        , test "and the bar's button opens it again" <|
+        , test "and ☰'s live games open it again" <|
             \_ ->
-                home (send GameLanding.ClosedResume withGames)
-                    |> Query.find [ id "resume-games" ]
+                home (send GameLanding.ToggledNav (send GameLanding.ClosedResume withGames))
+                    |> Query.find [ id "nav-live" ]
                     |> Event.simulate Event.click
                     |> Event.expect GameLanding.OpenedResume
         , test "Escape is listened for only while it is open" <|
@@ -858,12 +885,13 @@ resume =
                     , \m -> Expect.equal Sub.none (GameLanding.subscriptions (send GameLanding.ClosedResume m))
                     ]
                     withGamesOpen
-        , test "a visitor with nothing to resume sees neither the list nor the button" <|
+        , test "a visitor with nothing to resume sees neither the list, the dot nor the item" <|
             \_ ->
-                home (send (GameLanding.GotMyGames (Ok [])) loadedModel)
+                home (send GameLanding.ToggledNav (send (GameLanding.GotMyGames (Ok [])) loadedModel))
                     |> Expect.all
                         [ Query.hasNot [ id "resume-modal" ]
-                        , Query.hasNot [ id "resume-games" ]
+                        , Query.hasNot [ class "lh-burger-dot" ]
+                        , Query.hasNot [ id "nav-live" ]
                         ]
         , test "the list failing to come changes nothing" <|
             \_ ->
@@ -871,10 +899,10 @@ resume =
                     |> Query.hasNot [ id "resume-modal" ]
         , test "one game is 1 live game, and their move is quiet" <|
             \_ ->
-                home (send GameLanding.OpenedResume (send (GameLanding.GotMyGames (Ok [ { playing | yourMove = False } ])) loadedModel))
+                send (GameLanding.GotMyGames (Ok [ { playing | yourMove = False } ])) loadedModel
                     |> Expect.all
-                        [ Query.find [ id "resume-games" ] >> Query.has [ text "1 live game" ]
-                        , Query.find [ id "resume-123456" ] >> Query.has [ text "Their move" ]
+                        [ send GameLanding.ToggledNav >> home >> Query.find [ id "nav-live" ] >> Query.has [ text "1 live game" ]
+                        , send GameLanding.OpenedResume >> home >> Query.find [ id "resume-123456" ] >> Query.has [ text "Their move" ]
                         ]
         , test "the clocks show as of the row, the running side charged for the time since" <|
             \_ ->
@@ -1071,7 +1099,7 @@ render model =
 -}
 home : GameLanding.Model -> Query.Single GameLanding.Msg
 home model =
-    Html.div [] (GameLanding.home { join = Shell.navJoin shell, toMsg = identity } model)
+    Html.div [] (GameLanding.home (GameLanding.navBar identity model) identity model ++ GameLanding.barModals model)
         |> Query.fromHtml
 
 
