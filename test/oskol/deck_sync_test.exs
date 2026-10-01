@@ -952,24 +952,75 @@ defmodule Oskol.DeckSyncTest do
       {:ok, %{new_remaining_today: 0}} = Retain.queue(user.id, limit: 20)
 
       caps = new_caps()
-      assert caps.start_new_in_band.(user.id, "bad", 3) == 3
 
-      started =
+      started = fn ->
         from(i in Retain.Item,
           where: i.key in ^bad_keys and not is_nil(i.started_at),
           select: i.key
         )
         |> Repo.all()
-        |> Enum.sort()
+        |> MapSet.new()
+      end
 
-      assert started == Enum.sort(Enum.take(bad_keys, 3))
+      # One at a time, so the order is the assertion: each press starts
+      # the next of the band in introduction order, newest game first.
+      order =
+        Enum.map(1..3, fn _ ->
+          before = started.()
+          assert caps.start_new_in_band.(user.id, "bad", 1) == 1
+          [key] = MapSet.difference(started.(), before) |> MapSet.to_list()
+          key
+        end)
 
-      # Again: only the one left, and then nothing.
+      assert order == Enum.take(bad_keys, 3)
+
+      # Three more asked for: only the one left, and then nothing.
       assert caps.start_new_in_band.(user.id, "bad", 3) == 1
+      assert MapSet.equal?(started.(), MapSet.new(bad_keys))
       assert caps.start_new_in_band.(user.id, "bad", 3) == 0
       # A band that is not one starts nothing; "" is the whole deck.
       assert caps.start_new_in_band.(user.id, "brilliant", 3) == 0
       assert caps.start_new_in_band.(user.id, "", 3) == 0
+    end
+
+    test "two accounts on one position each band it by their own mistake" do
+      ari = an_account("arie@oskol.test")
+      bo = an_account("bo@oskol.test")
+
+      ari_game = a_room([seat("p1", guest: "g1", user: ari.id)])
+      mistakes(ari_game, ["p1"])
+      grade(ari_game, "doubtful")
+
+      # The same position in Bo's game, played far worse.
+      bo_game = a_room([seat("p1", guest: "g2", user: bo.id)])
+      same_mistake(bo_game, ari_game)
+      grade(bo_game, "very_bad")
+
+      assert {:ok, 1} = Practice.sync(ari.id)
+      assert {:ok, 1} = Practice.sync(bo.id)
+      [key] = Enum.map(sources_of(ari_game), & &1.puzzle_id)
+
+      caps = new_caps()
+
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, band_queue,
+       _, _, _, _} = Oskol.Gleam.Caps.Practice.build()
+
+      # Each sees the card in their own tier, by all four readings.
+      for {who, band} <- [{ari, "doubtful"}, {bo, "very_bad"}] do
+        assert [{:cell, ^key, ^band, _, _, :new, _}] = caps.cells.(who.id)
+        assert [{:severity, ^band, 1, 0, 0, 0, 1}] = severity.(who.id, 4)
+
+        assert {:session, [], [{:card, ^key, _, _, _, _, _, _, _}], _} =
+                 band_queue.(who.id, band, 20)
+
+        other = if band == "doubtful", do: "very_bad", else: "doubtful"
+        assert {:session, [], [], _} = band_queue.(who.id, other, 20)
+        assert caps.start_new_in_band.(who.id, other, 3) == 0
+
+        {:ok, _} = Retain.start(who.id, [key])
+        {:ok, _} = Retain.review(who.id, key, :pass)
+        assert caps.answered_today_by_band.(who.id) == [{band, 1}]
+      end
     end
 
     test "a set's cells read no band, and the ladder is the configured one" do

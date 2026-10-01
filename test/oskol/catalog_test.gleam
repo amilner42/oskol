@@ -222,7 +222,7 @@ pub fn an_account_reads_every_deck_from_its_cells_test() {
   assert very_bad.size == 3
   assert very_bad.joined
   // total, untouched, in progress, patched, due, new left (the budget's
-  // one), done today, target (4 = 3 done + 1 due... + 1 new), then the
+  // one), done today, target (5 = 3 done + 1 due + 1 new), then the
   // rungs.
   assert very_bad.standing
     == Some([3, 1, 1, 1, 1, 1, 3, 5, 1, 0, 1, 0, 0, 1, 0, 0])

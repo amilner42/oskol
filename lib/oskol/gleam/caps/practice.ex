@@ -89,7 +89,7 @@ defmodule Oskol.Gleam.Caps.Practice do
       {:ok, user} ->
         from(i in Retain.Item,
           left_join: s in Oskol.Puzzles.Source,
-          on: s.puzzle_id == i.key,
+          on: s.puzzle_id == i.key and s.owner_user_id == ^owner(scope, user),
           where: i.user_id == ^user.id,
           group_by: i.id,
           order_by: [asc_nulls_last: i.position, asc: i.inserted_at, asc: i.id],
@@ -136,7 +136,7 @@ defmodule Oskol.Gleam.Caps.Practice do
             join: i in Retain.Item,
             on: i.id == r.item_id,
             left_join: s in Oskol.Puzzles.Source,
-            on: s.puzzle_id == i.key,
+            on: s.puzzle_id == i.key and s.owner_user_id == ^owner(scope, user),
             where:
               i.user_id == ^user.id and is_nil(r.supersedes_id) and
                 r.outcome != ^:defer and r.at >= ^since,
@@ -180,7 +180,7 @@ defmodule Oskol.Gleam.Caps.Practice do
       {{:ok, user}, wanted} ->
         keys =
           user
-          |> in_band(wanted)
+          |> in_band(scope, wanted)
           |> where([i], not i.suspended and is_nil(i.started_at))
           |> order_by([i], asc_nulls_last: i.position, asc: i.inserted_at, asc: i.id)
           |> limit(^n)
@@ -342,7 +342,7 @@ defmodule Oskol.Gleam.Caps.Practice do
         worst =
           from(i in Retain.Item,
             join: s in Oskol.Puzzles.Source,
-            on: s.puzzle_id == i.key,
+            on: s.puzzle_id == i.key and s.owner_user_id == ^owner(scope, user),
             where: i.user_id == ^user.id,
             group_by: [i.id, i.level, i.started_at, i.suspended, i.due],
             select: %{
@@ -435,7 +435,7 @@ defmodule Oskol.Gleam.Caps.Practice do
 
         reviews =
           user
-          |> in_band(wanted)
+          |> in_band(scope, wanted)
           |> where([i], not i.suspended and not is_nil(i.started_at) and i.due <= ^now)
           |> order_by([i], asc: i.level, asc: i.due, asc: i.id)
           |> limit(^limit)
@@ -446,7 +446,7 @@ defmodule Oskol.Gleam.Caps.Practice do
         fresh =
           if reviews == [] and remaining > 0 do
             user
-            |> in_band(wanted)
+            |> in_band(scope, wanted)
             |> where([i], not i.suspended and is_nil(i.started_at))
             |> order_by([i], asc_nulls_last: i.position, asc: i.inserted_at, asc: i.id)
             |> limit(^min(limit, remaining))
@@ -462,11 +462,11 @@ defmodule Oskol.Gleam.Caps.Practice do
   # This account's cards whose worst source is exactly this band. The
   # subquery is the one `severity/2` ranks with, so a card can only ever
   # be in the tier the hub counted it in.
-  defp in_band(user, wanted) do
+  defp in_band(user, scope, wanted) do
     worst =
       from(i in Retain.Item,
         join: s in Oskol.Puzzles.Source,
-        on: s.puzzle_id == i.key,
+        on: s.puzzle_id == i.key and s.owner_user_id == ^owner(scope, user),
         where: i.user_id == ^user.id,
         group_by: i.id,
         having:
@@ -501,6 +501,27 @@ defmodule Oskol.Gleam.Caps.Practice do
       |> Kernel.||(0)
 
     max(user.new_per_day - started, 0)
+  end
+
+  # Whose `puzzle_sources` rows band a card: the learner's own, and only in
+  # the mistakes scope. A position is shared -- the same opening, the same
+  # middlegame reached by two players -- so banding by every account's rows
+  # would let somebody else's very bad move put this player's dubious one in
+  # their ?? tier, and would band a universal set's opening by whoever got
+  # it wrong anywhere. `owner_user_id` is the column the sync already keys
+  # on (`Oskol.Practice.repositions_for/2`). In a set scope, or for a uid
+  # that is not an account id, no row can match: every card bands "".
+  # `severity/3`, `in_band/3`, `cells/2` and `answered_today_by_band/2` all
+  # join through this, so the four can never band one card two ways.
+  @nobody "00000000-0000-0000-0000-000000000000"
+
+  defp owner(scope, user) do
+    with true <- scope == Retain.Config.default_scope(),
+         {:ok, uuid} <- Ecto.UUID.cast(user.uid) do
+      uuid
+    else
+      _ -> @nobody
+    end
   end
 
   defp rank("very_bad"), do: 3

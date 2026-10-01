@@ -427,6 +427,9 @@ type Reading {
     standing: Option(deck.Standing),
     /// The cards the grid draws: an account's own, else none.
     cells: List(Cell),
+    /// Answers in the scope's own day (`day.answered`): the mistakes'
+    /// for a tier -- the three share it -- or the set's. 0 off an account.
+    answered: Int,
   )
 }
 
@@ -440,7 +443,7 @@ pub fn decks_json(ctx: Ctx, session: Session, now_ms: Int) -> String {
   let readings = read_decks(ctx, session, now_ms, offered_decks(ctx))
   let #(today, streak) = case session.user_id {
     Some(uid) -> #(
-      Some(json.object([#("done", json.int(done_today(ctx, uid, readings)))])),
+      Some(json.object([#("done", json.int(done_today(readings)))])),
       home.days_running(ctx.activity.days(uid, home.streak_window)),
     )
     None -> #(None, 0)
@@ -474,7 +477,7 @@ pub fn deck_page_json(
   })
   let reading = case read_decks(ctx, session, now_ms, [#(found, size)]) {
     [reading] -> reading
-    _ -> Reading(found, size, False, None, [])
+    _ -> Reading(found, size, False, None, [], 0)
   }
   let days = case session.user_id {
     Some(uid) ->
@@ -541,13 +544,20 @@ fn read_decks(
         let #(d, size) = pair
         case d.kind {
           catalog.Mistakes(band) ->
-            Reading(d, list.count(mine, fn(m) { m.1 == band }), False, None, [])
-          catalog.Set(_) -> Reading(d, size, False, None, [])
+            Reading(
+              d,
+              list.count(mine, fn(m) { m.1 == band }),
+              False,
+              None,
+              [],
+              0,
+            )
+          catalog.Set(_) -> Reading(d, size, False, None, [], 0)
         }
       })
     }
     None, None ->
-      list.map(offered, fn(pair) { Reading(pair.0, pair.1, False, None, []) })
+      list.map(offered, fn(pair) { Reading(pair.0, pair.1, False, None, [], 0) })
   }
 }
 
@@ -576,7 +586,14 @@ fn account_readings(
         let done = list.key_find(read.by_band, band) |> result.unwrap(0)
         let standing =
           deck.standing(cells, read.day.new_remaining, done, now_ms, rungs)
-        Reading(d, standing.total, standing.total > 0, Some(standing), cells)
+        Reading(
+          d,
+          standing.total,
+          standing.total > 0,
+          Some(standing),
+          cells,
+          read.day.answered,
+        )
       }
       catalog.Set(set), _ -> {
         let caps = decks.practice(ctx, set)
@@ -584,29 +601,33 @@ fn account_readings(
         let day = caps.day(uid)
         let standing =
           deck.standing(cells, day.new_remaining, day.answered, now_ms, rungs)
-        Reading(d, size, standing.total > 0, Some(standing), cells)
+        Reading(
+          d,
+          size,
+          standing.total > 0,
+          Some(standing),
+          cells,
+          day.answered,
+        )
       }
       // Not reached: the mistakes are read whenever a tier is offered.
-      catalog.Mistakes(_), None -> Reading(d, 0, False, None, [])
+      catalog.Mistakes(_), None -> Reading(d, 0, False, None, [], 0)
     }
   })
 }
 
 /// Everything this account has answered today, in every deck: the
-/// mistakes' day (one learner for the three tiers) and each set's.
-fn done_today(ctx: Ctx, uid: String, readings: List(Reading)) -> Int {
+/// mistakes' day (one learner for the three tiers, so counted once) and
+/// each set's. Read off the days the readings already hold.
+fn done_today(readings: List(Reading)) -> Int {
   let sets =
     readings
-    |> list.filter_map(fn(r) {
-      case r.deck.kind, r.standing {
-        catalog.Set(_), Some(s) -> Ok(s.done_today)
-        _, _ -> Error(Nil)
-      }
-    })
+    |> list.filter(fn(r) { !is_tier(r.deck) })
+    |> list.map(fn(r) { r.answered })
     |> int.sum
-  let mistakes = case list.any(readings, fn(r) { is_tier(r.deck) }) {
-    True -> ctx.practice.day(uid).answered
-    False -> 0
+  let mistakes = case list.find(readings, fn(r) { is_tier(r.deck) }) {
+    Ok(r) -> r.answered
+    Error(Nil) -> 0
   }
   mistakes + sets
 }

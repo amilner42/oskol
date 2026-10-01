@@ -14,6 +14,8 @@ defmodule OskolWeb.Api.PracticeApiTest do
   # sandbox, not async.
   use OskolWeb.ConnCase, async: false
 
+  import Ecto.Query
+
   alias Oskol.Auth
   alias Oskol.Repo
 
@@ -44,6 +46,69 @@ defmodule OskolWeb.Api.PracticeApiTest do
     conn = conn |> as_guest(guest_id) |> get(~p"/")
     :ok = Auth.bind_guest(guest_id, user.id)
     {recycle(conn), user}
+  end
+
+  # One mistake of this grade, on a seat this account owns, written the way
+  # the review job writes it. Returns the puzzle id.
+  defp a_mistake(user_id, grade, n) do
+    game_id = "pa-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
+
+    Repo.insert!(%Oskol.Persistence.Game{
+      id: game_id,
+      slug: "backgammon",
+      config: %{"format" => "single"},
+      seed: 7,
+      players: [%{"id" => "p1", "name" => "p1", "guest_id" => "g1", "user_id" => user_id}],
+      status: "finished",
+      winners: [],
+      inserted_at: DateTime.utc_now(),
+      updated_at: DateTime.utc_now()
+    })
+
+    :ok = Oskol.Reviews.save(game_id, 1, "done", 1, %{"turns" => []}, nil, %{"turns" => []}, 3)
+    base = :crypto.hash(:sha256, game_id) |> Base.encode32(padding: false) |> binary_part(0, 7)
+
+    {:ok, _} =
+      Oskol.Puzzles.store(
+        game_id,
+        1,
+        [
+          %{
+            key: "k-#{game_id}",
+            ids: for(m <- 1..4, do: base <> Integer.to_string(m)),
+            kind: "move",
+            question: %{
+              "version" => 1,
+              "kind" => "move",
+              "board" => List.duplicate(0, 26) |> List.replace_at(n, 2),
+              "dice" => [6, 4],
+              "cube" => %{"value" => 1, "owner" => "center"},
+              "score" => nil,
+              "crawford" => false,
+              "jacoby" => false
+            },
+            answer: %{"kind" => "move", "complete" => true, "outcomes" => []},
+            evaluated_by: %{"levels" => %{}},
+            complete: true
+          }
+        ],
+        [
+          %{
+            key: "k-#{game_id}",
+            game_number: 1,
+            turn: 1,
+            kind: "move",
+            seat: 0,
+            player_id: "p1",
+            played: "13/8 13/11",
+            equity_lost: 0.1,
+            grade: grade,
+            skipped_reason: nil
+          }
+        ]
+      )
+
+    Repo.one!(from(s in Oskol.Puzzles.Source, where: s.game_id == ^game_id, select: s.puzzle_id))
   end
 
   describe "GET /papi/practice" do
@@ -153,7 +218,17 @@ defmodule OskolWeb.Api.PracticeApiTest do
 
     test "KEEP GOING takes a band, and refuses one that is not", %{conn: conn} do
       {conn, user} = signed_in(conn, "arie@oskol.test")
-      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC")
+      {:ok, _} = Retain.put_user(user.id, tz: "Etc/UTC", new_per_day: 3)
+
+      bad = a_mistake(user.id, "bad", 1)
+      worse = a_mistake(user.id, "very_bad", 2)
+      assert {:ok, 2} = Oskol.Practice.sync(user.id)
+      # The day's budget is nothing, set after the sync (which opens the
+      # deck at the pace).
+      {:ok, _} = Retain.put_user(user.id, new_per_day: 0)
+      # The ordinary queue offers no new one.
+      assert conn |> get("/papi/practice?band=bad") |> json_response(200) |> Map.get("puzzles") ==
+               []
 
       body =
         conn
@@ -161,7 +236,13 @@ defmodule OskolWeb.Api.PracticeApiTest do
         |> post(~p"/papi/practice/more", %{"band" => "bad"})
         |> json_response(200)
 
-      assert body["puzzles"] == []
+      # The bad one was started, over the budget, and is the session now;
+      # the very bad one was left alone.
+      assert [%{"id" => ^bad, "due" => true}] = body["puzzles"]
+      {:ok, started} = Retain.fetch_item(user.id, bad)
+      assert started.started_at
+      {:ok, untouched} = Retain.fetch_item(user.id, worse)
+      assert untouched.started_at == nil
 
       assert %{"error" => %{"code" => "validation_failed"}} =
                conn

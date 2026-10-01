@@ -246,6 +246,57 @@ defmodule OskolWeb.Api.DecksApiTest do
     assert conn |> get(~p"/papi/practice/decks/no-such") |> json_response(404)
   end
 
+  # A mistake somebody made on this position in a real game.
+  defp a_source(puzzle_id, owner_id, grade) do
+    game_id = "s-" <> (:crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower))
+
+    Repo.insert!(%Oskol.Persistence.Game{
+      id: game_id,
+      slug: "backgammon",
+      config: %{"format" => "single"},
+      seed: 7,
+      players: [%{"id" => "p1", "name" => "p1", "user_id" => owner_id}],
+      status: "finished",
+      winners: [],
+      inserted_at: DateTime.utc_now(),
+      updated_at: DateTime.utc_now()
+    })
+
+    Repo.insert!(%Oskol.Puzzles.Source{
+      puzzle_id: puzzle_id,
+      game_id: game_id,
+      game_number: 1,
+      turn: 1,
+      kind: "move",
+      seat: 0,
+      player_id: "p1",
+      played: "13/8 13/11",
+      equity_lost: 0.3,
+      grade: grade,
+      owner_user_id: owner_id
+    })
+  end
+
+  test "a set's cells band nothing, whoever got its positions wrong in a game", %{conn: conn} do
+    {conn, user} = signed_in(conn, "arie@oskol.test")
+    other = Auth.find_or_create_user("other@oskol.test")
+
+    joined =
+      conn
+      |> with_csrf()
+      |> post(~p"/papi/decks/openings/join", %{"tz" => "Etc/UTC"})
+      |> json_response(200)
+
+    [first | _] = joined["puzzles"]
+    # Somebody else's very bad move on this opening, and the player's own.
+    a_source(first["id"], other.id, "very_bad")
+    a_source(first["id"], user.id, "bad")
+
+    page = conn |> get(~p"/papi/practice/decks/openings") |> json_response(200)
+    assert Enum.any?(page["cells"], &(&1["id"] == first["id"]))
+    assert Enum.all?(page["cells"], &(&1["band"] == ""))
+  end
+
   test "a deck that names nothing is refused on an answer", %{conn: conn} do
     [first | _] =
       conn |> get(~p"/papi/decks/openings") |> json_response(200) |> Map.get("puzzles")

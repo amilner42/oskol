@@ -85,11 +85,13 @@ pub fn more_json(
     session.user_id
     |> option.to_result(error.Conflict("sign_in", sign_in_message)),
   )
-  use _ <- result.try(case decks.joined(decks.standing(ctx, d, uid)) {
-    True -> Ok(Nil)
-    False -> Error(error.Conflict("not_joined", not_joined_message))
+  let caps = decks.practice(ctx, d)
+  // Added means the set's ladder holds something: one read of its totals.
+  use _ <- result.try(case caps.summary(uid, []) {
+    [row, ..] if row.count > 0 -> Ok(Nil)
+    _ -> Error(error.Conflict("not_joined", not_joined_message))
   })
-  let _ = decks.practice(ctx, d).start_new(uid, d.new_per_day)
+  let _ = caps.start_new(uid, d.new_per_day)
   Ok(session_body(ctx, session, d, False))
 }
 
