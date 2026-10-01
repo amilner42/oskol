@@ -1,7 +1,7 @@
 /**
  * Screenshots of the sets on offer (the openings, the replies to them) on
- * the practice home, and a run through one: the LEARN card as an account
- * that has added the openings and not the replies, and as a guest; a
+ * the practice home, and a run through one: the openings' card in front
+ * as an account that has added them and not the replies, and as a guest; a
  * puzzle in a run through the openings (the strip names the set); and the
  * end card after one answer. At 390x844, 320x568, 844x390 and a desktop.
  *
@@ -47,20 +47,17 @@ function arrange() {
     const account = await seatedContext(browser, guestId, { viewport });
     const page = await account.newPage();
     await page.goto(`${BASE}/puzzles`);
-    await page.waitForSelector('#decks');
+    await page.waitForSelector('#hub-card');
     await page.screenshot({ path: `${OUT}/${size.name}-hub-account.png`, fullPage: true });
-    await page.locator('#decks').screenshot({ path: `${OUT}/${size.name}-learn-account.png` });
+    // The openings in front of the practice home: one of the five decks.
+    if (await page.locator('#hub-row-openings').count()) await page.click('#hub-row-openings');
+    await page.waitForSelector('#hub-card[data-deck="openings"]');
+    await page.locator('#hub-card').screenshot({ path: `${OUT}/${size.name}-learn-account.png` });
 
-    // Each size answers one, so by the last the openings have nothing left
-    // today: that is the resting row, and a picture of its own.
-    if (!(await page.locator('#deck-openings-go').count())) {
-      log(`${size.name}: the openings are resting`);
-      await account.close();
-      continue;
-    }
-
-    // A run through the openings: the strip names the set.
-    await page.click('#deck-openings-go');
+    // A run through the openings: the strip names the set. Each size
+    // answers one, so the one button may by now say KEEP GOING: it still
+    // starts a run.
+    await page.click('#hub-go');
     await page.waitForSelector('#pz-progress-count');
     await page.screenshot({ path: `${OUT}/${size.name}-run.png`, fullPage: true });
     const strip = await page.textContent('#pz-progress-count');
@@ -81,8 +78,10 @@ function arrange() {
     const guestContext = await browser.newContext({ viewport });
     const guest = await guestContext.newPage();
     await guest.goto(`${BASE}/puzzles`);
-    await guest.waitForSelector('#decks');
-    await guest.locator('#decks').screenshot({ path: `${OUT}/${size.name}-learn-guest.png` });
+    await guest.waitForSelector('#hub-row-openings');
+    await guest.click('#hub-row-openings');
+    await guest.waitForSelector('#hub-card[data-deck="openings"]');
+    await guest.locator('#hub-card').screenshot({ path: `${OUT}/${size.name}-learn-guest.png` });
     await guestContext.close();
   }
 

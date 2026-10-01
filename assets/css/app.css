@@ -2318,16 +2318,260 @@ button.tier-row:active { background: var(--paper-2); transform: translateY(1px);
   .tier-left { font-size: 30px; }
 }
 
-/* ---------- The sets on offer (LEARN, on the practice home) ----------
-   Page/Puzzles.elm's second card: a row per set (the openings, the
-   replies to them), each its own name, line, standing and button. The
-   rows are kept apart by the same dashed rule the reveal's level line
-   uses, so two buttons never read as one stack. */
-.deck-row + .deck-row {
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 1px dashed var(--pencil);
+/* ---------------------------------------------------------------------
+   THE PRACTICE HOME: FIVE DECKS (Page/Puzzles.elm, Ui/Deck.elm)
+
+   One sheet. Over it, the day and what the mistakes cost; then one deck
+   in front as a card -- the mark, today's ring, the mastery grid, its
+   state in words with the grid's own colours as the legend, its cost,
+   one button and one quiet line -- and the other four as rows.
+
+   Nothing moves: every slot that changes with the data or a press holds
+   its size (the button's, the quiet line's two lines, the won-back
+   line's one), the grid's box is its count's, and the ring's arc is the
+   only thing that animates. Motion is decoration: under
+   prefers-reduced-motion everything is drawn in its final state.
+   --------------------------------------------------------------------- */
+.pz-hub {
+  --dk-green: #1f7a45;
+  --dk-paper: rgb(222, 217, 203);
+  --dk-y1: #f2d27a;
+  --dk-y2: #e6bd3a;
+  --dk-y3: #d9a100;
+  width: 100%;
+  max-width: 30rem;
+  margin: 24px auto 8px;
+  padding: 22px 18px 20px;
 }
+@media (min-width: 640px) {
+  .pz-hub { max-width: 33rem; margin-top: 44px; padding: 32px 32px 28px; }
+}
+.pz-hub-loading { min-height: 440px; }
+
+/* The head: the day, quiet; then the cost, the one sentence in ink. */
+.pz-hub-day {
+  font-size: 13px;
+  color: var(--pencil);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.005em;
+}
+.pz-hub-cost { margin-top: 8px; }
+.pz-hub-cost-line {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+/* Held whether or not it has anything to say: the day the first patch
+   lands, nothing under it moves. */
+.pz-hub-won {
+  min-height: 1.45em;
+  margin-top: 3px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--dk-green);
+}
+.pz-hub-cost > .pz-hub-cost-line:only-child { margin-bottom: calc(1.45em + 3px); }
+.pz-hub-headline {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.pz-hub-line {
+  margin-top: 6px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  opacity: 0.86;
+  text-wrap: pretty;
+}
+.pz-hub-try { margin-top: 18px; }
+.pz-hub-try .q-btn { width: 100%; height: 50px; font-size: 15px; letter-spacing: 0.04em; }
+.pz-hub-signin { margin-top: 18px; font-size: 13px; line-height: 1.45; text-align: center; }
+
+/* ---- The card ---- */
+.dk-card {
+  margin-top: 18px;
+  background: #fff;
+  border: 2px solid var(--ink);
+  border-radius: 18px;
+  box-shadow: 4px 4px 0 0 var(--ink);
+  padding: 20px 18px 16px;
+}
+@media (min-width: 640px) { .dk-card { padding: 26px 26px 20px; } }
+
+.dk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; min-height: 64px; }
+.dk-title { min-width: 0; }
+/* The mark, big: ?? reads as the thing itself long before the words do. */
+.dk-mark {
+  font-family: "Press Start 2P", monospace;
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--pen);
+  padding-top: 3px;
+}
+.dk-setname {
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.dk-name {
+  margin-top: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--pencil);
+}
+@media (min-width: 640px) {
+  .dk-mark { font-size: 38px; }
+  .dk-setname { font-size: 28px; }
+}
+
+.dk-today { flex: none; width: 60px; display: flex; flex-direction: column; align-items: center; }
+.dk-today .chart-ring { width: 58px; height: 58px; }
+.dk-today-word {
+  margin-top: 3px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pencil);
+}
+.chart-ring .ring-words { font-family: "Press Start 2P", monospace; }
+
+/* The grid: a square a position, drawn at --sq a square and never wider
+   than the card. Its box is its count's, so it is the same before and
+   after anything lands. */
+.dk-grid { margin-top: 16px; }
+.chart-grid { --sq: 22px; width: min(100%, calc(var(--cols) * var(--sq) - 4px)); height: auto; }
+@media (min-width: 640px) { .chart-grid { --sq: 24px; } }
+
+/* The state line, which is the grid's legend in words. */
+.dk-state {
+  margin-top: 12px;
+  display: flex; flex-wrap: wrap; align-items: center;
+  column-gap: 12px; row-gap: 4px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.dk-part { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.dk-part.is-total, .dk-part.is-plain { color: var(--pencil); white-space: normal; }
+.dk-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.dk-swatch.is-patched { background: var(--dk-green); }
+.dk-swatch.is-in-progress { background: var(--dk-y2); }
+.dk-swatch.is-to-start { background: var(--dk-paper); }
+
+/* What a tier cost: under a pencilled rule, the PR in plain words. */
+.dk-cost {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(35, 36, 58, 0.22);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+.dk-won { margin-top: 4px; font-weight: 600; color: var(--dk-green); }
+
+/* One button, in a slot that is the same height whatever it says. */
+.dk-action { margin-top: 16px; height: 52px; }
+.dk-go { width: 100%; height: 50px; font-size: 15px; letter-spacing: 0.05em; }
+.dk-go.is-keep-going { background: var(--highlighter); color: var(--ink); }
+.dk-go.is-practice-anyway { background: #fff; color: var(--ink); }
+.dk-quiet {
+  margin-top: 8px;
+  min-height: calc(2 * 1.45em);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--pencil);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* ---- The rows: the four not in front ---- */
+.dk-rows { margin-top: 14px; }
+.dk-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 20px 4.9rem 10px;
+  align-items: center;
+  column-gap: 10px;
+  width: 100%;
+  height: 44px;
+  padding: 0 10px;
+  margin: 0;
+  text-align: left;
+  font-size: 14px;
+  color: var(--ink);
+  background-color: transparent;
+  border-radius: 10px;
+  transition: background 0.15s ease;
+}
+.dk-row + .dk-row {
+  background-image: linear-gradient(rgba(35, 36, 58, 0.09), rgba(35, 36, 58, 0.09));
+  background-size: calc(100% - 20px) 1px;
+  background-position: 10px 0;
+  background-repeat: no-repeat;
+}
+button.dk-row { cursor: pointer; }
+@media (hover: hover) { button.dk-row:hover { background-color: var(--paper-2); } }
+button.dk-row:focus-visible { background-color: var(--paper-2); outline: none; }
+button.dk-row:active { background-color: var(--paper-2); }
+.dk-row-mark {
+  font-family: "Press Start 2P", monospace;
+  font-size: 12px;
+  letter-spacing: -0.04em;
+  color: var(--pen);
+}
+.dk-row-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-row-ring { width: 20px; height: 20px; }
+.dk-row-ring .chart-ring { width: 20px; height: 20px; }
+.dk-row-left { text-align: right; font-size: 12.5px; color: var(--pencil); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dk-row-chev { color: var(--pencil); font-size: 18px; line-height: 1; transition: transform 0.15s ease; }
+button.dk-row:hover .dk-row-chev { transform: translateX(2px); color: var(--ink); }
+.dk-row.is-quiet { color: var(--pencil); }
+.dk-row.is-quiet .dk-row-mark { color: var(--pencil); opacity: 0.7; }
+.dk-row.is-quiet .dk-row-name { font-weight: 500; }
+
+@media (max-width: 359px) {
+  .pz-hub { padding: 20px 14px 18px; }
+  .dk-card { padding: 18px 14px 14px; }
+  .dk-mark { font-size: 26px; }
+  .dk-setname { font-size: 22px; }
+  .dk-row { column-gap: 6px; padding: 0 4px; font-size: 13px; grid-template-columns: 22px minmax(0, 1fr) 18px 3.9rem 8px; }
+  .dk-row-left { font-size: 12px; }
+  .dk-row-mark { font-size: 10px; }
+  .pz-hub-cost-line { font-size: 17px; }
+}
+
+/* ---- Motion: the squares a player has lit come in one after another,
+   the ring draws its arc, and a full ring draws its check. Opacity and
+   transform only: no box changes size. ---- */
+@media (prefers-reduced-motion: no-preference) {
+  .chart-grid .grid-sq.is-lit {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: dk-sq-in 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+    animation-delay: calc(min(var(--i), 80) * 9ms + 80ms);
+  }
+  .chart-ring .ring-arc { animation: dk-ring-in 0.9s cubic-bezier(0.3, 0.7, 0.2, 1) both 0.12s; }
+  .chart-ring .ring-check { stroke-dasharray: 1; animation: dk-check-in 0.45s ease-out both 0.8s; }
+  .dk-card { animation: dk-card-in 0.28s ease-out both; }
+}
+@keyframes dk-sq-in { from { opacity: 0; transform: scale(0.35); } to { opacity: 1; transform: scale(1); } }
+@keyframes dk-ring-in { from { stroke-dasharray: 0 100; } }
+@keyframes dk-check-in { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes dk-card-in { from { opacity: 0.4; } to { opacity: 1; } }
 
 /* ---------- <oskol-demo-board>: the guest home's demo board ----------
    assets/js/demo_board.js. A decorative board in real 3D, tilted back on

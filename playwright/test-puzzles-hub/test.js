@@ -9,15 +9,18 @@
  *     and TRY ONE opens a puzzle with no NEXT (one puzzle is not a run).
  *  2. Alice, a guest holding the seat that made the mistakes, opens
  *     /puzzles: "12 mistakes from your 1 game", that nothing is saved,
- *     PRACTICE. The run: twelve puzzles, PLAY and NEXT each, then the
- *     score and the sign-in ask. She signs in right there (the mail read
+ *     her worst tier in front with PRACTICE. The run: that tier's
+ *     puzzles, PLAY and NEXT each, then the score and the sign-in ask. She signs in right there (the mail read
  *     from /dev/last-login) and CONTINUE lands her back on /puzzles with
  *     a deck: the counts line, and her timezone sent once.
- *  3. As an account: the head names the worst of what she has made and
- *     the card leads with one tier (its mark, what is left to fix, FIX
- *     ONE) and the others are quiet rows; FIX ONE runs that tier -- the
- *     counter and the marks watched over each of them -- and ends on
- *     the summary with the way back. I'M DONE ends a run after one.
+ *  3. As an account: five decks, one in front -- the worst tier, by its
+ *     mark, with its grid (a square a mistake), today's ring and FIX ONE
+ *     -- and the others as rows; tapping a row and back leaves the page
+ *     the height it was. FIX ONE runs that tier -- the counter and the
+ *     marks watched over each of them -- and ends on the summary with the
+ *     way back. I'M DONE ends a run after one. Once today's set is done
+ *     the ring is full and the one button is still there: KEEP GOING (or
+ *     PRACTICE ANYWAY), which starts a run.
  *  4. Phones: the home at 390x844, 320x568 and 844x390 scrolls nowhere
  *     sideways.
  *
@@ -209,7 +212,9 @@ async function run(browser, setup, errors) {
     must(!html.includes('name="robots"'), 'the practice home is indexable');
     await stranger.waitForSelector('#puzzles-hub #hub-try-one');
     must(await stranger.locator('#hub-about').count(), 'a stranger is told what this is');
-    must(!(await stranger.locator('#hub-practice').count()), 'and has nothing to practice');
+    must(!(await stranger.locator('#hub-card').count()), 'and nothing of hers is in front');
+    const strangerRows = await stranger.locator('#hub-rows .dk-row').count();
+    must(strangerRows >= 3, `the decks are rows, her tiers among them (${strangerRows})`);
     await stranger.click('#hub-try-one');
     await stranger.waitForSelector('#pz-board .bg-stack');
     must(/^\/puzzles\/[0-9A-Z]{8}$/i.test(new URL(stranger.url()).pathname), `TRY ONE opened a puzzle: ${stranger.url()}`);
@@ -227,15 +232,23 @@ async function run(browser, setup, errors) {
       if (r.method() === 'POST' && r.url().includes('/papi/practice/tz')) posts.push(r.postDataJSON());
     });
     await alice.goto(`${BASE}/puzzles`);
-    await alice.waitForSelector('#hub-practice');
+    await alice.waitForSelector('#hub-go[data-action="practice"]');
     const headline = (await alice.textContent('#hub-headline')).trim();
     must(headline === `${KEPT} mistakes from your 1 game`, `a guest reads what is hers: "${headline}"`);
     must(await alice.locator('#hub-unsaved').count(), 'and that nothing is saved yet');
     must(posts.length === 0, 'a guest\'s timezone is nobody\'s to keep');
-    await alice.click('#hub-practice');
+    // Her worst tier is in front, and PRACTICE runs that tier.
+    const guestTier = await alice.getAttribute('#hub-card', 'data-deck');
+    const guestDecks = (await (await alice.request.get(`${BASE}/papi/practice/decks`)).json()).decks;
+    const guestSize = guestDecks.find((d) => d.id === guestTier).size;
+    const firstTier = guestDecks.find((d) => d.kind === 'mistakes' && d.size > 0).id;
+    must(guestTier === firstTier, `her worst tier with mistakes is in front: ${guestTier} (${guestSize})`);
+    const squares = await alice.locator('#hub-grid rect').count();
+    must(squares === guestSize, `a square a mistake (${squares})`);
+    await alice.click('#hub-go');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
     log('PRACTICE started the run');
-    await runToEnd(alice, KEPT);
+    await runToEnd(alice, guestSize);
     await alice.waitForSelector('#pz-signin-ask');
     must(await alice.locator('#signin-email').count(), 'a guest is asked to sign in, in the one component');
     must(!(await alice.locator('#pz-keep-going').count()), 'and not offered a quota to keep going with');
@@ -253,7 +266,7 @@ async function run(browser, setup, errors) {
     log('CONTINUE landed back on the practice home');
     // Signed in now, and the page knows it from the server's answer: the
     // browser's zone goes to the deck, once for this load of the page.
-    await alice.waitForFunction(() => document.querySelector('#hub-practice, #hub-fix-one, #hub-try-one'));
+    await alice.waitForFunction(() => document.querySelector('#hub-go, #hub-try-one'));
     await sleep(300);
     must(posts.length === 1 && typeof posts[0].tz === 'string' && posts[0].tz.length > 0, `the browser's timezone was sent: ${JSON.stringify(posts[0])}`);
 
@@ -278,34 +291,44 @@ async function run(browser, setup, errors) {
 
     // ---- 3. as an account ----
     await alice.goto(`${BASE}/puzzles`);
-    await alice.waitForSelector('#hub-fix-one');
-    // One tier in front, by the mark the replay draws, with the one
-    // number that matters and one button.
-    const tier = await alice.getAttribute('#hub-tier', 'data-tier');
-    must(['very_bad', 'bad', 'doubtful'].includes(tier), `one tier is in front: ${tier}`);
+    await alice.waitForSelector('#hub-go[data-action="fix-one"]');
+    // One deck in front: the worst tier, by the mark the replay draws, a
+    // square a mistake, today's ring and one button.
+    const decks = (await (await alice.request.get(`${BASE}/papi/practice/decks`)).json());
+    const tier = await alice.getAttribute('#hub-card', 'data-deck');
+    must(tier === decks.lead && ['very_bad', 'bad', 'doubtful'].includes(tier), `the server's lead is in front: ${tier}`);
     const mark = { very_bad: '??', bad: '?', doubtful: '?!' }[tier];
-    const head = (await alice.textContent('#hub-tier')).trim();
-    must(head.includes(mark), `named by its mark: "${head.split('\n')[0]}"`);
-    const left = (await alice.textContent('#hub-tier-left')).trim();
-    must(/^\d+ left to fix$/.test(left), `and by what is left to fix: "${left}"`);
-    const fix = (await alice.textContent('#hub-fix-one')).trim();
+    const front = decks.decks.find((d) => d.id === tier);
+    must((await alice.textContent('#hub-card .dk-mark')).trim() === mark, `named by its mark: ${mark}`);
+    const grid = await alice.locator('#hub-grid rect').count();
+    must(grid === front.size, `the grid is a square a mistake (${grid} of ${front.size})`);
+    const ring = await alice.getAttribute('#hub-today svg', 'data-target');
+    must(Number(ring) === front.standing.target_today, `today's ring is today's set (${ring})`);
+    const fix = (await alice.textContent('#hub-go')).trim();
     must(fix === 'FIX ONE', `one button, and it asks for one: "${fix}"`);
-    must(!(await alice.locator('#hub-keep-going').count()), 'and no quota to keep going with');
-    must(!(await alice.locator('#hub-today').count()), 'nothing under the tiers but the tiers');
-    // The tiers she is not on are quiet rows -- one per band she has
-    // made a mistake in, less the one already in front. This room's
-    // mistakes may all be of one band, and then there are none.
-    const bands = (await (await alice.request.get(`${BASE}/papi/practice`)).json()).severity;
-    const others = bands.filter((b) => b.total > 0 && b.grade !== tier).length;
-    const rows = await alice.locator('#hub-tier-rows [data-tier]').count();
-    must(rows === others, `the tiers she is not on are quiet rows (${rows} of ${others})`);
-    must(!(await alice.locator(`#hub-tier-row-${tier}`).count()), 'and the tier in front is not also a row');
+    // The other decks are rows, and the one in front is not also a row.
+    const rows = await alice.locator('#hub-rows .dk-row').count();
+    must(rows === decks.decks.length - 1, `every other deck is a row (${rows} of ${decks.decks.length - 1})`);
+    must(!(await alice.locator(`#hub-row-${tier}`).count()), 'and the deck in front is not also a row');
+    // Nothing moves: a row tapped in front and back leaves the page the
+    // height it was.
+    const tappable = alice.locator('#hub-rows button.dk-row');
+    if (await tappable.count()) {
+      const before = await alice.evaluate(() => document.querySelector('#puzzles-hub').getBoundingClientRect().height);
+      const other = await tappable.first().getAttribute('data-deck');
+      await tappable.first().click();
+      await alice.waitForSelector(`#hub-card[data-deck="${other}"]`);
+      await alice.click(`#hub-row-${tier}`);
+      await alice.waitForSelector(`#hub-card[data-deck="${tier}"]`);
+      const after = await alice.evaluate(() => document.querySelector('#puzzles-hub').getBoundingClientRect().height);
+      must(before === after, `the page is ${after}px before ${other} came in front and after ${tier} went back`);
+    }
     await sleep(300);
     must(posts.length === 2, `the timezone goes once per load of the page, never per fetch (${posts.length} for 2 loads)`);
 
     // ---- 3b. one mistake is a whole session ----
     // FIX ONE, answer one, stop. That has to read as finished.
-    await alice.click('#hub-fix-one');
+    await alice.click('#hub-go');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
     await alice.waitForSelector('#pz-board .bg-stack');
     await answer(alice);
@@ -323,8 +346,8 @@ async function run(browser, setup, errors) {
 
     // ---- 3c. the rest of the day's new ones, watching the strip ----
     await alice.goto(`${BASE}/puzzles`);
-    await alice.waitForSelector('#hub-fix-one');
-    await alice.click('#hub-fix-one');
+    await alice.waitForSelector('#hub-go[data-action="fix-one"]');
+    await alice.click('#hub-go');
     await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
     const rest = NEW_PER_DAY - 1;
     await runWatchingProgress(alice, rest, rest, mark);
@@ -343,21 +366,21 @@ async function run(browser, setup, errors) {
       'a first answer patches nothing, and the end card claims nothing');
     must(!(await alice.locator('#signin-email').count()), 'an account is not asked to sign in');
 
-    // ---- 3d. the day's new ones spent: the tier is in good shape ----
+    // ---- 3d. today's set done: the ring is full, and still a button ----
     await alice.goto(`${BASE}/puzzles`);
-    await alice.waitForSelector('#hub-tier');
-    must(await alice.locator('#hub-tier-good').count(), 'a tier with nothing left today says so');
-    const goodLine = (await alice.textContent('#hub-tier-good')).trim();
-    must(/good shape\.$/.test(goodLine), `warmly, and by its mark: "${goodLine}"`);
-    must(!(await alice.locator('#hub-fix-one').count()), 'and offers no run it cannot serve');
-    const nextOffer = await alice.locator('#hub-tier-next').count();
-    if (nextOffer) {
-      const offer = (await alice.textContent('#hub-tier-next')).trim();
-      must(/^WORK ON /.test(offer), `the next tier down is the only thing to press: "${offer}"`);
-    } else {
-      must(!(await alice.locator('#puzzles-hub button').count()),
-        'every tier in good shape: one warm line, and nothing to press');
-    }
+    await alice.waitForSelector('#hub-card');
+    const done = await alice.getAttribute('#hub-card', 'data-action');
+    must(['keep-going', 'practice-anyway'].includes(done), `today's set done, the one button goes on: ${done}`);
+    const doneRing = await alice.locator('#hub-today svg');
+    must(Number(await doneRing.getAttribute('data-done')) >= Number(await doneRing.getAttribute('data-target')),
+      'and the ring is full');
+    const quiet = (await alice.textContent('#hub-quiet')).trim();
+    must(done === 'keep-going' ? /^Today's \d+ done\. Keep going adds \d+ more\.$/.test(quiet) || /^Nothing due here today/.test(quiet)
+      : /scheduled/.test(quiet), `the line under it says why: "${quiet}"`);
+    await alice.click('#hub-go');
+    await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
+    await alice.waitForSelector('#pz-board .bg-stack');
+    log(`${done} started a run`);
 
     // ---- 4. phones ----
     for (const size of [{ w: 390, h: 844 }, { w: 320, h: 568 }, { w: 844, h: 390 }]) {
@@ -369,7 +392,7 @@ async function run(browser, setup, errors) {
       await noSideways(stranger, what);
       await alice.setViewportSize({ width: size.w, height: size.h });
       await alice.goto(`${BASE}/puzzles`);
-      await alice.waitForSelector('#hub-tier');
+      await alice.waitForSelector('#hub-card');
       await sleep(150);
       await noSideways(alice, `${what} (account)`);
     }

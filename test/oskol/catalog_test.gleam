@@ -437,6 +437,47 @@ pub fn a_guest_reads_their_own_tier_sizes_and_no_standing_test() {
   assert int_at(body, ["streak"]) == 0
 }
 
+pub fn a_guest_reads_what_is_theirs_from_how_many_games_test() {
+  let body = practice.decks_json(guest_ctx(), fakes.guest("g1"), now)
+  // Three puzzles (b twice is one), all from the one room.
+  assert int_at(body, ["mistakes", "puzzles"]) == 3
+  assert int_at(body, ["mistakes", "games"]) == 1
+}
+
+pub fn every_deck_says_its_pace_and_a_set_its_line_test() {
+  let body = practice.decks_json(guest_ctx(), fakes.guest("g1"), now)
+  let read = {
+    use id <- decode.field("id", decode.string)
+    use pace <- decode.field("pace", decode.int)
+    use blurb <- decode.field("blurb", decode.string)
+    decode.success(#(id, pace, blurb != ""))
+  }
+  let assert Ok(decks) =
+    json.parse(body, decode.at(["decks"], decode.list(read)))
+  assert decks
+    == [
+      #("very_bad", deck.keep_going_new, False),
+      #("bad", deck.keep_going_new, False),
+      #("doubtful", deck.keep_going_new, False),
+      #("openings", 5, True),
+      #("opening_replies", 10, True),
+    ]
+}
+
+pub fn an_account_and_a_stranger_have_no_guest_line_test() {
+  let ctx =
+    Ctx(
+      ..fakes.ctx(),
+      decks: DeckCaps(..fakes.ctx().decks, size: fn(id) {
+        list.key_find(built(), id) |> result.unwrap(0)
+      }),
+    )
+  assert string.contains(
+    practice.decks_json(ctx, fakes.no_guest(), now),
+    "\"mistakes\":null",
+  )
+}
+
 pub fn a_guest_tier_page_is_their_count_and_nothing_kept_test() {
   let assert Ok(body) =
     practice.deck_page_json(guest_ctx(), fakes.guest("g1"), "bad", now)

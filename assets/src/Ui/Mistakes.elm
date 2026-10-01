@@ -4,7 +4,22 @@ module Ui.Mistakes exposing
     , applyLabel
     , bandName
     , bandWord
+    , costHeadline
+    , costLine
+    , dayStreakLine
     , fixedToday
+    , freshLine
+    , guestPracticeLine
+    , guestStateLine
+    , keepGoingLine
+    , oneDecimal
+    , rowLeft
+    , scheduledLine
+    , stateLine
+    , stateParts
+    , unsavedLine
+    , wonBackLine
+    , workLine
     , goodShapeLine
     , goodShapeWhy
     , gotItGraded
@@ -463,3 +478,263 @@ word n =
 
         _ ->
             String.fromInt n
+
+
+
+-- THE PRACTICE HOME
+
+
+{-| A tier in its three states, in the order the grid is filled in:
+what is patched, what is in progress, what is still to start, and how
+many there are in all. Each part is said even at zero: the line is also
+the grid's legend, and a legend that loses a colour is another legend.
+
+    "12 patched · 20 in progress · 12 to start · of 44"
+
+-}
+stateLine : { total : Int, untouched : Int, inProgress : Int, patched : Int } -> String
+stateLine counts =
+    String.join " · " (List.map Tuple.second (stateParts counts))
+
+
+{-| The same line in its parts, each with the state it names
+("patched", "in-progress", "to-start", "total"), so a page can put the
+grid's own colour beside each.
+-}
+stateParts : { total : Int, untouched : Int, inProgress : Int, patched : Int } -> List ( String, String )
+stateParts counts =
+    [ ( "patched", String.fromInt (max 0 counts.patched) ++ " patched" )
+    , ( "in-progress", String.fromInt (max 0 counts.inProgress) ++ " in progress" )
+    , ( "to-start", String.fromInt (max 0 counts.untouched) ++ " to start" )
+    , ( "total", "of " ++ String.fromInt (max 0 counts.total) )
+    ]
+
+
+{-| A guest's tier, which nothing is keeping yet: how many, and where
+they came from.
+
+    "23 very bad moves from your games"
+
+-}
+guestStateLine : Int -> String -> String
+guestStateLine n grade =
+    moves n grade ++ " from your games"
+
+
+{-| What one tier cost, over the graded games it was counted in, said in
+PR throughout -- the rating the player knows, and the unit the head line
+speaks -- so the two numbers in the sentence add up. Raw equity is never
+shown: "4.8 points" beside "5.1, not 8.3" reads as a contradiction.
+
+    "These cost you 3.2 PR over 6 games. Without them your PR would be
+    5.1, not 8.3."
+
+The cost is the difference of the two figures as they are printed, so
+the sentence's own arithmetic always holds.
+
+-}
+costLine : { games : Int, pr : Float, prWithout : Float } -> String
+costLine cost =
+    "These cost you "
+        ++ oneDecimal (gap cost.pr cost.prWithout)
+        ++ " PR over "
+        ++ String.fromInt (max 0 cost.games)
+        ++ (if cost.games == 1 then
+                " game"
+
+            else
+                " games"
+           )
+        ++ ". Without them your PR would be "
+        ++ oneDecimal cost.prWithout
+        ++ ", not "
+        ++ oneDecimal cost.pr
+        ++ "."
+
+
+{-| What patching has won back of one tier's cost, once there is any:
+the PR the patched ones were worth.
+
+    "Patched so far: 0.6 PR won back."
+
+-}
+wonBackLine : { pr : Float, prPatched : Float } -> Maybe String
+wonBackLine cost =
+    wonBack cost |> Maybe.map (\back -> "Patched so far: " ++ back ++ " PR won back.")
+
+
+{-| The head of the practice home, over every mistake at once: how much
+of the player's rating their mistakes are, and -- once anything is
+patched -- what that has won back.
+
+    ( "Your mistakes are 8.0 of your 8.3 PR."
+    , Just "You have won back 0.6 so far."
+    )
+
+-}
+costHeadline : { pr : Float, prWithout : Float, prPatched : Float } -> ( String, Maybe String )
+costHeadline cost =
+    ( "Your mistakes are " ++ oneDecimal (gap cost.pr cost.prWithout) ++ " of your " ++ oneDecimal cost.pr ++ " PR."
+    , wonBack { pr = cost.pr, prPatched = cost.prPatched }
+        |> Maybe.map (\back -> "You have won back " ++ back ++ " so far.")
+    )
+
+
+{-| How much PR the patched ones were worth, to one decimal -- and
+nothing at all until that is something a reader could see.
+-}
+wonBack : { pr : Float, prPatched : Float } -> Maybe String
+wonBack cost =
+    let
+        back =
+            gap cost.pr cost.prPatched
+    in
+    if back <= 0 then
+        Nothing
+
+    else
+        Just (oneDecimal back)
+
+
+{-| The quiet line at the top of the practice home: how long the player
+has kept showing up, and what today has come to. The streak is left off
+at zero rather than said as a zero.
+
+    "5 days running · 3 fixed today"
+    "1 day running · nothing fixed yet today"
+    "Nothing fixed yet today"
+
+-}
+dayStreakLine : { streak : Int, done : Int } -> String
+dayStreakLine day =
+    let
+        today =
+            fixedToday day.done
+    in
+    case max 0 day.streak of
+        0 ->
+            today
+
+        n ->
+            String.fromInt n
+                ++ (if n == 1 then
+                        " day running · "
+
+                    else
+                        " days running · "
+                   )
+                ++ String.toLower (String.left 1 today)
+                ++ String.dropLeft 1 today
+
+
+{-| Under FIX ONE: what today still asks of this tier. Empty when it
+asks nothing (and then FIX ONE is not the button).
+
+    "4 due now · 3 new today"
+
+-}
+workLine : { due : Int, newLeft : Int } -> String
+workLine work =
+    [ if work.due > 0 then
+        Just (String.fromInt work.due ++ " due now")
+
+      else
+        Nothing
+    , if work.newLeft > 0 then
+        Just (String.fromInt work.newLeft ++ " new today")
+
+      else
+        Nothing
+    ]
+        |> List.filterMap identity
+        |> String.join " · "
+
+
+{-| Under KEEP GOING, once today's set is done: said as the moment it
+is, then what the button does. The sets say it in the same words.
+
+    "Today's 5 done. Keep going adds 3 more."
+    "Nothing due here today. Keep going adds 3 more."
+
+-}
+keepGoingLine : { done : Int, adds : Int } -> String
+keepGoingLine day =
+    (if day.done > 0 then
+        "Today's " ++ String.fromInt day.done ++ " done."
+
+     else
+        "Nothing due here today."
+    )
+        ++ " Keep going adds "
+        ++ String.fromInt (max 0 day.adds)
+        ++ " more."
+
+
+{-| Under PRACTICE ANYWAY: everything has been started and nothing is
+due, so an answer now is practice and moves nothing.
+-}
+scheduledLine : String
+scheduledLine =
+    "Everything here is scheduled. Practising early moves nothing."
+
+
+{-| Under a guest's PRACTICE: the order it comes in. That nothing is
+kept is said once, over the card.
+-}
+guestPracticeLine : String
+guestPracticeLine =
+    "Newest game first, one at a time."
+
+
+{-| A guest's: nothing they do here is kept.
+-}
+unsavedLine : String
+unsavedLine =
+    "Your progress is not saved until you sign in."
+
+
+{-| A row's number: what is still to fix ("23 left"), or for a tier the
+visitor has made no mistakes in, that there are none yet.
+-}
+rowLeft : Int -> String
+rowLeft n =
+    if n <= 0 then
+        "None yet"
+
+    else
+        String.fromInt n ++ " left"
+
+
+{-| An account with no mistakes yet: where they will come from, and what
+to do meanwhile.
+-}
+freshLine : String
+freshLine =
+    "Your mistakes land here as your games are graded. Until then, learn the openings."
+
+
+{-| The difference of two ratings as they are printed, to one decimal:
+8.3 and 5.1 are 3.2 apart however the unrounded figures fall, so a
+sentence that names all three always adds up.
+-}
+gap : Float -> Float -> Float
+gap from to =
+    toFloat (round (from * 10) - round (to * 10)) / 10
+
+
+{-| A rating to one decimal, always: "8" reads as "8.0".
+-}
+oneDecimal : Float -> String
+oneDecimal value =
+    let
+        n =
+            round (abs value * 10)
+
+        sign =
+            if value < 0 && n /= 0 then
+                "-"
+
+            else
+                ""
+    in
+    sign ++ String.fromInt (n // 10) ++ "." ++ String.fromInt (modBy 10 n)

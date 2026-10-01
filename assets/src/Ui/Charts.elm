@@ -1,8 +1,13 @@
 module Ui.Charts exposing
     ( days
+    , grid
+    , gridColumns
+    , gridFromCounts
     , ladder
+    , miniRing
     , patched
     , prLine
+    , ring
     , rolling
     , windowPr
     )
@@ -689,6 +694,358 @@ which is not yet the green that means done.
 barGoing : String
 barGoing =
     "#d9a100"
+
+
+
+-- THE MASTERY GRID
+
+
+{-| A deck's size and how much of it is learnt, in one picture: a square
+per position, coloured by the rung it is on.
+
+  - paper for a position never started,
+  - a pale yellow for one started and back at the bottom rung (a miss),
+  - three deepening yellows for levels 1 to 3 -- the highlighter is the
+    work under way,
+  - the best move's green from the patched rung up,
+  - paper with a hairline of ink for one the player put away (NEVER).
+
+Squares are 10 units on a 12 pitch, `columns` to a row. Left out, the
+columns are a tier's: `ceil (sqrt n * 1.6)`, at most 24, so a handful of
+mistakes is a small block and a few hundred a wide one, and the area of
+the block is how many there are. The `viewBox` is a function of the count
+alone, so a page can hold the grid's place before it knows a single level
+and nothing moves when they land. Drawn at `--sq` (CSS) a square, and
+never wider than its column.
+
+The picture says nothing a reader cannot hear: it is `aria-hidden`, and
+the sentence beside it (handed in, and kept on the `<title>` for a hover)
+is the state line in words.
+
+-}
+grid : { cells : List { level : Int, status : String }, columns : Maybe Int, patchedLevel : Int, sentence : String } -> Html msg
+grid config =
+    let
+        count =
+            List.length config.cells
+
+        columns =
+            gridColumns config.columns count
+
+        rows =
+            max 1 (ceiling (toFloat count / toFloat columns))
+
+        width =
+            toFloat columns * gridPitch - (gridPitch - gridSquare)
+
+        height =
+            toFloat rows * gridPitch - (gridPitch - gridSquare)
+
+        square index cell =
+            let
+                x =
+                    toFloat (modBy columns index) * gridPitch
+
+                y =
+                    toFloat (index // columns) * gridPitch
+
+                ( fill, edge ) =
+                    gridPaint config.patchedLevel cell
+
+                lit =
+                    cell.status /= "new" && cell.status /= "suspended"
+            in
+            Svg.rect
+                ([ SvgAttr.x (num x)
+                 , SvgAttr.y (num y)
+                 , SvgAttr.width (num gridSquare)
+                 , SvgAttr.height (num gridSquare)
+                 , SvgAttr.rx "2"
+                 , SvgAttr.fill fill
+                 , attribute "data-level" (String.fromInt cell.level)
+                 , attribute "data-status" cell.status
+                 , SvgAttr.class
+                    (if lit then
+                        "grid-sq is-lit"
+
+                     else
+                        "grid-sq"
+                    )
+                 , attribute "style" ("--i:" ++ String.fromInt index)
+                 ]
+                    ++ (case edge of
+                            Just colour ->
+                                [ SvgAttr.stroke colour, SvgAttr.strokeWidth "1" ]
+
+                            Nothing ->
+                                []
+                       )
+                )
+                []
+    in
+    Svg.svg
+        [ SvgAttr.viewBox ("0 0 " ++ num (max width gridSquare) ++ " " ++ num (max height gridSquare))
+        , SvgAttr.class "chart-grid block"
+        , attribute "aria-hidden" "true"
+        , attribute "data-count" (String.fromInt count)
+        , attribute "data-columns" (String.fromInt columns)
+        , attribute "data-rows" (String.fromInt rows)
+        , attribute "style" ("--cols:" ++ String.fromInt columns ++ ";--rows:" ++ String.fromInt rows)
+        ]
+        (Svg.title [] [ Svg.text config.sentence ] :: List.indexedMap square config.cells)
+
+
+{-| A tier's columns, or the ones asked for: `ceil (sqrt n * 1.6)`, never
+more than 24 and never more than there are squares.
+-}
+gridColumns : Maybe Int -> Int -> Int
+gridColumns asked count =
+    case asked of
+        Just n ->
+            max 1 n
+
+        Nothing ->
+            count
+                |> toFloat
+                |> sqrt
+                |> (*) 1.6
+                |> ceiling
+                |> min 24
+                |> min count
+                |> max 1
+
+
+gridSquare : Float
+gridSquare =
+    10
+
+
+gridPitch : Float
+gridPitch =
+    12
+
+
+{-| A square's fill, and the edge it is drawn with when it has one.
+-}
+gridPaint : Int -> { level : Int, status : String } -> ( String, Maybe String )
+gridPaint patchedLevel cell =
+    if cell.status == "suspended" then
+        ( barRest, Just "#23243a" )
+
+    else if cell.status == "new" then
+        ( barRest, Nothing )
+
+    else if cell.level >= max 1 patchedLevel then
+        ( patchedGreen, Nothing )
+
+    else
+        case cell.level of
+            1 ->
+                ( "#f2d27a", Nothing )
+
+            2 ->
+                ( "#e6bd3a", Nothing )
+
+            3 ->
+                ( "#d9a100", Nothing )
+
+            _ ->
+                ( "#f6e7b8", Nothing )
+
+
+{-| The same squares from counts alone, in the order that reads as
+progress: patched first, then the yellows deepest first, then the ones
+started and back at the bottom, then the ones never started. What the
+practice home draws, where it has the counts but not each position.
+
+`levels` is how many sit on each rung, lowest first; the untouched are
+counted among the bottom rung's and are taken back out of it.
+
+-}
+gridFromCounts : { levels : List Int, untouched : Int, total : Int } -> List { level : Int, status : String }
+gridFromCounts counts =
+    let
+        onRung =
+            List.indexedMap Tuple.pair counts.levels
+
+        started rung n =
+            if rung == 0 then
+                max 0 (n - counts.untouched)
+
+            else
+                max 0 n
+
+        lit =
+            onRung
+                |> List.reverse
+                |> List.concatMap (\( rung, n ) -> List.repeat (started rung n) { level = rung, status = "active" })
+
+        untouched =
+            List.repeat (max 0 (counts.total - List.length lit)) { level = 0, status = "new" }
+    in
+    List.take (max 0 counts.total) (lit ++ untouched)
+
+
+
+-- TODAY'S RING
+
+
+{-| Today: how much of today's set is done. A 40-unit ring, the paper
+track under the best move's green, and the fraction in the middle in the
+pixel font -- "3/5" -- or a check drawn in once the set is done, or a
+dash on a day with nothing in it.
+
+The arc is the one thing on the page that moves when an answer lands, so
+it is drawn as a dash over a path of length 100 and the page animates the
+dash alone; the ring's box never changes. `aria-hidden`: its words are
+beside it.
+
+-}
+ring : { done : Int, target : Int, label : String } -> Html msg
+ring config =
+    let
+        done =
+            max 0 config.done
+
+        target =
+            max 0 config.target
+
+        complete =
+            target > 0 && done >= target
+
+        fraction =
+            if target <= 0 then
+                0
+
+            else
+                min 1 (toFloat done / toFloat target)
+
+        middle =
+            if complete then
+                Svg.path
+                    [ SvgAttr.d "M13.5 20.5 L18 25 L27 15"
+                    , SvgAttr.fill "none"
+                    , SvgAttr.stroke patchedGreen
+                    , SvgAttr.strokeWidth "3.4"
+                    , SvgAttr.strokeLinecap "round"
+                    , SvgAttr.strokeLinejoin "round"
+                    , SvgAttr.class "ring-check"
+                    , attribute "pathLength" "1"
+                    ]
+                    []
+
+            else
+                let
+                    words =
+                        if target <= 0 then
+                            "—"
+
+                        else
+                            String.fromInt done ++ "/" ++ String.fromInt target
+                in
+                Svg.text_
+                    [ SvgAttr.x "20"
+                    , SvgAttr.y "20"
+                    , SvgAttr.textAnchor "middle"
+                    , SvgAttr.dominantBaseline "central"
+                    , SvgAttr.fontSize (num (min 8 (24 / toFloat (max 1 (String.length words)))))
+                    , SvgAttr.class "ring-words"
+                    , SvgAttr.fill "var(--ink)"
+                    ]
+                    [ Svg.text words ]
+    in
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 40 40"
+        , SvgAttr.class
+            (if complete then
+                "chart-ring is-done block"
+
+             else
+                "chart-ring block"
+            )
+        , attribute "aria-hidden" "true"
+        , attribute "data-done" (String.fromInt done)
+        , attribute "data-target" (String.fromInt target)
+        ]
+        [ Svg.title [] [ Svg.text config.label ]
+        , ringTrack 16 4
+        , ringArc 16 4 fraction
+        , middle
+        ]
+
+
+{-| The same ring at row size: the arc alone, no words -- at 20 pixels a
+fraction is a smudge, and the row says its number beside it.
+-}
+miniRing : { done : Int, target : Int, label : String } -> Html msg
+miniRing config =
+    let
+        target =
+            max 0 config.target
+
+        fraction =
+            if target <= 0 then
+                0
+
+            else
+                min 1 (toFloat (max 0 config.done) / toFloat target)
+    in
+    Svg.svg
+        [ SvgAttr.viewBox "0 0 40 40"
+        , SvgAttr.class
+            (if target > 0 && config.done >= target then
+                "chart-ring mini is-done block"
+
+             else
+                "chart-ring mini block"
+            )
+        , attribute "aria-hidden" "true"
+        , attribute "data-done" (String.fromInt (max 0 config.done))
+        , attribute "data-target" (String.fromInt target)
+        ]
+        [ Svg.title [] [ Svg.text config.label ]
+        , ringTrack 15 7
+        , ringArc 15 7 fraction
+        ]
+
+
+ringTrack : Float -> Float -> Svg msg
+ringTrack radius stroke =
+    Svg.circle
+        [ SvgAttr.cx "20"
+        , SvgAttr.cy "20"
+        , SvgAttr.r (num radius)
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke barRest
+        , SvgAttr.strokeWidth (num stroke)
+        ]
+        []
+
+
+ringArc : Float -> Float -> Float -> Svg msg
+ringArc radius stroke fraction =
+    Svg.circle
+        [ SvgAttr.cx "20"
+        , SvgAttr.cy "20"
+        , SvgAttr.r (num radius)
+        , SvgAttr.fill "none"
+        , SvgAttr.stroke patchedGreen
+        , SvgAttr.strokeWidth (num stroke)
+        , SvgAttr.strokeLinecap
+            (if fraction > 0 && fraction < 1 then
+                "round"
+
+             else
+                "butt"
+            )
+        , attribute "pathLength" "100"
+        , SvgAttr.strokeDasharray (num (fraction * 100) ++ " 100")
+        , SvgAttr.transform "rotate(-90 20 20)"
+        , SvgAttr.class "ring-arc"
+        , attribute "data-fraction" (num fraction)
+        , attribute "style" ("--arc:" ++ num (fraction * 100))
+        ]
+        []
 
 
 

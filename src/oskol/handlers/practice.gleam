@@ -441,7 +441,13 @@ type MistakesRead {
 }
 
 pub fn decks_json(ctx: Ctx, session: Session, now_ms: Int) -> String {
-  let readings = read_decks(ctx, session, now_ms, offered_decks(ctx))
+  // A guest's own mistakes, read once: the tiers' sizes and the line over
+  // them ("23 mistakes from your 4 games") are counted off the same rows.
+  let mine = case session.user_id, session.guest_id {
+    None, Some(guest_id) -> Some(guest_mistakes(ctx, guest_id))
+    _, _ -> None
+  }
+  let readings = read_decks(ctx, session, now_ms, offered_decks(ctx), mine)
   let costing =
     costing(ctx, session, readings, fn() {
       readings
@@ -465,6 +471,12 @@ pub fn decks_json(ctx: Ctx, session: Session, now_ms: Int) -> String {
     #("streak", json.int(streak)),
     #("patched_level", json.int(deck.patched_level)),
     #("cost_all", cost.all_json(costing.window, costing.patched)),
+    // A guest's: what is theirs, from how many games. Null for an account
+    // (its tiers say it) and for a stranger (nothing is theirs).
+    #("mistakes", case mine {
+      Some(pairs) -> mistakes(list.map(pairs, fn(pair) { pair.0 }))
+      None -> json.null()
+    }),
   ])
 }
 
@@ -483,7 +495,7 @@ pub fn deck_page_json(
     catalog.Set(_), 0 -> Error(error.NotFound(decks.unknown_deck_message))
     _, _ -> Ok(Nil)
   })
-  let reading = case read_decks(ctx, session, now_ms, [#(found, size)]) {
+  let reading = case read_decks(ctx, session, now_ms, [#(found, size)], None) {
     [reading] -> reading
     _ -> Reading(found, size, False, None, [], 0)
   }
@@ -546,14 +558,20 @@ fn read_decks(
   session: Session,
   now_ms: Int,
   offered: List(#(catalog.Deck, Int)),
+  guest_mine: Option(List(#(DeckSource, String))),
 ) -> List(Reading) {
   case session.user_id, session.guest_id {
     Some(uid), _ -> account_readings(ctx, uid, now_ms, offered)
     None, Some(guest_id) -> {
-      // Asked for only when a tier is: a set's page reads nothing of theirs.
-      let mine = case list.any(offered, fn(pair) { is_tier(pair.0) }) {
-        True -> guest_mistakes(ctx, guest_id)
-        False -> []
+      // Asked for only when a tier is: a set's page reads nothing of
+      // theirs. The list has read them already, and hands them in.
+      let mine = case
+        guest_mine,
+        list.any(offered, fn(pair) { is_tier(pair.0) })
+      {
+        Some(mine), _ -> mine
+        None, True -> guest_mistakes(ctx, guest_id)
+        None, False -> []
       }
       list.map(offered, fn(pair) {
         let #(d, size) = pair
@@ -712,7 +730,24 @@ fn reading_json(r: Reading, costing: Costing) -> Json {
     #("kind", json.string(catalog.kind_name(r.deck))),
     #("name", json.string(r.deck.name)),
     #("mark", json.string(r.deck.mark)),
+    // A set's one line on what it is for; a tier is said by its name.
+    #(
+      "blurb",
+      json.string(case r.deck.kind {
+        catalog.Mistakes(_) -> ""
+        catalog.Set(set) -> set.blurb
+      }),
+    ),
     #("size", json.int(r.size)),
+    // How many new positions KEEP GOING puts in front: the mistakes' pace
+    // (one for the three tiers, which share a day) or the set's own.
+    #(
+      "pace",
+      json.int(case r.deck.kind {
+        catalog.Mistakes(_) -> deck.keep_going_new
+        catalog.Set(set) -> set.new_per_day
+      }),
+    ),
     #("joined", json.bool(r.joined)),
     #("standing", case r.standing {
       Some(s) -> deck.standing_json(s)

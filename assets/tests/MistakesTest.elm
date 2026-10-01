@@ -29,6 +29,7 @@ suite =
         , patched
         , why
         , choices
+        , theHome
         , noJargon
         ]
 
@@ -289,13 +290,93 @@ noJargon =
                              , Mistakes.missedNote
                              , Mistakes.knewItWhy
                              , Mistakes.neverWhy
+                             , Mistakes.stateLine { total = 44, untouched = 12, inProgress = 20, patched = 12 }
+                             , Mistakes.guestStateLine 23 "very_bad"
+                             , Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 }
+                             , Tuple.first (Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 7.7 })
+                             , Mistakes.dayStreakLine { streak = 5, done = 3 }
+                             , Mistakes.workLine { due = 4, newLeft = 3 }
+                             , Mistakes.keepGoingLine { done = 5, adds = 3 }
+                             , Mistakes.scheduledLine
+                             , Mistakes.unsavedLine
+                             , Mistakes.guestPracticeLine
+                             , Mistakes.rowLeft 23
+                             , Mistakes.freshLine
                              ]
                                 ++ List.filterMap identity
                                     [ Mistakes.patchedAside (band "very_bad" 61 30 23)
                                     , Mistakes.patchedRun [ "very_bad" ]
+                                    , Mistakes.wonBackLine { pr = 8.3, prPatched = 7.7 }
+                                    , Tuple.second (Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 7.7 })
                                     ]
                             )
                         )
             in
             List.filter (\word -> String.contains word everything) [ "card", "deck", "flashcard" ]
                 |> Expect.equal []
+
+
+
+{-| The practice home's words: a tier's three states, what it cost, the
+day, and the line under each of the one button's states.
+-}
+theHome : Test
+theHome =
+    describe "the practice home"
+        [ test "a tier in its three states, every part even at zero, then how many" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.stateLine { total = 44, untouched = 12, inProgress = 20, patched = 12 } |> Expect.equal "12 patched · 20 in progress · 12 to start · of 44"
+                    , \_ -> Mistakes.stateLine { total = 3, untouched = 3, inProgress = 0, patched = 0 } |> Expect.equal "0 patched · 0 in progress · 3 to start · of 3"
+                    , \_ -> Mistakes.guestStateLine 23 "very_bad" |> Expect.equal "23 very bad moves from your games"
+                    , \_ -> Mistakes.guestStateLine 1 "bad" |> Expect.equal "1 bad move from your games"
+                    ]
+                    ()
+        , test "what a tier cost, and what patching won back of it" <|
+            \_ ->
+                Expect.all
+                    -- Said in PR throughout: the cost is the gap between the two
+                    -- ratings the sentence names (8.3 - 5.1), never the equity
+                    -- the mistakes gave up (4.84 on this account), which is
+                    -- another unit and reads as a contradiction beside them.
+                    [ \_ -> Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 } |> Expect.equal "These cost you 3.2 PR over 6 games. Without them your PR would be 5.1, not 8.3."
+                    , \_ -> Mistakes.costLine { games = 1, pr = 9, prWithout = 7 } |> Expect.equal "These cost you 2.0 PR over 1 game. Without them your PR would be 7.0, not 9.0."
+                    -- The gap is of the printed figures, so it always adds up.
+                    , \_ -> Mistakes.costLine { games = 3, pr = 8.26, prWithout = 5.14 } |> Expect.equal "These cost you 3.2 PR over 3 games. Without them your PR would be 5.1, not 8.3."
+                    , \_ -> Mistakes.costLine { games = 6, pr = 8.3, prWithout = 5.1 } |> String.contains "point" |> Expect.equal False
+                    , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 7.7 } |> Expect.equal (Just "Patched so far: 0.6 PR won back.")
+                    , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 8.3 } |> Expect.equal Nothing
+                    , \_ -> Mistakes.wonBackLine { pr = 8.3, prPatched = 8.28 } |> Expect.equal Nothing
+                    ]
+                    ()
+        , test "the headline: how much of the rating is mistakes, then what is won back once anything is" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 7.7 } |> Expect.equal ( "Your mistakes are 8.0 of your 8.3 PR.", Just "You have won back 0.6 so far." )
+                    , \_ -> Mistakes.costHeadline { pr = 8.3, prWithout = 0.3, prPatched = 8.3 } |> Expect.equal ( "Your mistakes are 8.0 of your 8.3 PR.", Nothing )
+                    ]
+                    ()
+        , test "the day: the streak left off at zero, the count said in words at zero" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.dayStreakLine { streak = 5, done = 3 } |> Expect.equal "5 days running · 3 fixed today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 1, done = 0 } |> Expect.equal "1 day running · nothing fixed yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 0 } |> Expect.equal "Nothing fixed yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 2 } |> Expect.equal "2 fixed today"
+                    ]
+                    ()
+        , test "the line under each button" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.workLine { due = 4, newLeft = 3 } |> Expect.equal "4 due now · 3 new today"
+                    , \_ -> Mistakes.workLine { due = 0, newLeft = 3 } |> Expect.equal "3 new today"
+                    , \_ -> Mistakes.workLine { due = 2, newLeft = 0 } |> Expect.equal "2 due now"
+                    , \_ -> Mistakes.keepGoingLine { done = 5, adds = 3 } |> Expect.equal "Today's 5 done. Keep going adds 3 more."
+                    , \_ -> Mistakes.keepGoingLine { done = 0, adds = 3 } |> Expect.equal "Nothing due here today. Keep going adds 3 more."
+                    , \_ -> Mistakes.scheduledLine |> Expect.equal "Everything here is scheduled. Practising early moves nothing."
+                    , \_ -> Mistakes.unsavedLine |> Expect.equal "Your progress is not saved until you sign in."
+                    , \_ -> Mistakes.rowLeft 23 |> Expect.equal "23 left"
+                    , \_ -> Mistakes.rowLeft 0 |> Expect.equal "None yet"
+                    ]
+                    ()
+        ]
