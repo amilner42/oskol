@@ -1745,8 +1745,25 @@ button.pz-band:not(:disabled):active { transform: translate(2px, 2px); box-shado
 .pz-outcome:not(:disabled):hover { background: var(--paper-2); }
 .pz-outcome:not(:disabled):active { transform: translate(2px, 2px); box-shadow: none; }
 .pz-outcome.is-on { background: var(--ink); color: var(--paper); }
+/* Selected, not applied: pressed in and ringed, on paper. The fill stays
+   with the choice in force until APPLY. Outline and transform take no
+   layout, so nothing beside it moves. */
+.pz-outcome.is-pending {
+  background: var(--paper); transform: translate(2px, 2px); box-shadow: none;
+  outline: 2px solid var(--ink); outline-offset: 2px;
+}
 .pz-outcome:disabled { cursor: default; }
+.pz-outcomes.is-closed .pz-outcome:not(.is-on) { opacity: 0.55; }
+/* GOT IT after a miss: in its column, not a choice. A tap says why. */
+.pz-outcome.is-barred { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+.pz-outcome.is-barred:hover { background: #fff; }
+.pz-outcome.is-barred:active { transform: none; }
+/* What the selected choice would do. Two lines are always reserved, so the
+   reveal is the same height whatever is tapped. */
+.pz-outcome-why { margin: 0; min-height: 34px; font-size: 12.5px; line-height: 17px; color: var(--ink); }
 .pz-outcome-error { font-size: 12px; color: var(--red); }
+.pz-apply-slot { display: flex; justify-content: flex-end; }
+.pz-apply.is-idle { visibility: hidden; }
 /* The memory line: the reader's own game, and the way to that moment. */
 .pz-memory { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--paper-2); font-size: 12.5px; }
 .pz-memory-link { color: var(--pen); font-weight: 700; white-space: nowrap; }

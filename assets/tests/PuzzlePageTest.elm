@@ -709,10 +709,13 @@ cube =
 schedule : Test
 schedule =
     let
-        withSchedule name scheduleName =
+        withSchedule =
+            withScheduleIn { hasNext = False }
+
+        withScheduleIn config name scheduleName =
             let
                 model =
-                    page { hasNext = False } "move"
+                    page config "move"
 
                 ( path, _ ) =
                     aTurn model
@@ -817,17 +820,230 @@ schedule =
                         [ Query.find [ id "pz-level-line" ] >> Query.has [ text "Level 1 → 2" ]
                         , Query.find [ id "pz-level" ] >> Query.hasNot [ class "is-patched" ]
                         ]
-        , test "NEVER: set aside, and the buttons go" <|
+        , test "NEVER: set aside, and the four stay where they are, disabled" <|
             \_ ->
                 let
                     pressed =
-                        withSchedule "move_dubious" "schedule_amendable" |> step (PressedOutcome "never") |> step (GotOutcome "never" (Ok Nothing))
+                        withSchedule "move_dubious" "schedule_amendable"
+                            |> step (PressedOutcome "never")
+                            |> step PressedApply
+                            |> step (GotOutcome "never" (Ok Nothing))
                 in
                 rendered pressed
                     |> Expect.all
                         [ \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Set aside: it will not come back." ]
-                        , hasNot [ id "pz-outcomes" ]
+                        , \q -> q |> Query.findAll [ class "pz-outcome" ] |> Query.count (Expect.equal 4)
+                        , \q -> q |> Query.findAll [ class "pz-outcome", attribute (Html.Attributes.disabled True) ] |> Query.count (Expect.equal 4)
+                        , \q -> q |> Query.find [ id "pz-apply" ] |> Query.has [ class "is-idle" ]
                         ]
+
+        -- SELECT, EXPLAIN, THEN APPLY
+        , test "nothing pending: the choice in force is explained and APPLY's slot is idle" <|
+            \_ ->
+                rendered (withSchedule "move_pass" "schedule_amendable")
+                    |> Expect.all
+                        [ \q -> q |> Query.find [ id "pz-outcome-why" ] |> Query.has [ text "As graded. Level 2 → 3 · back in 7 days." ]
+                        , \q -> q |> Query.find [ id "pz-apply" ] |> Query.has [ class "is-idle", attribute (Html.Attributes.disabled True) ]
+                        , hasNot [ class "is-pending" ]
+                        ]
+        , test "a tap posts nothing, and marks the choice pending with its sentence" <|
+            \_ ->
+                let
+                    tapped =
+                        withSchedule "move_pass" "schedule_amendable" |> step (PressedOutcome "sooner")
+                in
+                Expect.all
+                    [ \_ -> tapped.outcomeSending |> Expect.equal False
+                    , \_ -> tapped.pending |> Expect.equal (Just "sooner")
+                    , \_ -> out (PressedOutcome "sooner") (withSchedule "move_pass" "schedule_amendable") |> Expect.equal Page.NoOut
+                    , \_ ->
+                        rendered tapped
+                            |> Expect.all
+                                [ \q -> q |> Query.find [ id "pz-outcome-sooner" ] |> Query.has [ class "is-pending", attribute (Html.Attributes.attribute "aria-pressed" "false") ]
+
+                                -- The fill stays with what is in force until APPLY.
+                                , \q -> q |> Query.find [ id "pz-outcome-got-it" ] |> Query.has [ class "is-on", attribute (Html.Attributes.attribute "aria-pressed" "true") ]
+                                , \q -> q |> Query.find [ id "pz-outcome-why" ] |> Query.has [ text "Back to the start: it comes back tomorrow. Level 2 → 0." ]
+                                , \q -> q |> Query.find [ id "pz-apply" ] |> Query.has [ text "APPLY" ]
+                                , \q -> q |> Query.find [ id "pz-apply" ] |> Query.hasNot [ class "is-idle" ]
+                                , \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Level 2 → 3 · back in 7 days" ]
+                                ]
+                    ]
+                    ()
+        , test "tapping the choice in force again takes the selection back" <|
+            \_ ->
+                (withSchedule "move_pass" "schedule_amendable" |> step (PressedOutcome "sooner") |> step (PressedOutcome "got_it")).pending
+                    |> Expect.equal Nothing
+        , test "each choice says what it would do" <|
+            \_ ->
+                let
+                    whyOf outcome model =
+                        rendered (step (PressedOutcome outcome) model) |> Query.find [ id "pz-outcome-why" ]
+                in
+                Expect.all
+                    [ \_ -> whyOf "knew_it" (withSchedule "move_pass" "schedule_amendable") |> Query.has [ text "I already knew this: to the top, back in a year." ]
+                    , \_ -> whyOf "never" (withSchedule "move_pass" "schedule_amendable") |> Query.has [ text "Out of your practice for good. It will not come back, and this cannot be undone." ]
+
+                    -- Nothing checked a self-graded answer: GOT IT holds the
+                    -- level, for as long as that level waits.
+                    , \_ -> whyOf "got_it" (withSchedule "move_unknown" "schedule_self_grade") |> Query.has [ text "Counts as right, but nothing checked it: level 3 stays · back in 7 days." ]
+                    ]
+                    ()
+        , test "APPLY posts the outcome, and the row waits for it" <|
+            \_ ->
+                let
+                    applying =
+                        withSchedule "move_pass" "schedule_amendable" |> step (PressedOutcome "sooner") |> step PressedApply
+                in
+                Expect.all
+                    [ \_ -> applying.outcomeSending |> Expect.equal True
+                    , \_ -> rendered applying |> Query.findAll [ class "pz-outcome", attribute (Html.Attributes.disabled True) ] |> Query.count (Expect.equal 4)
+                    , \_ -> (step PressedApply (withSchedule "move_pass" "schedule_amendable")).outcomeSending |> Expect.equal False
+                    ]
+                    ()
+        , test "once it has gone through the choice is filled and nothing is pending" <|
+            \_ ->
+                let
+                    model =
+                        withSchedule "move_pass" "schedule_amendable"
+
+                    after =
+                        D.decodeString Puzzle.scheduleDecoder (reveal "schedule_amendable")
+                            |> Result.map (\s -> { s | levelBefore = 2, levelAfter = 0, due = model.now + 86400000 })
+                            |> Result.toMaybe
+
+                    applied =
+                        model |> step (PressedOutcome "sooner") |> step PressedApply |> step (GotOutcome "sooner" (Ok after))
+                in
+                Expect.all
+                    [ \_ -> applied.pending |> Expect.equal Nothing
+                    , \_ ->
+                        rendered applied
+                            |> Expect.all
+                                [ \q -> q |> Query.find [ id "pz-outcome-sooner" ] |> Query.has [ class "is-on" ]
+                                , \q -> q |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Level 2 → 0 · back tomorrow" ]
+                                , \q -> q |> Query.find [ id "pz-apply" ] |> Query.has [ class "is-idle" ]
+
+                                -- GOT IT still says what the grade did, not
+                                -- what SOONER has done since.
+                                , \_ -> rendered (step (PressedOutcome "got_it") applied) |> Query.find [ id "pz-outcome-why" ] |> Query.has [ text "As graded. Level 2 → 3 · back in 7 days." ]
+                                ]
+                    ]
+                    ()
+        , test "NEVER needs APPLY, and its APPLY says YES, NEVER" <|
+            \_ ->
+                let
+                    tapped =
+                        withSchedule "move_pass" "schedule_amendable" |> step (PressedOutcome "never")
+                in
+                Expect.all
+                    [ \_ -> tapped.outcomeSending |> Expect.equal False
+                    , \_ -> rendered tapped |> Query.find [ id "pz-apply" ] |> Query.has [ text "YES, NEVER" ]
+                    , \_ -> rendered tapped |> Query.find [ id "pz-level-line" ] |> Query.has [ text "Level 2 → 3 · back in 7 days" ]
+                    ]
+                    ()
+        , test "a refused apply keeps the selection and says why in the line's place" <|
+            \_ ->
+                let
+                    refused =
+                        withSchedule "move_pass" "schedule_amendable"
+                            |> step (PressedOutcome "knew_it")
+                            |> step PressedApply
+                            |> step (GotOutcome "knew_it" (Err (Api.ApiError { code = "nothing_to_amend", message = "There is nothing to change about that answer" })))
+                in
+                Expect.all
+                    [ \_ -> refused.pending |> Expect.equal (Just "knew_it")
+                    , \_ ->
+                        rendered refused
+                            |> Expect.all
+                                [ \q -> q |> Query.find [ id "pz-outcome-error" ] |> Query.has [ text "There is nothing to change about that answer" ]
+                                , \q -> q |> Query.find [ id "pz-outcome-knew-it" ] |> Query.has [ class "is-pending" ]
+                                , \q -> q |> Query.find [ id "pz-apply" ] |> Query.hasNot [ class "is-idle" ]
+                                ]
+                    ]
+                    ()
+        , test "GOT IT after a miss: disabled in its own column, and a tap says why" <|
+            \_ ->
+                let
+                    model =
+                        withSchedule "move_fail" "schedule_amendable"
+
+                    tapped =
+                        step (PressedOutcome "got_it") model
+                in
+                Expect.all
+                    [ \_ -> rendered model |> Query.findAll [ class "pz-outcome" ] |> Query.count (Expect.equal 4)
+                    , \_ -> rendered model |> Query.find [ id "pz-outcome-got-it" ] |> Query.has [ class "is-barred", attribute (Html.Attributes.attribute "aria-disabled" "true") ]
+                    , \_ -> tapped.pending |> Expect.equal Nothing
+                    , \_ -> tapped.outcomeSending |> Expect.equal False
+                    , \_ -> rendered tapped |> Query.find [ id "pz-outcome-why" ] |> Query.has [ text "You missed this one." ]
+                    , \_ -> rendered tapped |> Query.find [ id "pz-apply" ] |> Query.has [ class "is-idle" ]
+                    , \_ -> rendered (step (FocusedOutcome "got_it") model) |> Query.find [ id "pz-outcome-why" ] |> Query.has [ text "You missed this one." ]
+
+                    -- A pass is no miss: GOT IT is a choice like the others.
+                    , \_ -> rendered (withSchedule "move_pass" "schedule_amendable") |> Query.find [ id "pz-outcome-got-it" ] |> Query.hasNot [ class "is-barred" ]
+                    ]
+                    ()
+        , test "in a run, ANOTHER applies a pending choice first and then wants the next" <|
+            \_ ->
+                let
+                    tapped =
+                        withScheduleIn { hasNext = True } "move_pass" "schedule_amendable" |> step (PressedOutcome "sooner")
+
+                    leaving =
+                        step Next tapped
+
+                    after =
+                        D.decodeString Puzzle.scheduleDecoder (reveal "schedule_amendable") |> Result.toMaybe
+                in
+                Expect.all
+                    [ \_ -> out Next tapped |> Expect.equal Page.NoOut
+                    , \_ -> leaving.outcomeSending |> Expect.equal True
+                    , \_ ->
+                        case out (GotOutcome "sooner" (Ok after)) leaving of
+                            Page.AnsweredThen _ Page.WantsNext ->
+                                Expect.pass
+
+                            other ->
+                                Expect.fail ("expected the answer then the next, got " ++ Debug.toString other)
+                    ]
+                    ()
+        , test "I'M DONE likewise, and nothing pending goes at once" <|
+            \_ ->
+                let
+                    model =
+                        withScheduleIn { hasNext = True } "move_pass" "schedule_amendable"
+
+                    leaving =
+                        model |> step (PressedOutcome "knew_it") |> step PressedDone
+                in
+                Expect.all
+                    [ \_ -> out PressedDone model |> Expect.equal Page.WantsEnd
+                    , \_ -> leaving.outcomeSending |> Expect.equal True
+                    , \_ ->
+                        case out (GotOutcome "knew_it" (Ok Nothing)) leaving of
+                            Page.AnsweredThen _ Page.WantsEnd ->
+                                Expect.pass
+
+                            other ->
+                                Expect.fail ("expected the answer then the end, got " ++ Debug.toString other)
+                    ]
+                    ()
+        , test "a pending choice refused on the way out stays here with the sentence" <|
+            \_ ->
+                let
+                    leaving =
+                        withScheduleIn { hasNext = True } "move_pass" "schedule_amendable" |> step (PressedOutcome "sooner") |> step Next
+
+                    refusal =
+                        GotOutcome "sooner" (Err (Api.ApiError { code = "nothing_to_amend", message = "There is nothing to change about that answer" }))
+                in
+                Expect.all
+                    [ \_ -> out refusal leaving |> Expect.equal Page.NoOut
+                    , \_ -> (step refusal leaving).pending |> Expect.equal (Just "sooner")
+                    , \_ -> rendered (step refusal leaving) |> Query.find [ id "pz-outcome-error" ] |> Query.has [ text "There is nothing to change about that answer" ]
+                    ]
+                    ()
         , test "when it comes back, in words" <|
             \_ ->
                 let

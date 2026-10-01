@@ -28,6 +28,7 @@ suite =
         , runEnd
         , patched
         , why
+        , choices
         , noJargon
         ]
 
@@ -221,6 +222,40 @@ why =
         ]
 
 
+choices : Test
+choices =
+    describe "what each of the four choices would do, said before it is done"
+        [ test "SOONER: back to the start, and from where" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.soonerWhy 3 |> Expect.equal "Back to the start: it comes back tomorrow. Level 3 → 0."
+                    , \_ -> Mistakes.soonerWhy 0 |> Expect.equal "Back to the start: it comes back tomorrow."
+                    ]
+                    ()
+        , test "GOT IT on a graded pass: the level line's own words" <|
+            \_ ->
+                Mistakes.gotItGraded "Level 2 → 3 · back in 7 days"
+                    |> Expect.equal "As graded. Level 2 → 3 · back in 7 days."
+        , test "GOT IT where nothing checked the answer: the level holds" <|
+            \_ ->
+                Mistakes.gotItUnchecked 2 "back in 3 days"
+                    |> Expect.equal "Counts as right, but nothing checked it: level 2 stays · back in 3 days."
+        , test "GOT IT after a miss says why it is not a choice" <|
+            \_ -> Mistakes.missedNote |> Expect.equal "You missed this one."
+        , test "KNEW IT and NEVER" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Mistakes.knewItWhy |> Expect.equal "I already knew this: to the top, back in a year."
+                    , \_ -> Mistakes.neverWhy |> Expect.equal "Out of your practice for good. It will not come back, and this cannot be undone."
+                    ]
+                    ()
+        , test "APPLY, and NEVER's button asks in its own words" <|
+            \_ ->
+                List.map Mistakes.applyLabel [ "sooner", "got_it", "knew_it", "never" ]
+                    |> Expect.equal [ "APPLY", "APPLY", "APPLY", "YES, NEVER" ]
+        ]
+
+
 {-| The rule, as a test: nothing a player reads here is about how any of
 it is stored.
 -}
@@ -244,6 +279,12 @@ noJargon =
                              , Mistakes.nextTierLabel "bad"
                              , Mistakes.runSummary { right = 1, total = 1 }
                              , Mistakes.whyLine { grade = "bad", opponent = "Charlie" }
+                             , Mistakes.soonerWhy 3
+                             , Mistakes.gotItGraded "Level 2 → 3 · back in 7 days"
+                             , Mistakes.gotItUnchecked 2 "back in 3 days"
+                             , Mistakes.missedNote
+                             , Mistakes.knewItWhy
+                             , Mistakes.neverWhy
                              ]
                                 ++ List.filterMap identity
                                     [ Mistakes.patchedAside (band "very_bad" 61 30 23)
