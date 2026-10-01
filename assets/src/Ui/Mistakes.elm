@@ -1,21 +1,28 @@
 module Ui.Mistakes exposing
     ( Band
     , allClearLine
+    , applyLabel
     , bandName
     , bandWord
     , fixedToday
     , goodShapeLine
     , goodShapeWhy
+    , gotItGraded
+    , gotItUnchecked
     , hasWork
+    , knewItWhy
     , leftToFix
     , line
     , mark
     , milestone
+    , missedNote
     , moves
+    , neverWhy
     , nextTierLabel
     , patchedAside
     , patchedRun
     , runSummary
+    , soonerWhy
     , tierName
     , whyLine
     )
@@ -265,6 +272,74 @@ The rest of that line says when it comes back.
 milestone : Int -> String
 milestone level =
     "Patched. " ++ String.toUpper (String.left 1 (word level)) ++ String.dropLeft 1 (word level) ++ " right in a row"
+
+
+{-| After the reveal the four choices select before they act, and the
+line under them says what the selected one would do. Said from the
+schedule the answer came back with, so the words are about this
+mistake and not about choices in general.
+
+    "Back to the start: it comes back tomorrow. Level 3 → 0."
+
+The level part is left off where it is at the start already.
+
+-}
+soonerWhy : Int -> String
+soonerWhy levelBefore =
+    "Back to the start: it comes back tomorrow."
+        ++ (if levelBefore > 0 then
+                " Level " ++ String.fromInt levelBefore ++ " → 0."
+
+            else
+                ""
+           )
+
+
+{-| GOT IT on an answer the engine passed: what the grade already did,
+in the level line's own words ("Level 2 → 3 · back in 7 days").
+-}
+gotItGraded : String -> String
+gotItGraded levelLine =
+    "As graded. " ++ levelLine ++ "."
+
+
+{-| GOT IT where nothing could check the answer: it counts, and holds
+the level rather than raising it. The second argument is when it comes
+back, "back in 3 days".
+-}
+gotItUnchecked : Int -> String -> String
+gotItUnchecked level backIn =
+    "Counts as right, but nothing checked it: level " ++ String.fromInt level ++ " stays · " ++ backIn ++ "."
+
+
+{-| GOT IT after a miss is not one of the choices; a tap on it says why
+rather than doing nothing.
+-}
+missedNote : String
+missedNote =
+    "You missed this one."
+
+
+knewItWhy : String
+knewItWhy =
+    "I already knew this: to the top, back in a year."
+
+
+neverWhy : String
+neverWhy =
+    "Out of your practice for good. It will not come back, and this cannot be undone."
+
+
+{-| The button that makes a selected choice take effect. NEVER cannot be
+undone, so its button says so in the asking.
+-}
+applyLabel : String -> String
+applyLabel outcome =
+    if outcome == "never" then
+        "YES, NEVER"
+
+    else
+        "APPLY"
 
 
 {-| Above the board in a session: why this position is in front of you.

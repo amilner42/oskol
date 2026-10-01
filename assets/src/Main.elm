@@ -529,6 +529,66 @@ startRunOf next ids today tier deck model =
             )
 
 
+{-| What the puzzle page asked of the shell, with the page already in
+`model`. `AnsweredThen` is a choice applied on the way out of a run's
+puzzle: the answer is kept first, so the end card's score is about what
+the player settled on, and then the page goes on.
+-}
+puzzleOut : Page.Puzzle.Out -> Model -> ( Model, Cmd Msg )
+puzzleOut out model =
+    case out of
+        Page.Puzzle.NoOut ->
+            ( model, Cmd.none )
+
+        Page.Puzzle.Answered answer ->
+            ( { model
+                | run = Maybe.map (answered answer) model.run
+                , today = model.run |> Maybe.map (\run -> counted run model.today) |> Maybe.withDefault model.today
+              }
+            , Cmd.none
+            )
+
+        Page.Puzzle.AnsweredThen answer onward ->
+            let
+                ( kept, first ) =
+                    puzzleOut (Page.Puzzle.Answered answer) model
+
+                ( went, second ) =
+                    puzzleOut onward kept
+            in
+            ( went, Cmd.batch [ first, second ] )
+
+        -- ANOTHER: the next mistake of the same tier. There is always one,
+        -- or the button was not drawn.
+        Page.Puzzle.WantsNext ->
+            case nextInRun model.run of
+                Just next ->
+                    ( model, Nav.pushUrl model.key (Route.href (Route.puzzle next)) )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        -- I'M DONE, or the run simply ran out: the page ends it here, with
+        -- the score of what was actually answered.
+        Page.Puzzle.WantsEnd ->
+            case ( model.run, model.page ) of
+                ( Just run, Puzzle pageModel ) ->
+                    Page.Puzzle.endRun (score run) (answers run) run.next pageModel
+                        |> wrap model Puzzle PuzzleMsg
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Page.Puzzle.StartRun ids today tier ->
+            startRun (Route.href Route.puzzles) ids today tier model
+
+        Page.Puzzle.SignedIn user ->
+            signedIn user model
+
+        Page.Puzzle.Go path ->
+            ( model, Nav.pushUrl model.key path )
+
+
 {-| The answer at the open puzzle, kept on the run: how it was graded,
 where the mistake now stands, and how bad it was. Answering the same
 puzzle again (back, then PLAY, or the override after the reveal)
@@ -827,55 +887,9 @@ update msg model =
             let
                 ( newPageModel, cmd, out ) =
                     Page.Puzzle.update pageMsg pageModel
-
-                withPage =
-                    { model | page = Puzzle newPageModel }
-
-                more extra =
-                    Cmd.batch [ Cmd.map PuzzleMsg cmd, extra ]
             in
-            case out of
-                Page.Puzzle.NoOut ->
-                    ( withPage, Cmd.map PuzzleMsg cmd )
-
-                Page.Puzzle.Answered answer ->
-                    ( { withPage
-                        | run = Maybe.map (answered answer) model.run
-                        , today = model.run |> Maybe.map (\run -> counted run model.today) |> Maybe.withDefault model.today
-                      }
-                    , Cmd.map PuzzleMsg cmd
-                    )
-
-                -- ANOTHER: the next mistake of the same tier. There is
-                -- always one, or the button was not drawn.
-                Page.Puzzle.WantsNext ->
-                    case nextInRun model.run of
-                        Just next ->
-                            ( withPage, more (Nav.pushUrl model.key (Route.href (Route.puzzle next))) )
-
-                        Nothing ->
-                            ( withPage, Cmd.map PuzzleMsg cmd )
-
-                -- I'M DONE, or the run simply ran out: the page ends it
-                -- here, with the score of what was actually answered.
-                Page.Puzzle.WantsEnd ->
-                    case model.run of
-                        Just run ->
-                            Page.Puzzle.endRun (score run) (answers run) run.next newPageModel
-                                |> wrap model Puzzle PuzzleMsg
-                                |> Tuple.mapSecond more
-
-                        Nothing ->
-                            ( withPage, Cmd.map PuzzleMsg cmd )
-
-                Page.Puzzle.StartRun ids today tier ->
-                    startRun (Route.href Route.puzzles) ids today tier withPage |> Tuple.mapSecond more
-
-                Page.Puzzle.SignedIn user ->
-                    signedIn user withPage |> Tuple.mapSecond more
-
-                Page.Puzzle.Go path ->
-                    ( withPage, more (Nav.pushUrl model.key path) )
+            puzzleOut out { model | page = Puzzle newPageModel }
+                |> Tuple.mapSecond (\extra -> Cmd.batch [ Cmd.map PuzzleMsg cmd, extra ])
 
         ( PuzzlesMsg pageMsg, Puzzles pageModel ) ->
             let

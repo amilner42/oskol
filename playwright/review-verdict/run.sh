@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # Serve this checkout on its own port and database, take the review-verdict
-# screenshots, and stop the server whatever happens.
+# screenshots (the verdict's shapes, then the four choices under the level
+# line), and stop the server whatever happens.
 #
-#   playwright/review-verdict/run.sh      (PORT=4472, OSKOL_DEV_DATABASE=oskol_verdict_dev)
+#   playwright/review-verdict/run.sh             both
+#   playwright/review-verdict/run.sh outcomes    only the four choices
+#   (PORT=4472, OSKOL_DEV_DATABASE=oskol_verdict_dev)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 export PORT="${PORT:-4472}"
 export OSKOL_DEV_DATABASE="${OSKOL_DEV_DATABASE:-oskol_verdict_dev}"
+scripts=("${@:-test outcomes}")
+read -r -a scripts <<<"${scripts[*]}"
 
 mix ecto.create >/dev/null 2>&1 || true
 mix ecto.migrate >/dev/null
@@ -21,4 +26,6 @@ for _ in $(seq 1 120); do
   sleep 0.5
 done
 
-node playwright/review-verdict/test.js
+for script in "${scripts[@]}"; do
+  node "playwright/review-verdict/$script.js"
+done

@@ -42,8 +42,12 @@ A tree too big to send whole arrives `lazy`, and the page fetches each
 level as the board reaches it.
 
 For a signed-in player whose deck holds the card, the reveal carries where
-it now stands ("Level 2 → 3 · back in 7 days") and the four buttons that
-override the grade. For a player who was in the game the puzzle came from,
+it now stands ("Level 2 → 3 · back in 7 days") and the four choices that
+override the grade. A choice **selects, explains, then applies**: a tap
+marks it pending and the fixed line under the row says what it would do;
+APPLY ("YES, NEVER" for NEVER) is what sends it, and in a run ANOTHER and
+I'M DONE apply a pending choice first. Nothing is sent on a tap. For a
+player who was in the game the puzzle came from,
 either seat, `/mine` adds the memory line, asked for after the attempt and
 never before. A guest sees neither, and loses nothing.
 
@@ -77,7 +81,7 @@ import Games.Backgammon.View as Board
 import Games.Backgammon.Words as Words exposing (chanceCells, cubeChances, cubeLine, gradeTag, signed)
 import Html exposing (Html, a, button, div, h1, p, span, text)
 import Html.Attributes exposing (attribute, class, classList, disabled, href, id, type_)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onFocus)
 import Json.Decode as D
 import Json.Encode as E
 import Page.Play exposing (shareInvite, shareResult)
@@ -153,9 +157,13 @@ type alias Model =
     , attempt : Attempt
     , showing : Maybe Int -- a candidate's rank on the board; Nothing is the move played
     , before : Bool -- the roll on the board it was thrown into: the move taken back, as the replay's dice do
-    , outcome : Maybe String -- the override the player pressed, once it went through
+    , outcome : Maybe String -- the override the player applied, once it went through
+    , graded : Maybe Schedule -- the schedule the answer came back with, before any override
+    , pending : Maybe String -- a choice tapped and not yet applied
+    , missedNote : Bool -- GOT IT after a miss was tapped: say why it is not a choice
     , outcomeSending : Bool
     , outcomeError : Maybe String -- why the last override did not go through
+    , thenOut : Maybe Out -- ANOTHER or I'M DONE, waiting on the pending choice to apply
     , why : Maybe Puzzle.Why -- why this one is here, asked before the answer
     , memory : Maybe Puzzle.Memory
     , shareLabel : Maybe String
@@ -219,6 +227,8 @@ type Msg
     | ToggleBefore
     | PressedDone
     | PressedOutcome String
+    | FocusedOutcome String
+    | PressedApply
     | GotOutcome String (Result Api.Error (Maybe Schedule))
     | GotWhy (Result Api.Error Puzzle.Why)
     | GotMemory (Result Api.Error Puzzle.Memory)
@@ -252,6 +262,8 @@ somewhere.
 type Out
     = NoOut
     | Answered Answer
+      -- a pending choice applied on the way out: keep the answer, then go
+    | AnsweredThen Answer Out
     | WantsNext
     | WantsEnd
     | StartRun (List String) (Maybe Today) (Maybe String)
@@ -295,8 +307,12 @@ init session config =
       , showing = Nothing
       , before = False
       , outcome = Nothing
+      , graded = Nothing
+      , pending = Nothing
+      , missedNote = False
       , outcomeSending = False
       , outcomeError = Nothing
+      , thenOut = Nothing
       , why = Nothing
       , memory = Nothing
       , shareLabel = Nothing
@@ -419,7 +435,7 @@ update msg model =
             let
                 revealed =
                     marked reveal.verdict
-                        { model | attempt = Revealed reveal, showing = Nothing, before = False }
+                        { model | attempt = Revealed reveal, graded = reveal.schedule, showing = Nothing, before = False }
             in
             ( revealed
             , Cmd.batch
@@ -464,40 +480,77 @@ update msg model =
         ToggleBefore ->
             stay { model | before = not model.before, showing = Nothing } Cmd.none
 
+        -- A tap selects and sends nothing: the line under the row says
+        -- what the choice would do, and APPLY is what does it. Tapping the
+        -- choice already in force takes the selection back.
         PressedOutcome outcome ->
             if model.outcomeSending then
                 stay model Cmd.none
 
+            else if outcome == "got_it" && gotItBarred model then
+                stay { model | pending = Nothing, missedNote = True, outcomeError = Nothing } Cmd.none
+
+            else if Just outcome == inForce model then
+                stay { model | pending = Nothing, missedNote = False, outcomeError = Nothing } Cmd.none
+
             else
-                stay { model | outcomeSending = True, outcomeError = Nothing }
-                    (Api.post model.session
-                        (base model.id ++ "/attempts/" ++ model.key ++ "/outcome")
-                        (E.object (( "outcome", E.string outcome ) :: deckField model))
-                        (D.field "schedule" (D.nullable Puzzle.scheduleDecoder))
-                        (GotOutcome outcome)
-                    )
+                stay { model | pending = Just outcome, missedNote = False, outcomeError = Nothing } Cmd.none
+
+        -- GOT IT after a miss says why it is not a choice when it is
+        -- reached by the keyboard too, not only by a tap.
+        FocusedOutcome outcome ->
+            if outcome == "got_it" && gotItBarred model then
+                stay { model | missedNote = True } Cmd.none
+
+            else
+                stay model Cmd.none
+
+        PressedApply ->
+            case model.pending of
+                Just outcome ->
+                    apply outcome Nothing model
+
+                Nothing ->
+                    stay model Cmd.none
 
         GotOutcome outcome (Ok schedule) ->
-            amended outcome
-                schedule
-                { model
-                    | outcomeSending = False
-                    , outcomeError = Nothing
-                    , outcome = Just outcome
-                    , attempt =
-                        case ( model.attempt, schedule ) of
-                            ( Revealed reveal, Just s ) ->
-                                Revealed { reveal | schedule = Just s }
+            let
+                ( settled, cmd, answered ) =
+                    amended outcome
+                        schedule
+                        { model
+                            | outcomeSending = False
+                            , outcomeError = Nothing
+                            , outcome = Just outcome
+                            , pending = Nothing
+                            , thenOut = Nothing
+                            , attempt =
+                                case ( model.attempt, schedule ) of
+                                    ( Revealed reveal, Just s ) ->
+                                        Revealed { reveal | schedule = Just s }
 
-                            ( other, _ ) ->
-                                other
-                }
+                                    ( other, _ ) ->
+                                        other
+                        }
+            in
+            -- ANOTHER or I'M DONE was waiting on this: the shell keeps the
+            -- answer first, so the run's score is about what was settled on.
+            case ( model.thenOut, answered ) of
+                ( Just onward, Answered answer ) ->
+                    ( settled, cmd, AnsweredThen answer onward )
+
+                ( Just onward, _ ) ->
+                    ( settled, cmd, onward )
+
+                ( Nothing, _ ) ->
+                    ( settled, cmd, answered )
 
         GotOutcome _ (Err err) ->
-            -- A 409 (nothing to amend any more) or a lost connection: the
-            -- line keeps saying what the server last said, and why the
-            -- press changed nothing is said under it.
-            stay { model | outcomeSending = False, outcomeError = Just (Api.errorMessage err) } Cmd.none
+            -- A 409 (nothing to amend any more), a 422 or a lost
+            -- connection: the line keeps saying what the server last said,
+            -- the selection stays, and why it changed nothing is said in
+            -- the explanation's place. A run waiting on it stays here.
+            stay { model | outcomeSending = False, thenOut = Nothing, outcomeError = Just (Api.errorMessage err) } Cmd.none
 
         GotWhy (Ok why) ->
             stay { model | why = Just why } Cmd.none
@@ -576,13 +629,15 @@ update msg model =
         ShareLabelCleared ->
             stay { model | shareLabel = Nothing, storyLabel = Nothing } Cmd.none
 
+        -- ANOTHER, and I'M DONE below: a choice selected and not applied
+        -- is applied first, so the common path is still one tap.
         Next ->
-            ( model, Cmd.none, WantsNext )
+            leave WantsNext model
 
         -- I'M DONE: the run stops here and the shell hands back the
         -- score, however few this was. One is a whole session.
         PressedDone ->
-            ( model, Cmd.none, WantsEnd )
+            leave WantsEnd model
 
         EndSignInMsg signInMsg ->
             case model.ended of
@@ -678,6 +733,68 @@ marked verdict model =
                     else
                         model.today
             }
+
+
+{-| Send a selected choice. `thenOut` is where the page goes once it has
+gone through: nowhere (APPLY), or on through the run.
+-}
+apply : String -> Maybe Out -> Model -> ( Model, Cmd Msg, Out )
+apply outcome thenOut model =
+    ( { model | outcomeSending = True, outcomeError = Nothing, thenOut = thenOut }
+    , Api.post model.session
+        (base model.id ++ "/attempts/" ++ model.key ++ "/outcome")
+        (E.object (( "outcome", E.string outcome ) :: deckField model))
+        (D.field "schedule" (D.nullable Puzzle.scheduleDecoder))
+        (GotOutcome outcome)
+    , NoOut
+    )
+
+
+{-| ANOTHER or I'M DONE. A pending choice is applied on the way and the
+page goes on once it has; one already on its way is waited for. Nothing
+pending, the page goes at once.
+-}
+leave : Out -> Model -> ( Model, Cmd Msg, Out )
+leave out model =
+    if model.outcomeSending then
+        ( { model | thenOut = Just out }, Cmd.none, NoOut )
+
+    else
+        case model.pending of
+            Just outcome ->
+                apply outcome (Just out) model
+
+            Nothing ->
+                ( model, Cmd.none, out )
+
+
+{-| The choice that stands: the one applied, else the one the grade
+stands for.
+-}
+inForce : Model -> Maybe String
+inForce model =
+    case ( model.outcome, model.attempt ) of
+        ( Just outcome, _ ) ->
+            Just outcome
+
+        ( Nothing, Revealed reveal ) ->
+            reveal.schedule |> Maybe.andThen (preselected reveal.verdict)
+
+        _ ->
+            Nothing
+
+
+{-| GOT IT is not one of the choices after a miss: the server refuses
+it, and the page draws it disabled in its own column.
+-}
+gotItBarred : Model -> Bool
+gotItBarred model =
+    case model.attempt of
+        Revealed reveal ->
+            reveal.verdict == Fail
+
+        _ ->
+            False
 
 
 {-| The override the player pressed, once it went through: the shell is
@@ -1879,10 +1996,18 @@ viewCubeReveal model puzzle cube =
     ]
 
 
-{-| The level line and the four buttons, for an account whose deck holds
-the card. The graded button is preselected where the engine graded the
-play and the player may amend it; nothing is where the player grades it;
-no buttons where there is nothing to say. NEVER puts the card aside.
+{-| The level line and the four choices, for an account whose deck holds
+the card. The graded choice is in force where the engine graded the play
+and the player may amend it; nothing is where the player grades it; no
+choices where there is nothing to say.
+
+A choice **selects, explains, then applies**. A tap marks it pending
+(outlined) and sends nothing; the fixed line under the row says what the
+selected one would do; APPLY ("YES, NEVER" for NEVER) sends it. The line
+and APPLY's slot are always laid out, so nothing under them moves when a
+choice is tapped. GOT IT after a miss keeps its column, disabled, and
+says why when tapped. Once NEVER has gone through the four stay where they
+are, disabled.
 -}
 viewSchedule : Model -> Reveal -> List (Html Msg)
 viewSchedule model reveal =
@@ -1893,42 +2018,96 @@ viewSchedule model reveal =
         Just schedule ->
             let
                 chosen =
-                    case model.outcome of
-                        Just outcome ->
-                            Just outcome
-
-                        Nothing ->
-                            preselected reveal.verdict schedule
+                    inForce model
 
                 offered =
-                    (schedule.amendable || schedule.selfGrade) && model.outcome /= Just "never"
+                    schedule.amendable || schedule.selfGrade
+
+                setAside =
+                    model.outcome == Just "never"
+
+                barred =
+                    gotItBarred model
 
                 line =
-                    if model.outcome == Just "never" then
+                    if setAside then
                         "Set aside: it will not come back."
 
-                    else if not schedule.amendable && not schedule.selfGrade then
+                    else if not offered then
                         "Already scheduled."
 
                     else
                         levelLine model.now schedule
 
+                -- What the selected choice would do: the pending one, else
+                -- the one in force. A refusal takes its place, so the
+                -- reveal keeps its height whatever the server says.
+                ( why, refused ) =
+                    case model.outcomeError of
+                        Just error ->
+                            ( error, True )
+
+                        Nothing ->
+                            if model.missedNote then
+                                ( Mistakes.missedNote, False )
+
+                            else if setAside then
+                                ( "", False )
+
+                            else
+                                ( model.pending
+                                    |> orElse chosen
+                                    |> Maybe.map (outcomeWhy model reveal.verdict (Maybe.withDefault schedule model.graded))
+                                    |> Maybe.withDefault ""
+                                , False
+                                )
+
                 option outcome label =
+                    let
+                        isBarred =
+                            outcome == "got_it" && barred
+
+                        on =
+                            chosen == Just outcome
+                    in
                     button
-                        [ classList [ ( "pz-outcome", True ), ( "is-on", chosen == Just outcome ) ]
-                        , id ("pz-outcome-" ++ String.replace "_" "-" outcome)
-                        , attribute "data-outcome" outcome
-                        , attribute "aria-pressed"
-                            (if chosen == Just outcome then
+                        ([ classList
+                            [ ( "pz-outcome", True )
+                            , ( "is-on", on )
+                            , ( "is-pending", model.pending == Just outcome && not on )
+                            , ( "is-barred", isBarred )
+                            ]
+                         , id ("pz-outcome-" ++ String.replace "_" "-" outcome)
+                         , attribute "data-outcome" outcome
+                         , attribute "aria-pressed"
+                            (if on then
                                 "true"
 
                              else
                                 "false"
                             )
-                        , disabled model.outcomeSending
-                        , onClick (PressedOutcome outcome)
-                        ]
+                         , attribute "aria-describedby" "pz-outcome-why"
+                         , disabled (model.outcomeSending || setAside)
+                         , onClick (PressedOutcome outcome)
+                         ]
+                            ++ (if isBarred then
+                                    -- Not `disabled`: a disabled button
+                                    -- hears no tap, and this one has to
+                                    -- say why it is not a choice.
+                                    [ attribute "aria-disabled" "true", onFocus (FocusedOutcome outcome) ]
+
+                                else
+                                    []
+                               )
+                        )
                         [ text label ]
+
+                applying =
+                    if setAside then
+                        Nothing
+
+                    else
+                        model.pending
             in
             [ div
                 [ classList
@@ -1937,25 +2116,102 @@ viewSchedule model reveal =
                     ]
                 , id "pz-level"
                 ]
-                [ span [ class "pz-level-line", id "pz-level-line" ] [ text line ]
-                , if offered then
-                    div [ class "pz-outcomes", id "pz-outcomes" ]
-                        [ option "sooner" "SOONER"
-                        , option "got_it" "GOT IT"
-                        , option "knew_it" "KNEW IT"
-                        , option "never" "NEVER"
-                        ]
+                ([ span [ class "pz-level-line", id "pz-level-line" ] [ text line ] ]
+                    ++ (if offered then
+                            [ div [ classList [ ( "pz-outcomes", True ), ( "is-closed", setAside ) ], id "pz-outcomes" ]
+                                [ option "sooner" "SOONER"
+                                , option "got_it" "GOT IT"
+                                , option "knew_it" "KNEW IT"
+                                , option "never" "NEVER"
+                                ]
+                            , p
+                                [ classList [ ( "pz-outcome-why", True ), ( "pz-outcome-error", refused ) ]
+                                , id
+                                    (if refused then
+                                        "pz-outcome-error"
 
-                  else
-                    text ""
-                , case model.outcomeError of
-                    Just why ->
-                        span [ class "pz-outcome-error", id "pz-outcome-error" ] [ text why ]
+                                     else
+                                        "pz-outcome-why"
+                                    )
+                                , attribute "aria-live" "polite"
+                                ]
+                                [ text why ]
+                            , div [ class "pz-apply-slot" ]
+                                [ button
+                                    [ class "q-btn plain pz-action pz-apply"
+                                    , id "pz-apply"
+                                    , classList [ ( "is-idle", applying == Nothing ) ]
+                                    , disabled (applying == Nothing || model.outcomeSending)
+                                    , onClick PressedApply
+                                    ]
+                                    [ text (Mistakes.applyLabel (Maybe.withDefault "" applying)) ]
+                                ]
+                            ]
 
-                    Nothing ->
-                        text ""
-                ]
+                        else
+                            case model.outcomeError of
+                                Just error ->
+                                    [ span [ class "pz-outcome-error", id "pz-outcome-error" ] [ text error ] ]
+
+                                Nothing ->
+                                    []
+                       )
+                )
             ]
+
+
+{-| What a choice would do to this mistake, said before it is done. Read
+off the schedule the answer first came back with, so it says the same
+thing whatever has been applied since.
+-}
+outcomeWhy : Model -> Verdict -> Schedule -> String -> String
+outcomeWhy model verdict graded outcome =
+    case outcome of
+        "sooner" ->
+            Mistakes.soonerWhy graded.levelBefore
+
+        "got_it" ->
+            if verdict == Fail then
+                Mistakes.missedNote
+
+            else if verdict == Pass && graded.amendable then
+                Mistakes.gotItGraded (levelLine model.now graded)
+
+            else
+                -- Nothing checked the answer: it counts, and the level holds.
+                Mistakes.gotItUnchecked graded.levelAfter (backIn 0 (heldFor graded.levelAfter * 86400000))
+
+        "knew_it" ->
+            Mistakes.knewItWhy
+
+        "never" ->
+            Mistakes.neverWhy
+
+        _ ->
+            ""
+
+
+{-| How long a card waits at a level, in days: the twin of
+`config :retain, intervals` (config/config.exs). Only GOT IT's line on an
+answer nothing checked reads it -- every other "back in" is the server's
+own due date -- and it moves with that config.
+-}
+heldFor : Int -> Int
+heldFor level =
+    [ 1, 1, 3, 7, 21, 58, 145, 365 ]
+        |> List.drop (clamp 0 7 level)
+        |> List.head
+        |> Maybe.withDefault 1
+
+
+orElse : Maybe a -> Maybe a -> Maybe a
+orElse fallback first =
+    case first of
+        Just _ ->
+            first
+
+        Nothing ->
+            fallback
 
 
 {-| The button the engine's grade stands for, where it graded the play and
