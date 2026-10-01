@@ -1,5 +1,6 @@
 module Ui.Charts exposing
     ( days
+    , daysSentence
     , grid
     , gridColumns
     , gridFromCounts

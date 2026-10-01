@@ -121,34 +121,10 @@ type Out
     | SignedIn (Maybe Session.User)
 
 
-{-| What the run is told of the deck it was started from: its day, for
-the ring over the board (today's set grown by what KEEP GOING just
-started), and whether it is PRACTICE ANYWAY -- every answer early,
-practice only.
+{-| What the run is told of the deck it was started from (`Ui.Deck.begun`).
 -}
 type alias Begun =
-    { deckToday : Maybe { done : Int, target : Int }
-    , anyway : Bool
-    }
-
-
-begun : Deck -> Action -> Int -> Begun
-begun deck which started =
-    { deckToday =
-        deck.standing
-            |> Maybe.map
-                (\standing ->
-                    { done = standing.doneToday
-                    , target =
-                        if which == KeepGoing then
-                            standing.targetToday + started
-
-                        else
-                            standing.targetToday
-                    }
-                )
-    , anyway = which == PracticeAnyway
-    }
+    Deck.Begun
 
 
 init : Session -> { tz : String } -> ( Model, Cmd Msg )
@@ -314,7 +290,7 @@ update msg model =
                 entries ->
                     ( { model | busy = Idle }
                     , Cmd.none
-                    , StartRun (List.map .id entries) practice.today (Just deck.id) (begun deck which (List.length entries))
+                    , StartRun (List.map .id entries) practice.today (Just deck.id) (Deck.begun deck which (List.length entries))
                     )
 
         GotSetRun deck which (Ok session) ->
@@ -328,7 +304,7 @@ update msg model =
                 entries ->
                     ( { model | busy = Idle }
                     , Cmd.none
-                    , StartDeckRun (List.map .id entries) session.today (PracticeDecks.named deck) (begun deck which (List.length entries))
+                    , StartDeckRun (List.map .id entries) session.today (PracticeDecks.named deck) (Deck.begun deck which (List.length entries))
                     )
 
         GotTierRun _ _ (Err err) ->
@@ -487,6 +463,9 @@ body model catalog =
                         , onPress = Pressed deck
                         , prefix = "hub"
                         , note = model.note
+                        , open = Just (Route.href (Route.practice deck.slug))
+                        , squares = Nothing
+                        , size = Deck.OnHub
                         }
 
                 Nothing ->

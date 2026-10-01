@@ -1,5 +1,10 @@
 defmodule OskolWeb.SitemapController do
-  @moduledoc "The library, one landing page per game and the practice home, for search engines."
+  @moduledoc """
+  The library, one landing page per game, the practice home and the sets of
+  puzzles that have something built (`/practice/openings`...), for search
+  engines. A tier of somebody's mistakes is nobody else's page and is never
+  listed.
+  """
   use OskolWeb, :controller
 
   alias Oskol.GameKit
@@ -7,7 +12,11 @@ defmodule OskolWeb.SitemapController do
   def index(conn, _params) do
     urls =
       [url(~p"/") | Enum.map(GameKit.games(), fn game -> url(~p"/#{game["slug"]}") end)] ++
-        [url(~p"/puzzles")]
+        [url(~p"/puzzles")] ++
+        Enum.map(
+          :oskol@handlers@practice.indexed_slugs(Oskol.Gleam.CtxBuilder.build()),
+          fn slug -> url(~p"/practice/#{slug}") end
+        )
 
     body =
       [

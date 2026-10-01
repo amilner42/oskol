@@ -9,6 +9,7 @@ module Route exposing
     , library
     , play
     , puzzle
+    , practice
     , puzzles
     , replay
     )
@@ -19,6 +20,7 @@ module Route exposing
     /:slug       one game's start page (`?game=` an invite)
     /login/:token  the page a mailed sign-in link opens
     /puzzles     the practice home: what you have to practice, or one to try
+    /practice/:slug  one deck's page: a tier of your mistakes or a set
     /puzzles/:id one puzzle: a position and its question (`?s=` a story
                  token: the same puzzle, with the sharer's story after
                  the attempt)
@@ -53,6 +55,8 @@ type Route
     | Puzzles
       -- a puzzle, by id, and ?s= (a share-with-my-story token)
     | Puzzle String (Maybe String)
+      -- a deck's page, by its slug (very-bad, openings...)
+    | Practice String
       -- slug, game id
     | Play String String
       -- slug, game id, ?game= (a game's number), ?step= (a line of its record)
@@ -70,6 +74,8 @@ parser =
         -- room of a game called puzzles.
         , map Puzzles (s "puzzles")
         , map Puzzle (s "puzzles" </> string <?> Query.string "s")
+        -- And "practice": /practice/:slug is a deck, not a room.
+        , map Practice (s "practice" </> string)
         , map Play (string </> string)
         , map Replay (string </> string </> s "replay" <?> Query.int "game" <?> Query.int "step")
         , map GameLanding (string <?> Query.string "game")
@@ -123,6 +129,14 @@ puzzle id =
     Puzzle id Nothing
 
 
+{-| One deck's page, by its slug: "very-bad", "bad", "dubious",
+"openings", "opening-replies".
+-}
+practice : String -> Route
+practice slug =
+    Practice slug
+
+
 {-| The practice home.
 -}
 puzzles : Route
@@ -151,6 +165,9 @@ href route =
 
         Puzzle id share ->
             "/puzzles/" ++ id ++ query [ ( "s", share ) ]
+
+        Practice slug ->
+            "/practice/" ++ slug
 
         Play slug gameId ->
             "/" ++ slug ++ "/" ++ gameId

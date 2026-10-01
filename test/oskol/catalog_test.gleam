@@ -873,3 +873,57 @@ pub fn a_set_page_and_a_guest_read_no_rating_test() {
   assert cost_of(body, ["cost_all"]) == "None"
   assert list.length(string.split(body, "\"cost\":null")) == 6
 }
+
+// ---------- A deck page's head ----------
+
+fn sized(built: List(#(String, Int))) -> Ctx {
+  Ctx(
+    ..fakes.ctx(),
+    decks: DeckCaps(..fakes.ctx().decks, size: fn(id) {
+      list.key_find(built, id) |> result.unwrap(0)
+    }),
+  )
+}
+
+pub fn a_tier_page_is_named_and_kept_out_of_search_test() {
+  let assert Ok(head) = practice.deck_head(sized(built()), "very-bad")
+  assert head
+    == practice.DeckHead(
+      title: "Very bad moves · Practice",
+      description: "Your very bad moves, and how many you have stopped making.",
+      indexable: False,
+    )
+  let assert Ok(dubious) = practice.deck_head(sized(built()), "dubious")
+  assert dubious.title == "Dubious moves · Practice"
+  assert dubious.indexable == False
+}
+
+pub fn a_set_page_is_its_blurb_and_indexable_test() {
+  let assert Ok(head) = practice.deck_head(sized(built()), "openings")
+  assert head
+    == practice.DeckHead(
+      title: "Openings · Practice",
+      description: "The fifteen opening rolls, and the play for each.",
+      indexable: True,
+    )
+  let assert Ok(replies) = practice.deck_head(sized(built()), "opening-replies")
+  assert replies.title == "Opening replies · Practice"
+  assert replies.indexable
+}
+
+pub fn a_head_for_nothing_is_a_404_test() {
+  let missing = Error(error.NotFound("There is no such set of puzzles."))
+  assert practice.deck_head(sized(built()), "nothing") == missing
+  // A slug is not an id.
+  assert practice.deck_head(sized(built()), "very_bad") == missing
+  // A set nobody has built has no page.
+  assert practice.deck_head(sized([#("openings", 15)]), "opening-replies")
+    == missing
+}
+
+pub fn the_sitemap_lists_the_built_sets_only_test() {
+  assert practice.indexed_slugs(sized(built()))
+    == ["openings", "opening-replies"]
+  assert practice.indexed_slugs(sized([#("openings", 15)])) == ["openings"]
+  assert practice.indexed_slugs(sized([])) == []
+}

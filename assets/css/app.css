@@ -2620,6 +2620,118 @@ button.dk-row:hover .dk-row-chev { transform: translateX(2px); color: var(--ink)
   .pz-hub-cost-line { font-size: 17px; }
 }
 
+/* ---- OPEN on the hub's card: the deck's own page, on the eyebrow's
+   line and no taller than it, so the head holds its height. ---- */
+.dk-name-row { display: flex; align-items: center; gap: 10px; height: 18px; margin-top: 10px; }
+.dk-name-row .dk-name { margin-top: 0; line-height: 18px; white-space: nowrap; }
+.dk-open {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 18px;
+  padding: 0 6px 0 8px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--ink);
+  background: #fff;
+  box-shadow: 1.5px 1.5px 0 0 var(--ink);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  white-space: nowrap;
+}
+.dk-open-chev { font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 13px; line-height: 1; margin-top: -1px; }
+@media (hover: hover) { .dk-open:hover { background: var(--highlighter); transform: translate(-1px, -1px); box-shadow: 2.5px 2.5px 0 0 var(--ink); } }
+.dk-open:active { transform: translate(1px, 1px); box-shadow: 0 0 0 0 var(--ink); }
+.dk-open:focus-visible { outline: 2px solid var(--pen); outline-offset: 2px; }
+
+/* ---- A deck's own page: /practice/<slug>. The practice home's card at
+   page size -- the grid as wide as the card, the ring at 64px, the
+   grid's legend under it -- then where its positions stand, the month,
+   and what a tier cost. Until the answer lands the page holds 320px. ---- */
+.dp-page { max-width: 30rem; }
+@media (min-width: 640px) { .dp-page { max-width: 40rem; } }
+.dp-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; margin: -6px 0 6px;
+  font-size: 13.5px; font-weight: 600;
+  color: var(--pencil);
+  transition: color 0.12s ease, transform 0.12s ease;
+}
+.dp-back:hover { color: var(--ink); transform: translateX(-2px); }
+.dp-loading { min-height: 320px; }
+.dp-unsaved { margin-top: 2px; }
+
+.dk-card.is-page .dk-today { width: 68px; }
+.dk-card.is-page .dk-today .chart-ring { width: 64px; height: 64px; }
+.dk-card.is-page .dk-grid { margin-top: 18px; }
+.dk-card.is-page .chart-grid { width: min(100%, calc(var(--cols) * 44px - 8px)); }
+
+.dk-legend {
+  margin-top: 10px;
+  display: flex; flex-wrap: wrap; align-items: center;
+  column-gap: 12px; row-gap: 4px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--pencil);
+}
+.dk-key { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.dk-swatch.is-level-1 { background: var(--dk-y1); }
+.dk-swatch.is-level-2 { background: var(--dk-y2); }
+.dk-swatch.is-level-3 { background: var(--dk-y3); }
+.dk-card.is-page .dk-state { padding-top: 10px; border-top: 1px solid rgba(35, 36, 58, 0.08); }
+
+.dp-details { margin-top: 10px; }
+@media (min-width: 640px) {
+  .dp-details { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 28px; }
+  .dp-cost-block { grid-column: 1 / -1; }
+}
+.dp-block { padding: 16px 2px 2px; }
+.dp-block + .dp-block { border-top: 1px dashed rgba(35, 36, 58, 0.22); }
+@media (min-width: 640px) {
+  .dp-block + .dp-block { border-top: 0; }
+  .dp-cost-block { margin-top: 14px; border-top: 1px dashed rgba(35, 36, 58, 0.22) !important; }
+}
+.dp-head {
+  margin-bottom: 8px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pencil);
+}
+.dp-ladder {
+  font-size: 16px; font-weight: 700; line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-wrap: pretty;
+}
+.dp-due {
+  margin-top: 6px;
+  font-size: 13.5px; line-height: 1.5;
+  color: var(--pencil);
+  font-variant-numeric: tabular-nums;
+}
+.dp-days .chart-days { width: 100%; max-width: 22rem; height: auto; display: block; }
+.dp-days-line { margin-top: 4px; font-size: 12.5px; line-height: 1.45; color: var(--pencil); }
+.dp-cost-block .dk-cost {
+  margin-top: 0; padding-top: 0; border-top: 0;
+  font-size: 15px; line-height: 1.5;
+}
+.dp-cost-block .dk-won { font-size: 15px; }
+
+/* A tier with nothing of the visitor's in it: one line and the way back. */
+.dp-empty { margin-top: 18px; }
+.dp-empty .dk-name { margin-top: 10px; }
+.dp-empty-line { margin-top: 12px; }
+.dp-way-back { display: flex; width: 100%; height: 50px; margin-top: 20px; font-size: 15px; letter-spacing: 0.04em; }
+
+@media (max-width: 359px) {
+  .dk-name-row { gap: 7px; }
+  .dk-legend { column-gap: 9px; font-size: 11px; }
+}
+
 /* ---- Motion: the squares a player has lit come in one after another,
    the ring draws its arc, and a full ring draws its check. Opacity and
    transform only: no box changes size. ---- */

@@ -419,6 +419,56 @@ async function run(browser, setup, errors) {
     await alice.waitForSelector('#pz-board .bg-stack');
     log(`${done} started a run`);
 
+    // ---- 3e. a deck's own page: OPEN from the hub, its button, a run ----
+    await alice.goto(`${BASE}/puzzles`);
+    await alice.waitForSelector('#hub-open');
+    const lead = await alice.getAttribute('#hub-card', 'data-deck');
+    const hubAction = await alice.getAttribute('#hub-card', 'data-action');
+    const headBefore = await alice.evaluate(() => document.querySelector('#hub-card .dk-head').getBoundingClientRect().height);
+    must(headBefore > 0, `the hub's card carries OPEN for ${lead}`);
+    await alice.click('#hub-open');
+    await alice.waitForURL(/\/practice\/[a-z-]+$/);
+    await alice.waitForSelector('#practice-card');
+    const slug = new URL(alice.url()).pathname.split('/').pop();
+    must(slug === (lead === 'doubtful' ? 'dubious' : lead.replace(/_/g, '-')), `OPEN goes to that deck's page: /practice/${slug}`);
+    must(await alice.getAttribute('#practice-card', 'data-deck') === lead, 'and the page is that deck');
+    const pageSquares = Number(await alice.getAttribute('#practice-grid svg', 'data-count'));
+    must(pageSquares > 0, `a square per position on the page (${pageSquares})`);
+    must(await alice.locator('#practice-legend').count() && await alice.locator('#practice-month').count(),
+      'the legend under the grid, and the month under the card');
+    const pageAction = await alice.getAttribute('#practice-card', 'data-action');
+    must(pageAction === hubAction, `the page's button is the hub's, in the same state: ${pageAction}`);
+    await alice.click('#practice-go');
+    await alice.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
+    await alice.waitForSelector('#pz-board .bg-stack');
+    await answer(alice);
+    await alice.waitForSelector('#pz-reveal');
+    await alice.click('#pz-done');
+    await alice.waitForSelector('#pz-end');
+    log(`a run from /practice/${slug} played one and ended`);
+    // Back on the page, cold: it is served by the server too.
+    await alice.goto(`${BASE}/practice/${slug}`);
+    await alice.waitForSelector('#practice-card');
+    must((await alice.title()).startsWith(await alice.textContent('#practice-name')), `a cold load names the deck: "${await alice.title()}"`);
+
+    // A stranger on a set's page, cold: TRY walks it. The sets exist only
+    // where the operator built them (review-decks builds its own); a set
+    // with nothing built is a 404, which is its own assertion.
+    const openings = await stranger.goto(`${BASE}/practice/openings`);
+    if (openings.status() === 404) {
+      log('the openings are not built in this database: their page is a 404, as it should be');
+    } else {
+      await stranger.waitForSelector('#practice-go[data-action="try"]');
+      must(await stranger.locator('#practice-signin-open').count(), 'a stranger on a set is offered the sign-in');
+      await stranger.click('#practice-go');
+      await stranger.waitForURL(/\/puzzles\/[0-9A-Z]{8}/i);
+      log('TRY from the openings page started a walk');
+    }
+    // A stranger on a tier: one line and the way back.
+    await stranger.goto(`${BASE}/practice/very-bad`);
+    await stranger.waitForSelector('#practice-empty-line');
+    must(await stranger.getAttribute('#practice-way-back', 'href') === '/puzzles', 'a stranger on a tier gets the way back');
+
     // ---- 4. phones ----
     for (const size of [{ w: 390, h: 844 }, { w: 320, h: 568 }, { w: 844, h: 390 }]) {
       const what = `${size.w}x${size.h}`;

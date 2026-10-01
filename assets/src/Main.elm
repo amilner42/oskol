@@ -52,6 +52,7 @@ import Page.Home
 import Page.Login
 import Page.Play
 import Page.Puzzle
+import Page.Practice
 import Page.Puzzles
 import Page.Replay
 import Route exposing (Route)
@@ -131,6 +132,7 @@ type Page
     | Replay Page.Replay.Model
     | Puzzle Page.Puzzle.Model
     | Puzzles Page.Puzzles.Model
+    | Practice Page.Practice.Model
 
 
 type Msg
@@ -143,6 +145,7 @@ type Msg
     | ReplayMsg Page.Replay.Msg
     | PuzzleMsg Page.Puzzle.Msg
     | PuzzlesMsg Page.Puzzles.Msg
+    | PracticeMsg Page.Practice.Msg
     | OpenedJoin
     | ClosedJoin
     | JoinCodeInput String
@@ -269,6 +272,9 @@ withSession session model =
 
                 Puzzles pageModel ->
                     Puzzles (Page.Puzzles.withSession session pageModel)
+
+                Practice pageModel ->
+                    Practice (Page.Practice.withSession session pageModel)
 
                 Replay pageModel ->
                     Replay (Page.Replay.withSession session pageModel)
@@ -413,6 +419,10 @@ openRoute url oldModel =
             Page.Puzzles.init model.session { tz = model.tz }
                 |> wrap model Puzzles PuzzlesMsg
 
+        Just (Route.Practice slug) ->
+            Page.Practice.init model.session { tz = model.tz, slug = slug }
+                |> wrap model Practice PracticeMsg
+
         Just (Route.Puzzle id share) ->
             let
                 -- The run stays a run only while the puzzle opened is one
@@ -513,31 +523,6 @@ startRun next ids today tier model =
         { ids = ids
         , next = next
         , source = tier |> Maybe.map Run.Band |> Maybe.withDefault Run.Fixed
-        , anyway = False
-        , deckToday = Nothing
-        }
-        today
-        model
-
-
-{-| The same, of one of the sets on offer rather than of mistakes: the
-answers count on that set's ladder, and the page says its name.
--}
-startRunOf : String -> List String -> Maybe Today -> Maybe String -> Maybe Api.Decks.Named -> Model -> ( Model, Cmd Msg )
-startRunOf next ids today tier deck model =
-    startRunWith
-        { ids = ids
-        , next = next
-        , source =
-            case ( deck, tier ) of
-                ( Just named, _ ) ->
-                    Run.InSet named
-
-                ( Nothing, Just band ) ->
-                    Run.Band band
-
-                ( Nothing, Nothing ) ->
-                    Run.Fixed
         , anyway = False
         , deckToday = Nothing
         }
@@ -976,6 +961,55 @@ update msg model =
                 Page.Puzzles.SignedIn user ->
                     signedIn user withPage |> Tuple.mapSecond more
 
+        -- A deck's own page: its runs come back to it.
+        ( PracticeMsg pageMsg, Practice pageModel ) ->
+            let
+                ( newPageModel, cmd, out ) =
+                    Page.Practice.update pageMsg pageModel
+
+                withPage =
+                    { model | page = Practice newPageModel }
+
+                more extra =
+                    Cmd.batch [ Cmd.map PracticeMsg cmd, extra ]
+
+                back =
+                    Route.href (Route.practice newPageModel.slug)
+            in
+            case out of
+                Page.Practice.NoOut ->
+                    ( withPage, Cmd.map PracticeMsg cmd )
+
+                Page.Practice.StartRun ids today tier begun ->
+                    startRunWith
+                        { ids = ids
+                        , next = back
+                        , source = tier |> Maybe.map Run.Band |> Maybe.withDefault Run.Fixed
+                        , anyway = begun.anyway
+                        , deckToday = begun.deckToday
+                        }
+                        today
+                        withPage
+                        |> Tuple.mapSecond more
+
+                Page.Practice.StartDeckRun ids today deck begun ->
+                    startRunWith
+                        { ids = ids
+                        , next = back
+                        , source = Run.InSet deck
+                        , anyway = begun.anyway
+                        , deckToday = begun.deckToday
+                        }
+                        today
+                        withPage
+                        |> Tuple.mapSecond more
+
+                Page.Practice.Go path ->
+                    ( withPage, more (Nav.pushUrl model.key path) )
+
+                Page.Practice.SignedIn user ->
+                    signedIn user withPage |> Tuple.mapSecond more
+
         ( OpenedJoin, _ ) ->
             ( { model | joinOpen = True, joinCode = "", joinError = Nothing }
             , Notebook.focus NoOp Shell.joinCodeInputId
@@ -1220,6 +1254,9 @@ page model =
             Puzzles pageModel ->
                 framed model [ Html.map PuzzlesMsg (Page.Puzzles.view pageModel) ]
 
+            Practice pageModel ->
+                framed model [ Html.map PracticeMsg (Page.Practice.view pageModel) ]
+
             Login pageModel ->
                 framed model [ Html.map LoginMsg (Page.Login.view pageModel) ]
 
@@ -1301,6 +1338,9 @@ title model =
 
         Puzzles pageModel ->
             Page.Puzzles.title pageModel
+
+        Practice pageModel ->
+            Page.Practice.title pageModel
 
         Home pageModel ->
             Page.Home.title pageModel

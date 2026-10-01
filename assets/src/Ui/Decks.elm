@@ -2,10 +2,14 @@ module Ui.Decks exposing
     ( doneToday
     , endSignIn
     , hasWork
+    , ladderLine
     , learnedRun
+    , legendTop
     , restingLine
     , rowLeft
     , runSummary
+    , signInLine
+    , signInRest
     , sizeEyebrow
     , sizeLine
     , standingLine
@@ -28,6 +32,7 @@ player reads says card, deck or flashcard.
 -}
 
 import Api.Decks exposing (Standing)
+import Ui.Mistakes as Mistakes
 
 
 {-| Does this set have something to do today?
@@ -234,3 +239,39 @@ sign-in.
 endSignIn : String
 endSignIn =
     "Sign in and we'll keep your place: each comes back until you know it."
+
+
+
+-- A SET'S OWN PAGE
+
+
+{-| A position at the top of a set's ladder: learned, never patched.
+-}
+legendTop : String
+legendTop =
+    "learned"
+
+
+{-| A set's ladder in words.
+
+    "3 back at the start, 7 at level 1, 4 learned."
+
+-}
+ladderLine : { patchedLevel : Int, started : List Int } -> String
+ladderLine =
+    Mistakes.ladderWords legendTop
+
+
+{-| Under a set's page, for anybody without an account.
+-}
+signInLine : String
+signInLine =
+    "Sign in" ++ signInRest
+
+
+{-| The same line after its first two words, which the page draws as the
+button that opens the sign-in.
+-}
+signInRest : String
+signInRest =
+    " to keep your place in these."
