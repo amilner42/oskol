@@ -240,6 +240,10 @@ choices =
             \_ ->
                 Mistakes.gotItUnchecked 2 "back in 3 days"
                     |> Expect.equal "Counts as right, but nothing checked it: level 2 stays · back in 3 days."
+        , test "GOT IT where the answer did not say how long the level holds" <|
+            \_ ->
+                Mistakes.gotItHolds 2
+                    |> Expect.equal "Counts as right, but nothing checked it: level 2 stays."
         , test "GOT IT after a miss says why it is not a choice" <|
             \_ -> Mistakes.missedNote |> Expect.equal "You missed this one."
         , test "KNEW IT and NEVER" <|

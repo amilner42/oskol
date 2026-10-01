@@ -889,6 +889,45 @@ schedule =
                     , \_ -> whyOf "got_it" (withSchedule "move_unknown" "schedule_self_grade") |> Query.has [ text "Counts as right, but nothing checked it: level 3 stays · back in 7 days." ]
                     ]
                     ()
+        , test "how long a level holds is the server's word, never a copy of the ladder" <|
+            \_ ->
+                let
+                    withBody body =
+                        let
+                            model =
+                                page { hasNext = False } "move"
+
+                            ( path, _ ) =
+                                aTurn model
+                        in
+                        model
+                            |> step (BoardOut (Puzzle.Stepped path))
+                            |> revealed body
+                            |> (\m -> { m | now = 1800000000000 - 7 * 86400000 })
+
+                    selfGraded =
+                        revealWith "move_unknown" "schedule_self_grade"
+
+                    gotIt model =
+                        rendered (step (PressedOutcome "got_it") model) |> Query.find [ id "pz-outcome-why" ]
+                in
+                Expect.all
+                    [ -- A ladder that keeps level 3 for 21 days says 21 days.
+                      \_ ->
+                        gotIt (withBody (String.replace "\"held_days\":7" "\"held_days\":21" selfGraded))
+                            |> Query.has [ text "Counts as right, but nothing checked it: level 3 stays · back in 21 days." ]
+
+                    -- A schedule stored before the server said it: the level
+                    -- holds, and no date is made up.
+                    , \_ ->
+                        gotIt (withBody (String.replace ",\"held_days\":7" "" selfGraded))
+                            |> Query.has [ text "Counts as right, but nothing checked it: level 3 stays." ]
+                    , \_ ->
+                        D.decodeString Puzzle.scheduleDecoder (reveal "schedule_self_grade")
+                            |> Result.map .heldDays
+                            |> Expect.equal (Ok (Just 7))
+                    ]
+                    ()
         , test "APPLY posts the outcome, and the row waits for it" <|
             \_ ->
                 let
@@ -1735,6 +1774,7 @@ answer grade patched =
             , amendable = True
             , selfGrade = False
             , patched = patched
+            , heldDays = Just 3
             }
     }
 
