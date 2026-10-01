@@ -79,7 +79,16 @@ defmodule Oskol.Practice do
   def reposition(limit \\ 500, write? \\ false) when is_integer(limit) do
     import Ecto.Query
 
-    Oskol.Repo.all(from(u in Retain.User, order_by: u.id, limit: ^limit, select: u.uid))
+    # The mistakes decks only: a universal deck (openings...) is another
+    # scope of the same account, and its order is the deck's, not a band's.
+    Oskol.Repo.all(
+      from(u in Retain.User,
+        where: u.scope == ^Retain.Config.default_scope(),
+        order_by: u.id,
+        limit: ^limit,
+        select: u.uid
+      )
+    )
     |> Enum.reduce(%{accounts: 0, cards: 0, moved: 0}, fn uid, totals ->
       moves = repositions_for(uid)
 
@@ -116,7 +125,9 @@ defmodule Oskol.Practice do
           on: s.puzzle_id == i.key and s.owner_user_id == type(u.uid, Ecto.UUID),
           left_join: r in Oskol.Reviews.Review,
           on: r.game_id == s.game_id and r.game_number == s.game_number,
-          where: u.uid == ^uid,
+          # An opening that is also one of your mistakes is a card in two
+          # scopes; only the mistakes one is placed by this rule.
+          where: u.uid == ^uid and u.scope == ^Retain.Config.default_scope(),
           select: %{
             item: i.id,
             position: i.position,

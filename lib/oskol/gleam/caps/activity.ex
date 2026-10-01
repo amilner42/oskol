@@ -54,24 +54,24 @@ defmodule Oskol.Gleam.Caps.Activity do
   # answer it corrects -- the same two exclusions `Retain.streak/2` makes
   # and `Oskol.Gleam.Caps.Practice.days/2` draws the strip on, so the
   # streak, the strip and Retain's own number can never disagree.
+  #
+  # Every scope this account has counts: its mistakes and each universal
+  # deck (openings...) are learners of their own, and answering an opening
+  # is as much showing up as answering a mistake.
   defp practised(uid, since, tz) do
-    case Retain.fetch_user(uid) do
-      {:error, :not_found} ->
-        MapSet.new()
-
-      {:ok, user} ->
-        from(r in Retain.Review,
-          join: i in Retain.Item,
-          on: i.id == r.item_id,
-          where:
-            i.user_id == ^user.id and is_nil(r.supersedes_id) and
-              r.outcome != ^:defer and r.at >= ^since,
-          distinct: true,
-          select: fragment("((? AT TIME ZONE 'UTC') AT TIME ZONE ?)::date", r.at, ^tz)
-        )
-        |> Repo.all()
-        |> MapSet.new()
-    end
+    from(r in Retain.Review,
+      join: i in Retain.Item,
+      on: i.id == r.item_id,
+      join: u in Retain.User,
+      on: u.id == i.user_id,
+      where:
+        u.uid == ^uid and is_nil(r.supersedes_id) and
+          r.outcome != ^:defer and r.at >= ^since,
+      distinct: true,
+      select: fragment("((? AT TIME ZONE 'UTC') AT TIME ZONE ?)::date", r.at, ^tz)
+    )
+    |> Repo.all()
+    |> MapSet.new()
   end
 
   defp played(uid, since, tz) do

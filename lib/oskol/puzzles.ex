@@ -527,6 +527,73 @@ defmodule Oskol.Puzzles do
   end
 
   @doc """
+  Write one universal deck: its puzzles and its membership, in one
+  transaction.
+
+  `entries` are `{puzzle, position}` with `puzzle` in the shape `store/4`
+  takes. A puzzle is written only where its key is new and an incomplete
+  stored answer is upgraded, exactly as a game's are, so an opening that is
+  already somebody's mistake stays one puzzle. A member already in the deck
+  keeps its row and takes the position given; nothing is ever removed.
+
+  `{:ok, %{puzzles:, upgraded:, members:}}` with the rows actually made (a
+  rerun is all zeros), or `{:error, reason}`.
+  """
+  def store_deck(deck, entries) when is_binary(deck) and is_list(entries) do
+    Repo.transaction(fn ->
+      puzzles = Enum.map(entries, &elem(&1, 0))
+      {ids, written} = resolve_ids(puzzles, 0, 0)
+      upgraded = upgrade_answers(puzzles)
+      now = DateTime.utc_now()
+
+      rows =
+        for {puzzle, position} <- entries, id = Map.get(ids, puzzle.key), id != nil do
+          %{deck: deck, puzzle_id: id, position: position, inserted_at: now, updated_at: now}
+        end
+
+      existing =
+        from(m in "deck_puzzles", where: m.deck == ^deck, select: m.puzzle_id)
+        |> Repo.all()
+        |> MapSet.new()
+
+      Repo.insert_all("deck_puzzles", rows,
+        on_conflict: {:replace, [:position, :updated_at]},
+        conflict_target: [:deck, :puzzle_id]
+      )
+
+      members = Enum.count(rows, &(not MapSet.member?(existing, &1.puzzle_id)))
+      %{puzzles: written, upgraded: upgraded, members: members}
+    end)
+    |> case do
+      {:ok, counts} -> {:ok, counts}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  @doc """
+  A deck's positions in its order: `%{puzzle_id, position, kind, question}`
+  with the question as the stored map.
+  """
+  def deck_members(deck) when is_binary(deck) do
+    from(m in "deck_puzzles",
+      join: p in Puzzle,
+      on: p.id == m.puzzle_id,
+      where: m.deck == ^deck,
+      order_by: [asc: m.position, asc: m.puzzle_id],
+      select: %{puzzle_id: p.id, position: m.position, kind: p.kind, question: p.question}
+    )
+    |> Repo.all()
+  end
+
+  @doc "How many positions a deck has."
+  def deck_size(deck) when is_binary(deck) do
+    from(m in "deck_puzzles", where: m.deck == ^deck, select: count())
+    |> Repo.one()
+  end
+
+  @doc """
   This game's answer has been replaced and its puzzles are owed again.
 
   One transaction: the extraction marker, its error and its attempts are

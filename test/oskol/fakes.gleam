@@ -13,6 +13,7 @@ import oskol/caps/activity as activity_caps
 import oskol/caps/analysis as analysis_caps
 import oskol/caps/auth as auth_caps
 import oskol/caps/copy as copy_caps
+import oskol/caps/decks as decks_caps
 import oskol/caps/guests as guests_caps
 import oskol/caps/ids as ids_caps
 import oskol/caps/persistence as persistence_caps
@@ -38,6 +39,21 @@ pub fn ctx() -> Ctx {
     puzzles: puzzles_caps.stub(),
     records: records_caps.stub(),
     rooms: rooms_caps.stub(),
+    decks: decks_caps.stub(),
+  )
+}
+
+/// A player who has added none of the universal decks: every deck's ladder
+/// answers that it holds nothing, and anything that would write to one
+/// still panics.
+pub fn no_decks(ctx: Ctx) -> Ctx {
+  Ctx(
+    ..ctx,
+    decks: decks_caps.DeckCaps(..ctx.decks, practice: fn(_scope) {
+      practice_caps.PracticeCaps(..practice_caps.stub(), summary: fn(_, _) {
+        []
+      })
+    }),
   )
 }
 

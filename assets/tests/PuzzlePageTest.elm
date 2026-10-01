@@ -90,7 +90,7 @@ page : { hasNext : Bool } -> String -> Page.Model
 page config name =
     let
         ( model, _ ) =
-            Page.init Session.empty { id = "fix", hasNext = config.hasNext, inRun = config.hasNext, progress = Nothing, tier = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
+            Page.init Session.empty { id = "fix", hasNext = config.hasNext, inRun = config.hasNext, progress = Nothing, tier = Nothing, deck = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
 
         loaded =
             case D.decodeString Puzzle.decoder (question name) of
@@ -277,7 +277,7 @@ staging =
                             Ok p ->
                                 let
                                     ( fresh, _ ) =
-                                        Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, today = Nothing, origin = "", share = Nothing }
+                                        Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, deck = Nothing, today = Nothing, origin = "", share = Nothing }
                                 in
                                 rendered (step (GotPuzzle (Ok p)) fresh) |> Query.find [ id "pz-score" ]
 
@@ -437,7 +437,7 @@ posting =
             \_ ->
                 let
                     ( fresh, _ ) =
-                        Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, today = Nothing, origin = "", share = Nothing }
+                        Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, deck = Nothing, today = Nothing, origin = "", share = Nothing }
 
                     model =
                         case D.decodeString Puzzle.decoder (question "move") of
@@ -838,6 +838,7 @@ next =
                             , inRun = True
                             , progress = Nothing
                             , tier = Just "very_bad"
+                            , deck = Nothing
                             , today = Nothing
                             , origin = "http://oskol.test"
                             , share = Nothing
@@ -862,7 +863,7 @@ next =
             \_ ->
                 let
                     missing config =
-                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, inRun = config.hasNext, progress = Nothing, tier = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
+                        Page.init Session.empty { id = "gone", hasNext = config.hasNext, inRun = config.hasNext, progress = Nothing, tier = Nothing, deck = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
                             |> Tuple.first
                             |> step (GotPuzzle (Err (Api.ApiError { code = "not_found", message = "no" })))
                 in
@@ -891,7 +892,7 @@ ended : Session.Session -> Page.Model
 ended session =
     let
         ( model, _ ) =
-            Page.init session { id = "fix", hasNext = True, inRun = True, progress = Nothing, tier = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
+            Page.init session { id = "fix", hasNext = True, inRun = True, progress = Nothing, tier = Nothing, deck = Nothing, today = Nothing, origin = "http://oskol.test", share = Nothing }
 
         loaded =
             case D.decodeString Puzzle.decoder (question "move") of
@@ -1184,7 +1185,7 @@ story =
         opened share =
             let
                 ( model, _ ) =
-                    Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, today = Nothing, origin = "http://oskol.test", share = share }
+                    Page.init Session.empty { id = "fix", hasNext = False, inRun = False, progress = Nothing, tier = Nothing, deck = Nothing, today = Nothing, origin = "http://oskol.test", share = share }
 
                 loaded =
                     case D.decodeString Puzzle.decoder (question "move") of
@@ -1258,6 +1259,7 @@ inRunOf tier at marks today =
                 , inRun = True
                 , progress = Just { at = at, marks = marks }
                 , tier = tier
+                , deck = Nothing
                 , today = today
                 , origin = "http://oskol.test"
                 , share = Nothing
@@ -1313,6 +1315,35 @@ runProgress =
                             >> Query.count (Expect.equal 1)
                         , Query.findAll [ class "is-here" ] >> Query.count (Expect.equal 1)
                         ]
+        , test "a run through a set is named by the set, and its day in the set's words" <|
+            \_ ->
+                let
+                    model =
+                        inRunOf Nothing 0 (blanks 3) (Just { done = 3 })
+                in
+                rendered { model | deck = Just { id = "openings", name = "Openings" } }
+                    |> Query.find [ id "pz-progress-count" ]
+                    |> Query.has [ text "Openings · 3 practised today" ]
+        , test "an answer in a set says which set it counts in, and one of a mistake never does" <|
+            \_ ->
+                let
+                    plain =
+                        page { hasNext = False } "double"
+
+                    inSet =
+                        { plain | deck = Just { id = "openings", name = "Openings" } }
+                in
+                Expect.all
+                    [ \_ ->
+                        Page.attemptBody (step (PickedBand 1) inSet)
+                            |> Maybe.map (E.encode 0)
+                            |> Expect.equal (Just "{\"band\":1,\"key\":\"key-0123\",\"deck\":\"openings\"}")
+                    , \_ ->
+                        Page.attemptBody (step (PickedBand 1) plain)
+                            |> Maybe.map (E.encode 0)
+                            |> Expect.equal (Just "{\"band\":1,\"key\":\"key-0123\"}")
+                    ]
+                    ()
         , test "a run of one game's mistakes has no tier, so it is the count alone" <|
             \_ ->
                 rendered (inRun 0 (blanks 3) (Just { done = 1 }))

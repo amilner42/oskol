@@ -186,8 +186,9 @@ fn move_puzzle(
 
 /// Every legal play the engine evaluated when it sent them, the five it
 /// described when it did not; the top five plus the move that was played,
-/// with everything a reveal shows.
-fn move_answer(
+/// with everything a reveal shows. Public for the universal decks
+/// (`handlers/decks_build`), whose answers must be built the same way.
+pub fn move_answer(
   played: report.Candidate,
   top: List(report.Candidate),
   results: List(report.MoveResult),

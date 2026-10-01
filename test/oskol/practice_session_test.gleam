@@ -11,6 +11,7 @@ import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import oskol/caps/decks.{DeckCaps}
 import oskol/caps/practice.{
   type Ask, type Card, type Severity, Active, Card, CardNotStarted, Day, Graded,
   PracticeCaps, Session, Severity, Summary, UnknownCard, UnknownTimezone,
@@ -634,11 +635,42 @@ pub fn a_timezone_is_written_once_for_the_account_test() {
     )
   let assert Ok(body) =
     practice.timezone_json(
-      ctx,
+      fakes.no_decks(ctx),
       fakes.signed_in("g1", "u1"),
       "America/Vancouver",
     )
   assert string.contains(body, "\"tz\":\"America/Vancouver\"")
+}
+
+pub fn a_timezone_reaches_every_deck_the_player_has_added_and_no_other_test() {
+  // The openings are added (their ladder holds something) and take the zone
+  // with their own budget; the replies are not, and are never created by
+  // being told where the player is (their put_user panics).
+  let ctx =
+    Ctx(
+      ..fakes.ctx(),
+      practice: PracticeCaps(..fakes.ctx().practice, put_user: fn(_, _, _) {
+        Ok(Nil)
+      }),
+      decks: DeckCaps(..fakes.ctx().decks, practice: fn(scope) {
+        case scope {
+          "deck:openings" ->
+            PracticeCaps(
+              ..fakes.ctx().practice,
+              summary: fn(_, _) { [Summary([], 15, 10, 5, 0, 2, 0.4)] },
+              put_user: fn(uid, tz, per_day) {
+                assert uid == "u1"
+                assert tz == "Europe/Paris"
+                assert per_day == 5
+                Ok(Nil)
+              },
+            )
+          _ -> PracticeCaps(..fakes.ctx().practice, summary: fn(_, _) { [] })
+        }
+      }),
+    )
+  let assert Ok(_) =
+    practice.timezone_json(ctx, fakes.signed_in("g1", "u1"), "Europe/Paris")
 }
 
 pub fn a_name_that_is_not_a_timezone_is_refused_before_it_is_written_test() {
@@ -671,7 +703,11 @@ pub fn the_zone_names_the_world_has_are_accepted_test() {
         }),
       )
     let assert Ok(_) =
-      practice.timezone_json(ctx, fakes.signed_in("g1", "u1"), name)
+      practice.timezone_json(
+        fakes.no_decks(ctx),
+        fakes.signed_in("g1", "u1"),
+        name,
+      )
   })
 }
 

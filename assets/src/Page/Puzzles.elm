@@ -38,12 +38,14 @@ today" and "back tomorrow" are the player's day and not UTC's.
 -}
 
 import Api
+import Api.Decks as Decks exposing (Deck)
 import Api.Practice as Practice exposing (Practice)
 import Html exposing (Html)
 import Html.Attributes as Attr exposing (class, id)
 import Html.Events exposing (onClick)
 import Route
 import Session exposing (Session)
+import Ui.Decks
 import Ui.Mistakes as Mistakes
 import Ui.Notebook as Notebook
 import Ui.SignIn as SignIn
@@ -63,6 +65,8 @@ type alias Model =
     , signIn : Maybe SignIn.Model -- the early sign-in, once opened
     , note : Maybe String -- what the last press came back with, when it was not a puzzle
     , tier : Maybe String -- the tier the player tapped, if they tapped one
+    , decks : Maybe (List Deck) -- the sets on offer (the openings...), once they land
+    , deckNote : Maybe String -- what a set's press came back with, when it was not a run
     }
 
 
@@ -78,6 +82,7 @@ type Busy
     = Idle
     | Trying
     | Fixing
+    | Opening String -- a set's session, by id, on its way
 
 
 {-| The three visitors, read off the server's answer.
@@ -99,6 +104,9 @@ type Msg
     | TimezoneSent (Result Api.Error ())
     | OpenedSignIn
     | SignInMsg SignIn.Msg
+    | GotDecks (Result Api.Error (List Deck))
+    | PressedDeck Deck
+    | GotDeckSession Decks.Named (Result Api.Error Decks.Session)
     | NoOp
 
 
@@ -108,6 +116,7 @@ somewhere, or take note of a sign-in.
 type Out
     = NoOut
     | StartRun (List String) (Maybe Practice.Today) (Maybe String)
+    | StartDeckRun (List String) (Maybe Practice.Today) Decks.Named
     | Go String
     | SignedIn (Maybe Session.User)
 
@@ -122,8 +131,10 @@ init session config =
       , signIn = Nothing
       , note = Nothing
       , tier = Nothing
+      , decks = Nothing
+      , deckNote = Nothing
       }
-    , Practice.fetch session GotPractice
+    , Cmd.batch [ Practice.fetch session GotPractice, Decks.fetchList session GotDecks ]
     )
 
 
@@ -281,7 +292,11 @@ update msg model =
                         -- that came along. Ask again, and tell the shell.
                         SignIn.SignedIn result ->
                             ( updated
-                            , Cmd.batch [ Cmd.map SignInMsg cmd, Practice.fetch model.session GotPractice ]
+                            , Cmd.batch
+                                [ Cmd.map SignInMsg cmd
+                                , Practice.fetch model.session GotPractice
+                                , Decks.fetchList model.session GotDecks
+                                ]
                             , SignedIn result.user
                             )
 
@@ -290,6 +305,71 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none, NoOut )
+
+        GotDecks (Ok decks) ->
+            ( { model | decks = Just decks }, Cmd.none, NoOut )
+
+        -- The sets are a second card under the first: a page that could
+        -- not read them still has everything else, so it says nothing.
+        GotDecks (Err _) ->
+            ( { model | decks = Just [] }, Cmd.none, NoOut )
+
+        -- A set's button: an account that has added it gets its queue,
+        -- one that has not adds it first (which is what START means), and
+        -- anybody else walks it in order with nothing kept.
+        PressedDeck deck ->
+            if model.busy == Idle then
+                let
+                    joined =
+                        deck.standing |> Maybe.map .joined |> Maybe.withDefault False
+
+                    fetch =
+                        if model.session.user /= Nothing && not joined then
+                            Decks.join model.session deck.id model.tz
+
+                        else
+                            Decks.fetchSession model.session deck.id
+                in
+                ( { model | busy = Opening deck.id, deckNote = Nothing }
+                , fetch (GotDeckSession (Decks.named deck))
+                , NoOut
+                )
+
+            else
+                ( model, Cmd.none, NoOut )
+
+        GotDeckSession which (Ok session) ->
+            let
+                fresh =
+                    Maybe.map (List.map (\d -> if d.id == session.deck.id then session.deck else d)) model.decks
+            in
+            case session.puzzles of
+                -- Answered between the list and the press. The row takes
+                -- the standing that came back, which says so itself; a
+                -- set nobody added (a walk of nothing) is said here.
+                [] ->
+                    ( { model
+                        | busy = Idle
+                        , decks = fresh
+                        , deckNote =
+                            if session.deck.standing |> Maybe.map .joined |> Maybe.withDefault False then
+                                Nothing
+
+                            else
+                                Just Ui.Decks.restingLine
+                      }
+                    , Cmd.none
+                    , NoOut
+                    )
+
+                entries ->
+                    ( { model | busy = Idle, decks = fresh }
+                    , Cmd.none
+                    , StartDeckRun (List.map .id entries) session.today which
+                    )
+
+        GotDeckSession _ (Err err) ->
+            ( { model | busy = Idle, deckNote = Just (Api.errorMessage err) }, Cmd.none, NoOut )
 
         NoOp ->
             ( model, Cmd.none, NoOut )
@@ -320,20 +400,107 @@ nothingMoreLine =
 
 view : Model -> Html Msg
 view model =
-    Html.section
-        [ class "mt-8 sm:mt-12 mx-auto max-w-md q-card sheet p-6 sm:p-8", id "puzzles-hub" ]
-        (Notebook.eyebrow "PUZZLES"
-            :: (case model.practice of
-                    Loading ->
-                        [ Html.p [ class "pixel text-[9px]", Notebook.style "color: var(--pencil)" ] [ Html.text "LOADING…" ] ]
+    Html.div []
+        [ Html.section
+            [ class "mt-8 sm:mt-12 mx-auto max-w-md q-card sheet p-6 sm:p-8", id "puzzles-hub" ]
+            (Notebook.eyebrow "PUZZLES"
+                :: (case model.practice of
+                        Loading ->
+                            [ Html.p [ class "pixel text-[9px]", Notebook.style "color: var(--pencil)" ] [ Html.text "LOADING…" ] ]
 
-                    Unavailable reason ->
-                        [ line reason ]
+                        Unavailable reason ->
+                            [ line reason ]
 
-                    Loaded practice ->
-                        body model (state practice)
-               )
-        )
+                        Loaded practice ->
+                            body model (state practice)
+                   )
+            )
+        , decksCard model
+        ]
+
+
+{-| The sets on offer to everyone -- the openings, the replies to them --
+as a second card: a row each, with where the player stands and one
+button. Nothing is drawn until they land, and nothing at all while no set
+has been built.
+-}
+decksCard : Model -> Html Msg
+decksCard model =
+    case model.decks of
+        Just ((_ :: _) as decks) ->
+            Html.section
+                [ class "mt-6 mx-auto max-w-md q-card sheet p-6 sm:p-8", id "decks" ]
+                (Notebook.eyebrow "LEARN"
+                    :: List.map (deckRow model) decks
+                    ++ [ case model.deckNote of
+                            Just text ->
+                                Html.p [ id "decks-note", class "q-note text-[13px] leading-snug text-center mt-3" ] [ Html.text text ]
+
+                            Nothing ->
+                                Html.text ""
+                       ]
+                )
+
+        _ ->
+            Html.text ""
+
+
+deckRow : Model -> Deck -> Html Msg
+deckRow model deck =
+    let
+        signedIn =
+            model.session.user /= Nothing
+
+        joined =
+            deck.standing |> Maybe.map .joined |> Maybe.withDefault False
+
+        resting =
+            case deck.standing of
+                Just standing ->
+                    standing.joined && not (Ui.Decks.hasWork standing)
+
+                Nothing ->
+                    False
+
+        busy =
+            model.busy == Opening deck.id
+    in
+    Html.div [ id ("deck-" ++ deck.id), class "deck-row" ]
+        [ Html.p [ class "text-[18px] font-bold leading-snug", Notebook.style "color: var(--ink)" ]
+            [ Html.text deck.name ]
+        , Html.p [ class "q-note text-[13px] leading-snug mt-1" ] [ Html.text deck.blurb ]
+        , case deck.standing of
+            Just standing ->
+                if standing.joined then
+                    Html.p [ id ("deck-" ++ deck.id ++ "-standing"), class "text-[14px] mt-2", Notebook.style "color: var(--ink)" ]
+                        [ Html.text (Ui.Decks.standingLine standing) ]
+
+                else
+                    Html.text ""
+
+            Nothing ->
+                Html.text ""
+        , if resting then
+            Html.p [ id ("deck-" ++ deck.id ++ "-resting"), class "q-note text-[13px] leading-snug mt-3" ]
+                [ Html.text Ui.Decks.restingLine ]
+
+          else
+            Html.button
+                [ Attr.type_ "button"
+                , id ("deck-" ++ deck.id ++ "-go")
+                , class "q-btn w-full px-6 py-3 text-[15px] mt-3"
+                , Attr.disabled (model.busy /= Idle)
+                , onClick (PressedDeck deck)
+                ]
+                [ Html.text
+                    (if busy then
+                        "…"
+
+                     else
+                        Ui.Decks.startLabel { signedIn = signedIn, joined = joined }
+                    )
+                ]
+        ]
 
 
 body : Model -> State -> List (Html Msg)
