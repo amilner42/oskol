@@ -106,7 +106,7 @@ defmodule Oskol.RatingsTest do
     # than at runtime on a page.
     {:analysis_caps, _log, _stored, ratings, _summaries, _report, _save, _backfill_turns,
      _enqueue, _review, _report_turn, _charge, _replace, _grades, _forget_grades, _graded_for,
-     _graded_rooms_for} = Oskol.Gleam.Caps.Analysis.build()
+     _graded_rooms_for, _mistake_costs} = Oskol.Gleam.Caps.Analysis.build()
 
     assert [{:stored, 1, :pending, 1, :none, false, false, 1}] = ratings.(game_id)
   end

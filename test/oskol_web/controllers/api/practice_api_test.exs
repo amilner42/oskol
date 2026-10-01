@@ -200,7 +200,10 @@ defmodule OskolWeb.Api.PracticeApiTest do
                  d["standing"]["levels"] == [0, 0, 0, 0, 0, 0, 0, 0]
              end)
 
-      assert %{"lead" => nil, "today" => %{"done" => 0}, "streak" => 0} = body
+      # No graded game behind it: nothing to say what mistakes cost, read
+      # off the real rows (graded_for and mistake_costs both ran).
+      assert %{"lead" => nil, "today" => %{"done" => 0}, "streak" => 0, "cost_all" => nil} =
+               body
 
       page = conn |> get(~p"/papi/practice/decks/dubious") |> json_response(200)
       assert %{"deck" => %{"id" => "doubtful", "mark" => "?!"}, "cells" => []} = page

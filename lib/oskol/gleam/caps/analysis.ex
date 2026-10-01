@@ -5,7 +5,7 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
       AnalysisCaps(log, stored, ratings, summaries, report, save, backfill_turns,
       enqueue, review, report_turn, charge, replace, grades, forget_grades,
-      graded_for, graded_rooms_for)
+      graded_for, graded_rooms_for, mistake_costs)
       RatedGame(game_id, game_number, seat, response_json, ended_at_ms)
       GameLog(slug, format, clock, seed, seats, entries, record_generation)
       LogEntry(kind, player_id, payload_json, at_ms)
@@ -15,6 +15,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
       points, kind, response_json, ended_at_ms)
       GradedRoomGame(format, over, winners, game)
       Cursor(ended_at_ms, room_id)
+      MistakeCost(puzzle_id, band, game_id, game_number, seat, equity_lost)
+      Seat(player_id, guest_id, user_id, bot)   (src/oskol/rooms/seat.gleam)
       Status: :pending | :done | :failed
 
   `response` and `report` are hundreds of kilobytes each. `summaries`
@@ -46,7 +48,8 @@ defmodule Oskol.Gleam.Caps.Analysis do
 
     {:analysis_caps, &log/1, &stored/1, &ratings/1, &summaries/1, &report/2, &save/3,
      &backfill_turns/3, &enqueue/1, Keyword.get(opts, :review, &review/1), &report_turn/3,
-     &charge/4, &replace/3, grades, &forget_grades/2, &graded_for/2, &graded_rooms_for/3}
+     &charge/4, &replace/3, grades, &forget_grades/2, &graded_for/2, &graded_rooms_for/3,
+     &mistake_costs/1}
   end
 
   # The grades stored for a game's turns, in the order the bodies were asked
@@ -87,6 +90,22 @@ defmodule Oskol.Gleam.Caps.Analysis do
       {:graded_room_game, row.format, row.over, row.winners, graded_game(row)}
     end)
   end
+
+  # Every mistake on a seat this account holds, each with the seat it was
+  # made from: the holder rule is asked in Gleam, of the seat.
+  defp mistake_costs(user_id) do
+    user_id
+    |> Reviews.mistake_costs()
+    |> Enum.map(fn row ->
+      {:mistake_cost, row.puzzle_id, row.band, row.game_id, row.game_number,
+       {:seat, row.player_id, id(row.guest_id), id(row.user_id), row.bot},
+       (row.equity_lost || 0.0) * 1.0}
+    end)
+  end
+
+  # An empty id is no id at all, as `seat.of_rows` reads one.
+  defp id(""), do: :none
+  defp id(value), do: opt(value)
 
   defp graded_game(row) do
     {:graded_game, row.game_id, row.game_number, row.slug, row.seat, row.player_id,
