@@ -202,6 +202,13 @@ async function runToEnd(page, expected) {
   return score;
 }
 
+async function boxOf(page, selector) {
+  return page.evaluate((s) => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return { y: Math.round(r.y), h: Math.round(r.height) };
+  }, selector);
+}
+
 async function noSideways(page, what) {
   const d = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth }));
   must(d.sw <= d.iw, `${what}: nothing scrolls sideways (${d.sw} <= ${d.iw})`);
@@ -493,23 +500,71 @@ async function run(browser, setup, errors) {
     await alice.waitForSelector('#hub-card[data-deck="very_bad"] #hub-go[data-action="fix-one"]');
     await alice.click('#hub-go');
     await alice.waitForURL(/\/puzzles\/[^/]+$/);
+    // The strip measured at three sizes: a stretch of the run at each,
+    // every puzzle's strip and board the box the stretch's first had.
+    const stretches = [
+      { to: 8, width: 390, height: 844 },
+      { to: 15, width: 320, height: 568 },
+      { to: 22, width: 844, height: 390 },
+    ];
     let firstStrip = null;
+    let firstBoard = null;
+    let stretch = null;
     for (let n = 1; n <= 22; n++) {
+      const size = stretches.find((s) => n <= s.to);
+      if (size !== stretch) {
+        stretch = size;
+        await alice.setViewportSize({ width: size.width, height: size.height });
+        firstStrip = null;
+      }
       await alice.waitForSelector('#pz-reveal', { state: 'detached' });
       await alice.waitForSelector('#pz-board .bg-stack');
+      await sleep(150);
       const before = await progressOf(alice, n);
+      const boardBefore = await boxOf(alice, '#pz-board');
       await answer(alice);
       await alice.waitForSelector('#pz-reveal');
       await sleep(250);
       const after = await progressOf(alice, n);
-      if (!firstStrip) firstStrip = before.strip;
+      const boardAfter = await boxOf(alice, '#pz-board');
+      if (!firstStrip) { firstStrip = before.strip; firstBoard = boardBefore; }
+      const at = `${size.width}x${size.height}`;
       must(JSON.stringify(before.strip) === JSON.stringify(firstStrip) && JSON.stringify(after.strip) === JSON.stringify(firstStrip),
-        `puzzle ${n}: the strip is the box it was with one tile (${JSON.stringify(after.strip)})`);
+        `puzzle ${n} at ${at}: the strip is the box it was at this size's first (${JSON.stringify(after.strip)})`);
+      must(boardBefore.y === firstBoard.y && boardAfter.y === firstBoard.y, `puzzle ${n} at ${at}: the board has not moved (y ${boardAfter.y})`);
+      const tileRows = await alice.evaluate(() => new Set([...document.querySelectorAll('#pz-marks .pz-tile')].map((t) => Math.round(t.getBoundingClientRect().y))).size);
+      must(tileRows === 1, `puzzle ${n} at ${at}: ${n} tiles are one row`);
       if (n < 22) await pressNext(alice);
     }
     must(!(await alice.locator('#pz-end').count()), 'the run went on past the twentieth');
-    const tileRows = await alice.evaluate(() => new Set([...document.querySelectorAll('#pz-marks .pz-tile')].map((t) => Math.round(t.getBoundingClientRect().y))).size);
-    must(tileRows === 1, `twenty-two tiles are one row (${tileRows})`);
+
+    // On a desktop the strip's height comes off the board, so ANOTHER is on
+    // the screen under it.
+    for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+      await alice.setViewportSize(size);
+      await sleep(300);
+      const next = await boxOf(alice, '#pz-next');
+      must(next.y + next.h <= size.height, `${size.width}x${size.height}: ANOTHER is on screen (bottom ${next.y + next.h} <= ${size.height})`);
+    }
+    await alice.setViewportSize({ width: 390, height: 844 });
+
+    // ---- 5b. past 25 into PRACTICE ANYWAY ----
+    // Nothing new left anywhere, then the rest of the due ones: the run ends
+    // on PRACTICE ANYWAY, whose first page of the rotation is twenty of the
+    // ones just answered. It must ask past them, not stop.
+    log(`start all: ${resultLine(execFileSync('mix', ['run', '-e', 'Code.eval_file("playwright/test-puzzles-hub/many_due.exs")'], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, SHAPE_EMAIL: email, DUE_MODE: 'start_all' },
+    }))}`);
+    await pressNext(alice);
+    const tail = await playRun(alice);
+    log(`the run went through ${tail} more and ended`);
+    await alice.waitForSelector('#pz-anyway');
+    await alice.click('#pz-anyway');
+    // The end card stays until the next puzzle opens, or says why not.
+    await alice.waitForFunction(() => !document.querySelector('#pz-end') || /every one/.test(document.querySelector('#pz-way-line').textContent), null, { timeout: 15000 });
+    must(!(await alice.locator('#pz-end').count()), 'PRACTICE ANYWAY after 25 asked past the ones just answered and went on');
+    await alice.waitForSelector('#pz-board .bg-stack');
+    must((await alice.textContent('#pz-progress-count')).trim() === 'Practice only', 'and the run is practice only');
   } finally {
     for (const c of contexts) await c.close().catch(() => {});
   }

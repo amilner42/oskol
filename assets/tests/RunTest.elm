@@ -40,7 +40,7 @@ tierRun list =
 
 emptyRun : Run
 emptyRun =
-    { ids = [], at = 0, answers = [], next = "", source = Fixed, anyway = False, served = 0, deckToday = Nothing }
+    { ids = [], at = 0, answers = [], next = "", source = Fixed, anyway = False, served = 0, deckToday = Nothing, gen = 0 }
 
 
 at : Int -> Run -> Run
@@ -180,6 +180,28 @@ goingOn =
                 in
                 ( ( List.length through.answers, Run.nextId through ), ( List.length refetched.ids, Run.nextId refetched ) )
                     |> Expect.equal ( ( 20, Nothing ), ( 25, Just "q1" ) )
+        , test "one answer mixing answered ids, new ids and duplicates adds each new one once" <|
+            \_ ->
+                let
+                    through =
+                        tierRun [ "a", "b", "c" ] |> answerAll pass
+
+                    refetched =
+                        Run.refetched [ "b", "x", "a", "y", "x", "c", "y", "z" ] through
+                in
+                ( refetched.ids, Run.nextId refetched )
+                    |> Expect.equal ( [ "a", "b", "c", "x", "y", "z" ], Just "x" )
+        , test "an answer for an earlier run is dropped" <|
+            \_ ->
+                let
+                    run =
+                        tierRun [ "a" ]
+
+                    second =
+                        { run | gen = 2 }
+                in
+                ( Run.current 2 (Just second) |> Maybe.map .gen, Run.current 1 (Just second), Run.current 1 Nothing )
+                    |> Expect.equal ( Just 2, Nothing, Nothing )
         , test "a refetch with nothing new is the end of today's set" <|
             \_ ->
                 let
@@ -234,6 +256,54 @@ anyway =
                         ( Just "/papi/practice?band=bad&all=1&from=20"
                         , Just "/papi/practice?band=bad&all=1&from=40"
                         )
+        , test "a full page of the rotation that is all already answered is not the end: ask past it" <|
+            \_ ->
+                let
+                    -- 25 due answered; PRACTICE ANYWAY from the end card. The
+                    -- rotation's first twenty, soonest due, are twenty of
+                    -- those same 25.
+                    through =
+                        tierRun (ids "d" 25) |> answerAll pass
+
+                    page1 =
+                        ids "d" 20
+
+                    anyway1 =
+                        Run.anywayFetched page1 through
+
+                    -- the next page is the rest of the rotation
+                    page2 =
+                        ids "d" 25 |> List.drop 20 |> (\rest -> rest ++ ids "r" 15)
+
+                    anyway2 =
+                        Run.refetched page2 anyway1
+                in
+                ( ( Run.nextId anyway1, Run.askAgain page1 anyway1, Run.queueUrl anyway1 )
+                , ( Run.nextId anyway2, Run.askAgain page2 anyway2 )
+                )
+                    |> Expect.equal
+                        ( ( Nothing, True, Just "/papi/practice?band=very_bad&all=1&from=20" )
+                        , ( Just "r1", False )
+                        )
+        , test "a page short of full is the rotation's end: no asking again" <|
+            \_ ->
+                let
+                    through =
+                        tierRun (ids "d" 5) |> answerAll pass
+
+                    after =
+                        Run.anywayFetched (ids "d" 5) through
+                in
+                ( Run.nextId after, Run.askAgain (ids "d" 5) after )
+                    |> Expect.equal ( Nothing, False )
+        , test "only PRACTICE ANYWAY asks again: an ordinary full page with nothing new ends today" <|
+            \_ ->
+                let
+                    through =
+                        tierRun (ids "d" 20) |> answerAll pass
+                in
+                Run.askAgain (ids "d" 20) (Run.refetched (ids "d" 20) through)
+                    |> Expect.equal False
         , test "a set's rotation, the same" <|
             \_ ->
                 Run.start { ids = ids "r" 20, next = "/puzzles", source = InSet { id = "openings", name = "Openings" }, anyway = True, deckToday = Nothing }

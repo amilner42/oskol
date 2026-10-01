@@ -2227,7 +2227,7 @@ a.rp-match-row:hover { color: var(--ink); }
      the screen under it. */
   .pz-page.has-run .bg-still {
     --bg-point-h: min(
-      calc((var(--page-h) - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - 3.25rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
+      calc((var(--page-h) - 28px - 2.5rem - 2.6rem - 3.2rem - 5.5rem - 3.75rem - var(--bg-band-h) - 2 * var(--bg-lip) - 1rem) / 2),
       calc((100vw - 48px - 22rem - 16px - 4rem) / 2.9)
     );
   }

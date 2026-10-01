@@ -1508,6 +1508,24 @@ wayOn =
                 rendered anyway
                     |> Query.find [ id "pz-practice-only" ]
                     |> Query.has [ text "Practice only: none of these were due, so nothing moved." ]
+        , test "ANOTHER after a choice whose apply failed is pressable again" <|
+            \_ ->
+                let
+                    failed =
+                        inRunWith { tier = Just "bad", ring = Just { done = 0, target = 3 }, anyway = False } 0 [ Nothing ] (Just { done = 0 })
+                            |> answerWith "move_pass"
+                            |> step (PressedOutcome "sooner")
+                            |> step Next
+                            |> step (GotOutcome "sooner" (Err Api.NetworkError))
+                in
+                Expect.all
+                    [ \_ -> failed.leaving |> Expect.equal False
+                    , \_ -> rendered failed |> Query.find [ id "pz-next" ] |> Query.hasNot [ class "is-busy" ]
+
+                    -- pressed again, it tries the pending choice again and goes on
+                    , \_ -> failed |> step Next |> .thenOut |> Expect.equal (Just Page.WantsNext)
+                    ]
+                    ()
         , test "ANOTHER, pressed past the run's last id, waits for the shell rather than doing nothing" <|
             \_ ->
                 let
@@ -1777,13 +1795,26 @@ blanks n =
 -}
 answerWith : String -> Page.Model -> Page.Model
 answerWith name model =
+    answerWithSchedule name "schedule_amendable" model
+
+
+{-| Answer it, the server answering with this schedule (or none: "").
+-}
+answerWithSchedule : String -> String -> Page.Model -> Page.Model
+answerWithSchedule name scheduleName model =
     let
         ( path, _ ) =
             aTurn model
     in
     model
         |> step (BoardOut (Puzzle.Stepped path))
-        |> revealed (reveal name)
+        |> revealed
+            (if scheduleName == "" then
+                reveal name
+
+             else
+                revealWith name scheduleName
+            )
 
 
 dataAttr : String -> String -> Test.Html.Selector.Selector
@@ -2011,7 +2042,28 @@ runProgress =
                 , Page.countsToday False (Just settled)
                 , Page.countsToday True Nothing
                 ]
-                    |> Expect.equal [ True, True, True, False, False ]
+                    -- only what the server moved: a self-grade is deferred
+                    -- and an answer with no schedule wrote nothing
+                    |> Expect.equal [ False, True, False, False, False ]
+        , test "a self-graded answer, and one outside the player's practice, count nothing: the number never goes down later" <|
+            \_ ->
+                let
+                    start =
+                        inRunWith { tier = Just "very_bad", ring = Just { done = 3, target = 5 }, anyway = False } 0 [ Nothing ] (Just { done = 3 })
+
+                    shown model =
+                        rendered model
+                            |> Query.find [ id "pz-progress" ]
+                            |> Expect.all
+                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practised today" ]
+                                , Query.find [ id "pz-ring-count" ] >> Query.has [ text "3/5" ]
+                                ]
+                in
+                Expect.all
+                    [ \_ -> shown (answerWithSchedule "move_unknown" "schedule_self_grade" start)
+                    , \_ -> shown (answerWithSchedule "move_pass" "" start)
+                    ]
+                    ()
         ]
 
 

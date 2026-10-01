@@ -5,6 +5,8 @@ module Run exposing
     , answer
     , answers
     , anywayFetched
+    , askAgain
+    , current
     , deck
     , goesOn
     , idsDecoder
@@ -76,6 +78,7 @@ type alias Run =
     , anyway : Bool -- PRACTICE ANYWAY: every answer early, practice only, nothing moved
     , served : Int -- how much of the rotation PRACTICE ANYWAY has handed this run (its `from`)
     , deckToday : Maybe DeckToday -- the deck's ring: today's set, as the page that started the run read it
+    , gen : Int -- which run this is, so an answer to an older run's request is dropped
     }
 
 
@@ -115,6 +118,7 @@ start config =
                     else
                         0
                 , deckToday = config.deckToday
+                , gen = 0
                 }
 
 
@@ -404,6 +408,36 @@ anywayFetched fetched run =
 
     else
         refetched fetched { run | anyway = True, served = 0 }
+
+
+
+{-| How many a session answers at most: the server's page
+(`deck.page`). A page that came back full may have more behind it.
+-}
+pageSize : Int
+pageSize =
+    20
+
+
+{-| Should the shell ask again at once? Through PRACTICE ANYWAY the
+rotation comes soonest due first, and the ones this run has just
+answered can fill a whole page of it -- 25 due answered, and the first
+twenty of the rotation are those -- so a full page with nothing new in it
+is not the end: ask past it. A page short of full is the rotation's end,
+which is what bounds this.
+-}
+askAgain : List String -> Run -> Bool
+askAgain fetched run =
+    run.anyway && List.length fetched >= pageSize && nextId run == Nothing
+
+
+{-| The run an answer is for, if it is still the one being worked: a
+request the shell made for an earlier run (the player started another
+before it came back) must not add that run's queue to this one.
+-}
+current : Int -> Maybe Run -> Maybe Run
+current gen run =
+    run |> Maybe.andThen (\r -> if r.gen == gen then Just r else Nothing)
 
 
 

@@ -103,6 +103,11 @@ type alias Model =
     -- as this shell has counted it since: one more with every card
     -- answered for the first time in this run. An account's only.
     , today : Maybe Today
+
+    -- How many runs this session has started: each run is numbered, and
+    -- the shell's requests for one carry its number, so an answer that
+    -- lands after another run has started is dropped (`Run.current`).
+    , runs : Int
     , joinOpen : Bool
     , joinCode : String
     , joinError : Maybe String
@@ -156,11 +161,11 @@ type Msg
     | MinShown
     | MeGivenUp
       -- the run's queue, asked again once its ids ran out
-    | GotRefetch (Result Api.Error (List String))
+    | GotRefetch Int (Result Api.Error (List String))
       -- where the run's deck stands, for the end card's way on
-    | GotStanding (Result Api.Error PracticeDecks.Catalog)
+    | GotStanding Int (Result Api.Error PracticeDecks.Catalog)
       -- what KEEP GOING or PRACTICE ANYWAY handed over
-    | GotOnward Page.Puzzle.Way (Result Api.Error (List String))
+    | GotOnward Int Page.Puzzle.Way (Result Api.Error (List String))
     | NoOp
 
 
@@ -186,6 +191,7 @@ init flags url key =
                         |> Result.withDefault ""
                 , run = Nothing
                 , today = Nothing
+                , runs = 0
                 , joinOpen = False
                 , joinCode = ""
                 , joinError = Nothing
@@ -540,7 +546,7 @@ startRunWith config today model =
             ( model, Cmd.none )
 
         Just run ->
-            ( { model | run = Just run, today = today }
+            ( { model | run = Just { run | gen = model.runs + 1 }, runs = model.runs + 1, today = today }
             , Nav.pushUrl model.key (Route.href (Route.puzzle (Maybe.withDefault "" (List.head config.ids))))
             )
 
@@ -599,7 +605,7 @@ puzzleOut out model =
 
                         Nothing ->
                             if Run.refetchable run then
-                                ( model, Run.refetch model.session run GotRefetch )
+                                ( model, Run.refetch model.session run (GotRefetch run.gen) )
 
                             else
                                 endHere model
@@ -618,13 +624,13 @@ puzzleOut out model =
                     ( model
                     , case way of
                         Page.Puzzle.Continue _ ->
-                            Run.refetch model.session run (GotOnward way)
+                            Run.refetch model.session run (GotOnward run.gen way)
 
                         Page.Puzzle.MoreNew _ ->
-                            Run.keepGoing model.session run (GotOnward way)
+                            Run.keepGoing model.session run (GotOnward run.gen way)
 
                         Page.Puzzle.Anyway ->
-                            Run.practiseAnyway model.session run (GotOnward way)
+                            Run.practiseAnyway model.session run (GotOnward run.gen way)
 
                         Page.Puzzle.NoWay ->
                             Cmd.none
@@ -660,7 +666,7 @@ endHere model =
             in
             if asks then
                 ( { model | page = Puzzle (Page.Puzzle.offering Page.Puzzle.Asking ended) }
-                , Cmd.batch [ Cmd.map PuzzleMsg cmd, PracticeDecks.fetchList model.session GotStanding ]
+                , Cmd.batch [ Cmd.map PuzzleMsg cmd, PracticeDecks.fetchList model.session (GotStanding run.gen) ]
                 )
 
             else
@@ -1051,8 +1057,8 @@ update msg model =
         -- the player yet, or, with nothing new, today's set is done. A
         -- failed ask ends the run where it is rather than leaving ANOTHER
         -- pressed for ever.
-        ( GotRefetch result, Puzzle _ ) ->
-            case ( model.run, result ) of
+        ( GotRefetch gen result, Puzzle _ ) ->
+            case ( Run.current gen model.run, result ) of
                 ( Just run, Ok ids ) ->
                     let
                         more =
@@ -1063,7 +1069,13 @@ update msg model =
                             going
 
                         Nothing ->
-                            endHere { model | run = Just more }
+                            -- A full page of the rotation, all of it
+                            -- already answered: ask past it.
+                            if Run.askAgain ids more then
+                                ( { model | run = Just more }, Run.refetch model.session more (GotRefetch gen) )
+
+                            else
+                                endHere { model | run = Just more }
 
                 ( Just _, Err _ ) ->
                     endHere model
@@ -1071,8 +1083,8 @@ update msg model =
                 ( Nothing, _ ) ->
                     ( model, Cmd.none )
 
-        ( GotStanding (Ok catalog), Puzzle _ ) ->
-            case model.run of
+        ( GotStanding gen (Ok catalog), Puzzle _ ) ->
+            case Run.current gen model.run of
                 Just run ->
                     ( offer (Page.Puzzle.Offered (Run.way run catalog.decks))
                         { model | run = Just (Run.withStanding catalog.decks run) }
@@ -1082,11 +1094,15 @@ update msg model =
                 Nothing ->
                     ( model, Cmd.none )
 
-        ( GotStanding (Err _), Puzzle _ ) ->
-            ( offer (Page.Puzzle.Offered Page.Puzzle.NoWay) model, Cmd.none )
+        ( GotStanding gen (Err _), Puzzle _ ) ->
+            if Run.current gen model.run /= Nothing then
+                ( offer (Page.Puzzle.Offered Page.Puzzle.NoWay) model, Cmd.none )
 
-        ( GotOnward way result, Puzzle _ ) ->
-            case ( model.run, result ) of
+            else
+                ( model, Cmd.none )
+
+        ( GotOnward gen way result, Puzzle _ ) ->
+            case ( Run.current gen model.run, result ) of
                 ( Just run, Ok ids ) ->
                     let
                         more =
@@ -1105,7 +1121,11 @@ update msg model =
                             going
 
                         Nothing ->
-                            ( offer (Page.Puzzle.Stopped Mistakes.everyOnePractised) { model | run = Just more }, Cmd.none )
+                            if Run.askAgain ids more then
+                                ( { model | run = Just more }, Run.refetch model.session more (GotOnward gen way) )
+
+                            else
+                                ( offer (Page.Puzzle.Stopped Mistakes.everyOnePractised) { model | run = Just more }, Cmd.none )
 
                 ( Just _, Err err ) ->
                     ( offer (Page.Puzzle.Stopped (Api.errorMessage err)) model, Cmd.none )

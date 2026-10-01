@@ -616,7 +616,7 @@ update msg model =
             -- connection: the line keeps saying what the server last said,
             -- the selection stays, and why it changed nothing is said in
             -- the explanation's place. A run waiting on it stays here.
-            stay { model | outcomeSending = False, thenOut = Nothing, outcomeError = Just (Api.errorMessage err) } Cmd.none
+            stay { model | outcomeSending = False, thenOut = Nothing, leaving = False, outcomeError = Just (Api.errorMessage err) } Cmd.none
 
         GotWhy (Ok why) ->
             stay { model | why = Just why } Cmd.none
@@ -845,23 +845,17 @@ marked reveal model =
             }
 
 
-{-| Does this answer count toward the day -- the ring, and "3 fixed
-today"? Not one given early: in a run started from PRACTICE ANYWAY, or
-one the server answered with a schedule nothing moved (not graded, not
-asked to be graded). The server counts the day by what moved, so the
-page counts the same.
+{-| Does this answer count toward the day -- the ring, and "3 practised
+today"? Only one the server moved the mistake for (`amendable`): that is
+exactly what it counts the day by. Not one given early (PRACTICE ANYWAY,
+or a second go), not one it could not grade (a self-grade is deferred,
+and a deferral is not counted), and not one of a puzzle outside the
+player's practice (nothing is written). Counting any of those here would
+make the number go down when the server's own count next lands.
 -}
 countsToday : Bool -> Maybe Schedule -> Bool
 countsToday anyway schedule =
-    not anyway && not (Maybe.map early schedule |> Maybe.withDefault False)
-
-
-{-| An answer that moved nothing: the mistake was not due, so the
-attempt is a reveal and practice only.
--}
-early : Schedule -> Bool
-early schedule =
-    not schedule.amendable && not schedule.selfGrade
+    not anyway && (Maybe.map .amendable schedule |> Maybe.withDefault False)
 
 
 {-| Send a selected choice. `thenOut` is where the page goes once it has
