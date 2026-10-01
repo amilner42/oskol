@@ -12,12 +12,13 @@ import gleam/int
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import oskol/caps/practice.{
-  type Ask, type Graded, type Item, type Outcome, type PracticeError,
-  type Session, type Severity, Ask, BadContent, CardNotStarted, CardSuspended,
-  DeckUnavailable, NotAmendable, OutOfOrder, Severity, UnknownCard,
-  UnknownTimezone,
+  type Ask, type Card, type Cell, type Graded, type Item, type Outcome,
+  type PracticeError, type Session, type Severity, Active, Ask, BadContent,
+  CardNotStarted, CardSuspended, DeckUnavailable, New, NotAmendable, OutOfOrder,
+  Severity, UnknownCard, UnknownTimezone,
 }
 import oskol/core/ctx.{type Ctx}
 import oskol/core/error.{type ApiError}
@@ -51,9 +52,10 @@ pub const bands = ["very_bad", "bad", "doubtful"]
 pub const page = 20
 
 /// How many new puzzles KEEP GOING puts into rotation, each time it is
-/// pressed. The brief caps the day for the player who takes what they are
+/// pressed: the deck's own pace again, over the day's budget. The pace is
+/// what today's set is made of for the player who takes what they are
 /// given; it never caps the one who asks for more.
-pub const keep_going_new = 10
+pub const keep_going_new = new_per_day
 
 /// What a deck runs on until its owner's browser says otherwise. Every
 /// "due today" and every "tomorrow" is read in this zone, so the answer to
@@ -166,8 +168,142 @@ pub fn correct(
 
 /// KEEP GOING: put more new puzzles into rotation, over today's budget,
 /// and say how many moved. The caller fetches the session again after.
-pub fn keep_going(ctx: Ctx, uid: String) -> Int {
-  ctx.practice.start_new(uid, keep_going_new)
+/// `band` narrows it to one tier ("" is the whole deck): the next mistakes
+/// of that band never shown, in the order they are introduced in.
+pub fn keep_going(ctx: Ctx, uid: String, band: String) -> Int {
+  case band {
+    "" -> ctx.practice.start_new(uid, keep_going_new)
+    _ -> ctx.practice.start_new_in_band(uid, band, keep_going_new)
+  }
+}
+
+/// PRACTICE ANYWAY: the deck's positions in rotation, soonest due first, a
+/// page of them -- what a player who has done today's set and started
+/// everything there is may still go through. Answering one before it is
+/// due is a reveal and nothing else (the attempt path already says so), so
+/// nothing here is started, moved or written. `band` narrows it to one tier
+/// ("" is the whole deck); a paused card is not in rotation.
+pub fn anyway(ctx: Ctx, uid: String, band: String) -> List(Card) {
+  let keys =
+    ctx.practice.cells(uid)
+    |> list.filter(fn(c) {
+      c.status == Active && { band == "" || c.band == band }
+    })
+    |> list.sort(fn(a, b) { int.compare(a.due_ms, b.due_ms) })
+    |> list.take(page)
+    |> list.map(fn(c) { c.key })
+  case keys {
+    [] -> []
+    _ -> {
+      let found = ctx.practice.cards(uid, keys)
+      list.filter_map(keys, fn(key) { list.find(found, fn(c) { c.key == key }) })
+    }
+  }
+}
+
+// ---------- A deck's standing, from its cells ----------
+
+/// Where a player stands on one deck, counted from its cells: the three
+/// states (untouched, in progress, patched), what today still asks, and
+/// the count on each rung. The same shape for a tier and for a set.
+pub type Standing {
+  Standing(
+    total: Int,
+    /// Never started.
+    untouched: Int,
+    /// Started, below the patched rung.
+    in_progress: Int,
+    /// Started, at or above `patched_level`.
+    patched: Int,
+    /// In rotation and due now.
+    due: Int,
+    /// Never started, and within what today's budget still allows.
+    new_left: Int,
+    /// Answered in the player's own day.
+    done_today: Int,
+    /// Today's set: what has been done, plus what is still due, plus the
+    /// new ones the day still allows. The ring is `done_today` over this,
+    /// so it grows when KEEP GOING adds and is full when the deck has
+    /// nothing more to ask today.
+    target_today: Int,
+    /// Cards on each rung, lowest first, one entry per rung of the ladder.
+    levels: List(Int),
+  )
+}
+
+/// Count a deck's cells. `budget` is what is left of the day's new ones
+/// (for the mistakes, the deck's -- shared by the three tiers, as `tiers`
+/// folds it); `rungs` is how many levels the ladder has.
+pub fn standing(
+  cells: List(Cell),
+  budget: Int,
+  done_today: Int,
+  now_ms: Int,
+  rungs: Int,
+) -> Standing {
+  let total = list.length(cells)
+  let untouched = list.count(cells, fn(c) { c.status == New })
+  let patched =
+    list.count(cells, fn(c) { c.status != New && c.level >= patched_level })
+  let due =
+    list.count(cells, fn(c) { c.status == Active && c.due_ms <= now_ms })
+  let new_left = int.min(untouched, int.max(budget, 0))
+  Standing(
+    total: total,
+    untouched: untouched,
+    in_progress: int.max(total - untouched - patched, 0),
+    patched: patched,
+    due: due,
+    new_left: new_left,
+    done_today: done_today,
+    target_today: done_today + due + new_left,
+    levels: levels(cells, rungs),
+  )
+}
+
+/// Does this deck still ask for something today?
+pub fn standing_has_work(standing: Standing) -> Bool {
+  standing.due > 0 || standing.new_left > 0
+}
+
+fn levels(cells: List(Cell), rungs: Int) -> List(Int) {
+  case rungs <= 0 {
+    True -> []
+    False ->
+      list.range(0, rungs - 1)
+      |> list.map(fn(rung) {
+        list.count(cells, fn(c) {
+          // A card past the top rung is counted on it, so the bars always
+          // add up to the deck.
+          int.min(int.max(c.level, 0), rungs - 1) == rung
+        })
+      })
+  }
+}
+
+pub fn standing_json(standing: Standing) -> Json {
+  json.object([
+    #("total", json.int(standing.total)),
+    #("untouched", json.int(standing.untouched)),
+    #("in_progress", json.int(standing.in_progress)),
+    #("patched", json.int(standing.patched)),
+    #("due", json.int(standing.due)),
+    #("new_left", json.int(standing.new_left)),
+    #("done_today", json.int(standing.done_today)),
+    #("target_today", json.int(standing.target_today)),
+    #("levels", json.array(standing.levels, json.int)),
+  ])
+}
+
+/// How many days a card waits at this level, off the ladder the deck is
+/// configured with: what "level 2 stays · back in 3 days" says. A level
+/// off either end of the ladder reads its nearest rung.
+pub fn held_days(intervals: List(Int), level: Int) -> Int {
+  let top = list.length(intervals) - 1
+  intervals
+  |> list.drop(int.min(int.max(level, 0), int.max(top, 0)))
+  |> list.first
+  |> result.unwrap(1)
 }
 
 // ---------- Today ----------

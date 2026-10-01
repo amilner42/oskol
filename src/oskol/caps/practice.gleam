@@ -243,6 +243,45 @@ pub type PracticeCaps {
     /// day's new-card budget still applies: `new_per_day` is what the
     /// queue may introduce, and a band is a slice of the same day.
     band_queue: fn(String, String, Int) -> Session,
+    /// Every card of this learner, one row each, for the mastery grid:
+    /// where it stands, when it is due, and the band it counts in -- the
+    /// worst grade any game that reached the position was graded at (the
+    /// ranking `severity` uses), and "" for a card no game reached, which
+    /// is every card of a universal set. In the order the deck introduces
+    /// them (position, then creation), so a grid drawn from it is the same
+    /// grid on every read. A learner that is not there yet has none.
+    cells: fn(String) -> List(Cell),
+    /// The answers recorded in this learner's own local day, counted by the
+    /// band of the card answered ("" for a card no game reached). The same
+    /// rows `day.answered` counts -- an attempt, never a card put off and
+    /// never a correction -- so the bands add up to it.
+    answered_today_by_band: fn(String) -> List(#(String, Int)),
+    /// KEEP GOING for one tier: put the next `n` never-started, not-paused
+    /// cards of that band into rotation, in the order they are introduced
+    /// in, **over** today's budget. "" is the whole deck, as `start_new`
+    /// is. Returns how many moved.
+    start_new_in_band: fn(String, String, Int) -> Int,
+    /// The ladder: how many days a card waits at each level, lowest first
+    /// (`config :retain, intervals`). The page is told what a level means
+    /// rather than keeping its own copy of the list.
+    intervals: fn() -> List(Int),
+  )
+}
+
+/// One card, as the mastery grid draws it.
+/// **Field order is the Elixir tuple's** (`lib/oskol/gleam/caps/practice.ex`).
+pub type Cell {
+  Cell(
+    key: String,
+    /// "very_bad", "bad", "doubtful", or "" where no game reached it.
+    band: String,
+    /// 0..7.
+    level: Int,
+    /// When it is next due, in Unix milliseconds.
+    due_ms: Int,
+    status: Status,
+    /// The order it is introduced in; None leaves it to creation order.
+    position: Option(Int),
   )
 }
 
@@ -304,5 +343,13 @@ pub fn stub() -> PracticeCaps {
     day: fn(_) { panic as "stub practice.day" },
     severity: fn(_, _) { panic as "stub practice.severity" },
     band_queue: fn(_, _, _) { panic as "stub practice.band_queue" },
+    cells: fn(_) { panic as "stub practice.cells" },
+    answered_today_by_band: fn(_) {
+      panic as "stub practice.answered_today_by_band"
+    },
+    start_new_in_band: fn(_, _, _) {
+      panic as "stub practice.start_new_in_band"
+    },
+    intervals: fn() { panic as "stub practice.intervals" },
   )
 }

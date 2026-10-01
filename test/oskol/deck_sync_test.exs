@@ -585,7 +585,8 @@ defmodule Oskol.DeckSyncTest do
       assert session(user.id) == []
 
       # ...and KEEP GOING is what gets past that.
-      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _, _, _, _, _, _} =
+      {:practice_caps, _, _, _, _, _, _, start_new, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _,
+       _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert start_new.(user.id, 10) == 10
@@ -676,7 +677,8 @@ defmodule Oskol.DeckSyncTest do
       assert {:ok, 2} = Practice.sync(user.id)
       [worst] = Enum.map(sources_of(very_bad), & &1.puzzle_id)
 
-      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _} =
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _, _, _, _,
+       _} =
         Oskol.Gleam.Caps.Practice.build()
 
       # Nothing started yet: every mistake is untouched -- neither in
@@ -732,7 +734,8 @@ defmodule Oskol.DeckSyncTest do
       assert {:ok, 1} = Practice.sync(user.id)
       [key] = Enum.map(sources_of(game_id), & &1.puzzle_id)
 
-      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _} =
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _, _, _, _,
+       _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert {:severity, "very_bad", 1, 0, 0, 0, 1} in severity.(user.id, 4)
@@ -759,7 +762,8 @@ defmodule Oskol.DeckSyncTest do
       [worst] = Enum.map(sources_of(very_bad), & &1.puzzle_id)
       [mild] = Enum.map(sources_of(dubious), & &1.puzzle_id)
 
-      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, band_queue} =
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, band_queue, _, _,
+       _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       # Nothing started: each tier offers its own, as a new card.
@@ -786,7 +790,8 @@ defmodule Oskol.DeckSyncTest do
     test "a band nobody has, and a band that is not a band, are both empty" do
       user = an_account("arie@oskol.test")
 
-      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, band_queue} =
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, band_queue, _, _,
+       _, _} =
         Oskol.Gleam.Caps.Practice.build()
 
       # No deck at all.
@@ -805,10 +810,246 @@ defmodule Oskol.DeckSyncTest do
     test "an account with no deck is counted as nothing, not as an error" do
       user = an_account("arie@oskol.test")
 
-      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _} =
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, _, _, _, _,
+       _} =
         Oskol.Gleam.Caps.Practice.build()
 
       assert severity.(user.id, 4) == []
+    end
+  end
+
+  # ---------- The five decks: cells, today by band, more of one band ----------
+
+  # The three new caps, by name, off the end of the record.
+  defp new_caps(scope \\ Retain.Config.default_scope()) do
+    caps = Oskol.Gleam.Caps.Practice.build(scope)
+    size = tuple_size(caps)
+
+    %{
+      cells: elem(caps, size - 4),
+      answered_today_by_band: elem(caps, size - 3),
+      start_new_in_band: elem(caps, size - 2),
+      intervals: elem(caps, size - 1)
+    }
+  end
+
+  describe "the five decks over real rows" do
+    test "cells ranks a card by its worst source, in introduction order" do
+      user = an_account("arie@oskol.test")
+
+      very_bad = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(very_bad, ["p1"])
+      grade(very_bad, "very_bad")
+
+      dubious = a_room([seat("p1", guest: "g2", user: user.id)])
+      mistakes(dubious, ["p1"])
+      grade(dubious, "doubtful")
+
+      assert {:ok, 2} = Practice.sync(user.id)
+      [worst] = Enum.map(sources_of(very_bad), & &1.puzzle_id)
+      [mild] = Enum.map(sources_of(dubious), & &1.puzzle_id)
+
+      caps = new_caps()
+
+      # Nothing started: both new, worst first (the sync's own order).
+      assert [
+               {:cell, ^worst, "very_bad", 0, _, :new, {:some, _}},
+               {:cell, ^mild, "doubtful", 0, _, :new, {:some, _}}
+             ] = caps.cells.(user.id)
+
+      # The dubious one reached again in a bad game: it counts as bad now.
+      same = a_room([seat("p1", guest: "g3", user: user.id)])
+      same_mistake(same, dubious)
+      grade(same, "bad")
+      {:ok, _} = Retain.start(user.id, [mild])
+      {:ok, _} = Retain.review(user.id, mild, :pass)
+      {:ok, %{suspended: 1}} = Retain.suspend(user.id, [worst])
+
+      cells = caps.cells.(user.id)
+      assert length(cells) == 2
+      assert {:cell, ^mild, "bad", 1, due, :active, _} = List.keyfind(cells, mild, 1)
+      assert due > System.system_time(:millisecond)
+      assert {:cell, ^worst, "very_bad", 0, _, :suspended, _} = List.keyfind(cells, worst, 1)
+
+      # Somebody else's deck is not this one's, and no deck is no cells.
+      assert caps.cells.(an_account("other@oskol.test").id) == []
+    end
+
+    test "answered_today_by_band counts first answers only, in the learner's own day" do
+      user = an_account("arie@oskol.test")
+
+      very_bad = a_room([seat("p1", guest: "g1", user: user.id)])
+      mistakes(very_bad, ["p1"])
+      grade(very_bad, "very_bad")
+
+      bad = a_room([seat("p1", guest: "g2", user: user.id)])
+      mistakes(bad, ["p1"])
+      grade(bad, "bad")
+
+      assert {:ok, 2} = Practice.sync(user.id)
+      [worst] = Enum.map(sources_of(very_bad), & &1.puzzle_id)
+      [lesser] = Enum.map(sources_of(bad), & &1.puzzle_id)
+      caps = new_caps()
+
+      assert caps.answered_today_by_band.(user.id) == []
+
+      {:ok, _} = Retain.start(user.id, [worst, lesser])
+      {:ok, %{review_id: review_id}} = Retain.review(user.id, worst, :pass)
+      # A correction sits on the answer it corrects: still one answer.
+      {:ok, _} = Retain.amend(user.id, worst, review_id, :again)
+      # Putting one off is not an answer at all.
+      {:ok, _} = Retain.defer(user.id, lesser, DateTime.add(DateTime.utc_now(), 1, :day))
+
+      assert caps.answered_today_by_band.(user.id) == [{"very_bad", 1}]
+
+      # The same rows `day` counts, so the bands add up to it.
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, day, _, _, _, _, _, _} =
+        Oskol.Gleam.Caps.Practice.build()
+
+      assert {:day, 1, _} = day.(user.id)
+
+      # An answer before the learner's own midnight was yesterday's. In a
+      # zone far ahead of UTC, the start of today is hours ago; an answer
+      # from before then is not counted.
+      {:ok, _} = Retain.put_user(user.id, tz: "Pacific/Kiritimati")
+
+      tz_midnight =
+        Retain.Clock.start_of_day(
+          Retain.Clock.local_date(DateTime.utc_now(), "Pacific/Kiritimati"),
+          "Pacific/Kiritimati"
+        )
+
+      from(r in Retain.Review, where: r.id == ^review_id)
+      |> Repo.update_all(set: [at: DateTime.add(tz_midnight, -60, :second)])
+
+      assert caps.answered_today_by_band.(user.id) == []
+    end
+
+    test "start_new_in_band starts that band's next ones, in order, over the budget" do
+      user = an_account("arie@oskol.test")
+
+      # Four bad mistakes from four games, oldest first, and one very bad.
+      bads =
+        for n <- 1..4 do
+          game = a_room([seat("p1", guest: "g#{n}", user: user.id)])
+          mistakes(game, ["p1"])
+          backdate(game, -n, :day)
+          game
+        end
+
+      worst_game = a_room([seat("p1", guest: "g9", user: user.id)])
+      mistakes(worst_game, ["p1"])
+      grade(worst_game, "very_bad")
+
+      assert {:ok, 5} = Practice.sync(user.id)
+      # Newest game first within the band.
+      bad_keys = Enum.map(bads, fn g -> hd(sources_of(g)).puzzle_id end)
+      [worst] = Enum.map(sources_of(worst_game), & &1.puzzle_id)
+
+      # The day's budget is already spent.
+      {:ok, _} = Retain.put_user(user.id, new_per_day: 1)
+      {:ok, %{started: 1}} = Retain.start(user.id, [worst])
+      {:ok, %{new_remaining_today: 0}} = Retain.queue(user.id, limit: 20)
+
+      caps = new_caps()
+
+      started = fn ->
+        from(i in Retain.Item,
+          where: i.key in ^bad_keys and not is_nil(i.started_at),
+          select: i.key
+        )
+        |> Repo.all()
+        |> MapSet.new()
+      end
+
+      # One at a time, so the order is the assertion: each press starts
+      # the next of the band in introduction order, newest game first.
+      order =
+        Enum.map(1..3, fn _ ->
+          before = started.()
+          assert caps.start_new_in_band.(user.id, "bad", 1) == 1
+          [key] = MapSet.difference(started.(), before) |> MapSet.to_list()
+          key
+        end)
+
+      assert order == Enum.take(bad_keys, 3)
+
+      # Three more asked for: only the one left, and then nothing.
+      assert caps.start_new_in_band.(user.id, "bad", 3) == 1
+      assert MapSet.equal?(started.(), MapSet.new(bad_keys))
+      assert caps.start_new_in_band.(user.id, "bad", 3) == 0
+      # A band that is not one starts nothing; "" is the whole deck.
+      assert caps.start_new_in_band.(user.id, "brilliant", 3) == 0
+      assert caps.start_new_in_band.(user.id, "", 3) == 0
+    end
+
+    test "two accounts on one position each band it by their own mistake" do
+      ari = an_account("arie@oskol.test")
+      bo = an_account("bo@oskol.test")
+
+      ari_game = a_room([seat("p1", guest: "g1", user: ari.id)])
+      mistakes(ari_game, ["p1"])
+      grade(ari_game, "doubtful")
+
+      # The same position in Bo's game, played far worse.
+      bo_game = a_room([seat("p1", guest: "g2", user: bo.id)])
+      same_mistake(bo_game, ari_game)
+      grade(bo_game, "very_bad")
+
+      assert {:ok, 1} = Practice.sync(ari.id)
+      assert {:ok, 1} = Practice.sync(bo.id)
+      [key] = Enum.map(sources_of(ari_game), & &1.puzzle_id)
+
+      caps = new_caps()
+
+      {:practice_caps, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, severity, band_queue,
+       _, _, _, _} = Oskol.Gleam.Caps.Practice.build()
+
+      # Each sees the card in their own tier, by all four readings.
+      for {who, band} <- [{ari, "doubtful"}, {bo, "very_bad"}] do
+        assert [{:cell, ^key, ^band, _, _, :new, _}] = caps.cells.(who.id)
+        assert [{:severity, ^band, 1, 0, 0, 0, 1}] = severity.(who.id, 4)
+
+        assert {:session, [], [{:card, ^key, _, _, _, _, _, _, _}], _} =
+                 band_queue.(who.id, band, 20)
+
+        other = if band == "doubtful", do: "very_bad", else: "doubtful"
+        assert {:session, [], [], _} = band_queue.(who.id, other, 20)
+        assert caps.start_new_in_band.(who.id, other, 3) == 0
+
+        {:ok, _} = Retain.start(who.id, [key])
+        {:ok, _} = Retain.review(who.id, key, :pass)
+        assert caps.answered_today_by_band.(who.id) == [{band, 1}]
+      end
+    end
+
+    test "a set's cells read no band, and the ladder is the configured one" do
+      user = an_account("arie@oskol.test")
+      caps = new_caps("deck:openings")
+      {:ok, _} = Retain.put_user(user.id, scope: "deck:openings", tz: "Etc/UTC")
+
+      {:ok, _} =
+        Retain.put_items(
+          user.id,
+          [
+            %{key: "o2", tags: %{}, content: %{}, position: 2},
+            %{key: "o1", tags: %{}, content: %{}, position: 1}
+          ],
+          scope: "deck:openings"
+        )
+
+      assert [
+               {:cell, "o1", "", 0, _, :new, {:some, 1}},
+               {:cell, "o2", "", 0, _, :new, {:some, 2}}
+             ] = caps.cells.(user.id)
+
+      # The mistakes' scope holds none of them.
+      assert new_caps().cells.(user.id) == []
+
+      {:ok, _} = Retain.start(user.id, ["o1"], scope: "deck:openings")
+      {:ok, _} = Retain.review(user.id, "o1", :pass, scope: "deck:openings")
+      assert caps.answered_today_by_band.(user.id) == [{"", 1}]
+      assert caps.intervals.() == Application.fetch_env!(:retain, :intervals)
     end
   end
 
