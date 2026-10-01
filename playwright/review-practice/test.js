@@ -1,0 +1,207 @@
+/**
+ * Screenshots of the practice home (/puzzles), five decks, for every
+ * visitor and every state the deck in front can be in, at 390x844,
+ * 320x568, 844x390 and 1440x900 -- with the page held still: every shot
+ * also measures what must not move and fails if it did.
+ *
+ *   01 account, the very bad moves with work today: FIX ONE, the ring part
+ *      full, every colour of the grid, the cost lines and what patching won
+ *      back
+ *   02 the same with the replies tapped into the front (a 15x21 grid)
+ *   03 account, today's set done: KEEP GOING
+ *   04 account, everything started and nothing due: PRACTICE ANYWAY
+ *   05 a fresh account: nothing of theirs yet, the openings in front, START
+ *   06 a guest with games: their worst tier, PRACTICE, nothing kept
+ *   07 a stranger: what this is, TRY ONE, the five as rows
+ *   08 a stranger with the openings tapped in front: TRY
+ *
+ * What is measured, and must be equal:
+ *   - #puzzles-hub's height before tapping a row and after tapping back;
+ *   - the card's box while its press is on the way (STARTING...) and after;
+ *   - the card's box as the page lands and once its animations are done
+ *     (the squares and the ring animate opacity, transform and the arc
+ *     only);
+ *   - nothing scrolls sideways at any size.
+ *
+ * `setup.exs` arranges everyone (six graded games, three browsers, the two
+ * sets on a stub engine) and `shape.exs` puts the account in each state.
+ * PRACTICE_SETUP (the JSON line setup.exs printed) skips the arranging.
+ *
+ *   playwright/review-practice/run.sh       (serves its own port and database)
+ */
+const playwright = require('playwright');
+const fs = require('fs');
+const { execFileSync } = require('child_process');
+const { BASE, resultLine, seatedContext } = require('../lib/flows');
+
+const OUT = process.env.SHOTS_DIR || 'playwright/screenshots/review-practice';
+fs.mkdirSync(OUT, { recursive: true });
+const log = (m) => console.log(`[${new Date().toISOString().substr(11, 8)}] ${m}`);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const SIZES = [
+  { name: 'phone', width: 390, height: 844 },
+  { name: 'small', width: 320, height: 568 },
+  { name: 'landscape', width: 844, height: 390 },
+  { name: 'desktop', width: 1440, height: 900 },
+];
+const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
+
+function mix(script, env = {}) {
+  const out = execFileSync('mix', ['run', '-e', `Code.eval_file("${script}")`], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, ...env },
+  });
+  return JSON.parse(resultLine(out));
+}
+
+function must(condition, message) {
+  if (!condition) throw new Error(`moved: ${message}`);
+  log(`still: ${message}`);
+}
+
+const box = (page, selector) =>
+  page.evaluate((s) => {
+    const el = document.querySelector(s);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: Math.round(r.x), y: Math.round(r.y + scrollY), w: Math.round(r.width), h: Math.round(r.height) };
+  }, selector);
+
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+async function noSideways(page, what) {
+  const d = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth }));
+  must(d.sw <= d.iw, `${what}: nothing scrolls sideways (${d.sw} <= ${d.iw})`);
+}
+
+/** Load /puzzles and hold the card to its first box until the animations
+ * are over. */
+async function land(page, what) {
+  await page.goto(`${BASE}/puzzles`);
+  await page.waitForSelector('#puzzles-hub .dk-rows');
+  const first = await box(page, '#hub-card');
+  const hubFirst = await box(page, '#puzzles-hub');
+  await sleep(1800);
+  const settled = await box(page, '#hub-card');
+  const hubSettled = await box(page, '#puzzles-hub');
+  must(same(first, settled), `${what}: the card as it lands and once it has settled ${JSON.stringify(settled)}`);
+  must(same(hubFirst, hubSettled), `${what}: the page as it lands and once it has settled (${hubSettled.h}px)`);
+}
+
+/** Tap a row in, and the one that was in front back: the page is the
+ * height it was. */
+async function tapAndBack(page, what) {
+  const was = await page.getAttribute('#hub-card', 'data-deck');
+  const before = await box(page, '#puzzles-hub');
+  const row = page.locator('button.dk-row').first();
+  const other = await row.getAttribute('data-deck');
+  await row.click();
+  await page.waitForSelector(`#hub-card[data-deck="${other}"]`);
+  await page.click(`#hub-row-${was}`);
+  await page.waitForSelector(`#hub-card[data-deck="${was}"]`);
+  await sleep(100);
+  const after = await box(page, '#puzzles-hub');
+  must(same(before, after), `${what}: #puzzles-hub is ${after.h}px before ${other} came in front and after ${was} went back`);
+}
+
+/** Press the card's button with its answer held back: the card is the
+ * same box while it says STARTING... as before. */
+async function pressHeld(page, what) {
+  if (!(await page.locator('#hub-go:not([disabled])').count())) return;
+  const before = await box(page, '#hub-card');
+  const slot = await box(page, '#hub-card .dk-action');
+  let release;
+  const held = new Promise((r) => (release = r));
+  await page.route(/\/papi\/(practice|decks)/, async (route) => {
+    if (route.request().url().includes('/papi/practice/decks')) return route.continue();
+    await held;
+    await route.abort().catch(() => {});
+  });
+  await page.click('#hub-go');
+  await page.waitForFunction(() => /STARTING/.test(document.querySelector('#hub-go').textContent));
+  const during = await box(page, '#hub-card');
+  const slotDuring = await box(page, '#hub-card .dk-action');
+  release();
+  // Aborted before the route goes: a press let through would start the
+  // run (KEEP GOING writes), and every later shot would be of another day.
+  await sleep(150);
+  await page.unroute(/\/papi\/(practice|decks)/);
+  must(same(before, during), `${what}: the card while its press is on the way`);
+  must(same(slot, slotDuring), `${what}: the button's slot while it says STARTING`);
+}
+
+async function shoot(context, name, prepare, checks = {}) {
+  if (ONLY && !ONLY.some((o) => name.startsWith(o))) return;
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  for (const size of SIZES) {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await land(page, `${name} ${size.name}`);
+    if (prepare) await prepare(page);
+    await sleep(1400);
+    await noSideways(page, `${name} ${size.name}`);
+    if (checks.tap && size.name === 'phone') await tapAndBack(page, `${name} ${size.name}`);
+    await page.mouse.move(0, 0);
+    await page.screenshot({ path: `${OUT}/${name}-${size.name}.png`, fullPage: true });
+    if (checks.press && size.name === 'phone') {
+      await pressHeld(page, `${name} ${size.name}`);
+      await page.goto('about:blank');
+    }
+  }
+  if (errors.length) throw new Error(`${name}: ${errors.join('; ')}`);
+  await page.close();
+  log(`${name} shot`);
+}
+
+(async () => {
+  const setup = process.env.PRACTICE_SETUP ? JSON.parse(process.env.PRACTICE_SETUP) : mix('playwright/review-practice/setup.exs');
+  log(`arranged: ${JSON.stringify(setup)}`);
+  const shape = (state) => log(`shaped: ${JSON.stringify(mix('playwright/review-practice/shape.exs', { SHAPE_EMAIL: setup.email, SHAPE_STATE: state }))}`);
+
+  const browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.PW_CHROMIUM, args: ['--no-sandbox'] });
+  const context = async (guest) => {
+    const c = guest ? await seatedContext(browser, guest, { deviceScaleFactor: 2 }) : await browser.newContext({ deviceScaleFactor: 2 });
+    await c.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+    return c;
+  };
+  try {
+    const account = await context(setup.guest);
+    if (!ONLY || ONLY.some((o) => o.startsWith('01') || o.startsWith('02'))) shape('ladder');
+    await shoot(account, '01-account-fix-one', null, { tap: true, press: true });
+    await shoot(account, '02-account-replies-in-front', async (page) => {
+      await page.click('#hub-row-opening_replies');
+      await page.waitForSelector('#hub-card[data-deck="opening_replies"]');
+    });
+    if (!ONLY || ONLY.some((o) => o.startsWith('03'))) shape('keep_going');
+    await shoot(account, '03-account-keep-going', null, { press: true });
+    if (!ONLY || ONLY.some((o) => o.startsWith('04'))) shape('scheduled');
+    await shoot(account, '04-account-practice-anyway', null, { press: true });
+    await account.close();
+
+    const fresh = await context(setup.fresh);
+    await shoot(fresh, '05-fresh-account', null, { tap: true, press: true });
+    await fresh.close();
+
+    const guest = await context(setup.bob);
+    await shoot(guest, '06-guest', null, { tap: true, press: true });
+    await guest.close();
+
+    const stranger = await context(null);
+    await shoot(stranger, '07-stranger');
+    await shoot(stranger, '08-stranger-openings', async (page) => {
+      await page.click('#hub-row-openings');
+      await page.waitForSelector('#hub-card[data-deck="openings"]');
+    });
+    await stranger.close();
+    log(`screenshots in ${OUT}`);
+  } finally {
+    await browser.close();
+  }
+})().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
