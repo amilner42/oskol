@@ -1,0 +1,391 @@
+# URLs and the `/papi` JSON API
+
+The routes are `lib/oskol_web/router.ex`; the decisions behind every answer
+are Gleam handlers under `src/oskol/handlers/`. What each page shows a player
+is in the Aveline doc `pages`; the subsystems behind the endpoints are in
+[home.md](home.md), [reviews.md](reviews.md), [puzzles.md](puzzles.md) and
+[identity.md](identity.md).
+
+## URLs
+
+The page URLs are Elm routes and server routes both: a visitor may
+arrive at any of them cold, and moving between them afterwards is a
+`pushUrl`, not a page load.
+
+- `/` the home page, which is two pages: a guest gets OSKOL, a board
+  playing by itself and one sentence over PLAY NOW (`Page.GameLanding`;
+  see the Aveline doc `pages`), an account gets its own home --
+  form and its streak, live games, practice, recent matches (`Page.Home`,
+  from `GET /papi/me/home`). `Main` picks by the session and picks again when
+  `/papi/me` lands, so a browser that turns out to be signed in ends up on
+  its own home with no reload, and one that logs out is handed the board
+  back. Until then `/` is a loading screen (`Ui.Loading`: the bar with only
+  the bird, which both homes' bars start with, and a thin loading bar), up
+  for at least a second from the page starting to load and until an
+  account's home has its answer, so neither home flashes before the other.
+  The server paints that same screen before the app boots (`spa.html.heex`)
+  and the app's bar picks its animation up where the server's left it. The
+  server serves the same shell either way.
+- `/papi/library`, `/papi/games/:slug` (GET and POST) the landing pages as
+  JSON for the Elm client. Public like the pages, session-based guest
+  identity, CSRF token in `x-csrf-token`. Envelope: `{"ok": true, ...}` or
+  `{"ok": false, "error": {"code", "message"}}` (404 not_found,
+  422 validation_failed, 500 server_error).
+- `/backgammon` create a game; `/backgammon?game=<id>` is the invite link.
+  Its head is the invitation while the room waits for its second player:
+  "Arie wants to play a match to 7 on a 5 min clock", what to do about it,
+  and the opening position as the card's picture (`landing.invite_head`,
+  in Gleam, from the room's row through the cap `persistence.room`: a
+  crawler wakes no room, and the inviter is the seat's name, not a live
+  connection's). Any other room -- started, over, unknown, another game's
+  -- and the bare page get the game's own head; the canonical is always
+  `/backgammon`, so an invite never competes with it
+- `/backgammon/<id>` a running game — and, until the second player arrives,
+  the waiting room: a room with no instance yet answers the game channel
+  with a lobby payload. The URL says which room and nothing else; what it
+  opens is the room's answer on the game channel, against the browser's
+  guest cookie. A browser holding no seat there is refused ("unauthorized",
+  never saying why) and the client sends it to the invite link, which is the
+  one page that says whether there is a seat to take. A legacy `?t=` (seat
+  tokens no longer exist) is ignored by every route and every handler.
+- `/backgammon/<id>/replay?game=<n>&step=<s>` a room's games played again,
+  a line of the record at a time, with the analysis engine's verdicts. It
+  opens for anyone with the link -- a replay is what both players and any
+  spectator already saw -- and is served the SPA shell, `noindex`. The board
+  faces the reader's own seat when their guest holds one here, else the seat
+  that played first, and the page turns the board around anyway. The table
+  offers it from the match history and at game over. Board, steps and
+  verdicts all come from `/record` and `/reviews`. The page keeps `step`
+  current in the address bar (replaced, not pushed, so back still leaves
+  the page), which is what makes a reload land on the same line and a
+  link carry a move to a friend; `step` is omitted at the start of a game.
+- `/puzzles` the practice home, PUZZLES on the home menu: what this
+  visitor has to practice and PRACTICE, which starts a run (see [puzzles.md](puzzles.md)). Open to anyone, indexable, in the sitemap; the
+  head (`SpaController.puzzles`) is "Puzzles" and the brief's one-liner,
+  the same to everyone.
+- `/puzzles/<id>` one puzzle: the position, "White to play 6-4. What's your
+  play?", the board to play it on, then the reveal. Open to anyone with
+  the link and indexable; `puzzles` is a reserved slug (before `/:slug` on
+  both sides). The
+  head (`SpaController.puzzle`, words from `handlers/puzzles.head`) is the
+  question as the title and og:title, the score and cube as the
+  description ("Match play, 3 away against 5. Cube centred."; no score is
+  "Unlimited play", one point each way "Single game" unless Crawford, the
+  picture's own words), the board's picture as og:image, nothing else; an
+  id nobody stored is a 404. Not in the sitemap: too many. There is one
+  prompt, `oskol/puzzles.prompt` ("White to play 6-4. What's your play?",
+  "White to play. Double?", "White is doubled. Take?"): the wire, the head,
+  the page and the picture all read it. `/puzzles/<id>?s=<token>` is a
+  **story link** (`handlers/shares`): the same page, whose head says
+  "Arie got this wrong. What's your play?" (the sharer's name, then the
+  prompt's question: "Double?", "Take?") and whose reveal, after the
+  reader's own attempt, adds "Arie played 24/23 13/11 (a bad move) and
+  lost 2 points." The canonical stays the clean URL; the picture ignores
+  `?s=`; a token nobody minted, or minted for another puzzle, is ignored
+  and the page is the plain one. Only the seat that made the mistake can
+  mint one (`POST /papi/puzzles/:id/shares`), and it names the sharer
+  only, never the opponent.
+- `/login/<token>` the page a mailed sign-in link opens. It **reads** the
+  token and writes nothing: the page says "Sign in as you@example.com" with
+  one button, and that button POSTs `/papi/auth/link`, which is the only
+  thing that spends it. So a mail scanner prefetching the link cannot burn
+  it and no other site can sign a visitor in. Under the button: "Opened
+  this on another device? Enter the code from the mail there instead."
+  Pressed, the page is the win every sign-in ends on ("You're in.", how
+  many games came along, CONTINUE to where it was asked from), plus a line
+  for a link that brought nothing, pointing at the other device. A dead
+  token renders "That link has expired. We'll send a fresh one." over the
+  sign-in (`Ui.SignIn`). Served the SPA shell, `noindex`; the flags
+  (`state`, `email`, `next`) ride in a `login` meta tag. A bare `/login` names no game: 404. `login` and `dev` are
+  reserved slugs (declared before the game routes).
+- `/poker`, `/go`, `/chess` and anything under them: 302 to `/` (the games
+  that were removed).
+- `/puzzles/<id>.png` a puzzle's link picture (`OskolWeb.Plugs.PuzzlePicture`,
+  an endpoint plug, not a route; see [puzzles.md](puzzles.md)).
+- `/sitemap.xml` (`/`, each game's page, `/puzzles`) and `/status` (is the
+  analysis engine answering, and is it really the engine:
+  `OskolWeb.StatusController`).
+- Dev only (`:dev_routes`): `/dev/mailbox` and `/dev/last-login` (see
+  [identity.md](identity.md#mail)).
+
+## The `/papi` API
+
+The landing pages read and write over JSON. Every response is the same
+envelope: `{"ok": true, ...payload}`, or `{"ok": false, "error": {"code",
+"message"}}` — including on a non-2xx status, so the client parses bodies
+rather than leaning on the status. Requests go same-origin, so the guest
+cookie rides along and identity needs nothing from the client; writes carry
+the page's CSRF token in `x-csrf-token`.
+
+```
+GET  /papi/library                     {ok, games, coming_soon, guest_name}
+GET  /papi/games/:slug                 {ok, game, formats, clock_presets, copy, guest_name}
+POST /papi/games/:slug                 {format, name, clock, opponent}
+                                         -> {ok, id, path, player_id}
+                                       `opponent` is `friend` (the link, and
+                                       anything else) or `bot`; a bot game is
+                                       forced to no clock and is already
+                                       running when this answers
+GET  /papi/games/:slug/rooms/:id       {ok, state, inviter_name, summary, disconnected}
+POST /papi/games/:slug/rooms/:id       {name} | {player_id} -> {ok, id, path, player_id}
+POST /papi/games/:slug/rooms/:id/close {} -> {ok, closed: true}  (a seat
+                                       only, and only while the room has no
+                                       game in it: a lobby nobody joined.
+                                       422 "You are not at this table" for
+                                       anyone else, 422 "That game already
+                                       started" once there is a game, 404
+                                       for a room no row remembers; a second
+                                       press is the same yes)
+GET  /papi/games/:slug/rooms/:id/reviews  (open) the index, and only the index
+                                       {ok, players, games: [{game_number,
+                                           status, turns}]}  -- a few hundred
+                                       bytes for a whole match
+GET  /papi/games/:slug/rooms/:id/reviews/:game_number  (open) one game
+                                       {ok, game_number, status, turns, review}
+                                         review is null unless status is done;
+                                         when it is, {levels, timing_ms, players,
+                                         turns}; a turn names its record lines
+                                         (entry, double_entry, answer_entry) and
+                                         each candidate move its position and
+                                         landings. A number the room has no game
+                                         for is a 404.
+POST /papi/games/:slug/rooms/:id/reviews/retry  {game_number} -> the index, a
+                                         failed game queued again (a seat only)
+GET  /papi/games/:slug/rooms/:id/record  (open)
+                                       {ok, slug, id, you, seated, accounts, record}  (the game's
+                                       `record`; `you` is the seat the board faces --
+                                       the reader's own, else the first -- and `seated`
+                                       says whether that seat is theirs)
+GET  /papi/games/:slug/rooms/:id/ratings  (open) {ok, players: [{player_id,
+                                       games, pr, career}], games:
+                                       [{game_number, players: [{player_id,
+                                       pr}]}]} -- each seat's PR over the games
+                                       of THIS match the engine has graded (null
+                                       while it has graded none), `career` the
+                                       same seat's account over every graded game
+                                       it has played (null for a seat no account
+                                       owns and under 5 games), and each graded
+                                       game's PRs by seat, for the match panel
+GET  /papi/puzzles/:id                 (open) {ok, id, kind, question, tree,
+                                         prompt} -- the position, the sentence it
+                                         asks in, and for a checker play every
+                                         legal way to play the roll as a DAG of
+                                         boards. Never the answer, never a name,
+                                         never the game it came from
+GET  /papi/puzzles/:id/tree?node=      (open) one level of a tree too big to send
+                                         whole: {ok, node, tree: Node}
+POST /papi/puzzles/:id/attempts        {moves | band, key, s?, deck?} -> {ok, verdict, yours,
+                                         best, top, cube, schedule, story}. Open; a
+                                         guest and a puzzle outside the caller's deck
+                                         get schedule: null and nothing is written.
+                                         `s` is the story token the page was opened
+                                         with: `story` is {name, kind, played, grade,
+                                         equity_lost, date, result, headline, line}
+                                         where it opens one for this puzzle, else
+                                         null -- on the reveal and nowhere earlier
+POST /papi/puzzles/:id/attempts/:key/outcome  {outcome: sooner|got_it|knew_it|never, deck?}
+                                         -> {ok, schedule}. The attempt's own
+                                         account only (403); 409 with nothing to
+                                         amend
+POST /papi/puzzles/:id/shares          {} -> {ok, token, url}  (the seat that
+                                       made the mistake, by the holder rule --
+                                       guest or account -- mints its story link,
+                                       `/puzzles/:id?s=<token>`, the same one on
+                                       every press; the opponent and a stranger
+                                       are a 403 in one sentence; a GET never
+                                       mints)
+GET  /papi/puzzles/:id/mine            (a seat in the source game, either side)
+                                         {ok, who, opponent, played, equity_lost,
+                                         grade, date, result, replay}; 404 otherwise.
+                                         `who` is "you" or the other seat's display
+                                         name; `opponent` the other seat's, always;
+                                         `date` the day the game ended (its review
+                                         row's), never the day the source was written
+GET  /papi/puzzles/:id/why             (a seat in the source game, either side)
+                                         {ok, who, opponent, grade}; 404 otherwise.
+                                         Why this position is in front of you, asked
+                                         **before** the answer: the band and whose
+                                         game it was, and nothing derived from the
+                                         answer -- no move played, no equity, no
+                                         result. The session's quiet line over the
+                                         board; a shared link is a 404 and says
+                                         nothing
+GET  /papi/games/:slug/rooms/:id/puzzles?game=n  (a seat) {ok, puzzles: [{id, kind,
+                                         prompt, due}], cursor, counts, today, game}
+                                         -- 404 without a seat; 409 `puzzles_pending`
+                                         while the game's review is done but its
+                                         puzzles are not yet written (the page
+                                         asks again in a moment)
+GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
+                                       normalised: the one that answered comes back)
+POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no
+                                       enumeration; over a rate limit it sends
+                                       nothing and says the same. Mails a link and
+                                       a six-digit code)
+POST /papi/auth/link                   {token} -> {ok, saved, next, user, new}
+POST /papi/auth/code                   {email, code} -> {ok, saved, next, user, new}
+                                       (the code redeems only from the browser that
+                                       asked; 5 tries, then dead)
+POST /papi/auth/logout                 {ok}  (nilifies guests.user_id and drops
+                                       this browser's sockets)
+GET  /papi/me                          {ok, guest_name, user: {email, name} | null}
+POST /papi/me/name                     {name} -> {ok, user}  (a signed-in browser
+                                       renames its account; 422 "That name is
+                                       taken." when another account has it)
+GET  /papi/practice[?band=<grade>]     {ok, puzzles: [{id, kind, prompt, due}],
+                                         cursor: null, counts: {due,
+                                         new_today, new_tomorrow, deck} | null,
+                                         mistakes: {puzzles, games} | null,
+                                         today: {done} | null,
+                                         severity: [{grade, total,
+                                           in_progress, patched, due,
+                                           new_left}] | null,
+                                         lead: "<grade>" | null,
+                                         patched_level, game: null}
+                                       -- an account's deck (due, then new;
+                                       new_tomorrow is the day's budget or
+                                       the cards never seen, whichever is
+                                       fewer), a guest's own mistakes
+                                       (unscheduled, counts null, no writes;
+                                       `mistakes` counts all of them, from
+                                       how many games), or nothing. `today`
+                                       is a plain count of the answers
+                                       recorded in the caller's own local
+                                       day: **no target, and so no quota**.
+                                       `severity` is the mistakes by band,
+                                       worst first, each in three states --
+                                       untouched, in progress (started,
+                                       below the patched rung) and patched --
+                                       plus what that band still has to do
+                                       today: `due` now, and `new_left`,
+                                       the ones it has never shown that the
+                                       day's budget of new mistakes still
+                                       allows (the budget is the deck's, not
+                                       the band's). `lead` is the worst band
+                                       with work, else the worst the player
+                                       has made a mistake in at all, else
+                                       null -- one choice, so the hub and the
+                                       home cannot make it two ways. All an
+                                       account's only. `?band=` narrows the
+                                       puzzles to that one tier, due first and
+                                       then ones never seen, worst first
+                                       inside it: what FIX ONE runs. A band
+                                       that is not one of the three is a 422,
+                                       never the whole deck. Never paged:
+                                       every fetch is the front of the queue
+GET  /papi/decks                       {ok, decks: [{id, name, blurb, size, standing:
+                                         {joined, total, in_progress, patched, left,
+                                         due, new_left} | null}], patched_level} --
+                                       the universal sets with positions built
+                                       (see [puzzles.md](puzzles.md#universal-sets));
+                                       `standing` is an account's
+GET  /papi/decks/:id                   {ok, deck, puzzles: [{id, kind, prompt, due}],
+                                         today} -- an account that added it gets
+                                       its queue (due, then new within the set's
+                                       own budget); anybody else walks it in
+                                       order, nothing written. 404 for a set that
+                                       names nothing or has nothing built
+POST /papi/decks/:id/join              {tz} -> the same session, once the set is
+                                       added (an account's; 409 `sign_in` for
+                                       anybody else). Idempotent: adding again
+                                       adds only positions built since
+GET  /papi/puzzles/random              {ok, id, kind, prompt}  TRY ONE: a
+                                       random complete puzzle whose answer
+                                       stands clear (a checker play whose
+                                       runner-up gives up 0.02 or more, a
+                                       cube in an outer band, |margin| >=
+                                       0.08); 404 with a sentence while the
+                                       pool has none. Reads nothing about
+                                       the caller and writes nothing
+POST /papi/practice/more               ten more new ones into rotation, then the
+                                       same session. Nothing in the client
+                                       presses it: the day has no target, and
+                                       `new_per_day` is the only cap
+POST /papi/practice/tz                 {tz} -> {ok, tz}  (an IANA name, on the
+                                       account's deck; Etc/UTC until set)
+POST /papi/practice/bury               {id} -> {ok, id, level, due}  (back at
+                                       the player's own midnight, level kept;
+                                       409 when it is not in rotation)
+GET  /papi/me/prefs                    {ok, prefs}
+POST /papi/me/prefs                    {key, value} -> {ok, prefs}
+GET  /papi/me/games                    {ok, games: [{slug, id, path, status,
+                                         opponent, format, clock, your_move,
+                                         closable,
+                                         time: {mine_ms, theirs_ms, running,
+                                         free_ms, age_s} | null, idle_s}]}
+                                       -- the unfinished rooms the caller
+                                       holds a seat in (holder rule), newest activity
+                                       first, from the rows alone.
+                                       `closable` is whether the list itself
+                                       may end this room (a lobby): the
+                                       server's call, never a format the
+                                       client reads
+GET  /papi/me/home                     {ok, signed_in: false} for a guest;
+                                       else {ok, signed_in: true, live, form,
+                                       practice, recent, more, next} -- the
+                                       whole signed-in home in one answer
+                                       (see [home.md](home.md))
+GET  /papi/me/games/graded?before=<cursor>
+                                       {ok, rooms, more, next} -- the next ten
+                                       recent rooms (a match, a session or a
+                                       single game, with its graded games
+                                       inside). `before` is the previous
+                                       answer's `next` and nothing else; a
+                                       mangled one is a 422, never the first
+                                       page again
+```
+
+`path` is the URL of the seat that was just taken (`/:slug/:id`, carrying
+nothing): the client goes there, and the seat waits in the lobby until its
+opponent arrives. The seat is held by the guest cookie the write came with,
+so the same URL is what anyone would be given for that room. `state` is
+`open` (a free seat), `away` (a seat whose player is gone and that anyone
+with the code may take back), `owned` (the only seats free belong to
+accounts: nothing on offer), `seated` (with `path`: the caller already
+holds a seat there, by its guest or its account, and the client goes
+straight to the table), `full` (both players are there) or `missing`
+(the room is over). `disconnected` names only the seats a visitor may
+actually take, so an owned seat is never listed and nothing on the page can
+be typed at it.
+
+A game's own `clocks` are preset ids; `clock_presets` carries every preset,
+so the picker can name the ones the game offers. Statuses: 404 `not_found`
+(no such game, no such code, a room that is over), 422 `validation_failed`
+(a name, a mode, a clock or a seat the room refused), 409 `not_in_rotation`
+(a puzzle the session has moved past), 500 `server_error`.
+Every decision behind these lives in `src/oskol/handlers/landing.gleam`,
+except the record's, in `src/oskol/handlers/record.gleam`, and the reviews',
+in `src/oskol/handlers/reviews.gleam`. A lobby, a slug that is not the
+room's game and a room that is gone all answer the same 404, as the game
+channel refuses without saying which. The caller's guest (the cap
+`seated_game`, which answers which seat a guest holds) picks the seat the
+record's board faces, and is what a retry takes. Nothing a reader does
+spends engine time.
+
+`/papi/me/games` is what the home page opens with: every room in `waiting`
+or `playing` where the caller holds a seat by the holder rule — the guest
+that took an unowned seat, or the account that owns one, so an account's
+games follow it to any browser it signs in on and a browser that logged
+out is offered none of them — read from `games` with no room woken
+(`Persistence.seated_rooms`, the cap `persistence.seated_rooms`, the
+handler `landing.my_games_json`, which asks `seat.held_by` of each room
+and drops the rooms where the answer is nobody). Each
+entry names the opponent (null in a lobby), the format and clock by name,
+whether it is the caller's turn (`your_move`, from the row's `state`), the
+two clocks as the snapshot last read them with how long ago that was
+(`time`, so the client can charge the running one and count it down), and
+seconds since the room was touched. The guest home (`Page/GameLanding.elm`)
+offers them as "N live games" in its bar's ☰ (with a dot on ☰) for as
+long as there are any, and the list opens only when that is pressed: nothing pops up over the page a
+player came to play on. Nothing prunes games (they
+are kept, finished or not), so nothing bounds the list -- but a lobby
+nobody joined can be closed from its own row (`closable`; see [rooms.md](rooms.md#ending-a-room)).
+
+`/papi/me/prefs` is the visitor's own display taste — today the backgammon
+board's colours, under `backgammon_theme`. Gleam owns the whitelist
+(`src/oskol/guests/prefs.gleam`): an unknown key or a value that names no
+theme is a 422 and nothing is written. It is display only: a theme never
+reaches a scene, an event or the game channel, and each player's board is
+their own. The client also keeps the pick in `localStorage` (the `storePref`
+port), which is what paints the board before the round trip and all a
+visitor whose guest cookie is gone has.
