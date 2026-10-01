@@ -412,7 +412,7 @@ anAccount =
                 loaded accountJson
                     |> rendered
                     |> Query.find [ id "hub-day" ]
-                    |> Query.has [ text "5 days running · 2 fixed today" ]
+                    |> Query.has [ text "5 days running · 2 practised today" ]
         , test "the lead in front: its mark, its name, its ring, FIX ONE" <|
             \_ ->
                 card accountJson
@@ -664,7 +664,7 @@ aFreshAccount =
                         [ Query.find [ id "hub-fresh" ] >> Query.has [ text Mistakes.freshLine ]
                         , Query.find [ id "hub-card" ] >> Query.has [ dataAttr "data-deck" "openings" ]
                         , Query.find [ id "hub-go" ] >> Query.has [ text "START" ]
-                        , Query.find [ id "hub-day" ] >> Query.has [ text "Nothing fixed yet today" ]
+                        , Query.find [ id "hub-day" ] >> Query.has [ text "Nothing practised yet today" ]
                         ]
         , test "its tiers are quiet rows with nothing to tap" <|
             \_ ->

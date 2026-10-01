@@ -205,11 +205,27 @@ today : Test
 today =
     describe "the day, wherever the ring used to be"
         [ test "a plain count, with nothing to measure it against" <|
-            \_ -> Mistakes.fixedToday 3 |> Expect.equal "3 fixed today"
+            \_ -> Mistakes.practisedToday 3 |> Expect.equal "3 practised today"
         , test "one is one, not a fraction of anything" <|
-            \_ -> Mistakes.fixedToday 1 |> Expect.equal "1 fixed today"
+            \_ -> Mistakes.practisedToday 1 |> Expect.equal "1 practised today"
         , test "a day not started yet says so without a goal" <|
-            \_ -> Mistakes.fixedToday 0 |> Expect.equal "Nothing fixed yet today"
+            \_ -> Mistakes.practisedToday 0 |> Expect.equal "Nothing practised yet today"
+        , test "with the streak, on the practice home's head line" <|
+            \_ -> Mistakes.dayStreakLine { streak = 5, done = 2 } |> Expect.equal "5 days running · 2 practised today"
+
+        -- A count of answers counts misses too: it never says "fixed",
+        -- which only a mistake over the patched rung has earned.
+        , test "no count of answers says fixed" <|
+            \_ ->
+                [ Mistakes.practisedToday 0
+                , Mistakes.practisedToday 8
+                , Mistakes.dayStreakLine { streak = 0, done = 3 }
+                , Mistakes.dayStreakLine { streak = 5, done = 0 }
+                , Mistakes.runSummary { right = 1, total = 1 }
+                , Mistakes.runSummary { right = 0, total = 12 }
+                ]
+                    |> List.filter (String.contains "fixed")
+                    |> Expect.equal []
         ]
 
 
@@ -222,7 +238,7 @@ runEnd =
         [ test "one fixed is a whole session, and says so" <|
             \_ ->
                 Mistakes.runSummary { right = 1, total = 1 }
-                    |> Expect.equal "One fixed. That is how it is done."
+                    |> Expect.equal "One right. That is how it is done."
         , test "one missed says when it comes back, not that you failed" <|
             \_ ->
                 Mistakes.runSummary { right = 0, total = 1 }
@@ -332,7 +348,7 @@ noJargon =
                             ([ Mistakes.bandName "very_bad"
                              , Mistakes.line (band "bad" 3 1 1)
                              , Mistakes.milestone 4
-                             , Mistakes.fixedToday 3
+                             , Mistakes.practisedToday 3
                              , Mistakes.tierName "very_bad"
                              , Mistakes.leftToFix (band "very_bad" 61 30 23)
                              , Mistakes.goodShapeLine "very_bad"
@@ -427,10 +443,10 @@ theHome =
         , test "the day: the streak left off at zero, the count said in words at zero" <|
             \_ ->
                 Expect.all
-                    [ \_ -> Mistakes.dayStreakLine { streak = 5, done = 3 } |> Expect.equal "5 days running · 3 fixed today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 1, done = 0 } |> Expect.equal "1 day running · nothing fixed yet today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 0 } |> Expect.equal "Nothing fixed yet today"
-                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 2 } |> Expect.equal "2 fixed today"
+                    [ \_ -> Mistakes.dayStreakLine { streak = 5, done = 3 } |> Expect.equal "5 days running · 3 practised today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 1, done = 0 } |> Expect.equal "1 day running · nothing practised yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 0 } |> Expect.equal "Nothing practised yet today"
+                    , \_ -> Mistakes.dayStreakLine { streak = 0, done = 2 } |> Expect.equal "2 practised today"
                     ]
                     ()
         , test "the line under each button" <|

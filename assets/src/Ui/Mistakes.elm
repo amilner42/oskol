@@ -18,7 +18,7 @@ module Ui.Mistakes exposing
     , legendParts
     , legendTop
     , strangerTierLine
-    , fixedToday
+    , practisedToday
     , freshLine
     , guestPracticeLine
     , guestStateLine
@@ -237,22 +237,25 @@ nextTierLabel grade =
     String.toUpper ("Work on " ++ mark grade ++ " " ++ bandWord grade ++ " moves")
 
 
-{-| The day, wherever it used to be a ring: a plain count of what has
-been answered, and nothing to measure it against.
+{-| The day: a plain count of what has been answered, misses and all,
+and nothing to measure it against. **Practised, never "fixed"**: a miss
+fixes nothing, and a count that said "8 fixed" over six red misses is the
+number that lies. "Fixed" and "patched" are kept for a mistake that has
+actually crossed the patched rung.
 
-    "3 fixed today"
-    "1 fixed today"
-    "Nothing fixed yet today"
+    "3 practised today"
+    "1 practised today"
+    "Nothing practised yet today"
 
 -}
-fixedToday : Int -> String
-fixedToday done =
+practisedToday : Int -> String
+practisedToday done =
     case max 0 done of
         0 ->
-            "Nothing fixed yet today"
+            "Nothing practised yet today"
 
         n ->
-            String.fromInt n ++ " fixed today"
+            String.fromInt n ++ " practised today"
 
 
 {-| The end of a run, over the marks. A run has no fixed length, so the
@@ -270,7 +273,7 @@ runSummary score =
 
     else if score.total == 1 then
         if score.right == 1 then
-            "One fixed. That is how it is done."
+            "One right. That is how it is done."
 
         else
             "One faced. It comes back tomorrow."
@@ -709,16 +712,16 @@ wonBack cost =
 has kept showing up, and what today has come to. The streak is left off
 at zero rather than said as a zero.
 
-    "5 days running · 3 fixed today"
-    "1 day running · nothing fixed yet today"
-    "Nothing fixed yet today"
+    "5 days running · 3 practised today"
+    "1 day running · nothing practised yet today"
+    "Nothing practised yet today"
 
 -}
 dayStreakLine : { streak : Int, done : Int } -> String
 dayStreakLine day =
     let
         today =
-            fixedToday day.done
+            practisedToday day.done
     in
     case max 0 day.streak of
         0 ->

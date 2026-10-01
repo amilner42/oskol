@@ -1327,7 +1327,7 @@ runEnd =
                 in
                 rendered one
                     |> Expect.all
-                        [ \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "One fixed. That is how it is done." ]
+                        [ \q -> q |> Query.find [ id "pz-score" ] |> Query.has [ text "One right. That is how it is done." ]
                         ]
         , test "a guest is asked to sign in, in the one component, going on to the practice home" <|
             \_ ->
@@ -1805,8 +1805,8 @@ runProgress =
                         [ Query.find [ id "pz-progress-label" ] >> Query.has [ text "??" ]
                         , Query.find [ id "pz-ring" ] >> Query.has [ dataAttr "data-done" "2", dataAttr "data-target" "5" ]
                         , Query.find [ id "pz-ring-count" ] >> Query.has [ text "2/5" ]
-                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 fixed today" ]
-                        , Query.has [ dataAttr "aria-label" "?? · 2 of today's 5 done · 3 fixed today" ]
+                        , Query.find [ id "pz-progress-count" ] >> Query.has [ text "3 practised today" ]
+                        , Query.has [ dataAttr "aria-label" "?? · 2 of today's 5 done · 3 practised today" ]
                         , Query.hasNot [ attribute (Html.Attributes.attribute "role" "progressbar") ]
                         ]
         , test "the ring draws its check once today's set is done" <|
@@ -1908,7 +1908,7 @@ runProgress =
             \_ ->
                 rendered (inRun 0 (blanks 3) (Just { done = 1 }))
                     |> Expect.all
-                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "1 fixed today" ]
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "1 practised today" ]
                         , Query.hasNot [ id "pz-ring" ]
                         ]
         , test "a guest in a run has no day of theirs, so it is the mark alone" <|
@@ -1945,14 +1945,14 @@ runProgress =
                     [ \_ ->
                         rendered model
                             |> Query.find [ id "pz-progress-count" ]
-                            |> Query.has [ text "4 fixed today" ]
+                            |> Query.has [ text "4 practised today" ]
                     , \_ ->
                         model
                             |> answerWith "move_pass"
                             |> rendered
                             |> Query.find [ id "pz-progress" ]
                             |> Expect.all
-                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 fixed today" ]
+                                [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 practised today" ]
                                 , Query.find [ id "pz-ring-count" ] >> Query.has [ text "3/5" ]
                                 ]
                     ]
@@ -1967,7 +1967,7 @@ runProgress =
                     |> rendered
                     |> Query.find [ id "pz-progress" ]
                     |> Expect.all
-                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 fixed today" ]
+                        [ Query.find [ id "pz-progress-count" ] >> Query.has [ text "5 practised today" ]
                         , Query.find [ id "pz-ring-count" ] >> Query.has [ text "1/3" ]
                         ]
         , test "a run of early answers says it is practice only, and counts nothing" <|

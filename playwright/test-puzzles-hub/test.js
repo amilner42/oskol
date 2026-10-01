@@ -149,7 +149,7 @@ async function progressOf(page, seen) {
     ring,
     strip: await page.evaluate(() => { const r = document.querySelector('#pz-progress').getBoundingClientRect(); return { y: Math.round(r.y), h: Math.round(r.height) }; }),
     filled: await page.locator('#pz-marks [data-mark]:not([data-mark="blank"])').count(),
-    today: Number((count.match(/(\d+) fixed today/) || [0, 0])[1]),
+    today: Number((count.match(/(\d+) practised today/) || [0, 0])[1]),
   };
 }
 
@@ -361,7 +361,7 @@ async function run(browser, setup, errors) {
     await alice.waitForSelector('#pz-keep-going[data-action="continue"]');
     log('I\'M DONE with today unfinished offers KEEP GOING, which goes on with it');
     const oneToday = (await alice.textContent('#pz-today')).trim();
-    must(oneToday === '1 fixed today', `the day counts the one: "${oneToday}"`);
+    must(oneToday === '1 practised today', `the day counts the one: "${oneToday}"`);
 
     // ---- 3c. the rest of the day's new ones, watching the strip ----
     await alice.goto(`${BASE}/puzzles`);
@@ -378,7 +378,7 @@ async function run(browser, setup, errors) {
     log(`today's set done, the end card offers ${way}`);
     must(!(await alice.locator('#pz-more-due').count()), 'the end card counts nothing that is left');
     const endToday = (await alice.textContent('#pz-today')).trim();
-    must(endToday === `${NEW_PER_DAY} fixed today`, `the day's count, under the score: "${endToday}"`);
+    must(endToday === `${NEW_PER_DAY} practised today`, `the day's count, under the score: "${endToday}"`);
     // Read back from the server, so the count is not the client's own
     // arithmetic being asked about itself -- and there is no target.
     const day = (await (await alice.request.get(`${BASE}/papi/practice`)).json()).today;

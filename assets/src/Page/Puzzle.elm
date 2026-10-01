@@ -1327,7 +1327,7 @@ wayLine model way =
             ""
 
 
-{-| The day, under the score: "3 fixed today". The same words the hub
+{-| The day, under the score: "3 practised today". The same words the hub
 and the session use, and the same plain count.
 -}
 viewToday : Model -> Html Msg
@@ -1418,7 +1418,7 @@ dayLine model done =
             Decks.doneToday done
 
         Nothing ->
-            Mistakes.fixedToday done
+            Mistakes.practisedToday done
 
 
 viewAfter : Model -> After -> List (Html Msg)
@@ -1621,7 +1621,7 @@ underLine model =
         Maybe.map (\today -> dayLine model today.done) model.today |> Maybe.withDefault ""
 
 
-{-| "?? · 3 of today's 5 done · 3 fixed today": the strip as one
+{-| "?? · 3 of today's 5 done · 3 practised today": the strip as one
 sentence, for a reader who hears it rather than sees it. The mark alone
 for a guest, who has no day counted.
 -}
