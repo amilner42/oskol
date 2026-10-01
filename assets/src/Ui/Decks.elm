@@ -4,9 +4,16 @@ module Ui.Decks exposing
     , hasWork
     , learnedRun
     , restingLine
+    , rowLeft
     , runSummary
+    , sizeEyebrow
+    , sizeLine
     , standingLine
     , startLabel
+    , startLine
+    , stateLine
+    , stateParts
+    , tryLine
     )
 
 {-| Every sentence the universal sets are said in: the openings and the
@@ -113,6 +120,112 @@ learnedRun n =
 
         _ ->
             Just ("You learned " ++ String.fromInt n ++ " of them.")
+
+
+{-| A set in its three states, as the grid is filled in: learned, in
+progress, still to start, and how many in all. Every part even at zero,
+because the line is the grid's legend too.
+
+    "4 learned · 6 in progress · 5 to start · of 15"
+
+-}
+stateLine : { total : Int, untouched : Int, inProgress : Int, patched : Int } -> String
+stateLine counts =
+    String.join " · " (List.map Tuple.second (stateParts counts))
+
+
+{-| The same line in its parts, each with the state it names
+("patched" -- the grid's word for the top rungs, said "learned" here --,
+"in-progress", "to-start", "total").
+-}
+stateParts : { total : Int, untouched : Int, inProgress : Int, patched : Int } -> List ( String, String )
+stateParts counts =
+    [ ( "patched", String.fromInt (max 0 counts.patched) ++ " learned" )
+    , ( "in-progress", String.fromInt (max 0 counts.inProgress) ++ " in progress" )
+    , ( "to-start", String.fromInt (max 0 counts.untouched) ++ " to start" )
+    , ( "total", "of " ++ String.fromInt (max 0 counts.total) )
+    ]
+
+
+{-| A set's size, over its name: "15 POSITIONS".
+-}
+sizeEyebrow : Int -> String
+sizeEyebrow n =
+    String.fromInt n
+        ++ (if n == 1 then
+                " POSITION"
+
+            else
+                " POSITIONS"
+           )
+
+
+{-| A set nobody has added, for anybody: how many to learn.
+
+    "15 positions to learn"
+
+-}
+sizeLine : Int -> String
+sizeLine n =
+    String.fromInt n
+        ++ (if n == 1 then
+                " position to learn"
+
+            else
+                " positions to learn"
+           )
+
+
+{-| Under START: what adding the set means, in its own pace.
+
+    "Five new a day, and each comes back until you know it."
+
+-}
+startLine : Int -> String
+startLine pace =
+    String.toUpper (String.left 1 (paceWord pace))
+        ++ String.dropLeft 1 (paceWord pace)
+        ++ " new a day, and each comes back until you know it."
+
+
+paceWord : Int -> String
+paceWord n =
+    case n of
+        1 ->
+            "one"
+
+        2 ->
+            "two"
+
+        3 ->
+            "three"
+
+        5 ->
+            "five"
+
+        10 ->
+            "ten"
+
+        _ ->
+            String.fromInt n
+
+
+{-| Under TRY, for anybody without an account: a walk, nothing kept.
+-}
+tryLine : String
+tryLine =
+    "Played in order, nothing kept. Sign in to keep your place."
+
+
+{-| A row's number for a set: what is left to learn of it.
+-}
+rowLeft : Int -> String
+rowLeft n =
+    if n <= 0 then
+        "All learned"
+
+    else
+        String.fromInt n ++ " left"
 
 
 {-| What a guest reads at the end of a run through a set, over the

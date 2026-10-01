@@ -27,6 +27,8 @@ suite =
         , ladder
         , days
         , mastery
+        , grid
+        , ring
         ]
 
 
@@ -446,4 +448,91 @@ mastery =
                         , Query.find [ tag "rect", attr "data-part" "patched" ]
                             >> Query.has [ attr "x" "64", attr "width" "256" ]
                         ]
+        ]
+
+
+
+{-| The mastery grid: a square a position, coloured by rung, its box a
+function of the count alone.
+-}
+grid : Test
+grid =
+    let
+        cells =
+            [ { level = 5, status = "active" }
+            , { level = 3, status = "active" }
+            , { level = 2, status = "active" }
+            , { level = 1, status = "active" }
+            , { level = 0, status = "active" }
+            , { level = 0, status = "new" }
+            , { level = 2, status = "suspended" }
+            ]
+
+        drawn columns =
+            Charts.grid { cells = cells, columns = columns, patchedLevel = 4, sentence = "s" }
+                |> Query.fromHtml
+    in
+    describe "the mastery grid"
+        [ test "one square a position" <|
+            \_ -> drawn Nothing |> Query.findAll [ tag "rect" ] |> Query.count (Expect.equal 7)
+        , test "each coloured by its rung: green from patched, three yellows, paper" <|
+            \_ ->
+                drawn Nothing
+                    |> Query.findAll [ tag "rect" ]
+                    |> Expect.all
+                        [ Query.index 0 >> Query.has [ attr "fill" "#1f7a45" ]
+                        , Query.index 1 >> Query.has [ attr "fill" "#d9a100" ]
+                        , Query.index 2 >> Query.has [ attr "fill" "#e6bd3a" ]
+                        , Query.index 3 >> Query.has [ attr "fill" "#f2d27a" ]
+                        , Query.index 5 >> Query.has [ attr "fill" "rgb(222,217,203)" ]
+                        , Query.index 6 >> Query.has [ attr "fill" "rgb(222,217,203)", attr "stroke" "#23243a" ]
+                        ]
+        , test "its box is its count's: rows of the columns asked for" <|
+            \_ ->
+                drawn (Just 3)
+                    |> Query.has [ attr "data-count" "7", attr "data-columns" "3", attr "data-rows" "3", attr "viewBox" "0 0 34 34" ]
+        , test "a tier's columns: ceil (sqrt n * 1.6), at most 24" <|
+            \_ ->
+                [ 6, 44, 141, 1000 ]
+                    |> List.map (Charts.gridColumns Nothing)
+                    |> Expect.equal [ 4, 11, 19, 24 ]
+        , test "from counts alone: patched first, then the yellows, then the missed, then the untouched" <|
+            \_ ->
+                Charts.gridFromCounts { levels = [ 3, 1, 0, 1, 2, 0, 0, 0 ], untouched = 2, total = 7 }
+                    |> List.map (\c -> ( c.level, c.status ))
+                    |> Expect.equal [ ( 4, "active" ), ( 4, "active" ), ( 3, "active" ), ( 1, "active" ), ( 0, "active" ), ( 0, "new" ), ( 0, "new" ) ]
+        ]
+
+
+{-| Today's ring: the arc done over today's set, the fraction in the
+middle, a check once it is done, a dash on a day with nothing in it.
+-}
+ring : Test
+ring =
+    let
+        drawn done target =
+            Charts.ring { done = done, target = target, label = "l" } |> Query.fromHtml
+    in
+    describe "today's ring"
+        [ test "the arc is the fraction done" <|
+            \_ ->
+                drawn 3 5
+                    |> Query.find [ tag "circle", attr "pathLength" "100" ]
+                    |> Query.has [ attr "stroke-dasharray" "60 100" ]
+        , test "the fraction in the middle" <|
+            \_ -> drawn 3 5 |> Query.has [ text "3/5", attr "data-done" "3", attr "data-target" "5" ]
+        , test "a check once today's set is done, and no fraction" <|
+            \_ ->
+                drawn 5 5
+                    |> Expect.all
+                        [ Query.findAll [ tag "path", attr "pathLength" "1" ] >> Query.count (Expect.equal 1)
+                        , Query.hasNot [ text "5/5" ]
+                        ]
+        , test "a dash on a day with nothing set" <|
+            \_ -> drawn 0 0 |> Query.has [ text "—" ]
+        , test "more than the day asked is still a full ring, never past it" <|
+            \_ ->
+                drawn 7 5
+                    |> Query.find [ tag "circle", attr "pathLength" "100" ]
+                    |> Query.has [ attr "stroke-dasharray" "100 100" ]
         ]
