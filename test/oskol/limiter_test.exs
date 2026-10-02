@@ -1,8 +1,8 @@
-defmodule Oskol.Auth.LimiterTest do
+defmodule Oskol.LimiterTest do
   use ExUnit.Case, async: false
   import ExUnit.CaptureLog
 
-  alias Oskol.Auth.Limiter
+  alias Oskol.Limiter
 
   setup do
     Limiter.reset()
@@ -60,6 +60,65 @@ defmodule Oskol.Auth.LimiterTest do
     assert log =~ "auth mail limited: source"
     refute log =~ "opaque-source"
     assert length(String.split(log, "auth mail limited: source")) == 2
+  end
+
+  test "a refusal names the full bucket that frees up last, and how long until it does" do
+    started = System.system_time(:second) - 600
+    :ets.insert(Limiter, {"analysis:user:u1:hour", started, 30, 3_600})
+    :ets.insert(Limiter, {"analysis:user:u1:day", started, 150, 86_400})
+
+    assert {:error, {:refused, "analysis:user:u1:day", wait}} =
+             Limiter.allow([
+               {:limit_bucket, "analysis:user:u1:hour", 30, 3_600},
+               {:limit_bucket, "analysis:user:u1:day", 150, 86_400},
+               {:limit_bucket, "analysis:global:day", 600, 86_400}
+             ])
+
+    assert wait in (86_400 - 601)..(86_400 - 599)
+    assert :ets.lookup(Limiter, "analysis:global:day") == []
+    assert {:ok, nil} = Limiter.allow([{:limit_bucket, "analysis:global:day", 600, 86_400}])
+  end
+
+  test "a release hands one use back, and never below nothing" do
+    bucket = {:limit_bucket, "analysis:global:day", 600, 86_400}
+    assert {:ok, nil} = Limiter.allow([bucket])
+    assert {:ok, nil} = Limiter.allow([bucket])
+    assert :ok = Limiter.release([bucket])
+    assert [{_, _, 1, 86_400}] = :ets.lookup(Limiter, "analysis:global:day")
+    assert :ok = Limiter.release([bucket, {:limit_bucket, "analysis:never", 1, 60}])
+    assert :ok = Limiter.release([bucket])
+    assert [{_, _, 0, 86_400}] = :ets.lookup(Limiter, "analysis:global:day")
+    assert :ets.lookup(Limiter, "analysis:never") == []
+  end
+
+  test "an unavailable limiter fails closed for asks and open for mail" do
+    pid = Process.whereis(Limiter)
+    assert Process.unregister(Limiter)
+
+    on_exit(fn ->
+      if Process.whereis(Limiter) == nil, do: Process.register(pid, Limiter)
+    end)
+
+    assert {:error, {:refused, "analysis:limiter", 30}} =
+             Limiter.allow([{:limit_bucket, "analysis:global:day", 600, 86_400}])
+
+    assert Limiter.allow_mail([{:limit_bucket, "start:global", 1, 3_600}])
+    assert :ok = Limiter.release([{:limit_bucket, "analysis:global:day", 600, 86_400}])
+    assert Process.register(pid, Limiter)
+  end
+
+  test "an analysis refusal logs under its own name, never the id" do
+    assert {:ok, nil} = Limiter.allow([{:limit_bucket, "analysis:user:secret-id:hour", 1, 3_600}])
+
+    log =
+      capture_log(fn ->
+        assert {:error, _} =
+                 Limiter.allow([{:limit_bucket, "analysis:user:secret-id:hour", 1, 3_600}])
+      end)
+
+    assert log =~ "analysis limited: user"
+    refute log =~ "auth mail"
+    refute log =~ "secret-id"
   end
 
   test "a fixed-window warning marker survives an epoch boundary" do

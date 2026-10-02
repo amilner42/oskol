@@ -26,8 +26,8 @@ defmodule Oskol.Application do
         Oskol.Repo,
         {Phoenix.PubSub, name: Oskol.PubSub},
         {Registry, keys: :unique, name: Oskol.GameRegistry},
-        # The sign-in rate counters (ETS, per node).
-        {Oskol.Auth.Limiter, []},
+        # The rate counters: sign-in mail and analysis asks (ETS, per node).
+        {Oskol.Limiter, []},
         # A puzzle's move tree, worked out once (ETS, per node). Bounded,
         # and losing it costs one rebuild.
         {Oskol.Puzzles.TreeCache, []},
@@ -42,6 +42,10 @@ defmodule Oskol.Application do
         # game is. It answers nobody: rooms cast and carry on.
         {Task.Supervisor, name: Oskol.Reviews.GraderSupervisor},
         {Oskol.Reviews.Grader, []},
+        # The analysis board's asks: a short line in front of the engine,
+        # two at a time, jobs keyed by the position's puzzle key.
+        {Task.Supervisor, name: Oskol.Analysis.AskerSupervisor},
+        {Oskol.Analysis.Asker, []},
         # A bot seat's thinking: seconds on the analysis engine, off the room
         # that is serving live play.
         {Task.Supervisor, name: Oskol.Game.BotSupervisor},

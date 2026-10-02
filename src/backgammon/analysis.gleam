@@ -867,7 +867,13 @@ pub fn request_json_at(
   move_level: Option(String),
   cube_level: Option(String),
 ) -> Json {
-  body_json(json.array(g.turns, turn_json), g.jacoby, move_level, cube_level)
+  body_json(
+    json.array(g.turns, turn_json),
+    g.jacoby,
+    move_level,
+    cube_level,
+    True,
+  )
 }
 
 /// The body for **some** of a game's turns, each with where it sits in that
@@ -889,6 +895,22 @@ pub fn turns_request(
     jacoby,
     move_level,
     cube_level,
+    True,
+  )
+}
+
+/// The body for one position asked on its own (the analysis board), at the
+/// engine's default depth: every legal play's result and the top five, and
+/// **no luck**. Luck is a cube evaluation the engine runs per turn, and a
+/// position nobody rolled has no luck worth measuring. Deliberately not the
+/// bytes a game's turn is graded and cached under (`one_turn_request`).
+pub fn position_request(turn: Turn, index: Int, jacoby: Bool) -> Json {
+  body_json(
+    json.array([turn], turn_json_at(Some(index), _)),
+    jacoby,
+    None,
+    None,
+    False,
   )
 }
 
@@ -905,6 +927,7 @@ fn body_json(
   jacoby: Bool,
   move_level: Option(String),
   cube_level: Option(String),
+  include_luck: Bool,
 ) -> Json {
   let level = fn(name, value) {
     case value {
@@ -918,7 +941,7 @@ fn body_json(
         #("jacoby", json.bool(jacoby)),
         #("top_moves", json.int(5)),
         #("all_results", json.bool(True)),
-        #("include_luck", json.bool(True)),
+        #("include_luck", json.bool(include_luck)),
       ],
       level("move_level", move_level),
       level("cube_level", cube_level),

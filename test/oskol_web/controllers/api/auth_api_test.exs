@@ -16,12 +16,12 @@ defmodule OskolWeb.Api.AuthApiTest do
   import Swoosh.TestAssertions
 
   alias Oskol.Auth
-  alias Oskol.Auth.Limiter
+  alias Oskol.Limiter
   alias Oskol.Repo
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
-    Oskol.Auth.Limiter.reset()
+    Oskol.Limiter.reset()
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
     :ok
   end

@@ -89,6 +89,11 @@ defmodule OskolWeb.Router do
     # A story link, minted only by the seat that made the mistake, and only
     # ever by a POST: a GET never mints anything.
     post "/puzzles/:id/shares", PuzzleController, :share
+
+    # The analysis board: a set-up position asked of the engine on a
+    # player's press, bounded and cached by its question.
+    post "/analysis", AnalysisController, :create
+    get "/analysis/:key", AnalysisController, :show
   end
 
   # Enable LiveDashboard in development. Declared before the game routes so

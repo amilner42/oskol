@@ -176,3 +176,79 @@ parsed before the `/:slug` catch-alls. The builders are `Route.analysis`,
 `?xgid=XGID=...` with a bare `=` the same way; `Url.Parser.Query` alone
 would drop it. Main shows the not-found page for the route until the page
 lands (analysis-page-editor).
+
+## Asking the engine (`src/oskol/handlers/analysis.gleam`, `Oskol.Analysis.Asker`)
+
+`POST /papi/analysis` asks about one set-up position; `GET
+/papi/analysis/:key` says where the ask stands (wire: `docs/api.md`). Tests:
+`test/oskol/analysis_handler_test.gleam` (every decision, on stubs) and
+`test/oskol/analysis/asker_test.exs` (the real line, the stub engine).
+
+- **An analyzed position is a puzzle row.** The question
+  (`setup.question`) is the key (`oskol/puzzles.key`), so a position asked
+  before -- a game's mistake, a set's position, an earlier ask, by anyone --
+  is answered at once from its row (`puzzles.by_key`) with a 200 and costs
+  nothing. Only a key with no complete row goes to the engine. The answer
+  is written once (`puzzles.store_one`, origin `analysis`), public like
+  every puzzle, never rewritten (a complete answer may upgrade an
+  incomplete one, as everywhere); its picture is drawn on the spot
+  (`puzzles.pictures_one`) so a link shared a second later unfurls with the
+  board. A key already stored keeps its row, its id and its origin.
+- **`puzzles.origin`** (`game` | `set` | `analysis` | `replay`), set once by
+  whichever write got the key first. TRY ONE and the status page sample
+  `game` and `set` only (`Oskol.Puzzles.sample/1`, `sample_move/0`), so a
+  board nobody meant for a stranger is never handed to one.
+- **`prepare`** decides, in order: the setup decodes and passes `check`
+  (else 422 with its sentence; a roll that plays nothing is 409 `dances`,
+  "6-4 cannot be played from here", nothing asked); a complete row is
+  `Cached`; a key the asker already holds is `Joining` (free); the asker
+  asleep is 503, full is 429 "The engine is busy. Try again in a minute.";
+  and only then is one ask reserved from every bucket (`allow_ask`),
+  refused as a 429 that says whose budget and how long. The request is
+  `analysis.position_request(turn, 1, jacoby)`: the engine's default depth
+  (4-ply), `all_results`, the top five, and `include_luck: false` (luck is
+  a cube evaluation per turn that nothing here reads). A game's own turns
+  keep `one_turn_request`, luck and all, so the review cache's bytes are
+  unchanged.
+- **The budgets** (`buckets`; numbers from `config :oskol, :analysis_budget`):
+  a guest `analysis:guest:<id>:hour` 10 and `:day` 30; an account
+  `analysis:user:<id>:hour` 30 and `:day` 150 (an account is charged as
+  itself, not as its browser); everybody `analysis:global:day` 600. The
+  limiter is the sign-in one generalized (`Oskol.Limiter.allow/1`: per
+  node, in memory, atomic over all buckets, fixed windows); it logs
+  "analysis limited: guest|user|global" once per window. A restart resets
+  the counts: a spend guard, not billing. A limiter that cannot be asked
+  fails **closed** for asks (429 "The engine is busy", 30 s) and open for
+  sign-in mail. An ask that was charged and never reached the engine is
+  handed back (`release_ask`, `Oskol.Limiter.release/1`): the asker full or
+  asleep when it was submitted, or a waiting job failed by the circuit. Two
+  first POSTs of one key that race past `asking` may both stay charged.
+- **`store`** keeps an answer only if it can grade any attempt: a move
+  answer must hold every legal play and a board on every candidate
+  (`practice/openings.answer`, the sets' own rule); a cube answer must
+  carry the chances it was judged on (`extract.cube_answer`). Anything else
+  is an `Error` and nothing is written.
+- **The asker** (`lib/oskol/analysis/asker.ex`, a GenServer over the
+  `Oskol.Analysis.AskerSupervisor` task supervisor) is the line and nothing
+  else: jobs keyed by the puzzle key (a second ask joins), `in_flight` 2 and
+  `waiting` 20, each task `Oskol.Reviews.ask_status("/backgammon/review",
+  body, ask_timeout_ms)` then Gleam's `store`. A 4xx from the engine
+  (`{:rejected, status, detail}`: it read the position and will not answer
+  it, which a player-built board can provoke) fails that key alone with
+  "The engine could not read this position. Check the board and try
+  another." and is logged; it never opens the circuit. A 5xx, a timeout or
+  no connection (`{:error, _}`) opens the circuit for `circuit_ms` (60 s),
+  as the Grader's does: every
+  POST in that window is a 503 at once and the jobs waiting fail with the
+  same sentence, so a sleeping desktop is asked once. A task that crashes
+  or whose answer `store` refuses fails its key with "The engine could not
+  answer that one. Try again." Outcomes sit in a public ETS table (`{key,
+  status, puzzle id | message, at}`) for ten minutes; a restart forgets
+  them (a polling page then gets a 404 and asks again, which an answered
+  key serves from its row). Config `config :oskol, Oskol.Analysis.Asker,
+  enabled:, in_flight:, waiting:, circuit_ms:, ask_timeout_ms:`; off in
+  tests (jobs are taken and never asked) unless a test turns it on.
+- **The reveal** (`handlers/puzzles.reveal_json`) is `{best, top, cube,
+  n_legal, levels}`; `best`, `top` and `cube` come from the same
+  `answer_fields` an attempt's reveal is rendered with, so a page draws an
+  analysis and an answered puzzle with one renderer.

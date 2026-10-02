@@ -121,6 +121,15 @@ defmodule Oskol.Puzzles.Pictures do
   end
 
   @doc """
+  Draw one puzzle's picture now if it has none and tries to spare: what an
+  analyzed position does the moment its row is written, so a share sent a
+  second later unfurls with the board. Returns how many were drawn (0 or 1).
+  """
+  def render_one(puzzle_id) when is_binary(puzzle_id) do
+    [puzzle_id] |> Enum.filter(&owed?/1) |> render_each()
+  end
+
+  @doc """
   The sweep's batch: the newest puzzles with no picture and tries to
   spare, at most `limit` of them, drawn now. Returns how many were drawn.
   """

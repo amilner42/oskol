@@ -1030,6 +1030,22 @@ defmodule Oskol.Reviews do
   waits that long, and a think that came back empty is tried again.
   """
   def ask(route, body, receive_timeout) when is_binary(route) and is_binary(body) do
+    case ask_status(route, body, receive_timeout) do
+      {:rejected, status, detail} -> {:error, http_error(status, detail)}
+      other -> other
+    end
+  end
+
+  @doc """
+  `ask/3` with the engine's refusals told apart from its failures:
+  `{:ok, body}`, `{:rejected, status, detail}` when the engine answered
+  with a 4xx (it read the question and will not answer *that* question --
+  asking again is pointless, and nothing is wrong with the engine), or
+  `{:error, reason}` for everything else (a 5xx, a timeout, a refused
+  connection). What the analysis board's asker opens its circuit on is
+  only the last. Never raises.
+  """
+  def ask_status(route, body, receive_timeout) when is_binary(route) and is_binary(body) do
     config = Application.get_env(:oskol, :analysis, [])
     url = String.trim_trailing(Keyword.get(config, :url, "http://localhost:18082"), "/")
 
@@ -1050,7 +1066,16 @@ defmodule Oskol.Reviews do
       ]
       |> Keyword.merge(Keyword.get(config, :req_options, []))
 
-    posted(options)
+    case post_raw(options) do
+      {:http, status, body} when status in 400..499 ->
+        {:rejected, status, String.slice(to_string(body), 0, 500)}
+
+      {:http, status, body} ->
+        {:error, http_error(status, body)}
+
+      other ->
+        other
+    end
   rescue
     e -> {:error, Exception.message(e)}
   end
@@ -1104,6 +1129,17 @@ defmodule Oskol.Reviews do
   # A mailbox goes with its process, so here an abandoned reply is abandoned
   # rather than left lying for the next caller.
   defp posted(options) do
+    case post_raw(options) do
+      {:http, status, body} -> {:error, http_error(status, body)}
+      other -> other
+    end
+  end
+
+  defp http_error(status, body), do: "HTTP #{status}: #{String.slice(to_string(body), 0, 500)}"
+
+  # `{:ok, body}` on a 200, `{:http, status, body}` on any other status,
+  # `{:error, reason}` when there was no answer at all.
+  defp post_raw(options) do
     timeout = Keyword.fetch!(options, :receive_timeout)
 
     # Linked, deliberately. The caller owns this request: a queue task killed
@@ -1121,7 +1157,7 @@ defmodule Oskol.Reviews do
         {:ok, body}
 
       {:ok, {:ok, %Req.Response{status: status, body: body}}} ->
-        {:error, "HTTP #{status}: #{String.slice(to_string(body), 0, 500)}"}
+        {:http, status, body}
 
       {:ok, {:error, exception}} ->
         {:error, Exception.message(exception)}

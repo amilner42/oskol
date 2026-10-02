@@ -31,7 +31,11 @@ lib/oskol/game/bot.ex           a bot seat's turn: a supervised task asks the ga
 lib/oskol/persistence.ex        games + game_actions tables (seed + action log per room)
 lib/oskol/guests.ex             silent guest identity: guests table (name + prefs)
 lib/oskol/auth.ex               accounts: users + login_tokens, the rows a sign-in spends
-lib/oskol/auth/limiter.ex       the sign-in rate counters (ETS, per node)
+lib/oskol/limiter.ex            the rate counters, sign-in mail's and the analysis
+                                board's (ETS, per node; `allow/1`, `allow_mail/1`)
+lib/oskol/analysis/asker.ex     the analysis board's line to the engine: jobs by
+                                puzzle key, two in flight, twenty waiting, the 60 s
+                                circuit, outcomes in ETS for ten minutes
 lib/oskol/mail.ex               the one mail Oskol sends: the sign-in link and code
 lib/oskol/mailer.ex             Swoosh: Postmark in prod, /dev/mailbox in dev
 lib/oskol_web/plugs/guest_id.ex mints/renews the year-long guest cookie on every visit
@@ -79,6 +83,10 @@ src/oskol/analysis/setup.gleam  the position a player sets up on the analysis bo
 src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
                                 key and id, the answer, the JSON of each column
 src/oskol/puzzles/extract.gleam which turns of a graded game are puzzles
+src/oskol/handlers/analysis.gleam POST/GET /papi/analysis: the cache by key, the
+                                budgets, the refusals, and `store` (an engine answer
+                                kept as an "analysis" puzzle); its controller is
+                                lib/oskol_web/controllers/api/analysis_controller.ex
 src/oskol/handlers/puzzles.gleam the puzzle pages: the question, the grade, the
                                  reveal, what an answer does to a deck, the
                                  memory line, a game's own mistakes

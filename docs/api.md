@@ -128,7 +128,8 @@ arrive at any of them cold, and moving between them afterwards is a
 The landing pages read and write over JSON. Every response is the same
 envelope: `{"ok": true, ...payload}`, or `{"ok": false, "error": {"code",
 "message"}}` — including on a non-2xx status, so the client parses bodies
-rather than leaning on the status. Requests go same-origin, so the guest
+rather than leaning on the status. A refusal that passes with time (a 429,
+a 503) adds `retry_after_s` to the error. Requests go same-origin, so the guest
 cookie rides along and identity needs nothing from the client; writes carry
 the page's CSRF token in `x-csrf-token`.
 
@@ -239,6 +240,34 @@ GET  /papi/games/:slug/rooms/:id/puzzles?game=n  (a seat) {ok, puzzles: [{id, ki
                                          while the game's review is done but its
                                          puzzles are not yet written (the page
                                          asks again in a moment)
+POST /papi/analysis                    a set-up position (analysis/setup's wire:
+                                         {points, white_bar, black_bar, to_play,
+                                         ask, dice, cube: {value, owner}, match})
+                                         -> 200 {ok, status: "done", key, puzzle,
+                                         reveal} when the question's puzzle row is
+                                         complete (free, nothing charged); 202 {ok,
+                                         status: "pending", key} when handed to the
+                                         asker or joining the same key in hand. 409
+                                         `dances` "6-4 cannot be played from here"
+                                         (nothing asked); 422 `validation_failed`
+                                         with the setup's sentence; 429
+                                         `rate_limited` {message, retry_after_s}
+                                         over a budget or with the line full; 503
+                                         `engine_down` "The engine is asleep. Try
+                                         again in a minute." {retry_after_s} while
+                                         the circuit is open. `puzzle` is GET
+                                         /papi/puzzles/:id's object (id, kind,
+                                         question as shown, tree, prompt); `reveal`
+                                         is {best, top, cube, n_legal, levels}: the
+                                         attempt reveal's own best/top/cube with
+                                         nobody's answer in it, n_legal (null for a
+                                         cube), levels {moves, cube} | null
+GET  /papi/analysis/:key               {ok, status: "pending"} | {ok, status:
+                                         "done", key, puzzle, reveal} | {ok,
+                                         status: "failed", message}; a key no row
+                                         answers and the asker has not seen (in ten
+                                         minutes, or since a restart) is a 404.
+                                         The page polls this once a second
 GET  /papi/codes/:code                 {ok, slug, code}  (the code as typed, else
                                        normalised: the one that answered comes back)
 POST /papi/auth/start                  {email, next?} -> {ok}  (always ok: no
