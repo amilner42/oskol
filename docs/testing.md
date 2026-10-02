@@ -87,9 +87,11 @@ the three schedule shapes).
   waits for the key), the verdict and "you" in the table, the cube scale
   with the engine's band, a dubious play a miss named by its band, the
   level line in its three states and after an override (an early answer,
-  KNEW IT), a tap selects and posts nothing, APPLY posts, ANOTHER / I'M
-  DONE apply a pending choice first, GOT IT barred after a miss, YES,
-  NEVER; ANOTHER and I'M DONE only from the shell, the memory line on 200
+  KNEW IT), SOONER / GOT IT / KNEW IT each posting on the tap, a second
+  tap of another replacing it, the four disabled in flight, a refusal
+  keeping the choice before it, NEVER needing YES, NEVER (any other tap
+  takes it back), ANOTHER / I'M DONE waiting for a choice on its way, GOT
+  IT barred after a miss, the same rows laid out whatever is tapped; ANOTHER and I'M DONE only from the shell, the memory line on 200
   and not on 404; the session strip (the deck's mark or name, its ring
   with the count, one row of tiles, the day's line, no total, practice
   only through PRACTICE ANYWAY); the end of a run: every verdict reported,
@@ -113,8 +115,10 @@ the three schedule shapes).
   asking the queue again past its ids, KEEP GOING, PRACTICE ANYWAY, the
   way on from the end card, and celebrating exactly the counted answer
   that reaches today's target, once a run.
-- `PuzzleCelebrationTest`: the today's-set-done card -- under the reveal
-  and never before it, never for a guest, once a page; hidden until the
+- `PuzzleCelebrationTest`: the today's-set-done card -- not in the
+  reveal of the answer that did it, whose ANOTHER (even past the run's
+  last id) or I'M DONE shows it in place of the puzzle (the card's own I'M DONE ends the run); never for a guest, once a
+  page; "Keep going?"; hidden until the
   deck is read; the ring and check, the steps line, the won-back line, a
   set's words, the grid's stepping squares, KEEP GOING / PRACTICE ANYWAY /
   I'M DONE, paused until on screen, settled on the last keyframe, reduced
@@ -204,8 +208,9 @@ node playwright/test-puzzle/test.js             # a puzzle from a link: setup.ex
                                                # (real legal plays, the played one a mistake) and
                                                # extracts; a stranger, the opponent (memory line)
                                                # and the mistake's own player signed in (level
-                                               # line; the four tapped without a post or a height
-                                               # change; SOONER explained and APPLIED) play it;
+                                               # line; NEVER asking without a post or a height
+                                               # change; KNEW IT / SOONER posted on the tap, once,
+                                               # and explained) play it;
                                                # phones; the board is the table's size
 node playwright/review-puzzle/test.js           # screenshots of the puzzle page: question, staged,
                                                # reveal, a candidate, the cube scale (phone, small,
@@ -216,8 +221,9 @@ node playwright/test-puzzles-hub/test.js        # the practice home and a run: s
                                                # sign in there (timezone sent once), the five decks
                                                # with the worst tier in front, TRAIN's run watching
                                                # the strip, I'M DONE after one, the run asking its
-                                               # queue again, TRAIN's run ending on the today's-set
-                                               # card (no shift at four sizes) and KEEP GOING (3/6);
+                                               # queue again, TRAIN's run whose ANOTHER brings the
+                                               # today's-set card (same URL, centered at four sizes)
+                                               # and KEEP GOING (3/6);
                                                # phones;
                                                # past the twentieth with many_due.exs (DUE_COUNT;
                                                # DUE_MODE=start_all leaves nothing new, for PRACTICE
@@ -229,15 +235,17 @@ playwright/review-practice/run.sh               # screenshots of /puzzles for ev
                                                # sizes); setup.exs and shape.exs (SHAPE_STATE ladder,
                                                # keep_going, scheduled, today_three) arrange them;
                                                # serves its own port and database
-playwright/review-celebration/run.sh            # screenshots of the today's-set-done card at four sizes
-                                               # with no-shift checks, reduced motion, KEEP GOING then
+playwright/review-celebration/run.sh            # screenshots of the today's-set-done card at four sizes:
+                                               # the reveal before it, ANOTHER to the card (same URL, board
+                                               # gone, centered, settled in time), reduced motion, KEEP GOING then
                                                # ANOTHER, a set, an all-miss run; frames and a video;
                                                # its own port and database
 playwright/review-run/run.sh                    # screenshots of a run: the strip, the refetch, the end
                                                # card's way on, an early answer, a set's run, past the
                                                # twentieth (four sizes); its own port and database
 playwright/review-verdict/run.sh                # screenshots of the reveal's verdict in each shape, then
-                                               # the four choices under the level line (four sizes);
+                                               # the four choices under the level line, applied on tap,
+                                               # NEVER's confirm, the reveal's height held (four sizes);
                                                # serves its own port and database
 playwright/review-decks/run.sh                  # screenshots of the sets on /puzzles, a run
                                                # through the openings, the reveal and the end

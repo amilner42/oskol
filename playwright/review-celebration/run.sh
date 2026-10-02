@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Serve this checkout on its own port and database, take the
-# review-celebration screenshots and recording (the card a run ends today's
-# set on), and stop the server whatever happens.
+# review-celebration screenshots and recording (the card that comes after
+# the answer that finishes today's set), and stop the server whatever
+# happens.
 #
 #   playwright/review-celebration/run.sh   (PORT=4478, OSKOL_DEV_DATABASE=oskol_celebrate_dev)
 #

@@ -56,10 +56,11 @@ level as the board reaches it.
 
 For a signed-in player whose deck holds the card, the reveal carries where
 it now stands ("Level 2 → 3 · back in 7 days") and the four choices that
-override the grade. A choice **selects, explains, then applies**: a tap
-marks it pending and the fixed line under the row says what it would do;
-APPLY ("YES, NEVER" for NEVER) is what sends it, and in a run ANOTHER and
-I'M DONE apply a pending choice first. Nothing is sent on a tap. For a
+override the grade. SOONER, GOT IT and KNEW IT **apply on tap**: the
+tap sends it, the choice is drawn in force, and the fixed line under the
+row says what it did; another tap replaces it (the server replaces the
+review an override names, it never stacks one). NEVER cannot be undone,
+so it alone asks first: its tap explains, and "YES, NEVER" sends it. For a
 player who was in the game the puzzle came from,
 either seat, `/mine` adds the memory line, asked for after the attempt and
 never before. A guest sees neither, and loses nothing.
@@ -195,11 +196,11 @@ type alias Model =
     , before : Bool -- the roll on the board it was thrown into: the move taken back, as the replay's dice do
     , outcome : Maybe String -- the override the player applied, once it went through
     , graded : Maybe Schedule -- the schedule the answer came back with, before any override
-    , pending : Maybe String -- a choice tapped and not yet applied
+    , confirmingNever : Bool -- NEVER was tapped: its sentence and YES, NEVER are up
     , missedNote : Bool -- GOT IT after a miss was tapped: say why it is not a choice
-    , outcomeSending : Bool
+    , applying : Maybe String -- the choice on its way to the server
     , outcomeError : Maybe String -- why the last override did not go through
-    , thenOut : Maybe Out -- ANOTHER or I'M DONE, waiting on the pending choice to apply
+    , thenOut : Maybe Out -- ANOTHER or I'M DONE, waiting on a choice still on its way
     , why : Maybe Puzzle.Why -- why this one is here, asked before the answer
     , memory : Maybe Puzzle.Memory
     , shareLabel : Maybe String
@@ -208,7 +209,7 @@ type alias Model =
     , sharing : Sharing -- which button the share sheet's answer is for
     , now : Int -- client time (ms) when the reveal landed, for "back in 7 days"
     , ended : Maybe End -- the run is over: the score, and what comes after it
-    , celebration : Maybe Celebration -- this answer finished today's set: the card under the reveal
+    , celebration : Maybe Celebration -- this answer finished today's set: the card that comes next
     , leaving : Bool -- ANOTHER was pressed and the shell is finding the next
     , zone : Time.Zone -- the reader's own, for the day an early answer is due
     }
@@ -263,10 +264,12 @@ type WayState
     | Stopped String
 
 
-{-| The moment today's set is done, under the reveal: the shell decides
+{-| The moment today's set is done, as the next card: the shell decides
 it (`Run.celebrate`, once a run, on the counted answer that brings the
-deck's ring to its target) and hands the page what it needs; the page
-draws it and plays it.
+deck's ring to its target) and hands the page what it needs. The reveal
+of that answer is an ordinary reveal whose ANOTHER is always there;
+pressed, it puts this card where the next puzzle would be -- the board
+gone -- and plays it.
 
   - `target`: today's set, now done -- "Today's 5 done.";
   - `answered`: the run's answers with their puzzles, oldest first, which
@@ -277,6 +280,8 @@ draws it and plays it.
     what it cost, how much of a set is mastered), read once when the card
     appears;
   - `way`: KEEP GOING or PRACTICE ANYWAY, from where the deck stands;
+  - `shown`: ANOTHER was pressed, and the card is on the page instead of
+    the puzzle;
   - `ready`: the card is drawn -- once the deck is read, or failing that
     after a moment, so nothing waits on the network for long;
   - `playing`: the card is on the screen and its motion runs;
@@ -288,6 +293,7 @@ type alias Celebration =
     , answered : List ( String, Answer )
     , deck : CelebrationDeck
     , way : WayState
+    , shown : Bool
     , ready : Bool
     , playing : Bool
     , settled : Bool
@@ -334,7 +340,7 @@ type Msg
     | PressedDone
     | PressedOutcome String
     | FocusedOutcome String
-    | PressedApply
+    | ConfirmedNever
     | GotOutcome String (Result Api.Error (Maybe Schedule))
     | GotWhy (Result Api.Error Puzzle.Why)
     | GotMemory (Result Api.Error Puzzle.Memory)
@@ -372,7 +378,8 @@ somewhere.
 type Out
     = NoOut
     | Answered Answer
-      -- a pending choice applied on the way out: keep the answer, then go
+      -- ANOTHER or I'M DONE pressed while a choice was on its way: keep
+      -- the answer it settled on, then go
     | AnsweredThen Answer Out
     | WantsNext
     | WantsEnd
@@ -421,9 +428,9 @@ init session config =
       , before = False
       , outcome = Nothing
       , graded = Nothing
-      , pending = Nothing
+      , confirmingNever = False
       , missedNote = False
-      , outcomeSending = False
+      , applying = Nothing
       , outcomeError = Nothing
       , thenOut = Nothing
       , why = Nothing
@@ -596,21 +603,29 @@ update msg model =
         ToggleBefore ->
             stay { model | before = not model.before, showing = Nothing } Cmd.none
 
-        -- A tap selects and sends nothing: the line under the row says
-        -- what the choice would do, and APPLY is what does it. Tapping the
-        -- choice already in force takes the selection back.
+        -- SOONER, GOT IT and KNEW IT apply on the tap; the one already in
+        -- force sends nothing. NEVER cannot be undone, so its tap only
+        -- asks (its sentence, and YES, NEVER); tapping it again, or any
+        -- other choice, takes the question back.
         PressedOutcome outcome ->
-            if model.outcomeSending then
+            let
+                settled =
+                    { model | confirmingNever = False, missedNote = False, outcomeError = Nothing }
+            in
+            if model.applying /= Nothing || model.outcome == Just "never" then
                 stay model Cmd.none
 
             else if outcome == "got_it" && gotItBarred model then
-                stay { model | pending = Nothing, missedNote = True, outcomeError = Nothing } Cmd.none
+                stay { settled | missedNote = True } Cmd.none
+
+            else if outcome == "never" then
+                stay { settled | confirmingNever = not model.confirmingNever } Cmd.none
 
             else if Just outcome == inForce model then
-                stay { model | pending = Nothing, missedNote = False, outcomeError = Nothing } Cmd.none
+                stay settled Cmd.none
 
             else
-                stay { model | pending = Just outcome, missedNote = False, outcomeError = Nothing } Cmd.none
+                apply outcome settled
 
         -- GOT IT after a miss says why it is not a choice when it is
         -- reached by the keyboard too, not only by a tap.
@@ -621,13 +636,12 @@ update msg model =
             else
                 stay model Cmd.none
 
-        PressedApply ->
-            case model.pending of
-                Just outcome ->
-                    apply outcome Nothing model
+        ConfirmedNever ->
+            if model.confirmingNever && model.applying == Nothing then
+                apply "never" { model | confirmingNever = False }
 
-                Nothing ->
-                    stay model Cmd.none
+            else
+                stay model Cmd.none
 
         GotOutcome outcome (Ok schedule) ->
             let
@@ -635,10 +649,9 @@ update msg model =
                     amended outcome
                         schedule
                         { model
-                            | outcomeSending = False
+                            | applying = Nothing
                             , outcomeError = Nothing
                             , outcome = Just outcome
-                            , pending = Nothing
                             , thenOut = Nothing
                             , attempt =
                                 case ( model.attempt, schedule ) of
@@ -664,9 +677,10 @@ update msg model =
         GotOutcome _ (Err err) ->
             -- A 409 (nothing to amend any more), a 422 or a lost
             -- connection: the line keeps saying what the server last said,
-            -- the selection stays, and why it changed nothing is said in
-            -- the explanation's place. A run waiting on it stays here.
-            stay { model | outcomeSending = False, thenOut = Nothing, leaving = False, outcomeError = Just (Api.errorMessage err) } Cmd.none
+            -- the choice in force is the one before the tap, and why it
+            -- changed nothing is said in the explanation's place. A run
+            -- waiting on it stays here.
+            stay { model | applying = Nothing, thenOut = Nothing, leaving = False, outcomeError = Just (Api.errorMessage err) } Cmd.none
 
         GotWhy (Ok why) ->
             stay { model | why = Just why } Cmd.none
@@ -745,14 +759,24 @@ update msg model =
         ShareLabelCleared ->
             stay { model | shareLabel = Nothing, storyLabel = Nothing } Cmd.none
 
-        -- ANOTHER, and I'M DONE below: a choice selected and not applied
-        -- is applied first, so the common path is still one tap.
+        -- ANOTHER, and I'M DONE below: a choice still on its way is waited
+        -- for. On the answer that finished today's set, ANOTHER is the
+        -- celebration: the next card, in place of the next puzzle.
         Next ->
-            if model.leaving then
-                stay model Cmd.none
+            case model.celebration of
+                Just c ->
+                    if c.shown then
+                        stay model Cmd.none
 
-            else
-                leave WantsNext { model | leaving = True }
+                    else
+                        showCelebration c model
+
+                Nothing ->
+                    if model.leaving then
+                        stay model Cmd.none
+
+                    else
+                        leave WantsNext { model | leaving = True }
 
         -- KEEP GOING or PRACTICE ANYWAY on the end card: the button says it
         -- is on its way, and the shell does the asking.
@@ -827,8 +851,21 @@ update msg model =
 
         -- I'M DONE: the run stops here and the shell hands back the
         -- score, however few this was. One is a whole session.
+        --
+        -- On the answer that finished today's set, I'M DONE shows the
+        -- celebration first, as ANOTHER does: that is exactly when a player
+        -- stops, and the moment is theirs. The card's own I'M DONE ends it.
         PressedDone ->
-            leave WantsEnd model
+            case model.celebration of
+                Just c ->
+                    if c.shown then
+                        leave WantsEnd model
+
+                    else
+                        showCelebration c model
+
+                Nothing ->
+                    leave WantsEnd model
 
         EndSignInMsg signInMsg ->
             case model.ended of
@@ -903,14 +940,14 @@ offering state model =
                 AskSignIn _ ->
                     model
 
-        -- The celebration's way on is the same press, under the reveal.
+        -- The celebration's way on is the same press, on its own card.
         Nothing ->
             { model | celebration = Maybe.map (\c -> { c | way = state }) model.celebration }
 
 
-{-| Today's set is done, on this answer: the card under the reveal. The
-deck is read next (`celebrationRead`); if it is slow, the card is drawn
-without it after a moment.
+{-| Today's set is done, on this answer: the card that ANOTHER brings up
+next. The deck is read now (`celebrationRead`), while the reveal is
+read; if it is slow, the card is drawn without it after a moment.
 -}
 celebrate : { target : Int, answered : List ( String, Answer ) } -> Model -> ( Model, Cmd Msg )
 celebrate config model =
@@ -923,6 +960,7 @@ celebrate config model =
                         , answered = config.answered
                         , deck = Reading
                         , way = Asking
+                        , shown = False
                         , ready = False
                         , playing = False
                         , settled = False
@@ -969,10 +1007,36 @@ celebrationRead read model =
             ( model, Cmd.none )
 
 
+{-| ANOTHER or I'M DONE on the reveal that finished today's set: the card
+in place of the puzzle. An unconfirmed NEVER is dropped; a choice still on
+its way lands on this page as ever, and the card's lines follow it.
+-}
+showCelebration : Celebration -> Model -> ( Model, Cmd Msg, Out )
+showCelebration c model =
+    let
+        shown =
+            { c | shown = True }
+    in
+    stay { model | celebration = Just shown, confirmingNever = False }
+        (if shown.ready then
+            celebrateCard celebrationId
+
+         else
+            Cmd.none
+        )
+
+
+{-| The card can be drawn. Played as soon as it is also on the page:
+now, if ANOTHER has already been pressed, else when it is.
+-}
 ready : Celebration -> Model -> ( Model, Cmd Msg, Out )
 ready c model =
     ( { model | celebration = Just { c | ready = True } }
-    , celebrateCard celebrationId
+    , if c.shown then
+        celebrateCard celebrationId
+
+      else
+        Cmd.none
     , NoOut
     )
 
@@ -995,9 +1059,8 @@ settleName =
     "pz-cele-settle"
 
 
-{-| Bring the card into view (smoothly, a beat after the reveal, so the
-verdict is read first) and say when it is on the screen, and whether the
-reader asked for reduced motion.
+{-| Put the page back at its top, where the card is, and say when the
+card is on the screen, and whether the reader asked for reduced motion.
 -}
 port celebrateCard : String -> Cmd msg
 
@@ -1063,12 +1126,11 @@ countsToday anyway schedule =
     not anyway && (Maybe.map .amendable schedule |> Maybe.withDefault False)
 
 
-{-| Send a selected choice. `thenOut` is where the page goes once it has
-gone through: nowhere (APPLY), or on through the run.
+{-| Send a choice. The four wait for the answer, so nothing is sent twice.
 -}
-apply : String -> Maybe Out -> Model -> ( Model, Cmd Msg, Out )
-apply outcome thenOut model =
-    ( { model | outcomeSending = True, outcomeError = Nothing, thenOut = thenOut }
+apply : String -> Model -> ( Model, Cmd Msg, Out )
+apply outcome model =
+    ( { model | applying = Just outcome, outcomeError = Nothing }
     , Api.post model.session
         (base model.id ++ "/attempts/" ++ model.key ++ "/outcome")
         (E.object (( "outcome", E.string outcome ) :: deckField model))
@@ -1078,22 +1140,17 @@ apply outcome thenOut model =
     )
 
 
-{-| ANOTHER or I'M DONE. A pending choice is applied on the way and the
-page goes on once it has; one already on its way is waited for. Nothing
-pending, the page goes at once.
+{-| ANOTHER or I'M DONE. A choice still on its way is waited for, so the
+run keeps what it settled on; a NEVER never confirmed is simply dropped.
+Otherwise the page goes at once.
 -}
 leave : Out -> Model -> ( Model, Cmd Msg, Out )
 leave out model =
-    if model.outcomeSending then
-        ( { model | thenOut = Just out }, Cmd.none, NoOut )
+    if model.applying /= Nothing then
+        ( { model | thenOut = Just out, confirmingNever = False }, Cmd.none, NoOut )
 
     else
-        case model.pending of
-            Just outcome ->
-                apply outcome (Just out) model
-
-            Nothing ->
-                ( model, Cmd.none, out )
+        ( { model | confirmingNever = False }, Cmd.none, out )
 
 
 {-| The choice that stands: the one applied, else the one the grade
@@ -1340,7 +1397,7 @@ subscriptions model =
         [ shareResult ShareReported
         , case model.celebration of
             Just c ->
-                if c.playing then
+                if c.playing || not c.shown then
                     Sub.none
 
                 else
@@ -1357,36 +1414,61 @@ subscriptions model =
 
 view : Model -> Html Msg
 view model =
-    div [ classList [ ( "rp-page pz-page paper", True ), ( "has-run", model.progress /= Nothing ), ( "is-ended", model.ended /= Nothing ) ], id "puzzle" ]
+    let
+        celebrating =
+            model.ended == Nothing && (Maybe.map .shown model.celebration == Just True)
+    in
+    div
+        [ classList
+            [ ( "rp-page pz-page paper", True )
+            , ( "has-run", model.progress /= Nothing )
+            , ( "is-ended", model.ended /= Nothing )
+            , ( "is-card", model.ended /= Nothing || celebrating )
+            ]
+        , id "puzzle"
+        ]
         (case ( model.ended, model.puzzle ) of
             ( Just end, _ ) ->
                 [ viewHead, viewEnd model end ]
 
-            ( Nothing, Loading ) ->
-                [ viewHead, div [ class "rp-message pixel text-[9px]" ] [ text "LOADING THE PUZZLE…" ] ]
+            -- Today's set done: the next card, in place of the next
+            -- puzzle. The board is gone, as it would be for a new one.
+            ( Nothing, _ ) ->
+                if celebrating then
+                    [ viewHead, viewCelebration model ]
 
-            ( Nothing, Missing ) ->
-                [ viewHead
-                , div [ class "rp-message", id "pz-missing" ]
-                    [ span [ class "pixel text-[9px]" ] [ text "NO SUCH PUZZLE" ]
-                    , span [ class "text-sm", attribute "style" "color: var(--pencil)" ] [ text "That link does not open anything. It may have been typed wrong." ]
-                    , a [ href (Route.href Route.library), class "font-semibold", attribute "style" "color: var(--pen)" ] [ text "Back to the board →" ]
-                    , skip model
-                    ]
-                ]
-
-            ( Nothing, Unavailable reason ) ->
-                [ viewHead
-                , div [ class "rp-message" ]
-                    [ span [ class "pixel text-[9px]" ] [ text "NO PUZZLE" ]
-                    , span [ class "text-sm", attribute "style" "color: var(--pencil)" ] [ text reason ]
-                    , skip model
-                    ]
-                ]
-
-            ( Nothing, Loaded puzzle ) ->
-                viewPuzzle model puzzle
+                else
+                    viewLoadable model
         )
+
+
+viewLoadable : Model -> List (Html Msg)
+viewLoadable model =
+    case model.puzzle of
+        Loading ->
+            [ viewHead, div [ class "rp-message pixel text-[9px]" ] [ text "LOADING THE PUZZLE…" ] ]
+
+        Missing ->
+            [ viewHead
+            , div [ class "rp-message", id "pz-missing" ]
+                [ span [ class "pixel text-[9px]" ] [ text "NO SUCH PUZZLE" ]
+                , span [ class "text-sm", attribute "style" "color: var(--pencil)" ] [ text "That link does not open anything. It may have been typed wrong." ]
+                , a [ href (Route.href Route.library), class "font-semibold", attribute "style" "color: var(--pen)" ] [ text "Back to the board →" ]
+                , skip model
+                ]
+            ]
+
+        Unavailable reason ->
+            [ viewHead
+            , div [ class "rp-message" ]
+                [ span [ class "pixel text-[9px]" ] [ text "NO PUZZLE" ]
+                , span [ class "text-sm", attribute "style" "color: var(--pencil)" ] [ text reason ]
+                , skip model
+                ]
+            ]
+
+        Loaded puzzle ->
+            viewPuzzle model puzzle
 
 
 
@@ -2243,15 +2325,10 @@ viewControls model puzzle =
                     -- or stop. Stopping is a finished thing to have
                     -- done, so I'M DONE is always offered and never
                     -- reads as giving up.
-                    :: (if model.celebration /= Nothing then
-                            -- Today's set is done, on this answer: the card
-                            -- under the reveal holds the way on, KEEP GOING
-                            -- beside I'M DONE, and the band keeps SHARE. The
-                            -- band is drawn with the reveal, so it is never
-                            -- seen with these and nothing in it moves.
-                            []
-
-                        else if model.hasNext then
+                    -- On the answer that finished today's set ANOTHER is
+                    -- there even past the run's last id: the celebration
+                    -- is what comes next.
+                    :: (if model.hasNext || model.celebration /= Nothing then
                             [ button
                                 [ classList [ ( "q-btn pz-action", True ), ( "is-busy", model.leaving ) ]
                                 , id "pz-next"
@@ -2270,7 +2347,7 @@ viewControls model puzzle =
                         else
                             []
                        )
-                    ++ (if model.inRun && model.celebration == Nothing then
+                    ++ (if model.inRun then
                             [ button [ class "q-btn plain pz-action", id "pz-done", onClick PressedDone ]
                                 [ text "I'M DONE" ]
                             ]
@@ -2338,7 +2415,6 @@ viewReveal model puzzle reveal =
             ++ viewSchedule model reveal
             ++ viewMemory model
             ++ viewStory reveal
-            ++ [ viewCelebration model ]
         )
 
 
@@ -2623,20 +2699,20 @@ viewCubeReveal model puzzle cube =
 -- TODAY'S SET, DONE
 
 
-{-| The card under the reveal, the moment today's set is done. Under the
-reveal and never over it -- the answer is read first -- and appended, so
-nothing above it moves.
+{-| The moment today's set is done, as the card after the answer that did
+it: ANOTHER on that reveal puts it where the next puzzle would be, the
+board gone, centered on the page.
 
-  - today's ring at 64 pixels, its arc running from where it stood before
-    this answer to full, then the check drawn in;
+  - today's ring, large, its arc running from where it stood before this
+    answer to full, then the check drawn in;
   - "Today's 5 done.", with the highlighter swept under it;
   - what the run did: "2 stepped up a level · 1 mastered";
   - the deck's grid, the squares this run moved stepping up a shade one
     after another, oldest first;
   - for a tier what mastering has won back, for a set how much of it is
     mastered;
-  - the way on, KEEP GOING (or PRACTICE ANYWAY) beside I'M DONE, in one
-    band whose height is fixed: never a wall.
+  - "Keep going?", and the way on, KEEP GOING (or PRACTICE ANYWAY) beside
+    I'M DONE, in one band whose height is fixed: never a wall.
 
 The motion is all CSS, run once the card is on the screen
 (`is-playing`); with reduced motion the final state is drawn at once.
@@ -2889,9 +2965,9 @@ viewCelebrationGrid model c =
             text ""
 
 
-{-| KEEP GOING (or PRACTICE ANYWAY) beside I'M DONE, in a band whose
-height is fixed, with one quiet line under it saying what the first
-does. The first button is laid out while the deck is read and hidden
+{-| "Keep going?" over KEEP GOING (or PRACTICE ANYWAY) beside I'M DONE,
+in a band whose height is fixed, with one quiet line under it saying
+what the first does. The first button is laid out while the deck is read and hidden
 where there is no way on; I'M DONE is always there.
 -}
 viewCelebrationWay : Model -> Celebration -> Html Msg
@@ -2961,7 +3037,14 @@ viewCelebrationWay model c =
                             ""
     in
     div [ class "pz-cele-way", id "pz-today-way", attribute "data-way" action ]
-        [ div [ class "pz-cele-buttons" ]
+        [ -- The question the card asks, laid out from the first frame and
+          -- held back only where there is nothing to keep going with.
+          p
+            [ classList [ ( "pz-cele-ask", True ), ( "is-idle", shown == Just NoWay ) ]
+            , id "pz-today-ask"
+            ]
+            [ text Mistakes.keepGoingAsk ]
+        , div [ class "pz-cele-buttons" ]
             [ button
                 [ classList [ ( "q-btn pz-action pz-cele-go", True ), ( "is-idle", not offered ), ( "is-busy", going ) ]
                 , id buttonId
@@ -2985,13 +3068,16 @@ the card. The graded choice is in force where the engine graded the play
 and the player may amend it; nothing is where the player grades it; no
 choices where there is nothing to say.
 
-A choice **selects, explains, then applies**. A tap marks it pending
-(outlined) and sends nothing; the fixed line under the row says what the
-selected one would do; APPLY ("YES, NEVER" for NEVER) sends it. The line
-and APPLY's slot are always laid out, so nothing under them moves when a
-choice is tapped. GOT IT after a miss keeps its column, disabled, and
-says why when tapped. Once NEVER has gone through the four stay where they
-are, disabled.
+SOONER, GOT IT and KNEW IT **apply on tap**: the tapped one is filled at
+once (pressed while it is on its way, the four disabled), and the fixed
+line under the row says what it does; a refusal says why in that line
+and the choice before the tap stands. NEVER alone asks first -- it
+cannot be undone -- so its tap rings it, explains, and lays out YES,
+NEVER; any other tap takes the question back. The line and the confirm's
+slot are always laid out, so nothing under them moves when a choice is
+tapped. GOT IT after a miss keeps its column, disabled, and says why
+when tapped. Once NEVER has gone through the four stay where they are,
+disabled.
 -}
 viewSchedule : Model -> Reveal -> List (Html Msg)
 viewSchedule model reveal =
@@ -3001,8 +3087,10 @@ viewSchedule model reveal =
 
         Just schedule ->
             let
+                -- The one on its way is drawn in force at once; a refusal
+                -- puts back the one before it.
                 chosen =
-                    inForce model
+                    model.applying |> orElse (inForce model)
 
                 offered =
                     schedule.amendable || schedule.selfGrade
@@ -3030,9 +3118,9 @@ viewSchedule model reveal =
                     else
                         levelLineFor model.outcome model.now schedule
 
-                -- What the selected choice would do: the pending one, else
-                -- the one in force. A refusal takes its place, so the
-                -- reveal keeps its height whatever the server says.
+                -- What the choice does: NEVER while it asks, else the one
+                -- in force. A refusal takes its place, so the reveal keeps
+                -- its height whatever the server says.
                 ( why, refused ) =
                     case model.outcomeError of
                         Just error ->
@@ -3046,8 +3134,12 @@ viewSchedule model reveal =
                                 ( "", False )
 
                             else
-                                ( model.pending
-                                    |> orElse chosen
+                                ( (if model.confirmingNever then
+                                    Just "never"
+
+                                   else
+                                    chosen
+                                  )
                                     |> Maybe.map (outcomeWhy model reveal.verdict (Maybe.withDefault schedule model.graded))
                                     |> Maybe.withDefault ""
                                 , False
@@ -3065,7 +3157,8 @@ viewSchedule model reveal =
                         ([ classList
                             [ ( "pz-outcome", True )
                             , ( "is-on", on )
-                            , ( "is-pending", model.pending == Just outcome && not on )
+                            , ( "is-busy", model.applying == Just outcome )
+                            , ( "is-pending", outcome == "never" && model.confirmingNever )
                             , ( "is-barred", isBarred )
                             ]
                          , id ("pz-outcome-" ++ String.replace "_" "-" outcome)
@@ -3078,7 +3171,7 @@ viewSchedule model reveal =
                                 "false"
                             )
                          , attribute "aria-describedby" "pz-outcome-why"
-                         , disabled (model.outcomeSending || setAside)
+                         , disabled (model.applying /= Nothing || setAside)
                          , onClick (PressedOutcome outcome)
                          ]
                             ++ (if isBarred then
@@ -3093,12 +3186,8 @@ viewSchedule model reveal =
                         )
                         [ text label ]
 
-                applying =
-                    if setAside then
-                        Nothing
-
-                    else
-                        model.pending
+                asking =
+                    model.confirmingNever && not setAside
             in
             [ div
                 [ classList
@@ -3127,15 +3216,15 @@ viewSchedule model reveal =
                                 , attribute "aria-live" "polite"
                                 ]
                                 [ text why ]
-                            , div [ class "pz-apply-slot" ]
+                            , div [ class "pz-confirm-slot" ]
                                 [ button
-                                    [ class "q-btn plain pz-action pz-apply"
-                                    , id "pz-apply"
-                                    , classList [ ( "is-idle", applying == Nothing ) ]
-                                    , disabled (applying == Nothing || model.outcomeSending)
-                                    , onClick PressedApply
+                                    [ class "q-btn plain pz-action pz-confirm"
+                                    , id "pz-never-yes"
+                                    , classList [ ( "is-idle", not asking ) ]
+                                    , disabled (not asking || model.applying /= Nothing)
+                                    , onClick ConfirmedNever
                                     ]
-                                    [ text (Mistakes.applyLabel (Maybe.withDefault "" applying)) ]
+                                    [ text Mistakes.neverConfirm ]
                                 ]
                             ]
 

@@ -1,14 +1,16 @@
 module PuzzleCelebrationTest exposing (suite)
 
-{-| The card the puzzle page draws under the reveal when the shell says
-an answer finished today's set (`Run.celebrate` decides when; `RunTest`
-holds that to "exactly once, on the counted answer that reaches the
-target"). Here: that it is drawn after the reveal and under it, never for
-a guest; what it says, from the run's own answers and the deck as the
-server read it; that its two buttons go on and stop; that the band under
-the board gives up ANOTHER and I'M DONE to it; and that its motion is the
-CSS's business -- the page only says when it is on the screen, and with
-reduced motion it is settled at once.
+{-| The card the puzzle page puts where the next puzzle would be when the
+shell says an answer finished today's set (`Run.celebrate` decides when;
+`RunTest` holds that to "exactly once, on the counted answer that
+reaches the target", and never in PRACTICE ANYWAY or a run with no ring).
+Here: that the reveal of that answer is an ordinary one, whose ANOTHER
+(there even past the run's last id) brings the card up in place of the
+board, once, never for a guest; what it says, from the run's own answers
+and the deck as the server read it; that "Keep going?" and its two
+buttons go on and stop; and that its motion is the CSS's business -- the
+page only says when it is on the screen, and with reduced motion it is
+settled at once.
 -}
 
 import Api
@@ -178,9 +180,19 @@ allMissed =
     [ ( "p1", did Fail 1 0 False ), ( "p2", did Fail 2 0 False ), ( "p3", did Fail 0 0 False ) ]
 
 
+{-| The shell's word that this answer finished today's set: the reveal
+keeps the card for ANOTHER.
+-}
+done : List ( String, Page.Answer ) -> Page.Model -> Page.Model
+done given model =
+    Page.celebrate { target = 5, answered = given } model |> Tuple.first
+
+
+{-| ...and ANOTHER pressed on that reveal: the card is on the page.
+-}
 celebrating : List ( String, Page.Answer ) -> Page.Model -> Page.Model
 celebrating given model =
-    Page.celebrate { target = 5, answered = given } model |> Tuple.first
+    done given model |> step Next
 
 
 deckPageJson : { kind : String, cost : String, patched : Int, total : Int } -> String
@@ -234,46 +246,110 @@ openings =
 
 appearing : Test
 appearing =
-    describe "the card appears"
-        [ test "under the reveal, inside it, after the answer: never before it" <|
+    describe "the card comes next"
+        [ test "the reveal of the answer that did it is an ordinary reveal: no card in it" <|
             \_ ->
                 let
                     model =
-                        answered { session = account, deck = Nothing } |> celebrating runAnswers
+                        answered { session = account, deck = Nothing } |> done runAnswers
                 in
                 Expect.all
-                    [ \_ -> rendered model |> Query.find [ id "pz-reveal" ] |> Query.has [ id "pz-today-done" ]
-                    , \_ -> rendered (answered { session = account, deck = Nothing }) |> Query.hasNot [ id "pz-today-done" ]
+                    [ \_ -> rendered model |> Query.hasNot [ id "pz-today-done" ]
+                    , \_ -> rendered model |> Query.has [ id "pz-reveal" ]
+                    , \_ -> rendered model |> Query.find [ id "pz-actions" ] |> Query.has [ id "pz-share" ]
+                    , \_ -> rendered model |> Query.find [ id "pz-actions" ] |> Query.has [ id "pz-next" ]
+                    , \_ -> rendered model |> Query.find [ id "pz-actions" ] |> Query.has [ id "pz-done" ]
                     ]
                     ()
-        , test "the band under the board keeps SHARE, and the card holds ANOTHER's and I'M DONE's place" <|
+        , test "ANOTHER on it shows the card in place of the puzzle, and asks the shell for nothing" <|
             \_ ->
-                answered { session = account, deck = Nothing }
-                    |> celebrating runAnswers
-                    |> rendered
-                    |> Expect.all
-                        [ Query.find [ id "pz-actions" ] >> Query.has [ id "pz-share" ]
-                        , Query.find [ id "pz-actions" ] >> Query.hasNot [ id "pz-next" ]
-                        , Query.findAll [ id "pz-done" ] >> Query.count (Expect.equal 1)
-                        , card >> Query.has [ id "pz-done" ]
-                        ]
-        , test "never for a guest: a guest has no day" <|
+                let
+                    model =
+                        answered { session = account, deck = Nothing } |> done runAnswers
+                in
+                Expect.all
+                    [ \_ -> out Next model |> Expect.equal Page.NoOut
+                    , \_ -> rendered (step Next model) |> Query.has [ id "pz-today-done" ]
+                    , \_ -> rendered (step Next model) |> Query.hasNot [ id "pz-reveal" ]
+                    , \_ -> rendered (step Next model) |> Query.hasNot [ id "pz-actions" ]
+                    , \_ -> rendered (step Next model) |> Query.has [ class "is-card" ]
+                    , \_ -> rendered (step Next model) |> Query.findAll [ id "pz-done" ] |> Query.count (Expect.equal 1)
+                    , \_ -> rendered (step Next model) |> card |> Query.has [ id "pz-done" ]
+                    ]
+                    ()
+        , test "the card still comes next when the run has no next puzzle" <|
             \_ ->
-                answered { session = Session.empty, deck = Nothing }
-                    |> celebrating runAnswers
-                    |> rendered
-                    |> Query.hasNot [ id "pz-today-done" ]
-        , test "once on a page: a second word from the shell changes nothing" <|
+                let
+                    last =
+                        answered { session = account, deck = Nothing }
+                            |> (\m -> { m | hasNext = False })
+                            |> done runAnswers
+                in
+                Expect.all
+                    [ \_ -> rendered last |> Query.find [ id "pz-actions" ] |> Query.has [ id "pz-next" ]
+                    , \_ -> out Next last |> Expect.equal Page.NoOut
+                    , \_ -> rendered (step Next last) |> Query.has [ id "pz-today-done" ]
+                    ]
+                    ()
+        , test "I'M DONE on that reveal shows the card first; the card's I'M DONE ends the run" <|
+            \_ ->
+                let
+                    model =
+                        answered { session = account, deck = Nothing } |> done runAnswers
+
+                    stopped =
+                        step PressedDone model
+                in
+                Expect.all
+                    [ \_ -> out PressedDone model |> Expect.equal Page.NoOut
+                    , \_ -> rendered stopped |> Query.has [ id "pz-today-done" ]
+                    , \_ -> rendered stopped |> Query.hasNot [ id "pz-reveal" ]
+                    , \_ -> out PressedDone stopped |> Expect.equal Page.WantsEnd
+                    ]
+                    ()
+        , test "an unconfirmed NEVER is dropped on the way to the card" <|
+            \_ ->
+                (answered { session = account, deck = Nothing }
+                    |> done runAnswers
+                    |> step (PressedOutcome "never")
+                    |> step PressedDone
+                ).confirmingNever
+                    |> Expect.equal False
+        , test "the outcome choices on that reveal still work" <|
+            \_ ->
+                (answered { session = account, deck = Nothing } |> done runAnswers |> step (PressedOutcome "sooner")).applying
+                    |> Expect.equal (Just "sooner")
+        , test "never for a guest: a guest has no day, and ANOTHER is the next puzzle" <|
+            \_ ->
+                let
+                    guest =
+                        answered { session = Session.empty, deck = Nothing } |> done runAnswers
+                in
+                Expect.all
+                    [ \_ -> rendered (step Next guest) |> Query.hasNot [ id "pz-today-done" ]
+                    , \_ -> out Next guest |> Expect.equal Page.WantsNext
+                    ]
+                    ()
+        , test "without the shell's word, ANOTHER is the next puzzle as always" <|
+            \_ ->
+                out Next (answered { session = account, deck = Nothing }) |> Expect.equal Page.WantsNext
+        , test "once on a page: a second word from the shell, or a second ANOTHER, changes nothing" <|
             \_ ->
                 let
                     once =
                         answered { session = account, deck = Nothing } |> celebrating runAnswers
                 in
-                Page.celebrate { target = 9, answered = [] } once
-                    |> Tuple.first
-                    |> rendered
-                    |> card
-                    |> Query.has [ dataAttr "data-target" "5" ]
+                Expect.all
+                    [ \_ ->
+                        Page.celebrate { target = 9, answered = [] } once
+                            |> Tuple.first
+                            |> rendered
+                            |> card
+                            |> Query.has [ dataAttr "data-target" "5" ]
+                    , \_ -> out Next once |> Expect.equal Page.NoOut
+                    , \_ -> rendered (step Next once) |> Query.has [ id "pz-today-done" ]
+                    ]
+                    ()
         , test "laid out hidden while the deck is read, then drawn" <|
             \_ ->
                 let
@@ -431,12 +507,14 @@ goingOn =
                 |> Page.offering (Page.Offered way)
     in
     describe "never a wall"
-        [ test "KEEP GOING beside I'M DONE, and what KEEP GOING adds" <|
+        [ test "\"Keep going?\", KEEP GOING beside I'M DONE, and what KEEP GOING adds" <|
             \_ ->
                 rendered (offered (Page.MoreNew 3))
                     |> card
                     |> Expect.all
-                        [ Query.find [ id "pz-keep-going" ] >> Query.has [ text "KEEP GOING", Test.Html.Selector.disabled False ]
+                        [ Query.find [ id "pz-today-ask" ] >> Query.has [ text "Keep going?" ]
+                        , Query.find [ id "pz-today-ask" ] >> Query.hasNot [ class "is-idle" ]
+                        , Query.find [ id "pz-keep-going" ] >> Query.has [ text "KEEP GOING", Test.Html.Selector.disabled False ]
                         , Query.find [ id "pz-done" ] >> Query.has [ text "I'M DONE" ]
                         , Query.find [ id "pz-today-way-line" ] >> Query.has [ text "Keep going adds 3 more." ]
                         ]

@@ -2,7 +2,7 @@ module Ui.Mistakes exposing
     ( Band
     , addsLine
     , allClearLine
-    , applyLabel
+    , keepGoingAsk
     , backLine
     , bandName
     , bandWord
@@ -50,6 +50,7 @@ module Ui.Mistakes exposing
     , milestone
     , missedNote
     , moves
+    , neverConfirm
     , neverWhy
     , nextTierLabel
     , masteredAside
@@ -486,16 +487,19 @@ neverWhy =
     "Out of your practice for good. It will not come back, and this cannot be undone."
 
 
-{-| The button that makes a selected choice take effect. NEVER cannot be
-undone, so its button says so in the asking.
+{-| The one confirm a choice has: NEVER cannot be undone, so it asks, and
+its button says so in the asking. The other three apply on the tap.
 -}
-applyLabel : String -> String
-applyLabel outcome =
-    if outcome == "never" then
-        "YES, NEVER"
+neverConfirm : String
+neverConfirm =
+    "YES, NEVER"
 
-    else
-        "APPLY"
+
+{-| What the card that says today's set is done asks.
+-}
+keepGoingAsk : String
+keepGoingAsk =
+    "Keep going?"
 
 
 {-| Above the board in a session: why this position is in front of you.
