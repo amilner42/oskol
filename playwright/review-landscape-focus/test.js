@@ -6,13 +6,17 @@
  * sideways phone has always had, the whole table beside the board.
  * `#bg-focus-toggle` moves between them, so every screen here is shot both
  * ways, in play and between games, plus the same room upright and on a
- * desktop to show that neither moved.
+ * desktop. Off a portrait phone the bear-off trays are a column at the end
+ * of the home boards (three bins of five a side); upright they stay strips
+ * in the identity bars. Both are asserted on every screen here, and a
+ * bear-off is played on each, holding every box on the table still.
  *
  * Run with the server up:  node playwright/review-landscape-focus/test.js
  */
 const playwright = require('playwright');
 const fs = require('fs');
 const { BASE, createGame, joinByLink } = require('../lib/flows');
+const { assertTrayColumn, assertTrayStrips, bearOffEverywhere } = require('../lib/trays');
 
 const OUT = process.argv[2] || 'playwright/screenshots/review-landscape-focus';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -74,7 +78,9 @@ async function table(browser, vp) {
   const seats = [guest(), guest()];
   const { a, b, mover, contexts } = await playing(browser, vp, seats);
 
-  // Expanded is what a turned phone gets with nothing stored.
+  // Expanded is what a turned phone gets with nothing stored. The trays
+  // are a column at the end of the home boards in both modes.
+  await assertTrayColumn(mover, `${vp.name}, expanded`);
   await mover.screenshot({ path: `${OUT}/${vp.name}-01-expanded-playing.png` });
   const source = mover.locator('.bg-point.source');
   if (await source.count()) {
@@ -85,6 +91,7 @@ async function table(browser, vp) {
 
   // ...and the same board compressed.
   await toggle(mover);
+  await assertTrayColumn(mover, `${vp.name}, compressed`);
   await mover.screenshot({ path: `${OUT}/${vp.name}-03-compressed-playing.png` });
   if (await mover.locator('#bg-match-toggle').count()) {
     await mover.click('#bg-match-toggle');
@@ -134,6 +141,8 @@ async function unchanged(browser) {
     await p.goto(url);
     await p.waitForSelector('.bg-board', { timeout: 20000 });
     await sleep(900);
+    if (vp === UPRIGHT) await assertTrayStrips(p, vp.name);
+    else await assertTrayColumn(p, vp.name);
     await p.screenshot({ path: `${OUT}/${vp.name}-table.png` });
     await p.close();
     await c.close();
@@ -163,6 +172,14 @@ async function unchanged(browser) {
     } catch (e) {
       failed = true;
       console.error(`unchanged: ${e.message}`);
+    }
+    // A bear-off on every screen the trays change shape across, every box
+    // on the table held still while checkers come off.
+    try {
+      await bearOffEverywhere(browser, { shot: (screen, mode) => `${OUT}/${screen.name}-07-bear-off-${mode}.png` });
+    } catch (e) {
+      failed = true;
+      console.error(`bear-off: ${e.message}`);
     }
   } finally {
     await browser.close();
