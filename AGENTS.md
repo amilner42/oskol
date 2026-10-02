@@ -206,6 +206,7 @@ PR as the code it describes (update it when you change what it says):
 | `docs/rooms.md` | the bot (Sage), persistence and rehydrate, ending a room, `games.state`, patching old logs |
 | `docs/home.md` | the signed-in home's data: `/papi/me/home`, ratings, streak, recent rooms |
 | `docs/reviews.md` | post-game reviews, the per-turn grader, records, match and career PR |
+| `docs/analysis.md` | the analysis board: the position a player sets up (`oskol/analysis/setup`) |
 | `docs/puzzles.md` | puzzles, grading, the deck and its sync, practice sessions, the five decks and their pages, a run, sharing, pictures, universal sets |
 | `docs/testing.md` | what each suite covers, fixtures, every Playwright script, CI, build notes |
 | `docs/file-map.md` | the file-by-file map |

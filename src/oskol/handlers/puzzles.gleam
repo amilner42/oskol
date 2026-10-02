@@ -44,6 +44,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
+import oskol/analysis/setup
 import oskol/caps/practice.{
   type Card, type Outcome, Active, Again, Known, New, Partial,
   Pass as PassOutcome, Suspended,
@@ -183,25 +184,18 @@ pub fn head(ctx: Ctx, id: String, share: String) -> Result(Head, ApiError) {
 /// each way is a single game -- a 1-point match and a single game are the
 /// same position, unless it is marked Crawford, which only a match is.
 pub fn describe(q: Question) -> String {
-  let score = case q.away_mover, q.away_opponent, q.crawford {
-    0, 0, _ -> "Unlimited play"
-    1, 1, False -> "Single game"
-    mine, theirs, crawford ->
-      "Match play, "
-      <> int.to_string(mine)
-      <> " away against "
-      <> int.to_string(theirs)
-      <> case crawford {
-        True -> ", Crawford"
-        False -> ""
-      }
-  }
-  let cube = case q.cube_owner {
-    Mover -> "Cube at " <> int.to_string(q.cube_value) <> ", White's."
-    Opponent -> "Cube at " <> int.to_string(q.cube_value) <> ", Black's."
-    _ -> "Cube centered."
-  }
-  score <> ". " <> cube <> " A backgammon puzzle: play it on the board."
+  setup.situation(
+    q.away_mover,
+    q.away_opponent,
+    q.crawford,
+    q.cube_value,
+    case q.cube_owner {
+      Mover -> Some(White)
+      Opponent -> Some(board.Black)
+      _ -> None
+    },
+  )
+  <> " A backgammon puzzle: play it on the board."
 }
 
 /// The sentence the page asks in, the head and the picture repeat, and a

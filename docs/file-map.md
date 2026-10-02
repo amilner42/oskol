@@ -72,6 +72,10 @@ src/oskol/caps/decks.gleam      a set's members, its write, and the practice cap
 lib/oskol/practice.ex           those decisions run with the real rows behind them
 lib/oskol/puzzles.ex            puzzles + puzzle_sources/attempts/shares/images tables;
                                 the one write, in one transaction with its marker
+src/oskol/analysis/setup.gleam  the position a player sets up on the analysis board:
+                                the shape and its wire, check's refusals, the puzzle
+                                question and engine turn it asks, flip, and the way
+                                back from a stored question
 src/oskol/puzzles.gleam         a puzzle's stored shape: the question, its canonical
                                 key and id, the answer, the JSON of each column
 src/oskol/puzzles/extract.gleam which turns of a graded game are puzzles
