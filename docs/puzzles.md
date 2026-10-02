@@ -463,7 +463,9 @@ band in the replay's mark and colour (?! DUBIOUS, ? BAD, ?? VERY BAD) with
 "Gives up 0.04 — a mistake, so it comes back." (no "so it comes back"
 without a schedule). Then the replay's words and table (`Words`, with
 `doubleWhy`/`noDoubleWhy`/`answerWhy` for a position nobody has acted on
-yet) with "you" marked and a candidate tappable onto the board; the cube's
+yet) with "you" marked (a play outside the five the engine described is
+the row "your play", which needs no badge) and a candidate tappable onto
+the board; the cube's
 scale marks the engine's band over `cubeLine`. The attempt's key is minted
 once per page load (`elm/random`) and a PLAY that lands before it waits for
 it, so a retry is the same answer. Signed in with a `schedule`, the level
@@ -760,8 +762,8 @@ universal-set machinery with an owner, so there are no new practice rules.
   (`Run.InSet`), exactly as Openings'. Its page (`Page.Practice`) adds
   MANAGE (`#practice-manage`) under the card: the name in a field
   (`#practice-rename`, RENAME, `PATCH`), the positions as a list -- a 72px
-  still board (`viewStill` on `Setup.fromQuestion`), the prompt, where it
-  stands ("to learn", "back at the start", "level 2", "mastered"), and an
+  still board (`viewStill` on `Setup.fromQuestion`), the prompt (two lines
+  at most, a roll never broken at its hyphen), where it stands ("to learn", "back at the start", "level 2", "mastered"), and an
   x (`#practice-remove-<pid>`) -- and DELETE SET (`#practice-delete`),
   which asks in its own slot ("Delete Openings I like? Its positions stay
   where they are; your progress on them is kept aside.", YES, DELETE

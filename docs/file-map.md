@@ -252,7 +252,8 @@ assets/src/Page/Analysis.elm     "/analysis" the analysis board: the brushes, th
                                  the cube's line; a candidate on the board), SHARE /
                                  OPEN AS PUZZLE, the refusals and TRY AGAIN; playing it
                                  out: SET UP / PLAY, the puzzle table on a step's legal
-                                 plays, PLAY THIS, ROLL FOR ME, the cube's choices, the
+                                 plays, PLAY THIS, ROLL FOR ME / PICK A ROLL / DOUBLE?,
+                                 the cube's choices, the strip locked in PLAY, the
                                  line (`#an-line`) and its plates
 assets/src/Api/Analysis.elm      POST /papi/analysis and GET /papi/analysis/:key: the
                                  status decoder, the reveal ({best, top, cube, n_legal,
@@ -368,4 +369,9 @@ assets/src/Api/Auth.elm          /papi/auth/* and /papi/me for the client
 playwright/test-accounts/test.js the whole sign-in flow in three browsers
 playwright/test-home/test.js     the signed-in home end to end (setup.exs makes the
                                  account and its graded games)
+playwright/test-analysis/        the analysis board's smoke, four parts (setup.exs: the
+                                 stand-in engine; account.exs: an account with no sets)
+playwright/review-analysis/      the Analysis milestone's screenshots at four sizes
+                                 (setup.exs: the seeded match, the universal sets, an
+                                 account; run.sh: its own port and database)
 ```

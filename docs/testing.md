@@ -278,10 +278,13 @@ node playwright/test-analysis/test.js           # the analysis board. Part 1, se
                                                # opening 3-1, ROLL FOR ME for Black, the table on
                                                # its legal plays (Black at the bottom), ANALYZE;
                                                # FIRST and NEXT with the answers kept and no ask;
-                                               # Black's roll played by hand, White's DOUBLE and
-                                               # Black's PASS ending the line in its sentence; a
-                                               # different play at step 0 dropping the rest; an
-                                               # edit at a later step starting a fresh line; the
+                                               # Black's roll played by hand, the strip, the quick
+                                               # starts and IMPORT disabled in PLAY (the id and COPY
+                                               # live), White's DOUBLE? from the row and Black's PASS
+                                               # ending the line in its sentence; a different play
+                                               # at step 0 dropping the rest; PICK A ROLL in PLAY;
+                                               # SET UP live again, and an edit at a later step
+                                               # starting a fresh line; the
                                                # board, the row over it, the line, ANALYZE and the
                                                # panel holding their boxes throughout. Part 4,
                                                # SAVE, with an account account.exs makes (its old
@@ -297,7 +300,9 @@ node playwright/test-analysis/test.js           # the analysis board. Part 1, se
                                                # puzzles-your-sets-*, practice-own-*, puzzle-save-390.
                                                # `playwright/test-analysis/run.sh` serves its own
                                                # port and database around it; bin/check points its
-                                               # server's ANALYSIS_URL at the stand-in's port.
+                                               # server's ANALYSIS_URL at the stand-in's port, and
+                                               # CI runs it as the `analysis` shard with the
+                                               # server's ANALYSIS_URL at http://localhost:14400.
 node playwright/test-puzzles-hub/test.js        # the practice home and a run: setup.exs's game, the
                                                # first seat trimmed to 12 mistakes; a stranger's TRY
                                                # ONE, a guest's run to the score and the sign-in ask,
@@ -334,6 +339,22 @@ playwright/review-decks/run.sh                  # screenshots of the sets on /pu
                                                # through the openings, the reveal and the end
                                                # card (four sizes); serves its own port and
                                                # database and builds the sets on a stub engine
+playwright/review-analysis/run.sh               # the Analysis milestone whole, at four sizes: the
+                                               # empty board with ☰ open, a position half set up,
+                                               # the roll sheet, IMPORT, a move's answer and a
+                                               # candidate (sideways: the board in view beside the
+                                               # answer), a cube's answer, a line of three steps in
+                                               # PLAY, the save sheet (an account, a guest), /puzzles
+                                               # with "Your sets", the set's page with MANAGE, the
+                                               # replay's SHARE and OPEN IN ANALYSIS, and a replay
+                                               # share's reveal (SAVE, OPEN IN ANALYSIS, WATCH THE
+                                               # REPLAY). setup.exs arranges the seeded match, the
+                                               # universal sets (stub engine) and an account; test.js
+                                               # starts the stand-in engine and makes the set.
+                                               # screenshots/review-analysis-<size>-<state>.png;
+                                               # serves its own port (4487) and database.
+                                               # review-analysis/serve.sh serves the same data and
+                                               # engine until Ctrl-C, for walking it by hand
 node playwright/test-spa-landing/test.js        # the guest home: the sentence and its menus,
                                                # PLAY NOW against Sage and a friend, old links
                                                # redirect, a full create -> play click-through
@@ -355,10 +376,11 @@ node playwright/review-replay-mobile/test.js    # screenshots of the replay's ve
                                                # overview on two phones, sideways, and a desktop
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`:
-two jobs side by side, the suites (compile, Gleam, Elm, Elixir, formatting)
-and the Playwright smokes (one server, in `bin/check`'s order), green when
-both are. It runs on pull requests and on pushes to main, once per commit;
+CI (`.github/workflows/ci.yml`) runs the same steps as `bin/check --browser`,
+side by side: the suites (compile, Gleam, Elm, formatting), the Elixir
+tests in four partitions, and the Playwright smokes in five shards (each its
+own server and database; the matrix says which smokes each runs and what
+they cost), green when all are. It runs on pull requests and on pushes to main, once per commit;
 a newer push to a branch cancels the run it supersedes, a push to main is
 never cancelled.
 
