@@ -7,9 +7,12 @@ fits one phone screen with no scrolling. The table is one dark slab: the
 opponent's identity bar, the board and the viewer's bar share a frame. The
 points take the slab's whole width: the doubling cube lives on the bar (in
 the middle while centred, at the band end of the owner's half once
-turned) and each player's bear-off tray is a row of holders in their own
-identity bar, beside their name and clock, so no column of the board is
-spent on either. Every action (roll, double, take, drop, play, undo)
+turned). On a phone held upright each player's bear-off tray is a row of
+three holders in their own identity bar, beside their name and clock, so
+no column of the board is spent on it; everywhere else (a phone on its
+side, a tablet, a desktop) the trays are one column at the end of the
+home boards, three bins of five a side, as a real board keeps them
+(`viewTrayColumn`). Every action (roll, double, take, drop, play, undo)
 lives in the board's centre band, and each player's clock in their bar.
 
 Turn the phone and the board takes the screen. In landscape the layout is
@@ -23,8 +26,9 @@ so a big monitor gets a big board), and there are two of them, with
     board is nearly square and a sideways phone is not, so the width a
     full-height felt cannot use becomes the board's own rails -- and almost
     nothing else is drawn. What stays is what a turn cannot be played
-    without: the clock, the score, the bear-off tray, the centre band, and
-    PRACTICE THIS GAME'S N MISTAKES on the card between games.
+    without: the clock, the score, the bear-off trays (on the rail beside
+    the home boards), the centre band, and PRACTICE THIS GAME'S N MISTAKES
+    on the card between games.
   - **compressed**, which is the layout a sideways phone has always had:
     the whole table in a column beside the board. Everything focus mode
     puts away is here, one tap from it.

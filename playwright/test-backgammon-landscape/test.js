@@ -15,7 +15,7 @@
  * 2. Nothing scrolls, in either mode: the document is exactly as tall as
  *    the viewport.
  * 3. Expanded: the board IS the screen, and the little chrome it keeps --
- *    the clock, the score, the tray -- is ON the board and never on the
+ *    the clock, the score, the trays -- is ON the board and never on the
  *    play. Until focus mode the promise here was "the chrome is beside the
  *    board, not on it", which was one way of saying the thing that actually
  *    matters: that nothing may cover a point, a checker, the dice, the cube
@@ -34,8 +34,17 @@
  * 6. A danced turn in landscape (the room is arranged the way
  *    test-backgammon-dance does it): "NO LEGAL MOVES / TURN PASSES" and
  *    the dice that did it are both on the board, inside it.
- * 7. Portrait phone and desktop screenshots of the very same game, to show
- *    that neither changed.
+ * 7. Portrait phone and desktop screenshots of the very same game.
+ * 8. The bear-off trays: off a portrait phone they are one column at the
+ *    end of the home boards (beside the ace points, the other side's tray
+ *    on top, the viewer's a tap target), and upright they stay strips in the
+ *    identity bars. A real bear-off (bearoff.exs arranges the room) is
+ *    played at 844x390 and 667x375 and 932x430 and 640x480 in both layouts,
+ *    at 1440x900 and upright at 390x844, and no box on the table moves as
+ *    the checkers come off (playwright/lib/trays.js).
+ * 9. The clock is one line, "5:00 +12": the time and its free seconds never
+ *    overlap and sit inside the chip, the chip is as wide either way, and
+ *    the running clock reads at WCAG AA on all twelve boards.
  *
  * Run with the server up:  node playwright/test-backgammon-landscape/test.js
  */

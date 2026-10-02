@@ -724,7 +724,9 @@ a.q-card:hover, a.q-card:focus-visible {
 /* Backgammon: the table is one wooden slab. The opponent's identity bar,
    the board's frame and the viewer's bar are the same walnut; two light
    oak fields are recessed into it; the bar runs through the centre with
-   the cube on it, and each player's bear-off tray sits in their own bar. Points alternate walnut and tan; amber is the accent: the player
+   the cube on it, and each player's bear-off tray sits in their own bar
+   on a phone held upright, in a column at the end of the home boards
+   everywhere else. Points alternate walnut and tan; amber is the accent: the player
    to act, a picked checker, an offer.
 
    Every board dimension follows from one number, the point height
@@ -1052,9 +1054,10 @@ a.q-card:hover, a.q-card:focus-visible {
 /* A checker on the bar is the size of one on a point, not of the bar. */
 .bg-bar .checker { width: calc((var(--bg-pw) - 2px) * 0.84); } /* a point has 1px of side padding */
 .bg-bar .checker.black { border-color: var(--bg-checker-dark-ink); }
-/* The bear-off trays: one per player, in that player's identity bar,
-   three holders of five laid along it the way a real board keeps them,
-   turned on their side. The checkers borne off stack edge-on, filling
+/* The bear-off trays on a phone held upright, and on the still boards
+   (the replay, a puzzle, the analysis board) everywhere: one per player,
+   in that player's identity bar, three holders of five laid along it the
+   way a real board keeps them, turned on their side. The checkers borne off stack edge-on, filling
    the holders from the left; a stick is a fifth of a holder, so a full
    holder is full. The count reads after the holders. */
 .bg-tray {
@@ -1699,8 +1702,9 @@ a.bg-match-door:hover { background: var(--paper-2); }
        exactly half of it on each side. The felt sits in the middle of a
        board that reaches both edges.
      - Almost nothing else is drawn. What stays is what you cannot play a
-       turn without: the **clock**, the **score**, the bear-off tray (which
-       is a tap target, not a readout), the small name that says which side
+       turn without: the **clock**, the **score**, the bear-off trays
+       (a tap target, not a readout: a column on the rail beside the home
+       boards, as on every board off a portrait phone), the small name that says which side
        of a bot game you are looking at, and the board's own centre band --
        the dice, UNDO and PLAY, READY between games. Everything else is one
        tap away in compressed mode, which is the point of having two: the
@@ -1713,7 +1717,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
        grid's outer columns are exactly `--bg-frame-w` wide, so a plate put
        in one of them is on wood by construction rather than by a number
        somebody has to keep true. Left rail: who is playing. Right rail:
-       the one control.
+       the trays beside the felt, and the one control at its edge.
      - Nothing hides behind a tap. Games here are played on a clock, and a
        clock you have to tap for is a clock you lose on.
 
@@ -1734,15 +1738,15 @@ a.bg-match-door:hover { background: var(--paper-2); }
     height: 100dvh;
     --bg-lip: 5px;
     --bg-band-h: 2.75rem;
-    /* What a plate needs of a rail -- a name over a score and a clock, or
-       the tray's three holders -- and so what the width cap has to leave
+    /* What a plate needs of a rail -- a name over a score and a clock on
+       the left, the tray column and the toggle on the right -- and so what the width cap has to leave
        over on each side before the board may take any more height. It
        binds on nothing a phone is shaped like: sideways, the height runs
        out long before the width does, so this is the squarish-screen case
        (a small tablet) and nothing else -- and there it is kept small
        enough that focus mode is never the smaller board of the two. A
        plate's own floor is its clock chip, since the name gives way to an
-       ellipsis and the tray's holders wrap. */
+       ellipsis. */
     --bg-rail-min: 5rem;
     --bg-inset-x: calc(env(safe-area-inset-left, 0px) + env(safe-area-inset-right, 0px));
     /* The bottom lip swallows the home indicator where there is one, so the
@@ -1827,9 +1831,8 @@ a.bg-match-door:hover { background: var(--paper-2); }
     width: auto;
     max-width: none;
     /* A plate is read, not pressed, so it may not take a tap the board was
-       meant to get -- with one exception, restored below: the viewer's own
-       bear-off tray, which is where a checker coming off is tapped to
-       (`viewTray` in View.elm). */
+       meant to get. (The bear-off trays, which are taps, are not on the
+       plates here: they are the column on the right rail.) */
     pointer-events: none;
     flex-wrap: wrap;
     gap: 2px 5px;
@@ -1852,8 +1855,7 @@ a.bg-match-door:hover { background: var(--paper-2); }
   }
   .bg-page.is-expanded .player-bar:not(.is-me) { align-self: start; }
   .bg-page.is-expanded .player-bar.is-me { align-self: end; flex-wrap: wrap-reverse; }
-  /* What a plate is: a small name, the score, the clock, and the tray a
-     checker bears off into. Everything else on the bar is something you can
+  /* What a plate is: a small name, the score and the clock. Everything else on the bar is something you can
      read in compressed mode -- the pips, the ratings, the swatch, the
      identity badge, the presence dot, the turn arrow -- and focus mode is
      for playing, not for reading about the table. The elastic gap goes too,
@@ -1870,15 +1872,6 @@ a.bg-match-door:hover { background: var(--paper-2); }
   .bg-page.is-expanded .player-bar .bar-name { font-size: 11px; line-height: 1.2; min-width: 0; }
   .bg-page.is-expanded .player-bar .score-chip { font-size: 9px; padding: 1px 4px; }
   .bg-page.is-expanded .player-bar .clock-chip { font-size: 10px; padding: 0 4px; }
-  .bg-page.is-expanded .player-bar .bg-tray {
-    flex-wrap: wrap;
-    min-width: 0;
-    max-width: 100%;
-    /* The one tap target on a plate, so the one thing that keeps its
-       pointer events: a checker bearing off is tapped into it. */
-    pointer-events: auto;
-    --holder-h: 0.8rem;
-  }
 
   /* ---- the right rail: the one control ---- */
   .bg-page.is-expanded .bg-actions,
