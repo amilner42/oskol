@@ -244,8 +244,8 @@ assets/src/Page/Puzzles.elm      "/puzzles" the practice home: the five decks fr
 assets/src/Page/Analysis.elm     "/analysis" the analysis board: the brushes, the board
                                  as `View.viewEdit` draws it (a tap, a right click, a
                                  long press per point and bar half), the settings
-                                 strip, OPENING / CLEAR / FLIP, the XGID with COPY (the
-                                 `copyText` port) and IMPORT, the check line and
+                                 strip (TO PLAY as checkers with their words), OPENING /
+                                 CLEAR / FLIP, the check line and
                                  ANALYZE; the doors in (?xgid=, ?p=); the press (the
                                  plate counting seconds, the poll), the answer's panel
                                  (`#an-panel`: the best play and the candidate table, or

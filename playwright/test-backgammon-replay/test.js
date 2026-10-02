@@ -231,7 +231,8 @@ async function openedInAnalysis(context, page, want, what) {
       throw new Error(`${what}: point ${p} draws ${JSON.stringify(drawn)}, the replay has ${JSON.stringify(w)}`);
   }
   log(`ok: ${what}: all 24 points draw the replay's checkers`);
-  const id = await an.inputValue("#an-xgid");
+  // the position the replay opened, as the link carries it (the page shows no id)
+  const id = new URL(an.url()).searchParams.get("xgid");
   const f = id.slice(5).split(":");
   const at = (i) => { const ch = f[0][i]; return ch === "-" ? 0 : ch >= "A" && ch <= "P" ? ch.charCodeAt(0) - 64 : -(ch.charCodeAt(0) - 96); };
   const got = {

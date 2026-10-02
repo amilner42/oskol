@@ -299,19 +299,6 @@ app.ports.celebrateCard?.subscribe((id) => {
   });
 });
 
-// ---- The analysis board's position id: COPY ----
-// The clipboard where the browser allows it; where it does not (an
-// insecure origin, a refused permission), the field is selected so the
-// reader can copy it themselves.
-app.ports.copyText?.subscribe(async (text) => {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch (_) {
-    const field = document.getElementById("an-xgid");
-    if (field) { field.focus(); field.select(); }
-  }
-});
-
 // ---- Invite links: native share on phones, clipboard elsewhere ----
 app.ports.shareInvite?.subscribe(async (url) => {
   const reply = (result) => app.ports.shareResult?.send(result);

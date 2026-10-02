@@ -345,20 +345,20 @@ suite =
                 \_ ->
                     View.autoRoll [ schema "roll", schema "resign" ] View.init
                         |> Expect.equal
-                            ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                            ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }
                             , Just (Protocol.encodeAction "roll" [])
                             )
              , test "the same state never rolls twice" <|
                 \_ ->
-                    View.autoRoll [ schema "roll" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
-                        |> Expect.equal ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }, Nothing )
+                    View.autoRoll [ schema "roll" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }
+                        |> Expect.equal ( { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }, Nothing )
              , test "keeps the choice when double is also legal" <|
                 \_ ->
                     View.autoRoll [ schema "roll", schema "double" ] View.init
                         |> Expect.equal ( View.init, Nothing )
              , test "disarms as soon as rolling stops being the pending action" <|
                 \_ ->
-                    View.autoRoll [ schema "move" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                    View.autoRoll [ schema "move" ] { swaps = 0, autoRolled = True, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }
                         |> Expect.equal ( View.init, Nothing )
              , test "a whole turn rolls exactly once: qualify, roll, advance, re-qualify" <|
                 \_ ->
@@ -1203,7 +1203,7 @@ suite =
                     withDice [ 6, 4 ] u
 
                 model swaps =
-                    { swaps = swaps, autoRolled = False, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False }
+                    { swaps = swaps, autoRolled = False, resigning = False, roll = settled, matchOpen = False, viewing = Nothing, stale = False, still = False, turnMark = False }
 
                 rendered swaps u =
                     View.view (ctx "p1" (twoDice u) (model swaps)) |> Query.fromHtml

@@ -1,4 +1,4 @@
-module Games.Backgammon.View exposing (Ctx, EditBoard, EditEvent(..), Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewEdit, viewPlay, viewStill)
+module Games.Backgammon.View exposing (Ctx, EditBoard, EditEvent(..), Model, Move, Msg(..), Out(..), PlayBoard, PlayOut(..), Presence(..), Roll, Save(..), Side, Snapshot, Step, StillBoard, TapContext, Turn, autoRoll, defaultTheme, init, noteEvents, presenceFlashMs, presenceOf, resolveTap, sideDecoder, snapshotDecoder, themeBoard, themeClass, themes, tumbleFaces, update, view, viewEdit, viewPlay, viewStill, viewStillTurn)
 
 {-| A backgammon board on the protocol Scene, in the notebook multicade style.
 
@@ -60,6 +60,7 @@ type alias Model =
     , viewing : Maybe Int -- a past turn of the game on the board (its index in the record, oldest first) is up instead of the live position
     , stale : Bool -- the game moved on while a past turn was on the board
     , still : Bool -- a board drawn for the replay (`viewStill`): no live game behind it, so no way back to one
+    , turnMark : Bool -- a still board that says whose turn it is: the mover's bar is drawn as the live game's to-move bar (`viewEdit`, `viewStillTurn`)
     }
 
 
@@ -125,6 +126,7 @@ init =
     , viewing = Nothing
     , stale = False
     , still = False
+    , turnMark = False
     }
 
 
@@ -936,7 +938,7 @@ viewPlayerBar ctx player isMe tray =
         Just p ->
             let
                 active =
-                    toActId ctx == Just p.id && ctx.finished == Nothing
+                    (toActId ctx == Just p.id || (ctx.model.turnMark && toMoveId ctx == Just p.id)) && ctx.finished == Nothing
 
                 color =
                     colorOf (Just p)
@@ -961,7 +963,7 @@ viewPlayerBar ctx player isMe tray =
 
                 -- The room's name for the seat, not the one the game started
                 -- with: an account's seat is named by its account.
-                , span [ class "font-bold text-sm sm:text-base truncate" ] [ text (ctx.nameOf p.id) ]
+                , span [ class "bar-name font-bold text-sm sm:text-base truncate" ] [ text (ctx.nameOf p.id) ]
                 , viewPresenceDot ctx p.id
                 , viewRating ctx p.id
                 , span
@@ -2975,6 +2977,15 @@ type alias StillBoard =
     }
 
 
+{-| A still board that says whose turn it is: the mover's bar is the
+live game's to-move bar, with its ▸. The analysis board, where whose move
+it is is the question.
+-}
+viewStillTurn : msg -> StillBoard -> Html msg
+viewStillTurn noop s =
+    Html.map (\_ -> noop) (slab s { stillOnly | turnMark = True })
+
+
 viewStill : msg -> StillBoard -> Html msg
 viewStill noop s =
     Html.map (\_ -> noop) (slab s stillOnly)
@@ -2992,6 +3003,7 @@ type alias Taps =
     , swaps : Int -- taps on the dice: which one plays next
     , honours : Msg -> Bool -- a tap the caller can actually carry out
     , zone : String -> List (Html.Attribute Msg) -- an editor board's places (`viewEdit`)
+    , turnMark : Bool -- the mover's bar drawn as the one to move, on a board nobody is playing
     }
 
 
@@ -3004,6 +3016,7 @@ stillOnly =
     , swaps = 0
     , honours = \_ -> False
     , zone = \_ -> []
+    , turnMark = False
     }
 
 
@@ -3083,6 +3096,7 @@ slab s taps =
             , model =
                 { init
                     | still = True
+                    , turnMark = taps.turnMark
                     , swaps = taps.swaps
                     , roll = { seq = -1 - s.key, watched = False }
 
@@ -3286,7 +3300,7 @@ viewEdit eb =
                 _ ->
                     eb.noop
         )
-        (slab eb.still { stillOnly | zone = editZone eb.zoneId })
+        (slab eb.still { stillOnly | zone = editZone eb.zoneId, turnMark = True })
 
 
 editZone : (String -> String) -> String -> List (Html.Attribute Msg)
@@ -3389,6 +3403,7 @@ viewPlay pb =
             , swaps = pb.swaps
             , honours = \msg -> playSteps pb msg /= Nothing
             , zone = \_ -> []
+            , turnMark = False
             }
         )
 

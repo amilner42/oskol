@@ -3403,7 +3403,7 @@ oskol-demo-board {
    the board takes the screen's height and the rest is the column beside
    it; on a desktop the brushes sit over the board and the column beside
    both. Every control has a fixed size, so nothing moves when one changes:
-   the strip is two rows at every width, its labels and buttons never
+   the strip is three rows at every width, its labels and buttons never
    change width with what they say, and the line under it is two lines
    tall whether or not it says anything. */
 .an-board .edit-zone { cursor: pointer; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
@@ -3434,11 +3434,36 @@ oskol-demo-board {
   transition: background 0.12s;
 }
 .an-brush:hover:not(.is-on) { background: var(--paper-2); }
-.an-brush.is-on { background: var(--ink); color: #fff; }
+/* Chosen -- a brush, who is to play, a step of the line -- is the
+   highlighter under the thing with an ink ring round it, never an
+   inverted tile: a white checker on a dark square reads as the other
+   colour. A checker is always drawn as the board draws it. */
+.an-brush.is-on, .an-who.is-on, .an-plate.is-on { background: var(--highlighter); box-shadow: inset 0 0 0 1.5px var(--ink); }
 .an-chip { display: inline-block; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--ink); flex: none; }
 .an-chip.white { background: #f6f1e4; }
 .an-chip.black { background: #2b2c40; }
-.is-on > .an-chip { border-color: #fff; }
+/* TO PLAY: each colour's checker with its word; the chosen one's word in
+   ink and underlined, the other's in pencil. */
+.an-whos { display: flex; gap: 4px; height: 30px; }
+.an-who {
+  flex: none; width: 70px; height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0;
+  border: 1.5px solid var(--ink); border-radius: 7px; background: #fff; color: var(--pencil); cursor: pointer;
+  transition: background 0.12s;
+}
+.an-who:hover:not(.is-on):not(:disabled) { background: var(--paper-2); }
+.an-who .an-chip { width: 14px; height: 14px; }
+.an-who-word { font-size: 7px; line-height: 1; letter-spacing: 0.02em; text-underline-offset: 3px; }
+.an-who.is-on .an-who-word { color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; }
+.an-strip.is-locked .an-who { cursor: default; }
+/* The step of the line's colour, as a checker in place of W or B. */
+.an-plate { display: inline-flex; align-items: center; gap: 5px; }
+.an-plate .an-chip { width: 12px; height: 12px; border-width: 1.2px; }
+/* On the analysis board the bar of the player to move says so in words. */
+.an-board .player-bar.active .bar-name::after { content: " to play"; font-weight: 500; opacity: 0.85; }
+/* The bars never set the slab's width (sideways the slab is as wide as
+   its content): whatever a bar says -- "to play", a count -- it fits the
+   board's width, so the board never moves when the turn changes. */
+.an-board .bg-still .player-bar { width: 0; min-width: 100%; }
 .an-x { font-size: 15px; line-height: 1; font-weight: 700; }
 .an-hint { flex: 1; min-width: 0; font-size: 12px; color: var(--pencil); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .an-hint-mouse { display: none; }
@@ -3467,6 +3492,7 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
 .an-strip.is-locked { opacity: 0.4; }
 .an-strip.is-locked .an-seg, .an-strip.is-locked .an-step { cursor: default; }
 .an-strip.is-locked .an-seg.is-on { color: #fff; }
+.an-strip.is-locked .an-who.is-on .an-who-word { color: var(--ink); }
 .an-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
 .an-group { display: flex; flex-direction: column; gap: 4px; flex: none; }
 .an-label { font-size: 6px; line-height: 7px; height: 7px; color: var(--pencil); letter-spacing: 0.04em; white-space: nowrap; }
@@ -3485,7 +3511,6 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
 .an-seg.is-on { background: var(--ink); color: #fff; }
 .an-seg:disabled, .an-step:disabled { color: #a9a9b2; cursor: default; }
 .an-step { width: 20px; font-family: inherit; font-size: 15px; font-weight: 700; }
-#an-turn-white, #an-turn-black { width: 30px; }
 #an-dice { width: 46px; }
 #an-ask-double { width: 57px; }
 #an-ask-take { width: 43px; }
@@ -3508,15 +3533,9 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
 .an-die-q { font-size: 7px; color: var(--pencil); }
 
 .an-quicks { flex: none; display: flex; flex-direction: column; gap: 8px; }
-.an-quick-row, .an-xgid-row { display: flex; gap: 8px; align-items: center; }
+.an-quick-row { display: flex; gap: 8px; align-items: center; }
 .an-quick { height: 30px; padding: 0 8px; font-size: 7px; border-radius: 7px; box-shadow: 2px 2px 0 0 var(--ink); white-space: nowrap; }
 .an-quick-row .an-quick { flex: 1 1 0; }
-.an-xgid-row .an-quick { flex: none; width: 64px; }
-.an-xgid {
-  flex: 1; min-width: 0; height: 30px; padding: 0 7px; border-radius: 6px;
-  font: 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); background: var(--paper-2);
-}
-.an-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .an-check {
   flex: none; height: 2.7em; margin: 0; overflow: hidden;
   font-size: 13px; line-height: 1.35; font-weight: 600; color: var(--ink);
@@ -3562,7 +3581,6 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
 .an-retry { width: 11.5rem; height: 38px; font-size: 8px; border-radius: 8px; box-shadow: 2px 2px 0 0 var(--ink); }
 .an-retry:disabled { box-shadow: 2px 2px 0 0 #a9a9b2; }
 .an-board .an-proposed { pointer-events: none; }
-.an-import-error { margin: 0; height: 1.3em; font-size: 13px; font-weight: 600; color: var(--red); }
 
 /* The 21 rolls: a sheet from the bottom on a phone, a card in the middle
    on anything wider; it floats over the page, so opening it moves
@@ -3623,10 +3641,9 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
   font-variant-numeric: tabular-nums; transition: background 0.12s, color 0.12s;
 }
 .an-plate:hover:not(.is-on) { background: var(--paper-2); }
-.an-plate.is-on { background: var(--ink); color: #fff; }
 .an-action-wide { grid-column: 1 / -1; }
 
-/* A narrow phone: the same two rows, a size down. */
+/* A narrow phone: the same three rows, a size down. */
 @media (max-width: 359px) {
   .an-mode { width: 52px; }
   #an-mode-play { width: 42px; }
@@ -3635,7 +3652,11 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
   .an-plate { font-size: 11px; padding: 0 6px; }
   .an-seg { font-size: 6px; }
   .an-step { width: 18px; }
-  #an-turn-white, #an-turn-black { width: 26px; }
+  .an-who { width: 60px; gap: 4px; }
+  .an-who .an-chip { width: 12px; height: 12px; }
+  .an-who-word { font-size: 6px; }
+  /* "White to play" whole beside its tray: the pip count makes room */
+  .an-board .player-bar .bar-pips { display: none; }
   #an-dice { width: 42px; }
   #an-ask-double { width: 48px; }
   #an-ask-take { width: 37px; }
@@ -3651,10 +3672,6 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
   .an-hint { font-size: 11px; }
   .an-hint-long { display: none; }
   .an-hint-short { display: inline; }
-  /* "Place every checker first" whole in the id's field */
-  .an-xgid { font-size: 9.5px; padding: 0 5px; }
-  .an-xgid-row { gap: 6px; }
-  .an-xgid-row .an-quick { width: 58px; }
 }
 
 /* Sideways: the board down the left at the screen's height, everything
@@ -3674,7 +3691,7 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
 
 /* A desktop: the brushes over the board, the column beside both -- a
    wider one than the replay's, its controls a size up so they sit with
-   the big board, and the position id on a line of its own. The board's
+   the big board. The board's
    width term is the replay's with this column's width. */
 @media (min-width: 1024px) {
   .an-page .rp-main { grid-template-columns: max-content 26rem; grid-template-rows: auto auto auto 1fr; row-gap: 8px; }
@@ -3704,7 +3721,10 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
   .an-controls, .an-segs, .an-stepper { height: 38px; }
   .an-seg { font-size: 8px; }
   .an-step { width: 26px; font-size: 17px; }
-  #an-turn-white, #an-turn-black { width: 38px; }
+  .an-whos { height: 38px; }
+  .an-who { width: 88px; height: 38px; gap: 6px; }
+  .an-who .an-chip { width: 17px; height: 17px; }
+  .an-who-word { font-size: 8px; }
   #an-dice { width: 56px; }
   #an-ask-double { width: 68px; }
   #an-ask-take { width: 52px; }
@@ -3715,9 +3735,6 @@ fieldset.an-strip, fieldset.an-quick-row { margin: 0; padding: 0; border: 0; min
   .an-score-value { width: 26px; font-size: 9px; }
   .an-die { width: 18px; height: 18px; }
   .an-quick { height: 38px; font-size: 8px; }
-  .an-xgid-row { flex-wrap: wrap; }
-  .an-xgid { flex: 1 1 100%; height: 38px; font-size: 12px; }
-  .an-xgid-row .an-quick { flex: 1 1 0; width: auto; }
   .an-check { font-size: 14px; }
   .an-analyze { height: 52px; font-size: 13px; }
 }

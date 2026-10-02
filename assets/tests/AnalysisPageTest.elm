@@ -37,12 +37,12 @@ suite =
         [ painting
         , pointers
         , quickStarts
-        , theId
         , doors
         , theLine
         , settings
         , answering
         , placing
+        , whoseMove
         , theNextPosition
         , playingItOut
         ]
@@ -285,70 +285,6 @@ withRoll setup =
     { setup | ask = Move (Just ( 3, 1 )) }
 
 
-theId : Test
-theId =
-    describe "the position id"
-        [ test "the field follows every change" <|
-            \_ ->
-                let
-                    field model =
-                        Analysis.view model
-                            |> Query.fromHtml
-                            |> Query.find [ id "an-xgid" ]
-                            |> Query.has [ attribute (Html.Attributes.value (Xgid.encode model.setup)) ]
-
-                    steps =
-                        [ Pressed Primary (Point 4), PickedRoll ( 6, 5 ), CycledCube, PressedFlip, ToggledGame, SteppedScore White 1 ]
-                in
-                Expect.all
-                    (List.indexedMap (\i _ -> \_ -> field (sendAll (List.take (i + 1) steps) page)) steps
-                        ++ [ \_ -> field page ]
-                    )
-                    ()
-        , test "while a checker is not placed there is no id: the field is empty, COPY is off, IMPORT is not" <|
-            \_ ->
-                sendAll [ PickedBrush Erase, Pressed Primary (Point 6) ] page
-                    |> Expect.all
-                        [ Analysis.positionId >> Expect.equal Nothing
-                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-xgid" ] >> Query.has [ attribute (Html.Attributes.value ""), attribute (Html.Attributes.placeholder "Place every checker first") ]
-                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-xgid-copy" ] >> Query.has [ attribute (Html.Attributes.disabled True) ]
-                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-xgid-import" ] >> Query.hasNot [ attribute (Html.Attributes.disabled True) ]
-                        , send PressedCopy >> .copiedShown >> Expect.equal False
-                        , sendAll [ PickedBrush (Paint White), Pressed Primary (Tray White) ] >> Analysis.positionId >> Expect.notEqual Nothing
-                        ]
-        , test "the opening with no roll picked is XG's opening with 00" <|
-            \_ ->
-                Xgid.encode page.setup
-                    |> Expect.equal "XGID=-b----E-C---eE---c-e----B-:0:0:1:00:0:0:1:0:10"
-        , test "IMPORT reads an id onto the board" <|
-            \_ ->
-                page
-                    |> sendAll [ OpenedImport, ImportInput "XGID=--A-bBBBB--BbB-----dbbc-B-:0:0:1:31:6:4:1:7:10", ImportSubmitted ]
-                    |> Expect.all
-                        [ .importOpen >> Expect.equal False
-                        , .setup >> Ok >> Expect.equal (Xgid.decode "XGID=--A-bBBBB--BbB-----dbbc-B-:0:0:1:31:6:4:1:7:10")
-                        ]
-        , test "a bad id stays in the dialog and says so" <|
-            \_ ->
-                page
-                    |> sendAll [ OpenedImport, ImportInput "hello", ImportSubmitted ]
-                    |> Expect.all
-                        [ .importOpen >> Expect.equal True
-                        , .setup >> Expect.equal Setup.opening
-                        , Analysis.view >> Query.fromHtml >> Query.find [ id "an-import-error" ] >> Query.has [ text "That is not a position id" ]
-                        ]
-        , test "the import dialog and its button are where the page says" <|
-            \_ ->
-                send OpenedImport page
-                    |> Analysis.view
-                    |> Query.fromHtml
-                    |> Expect.all
-                        [ Query.has [ id "an-import" ]
-                        , Query.find [ id "an-import-go" ] >> Query.has [ text "IMPORT" ]
-                        ]
-        ]
-
-
 doors : Test
 doors =
     describe "the doors in"
@@ -376,13 +312,13 @@ doors =
                     crawford =
                         .setup >> .match >> Maybe.map .crawford
                 in
-                Expect.all
-                    [ \_ -> Analysis.init Session.empty "http://oskol.test" { xgid = Just raw, puzzle = Nothing } |> Tuple.first |> crawford |> Expect.equal (Just False)
-                    , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted ] |> crawford |> Expect.equal (Just False)
-                    , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted ] |> Analysis.line |> Expect.equal Nothing
-                    , \_ -> page |> sendAll [ OpenedImport, ImportInput raw, ImportSubmitted, ToggledGame, ToggledGame ] |> crawford |> Expect.equal (Just False)
-                    ]
-                    ()
+                Analysis.init Session.empty "http://oskol.test" { xgid = Just raw, puzzle = Nothing }
+                    |> Tuple.first
+                    |> Expect.all
+                        [ crawford >> Expect.equal (Just False)
+                        , sendAll [ PickedRoll ( 3, 1 ) ] >> Analysis.line >> Expect.equal Nothing
+                        , sendAll [ ToggledGame, ToggledGame ] >> crawford >> Expect.equal (Just False)
+                        ]
         , test "an id with an owner on a cube at 1 comes in centered" <|
             \_ ->
                 Analysis.init Session.empty "http://oskol.test" { xgid = Just "XGID=-b----E-C---eE---c-e----B-:0:1:1:31:0:0:1:0:10", puzzle = Nothing }
@@ -1389,4 +1325,36 @@ playingItOut =
                 in
                 Analysis.notation chain [ "a", "b", "c", "d" ]
                     |> Expect.equal "24/18*/12 13/7(2)"
+        ]
+
+
+whoseMove : Test
+whoseMove =
+    describe "whose move it is"
+        [ test "TO PLAY: each colour's checker and its word, the chosen one marked, heard as \"White to play\"" <|
+            \_ ->
+                Analysis.view page
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.find [ id "an-turn-white" ] >> Query.has [ class "is-on", text "WHITE", attribute (Html.Attributes.attribute "aria-label" "White to play"), attribute (Html.Attributes.attribute "aria-pressed" "true") ]
+                        , Query.find [ id "an-turn-black" ] >> Query.has [ text "BLACK", attribute (Html.Attributes.attribute "aria-pressed" "false") ]
+                        , Query.find [ id "an-turn-black" ] >> Query.hasNot [ class "is-on" ]
+                        , Query.find [ id "an-turn-white" ] >> Query.has [ class "an-chip", class "white" ]
+                        ]
+        , test "the mover's bar is the one to move, in SET UP too" <|
+            \_ ->
+                Expect.all
+                    [ \_ -> Analysis.view page |> Query.fromHtml |> Query.find [ class "player-bar", class "active" ] |> Query.has [ text "White" ]
+                    , \_ -> send (PickedTurn Black) page |> Analysis.view |> Query.fromHtml |> Query.find [ class "player-bar", class "active" ] |> Query.has [ text "Black" ]
+                    ]
+                    ()
+        , test "the position id's row is gone" <|
+            \_ ->
+                Analysis.view page
+                    |> Query.fromHtml
+                    |> Expect.all
+                        [ Query.hasNot [ id "an-xgid" ]
+                        , Query.hasNot [ id "an-xgid-copy" ]
+                        , Query.hasNot [ id "an-xgid-import" ]
+                        ]
         ]
