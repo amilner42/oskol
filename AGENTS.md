@@ -167,7 +167,7 @@ mix oskol.seed         # rooms 000001.. in positions worth testing (see Aveline 
 
 Operator tasks (each a dry run unless `--write`; release twins in
 `Oskol.Release`): `mix oskol.decks.build`, `mix oskol.puzzles.backfill`,
-`mix oskol.puzzles.sync`, `mix oskol.puzzles.reposition`,
+`mix oskol.puzzles.sync`, `mix oskol.puzzles.reposition`, `mix oskol.puzzles.refresh_owners`,
 `mix oskol.reviews.rebuild`, `mix oskol.patch_ready_up`, `mix oskol.analyse`
 (see Aveline runbooks before running one against prod). For a script:
 `mix run -e 'Code.eval_file("path")'`. To play a game without a browser:

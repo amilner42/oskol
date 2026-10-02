@@ -83,17 +83,36 @@ defmodule Oskol.Persistence do
   end
 
   def update_players(game_id, players) do
-    update_game(game_id, players: keep_owners(game_id, players))
+    update_seats(game_id, players: keep_owners(game_id, players))
   end
 
   def mark_started(game_id, seed, config, players, state) do
-    update_game(game_id,
+    update_seats(game_id,
       seed: seed,
       config: config,
       players: keep_owners(game_id, players),
       status: "playing",
       state: state
     )
+  end
+
+  # A write that carries the whole seat list can hand a seat to an account
+  # -- a signed-in browser claiming a seat that was away is the one that
+  # does it to a room that already has mistakes -- so the room's puzzle
+  # sources learn their owners in the same transaction, exactly as the
+  # sign-in stamp's do. Without it the deck, which finds a mistake by
+  # `puzzle_sources.owner_user_id`, never sees the seat's mistakes
+  # (`puzzles-stale-owner`: room 821900). Nothing to do for a room with no
+  # sources yet, which is every lobby; the review job writes those with
+  # their owners when they come.
+  defp update_seats(game_id, sets) do
+    {:ok, :ok} =
+      Repo.transaction(fn ->
+        :ok = update_game(game_id, sets)
+        Oskol.Puzzles.refresh_owners([game_id])
+      end)
+
+    :ok
   end
 
   # A room writes its seat list from memory. If a sign-in stamped a seat on

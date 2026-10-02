@@ -874,14 +874,34 @@ defmodule Oskol.Puzzles do
   @doc """
   Point these games' sources at the accounts that own their seats.
 
-  Run inside the write that can change the answer: when the sources are
-  first written, and when a sign-in stamps a game's seats. One statement,
-  and it only ever writes where the answer moved, so running it twice
-  writes nothing the second time.
+  Run inside every write that can change the answer: when the sources are
+  first written, when a room writes its seat list (a join, a claim, a
+  start: `Oskol.Persistence.update_players/2`), and when a sign-in stamps a
+  game's seats. It only ever writes where the answer moved, so running it
+  twice writes nothing the second time.
+
+  The games' rows are locked first. The two sides of this -- a write that
+  inserts sources, and a write that changes seats -- each run it inside
+  their own transaction, and under read committed neither sees the other's
+  uncommitted rows: a claim committing between the review job's insert and
+  its commit would refresh no sources and the job would have read the old
+  seat. Taking the room's row lock makes the second of the two wait for
+  the first, and then see it.
+
+  `FOR NO KEY UPDATE`, not `FOR UPDATE`: inserting a source already holds
+  `FOR KEY SHARE` on its room (the foreign key), and a seat write already
+  holds `FOR NO KEY UPDATE` (its `UPDATE games`). `FOR UPDATE` conflicts
+  with the key share, so each would wait on the other: a deadlock. This
+  lock conflicts only with the seat write's, so one simply waits.
   """
   def refresh_owners([]), do: :ok
 
   def refresh_owners(game_ids) when is_list(game_ids) do
+    Repo.query!(
+      "SELECT 1 FROM games WHERE id = ANY($1) ORDER BY id FOR NO KEY UPDATE",
+      [game_ids]
+    )
+
     Repo.query!(
       """
       UPDATE puzzle_sources s
@@ -897,6 +917,31 @@ defmodule Oskol.Puzzles do
     )
 
     :ok
+  end
+
+  @doc """
+  The sources whose `owner_user_id` disagrees with the account that owns
+  their seat today -- what `refresh_owners/1` would write -- as one row per
+  room and account, `%{game_id:, user_id:, sources:}`. A read.
+
+  The repair behind `mix oskol.puzzles.refresh_owners` reads it; every live
+  path keeps it empty by refreshing in the write that changes a seat.
+  """
+  def stale_owners do
+    Repo.query!("""
+    SELECT s.game_id, p ->> 'user_id', count(*)
+    FROM puzzle_sources s
+    JOIN games g ON g.id = s.game_id,
+    LATERAL jsonb_array_elements(oskol_players_jsonb(g.players)) p
+    WHERE p ->> 'id' = s.player_id
+      AND p ->> 'user_id' IS NOT NULL
+      AND s.owner_user_id IS DISTINCT FROM (p ->> 'user_id')::uuid
+    GROUP BY 1, 2
+    ORDER BY 1, 2
+    """).rows
+    |> Enum.map(fn [game_id, user_id, count] ->
+      %{game_id: game_id, user_id: user_id, sources: count}
+    end)
   end
 
   @doc """

@@ -189,6 +189,83 @@ defmodule Oskol.Practice do
     end)
   end
 
+  @doc """
+  Point every puzzle source at the account that owns its seat, and fill
+  the decks that were missing those mistakes: the repair for
+  `puzzles-stale-owner`, behind `mix oskol.puzzles.refresh_owners`.
+
+  A seat that reached an account without its room's sources hearing of it
+  (a signed-in browser claiming an away seat, before that write refreshed
+  them) left the mistakes on it owned by nobody, and the deck finds a
+  mistake by its owner. This finds every such room
+  (`Oskol.Puzzles.stale_owners/0`) and, with `write?`, refreshes their
+  owners and then syncs each affected account's deck over those rooms,
+  exactly as the sweep would.
+
+  `write?` false reads and writes nothing. Idempotent: a second run finds
+  no room. Returns `%{rooms: [%{game_id:, user_id:, sources:}], accounts:
+  [%{user_id:, game_ids:, sources:, added:}]}`, `added` being the cards
+  each deck gained (nil on a dry run, `:error` where the sync refused).
+  """
+  def refresh_owners(write? \\ false) do
+    rooms = Oskol.Puzzles.stale_owners()
+
+    if write? do
+      :ok = rooms |> Enum.map(& &1.game_id) |> Enum.uniq() |> Oskol.Puzzles.refresh_owners()
+    end
+
+    accounts =
+      rooms
+      |> Enum.group_by(& &1.user_id)
+      |> Enum.map(fn {user_id, rows} ->
+        game_ids = rows |> Enum.map(& &1.game_id) |> Enum.uniq()
+
+        %{
+          user_id: user_id,
+          game_ids: game_ids,
+          sources: rows |> Enum.map(& &1.sources) |> Enum.sum(),
+          added: if(write?, do: synced(user_id, game_ids))
+        }
+      end)
+      |> Enum.sort_by(& &1.user_id)
+
+    %{rooms: rooms, accounts: accounts}
+  end
+
+  defp synced(user_id, game_ids) do
+    case sync(user_id, game_ids) do
+      {:ok, added} -> added
+      :error -> :error
+    end
+  end
+
+  @doc "One line per room and per account of what `refresh_owners/1` found, or did."
+  def describe_refresh(%{rooms: rooms, accounts: accounts}, write?) do
+    room_lines =
+      Enum.map(rooms, fn r ->
+        "room #{r.game_id}: #{r.sources} mistakes " <>
+          if(write?, do: "now owned", else: "would be owned") <> " by #{r.user_id}"
+      end)
+
+    account_lines =
+      Enum.map(accounts, fn a ->
+        deck =
+          case a.added do
+            nil -> "deck to sync"
+            :error -> "deck sync REFUSED (see the log)"
+            n -> "#{n} new cards"
+          end
+
+        "account #{a.user_id}: #{a.sources} mistakes in #{length(a.game_ids)} rooms, #{deck}"
+      end)
+
+    total =
+      "#{length(rooms)} rooms, #{length(accounts)} accounts" <>
+        if(write?, do: ", written", else: ", dry run (pass --write)")
+
+    room_lines ++ account_lines ++ [total]
+  end
+
   @doc "How many accounts one sweep works through."
   def sweep_batch, do: @sweep_batch
 
